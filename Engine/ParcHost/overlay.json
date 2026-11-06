@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 366,
+  "version": 367,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1580,12 +1580,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_adapter.h",
       "target": "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.h",
-      "sha256": "96425054397efc391e495b942893f551105c96552b9b64bdca1e556ed9e64b76"
+      "sha256": "f0821fa4d73a0265dde8afb6cd9194e2bf4333d7db41f0581b4be4a76bb7cc37"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_adapter.mm",
       "target": "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.mm",
-      "sha256": "330f6c04704b8c173139c58adda3b9b4d5f640e717e4e0a85f4e41b269c6de94"
+      "sha256": "9004afe7ec218521893d18373e2dcf638ebfdda4a696cefd59b3a071d437a156"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client.h",
@@ -3947,7 +3947,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "fd43504e80ce4949af3ea92296e08c9bb6e33d02f7d84fe511dc704aad8b1d80",
+      "sha256": "35cc81b557af98fd3ab76fd317e70b64bc2d6dd1f475ce7ad50ef62988f0ae82",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -3982,7 +3982,7 @@
         {
           "target": "content/browser/media/media_interface_proxy.cc",
           "before_sha256": "151fd2acf0b00762c9debb229b6ab62cebc2fbc91cb6a5d9d0afd5bd48c89b67",
-          "after_sha256": "d1e5f19a1bb8efac9eb07bc5e1cef99eb172514008a1b35b485aa49f53ef9e47"
+          "after_sha256": "eb6ab89c69aad293337a2579b24675e4a4a36547d873ba04a546a583fe6adb95"
         },
         {
           "target": "content/browser/media/media_interface_proxy.h",
@@ -4070,6 +4070,11 @@
           "after_sha256": "d6190b4c805c3d9e1f586f879f15e3f45d66016e8b1d551c11c307c1075a055b"
         },
         {
+          "target": "media/mojo/mojom/frame_interface_factory.mojom",
+          "before_sha256": "1c58a4930d9f87d03b82a637963268193fd5fe63f8c5f85e9aad175615f43e7d",
+          "after_sha256": "bd0bbed83c64ca1d4454f0e602876230135c7fd3ac76be473404295ffc0ab79c"
+        },
+        {
           "target": "media/mojo/mojom/interface_factory.mojom",
           "before_sha256": "44b7ed54aee55d131f6295fa5e5e8d9a2f06d80ad29459f3912f763ddc5a9c47",
           "after_sha256": "e0fd73b28cf9dd1be1bb996eac609895bafc176067e338be52e43e08ed21231f"
@@ -4097,12 +4102,12 @@
         {
           "target": "media/mojo/services/gpu_mojo_media_client_mac.cc",
           "before_sha256": "639195fdf9ab52f556aa39ecf950231d82247a34939e831d035e15e1e6f75b7c",
-          "after_sha256": "ff44a41a5509f35066fbe25af30a62c583e7ee0a50713df819673c9b45b4b14c"
+          "after_sha256": "57481c5f6de080fe601dc21259ec4033b19f4af8d519fb9fb150df96f11a70d4"
         },
         {
           "target": "media/mojo/services/interface_factory_impl.cc",
           "before_sha256": "031060f942e388b6335c5d73f16db4bcada24a7625a23c674d5a5b69ccf2076a",
-          "after_sha256": "f06ad643ec9634226ab48d6807af520551d61e5e8c02dc146ad80317dad9a7c0"
+          "after_sha256": "2211d91b6c7d9e6e7828de2f227d0a4502749a93669ecc3f1d23268849f789e1"
         },
         {
           "target": "media/mojo/services/interface_factory_impl.h",
@@ -4117,12 +4122,17 @@
         {
           "target": "media/mojo/services/mojo_media_client.cc",
           "before_sha256": "ce1f71ae9d481a4a2c9b38da6217d41995090425222ee7bf3510bc7509686e7b",
-          "after_sha256": "711697b4ac222f7bfc164afe3c93028dc38f33feea424cf6f789559d0812f520"
+          "after_sha256": "65c24378dc85728e0975e6acb8039704038aee8e9c438b1fb7fd88691f38d75b"
+        },
+        {
+          "target": "media/mojo/services/mojo_cdm_helper_unittest.cc",
+          "before_sha256": "be22c1e67026f413ea8f8fad20faa9625186850b09d23db87335b9a7edbebc2d",
+          "after_sha256": "c7fbd4087da9da59c7ef13922af292d136643ef39c130eddeb63fee048e80007"
         },
         {
           "target": "media/mojo/services/mojo_media_client.h",
           "before_sha256": "f7f86427e6ce6c4e4257f2690533f42ee8e4346a137c7df930b5a7888087b87f",
-          "after_sha256": "b0617eed5ccf00a7c893a00b3e5febe0803e97cbfc282dda611c4d45b350d240"
+          "after_sha256": "3b46fa412e2613c96778120ef4ace6303d01c4cc62d4f7662e6f7aed2c998e4c"
         },
         {
           "target": "sandbox/policy/mac/gpu.sb",

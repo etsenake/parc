@@ -17,6 +17,7 @@
 #include <string>
 
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -69,6 +70,16 @@ class FairPlayRendererAdapter final
   base::TimeDelta GetMediaTime() override;
   RendererType GetRendererType() override;
 
+  // The frame's mute state (tab mute). The audio bypasses Chromium's audio
+  // service, so the browser's MuteStateObserver feeds this; it is bound to a
+  // weak pointer and may outlive the adapter.
+  base::RepeatingCallback<void(bool)> GetMuteStateCallback();
+  // Called once the browser was asked for the mute state. Audio stays muted
+  // until its first answer, so a muted tab never plays a moment of sound
+  // while the answer is on its way. |closer| closes the observer when the
+  // adapter is destroyed.
+  void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
+
   // parc::fairplay::FairPlayRendererClient implementation.
   void OnNeedData(parc::fairplay::StreamType stream) override;
   void OnWaitingForKey() override;
@@ -96,6 +107,7 @@ class FairPlayRendererAdapter final
                      const DecoderBuffer& buffer);
   void MaybeFinishFlush();
   void ReportError(PipelineStatus status);
+  void SetMuted(bool muted);
 
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
   const LayerRegisteredCB layer_registered_cb_;
@@ -114,6 +126,8 @@ class FairPlayRendererAdapter final
   bool natural_size_reported_ = false;
   base::TimeDelta start_time_;
   float volume_ = 1;
+  bool muted_ = false;
+  bool awaiting_mute_state_ = false;
 
   // Bumped by Flush; reads issued before it are dropped when they return.
   uint64_t generation_ = 0;
@@ -122,6 +136,7 @@ class FairPlayRendererAdapter final
 
   base::UnguessableToken layer_token_;
   gfx::Size natural_size_;
+  base::ScopedClosureRunner mute_state_observer_closer_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<FairPlayRendererAdapter> weak_factory_{this};

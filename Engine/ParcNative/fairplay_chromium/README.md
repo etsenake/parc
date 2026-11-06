@@ -16,7 +16,7 @@ which the core predates, don't apply. Upstream hunks are in
 
 ## Status
 
-Lands on main in three increments, each building on its own:
+Landed on main in increments, each building on its own:
 
 1. The CDM: routing, GPU adapter and factory, `CdmContext` additions, the
    Widevine hook and the GPU sandbox rules. Inert: `MediaInterfaceProxy`
@@ -27,6 +27,8 @@ Lands on main in three increments, each building on its own:
    it is only selected for a FairPlay CDM.
 3. Registration (browser `CdmInfo`, Blink key system info) and the codec build
    flags. From here FairPlay is offered to every page.
+4. The GPU sandbox rules as `tests/FairPlay/sandbox` proved them.
+5. Tab mute and the tab's audio indicator.
 
 ## What is where
 
@@ -136,14 +138,29 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
   layer only from the GPU main thread, and only its placement.
 - Audio goes from `AVSampleBufferAudioRenderer` straight to CoreAudio from the
   GPU process, never through Chromium's audio service. Web Audio's
-  `createMediaElementSource`, `setSinkId` and the tab's audio indicator don't
-  see it.
+  `createMediaElementSource` and `setSinkId` don't see it. Tab mute and the
+  tab's audio indicator do, the way MediaFoundation's renderer gets them on
+  Windows:
+  - Mute: `GpuMojoMediaClientMac::CreateFairPlayRenderer` registers a
+    `mojom::MuteStateObserver` with the frame's `FrameInterfaceFactory`
+    (enabled on macOS too). The browser answers with the tab's state at once
+    and on every change; the adapter mutes the core (`SetMuted`, kept until
+    the core is initialized). Until that first answer the adapter keeps the
+    audio muted, so a muted tab plays no sound while it is on its way. The
+    observer closes with the renderer.
+  - Indicator: `MediaInterfaceProxy::CreateFairPlayRenderer` holds an
+    `AudibilityBypassTracker` grant in the proxy it puts between the GPU
+    adapter and the render-process client, so the grant ends with the GPU
+    renderer. The player reports that it doesn't use the audio service, so
+    `MediaWebContentsObserver` claims the grant while the player is audible
+    and registers it with `AudioStreamMonitor`. A frame gets the grant only
+    after it asked `CreateCdm` for a registered FairPlay key system.
+  - The layer token (`OnLayerRegistered`) goes through that proxy on the
+    browser's UI thread, so a busy UI thread delays the first video frame's
+    hole; the render-process client paints the hole whenever it arrives.
 
 ## Known gaps
 
-- `requiresFlushToResumeDecoding` (layer detached while the page has no
-  compositor) is reported by the core but not yet recovered; fairplay-core's
-  next batch adds recovery.
 - A page that turns its own video track off (`videoTracks`) ends video until
   the next seek; a disabled `ChunkDemuxerStream` answers with end of stream.
   The background-tab optimization that does the same is turned off for
@@ -151,7 +168,12 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
 - A codec change through MSE `changeType` ends playback with an error.
 - A `setMediaKeys` that arrives after a clear pipeline already chose
   `RendererImpl` doesn't switch renderers (same as MediaFoundation upstream).
-- `setSinkId` isn't wired yet (the core is adding `SetAudioOutputDevice`).
+- `setSinkId` isn't wired. The core has `SetAudioOutputDevice`, but
+  `media::Renderer` has no sink switch, so it needs a client extension call.
+- Two FairPlay players in one frame can lose the speaker icon: upstream's
+  `AudibilityBypassTracker` hands any pending grant to whichever player
+  claims first, so when one renderer goes, the other player's claimed grant
+  can go with it (the same holds for MediaFoundation on Windows).
 
 ## Widevine request hook
 
@@ -293,8 +315,9 @@ system registration are on main.
 
    Expect: one license request in the Network tab, `keystatuseschange` to
    "usable", video in the element's box that follows scrolling, resizing and
-   fullscreen, audio, and working seek and pause. The vector has no clear lead,
-   so this doesn't depend on the core's clear-lead work. (Check the vector's
+   fullscreen, audio, and working seek and pause. The tab shows its speaker
+   icon while audio plays, and muting the tab (or the site) silences it.
+   The vector has no clear lead, so this doesn't depend on the core's clear-lead work. (Check the vector's
    master playlist name in Axinom's README if `manifest.m3u8` 404s.)
 4. Ordinary paths unchanged: a clear MP4/MSE video, and a Widevine site (e.g.
    Shaka's Widevine demo asset) play as before. In media-internals their

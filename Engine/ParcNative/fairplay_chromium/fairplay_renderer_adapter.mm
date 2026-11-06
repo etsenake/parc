@@ -231,6 +231,7 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
   if (status.is_ok()) {
     core_initialized_ = true;
     core_->SetVolume(volume_);
+    core_->SetMuted(muted_ || awaiting_mute_state_);
     if (video) {
       CALayer* layer = (__bridge CALayer*)core_->display_layer();
       layer_token_ = base::UnguessableToken::Create();
@@ -342,6 +343,31 @@ base::TimeDelta FairPlayRendererAdapter::GetMediaTime() {
 
 RendererType FairPlayRendererAdapter::GetRendererType() {
   return RendererType::kFairPlay;
+}
+
+base::RepeatingCallback<void(bool)>
+FairPlayRendererAdapter::GetMuteStateCallback() {
+  return base::BindRepeating(&FairPlayRendererAdapter::SetMuted,
+                             weak_factory_.GetWeakPtr());
+}
+
+void FairPlayRendererAdapter::SetMuteStateObserverCloser(
+    base::ScopedClosureRunner closer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  mute_state_observer_closer_ = std::move(closer);
+  awaiting_mute_state_ = true;
+  if (core_initialized_) {
+    core_->SetMuted(true);
+  }
+}
+
+void FairPlayRendererAdapter::SetMuted(bool muted) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  muted_ = muted;
+  awaiting_mute_state_ = false;
+  if (core_initialized_) {
+    core_->SetMuted(muted);
+  }
 }
 
 void FairPlayRendererAdapter::OnNeedData(fp::StreamType type) {
