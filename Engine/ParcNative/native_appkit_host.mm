@@ -193,7 +193,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   ~AppKitBrowserHost() override { BeginTeardown(); }
   PCNativeBrowserWindow* binding() const { return binding_; }
   bool selected() const { return selected_ && !tearing_down_ && !draining_; }
-  bool acceptsNewPages() const { return !tearing_down_ && !draining_; }
+  // A delete-scheduled Browser destroys its window features before any tab
+  // still in its TabStripModel, so it takes no page even before its drain.
+  bool acceptsNewPages() const {
+    return !tearing_down_ && !draining_ && !browser_.IsDeleteScheduled();
+  }
   void DidAttachWindow(gfx::NativeWindow window) override {
     CHECK(window.GetNativeNSWindow() == binding_.window);
     window_ = window.GetNativeNSWindow();

@@ -235,6 +235,8 @@ class BindingState {
   uint64_t ownership_epoch = 0;
   uint64_t selection_generation = 0;
   size_t pending_reservations = 0;
+  // Page creations waiting for a delete-scheduled Browser to unregister.
+  std::vector<base::OnceClosure> retirement_waiters;
   bool close_in_progress = false;
   bool close_approved = false;
   void FinishClose(bool allow) {
@@ -1784,8 +1786,33 @@ void UnregisterAppKitBrowser(PCNativeBrowserWindow* binding,
   if (auto transaction = ActiveCloseTransaction()) {
     transaction->BrowserUnregistered(browser);
   }
+  // Never create the replacement Browser on this teardown stack.
+  for (auto& waiter : std::exchange(state.retirement_waiters, {})) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(waiter));
+  }
   NotifyNativeEngineOwnershipChanged();
 }
+namespace {
+// Closing a Browser's last tab schedules its deletion at once, but it stays
+// registered to this window until its native drain finishes. ~Browser destroys
+// BrowserWindowFeatures before tabs still in its TabStripModel, so a page added
+// meanwhile outlives the window services it observes (its cookie page action
+// observes the window's CookieControlsController). Callers wait for that
+// Browser to unregister; their retry then creates this window's next Browser.
+bool BrowserRetiringForPath(PCNativeBrowserWindow* binding, NSString* path) {
+  const base::FilePath profile_path(base::SysNSStringToUTF8(path));
+  for (const auto& entry : [binding state].browsers) {
+    const auto& browser = entry.second;
+    // An OTR Profile reports its original Profile's path.
+    if (browser && browser->IsDeleteScheduled() &&
+        browser->GetProfile()->GetPath() == profile_path) {
+      return true;
+    }
+  }
+  return false;
+}
+}  // namespace
 void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
                               BrowserWindowInterface& browser,
                               bool approved) {
@@ -1989,6 +2016,22 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     completion(
         nil, parc::Error(
                  @"The supplied page window or profile path is unavailable."));
+    return;
+  }
+  if (parc::BrowserRetiringForPath(self, path)) {
+    __weak PCNativeBrowserWindow* weak_self = self;
+    __weak NSView* weak_target = container;
+    void (^retry_completion)(PCNativePage*, NSError*) = [completion copy];
+    _state->retirement_waiters.push_back(base::BindOnce(^{
+      PCNativeBrowserWindow* binding = weak_self;
+      NSView* target = weak_target;
+      if (!binding || !target) {
+        retry_completion(nil, parc::Error(@"The page's window closed."));
+        return;
+      }
+      [binding openURL:url profilePath:path container:target
+          searchNavigation:search completion:retry_completion];
+    }));
     return;
   }
   ++parc::pending_creations;
@@ -3884,6 +3927,20 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
       !binding.client || [binding state].close_in_progress ||
       [binding state].close_approved) {
     std::move(callback).Run(nullptr, false, Error(@"The destination window is unavailable."));
+    return;
+  }
+  if (BrowserRetiringForPath(binding, path)) {
+    __weak PCNativeBrowserWindow* weak_binding = binding;
+    [binding state].retirement_waiters.push_back(base::BindOnce(
+        [](PCNativeBrowserWindow* __weak weak_binding, NSString* path,
+           base::OnceCallback<void(BrowserWindowInterface*, bool, NSError*)> callback) {
+          if (PCNativeBrowserWindow* binding = weak_binding) {
+            WithNativeRoutingBrowser(binding, path, std::move(callback));
+          } else {
+            std::move(callback).Run(nullptr, false, Error(@"The destination window is unavailable."));
+          }
+        },
+        weak_binding, [path copy], std::move(callback)));
     return;
   }
   ++pending_creations;
