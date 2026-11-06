@@ -190,6 +190,7 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   void ScreenChanged();
   void SuspendDrawing();
   void ResumeDrawing();
+  void AllowProtectedLayers();
   void ReleaseCaptureLock();
   void ReleasePool();
 
@@ -214,6 +215,12 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   bool marked_ = false;
   bool reserved_ = false;
   bool detaching_ = false;
+  // The page whose frame this display holds: the one it last drew while it
+  // could show FairPlay layers. An identity, never dereferenced.
+  raw_ptr<const content::WebContents, DisableDanglingPtrDetection>
+      held_frame_page_ = nullptr;
+  // Advanced by each suspend and resume, cancelling a pending re-allow.
+  uint64_t protected_layers_generation_ = 0;
   base::WeakPtrFactory<NativePaneCompositor> weak_factory_{this};
 };
 
@@ -302,6 +309,7 @@ NativePaneCompositor::NativePaneCompositor(NativePaneCompositorPool& pool)
   compositor_->compositor()->SetBackgroundColor(SK_ColorTRANSPARENT);
   compositor_->widget()->SetNSView(this);
   compositor_->widget()->SetSuspended(true);
+  compositor_->compositor()->SetProtectedLayersAllowed(false);
   auto weak = weak_factory_.GetWeakPtr();
   overlay_.geometryHandler = ^{
     if (weak) {
@@ -598,6 +606,13 @@ void NativePaneCompositor::SuspendDrawing() {
   // Holds the last frame: no new commits, and none in flight reaches the view.
   compositor_->widget()->SetSuspended(true);
   compositor_->Suspend();
+  // Its display still redraws when a surface the held frame embeds changes.
+  // It must not take a FairPlay video's layer from the compositor that shows
+  // the page now (a page dragged to another window): it draws such a video
+  // black instead. Nothing else in a frame changes, so the held frame of a
+  // page without FairPlay video is exactly as before.
+  compositor_->compositor()->SetProtectedLayersAllowed(false);
+  ++protected_layers_generation_;
 }
 
 void NativePaneCompositor::ResumeDrawing() {
@@ -605,8 +620,42 @@ void NativePaneCompositor::ResumeDrawing() {
     return;
   }
   drawing_ = true;
+  AllowProtectedLayers();
   compositor_->widget()->SetSuspended(false);
   compositor_->Unsuspend();
+}
+
+void NativePaneCompositor::AllowProtectedLayers() {
+  const uint64_t generation = ++protected_layers_generation_;
+  if (!held_frame_page_ || held_frame_page_ == contents_key_) {
+    // The held frame is this page's, or there is none: show its FairPlay video
+    // again at once (viz redraws a frame that had one).
+    held_frame_page_ = contents_key_;
+    compositor_->compositor()->SetProtectedLayersAllowed(true);
+    return;
+  }
+  // The held frame is another page's. Redrawing it now would place that page's
+  // FairPlay video here, taking it from the compositor that shows the page, so
+  // wait until this page's first frame is on screen. Requesting the feedback
+  // doesn't make a frame; the page's first commit does.
+  compositor_->compositor()->RequestSuccessfulPresentationTimeForNextFrame(
+      base::BindOnce(
+          [](base::WeakPtr<NativePaneCompositor> self, uint64_t generation,
+             uintptr_t page, const viz::FrameTimingDetails&) {
+            // `page` identifies the page that asked; it is never dereferenced.
+            if (!self || reinterpret_cast<uintptr_t>(
+                             self->contents_key_.get()) != page) {
+              return;
+            }
+            // The display now holds this page's frame, even if it was parked
+            // again before this arrived.
+            self->held_frame_page_ = self->contents_key_;
+            if (generation == self->protected_layers_generation_) {
+              self->compositor_->compositor()->SetProtectedLayersAllowed(true);
+            }
+          },
+          weak_factory_.GetWeakPtr(), generation,
+          reinterpret_cast<uintptr_t>(contents_key_.get())));
 }
 
 scoped_refptr<NativePaneCompositorPool> NativePaneCompositorPool::ForWindow(

@@ -681,7 +681,7 @@
  #include "components/viz/service/display/display_resource_provider.h"
  #include "ui/base/cocoa/remote_layer_api.h"
  #include "ui/gfx/buffer_types.h"
-@@ -210,6 +211,21 @@
+@@ -210,11 +211,29 @@
    ca_layer_overlay->uv_rect.InvScale(texture_size.width(),
                                       texture_size.height());
    ca_layer_overlay->nearest_neighbor_filter = quad->nearest_neighbor;
@@ -703,27 +703,59 @@
    return gfx::kCALayerSuccess;
  }
  
-@@ -295,6 +311,10 @@
+ class CALayerOverlayProcessorInternal {
+  public:
++  explicit CALayerOverlayProcessorInternal(bool protected_layers_allowed)
++      : protected_layers_allowed_(protected_layers_allowed) {}
++
+   gfx::CALayerResult FromDrawQuad(
+       const DisplayResourceProvider* resource_provider,
+       const gfx::RectF& display_rect,
+@@ -295,6 +314,18 @@
              ca_layer_overlay);
        case DrawQuad::Material::kSurfaceContent:
          return gfx::kCALayerFailedSurfaceContent;
 +      case DrawQuad::Material::kVideoHole:
 +        yuv_draw_quad_count += 1;
++        had_protected_layer_ = true;
++        if (!protected_layers_allowed_) {
++          // Parc: a parked display shows the video black and never places
++          // the layer, which the display showing the page holds.
++          ca_layer_overlay->color = SkColors::kBlack;
++          ca_layer_overlay->is_solid_color = true;
++          return gfx::kCALayerSuccess;
++        }
 +        return FromVideoHoleQuad(VideoHoleDrawQuad::MaterialCast(quad),
 +                                 ca_layer_overlay);
        default:
          break;
      }
-@@ -403,10 +423,23 @@
+@@ -306,8 +337,11 @@
+   bool video_with_odd_height() { return video_with_odd_height_; }
+   bool video_with_odd_x() { return video_with_odd_x_; }
+   bool video_with_odd_y() { return video_with_odd_y_; }
++  bool had_protected_layer() const { return had_protected_layer_; }
+ 
+  private:
++  const bool protected_layers_allowed_;
++  bool had_protected_layer_ = false;
+   bool video_with_odd_width_ = false;
+   bool video_with_odd_height_ = false;
+   bool video_with_odd_x_ = false;
+@@ -403,10 +437,27 @@
        }
      }
  
 +    // Parc: a FairPlay video can't be drawn into the primary plane, so when
 +    // the frame can't be all CALayers it still goes to an underlay below a
 +    // hole in the primary plane, keeping page content drawn over it on top.
++    // A parked display leaves it in the primary plane, drawn black.
 +    if (quad->material == DrawQuad::Material::kVideoHole) {
-+      force_quad_to_overlay = true;
-+      protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
++      had_protected_layer_ = true;
++      if (protected_layers_allowed_) {
++        force_quad_to_overlay = true;
++        protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
++      }
 +    }
 +
      if (force_quad_to_overlay) {
@@ -738,6 +770,43 @@
          failed = true;
          break;
        }
+@@ -424,6 +475,7 @@
+   const QuadList& quad_list = render_pass->quad_list;
+   gfx::CALayerResult result = gfx::kCALayerSuccess;
+   size_t num_visible_quads = quad_list.size();
++  had_protected_layer_ = false;
+ 
+   // Skip overlay processing
+   if (!overlays_allowed_ || !enable_ca_renderer_) {
+@@ -447,7 +499,7 @@
+ 
+   int render_pass_draw_quad_count = 0;
+   int yuv_draw_quad_count = 0;
+-  CALayerOverlayProcessorInternal processor;
++  CALayerOverlayProcessorInternal processor(protected_layers_allowed_);
+   for (auto it = quad_list.BackToFrontBegin();
+        result == gfx::kCALayerSuccess && it != quad_list.BackToFrontEnd();
+        ++it) {
+@@ -480,6 +532,10 @@
+     ca_layer_overlays->push_back(ca_layer);
+   }
+ 
++  if (processor.had_protected_layer()) {
++    had_protected_layer_ = true;
++  }
++
+   // Fails if there are more draw quads than allowed for CoreAnimation.
+   size_t max_number = (yuv_draw_quad_count < kMaxNumVideos)
+                           ? layer_limit_default_
+@@ -506,7 +562,7 @@
+     const DrawQuad* quad,
+     gfx::ProtectedVideoType protected_video_type,
+     OverlayCandidateList* ca_layer_overlays) const {
+-  CALayerOverlayProcessorInternal processor;
++  CALayerOverlayProcessorInternal processor(protected_layers_allowed_);
+   OverlayCandidate ca_layer;
+   bool skip = false;
+   bool render_pass_draw_quad = false;
 --- a/components/viz/service/display/skia_renderer.cc
 +++ b/components/viz/service/display/skia_renderer.cc
 @@ -3036,6 +3036,15 @@
@@ -814,3 +883,366 @@
  
  #endif
  }
+--- a/components/viz/service/display/ca_layer_overlay.h
++++ b/components/viz/service/display/ca_layer_overlay.h
+@@ -52,6 +52,12 @@
+ 
+   gfx::CALayerResult ca_layer_result() { return ca_layer_result_; }
+ 
++  // Parc: see OverlayProcessorInterface::SetProtectedLayersAllowed.
++  void set_protected_layers_allowed(bool allowed) {
++    protected_layers_allowed_ = allowed;
++  }
++  bool had_protected_layer() const { return had_protected_layer_; }
++
+  private:
+   // Returns whether future candidate quads should be considered
+   bool PutQuadInSeparateOverlay(
+@@ -81,6 +87,11 @@
+ 
+   // The error code in ProcessForCALayerOverlays()
+   gfx::CALayerResult ca_layer_result_ = gfx::kCALayerSuccess;
++
++  // Parc: whether FairPlay protected layers may be placed, and whether the
++  // last frame had one. Mutable because the underlay pass is const.
++  bool protected_layers_allowed_ = true;
++  mutable bool had_protected_layer_ = false;
+ };
+ 
+ }  // namespace viz
+--- a/components/viz/service/display/overlay_processor_interface.h
++++ b/components/viz/service/display/overlay_processor_interface.h
+@@ -150,6 +150,12 @@
+   // If true, page fullscreen mode is enabled for this frame.
+   virtual void SetIsPageFullscreen(bool enabled) {}
+ 
++  // Parc: whether FairPlay protected layers (VideoHoleDrawQuads naming a
++  // registered layer) may be placed. Only processors that place them use it.
++  virtual void SetProtectedLayersAllowed(bool allowed) {}
++  // Whether the last processed frame had one, placed or not.
++  virtual bool HadProtectedLayer() const { return false; }
++
+   virtual gfx::CALayerResult GetCALayerErrorCode() const;
+ 
+   // Supports gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90 and
+--- a/components/viz/service/display/overlay_processor_mac.h
++++ b/components/viz/service/display/overlay_processor_mac.h
+@@ -57,6 +57,8 @@
+       gfx::Rect* damage_rect) override;
+ 
+   gfx::CALayerResult GetCALayerErrorCode() const override;
++  void SetProtectedLayersAllowed(bool allowed) override;
++  bool HadProtectedLayer() const override;
+ 
+  private:
+   // The damage that should be added the next frame for drawing to the output
+--- a/components/viz/service/display/overlay_processor_mac.cc
++++ b/components/viz/service/display/overlay_processor_mac.cc
+@@ -88,4 +88,12 @@
+   return ca_layer_overlay_processor_->ca_layer_result();
+ }
+ 
++void OverlayProcessorMac::SetProtectedLayersAllowed(bool allowed) {
++  ca_layer_overlay_processor_->set_protected_layers_allowed(allowed);
++}
++
++bool OverlayProcessorMac::HadProtectedLayer() const {
++  return ca_layer_overlay_processor_->had_protected_layer();
++}
++
+ }  // namespace viz
+--- a/components/viz/service/display/display.h
++++ b/components/viz/service/display/display.h
+@@ -147,6 +147,10 @@
+   void SetDisplayColorSpaces(
+       const gfx::DisplayColorSpaces& display_color_spaces);
+   void SetOutputIsSecure(bool secure);
++  // Parc: whether this display may show FairPlay protected layers. When not,
++  // a protected video quad is drawn black and never placed, so a parked pane
++  // compositor can't take the layer from the display that shows the page.
++  void SetProtectedLayersAllowed(bool allowed);
+   void NotifyMinSupportedVsyncInterval(base::TimeDelta min_vsync_interval);
+ 
+   const SurfaceId& CurrentSurfaceId() const;
+@@ -305,6 +309,7 @@
+   gfx::DisplayColorSpaces display_color_spaces_;
+   bool visible_ = false;
+   bool output_is_secure_ = false;
++  bool protected_layers_allowed_ = true;
+ 
+ #if DCHECK_IS_ON()
+   std::unique_ptr<gpu::ScopedAllowScheduleGpuTask>
+--- a/components/viz/service/display/display.cc
++++ b/components/viz/service/display/display.cc
+@@ -492,6 +492,23 @@
+     aggregator_->SetDisplayColorSpaces(display_color_spaces_);
+ }
+ 
++void Display::SetProtectedLayersAllowed(bool allowed) {
++  if (allowed == protected_layers_allowed_ || !overlay_processor_) {
++    return;
++  }
++  protected_layers_allowed_ = allowed;
++  overlay_processor_->SetProtectedLayersAllowed(allowed);
++  // Redraw a frame that had a FairPlay video, so its layer is placed again or
++  // let go at once (handed to a display that shows it). A display whose last
++  // frame had none never draws because of this.
++  if (overlay_processor_->HadProtectedLayer()) {
++    if (aggregator_ && current_surface_id_.is_valid()) {
++      aggregator_->SetFullDamageForSurface(current_surface_id_);
++    }
++    damage_tracker_->SetRootSurfaceDamaged();
++  }
++}
++
+ void Display::SetOutputIsSecure(bool secure) {
+   if (secure == output_is_secure_)
+     return;
+--- a/components/viz/service/display/overlay_ca_unittest.cc
++++ b/components/viz/service/display/overlay_ca_unittest.cc
+@@ -399,9 +399,149 @@
+         &ca_layer_list, &damage_rect_);
+     EXPECT_EQ(gfx::Rect(), damage_rect_);
+     EXPECT_EQ(1U, test::NumOverlaysExcludingPrimaryPlane(ca_layer_list));
++  }
++}
++
++// Parc: a FairPlay video (a VideoHoleDrawQuad naming a registered layer) is
++// placed with its token, except on a display that may not show protected
++// layers (a parked pane compositor), which shows it black and never places it.
++TEST_F(CALayerOverlayTest, ProtectedLayerPlacedOrHeldBack) {
++  const base::UnguessableToken token = base::UnguessableToken::Create();
++  auto process = [&](bool copy_request, OverlayCandidateList* ca_layer_list,
++                     AggregatedRenderPassList* pass_list) {
++    auto pass = CreateRenderPass();
++    auto* hole = pass->CreateAndAppendDrawQuad<VideoHoleDrawQuad>();
++    hole->SetNew(pass->shared_quad_state_list.back(), kOverlayRect,
++                 kOverlayRect, token);
++    if (copy_request) {
++      pass->copy_requests.push_back(CopyOutputRequest::CreateStubForTesting());
++    }
++    pass_list->push_back(std::move(pass));
++    overlay_processor_->ProcessForOverlays(
++        resource_provider_.get(), pass_list, GetIdentityColorMatrix(),
++        SurfaceDamageRectList(),
++        GetDefaultPrimaryPlane(pass_list->back()->output_rect.size()),
++        ca_layer_list, &damage_rect_);
++  };
++  auto only_overlay = [](const OverlayCandidateList& list) {
++    const OverlayCandidate* found = nullptr;
++    for (const auto& candidate : list) {
++      if (!candidate.is_root_render_pass) {
++        EXPECT_FALSE(found);
++        found = &candidate;
++      }
++    }
++    return found;
++  };
++
++  // Allowed (the default): every quad is a CALayer, the hole with its token.
++  {
++    OverlayCandidateList ca_layer_list;
++    AggregatedRenderPassList pass_list;
++    process(/*copy_request=*/false, &ca_layer_list, &pass_list);
++    const OverlayCandidate* overlay = only_overlay(ca_layer_list);
++    ASSERT_TRUE(overlay);
++    EXPECT_EQ(token, overlay->protected_layer_token);
++    EXPECT_EQ(gfx::ProtectedVideoType::kHardwareProtected,
++              overlay->protected_video_type);
++    EXPECT_FALSE(overlay->is_solid_color);
++    EXPECT_TRUE(overlay_processor_->HadProtectedLayer());
++  }
++
++  // Allowed, but the frame can't be all CALayers: the hole goes to an
++  // underlay with its token and leaves a hole punch in the primary plane.
++  {
++    OverlayCandidateList ca_layer_list;
++    AggregatedRenderPassList pass_list;
++    process(/*copy_request=*/true, &ca_layer_list, &pass_list);
++    const OverlayCandidate* overlay = only_overlay(ca_layer_list);
++    ASSERT_TRUE(overlay);
++    EXPECT_EQ(token, overlay->protected_layer_token);
++    EXPECT_EQ(DrawQuad::Material::kSolidColor,
++              pass_list.back()->quad_list.front()->material);
++    EXPECT_TRUE(overlay_processor_->HadProtectedLayer());
++  }
++
++  overlay_processor_->SetProtectedLayersAllowed(false);
++
++  // Parked: the hole is a black CALayer without a token.
++  {
++    OverlayCandidateList ca_layer_list;
++    AggregatedRenderPassList pass_list;
++    process(/*copy_request=*/false, &ca_layer_list, &pass_list);
++    const OverlayCandidate* overlay = only_overlay(ca_layer_list);
++    ASSERT_TRUE(overlay);
++    EXPECT_FALSE(overlay->protected_layer_token);
++    EXPECT_TRUE(overlay->is_solid_color);
++    EXPECT_EQ(SkColors::kBlack, overlay->color);
++    EXPECT_TRUE(overlay_processor_->HadProtectedLayer());
+   }
++
++  // Parked, without all CALayers: no underlay; the hole stays in the primary
++  // plane, where SkiaRenderer draws a quad that requires an overlay black
++  // (magenta with DCHECKs).
++  {
++    OverlayCandidateList ca_layer_list;
++    AggregatedRenderPassList pass_list;
++    process(/*copy_request=*/true, &ca_layer_list, &pass_list);
++    EXPECT_FALSE(only_overlay(ca_layer_list));
++    EXPECT_EQ(DrawQuad::Material::kVideoHole,
++              pass_list.back()->quad_list.front()->material);
++    EXPECT_TRUE(overlay_processor_->HadProtectedLayer());
++  }
++
++  // Allowed again: placed with its token.
++  overlay_processor_->SetProtectedLayersAllowed(true);
++  {
++    OverlayCandidateList ca_layer_list;
++    AggregatedRenderPassList pass_list;
++    process(/*copy_request=*/false, &ca_layer_list, &pass_list);
++    const OverlayCandidate* overlay = only_overlay(ca_layer_list);
++    ASSERT_TRUE(overlay);
++    EXPECT_EQ(token, overlay->protected_layer_token);
++    EXPECT_TRUE(overlay_processor_->HadProtectedLayer());
++  }
+ }
+ 
++// Parc: the protected-layer flag changes nothing in a frame without a FairPlay
++// video, so a parked pane compositor's frames are what they were.
++TEST_F(CALayerOverlayTest, ProtectedLayersFlagLeavesOrdinaryFramesAlone) {
++  auto process = [&](OverlayCandidateList* ca_layer_list) {
++    auto pass = CreateRenderPass();
++    TextureDrawQuad* video = CreateFullscreenCandidateQuad(
++        resource_provider_.get(), child_resource_provider_.get(),
++        child_provider_.get(), pass->shared_quad_state_list.back(), pass.get());
++    video->is_video_frame = true;
++    auto* color = pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
++    color->SetNew(pass->shared_quad_state_list.back(), kOverlayRect,
++                  kOverlayRect, SkColors::kRed, /*anti_aliasing_off=*/false);
++    AggregatedRenderPassList pass_list;
++    pass_list.push_back(std::move(pass));
++    overlay_processor_->ProcessForOverlays(
++        resource_provider_.get(), &pass_list, GetIdentityColorMatrix(),
++        SurfaceDamageRectList(),
++        GetDefaultPrimaryPlane(pass_list.back()->output_rect.size()),
++        ca_layer_list, &damage_rect_);
++  };
++
++  OverlayCandidateList allowed;
++  process(&allowed);
++  overlay_processor_->SetProtectedLayersAllowed(false);
++  OverlayCandidateList parked;
++  process(&parked);
++
++  ASSERT_EQ(2U, allowed.size());
++  ASSERT_EQ(allowed.size(), parked.size());
++  for (size_t i = 0; i < allowed.size(); ++i) {
++    EXPECT_EQ(allowed[i].display_rect, parked[i].display_rect);
++    EXPECT_EQ(allowed[i].is_solid_color, parked[i].is_solid_color);
++    EXPECT_EQ(allowed[i].color, parked[i].color);
++    EXPECT_EQ(allowed[i].protected_video_type, parked[i].protected_video_type);
++    EXPECT_FALSE(parked[i].protected_layer_token);
++  }
++  EXPECT_FALSE(overlay_processor_->HadProtectedLayer());
++}
++
+ TEST_F(CALayerOverlayTest, OverlayErrorCode) {
+   // Frame #1
+   {
+--- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h
++++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h
+@@ -83,6 +83,7 @@
+   void SetVSyncDisplayID(int64_t display_id) override;
+ #endif
+   void SetOutputIsSecure(bool secure) override;
++  void SetProtectedLayersAllowed(bool allowed) override;
+   void SetDisplayVSyncParameters(base::TimeTicks timebase,
+                                  base::TimeDelta interval) override;
+   void ForceImmediateDrawAndSwapIfPossible() override;
+--- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
++++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
+@@ -382,6 +382,10 @@
+ 
+ void RootCompositorFrameSinkImpl::SetOutputIsSecure(bool secure) {
+   display_->SetOutputIsSecure(secure);
++}
++
++void RootCompositorFrameSinkImpl::SetProtectedLayersAllowed(bool allowed) {
++  display_->SetProtectedLayersAllowed(allowed);
+ }
+ 
+ void RootCompositorFrameSinkImpl::SetDisplayVSyncParameters(
+--- a/services/viz/privileged/mojom/compositing/display_private.mojom
++++ b/services/viz/privileged/mojom/compositing/display_private.mojom
+@@ -47,6 +47,12 @@
+   SetDisplayColorSpaces(gfx.mojom.DisplayColorSpaces display_color_spaces);
+   SetOutputIsSecure(bool secure);
+ 
++  // Parc: whether this display may show FairPlay protected layers
++  // (ui::ProtectedLayerRegistry). A parked pane compositor's display may not,
++  // so it never takes one from the display that shows the page. Defaults to
++  // true.
++  SetProtectedLayersAllowed(bool allowed);
++
+   // Sets CGDirectDisplayID for GPU begin frame source.
+   [EnableIf=is_mac]
+   SetVSyncDisplayID(int64 display_id);
+--- a/ui/compositor/compositor.h
++++ b/ui/compositor/compositor.h
+@@ -476,6 +476,10 @@
+   bool output_is_secure() const { return output_is_secure_; }
+   void SetOutputIsSecure(bool output_is_secure);
+ 
++  // Parc: whether this compositor's display may show FairPlay protected
++  // layers. See viz::Display::SetProtectedLayersAllowed.
++  void SetProtectedLayersAllowed(bool allowed);
++
+   const cc::LayerTreeDebugState& GetLayerTreeDebugState() const;
+   void SetLayerTreeDebugState(const cc::LayerTreeDebugState& debug_state);
+ 
+@@ -703,6 +707,7 @@
+   gfx::DisplayColorSpaces display_color_spaces_;
+ 
+   bool output_is_secure_ = false;
++  bool protected_layers_allowed_ = true;
+ 
+   // If true, all paint commands are recorded at pixel size instead of DIP.
+   const bool is_pixel_canvas_;
+--- a/ui/compositor/compositor.cc
++++ b/ui/compositor/compositor.cc
+@@ -372,6 +372,7 @@
+     display_private_->SetDisplayColorMatrix(
+         gfx::SkM44ToTransform(display_color_matrix_));
+     display_private_->SetOutputIsSecure(output_is_secure_);
++    display_private_->SetProtectedLayersAllowed(protected_layers_allowed_);
+ #if BUILDFLAG(IS_MAC)
+     display_private_->SetVSyncDisplayID(display_id_);
+ #endif
+@@ -994,6 +995,16 @@
+     display_private_->SetOutputIsSecure(output_is_secure);
+ }
+ 
++void Compositor::SetProtectedLayersAllowed(bool allowed) {
++  if (allowed == protected_layers_allowed_) {
++    return;
++  }
++  protected_layers_allowed_ = allowed;
++  if (display_private_) {
++    display_private_->SetProtectedLayersAllowed(allowed);
++  }
++}
++
+ const cc::LayerTreeDebugState& Compositor::GetLayerTreeDebugState() const {
+   return host_->GetDebugState();
+ }
+--- a/ui/compositor/test/in_process_context_factory.cc
++++ b/ui/compositor/test/in_process_context_factory.cc
+@@ -140,6 +140,7 @@
+     vsync_interval_ = interval;
+   }
+   void SetOutputIsSecure(bool secure) override {}
++  void SetProtectedLayersAllowed(bool allowed) override {}
+ #if BUILDFLAG(IS_MAC)
+   void SetVSyncDisplayID(int64_t display_id) override {}
+ #endif

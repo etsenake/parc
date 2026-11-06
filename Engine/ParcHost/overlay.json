@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 359,
+  "version": 360,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -60,7 +60,7 @@
     {
       "source": "Engine/ParcNative/pane_compositor.mm",
       "target": "cef/libcef/browser/parc_native/pane_compositor.mm",
-      "sha256": "f587466a58b5ed1130458dcffc05608ebed90bd75cd51c06b5a550b50ee17465"
+      "sha256": "df2b5c691fbf4508f006946c0a863c81f7b9ed8595b1448a2f6fecdb3ea5c399"
     },
     {
       "source": "Engine/ParcNative/pane_compositor_policy.h",
@@ -3826,7 +3826,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "ab15205c48af0efb0e957fcd0400a97ce43d17d80c225c9073a0b3949f97f984",
+      "sha256": "6cf4ccfde7ce78cd6c757abdefa3ec128d5a31749f7c644b78300af9e3375cbe",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -3861,7 +3861,7 @@
         {
           "target": "components/viz/service/display/ca_layer_overlay.cc",
           "before_sha256": "5cd1ee86cff67c5fa24995edd03f8d84ae8200f86445fd610959564fbfd16689",
-          "after_sha256": "6f76351e8216d458199d4dd86f555609a308d738f53ea8a825cb6f0d16a7ac22"
+          "after_sha256": "3eec1152aad13197ef11c70f5df48b0a09984f2abb376e8e61709028bc00f852"
         },
         {
           "target": "components/viz/service/display/skia_renderer.cc",
@@ -3877,6 +3877,71 @@
           "target": "components/viz/service/display_embedder/output_presenter_gl.cc",
           "before_sha256": "f1ea7ae327d6999d37c1b624d547dedd40757315d010a548b5c7120562750ed0",
           "after_sha256": "52984e8bc68718be3c3212cb9ae1239f7143ccb63c07475d33c871014d8118bf"
+        },
+        {
+          "target": "components/viz/service/display/ca_layer_overlay.h",
+          "before_sha256": "1e3ebabf223391b77b335876a8d16af5b21a985df8a16a3a3e83196235c4de25",
+          "after_sha256": "2afca5e25512c245e790e6e0fe9adb93f18fd0a7664d6b9f96e50f977c32aca7"
+        },
+        {
+          "target": "components/viz/service/display/overlay_processor_interface.h",
+          "before_sha256": "95b46e5068c5825e217427ac7fe93e16301d79a8fd12abad129826df3b5512c8",
+          "after_sha256": "53ea3e2ea5f5e53fc29f8a607f8fa1112dd405d01e3a26fd32371b579554de93"
+        },
+        {
+          "target": "components/viz/service/display/overlay_processor_mac.h",
+          "before_sha256": "92f90a633f1940028100f4d6b756e8a70f0acfa02b392305af6b8e755a3dc95e",
+          "after_sha256": "5f74f738c1cb5ffc44846738daab0d8956fee877369fee30571f18d25ea1d2dd"
+        },
+        {
+          "target": "components/viz/service/display/overlay_processor_mac.cc",
+          "before_sha256": "412ed8d7f0fa8eb3b1ce94021b79f09256442d6fa58c5de2578aa87a04f06e08",
+          "after_sha256": "f6892584f894a859061a4d579d8a28e85271040e693fd1e0883813bd2916db40"
+        },
+        {
+          "target": "components/viz/service/display/display.h",
+          "before_sha256": "9d35537d953d0d6f20d07de5cc19c021fc3c4493ce8279edbb7835472e5df875",
+          "after_sha256": "fc2cfe5f60dab66fd67485686031ba947774160069bd5f76875db5efe3baaf34"
+        },
+        {
+          "target": "components/viz/service/display/display.cc",
+          "before_sha256": "4212a829989dc32da99d3addf2833fb1711d368bd0889c0fefad7af2f8e1495c",
+          "after_sha256": "f05d187b6ae12f35a2ce57c53ec837cbccb4803d8eab033892e987ac396e67ff"
+        },
+        {
+          "target": "components/viz/service/display/overlay_ca_unittest.cc",
+          "before_sha256": "ab18f208269cdacd2c4ec35ba42a205b6c93e4e962005668c7fcb216e7537f7e",
+          "after_sha256": "cd9cc3ddcec55128f03dfe6d8328d8f1bc7bbd9eb2a450b3988d4255c3f7931f"
+        },
+        {
+          "target": "components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h",
+          "before_sha256": "a8bba00aecbc25df75e75f3f185df2217265341f2e8a4adf97dc8c029bdea44a",
+          "after_sha256": "2eff28acc1cbeeefa288f217b313785a100311a42e7973436db9b92fd8a8d832"
+        },
+        {
+          "target": "components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc",
+          "before_sha256": "6cf385616aeb9b03d80f32978d10ab99c856217b0a18671ea4a389d0c521be4d",
+          "after_sha256": "edf5fc7cad568866234fe059158b9c63ef613f9a2b946c69708991fe1482f2ed"
+        },
+        {
+          "target": "services/viz/privileged/mojom/compositing/display_private.mojom",
+          "before_sha256": "5d5b3493f4d2f28851385fdb4975ab26a5849f22573683a591a492914dccb90b",
+          "after_sha256": "316b3bfdeb7b2f47b042e457194f67ba26ef6c9d319163f8e9f76f2e2dd2d806"
+        },
+        {
+          "target": "ui/compositor/compositor.h",
+          "before_sha256": "4aac92bd91f277af17e352e0083769423a94828b95d1e9c24ead772572278bf0",
+          "after_sha256": "bfd7947f0538c2504ee692f3dee56ce086f6a374043680a522775243201b98d7"
+        },
+        {
+          "target": "ui/compositor/compositor.cc",
+          "before_sha256": "030bc48605793014cd039a79a2a457f020cd4329a849ebae6f483ebc6db3ca74",
+          "after_sha256": "e2b682d3ead645d0c90d63619bb7493ef895fe2a6d99bfc9ad63b825ae024349"
+        },
+        {
+          "target": "ui/compositor/test/in_process_context_factory.cc",
+          "before_sha256": "dc445e42cb0474076fd11bcea74250bd92ad4734cc925ddcde7947d5c198c786",
+          "after_sha256": "c11c9f5f771c7b0f5509a1d3f6ead69e6a10769d51d8d84891c8e8070ad0e687"
         }
       ]
     },
