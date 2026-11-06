@@ -2789,8 +2789,64 @@ void BuilderSelfTests() {
         "builders: dec3 from rate and channels has the file's substream fields",
         "file " + ft::Hex(file) + (eac3_config ? ", built " + ft::Hex(*eac3_config) : ", none") +
             Format(" (%u Hz, %u channels)", w->eac3.info.sample_rate, w->eac3.info.channels));
-  Check(fp::DefaultDolbyVisionCompatibilityId(5) == 0 && fp::DefaultDolbyVisionCompatibilityId(8) == 1,
-        "builders: Dolby Vision compatibility ID defaults to 0 for profile 5 and 1 (HDR10) for profile 8");
+  Check(fp::DefaultDolbyVisionCompatibilityId(5) == 0 && fp::DefaultDolbyVisionCompatibilityId(8) == 1 &&
+            fp::DefaultDolbyVisionCompatibilityId(9) == 2,
+        "builders: Dolby Vision compatibility ID defaults to 0 for profile 5, 1 (HDR10) for 8 and 2 (SDR) for 9");
+  // Two programs whose 3-block frames interleave (I0 D0 I1 D1 I0 D0): each
+  // dependent belongs to the independent frame just before it.
+  std::vector<uint8_t> programs = join({frame(0, 0, 2, 7, 1, -1, 384), frame(1, 0, 2, 2, 0, 0x0200, 256),
+                                        frame(0, 1, 2, 2, 0, -1, 256), frame(1, 0, 2, 2, 0, 0x0100, 256),
+                                        frame(0, 0, 2, 7, 1, -1, 384), frame(1, 0, 2, 2, 0, 0x0200, 256)});
+  auto two = fp::Eac3SpecificBoxPayload(programs.data(), programs.size());
+  std::string layout;
+  if (two) {
+    // num_ind_sub, then per substream: dependents and chan_loc.
+    size_t bit = 13;
+    auto read = [&](int n) {
+      uint32_t v = 0;
+      for (int i = 0; i < n; ++i, ++bit) v = (v << 1) | (((*two)[bit / 8] >> (7 - bit % 8)) & 1);
+      return v;
+    };
+    const uint32_t count = read(3) + 1;
+    for (uint32_t i = 0; i < count && bit + 23 <= two->size() * 8; ++i) {
+      read(2 + 5 + 1 + 1 + 3 + 3 + 1 + 3);
+      const uint32_t dependents = read(4);
+      const uint32_t chan_loc = dependents ? read(9) : (read(1), 0u);
+      layout += Format("%s%u:%03x", layout.empty() ? "" : " ", dependents, chan_loc);
+    }
+  }
+  Check(layout == "1:080 1:040", "builders: dec3 credits each dependent substream to its own program",
+        two ? ft::Hex(*two) + " -> " + layout : "none");
+  // Parameter set IDs: the files' own sets declare 0; synthetic PPS with ID 1.
+  std::string ids;
+  auto add_ids = [&](bool hevc, const std::vector<uint8_t>& record) {
+    std::vector<uint8_t> data;
+    // Parameter sets from the record, through the Annex B conversion.
+    ft::AvcToAnnexB(record, hevc, true, &data, nullptr);
+    for (size_t i = 0; i + 4 < data.size();) {
+      size_t next = i + 4;
+      while (next + 4 <= data.size() && !(data[next] == 0 && data[next + 1] == 0 && data[next + 2] == 0 &&
+                                          data[next + 3] == 1)) {
+        ++next;
+      }
+      if (next + 4 > data.size()) next = data.size();
+      auto id = fp::ParameterSetId(hevc, data.data() + i + 4, next - i - 4);
+      ids += id ? Format("%u", *id) : "-";
+      i = next;
+    }
+  };
+  add_ids(false, w->video.info.codec_config);
+  ids += "/";
+  add_ids(true, w->hev1.info.codec_config);
+  const uint8_t avc_pps1[] = {0x68, 0x40}, hevc_pps1[] = {0x44, 0x01, 0x40};
+  auto avc1 = fp::ParameterSetId(false, avc_pps1, sizeof(avc_pps1));
+  auto hevc1 = fp::ParameterSetId(true, hevc_pps1, sizeof(hevc_pps1));
+  Check(ids == "00/000" && avc1 == 1u && hevc1 == 1u,
+        "builders: parameter set IDs read from H.264 SPS/PPS and HEVC VPS/SPS/PPS",
+        ids + Format(", PPS 1: %d %d", avc1 ? int(*avc1) : -1, hevc1 ? int(*hevc1) : -1));
+  auto core = fp::Eac3SpecificBoxFromConfig(48000, 8);
+  Check(core && core == fp::Eac3SpecificBoxFromConfig(48000, 6),
+        "builders: dec3 from a 7.1 config describes its 5.1 core", core ? ft::Hex(*core) : "none");
 
   // Chromium's whole-sample-encrypted AC-3/E-AC-3: no dac3/dec3 in the config
   // and no clear syncframe, so the renderer builds the box from rate and

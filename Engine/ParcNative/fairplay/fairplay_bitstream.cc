@@ -565,12 +565,15 @@ int FscodFor(int sample_rate) {
   return sample_rate == 48000 ? 0 : sample_rate == 44100 ? 1 : sample_rate == 32000 ? 2 : -1;
 }
 
-// acmod/lfeon for a channel count: 1 1/0, 2 2/0, 3 3/0, 4 2/2, 5 3/2, 6 3/2+LFE.
+// acmod/lfeon for a channel count: 1 1/0, 2 2/0, 3 3/0, 4 2/2, 5 3/2, and
+// 6, 7 or 8 as 3/2+LFE (for 6.1 and 7.1 that is the independent substream's
+// 5.1 core; the extra channels ride in a dependent substream the config
+// can't describe).
 bool LayoutFor(int channels, int* acmod, int* lfeon) {
-  static const int kAcmod[7] = {-1, 1, 2, 3, 6, 7, 7};
-  if (channels < 1 || channels > 6) return false;
+  static const int kAcmod[9] = {-1, 1, 2, 3, 6, 7, 7, 7, 7};
+  if (channels < 1 || channels > 8) return false;
   *acmod = kAcmod[channels];
-  *lfeon = channels == 6;
+  *lfeon = channels >= 6;
   return true;
 }
 
@@ -608,7 +611,7 @@ std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, in
 }
 
 int DefaultDolbyVisionCompatibilityId(int profile) {
-  return profile == 8 || profile == 9 ? 1 : 0;
+  return profile == 8 ? 1 : profile == 9 ? 2 : 0;
 }
 
 namespace {
@@ -660,6 +663,7 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
   std::vector<int> independent_ids;
   std::vector<std::pair<int, int>> dependent_ids;  // (parent index, substreamid)
   std::vector<std::pair<int, int>> rated;           // (strmtyp class, substreamid) counted once
+  int current = -1;  // Index in |independent| of the latest independent syncframe.
   uint64_t bits_per_second = 0;
   size_t pos = 0;
   while (pos + 6 <= size) {
@@ -698,29 +702,35 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
     if (r.failed() || !sample_rate || bsid <= 10 || bsid > 16 || frame_bytes > size - pos || strmtyp == 3) {
       return std::nullopt;
     }
+    // A dependent substream belongs to the independent substream of the
+    // latest independent syncframe (frames of several programs interleave).
+    const int kind = strmtyp == 1 ? 1 : 0;
+    if (kind == 0) {
+      auto it = std::find(independent_ids.begin(), independent_ids.end(), substreamid);
+      if (it == independent_ids.end()) {
+        independent_ids.push_back(substreamid);
+        independent.push_back({fscod == 3 ? 3 : fscod, bsid, acmod, lfeon, 0, 0});
+        current = static_cast<int>(independent.size()) - 1;
+      } else {
+        current = static_cast<int>(it - independent_ids.begin());
+      }
+    }
     // A substream's rate counts once, however many syncframes (1, 2 or 3
     // blocks each) make up its six blocks in this access unit.
-    const int kind = strmtyp == 1 ? 1 : 0;
-    const int parent = static_cast<int>(independent.size()) - 1;
-    const std::pair<int, int> rate_key{kind == 1 ? 100 + parent : 0, substreamid};
+    const std::pair<int, int> rate_key{kind == 1 ? 100 + current : 0, substreamid};
     if (std::find(rated.begin(), rated.end(), rate_key) == rated.end()) {
       rated.push_back(rate_key);
       bits_per_second += uint64_t(frame_bytes) * 8 * uint64_t(sample_rate) / (uint64_t(blocks) * 256);
     }
-    if (kind == 0) {
-      if (std::find(independent_ids.begin(), independent_ids.end(), substreamid) == independent_ids.end()) {
-        independent_ids.push_back(substreamid);
-        independent.push_back({fscod == 3 ? 3 : fscod, bsid, acmod, lfeon, 0, 0});
-      }
-    } else if (parent >= 0) {
-      const std::pair<int, int> dependent{parent, substreamid};
+    if (kind == 1 && current >= 0) {
+      const std::pair<int, int> dependent{current, substreamid};
       if (std::find(dependent_ids.begin(), dependent_ids.end(), dependent) == dependent_ids.end()) {
         dependent_ids.push_back(dependent);
-        ++independent[parent].dependents;
+        ++independent[current].dependents;
       }
       // chanmap bit 0 (MSB) is L; dec3's chan_loc lists bits 5-12 (Lc/Rc
       // through Cvh) then bit 14 (LFE2), MSB first.
-      independent[parent].chan_loc |= (((chanmap >> 3) & 0xff) << 1) | ((chanmap >> 1) & 1);
+      independent[current].chan_loc |= (((chanmap >> 3) & 0xff) << 1) | ((chanmap >> 1) & 1);
     }
     pos += frame_bytes;
   }
@@ -737,6 +747,61 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, i
     return std::nullopt;
   }
   return Dec3(0, {{fscod, 16, acmod, lfeon, 0, 0}});
+}
+
+std::optional<uint32_t> ParameterSetId(bool hevc, const uint8_t* nal, size_t size) {
+  const size_t header = hevc ? 2 : 1;
+  if (size <= header) {
+    return std::nullopt;
+  }
+  const int type = hevc ? (nal[0] >> 1) & 0x3f : nal[0] & 0x1f;
+  // An HEVC SPS ID follows profile_tier_level, at most ~100 bytes in.
+  std::vector<uint8_t> rbsp;
+  int zeros = 0;
+  for (size_t i = header; i < size && rbsp.size() < 128; ++i) {
+    if (zeros >= 2 && nal[i] == 0x03) {
+      zeros = 0;
+      continue;
+    }
+    zeros = nal[i] == 0 ? zeros + 1 : 0;
+    rbsp.push_back(nal[i]);
+  }
+  BitReader r(rbsp.data(), rbsp.size());
+  uint64_t id = 0;
+  if (!hevc && type == 7) {
+    r.Get(24);  // profile_idc, constraint flags, level_idc
+    id = r.Uvlc();
+  } else if (!hevc && type == 8) {
+    id = r.Uvlc();
+  } else if (hevc && type == 32) {
+    id = r.Get(4);
+  } else if (hevc && type == 33) {
+    r.Get(4);  // sps_video_parameter_set_id
+    const int sub_layers = static_cast<int>(r.Get(3));
+    r.Get(1);       // sps_temporal_id_nesting_flag
+    r.Get(88 + 8);  // general profile, tier and level
+    bool profile_present[8] = {}, level_present[8] = {};
+    for (int i = 0; i < sub_layers; ++i) {
+      profile_present[i] = r.Get(1);
+      level_present[i] = r.Get(1);
+    }
+    if (sub_layers > 0) {
+      r.Get(2 * (8 - sub_layers));  // reserved_zero_2bits
+    }
+    for (int i = 0; i < sub_layers; ++i) {
+      if (profile_present[i]) r.Get(88);
+      if (level_present[i]) r.Get(8);
+    }
+    id = r.Uvlc();
+  } else if (hevc && type == 34) {
+    id = r.Uvlc();
+  } else {
+    return std::nullopt;
+  }
+  if (r.failed() || id > 63) {
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(id);
 }
 
 }  // namespace parc::fairplay

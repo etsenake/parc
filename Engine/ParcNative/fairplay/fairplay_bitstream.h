@@ -117,16 +117,22 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
 
 // The same boxes from the decoder config alone, for streams whose syncframes
 // are encrypted (whole-sample cbcs/cenc audio): sample rate gives fscod,
-// channel count gives acmod and lfeon (6 = 3/2 + LFE). The bit rate is
-// unknown and written as 0. nullopt for an unsupported rate or layout.
+// channel count gives acmod and lfeon (6, 7 and 8 = 3/2 + LFE, the 5.1 core
+// of 6.1/7.1). The bit rate is unknown and written as 0. nullopt for an
+// unsupported rate or layout.
 std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, int channels);
 std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, int channels);
 
 // The Dolby Vision base-layer compatibility ID for a profile when the stream
 // doesn't say (Chromium carries only profile and level): 0 for profiles 4, 5
-// and 7 (no compatible base layer); for 8 and 9 the ID can't be known from
-// the profile, and 1 (HDR10) is assumed.
+// and 7 (no compatible base layer), 2 (SDR) for 9, the only one it allows;
+// for 8 the ID can't be known from the profile, and 1 (HDR10) is assumed.
 int DefaultDolbyVisionCompatibilityId(int profile);
+
+// The ID a parameter set NAL unit declares: H.264 SPS/PPS (types 7/8) or HEVC
+// VPS/SPS/PPS (32/33/34), read after removing emulation-prevention bytes.
+// nullopt for other NAL types or a truncated unit.
+std::optional<uint32_t> ParameterSetId(bool hevc, const uint8_t* nal, size_t size);
 
 // Wraps |payload| in an ISO box header.
 std::vector<uint8_t> MakeBox(uint32_t type, const std::vector<uint8_t>& payload);

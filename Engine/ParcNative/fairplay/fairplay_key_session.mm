@@ -984,9 +984,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (av_request.error.code == kSecurityLevelError) {
       return KeyStatus::kOutputRestricted;
     }
-    if (request.renewal && request.key) {
-      return KeyStatus::kUsable;  // The answered key stays in use meanwhile.
-    }
+    // The answered key stays in use while a renewal is in flight and after
+    // one fails, also when AVFoundation reuses the request object for it (its
+    // status then reads requesting or failed): report what HasUsableKey uses.
+    const bool key_kept = request.key && !request.error;
     KeyStatus status = KeyStatus::kStatusPending;
     switch (av_request.status) {
       case AVContentKeyRequestStatusRequestingResponse:
@@ -1004,9 +1005,12 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
         status = KeyStatus::kInternalError;
         break;
     }
+    if (key_kept && (status == KeyStatus::kStatusPending || status == KeyStatus::kInternalError)) {
+      status = KeyStatus::kUsable;
+    }
     if (status == KeyStatus::kUsable) {
       if (@available(macOS 14.4, *)) {
-        if (AVContentKey* key = av_request.contentKey) {
+        if (AVContentKey* key = request.key ?: av_request.contentKey) {
           switch (key.externalContentProtectionStatus) {
             case AVExternalContentProtectionStatusPending:
               status = KeyStatus::kStatusPending;

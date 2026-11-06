@@ -989,13 +989,18 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return !awaiting_video_config_;
     }
     // A keyframe may repeat only some sets (a new SPS and PPS under the same
-    // VPS): the ones of a kind it doesn't carry stay as they were.
+    // VPS, or PPS 0 but not PPS 1): earlier sets whose kind and ID it doesn't
+    // carry stay as they were.
     auto kind = [avc](const std::vector<uint8_t>& nal) {
       return avc ? (nal[0] & 0x1f) : ((nal[0] >> 1) & 0x3f);
     };
+    auto same_slot = [&](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+      return kind(a) == kind(b) &&
+             ParameterSetId(!avc, a.data(), a.size()) == ParameterSetId(!avc, b.data(), b.size());
+    };
     for (const std::vector<uint8_t>& earlier : parameter_sets_) {
       if (!earlier.empty() && std::none_of(sets.begin(), sets.end(), [&](const std::vector<uint8_t>& set) {
-            return kind(set) == kind(earlier);
+            return same_slot(set, earlier);
           })) {
         sets.push_back(earlier);
       }
@@ -1074,7 +1079,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                      : Ac3SpecificBoxFromConfig(audio_config_->sample_rate, audio_config_->channels);
     }
     if (!payload) {
-      *error = subsamples ? "AC-3/E-AC-3 config needs a 48, 44.1 or 32 kHz rate and 1-6 channels"
+      *error = subsamples ? "AC-3/E-AC-3 config needs a 48, 44.1 or 32 kHz rate and 1-8 channels"
                           : "no AC-3/E-AC-3 syncframe at the start of the first audio sample";
       return false;
     }

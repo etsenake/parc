@@ -146,13 +146,14 @@ as they are:
   other kinds. A rebuild that fails leaves the previous record and formats in
   place. The config's natural size wins over the stream's own display size.
 - Dolby Vision arrives as profile and level only. The `dvcC`/`dvvC` is built
-  from them, with compatibility ID 0 for profiles 4, 5 and 7 and 1 (HDR10)
-  assumed for 8 and 9.
+  from them, with compatibility ID 0 for profiles 4, 5 and 7, 2 (SDR) for 9,
+  and 1 (HDR10) assumed for 8.
 - AC-3 and E-AC-3 carry no `dac3`/`dec3`. The box is parsed from the first
   syncframe's header when it is in clear bytes (E-AC-3 substreams grouped by
   type and ID). When the whole sample is encrypted, the box comes from the
-  config's sample rate and channel count, with the bit rate written as 0
-  (CoreMedia decodes such boxes; checked with clear AC-3 and E-AC-3).
+  config's sample rate and channel count (6.1 and 7.1 as their 5.1 core), with
+  the bit rate written as 0 (CoreMedia decodes such boxes; checked with clear
+  AC-3 and E-AC-3).
 - Encryption is the scheme alone. Protected formats are built per key ID (and
   pattern) from each sample's `DecryptConfig`, with 16-byte per-sample IVs
   (Chromium copies a constant IV into every sample).
