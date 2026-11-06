@@ -155,6 +155,9 @@ class Release:
                 if prior["release_type"] != self.kind:
                     raise Failure("An unfinished " + prior["release_type"] + " release must resume before another bump")
                 self.state = prior
+                if (prior.get('status') == 'stopped' and prior.get('command_pid')
+                        and 'shipping-build' in prior.get('command', [])):
+                    self.state['interrupted_process_group'] = prior['command_pid']
                 self.emit("Resuming the existing release; version and inputs remain frozen")
         if not self.state:
             run = self.base / (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8])
@@ -310,6 +313,11 @@ class Release:
                 workspace = workspace.with_name(workspace.name + '-' + sha(lock)[:12])
                 self.checkpoint(workspace=str(workspace))
                 self.command([sys.executable, script, 'sync', '--workspace', workspace], name='engine-sync')
+        if self.state.get('interrupted_process_group'):
+            self.command([sys.executable, self.root / 'scripts/release_recover.py', source, workspace,
+                          str(self.state['interrupted_process_group']), Path(self.state['run']) / 'cancelled-shipping-receipt.json'],
+                         name='recover-cancelled-engine')
+            self.checkpoint(interrupted_process_group=None)
         self.git("fetch", "origin", "main", retries=2)
         self.command([sys.executable, script, "overlay-check", "--workspace", workspace, "--manifest", overlay], name="overlay-check")
         current = json.loads((workspace / ".parc-engine-source.json").read_text())
@@ -328,7 +336,9 @@ class Release:
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-reuse")
         except Failure:
             jobs = str(min(7, os.cpu_count() or 4))
-            self.command([sys.executable, script, "generate", "--workspace", workspace, "--jobs", jobs], name="engine-generate")
+            generated = json.loads((workspace / '.parc-engine-source.json').read_text())
+            if generated.get('phase') not in ('generated', 'built'):
+                self.command([sys.executable, script, "generate", "--workspace", workspace, "--jobs", jobs], name="engine-generate")
             self.git("fetch", "origin", "main", retries=2)
             self.command([sys.executable, script, "shipping-build", "--workspace", workspace, "--jobs", jobs], name="engine-build")
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-seal")
