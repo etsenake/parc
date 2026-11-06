@@ -6,8 +6,23 @@ its raw result unchanged and do not present it as an automated pass. The
 separate behavior bug does not block the confirmed production release.
 The existing tag/assets are immutable and its stable/latest DMG distribution
 is authorized. Current installed-app operations belong to the other agent:
-do not launch, replace, downgrade or rebuild it. Actual Homebrew DMG
-installation/upgrade validation remains pending an authorized app operation.
+do not launch, replace, downgrade or rebuild it without Josh's direction.
+
+Josh subsequently authorized an actual Homebrew upgrade test with browser data
+preserved. `brew upgrade --cask etsenake/tap/parc` successfully upgraded the
+adopted 0.1.0 installation to the published 1.0.0 DMG. Before opening Parc,
+all 4,348 profile files (666,436,194 bytes), directories and symlink targets
+matched the pre-upgrade snapshot; a separately verified profile backup and the
+previous app remain retained. No `zap` or profile removal was used. All 12 code
+hashes, Team, stable requirement, strict signature, ticket and Gatekeeper passed.
+The normal installed app then passed a 60.07-second automatic observation with
+no new app/helper crash reports, followed by normal deep signing and code-hash
+checks that preserve its custom Finder icon. This verifies the actual Homebrew
+upgrade and profile preservation; it does not investigate the separate behavior
+bug. Receipts and the private backup are in
+`build/homebrew-upgrade-test-20261106T034702Z`. The byte comparison covers the
+upgrade interval before launch; normal app use can subsequently update data.
+Another source build still waits for Josh's ready signal.
 
 The next source release is **1.0.1, bundle build 2**. Leave `app-version.json`
 unchanged until Josh supplies the ready source. At that point:

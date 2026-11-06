@@ -3242,6 +3242,21 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
+**Latest authorized Homebrew test — November 5:** Josh asked for a real tap
+upgrade without losing browser data, authorizing this specific existing-release
+installation. Root upgraded 0.1.0 to 1.0.0 with
+`brew upgrade --cask etsenake/tap/parc`. The closed profile was backed up and
+verified first; all 4,348 files (666,436,194 bytes), directories and symlinks were
+identical after Homebrew finished and before normal app launch. The prior app
+and private profile backup remain retained. All 12 installed signed-image hashes,
+Team `94HKA7L2DR`, stable requirement, strict signature, stapled ticket and
+Gatekeeper checks passed. The installed app then stayed alive for 60.07 seconds
+with no new app/helper crash reports; post-launch normal deep signing and hashes
+passed. Homebrew now records 1.0.0. Receipts and the backup are in
+`build/homebrew-upgrade-test-20261106T034702Z`. The separate behavior crash was
+not investigated, no source/app rebuild occurred, and further builds still await
+Josh's ready signal. This supersedes the earlier pending-upgrade status only.
+
 **Current handoff — November 5:** Josh assigned the behavior-triggered crash to another
 agent and explicitly stopped crash investigation here. Root and the focused
 Homebrew agent continue only production release setup/tooling, documentation
