@@ -3242,6 +3242,16 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
+**1.1.1 patch release delivered — November 6:** pulled published main, then ran
+`bash scripts/release.sh --type patch` to completion. Source `f083a16d`,
+engine overlay 341, bundle build 3. [v1.1.1](https://github.com/etsenake/parc/releases/tag/v1.1.1) is stable/latest
+with verified signed/notarized ZIP and DMG. Production Team remains `94HKA7L2DR`.
+App submission: `c4292f6d-42bb-490b-8c98-592af9c44076`; DMG submission:
+`6f522cab-3bbb-4b86-8d19-7788232b07d2`. Both were accepted, stapled and Gatekeeper verified.
+Tap commit `6681e13042521e3336484cf7c982884c303b284e` publishes the 1.1.1 cask. The script performed
+no local installation, quit, launch, browser tests or Homebrew upgrade. No pipeline
+errors occurred. Receipts: `build/releases/20261106T073716Z-9a03d3fb/delivery.json`.
+
 **1.1.0 release delivered — November 5:** the new master command completed
 engine/app/sign/notarize/publish/cask delivery for source `ee799c69`, overlay 333,
 bundle build 2. [v1.1.0](https://github.com/etsenake/parc/releases/tag/v1.1.0)
