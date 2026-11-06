@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 361,
+  "version": 362,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1555,7 +1555,7 @@
     {
       "source": "Engine/ParcNative/fairplay_identity_policy.h",
       "target": "cef/libcef/browser/parc_native/fairplay_identity_policy.h",
-      "sha256": "a214c55dadcfe79fb5e99c0fc3f47a991934c817de3aba6d777ebafd8fcfac77"
+      "sha256": "845af9f03ed8ed11d90932dee080c30f60329eacf51ff1cb96863519475adb45"
     },
     {
       "source": "Engine/ParcNative/fairplay_identity.h",
@@ -1565,7 +1565,7 @@
     {
       "source": "Engine/ParcNative/fairplay_identity.mm",
       "target": "cef/libcef/browser/parc_native/fairplay_identity.mm",
-      "sha256": "6498815056aa947ab736a50b9f0fc7d7ef2ca48fef0ed0ab1236828998bba62a"
+      "sha256": "9606432a84222a61bb7aa135acb6098c8bcbe2d0a0fe26694b0edc1992e4c9be"
     },
     {
       "source": "Engine/ParcRenderer/parc_safari_identity.h",
@@ -2183,7 +2183,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-host-route.patch",
-      "sha256": "a2251a545cbc1f1f5e02d45d083272a3a021c7a024804fe7c067ab7a84f594fd",
+      "sha256": "73bb2dfa59b02f1590f071003484703fc164f96e3176d89d3fbff1c176885274",
       "files": [
         {
           "target": "cef/libcef/browser/browser_host_base.h",
@@ -2323,7 +2323,7 @@
         {
           "target": "content/renderer/render_frame_impl.cc",
           "before_sha256": "1022dc00a64aeef2d987835c5a7d818691c72162ceee6e61bbd019bab45bd229",
-          "after_sha256": "77ea89dc3cf81cbe7c6ed84be9a25e6affaf5875756002679814949e3f10060f"
+          "after_sha256": "69848ef824d3f98a5af8d50aafbca69c52daf80ee7cb16114dd77b874dfd3bab"
         },
         {
           "target": "content/renderer/render_frame_impl.h",

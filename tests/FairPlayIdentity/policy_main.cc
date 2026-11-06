@@ -44,14 +44,12 @@ FrameNavigation Main(const std::string& site) {
 FrameNavigation Sub(const std::string& site,
                     bool same_site_as_main,
                     bool main_safari,
-                    bool parent_safari,
-                    bool isolated = false) {
+                    bool parent_safari) {
   FrameNavigation navigation;
   navigation.site = site;
   navigation.same_site_as_main = same_site_as_main;
   navigation.main_frame_safari = main_safari;
   navigation.parent_safari = parent_safari;
-  navigation.isolated = isolated;
   return navigation;
 }
 
@@ -87,15 +85,13 @@ void NavigationRules() {
   Check(!NavigationPresentsSafari(
             lists, Sub("netflix.com", true, false, false)),
         "same-site subframe of a Chrome main document stays Chrome");
-  Check(!NavigationPresentsSafari(
-            lists, Sub("netflix.com", true, true, true, /*isolated=*/true)),
-        "sandboxed frame without allow-same-origin gets its own process");
+  Check(NavigationPresentsSafari(lists, Sub("netflix.com", true, true, false)),
+        "a frame on the main document's site follows it, also when its "
+        "parent is a cross-site frame or it gets a process of its own");
   Check(NavigationPresentsSafari(lists, Sub("", false, true, true)),
         "about:blank subframe inherits its Safari parent");
   Check(!NavigationPresentsSafari(lists, Sub("", false, true, false)),
         "about:blank inside a cross-site frame inherits its Chrome parent");
-  Check(!NavigationPresentsSafari(lists, Sub("", false, true, true, true)),
-        "sandboxed srcdoc frame is isolated too");
 }
 
 WidevineRequestFrame Frame(const std::string& site, bool follows, bool safari) {

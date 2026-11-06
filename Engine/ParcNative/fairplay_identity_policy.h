@@ -34,31 +34,31 @@ struct FrameNavigation {
   // parent's document process.
   std::string site;
   // For a subframe: the URL is on the main document's site, scheme included,
-  // as Chromium's site isolation compares it.
+  // as Chromium's site isolation compares it. Also true for every subframe
+  // when Chromium doesn't give each site its own process (site isolation
+  // turned off), since then every frame shares the main document's process.
   bool same_site_as_main = false;
-  // For a subframe: it is sandboxed without allow-same-origin, which Chromium
-  // puts in a process of its own.
-  bool isolated = false;
   // For a subframe: the identity of the page's committed main document, and
   // the identity the parent frame presents now.
   bool main_frame_safari = false;
   bool parent_safari = false;
 };
 
-// Chromium applies a page's user agent override in the renderer only to the
-// frames that share the main document's process, and never to a frame in
-// another process (RenderFrameImpl::ShouldUseUserAgentOverride). With site
-// isolation a frame shares that process when it is on the main document's
-// site and not isolated, so such a subframe follows the main document and
-// any other keeps Chrome's identity. Choosing the request headers the same
+// A subframe on the main document's site follows the main document, and a
+// frame without a site (about:blank, srcdoc, data:) follows its parent. A
+// frame from another site keeps Chrome's identity, so a Safari site embedded
+// by another site's page stays Chrome. Parc's renderer applies the override
+// to each frame from the document of its local root, the main frame or the
+// frame at the top of its process's part of the page
+// (RenderFrameImpl::ShouldUseUserAgentOverride as Parc patches it), so a
+// frame on the main document's site that Chromium puts in a process of its
+// own (sandboxed without allow-same-origin, or isolated by a response header)
+// presents what its navigation chose. Choosing the request headers the same
 // way keeps every frame's headers equal to what its scripts see.
 inline bool NavigationPresentsSafari(const SiteLists& lists,
                                      const FrameNavigation& navigation) {
   if (navigation.main_frame) {
     return PresentsSafari(lists, navigation.site);
-  }
-  if (navigation.isolated) {
-    return false;
   }
   if (navigation.site.empty()) {
     return navigation.parent_safari;
@@ -79,9 +79,10 @@ enum class WidevineRequest {
 struct WidevineRequestFrame {
   // The site of the page's main document; empty when it has none.
   std::string site;
-  // The frame is the main document or shares its process, so reloading the
-  // page gives it Safari's identity. A frame in another process keeps
-  // Chrome's identity whatever the lists say.
+  // The frame presents the main document's identity (the main document, a
+  // frame on its site, or a frame without a site inside one of those), so
+  // reloading the page gives it Safari's identity. A frame from another site
+  // keeps Chrome's identity whatever the lists say.
   bool follows_main_frame = false;
   // The page's main document already presents Safari's identity.
   bool page_safari = false;

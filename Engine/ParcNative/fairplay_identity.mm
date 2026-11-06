@@ -25,6 +25,8 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/document_user_data.h"
+#include "content/public/browser/frame_tree_node_id.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
@@ -45,8 +47,6 @@
 #include "native_profile_removal.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/schemeful_site.h"
-#include "services/network/public/cpp/web_sandbox_flags.h"
-#include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "ui/base/page_transition_types.h"
@@ -107,10 +107,11 @@ std::string SiteForURL(const GURL& url) {
   return base::ToLowerASCII(domain.empty() ? origin.host() : domain);
 }
 
-// Present on a main document that was committed with Safari's identity.
-// Chromium deletes it when the frame commits another document, so it always
-// describes the document a frame shows now, including one restored from the
-// back/forward cache or activated from a prerender.
+// Present on a document that was committed with Safari's identity; a frame
+// presents what its local root's record says. Chromium deletes it when the
+// frame commits another document, so it always describes the document a
+// frame shows now, including one restored from the back/forward cache or
+// activated from a prerender.
 class SafariIdentityDocument final
     : public content::DocumentUserData<SafariIdentityDocument> {
  public:
@@ -130,21 +131,49 @@ bool MainDocumentPresentsSafari(content::RenderFrameHost* main_frame) {
          SafariIdentityDocument::GetForCurrentDocument(main_frame) != nullptr;
 }
 
-// Whether a frame shares the main document's process and frame tree, which
-// is what Chromium's renderer goes by when it applies the override. Frames in
-// one SiteInstanceGroup do; a data: subframe has its own SiteInstance in its
-// creator's group.
-bool SharesMainDocumentProcess(content::RenderFrameHost* frame) {
-  content::RenderFrameHost* main_frame = frame->GetMainFrame();
-  return frame == main_frame ||
-         frame->GetSiteInstance()->GetSiteInstanceGroupId() ==
-             main_frame->GetSiteInstance()->GetSiteInstanceGroupId();
+// Whether a frame starts its own part of the page in the renderer: the main
+// frame, or a frame whose parent is in another SiteInstanceGroup (another
+// process and frame tree). A data: subframe has its own SiteInstance in its
+// creator's group, so it isn't one.
+bool IsLocalRoot(content::RenderFrameHost* frame) {
+  content::RenderFrameHost* parent = frame->GetParent();
+  return !parent || frame->GetSiteInstance()->GetSiteInstanceGroupId() !=
+                        parent->GetSiteInstance()->GetSiteInstanceGroupId();
 }
 
-// The identity a committed frame presents now.
+content::RenderFrameHost* LocalRootOf(content::RenderFrameHost* frame) {
+  while (!IsLocalRoot(frame)) {
+    frame = frame->GetParent();
+  }
+  return frame;
+}
+
+// The identity a committed frame presents now: Parc's renderer applies the
+// override to a frame from its local root's document
+// (RenderFrameImpl::ShouldUseUserAgentOverride as native-host-route.patch
+// changes it).
 bool FramePresentsSafari(content::RenderFrameHost* frame) {
-  return MainDocumentPresentsSafari(frame->GetMainFrame()) &&
-         SharesMainDocumentProcess(frame);
+  return SafariIdentityDocument::GetForCurrentDocument(LocalRootOf(frame)) !=
+         nullptr;
+}
+
+// Whether a committed frame should present its main document's identity
+// under NavigationPresentsSafari: it is the main document, a frame on its
+// site, or a frame without a site whose nearest ancestor with one is on it.
+// Committed addresses are compared as DidStartNavigation compares the
+// starting ones.
+bool FollowsMainDocument(content::RenderFrameHost* frame) {
+  if (!content::SiteIsolationPolicy::UseDedicatedProcessesForAllSites()) {
+    return true;
+  }
+  content::RenderFrameHost* main_frame = frame->GetMainFrame();
+  for (; frame && frame != main_frame; frame = frame->GetParent()) {
+    if (!SiteForURL(frame->GetLastCommittedURL()).empty()) {
+      return net::SchemefulSite(frame->GetLastCommittedURL()) ==
+             net::SchemefulSite(main_frame->GetLastCommittedOrigin());
+    }
+  }
+  return true;
 }
 
 class FairPlayIdentityHelper;
@@ -277,42 +306,38 @@ class FairPlayIdentityHelper final
         navigation->IsPrerenderedPageActivation()) {
       return;
     }
+    // A fenced frame is a subframe of the page that holds it, so a learned
+    // site inside another site's page stays Chrome there too.
     fairplay_identity::FrameNavigation facts;
-    facts.main_frame = navigation->IsInMainFrame();
+    facts.main_frame = navigation->IsInOutermostMainFrame();
     facts.site = SiteForURL(navigation->GetURL());
     if (!facts.main_frame) {
-      content::RenderFrameHost* parent = navigation->GetParentFrame();
+      content::RenderFrameHost* parent =
+          navigation->GetParentFrameOrOuterDocument();
       if (!parent) {
         return;
       }
-      content::RenderFrameHost* main_frame = parent->GetMainFrame();
+      content::RenderFrameHost* main_frame = parent->GetOutermostMainFrame();
       facts.same_site_as_main =
+          !content::SiteIsolationPolicy::UseDedicatedProcessesForAllSites() ||
           net::SchemefulSite(navigation->GetURL()) ==
-          net::SchemefulSite(main_frame->GetLastCommittedOrigin());
-      facts.isolated =
-          content::SiteIsolationPolicy::AreIsolatedSandboxedIframesEnabled() &&
-          (navigation->SandboxFlagsInherited() &
-           network::mojom::WebSandboxFlags::kOrigin) !=
-              network::mojom::WebSandboxFlags::kNone;
+              net::SchemefulSite(main_frame->GetLastCommittedOrigin());
       facts.main_frame_safari = MainDocumentPresentsSafari(main_frame);
       facts.parent_safari = FramePresentsSafari(parent);
     }
     const bool safari = fairplay_identity::NavigationPresentsSafari(
         ListsForContext(web_contents()->GetBrowserContext()), facts);
     navigation->SetIsOverridingUserAgent(safari);
-    if (facts.main_frame) {
-      main_frame_decisions_[navigation->GetNavigationId()] = safari;
-    }
+    decisions_[navigation->GetNavigationId()] = safari;
   }
 
   void DidFinishNavigation(content::NavigationHandle* navigation) override {
     const int64_t id = navigation->GetNavigationId();
     primary_navigations_.erase(id);
     std::optional<bool> decided;
-    if (auto found = main_frame_decisions_.find(id);
-        found != main_frame_decisions_.end()) {
+    if (auto found = decisions_.find(id); found != decisions_.end()) {
       decided = found->second;
-      main_frame_decisions_.erase(found);
+      decisions_.erase(found);
     }
     if (!navigation->HasCommitted() || navigation->IsSameDocument()) {
       // A list change waited for this navigation, which kept the document:
@@ -336,13 +361,20 @@ class FairPlayIdentityHelper final
       reconcile_pending_ = false;
       reconcile_held_ = false;
       own_reload_entry_id_ = 0;
+      identity_reloads_.clear();
+    }
+    // Recorded on every document committed with Safari's identity; a frame
+    // reads the record of its local root.
+    if (decided.value_or(false)) {
+      SafariIdentityDocument::CreateForCurrentDocument(frame);
     }
     if (!navigation->IsInMainFrame()) {
       KeepEntryOnMainDocument(frame);
+      // A POST is never sent again, as for the main frame.
+      if (!navigation->IsErrorPage() && !navigation->IsPost()) {
+        CheckSubframe(frame);
+      }
       return;
-    }
-    if (decided.value_or(false)) {
-      SafariIdentityDocument::CreateForCurrentDocument(frame);
     }
     if (navigation->IsErrorPage() || !navigation->IsInPrimaryMainFrame()) {
       return;
@@ -400,6 +432,47 @@ class FairPlayIdentityHelper final
     }
   }
 
+  // A committed subframe of the page whose scripts got another identity than
+  // its site has under NavigationPresentsSafari, because the identity was
+  // chosen for the URL it started with: a redirect took it off the main
+  // document's site into a process of its own with the main document's
+  // Safari identity, or onto the main document's site inside a cross-site
+  // frame with Chrome's. A frame without a site follows its parent as it was
+  // chosen to. A frame whose scripts already fit keeps its document, even if
+  // its own request carried the other identity.
+  void CheckSubframe(content::RenderFrameHost* frame) {
+    content::RenderFrameHost* main_frame = web_contents()->GetPrimaryMainFrame();
+    if (!frame->IsActive() || frame->GetMainFrame() != main_frame ||
+        SiteForURL(frame->GetLastCommittedURL()).empty()) {
+      return;
+    }
+    const bool wanted =
+        FollowsMainDocument(frame) && MainDocumentPresentsSafari(main_frame);
+    if (wanted != FramePresentsSafari(frame)) {
+      ReloadFrameForIdentity(frame, wanted);
+    }
+  }
+
+  // Reloads one frame, not the page: its reload starts from the address it
+  // ended at, so the identity chosen then fits. At most once per frame and
+  // identity until the main document changes, so a frame a reload can't fix
+  // (one that redirects again) reloads at most twice and never loops.
+  void ReloadFrameForIdentity(content::RenderFrameHost* frame, bool wanted) {
+    if (!identity_reloads_.emplace(frame->GetFrameTreeNodeId(), wanted)
+             .second) {
+      return;
+    }
+    content::GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&ReloadFrame, frame->GetGlobalId()));
+  }
+
+  static void ReloadFrame(content::GlobalRenderFrameHostId id) {
+    content::RenderFrameHost* frame = content::RenderFrameHost::FromID(id);
+    if (frame && frame->IsActive()) {
+      frame->Reload();
+    }
+  }
+
   void RememberOwnReload(content::WebContents* contents) {
     content::NavigationEntry* pending =
         contents->GetController().GetPendingEntry();
@@ -427,8 +500,11 @@ class FairPlayIdentityHelper final
     }
   }
 
-  std::map<int64_t, bool> main_frame_decisions_;
+  std::map<int64_t, bool> decisions_;
   std::set<int64_t> primary_navigations_;
+  // Frames reloaded for their identity in this main document, each with the
+  // identity it was reloaded for.
+  std::set<std::pair<content::FrameTreeNodeId, bool>> identity_reloads_;
   bool reconcile_pending_ = false;
   bool reconcile_held_ = false;
   bool retry_scheduled_ = false;
@@ -597,7 +673,7 @@ bool OnWidevineCdmRequest(content::RenderFrameHost* frame,
   }
   fairplay_identity::WidevineRequestFrame facts;
   facts.site = SiteForURL(main_frame->GetLastCommittedURL());
-  facts.follows_main_frame = SharesMainDocumentProcess(frame);
+  facts.follows_main_frame = FollowsMainDocument(frame);
   facts.page_safari = MainDocumentPresentsSafari(main_frame);
   content::BrowserContext* context = contents->GetBrowserContext();
   switch (fairplay_identity::DecideWidevineRequest(ListsForContext(context),

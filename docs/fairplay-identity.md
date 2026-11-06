@@ -106,18 +106,25 @@ decides in `DidStartNavigation`, the one place
 - A main frame presents Safari's identity when its URL's site is a Safari
   site. Leaving that site in the same tab returns to Chrome.
 - A subframe on the main document's site (scheme included, as site isolation
-  compares it) follows the main document.
+  compares it) follows the main document, wherever it sits in the page.
 - A subframe on another site keeps Chrome's identity, even when its site is a
-  Safari site. Chromium's renderer applies the override only to frames that
-  share the main document's process (`RenderFrameImpl::ShouldUseUserAgentOverride`),
-  and with site isolation those are the frames on its site. Choosing the
-  headers the same way keeps every frame's headers equal to what its scripts
-  see. A sandboxed frame without `allow-same-origin` gets its own process, so
-  it keeps Chrome's identity too.
+  Safari site. A fenced frame counts as a subframe of the page holding it.
 - A frame without a site (about:blank, srcdoc, data:) inherits its parent.
-- Once frames have committed, a frame counts as Safari only when it shares
-  the main document's SiteInstanceGroup (its process and frame tree), which
-  is what the renderer goes by.
+- With site isolation turned off every subframe shares the main document's
+  process, so every subframe follows the main document.
+- Parc's renderer applies the override to each frame from the document of its
+  local root, the main frame or the frame at the top of its process's part of
+  the page (`RenderFrameImpl::ShouldUseUserAgentOverride`, changed in
+  `native-host-route.patch`; upstream follows the main frame and never
+  overrides a frame in another process). So a frame on the main document's
+  site that Chromium puts in a process of its own, a sandboxed frame without
+  `allow-same-origin` or one isolated by a response header
+  (`Origin-Agent-Cluster: ?1`, `Content-Security-Policy: sandbox`), shows its
+  scripts the identity its request carried. Choosing the headers by the same
+  rule keeps every frame's headers equal to what its scripts see.
+- Once frames have committed, a frame presents what its local root's
+  document was committed with (its SiteInstanceGroup decides which frame
+  that is).
 
 The helper attaches when Parc's platform delegate receives the new contents,
 which is before the first navigation of a popup or a new tab. A main-frame
@@ -141,6 +148,15 @@ reloading:
 - A page restored from the back/forward cache with the old identity is
   evicted and loaded again; Chromium does that when the requested identity
   differs.
+
+A subframe whose scripts got the wrong identity because a redirect took it
+elsewhere reloads on its own: one that left the main document's site for a
+process of its own while presenting Safari, or one that a redirect brought
+onto the main document's site inside a cross-site frame with Chrome's
+identity (a player there couldn't get Widevine or FairPlay's identity
+otherwise). Its reload starts from the address it ended at, so the choice
+then fits. A frame reloads at most once for each identity in a main
+document, and a POST result never reloads.
 
 ## ManagedMediaSource
 
@@ -255,16 +271,29 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   refusal in `requestMediaKeySystemAccess` and `decodingInfo`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
   a hook that service and shared workers call as they start.
-- `native-host.patch` adds the new sources to `libcef_static`.
+- `native-host.patch` adds the new sources to `libcef_static`, and
+  `native-host-route.patch` makes the renderer apply the override from each
+  frame's local root.
 
 ## Known limits
 
 - A Safari site embedded by a page on another site keeps Chrome's identity
   (see the subframe rule above).
-- A same-site subframe that answers with `Origin-Agent-Cluster: ?1` or a
-  `Content-Security-Policy: sandbox` header gets its own process only once its
-  response arrives. Its request already carried Safari's user agent, while its
-  scripts see Chrome's.
+- The lists are a preference, not site data: clearing a site's data leaves
+  its entry, which the user removes with the View menu item. A private
+  window starts from its Profile's lists. So which learned sites present
+  Safari is visible across clearing data and between a Profile and its
+  private windows. Only a site the user opened and that asked for Widevine
+  there gets an entry.
+- A subframe that a redirect brings onto the main document's site in the
+  main document's process shows its scripts the main document's identity,
+  but its own request carried the identity chosen at the start. It isn't
+  reloaded to fix those headers, since the response already arrived and a
+  reload could repeat a one-time address (a sign-in callback).
+- A prerendered page's subframes aren't checked for redirects when the
+  page is activated, and fenced frames aren't checked at all: a fenced frame
+  whose URL is on a Safari page's site keeps Safari's identity if a redirect
+  takes it to another site.
 - Chromium copies each committing subframe's identity into the page's
   history entry. Parc puts the main document's identity back after every
   subframe commit, so restoring or prerendering the entry uses the right one.

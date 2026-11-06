@@ -1630,7 +1630,34 @@
  
    // If the navigations are deferred, cancellations should be deferred too.
    client_navigation_throttler_.DispatchOrScheduleNavigation(
-@@ -5689,6 +5691,7 @@
+@@ -5038,17 +5040,15 @@
+ }
+ 
+ bool RenderFrameImpl::ShouldUseUserAgentOverride() const {
+-  auto* web_view = GetWebView();
+-  // TODO(nasko): When the top-level frame is remote, there is no
+-  // WebDocumentLoader associated with it, so the checks below are not valid.
+-  // Temporarily return early and fix properly as part of
+-  // https://crbug.com/426555.
+-  if (web_view->MainFrame()->IsWebRemoteFrame()) {
+-    return false;
+-  }
+-  const WebLocalFrame* main_frame = web_view->MainFrame()->ToWebLocalFrame();
+-
+-  WebDocumentLoader* document_loader = main_frame->GetDocumentLoader();
++  // Parc: a frame follows the committed document of its local root: the main
++  // frame, or the frame at the top of this process's part of the page. So a
++  // frame in another process than the main document presents the identity
++  // its own navigation chose, as its headers do (docs/fairplay-identity.md).
++  // Upstream follows the main frame and never overrides a frame whose main
++  // frame is in another process (https://crbug.com/426555).
++  const WebLocalFrame* local_root = frame_->LocalRoot();
++
++  WebDocumentLoader* document_loader = local_root->GetDocumentLoader();
+   DocumentState* document_state =
+       document_loader ? DocumentState::FromDocumentLoader(document_loader)
+                       : nullptr;
+@@ -5689,6 +5689,7 @@
    // JS should be running in |this|, and no other frame should have a reference
    // to |this|.
    CHECK(in_frame_tree_);
@@ -1638,7 +1665,7 @@
  
    // This might be the first navigation in this RenderFrame.
    const bool first_navigation_in_render_frame = !had_started_any_navigation_;
-@@ -5739,6 +5742,59 @@
+@@ -5739,6 +5740,59 @@
    if (info->is_unfenced_top_navigation) {
      OpenURL(std::move(info));
      return;
@@ -1698,7 +1725,7 @@
    }
  
    // If the browser is interested, then give it a chance to look at the request.
-@@ -6108,12 +6164,15 @@
+@@ -6108,12 +6162,15 @@
    std::move(callback).Run(GetWebFrame()->GetFrameToken().value());
  }
  
