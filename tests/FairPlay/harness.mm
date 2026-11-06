@@ -1635,6 +1635,48 @@ std::vector<Step> AudioUnavailableScenario() {
     }
     done();
   });
+  // SetCdm, a failed Initialize, then a retry without audio: the CDM must
+  // still be attached, and only the retry reports a natural size.
+  steps.push_back([=](Done done) {
+    struct CountingClient : fp::FairPlayRendererClient {
+      int sizes = 0;
+      void OnNeedData(fp::StreamType) override {}
+      void OnWaitingForKey() override {}
+      void OnEnded() override {}
+      void OnError(fp::RendererError, const std::string&) override {}
+      void OnVideoNaturalSizeChange(int32_t, int32_t) override { ++sizes; }
+      void OnBufferingStateChange(bool) override {}
+    };
+    auto client = std::make_shared<CountingClient>();
+    auto renderer = std::make_shared<fp::FairPlayRenderer>(client.get(), MainPoster());
+    const fp::VideoConfig vc = VideoConfigFor(w->video.info, Framing::kChromium, true);
+    const fp::AudioConfig ac = AudioConfigFor(w->audio.info, Framing::kChromium, true);
+    fp::Result set = renderer->SetCdm(w->main_keys->cdm.get());
+    fp::Result failed = renderer->Initialize(vc, ac);
+    After(0.3, [=] {
+      Check(set.ok() && !failed.ok() && client->sizes == 0,
+            "audio unavailable: a failed Initialize after SetCdm reports no natural size",
+            Format("SetCdm %s, Initialize %s, %d size callbacks", set.ok() ? "ok" : set.message.c_str(),
+                   failed.ok() ? "succeeded" : "failed", client->sizes));
+      fp::Result retried = renderer->Initialize(vc, std::nullopt);
+      auto storage = std::make_shared<std::vector<uint8_t>>();
+      auto decrypt = std::make_shared<fp::DecryptInfo>();
+      fp::EncodedSample sample = ft::ChromiumBuffer(w->video.info, w->video.segments[0][0], storage.get(), decrypt.get());
+      fp::EnqueueResult enqueued =
+          retried.ok() ? renderer->Enqueue(fp::StreamType::kVideo, sample) : fp::EnqueueResult::kRejected;
+      Check(retried.ok() && sample.decrypt && enqueued == fp::EnqueueResult::kEnqueued,
+            "audio unavailable: the CDM set before the failed Initialize is attached on the retry "
+            "(a protected sample goes straight to the layer)",
+            Format("retry %s, sample %s, enqueue %d", retried.ok() ? "ok" : retried.message.c_str(),
+                   sample.decrypt ? "encrypted" : "clear", int(enqueued)));
+      After(0.3, [=] {
+        Check(client->sizes == 1, "audio unavailable: the retry reports the natural size once",
+              Format("%d", client->sizes));
+        (void)renderer;
+        done();
+      });
+    });
+  });
   return steps;
 }
 

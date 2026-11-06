@@ -440,7 +440,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     layer_ = nil;
     video_renderer_ = nil;
     audio_ = nil;
+    // A CDM set before Initialize waits for the next attempt, and that
+    // attempt reports the natural size afresh.
+    FairPlayCdm* pending_cdm = pending_cdm_;
     Shutdown();
+    pending_cdm_ = pending_cdm;
+    natural_width_ = 0;
+    natural_height_ = 0;
     synchronizer_ = nil;
     if (CMTimebaseRef timebase = timebase_.exchange(nullptr)) {
       CFRelease(timebase);
@@ -1090,7 +1096,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     natural_width_ = width;
     natural_height_ = height;
-    Post([width, height](Impl& impl) { impl.client_->OnVideoNaturalSizeChange(width, height); });
+    // Not after an Initialize that failed (no synchronizer then).
+    Post([width, height](Impl& impl) {
+      if (impl.synchronizer_) {
+        impl.client_->OnVideoNaturalSizeChange(width, height);
+      }
+    });
   }
 
   // Keyframes carry the decoder configuration in-band (Chromium re-inserts
