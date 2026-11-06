@@ -12,7 +12,6 @@ import platform
 import re
 import signal
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -181,6 +180,8 @@ class Release:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise Failure("Release builds require an Apple Silicon Mac with full Xcode")
         self.auth()
+        if not shutil.which('brew'):
+            raise Failure('Install Homebrew once before running a production release')
         self.command(["xcrun", "--find", "swiftc"], capture=True)
         self.command(["xcrun", "--find", "notarytool"], capture=True)
         self.command(["xcodebuild", "-checkFirstLaunchStatus"], capture=True)
@@ -410,18 +411,36 @@ class Release:
             old = Path(self.state['run']) / relative
             if old.is_dir() and not old.is_symlink():
                 self.command([lsregister, '-u', old], name='unregister-old-app')
-                import shutil
                 shutil.rmtree(old)
                 removed.append(str(old))
         self.command([lsregister, '-f', app], name='register-installed-app')
         state_path = self.root / 'build/recurring-prod-refresh/state.json'
-        previous = json.loads(state_path.read_text()) if state_path.exists() else {}
-        previous.update(status='installed_master_release_verified', installed_app=str(app),
-                        installed_source_commit=self.state['commit'], engine_overlay=self.state['overlay'],
-                        engine_manifest=self.state['manifest'], package=self.state['package'],
-                        release_tag=self.state['tag'], release_url='https://github.com/' + REPOSITORY + '/releases/tag/' + self.state['tag'],
-                        launch_observation=self.state['acceptance'], automation_status='deleted_by_user',
-                        app_version=self.state['version'], updated_utc=now(), master_release_run=self.state['run'])
+        if state_path.exists() and not (Path(self.state['run']) / 'previous-refresh-state.json').exists():
+            save(Path(self.state['run']) / 'previous-refresh-state.json', json.loads(state_path.read_text()))
+        acceptance_path = Path(self.state['run']) / 'homebrew/acceptance.json'
+        if not acceptance_path.exists():
+            acceptance_path = Path(self.state['acceptance'])
+        acceptance = json.loads(acceptance_path.read_text())
+        report_path = Path(self.state['package']) / 'package-report.json'
+        check.publisher.verify_acceptance(acceptance, self.state['tag'], self.state['commit'],
+                                          report['app_version'], sha(report_path))
+        previous = {'schema_version': 2, 'status': 'installed_master_release_verified',
+                    'automation_id': 'refresh-parc-production-app', 'automation_status': 'deleted_by_user',
+                    'installed_app': str(app), 'installed_source_commit': self.state['commit'],
+                    'engine_overlay': self.state['overlay'], 'overlay_identity': report['overlay']['identity'],
+                    'source_lock_sha256': report['source_lock_sha256'], 'engine_manifest': self.state['manifest'],
+                    'engine_manifest_file_sha256': self.state['manifest_sha256'], 'package': self.state['package'],
+                    'package_report': str(report_path), 'package_report_sha256': sha(report_path),
+                    'release_tag': self.state['tag'], 'release_url': 'https://github.com/' + REPOSITORY + '/releases/tag/' + self.state['tag'],
+                    'app_version': self.state['version'], 'signing_team': report['signing_team'],
+                    'signing_identity': report['signing_identity'], 'notarization': report['notarization'],
+                    'launch_observation': str(acceptance_path), 'launch_result': acceptance['launch_observation'],
+                    'designated_requirement': acceptance['designated_requirement'], 'code_image_count': len(report['signed_images']),
+                    'strict_signature_before_launch_verified': acceptance['prelaunch_strict_verified'],
+                    'signature_after_launch_verified': acceptance['installed_code_hashes_verified'],
+                    'application_window_verified': False, 'browser_functionality_acceptance_claimed': False,
+                    'homebrew': {'version': self.state['version']['version'], 'tap_commit': self.state['tap_commit']},
+                    'completed_utc': now(), 'master_release_run': self.state['run']}
         save(state_path, previous)
         self.checkpoint(removed_rollback_apps=removed, lease_release_started=True)
         release_lease.release(self.state['lease'])
