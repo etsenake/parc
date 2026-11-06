@@ -3242,6 +3242,22 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
+**1.1.0 release delivered — November 5:** the new master command completed
+engine/app/sign/notarize/publish/cask delivery for source `ee799c69`, overlay 333,
+bundle build 2. [v1.1.0](https://github.com/etsenake/parc/releases/tag/v1.1.0)
+is stable/latest, with ZIP and DMG. Both Apple submissions were accepted,
+stapled and Gatekeeper verified; production Team remains `94HKA7L2DR`.
+App submission: `ed1a3d5c-888f-4a11-9abf-c33d293e8afc`; DMG submission:
+`b16b4c04-c9b2-4338-af14-ffc100de42f6`. Tap commit:
+`0cded575c236f496a2246f0512b7b8a53947992d`. Source and engine stages resumed
+without a second version bump; cancelled engine compilation resumed its cache.
+No app install, quit, launch, runtime test or Homebrew upgrade ran. The local app
+and Homebrew receipt remain 1.0.0 pending Josh's manual upgrade. Publication
+metadata is `build/releases/20261106T042042Z-046471e2/delivery.json`; 217 packaging
+checks passed (one platform skip), plus 75 engine-source checks. Secure private-key
+backup remains pending the already-reported one-time 1Password CLI login; this
+Mac's working Developer ID/notary profile were used for the release.
+
 **Latest release scope correction — November 5:** Josh requires a release-only
 master command: engine/app build, Developer ID signing, app/DMG notarization,
 GitHub publication and version/URL/checksum publication to the Homebrew tap.
