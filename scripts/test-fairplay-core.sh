@@ -22,7 +22,9 @@ xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation -framework
 # or after --time-limit seconds (default 480); this cap backs that up.
 "$output/fairplay-proof" --cache "${PARC_FAIRPLAY_CACHE:-${TMPDIR:-/tmp}/parc-fairplay-cache}" "$@" &
 proof=$!
-( sleep 600; kill -TERM "$proof" 2>/dev/null ) &
+# The cap's sleep is its own process: stopping the cap must stop it too.
+( trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM; sleep 600 & sleeper=$!; wait "$sleeper"
+  kill -TERM "$proof" 2>/dev/null ) &
 cap=$!
 status=0
 wait "$proof" || status=$?

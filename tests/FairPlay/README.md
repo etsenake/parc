@@ -253,3 +253,9 @@ probed through its runtime interface)
   system default has to be passed as its UID.
 - CoreMedia accepts `dac3`/`dec3` boxes with the bit rate fields 0: clear AC-3
   and E-AC-3 decode to the end with them.
+- A covered harness window that plays video without audio appears to be App
+  Napped: in one full run, main-queue timers fired 1.2–1.8 s late while
+  samples showed the main thread idle in `mach_msg`, and two video-only clips
+  missed `OnEnded` (one stopped getting need-data). The same clips pass when
+  run alone with the window in front. The harness now holds an
+  `NSActivityUserInitiated | NSActivityLatencyCritical` activity for its run.

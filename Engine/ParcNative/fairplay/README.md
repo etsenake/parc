@@ -239,6 +239,11 @@ so this forces the following on the Chromium integration.
   which may be called from any thread (it reads a retained `CMTimebase`). It
   starts on HAVE_ENOUGH and stops on underflow inside the renderer, as
   `RendererImpl` does.
+- **The hosting process must not be napped.** Synchronizer time observers,
+  media-data requests and posted callbacks drive end of stream, underflow and
+  need-data. In the harness, a covered window playing video alone showed
+  seconds-late timers until it opted out of App Nap. Whether Chromium's GPU
+  process is ever napped is unverified.
 - **Several media elements can share one MediaKeys.** Each renderer's layer
   joins the same session; keys are matched by key ID, so any element can use
   any usable key of that MediaKeys.

@@ -3129,6 +3129,33 @@ void StartWatchdog() {
     double stalled = now - g_heartbeat.load();
     bool stall = g_heartbeat.load() > 0 && stalled > 15;
     bool over = now > g_time_limit;
+    // Short stalls (the heartbeat beats every 0.5 s) delay callbacks enough to
+    // fail timing checks; the first few are sampled while still in progress,
+    // without stopping the run, to show what holds the main thread.
+    static std::atomic<bool> sampling{false};
+    static std::atomic<int> short_samples{0};
+    if (!stall && !over && g_heartbeat.load() > 0 && stalled > 1.2 && short_samples.load() < 4 &&
+        !sampling.exchange(true)) {
+      const int index = ++short_samples;
+      std::string path = std::string(NSTemporaryDirectory().UTF8String) +
+                         Format("fairplay-proof-stall-%d-%d.txt", getpid(), index);
+      Log("WATCHDOG: main thread late by %.1f s; sampling it (%s)", stalled, path.c_str());
+      std::string command =
+          Format("/usr/bin/sample %d 1 1 -mayDie -file '%s' >/dev/null 2>&1", getpid(), path.c_str());
+      if (system(command.c_str()) == 0) {
+        NSString* text = [NSString stringWithContentsOfFile:@(path.c_str()) encoding:NSUTF8StringEncoding error:nil];
+        bool main_thread = false;
+        int printed = 0;
+        for (NSString* line in [text componentsSeparatedByString:@"\n"]) {
+          if ([line containsString:@"com.apple.main-thread"]) main_thread = true;
+          else if (main_thread && [line containsString:@"Thread_"]) break;
+          if (main_thread && printed++ < 60) printf("    %s\n", line.UTF8String);
+        }
+        fflush(stdout);
+      }
+      sampling.store(false);
+      return;
+    }
     if (!stall && !over) return;
     if (stall) {
       Log("WATCHDOG: main thread stalled for %.0f s; sampling its stack", stalled);
@@ -3302,6 +3329,13 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IOLBF, 0);
     static World world;
     g_world = &world;
+    // A covered window that plays no audio (the video-only codec clips) is
+    // App Napped: timers, time observers and callbacks then arrive seconds
+    // late and timing checks fail. The proof opts out for its whole run.
+    static id<NSObject> no_app_nap = [[NSProcessInfo processInfo]
+        beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical
+                          reason:@"FairPlay proof timing"];
+    (void)no_app_nap;
     StartWatchdog();
     NSString* video_playlist = @"video-H264-720-2100k.m3u8";
     g_cache_dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"parc-fairplay-cache"];
