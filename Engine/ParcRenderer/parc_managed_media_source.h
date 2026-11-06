@@ -443,7 +443,8 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
   // or on a <source> inside one.
   function noteSrc(element, value) {
     const source = sourceForURL(value);
-    if (source) {
+    // A source already open on another element can't attach here.
+    if (source && source.readyState === 'closed') {
       remember(source, element);
     }
   }

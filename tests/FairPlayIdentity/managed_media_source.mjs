@@ -350,6 +350,12 @@ function makeWorld() {
   two.srcObject = playing;  // fails in Chromium: the source is already open on `one`
   one.dispatchEvent(new context.Event('timeupdate'));
   check(playing.streaming === true, 'a failed second attach does not take over the policy');
+  const url = context.URL.createObjectURL(playing);
+  const three = new context.HTMLVideoElement();
+  three.currentTime = 2000;
+  three.src = url;
+  one.dispatchEvent(new context.Event('timeupdate'));
+  check(playing.streaming === true, 'src naming an open source elsewhere does not take over the policy');
 }
 
 // A MediaStream still goes to Chromium's srcObject.
