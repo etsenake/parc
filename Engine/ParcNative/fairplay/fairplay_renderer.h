@@ -77,6 +77,8 @@ struct RendererStatus {
   uint64_t protected_enqueued = 0;
   uint64_t decode_failures = 0;
   uint64_t audio_automatic_flushes = 0;
+  uint64_t video_decoder_resets = 0;  // Flushes for requiresFlushToResumeDecoding.
+  uint64_t redelivered = 0;  // Samples enqueued again after either.
   float rate = 0;
   MediaTime time;
   // Media subtypes of the clear format description and of the protected one
@@ -149,11 +151,18 @@ class FairPlayRenderer {
   void SetPlaybackRate(double rate);
   void SetVolume(float volume);
   void SetMuted(bool muted);
+  // Core Audio device UID for the audio output (HTMLMediaElement.setSinkId);
+  // empty picks the current system default device (AVFoundation takes no
+  // "follow the default" value once a device was set). The audio renderer
+  // flushes itself on a switch, and the queued samples are delivered again.
+  Result SetAudioOutputDevice(const std::string& unique_id);
 
   // Stops playback, drops everything enqueued or held, and clears end of
   // stream. |done| runs on the owner sequence.
   void Flush(std::function<void()> done);
 
+  // Callable from any thread (Chromium's TimeSource is read off the owner
+  // sequence); everything else runs on the owner sequence.
   MediaTime GetMediaTime() const;
   RendererStatus GetStatus() const;
   void LoadVideoMetrics(std::function<void(const VideoMetrics&)> done) const;

@@ -232,14 +232,34 @@ so this forces the following on the Chromium integration.
 - **Audio bypasses Chromium's audio stack.** `AVSampleBufferAudioRenderer`
   plays to the system directly: Web Audio `createMediaElementSource` gets
   silence. Volume, mute, audio focus and ducking must map to `SetVolume` and
-  `SetMuted`. `setSinkId` would need `audioOutputDeviceUniqueID`, which the
-  core doesn't expose yet.
-- **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`. It
+  `SetMuted`; `setSinkId` maps to `SetAudioOutputDevice` (a Core Audio device
+  UID, empty for the current default device, since
+  `audioOutputDeviceUniqueID` throws on nil).
+- **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`,
+  which may be called from any thread (it reads a retained `CMTimebase`). It
   starts on HAVE_ENOUGH and stops on underflow inside the renderer, as
   `RendererImpl` does.
 - **Several media elements can share one MediaKeys.** Each renderer's layer
   joins the same session; keys are matched by key ID, so any element can use
   any usable key of that MediaKeys.
+
+## Recovery inside the renderer
+
+- **Automatic audio flushes.** `AVSampleBufferAudioRenderer` flushes itself
+  when its output changes (a route or device switch) and reports the start of
+  the first sample it dropped. The renderer keeps the audio it enqueued from
+  half a second behind the clock on, and enqueues everything from the flush
+  time again; otherwise the queued duration would play as silence while the
+  clock runs on. Proven with a device switch during protected playback (one
+  flush, 107 samples re-delivered, no underflow).
+- **Video decoder resets.** When `requiresFlushToResumeDecoding` turns on, the
+  renderer flushes the video renderer and enqueues again from the last
+  keyframe at or before the clock, marking frames already due
+  `DoNotDisplay`. No public trigger exists on macOS, so this path is untested.
+- `RendererStatus` counts both (`audio_automatic_flushes`,
+  `video_decoder_resets`, `redelivered`).
+- Layer creation is committed in an explicit `CATransaction`, since the owner
+  sequence may have no run loop.
 
 ## Key session contract
 

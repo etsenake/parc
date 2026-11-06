@@ -2,6 +2,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <CoreAudio/CoreAudio.h>
 #import <CoreMedia/CoreMedia.h>
 
 #include <algorithm>
@@ -65,6 +66,25 @@ struct RequestGate {
   std::mutex mutex;
   uint64_t current = 0;
 };
+
+// The system default output device's Core Audio UID, nil if unavailable.
+NSString* DefaultOutputDeviceUid() {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice,
+                                        kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+  AudioDeviceID device = kAudioObjectUnknown;
+  UInt32 size = sizeof(device);
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size, &device) != noErr ||
+      device == kAudioObjectUnknown) {
+    return nil;
+  }
+  address.mSelector = kAudioDevicePropertyDeviceUID;
+  CFStringRef uid = nullptr;
+  size = sizeof(uid);
+  if (AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &uid) != noErr || !uid) {
+    return nil;
+  }
+  return (__bridge_transfer NSString*)uid;
+}
 
 NSData* ToNSData(const std::vector<uint8_t>& bytes) {
   return [NSData dataWithBytes:bytes.data() length:bytes.size()];
@@ -250,7 +270,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   Impl(FairPlayRendererClient* client, PostTask post_task)
       : client_(client), poster_(std::make_shared<const PostTask>(std::move(post_task))) {}
 
-  ~Impl() { Shutdown(); }
+  ~Impl() {
+    Shutdown();
+    if (CMTimebaseRef timebase = timebase_.exchange(nullptr)) {
+      CFRelease(timebase);
+    }
+  }
 
   void Shutdown() {
     pending_cdm_ = nullptr;
@@ -298,6 +323,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
     }
     synchronizer_ = [[AVSampleBufferRenderSynchronizer alloc] init];
+    if (CMTimebaseRef timebase = synchronizer_.timebase) {
+      CFRetain(timebase);
+      timebase_.store(timebase);
+    }
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
     clock_observer_ = [synchronizer_ addPeriodicTimeObserverForInterval:CMTimeMake(1, 10)
@@ -318,8 +347,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }];
     NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
     if (video) {
+      // The owner sequence may have no run loop to commit an implicit
+      // transaction, so the layer's setup is committed explicitly.
+      [CATransaction begin];
+      [CATransaction setDisableActions:YES];
       layer_ = [AVSampleBufferDisplayLayer layer];
       layer_.videoGravity = AVLayerVideoGravityResizeAspect;
+      [CATransaction commit];
       NSNotificationName decode_failed = AVSampleBufferDisplayLayerFailedToDecodeNotification;
       NSString* decode_error_key = AVSampleBufferDisplayLayerFailedToDecodeNotificationErrorKey;
       NSNotificationName requires_flush =
@@ -342,18 +376,36 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                                                                                  NSNotification* note) {
         impl.OnDecodeFailed(note.userInfo[decode_error_key]);
       });
-      AddNotification(center, requires_flush, video_renderer_,
-                      [](Impl& impl, NSNotification*) { impl.CheckRendererStatus(); });
+      AddNotification(center, requires_flush, video_renderer_, [](Impl& impl, NSNotification*) {
+        impl.CheckRendererStatus();
+        impl.ResumeVideoDecoding();
+      });
     }
     if (audio) {
       audio_ = [[AVSampleBufferAudioRenderer alloc] init];
       [synchronizer_ addRenderer:audio_];
       Observe(audio_, @"status");
       Observe(audio_, @"error");
-      AddNotification(center, AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification,
-                      audio_, [](Impl& impl, NSNotification*) {
-                        ++impl.status_.audio_automatic_flushes;
-                      });
+      // The flush time belongs to the timeline of the moment AVFoundation
+      // posts it, so the generation is read then, not when the task runs.
+      std::shared_ptr<std::atomic<uint64_t>> flushes = flush_count_;
+      id token = [center addObserverForName:AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification
+                                     object:audio_
+                                      queue:nil
+                                 usingBlock:^(NSNotification* note) {
+                                   const uint64_t generation = flushes->load();
+                                   NSValue* value = note.userInfo[AVSampleBufferAudioRendererFlushTimeKey];
+                                   const CMTime time = value ? value.CMTimeValue : kCMTimeInvalid;
+                                   (*poster)([weak, generation, time] {
+                                     auto impl = weak.lock();
+                                     if (impl && impl->generation_ == generation) {
+                                       impl->OnAudioFlushedAutomatically(
+                                           CMTIME_IS_NUMERIC(time) ? CMTimeGetSeconds(time)
+                                                                   : impl->GetMediaTime().InSeconds());
+                                     }
+                                   });
+                                 }];
+      notification_tokens_.push_back(token);
     }
     if (FairPlayCdm* cdm = pending_cdm_) {
       pending_cdm_ = nullptr;
@@ -491,7 +543,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!state.last_end.IsValid() || end.InSeconds() > state.last_end.InSeconds()) {
       state.last_end = end;
     }
+    held.start = sample.pts.InSeconds();
     held.end = end.InSeconds();
+    held.keyframe = stream == StreamType::kAudio || sample.is_keyframe;
     if (!state.held.empty() || !Submit(stream, held)) {
       state.held.push_back(std::move(held));
       if (!waiting_reported_) {
@@ -546,6 +600,19 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void SetVolume(float volume) { audio_.volume = volume; }
   void SetMuted(bool muted) { audio_.muted = muted; }
+  // AVSampleBufferAudioRenderer throws on a nil device ID, so "the system
+  // default" is the default device's UID at the time of the call.
+  Result SetAudioOutputDevice(const std::string& unique_id) {
+    if (!audio_) {
+      return Result::Error(Exception::kInvalidState, "no audio stream");
+    }
+    NSString* uid = unique_id.empty() ? DefaultOutputDeviceUid() : @(unique_id.c_str());
+    if (!uid.length) {
+      return Result::Error(Exception::kNotSupported, "no default audio output device");
+    }
+    audio_.audioOutputDeviceUniqueID = uid;
+    return Result::Ok();
+  }
 
   void Flush(std::function<void()> done) {
     synchronizer_.rate = 0;
@@ -561,6 +628,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     waiting_reported_ = false;
     ended_ = false;
     ++generation_;
+    flush_count_->store(generation_);
     // Like RendererImpl::Flush: back to HAVE_NOTHING without a callback; the
     // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
@@ -568,9 +636,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     Post([done](Impl&) { done(); });
   }
 
+  // Any thread: CMTimebase reads are thread-safe, and the timebase is
+  // retained for the renderer's lifetime.
   MediaTime GetMediaTime() const {
-    return synchronizer_ ? FromCMTime(CMTimebaseGetTime(synchronizer_.timebase))
-                         : MediaTime::Invalid();
+    CMTimebaseRef timebase = timebase_.load();
+    return timebase ? FromCMTime(CMTimebaseGetTime(timebase)) : MediaTime::Invalid();
   }
 
   RendererStatus GetStatus() const {
@@ -647,14 +717,18 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     CMSampleBufferRef buffer = nullptr;  // Owned.
     bool encrypted = false;
     std::vector<uint8_t> key_id;
-    double end = 0;  // Presentation end, seconds.
+    double start = 0;  // Presentation start, seconds.
+    double end = 0;    // Presentation end, seconds.
+    bool keyframe = true;
 
     Held() = default;
     Held(Held&& other) noexcept
         : buffer(other.buffer),
           encrypted(other.encrypted),
           key_id(std::move(other.key_id)),
-          end(other.end) {
+          start(other.start),
+          end(other.end),
+          keyframe(other.keyframe) {
       other.buffer = nullptr;
     }
     Held& operator=(Held&& other) noexcept {
@@ -665,7 +739,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         buffer = other.buffer;
         encrypted = other.encrypted;
         key_id = std::move(other.key_id);
+        start = other.start;
         end = other.end;
+        keyframe = other.keyframe;
         other.buffer = nullptr;
       }
       return *this;
@@ -677,8 +753,46 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   };
 
+  // A buffer already given to AVFoundation, kept for re-delivery.
+  struct Submitted {
+    CMSampleBufferRef buffer = nullptr;  // Retained.
+    double start = 0;
+    double end = 0;
+    bool keyframe = true;
+
+    Submitted(CMSampleBufferRef retained, double start, double end, bool keyframe)
+        : buffer(retained), start(start), end(end), keyframe(keyframe) {}
+    Submitted(const Submitted&) = delete;
+    Submitted& operator=(const Submitted&) = delete;
+    Submitted(Submitted&& other) noexcept
+        : buffer(other.buffer), start(other.start), end(other.end), keyframe(other.keyframe) {
+      other.buffer = nullptr;
+    }
+    Submitted& operator=(Submitted&& other) noexcept {
+      if (this != &other) {
+        if (buffer) {
+          CFRelease(buffer);
+        }
+        buffer = other.buffer;
+        start = other.start;
+        end = other.end;
+        keyframe = other.keyframe;
+        other.buffer = nullptr;
+      }
+      return *this;
+    }
+    ~Submitted() {
+      if (buffer) {
+        CFRelease(buffer);
+      }
+    }
+  };
+
   struct Stream {
     std::deque<Held> held;
+    // What AVFoundation holds or may need again: audio from the playback
+    // position on, video from the last keyframe at or before it.
+    std::deque<Submitted> submitted;
     bool end_of_stream = false;
     bool armed = false;
     MediaTime last_end;
@@ -1298,7 +1412,73 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ++(stream == StreamType::kVideo ? status_.video_enqueued : status_.audio_enqueued);
     Stream& state = StreamFor(stream);
     state.enqueued_end = std::max(state.enqueued_end, held.end);
+    CFRetain(held.buffer);
+    state.submitted.emplace_back(held.buffer, held.start, held.end, held.keyframe);
+    TrimSubmitted(stream);
     return true;
+  }
+
+  void TrimSubmitted(StreamType stream) {
+    std::deque<Submitted>& submitted = StreamFor(stream).submitted;
+    const double now = GetMediaTime().InSeconds();
+    if (stream == StreamType::kAudio) {
+      // A little behind the clock, for a flush reported as it plays.
+      while (!submitted.empty() && submitted.front().end < now - 0.5) {
+        submitted.pop_front();
+      }
+      return;
+    }
+    size_t keep_from = 0;
+    for (size_t i = 0; i < submitted.size() && submitted[i].start <= now; ++i) {
+      if (submitted[i].keyframe) {
+        keep_from = i;
+      }
+    }
+    submitted.erase(submitted.begin(), submitted.begin() + static_cast<std::ptrdiff_t>(keep_from));
+  }
+
+  // AVSampleBufferAudioRenderer flushes itself when the output changes (a
+  // route or device switch) and reports the start of the first sample it
+  // dropped; without re-delivery the queued duration would play as silence.
+  void OnAudioFlushedAutomatically(double flush_time) {
+    ++status_.audio_automatic_flushes;
+    for (const Submitted& entry : audio_stream_.submitted) {
+      if (entry.start + 1e-6 >= flush_time) {
+        [audio_ enqueueSampleBuffer:entry.buffer];
+        ++status_.redelivered;
+      }
+    }
+  }
+
+  // A video decoder that lost its state (requiresFlushToResumeDecoding) is
+  // flushed and fed again from the last keyframe at or before the clock;
+  // frames already due are decoded but not displayed.
+  void ResumeVideoDecoding() {
+    if (!video_renderer_ || !GetStatus().video_requires_flush) {
+      return;
+    }
+    StopRequest(StreamType::kVideo);
+    video_.armed = false;
+    [video_renderer_ flush];
+    ++status_.video_decoder_resets;
+    const double now = GetMediaTime().InSeconds();
+    bool from_keyframe = false;
+    for (const Submitted& entry : video_.submitted) {
+      from_keyframe |= entry.keyframe;
+      if (!from_keyframe) {
+        continue;
+      }
+      if (entry.end <= now) {
+        CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(entry.buffer, true);
+        if (attachments && CFArrayGetCount(attachments)) {
+          CFDictionarySetValue((CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0),
+                               kCMSampleAttachmentKey_DoNotDisplay, kCFBooleanTrue);
+        }
+      }
+      [video_renderer_ enqueueSampleBuffer:entry.buffer];
+      ++status_.redelivered;
+    }
+    NotifyNeedData(StreamType::kVideo);
   }
 
   void OnKeysChanged() {
@@ -1560,6 +1740,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   int32_t natural_width_ = 0;
   int32_t natural_height_ = 0;
   uint64_t generation_ = 0;  // Bumped by Flush; stale posted tasks compare it.
+  // generation_ for threads other than the owner's (notification blocks).
+  const std::shared_ptr<std::atomic<uint64_t>> flush_count_ = std::make_shared<std::atomic<uint64_t>>(0);
+  // Retained synchronizer timebase, read by GetMediaTime from any thread.
+  std::atomic<CMTimebaseRef> timebase_{nullptr};
   bool ended_ = false;
   bool video_failure_reported_ = false;
   bool audio_failure_reported_ = false;
@@ -1620,6 +1804,10 @@ void FairPlayRenderer::SetVolume(float volume) {
 
 void FairPlayRenderer::SetMuted(bool muted) {
   impl_->SetMuted(muted);
+}
+
+Result FairPlayRenderer::SetAudioOutputDevice(const std::string& unique_id) {
+  return impl_->SetAudioOutputDevice(unique_id);
 }
 
 void FairPlayRenderer::Flush(std::function<void()> done) {

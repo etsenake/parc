@@ -36,9 +36,11 @@ source_set("core") {
   frameworks = [
     "AVFoundation.framework",
     "AudioToolbox.framework",
+    "CoreAudio.framework",
     "CoreFoundation.framework",
     "CoreMedia.framework",
     "Foundation.framework",
+    "QuartzCore.framework",
   ]
 }
 

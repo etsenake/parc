@@ -245,3 +245,11 @@ probed through its runtime interface)
 - The ad-hoc signed command-line harness gets SPCs, CKCs and protected playback
   with no app bundle and no entitlement. It ran unsandboxed; the sandbox profile
   of the engine process that hosts the core must allow FairPlay (unverified).
+- Setting `audioOutputDeviceUniqueID` on a playing `AVSampleBufferAudioRenderer`
+  (from unset to the built-in speakers' explicit UID) posts
+  `AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification` once, with
+  the flush time; setting the same device again posts none. Setting nil throws
+  `NSInvalidArgumentException` (`audioOutputDeviceUniqueID != nil`), so the
+  system default has to be passed as its UID.
+- CoreMedia accepts `dac3`/`dec3` boxes with the bit rate fields 0: clear AC-3
+  and E-AC-3 decode to the end with them.

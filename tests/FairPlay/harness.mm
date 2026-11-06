@@ -6,6 +6,7 @@
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <CoreAudio/CoreAudio.h>
 #import <QuartzCore/QuartzCore.h>
 
 #include <algorithm>
@@ -1333,6 +1334,16 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
       Run(player(), 2, 1.5, name + " rate 1.5 for 2s")(done);
     });
     steps.push_back([=](Done done) {
+      // A rate change may make the audio renderer flush itself; whatever it
+      // dropped must have been enqueued again.
+      fp::RendererStatus s = player()->renderer().GetStatus();
+      Check(s.audio_automatic_flushes == 0 || s.redelivered > 0,
+            name + ": automatic audio flushes during the rate steps were re-delivered",
+            Format("%llu automatic flushes, %llu samples re-delivered",
+                   (unsigned long long)s.audio_automatic_flushes, (unsigned long long)s.redelivered));
+      done();
+    });
+    steps.push_back([=](Done done) {
       player()->renderer().SetVolume(0.25f);
       player()->renderer().SetMuted(true);
       fp::RendererStatus s = player()->renderer().GetStatus();
@@ -1424,6 +1435,71 @@ std::vector<Step> MixedScenario(bool chromium_inputs = false) {
     done();
   });
   steps.push_back([=](Done done) { Metrics(w->player, "mixed", 200, frames)(done); });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// The default output device's Core Audio UID.
+std::string DefaultOutputDeviceUid() {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice,
+                                        kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+  AudioDeviceID device = kAudioObjectUnknown;
+  UInt32 size = sizeof(device);
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size, &device) != noErr) {
+    return "";
+  }
+  address.mSelector = kAudioDevicePropertyDeviceUID;
+  CFStringRef uid = nullptr;
+  size = sizeof(uid);
+  if (AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &uid) != noErr || !uid) {
+    return "";
+  }
+  std::string result = ((__bridge NSString*)uid).UTF8String;
+  CFRelease(uid);
+  return result;
+}
+
+// Moving audio to another output (setSinkId) makes AVSampleBufferAudioRenderer
+// flush itself; the renderer must enqueue what was dropped again, or the
+// queued duration plays as silence and the clock runs ahead of the audio.
+std::vector<Step> AudioDeviceSwitchScenario() {
+  World* w = g_world;
+  auto before = std::make_shared<fp::RendererStatus>();
+  std::vector<Step> steps;
+  steps.push_back(Section("audio output switch: protected playback while audio moves to another device and back"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("device-switch", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, &w->video, &w->audio, 0, 5, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "device-switch before the switch")(done); });
+  for (bool to_explicit : {true, false}) {
+    steps.push_back([=](Done done) {
+      *before = w->player->renderer().GetStatus();
+      std::string uid = to_explicit ? DefaultOutputDeviceUid() : "";
+      Log("device-switch: audio output -> %s", uid.empty() ? "system default" : uid.c_str());
+      fp::Result result = w->player->renderer().SetAudioOutputDevice(uid);
+      Check(result.ok(), std::string("device-switch: SetAudioOutputDevice(") + (uid.empty() ? "default" : uid) + ")",
+            result.message);
+      Run(w->player, 3, 1, std::string("device-switch after switching to ") +
+                               (to_explicit ? "the explicit device" : "the system default"))(done);
+    });
+    steps.push_back([=](Done done) {
+      fp::RendererStatus s = w->player->renderer().GetStatus();
+      const uint64_t flushes = s.audio_automatic_flushes - before->audio_automatic_flushes;
+      const uint64_t redelivered = s.redelivered - before->redelivered;
+      Log("device-switch: %llu automatic flushes, %llu samples re-delivered", (unsigned long long)flushes,
+          (unsigned long long)redelivered);
+      Check(flushes == 0 || redelivered > 0, "device-switch: an automatic audio flush is followed by re-delivery",
+            Format("%llu flushes, %llu re-delivered", (unsigned long long)flushes, (unsigned long long)redelivered));
+      Check(w->player->underflows == 0, "device-switch: no HAVE_NOTHING across the switch",
+            Format("%d", w->player->underflows));
+      done();
+    });
+  }
   steps.push_back([=](Done done) {
     w->player.reset();
     done();
@@ -3142,6 +3218,7 @@ void RunAll() {
   add("ChromiumInputsScenario()", ChromiumInputsScenario());
   add("QualitySwitchScenario()", QualitySwitchScenario());
   add("UnderflowScenario()", UnderflowScenario());
+  add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
   add("SeekOrderScenario()", SeekOrderScenario());
   add("ShortEndScenario()", ShortEndScenario());
