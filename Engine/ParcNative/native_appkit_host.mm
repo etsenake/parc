@@ -1304,7 +1304,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
             return;
           }
         }
-        RequestPresentation(*contents, window);
+        WatchPicture(*contents, window);
       }
       const auto pip_visibility =
           !shown ? parc::BackgroundPipVisibility::kHidden
@@ -1370,6 +1370,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   // gives the page a new surface the renderer must draw. Every pass is
   // followed by a check of the pages the window shows, and one without a
   // picture gets that same re-sync, a few times per arrangement of pages.
+  // A shown page's confirmation: its current surface activated, then a
+  // presentation requested after that answered.
+  struct PresentationWatch {
+    enum Stage { kAwaitingSurface, kAwaitingPresentation };
+    uint64_t serial = 0;
+    Stage stage = kAwaitingSurface;
+    bool presented = false;
+  };
   void SchedulePictureCheck() {
     if (tearing_down_ || draining_ || !window_) {
       return;
@@ -1400,6 +1408,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     std::vector<std::pair<base::WeakPtr<content::WebContents>, const char*>>
         missing;
     std::set<const content::WebContents*> checked;
+    picture_confirmation_pending_ = false;
     for (PCNativePage* page in visible) {
       content::WebContents* contents = ContentsForNativePage(page);
       // Pages not yet VISIBLE are the visibility retries' (overlay 330).
@@ -1420,6 +1429,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     });
     if (missing.empty()) {
       picture_repairs_ = 0;
+      // A page whose surface just activated waits for its presentation.
+      if (picture_confirmation_pending_) {
+        SchedulePictureCheck();
+      }
       return;
     }
     if (picture_repairs_ >= kPictureRepairLimit) {
@@ -1442,7 +1455,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         RepairPicture(*contents, window);
         if (weak && contents && !tearing_down_ && !draining_ &&
             window_ == window) {
-          RequestPresentation(*contents, window);
+          WatchPicture(*contents, window);
         }
       }
       if (!weak) {
@@ -1542,24 +1555,19 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!size.IsEmpty() && size != view->GetRequestedRendererSize()) {
       return "view size stale";
     }
-    content::DelegatedFrameHost* frame_host =
-        view->BrowserCompositor()->GetDelegatedFrameHost();
-    const viz::SurfaceId embedded = frame_host->GetCurrentSurfaceId();
-    // The last renderer frame viz activated (RenderFrameMetadata reports each
-    // new surface id after activation).
-    const std::optional<viz::LocalSurfaceId>& drawn =
-        host->render_frame_metadata_provider()
-            ->LastRenderFrameMetadata()
-            .local_surface_id;
-    if (!frame_host->HasPrimarySurface() || !embedded.is_valid() ||
-        !drawn || !drawn->is_valid() ||
-        !drawn->IsSameOrNewerThan(embedded.local_surface_id())) {
+    if (!RendererSurfaceActivated(*view)) {
       return "renderer surface stale";
     }
-    // The outcome: a frame of this page's compositor reached the screen
-    // since the page was shown, attached or repaired there.
+    // The outcome, in order: the page's current surface activated (checked
+    // just above), then a frame of its compositor drawn after that reached
+    // the screen, with the page's layer drawn in it.
     auto watch = presentation_watches_.find(&contents);
     if (watch != presentation_watches_.end()) {
+      if (watch->second.stage == PresentationWatch::kAwaitingSurface) {
+        RequestPresentation(contents, window, watch->second);
+        picture_confirmation_pending_ = true;
+        return nullptr;
+      }
       if (!watch->second.presented) {
         return "no presentation";
       }
@@ -1567,19 +1575,53 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     return nullptr;
   }
-  // Asks the page's compositor to report its next frame reaching the screen,
-  // and draws one. Unanswered at the next check, it is a missing picture.
-  void RequestPresentation(content::WebContents& contents, NSWindow* window) {
-    ui::Layer* layer = PaneCompositorLayer(contents, window);
-    ui::Compositor* compositor = layer ? layer->GetCompositor() : nullptr;
-    // Without a compositor the picture checks report the page themselves.
-    if (!compositor) {
+  // Viz accepted a renderer frame for exactly the surface the page embeds:
+  // RenderFrameMetadata reports each new surface id only after activation,
+  // and a discarded or evicted frame never activates.
+  static bool RendererSurfaceActivated(content::RenderWidgetHostViewMac& view) {
+    content::DelegatedFrameHost* frame_host =
+        view.BrowserCompositor()->GetDelegatedFrameHost();
+    const viz::SurfaceId embedded = frame_host->GetCurrentSurfaceId();
+    const std::optional<viz::LocalSurfaceId>& drawn =
+        view.host()
+            ->render_frame_metadata_provider()
+            ->LastRenderFrameMetadata()
+            .local_surface_id;
+    return frame_host->HasPrimarySurface() && embedded.is_valid() && drawn &&
+           drawn->is_valid() &&
+           drawn->IsSameOrNewerThan(embedded.local_surface_id());
+  }
+  // After a show, attachment, compositor change or repair: wait for the
+  // page's current surface to activate, then for the screen.
+  void WatchPicture(content::WebContents& contents, NSWindow* window) {
+    if (!PaneCompositorLayer(contents, window)) {
+      // The picture checks report a page without a compositor themselves.
       presentation_watches_.erase(&contents);
       return;
     }
     PresentationWatch& watch = presentation_watches_[&contents];
     watch.serial = ++presentation_serial_;
+    watch.stage = PresentationWatch::kAwaitingSurface;
     watch.presented = false;
+    content::RenderWidgetHostViewMac* view = PageWidgetView(contents);
+    if (view && !view->host()->IsHidden() && RendererSurfaceActivated(*view)) {
+      RequestPresentation(contents, window, watch);
+    }
+  }
+  // Asks the page's compositor, once its surface has activated, to report
+  // its next frame reaching the screen, and draws one. That frame embeds the
+  // activated surface. Unanswered at the next check, it is a missing picture.
+  void RequestPresentation(content::WebContents& contents,
+                           NSWindow* window,
+                           PresentationWatch& watch) {
+    ui::Layer* layer = PaneCompositorLayer(contents, window);
+    ui::Compositor* compositor = layer ? layer->GetCompositor() : nullptr;
+    watch.serial = ++presentation_serial_;
+    watch.stage = PresentationWatch::kAwaitingPresentation;
+    watch.presented = false;
+    if (!compositor) {
+      return;
+    }
     compositor->RequestSuccessfulPresentationTimeForNextFrame(base::BindOnce(
         [](base::WeakPtr<AppKitBrowserHost> self,
            const content::WebContents* key, uint64_t serial,
@@ -2204,10 +2246,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   base::OneShotTimer picture_check_timer_;
   int picture_repairs_ = 0;
   NSArray<PCNativePage*>* __strong picture_pages_;
-  struct PresentationWatch {
-    uint64_t serial = 0;
-    bool presented = false;
-  };
+  bool picture_confirmation_pending_ = false;
   // Keys are compared only; a destroyed page's entry is pruned at a check.
   std::map<const content::WebContents*, PresentationWatch>
       presentation_watches_;

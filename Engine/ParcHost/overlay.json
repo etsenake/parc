@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 336,
+  "version": 337,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -405,7 +405,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "28956874720ee93696f2c58e41f32d9dc3a08b4dc55f1d7fc7f091bf96409817"
+      "sha256": "56f8a32b93b81f4323c44d3eabaecf905d877b38e7ecba6e9cd3bf4e42af6c98"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
