@@ -198,14 +198,22 @@ tested. So the main world of every Safari-identity document gets a
   there plays through an object URL. While it does, `srcObject` returns the
   source, `src` and `currentSrc` are empty as in Safari, `load()` attaches it
   again, and clearing `srcObject` restores any `src` set before.
-- `ManagedMediaSource.canConstructInDedicatedWorker` is `false`, since workers
-  don't get the script. Its errors aren't muted, and a document that can't
-  run scripts doesn't get it.
+- Dedicated workers of a Safari-identity document get it too, before their
+  own script runs, and `ManagedMediaSource.canConstructInDedicatedWorker`
+  answers like `MediaSource`'s (true, as in Safari). In a worker it attaches
+  through `handle`; with no media element to watch, it may start streaming
+  but never stops, so a player that moves its buffering to a worker because
+  of that answer relies on its own buffer limits. Workers have no
+  `TimeRanges` interface, so its event ranges take the prototype of the first
+  real buffered ranges (an event a page builds before reading any gets plain
+  objects). Its errors aren't muted, and a document that can't run scripts
+  doesn't get it.
 - A popup's initial empty document can hand its window and script context to
   the same-origin page it loads. That page loses `userAgentData` in every
-  world when it takes the window over, but it doesn't get `ManagedMediaSource`:
-  the window's globals may hold the opener's getters, and no script may run in
-  the middle of a commit.
+  world when it takes the window over, and gets `ManagedMediaSource` from a
+  microtask: after the commit has finished (the window's globals may hold the
+  opener's getters, which mustn't run in the middle of a commit) and before
+  any of its own scripts run.
 - `scripts/test-fairplay-identity.sh` runs the exact script against a model of
   the media APIs (`tests/FairPlayIdentity/managed_media_source.mjs`).
 
@@ -309,8 +317,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   restart with the new one.
 - `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
   WebKit's engine policy (below). It is visible to a page that inspects it,
-  for example through `Function.prototype.toString`. Workers and isolated
-  worlds don't get it.
+  for example through `Function.prototype.toString`. Isolated worlds and
+  shared or service workers don't get it (Safari offers it to windows and
+  dedicated workers).
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used

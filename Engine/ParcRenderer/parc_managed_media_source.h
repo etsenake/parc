@@ -11,7 +11,8 @@
 // or through `srcObject`, which Chromium accepts only for MediaStreams and so
 // is mapped to an object URL. `streaming` follows WebKit's managed policy:
 // true while less than 10 s ahead of the playback position is buffered, false
-// once 30 s are or everything to the end is.
+// once 30 s are or everything to the end is. Dedicated workers of such
+// documents get it too, where it attaches through MediaSource's `handle`.
 // tests/FairPlayIdentity/managed_media_source.mjs runs this exact script
 // against a model of the media APIs.
 // Installed at third_party/blink/renderer/bindings/core/v8/parc_managed_media_source.h.
@@ -25,12 +26,14 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
   'use strict';
   const g = globalThis;
   if (typeof g.MediaSource !== 'function' || typeof g.SourceBuffer !== 'function' ||
-      typeof g.TimeRanges !== 'function' || 'ManagedMediaSource' in g) {
+      'ManagedMediaSource' in g) {
     return;
   }
   const NativeMediaSource = g.MediaSource;
   const NativeSourceBuffer = g.SourceBuffer;
-  const NativeTimeRanges = g.TimeRanges;
+  // Workers have TimeRanges objects but no TimeRanges interface; its
+  // prototype is then taken from the first buffered ranges seen.
+  let timeRangesPrototype = typeof g.TimeRanges === 'function' ? g.TimeRanges.prototype : null;
   const NativeEvent = g.Event;
   const NativeWeakRef = g.WeakRef;
   const define = Object.defineProperty;
@@ -68,7 +71,7 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
   // TimeRanges objects for BufferedChangeEvent. Chromium's TimeRanges has no
   // constructor, so these inherit its prototype and carry their own values.
   function ranges(list) {
-    const value = Object.create(NativeTimeRanges.prototype);
+    const value = Object.create(timeRangesPrototype || Object.prototype);
     const bound = (index) => {
       if (!(index >= 0 && index < list.length)) {
         throw new DOMException('The index provided (' + index +
@@ -174,7 +177,11 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     }
     let now;
     try {
-      now = snapshot(sourceBuffer.buffered);
+      const buffered = sourceBuffer.buffered;
+      if (!timeRangesPrototype) {
+        timeRangesPrototype = Object.getPrototypeOf(buffered);
+      }
+      now = snapshot(buffered);
     } catch (e) {
       return;
     }
@@ -390,9 +397,9 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     static isTypeSupported(type) {
       return NativeMediaSource.isTypeSupported(type);
     }
-    // Only window documents get this script.
+    // Dedicated workers of a Safari-identity document get this script too.
     static get canConstructInDedicatedWorker() {
-      return false;
+      return NativeMediaSource.canConstructInDedicatedWorker === true;
     }
   }
 

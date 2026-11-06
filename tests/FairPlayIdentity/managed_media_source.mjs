@@ -21,7 +21,7 @@ function check(condition, message) {
 }
 
 // ---- Model of the media APIs the script builds on.
-function makeWorld() {
+function makeWorld(options = {}) {
   const timers = [];
   const intervals = new Map();
   class TimeRanges {
@@ -118,6 +118,14 @@ function makeWorld() {
     setInterval: (fn) => { const id = ++nextTimer; intervals.set(id, fn); return id; },
     clearInterval: (id) => { intervals.delete(id); },
   };
+  if (options.worker) {
+    // A dedicated worker: MediaSource and SourceBuffer, TimeRanges objects
+    // without a TimeRanges interface, no DOM.
+    for (const name of ['TimeRanges', 'Element', 'HTMLMediaElement', 'HTMLSourceElement',
+                        'HTMLVideoElement', 'document']) {
+      delete context[name];
+    }
+  }
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(script, context);
@@ -138,7 +146,7 @@ function makeWorld() {
   check(Object.prototype.toString.call(new ManagedMediaSource()) === '[object ManagedMediaSource]', 'toStringTag');
   check(ManagedMediaSource.isTypeSupported('video/mp4; codecs="dvh1.05.01"'), 'isTypeSupported delegates');
   check(!ManagedMediaSource.isTypeSupported('video/x-unknown'), 'unsupported type');
-  check(ManagedMediaSource.canConstructInDedicatedWorker === false, 'not offered to workers');
+  check(ManagedMediaSource.canConstructInDedicatedWorker === true, 'offered to workers, which get it too');
   let threw = false;
   try { new ManagedSourceBuffer(); } catch (e) { threw = e.name === 'TypeError'; }
   check(threw, 'ManagedSourceBuffer has no public constructor');
@@ -356,6 +364,28 @@ function makeWorld() {
   three.src = url;
   one.dispatchEvent(new context.Event('timeupdate'));
   check(playing.streaming === true, 'src naming an open source elsewhere does not take over the policy');
+}
+
+// ---- A dedicated worker of a Safari-identity document.
+{
+  const world = makeWorld({ worker: true });
+  const { context } = world;
+  check(typeof context.ManagedMediaSource === 'function', 'workers get ManagedMediaSource');
+  check(context.ManagedMediaSource.canConstructInDedicatedWorker === true,
+        'canConstructInDedicatedWorker follows MediaSource once workers have it');
+  const source = new context.ManagedMediaSource();
+  source._open();
+  world.run();
+  check(source.streaming === true, 'a worker source starts streaming');
+  const sb = source.addSourceBuffer('video/mp4; codecs="dvh1.05.01"');
+  const changes = [];
+  sb.addEventListener('bufferedchange', (e) => changes.push(e));
+  sb._finish([[0, 60]]);
+  world.run();
+  check(changes.length === 1 && changes[0].addedRanges.end(0) === 60, 'bufferedchange in a worker');
+  check(Object.getPrototypeOf(changes[0].addedRanges) === Object.getPrototypeOf(sb.buffered),
+        'event ranges share the native TimeRanges prototype');
+  check(source.streaming === true, 'no playhead in a worker: streaming never stops');
 }
 
 // A MediaStream still goes to Chromium's srcObject.
