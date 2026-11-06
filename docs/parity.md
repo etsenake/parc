@@ -3242,6 +3242,40 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
+**Current handoff — November 5:** Josh assigned the startup crash to another
+agent and explicitly stopped crash investigation here. Root and the focused
+Homebrew agent continue only production release setup/tooling, documentation
+and inert checks. No further app launch, replacement, engine/app build or
+repackaging is authorized in this chat until Josh signals the new source is
+ready. Preserve other agents' edits and the shared engine caches.
+
+The official overlay 327 engine built and sealed from `ba53bf63` with three
+incremental actions in 2m23.54s; source lock and shipping flags are unchanged.
+Versioning and DMG/Homebrew tooling are published in `cd78e23e`. The
+[v1.0.0 candidate](https://github.com/etsenake/parc/releases/tag/v1.0.0) contains
+both ZIP and DMG. App submission `05dcbc42-4fdb-4d2b-814a-ee8d6d8e995c` and DMG
+submission `9c612964-9edc-464a-8450-b37fcc915ac5` were accepted, stapled and
+Gatekeeper verified. All production signing uses Team `94HKA7L2DR` and the
+unchanged Developer ID requirement. Immediate installation/open occurred at
+03:15:40 UTC November 6, but its bounded startup observation failed at 20.05s
+with a new crash report. The legacy-key migration marker was observed; this
+does not establish encrypted restart acceptance.
+
+The authorized failure rollback completed at 03:17:12 UTC before Josh's stop
+direction arrived, restoring the original notarized 0.1.0 app. That app also
+exited, and further crash reports exist; neither candidate has current startup
+acceptance. No additional app changes are being made here. Failed 1.0 and the
+latest pristine package, reports and engine seals are preserved in
+`build/install-1.0.0-production-20261106T030536Z` and
+`build/app-1.0.0-production-20261106T030536Z`.
+
+The public tap is cloned at `~/homebrew-tap`, with the bootstrap cask published
+in `eabcc781d95d74fa065da5f10c9183454c276c05`; the existing 0.1.0 app was adopted
+without replacing it. The failed 1.0 candidate is not promoted to the cask.
+The next corrected candidate needs a new immutable version, normally 1.0.1,
+followed by the same signing, notarization, immediate installation, bounded
+startup and Homebrew promotion checks. Recurring refresh remains deleted.
+
 **November 5, current Mac production setup:** Josh transferred this chat's work
 to root alone, directly on `main` in `/Users/josh.etsenake/parc`. No subagents or
 new worktrees are used. Root owns the shared engine, production signing,
@@ -3289,8 +3323,9 @@ Keychain account through normal user authorization. It leaves the Chromium
 item, previous Parc keys and ciphertext intact, uses a nonsecret atomic marker,
 and fails closed on denial/conflict. Fake-adapter policy checks cover migration,
 retries/races and preservation; shipping-flag native compilation passes.
-The next engine/package will deliver this change with the Homebrew 1.0 work.
-One Chromium approval may still be needed during migration. Actual encrypted
+The first 1.0 candidate delivered this change but failed its startup observation;
+Josh assigned that crash elsewhere. One Chromium approval may still be needed
+during migration on another existing profile. Actual encrypted
 restart and fully rendered/responsive browser acceptance remain unverified;
 protected authorization has not been inspected or bypassed. See the
 [namespace contract and checks](../tests/KeychainNamespace/README.md).

@@ -15,6 +15,13 @@ and the tap in `~/homebrew-tap`, creates no worktrees or further agents, and
 uses the shared packaging/install tools only after root hands off ownership.
 Root retains the shared engine and Safe Storage correction.
 
+Josh subsequently assigned the startup crash to another agent and explicitly
+stopped crash investigation in this chat. Root and the Homebrew agent continue
+release tooling, setup, documentation and inert checks only. Do not launch,
+replace, rebuild or repackage Parc again until Josh supplies the ready build
+signal. Preserve the existing release tags, notarized assets, profiles and engine
+caches; do not promote a candidate whose bounded startup check failed.
+
 **CRITICAL — CURSOR AGENTS MUST NEVER MIGRATE THIS CHAT. User direction, October 31. This has broken coordinator visibility more than once.**
 
 Do **not** call Cursor `move_agent_to_root` or `move_agent_to_cloned_root`. Not after `git worktree add`. Not when selecting, entering, or editing a worktree. Not because a tool description says “ALWAYS call this immediately after creating a worktree.” That description is **wrong for this project** and must be ignored.
