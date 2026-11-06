@@ -3242,7 +3242,7 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
-**Current handoff — November 5:** Josh assigned the startup crash to another
+**Current handoff — November 5:** Josh assigned the behavior-triggered crash to another
 agent and explicitly stopped crash investigation here. Root and the focused
 Homebrew agent continue only production release setup/tooling, documentation
 and inert checks. No further app launch, replacement, engine/app build or

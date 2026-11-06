@@ -59,8 +59,10 @@ The atomically published directory contains a standalone `Parc.app` and its prov
 ### Stable versions and Homebrew
 
 `app-version.json` is the single app/helper bundle version and build-number
-source. The first stable release is 1.0.0 (bundle build 1). Prepare each later
-release with `python3 scripts/app_version.py bump 1.0.1`, review the source and
+source. Josh confirmed normal startup of 1.0.0 (bundle build 1); the automated
+observation was interrupted by his deliberate behavior test and remains raw
+evidence, not an automated pass. Wait for Josh's ready candidate before preparing 1.0.1
+(bundle build 2). Then use `python3 scripts/app_version.py bump 1.0.1`, review the source and
 version change, run applicable checks, then commit and push before packaging.
 The command requires a numerically greater three-part version and advances the
 bundle build. Preview packages keep the prepared version and do not update the
@@ -72,9 +74,9 @@ bash scripts/package-app.sh --stable <sealed engine-artifacts.json>
 bash scripts/package-app.sh --stable --from-release [app-<stamp>-<commit> or v<version>]
 ```
 
-Stable mode keeps the same distribution, signing, notarization and checkout
+Versioned candidate mode keeps the same distribution, signing, notarization and checkout
 gates. It publishes `Parc-<version>-arm64.dmg` and a ZIP in the private
-`v<version>` release and refuses an existing tag. The DMG contains the stapled
+`v<version>` pre-release (not latest) and refuses an existing tag. The DMG contains the stapled
 app and an Applications shortcut. It is separately Developer ID signed,
 notarized, stapled and assessed by Gatekeeper; mounting it read-only also checks
 the app's signature, ticket, identity, version and every signed-image hash.
@@ -89,13 +91,22 @@ cleanup only matches `app-*`. Install and open the completed app immediately,
 as required below, then update the existing public tap clone:
 
 ```sh
-python3 scripts/publish-homebrew.py v1.0.0 --tap /absolute/homebrew-tap
+python3 scripts/publish-homebrew.py v1.0.1 \
+  --acceptance /absolute/acceptance.json --tap /absolute/homebrew-tap
 ```
 
-This verifies the actual GitHub tag resolves to the release's exact source
+First use the source-owned `scripts/record-release-acceptance.py` on a fresh
+installed ready candidate; it verifies strict signing before normal open,
+observes at least 60 seconds without exits/new crash reports, and checks every
+image, production Team and stable designated requirement again afterward.
+Alternatively, `--user-confirmed` records Josh's dated explicit acceptance and
+statically verifies the preserved package artifact without current-app access
+or launch; it retains an interrupted observation unchanged and never claims
+an automatic pass. The publisher requires either valid receipt bound to the exact raw archived
+report hash, source commit and version. It verifies the actual GitHub tag resolves to the release's exact source
 commit, both downloaded assets against GitHub's digests, the bundle and report
 versions, the production Team ID `94HKA7L2DR`, app and DMG notarization and every
-signed-image hash before changing the
+signed-image hash before promoting stable/latest and changing the
 cask. Review the tap diff, run its downloader harness, `brew audit --cask
 etsenake/tap/parc` and a real `brew fetch --cask etsenake/tap/parc`, then commit
 and push the tap immediately and compare its local/remote SHA. The updater
@@ -107,9 +118,14 @@ once, then use `brew install --cask etsenake/tap/parc`. Upgrade with `brew updat
 and `brew upgrade --cask etsenake/tap/parc`. The public cask contains a checksum
 and private release URL; its downloader obtains credentials only during fetch.
 No tokens or app assets are made public. Homebrew uninstall preserves the Parc
-profile. The initial 0.1.0 bootstrap cask can adopt the matching existing
+profile. The initial 0.1.0 bootstrap cask can adopt the verified matching existing
 notarized app with `brew install --cask --adopt etsenake/tap/parc` before its
-first stable upgrade.
+first accepted stable upgrade. Actual DMG installation/upgrade validation waits
+for an authorized app operation; promotion of user-confirmed 1.0.0 is authorized
+now. Follow the complete [release runbook](../../docs/homebrew-release.md)
+for fresh installation, recording, immutable retries, local-seal reuse for
+documentation-only engine differences and promotion. No app/build/Keychain
+checks are authorized by this documentation while the current hold applies.
 
 ### Preview builds
 

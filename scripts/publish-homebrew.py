@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Verify a stable Parc release and update its cask in the existing tap clone.
+"""Promote an accepted Parc candidate and update its cask in the existing tap clone.
 
 Does not commit or push: inspect/check the resulting diff, then publish it.
 """
 import argparse
+import datetime
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import plistlib
@@ -19,6 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "etsenake/parc"
 TAP_REPOSITORY = "etsenake/homebrew-tap"
 PRODUCTION_TEAM = "94HKA7L2DR"
+PRODUCTION_DESIGNATED_REQUIREMENT = ('designated => identifier "org.parc.Browser" and anchor apple generic and '
+    'certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and '
+    'certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and '
+    'certificate leaf[subject.OU] = "94HKA7L2DR"')
 _github_environment = None
 spec = importlib.util.spec_from_file_location("parc_release_dmg", Path(__file__).with_name("package-dmg.py"))
 dmg_tool = importlib.util.module_from_spec(spec)
@@ -64,8 +70,8 @@ def verify_release(release, archive):
         raise ValueError("Homebrew accepts stable v<major>.<minor>.<patch> releases only")
     version = tag[1:]
     commit = release["target_commitish"]
-    if release["draft"] or release["prerelease"] or not re.fullmatch(r"[0-9a-f]{40}", commit):
-        raise ValueError("The stable release must be published at an exact source commit")
+    if release["draft"] or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("The versioned candidate must be published at an exact source commit")
     assets = [item for item in release["assets"] if item["name"] == f"Parc-{version}-arm64.zip"]
     if len(assets) != 1:
         raise ValueError("The stable release lacks its uniquely named ARM64 archive")
@@ -78,7 +84,8 @@ def verify_release(release, archive):
     if "sha256:" + actual != digest:
         raise ValueError("Downloaded archive differs from GitHub's digest")
     with zipfile.ZipFile(archive) as bundle:
-        report = json.loads(bundle.read("development/package-report.json"))
+        report_bytes = bundle.read("development/package-report.json")
+        report = json.loads(report_bytes)
         info = plistlib.loads(bundle.read("development/Parc.app/Contents/Info.plist"))
     app_version = report.get("app_version", {})
     notary = report.get("notarization", {})
@@ -101,7 +108,66 @@ def verify_release(release, archive):
             with bundle.open("development/" + relative) as image:
                 if hashlib.file_digest(image, "sha256").hexdigest() != expected:
                     raise ValueError("Archive signed image differs from its notarized report: " + relative)
-    return app_version, actual, commit, report
+    return app_version, actual, commit, report, hashlib.sha256(report_bytes).hexdigest()
+
+
+def require_startup(observation):
+    seconds = observation.get("observed_seconds")
+    if (observation.get("passed") is not True or type(seconds) not in (int, float)
+            or not math.isfinite(seconds) or seconds < 60
+            or observation.get("new_crash_reports") != [] or observation.get("failure") is not None
+            or type(observation.get("main_pid")) is not int or observation["main_pid"] <= 0):
+        raise ValueError("Promotion requires a passed startup observation of at least 60 seconds with no new crash reports")
+
+
+def require_evidence(acceptance):
+    kind = acceptance.get("acceptance_kind")
+    if kind == "automatic":
+        require_startup(acceptance.get("launch_observation", {}))
+        if acceptance.get("status") != "passed":
+            raise ValueError("Automatic startup acceptance must have passed")
+    elif kind == "user-confirmed":
+        confirmation = acceptance.get("user_confirmation", {})
+        try:
+            confirmed_at = datetime.datetime.fromisoformat(confirmation["confirmed_at"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("User-confirmed acceptance requires a dated statement") from error
+        if (acceptance.get("status") != "user-confirmed" or confirmation.get("confirmed_by") != "Josh"
+                or confirmed_at.tzinfo is None or confirmation.get("scope") != "normal-startup"
+                or not isinstance(confirmation.get("statement"), str) or not confirmation["statement"].strip()
+                or acceptance.get("automatic_startup_acceptance_claimed") is not False):
+            raise ValueError("User-confirmed acceptance requires Josh's explicit dated normal-startup statement")
+    else:
+        raise ValueError("Acceptance must explicitly identify automatic or user-confirmed evidence")
+
+
+def verify_acceptance(acceptance, tag, commit, app_version, report_sha):
+    require_evidence(acceptance)
+    manual = acceptance["acceptance_kind"] == "user-confirmed"
+    code_verified = acceptance.get("artifact_code_hashes_verified" if manual else "installed_code_hashes_verified")
+    strict_verified = acceptance.get("artifact_strict_verified" if manual else "prelaunch_strict_verified")
+    if (acceptance.get("schema_version") != 1
+            or acceptance.get("release_tag") != tag or acceptance.get("source_commit") != commit
+            or acceptance.get("app_version") != app_version
+            or acceptance.get("package_report_sha256") != report_sha
+            or acceptance.get("signing_team") != PRODUCTION_TEAM
+            or code_verified is not True or strict_verified is not True
+            or acceptance.get("designated_requirement") != PRODUCTION_DESIGNATED_REQUIREMENT):
+        raise ValueError("Startup acceptance must bind this exact release commit, app report hash, version and production identity")
+
+
+def promote_release(release, acceptance, app_version, report_sha):
+    verify_acceptance(acceptance, release["tag_name"], release["target_commitish"], app_version, report_sha)
+    verify_tag(release["tag_name"], release["target_commitish"])
+    if github("api", f"repos/{REPOSITORY}", "--jq", ".private") != "true":
+        raise ValueError("Parc release assets must remain in the private repository")
+    github("release", "edit", release["tag_name"], "--repo", REPOSITORY,
+           "--prerelease=false", "--latest", "--title", release["name"].replace(" candidate", "", 1))
+    after = json.loads(github("api", f'repos/{REPOSITORY}/releases/tags/{release["tag_name"]}'))
+    if (after["prerelease"] or after["draft"] or after["target_commitish"] != release["target_commitish"]
+            or [(item["id"], item["digest"]) for item in after["assets"]]
+            != [(item["id"], item["digest"]) for item in release["assets"]]):
+        raise ValueError("Release promotion changed immutable provenance or did not complete")
 
 
 def verify_dmg_asset(release, dmg, report, folder):
@@ -149,11 +215,15 @@ end
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("tag", help="published stable tag, for example v1.0.0")
+    parser.add_argument("tag", help="versioned candidate tag, for example v1.0.1")
+    parser.add_argument("--acceptance", required=True, type=Path,
+                        help="passed receipt from scripts/record-release-acceptance.py")
     parser.add_argument("--tap", required=True, type=Path, help="existing etsenake/homebrew-tap clone")
     args = parser.parse_args()
     tap = args.tap.resolve()
     try:
+        acceptance = json.loads(args.acceptance.read_text())
+        require_evidence(acceptance)
         if run("git", "status", "--porcelain", cwd=tap):
             raise ValueError("The tap clone must be clean before updating")
         origin = run("git", "remote", "get-url", "origin", cwd=tap).removesuffix(".git")
@@ -173,7 +243,8 @@ def main():
             archive = Path(temporary) / "Parc.zip"
             github("release", "download", args.tag, "--repo", REPOSITORY,
                 "--pattern", f"Parc-{args.tag.removeprefix('v')}-arm64.zip", "--output", str(archive))
-            app_version, _, commit, report = verify_release(release, archive)
+            app_version, _, commit, report, report_sha = verify_release(release, archive)
+            verify_acceptance(acceptance, args.tag, commit, app_version, report_sha)
             dmg = Path(temporary) / "Parc.dmg"
             github("release", "download", args.tag, "--repo", REPOSITORY,
                 "--pattern", f'Parc-{app_version["version"]}-arm64.dmg', "--output", str(dmg))
@@ -188,7 +259,8 @@ def main():
             if not match or tuple(map(int, version.split("."))) <= tuple(map(int, match[1].split("."))):
                 raise ValueError("The release must advance the tap's current version")
         target.write_text(cask(version, digest))
-        print(f"Updated {target} to {version} from {commit}; verify, commit and push the tap.")
+        promote_release(release, acceptance, app_version, report_sha)
+        print(f"Promoted {args.tag} and updated {target} from {commit}; verify, commit and push the tap.")
     except (OSError, ValueError, KeyError, dmg_tool.Refusal, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, "error: " + str(error) + "\n")
 

@@ -15,7 +15,7 @@ and the tap in `~/homebrew-tap`, creates no worktrees or further agents, and
 uses the shared packaging/install tools only after root hands off ownership.
 Root retains the shared engine and Safe Storage correction.
 
-Josh subsequently assigned the startup crash to another agent and explicitly
+Josh subsequently assigned the behavior-triggered crash to another agent and explicitly
 stopped crash investigation in this chat. Root and the Homebrew agent continue
 release tooling, setup, documentation and inert checks only. Do not launch,
 replace, rebuild or repackage Parc again until Josh supplies the ready build

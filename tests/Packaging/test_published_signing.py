@@ -60,7 +60,9 @@ class PublishedSigningTests(unittest.TestCase):
             if sys.argv[1:3] == ['auth', 'token']: print('fixture-token')
             elif sys.argv[1:3] == ['release', 'list']:
                 releases = [{'tagName': 'v1.0.0', 'name': 'Parc 1.0.0 (engine overlay 316)',
-                             'createdAt': '2026-11-06T00:00:00Z', 'isDraft': False, 'isPrerelease': False}]
+                             'createdAt': '2026-11-06T00:00:00Z', 'isDraft': False, 'isPrerelease': False},
+                            {'tagName': 'v9.0.0', 'name': 'Parc 9.0.0 candidate (engine overlay 316)',
+                             'createdAt': '2026-11-07T00:00:00Z', 'isDraft': False, 'isPrerelease': True}]
                 query = sys.argv[sys.argv.index('--jq') + 1]
                 print(subprocess.check_output(['jq', '-r', query], input=json.dumps(releases), text=True).strip())
             elif sys.argv[1:3] == ['release', 'view']:
@@ -192,8 +194,8 @@ class PublishedSigningTests(unittest.TestCase):
         self.assertIn('v1.0.0', arguments)
         self.assertTrue(any(item.endswith('/Parc-1.0.0-arm64.zip') for item in arguments))
         self.assertTrue(any(item.endswith('/Parc-1.0.0-arm64.dmg') for item in arguments))
-        self.assertIn('--latest', arguments)
-        self.assertNotIn('--prerelease', arguments)
+        self.assertIn('--latest=false', arguments)
+        self.assertIn('--prerelease', arguments)
         self.assertTrue((self.root / 'notarized').exists())
         self.assertTrue((self.root / 'dmg-notarized').exists())
 

@@ -144,7 +144,7 @@ if [ -n "$from_release" ]; then
     wanted="engine overlay $overlay)"
     if [ -n "$local_test" ]; then wanted="engine overlay "; fi
     release_tag="$(gh release list -R "$github_repo" --limit 200 --json tagName,name,createdAt,isDraft,isPrerelease \
-      --jq "[.[] | select(((.tagName | test(\"$tag_pattern\")) or (.tagName | test(\"$stable_tag_pattern\"))) and (.isDraft | not) and (.name | contains(\"$wanted\")))] | sort_by(.createdAt) | reverse | .[0].tagName // empty" </dev/null)"
+      --jq "[.[] | select((((.tagName | test(\"$tag_pattern\")) and .isPrerelease) or ((.tagName | test(\"$stable_tag_pattern\")) and (.isPrerelease | not))) and (.isDraft | not) and (.name | contains(\"$wanted\")))] | sort_by(.createdAt) | reverse | .[0].tagName // empty" </dev/null)"
     if [ -z "$release_tag" ] && [ -n "$local_test" ]; then
       echo "error: no published app package to take an engine from" >&2
       exit 1
@@ -266,8 +266,8 @@ title="Parc app $stamp ($short, engine overlay $overlay)"
 if [ -n "$stable" ]; then
   tag="$stable_tag"
   archive="$run/Parc-$app_version-arm64.zip"
-  release_options=(--latest)
-  title="Parc $app_version (engine overlay $overlay)"
+  release_options=(--prerelease --latest=false)
+  title="Parc $app_version candidate (engine overlay $overlay)"
 fi
 trap 'rm -rf -- "$archive" "$run/engine-release"' EXIT
 ditto -c -k --sequesterRsrc --keepParent "$run/development" "$archive"
