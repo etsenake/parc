@@ -1,0 +1,195 @@
+--- a/chrome/browser/ui/tab_sharing/BUILD.gn
++++ b/chrome/browser/ui/tab_sharing/BUILD.gn
+@@ -1,6 +1,8 @@
+ # Copyright 2025 The Chromium Authors
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
++
++import("//cef/libcef/features/features.gni")
+ 
+ if (!is_android) {
+   source_set("tab_sharing") {
+@@ -22,6 +24,7 @@
+   source_set("impl") {
+     sources = [ "tab_sharing_infobar_delegate.cc" ]
+     deps = [
++      "//cef/libcef/features:buildflags",
+       ":tab_sharing",
+       "//chrome/app:generated_resources",
+       "//chrome/browser/ui:bubble_anchor_util",
+@@ -42,6 +45,9 @@
+       "//ui/strings:ui_strings",
+       "//ui/strings:ui_strings_grit",
+     ]
++    if (is_mac && enable_cef) {
++      deps += [ "//cef/libcef/browser/parc_native:native_tab_sharing_api" ]
++    }
+     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+   }
+ 
+--- a/chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.cc
++++ b/chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.cc
+@@ -3,6 +3,12 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.h"
++#include "build/build_config.h"
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/parc_native/native_tab_sharing_api.h"
++#include "cef/libcef/browser/parc_native/native_page_info.h"
++#endif
+ 
+ #include <string>
+ #include <utility>
+@@ -149,6 +155,12 @@
+     if (!web_contents_) {
+       return;
+     }
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++    if (parc::IsNativeTabSharingPage(web_contents_.get())) {
++      parc::ShowNativePageInfoPermission(web_contents_.get(), ContentSettingsType::CAPTURED_SURFACE_CONTROL);
++      return;
++    }
++#endif
+     ShowPageInfoDialog(web_contents_.get(), base::DoNothing(),
+                        bubble_anchor_util::Anchor::kLocationBar,
+                        ContentSettingsType::CAPTURED_SURFACE_CONTROL);
+@@ -213,12 +225,20 @@
+   CHECK(infobar_manager);
+   CHECK(ui);
+ 
+-  std::unique_ptr<infobars::InfoBar> new_infobar = CreateTabSharingInfoBar(
+-      base::WrapUnique(new TabSharingInfoBarDelegate(
+-          web_contents, role, share_this_tab_instead_button_state,
+-          captured_surface_control_active, ui, capture_type)),
+-      shared_tab_id, capturer_id, shared_tab_name, capturer_name, role,
+-      capture_type, ui->GetUmaLogger().GetWeakPtr());
++  auto delegate = base::WrapUnique(new TabSharingInfoBarDelegate(
++      web_contents, role, share_this_tab_instead_button_state,
++      captured_surface_control_active, ui, capture_type));
++  std::unique_ptr<infobars::InfoBar> new_infobar;
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++  new_infobar = parc::CreateNativeTabSharingInfoBar(
++      web_contents, delegate, shared_tab_id, capturer_id, shared_tab_name,
++      capturer_name, role, capture_type, ui->GetUmaLogger().GetWeakPtr());
++#endif
++  if (!new_infobar) {
++    new_infobar = CreateTabSharingInfoBar(std::move(delegate), shared_tab_id,
++        capturer_id, shared_tab_name, capturer_name, role, capture_type,
++        ui->GetUmaLogger().GetWeakPtr());
++  }
+ 
+   return old_infobar ? infobar_manager->ReplaceInfoBar(old_infobar,
+                                                        std::move(new_infobar))
+--- a/chrome/browser/ui/views/tab_sharing/BUILD.gn
++++ b/chrome/browser/ui/views/tab_sharing/BUILD.gn
+@@ -1,6 +1,8 @@
+ # Copyright 2026 The Chromium Authors
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
++
++import("//cef/libcef/features/features.gni")
+ 
+ import("//build/config/ui.gni")
+ 
+@@ -39,6 +41,7 @@
+   ]
+ 
+   deps = [
++    "//cef/libcef/features:buildflags",
+     "//chrome/app:generated_resources",
+     "//chrome/browser/enterprise",
+     "//chrome/browser/media/webrtc",
+@@ -54,6 +57,10 @@
+     "//ui/base",
+     "//ui/gfx",
+   ]
++
++  if (is_mac && enable_cef) {
++    deps += [ "//cef/libcef/browser/parc_native:native_tab_sharing_api" ]
++  }
+ 
+   if (is_chromeos) {
+     deps += [ "//chrome/browser/chromeos/policy/dlp" ]
+--- a/chrome/browser/ui/views/tab_sharing/tab_sharing_status_message_view.cc
++++ b/chrome/browser/ui/views/tab_sharing/tab_sharing_status_message_view.cc
+@@ -245,6 +245,17 @@
+       uma_logger);
+ }
+ 
++TabSharingStatusMessageView::MessageInfo TabSharingStatusMessageView::DescribeMessage(
++    const EndpointInfo& shared_tab_info,
++    const EndpointInfo& capturer_info,
++    const std::u16string& capturer_name,
++    TabSharingInfoBarDelegate::TabRole role,
++    TabSharingInfoBarDelegate::TabShareType capture_type,
++    bool is_shared_tab_blocked) {
++  return GetMessageInfo(shared_tab_info, capturer_info, capturer_name, role,
++                        capture_type, is_shared_tab_blocked);
++}
++
+ std::u16string TabSharingStatusMessageView::GetMessageText(
+     const EndpointInfo& shared_tab_info,
+     const EndpointInfo& capturer_info,
+--- a/chrome/browser/ui/views/tab_sharing/tab_sharing_status_message_view.h
++++ b/chrome/browser/ui/views/tab_sharing/tab_sharing_status_message_view.h
+@@ -68,6 +68,14 @@
+       base::WeakPtr<ScreensharingControlsHistogramLogger> uma_logger,
+       bool is_shared_tab_blocked = false);
+ 
++  static MessageInfo DescribeMessage(
++      const TabSharingStatusMessageView::EndpointInfo& shared_tab_info,
++      const TabSharingStatusMessageView::EndpointInfo& capturer_info,
++      const std::u16string& capturer_name,
++      TabSharingInfoBarDelegate::TabRole role,
++      TabSharingInfoBarDelegate::TabShareType capture_type,
++      bool is_shared_tab_blocked = false);
++
+   static std::u16string GetMessageText(
+       const TabSharingStatusMessageView::EndpointInfo& shared_tab_info,
+       const TabSharingStatusMessageView::EndpointInfo& capturer_info,
+--- a/chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
++++ b/chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.h"
++#include "build/build_config.h"
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/parc_native/native_tab_sharing_api.h"
++#endif
+ 
+ #include <algorithm>
+ #include <memory>
+@@ -18,7 +23,6 @@
+ #include "base/location.h"
+ #include "base/strings/strcat.h"
+ #include "base/time/time.h"
+-#include "build/build_config.h"
+ #include "chrome/browser/media/webrtc/capture_policy_utils.h"
+ #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
+ #include "chrome/browser/media/webrtc/same_origin_observer.h"
+@@ -70,6 +74,12 @@
+ #endif
+ 
+ namespace {
++Profile* CapturerProfile(content::GlobalRenderFrameHostId capturer) {
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++  if (auto* profile = parc::NativeTabSharingProfile(capturer)) return profile;
++#endif
++  return ProfileManager::GetLastUsedProfileAllowedByPolicy();
++}
+ 
+ using TabRole = ::TabSharingInfoBarDelegate::TabRole;
+ using content::GlobalRenderFrameHostId;
+@@ -188,7 +198,7 @@
+     TabSharingInfoBarDelegate::TabShareType capture_type,
+     bool captured_surface_control_active)
+     : capture_session_id_(next_capture_session_id_++),
+-      profile_(ProfileManager::GetLastUsedProfileAllowedByPolicy()),
++      profile_(CapturerProfile(capturer)),
+       capturer_(capturer),
+       capturer_origin_(GetOriginFromId(capturer)),
+       can_focus_capturer_(GetOriginFromId(capturer).scheme() !=

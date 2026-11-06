@@ -1,0 +1,51 @@
+# Map this directory to //cef/tests/parc_native_video_pip. The two application
+# presenter files are mapped here from Sources/ParcEngine for the real-controller
+# executable; the production app continues to compile them into its own binary.
+assert(is_mac)
+
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [
+    "VideoPiPWindow.h",
+    "VideoPiPWindow.m",
+    "controller_browsertest.mm",
+  ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework", "QuartzCore.framework" ]
+  deps = [
+    "//base",
+    "//cef:libcef_static",
+    "//cef/libcef/browser/parc_native:native_video_pip_api",
+    "//chrome/browser:core",
+    "//chrome/browser:chrome_content_browser_client",
+    "//chrome/browser/picture_in_picture",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test:test_support",
+    "//content/public/browser",
+    "//content/public/common",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "occlusion_unittest.mm" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef:libcef_static",
+    "//chrome/browser/picture_in_picture",
+    "//chrome/browser/picture_in_picture:impl",
+    "//chrome/test/views",
+    "//chrome/test:test_support",
+    "//testing/gtest",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//ui/views",
+  ]
+}

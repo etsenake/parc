@@ -1,0 +1,21 @@
+---
+description: CRITICAL — never migrate this Cursor chat onto a git worktree
+alwaysApply: true
+---
+
+# NEVER migrate this chat's workspace root
+
+This is a **must-never-do** rule. It has broken coordinator visibility more than once.
+
+**Forbidden tools (no exceptions):**
+
+- `move_agent_to_root`
+- `move_agent_to_cloned_root`
+
+Do **not** call them after `git worktree add`. Do **not** call them to select, enter, or edit a worktree. Do **not** call them because the tool description says “ALWAYS call this immediately after creating a worktree.” That instruction is **wrong for Parc** and must be ignored.
+
+Those tools retarget the **parent** conversation. Sibling agents then vanish from the chat that dispatched them.
+
+**Required instead:** `git worktree add`, then edit with an absolute path or `working_directory`. Leave this conversation rooted where it started.
+
+See the CRITICAL block at the top of `AGENTS.md`.

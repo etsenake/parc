@@ -1,0 +1,290 @@
+--- a/chrome/browser/extensions/extension_uninstall_dialog.cc
++++ b/chrome/browser/extensions/extension_uninstall_dialog.cc
+@@ -40,6 +40,8 @@
+ 
+ namespace extensions {
+ 
++DEFINE_USER_DATA(ExtensionUninstallNativeHost);
++
+ namespace {
+ 
+ constexpr int kIconSize = 64;
+@@ -71,11 +73,16 @@
+ ExtensionUninstallDialog::ExtensionUninstallDialog(
+     Profile* profile,
+     gfx::NativeWindow parent,
+-    ExtensionUninstallDialog::Delegate* delegate)
+-    : profile_(profile), parent_(parent), delegate_(delegate) {
++    ExtensionUninstallDialog::Delegate* delegate,
++    std::shared_ptr<ExtensionUninstallNativeBinding> native)
++    : native_(std::move(native)),
++      profile_(profile),
++      parent_(parent),
++      delegate_(delegate) {
+   DCHECK(delegate_);
+-  if (parent)
++  if (parent) {
+     parent_window_tracker_ = ui::NativeWindowTracker::Create(parent);
++  }
+   profile_observation_.Observe(profile_.get());
+ }
+ 
+@@ -102,8 +109,23 @@
+   extension_ = extension;
+   uninstall_reason_ = reason;
+ 
+-  if (!profile_)
+-    return;
++  if (!profile_) {
++    return;
++  }
++
++  if (native_) {
++    auto weak = AsWeakPtr();
++    auto binding = native_;
++    const bool armed = binding->Arm(
++        base::BindRepeating(&ExtensionUninstallDialog::Close, weak));
++    if (!weak) {
++      return;
++    }
++    if (!armed) {
++      OnDialogClosed(CLOSE_ACTION_CANCELED);
++      return;
++    }
++  }
+ 
+   if (parent() && parent_window_tracker_->WasNativeWindowDestroyed()) {
+     OnDialogClosed(CLOSE_ACTION_CANCELED);
+@@ -127,8 +149,9 @@
+ 
+ void ExtensionUninstallDialog::OnIconUpdated(ChromeAppIcon* icon) {
+   // Ignore initial update.
+-  if (!icon_ || dialog_shown_)
+-    return;
++  if (!icon_ || dialog_shown_ || (native_ && completion_reported_)) {
++    return;
++  }
+   DCHECK_EQ(icon, icon_.get());
+ 
+   dialog_shown_ = true;
+@@ -183,6 +206,14 @@
+ }
+ 
+ void ExtensionUninstallDialog::OnDialogClosed(CloseAction action) {
++  // Parent/Profile/extension invalidation can race the same native terminal
++  // callback. Commit once before any removal/observer/delegate delivery.
++  if (native_) {
++    if (completion_reported_) {
++      return;
++    }
++    completion_reported_ = true;
++  }
+   // Ensure the dialog isn't notified of an uninstallation after the dialog was
+   // closed.
+   registry_observation_.Reset();
+@@ -226,6 +257,10 @@
+   const Extension* current_extension =
+       ExtensionRegistry::Get(profile_)->GetExtensionById(
+           extension_->id(), ExtensionRegistry::EVERYTHING);
++  if (native_ && current_extension != extension_.get()) {
++    *error = kExtensionRemovedError;
++    return false;
++  }
+   if (current_extension) {
+     if (current_extension->was_installed_by_default()) {
+       base::RecordAction(base::UserMetricsAction(
+--- a/chrome/browser/extensions/extension_uninstall_dialog.h
++++ b/chrome/browser/extensions/extension_uninstall_dialog.h
+@@ -14,6 +14,7 @@
+ #include "base/threading/thread_checker.h"
+ #include "chrome/browser/extensions/chrome_app_icon.h"
+ #include "chrome/browser/extensions/chrome_app_icon_delegate.h"
++#include "chrome/browser/extensions/extension_uninstall_native_host.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_observer.h"
+ #include "extensions/browser/extension_registry.h"
+@@ -66,8 +67,11 @@
+ 
+   // Creates the implementation of `ExtensionUninstallDialog`. The dialog
+   // will be modal to `parent`, or a non-modal dialog if `parent` is NULL.
+-  static std::unique_ptr<ExtensionUninstallDialog>
+-  Create(Profile* profile, gfx::NativeWindow parent, Delegate* delegate);
++  static std::unique_ptr<ExtensionUninstallDialog> Create(
++      Profile* profile,
++      gfx::NativeWindow parent,
++      Delegate* delegate,
++      std::shared_ptr<ExtensionUninstallNativeBinding> native = {});
+ 
+   ExtensionUninstallDialog(const ExtensionUninstallDialog&) = delete;
+   ExtensionUninstallDialog& operator=(const ExtensionUninstallDialog&) = delete;
+@@ -105,14 +109,21 @@
+ 
+  protected:
+   // Constructor used by the derived classes.
+-  ExtensionUninstallDialog(Profile* profile,
+-                           gfx::NativeWindow parent,
+-                           Delegate* delegate);
++  ExtensionUninstallDialog(
++      Profile* profile,
++      gfx::NativeWindow parent,
++      Delegate* delegate,
++      std::shared_ptr<ExtensionUninstallNativeBinding> native = {});
++
++  std::shared_ptr<ExtensionUninstallNativeBinding> native_presentation() const {
++    return native_;
++  }
+ 
+   // Accessors for members.
+   const Extension* extension() const { return extension_.get(); }
+   const Extension* triggering_extension() const {
+-      return triggering_extension_.get(); }
++    return triggering_extension_.get();
++  }
+   const gfx::ImageSkia& icon() const { return icon_->image_skia(); }
+   gfx::NativeWindow parent() { return parent_; }
+ 
+@@ -143,6 +154,9 @@
+   // Forcefully closes the dialog view.
+   virtual void Close() = 0;
+ 
++  std::shared_ptr<ExtensionUninstallNativeBinding> native_;
++  bool completion_reported_ = false;
++
+   // Resets to nullptr when the Profile is deleted.
+   raw_ptr<Profile> profile_;
+ 
+--- a/chrome/browser/ui/extensions/extension_uninstall_dialog_impl.cc
++++ b/chrome/browser/ui/extensions/extension_uninstall_dialog_impl.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <memory>
+ #include <string>
++#include <utility>
+ 
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+@@ -31,7 +32,8 @@
+   ExtensionUninstallDialogImpl(
+       Profile* profile,
+       gfx::NativeWindow parent,
+-      extensions::ExtensionUninstallDialog::Delegate* delegate);
++      extensions::ExtensionUninstallDialog::Delegate* delegate,
++      std::shared_ptr<extensions::ExtensionUninstallNativeBinding> native);
+   ExtensionUninstallDialogImpl(const ExtensionUninstallDialogImpl&) = delete;
+   ExtensionUninstallDialogImpl& operator=(const ExtensionUninstallDialogImpl&) =
+       delete;
+@@ -60,14 +62,19 @@
+ ExtensionUninstallDialogImpl::ExtensionUninstallDialogImpl(
+     Profile* profile,
+     gfx::NativeWindow parent,
+-    extensions::ExtensionUninstallDialog::Delegate* delegate)
+-    : extensions::ExtensionUninstallDialog(profile, parent, delegate) {}
++    extensions::ExtensionUninstallDialog::Delegate* delegate,
++    std::shared_ptr<extensions::ExtensionUninstallNativeBinding> native)
++    : extensions::ExtensionUninstallDialog(profile,
++                                           parent,
++                                           delegate,
++                                           std::move(native)) {}
+ 
+ ExtensionUninstallDialogImpl::~ExtensionUninstallDialogImpl() {
+-  if (dialog_model_) {
+-    dialog_model_->host()->Close();
++  // Clear before host teardown can reenter the closing callback.
++  auto model = std::exchange(dialog_model_, nullptr);
++  if (model) {
++    model->host()->Close();
+   }
+-  DCHECK(!dialog_model_);
+ }
+ 
+ void ExtensionUninstallDialogImpl::Show() {
+@@ -124,10 +131,22 @@
+   std::unique_ptr<ui::DialogModel> dialog_model = dialog_builder.Build();
+   dialog_model_ = dialog_model.get();
+ 
++  if (auto binding = native_presentation()) {
++    binding->Show(std::move(dialog_model));
++    return;
++  }
+   ShowDialog(parent(), extension()->id(), std::move(dialog_model));
+ }
+ 
+ void ExtensionUninstallDialogImpl::Close() {
++  if (auto binding = native_presentation()) {
++    if (dialog_model_) {
++      binding->Close();
++    } else {
++      OnDialogClosed(CLOSE_ACTION_CANCELED);
++    }
++    return;
++  }
+   DCHECK(dialog_model_);
+   dialog_model_->host()->Close();
+ }
+@@ -160,9 +179,11 @@
+ 
+ // static
+ std::unique_ptr<extensions::ExtensionUninstallDialog>
+-extensions::ExtensionUninstallDialog::Create(Profile* profile,
+-                                             gfx::NativeWindow parent,
+-                                             Delegate* delegate) {
+-  return std::make_unique<ExtensionUninstallDialogImpl>(profile, parent,
+-                                                        delegate);
++extensions::ExtensionUninstallDialog::Create(
++    Profile* profile,
++    gfx::NativeWindow parent,
++    Delegate* delegate,
++    std::shared_ptr<ExtensionUninstallNativeBinding> native) {
++  return std::make_unique<ExtensionUninstallDialogImpl>(
++      profile, parent, delegate, std::move(native));
+ }
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -6,6 +6,7 @@
+ import("//build/config/features.gni")
+ import("//build/config/ozone.gni")
+ import("//build/config/ui.gni")
++import("//cef/libcef/features/features.gni")
+ import("//chrome/common/features.gni")
+ import("//components/enterprise/buildflags/buildflags.gni")
+ import("//components/guest_view/buildflags/buildflags.gni")
+@@ -298,6 +299,7 @@
+     "extension_garbage_collector_factory.h",
+     "extension_install_error_menu_item_id_provider.cc",
+     "extension_install_error_menu_item_id_provider.h",
++    "extension_install_native_host.h",
+     "extension_install_prompt.cc",
+     "extension_install_prompt.h",
+     "extension_install_prompt_show_params.cc",
+@@ -328,6 +330,7 @@
+     "extension_ui_util.h",
+     "extension_uninstall_dialog.cc",
+     "extension_uninstall_dialog.h",
++    "extension_uninstall_native_host.h",
+     "extension_url_overrides.cc",
+     "extension_url_overrides.h",
+     "extension_url_overrides_registrar.cc",
+@@ -641,12 +644,12 @@
+     "//storage/browser",
+     "//third_party/zlib/google:zip",
+     "//ui/base/accelerators/global_accelerator_listener",
+-    "//ui/base/unowned_user_data",
+     "//ui/menus",
+     "//ui/native_window_tracker",
+     "//ui/shell_dialogs",
+   ]
+   public_deps = [
++    "//ui/base/unowned_user_data",
+     "//chrome/browser/extensions/api/messaging",
+     "//chrome/browser/media/webrtc",
+     "//chrome/browser/supervised_user",
+@@ -665,6 +668,9 @@
+ 
+   if (is_mac) {
+     deps += [ "//chrome/browser/mac" ]
++    if (enable_cef) {
++      deps += [ "//cef/libcef/browser/parc_native:native_window_state_api" ]
++    }
+   }
+   if (enable_spellcheck) {
+     deps += [ "//chrome/browser/spellchecker" ]

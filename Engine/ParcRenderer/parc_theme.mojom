@@ -1,0 +1,14 @@
+// Copyright 2026 Parc contributors.
+module parc.mojom;
+
+import "mojo/public/mojom/base/unguessable_token.mojom";
+import "third_party/blink/public/mojom/tokens/tokens.mojom";
+
+// Browser-owned theme publication on the original frame's associated channel.
+// This interface does not execute script or expose a website-origin endpoint.
+interface WebsiteThemeAgent {
+  SetTheme(blink.mojom.DocumentToken document,
+           mojo_base.mojom.UnguessableToken owner, string stylesheet);
+  RemoveTheme(blink.mojom.DocumentToken document,
+              mojo_base.mojom.UnguessableToken owner);
+};

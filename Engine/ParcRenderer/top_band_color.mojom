@@ -1,0 +1,20 @@
+// Copyright 2026 Parc contributors.
+module parc.mojom;
+
+//
+//
+// renderer's agent on the original frame's associated channel and passes its
+// observer; nothing here runs script or reaches a website-origin endpoint.
+interface TopBandColorObserver {
+  // `has_color` false: the renderer found no colour. `sample_frame`: the
+  // colour comes from the composited frame's top band under
+  // `frame_sample_id`. `reuse_frame_sample`: show the last frame sample
+  // instead of `color`. `crossfade`: animate the change.
+  DidSampleTopBandColor(uint32 color, bool has_color, bool sample_frame,
+                        int64 frame_sample_id, bool reuse_frame_sample,
+                        bool crossfade);
+};
+
+interface TopBandColorAgent {
+  SetObserver(pending_associated_remote<TopBandColorObserver> observer);
+};

@@ -1,0 +1,65 @@
+--- a/content/browser/renderer_host/page_lifecycle_state_manager.h
++++ b/content/browser/renderer_host/page_lifecycle_state_manager.h
+@@ -6,6 +6,7 @@
+ #define CONTENT_BROWSER_RENDERER_HOST_PAGE_LIFECYCLE_STATE_MANAGER_H_
+ 
+ #include "base/functional/callback_forward.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/time/time.h"
+@@ -41,6 +42,11 @@
+   ~PageLifecycleStateManager();
+ 
+   void SetIsFrozen(bool frozen);
++
++  // Keeps this original page runnable for an owned native request. Explicit
++  // freeze requests continue to be recorded and take effect on last release.
++  // BFCache freezing is never suppressed. Tokens are harmless after destruction.
++  base::ScopedClosureRunner AcquireParcUnfreezingLease();
+   void SetFrameTreeVisibility(
+       blink::mojom::PageVisibilityState visibility_state);
+   void SetIsInBackForwardCache(
+@@ -90,6 +96,9 @@
+   void SetDelegateForTesting(TestDelegate* test_delegate_);
+ 
+  private:
++  void ReleaseParcUnfreezingLease();
++  size_t parc_unfreezing_lease_count_ = 0;
++
+   // Send mojo message to renderer if the effective (page) lifecycle state has
+   // changed.
+   void SendUpdatesToRendererIfNeeded(
+--- a/content/browser/renderer_host/page_lifecycle_state_manager.cc
++++ b/content/browser/renderer_host/page_lifecycle_state_manager.cc
+@@ -72,6 +72,20 @@
+ 
+   SendUpdatesToRendererIfNeeded(
+       /*page_restore_params=*/nullptr, base::NullCallback());
++}
++
++base::ScopedClosureRunner PageLifecycleStateManager::AcquireParcUnfreezingLease() {
++  ++parc_unfreezing_lease_count_;
++  SendUpdatesToRendererIfNeeded(nullptr, base::NullCallback());
++  return base::ScopedClosureRunner(base::BindOnce(
++      &PageLifecycleStateManager::ReleaseParcUnfreezingLease,
++      weak_ptr_factory_.GetWeakPtr()));
++}
++
++void PageLifecycleStateManager::ReleaseParcUnfreezingLease() {
++  CHECK_GT(parc_unfreezing_lease_count_, 0u);
++  --parc_unfreezing_lease_count_;
++  SendUpdatesToRendererIfNeeded(nullptr, base::NullCallback());
+ }
+ 
+ void PageLifecycleStateManager::SetFrameTreeVisibility(
+@@ -231,7 +245,8 @@
+ PageLifecycleStateManager::CalculatePageLifecycleState() {
+   auto state = blink::mojom::PageLifecycleState::New();
+   state->is_in_back_forward_cache = IsInBackForwardCache();
+-  state->is_frozen = IsInBackForwardCache() || frozen_explicitly_;
++  state->is_frozen = IsInBackForwardCache() ||
++                     (frozen_explicitly_ && parc_unfreezing_lease_count_ == 0);
+   state->pagehide_dispatch = pagehide_dispatch_;
+   // If a page is stored in the back-forward cache, or we have already
+   // dispatched/are dispatching pagehide for the page, it should be treated as

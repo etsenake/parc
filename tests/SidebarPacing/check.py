@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""⌘S frame pacing: the production SidebarMotionController, SidebarTransition,
+SidebarChromeFrames and ThemeRendererView in an off-screen window that is never
+made key, laid out like BrowserWindowController's; no browser, input or
+preferences. Parc's budget: each display frame of a hide, reveal, floating
+reveal, floating dismissal and reversal leaves the main thread idle in every
+view but the blur, and while docking the behind-window material, which AppKit
+resizes every frame of floating ↔ locked. Negative controls rebuild the harness without each fix and expect it
+to fail."""
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+root = Path(__file__).resolve().parents[2]
+app = root / "Sources/ParcApp"
+motion = (app / "SidebarMotionController.swift").read_text()
+controller = (app / "BrowserWindowController.swift").read_text()
+# The harness drives the same three passes, participants and helpers as
+# BrowserWindowController (main.swift's Window mirrors these lines).
+for use in ("let transition = SidebarTransition(from: previous, to: presentation)",
+            "sidebarFloatingSurface = transition.keepsFloatingSurface",
+            "sidebarRevealsAnchored = transition.revealsAnchored\n"
+            "            sidebarChromePass = .preparation\n"
+            "            layoutChrome()\n"
+            "            sidebarContainer.preparesFloatingDock = transition.docksFloatingSurface\n"
+            "            sidebarChromePass = .geometry\n"
+            "            sidebarMotion.animate(layoutRoot: rootView, views: [sidebarContainer, pageHost, pageShadow, findHost, loadingIndicator],\n"
+            "                                  style: transition.style, flushesPreviousLayout: transition.flushesPreparation) {\n"
+            "                sidebarPresentation = presentation\n"
+            "                layoutChrome()",
+            "SidebarMotionController.pinSurface(of: sidebarContainer, except: sidebar)",
+            "rootView.onLayout = { [weak self] in self?.layoutChrome() }",
+            "        let frames = chromeFrames(sidebarWidth: sidebarLayoutWidth, in: bounds)\n"
+            "        sidebarContainer.frame = frames.sidebar\n"
+            "        sidebar.frame = sidebarContainer.bounds\n",
+            # The harness has no Library, side panel or margin handle; the
+            # geometry pass's other frames are these.
+            "        pageHost.frame = frames.pageHost\n"
+            "        extensionSidePanel.isHidden = !frames.showsSidePanel\n"
+            "        extensionSidePanel.frame = frames.sidePanel\n"
+            "        pageShadow.place(around: frames.pageHost)\n"
+            "        loadingIndicator.frame = PageLoadingIndicatorHost.frame(pageHost: frames.pageHost)\n"
+            "        splitMarginHandle.frame = splitMarginFrame(frames)\n"
+            "        pageHost.needsLayout = true\n"
+            "        pageHost.layoutSubtreeIfNeeded()\n",
+            "        if sidebarFloatingSurface && sidebarPresentation == .locked { sidebarContainer.docksFloatingSurface = true }\n",
+            "        sidebarContainer.floatingCornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : nil\n"
+            "        // A full pass while the dock slides keeps what the dock faded.\n"
+            "        sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked\n"
+            "        if fullPass { sidebarContainer.preparesFloatingDock = false }\n",
+            "        pageHost.frame = frames.pageHost\n"
+            "        pageShadow.place(around: frames.pageHost)\n"
+            "        refreshPageShadow()\n",
+            "rootView.addSubview(pageShadow)\n        rootView.addSubview(pageHost)\n"):
+    assert use in controller, f"BrowserWindowController no longer runs the passes tests/SidebarPacing measures: {use}"
+assert controller.count("sidebarContainer.frame = frames.sidebar") == 2, "both chrome passes place the sidebar by SidebarChromeFrames"
+# The hidden strips the harness gives each pane are drawing views in production.
+for source, view in (("DeveloperMode.swift", "DeveloperToolbarView"), ("BrowserToolbar.swift", "BrowserToolbarView"),
+                     ("PageFailureView.swift", "PageFailureView")):
+    body = re.search(rf"^(?:@MainActor )?final class {view}\b.*?(?=^(?:@MainActor |private |fileprivate )?(?:final )?(?:class|struct|enum|extension) )",
+                     (app / source).read_text() + "\nclass End", re.S | re.M)
+    assert body and "override func draw(_ dirtyRect: NSRect)" in body.group(0), f"{view} no longer draws; the harness's hidden strips stand for it"
+for use in ("developerToolbar.isHidden = true; addSubview(developerToolbar)", "browserToolbar.isHidden = true; addSubview(browserToolbar)",
+            "browserToolbar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)",
+            "developerToolbar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: developerHeight)",
+            "            self.error.frame = self.content.bounds\n"):
+    assert use in controller, f"BrowserPane no longer lays its hidden views out as the harness does: {use}"
+hold = "        for view in hidden { view.layerContentsRedrawPolicy = .beforeViewResize }\n"
+pin = "            pinDrawnContent(surface, to: .scaleAxesIndependently)\n"
+assert hold in motion and pin in motion, "SidebarMotionController no longer holds hidden drawing views or pins the floating surface"
+# An empty window shows SplitPanePlaceholder, a layer-only view main.swift's EmptyContent stands for.
+placeholder = re.search(r"^final class SplitPanePlaceholder\b.*?^}", (app / "SplitPaneMenu.swift").read_text(), re.S | re.M)
+assert placeholder and "override var wantsUpdateLayer: Bool { true }" in placeholder.group(0) \
+    and "override func draw(" not in placeholder.group(0) and "addSubview(" not in placeholder.group(0), \
+    "SplitPanePlaceholder no longer draws only through its layer; the harness's EmptyContent stands for it"
+assert "let empty = SplitPanePlaceholder(frame: .zero)" in controller, "a window with no tab no longer shows the empty content"
+
+def build(directory, name, motion_source):
+    source = Path(directory) / f"{name}-SidebarMotionController.swift"
+    source.write_text(motion_source)
+    executable = Path(directory) / name
+    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
+                    str(root / "Sources/ParcCore/SpaceTheme.swift"), str(app / "ThemeRenderer.swift"), str(source),
+                    str(app / "SidebarChromeLayout.swift"), str(app / "WindowStandardButtons.swift"),
+                    str(app / "ReloadControl.swift"), str(app / "PageLoadingIndicator.swift"), str(app / "PageCardShadow.swift"),
+                    str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
+    return executable
+
+with tempfile.TemporaryDirectory(prefix="parc-sidebar-pacing-") as directory:
+    # An unbundled executable's Bundle.main.resourceURL is its own directory,
+    # so the floating shadow draws its real artwork.
+    shutil.copytree(root / "Resources/FloatingSidebar", Path(directory) / "FloatingSidebar")
+    subprocess.run([str(build(directory, "pacing", motion))], check=True)
+    # Without each fix the production scenarios exceed the per-frame budget.
+    controls = {"hidden views resized every frame": (motion.replace(hold, ""), "⌘S hide, web page: per-frame"),
+                "theme canvas rendered every frame": (motion.replace(pin, "            _ = surface\n"),
+                                                         "⌘S locks a floating sidebar: per-frame")}
+    for name, (source, failure) in controls.items():
+        result = subprocess.run([str(build(directory, name.replace(" ", "-"), source))], capture_output=True, text=True)
+        assert result.returncode != 0 and failure in result.stdout, f"negative control did not fail: {name}\n{result.stdout[-2000:]}"
+        print(f"SidebarPacing negative control fails as expected: {name}")

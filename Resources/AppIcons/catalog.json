@@ -1,0 +1,15 @@
+{
+  "default": "Original",
+  "variants": [
+    "Original",
+    "Candy",
+    "Colorful",
+    "FlutedGlass",
+    "Hologram",
+    "Neon",
+    "Schoolbook",
+    "EarlyBirds",
+    "Canary",
+    "Dev"
+  ]
+}

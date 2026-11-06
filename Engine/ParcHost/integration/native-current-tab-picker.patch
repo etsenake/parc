@@ -1,0 +1,44 @@
+--- a/chrome/browser/ui/views/desktop_capture/share_this_tab_dialog_views.cc
++++ b/chrome/browser/ui/views/desktop_capture/share_this_tab_dialog_views.cc
+@@ -113,6 +113,7 @@
+     : web_contents_(params.web_contents->GetWeakPtr()),
+       app_name_(params.app_name),
+       parent_(parent),
++      on_picker_destroying_(params.on_picker_destroying),
+       auto_select_tab_(
+           base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+               switches::kAutoSelectTabCaptureSourceByTitle)),
+@@ -237,7 +238,9 @@
+   SetDefaultButton(static_cast<int>(ui::mojom::DialogButton::kNone));
+ }
+-
++
+-ShareThisTabDialogView::~ShareThisTabDialogView() = default;
++ShareThisTabDialogView::~ShareThisTabDialogView() {
++  if (on_picker_destroying_) std::move(on_picker_destroying_).Run();
++}
+-
++
+ void ShareThisTabDialogView::RecordUmaDismissal() const {
+   RecordUma(GDMPreferCurrentTabResult::kDialogDismissed, dialog_open_time_);
+@@ -458,6 +461,7 @@
+     dialog_->RecordUmaDismissal();
+     dialog_->DetachParent();
+     dialog_->GetWidget()->Close();
++    DesktopMediaPickerManager::Get()->OnHideDialog();
+   }
+ }
+-
++
+--- a/chrome/browser/ui/views/desktop_capture/share_this_tab_dialog_views.h
++++ b/chrome/browser/ui/views/desktop_capture/share_this_tab_dialog_views.h
+@@ -72,6 +72,7 @@
+   const std::u16string app_name_;
+-
++
+   raw_ptr<ShareThisTabMediaPicker> parent_;
++  base::OnceClosure on_picker_destroying_;
+-
++
+   // Child view displaying a preview, icon and title for the tab being shared,
+   // or a throbber while the dialog is not yet activated.

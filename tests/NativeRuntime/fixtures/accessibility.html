@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Parc native accessibility regression</title>
+<style>body { font: 18px system-ui; margin: 40px; } label, p { display: block; margin: 20px 0; }</style>
+<h1>Native accessibility regression</h1>
+<p>Use the native accessibility tree to activate and edit these real HTML controls.</p>
+<button id="increment">Increment</button>
+<p role="status" aria-live="polite">Count: <span id="count">0</span></p>
+<label><input id="checkbox" type="checkbox"> Preserve this checked state</label>
+<label>Editable text <input id="text" value="Original text"></label>
+<p role="status" aria-live="polite" id="result">Unchecked; Original text</p>
+<script>
+let count = 0;
+const checkbox = document.querySelector('#checkbox');
+const text = document.querySelector('#text');
+document.querySelector('#increment').addEventListener('click', () => {
+  document.querySelector('#count').textContent = String(++count);
+});
+function report() {
+  document.querySelector('#result').textContent =
+      (checkbox.checked ? 'Checked' : 'Unchecked') + '; ' + text.value;
+}
+checkbox.addEventListener('change', report);
+text.addEventListener('input', report);
+</script>
+</html>

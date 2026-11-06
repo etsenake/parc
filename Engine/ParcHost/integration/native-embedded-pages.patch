@@ -1,0 +1,131 @@
+--- a/components/sessions/content/session_tab_helper.h
++++ b/components/sessions/content/session_tab_helper.h
+@@ -33,6 +33,12 @@
+ 
+   // Returns the identifier used by session restore for this tab.
+   SessionID session_id() const { return session_id_; }
++
++  // Auxiliary native content keeps its real tab/window identity for security,
++  // but is owned by an Easel object rather than the browser restore model.
++  // Set before its first requested navigation; never cleared during its life.
++  void OmitFromSessionRestore() { omit_from_session_restore_ = true; }
++  bool omit_from_session_restore() const { return omit_from_session_restore_; }
+ 
+   // Identifier of the window the tab is in.
+   void SetWindowID(SessionID id);
+@@ -79,6 +85,7 @@
+   WindowIdChangedCallbackList window_id_changed_callbacks_;
+ 
+   DelegateLookup delegate_lookup_;
++  bool omit_from_session_restore_ = false;
+ 
+   // Unique identifier of the tab for session restore. This id is only unique
+   // within the current session, and is not guaranteed to be unique across
+--- a/components/sessions/content/session_tab_helper.cc
++++ b/components/sessions/content/session_tab_helper.cc
+@@ -113,7 +113,8 @@
+ }
+ 
+ SessionTabHelperDelegate* SessionTabHelper::GetDelegate() {
+-  return delegate_lookup_ ? delegate_lookup_.Run(web_contents()) : nullptr;
++  return !omit_from_session_restore_ && delegate_lookup_
++             ? delegate_lookup_.Run(web_contents()) : nullptr;
+ }
+ 
+ WEB_CONTENTS_USER_DATA_KEY_IMPL(SessionTabHelper);
+--- a/components/sessions/core/live_tab.h
++++ b/components/sessions/core/live_tab.h
+@@ -25,6 +25,11 @@
+   // Returns the unique SessionID of the tab.
+   virtual SessionID GetSessionID() const = 0;
+ 
++  // Auxiliary content must not become an ordinary restored tab, including
++  // when its containing window/group closes. Ordinary implementations retain
++  // their original default behavior.
++  virtual bool ShouldTrackForRestore() const { return true; }
++
+   // Methods that return information about the navigation state of the tab.
+   virtual bool IsInitialBlankNavigation() = 0;
+   virtual int GetCurrentEntryIndex() = 0;
+--- a/components/sessions/content/content_live_tab.h
++++ b/components/sessions/content/content_live_tab.h
+@@ -35,6 +35,7 @@
+ 
+   // LiveTab:
+   SessionID GetSessionID() const override;
++  bool ShouldTrackForRestore() const override;
+   bool IsInitialBlankNavigation() override;
+   int GetCurrentEntryIndex() override;
+   int GetPendingEntryIndex() override;
+--- a/components/sessions/content/content_live_tab.cc
++++ b/components/sessions/content/content_live_tab.cc
+@@ -25,6 +25,11 @@
+       sessions::SessionTabHelper::FromWebContents(&GetWebContents());
+ 
+   return helper ? helper->session_id() : SessionID::InvalidValue();
++}
++
++bool ContentLiveTab::ShouldTrackForRestore() const {
++  const auto* helper = SessionTabHelper::FromWebContents(&GetWebContents());
++  return !helper || !helper->omit_from_session_restore();
+ }
+ 
+ bool ContentLiveTab::IsInitialBlankNavigation() {
+--- a/components/sessions/core/tab_restore_service_helper.cc
++++ b/components/sessions/core/tab_restore_service_helper.cc
+@@ -257,7 +257,7 @@
+ std::optional<SessionID> TabRestoreServiceHelper::CreateHistoricalTab(
+     LiveTab* live_tab,
+     int index) {
+-  if (restoring_) {
++  if (restoring_ || !live_tab->ShouldTrackForRestore()) {
+     return std::nullopt;
+   }
+ 
+@@ -322,6 +322,10 @@
+   window->extra_data = context->GetExtraDataForWindow();
+ 
+   for (int tab_index = 0; tab_index < context->GetTabCount(); ++tab_index) {
++    if (!context->GetLiveTabAt(tab_index)->ShouldTrackForRestore()) {
++      if (tab_index < context->GetSelectedIndex()) --window->selected_tab_index;
++      continue;
++    }
+     auto tab = std::make_unique<Tab>();
+     PopulateTab(tab.get(), tab_index, context,
+                 context->GetLiveTabAt(tab_index));
+@@ -480,6 +484,7 @@
+   }
+ 
+   for (const auto& split_tab : split_tabs) {
++    if (!split_tab.second->ShouldTrackForRestore()) return nullptr;
+     auto tab = std::make_unique<Tab>();
+     PopulateTab(tab.get(), split_tab.first, context, split_tab.second);
+     split->tabs.push_back(std::move(tab));
+@@ -1469,6 +1474,7 @@
+                                           LiveTabContext* context,
+                                           LiveTab* live_tab) {
+   tab->current_navigation_index = 0;
++  if (!live_tab->ShouldTrackForRestore()) return;
+   if (!live_tab->IsInitialBlankNavigation() && live_tab->GetEntryCount() > 0) {
+     AddSerializedNavigationEntries(
+         live_tab, AddBehavior::kCurrentAndPreceedingEntries, tab->navigations);
+--- a/chrome/browser/sessions/session_service_base.cc
++++ b/chrome/browser/sessions/session_service_base.cc
+@@ -275,7 +275,8 @@
+ void SessionServiceBase::TabInserted(WebContents* contents) {
+   sessions::SessionTabHelper* session_tab_helper =
+       sessions::SessionTabHelper::FromWebContents(contents);
+-  if (!ShouldTrackChangesToWindow(session_tab_helper->window_id())) {
++  if (session_tab_helper->omit_from_session_restore() ||
++      !ShouldTrackChangesToWindow(session_tab_helper->window_id())) {
+     return;
+   }
+   SetTabWindow(session_tab_helper->window_id(),
+@@ -612,6 +613,7 @@
+ 
+   sessions::SessionTabHelper* session_tab_helper =
+       sessions::SessionTabHelper::FromWebContents(tab);
++  if (session_tab_helper->omit_from_session_restore()) return;
+   const SessionID session_id(session_tab_helper->session_id());
+   command_storage_manager()->AppendRebuildCommand(
+       sessions::CreateSetTabWindowCommand(window_id, session_id));

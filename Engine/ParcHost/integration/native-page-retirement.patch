@@ -1,0 +1,721 @@
+--- a/chrome/browser/ui/unload_controller.h
++++ b/chrome/browser/ui/unload_controller.h
+@@ -5,7 +5,10 @@
+ #ifndef CHROME_BROWSER_UI_UNLOAD_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_UNLOAD_CONTROLLER_H_
+ 
++#include <cstdint>
++#include <map>
+ #include <memory>
++#include <optional>
+ #include <set>
+ #include <vector>
+ 
+@@ -214,6 +217,37 @@
+       bool skip_beforeunload,
+       const base::RepeatingCallback<void(bool)>& on_close_confirmed);
+ 
++  // Exact-page transaction used by native batch retirement. All targets must
++  // belong to this Browser. The posted preflight reports true for PREPARED
++  // (no page closed). A later false can synchronously invalidate that state on
++  // external document/owner changes, including after arming posted unload. The
++  // caller must hold all Browser owners, validate every participating token,
++  // then commit each on the same UI stack without an intervening callback.
++  using TabCloseToken = uint64_t;
++  // A same-profile native tab transfer must keep an empty source Browser alive
++  // until insertion/rollback has completed. This reservation refuses close
++  // attempts but never fires beforeunload or destroys a page. UI thread only.
++  std::optional<TabCloseToken> ReserveTabTransfer();
++  // Releases the hold without closing synchronously or posting work. Returns
++  // an optional weak-owner close operation only if this hold observed the tab
++  // strip become empty and it remains empty. The caller decides whether that
++  // owner should retire and runs it after committing native/shell ownership.
++  base::OnceClosure ReleaseTabTransfer(TabCloseToken token);
++  std::optional<TabCloseToken> ReserveTabClosePreflight(
++      const std::vector<content::WebContents*>& contents,
++      base::RepeatingCallback<void(bool)> prepared);
++  // Start one reserved group after the previous Browser's sheet has completed.
++  // Dispatch is posted; reservation itself never opens UI or invokes callbacks.
++  bool RunTabClosePreflight(TabCloseToken token);
++  bool IsTabClosePreflightReady(TabCloseToken token) const;
++  // Marks committed and POSTS actual ClosePage. No callback or unload runs
++  // inside this method, allowing all participating controllers to arm first.
++  bool CommitTabClosePreflight(TabCloseToken token);
++  // Cancellation is non-destructive before commit. After commit this only
++  // releases completed bookkeeping; it cannot roll back an actual unload.
++  void ReleaseTabClosePreflight(TabCloseToken token);
++  bool HasTabClosePreflight() const;
++
+   // Clears the results of any beforeunload confirmation dialogs triggered by a
+   // RunBeforeUnloadForShutdown() call.
+   void ResetBeforeUnloadForShutdown();
+@@ -280,6 +314,20 @@
+   void InProgressDownloadResponse(bool cancel_downloads);
+ 
+  private:
++  void WebContentsDestroyed(content::WebContents*) override;
++  void DidFinishNavigation(content::WebContents*,
++                           content::NavigationHandle*) override;
++  struct TabCloseRequest;
++  bool ValidateTabCloseRequest() const;
++  bool HasPendingTabCloseReply() const;
++  bool IsTabCloseTarget(content::WebContents*) const;
++  void AdvanceTabClosePreflight(TabCloseToken);
++  void CompleteTabCloseDecision(content::WebContents*, TabCloseToken, bool);
++  void ClosePreparedTabs(TabCloseToken);
++  bool CheckCommittedTabClose(TabCloseToken);
++  void CancelTabClosePreflight();
++  bool RunUnloadEventsHelperImpl(content::WebContents*, TabCloseToken);
++
+   void RenderProcessGone(content::WebContents* web_contents,
+                          base::TerminationStatus status) override;
+ 
+@@ -448,6 +496,14 @@
+   // shortly (after a PostTask).
+   bool is_delete_scheduled_ = false;
+ 
++  std::unique_ptr<TabCloseRequest> tab_close_request_;
++  std::optional<TabCloseToken> tab_transfer_token_;
++  bool tab_transfer_saw_empty_ = false;
++  // Retain cancelled outstanding reply identities until the real reply arrives.
++  // A late Leave must never fall through to ordinary destructive tab closure.
++  std::map<raw_ptr<content::WebContents>, TabCloseToken> tab_close_pending_;
++  base::WeakPtrFactory<UnloadController> tab_close_weak_factory_{this};
++
+   base::WeakPtrFactory<UnloadController> weak_factory_{this};
+ };
+ 
+--- a/chrome/browser/ui/unload_controller.cc
++++ b/chrome/browser/ui/unload_controller.cc
+@@ -45,8 +45,14 @@
+ #include "components/tabs/public/tab_group.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "components/webapps/common/web_app_id.h"
++#include "content/public/browser/javascript_dialog_manager.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/render_view_host.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_delegate.h"
++#include "content/public/browser/web_contents_user_data.h"
+ #include "extensions/buildflags/buildflags.h"
+ 
+ #if BUILDFLAG(ENABLE_EXTENSIONS)
+@@ -61,7 +67,82 @@
+ 
+ DEFINE_USER_DATA(UnloadController);
+ 
++struct UnloadController::TabCloseRequest {
++  struct Target {
++    base::WeakPtr<content::WebContents> contents;
++    base::WeakPtr<tabs::TabInterface> tab;
++    content::WeakDocumentPtr document;
++    bool approved = false;
++  };
++  TabCloseToken token;
++  std::vector<Target> targets;
++  base::RepeatingCallback<void(bool)> callback;
++  bool started = false;
++  bool ready = false;
++  bool committed = false;
++  bool awaiting = false;
++};
++
+ namespace {
++
++// The reply follows the actual page through TabStripModel moves. Storing this
++// only on the old Browser would let a late Leave fall through the new Browser's
++// ordinary close path after a cancelled transaction.
++class TabClosePendingReply final
++    : public content::WebContentsUserData<TabClosePendingReply>,
++      public content::WebContentsObserver {
++ public:
++  static bool Has(content::WebContents* contents) {
++    auto* value = FromWebContents(contents);
++    return value && !!value->reply_;
++  }
++  static void Install(content::WebContents* contents,
++                      uint64_t token,
++                      base::OnceCallback<void(bool)> reply) {
++    CreateForWebContents(contents);
++    auto* value = FromWebContents(contents);
++    CHECK(!value->reply_);
++    value->token_ = token;
++    value->reply_ = std::move(reply);
++  }
++  static void Complete(base::WeakPtr<content::WebContents> contents,
++                       uint64_t token,
++                       bool allow) {
++    if (!contents) {
++      return;
++    }
++    auto* value = FromWebContents(contents.get());
++    if (!value || !value->reply_ || (token && value->token_ != token)) {
++      return;
++    }
++    auto reply = std::move(value->reply_);
++    std::move(reply).Run(allow);
++  }
++
++ private:
++  friend class content::WebContentsUserData<TabClosePendingReply>;
++  explicit TabClosePendingReply(content::WebContents* contents)
++      : content::WebContentsUserData<TabClosePendingReply>(*contents),
++        content::WebContentsObserver(contents) {}
++  void DidFinishNavigation(content::NavigationHandle* navigation) override {
++    if (navigation->HasCommitted() && navigation->IsInPrimaryMainFrame() &&
++        !navigation->IsSameDocument()) {
++      Complete(web_contents()->GetWeakPtr(), token_, false);
++    }
++  }
++  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
++    Complete(web_contents()->GetWeakPtr(), token_, false);
++  }
++  uint64_t token_ = 0;
++  base::OnceCallback<void(bool)> reply_;
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++WEB_CONTENTS_USER_DATA_KEY_IMPL(TabClosePendingReply);
++uint64_t NextTabCloseToken() {
++  static constinit uint64_t value = 0;
++  CHECK_NE(++value, 0u);
++  return value;
++}
+ 
+ // Returns a pair [last_window, last_window_for_profile] indicating if `browser`
+ // is the only browser in total and for this profile.
+@@ -107,6 +188,13 @@
+ }
+ 
+ bool UnloadController::HandleBeforeClose() {
++  if (tab_transfer_token_ || HasPendingTabCloseReply() ||
++      (tab_close_request_ && (!tab_close_request_->committed ||
++                              !browser_->tab_strip_model()->empty()))) {
++    NotifyWindowCloseCancelled(
++        BrowserWindowInterface::ClosingStatus::kDeniedUnloadHandlersNeedTime);
++    return false;
++  }
+   // If `force_skip_warning_user_on_close_` is true, then we should immediately
+   // return true.
+   if (force_skip_warning_user_on_close()) {
+@@ -231,17 +319,26 @@
+ }
+ 
+ UnloadController::~UnloadController() {
++  CancelTabClosePreflight();
+   browser_->tab_strip_model()->RemoveObserver(this);
+ }
+ 
+ bool UnloadController::ShouldRunUnloadListenerBeforeClosing(
+     content::WebContents* web_contents) {
++  if (tab_transfer_token_ || TabClosePendingReply::Has(web_contents) ||
++      (IsTabCloseTarget(web_contents) && !tab_close_request_->committed)) {
++    return true;
++  }
+   return !force_skip_warning_user_on_close_ &&
+          ShouldRunUnloadEventsHelper(web_contents);
+ }
+ 
+ bool UnloadController::RunUnloadListenerBeforeClosing(
+     content::WebContents* web_contents) {
++  if (tab_transfer_token_ || TabClosePendingReply::Has(web_contents) ||
++      (IsTabCloseTarget(web_contents) && !tab_close_request_->committed)) {
++    return true;
++  }
+   return !force_skip_warning_user_on_close_ &&
+          RunUnloadEventsHelper(web_contents);
+ }
+@@ -249,6 +346,10 @@
+ void UnloadController::BeforeUnloadFired(content::WebContents* web_contents,
+                                          bool proceed,
+                                          bool* proceed_to_fire_unload) {
++  if (TabClosePendingReply::Has(web_contents)) {
++    *proceed_to_fire_unload = BeforeUnloadFired(web_contents, proceed);
++    return;
++  }
+   if ((browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS) &&
+       DevToolsWindow::HandleBeforeUnload(web_contents, proceed,
+                                          proceed_to_fire_unload)) {
+@@ -259,6 +360,10 @@
+ }
+ 
+ bool UnloadController::CanCloseContents(content::WebContents* contents) {
++  if (tab_transfer_token_ || TabClosePendingReply::Has(contents) ||
++      (IsTabCloseTarget(contents) && !tab_close_request_->committed)) {
++    return false;
++  }
+   // Don't try to close the tab when the whole browser is being closed, since
+   // that avoids the fast shutdown path where we just kill all the renderers.
+   if (is_attempting_to_close_browser()) {
+@@ -326,6 +431,21 @@
+ }
+ 
+ bool UnloadController::RunUnloadEventsHelper(content::WebContents* contents) {
++  if (tab_transfer_token_) {
++    return true;
++  }
++  if (IsTabCloseTarget(contents)) {
++    return !tab_close_request_->committed;
++  }
++  if (TabClosePendingReply::Has(contents)) {
++    return true;
++  }
++  return RunUnloadEventsHelperImpl(contents, 0);
++}
++
++bool UnloadController::RunUnloadEventsHelperImpl(
++    content::WebContents* contents,
++    TabCloseToken preflight_token) {
+   // If a tab unload handler indicates that beforeunload handling should be
+   // skipped (for example, because the user already confirmed closing the tab
+   // via a custom task confirmation dialog), return false immediately. This
+@@ -343,11 +463,15 @@
+   }
+ 
+   if (handler_to_show) {
+-    if (handler_to_show->ShowCustomConfirmation(
+-            contents,
+-            base::BindOnce(&UnloadController::OnCustomConfirmationClosed,
+-                           weak_factory_.GetWeakPtr(),
+-                           contents->GetWeakPtr()))) {
++    auto callback =
++        preflight_token
++            ? base::BindOnce(&TabClosePendingReply::Complete,
++                             contents->GetWeakPtr(), preflight_token)
++            : base::BindOnce(&UnloadController::OnCustomConfirmationClosed,
++                             weak_factory_.GetWeakPtr(),
++                             contents->GetWeakPtr());
++    if (handler_to_show->ShowCustomConfirmation(contents,
++                                                std::move(callback))) {
+       return true;
+     }
+   }
+@@ -403,6 +527,13 @@
+ 
+ bool UnloadController::BeforeUnloadFired(content::WebContents* contents,
+                                          bool proceed) {
++  if (TabClosePendingReply::Has(contents)) {
++    TabClosePendingReply::Complete(contents->GetWeakPtr(), 0, proceed);
++    return false;
++  }
++  if (IsTabCloseTarget(contents) && !tab_close_request_->committed) {
++    return false;
++  }
+   if (!proceed) {
+     DevToolsWindow::OnPageCloseCanceled(contents);
+ 
+@@ -455,6 +586,9 @@
+ 
+ BrowserWindowInterface::ClosingStatus
+ UnloadController::GetBrowserClosingStatus() const {
++  if (tab_close_request_ && !tab_close_request_->committed) {
++    return BrowserWindowInterface::ClosingStatus::kDeniedUnloadHandlersNeedTime;
++  }
+   if (IsUnclosableApp()) {
+     return BrowserWindowInterface::ClosingStatus::kDeniedByPolicy;
+   }
+@@ -499,6 +633,11 @@
+ bool UnloadController::RunBeforeUnloadForShutdown(
+     bool skip_beforeunload,
+     const base::RepeatingCallback<void(bool)>& on_close_confirmed) {
++  if (tab_transfer_token_ || HasTabClosePreflight()) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(on_close_confirmed, false));
++    return true;
++  }
+   cancel_download_confirmation_state_ =
+       CancelDownloadConfirmationState::kResponseReceived;
+   // The devtools browser gets its beforeunload events as the results of
+@@ -589,6 +728,10 @@
+ 
+ void UnloadController::RenderProcessGone(content::WebContents* web_contents,
+                                          base::TerminationStatus status) {
++  tab_close_pending_.erase(web_contents);
++  if (IsTabCloseTarget(web_contents) && !tab_close_request_->committed) {
++    CancelTabClosePreflight();
++  }
+   if (is_attempting_to_close_browser()) {
+     ClearUnloadState(web_contents,
+                      false);  // See comment for ClearUnloadState().
+@@ -628,6 +771,10 @@
+ }
+ 
+ void UnloadController::TabStripEmpty() {
++  if (tab_transfer_token_) {
++    tab_transfer_saw_empty_ = true;
++    return;
++  }
+   // Set state_ here, so that extensions, etc, do not attempt to add tabs to the
+   // browser before it closes.
+   if (state_ == State::kIdle) {
+@@ -730,6 +877,24 @@
+ }
+ 
+ void UnloadController::TabDetachedImpl(content::WebContents* contents) {
++  tab_close_pending_.erase(contents);
++  if (IsTabCloseTarget(contents)) {
++    if (!tab_close_request_->committed) {
++      CancelTabClosePreflight();
++    } else {
++      // Normal ClosePage detachment destroys the page in this stack. An
++      // independent live transfer instead invalidates the approved owner.
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++          FROM_HERE,
++          base::BindOnce(
++              [](base::WeakPtr<UnloadController> self, TabCloseToken token) {
++                if (self) {
++                  self->CheckCommittedTabClose(token);
++                }
++              },
++              tab_close_weak_factory_.GetWeakPtr(), tab_close_request_->token));
++    }
++  }
+   if (is_attempting_to_close_browser()) {
+     ClearUnloadState(contents, false);
+   }
+@@ -1149,7 +1314,7 @@
+       base::BindOnce(
+           [](base::WeakPtr<BrowserWindowInterface> browser) {
+             if (browser) {
+-              BrowserManagerService::SynchronouslyDestroyBrowser(browser.get());
++              BrowserManagerService::RequestBrowserDeletion(browser.get());
+             }
+           },
+           browser_->GetWeakPtr()));
+@@ -1164,3 +1329,335 @@
+     BrowserWindowInterface::BrowserCloseCancelledCallback callback) {
+   return browser_close_cancelled_callback_list_.Add(std::move(callback));
+ }
++
++std::optional<UnloadController::TabCloseToken>
++UnloadController::ReserveTabTransfer() {
++  if (tab_transfer_token_ || HasTabClosePreflight() || state_ != State::kIdle ||
++      is_delete_scheduled_ || IsUnclosableApp()) {
++    return std::nullopt;
++  }
++  tab_transfer_saw_empty_ = false;
++  tab_transfer_token_ = NextTabCloseToken();
++  return tab_transfer_token_;
++}
++
++base::OnceClosure UnloadController::ReleaseTabTransfer(TabCloseToken token) {
++  if (tab_transfer_token_ != token) {
++    return {};
++  }
++  tab_transfer_token_.reset();
++  const bool became_empty = std::exchange(tab_transfer_saw_empty_, false);
++  if (!became_empty || !browser_->tab_strip_model()->empty()) {
++    return {};
++  }
++  return base::BindOnce(
++      [](base::WeakPtr<BrowserWindowInterface> browser) {
++        if (browser && !browser->IsDeleteScheduled() &&
++            browser->GetTabStripModel()->empty()) {
++          browser->GetWindow()->Close();
++        }
++      },
++      browser_->GetWeakPtr());
++}
++
++std::optional<UnloadController::TabCloseToken>
++UnloadController::ReserveTabClosePreflight(
++    const std::vector<content::WebContents*>& contents,
++    base::RepeatingCallback<void(bool)> prepared) {
++  if (contents.empty() || !prepared || state_ != State::kIdle ||
++      tab_transfer_token_ || HasTabClosePreflight() || is_delete_scheduled_ ||
++      browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS ||
++      IsUnclosableApp()) {
++    return std::nullopt;
++  }
++  auto request = std::make_unique<TabCloseRequest>();
++  request->token = NextTabCloseToken();
++  request->callback = std::move(prepared);
++  std::set<content::WebContents*> unique;
++  for (auto* contents_to_close : contents) {
++    auto* tab =
++        contents_to_close
++            ? tabs::TabInterface::MaybeGetFromContents(contents_to_close)
++            : nullptr;
++    if (!contents_to_close || contents_to_close->IsBeingDestroyed() || !tab ||
++        tab->GetBrowserWindowInterface() != browser_ ||
++        TabClosePendingReply::Has(contents_to_close) ||
++        !unique.insert(contents_to_close).second ||
++        !CanCloseContents(contents_to_close)) {
++      return std::nullopt;
++    }
++    request->targets.push_back(
++        {contents_to_close->GetWeakPtr(), tab->GetWeakPtr(),
++         contents_to_close->GetPrimaryMainFrame()->GetWeakDocumentPtr()});
++  }
++  const auto token = request->token;
++  tab_close_request_ = std::move(request);
++  return token;
++}
++
++bool UnloadController::RunTabClosePreflight(TabCloseToken token) {
++  if (!tab_close_request_ || tab_close_request_->token != token ||
++      tab_close_request_->started || !ValidateTabCloseRequest()) {
++    return false;
++  }
++  tab_close_request_->started = true;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&UnloadController::AdvanceTabClosePreflight,
++                                tab_close_weak_factory_.GetWeakPtr(), token));
++  return true;
++}
++
++bool UnloadController::HasPendingTabCloseReply() const {
++  for (int index = 0; index < browser_->tab_strip_model()->count(); ++index) {
++    if (TabClosePendingReply::Has(
++            browser_->tab_strip_model()->GetWebContentsAt(index))) {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool UnloadController::HasTabClosePreflight() const {
++  return tab_close_request_ || HasPendingTabCloseReply();
++}
++
++bool UnloadController::IsTabCloseTarget(content::WebContents* contents) const {
++  if (!tab_close_request_) {
++    return false;
++  }
++  return std::ranges::any_of(tab_close_request_->targets,
++                             [contents](const auto& target) {
++                               return target.contents.get() == contents;
++                             });
++}
++
++bool UnloadController::ValidateTabCloseRequest() const {
++  if (!tab_close_request_ || state_ != State::kIdle || is_delete_scheduled_ ||
++      IsUnclosableApp()) {
++    return false;
++  }
++  for (const auto& target : tab_close_request_->targets) {
++    auto* contents = target.contents.get();
++    if (!contents || contents->IsBeingDestroyed() || !target.tab ||
++        tabs::TabInterface::MaybeGetFromContents(contents) !=
++            target.tab.get() ||
++        target.tab->GetBrowserWindowInterface() != browser_ ||
++        target.document.AsRenderFrameHostIfValid() !=
++            contents->GetPrimaryMainFrame()) {
++      return false;
++    }
++    const int index =
++        browser_->tab_strip_model()->GetIndexOfWebContents(contents);
++    if (index == TabStripModel::kNoTab ||
++        !web_app::IsTabClosable(browser_->tab_strip_model(), index)) {
++      return false;
++    }
++#if BUILDFLAG(IS_CHROMEOS)
++    if (ash::boca::OnTaskLockedController::From(browser_)
++            ->is_locked_for_on_task()) {
++      return false;
++    }
++#endif
++  }
++  return true;
++}
++
++bool UnloadController::IsTabClosePreflightReady(TabCloseToken token) const {
++  return tab_close_request_ && tab_close_request_->token == token &&
++         tab_close_request_->ready && !tab_close_request_->committed &&
++         ValidateTabCloseRequest();
++}
++
++void UnloadController::AdvanceTabClosePreflight(TabCloseToken token) {
++  if (!tab_close_request_ || tab_close_request_->token != token ||
++      tab_close_request_->committed || tab_close_request_->awaiting ||
++      tab_close_request_->ready) {
++    return;
++  }
++  if (!ValidateTabCloseRequest()) {
++    CancelTabClosePreflight();
++    return;
++  }
++  for (const auto& target : tab_close_request_->targets) {
++    if (target.approved) {
++      continue;
++    }
++    auto contents = target.contents;
++    tab_close_request_->awaiting = true;
++    tab_close_pending_[contents.get()] = token;
++    TabClosePendingReply::Install(
++        contents.get(), token,
++        base::BindOnce(
++            [](base::WeakPtr<UnloadController> controller,
++               base::WeakPtr<content::WebContents> contents,
++               TabCloseToken token, bool allow) {
++              if (controller && contents) {
++                controller->CompleteTabCloseDecision(contents.get(), token,
++                                                     allow);
++              }
++            },
++            tab_close_weak_factory_.GetWeakPtr(), contents, token));
++    const auto weak = tab_close_weak_factory_.GetWeakPtr();
++    const bool pending = RunUnloadEventsHelperImpl(contents.get(), token);
++    if (!weak || !tab_close_request_ || tab_close_request_->token != token) {
++      return;
++    }
++    // A custom confirmation can synchronously settle the request. Do not send
++    // a second decision or access the old target reference after its callback.
++    if (!pending && contents && tab_close_pending_.contains(contents.get())) {
++      TabClosePendingReply::Complete(contents, token, true);
++    }
++    return;
++  }
++  tab_close_request_->ready = true;
++  auto callback = tab_close_request_->callback;
++  callback.Run(true);
++}
++
++void UnloadController::CompleteTabCloseDecision(content::WebContents* contents,
++                                                TabCloseToken token,
++                                                bool allow) {
++  auto pending = tab_close_pending_.find(contents);
++  if (pending != tab_close_pending_.end() && pending->second == token) {
++    tab_close_pending_.erase(pending);
++  }
++  if (!tab_close_request_ || tab_close_request_->token != token ||
++      tab_close_request_->committed) {
++    return;
++  }
++  if (!allow || !ValidateTabCloseRequest()) {
++    CancelTabClosePreflight();
++    return;
++  }
++  for (auto& target : tab_close_request_->targets) {
++    if (target.contents.get() == contents) {
++      target.approved = true;
++      break;
++    }
++  }
++  tab_close_request_->awaiting = false;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&UnloadController::AdvanceTabClosePreflight,
++                                tab_close_weak_factory_.GetWeakPtr(), token));
++}
++
++bool UnloadController::CommitTabClosePreflight(TabCloseToken token) {
++  if (!IsTabClosePreflightReady(token)) {
++    return false;
++  }
++  tab_close_request_->committed = true;
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&UnloadController::ClosePreparedTabs,
++                                tab_close_weak_factory_.GetWeakPtr(), token));
++  return true;
++}
++
++bool UnloadController::CheckCommittedTabClose(TabCloseToken token) {
++  if (!tab_close_request_ || tab_close_request_->token != token ||
++      !tab_close_request_->committed) {
++    return false;
++  }
++  for (const auto& target : tab_close_request_->targets) {
++    if (!target.contents || target.contents->IsBeingDestroyed()) {
++      continue;
++    }
++    if (!target.tab || target.tab->GetBrowserWindowInterface() != browser_ ||
++        tabs::TabInterface::MaybeGetFromContents(target.contents.get()) !=
++            target.tab.get() ||
++        target.document.AsRenderFrameHostIfValid() !=
++            target.contents->GetPrimaryMainFrame()) {
++      auto callback = std::move(tab_close_request_->callback);
++      tab_close_request_.reset();
++      if (callback) {
++        callback.Run(false);
++      }
++      return false;
++    }
++  }
++  return true;
++}
++
++void UnloadController::ClosePreparedTabs(TabCloseToken token) {
++  if (!CheckCommittedTabClose(token)) {
++    return;
++  }
++  // Snapshot weak identities: ClosePage can synchronously destroy this Browser
++  // or run shell callbacks. A target moved elsewhere must never be closed in
++  // its new owner by this old transaction.
++  auto targets = tab_close_request_->targets;
++  auto weak = tab_close_weak_factory_.GetWeakPtr();
++  for (const auto& target : targets) {
++    if (!weak || !CheckCommittedTabClose(token)) {
++      return;
++    }
++    if (!target.contents || !target.tab ||
++        target.tab->GetBrowserWindowInterface() != browser_ ||
++        tabs::TabInterface::MaybeGetFromContents(target.contents.get()) !=
++            target.tab.get()) {
++      continue;
++    }
++    target.contents->ClosePage();
++  }
++}
++
++void UnloadController::ReleaseTabClosePreflight(TabCloseToken token) {
++  if (!tab_close_request_ || tab_close_request_->token != token) {
++    return;
++  }
++  if (tab_close_request_->committed) {
++    tab_close_request_.reset();
++    return;
++  }
++  CancelTabClosePreflight();
++}
++
++void UnloadController::CancelTabClosePreflight() {
++  if (!tab_close_request_) {
++    return;
++  }
++  auto request = std::move(tab_close_request_);
++  if (request->committed) {
++    return;
++  }
++  auto callback = std::move(request->callback);
++  // All controller state is retired before touching actual dialog managers.
++  // Outstanding renderer replies remain in tab_close_pending_ and are consumed
++  // without allowing unload even if cancellation delivery is asynchronous.
++  for (const auto& target : request->targets) {
++    if (!target.contents || target.contents->IsBeingDestroyed()) {
++      continue;
++    }
++    performance_manager::execution_context_priority::SetPageIsClosing(
++        target.contents.get(), false);
++    if (target.contents) {
++      DevToolsWindow::OnPageCloseCanceled(target.contents.get());
++    }
++    if (target.contents) {
++      target.contents->SetClosedByUserGesture(false);
++    }
++  }
++  if (callback) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(callback, false));
++  }
++}
++
++void UnloadController::DidFinishNavigation(
++    content::WebContents* contents,
++    content::NavigationHandle* navigation) {
++  if (IsTabCloseTarget(contents) && navigation->HasCommitted() &&
++      navigation->IsInPrimaryMainFrame() && !navigation->IsSameDocument()) {
++    if (tab_close_request_->committed) {
++      CheckCommittedTabClose(tab_close_request_->token);
++    } else {
++      CancelTabClosePreflight();
++    }
++  }
++}
++
++void UnloadController::WebContentsDestroyed(content::WebContents* contents) {
++  tab_close_pending_.erase(contents);
++  if (IsTabCloseTarget(contents) && !tab_close_request_->committed) {
++    CancelTabClosePreflight();
++  }
++}

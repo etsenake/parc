@@ -1,0 +1,58 @@
+--- a/content/browser/media/session/media_session_impl.cc
++++ b/content/browser/media/session/media_session_impl.cc
+@@ -5,6 +5,7 @@
+ #include "content/browser/media/session/media_session_impl.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <memory>
+ #include <utility>
+ 
+@@ -831,6 +832,14 @@
+   return desired_audio_focus_type_ == AudioFocusType::kGain;
+ }
+ 
++void MediaSessionImpl::SetUserVolumeMultiplier(double multiplier) {
++  // Reject NaN as well as infinities before sending a player multiplier.
++  if (!std::isfinite(multiplier))
++    return;
++  user_volume_multiplier_ = std::clamp(multiplier, 0.0, 1.0);
++  UpdateVolumeMultiplier();
++}
++
+ void MediaSessionImpl::SetDuckingVolumeMultiplier(double multiplier) {
+   ducking_volume_multiplier_ = std::clamp(multiplier, 0.0, 1.0);
+ }
+@@ -897,7 +906,8 @@
+ }
+ 
+ double MediaSessionImpl::GetVolumeMultiplier() const {
+-  return is_ducking_ ? ducking_volume_multiplier_ : kUnduckedVolumeMultiplier;
++  return user_volume_multiplier_ *
++      (is_ducking_ ? ducking_volume_multiplier_ : kUnduckedVolumeMultiplier);
+ }
+ 
+ bool MediaSessionImpl::IsActive() const {
+--- a/content/browser/media/session/media_session_impl.h
++++ b/content/browser/media/session/media_session_impl.h
+@@ -202,6 +202,12 @@
+   void DidReceiveAction(
+       media_session::mojom::MediaSessionAction action) override;
+ 
++  // Parc's independent per-session UI volume, composed with system ducking.
++  // The site-owned media volume remains unchanged; new players inherit this.
++  CONTENT_EXPORT void SetUserVolumeMultiplier(double multiplier);
++  double user_volume_multiplier() const { return user_volume_multiplier_; }
++  bool has_user_volume_players() const { return !normal_players_.empty(); }
++
+   // Set the volume multiplier applied during ducking.
+   CONTENT_EXPORT void SetDuckingVolumeMultiplier(double multiplier) override;
+ 
+@@ -660,6 +666,7 @@
+   base::UnguessableToken audio_focus_group_id_ = base::UnguessableToken::Null();
+ 
+   double ducking_volume_multiplier_;
++  double user_volume_multiplier_ = 1.0;
+ 
+   // True if the WebContents associated with this MediaSessionImpl is focused.
+   bool focused_ = false;

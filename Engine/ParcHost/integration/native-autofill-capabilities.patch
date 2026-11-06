@@ -1,0 +1,5067 @@
+--- a/cef/libcef/features/BUILD.gn
++++ b/cef/libcef/features/BUILD.gn
+@@ -111,3 +111,10 @@
+     "//cef:make_version_header",
+   ]
+ }
++
++# Explicit product identity of this reviewed Parc source overlay. This is not
++# inferred from ENABLE_CEF and applies to the Views conformance harness too.
++buildflag_header("parc_product_buildflags") {
++  header = "parc_product_policy.h"
++  flags = [ "IS_PARC_BROWSER=true" ]
++}
+--- a/chrome/browser/ui/autofill/BUILD.gn
++++ b/chrome/browser/ui/autofill/BUILD.gn
+@@ -188,6 +188,7 @@
+   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+ 
+   deps = [
++    "//cef/libcef/features:parc_product_buildflags",
+     ":autofill",
+     ":autofill_ai_ui_utils_impl",
+     "//chrome/browser:browser_process",
+--- a/chrome/browser/ui/autofill/autofill_ai/autofill_ai_import_data_controller_impl.cc
++++ b/chrome/browser/ui/autofill/autofill_ai/autofill_ai_import_data_controller_impl.cc
+@@ -14,6 +14,7 @@
+ #include "base/strings/strcat.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/types/optional_ref.h"
++#include "cef/libcef/features/parc_product_policy.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/signin/identity_manager_factory.h"
+ #include "chrome/browser/ui/autofill/autofill_ai/autofill_ai_import_data_controller.h"
+@@ -79,6 +80,9 @@
+ AutofillAiImportDataController* AutofillAiImportDataController::GetOrCreate(
+     content::WebContents* web_contents,
+     const std::string& app_locale) {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return nullptr;
++#else
+   if (!web_contents) {
+     return nullptr;
+   }
+@@ -86,6 +90,7 @@
+   AutofillAiImportDataControllerImpl::CreateForWebContents(web_contents,
+                                                            app_locale);
+   return AutofillAiImportDataControllerImpl::FromWebContents(web_contents);
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ // static
+@@ -102,6 +107,23 @@
+     bool close_on_accept,
+     LegalMessageLines legal_message_lines,
+     AutofillClient::EntityImportPromptResultCallback prompt_result_callback) {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  if (prompt_result_callback) {
++    std::move(prompt_result_callback)
++        .Run(AutofillClient::AutofillAiBubbleResult::kUnknown, std::nullopt,
++             {});
++  }
++#else
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kAutofillAiImport)) {
++    if (prompt_result_callback) {
++      std::move(prompt_result_callback)
++          .Run(AutofillClient::AutofillAiBubbleResult::kUnknown, std::nullopt,
++               {});
++    }
++    return;
++  }
++
+   // Don't show the bubble if it's already visible.
+   if (bubble_view() || !MaySetUpBubble()) {
+     if (!prompt_result_callback.is_null()) {
+@@ -117,9 +139,18 @@
+                            close_on_accept, std::move(legal_message_lines),
+                            std::move(prompt_result_callback));
+   QueueOrShowBubble();
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void AutofillAiImportDataControllerImpl::ShowLocalSaveNotification() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kAutofillAiNotification)) {
++    return;
++  }
++
+   if (bubble_view() || !MaySetUpBubble()) {
+     return;
+   }
+@@ -127,6 +158,7 @@
+   was_bubble_shown_ = false;
+   state_ = LocalSaveNotificationState();
+   QueueOrShowBubble();
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void AutofillAiImportDataControllerImpl::OnSaveButtonClicked() {
+@@ -234,26 +266,37 @@
+ }
+ 
+ void AutofillAiImportDataControllerImpl::DoShowBubble() {
+-  auto get_bubble = [this]() -> AutofillBubbleBase& {
+-    BrowserWindowInterface* browser =
+-        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+-            web_contents());
+-    auto* bubble_handler =
+-        BrowserWindow::FromBrowser(browser)->GetAutofillBubbleHandler();
+-    if (IsSaveUpdatePrompt()) {
+-      return *bubble_handler->ShowSaveAutofillAiDataBubble(web_contents(),
+-                                                           this);
+-    }
+-    if (IsLocalSaveNotification()) {
+-      return *bubble_handler->ShowAutofillAiLocalSaveNotification(
+-          web_contents(), this);
+-    }
+-    NOTREACHED();
+-  };
+-
++#if BUILDFLAG(IS_PARC_BROWSER)
++  MarkPresentationUnavailable();
++  MaybeRunSaveUpdateCallback(AutofillClient::AutofillAiBubbleResult::kUnknown);
++#else
++  const auto kind = IsSaveUpdatePrompt()
++                        ? AutofillUiPresentation::kAutofillAiImport
++                        : AutofillUiPresentation::kAutofillAiNotification;
++  if (!AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind)) {
++    MarkPresentationUnavailable();
++    MaybeRunSaveUpdateCallback(
++        AutofillClient::AutofillAiBubbleResult::kUnknown);
++    return;
++  }
++  auto* browser = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
++      web_contents());
++  auto* window = browser ? BrowserWindow::FromBrowser(browser) : nullptr;
++  auto* handler = window ? window->GetAutofillBubbleHandler() : nullptr;
++  auto* view =
++      !handler ? nullptr
++      : IsSaveUpdatePrompt()
++          ? handler->ShowSaveAutofillAiDataBubble(web_contents(), this)
++          : handler->ShowAutofillAiLocalSaveNotification(web_contents(), this);
++  if (!view) {
++    MarkPresentationUnavailable();
++    MaybeRunSaveUpdateCallback(
++        AutofillClient::AutofillAiBubbleResult::kUnknown);
++    return;
++  }
+   reopen_bubble_when_web_contents_becomes_visible_ = false;
+-  SetBubbleView(get_bubble());
+-  CHECK(bubble_view());
++  SetBubbleView(*view);
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ BubbleType AutofillAiImportDataControllerImpl::GetBubbleType() const {
+--- a/chrome/browser/ui/autofill/autofill_bubble_base.h
++++ b/chrome/browser/ui/autofill/autofill_bubble_base.h
+@@ -4,6 +4,7 @@
+ 
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_BUBBLE_BASE_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_BUBBLE_BASE_H_
++#include "base/functional/callback.h"
+ 
+ namespace autofill {
+ 
+@@ -20,6 +21,14 @@
+ 
+   // Called from controller to check if the mouse is hovering over the view.
+   virtual bool IsMouseHovered() const = 0;
++
++  // Existing Views bubbles are presented synchronously before being returned.
++  // Deferred native sessions override both methods and settle exactly once.
++  virtual bool IsPresented() const { return true; }
++  virtual void SetPresentationCallback(
++      base::OnceCallback<void(bool)> callback) {
++    std::move(callback).Run(IsPresented());
++  }
+ };
+ 
+ }  // namespace autofill
+--- a/chrome/browser/ui/autofill/autofill_bubble_controller_base.cc
++++ b/chrome/browser/ui/autofill/autofill_bubble_controller_base.cc
+@@ -4,7 +4,9 @@
+ 
+ #include "chrome/browser/ui/autofill/autofill_bubble_controller_base.h"
+ 
++#include "base/functional/bind.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
++#include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+ #include "chrome/browser/ui/autofill/bubble_manager.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+@@ -27,8 +29,12 @@
+ 
+ AutofillBubbleControllerBase::~AutofillBubbleControllerBase() {
+   if (IsShowingBubble()) {
+-    bubble_view_->Hide();
++    auto* view = bubble_view_.get();
++    // Invalidate this request before external native teardown can deliver its
++    // pending presentation callback. No new offer may target a dying page.
++    ++presentation_generation_;
+     bubble_view_ = nullptr;
++    view->Hide();
+   }
+ }
+ 
+@@ -76,8 +82,12 @@
+ 
+ void AutofillBubbleControllerBase::WebContentsDestroyed() {
+   if (IsShowingBubble()) {
+-    bubble_view_->Hide();
++    auto* view = bubble_view_.get();
++    // Invalidate this request before external native teardown can deliver its
++    // pending presentation callback. No new offer may target a dying page.
++    ++presentation_generation_;
+     bubble_view_ = nullptr;
++    view->Hide();
+   }
+ }
+ 
+@@ -108,6 +118,21 @@
+       tabs::TabInterface::MaybeGetFromContents(web_contents());
+   if (!tab_interface) {
+     return;
++  }
++
++  if (*icon_type == PageActionIconType::kSaveCard ||
++      *icon_type == PageActionIconType::kSaveIban ||
++      *icon_type == PageActionIconType::kVirtualCardEnroll ||
++      *icon_type == PageActionIconType::kMandatoryReauth ||
++      *icon_type == PageActionIconType::kPaymentsOfferNotification ||
++      *icon_type == PageActionIconType::kFilledCardInformation ||
++      *icon_type == PageActionIconType::kPaymentsChurnedUsers) {
++    if (auto* browser = tab_interface->GetBrowserWindowInterface()) {
++      if (auto* handler =
++              AutofillBubbleHandler::Get(browser->GetUnownedUserDataHost())) {
++        handler->OnPaymentStateChanged(web_contents());
++      }
++    }
+   }
+ 
+   tabs::TabFeatures* const tab_features = tab_interface->GetTabFeatures();
+@@ -140,18 +165,37 @@
+ }
+ 
+ void AutofillBubbleControllerBase::ShowBubble() {
+-  was_bubble_shown_ = true;
++  presentation_unavailable_ = false;
++  auto weak = GetBubbleControllerBaseWeakPtr();
+   UpdatePageActionIcon();
++  if (!weak) {
++    return;
++  }
+   DoShowBubble();
++  if (!weak) {
++    return;
++  }
++  was_bubble_shown_ |= IsShowingBubble() && bubble_view_->IsPresented();
+   UpdatePageActionIcon();
+ }
+ 
+ void AutofillBubbleControllerBase::HideBubble(
+     bool initiated_by_bubble_manager) {
++  auto weak = GetBubbleControllerBaseWeakPtr();
+   if (IsShowingBubble()) {
++    const uint64_t generation = presentation_generation_;
+     bubble_hide_initiated_by_bubble_manager_ = initiated_by_bubble_manager;
+     bubble_view_->Hide();
+-    ResetBubbleViewAndInformBubbleManager();
++    if (!weak) {
++      return;
++    }
++    // Hide may synchronously close this view or install another request.
++    if (presentation_generation_ == generation) {
++      ResetBubbleViewAndInformBubbleManager();
++    }
++    if (!weak) {
++      return;
++    }
+   }
+   bubble_hide_initiated_by_bubble_manager_ = false;
+ }
+@@ -186,6 +230,8 @@
+ }
+ 
+ void AutofillBubbleControllerBase::QueueOrShowBubble(bool force_show) {
++  ++presentation_generation_;  // Includes replacements that remain queued.
++
+ #if !BUILDFLAG(IS_ANDROID)
+   if (auto* manager = BubbleManager::GetForWebContents(web_contents())) {
+     manager->RequestShowController(*this, force_show);
+@@ -198,7 +244,55 @@
+ 
+ void AutofillBubbleControllerBase::SetBubbleView(
+     AutofillBubbleBase& bubble_view) {
++  ++presentation_generation_;
+   bubble_view_ = &bubble_view;
++}
++
++void AutofillBubbleControllerBase::ObservePresentation(
++    base::OnceClosure shown,
++    base::OnceClosure unavailable) {
++  CHECK(bubble_view_);
++  auto weak = GetBubbleControllerBaseWeakPtr();
++  auto* view = bubble_view_.get();
++  const uint64_t generation = presentation_generation_;
++  view->SetPresentationCallback(base::BindOnce(
++      [](base::WeakPtr<BubbleControllerBase> weak, AutofillBubbleBase* view,
++         uint64_t generation, base::OnceClosure shown,
++         base::OnceClosure unavailable, bool presented) {
++        if (!weak) {
++          return;
++        }
++        auto* self = static_cast<AutofillBubbleControllerBase*>(weak.get());
++        if (self->presentation_generation_ != generation ||
++            self->bubble_view_ != view) {
++          return;
++        }
++        if (presented) {
++          self->was_bubble_shown_ = true;
++          if (shown) {
++            std::move(shown).Run();
++          }
++          return;
++        }
++        self->presentation_unavailable_ = true;
++        self->bubble_view_ = nullptr;
++        const uint64_t refused_generation = ++self->presentation_generation_;
++        if (unavailable) {
++          std::move(unavailable).Run();
++        }
++        if (!weak || self->presentation_generation_ != refused_generation) {
++          return;
++        }
++#if !BUILDFLAG(IS_ANDROID)
++        // An async refusal happens after the manager's ShowBubble call
++        // returned. Release only this request; a reentrant replacement has a
++        // new generation.
++        if (auto* manager =
++                BubbleManager::GetForWebContents(self->web_contents()))
++          manager->OnBubbleHiddenByController(*self, true);
++#endif
++      },
++      weak, view, generation, std::move(shown), std::move(unavailable)));
+ }
+ 
+ void AutofillBubbleControllerBase::ResetBubbleViewAndInformBubbleManager() {
+@@ -206,6 +300,7 @@
+   const bool was_showing = IsShowingBubble();
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
++  ++presentation_generation_;
+   bubble_view_ = nullptr;
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+--- a/chrome/browser/ui/autofill/autofill_bubble_controller_base.h
++++ b/chrome/browser/ui/autofill/autofill_bubble_controller_base.h
+@@ -5,7 +5,10 @@
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_BUBBLE_CONTROLLER_BASE_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_BUBBLE_CONTROLLER_BASE_H_
+ 
++#include <stdint.h>
++
+ #include "base/check_deref.h"
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "chrome/browser/ui/autofill/bubble_controller_base.h"
+ #include "chrome/browser/ui/page_action/page_action_icon_type.h"
+@@ -47,6 +50,9 @@
+ 
+   // BubbleControllerBase:
+   void ShowBubble() override;
++  bool WasPresentationUnavailable() const override {
++    return presentation_unavailable_;
++  }
+   void HideBubble(bool initiated_by_bubble_manager) override;
+   bool CanBeReshown() const override;
+   bool ShouldReshowOnTabVisible() const override;
+@@ -60,7 +66,7 @@
+  protected:
+   // RAII-type guard that, while in scope, instructs the `BubbleManager` not
+   // to show the next queued bubble when this controller's bubble is hidden.
+-  // Must not outlive the controller.
++  // Callback-driven page teardown may destroy the controller while held.
+   // TODO(crbug.com/432429605): Look into ways to move this lock to
+   // BubbleManager to allow suppressing other controllers' bubbles while a
+   // multi-step flow is ongoing (e.g., credit card upload).
+@@ -68,9 +74,10 @@
+    public:
+     DoNotShowNextQueuedBubbleGuard(AutofillBubbleControllerBase* controller,
+                                    base::PassKey<AutofillBubbleControllerBase>)
+-        : controller_(CHECK_DEREF(controller)) {
+-      CHECK(controller_->allow_bubble_manager_to_show_next_);
+-      controller_->allow_bubble_manager_to_show_next_ = false;
++        : controller_(
++              CHECK_DEREF(controller).GetBubbleControllerBaseWeakPtr()) {
++      CHECK(controller->allow_bubble_manager_to_show_next_);
++      controller->allow_bubble_manager_to_show_next_ = false;
+     }
+     DoNotShowNextQueuedBubbleGuard(const DoNotShowNextQueuedBubbleGuard&) =
+         delete;
+@@ -80,11 +87,14 @@
+     DoNotShowNextQueuedBubbleGuard& operator=(
+         DoNotShowNextQueuedBubbleGuard&&) = delete;
+     ~DoNotShowNextQueuedBubbleGuard() {
+-      controller_->allow_bubble_manager_to_show_next_ = true;
++      if (controller_) {
++        static_cast<AutofillBubbleControllerBase*>(controller_.get())
++            ->allow_bubble_manager_to_show_next_ = true;
++      }
+     }
+ 
+    private:
+-    const raw_ref<AutofillBubbleControllerBase> controller_;
++    const base::WeakPtr<BubbleControllerBase> controller_;
+   };
+ 
+   DoNotShowNextQueuedBubbleGuard DoNotShowNextQueuedBubble() {
+@@ -107,6 +117,10 @@
+   // potentially log metrics.
+   virtual void DoShowBubble() = 0;
+ 
++  // Call before terminal cleanup, which may destroy this controller. No user
++  // decline/discard callback is implied. The manager advances after ShowBubble.
++  void MarkPresentationUnavailable() { presentation_unavailable_ = true; }
++
+   // Updates page action visibility.
+   virtual void UpdatePageActionIcon();
+ 
+@@ -123,11 +137,18 @@
+ 
+   // Setter for `bubble_view`.
+   void SetBubbleView(AutofillBubbleBase& bubble_view);
++  // Register last in DoShowBubble. The callback may run inline for a
++  // synchronous Views presentation, or after native caller registration for
++  // AppKit sheets.
++  void ObservePresentation(base::OnceClosure shown,
++                           base::OnceClosure unavailable);
+ 
+   // Resets the `bubble_view` and informs the bubble manager about it.
+   void ResetBubbleViewAndInformBubbleManager();
+ 
+   AutofillBubbleBase* bubble_view() const { return bubble_view_; }
++  // Compare across external callbacks that can close or replace this request.
++  uint64_t presentation_generation() const { return presentation_generation_; }
+ 
+   // True if anytime, the bubble was shown to the user in the lifecycle of the
+   // bubble.
+@@ -142,6 +163,8 @@
+   // This indicates to the `BubbleManager` whether it should show the next
+   // bubble.
+   bool allow_bubble_manager_to_show_next_ = true;
++  bool presentation_unavailable_ = false;
++  uint64_t presentation_generation_ = 0;
+ 
+   // Weak reference. Will be nullptr if no bubble is currently shown.
+   raw_ptr<AutofillBubbleBase> bubble_view_ = nullptr;
+--- a/chrome/browser/ui/autofill/autofill_bubble_handler.cc
++++ b/chrome/browser/ui/autofill/autofill_bubble_handler.cc
+@@ -4,8 +4,21 @@
+ 
+ #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+ 
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "components/tabs/public/tab_interface.h"
++
+ namespace autofill {
+ 
+ DEFINE_USER_DATA(AutofillBubbleHandler);
+ 
++bool AutofillBubbleHandler::IsPresentationSupported(
++    const content::WebContents* contents,
++    AutofillUiPresentation presentation) {
++  auto* tab =
++      contents ? tabs::TabInterface::MaybeGetFromContents(contents) : nullptr;
++  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  auto* handler = browser ? Get(browser->GetUnownedUserDataHost()) : nullptr;
++  return !handler || handler->IsAutofillUiPresentationSupported(presentation);
++}
++
+ }  // namespace autofill
+--- a/chrome/browser/ui/autofill/autofill_bubble_handler.h
++++ b/chrome/browser/ui/autofill/autofill_bubble_handler.h
+@@ -8,6 +8,7 @@
+ #include <memory>
+ 
+ #include "base/functional/callback_forward.h"
++#include "components/autofill/core/browser/ui/autofill_ui_presentation.h"
+ #include "components/signin/public/base/signin_buildflags.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ 
+@@ -45,10 +46,30 @@
+ 
+   AutofillBubbleHandler() = default;
+ 
++  // Resolves the actual page's Browser, never the frontmost window. Missing
++  // registration keeps existing non-native/test clients default-capable; a
++  // native Browser must register its handler before creating any page clients.
++  static bool IsPresentationSupported(const content::WebContents* contents,
++                                      AutofillUiPresentation presentation);
++
++  // Show methods may return nullptr if the typed presentation is unavailable.
++  // Callers must not mark the request shown or treat refusal as user decline.
++
+   AutofillBubbleHandler(const AutofillBubbleHandler&) = delete;
+   AutofillBubbleHandler& operator=(const AutofillBubbleHandler&) = delete;
+ 
+   virtual ~AutofillBubbleHandler() = default;
++
++  // Default-capable for existing platform implementations. Native hosts expose
++  // only implemented presentations; callers must check before creating offers.
++  virtual bool IsAutofillUiPresentationSupported(
++      AutofillUiPresentation presentation) const {
++    return true;
++  }
++
++  // Native shells without a Views toolbar receive real controller state.
++  // No-op for existing platform handlers; this never creates a presentation.
++  virtual void OnPaymentStateChanged(content::WebContents*) {}
+ 
+   virtual AutofillBubbleBase* ShowSaveCreditCardBubble(
+       content::WebContents* web_contents,
+--- a/chrome/browser/ui/autofill/bubble_controller_base.h
++++ b/chrome/browser/ui/autofill/bubble_controller_base.h
+@@ -54,6 +54,9 @@
+   // Instructs the controller to show the bubble view.
+   virtual void ShowBubble() = 0;
+ 
++  // A terminal presentation refusal, not a user decision or background wait.
++  virtual bool WasPresentationUnavailable() const { return false; }
++
+   // Instructs the controller to hide the bubble view.
+   // TODO(crbug.com/432429605): `initiated_by_bubble_manager` can be removed,
+   // instead use BubbleManager's `HasPendingBubbleOfSameType` to determine if
+--- a/chrome/browser/ui/autofill/bubble_manager_impl.cc
++++ b/chrome/browser/ui/autofill/bubble_manager_impl.cc
+@@ -9,9 +9,11 @@
+ #include "base/auto_reset.h"
+ #include "base/callback_list.h"
+ #include "base/check.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/notreached.h"
+ #include "base/strings/strcat.h"
++#include "base/task/single_thread_task_runner.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/ui/autofill/bubble_controller_base.h"
+ #include "components/tabs/public/tab_interface.h"
+@@ -152,7 +154,10 @@
+ }
+ 
+ BubbleManagerImpl::~BubbleManagerImpl() {
+-  std::ranges::for_each(pending_bubbles_queue_, [](const auto& request) {
++  destroying_ = true;
++  weak_factory_.InvalidateWeakPtrs();
++  auto pending = std::move(pending_bubbles_queue_);
++  std::ranges::for_each(pending, [](const auto& request) {
+     if (request.controller) {
+       request.controller->OnBubbleDiscarded();
+     }
+@@ -162,6 +167,10 @@
+ void BubbleManagerImpl::RequestShowController(
+     BubbleControllerBase& controller_to_show,
+     bool force_show) {
++  if (destroying_) {
++    return;
++  }
++
+   base::WeakPtr<BubbleControllerBase> controller_weak_ptr =
+       controller_to_show.GetBubbleControllerBaseWeakPtr();
+ 
+@@ -178,7 +187,16 @@
+   base::UmaHistogramEnumeration("Autofill.Bubble.RequestShow",
+                                 controller_to_show.GetBubbleType());
+ 
+-  base::AutoReset<bool> show_request_guard(&handling_show_request_, true);
++  auto weak = weak_factory_.GetWeakPtr();
++  const bool previous_show_request =
++      std::exchange(handling_show_request_, true);
++  base::ScopedClosureRunner show_request_guard(base::BindOnce(
++      [](base::WeakPtr<BubbleManagerImpl> self, bool previous) {
++        if (self) {
++          self->handling_show_request_ = previous;
++        }
++      },
++      weak, previous_show_request));
+ 
+   if (!active_bubble_controller_ ||
+       !active_bubble_controller_->IsShowingBubble()) {
+@@ -193,7 +211,13 @@
+       ShouldReplaceExistingBubble(controller_to_show.GetBubbleType())) {
+     base::UmaHistogramEnumeration("Autofill.Bubble.Show.Preemption",
+                                   controller_to_show.GetBubbleType());
++    const auto previous = active_bubble_controller_;
+     HideActiveBubbleForPreemption();
++    if (!weak || !controller_weak_ptr ||
++        (active_bubble_controller_ &&
++         active_bubble_controller_.get() != previous.get())) {
++      return;
++    }
+     ShowAndSetCurrentActive(controller_weak_ptr);
+     return;
+   }
+@@ -224,7 +248,21 @@
+     }
+   }
+ 
+-  active_bubble_controller_->ShowBubble();
++  auto weak = weak_factory_.GetWeakPtr();
++  controller_to_show->ShowBubble();
++  if (!weak || !controller_to_show ||
++      active_bubble_controller_.get() != controller_to_show.get()) {
++    return;
++  }
++  if (!controller_to_show->WasPresentationUnavailable()) {
++    return;
++  }
++  active_bubble_controller_.reset();
++  // Run after the current show/preemption guard, without treating refusal as
++  // a timeout, dismissal, or user decision. Weak identity protects replacement.
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(&BubbleManagerImpl::ProcessPendingBubbles, weak, false));
+ }
+ 
+ void BubbleManagerImpl::HideActiveBubbleForPreemption() {
+@@ -238,8 +276,13 @@
+   // Queue the old bubble. It will be hidden, and its OnBubbleHiddenByController
+   // call will be a no-op for starting the next bubble because we are inside a
+   // show request (`handling_show_request_` is true).
+-  AddToPendingQueue(active_bubble_controller_);
+-  active_bubble_controller_->HideBubble(/*initiated_by_bubble_manager=*/true);
++  auto weak = weak_factory_.GetWeakPtr();
++  const auto previous = active_bubble_controller_;
++  AddToPendingQueue(previous);
++  if (!weak || !previous || active_bubble_controller_.get() != previous.get()) {
++    return;
++  }
++  previous->HideBubble(/*initiated_by_bubble_manager=*/true);
+ }
+ 
+ void BubbleManagerImpl::AddToPendingQueue(
+@@ -269,18 +312,17 @@
+     const bool bubble_has_timed_out =
+         (now - it->time_added) > kPendingRequestTimeout;
+     if (ShouldAlwaysPreemptSameType(new_bubble_type) || bubble_has_timed_out) {
+-      if (bubble_has_timed_out) {
+-        if (it->controller) {
+-          it->controller->OnBubbleDiscarded();
+-          base::UmaHistogramEnumeration("Autofill.Bubble.Queue.TimedOut",
+-                                        it->controller->GetBubbleType());
+-        }
+-      } else {
+-        base::UmaHistogramEnumeration("Autofill.Bubble.Queue.Replaced",
+-                                      new_bubble_type);
+-      }
++      auto discarded = bubble_has_timed_out ? it->controller : nullptr;
+       pending_bubbles_queue_.erase(it);
+       pending_bubbles_queue_.insert(PendingRequest(controller, now, priority));
++      base::UmaHistogramEnumeration(bubble_has_timed_out
++                                        ? "Autofill.Bubble.Queue.TimedOut"
++                                        : "Autofill.Bubble.Queue.Replaced",
++                                    new_bubble_type);
++      if (discarded) {
++        discarded->OnBubbleDiscarded();
++      }
++
+     } else {
+       base::UmaHistogramEnumeration("Autofill.Bubble.Queue.Discarded",
+                                     new_bubble_type);
+@@ -292,7 +334,8 @@
+ }
+ 
+ void BubbleManagerImpl::ProcessPendingBubbles(bool tab_entered_foreground) {
+-  if (handling_show_request_ || handling_tab_will_enter_background_request_ ||
++  if (destroying_ || !tab_interface_->IsActivated() || handling_show_request_ ||
++      handling_tab_will_enter_background_request_ ||
+       (active_bubble_controller_ &&
+        active_bubble_controller_->IsShowingBubble())) {
+     // The bubble is hidden due to preemption and added to the queue. Or the tab
+@@ -300,27 +343,49 @@
+     return;
+   }
+ 
+-  // Clean up any stale pointers and timed out bubbles.
++  // Remove terminal requests before callbacks: a neutral unavailable result
++  // can destroy the page/manager or enqueue a replacement on this same tab.
+   const base::TimeTicks now = base::TimeTicks::Now();
+-  std::ranges::for_each(pending_bubbles_queue_, [&now](const auto& request) {
+-    if (!request.controller) {
++  for (;;) {
++    std::vector<base::WeakPtr<BubbleControllerBase>> discarded;
++    for (auto it = pending_bubbles_queue_.begin();
++         it != pending_bubbles_queue_.end();) {
++      if (!it->controller || (now - it->time_added) > kPendingRequestTimeout ||
++          !it->controller->CanBeReshown()) {
++        if (it->controller) {
++          discarded.push_back(it->controller);
++        }
++        it = pending_bubbles_queue_.erase(it);
++      } else {
++        ++it;
++      }
++    }
++    auto weak = weak_factory_.GetWeakPtr();
++    for (auto controller : discarded) {
++      if (!controller) {
++        continue;
++      }
++      base::UmaHistogramEnumeration("Autofill.Bubble.Queue.TimedOut",
++                                    controller->GetBubbleType());
++      controller->OnBubbleDiscarded();
++      if (!weak) {
++        return;
++      }
++    }
++    if (destroying_ || !tab_interface_->IsActivated() ||
++        handling_show_request_ || handling_tab_will_enter_background_request_ ||
++        (active_bubble_controller_ &&
++         active_bubble_controller_->IsShowingBubble())) {
+       return;
+     }
+-    const bool timed_out = (now - request.time_added) > kPendingRequestTimeout;
+-    if (timed_out || !request.controller->CanBeReshown()) {
+-      request.controller->OnBubbleDiscarded();
+-    }
+-    if (timed_out) {
+-      // Log timed-out bubbles.
+-      base::UmaHistogramEnumeration("Autofill.Bubble.Queue.TimedOut",
+-                                    request.controller->GetBubbleType());
+-    }
+-  });
+-  std::erase_if(pending_bubbles_queue_, [&now](const auto& request) {
+-    return !request.controller ||
+-           (now - request.time_added) > kPendingRequestTimeout ||
+-           !request.controller->CanBeReshown();
+-  });
++
++    if (discarded.empty()) {
++      break;
++    }
++    // Discard callbacks can invalidate another queued request or its
++    // eligibility. Revalidate the current queue before dereferencing its
++    // selected weak entry.
++  }
+ 
+   if (pending_bubbles_queue_.empty()) {
+     active_bubble_controller_ = nullptr;
+@@ -415,16 +480,34 @@
+ 
+ void BubbleManagerImpl::TabWillEnterBackground(
+     tabs::TabInterface* tab_interface) {
+-  base::AutoReset<bool> hide_request_guard(
+-      &handling_tab_will_enter_background_request_, true);
++  auto weak = weak_factory_.GetWeakPtr();
++  const bool previous_hide_request =
++      std::exchange(handling_tab_will_enter_background_request_, true);
++  base::ScopedClosureRunner hide_request_guard(base::BindOnce(
++      [](base::WeakPtr<BubbleManagerImpl> self, bool previous) {
++        if (self) {
++          self->handling_tab_will_enter_background_request_ = previous;
++        }
++      },
++      weak, previous_hide_request));
+   if (active_bubble_controller_) {
+     base::UmaHistogramEnumeration("Autofill.Bubble.HideDueToTabHide",
+                                   active_bubble_controller_->GetBubbleType());
+-    if (active_bubble_controller_->ShouldReshowOnTabVisible()) {
+-      AddToPendingQueue(active_bubble_controller_);
+-    }
+-    active_bubble_controller_->HideBubble(/*initiated_by_bubble_manager=*/true);
+-    active_bubble_controller_ = nullptr;
++    const auto previous = active_bubble_controller_;
++    if (previous->ShouldReshowOnTabVisible()) {
++      AddToPendingQueue(previous);
++    }
++    if (!weak || !previous ||
++        active_bubble_controller_.get() != previous.get()) {
++      return;
++    }
++    previous->HideBubble(/*initiated_by_bubble_manager=*/true);
++    if (!weak) {
++      return;
++    }
++    if (active_bubble_controller_.get() == previous.get()) {
++      active_bubble_controller_ = nullptr;
++    }
+   }
+ }
+ 
+@@ -434,7 +517,7 @@
+     ProcessPendingBubbles(/*tab_entered_foreground=*/true);
+   } else if (!active_bubble_controller_->IsShowingBubble()) {
+     // This can happen if a tab created in background becomes visible.
+-    active_bubble_controller_->ShowBubble();
++    ShowAndSetCurrentActive(active_bubble_controller_);
+   }
+ }
+ 
+--- a/chrome/browser/ui/autofill/bubble_manager_impl.h
++++ b/chrome/browser/ui/autofill/bubble_manager_impl.h
+@@ -12,6 +12,7 @@
+ #include "base/time/time.h"
+ #include "chrome/browser/ui/autofill/bubble_controller_base.h"
+ #include "chrome/browser/ui/autofill/bubble_manager.h"
++#include "optional"
+ 
+ namespace base {
+ class CallbackListSubscription;
+@@ -101,6 +102,8 @@
+ 
+   std::vector<base::CallbackListSubscription> tab_subscriptions_;
+   raw_ptr<tabs::TabInterface> tab_interface_;
++  bool destroying_ = false;
++  base::WeakPtrFactory<BubbleManagerImpl> weak_factory_{this};
+ };
+ 
+ }  // namespace autofill
+--- a/chrome/browser/ui/autofill/chrome_autofill_client.cc
++++ b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+@@ -26,6 +26,7 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#include "cef/libcef/features/parc_product_policy.h"
+ #include "chrome/browser/account_settings/account_setting_service_factory.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_task.h"
+@@ -79,6 +80,7 @@
+ #include "chrome/browser/translate/chrome_translate_client.h"
+ #include "chrome/browser/ui/autofill/address_bubbles_controller.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_controller_base.h"
++#include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+ #include "chrome/browser/ui/autofill/autofill_dialog_controller_impl.h"
+ #include "chrome/browser/ui/autofill/autofill_suggestion_controller.h"
+ #include "chrome/browser/ui/autofill/chrome_otp_phish_guard_delegate.h"
+@@ -291,6 +293,16 @@
+   }
+ }
+ 
++bool ChromeAutofillClient::IsAutofillUiPresentationSupported(
++    AutofillUiPresentation presentation) const {
++#if BUILDFLAG(IS_ANDROID)
++  return true;
++#else
++  return AutofillBubbleHandler::IsPresentationSupported(&GetWebContents(),
++                                                        presentation);
++#endif
++}
++
+ ChromeAutofillClient::~ChromeAutofillClient() {
+   // NOTE: It is too late to clean up the autofill popup; that cleanup process
+   // requires that the WebContents instance still be valid and it is not at
+@@ -1131,13 +1143,21 @@
+ }
+ 
+ void ChromeAutofillClient::ShowAutofillAiLoadingDialog() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+   GetAutofillDialogController()->ShowLoadingDialog(
+       l10n_util::GetStringUTF16(IDS_AUTOFILL_AI_LOADING_DIALOG_LABEL),
+       base::Seconds(1));
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::DismissAutofillAiLoadingDialog() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+   GetAutofillDialogController()->Dismiss();
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ AutofillDialogController* ChromeAutofillClient::GetAutofillDialogController() {
+@@ -1261,6 +1281,7 @@
+   // Initialize StrikeDatabase so its cache will be loaded and ready to use
+   // when requested by other Autofill classes.
+   GetStrikeDatabase();
++#if !BUILDFLAG(IS_PARC_BROWSER)
+   if (base::FeatureList::IsEnabled(features::kAutofillAiWithDataSchema)) {
+     autofill_ai_manager_ = std::make_unique<AutofillAiManager>(
+         this, StrikeDatabaseFactory::GetForProfile(GetProfile()));
+@@ -1270,13 +1291,16 @@
+         this, HistoryServiceFactory::GetForProfile(
+                   GetProfile(), ServiceAccessType::EXPLICIT_ACCESS));
+   }
++#endif  // !BUILDFLAG(IS_PARC_BROWSER)
+ #if BUILDFLAG(IS_ANDROID)
++#if !BUILDFLAG(IS_PARC_BROWSER)
+   if (base::FeatureList::IsEnabled(features::kAutofillAiWithDataSchema)) {
+     autofill_ai_save_update_entity_flow_manager_ =
+         std::make_unique<AutofillAiSaveUpdateEntityFlowManager>(
+             web_contents, GetAutofillMessageController(),
+             GetAutofillDialogController(), GetAppLocale());
+   }
++#endif  // !BUILDFLAG(IS_PARC_BROWSER)
+   save_update_address_profile_flow_manager_ =
+       std::make_unique<SaveUpdateAddressProfileFlowManager>(
+           this, GetAutofillMessageController());
+@@ -1284,6 +1308,7 @@
+       TouchToFillAutofillController::Create(this);
+ #endif
+ 
++#if !BUILDFLAG(IS_PARC_BROWSER)
+   if (actor::ActorKeyedService* actor_service =
+           base::FeatureList::IsEnabled(features::kAutofillActorMode)
+               ? actor::ActorKeyedService::Get(GetProfile())
+@@ -1296,6 +1321,7 @@
+             base::BindRepeating(&ChromeAutofillClient::OnActorTaskStateChange,
+                                 base::Unretained(this)));
+   }
++#endif  // !BUILDFLAG(IS_PARC_BROWSER)
+ 
+   form_predictions_tracker_ = std::make_unique<FormPredictionsTracker>(this);
+   actor_autofill_manager_ = std::make_unique<ActorAutofillManager>(
+@@ -1544,6 +1570,18 @@
+     bool save_is_synchronous,
+     LegalMessageLines public_passes_notice,
+     EntityImportPromptResultCallback prompt_result_callback) {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  std::move(prompt_result_callback)
++      .Run(AutofillClient::AutofillAiBubbleResult::kUnknown, std::nullopt, {});
++#else
++  if (!IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kAutofillAiImport)) {
++    std::move(prompt_result_callback)
++        .Run(AutofillClient::AutofillAiBubbleResult::kUnknown, std::nullopt,
++             {});
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID)
+   if (autofill_ai_save_update_entity_flow_manager_) {
+     autofill_ai_save_update_entity_flow_manager_->OfferSave(
+@@ -1565,6 +1603,7 @@
+              {});
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::CloseEntityImportBubble() {
+@@ -1574,6 +1613,14 @@
+ }
+ 
+ void ChromeAutofillClient::ShowAutofillAiLocalSaveNotification() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
++  if (!IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kAutofillAiNotification)) {
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID)
+   if (autofill_ai_save_update_entity_flow_manager_) {
+     autofill_ai_save_update_entity_flow_manager_->ShowLocalSaveNotification();
+@@ -1584,9 +1631,13 @@
+     controller->ShowLocalSaveNotification();
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::ShowAutofillAiSaveToWalletFailureNotification() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+ #if BUILDFLAG(IS_ANDROID)
+   GetAutofillSnackbarController()->Show(
+       AutofillSnackbarType::kAutofillAiSaveToWalletFailure, base::DoNothing());
+@@ -1596,9 +1647,13 @@
+     toast_controller->MaybeShowToast(std::move(params));
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::ShowAutofillAiFetchEntityFailureNotification() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+ #if BUILDFLAG(IS_ANDROID)
+   GetAutofillSnackbarController()->Show(
+       AutofillSnackbarType::kAutofillAiFetchEntityFailure, base::DoNothing());
+@@ -1608,10 +1663,14 @@
+     toast_controller->MaybeShowToast(std::move(params));
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::ShowAtMemoryFetchFailureNotification(
+     std::optional<std::u16string> message_override) {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+ #if BUILDFLAG(IS_ANDROID)
+   // TODO(crbug.com/540713368): Implement support on Android.
+ #else
+@@ -1621,9 +1680,13 @@
+     toast_controller->MaybeShowToast(std::move(params));
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::ShowAutofillAiPreFetchFailureNotification() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+ #if BUILDFLAG(IS_ANDROID)
+   GetAutofillMessageController()->Show(
+       AutofillMessageModel::CreateForPersonalContextFetchingFailure());
+@@ -1633,9 +1696,13 @@
+     toast_controller->MaybeShowToast(std::move(params));
+   }
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ void ChromeAutofillClient::ShowAutofillAiPrivateInferenceNotice() {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+ #if BUILDFLAG(IS_ANDROID)
+   base::OnceClosure action_callback = base::BindOnce(
+       [](base::WeakPtr<AutofillClient> client) {
+@@ -1673,12 +1740,16 @@
+   AutofillMetrics::LogAutofillAiPrivateInferenceNoticeInteraction(
+       AutofillMetrics::PopupNoticeInteractions::kShown);
+ #endif  // BUILDFLAG(IS_ANDROID)
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+ void ChromeAutofillClient::ShowAutofillAiSuppressionConfirmationDialog(
+     const EntityInstance& entity,
+     base::OnceCallback<void(bool)> callback) {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  std::move(callback).Run(false);
++#else
+   CHECK_EQ(entity.record_type(), EntityInstance::RecordType::kPersonalContext);
+   ShowEntitySuppressionDialogView(
+       web_contents(),
+@@ -1686,12 +1757,16 @@
+           entity.record_type_data())
+           .sources.size(),
+       std::move(callback));
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+ void ChromeAutofillClient::ShowAutofillAiSuggestionRemovedNotification(
+     const EntityInstance& entity,
+     base::OnceClosure on_undo_clicked) {
++#if BUILDFLAG(IS_PARC_BROWSER)
++  return;
++#else
+   CHECK_EQ(entity.record_type(), EntityInstance::RecordType::kPersonalContext);
+   if (!base::FeatureList::IsEnabled(
+           features::kAutofillAmbientAutofillSuppression)) {
+@@ -1719,6 +1794,7 @@
+   params.action_button_callback_data = base::Value(*entity.guid());
+   toast_controller->MaybeShowToast(std::move(params));
+ #endif
++#endif  // BUILDFLAG(IS_PARC_BROWSER)
+ }
+ 
+ ToastController* ChromeAutofillClient::GetToastController() {
+--- a/chrome/browser/ui/autofill/chrome_autofill_client.h
++++ b/chrome/browser/ui/autofill/chrome_autofill_client.h
+@@ -191,6 +191,9 @@
+   const GoogleGroupsManager* GetGoogleGroupsManager() const final;
+   FormDataImporter* GetFormDataImporter() final;
+   payments::ChromePaymentsAutofillClient* GetPaymentsAutofillClient() final;
++  bool IsAutofillUiPresentationSupported(
++      AutofillUiPresentation presentation) const override;
++
+   strike_database::StrikeDatabase* GetStrikeDatabase() final;
+   ukm::UkmRecorder* GetUkmRecorder() final;
+   AddressNormalizer* GetAddressNormalizer() final;
+--- a/chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.cc
++++ b/chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.cc
+@@ -292,8 +292,14 @@
+                                               std::move(callback));
+ }
+ 
++bool ChromePaymentsAutofillClient::IsAutofillUiPresentationSupported(
++    AutofillUiPresentation presentation) const {
++  return client_->IsAutofillUiPresentationSupported(presentation);
++}
++
+ bool ChromePaymentsAutofillClient::LocalCardSaveIsSupported() {
+-  return true;
++  return IsAutofillUiPresentationSupported(
++      AutofillUiPresentation::kLocalCardSave);
+ }
+ 
+ void ChromePaymentsAutofillClient::ShowSaveCreditCardLocally(
+@@ -454,13 +460,29 @@
+     const VirtualCardEnrollmentFields& virtual_card_enrollment_fields,
+     base::OnceClosure accept_virtual_card_callback,
+     base::OnceClosure decline_virtual_card_callback) {
++  ShowVirtualCardEnrollDialogWithPresentationOutcome(
++      virtual_card_enrollment_fields, std::move(accept_virtual_card_callback),
++      std::move(decline_virtual_card_callback), {});
++}
++
++void ChromePaymentsAutofillClient::
++    ShowVirtualCardEnrollDialogWithPresentationOutcome(
++        const VirtualCardEnrollmentFields& fields,
++        base::OnceClosure accept,
++        base::OnceClosure decline,
++        base::OnceClosure unavailable) {
++  if (!IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kVirtualCardEnrollment)) {
++    if (unavailable) {
++      std::move(unavailable).Run();
++    }
++    return;
++  }
+   VirtualCardEnrollBubbleControllerImpl::CreateForWebContents(web_contents());
+-  VirtualCardEnrollBubbleControllerImpl* controller =
++  auto* controller =
+       VirtualCardEnrollBubbleControllerImpl::FromWebContents(web_contents());
+-  DCHECK(controller);
+-  controller->SetupAndShowBubble(virtual_card_enrollment_fields,
+-                                 std::move(accept_virtual_card_callback),
+-                                 std::move(decline_virtual_card_callback));
++  controller->SetupAndShowBubble(fields, std::move(accept), std::move(decline),
++                                 std::move(unavailable));
+ }
+ 
+ void ChromePaymentsAutofillClient::VirtualCardEnrollCompleted(
+@@ -753,7 +775,6 @@
+       &CreateCardUnmaskPromptView, base::Unretained(unmask_controller_.get()),
+       base::Unretained(web_contents())));
+ }
+-
+ 
+ // TODO(crbug.com/40186650): Refactor this for both CVC and Biometrics flows.
+ void ChromePaymentsAutofillClient::OnUnmaskVerificationResult(
+@@ -1207,8 +1228,7 @@
+ #if !BUILDFLAG(IS_ANDROID)
+   CHECK(save_and_fill_dialog_controller_);
+   save_and_fill_dialog_controller_->ShowUploadDialog(
+-      std::move(legal_message_lines),
+-      std::move(callback));
++      std::move(legal_message_lines), std::move(callback));
+ #else
+   NOTIMPLEMENTED();
+ #endif  // !BUILDFLAG(IS_ANDROID)
+@@ -1317,6 +1337,11 @@
+ #if !BUILDFLAG(IS_ANDROID)
+ OmniboxAutofillDelegate*
+ ChromePaymentsAutofillClient::GetOmniboxAutofillDelegate() {
++  if (!IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kOmniboxAutofill)) {
++    return nullptr;
++  }
++
+   return omnibox_autofill_delegate_.get();
+ }
+ 
+@@ -1332,6 +1357,11 @@
+         void(const Suggestion&,
+              const AutofillSuggestionDelegate::SuggestionMetadata&)>
+         did_accept_suggestion) {
++  if (!IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kOmniboxAutofill)) {
++    return;
++  }
++
+   tabs::TabInterface* tab_interface =
+       tabs::TabInterface::MaybeGetFromContents(web_contents());
+   if (!tab_interface) {
+--- a/chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.h
++++ b/chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.h
+@@ -131,6 +131,9 @@
+   bool HasCreditCardScanFeature() const override;
+   void ScanCreditCard(CreditCardScanCallback callback) override;
+   bool LocalCardSaveIsSupported() override;
++  bool IsAutofillUiPresentationSupported(
++      AutofillUiPresentation presentation) const override;
++
+   void ShowSaveCreditCardLocally(const CreditCard& card,
+                                  SaveCreditCardOptions options,
+                                  LocalSaveCardPromptCallback callback) override;
+@@ -148,6 +151,11 @@
+       base::OnceClosure accept_virtual_card_callback,
+       base::OnceClosure decline_virtual_card_callback) override;
+   void VirtualCardEnrollCompleted(PaymentsRpcResult result) override;
++  void ShowVirtualCardEnrollDialogWithPresentationOutcome(
++      const VirtualCardEnrollmentFields& fields,
++      base::OnceClosure accept,
++      base::OnceClosure decline,
++      base::OnceClosure unavailable) override;
+   void OnCardDataAvailable(const FilledCardInformationBubbleOptions& options,
+                            const url::Origin& origin) override;
+   void ConfirmSaveIbanLocally(const Iban& iban,
+--- a/chrome/browser/ui/autofill/payments/filled_card_information_bubble_controller_impl.cc
++++ b/chrome/browser/ui/autofill/payments/filled_card_information_bubble_controller_impl.cc
+@@ -63,10 +63,18 @@
+ 
+ void FilledCardInformationBubbleControllerImpl::SetupAndShowBubble(
+     const FilledCardInformationBubbleOptions& options) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kFilledCardInformation)) {
++    return;
++  }
++
+   // If another bubble is visible, dismiss it and show a new one since the card
+   // information can be different.
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   if (bubble_view()) {
+     HideBubble(/*initiated_by_bubble_manager=*/false);
++    if (!weak)
++      return;
+   }
+ 
+   if (!MaySetUpBubble()) {
+@@ -90,14 +98,25 @@
+ 
+ void FilledCardInformationBubbleControllerImpl::SetupBubbleState(
+     FilledCardInformationBubbleOptions options) {
++  // Cancel the previous request's delayed presentation before replacing data.
++  weak_ptr_factory_.InvalidateWeakPtrs();
++  ++native_request_id_;
+   was_bubble_shown_ = false;
++  bubble_has_been_shown_ = false;
++  clicked_field_.reset();
+   DCHECK(options.IsValid());
+   options_ = std::move(options);
+   is_user_gesture_ = false;
+   should_icon_be_visible_ = true;
++  UpdatePageActionIcon();
+ }
+ 
+ void FilledCardInformationBubbleControllerImpl::ReshowBubble() {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kFilledCardInformation)) {
++    return;
++  }
++
+   // If bubble is already visible, return early.
+   if (bubble_view()) {
+     return;
+@@ -262,7 +281,10 @@
+ 
+ void FilledCardInformationBubbleControllerImpl::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak)
++    return;
+   if (!bubble_hide_initiated_by_bubble_manager_) {
+     LogBubbleCloseMetrics(closed_reason);
+   }
+@@ -413,6 +435,16 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+ void FilledCardInformationBubbleControllerImpl::DoShowBubble() {
++  if (!CanBeReshown()) {
++    RefusePresentation();
++    return;
++  }
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kFilledCardInformation)) {
++    MarkPresentationUnavailable();
++    return;
++  }
++
+   if (!IsWebContentsActive()) {
+     return;
+   }
+@@ -424,12 +456,38 @@
+   BrowserWindowInterface* browser =
+       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+           web_contents());
+-  SetBubbleView(*BrowserWindow::FromBrowser(browser)
+-                     ->GetAutofillBubbleHandler()
+-                     ->ShowFilledCardInformationBubble(web_contents(), this,
+-                                                       is_user_gesture_));
+-  DCHECK(bubble_view());
++  auto* window = browser ? BrowserWindow::FromBrowser(browser) : nullptr;
++  auto* handler = window ? window->GetAutofillBubbleHandler() : nullptr;
++  auto* view = handler ? handler->ShowFilledCardInformationBubble(
++                             web_contents(), this, is_user_gesture_)
++                       : nullptr;
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
++  ObservePresentation(
++      base::BindOnce(
++          &FilledCardInformationBubbleControllerImpl::RecordPresentation,
++          weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(
++          &FilledCardInformationBubbleControllerImpl::RefusePresentation,
++          weak_ptr_factory_.GetWeakPtr()));
++}
++
++bool FilledCardInformationBubbleControllerImpl::CanBeReshown() const {
++  return should_icon_be_visible_ && options_.IsValid();
++}
++
++void FilledCardInformationBubbleControllerImpl::RefusePresentation() {
++  MarkPresentationUnavailable();
++  should_icon_be_visible_ = false;
++  UpdatePageActionIcon();
++}
++
++void FilledCardInformationBubbleControllerImpl::RecordPresentation() {
+   bubble_has_been_shown_ = true;
++  UpdatePageActionIcon();
+ 
+   autofill_metrics::LogFilledCardInformationBubbleShown(is_user_gesture_);
+ 
+--- a/chrome/browser/ui/autofill/payments/iban_bubble_controller_impl.cc
++++ b/chrome/browser/ui/autofill/payments/iban_bubble_controller_impl.cc
+@@ -52,8 +52,21 @@
+     bool should_show_prompt,
+     payments::PaymentsAutofillClient::SaveIbanPromptCallback
+         save_iban_prompt_callback) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kIbanSave)) {
++    std::move(save_iban_prompt_callback)
++        .Run(payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++                 kNotPresented,
++             {});
++    return;
++  }
++
+   // Don't show the bubble if it's already visible or cannot be shown.
+   if (bubble_view() || !MaySetUpBubble() || !GetAutofillBubbleHandler()) {
++    std::move(save_iban_prompt_callback)
++        .Run(payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++                 kNotPresented,
++             {});
+     return;
+   }
+ 
+@@ -71,8 +84,21 @@
+     bool should_show_prompt,
+     payments::PaymentsAutofillClient::SaveIbanPromptCallback
+         save_iban_prompt_callback) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kIbanSave)) {
++    std::move(save_iban_prompt_callback)
++        .Run(payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++                 kNotPresented,
++             {});
++    return;
++  }
++
+   // Don't show the bubble if it's already visible or cannot be shown.
+   if (bubble_view() || !MaySetUpBubble() || !GetAutofillBubbleHandler()) {
++    std::move(save_iban_prompt_callback)
++        .Run(payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++                 kNotPresented,
++             {});
+     return;
+   }
+ 
+@@ -117,6 +143,13 @@
+ }
+ 
+ void IbanBubbleControllerImpl::ReshowBubble() {
++  if (!bubble_view() &&
++      !AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kIbanSave)) {
++    RefusePresentation();
++    return;
++  }
++
+   // Don't show the bubble if it's already visible.
+   if (bubble_view()) {
+     return;
+@@ -137,10 +170,18 @@
+ void IbanBubbleControllerImpl::ShowConfirmationBubbleView(
+     bool iban_saved,
+     bool hit_max_strikes) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kIbanConfirmation)) {
++    return;
++  }
++
+   DoNotShowNextQueuedBubbleGuard guard = DoNotShowNextQueuedBubble();
+ 
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   // Hide the current bubble if still showing.
+   HideBubble(/*initiated_by_bubble_manager=*/false);
++  if (!weak)
++    return;
+ 
+   is_reshow_ = false;
+   current_bubble_type_ = IbanBubbleType::kUploadCompleted;
+@@ -152,17 +193,31 @@
+ 
+   // Show upload confirmation bubble.
+   AutofillBubbleHandler* autofill_bubble_handler = GetAutofillBubbleHandler();
+-  CHECK(autofill_bubble_handler);
+-  SetBubbleView(*autofill_bubble_handler->ShowSaveIbanConfirmationBubble(
+-      web_contents(), this));
++  auto* view = autofill_bubble_handler
++                   ? autofill_bubble_handler->ShowSaveIbanConfirmationBubble(
++                         web_contents(), this)
++                   : nullptr;
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
+   UpdatePageActionIcon();
+ 
++  ObservePresentation(
++      base::BindOnce(&IbanBubbleControllerImpl::ConfirmationPresented,
++                     weak_ptr_factory_.GetWeakPtr(), iban_saved),
++      base::BindOnce(&IbanBubbleControllerImpl::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void IbanBubbleControllerImpl::ConfirmationPresented(bool iban_saved) {
+   // Auto close confirmation bubble when IBAN saved is successful.
+   if (iban_saved) {
+     auto_close_confirmation_timer_.Start(
+         FROM_HERE, kAutoCloseConfirmationBubbleWaitSec,
+         base::BindOnce(&IbanBubbleControllerImpl::HideBubble,
+-                       base::Unretained(this),
++                       weak_ptr_factory_.GetWeakPtr(),
+                        /*initiated_by_bubble_manager=*/false));
+   }
+ }
+@@ -289,10 +344,15 @@
+           /*is_upload_save=*/true);
+       iban_.set_nickname(std::u16string(nickname));
+       current_bubble_type_ = IbanBubbleType::kUploadInProgress;
+-      std::move(save_iban_prompt_callback_)
+-          .Run(payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
+-                   kAccepted,
+-               nickname);
++      {
++        auto weak = weak_ptr_factory_.GetWeakPtr();
++        std::move(save_iban_prompt_callback_)
++            .Run(payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++                     kAccepted,
++                 nickname);
++        if (weak && current_bubble_type_ == IbanBubbleType::kUploadInProgress)
++          UpdatePageActionIcon();
++      }
+       return;
+     case IbanBubbleType::kManageSavedIban:
+       return;
+@@ -315,9 +375,11 @@
+   tabs::TabInterface* tab = tabs::TabInterface::GetFromContents(web_contents());
+   CHECK(tab);
+   CHECK(tab->GetBrowserWindowInterface());
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   chrome::ShowSettingsSubPage(tab->GetBrowserWindowInterface(),
+                               chrome::kPaymentsSubPage);
+-  OnBubbleClosed(PaymentsUiClosedReason::kClosed);
++  if (weak)
++    OnBubbleClosed(PaymentsUiClosedReason::kClosed);
+ }
+ 
+ void IbanBubbleControllerImpl::OnBubbleDiscarded() {
+@@ -368,6 +430,7 @@
+ 
+ void IbanBubbleControllerImpl::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   if (current_bubble_type_ == IbanBubbleType::kLocalSave ||
+       current_bubble_type_ == IbanBubbleType::kUploadSave) {
+     if (closed_reason == PaymentsUiClosedReason::kCancelled) {
+@@ -383,7 +446,11 @@
+     }
+   }
+ 
++  if (!weak)
++    return;
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak)
++    return;
+ 
+   if (!bubble_hide_initiated_by_bubble_manager_) {
+     LogBubbleCloseMetrics(closed_reason);
+@@ -488,13 +555,45 @@
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
++void IbanBubbleControllerImpl::RefusePresentation() {
++  MarkPresentationUnavailable();
++  auto callback = std::move(save_iban_prompt_callback_);
++  current_bubble_type_ = IbanBubbleType::kInactive;
++  confirmation_ui_params_.reset();
++  auto_close_confirmation_timer_.Stop();
++  UpdatePageActionIcon();
++  if (callback) {
++    std::move(callback).Run(payments::PaymentsAutofillClient::
++                                SaveIbanOfferUserDecision::kNotPresented,
++                            {});
++  }
++}
++
+ void IbanBubbleControllerImpl::DoShowBubble() {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kIbanSave)) {
++    RefusePresentation();
++    return;
++  }
++
+   AutofillBubbleHandler* autofill_bubble_handler = GetAutofillBubbleHandler();
+-  CHECK(autofill_bubble_handler);
+-  SetBubbleView(*autofill_bubble_handler->ShowIbanBubble(
+-      web_contents(), this,
+-      /*is_user_gesture=*/is_reshow_, current_bubble_type_));
+-  CHECK(bubble_view());
++  auto* view = autofill_bubble_handler
++                   ? autofill_bubble_handler->ShowIbanBubble(
++                         web_contents(), this, is_reshow_, current_bubble_type_)
++                   : nullptr;
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
++  ObservePresentation(
++      base::BindOnce(&IbanBubbleControllerImpl::RecordPresentation,
++                     weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(&IbanBubbleControllerImpl::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void IbanBubbleControllerImpl::RecordPresentation() {
+   CHECK(current_bubble_type_ != IbanBubbleType::kInactive);
+ 
+   switch (current_bubble_type_) {
+--- a/chrome/browser/ui/autofill/payments/iban_bubble_controller_impl.h
++++ b/chrome/browser/ui/autofill/payments/iban_bubble_controller_impl.h
+@@ -128,6 +128,9 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+  private:
++  void RefusePresentation();
++  void RecordPresentation();
++  void ConfirmationPresented(bool iban_saved);
+   friend class content::WebContentsUserData<IbanBubbleControllerImpl>;
+ 
+   Profile* GetProfile();
+@@ -180,10 +183,12 @@
+   // Contains the details of the IBAN that will be saved if the user accepts.
+   Iban iban_;
+ 
+-  // Governs whether the upload or local save version of the UI should be shown.
++  // Governs whether the upload or local save version of the UI should be
++  // shown.
+   bool is_upload_save_ = false;
+ 
+-  // If no legal message should be shown, then this variable is an empty vector.
++  // If no legal message should be shown, then this variable is an empty
++  // vector.
+   LegalMessageLines legal_message_lines_;
+ 
+   // UI parameters needed to display the save IBAN confirmation view.
+--- a/chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller_impl.cc
++++ b/chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller_impl.cc
+@@ -48,6 +48,11 @@
+     base::OnceClosure accept_mandatory_reauth_callback,
+     base::OnceClosure cancel_mandatory_reauth_callback,
+     base::RepeatingClosure close_mandatory_reauth_callback) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kMandatoryReauthOptIn)) {
++    return;
++  }
++
+   if (bubble_view() || !MaySetUpBubble()) {
+     return;
+   }
+@@ -62,10 +67,6 @@
+   SetupBubble(std::move(accept_mandatory_reauth_callback),
+               std::move(cancel_mandatory_reauth_callback),
+               std::move(close_mandatory_reauth_callback));
+-  autofill_metrics::LogMandatoryReauthOptInBubbleOffer(
+-      autofill_metrics::MandatoryReauthOptInBubbleOffer::kShown,
+-      /*is_reshow=*/false);
+-
+   QueueOrShowBubble();
+ }
+ 
+@@ -84,6 +85,16 @@
+ }
+ 
+ void MandatoryReauthBubbleControllerImpl::ReshowBubble() {
++  const auto kind =
++      current_bubble_type_ == MandatoryReauthBubbleType::kConfirmation
++          ? AutofillUiPresentation::kMandatoryReauthConfirmation
++          : AutofillUiPresentation::kMandatoryReauthOptIn;
++  if (!bubble_view() &&
++      !AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind)) {
++    RefusePresentation();
++    return;
++  }
++
+   // Don't show the bubble if it's already visible.
+   if (bubble_view()) {
+     return;
+@@ -96,15 +107,6 @@
+     CHECK(accept_mandatory_reauth_callback_ &&
+           cancel_mandatory_reauth_callback_ &&
+           close_mandatory_reauth_callback_);
+-    autofill_metrics::LogMandatoryReauthOptInBubbleOffer(
+-        autofill_metrics::MandatoryReauthOptInBubbleOffer::kShown,
+-        /*is_reshow=*/true);
+-  } else if (current_bubble_type_ == MandatoryReauthBubbleType::kConfirmation) {
+-    // The confirmation bubble cannot be minimized, so it's safe to increment
+-    // the shown metric when it is reshown, which is the way it transitions
+-    // from opt-in to confirmation.
+-    autofill_metrics::LogMandatoryReauthOptInConfirmationBubbleMetric(
+-        autofill_metrics::MandatoryReauthOptInConfirmationBubbleMetric::kShown);
+   }
+ 
+   QueueOrShowBubble(/*force_show=*/true);
+@@ -185,7 +187,10 @@
+ 
+ void MandatoryReauthBubbleControllerImpl::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak_this)
++    return;
+ 
+ // After resetting the raw pointer to the view in the base class, the Android
+ // view has to be deleted.
+@@ -198,8 +203,6 @@
+   // weak pointer must be kept to then later be checked.
+   // TODO(crbug.com/517126769): Make callbacks below asynchronous so that a weak
+   // pointer isn't needed.
+-  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+-
+   if (current_bubble_type_ == MandatoryReauthBubbleType::kOptIn) {
+     if (!bubble_hide_initiated_by_bubble_manager_) {
+       LogBubbleCloseOptInMetrics(closed_reason);
+@@ -278,7 +281,26 @@
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
++void MandatoryReauthBubbleControllerImpl::RefusePresentation() {
++  MarkPresentationUnavailable();
++  accept_mandatory_reauth_callback_.Reset();
++  cancel_mandatory_reauth_callback_.Reset();
++  close_mandatory_reauth_callback_.Reset();
++  current_bubble_type_ = MandatoryReauthBubbleType::kInactive;
++  UpdatePageActionIcon();
++}
++
+ void MandatoryReauthBubbleControllerImpl::DoShowBubble() {
++  const auto kind =
++      current_bubble_type_ == MandatoryReauthBubbleType::kConfirmation
++          ? AutofillUiPresentation::kMandatoryReauthConfirmation
++          : AutofillUiPresentation::kMandatoryReauthOptIn;
++  if (!bubble_view() &&
++      !AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind)) {
++    RefusePresentation();
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID)
+   // The Android view's lifecycle is managed by this controller. We also
+   // register it as a raw pointer in the base class to use its closing logic
+@@ -294,11 +316,35 @@
+   BrowserWindowInterface* browser =
+       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+           web_contents());
++  auto* window = browser ? BrowserWindow::FromBrowser(browser) : nullptr;
+   AutofillBubbleHandler* autofill_bubble_handler =
+-      BrowserWindow::FromBrowser(browser)->GetAutofillBubbleHandler();
+-  SetBubbleView(*autofill_bubble_handler->ShowMandatoryReauthBubble(
+-      web_contents(), this, /*is_user_gesture=*/false, current_bubble_type_));
++      window ? window->GetAutofillBubbleHandler() : nullptr;
++  auto* view = autofill_bubble_handler
++                   ? autofill_bubble_handler->ShowMandatoryReauthBubble(
++                         web_contents(), this, false, current_bubble_type_)
++                   : nullptr;
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
+ #endif  // BUILDFLAG(IS_ANDROID)
++  ObservePresentation(
++      base::BindOnce(&MandatoryReauthBubbleControllerImpl::RecordPresentation,
++                     weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(&MandatoryReauthBubbleControllerImpl::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void MandatoryReauthBubbleControllerImpl::RecordPresentation() {
++  UpdatePageActionIcon();
++  if (current_bubble_type_ == MandatoryReauthBubbleType::kOptIn) {
++    autofill_metrics::LogMandatoryReauthOptInBubbleOffer(
++        autofill_metrics::MandatoryReauthOptInBubbleOffer::kShown, is_reshow_);
++  } else if (current_bubble_type_ == MandatoryReauthBubbleType::kConfirmation) {
++    autofill_metrics::LogMandatoryReauthOptInConfirmationBubbleMetric(
++        autofill_metrics::MandatoryReauthOptInConfirmationBubbleMetric::kShown);
++  }
+ }
+ 
+ bool MandatoryReauthBubbleControllerImpl::CanBeReshown() const {
+--- a/chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller_impl.h
++++ b/chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller_impl.h
+@@ -68,6 +68,8 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+  private:
++  void RefusePresentation();
++  void RecordPresentation();
+   friend class content::WebContentsUserData<
+       MandatoryReauthBubbleControllerImpl>;
+ 
+--- a/chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.cc
++++ b/chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.cc
+@@ -7,6 +7,7 @@
+ #include <string>
+ 
+ #include "base/check_deref.h"
++#include "base/functional/bind.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -32,6 +33,7 @@
+ #include "content/public/browser/navigation_handle.h"
+ #include "ui/actions/actions.h"
+ #include "ui/base/l10n/l10n_util.h"
++#include "url/origin.h"
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/page_action/page_action_controller.h"
+@@ -126,7 +128,10 @@
+ 
+ void OfferNotificationBubbleControllerImpl::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak)
++    return;
+   promo_code_button_clicked_ = false;
+   UpdatePageActionIcon();
+ }
+@@ -135,6 +140,11 @@
+     const AutofillOfferData& offer,
+     const CreditCard* card,
+     const OfferNotificationOptions& options) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kOfferNotification)) {
++    return;
++  }
++
+   // If this is not the bubble's first show, and offer to be shown has not
+   // changed, and it has not been shown for more than
+   // kAutofillBubbleSurviveNavigationTime, do not dismiss the bubble.
+@@ -151,7 +161,10 @@
+ 
+   // Hides the old bubble. Sets bubble_state_ to show icon here since we are
+   // going to show another bubble anyway.
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   HideBubbleAndClearTimestamp(/*should_show_icon=*/true);
++  if (!weak)
++    return;
+ 
+   SetupOfferNotification(offer, card);
+ 
+@@ -165,11 +178,13 @@
+ void OfferNotificationBubbleControllerImpl::SetupOfferNotification(
+     AutofillOfferData offer,
+     const CreditCard* card) {
++  ++native_request_id_;
+   was_bubble_shown_ = false;
+   offer_ = std::move(offer);
+ 
+   DCHECK(IsIconVisible());
+ 
++  card_.reset();
+   if (card) {
+     card_ = *card;
+   }
+@@ -177,6 +192,11 @@
+ }
+ 
+ void OfferNotificationBubbleControllerImpl::ReshowBubble() {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kOfferNotification)) {
++    return;
++  }
++
+   DCHECK(IsIconVisible());
+   if (bubble_view()) {
+     return;
+@@ -226,6 +246,16 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+ void OfferNotificationBubbleControllerImpl::DoShowBubble() {
++  if (!CanBeReshown()) {
++    RefusePresentation();
++    return;
++  }
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kOfferNotification)) {
++    MarkPresentationUnavailable();
++    return;
++  }
++
+   bubble_state_ = BubbleState::kShowingIconAndBubble;
+   UpdatePageActionIcon();
+ 
+@@ -236,10 +266,38 @@
+   }
+ 
+   AutofillBubbleHandler* autofill_bubble_handler = GetAutofillBubbleHandler();
+-  SetBubbleView(*autofill_bubble_handler->ShowOfferNotificationBubble(
+-      web_contents(), this, is_user_gesture_));
+-  DCHECK(bubble_view());
+-
++  auto* view = autofill_bubble_handler
++                   ? autofill_bubble_handler->ShowOfferNotificationBubble(
++                         web_contents(), this, is_user_gesture_)
++                   : nullptr;
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
++  ObservePresentation(
++      base::BindOnce(&OfferNotificationBubbleControllerImpl::RecordPresentation,
++                     weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(&OfferNotificationBubbleControllerImpl::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void OfferNotificationBubbleControllerImpl::RefusePresentation() {
++  MarkPresentationUnavailable();
++  bubble_state_ = BubbleState::kHidden;
++  bubble_shown_timestamp_.reset();
++  UpdatePageActionIcon();
++}
++
++bool OfferNotificationBubbleControllerImpl::CanBeReshown() const {
++  return IsIconVisible() &&
++         offer_.GetOfferType() != AutofillOfferData::OfferType::UNKNOWN &&
++         offer_.IsActiveAndEligibleForOrigin(
++             url::Origin::Create(web_contents()->GetLastCommittedURL())
++                 .GetURL());
++}
++
++void OfferNotificationBubbleControllerImpl::RecordPresentation() {
+   // Update |bubble_state_| after bubble is shown once. In OnVisibilityChanged()
+   // we display the bubble if the the state is kShowingIconAndBubble. Once we
+   // open the bubble here once, we set |bubble_state_| to kShowingIcon to make
+@@ -247,6 +305,7 @@
+   // we don't want to re-show it every time the web contents become visible.
+   bubble_state_ = BubbleState::kShowingIcon;
+   bubble_shown_timestamp_ = AutofillClock::Now();
++  UpdatePageActionIcon();
+ 
+   if (observer_for_testing_) {
+     observer_for_testing_->OnBubbleShown();
+@@ -278,8 +337,10 @@
+   bubble_state_ =
+       should_show_icon ? BubbleState::kShowingIcon : BubbleState::kHidden;
+   UpdatePageActionIcon();
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   HideBubble(/*initiated_by_bubble_manager=*/false);
+-  bubble_shown_timestamp_ = std::nullopt;
++  if (weak)
++    bubble_shown_timestamp_ = std::nullopt;
+ }
+ 
+ // TODO(crbug.com/546252995): Investigate whether this override is needed, since
+@@ -301,9 +362,13 @@
+     return;
+   }
+   actions::ActionId action_id = *GetActionIdForPageAction();
++  auto* browser_actions = BrowserActions::From(browser);
++  if (!browser_actions)
++    return;
+   auto* action = actions::ActionManager::Get().FindAction(
+-      action_id, BrowserActions::From(browser)->root_action_item());
+-  action->SetEnabled(ShouldShowPageAction());
++      action_id, browser_actions->root_action_item());
++  if (action)
++    action->SetEnabled(ShouldShowPageAction());
+ #endif  // BUILDFLAG(IS_ANDROID)
+ }
+ 
+--- a/chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.cc
++++ b/chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.h"
+ 
++#include "base/functional/bind.h"
+ #include "chrome/browser/autofill/personal_data_manager_factory.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+@@ -19,6 +20,7 @@
+ #include "components/autofill/core/browser/ui/payments/payments_ui_closed_reasons.h"
+ #include "components/strings/grit/components_strings.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "third_party/abseil-cpp/absl/functional/overload.h"
+ #include "ui/actions/actions.h"
+@@ -77,6 +79,16 @@
+         void(const Suggestion&,
+              const AutofillSuggestionDelegate::SuggestionMetadata&)>
+         did_accept_suggestion) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  const auto request = native_request_id_;
++  if (bubble_view())
++    HideBubble(/*initiated_by_bubble_manager=*/false);
++  if (!weak || native_request_id_ != request)
++    return;
++  ++native_request_id_;
++  native_document_ =
++      web_contents()->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  should_show_google_pay_logo_ = false;
+   suggestions_ = std::move(suggestions);
+   on_suggestions_shown_callback_ = std::move(on_suggestions_shown);
+   on_suggestions_hidden_callback_ = std::move(on_suggestions_hidden);
+@@ -118,23 +130,54 @@
+ }
+ 
+ void OmniboxAutofillBubbleController::DoShowBubble() {
++  if (!CanBeReshown()) {
++    RefusePresentation();
++    return;
++  }
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kOmniboxAutofill)) {
++    MarkPresentationUnavailable();
++    return;
++  }
++
+   BrowserWindowInterface* browser = tab_interface_->GetBrowserWindowInterface();
+   if (!browser) {
+     return;
+   }
+-  BrowserWindow* browser_window = BrowserWindow::FromBrowser(browser);
+-  if (!browser_window) {
+-    return;
+-  }
++  auto* handler = AutofillBubbleHandler::Get(browser->GetUnownedUserDataHost());
+   if (AutofillBubbleBase* bubble_view =
+-          browser_window->GetAutofillBubbleHandler()->ShowOmniboxAutofillBubble(
+-              web_contents(), this)) {
++          handler ? handler->ShowOmniboxAutofillBubble(web_contents(), this)
++                  : nullptr) {
+     SetBubbleView(*bubble_view);
+ 
+-    if (actions::ActionItem* action_item = GetActionItem()) {
+-      action_item->SetIsShowingBubble(true);
+-    }
+-  }
++    ObservePresentation(
++        base::BindOnce(&OmniboxAutofillBubbleController::RecordPresentation,
++                       weak_ptr_factory_.GetWeakPtr()),
++        base::BindOnce(&OmniboxAutofillBubbleController::RefusePresentation,
++                       weak_ptr_factory_.GetWeakPtr()));
++  } else {
++    RefusePresentation();
++  }
++}
++void OmniboxAutofillBubbleController::RecordPresentation() {
++  if (auto* action = GetActionItem())
++    action->SetIsShowingBubble(true);
++}
++void OmniboxAutofillBubbleController::RefusePresentation() {
++  MarkPresentationUnavailable();
++  if (auto* action = GetActionItem())
++    action->SetIsShowingBubble(false);
++}
++bool OmniboxAutofillBubbleController::IsNativeRequestCurrent() const {
++  return web_contents() && native_document_.AsRenderFrameHostIfValid() ==
++                               web_contents()->GetPrimaryMainFrame();
++}
++
++bool OmniboxAutofillBubbleController::CanBeReshown() const {
++  if (!IsNativeRequestCurrent())
++    return false;
++  const auto* chip = OmniboxAutofillPageActionController::From(*tab_interface_);
++  return chip && chip->IsNativeEntryVisible() && !suggestions_.empty();
+ }
+ 
+ AutofillBubbleBase* OmniboxAutofillBubbleController::GetBubbleView() const {
+@@ -168,24 +211,23 @@
+ 
+ void OmniboxAutofillBubbleController::OnBubbleClosed(
+     PaymentsUiClosedReason reason) {
+-  if (on_suggestions_hidden_callback_) {
+-    on_suggestions_hidden_callback_.Run(ToSuggestionHidingReason(reason));
+-  }
+-
+-  if (actions::ActionItem* action_item = GetActionItem()) {
+-    action_item->SetIsShowingBubble(false);
+-  }
+-
+-  // When the bubble is closed without accepting a suggestion, collapse the
+-  // expanded omnibox chip down to icon-only mode.
+-  if (reason != PaymentsUiClosedReason::kAccepted) {
+-    if (OmniboxAutofillPageActionController* page_action_controller =
+-            OmniboxAutofillPageActionController::From(*tab_interface_)) {
+-      page_action_controller->ShowCollapsedChip();
++  auto hidden = on_suggestions_hidden_callback_;
++  const uint64_t request = native_request_id_;
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  ResetBubbleViewAndInformBubbleManager();
++  if (weak && native_request_id_ == request) {
++    if (auto* action = GetActionItem())
++      action->SetIsShowingBubble(false);
++    if (weak && native_request_id_ == request &&
++        reason != PaymentsUiClosedReason::kAccepted) {
++      if (auto* chip =
++              OmniboxAutofillPageActionController::From(*tab_interface_);
++          chip && chip->IsNativeEntryVisible())
++        chip->ShowCollapsedChip();
+     }
+   }
+-
+-  ResetBubbleViewAndInformBubbleManager();
++  if (hidden)
++    hidden.Run(ToSuggestionHidingReason(reason));
+ }
+ 
+ void OmniboxAutofillBubbleController::OnSuggestionSelected(
+@@ -216,8 +258,10 @@
+   if (!browser_window) {
+     return nullptr;
+   }
+-  actions::ActionItem* root_action_item =
+-      BrowserActions::From(browser_window)->root_action_item();
++  auto* browser_actions = BrowserActions::From(browser_window);
++  if (!browser_actions)
++    return nullptr;
++  actions::ActionItem* root_action_item = browser_actions->root_action_item();
+   if (!root_action_item) {
+     return nullptr;
+   }
+--- a/chrome/browser/ui/autofill/payments/payments_churned_users_bubble_controller.cc
++++ b/chrome/browser/ui/autofill/payments/payments_churned_users_bubble_controller.cc
+@@ -7,13 +7,17 @@
+ #include <utility>
+ 
+ #include "base/functional/callback_helpers.h"
++#include "base/notreached.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+ #include "components/autofill/core/browser/payments/payments_churned_users_metrics.h"
+ #include "components/autofill/core/browser/ui/payments/payments_ui_closed_reasons.h"
+ #include "components/autofill/core/common/autofill_payments_features.h"
+ #include "components/signin/public/identity_manager/account_info.h"
++#include "components/strings/grit/components_strings.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/render_frame_host.h"
++#include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+@@ -49,9 +53,18 @@
+     base::OnceClosure cancel_callback,
+     base::OnceClosure closed_callback,
+     AccountInfo account_info) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kPaymentsChurnedUsers)) {
++    return;
++  }
++
+   if (bubble_view() || !MaySetUpBubble()) {
+     return;
+   }
++  ++native_request_id_;
++  native_document_ =
++      web_contents()->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  confirmation_showing_ = false;
+   is_reshow_ = false;
+   is_accepted_ = false;
+   accept_callback_ = std::move(accept_callback);
+@@ -63,6 +76,13 @@
+ }
+ 
+ void PaymentsChurnedUsersBubbleController::ReshowBubble() {
++  if (!bubble_view() &&
++      !AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kPaymentsChurnedUsers)) {
++    RefusePresentation();
++    return;
++  }
++
+   if (bubble_view()) {
+     return;
+   }
+@@ -78,30 +98,28 @@
+ 
+ void PaymentsChurnedUsersBubbleController::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
+-  ResetBubbleViewAndInformBubbleManager();
+-  autofill_metrics::LogPaymentsChurnedUsersBubbleResult(
+-      is_accepted_ ? PaymentsUiClosedReason::kAccepted : closed_reason);
+-
++  const uint64_t request = native_request_id_;
++  const bool accepted = is_accepted_;
++  base::OnceClosure callback;
++  if (!accepted) {
++    callback = closed_reason == PaymentsUiClosedReason::kCancelled
++                   ? std::move(cancel_callback_)
++                   : std::move(closed_callback_);
++  }
+   if (closed_reason == PaymentsUiClosedReason::kCancelled ||
+       closed_reason == PaymentsUiClosedReason::kClosed) {
+     should_show_icon_ = false;
+   }
+-
+-  UpdatePageActionIcon();
+-
+-  if (is_accepted_) {
+-    return;
+-  }
+-
+-  if (closed_reason == PaymentsUiClosedReason::kCancelled) {
+-    if (cancel_callback_) {
+-      std::move(cancel_callback_).Run();
+-    }
+-  } else {
+-    if (closed_callback_) {
+-      std::move(closed_callback_).Run();
+-    }
+-  }
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  ResetBubbleViewAndInformBubbleManager();
++  autofill_metrics::LogPaymentsChurnedUsersBubbleResult(
++      accepted ? PaymentsUiClosedReason::kAccepted : closed_reason);
++  if (weak && native_request_id_ == request)
++    UpdatePageActionIcon();
++  // The moved callback belongs to this request even if advancing the queue
++  // destroys the controller or installs a successor.
++  if (callback)
++    std::move(callback).Run();
+ }
+ 
+ AutofillEnableResurrectingPaymentsUsersTreatmentArm
+@@ -124,7 +142,24 @@
+   return account_info_;
+ }
+ 
++std::u16string PaymentsChurnedUsersBubbleController::GetWindowTitle() const {
++  switch (GetAutofillEnableResurrectingPaymentsUsersTreatmentArm()) {
++    case AutofillEnableResurrectingPaymentsUsersTreatmentArm::kSecurity: {
++      return l10n_util::GetStringUTF16(
++          IDS_AUTOFILL_CHURNED_USERS_BUBBLE_SECURITY_TITLE);
++    }
++    case AutofillEnableResurrectingPaymentsUsersTreatmentArm::kConvenience: {
++      return l10n_util::GetStringUTF16(
++          IDS_AUTOFILL_CHURNED_USERS_BUBBLE_CONVENIENCE_TITLE);
++    }
++    case AutofillEnableResurrectingPaymentsUsersTreatmentArm::kMessage:
++      NOTREACHED();
++  }
++}
++
+ void PaymentsChurnedUsersBubbleController::OnAcceptButton() {
++  if (is_accepted_ || !accept_callback_)
++    return;
+   is_accepted_ = true;
+   // Although the bubble is still present, run the accept callback as the user
+   // has made the decision to turn on payments autofill. The confirmation and
+@@ -136,22 +171,41 @@
+ }
+ 
+ void PaymentsChurnedUsersBubbleController::ShowConfirmationBubbleView() {
++  if (!is_accepted_ || confirmation_showing_)
++    return;
++  const uint64_t request = native_request_id_;
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   HideBubble(/*initiated_by_bubble_manager=*/false);
+-#if !BUILDFLAG(IS_ANDROID)
+-  tabs::TabInterface* tab = tabs::TabInterface::GetFromContents(web_contents());
+-  if (!tab) {
+-    return;
+-  }
+-  BrowserWindowInterface* browser_window = tab->GetBrowserWindowInterface();
+-  if (!browser_window) {
+-    return;
+-  }
+-  if (AutofillBubbleBase* bubble_view =
+-          AutofillBubbleHandler::Get(browser_window->GetUnownedUserDataHost())
+-              ->ShowPaymentsChurnedUsersConfirmationBubble(web_contents(),
+-                                                           this)) {
+-    SetBubbleView(*bubble_view);
+-  }
++  if (!weak || native_request_id_ != request) {
++    return;
++  }
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(),
++          AutofillUiPresentation::kPaymentsChurnedUsersConfirmation)) {
++    RefusePresentation();
++    return;
++  }
++#if !BUILDFLAG(IS_ANDROID)
++  auto* tab = tabs::TabInterface::MaybeGetFromContents(web_contents());
++  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  auto* handler =
++      browser ? AutofillBubbleHandler::Get(browser->GetUnownedUserDataHost())
++              : nullptr;
++  confirmation_showing_ = true;
++  auto* view = handler ? handler->ShowPaymentsChurnedUsersConfirmationBubble(
++                             web_contents(), this)
++                       : nullptr;
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
++  ObservePresentation(
++      base::BindOnce(
++          &PaymentsChurnedUsersBubbleController::UpdatePageActionIcon,
++          weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(&PaymentsChurnedUsersBubbleController::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
+ #endif
+ }
+ 
+@@ -186,8 +240,16 @@
+   HideBubble(/*initiated_by_bubble_manager=*/false);
+ }
+ 
++bool PaymentsChurnedUsersBubbleController::IsNativeRequestCurrent() const {
++  return web_contents() && native_document_.AsRenderFrameHostIfValid() ==
++                               web_contents()->GetPrimaryMainFrame();
++}
++
+ bool PaymentsChurnedUsersBubbleController::CanBeReshown() const {
+-  return true;
++  if (!IsNativeRequestCurrent())
++    return false;
++  return should_show_icon_ && !is_accepted_ && !confirmation_showing_ &&
++         !!accept_callback_;
+ }
+ 
+ BubbleType PaymentsChurnedUsersBubbleController::GetBubbleType() const {
+@@ -204,7 +266,22 @@
+   return weak_ptr_factory_.GetWeakPtr();
+ }
+ 
++void PaymentsChurnedUsersBubbleController::RefusePresentation() {
++  MarkPresentationUnavailable();
++  accept_callback_.Reset();
++  cancel_callback_.Reset();
++  closed_callback_.Reset();
++  should_show_icon_ = false;
++  UpdatePageActionIcon();
++}
++
+ void PaymentsChurnedUsersBubbleController::DoShowBubble() {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kPaymentsChurnedUsers)) {
++    RefusePresentation();
++    return;
++  }
++
+ #if !BUILDFLAG(IS_ANDROID)
+   tabs::TabInterface* tab = tabs::TabInterface::GetFromContents(web_contents());
+   if (!tab) {
+@@ -214,15 +291,33 @@
+   if (!browser_window) {
+     return;
+   }
++  auto* handler =
++      AutofillBubbleHandler::Get(browser_window->GetUnownedUserDataHost());
+   AutofillBubbleBase* created_bubble =
+-      AutofillBubbleHandler::Get(browser_window->GetUnownedUserDataHost())
+-          ->ShowPaymentsChurnedUsersBubble(web_contents(), this, is_reshow_);
++      handler ? handler->ShowPaymentsChurnedUsersBubble(web_contents(), this,
++                                                        is_reshow_)
++              : nullptr;
++  if (!created_bubble) {
++    RefusePresentation();
++    return;
++  }
+   if (created_bubble) {
+     SetBubbleView(*created_bubble);
+-    autofill_metrics::LogPaymentsChurnedUsersBubbleShowResult(
+-        autofill_metrics::PaymentsChurnedUsersBubbleShowResult::kShown);
++    ObservePresentation(
++        base::BindOnce(
++            &PaymentsChurnedUsersBubbleController::RecordPresentation,
++            weak_ptr_factory_.GetWeakPtr()),
++        base::BindOnce(
++            &PaymentsChurnedUsersBubbleController::RefusePresentation,
++            weak_ptr_factory_.GetWeakPtr()));
+   }
+ #endif
++}
++
++void PaymentsChurnedUsersBubbleController::RecordPresentation() {
++  UpdatePageActionIcon();
++  autofill_metrics::LogPaymentsChurnedUsersBubbleShowResult(
++      autofill_metrics::PaymentsChurnedUsersBubbleShowResult::kShown);
+ }
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+@@ -238,9 +333,12 @@
+ 
+ void PaymentsChurnedUsersBubbleController::OnConfirmationBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  const uint64_t request = native_request_id_;
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   should_show_icon_ = false;
+   UpdatePageActionIcon();
+-  ResetBubbleViewAndInformBubbleManager();
++  if (weak && native_request_id_ == request)
++    ResetBubbleViewAndInformBubbleManager();
+ }
+ 
+ }  // namespace autofill
+--- a/chrome/browser/ui/autofill/payments/payments_churned_users_bubble_controller.h
++++ b/chrome/browser/ui/autofill/payments/payments_churned_users_bubble_controller.h
+@@ -5,12 +5,15 @@
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_PAYMENTS_CHURNED_USERS_BUBBLE_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_PAYMENTS_CHURNED_USERS_BUBBLE_CONTROLLER_H_
+ 
++#include <cstdint>
++
+ #include "base/memory/raw_ptr.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_controller_base.h"
+ #include "components/autofill/core/browser/ui/payments/payments_churned_users_ui_delegate.h"
+ #include "components/autofill/core/browser/ui/payments/payments_ui_closed_reasons.h"
+ #include "components/autofill/core/browser/ui/payments/save_payment_method_and_virtual_card_enroll_confirmation_ui_params.h"
+ #include "components/signin/public/identity_manager/account_info.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ 
+ namespace tabs {
+@@ -51,6 +54,7 @@
+   AutofillEnableResurrectingPaymentsUsersTreatmentArm
+   GetAutofillEnableResurrectingPaymentsUsersTreatmentArm() const;
+   const AccountInfo& GetAccountInfo() const;
++  std::u16string GetWindowTitle() const;
+   void OnAcceptButton();
+   void ShowConfirmationBubbleView();
+   SavePaymentMethodAndVirtualCardEnrollConfirmationUiParams
+@@ -68,6 +72,14 @@
+   // content::WebContentsObserver:
+   void PrimaryPageChanged(content::Page& page) override;
+ 
++  uint64_t GetNativeRequestId() const { return native_request_id_; }
++  bool IsNativeRequestCurrent() const;
++  AutofillBubbleBase* GetBubbleView() const { return bubble_view(); }
++  int GetNativePhase() const {
++    return confirmation_showing_ ? 2 : (is_accepted_ ? 1 : 0);
++  }
++  bool IsIconVisible() const { return should_show_icon_; }
++
+  protected:
+   // AutofillBubbleControllerBase:
+   void DoShowBubble() override;
+@@ -78,6 +90,10 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+  private:
++  uint64_t native_request_id_ = 0;
++  content::WeakDocumentPtr native_document_;
++  void RefusePresentation();
++  void RecordPresentation();
+   void OnConfirmationBubbleClosed(PaymentsUiClosedReason closed_reason);
+ 
+   ui::ScopedUnownedUserData<PaymentsChurnedUsersBubbleController>
+@@ -90,7 +106,8 @@
+   // or if a user interacts with the confirmation bubble. This ensures the page
+   // action icon goes away so that the user isn't stuck with the icon and
+   // re-showing the bubble in the omnibox.
+-  bool should_show_icon_ = true;
++  bool should_show_icon_ = false;
++  bool confirmation_showing_ = false;
+ 
+   // Denotes whether the user has accepted the churned users bubble. Since
+   // there is a loading state that triggers after accepting the churned users
+--- a/chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.cc
++++ b/chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.cc
+@@ -116,6 +116,25 @@
+     payments::PaymentsAutofillClient::SaveCreditCardOptions options,
+     payments::PaymentsAutofillClient::LocalSaveCardPromptCallback
+         save_card_prompt_callback) {
++  const auto kind =
++      options.card_save_type ==
++              payments::PaymentsAutofillClient::CardSaveType::kCvcSaveOnly
++          ? AutofillUiPresentation::kLocalCvcSave
++          : AutofillUiPresentation::kLocalCardSave;
++  if (!AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind) ||
++      (!options.show_prompt &&
++       !AutofillBubbleHandler::IsPresentationSupported(
++           web_contents(), AutofillUiPresentation::kCardIcon)) ||
++      ((options.should_request_name_from_user ||
++        options.should_request_expiration_date_from_user) &&
++       !AutofillBubbleHandler::IsPresentationSupported(
++           web_contents(), AutofillUiPresentation::kCardFixFlow))) {
++    std::move(save_card_prompt_callback)
++        .Run(payments::PaymentsAutofillClient::SaveCardOfferUserDecision::
++                 kNotPresented);
++    return;
++  }
++
+   // If the confirmation view is still showing, close it before showing the new
+   // offer.
+   if (current_bubble_type_ == PaymentsBubbleType::kUploadComplete) {
+@@ -124,6 +143,11 @@
+ 
+   // Don't show the bubble if it's already visible or cannot be shown.
+   if (bubble_view() || !MaySetUpBubble() || !GetAutofillBubbleHandler()) {
++    if (save_card_prompt_callback) {
++      std::move(save_card_prompt_callback)
++          .Run(payments::PaymentsAutofillClient::SaveCardOfferUserDecision::
++                   kNotPresented);
++    }
+     return;
+   }
+ 
+@@ -163,6 +187,26 @@
+     payments::PaymentsAutofillClient::SaveCreditCardOptions options,
+     payments::PaymentsAutofillClient::UploadSaveCardPromptCallback
+         save_card_prompt_callback) {
++  const auto kind =
++      options.card_save_type ==
++              payments::PaymentsAutofillClient::CardSaveType::kCvcSaveOnly
++          ? AutofillUiPresentation::kUploadCvcSave
++          : AutofillUiPresentation::kUploadCardSave;
++  if (!AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind) ||
++      (!options.show_prompt &&
++       !AutofillBubbleHandler::IsPresentationSupported(
++           web_contents(), AutofillUiPresentation::kCardIcon)) ||
++      ((options.should_request_name_from_user ||
++        options.should_request_expiration_date_from_user) &&
++       !AutofillBubbleHandler::IsPresentationSupported(
++           web_contents(), AutofillUiPresentation::kCardFixFlow))) {
++    std::move(save_card_prompt_callback)
++        .Run(payments::PaymentsAutofillClient::SaveCardOfferUserDecision::
++                 kNotPresented,
++             {});
++    return;
++  }
++
+   // If the confirmation view is still showing, close it before showing the new
+   // offer.
+   if (current_bubble_type_ == PaymentsBubbleType::kUploadComplete) {
+@@ -171,6 +215,12 @@
+ 
+   // Don't show the bubble if it's already visible or cannot be shown.
+   if (bubble_view() || !MaySetUpBubble() || !GetAutofillBubbleHandler()) {
++    if (save_card_prompt_callback) {
++      std::move(save_card_prompt_callback)
++          .Run(payments::PaymentsAutofillClient::SaveCardOfferUserDecision::
++                   kNotPresented,
++               {});
++    }
+     return;
+   }
+ 
+@@ -226,6 +276,15 @@
+ 
+ void SaveCardBubbleControllerImpl::ReshowBubble(
+     bool is_triggered_by_user_gesture) {
++  // Don't alter an already presented request on an unrelated reshow attempt.
++  if (bubble_view()) {
++    return;
++  }
++  if (!SupportsCurrentPresentation()) {
++    RefusePresentation();
++    return;
++  }
++
+   // Don't show the bubble if it's already visible.
+   if (bubble_view()) {
+     return;
+@@ -243,10 +302,23 @@
+     std::optional<
+         payments::PaymentsAutofillClient::OnConfirmationClosedCallback>
+         on_confirmation_closed_callback) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kCardConfirmation)) {
++    if (on_confirmation_closed_callback) {
++      std::move(*on_confirmation_closed_callback).Run();
++    }
++    return;
++  }
++
+   DoNotShowNextQueuedBubbleGuard guard = DoNotShowNextQueuedBubble();
+ 
+   // Hide the current bubble if still showing.
+   HideBubble(/*initiated_by_bubble_manager=*/false);
++  if (!weak) {
++    return;
++  }
+ 
+   is_reshow_ = false;
+   is_triggered_by_user_gesture_ = false;
+@@ -261,6 +333,10 @@
+   // Show upload confirmation bubble.
+   CheckPreconditionsBeforeShowing();
+   QueueOrShowBubble();
++  if (!weak || current_bubble_type_ != PaymentsBubbleType::kUploadComplete ||
++      WasPresentationUnavailable()) {
++    return;
++  }
+ 
+   // Auto close confirmation bubble when card saved is successful.
+   if (card_saved) {
+@@ -606,7 +682,12 @@
+ 
+ void SaveCardBubbleControllerImpl::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak) {
++    return;
++  }
+ 
+   // If the dialog should be re-shown, do not change the bubble type or log
+   // metrics.
+@@ -629,10 +710,10 @@
+ 
+     UpdatePageActionIcon();
+ 
++    auto_close_confirmation_timer_.Stop();
+     if (on_confirmation_closed_callback_) {
+       (*std::exchange(on_confirmation_closed_callback_, std::nullopt)).Run();
+     }
+-    auto_close_confirmation_timer_.Stop();
+     return;
+   }
+ 
+@@ -673,20 +754,19 @@
+   }
+ 
+   if (user_decision && *user_decision != SaveCardOfferUserDecision::kAccepted) {
+-    switch (current_bubble_type_) {
+-      case PaymentsBubbleType::kLocalSave:
+-      case PaymentsBubbleType::kLocalCvcSave:
+-        std::move(local_save_card_prompt_callback_).Run(*user_decision);
+-        break;
+-      case PaymentsBubbleType::kUploadSave:
+-      case PaymentsBubbleType::kUploadCvcSave:
+-        std::move(upload_save_card_prompt_callback_)
+-            .Run(*user_decision, /*user_provided_card_details=*/{});
+-        break;
+-      default:
+-        break;
++    auto local = std::move(local_save_card_prompt_callback_);
++    auto upload = std::move(upload_save_card_prompt_callback_);
++    const auto old_type = current_bubble_type_;
++    current_bubble_type_ = PaymentsBubbleType::kInactive;
++    UpdatePageActionIcon();
++    if (local && (old_type == PaymentsBubbleType::kLocalSave ||
++                  old_type == PaymentsBubbleType::kLocalCvcSave)) {
++      std::move(local).Run(*user_decision);
++    } else if (upload && (old_type == PaymentsBubbleType::kUploadSave ||
++                          old_type == PaymentsBubbleType::kUploadCvcSave)) {
++      std::move(upload).Run(*user_decision, {});
+     }
+-    current_bubble_type_ = PaymentsBubbleType::kInactive;
++    return;
+   }
+ 
+   UpdatePageActionIcon();
+@@ -757,6 +837,11 @@
+ }
+ 
+ bool SaveCardBubbleControllerImpl::IsIconVisible() const {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kCardIcon)) {
++    return false;
++  }
++
+   if (current_bubble_type_ == PaymentsBubbleType::kInactive) {
+     CHECK(!bubble_view());
+     // If there is no bubble to show, then there should be no icon.
+@@ -836,7 +921,68 @@
+   return AutofillBubbleHandler::Get(browser->GetUnownedUserDataHost());
+ }
+ 
++AutofillUiPresentation SaveCardBubbleControllerImpl::CurrentPresentation()
++    const {
++  switch (current_bubble_type_) {
++    case PaymentsBubbleType::kLocalSave:
++      return AutofillUiPresentation::kLocalCardSave;
++    case PaymentsBubbleType::kLocalCvcSave:
++      return AutofillUiPresentation::kLocalCvcSave;
++    case PaymentsBubbleType::kUploadSave:
++      return AutofillUiPresentation::kUploadCardSave;
++    case PaymentsBubbleType::kUploadCvcSave:
++      return AutofillUiPresentation::kUploadCvcSave;
++    case PaymentsBubbleType::kManageCards:
++      return AutofillUiPresentation::kManageCards;
++    case PaymentsBubbleType::kUploadComplete:
++      return AutofillUiPresentation::kCardConfirmation;
++    case PaymentsBubbleType::kUploadInProgress:
++      return AutofillUiPresentation::kUploadCardSave;
++    case PaymentsBubbleType::kInactive:
++      return AutofillUiPresentation::kCardIcon;
++  }
++}
++
++bool SaveCardBubbleControllerImpl::SupportsCurrentPresentation() const {
++  return AutofillBubbleHandler::IsPresentationSupported(
++             web_contents(), CurrentPresentation()) &&
++         (!(ShouldRequestNameFromUser() ||
++            ShouldRequestExpirationDateFromUser()) ||
++          AutofillBubbleHandler::IsPresentationSupported(
++              web_contents(), AutofillUiPresentation::kCardFixFlow));
++}
++
++void SaveCardBubbleControllerImpl::RefusePresentation() {
++  MarkPresentationUnavailable();
++  const auto previous = current_bubble_type_;
++  auto local = std::move(local_save_card_prompt_callback_);
++  auto upload = std::move(upload_save_card_prompt_callback_);
++  auto confirmation =
++      std::exchange(on_confirmation_closed_callback_, std::nullopt);
++  current_bubble_type_ = PaymentsBubbleType::kInactive;
++  confirmation_ui_params_.reset();
++  auto_close_confirmation_timer_.Stop();
++  UpdatePageActionIcon();
++  // No member access after a callback: the manager may replace/delete this.
++  using Decision = payments::PaymentsAutofillClient::SaveCardOfferUserDecision;
++  if (local && (previous == PaymentsBubbleType::kLocalSave ||
++                previous == PaymentsBubbleType::kLocalCvcSave)) {
++    std::move(local).Run(Decision::kNotPresented);
++  } else if (upload && (previous == PaymentsBubbleType::kUploadSave ||
++                        previous == PaymentsBubbleType::kUploadCvcSave)) {
++    std::move(upload).Run(Decision::kNotPresented, {});
++  }
++  if (confirmation) {
++    std::move(*confirmation).Run();
++  }
++}
++
+ void SaveCardBubbleControllerImpl::DoShowBubble() {
++  if (!SupportsCurrentPresentation()) {
++    RefusePresentation();
++    return;
++  }
++
+   if (!IsWebContentsActive()) {
+     return;
+   }
+@@ -845,15 +991,30 @@
+   if (!autofill_bubble_handler) {
+     return;
+   }
+-  if (current_bubble_type_ == PaymentsBubbleType::kUploadComplete) {
+-    SetBubbleView(*autofill_bubble_handler->ShowSaveCardConfirmationBubble(
+-        web_contents(), this));
+-  } else {
+-    SetBubbleView(*autofill_bubble_handler->ShowSaveCreditCardBubble(
+-        web_contents(), this, is_triggered_by_user_gesture_));
+-  }
+-  CHECK(bubble_view());
+-
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  AutofillBubbleBase* view =
++      current_bubble_type_ == PaymentsBubbleType::kUploadComplete
++          ? autofill_bubble_handler->ShowSaveCardConfirmationBubble(
++                web_contents(), this)
++          : autofill_bubble_handler->ShowSaveCreditCardBubble(
++                web_contents(), this, is_triggered_by_user_gesture_);
++  if (!weak) {
++    return;
++  }
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
++
++  ObservePresentation(
++      base::BindOnce(&SaveCardBubbleControllerImpl::RecordPresentation,
++                     weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(&SaveCardBubbleControllerImpl::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
++}
++
++void SaveCardBubbleControllerImpl::RecordPresentation() {
+   // Do not log metrics for re-shows triggered by link clicks.
+   // TODO(issuetracker.google.com/316391673): Determine whether we should log
+   // metrics when using `was_url_opened_`.
+--- a/chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.h
++++ b/chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.h
+@@ -18,6 +18,7 @@
+ #include "components/autofill/core/browser/data_model/payments/credit_card.h"
+ #include "components/autofill/core/browser/payments/legal_message_line.h"
+ #include "components/autofill/core/browser/payments/payments_autofill_client.h"
++#include "components/autofill/core/browser/ui/autofill_ui_presentation.h"
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/web_contents_user_data.h"
+ #include "ui/actions/action_id.h"
+@@ -185,6 +186,10 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+  private:
++  AutofillUiPresentation CurrentPresentation() const;
++  bool SupportsCurrentPresentation() const;
++  void RefusePresentation();
++  void RecordPresentation();
+   friend class content::WebContentsUserData<SaveCardBubbleControllerImpl>;
+   friend class SaveCardBubbleControllerImplTest;
+   friend class SaveCardBubbleViewsFullFormBrowserTest;
+--- a/chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.cc
++++ b/chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.cc
+@@ -58,16 +58,32 @@
+ void VirtualCardEnrollBubbleControllerImpl::SetupAndShowBubble(
+     const VirtualCardEnrollmentFields& virtual_card_enrollment_fields,
+     base::OnceClosure accept_virtual_card_callback,
+-    base::OnceClosure decline_virtual_card_callback) {
++    base::OnceClosure decline_virtual_card_callback,
++    base::OnceClosure unavailable) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kVirtualCardEnrollment)) {
++    if (unavailable) {
++      std::move(unavailable).Run();
++    }
++    return;
++  }
++
+   if (!MaySetUpBubble()) {
++    if (unavailable) {
++      std::move(unavailable).Run();
++    }
+     return;
+   }
+ 
+   SetupBubble(virtual_card_enrollment_fields,
+               std::move(accept_virtual_card_callback),
+-              std::move(decline_virtual_card_callback));
+-
++              std::move(decline_virtual_card_callback), std::move(unavailable));
++
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   QueueOrShowBubble();
++  if (!weak || WasPresentationUnavailable()) {
++    return;
++  }
+ 
+   VirtualCardEnrollMetricsLogger::OnCardArtAvailable(
+       ui_model_->enrollment_fields().card_art_image,
+@@ -77,7 +93,15 @@
+ void VirtualCardEnrollBubbleControllerImpl::SetupBubble(
+     VirtualCardEnrollmentFields virtual_card_enrollment_fields,
+     base::OnceClosure accept_virtual_card_callback,
+-    base::OnceClosure decline_virtual_card_callback) {
++    base::OnceClosure decline_virtual_card_callback,
++    base::OnceClosure unavailable) {
++  presentation_unavailable_ = std::move(unavailable);
++  reprompt_required_ = false;
++  was_bubble_shown_ = false;
++#if !BUILDFLAG(IS_ANDROID)
++  ResetBubble();
++#endif
++
+   ui_model_ = std::make_unique<VirtualCardEnrollUiModel>(
+       std::move(virtual_card_enrollment_fields));
+   accept_virtual_card_callback_ = std::move(accept_virtual_card_callback);
+@@ -86,6 +110,13 @@
+ }
+ 
+ void VirtualCardEnrollBubbleControllerImpl::ReshowBubble() {
++  if (!bubble_view() &&
++      !AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kVirtualCardEnrollment)) {
++    RefusePresentation();
++    return;
++  }
++
+   DCHECK(IsIconVisible());
+ 
+   if (bubble_view()) {
+@@ -98,6 +129,11 @@
+ 
+ void VirtualCardEnrollBubbleControllerImpl::ShowConfirmationBubbleView(
+     PaymentsRpcResult result) {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kVirtualCardConfirmation)) {
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID)
+   if (autofill_vcn_enroll_bottom_sheet_bridge_) {
+     autofill_vcn_enroll_bottom_sheet_bridge_->Hide();
+@@ -105,7 +141,10 @@
+ #else  // !BUILDFLAG(IS_ANDROID)
+   DoNotShowNextQueuedBubbleGuard guard = DoNotShowNextQueuedBubble();
+ 
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   HideBubble(/*initiated_by_bubble_manager=*/false);
++  if (!weak)
++    return;
+   ResetBubble();
+   UpdatePageActionIcon();
+   if (result == PaymentsRpcResult::kClientSideTimeout) {
+@@ -144,7 +183,10 @@
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+ void VirtualCardEnrollBubbleControllerImpl::HideIconAndBubble() {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   HideBubble(/*initiated_by_bubble_manager=*/false);
++  if (!weak)
++    return;
+   ResetBubble();
+   UpdatePageActionIcon();
+ }
+@@ -160,7 +202,7 @@
+ 
+ void VirtualCardEnrollBubbleControllerImpl::OnAcceptButton(
+     bool did_switch_to_loading_state) {
+-  std::move(accept_virtual_card_callback_).Run();
++  auto accepted = std::move(accept_virtual_card_callback_);
+   decline_virtual_card_callback_.Reset();
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+@@ -183,16 +225,20 @@
+     bubble_state_ = BubbleState::kHidden;
+     LogVirtualCardEnrollmentLoadingViewShown(/*is_shown=*/false);
+   }
+-#endif
++  UpdatePageActionIcon();
++#endif
++  std::move(accepted).Run();
+ }
+ 
+ void VirtualCardEnrollBubbleControllerImpl::OnDeclineButton() {
+-  std::move(decline_virtual_card_callback_).Run();
++  auto declined = std::move(decline_virtual_card_callback_);
+   accept_virtual_card_callback_.Reset();
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+   bubble_state_ = BubbleState::kHidden;
+-#endif
++  UpdatePageActionIcon();
++#endif
++  std::move(declined).Run();
+ }
+ 
+ void VirtualCardEnrollBubbleControllerImpl::OnLinkClicked(
+@@ -272,7 +318,10 @@
+ 
+ void VirtualCardEnrollBubbleControllerImpl::OnBubbleClosed(
+     PaymentsUiClosedReason closed_reason) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak)
++    return;
+   UpdatePageActionIcon();
+ 
+   // If the dialog is to be shown again because user clicked on links, do not
+@@ -332,7 +381,10 @@
+       bubble_state_ == BubbleState::kShowingIconAndBubble) {
+     QueueOrShowBubble();
+   } else if (visibility == content::Visibility::HIDDEN) {
++    auto weak = weak_ptr_factory_.GetWeakPtr();
+     HideBubble(/*initiated_by_bubble_manager=*/false);
++    if (!weak)
++      return;
+     if (bubble_state_ != BubbleState::kShowingIcon) {
+       bubble_state_ = BubbleState::kHidden;
+     }
+@@ -359,7 +411,30 @@
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
++void VirtualCardEnrollBubbleControllerImpl::RefusePresentation() {
++  MarkPresentationUnavailable();
++  auto unavailable = std::move(presentation_unavailable_);
++  accept_virtual_card_callback_.Reset();
++  decline_virtual_card_callback_.Reset();
++#if !BUILDFLAG(IS_ANDROID)
++  ResetBubble();
++  UpdatePageActionIcon();
++#endif
++  if (unavailable) {
++    std::move(unavailable).Run();
++  }
++}
++
+ void VirtualCardEnrollBubbleControllerImpl::DoShowBubble() {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(),
++          enrollment_status_ == EnrollmentStatus::kCompleted
++              ? AutofillUiPresentation::kVirtualCardConfirmation
++              : AutofillUiPresentation::kVirtualCardEnrollment)) {
++    RefusePresentation();
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID)
+   auto delegate_mobile =
+       std::make_unique<AutofillVirtualCardEnrollmentBottomSheetDelegateMobile>(
+@@ -368,10 +443,14 @@
+       std::make_unique<AutofillVCNEnrollBottomSheetBridge>();
+   autofill_vcn_enroll_bottom_sheet_bridge_->RequestShowContent(
+       web_contents(), std::move(delegate_mobile));
++  RecordPresentation();
+ #else
+   // If bubble is already showing for another card, close it.
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   if (bubble_view()) {
+     HideBubble(/*initiated_by_bubble_manager=*/false);
++    if (!weak)
++      return;
+   }
+ 
+   bubble_state_ = BubbleState::kShowingIconAndBubble;
+@@ -383,35 +462,37 @@
+       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+           web_contents());
+ 
+-  if (enrollment_status_ == EnrollmentStatus::kCompleted) {
+-    SetBubbleView(
+-        *BrowserWindow::FromBrowser(browser)
+-             ->GetAutofillBubbleHandler()
+-             ->ShowVirtualCardEnrollConfirmationBubble(web_contents(), this));
+-  } else {
+-    // For reprompts after link clicks, `is_user_gesture` is set to false.
+-    bool user_gesture_reprompt = reprompt_required_ ? false : is_user_gesture_;
+-
+-    SetBubbleView(*BrowserWindow::FromBrowser(browser)
+-                       ->GetAutofillBubbleHandler()
+-                       ->ShowVirtualCardEnrollBubble(web_contents(), this,
+-                                                     user_gesture_reprompt));
+-  }
+-  DCHECK(bubble_view());
+-  // Update |bubble_state_| after bubble is shown once. In OnVisibilityChanged()
+-  // we display the bubble if the the state is kShowingIconAndBubble. Once we
+-  // open the bubble here once, we set |bubble_state_| to kShowingIcon to make
+-  // sure further OnVisibilityChanged() don't trigger opening the bubble because
+-  // we don't want to re-show it every time the web contents become visible.
++  auto* window = browser ? BrowserWindow::FromBrowser(browser) : nullptr;
++  auto* handler = window ? window->GetAutofillBubbleHandler() : nullptr;
++  auto* view = !handler ? nullptr
++               : enrollment_status_ == EnrollmentStatus::kCompleted
++                   ? handler->ShowVirtualCardEnrollConfirmationBubble(
++                         web_contents(), this)
++                   : handler->ShowVirtualCardEnrollBubble(
++                         web_contents(), this,
++                         reprompt_required_ ? false : is_user_gesture_);
++  if (!view) {
++    RefusePresentation();
++    return;
++  }
++  SetBubbleView(*view);
++  ObservePresentation(
++      base::BindOnce(&VirtualCardEnrollBubbleControllerImpl::RecordPresentation,
++                     weak_ptr_factory_.GetWeakPtr()),
++      base::BindOnce(&VirtualCardEnrollBubbleControllerImpl::RefusePresentation,
++                     weak_ptr_factory_.GetWeakPtr()));
++  return;
++#endif  // BUILDFLAG(IS_ANDROID)
++}
++
++void VirtualCardEnrollBubbleControllerImpl::RecordPresentation() {
++#if !BUILDFLAG(IS_ANDROID)
++  // A deferred native session is shown only when the original window attaches.
+   bubble_state_ = BubbleState::kShowingIcon;
+-
+-  // Metrics for showing virtual card enroll bubble are logged once when
+-  // enrollment is offered, do not log the same metrics again while showing
+-  // confirmation bubble.
+-  if (enrollment_status_ == EnrollmentStatus::kCompleted) {
+-    return;
+-  }
+-#endif  // BUILDFLAG(IS_ANDROID)
++  UpdatePageActionIcon();
++  if (enrollment_status_ == EnrollmentStatus::kCompleted)
++    return;
++#endif
+ 
+   // If the dialog is to be shown again because user clicked on links, do not
+   // log metrics.
+@@ -432,7 +513,10 @@
+ bool VirtualCardEnrollBubbleControllerImpl::CanBeReshown() const {
+ #if !BUILDFLAG(IS_ANDROID)
+   return enrollment_status_ != EnrollmentStatus::kCompleted &&
+-         enrollment_status_ != EnrollmentStatus::kNone;
++         (enrollment_status_ ==
++              EnrollmentStatus::kPaymentsServerRequestInFlight ||
++          (ui_model_ && accept_virtual_card_callback_ &&
++           decline_virtual_card_callback_));
+ #else
+   NOTREACHED();
+ #endif
+--- a/chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.h
++++ b/chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.h
+@@ -45,7 +45,8 @@
+   void SetupAndShowBubble(
+       const VirtualCardEnrollmentFields& virtual_card_enrollment_fields,
+       base::OnceClosure accept_virtual_card_callback,
+-      base::OnceClosure decline_virtual_card_callback);
++      base::OnceClosure decline_virtual_card_callback,
++      base::OnceClosure unavailable = {});
+ 
+   // Shows the bubble again if the users clicks the omnibox icon.
+   void ReshowBubble();
+@@ -98,6 +99,9 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+  private:
++  void RefusePresentation();
++  void RecordPresentation();
++  base::OnceClosure presentation_unavailable_;
+   friend class VirtualCardEnrollBubbleControllerImplTestApi;
+ 
+   friend class content::WebContentsUserData<
+@@ -108,7 +112,8 @@
+   // user acceptance or declination.
+   void SetupBubble(VirtualCardEnrollmentFields virtual_card_enrollment_fields,
+                    base::OnceClosure accept_virtual_card_callback,
+-                   base::OnceClosure decline_virtual_card_callback);
++                   base::OnceClosure decline_virtual_card_callback,
++                   base::OnceClosure unavailable = {});
+ 
+   // Log metrics when the bubble is closed.
+   void LogBubbleCloseMetrics(PaymentsUiClosedReason closed_reason);
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller.cc
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <utility>
+ 
++#include "base/functional/bind.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+ #include "chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.h"
+@@ -15,6 +16,7 @@
+ #include "components/strings/grit/components_strings.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/page_navigator.h"
++#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "ui/actions/actions.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -35,6 +37,8 @@
+ }
+ 
+ WalletReminderNoticeBubbleController::~WalletReminderNoticeBubbleController() {
++  ReportPresentation(false);
++
+   if (IsShowingBubble()) {
+     if (actions::ActionItem* action_item = GetActionItem()) {
+       action_item->SetIsShowingBubble(false);
+@@ -49,17 +53,47 @@
+ }
+ 
+ void WalletReminderNoticeBubbleController::Show(
+-    LegalMessageLines legal_message_lines) {
++    LegalMessageLines legal_message_lines,
++    base::OnceCallback<void(bool)> presented) {
+   // Don't show the bubble if it's already visible or not set up.
+-  if (GetBubbleView() || !MaySetUpBubble()) {
+-    return;
+-  }
++  if (GetBubbleView() || presentation_callback_ || !MaySetUpBubble() ||
++      !AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kWalletReminder)) {
++    if (presented) {
++      std::move(presented).Run(false);
++    }
++    return;
++  }
++  ++native_request_id_;
++  native_document_ =
++      web_contents()->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  logged_accept_button_clicked_ = false;
++  logged_link_clicked_ = false;
++  presentation_callback_ = std::move(presented);
+   legal_message_lines_ = std::move(legal_message_lines);
+   is_reshow_ = false;
+   QueueOrShowBubble();
+ }
+ 
++bool WalletReminderNoticeBubbleController::IsNativeRequestCurrent() const {
++  return web_contents() && native_document_.AsRenderFrameHostIfValid() ==
++                               web_contents()->GetPrimaryMainFrame();
++}
++
++bool WalletReminderNoticeBubbleController::CanBeReshown() const {
++  if (!IsNativeRequestCurrent())
++    return false;
++  auto* chip = WalletReminderNoticePageActionController::From(*tab_interface_);
++  return native_request_id_ &&
++         (presentation_callback_ || (chip && chip->IsNativeEntryVisible()));
++}
++
+ void WalletReminderNoticeBubbleController::ReshowBubble() {
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kWalletReminder)) {
++    return;
++  }
++
+   // Don't show the bubble if it's already visible.
+   if (GetBubbleView()) {
+     return;
+@@ -110,8 +144,17 @@
+ }
+ 
+ void WalletReminderNoticeBubbleController::OnBubbleClosed() {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  const uint64_t generation = presentation_generation();
++  auto pending = std::move(presentation_callback_);
+   if (actions::ActionItem* action_item = GetActionItem()) {
+     action_item->SetIsShowingBubble(false);
++  }
++  if (!weak || presentation_generation() != generation) {
++    if (pending) {
++      std::move(pending).Run(false);
++    }
++    return;
+   }
+   if (!logged_accept_button_clicked_ && !logged_link_clicked_ &&
+       !bubble_hide_initiated_by_bubble_manager_) {
+@@ -119,6 +162,11 @@
+         autofill_metrics::WalletReminderNoticeInteraction::kDismissed);
+   }
+   ResetBubbleViewAndInformBubbleManager();
++  // A close before presentation is refusal, never acknowledgment. The moved
++  // callback belongs to the old request even if reset shows a replacement.
++  if (pending) {
++    std::move(pending).Run(false);
++  }
+ }
+ 
+ BubbleType WalletReminderNoticeBubbleController::GetBubbleType() const {
+@@ -130,25 +178,57 @@
+   return weak_ptr_factory_.GetWeakPtr();
+ }
+ 
++void WalletReminderNoticeBubbleController::ReportPresentation(bool presented) {
++  auto callback = std::move(presentation_callback_);
++  if (presented) {
++    if (auto* page_action =
++            WalletReminderNoticePageActionController::From(*tab_interface_)) {
++      page_action->Show();
++    }
++  }
++  // The callback is already detached; page-action observers may reenter or
++  // destroy this controller. Do not access members after that native UI call.
++  if (callback) {
++    std::move(callback).Run(presented);
++  }
++}
+ void WalletReminderNoticeBubbleController::DoShowBubble() {
+-  BrowserWindowInterface* browser = tab_interface_->GetBrowserWindowInterface();
+-  if (!browser) {
+-    return;
+-  }
+-  AutofillBubbleHandler* autofill_bubble_handler =
+-      AutofillBubbleHandler::Get(browser->GetUnownedUserDataHost());
+-  if (!autofill_bubble_handler) {
+-    return;
+-  }
+-  if (AutofillBubbleBase* bubble_view =
+-          autofill_bubble_handler->ShowWalletReminderNoticeBubble(
+-              web_contents(), this, is_reshow_)) {
+-    SetBubbleView(*bubble_view);
+-
+-    if (actions::ActionItem* action_item = GetActionItem()) {
+-      action_item->SetIsShowingBubble(true);
+-    }
+-  }
++  auto* browser = tab_interface_->GetBrowserWindowInterface();
++  auto* handler =
++      browser ? AutofillBubbleHandler::Get(browser->GetUnownedUserDataHost())
++              : nullptr;
++  if (!handler || !handler->IsAutofillUiPresentationSupported(
++                      AutofillUiPresentation::kWalletReminder)) {
++    MarkPresentationUnavailable();
++    ReportPresentation(false);
++    return;
++  }
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  const uint64_t request_generation = presentation_generation();
++  auto* view =
++      handler->ShowWalletReminderNoticeBubble(web_contents(), this, is_reshow_);
++  if (!weak || presentation_generation() != request_generation) {
++    return;
++  }
++  if (!view) {
++    MarkPresentationUnavailable();
++    ReportPresentation(false);
++    return;
++  }
++  SetBubbleView(*view);
++  const uint64_t view_generation = presentation_generation();
++  if (auto* action = GetActionItem()) {
++    action->SetIsShowingBubble(true);
++  }
++  if (!weak || presentation_generation() != view_generation ||
++      GetBubbleView() != view) {
++    return;
++  }
++  ObservePresentation(
++      base::BindOnce(&WalletReminderNoticeBubbleController::ReportPresentation,
++                     weak_ptr_factory_.GetWeakPtr(), true),
++      base::BindOnce(&WalletReminderNoticeBubbleController::ReportPresentation,
++                     weak_ptr_factory_.GetWeakPtr(), false));
+ }
+ 
+ actions::ActionItem* WalletReminderNoticeBubbleController::GetActionItem() {
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller.h
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller.h
+@@ -5,12 +5,16 @@
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_WALLET_REMINDER_NOTICE_BUBBLE_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_WALLET_REMINDER_NOTICE_BUBBLE_CONTROLLER_H_
+ 
++#include <cstdint>
++
+ #include <string>
+ 
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ref.h"
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_controller_base.h"
+ #include "components/autofill/core/browser/payments/legal_message_line.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ 
+ class GURL;
+@@ -49,7 +53,8 @@
+ 
+   // Shows the bubble when it first opens automatically (e.g. without a user
+   // gesture).
+-  void Show(LegalMessageLines legal_message_lines);
++  void Show(LegalMessageLines legal_message_lines,
++            base::OnceCallback<void(bool)> presented = {});
+   // Re-opens the bubble when the user clicks the page action icon (e.g. after
+   // the bubble was dismissed by clicking outside the bubble).
+   void ReshowBubble();
+@@ -63,14 +68,22 @@
+   void OnBubbleClosed();
+ 
+   // BubbleControllerBase:
+-  void OnBubbleDiscarded() override {}
++  void OnBubbleDiscarded() override { ReportPresentation(false); }
+   BubbleType GetBubbleType() const override;
+   base::WeakPtr<BubbleControllerBase> GetBubbleControllerBaseWeakPtr() override;
++
++  uint64_t GetNativeRequestId() const { return native_request_id_; }
++  bool IsNativeRequestCurrent() const;
++  bool CanBeReshown() const override;
+ 
+  protected:
+   void DoShowBubble() override;
+ 
+  private:
++  uint64_t native_request_id_ = 0;
++  content::WeakDocumentPtr native_document_;
++  void ReportPresentation(bool presented);
++  base::OnceCallback<void(bool)> presentation_callback_;
+   actions::ActionItem* GetActionItem();
+ 
+   const raw_ref<tabs::TabInterface> tab_interface_;
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller_unittest.cc
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller_unittest.cc
+@@ -7,11 +7,13 @@
+ #include <memory>
+ #include <string>
+ 
++#include "base/test/bind.h"
+ #include "base/test/metrics/histogram_tester.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
+ #include "chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.h"
+ #include "chrome/browser/ui/autofill/test/test_autofill_bubble_handler.h"
++#include "chrome/browser/ui/browser_actions.h"
+ #include "chrome/browser/ui/browser_window/test/mock_browser_window_interface.h"
+ #include "chrome/browser/ui/page_action/test_support/mock_page_action_controller.h"
+ #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+@@ -21,6 +23,7 @@
+ #include "components/tabs/public/mock_tab_interface.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "ui/actions/actions.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ #include "ui/base/unowned_user_data/unowned_user_data_host.h"
+@@ -28,6 +31,12 @@
+ namespace autofill {
+ 
+ namespace {
++
++// The pinned common mock does not implement this current pure interface query.
++class WalletBrowserWindow : public MockBrowserWindowInterface {
++ public:
++  bool IsNormalBrowser() const override { return true; }
++};
+ 
+ class MockAutofillBubbleHandler : public TestAutofillBubbleHandler {
+  public:
+@@ -78,7 +87,7 @@
+ 
+  protected:
+   tabs::MockTabInterface mock_tab_interface_;
+-  MockBrowserWindowInterface mock_browser_window_interface_;
++  WalletBrowserWindow mock_browser_window_interface_;
+   ui::UnownedUserDataHost browser_unowned_user_data_host_;
+   MockAutofillBubbleHandler mock_autofill_bubble_handler_;
+   std::unique_ptr<ui::ScopedUnownedUserData<AutofillBubbleHandler>>
+@@ -97,6 +106,8 @@
+ }
+ 
+ TEST_F(WalletReminderNoticeBubbleControllerTest, Show_ShowsBubble) {
++  EXPECT_CALL(mock_page_action_controller_, Show(kActionWalletReminderNotice))
++      .Times(1);
+   EXPECT_CALL(mock_autofill_bubble_handler_,
+               ShowWalletReminderNoticeBubble(web_contents(), controller_.get(),
+                                              /*is_user_gesture=*/false))
+@@ -105,6 +116,89 @@
+   EXPECT_EQ(controller_->GetBubbleView(), nullptr);
+   controller_->Show({TestLegalMessageLine("Line 1")});
+   EXPECT_EQ(controller_->GetBubbleView(), &test_bubble_);
++}
++
++TEST_F(WalletReminderNoticeBubbleControllerTest,
++       HandlerCanDestroyControllerBeforeReturningView) {
++  EXPECT_CALL(
++      mock_autofill_bubble_handler_,
++      ShowWalletReminderNoticeBubble(web_contents(), controller_.get(), false))
++      .WillOnce([&](auto*, auto*, bool) {
++        controller_.reset();
++        return &test_bubble_;
++      });
++  int results = 0;
++  controller_->Show({}, base::BindLambdaForTesting([&](bool presented) {
++                      ++results;
++                      EXPECT_FALSE(presented);
++                    }));
++  EXPECT_FALSE(controller_);
++  EXPECT_EQ(results, 1);
++}
++
++TEST_F(WalletReminderNoticeBubbleControllerTest,
++       ActionObserverCanDestroyControllerBeforePresentationObserver) {
++  ON_CALL(mock_browser_window_interface_, GetProfile())
++      .WillByDefault(testing::Return(profile()));
++  BrowserActions browser_actions(&mock_browser_window_interface_);
++  auto root = actions::ActionItem::Builder().Build();
++  auto* action = root->AddChild(actions::ActionItem::Builder()
++                                    .SetActionId(kActionWalletReminderNotice)
++                                    .Build());
++  browser_actions.set_root_action_item_for_testing(
++      actions::ActionManager::Get().AddAction(std::move(root)));
++  auto subscription =
++      action->AddActionChangedCallback(base::BindLambdaForTesting([&] {
++        if (action->GetIsShowingBubble()) {
++          controller_.reset();
++        }
++      }));
++  EXPECT_CALL(mock_page_action_controller_, Show(kActionWalletReminderNotice))
++      .Times(0);
++  EXPECT_CALL(
++      mock_autofill_bubble_handler_,
++      ShowWalletReminderNoticeBubble(web_contents(), controller_.get(), false))
++      .WillOnce(testing::Return(&test_bubble_));
++  int results = 0;
++  controller_->Show({}, base::BindLambdaForTesting([&](bool presented) {
++                      ++results;
++                      EXPECT_FALSE(presented);
++                    }));
++  EXPECT_FALSE(controller_);
++  EXPECT_EQ(results, 1);
++}
++
++TEST_F(WalletReminderNoticeBubbleControllerTest,
++       ActionObserverCanCloseBeforePresentationObserver) {
++  ON_CALL(mock_browser_window_interface_, GetProfile())
++      .WillByDefault(testing::Return(profile()));
++  BrowserActions browser_actions(&mock_browser_window_interface_);
++  auto root = actions::ActionItem::Builder().Build();
++  auto* action = root->AddChild(actions::ActionItem::Builder()
++                                    .SetActionId(kActionWalletReminderNotice)
++                                    .Build());
++  browser_actions.set_root_action_item_for_testing(
++      actions::ActionManager::Get().AddAction(std::move(root)));
++  auto subscription =
++      action->AddActionChangedCallback(base::BindLambdaForTesting([&] {
++        if (action->GetIsShowingBubble()) {
++          controller_->OnBubbleClosed();
++        }
++      }));
++  EXPECT_CALL(mock_page_action_controller_, Show(kActionWalletReminderNotice))
++      .Times(0);
++  EXPECT_CALL(
++      mock_autofill_bubble_handler_,
++      ShowWalletReminderNoticeBubble(web_contents(), controller_.get(), false))
++      .WillOnce(testing::Return(&test_bubble_));
++  int results = 0;
++  controller_->Show({}, base::BindLambdaForTesting([&](bool presented) {
++                      ++results;
++                      EXPECT_FALSE(presented);
++                    }));
++  ASSERT_TRUE(controller_);
++  EXPECT_EQ(controller_->GetBubbleView(), nullptr);
++  EXPECT_EQ(results, 1);
+ }
+ 
+ TEST_F(WalletReminderNoticeBubbleControllerTest, ReshowBubble_ShowsBubble) {
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop.cc
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop.cc
+@@ -22,22 +22,25 @@
+     ~WalletReminderNoticeUiDelegateDesktop() = default;
+ 
+ void WalletReminderNoticeUiDelegateDesktop::ShowWalletReminderNotice(
+-    LegalMessageLines legal_message_lines) {
+-  tabs::TabInterface* tab_interface =
++    LegalMessageLines lines) {
++  ShowWalletReminderNoticeWithPresentationResult(std::move(lines), {});
++}
++void WalletReminderNoticeUiDelegateDesktop::
++    ShowWalletReminderNoticeWithPresentationResult(
++        LegalMessageLines lines,
++        base::OnceCallback<void(bool)> presented) {
++  auto* tab =
+       tabs::TabInterface::MaybeGetFromContents(&client_->GetWebContents());
+-  if (!tab_interface) {
++  auto* controller =
++      tab ? WalletReminderNoticeBubbleController::From(*tab) : nullptr;
++  if (!controller || !client_->IsAutofillUiPresentationSupported(
++                         AutofillUiPresentation::kWalletReminder)) {
++    if (presented) {
++      std::move(presented).Run(false);
++    }
+     return;
+   }
+-
+-  if (WalletReminderNoticePageActionController* page_action_controller =
+-          WalletReminderNoticePageActionController::From(*tab_interface)) {
+-    page_action_controller->Show();
+-  }
+-
+-  if (WalletReminderNoticeBubbleController* bubble_controller =
+-          WalletReminderNoticeBubbleController::From(*tab_interface)) {
+-    bubble_controller->Show(std::move(legal_message_lines));
+-  }
++  controller->Show(std::move(lines), std::move(presented));
+ }
+ 
+ }  // namespace autofill::payments
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop.h
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop.h
+@@ -28,6 +28,9 @@
+ 
+   // WalletReminderNoticeUiDelegate:
+   void ShowWalletReminderNotice(LegalMessageLines legal_message_lines) override;
++  void ShowWalletReminderNoticeWithPresentationResult(
++      LegalMessageLines lines,
++      base::OnceCallback<void(bool)> presented) override;
+ 
+  private:
+   const raw_ref<ContentAutofillClient> client_;
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop_unittest.cc
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop_unittest.cc
+@@ -80,7 +80,8 @@
+   std::unique_ptr<WalletReminderNoticeUiDelegateDesktop> delegate_;
+ };
+ 
+-TEST_F(WalletReminderNoticeUiDelegateDesktopTest, ShowWalletReminderNotice) {
++TEST_F(WalletReminderNoticeUiDelegateDesktopTest,
++       MissingBrowserDoesNotPresentNoticeOrShowIcon) {
+   LegalMessageLines legal_message_lines = {TestLegalMessageLine("Line 1.")};
+ 
+   auto* bubble_controller =
+@@ -88,7 +89,8 @@
+   ASSERT_TRUE(bubble_controller);
+   EXPECT_TRUE(bubble_controller->GetLegalMessageLines().empty());
+ 
+-  EXPECT_CALL(*mock_page_action_controller_, Show(kActionWalletReminderNotice));
++  EXPECT_CALL(*mock_page_action_controller_, Show(kActionWalletReminderNotice))
++      .Times(0);
+ 
+   delegate_->ShowWalletReminderNotice(legal_message_lines);
+ 
+--- a/components/autofill/core/browser/BUILD.gn
++++ b/components/autofill/core/browser/BUILD.gn
+@@ -1228,6 +1228,7 @@
+     "ui/autofill_resource_util.cc",
+     "ui/autofill_resource_util.h",
+     "ui/autofill_suggestion_delegate.h",
++    "ui/autofill_ui_presentation.h",
+     "ui/country_combobox_model.cc",
+     "ui/country_combobox_model.h",
+     "ui/payments/autofill_error_dialog_controller.h",
+--- a/components/autofill/core/browser/form_import/addresses/address_profile_save_manager.cc
++++ b/components/autofill/core/browser/form_import/addresses/address_profile_save_manager.cc
+@@ -123,6 +123,24 @@
+ 
+ void AddressProfileSaveManager::OfferSavePrompt(
+     std::unique_ptr<ProfileImportProcess> import_process) {
++  const auto bubble_type =
++      AutofillProfileImportTypeToBubbleType(import_process->import_type());
++  const auto kind =
++      import_process->merge_candidate() ? AutofillUiPresentation::kAddressUpdate
++      : bubble_type == AutofillClient::SaveAddressBubbleType::kMigrateToAccount
++          ? AutofillUiPresentation::kAddressMigration
++      : bubble_type ==
++              AutofillClient::SaveAddressBubbleType::kHomeWorkNameEmailMerge
++          ? AutofillUiPresentation::kAddressMerge
++      : import_process->import_candidate()->IsAccountProfile()
++          ? AutofillUiPresentation::kAccountAddressSave
++          : AutofillUiPresentation::kLocalAddressSave;
++  if (!client_->IsAutofillUiPresentationSupported(kind)) {
++    import_process->SetUserDecision(UserDecision::kAutoDeclined, std::nullopt);
++    FinalizeProfileImport(std::move(import_process));
++    return;
++  }
++
+   // The prompt should not have been shown yet.
+   DCHECK(!import_process->prompt_shown());
+ 
+@@ -145,6 +163,9 @@
+     UserDecision decision,
+     base::optional_ref<const AutofillProfile> edited_profile) {
+   DCHECK(import_process->prompt_shown());
++  if (decision == UserDecision::kAutoDeclined) {
++    import_process->clear_prompt_was_shown();
++  }
+ 
+   import_process->SetUserDecision(decision, edited_profile);
+   FinalizeProfileImport(std::move(import_process));
+--- a/components/autofill/core/browser/form_import/addresses/autofill_profile_import_process.h
++++ b/components/autofill/core/browser/form_import/addresses/autofill_profile_import_process.h
+@@ -267,6 +267,7 @@
+ 
+   // Set the prompt as being shown.
+   void set_prompt_was_shown();
++  void clear_prompt_was_shown() { prompt_shown_ = false; }
+ 
+   // Supply a user |decision| for the import process. The option
+   // |edited_profile| reflect user edits to the import candidate.
+--- a/components/autofill/core/browser/foundations/autofill_client.h
++++ b/components/autofill/core/browser/foundations/autofill_client.h
+@@ -29,6 +29,7 @@
+ #include "components/autofill/core/browser/field_types.h"
+ #include "components/autofill/core/browser/payments/legal_message_line.h"
+ #include "components/autofill/core/browser/studies/hats_surveys_util.h"
++#include "components/autofill/core/browser/ui/autofill_ui_presentation.h"
+ #include "components/autofill/core/browser/ui/popup_open_enums.h"
+ #include "components/autofill/core/common/aliases.h"
+ #include "components/autofill/core/common/unique_ids.h"
+@@ -75,7 +76,6 @@
+ class AnnotatedPageContent;
+ }
+ 
+-
+ namespace signin {
+ class IdentityManager;
+ }
+@@ -109,7 +109,7 @@
+ enum class PersonalContextEligibilityState;
+ class PersonalContextEligibilityService;
+ class PersonalContextFirstRunService;
+-}
++}  // namespace personal_context
+ 
+ namespace subscription_eligibility {
+ class SubscriptionEligibilityService;
+@@ -175,7 +175,7 @@
+ namespace payments {
+ class PaymentsAutofillClient;
+ class WalletReminderNoticeManager;
+-}
++}  // namespace payments
+ 
+ // A client interface that needs to be supplied to the Autofill component by the
+ // embedder.
+@@ -578,14 +578,22 @@
+   // payments::PaymentsAutofillClient exists for a given platform, these
+   // functions will return nullptr.
+   virtual payments::PaymentsAutofillClient* GetPaymentsAutofillClient();
++
++  // Default-capable for existing platform implementations. Native hosts expose
++  // only implemented presentations; callers must check before creating offers.
++  virtual bool IsAutofillUiPresentationSupported(
++      AutofillUiPresentation presentation) const {
++    return true;
++  }
++
+   const payments::PaymentsAutofillClient* GetPaymentsAutofillClient() const;
+ 
+   // Returns the WalletReminderNoticeManager for showing the legal reminder
+   // notice when required.
+   virtual payments::WalletReminderNoticeManager*
+   GetWalletReminderNoticeManager();
+-  const payments::WalletReminderNoticeManager*
+-  GetWalletReminderNoticeManager() const;
++  const payments::WalletReminderNoticeManager* GetWalletReminderNoticeManager()
++      const;
+ 
+   // Gets the StrikeDatabase associated with the client. Note: Nullptr may be
+   // returned so check before use.
+@@ -850,7 +858,6 @@
+       AutofillManager& manager,
+       FormGlobalId form_id,
+       FieldGlobalId field_id) const;
+-
+ 
+   // Returns the service used in order to log metrics into MQLS.
+   virtual optimization_guide::ModelQualityLogsUploaderService*
+--- a/components/autofill/core/browser/payments/credit_card_save_manager.cc
++++ b/components/autofill/core/browser/payments/credit_card_save_manager.cc
+@@ -293,6 +293,11 @@
+ }
+ 
+ bool CreditCardSaveManager::AttemptToOfferCvcLocalSave(const CreditCard& card) {
++  if (!payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kLocalCvcSave)) {
++    return false;
++  }
++
+   card_save_candidate_ = card;
+   show_save_prompt_.reset();
+   save_card_prompt_offer_decision_.reset();
+@@ -364,6 +369,8 @@
+   // only offered if import_type is local card or new card. It can't be
+   // duplicate or server card.
+   if (is_credit_card_upstream_enabled &&
++      payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kUploadCardSave) &&
+       (credit_card_import_type == payments::PaymentsFormDataImporter::
+                                       CreditCardImportType::kLocalCard ||
+        credit_card_import_type == payments::PaymentsFormDataImporter::
+@@ -385,7 +392,11 @@
+     if (card.record_type() == CreditCard::RecordType::kLocalCard) {
+       existing_credit_card =
+           payments_data_manager().GetCreditCardByGUID(card.guid());
+-      if (existing_credit_card && existing_credit_card->cvc() != card.cvc()) {
++      if (existing_credit_card && existing_credit_card->cvc() != card.cvc() &&
++          payments_autofill_client().IsAutofillUiPresentationSupported(
++              card.record_type() == CreditCard::RecordType::kLocalCard
++                  ? AutofillUiPresentation::kLocalCvcSave
++                  : AutofillUiPresentation::kUploadCvcSave)) {
+         AttemptToOfferCvcLocalSave(card);
+         return true;
+       }
+@@ -395,7 +406,11 @@
+       existing_credit_card =
+           payments_data_manager().GetCreditCardByInstrumentId(
+               card.instrument_id());
+-      if (existing_credit_card && existing_credit_card->cvc() != card.cvc()) {
++      if (existing_credit_card && existing_credit_card->cvc() != card.cvc() &&
++          payments_autofill_client().IsAutofillUiPresentationSupported(
++              card.record_type() == CreditCard::RecordType::kLocalCard
++                  ? AutofillUiPresentation::kLocalCvcSave
++                  : AutofillUiPresentation::kUploadCvcSave)) {
+         AttemptToOfferCvcUploadSave(card);
+         return true;
+       }
+@@ -416,6 +431,11 @@
+     const CreditCard& card,
+     const bool uploading_local_card,
+     ukm::SourceId ukm_source_id) {
++  if (!payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kUploadCardSave)) {
++    return;
++  }
++
+   payments::PaymentsNetworkInterface* payments_network_interface =
+       payments_autofill_client().GetPaymentsNetworkInterface();
+   // Abort the uploading if `payments_network_interface` is nullptr.
+@@ -675,6 +695,11 @@
+ 
+ void CreditCardSaveManager::AttemptToOfferCvcUploadSave(
+     const CreditCard& card) {
++  if (!payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kUploadCvcSave)) {
++    return;
++  }
++
+   card_save_candidate_ = card;
+   show_save_prompt_.reset();
+   save_card_prompt_offer_decision_.reset();
+@@ -948,6 +973,14 @@
+ }
+ 
+ void CreditCardSaveManager::OfferCardLocalSave() {
++  if (!payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kLocalCardSave) ||
++      (!show_save_prompt_.value_or(true) &&
++       !payments_autofill_client().IsAutofillUiPresentationSupported(
++           AutofillUiPresentation::kCardIcon))) {
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+   bool is_mobile_build = true;
+ #else
+@@ -1011,6 +1044,11 @@
+ }
+ 
+ void CreditCardSaveManager::OfferCvcLocalSave() {
++  if (!payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kLocalCvcSave)) {
++    return;
++  }
++
+   if (!is_ios || show_save_prompt_.value_or(true)) {
+     payments::PaymentsAutofillClient::SaveCreditCardOptions options =
+         payments::PaymentsAutofillClient::SaveCreditCardOptions()
+@@ -1029,6 +1067,11 @@
+ }
+ 
+ void CreditCardSaveManager::OfferCardUploadSave(ukm::SourceId ukm_source_id) {
++  if (!payments_autofill_client().IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kUploadCardSave)) {
++    return;
++  }
++
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+   bool is_mobile_build = true;
+ #else
+@@ -1130,6 +1173,8 @@
+ void CreditCardSaveManager::OnUserDidDecideOnLocalSave(
+     SaveCardOfferUserDecision user_decision) {
+   switch (user_decision) {
++    case SaveCardOfferUserDecision::kNotPresented:
++      return;
+     case SaveCardOfferUserDecision::kAccepted:
+       autofill_metrics::LogSaveCreditCardPromptResultMetric(
+           SaveCardPromptResult::kAccepted, /*is_upload_save=*/false);
+@@ -1164,6 +1209,8 @@
+ void CreditCardSaveManager::OnUserDidDecideOnCvcLocalSave(
+     SaveCardOfferUserDecision user_decision) {
+   switch (user_decision) {
++    case SaveCardOfferUserDecision::kNotPresented:
++      return;
+     case SaveCardOfferUserDecision::kAccepted:
+       // If accepted, clear all CvcStorage strikes for this CVC, in case the CVC
+       // is later removed and we want to offer local CVC save for this card
+@@ -1258,8 +1305,9 @@
+     for (const AutofillProfile& profile : candidate_profiles) {
+       const std::u16string address_name = RemoveMiddleInitial(
+           profile.GetInfo(NAME_FULL, client_->GetAppLocale()));
+-      if (address_name.empty())
++      if (address_name.empty()) {
+         continue;
++      }
+       if (verified_name.empty()) {
+         verified_name = address_name;
+       } else if (!base::EqualsCaseInsensitiveASCII(verified_name,
+@@ -1310,9 +1358,10 @@
+ 
+   // If none of the candidate addresses have a zip, the candidate set is
+   // invalid.
+-  if (verified_zip.empty() && !candidate_profiles.empty())
++  if (verified_zip.empty() && !candidate_profiles.empty()) {
+     upload_decision_metrics_ |=
+         autofill_metrics::UPLOAD_NOT_OFFERED_NO_ZIP_CODE;
++  }
+ 
+   // Set up |upload_request->profiles|.
+   upload_request->profiles.assign(candidate_profiles.begin(),
+@@ -1435,6 +1484,8 @@
+     const payments::PaymentsAutofillClient::UserProvidedCardDetails&
+         user_provided_card_details) {
+   switch (user_decision) {
++    case SaveCardOfferUserDecision::kNotPresented:
++      return;
+     case SaveCardOfferUserDecision::kAccepted:
+       autofill_metrics::LogSaveCreditCardPromptResultMetric(
+           SaveCardPromptResult::kAccepted, /*is_upload_save=*/true);
+@@ -1474,6 +1525,8 @@
+     const payments::PaymentsAutofillClient::UserProvidedCardDetails&
+         user_provided_card_details) {
+   switch (user_decision) {
++    case SaveCardOfferUserDecision::kNotPresented:
++      return;
+     case SaveCardOfferUserDecision::kAccepted: {
+       // If accepted, clear all CvcStorage strikes for this CVC, in case the CVC
+       // is later removed and we want to offer upload CVC save for this card
+@@ -1595,15 +1648,16 @@
+   // Virtual card enrollment manager may not be set of CWV clients.
+   if (auto* virtual_card_enrollment_manager =
+           payments_autofill_client().GetVirtualCardEnrollmentManager()) {
+-    virtual_card_enrollment_manager
+-      ->SetSaveCardBubbleAcceptedTimestamp(AutofillClock::Now());
++    virtual_card_enrollment_manager->SetSaveCardBubbleAcceptedTimestamp(
++        AutofillClock::Now());
+   }
+ 
+   // Populating risk data and offering upload occur asynchronously.
+   // If |risk_data| has already been loaded, send the upload card request.
+   // Otherwise, continue to wait and let OnDidGetUploadRiskData handle it.
+-  if (!upload_request_.risk_data.empty())
++  if (!upload_request_.risk_data.empty()) {
+     SendUploadCardRequest();
++  }
+ }
+ 
+ void CreditCardSaveManager::OnDidGetUploadRiskData(
+@@ -1612,8 +1666,9 @@
+   // Populating risk data and offering upload occur asynchronously.
+   // If the dialog has already been accepted, send the upload card request.
+   // Otherwise, continue to wait for the user to accept the save dialog.
+-  if (user_did_accept_upload_prompt_)
++  if (user_did_accept_upload_prompt_) {
+     SendUploadCardRequest();
++  }
+ }
+ 
+ void CreditCardSaveManager::SendUploadCardRequest() {
+--- a/components/autofill/core/browser/payments/credit_card_save_manager_unittest.cc
++++ b/components/autofill/core/browser/payments/credit_card_save_manager_unittest.cc
+@@ -572,9 +572,11 @@
+ 
+  private:
+   int ToHistogramSample(autofill_metrics::CardUploadDecision metric) {
+-    for (int sample = 0; sample < metric + 1; ++sample)
+-      if (metric & (1 << sample))
++    for (int sample = 0; sample < metric + 1; ++sample) {
++      if (metric & (1 << sample)) {
+         return sample;
++      }
++    }
+ 
+     NOTREACHED();
+   }
+@@ -2203,7 +2205,6 @@
+                   ClientBehaviorConstants::kOfferingToSaveCvc)));
+ }
+ #endif  // !BUILDFLAG(IS_IOS)
+-
+ 
+ TEST_F(CreditCardSaveManagerTest,
+        AttemptToOfferCardUploadSave_DoNotSendSaveCvcSignalIfSaveCvcPrefOff) {
+@@ -7021,8 +7022,7 @@
+                      bool,
+                      bool>> {
+  public:
+-  ProceedWithSavingIfApplicableTest() {
+-  }
++  ProceedWithSavingIfApplicableTest() {}
+ 
+   void SetUp() override {
+     CreditCardSaveManagerTest::SetUp();
+@@ -7573,6 +7573,9 @@
+     switch (GetSaveCardOfferUserDecision()) {
+       case SaveCardOfferUserDecision::kAccepted:
+         return SaveCardPromptResult::kAccepted;
++      case SaveCardOfferUserDecision::kNotPresented:
++        ADD_FAILURE() << "Not a user-decision test parameter";
++        return SaveCardPromptResult::kClosed;
+       case SaveCardOfferUserDecision::kDeclined:
+       case SaveCardOfferUserDecision::kIgnored:
+         return SaveCardPromptResult::kClosed;
+--- a/components/autofill/core/browser/payments/iban_save_manager.cc
++++ b/components/autofill/core/browser/payments/iban_save_manager.cc
+@@ -135,6 +135,11 @@
+ }
+ 
+ bool IbanSaveManager::AttemptToOfferSave(Iban& import_candidate) {
++  if (!client_->GetPaymentsAutofillClient()->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kIbanSave)) {
++    return false;
++  }
++
+ #if !BUILDFLAG(IS_IOS)
+   UpdateRecordType(import_candidate);
+   switch (DetermineHowToSaveIban(import_candidate)) {
+@@ -207,6 +212,11 @@
+ }
+ 
+ bool IbanSaveManager::AttemptToOfferLocalSave(const Iban& import_candidate) {
++  if (!client_->GetPaymentsAutofillClient()->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kIbanSave)) {
++    return false;
++  }
++
+   if (observer_for_testing_) {
+     observer_for_testing_->OnOfferLocalSave();
+   }
+@@ -227,6 +237,11 @@
+ }
+ 
+ bool IbanSaveManager::AttemptToOfferUploadSave(const Iban& import_candidate) {
++  if (!client_->GetPaymentsAutofillClient()->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kIbanSave)) {
++    return false;
++  }
++
+   autofill_metrics::LogUploadIbanMetric(
+       import_candidate.record_type() == Iban::kLocalIban
+           ? autofill_metrics::UploadIbanOriginMetric::kLocalIban
+@@ -273,6 +288,9 @@
+   const std::string& partial_iban_hash =
+       GetPartialIbanHashString(base::UTF16ToUTF8(import_candidate.value()));
+   switch (user_decision) {
++    case payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++        kNotPresented:
++      return;
+     case payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::kAccepted:
+       autofill_metrics::LogStrikesPresentWhenIbanSaved(
+           iban_save_strike_database_->GetStrikes(partial_iban_hash),
+@@ -308,6 +326,9 @@
+   autofill_metrics::UploadIbanActionMetric action_metric;
+   std::unique_ptr<Iban> accepted_candidate;
+   switch (user_decision) {
++    case payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::
++        kNotPresented:
++      return nullptr;
+     case payments::PaymentsAutofillClient::SaveIbanOfferUserDecision::kAccepted:
+       action_metric = autofill_metrics::UploadIbanActionMetric::kAccepted;
+       autofill_metrics::LogIbanSaveAcceptedCountry(
+--- a/components/autofill/core/browser/payments/mandatory_reauth_manager.cc
++++ b/components/autofill/core/browser/payments/mandatory_reauth_manager.cc
+@@ -143,6 +143,11 @@
+ bool MandatoryReauthManager::ShouldOfferOptin(
+     std::optional<NonInteractivePaymentMethodType>
+         payment_method_type_if_non_interactive_authentication_flow_completed) {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kMandatoryReauthOptIn)) {
++    return false;
++  }
++
+   opt_in_source_ = autofill_metrics::MandatoryReauthOptInOrOutSource::kUnknown;
+   // We should not offer to update a user pref in off the record mode.
+   if (client_->IsOffTheRecord()) {
+@@ -232,6 +237,11 @@
+ }
+ 
+ void MandatoryReauthManager::StartOptInFlow() {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kMandatoryReauthOptIn)) {
++    return;
++  }
++
+   client_->GetPaymentsAutofillClient()->ShowMandatoryReauthOptInPrompt(
+       base::BindOnce(&MandatoryReauthManager::OnUserAcceptedOptInPrompt,
+                      weak_ptr_factory_.GetWeakPtr()),
+--- a/components/autofill/core/browser/payments/payments_autofill_client.cc
++++ b/components/autofill/core/browser/payments/payments_autofill_client.cc
+@@ -11,6 +11,21 @@
+ #endif  // !BUILDFLAG(IS_IOS)
+ 
+ namespace autofill::payments {
++
++void PaymentsAutofillClient::ShowVirtualCardEnrollDialogWithPresentationOutcome(
++    const VirtualCardEnrollmentFields& fields,
++    base::OnceClosure accept,
++    base::OnceClosure decline,
++    base::OnceClosure unavailable) {
++  if (!IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kVirtualCardEnrollment)) {
++    if (unavailable) {
++      std::move(unavailable).Run();
++    }
++    return;
++  }
++  ShowVirtualCardEnrollDialog(fields, std::move(accept), std::move(decline));
++}
+ 
+ PaymentsAutofillClient::~PaymentsAutofillClient() = default;
+ 
+--- a/components/autofill/core/browser/payments/payments_autofill_client.h
++++ b/components/autofill/core/browser/payments/payments_autofill_client.h
+@@ -24,6 +24,7 @@
+ #include "components/autofill/core/browser/payments/risk_data_loader.h"
+ #include "components/autofill/core/browser/suggestions/suggestion.h"
+ #include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
++#include "components/autofill/core/browser/ui/autofill_ui_presentation.h"
+ #include "url/origin.h"
+ 
+ #if !BUILDFLAG(IS_IOS)
+@@ -148,6 +149,9 @@
+ 
+     // The user ignored the IBAN save prompt.
+     kIgnored,
++    // No UI was presented. Not a user decision; do not add strikes or save
++    // data.
++    kNotPresented,
+   };
+ 
+   enum class UnmaskCardReason {
+@@ -260,6 +264,9 @@
+ 
+     // The user ignored the credit card save prompt.
+     kIgnored,
++    // No UI was presented. Not a user decision; do not add strikes or save
++    // data.
++    kNotPresented,
+   };
+ 
+   // Carries card details that were explicitly provided or confirmed by the
+@@ -392,7 +399,7 @@
+ 
+   // Hides the virtual card enroll bubble and icon if it is visible.
+   virtual void HideVirtualCardEnrollBubbleAndIconIfVisible() = 0;
+-#endif  // BUILDFLAG(IS_ANDROID)
++#endif                    // BUILDFLAG(IS_ANDROID)
+ 
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+   // Display the cardholder name fix flow prompt and run the `callback` if
+@@ -420,6 +427,13 @@
+ 
+   // Returns true if credit card local save is supported by the client.
+   virtual bool LocalCardSaveIsSupported() = 0;
++
++  // Default-capable for existing platform implementations. Native hosts expose
++  // only implemented presentations; callers must check before creating offers.
++  virtual bool IsAutofillUiPresentationSupported(
++      AutofillUiPresentation presentation) const {
++    return true;
++  }
+ 
+   // Runs `callback` once the user makes a decision with respect to the
+   // offer-to-save prompt. This includes both the save local card prompt and the
+@@ -472,6 +486,14 @@
+       base::OnceClosure accept_virtual_card_callback,
+       base::OnceClosure decline_virtual_card_callback) = 0;
+ 
++  // Additive outcome for hosts that can refuse presentation after queueing.
++  // Existing platforms retain the original route. Unavailable is not decline.
++  virtual void ShowVirtualCardEnrollDialogWithPresentationOutcome(
++      const VirtualCardEnrollmentFields& fields,
++      base::OnceClosure accept,
++      base::OnceClosure decline,
++      base::OnceClosure unavailable);
++
+   // Called after virtual card enrollment is finished. Shows enrollment
+   // result to users. `result` holds the outcome of virtual card enrollment.
+   virtual void VirtualCardEnrollCompleted(PaymentsRpcResult result) = 0;
+--- a/components/autofill/core/browser/payments/payments_churned_users_manager.cc
++++ b/components/autofill/core/browser/payments/payments_churned_users_manager.cc
+@@ -42,6 +42,11 @@
+     FormGlobalId form,
+     AutofillManager::Observer::FieldTypeSource source,
+     bool small_forms_were_parsed) {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kPaymentsChurnedUsers)) {
++    return;
++  }
++
+   if (client_->IsOffTheRecord()) {
+     autofill_metrics::LogPaymentsChurnedUsersBubbleShowResult(
+         autofill_metrics::PaymentsChurnedUsersBubbleShowResult::kOffTheRecord);
+--- a/components/autofill/core/browser/payments/virtual_card_enrollment_manager.cc
++++ b/components/autofill/core/browser/payments/virtual_card_enrollment_manager.cc
+@@ -86,6 +86,11 @@
+     const CreditCard& credit_card,
+     std::optional<int64_t> fetched_card_instrument_id,
+     std::optional<bool> card_unmasked_from_cache) {
++  if (autofill_client_ && !autofill_client_->IsAutofillUiPresentationSupported(
++                              AutofillUiPresentation::kVirtualCardEnrollment)) {
++    return false;
++  }
++
+   if (credit_card.virtual_card_enrollment_state() !=
+       CreditCard::VirtualCardEnrollmentState::kUnenrolledAndEligible) {
+     return false;
+@@ -117,6 +122,14 @@
+         get_details_for_enrollment_response_details,
+     PrefService* user_prefs,
+     RiskAssessmentFunction risk_assessment_function) {
++  // A null AutofillClient is the existing Android settings UI, not a native
++  // desktop page. Preserve that separate provider rather than infer a window.
++  if (autofill_client_ && !autofill_client_->IsAutofillUiPresentationSupported(
++                              AutofillUiPresentation::kVirtualCardEnrollment)) {
++    Reset();
++    return;
++  }
++
+   // Check if we should continue existing downstream enrollment, and if so early
+   // return but don't reset the state.
+   if (ShouldContinueExistingDownstreamEnrollment(
+@@ -249,8 +262,9 @@
+     return false;
+   }
+ 
+-  if (!GetVirtualCardEnrollmentStrikeDatabase())
+-    return false;
++  if (!GetVirtualCardEnrollmentStrikeDatabase()) {
++    return false;
++  }
+ 
+   VirtualCardEnrollmentStrikeDatabase::StrikeDatabaseDecision decision =
+       GetVirtualCardEnrollmentStrikeDatabase()->GetStrikeDatabaseDecision(
+@@ -311,20 +325,32 @@
+ 
+ void VirtualCardEnrollmentManager::ShowVirtualCardEnrollBubble(
+     VirtualCardEnrollmentFields* virtual_card_enrollment_fields) {
++  if (autofill_client_ && !autofill_client_->IsAutofillUiPresentationSupported(
++                              AutofillUiPresentation::kVirtualCardEnrollment)) {
++    Reset();
++    return;
++  }
++
+   CHECK(autofill_client_);
+   LogUiLatencyMetrics();
+ 
+-  autofill_client_->GetPaymentsAutofillClient()->ShowVirtualCardEnrollDialog(
+-      *virtual_card_enrollment_fields,
+-      base::BindOnce(
+-          &VirtualCardEnrollmentManager::Enroll, weak_ptr_factory_.GetWeakPtr(),
+-          /*virtual_card_enrollment_update_response_callback=*/
++  autofill_client_->GetPaymentsAutofillClient()
++      ->ShowVirtualCardEnrollDialogWithPresentationOutcome(
++          *virtual_card_enrollment_fields,
+           base::BindOnce(
+-              &VirtualCardEnrollmentManager::OnVirtualCardEnrollCompleted,
+-              weak_ptr_factory_.GetWeakPtr())),
+-      base::BindOnce(
+-          &VirtualCardEnrollmentManager::OnVirtualCardEnrollmentBubbleCancelled,
+-          weak_ptr_factory_.GetWeakPtr()));
++              &VirtualCardEnrollmentManager::Enroll,
++              weak_ptr_factory_.GetWeakPtr(),
++              /*virtual_card_enrollment_update_response_callback=*/
++              base::BindOnce(
++                  &VirtualCardEnrollmentManager::OnVirtualCardEnrollCompleted,
++                  weak_ptr_factory_.GetWeakPtr())),
++          base::BindOnce(&VirtualCardEnrollmentManager::
++                             OnVirtualCardEnrollmentBubbleCancelled,
++                         weak_ptr_factory_.GetWeakPtr()),
++          // Reset invalidates this factory before replacement Init can proceed:
++          // delayed unavailability from A cannot reset request B.
++          base::BindOnce(&VirtualCardEnrollmentManager::Reset,
++                         weak_ptr_factory_.GetWeakPtr()));
+ }
+ 
+ void VirtualCardEnrollmentManager::SetSaveCardBubbleAcceptedTimestamp(
+@@ -406,8 +432,8 @@
+ }
+ 
+ void VirtualCardEnrollmentManager::OnVirtualCardEnrollmentBubbleCancelled() {
+-    AddStrikeToBlockOfferingVirtualCardEnrollment(base::NumberToString(
+-        state_.virtual_card_enrollment_fields.credit_card.instrument_id()));
++  AddStrikeToBlockOfferingVirtualCardEnrollment(base::NumberToString(
++      state_.virtual_card_enrollment_fields.credit_card.instrument_id()));
+   Reset();
+ }
+ 
+@@ -540,8 +566,9 @@
+ }
+ 
+ void VirtualCardEnrollmentManager::EnsureCardArtImageIsSetBeforeShowingUI() {
+-  if (state_.virtual_card_enrollment_fields.card_art_image)
+-    return;
++  if (state_.virtual_card_enrollment_fields.card_art_image) {
++    return;
++  }
+ 
+   // Tries to get the card art image from the local cache. If the card art
+   // image is not available, then we fall back to the network image instead.
+@@ -621,11 +648,14 @@
+     IsValidGetDetailsForEnrollmentResponseDetails(
+         const payments::GetDetailsForEnrollmentResponseDetails&
+             get_details_for_enrollment_response_details) {
+-  if (get_details_for_enrollment_response_details.google_legal_message.empty())
+-    return false;
+-
+-  if (get_details_for_enrollment_response_details.vcn_context_token.empty())
+-    return false;
++  if (get_details_for_enrollment_response_details.google_legal_message
++          .empty()) {
++    return false;
++  }
++
++  if (get_details_for_enrollment_response_details.vcn_context_token.empty()) {
++    return false;
++  }
+ 
+   return true;
+ }
+--- a/components/autofill/core/browser/payments/wallet_reminder_notice_manager.cc
++++ b/components/autofill/core/browser/payments/wallet_reminder_notice_manager.cc
+@@ -53,6 +53,11 @@
+ 
+ bool WalletReminderNoticeManager::IsWalletReminderNoticeEligible(
+     const CreditCard& extracted_card) {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kWalletReminder)) {
++    return false;
++  }
++
+   if (!base::FeatureList::IsEnabled(
+           autofill::features::kAutofillEnableWalletReminderNotice)) {
+     return false;
+@@ -74,6 +79,11 @@
+ bool WalletReminderNoticeManager::IsWalletReminderNoticeEligible(
+     const EntityType& type,
+     const EntityInstance::RecordType& record_type) {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kWalletReminder)) {
++    return false;
++  }
++
+   if (!base::FeatureList::IsEnabled(
+           autofill::features::kAutofillEnableWalletReminderNoticePublicPass)) {
+     return false;
+@@ -93,6 +103,13 @@
+ }
+ 
+ void WalletReminderNoticeManager::ShowWalletReminderNotice(FlowType flow_type) {
++  ++presentation_generation_;
++
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kWalletReminder)) {
++    return;
++  }
++
+   GetWalletReminderNoticeRequestDetails request_details;
+   request_details.app_locale = client_->GetAppLocale();
+   request_details.billing_customer_number = GetBillingCustomerId(
+@@ -102,14 +119,26 @@
+   GetPaymentsNetworkInterface().GetWalletReminderNotice(
+       request_details,
+       base::BindOnce(
+-          &WalletReminderNoticeManager::OnGetWalletReminderNoticeResponse,
+-          weak_ptr_factory_.GetWeakPtr(), flow_type));
++          [](base::WeakPtr<WalletReminderNoticeManager> self,
++             uint64_t generation, FlowType flow,
++             PaymentsAutofillClient::PaymentsRpcResult result,
++             const GetWalletReminderNoticeResponseDetails& details) {
++            if (self && self->presentation_generation_ == generation) {
++              self->OnGetWalletReminderNoticeResponse(flow, result, details);
++            }
++          },
++          weak_ptr_factory_.GetWeakPtr(), presentation_generation_, flow_type));
+ }
+ 
+ void WalletReminderNoticeManager::OnGetWalletReminderNoticeResponse(
+     FlowType flow_type,
+     PaymentsAutofillClient::PaymentsRpcResult result,
+     const GetWalletReminderNoticeResponseDetails& response_details) {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kWalletReminder)) {
++    return;
++  }
++
+   if (result != PaymentsAutofillClient::PaymentsRpcResult::kSuccess) {
+     autofill_metrics::LogWalletReminderNoticeShowResult(
+         autofill_metrics::WalletReminderNoticeShowResult::
+@@ -126,8 +155,36 @@
+ 
+   CHECK(!response_details.legal_message_lines.empty());
+   CHECK(!response_details.acknowledgement_token.empty());
+-  CHECK_DEREF(GetPaymentsAutofillClient().GetWalletReminderNoticeUiDelegate())
+-      .ShowWalletReminderNotice(response_details.legal_message_lines);
++  auto* delegate =
++      GetPaymentsAutofillClient().GetWalletReminderNoticeUiDelegate();
++  if (!delegate) {
++    return;
++  }
++#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
++  delegate->ShowWalletReminderNoticeWithPresentationResult(
++      response_details.legal_message_lines,
++      base::BindOnce(&WalletReminderNoticeManager::OnNoticePresented,
++                     weak_ptr_factory_.GetWeakPtr(), flow_type,
++                     response_details.acknowledgement_token,
++                     presentation_generation_));
++#else
++  // Existing mobile presentation contract is unchanged by the native desktop
++  // route.
++  delegate->ShowWalletReminderNotice(response_details.legal_message_lines);
++  OnNoticePresented(flow_type, response_details.acknowledgement_token,
++                    presentation_generation_, true);
++#endif
++}
++
++void WalletReminderNoticeManager::OnNoticePresented(FlowType flow_type,
++                                                    std::string token,
++                                                    uint64_t generation,
++                                                    bool presented) {
++  if (!presented || generation != presentation_generation_ ||
++      !client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kWalletReminder)) {
++    return;
++  }
+   autofill_metrics::LogWalletReminderNoticeShowResult(
+       autofill_metrics::WalletReminderNoticeShowResult::kShown);
+ 
+@@ -138,7 +195,7 @@
+   request_details.billing_customer_number = GetBillingCustomerId(
+       GetPaymentsAutofillClient().GetPaymentsDataManager());
+   request_details.billable_service_number = GetBillableServiceNumber(flow_type);
+-  request_details.legal_message_token = response_details.acknowledgement_token;
++  request_details.legal_message_token = std::move(token);
+   request_details.flow_type = flow_type;
+ 
+   GetPaymentsNetworkInterface().RecordLegalReminderAcknowledgment(
+@@ -150,6 +207,11 @@
+ 
+ void WalletReminderNoticeManager::OnRecordLegalReminderAcknowledgmentResponse(
+     PaymentsAutofillClient::PaymentsRpcResult result) {
++  if (!client_->IsAutofillUiPresentationSupported(
++          AutofillUiPresentation::kWalletReminder)) {
++    return;
++  }
++
+   // We only record that the reminder notice was shown if the acknowledgment was
+   // successfully recorded. If we didn't record their acknowledgment, we should
+   // show the user the reminder notice again.
+--- a/components/autofill/core/browser/payments/wallet_reminder_notice_manager.h
++++ b/components/autofill/core/browser/payments/wallet_reminder_notice_manager.h
+@@ -67,6 +67,11 @@
+       PaymentsAutofillClient::PaymentsRpcResult result);
+ 
+  private:
++  void OnNoticePresented(FlowType flow_type,
++                         std::string token,
++                         uint64_t generation,
++                         bool presented);
++  uint64_t presentation_generation_ = 0;
+   PaymentsAutofillClient& GetPaymentsAutofillClient() {
+     return *client_->GetPaymentsAutofillClient();
+   }
+--- a/components/autofill/core/browser/payments/wallet_reminder_notice_manager_unittest.cc
++++ b/components/autofill/core/browser/payments/wallet_reminder_notice_manager_unittest.cc
+@@ -59,6 +59,16 @@
+  public:
+   MockWalletReminderNoticeUiDelegate() = default;
+   ~MockWalletReminderNoticeUiDelegate() override = default;
++#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
++  void ShowWalletReminderNoticeWithPresentationResult(
++      LegalMessageLines lines,
++      base::OnceCallback<void(bool)> presented) override {
++    ShowWalletReminderNotice(std::move(lines));
++    if (presented) {
++      std::move(presented).Run(true);
++    }
++  }
++#endif
+ 
+   MOCK_METHOD(void,
+               ShowWalletReminderNotice,
+@@ -193,7 +203,8 @@
+ TEST_F(WalletReminderNoticeManagerTest,
+        IsWalletReminderNoticeEligible_PublicPass_LocalRecord_NotEligible) {
+   EXPECT_FALSE(manager_->IsWalletReminderNoticeEligible(
+-      EntityType(EntityTypeName::kVehicle), EntityInstance::RecordType::kLocal));
++      EntityType(EntityTypeName::kVehicle),
++      EntityInstance::RecordType::kLocal));
+ }
+ 
+ TEST_F(WalletReminderNoticeManagerTest,
+--- a/components/autofill/core/browser/ui/payments/wallet_reminder_notice_ui_delegate.h
++++ b/components/autofill/core/browser/ui/payments/wallet_reminder_notice_ui_delegate.h
+@@ -5,6 +5,8 @@
+ #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_UI_PAYMENTS_WALLET_REMINDER_NOTICE_UI_DELEGATE_H_
+ #define COMPONENTS_AUTOFILL_CORE_BROWSER_UI_PAYMENTS_WALLET_REMINDER_NOTICE_UI_DELEGATE_H_
+ 
++#include "base/functional/callback.h"
++#include "build/build_config.h"
+ #include "components/autofill/core/browser/payments/legal_message_line.h"
+ 
+ namespace autofill {
+@@ -20,6 +22,13 @@
+   // sheet/dialog displaying `legal_message_lines`.
+   virtual void ShowWalletReminderNotice(
+       LegalMessageLines legal_message_lines) = 0;
++#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
++  // Desktop queue acceptance is not disclosure presentation. Exactly one
++  // result follows actual view presentation or terminal unavailability.
++  virtual void ShowWalletReminderNoticeWithPresentationResult(
++      LegalMessageLines legal_message_lines,
++      base::OnceCallback<void(bool)> presented) = 0;
++#endif
+ };
+ 
+ }  // namespace payments
+--- a/chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller.h
++++ b/chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller.h
+@@ -31,6 +31,9 @@
+   virtual std::u16string GetCancelButtonText() const = 0;
+   virtual std::u16string GetExplanationText() const = 0;
+ 
++  // Native adapters verify the original presentation before opening Settings.
++  virtual bool CanOpenSettings() const { return true; }
++
+   virtual void OnBubbleClosed(PaymentsUiClosedReason closed_reason) = 0;
+ 
+   // Returns the current bubble view. Can return nullptr if bubble is not
+--- a/chrome/browser/ui/views/autofill/payments/mandatory_reauth_confirmation_bubble_view.cc
++++ b/chrome/browser/ui/views/autofill/payments/mandatory_reauth_confirmation_bubble_view.cc
+@@ -74,6 +74,8 @@
+     ~MandatoryReauthConfirmationBubbleView() = default;
+ 
+ void MandatoryReauthConfirmationBubbleView::OnSettingsLinkClicked() {
++  if (!controller_ || !controller_->CanOpenSettings())
++    return;
+   autofill_metrics::LogMandatoryReauthOptInConfirmationBubbleMetric(
+       autofill_metrics::MandatoryReauthOptInConfirmationBubbleMetric::
+           kSettingsLinkClicked);
+--- a/chrome/browser/ui/autofill/payments/filled_card_information_bubble_controller_impl.h
++++ b/chrome/browser/ui/autofill/payments/filled_card_information_bubble_controller_impl.h
+@@ -64,7 +64,10 @@
+   GetCardImageForDescriptionView() const override;
+   bool EducationalBodyHasLearnMoreLink() const override;
+ 
++  uint64_t GetNativeRequestId() const { return native_request_id_; }
++
+   // BubbleControllerBase:
++  bool CanBeReshown() const override;
+   void OnBubbleDiscarded() override;
+   BubbleType GetBubbleType() const override;
+   bool ShouldReshowOnTabVisible() const override;
+@@ -84,6 +87,9 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+  private:
++  void RecordPresentation();
++  void RefusePresentation();
++  uint64_t native_request_id_ = 0;
+   friend class content::WebContentsUserData<
+       FilledCardInformationBubbleControllerImpl>;
+   friend class FilledCardInformationBubbleViewsInteractiveUiTest;
+--- a/chrome/browser/ui/autofill/payments/offer_notification_bubble_controller.h
++++ b/chrome/browser/ui/autofill/payments/offer_notification_bubble_controller.h
+@@ -62,6 +62,9 @@
+   // Returns whether the omnibox icon should be visible.
+   virtual bool IsIconVisible() const = 0;
+ 
++  // Native adapters validate the original page before an offer link opens.
++  virtual bool CanOpenOfferDetails() const { return true; }
++
+   // Removes the reference the controller has to the bubble.
+   virtual void OnBubbleClosed(PaymentsUiClosedReason closed_reason) = 0;
+ };
+--- a/chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.h
++++ b/chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.h
+@@ -72,7 +72,10 @@
+   // Removes any visible bubble and the omnibox icon.
+   void DismissNotification();
+ 
++  uint64_t GetNativeRequestId() const { return native_request_id_; }
++
+   // BubbleControllerBase:
++  bool CanBeReshown() const override;
+   void OnBubbleDiscarded() override {}
+   BubbleType GetBubbleType() const override;
+   base::WeakPtr<BubbleControllerBase> GetBubbleControllerBaseWeakPtr() override;
+@@ -94,6 +97,9 @@
+   virtual bool IsWebContentsActive();
+ 
+  private:
++  void RecordPresentation();
++  void RefusePresentation();
++  uint64_t native_request_id_ = 0;
+   friend class content::WebContentsUserData<
+       OfferNotificationBubbleControllerImpl>;
+   friend class OfferNotificationBubbleControllerImplTest;
+--- a/chrome/browser/ui/views/autofill/payments/filled_card_information_bubble_views.cc
++++ b/chrome/browser/ui/views/autofill/payments/filled_card_information_bubble_views.cc
+@@ -313,8 +313,12 @@
+ 
+ void FilledCardInformationBubbleViews::OnFieldClicked(
+     FilledCardInformationBubbleField field) {
++  if (!controller_)
++    return;
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   controller_->OnFieldClicked(field);
+-  UpdateButtonTooltipsAndAccessibleNames();
++  if (weak && controller_)
++    UpdateButtonTooltipsAndAccessibleNames();
+ }
+ 
+ void FilledCardInformationBubbleViews::
+--- a/chrome/browser/ui/views/autofill/payments/offer_notification_bubble_views.cc
++++ b/chrome/browser/ui/views/autofill/payments/offer_notification_bubble_views.cc
+@@ -218,6 +218,8 @@
+ }
+ 
+ void OfferNotificationBubbleViews::OnOfferDetailsLinkClicked() {
++  if (!controller_ || !controller_->CanOpenOfferDetails())
++    return;
+   DCHECK(controller_->GetOffer()->GetOfferDetailsUrl().is_valid());
+   web_contents()->OpenURL(
+       content::OpenURLParams::CreateBrowserInitiated(
+--- a/chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.h
++++ b/chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.h
+@@ -5,12 +5,15 @@
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_OMNIBOX_AUTOFILL_BUBBLE_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_OMNIBOX_AUTOFILL_BUBBLE_CONTROLLER_H_
+ 
++#include <cstdint>
++
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ref.h"
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_controller_base.h"
+ #include "components/autofill/core/browser/suggestions/suggestion.h"
+ #include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+ 
+ namespace actions {
+@@ -81,11 +84,19 @@
+ 
+   bool ShouldShowGooglePayLogo() const;
+ 
++  uint64_t GetNativeRequestId() const { return native_request_id_; }
++  bool IsNativeRequestCurrent() const;
++  bool CanBeReshown() const override;
++
+  protected:
+   void DoShowBubble() override;
+ 
+  private:
++  uint64_t native_request_id_ = 0;
++  content::WeakDocumentPtr native_document_;
+   actions::ActionItem* GetActionItem();
++  void RefusePresentation();
++  void RecordPresentation();
+ 
+   const raw_ref<tabs::TabInterface> tab_interface_;
+ 
+--- a/chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.cc
++++ b/chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.h"
+ 
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
++#include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/page_action/page_action_controller.h"
+ #include "chrome/browser/ui/page_action/page_action_observer.h"
+@@ -54,22 +55,45 @@
+ 
+ void OmniboxAutofillPageActionController::ShowExpandedChip(
+     base::OnceClosure on_chip_shown) {
++  ++native_generation_;
++  native_visible_ = true;
+   on_chip_shown_ = std::move(on_chip_shown);
+   page_action_controller_->Show(kActionAutofillPayment);
+   page_action_controller_->ShowSuggestionChip(kActionAutofillPayment,
+                                               {.should_animate = true});
++  NotifyNativeEntry();
+ }
+ 
+ void OmniboxAutofillPageActionController::ShowCollapsedChip() {
++  ++native_generation_;
++  native_visible_ = true;
+   on_chip_shown_.Reset();
+   page_action_controller_->Show(kActionAutofillPayment);
+   page_action_controller_->HideSuggestionChip(kActionAutofillPayment);
++  NotifyNativeEntry();
+ }
+ 
+ void OmniboxAutofillPageActionController::HideChip() {
++  ++native_generation_;
++  native_visible_ = false;
+   on_chip_shown_.Reset();
+   page_action_controller_->HideSuggestionChip(kActionAutofillPayment);
+   page_action_controller_->Hide(kActionAutofillPayment);
++  NotifyNativeEntry();
+ }
+ 
++void OmniboxAutofillPageActionController::OnNativeEntryPresented(
++    uint64_t generation) {
++  if (!native_visible_ || generation != native_generation_ || !on_chip_shown_)
++    return;
++  auto callback = std::move(on_chip_shown_);
++  std::move(callback).Run();
++}
++void OmniboxAutofillPageActionController::NotifyNativeEntry() {
++  auto* browser = tab_interface_->GetBrowserWindowInterface();
++  if (auto* handler = browser ? AutofillBubbleHandler::Get(
++                                    browser->GetUnownedUserDataHost())
++                              : nullptr)
++    handler->OnPaymentStateChanged(tab_interface_->GetContents());
++}
+ }  // namespace autofill
+--- a/chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.h
++++ b/chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.h
+@@ -4,6 +4,8 @@
+ 
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_OMNIBOX_AUTOFILL_PAGE_ACTION_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_OMNIBOX_AUTOFILL_PAGE_ACTION_CONTROLLER_H_
++
++#include <cstdint>
+ 
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ref.h"
+@@ -50,7 +52,17 @@
+   // Hides the entire omnibox autofill page action chip.
+   void HideChip();
+ 
++  bool IsNativeEntryVisible() const { return native_visible_; }
++  uint64_t GetNativeEntryGeneration() const { return native_generation_; }
++  bool NeedsNativePresentationAcknowledgment() const {
++    return !!on_chip_shown_;
++  }
++  void OnNativeEntryPresented(uint64_t generation);
++
+  private:
++  void NotifyNativeEntry();
++  bool native_visible_ = false;
++  uint64_t native_generation_ = 0;
+   const raw_ref<tabs::TabInterface> tab_interface_;
+ 
+   const raw_ref<page_actions::PageActionController> page_action_controller_;
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.cc
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.cc
+@@ -5,6 +5,8 @@
+ #include "chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.h"
+ 
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
++#include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/page_action/page_action_controller.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+@@ -32,11 +34,24 @@
+ }
+ 
+ void WalletReminderNoticePageActionController::Show() {
++  ++native_generation_;
++  native_visible_ = true;
+   page_action_controller_->Show(kActionWalletReminderNotice);
++  NotifyNativeEntry();
+ }
+ 
+ void WalletReminderNoticePageActionController::Hide() {
++  ++native_generation_;
++  native_visible_ = false;
+   page_action_controller_->Hide(kActionWalletReminderNotice);
++  NotifyNativeEntry();
+ }
+ 
++void WalletReminderNoticePageActionController::NotifyNativeEntry() {
++  auto* browser = tab_interface_->GetBrowserWindowInterface();
++  if (auto* handler = browser ? AutofillBubbleHandler::Get(
++                                    browser->GetUnownedUserDataHost())
++                              : nullptr)
++    handler->OnPaymentStateChanged(tab_interface_->GetContents());
++}
+ }  // namespace autofill
+--- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.h
++++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.h
+@@ -4,6 +4,8 @@
+ 
+ #ifndef CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_WALLET_REMINDER_NOTICE_PAGE_ACTION_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_AUTOFILL_PAYMENTS_WALLET_REMINDER_NOTICE_PAGE_ACTION_CONTROLLER_H_
++
++#include <cstdint>
+ 
+ #include "base/memory/raw_ref.h"
+ #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
+@@ -41,7 +43,13 @@
+   // Hides the wallet reminder notice page action.
+   void Hide();
+ 
++  bool IsNativeEntryVisible() const { return native_visible_; }
++  uint64_t GetNativeEntryGeneration() const { return native_generation_; }
++
+  private:
++  void NotifyNativeEntry();
++  bool native_visible_ = false;
++  uint64_t native_generation_ = 0;
+   const raw_ref<tabs::TabInterface> tab_interface_;
+ 
+   const raw_ref<page_actions::PageActionController> page_action_controller_;
+--- a/chrome/browser/ui/views/autofill/payments/omnibox_autofill_bubble_view.cc
++++ b/chrome/browser/ui/views/autofill/payments/omnibox_autofill_bubble_view.cc
+@@ -33,8 +33,12 @@
+ OmniboxAutofillBubbleView::OmniboxAutofillBubbleView(
+     views::BubbleAnchor anchor_view,
+     content::WebContents* web_contents,
+-    OmniboxAutofillBubbleController* controller)
++    OmniboxAutofillBubbleController* controller,
++    base::RepeatingCallback<bool()> can_act,
++    base::OnceCallback<void(PaymentsUiClosedReason)> native_closed)
+     : AutofillLocationBarBubble(anchor_view, web_contents),
++      can_act_(std::move(can_act)),
++      native_closed_(std::move(native_closed)),
+       controller_(controller->GetWeakPtr()) {
+   SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
+   SetShowCloseButton(true);
+@@ -46,8 +50,9 @@
+ OmniboxAutofillBubbleView::~OmniboxAutofillBubbleView() = default;
+ 
+ void OmniboxAutofillBubbleView::Show(DisplayReason reason) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   ShowForReason(reason);
+-  if (controller_) {
++  if (weak && CanAct() && GetWidget()->IsVisible()) {
+     controller_->OnSuggestionsShown();
+   }
+ }
+@@ -61,7 +66,17 @@
+   return controller_ ? controller_->GetWindowTitle() : std::u16string();
+ }
+ 
++bool OmniboxAutofillBubbleView::CanAct() const {
++  return controller_ && (!can_act_ || can_act_.Run());
++}
++
+ void OmniboxAutofillBubbleView::WindowClosing() {
++  if (native_closed_) {
++    controller_ = nullptr;
++    std::move(native_closed_)
++        .Run(GetPaymentsUiClosedReasonFromWidget(GetWidget()));
++    return;
++  }
+   if (controller_) {
+     controller_->OnBubbleClosed(
+         GetPaymentsUiClosedReasonFromWidget(GetWidget()));
+@@ -195,8 +210,11 @@
+ void OmniboxAutofillBubbleView::OnSuggestionAccepted(
+     const Suggestion& suggestion,
+     size_t row_index) {
+-  if (controller_) {
++  if (CanAct()) {
++    auto weak = weak_ptr_factory_.GetWeakPtr();
+     controller_->OnSuggestionAccepted(suggestion, row_index);
++    if (!weak)
++      return;
+     if (views::Widget* widget = GetWidget()) {
+       widget->CloseWithReason(
+           views::Widget::ClosedReason::kAcceptButtonClicked);
+@@ -206,13 +224,13 @@
+ 
+ void OmniboxAutofillBubbleView::OnSuggestionSelected(
+     const Suggestion& suggestion) {
+-  if (controller_) {
++  if (CanAct()) {
+     controller_->OnSuggestionSelected(suggestion);
+   }
+ }
+ 
+ void OmniboxAutofillBubbleView::OnSuggestionDeselected() {
+-  if (controller_) {
++  if (CanAct()) {
+     controller_->OnSuggestionDeselected();
+   }
+ }
+--- a/chrome/browser/ui/views/autofill/payments/omnibox_autofill_bubble_view.h
++++ b/chrome/browser/ui/views/autofill/payments/omnibox_autofill_bubble_view.h
+@@ -6,6 +6,7 @@
+ #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_PAYMENTS_OMNIBOX_AUTOFILL_BUBBLE_VIEW_H_
+ 
+ #include <string>
++#include "base/functional/callback.h"
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -22,6 +23,7 @@
+ }  // namespace views
+ 
+ namespace autofill {
++enum class PaymentsUiClosedReason;
+ 
+ class OmniboxAutofillBubbleController;
+ struct Suggestion;
+@@ -30,9 +32,12 @@
+   METADATA_HEADER(OmniboxAutofillBubbleView, AutofillLocationBarBubble)
+ 
+  public:
+-  OmniboxAutofillBubbleView(views::BubbleAnchor anchor_view,
+-                            content::WebContents* web_contents,
+-                            OmniboxAutofillBubbleController* controller);
++  OmniboxAutofillBubbleView(
++      views::BubbleAnchor anchor_view,
++      content::WebContents* web_contents,
++      OmniboxAutofillBubbleController* controller,
++      base::RepeatingCallback<bool()> can_act = {},
++      base::OnceCallback<void(PaymentsUiClosedReason)> native_closed = {});
+   OmniboxAutofillBubbleView(const OmniboxAutofillBubbleView&) = delete;
+   OmniboxAutofillBubbleView& operator=(const OmniboxAutofillBubbleView&) =
+       delete;
+@@ -53,6 +58,9 @@
+   void Init() override;
+ 
+  private:
++  bool CanAct() const;
++  base::RepeatingCallback<bool()> can_act_;
++  base::OnceCallback<void(PaymentsUiClosedReason)> native_closed_;
+   // Calculates the maximum available vertical space for the bubble (shown below
+   // the omnibox chip), bounded by both the screen display work area and the
+   // browser window.
+--- a/chrome/browser/ui/views/autofill/payments/payments_churned_users_bubble_view.cc
++++ b/chrome/browser/ui/views/autofill/payments/payments_churned_users_bubble_view.cc
+@@ -30,8 +30,13 @@
+ PaymentsChurnedUsersBubbleView::PaymentsChurnedUsersBubbleView(
+     views::BubbleAnchor anchor,
+     content::WebContents* web_contents,
+-    PaymentsChurnedUsersBubbleController* controller)
+-    : AutofillLocationBarBubble(anchor, web_contents), controller_(controller) {
++    PaymentsChurnedUsersBubbleController* controller,
++    base::RepeatingCallback<bool()> can_act,
++    base::OnceCallback<void(PaymentsUiClosedReason)> native_closed)
++    : AutofillLocationBarBubble(anchor, web_contents),
++      can_act_(std::move(can_act)),
++      native_closed_(std::move(native_closed)),
++      controller_(controller->GetWeakPtr()) {
+   SetButtons(static_cast<int>(ui::mojom::DialogButton::kOk) |
+              static_cast<int>(ui::mojom::DialogButton::kCancel));
+   SetButtonLabel(ui::mojom::DialogButton::kOk,
+@@ -55,19 +60,22 @@
+ }
+ 
+ bool PaymentsChurnedUsersBubbleView::OnDialogAccepted() {
+-  bool did_switch_to_loading_state = false;
+-  if (controller_) {
+-    SwitchToLoadingState();
+-    did_switch_to_loading_state = true;
+-    controller_->OnAcceptButton();
++  if (!CanAct())
++    return true;
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  SwitchToLoadingState();
++  controller_->OnAcceptButton();
++  if (weak && weak->CanAct()) {
+     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+         FROM_HERE,
+-        base::BindOnce(
+-            &PaymentsChurnedUsersBubbleController::ShowConfirmationBubbleView,
+-            controller_->GetWeakPtr()),
++        base::BindOnce(&PaymentsChurnedUsersBubbleView::ShowConfirmation, weak),
+         base::Milliseconds(kMillisecondsUntilConfirmationBubbleIsShown));
+   }
+-  return !did_switch_to_loading_state;
++  return false;
++}
++void PaymentsChurnedUsersBubbleView::ShowConfirmation() {
++  if (CanAct())
++    controller_->ShowConfirmationBubbleView();
+ }
+ 
+ void PaymentsChurnedUsersBubbleView::SwitchToLoadingState() {
+@@ -86,14 +94,12 @@
+ 
+ void PaymentsChurnedUsersBubbleView::Hide() {
+   CloseBubble();
+-  if (controller_) {
+-    controller_->OnBubbleClosed(
+-        GetPaymentsUiClosedReasonFromWidget(GetWidget()));
+-  }
+-  controller_ = nullptr;
++  WindowClosing();
+ }
+ 
+ void PaymentsChurnedUsersBubbleView::AddedToWidget() {
++  if (!controller_)
++    return;
+   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+   int resource_id;
+   switch (
+@@ -120,22 +126,22 @@
+ }
+ 
+ std::u16string PaymentsChurnedUsersBubbleView::GetWindowTitle() const {
+-  switch (
+-      controller_->GetAutofillEnableResurrectingPaymentsUsersTreatmentArm()) {
+-    case AutofillEnableResurrectingPaymentsUsersTreatmentArm::kSecurity: {
+-      return l10n_util::GetStringUTF16(
+-          IDS_AUTOFILL_CHURNED_USERS_BUBBLE_SECURITY_TITLE);
+-    }
+-    case AutofillEnableResurrectingPaymentsUsersTreatmentArm::kConvenience: {
+-      return l10n_util::GetStringUTF16(
+-          IDS_AUTOFILL_CHURNED_USERS_BUBBLE_CONVENIENCE_TITLE);
+-    }
+-    case AutofillEnableResurrectingPaymentsUsersTreatmentArm::kMessage:
+-      NOTREACHED();
+-  }
++  if (!controller_)
++    return {};
++  return controller_->GetWindowTitle();
++}
++
++bool PaymentsChurnedUsersBubbleView::CanAct() const {
++  return controller_ && (!can_act_ || can_act_.Run());
+ }
+ 
+ void PaymentsChurnedUsersBubbleView::WindowClosing() {
++  if (native_closed_) {
++    controller_ = nullptr;
++    std::move(native_closed_)
++        .Run(GetPaymentsUiClosedReasonFromWidget(GetWidget()));
++    return;
++  }
+   if (controller_) {
+     controller_->OnBubbleClosed(
+         GetPaymentsUiClosedReasonFromWidget(GetWidget()));
+@@ -163,6 +169,8 @@
+ }
+ 
+ void PaymentsChurnedUsersBubbleView::Init() {
++  if (!controller_)
++    return;
+   SetUseDefaultFillLayout(true);
+ 
+   auto main_content_view = std::make_unique<views::BoxLayoutView>();
+--- a/chrome/browser/ui/views/autofill/payments/payments_churned_users_bubble_view.h
++++ b/chrome/browser/ui/views/autofill/payments/payments_churned_users_bubble_view.h
+@@ -5,7 +5,9 @@
+ #ifndef CHROME_BROWSER_UI_VIEWS_AUTOFILL_PAYMENTS_PAYMENTS_CHURNED_USERS_BUBBLE_VIEW_H_
+ #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_PAYMENTS_PAYMENTS_CHURNED_USERS_BUBBLE_VIEW_H_
+ 
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
+ #include "chrome/browser/ui/views/autofill/autofill_location_bar_bubble.h"
+ 
+@@ -15,6 +17,7 @@
+ }  // namespace views
+ 
+ namespace autofill {
++enum class PaymentsUiClosedReason;
+ 
+ class PaymentsChurnedUsersBubbleController;
+ 
+@@ -25,7 +28,9 @@
+   PaymentsChurnedUsersBubbleView(
+       views::BubbleAnchor anchor,
+       content::WebContents* web_contents,
+-      PaymentsChurnedUsersBubbleController* controller);
++      PaymentsChurnedUsersBubbleController* controller,
++      base::RepeatingCallback<bool()> can_act = {},
++      base::OnceCallback<void(PaymentsUiClosedReason)> native_closed = {});
+   PaymentsChurnedUsersBubbleView(const PaymentsChurnedUsersBubbleView&) =
+       delete;
+   PaymentsChurnedUsersBubbleView& operator=(
+@@ -46,9 +51,13 @@
+   void Init() override;
+ 
+  private:
++  bool CanAct() const;
++  void ShowConfirmation();
++  base::RepeatingCallback<bool()> can_act_;
++  base::OnceCallback<void(PaymentsUiClosedReason)> native_closed_;
+   std::unique_ptr<views::View> CreateLoadingProgressRow();
+ 
+-  raw_ptr<PaymentsChurnedUsersBubbleController> controller_;
++  base::WeakPtr<PaymentsChurnedUsersBubbleController> controller_;
+ 
+   raw_ptr<views::View> loading_progress_row_ = nullptr;
+   raw_ptr<views::Throbber> loading_throbber_ = nullptr;
+--- a/chrome/browser/ui/views/autofill/payments/wallet_reminder_notice_bubble_view.cc
++++ b/chrome/browser/ui/views/autofill/payments/wallet_reminder_notice_bubble_view.cc
+@@ -29,16 +29,20 @@
+ WalletReminderNoticeBubbleView::WalletReminderNoticeBubbleView(
+     views::BubbleAnchor anchor_view,
+     content::WebContents* web_contents,
+-    WalletReminderNoticeBubbleController* controller)
++    WalletReminderNoticeBubbleController* controller,
++    base::RepeatingCallback<bool()> can_act,
++    base::OnceClosure native_closed)
+     : AutofillLocationBarBubble(anchor_view, web_contents),
++      can_act_(std::move(can_act)),
++      native_closed_(std::move(native_closed)),
+       controller_(controller->GetWeakPtr()) {
+   SetButtons(static_cast<int>(ui::mojom::DialogButton::kOk));
+   SetButtonLabel(ui::mojom::DialogButton::kOk,
+                  l10n_util::GetStringUTF16(
+                      IDS_AUTOFILL_WALLET_REMINDER_NOTICE_CONFIRM_BUTTON_LABEL));
+   SetShowCloseButton(true);
+-  SetAcceptCallback(base::BindOnce(
+-      &WalletReminderNoticeBubbleController::OnAcceptButton, controller_));
++  SetAcceptCallback(base::BindOnce(&WalletReminderNoticeBubbleView::OnAccepted,
++                                   weak_ptr_factory_.GetWeakPtr()));
+ 
+   SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
+   GetViewAccessibility().SetRole(ax::mojom::Role::kDialog);
+@@ -49,6 +53,15 @@
+ }
+ 
+ WalletReminderNoticeBubbleView::~WalletReminderNoticeBubbleView() = default;
++
++void WalletReminderNoticeBubbleView::OnAccepted() {
++  if (CanAct())
++    controller_->OnAcceptButton();
++}
++void WalletReminderNoticeBubbleView::OnLegalLinkClicked(const GURL& url) {
++  if (CanAct())
++    controller_->OnLinkClicked(url);
++}
+ 
+ void WalletReminderNoticeBubbleView::Show(DisplayReason reason) {
+   ShowForReason(reason);
+@@ -78,7 +91,16 @@
+   return controller_ ? controller_->GetWindowTitle() : std::u16string();
+ }
+ 
++bool WalletReminderNoticeBubbleView::CanAct() const {
++  return controller_ && (!can_act_ || can_act_.Run());
++}
++
+ void WalletReminderNoticeBubbleView::WindowClosing() {
++  if (native_closed_) {
++    controller_ = nullptr;
++    std::move(native_closed_).Run();
++    return;
++  }
+   if (controller_) {
+     controller_->OnBubbleClosed();
+     controller_ = nullptr;
+@@ -102,8 +124,8 @@
+       legal_message_lines,
+       /*user_email=*/std::u16string(),
+       /*user_avatar=*/ui::ImageModel(),
+-      base::BindRepeating(&WalletReminderNoticeBubbleController::OnLinkClicked,
+-                          controller_)));
++      base::BindRepeating(&WalletReminderNoticeBubbleView::OnLegalLinkClicked,
++                          weak_ptr_factory_.GetWeakPtr())));
+ }
+ 
+ BEGIN_METADATA(WalletReminderNoticeBubbleView)
+--- a/chrome/browser/ui/views/autofill/payments/wallet_reminder_notice_bubble_view.h
++++ b/chrome/browser/ui/views/autofill/payments/wallet_reminder_notice_bubble_view.h
+@@ -6,16 +6,19 @@
+ #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_PAYMENTS_WALLET_REMINDER_NOTICE_BUBBLE_VIEW_H_
+ 
+ #include <string>
++#include "base/functional/callback.h"
+ 
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/ui/views/autofill/autofill_location_bar_bubble.h"
+ #include "ui/base/metadata/metadata_header_macros.h"
+ 
++class GURL;
+ namespace content {
+ class WebContents;
+ }  // namespace content
+ 
+ namespace autofill {
++enum class PaymentsUiClosedReason;
+ 
+ class WalletReminderNoticeBubbleController;
+ 
+@@ -26,7 +29,9 @@
+   WalletReminderNoticeBubbleView(
+       views::BubbleAnchor anchor_view,
+       content::WebContents* web_contents,
+-      WalletReminderNoticeBubbleController* controller);
++      WalletReminderNoticeBubbleController* controller,
++      base::RepeatingCallback<bool()> can_act = {},
++      base::OnceClosure native_closed = {});
+   WalletReminderNoticeBubbleView(const WalletReminderNoticeBubbleView&) =
+       delete;
+   WalletReminderNoticeBubbleView& operator=(
+@@ -48,7 +53,13 @@
+   void Init() override;
+ 
+  private:
++  bool CanAct() const;
++  void OnAccepted();
++  void OnLegalLinkClicked(const GURL& url);
++  base::RepeatingCallback<bool()> can_act_;
++  base::OnceClosure native_closed_;
+   base::WeakPtr<WalletReminderNoticeBubbleController> controller_;
++  base::WeakPtrFactory<WalletReminderNoticeBubbleView> weak_ptr_factory_{this};
+ };
+ 
+ }  // namespace autofill

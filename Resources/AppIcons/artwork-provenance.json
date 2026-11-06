@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "authorization": "Use deterministic processing; preserve the artwork.",
+  "method": "Original RGB retained; original alpha retained within two pixels of connected alpha >= 128 artwork.",
+  "masters": {
+    "Original": {
+      "originalFileSHA256": "6d3d552a1915192bfce0989ffae272ecd5922b70246fb2b8ff10a0111aced33b",
+      "originalRGBSHA256": "cff322fadb92f59d8d6da8afe4c53429b11b30a56f530a33f254531834abbc9d",
+      "originalOpaqueSHA256": "29df5d3e63a8e8691dfdbdefaf0e697a0018af867f08716a240371fca5343c93",
+      "cleanedFileSHA256": "f1879e05b028309a72e9afde2e8af0ad26e2cfec1729066b31d2dd86844218f2",
+      "removedAlphaPixels": 19481,
+      "opaquePixelsChanged": 0
+    },
+    "Candy": {
+      "originalFileSHA256": "96e471d0529c17b43b18c6048b2d247e43f7e230a218e4b3bc1aa31b661e1af2",
+      "originalRGBSHA256": "83e52fe7b458afddcea9b072379ce6c5d9c98272c8be80c40a8fecb80390f1f2",
+      "originalOpaqueSHA256": "66347d681549ba638c9de443d00a7b58af73608fa8def3c08d7f49309693ff0e",
+      "cleanedFileSHA256": "b4a31aa178e61851293d1150156034ce24faaefbb1cc8a337325f4fcd8123b1b",
+      "removedAlphaPixels": 62587,
+      "opaquePixelsChanged": 0
+    },
+    "Colorful": {
+      "originalFileSHA256": "072e8dbffa812e474a2549a70145f7e01fdb7fcbedf81c7f43cf91b59cee1a55",
+      "originalRGBSHA256": "93b9c3f1b1bd81ef41532cf623cea505e1969915bc3b672ea34d26223cb25660",
+      "originalOpaqueSHA256": "660bce85557d599da40af093609f3b517d393fd6e5356fca07fc0b3793dfc7e6",
+      "cleanedFileSHA256": "037fa7cb730936a50f3179f12d456a00110564511d25a8100ef1631450e4a1c4",
+      "removedAlphaPixels": 31244,
+      "opaquePixelsChanged": 0
+    },
+    "FlutedGlass": {
+      "originalFileSHA256": "6ad7dfdc33cddc7013938dd30699c593167715427d200283031ca54423aea82a",
+      "originalRGBSHA256": "88d44e52140071187a7176e13a85760222314b03fef9f174e0c507c9cdc45dd2",
+      "originalOpaqueSHA256": "590b74b3474de54a727a566bd66e4a0465256cd01fbd9590de3472ddf60019e3",
+      "cleanedFileSHA256": "4f9e84b945aff7e644a5ab52b55a356ceba1e8f4e6d42822e8d8b37420a31eb2",
+      "removedAlphaPixels": 25876,
+      "opaquePixelsChanged": 0
+    },
+    "Hologram": {
+      "originalFileSHA256": "abeadb2d7077f1b48c4665b663dc736fc68ee469bd298510e0e24a977216c7ba",
+      "originalRGBSHA256": "42904d2a21259edaa4202e93cba0bafef659b04ec82f1bad7396d8e0cfe9be1e",
+      "originalOpaqueSHA256": "557f07b2f12c2c70cf6a80a62920a93c12e8a07b57e3bbe1623006f7e863296d",
+      "cleanedFileSHA256": "4c727189da8fc570fdfd5ecf8bb60060fa80acdf2b39f1ac0b210edd64d291e7",
+      "removedAlphaPixels": 16499,
+      "opaquePixelsChanged": 0
+    },
+    "Neon": {
+      "originalFileSHA256": "479188050d1dc622525ecb402b773f37a667f681be4a6432435a0709ba5ca688",
+      "originalRGBSHA256": "7515aa94ad71848e5c3b853dcdd117d50f6219f53fbd8308687acc8f535ffddf",
+      "originalOpaqueSHA256": "72d05fbe5ddde181922209ce843b59bb92093eacdb721fafee213742a9d18799",
+      "cleanedFileSHA256": "02a13438ce84378165275c3e17509b68c8ae7b5f24dc82fdc40f81f7d113e6e6",
+      "removedAlphaPixels": 11074,
+      "opaquePixelsChanged": 0
+    },
+    "Schoolbook": {
+      "originalFileSHA256": "2b7b4d7300e0f64fc0f84e7b10f8d497afde9bd864680bd2c8f12f169b05a269",
+      "originalRGBSHA256": "689875aa392683afa54c9358d9df1a16f872be05cc6612ae7459b48aac2cfb1b",
+      "originalOpaqueSHA256": "5219ee84ffe85f980d9c24351f0c7596ababd67e7e1d3525cf53a903ac48ba2c",
+      "cleanedFileSHA256": "421e49397a7c39a5daf6ef224bb40074a3aef05d87d17594a430681cedd03c91",
+      "removedAlphaPixels": 29879,
+      "opaquePixelsChanged": 0
+    },
+    "EarlyBirds": {
+      "originalFileSHA256": "61b2a96fa9ebf5f8022173f97d37e730622829f8db215b1c6dbcbe66a1ffccbe",
+      "originalRGBSHA256": "4d2f2fcc1eb7911544eabeaab10490a3ca157d1a201083990dae19cef57d8591",
+      "originalOpaqueSHA256": "6baa65029f7a664495683ea0aeabe94456f0718948cc1708b17f51d25373d9f1",
+      "cleanedFileSHA256": "9a9988e7cd89e877b301c7e218df4ba54d1530c46d9135c3fb1dad01beb00b86",
+      "removedAlphaPixels": 34749,
+      "opaquePixelsChanged": 0
+    },
+    "Canary": {
+      "originalFileSHA256": "3299a1e7b72e5b485bc97e40614f7a56361483b66d0ab397062ffc68eafb99a8",
+      "originalRGBSHA256": "1f306d0dffc2bc3ec15fea6df21992f4b391bceee6895d634367dc3125bcc8a5",
+      "originalOpaqueSHA256": "94e3985361c9fbfb927288fb689290acc9b802499bcdeb2cc2a8b1cae3b965fe",
+      "cleanedFileSHA256": "036ba3d8279f81dc2bcc969f0e3d2c2ee3fa161b81c141a0a732177dde459283",
+      "removedAlphaPixels": 12433,
+      "opaquePixelsChanged": 0
+    },
+    "Dev": {
+      "originalFileSHA256": "6b825554e4c8ee60d62cba08540e869bb6288e8cd3bd85449129752a55738c4a",
+      "originalRGBSHA256": "865af1f343e8ca460def237e1c5a77fc5a22676eb78c88bb56c4222015b2650c",
+      "originalOpaqueSHA256": "191e40a1cc1fdf4d0f900e5c631e667ef727874b6241b0ee529ea58d7e3bd6f6",
+      "cleanedFileSHA256": "2b4f9033b5d53b6421fa4880a4f9f841f9c720c047c8a4a1afd2c8c0f6fb6b31",
+      "removedAlphaPixels": 4989,
+      "opaquePixelsChanged": 0
+    }
+  },
+  "marks": {
+    "source": "Original.png",
+    "sourceCrop": [
+      356,
+      220,
+      916,
+      1048
+    ],
+    "size": [
+      560,
+      828
+    ],
+    "alphaSHA256": "af0ab40037a4c3d9065ab875145c16a9b03eae9f8289a5ebd7e34d87e910124a",
+    "borderlessFileSHA256": "f24571e454c652ffca0a8e9c3ef35bfb2328b0ef3c8123f236cd74248cc6201c",
+    "monochromeFileSHA256": "f194b3d94447c236bcd050a29ceaefd281db9c675be089dfe9ab6022848e443c"
+  }
+}

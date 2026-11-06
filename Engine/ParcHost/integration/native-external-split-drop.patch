@@ -1,0 +1,95 @@
+--- a/content/app_shim_remote_cocoa/web_contents_view_cocoa.mm
++++ b/content/app_shim_remote_cocoa/web_contents_view_cocoa.mm
+@@ -21,6 +21,7 @@
+ #include "ui/base/clipboard/clipboard_util_mac.h"
+ #include "ui/base/clipboard/custom_data_helper.h"
+ #include "ui/base/cocoa/drag_permission.h"
++#import "ui/base/cocoa/content_drop_router.h"
+ #include "ui/base/dragdrop/drag_drop_types.h"
+ #include "ui/events/event_utils.h"
+ #include "ui/events/platform_event.h"
+@@ -132,6 +133,7 @@
+   // Drag variables.
+   WebDragSource* __strong _dragSource;
+   NSDragOperation _dragOperation;
++  PCNativeContentDropRouter* __strong _nativeDropRouter;
+ 
+   BOOL _willSetWebContentsOccludedAfterDelay;
+ }
+@@ -367,6 +369,10 @@
+ // NSDraggingDestination methods
+ 
+ - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
++  if (!_nativeDropRouter)
++    _nativeDropRouter = [[PCNativeContentDropRouter alloc] initWithView:self];
++  if (_host && [_nativeDropRouter begin:sender])
++    return _nativeDropRouter.operation;
+   if (!_host)
+     return NSDragOperationNone;
+ 
+@@ -389,12 +395,18 @@
+ }
+ 
+ - (void)draggingExited:(id<NSDraggingInfo>)sender {
++  if (_nativeDropRouter.claimed) {
++    [_nativeDropRouter exit:sender];
++    return;
++  }
+   if (!_host)
+     return;
+   _host->DraggingExited();
+ }
+ 
+ - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
++  if (_nativeDropRouter.claimed)
++    return [_nativeDropRouter update:sender];
+   if (!_host)
+     return NSDragOperationNone;
+   auto draggingInfo = DraggingInfo::New();
+@@ -404,7 +416,13 @@
+   return result;
+ }
+ 
++- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
++  return _nativeDropRouter.claimed ? [_nativeDropRouter prepare:sender] : YES;
++}
++
+ - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
++  if (_nativeDropRouter.claimed)
++    return [_nativeDropRouter perform:sender];
+   if (!_host)
+     return NO;
+   auto draggingInfo = DraggingInfo::New();
+@@ -414,12 +432,21 @@
+   return result;
+ }
+ 
++- (void)draggingEnded:(id<NSDraggingInfo>)sender {
++  [_nativeDropRouter end];
++}
++
++- (void)concludeDragOperation:(id<NSDraggingInfo>)sender {
++  [_nativeDropRouter end];
++}
++
+ - (void)clearViewsHostableView {
+   _viewsHostableView = nullptr;
+ }
+ 
+ - (void)setHost:(remote_cocoa::mojom::WebContentsNSViewHost*)host {
+   if (!host) {
++    [_nativeDropRouter end];
+     [_dragSource webContentsIsGone];
+   }
+   _host = host;
+--- a/ui/base/BUILD.gn
++++ b/ui/base/BUILD.gn
+@@ -319,6 +319,8 @@
+       "cocoa/default_command_dispatcher_delegate.mm",
+       "cocoa/defaults_utils.h",
+       "cocoa/defaults_utils.mm",
++      "cocoa/content_drop_router.h",
++      "cocoa/content_drop_router.mm",
+       "cocoa/drag_permission.h",
+       "cocoa/drag_permission.mm",
+       "cocoa/find_pasteboard.h",

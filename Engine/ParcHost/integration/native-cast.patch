@@ -1,0 +1,49 @@
+--- a/chrome/browser/ui/views/media_router/cast_dialog_view.cc
++++ b/chrome/browser/ui/views/media_router/cast_dialog_view.cc
+@@ -189,8 +189,14 @@
+       NOTREACHED();
+   }
+-
++
++  // A native host can revoke the original page/window between presenting the
++  // action and dispatch. An invalidated controller must not open another dialog.
++  auto starter = controller_->TakeMediaRouteStarter();
++  if (!starter) {
++    return;
++  }
+   AccessCodeCastDialog::Show(
+-      cast_mode_set, controller_->TakeMediaRouteStarter(),
++      cast_mode_set, std::move(starter),
+       AccessCodeCastDialogOpenLocation::kBrowserCastMenu);
+ }
+-
++
+--- a/chrome/browser/ui/webui/access_code_cast/access_code_cast_dialog.cc
++++ b/chrome/browser/ui/webui/access_code_cast/access_code_cast_dialog.cc
+@@ -49,6 +49,10 @@
+   auto* dialog_host =
+       CreateChromeConstrainedWindowViewsClient()->GetModalDialogHost(
+           web_contents->GetTopLevelNativeWindow());
++  if (!dialog_host) {
++    widget->SetSize(widget->GetRootView()->GetPreferredSize());
++    return;
++  }
+   views::Widget* host_widget =
+       views::Widget::GetWidgetForNativeView(dialog_host->GetHostView());
+-
++
+@@ -271,10 +275,9 @@
+   if (web_contents_) {
+     views::Widget* widget = views::Widget::GetWidgetForNativeWindow(
+         web_contents_->GetTopLevelNativeWindow());
+-    DCHECK(widget) << "Could not find a parent widget!";
+-    if (widget) {
+-      parent = widget->GetNativeView();
+-    }
++    // A native browser may own the original page in an AppKit window rather
++    // than a Views::Widget. Keep that exact native parent for the real WebUI.
++    parent = widget ? widget->GetNativeView() : web_contents_->GetNativeView();
+   }
+-
++
+   return parent;

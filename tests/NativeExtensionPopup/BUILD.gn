@@ -1,0 +1,125 @@
+# Installed by the reviewed overlay at //cef/tests/parc_native_extensions.
+# Native extension tests, consumed by //chrome/test:browser_tests on macOS.
+assert(is_mac)
+
+source_set("popup_browser_tests") {
+  testonly = true
+
+  # The consuming browser_tests binary isolates each case in a child process.
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "extension_popup_browsertest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_extensions",
+    "//chrome/browser/extensions",
+    "//chrome/browser/extensions:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/test:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/common",
+    "//testing/gtest",
+  ]
+}
+
+source_set("context_menu_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "context_menu_browsertest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_extensions",
+    "//chrome/app:branded_strings",
+    "//chrome/app:generated_resources",
+    "//chrome/browser/extensions",
+    "//chrome/browser/extensions:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/extensions",
+    "//chrome/browser/ui/toolbar",
+    "//chrome/test:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/common",
+    "//testing/gtest",
+    "//ui/base",
+  ]
+}
+
+source_set("uninstall_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "uninstall_browsertest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_components",
+    "//cef/libcef/browser/parc_native:native_extensions",
+    "//chrome/app:generated_resources",
+    "//chrome/browser/extensions",
+    "//chrome/browser/extensions:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/views/extensions:security_dialog_tracker",
+    "//chrome/test:test_support",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/browser",
+    "//extensions/common",
+    "//testing/gtest",
+    "//ui/base",
+    "//ui/strings:ui_strings",
+    "//ui/views",
+  ]
+}
+
+source_set("install_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "install_browsertest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_components",
+    "//cef/libcef/browser/parc_native:native_extensions",
+    "//chrome/app:generated_resources",
+    "//chrome/browser/extensions",
+    "//chrome/browser/extensions:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/views/extensions:security_dialog_tracker",
+    "//chrome/test:test_support",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/browser",
+    "//extensions/common",
+    "//testing/gtest",
+    "//ui/base",
+    "//ui/strings:ui_strings",
+    "//ui/views",
+  ]
+}

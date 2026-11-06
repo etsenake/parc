@@ -1,0 +1,82 @@
+--- a/chrome/browser/ui/extensions/extension_action_view_model.h
++++ b/chrome/browser/ui/extensions/extension_action_view_model.h
+@@ -74,6 +74,10 @@
+       base::RepeatingClosure observer) override;
+   ui::ImageModel GetIcon(content::WebContents* web_contents,
+                          const gfx::Size& size) override;
++  // Parc: GetIcon() without its badge, which the native shell draws itself.
++  // Grayscale and the blocked-action decoration are unchanged.
++  ui::ImageModel GetIconWithoutBadge(content::WebContents* web_contents,
++                                     const gfx::Size& size);
+   std::u16string GetActionName() const override;
+   std::u16string GetActionTitle(
+       content::WebContents* web_contents) const override;
+@@ -159,10 +163,12 @@
+   // Closes the extensions menu via the `delegate_`.
+   void CloseMenuTask();
+ 
+-  // Returns the image source for the icon.
++  // Returns the image source for the icon, with its badge unless
++  // `include_badge` is false.
+   std::unique_ptr<IconWithBadgeImageSource> GetIconImageSource(
+       content::WebContents* web_contents,
+-      const gfx::Size& size);
++      const gfx::Size& size,
++      bool include_badge = true);
+ 
+   // The extension ID.
+   extensions::ExtensionId extension_id_;
+--- a/chrome/browser/ui/extensions/extension_action_view_model.cc
++++ b/chrome/browser/ui/extensions/extension_action_view_model.cc
+@@ -292,6 +292,17 @@
+       gfx::ImageSkia(GetIconImageSource(web_contents, size), size));
+ }
+ 
++ui::ImageModel ExtensionActionViewModel::GetIconWithoutBadge(
++    content::WebContents* web_contents,
++    const gfx::Size& size) {
++  if (!ExtensionIsValid()) {
++    return ui::ImageModel();
++  }
++
++  return ui::ImageModel::FromImageSkia(gfx::ImageSkia(
++      GetIconImageSource(web_contents, size, /*include_badge=*/false), size));
++}
++
+ std::u16string ExtensionActionViewModel::GetActionName() const {
+   if (!ExtensionIsValid()) {
+     return std::u16string();
+@@ -781,7 +792,8 @@
+ 
+ std::unique_ptr<IconWithBadgeImageSource>
+ ExtensionActionViewModel::GetIconImageSource(content::WebContents* web_contents,
+-                                             const gfx::Size& size) {
++                                             const gfx::Size& size,
++                                             bool include_badge) {
+   // `web_contents` may be null during tab closure or in tests.  Fall back on a
+   // generic color provider.
+   auto get_color_provider_callback = base::BindRepeating(
+@@ -800,14 +812,16 @@
+   int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
+   image_source->SetIcon(icon_factory_.GetIcon(tab_id));
+ 
+-  std::unique_ptr<IconWithBadgeImageSource::Badge> badge;
+-  std::string badge_text = extension_action_->GetDisplayBadgeText(tab_id);
+-  if (!badge_text.empty()) {
+-    badge = std::make_unique<IconWithBadgeImageSource::Badge>(
+-        badge_text, extension_action_->GetBadgeTextColor(tab_id),
+-        extension_action_->GetBadgeBackgroundColor(tab_id));
++  if (include_badge) {
++    std::unique_ptr<IconWithBadgeImageSource::Badge> badge;
++    std::string badge_text = extension_action_->GetDisplayBadgeText(tab_id);
++    if (!badge_text.empty()) {
++      badge = std::make_unique<IconWithBadgeImageSource::Badge>(
++          badge_text, extension_action_->GetBadgeTextColor(tab_id),
++          extension_action_->GetBadgeBackgroundColor(tab_id));
++    }
++    image_source->SetBadge(std::move(badge));
+   }
+-  image_source->SetBadge(std::move(badge));
+ 
+   // We only grayscale the icon if it cannot interact with the page and the icon
+   // is disabled.

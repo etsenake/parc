@@ -1,0 +1,8 @@
+:root { color-scheme: light dark; font: 17px system-ui, sans-serif; }
+body { margin: 40px; }
+main { max-width: 640px; }
+h1 { font-size: 30px; }
+p { line-height: 1.6; }
+dt { font-weight: bold; margin-top: 14px; }
+dd { margin: 4px 0; overflow-wrap: anywhere; }
+output { font-weight: bold; }

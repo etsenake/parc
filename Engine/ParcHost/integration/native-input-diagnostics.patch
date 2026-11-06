@@ -1,0 +1,360 @@
+--- a/content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm
++++ b/content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm
+@@ -15,7 +15,9 @@
+ 
+ #import "base/apple/foundation_util.h"
+ #include "base/apple/owned_objc.h"
++#include "base/command_line.h"
+ #include "base/debug/crash_logging.h"
++#include "base/logging.h"
+ #import "base/mac/mac_util.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/numerics/safe_conversions.h"
+@@ -76,6 +78,33 @@
+ 
+ namespace {
+ 
++// Opt-in delivery observations only; never log page content or input values.
++bool ParcInputDiagnosticsEnabled() {
++  return base::CommandLine::InitializedForCurrentProcess() &&
++         base::CommandLine::ForCurrentProcess()->HasSwitch(
++             "parc-input-diagnostics");
++}
++
++void ParcTraceMouse(NSView* view,
++                    NSEvent* event,
++                    const char* phase,
++                    bool hit_self = false,
++                    bool open_mouse_down = false) {
++  if (!ParcInputDiagnosticsEnabled() ||
++      (event.type != NSEventTypeLeftMouseDown &&
++       event.type != NSEventTypeLeftMouseUp)) {
++    return;
++  }
++  NSWindow* window = view.window;
++  LOG(ERROR) << "[ParcInput] phase=" << phase << " event=" << event.eventNumber
++             << " time_us=" << static_cast<int64_t>(event.timestamp * 1000000)
++             << " type=" << static_cast<int>(event.type)
++             << " window=" << (window ? window.windowNumber : -1)
++             << " native_hidden=" << view.isHiddenOrHasHiddenAncestor
++             << " hit_self=" << hit_self
++             << " open_mouse_down=" << open_mouse_down;
++}
++
+ constexpr NSString* WebAutomaticQuoteSubstitutionEnabled =
+     @"WebAutomaticQuoteSubstitutionEnabled";
+ constexpr NSString* const WebAutomaticDashSubstitutionEnabled =
+@@ -1064,6 +1093,8 @@
+       // the window. Cocoa does this for us. We should handle these events and
+       // not ignore (since there is no other render view to handle them). Thus
+       // the |!hasOpenMouseDown_| check above.
++      ParcTraceMouse(self, theEvent, "cocoa-hit-other-widget", hitSelf,
++                     _hasOpenMouseDown);
+       return YES;
+     }
+     view = [view superview];
+@@ -1071,10 +1102,13 @@
+   // Ignore events which don't hit test to this subtree (and hit, for example,
+   // an overlapping view instead). As discussed above, the mouse may go outside
+   // the bounds of the view and keep sending events during a drag.
++  ParcTraceMouse(self, theEvent, "cocoa-hit-result", hitSelf,
++                 _hasOpenMouseDown);
+   return !hitSelf && !_hasOpenMouseDown;
+ }
+ 
+ - (void)mouseEvent:(NSEvent*)theEvent {
++  ParcTraceMouse(self, theEvent, "cocoa-mouse-enter");
+   TRACE_EVENT0("browser", "RenderWidgetHostViewCocoa::mouseEvent");
+ 
+   _textSelectionChangedForContextualMenu = NO;
+@@ -1102,11 +1136,15 @@
+   if (_responderDelegate &&
+       [_responderDelegate respondsToSelector:@selector(handleEvent:)]) {
+     BOOL handled = [_responderDelegate handleEvent:theEvent];
+-    if (handled)
++    if (handled) {
++      ParcTraceMouse(self, theEvent, "cocoa-responder-handled");
+       return;
+-  }
+-  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents())
++    }
++  }
++  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents()) {
++    ParcTraceMouse(self, theEvent, "cocoa-platform-ignore");
+     return;
++  }
+ 
+   // Set the pointer type when we are receiving a NSEventTypeMouseEntered event
+   // and the following NSEventTypeMouseExited event should have the same pointer
+@@ -1164,6 +1202,7 @@
+   }
+ 
+   if ([self shouldIgnoreMouseEvent:theEvent]) {
++    ParcTraceMouse(self, theEvent, "cocoa-hit-rejected");
+     // If this is the first such event, send a mouse exit to the host view.
+     // Mouse exited events are also delivered for hidden views, so that hover
+     // state gets cleared when a view under the cursor is hidden (see the
+@@ -1289,6 +1328,7 @@
+   }
+ 
+   _lastMouseScreenPosition = event.PositionInScreen();
++  ParcTraceMouse(self, theEvent, "cocoa-mouse-route");
+   _hostHelper->RouteOrProcessMouseEvent(event);
+ }
+ 
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -3,6 +3,9 @@
+ // found in the LICENSE file.
+ 
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_delegate.h"
++#include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
+ 
+ #include <algorithm>
+ #include <cstdint>
+@@ -28,6 +31,7 @@
+ #include "base/functional/callback_helpers.h"
+ #include "base/json/json_reader.h"
+ #include "base/lazy_instance.h"
++#include "base/logging.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory_coordinator/traits.h"
+@@ -468,6 +472,13 @@
+ 
+ namespace {
+ 
++// Opt-in delivery observations only; never log page content or input values.
++bool ParcInputDiagnosticsEnabled() {
++  return base::CommandLine::InitializedForCurrentProcess() &&
++         base::CommandLine::ForCurrentProcess()->HasSwitch(
++             "parc-input-diagnostics");
++}
++
+ // Maximum amount of time to wait for beforeunload/unload handlers to be
+ // processed by the renderer process.
+ constexpr base::TimeDelta kUnloadTimeout = base::Milliseconds(500);
+@@ -4026,10 +4037,29 @@
+ 
+ void RenderFrameHostImpl::AccessibilityPerformAction(
+     const ui::AXActionData& action_data) {
++  const bool parc_trace = ParcInputDiagnosticsEnabled() &&
++                          action_data.action == ax::mojom::Action::kDoDefault;
++  // Copied identity permits logging after a branch without retaining the frame.
++  const std::string parc_tree = parc_trace ? GetAXTreeID().ToString() : "";
++  const auto parc_frame = GetGlobalId();
++  const int parc_node = action_data.target_node_id;
++  const int parc_request = action_data.request_id;
++  const auto parc_log = [parc_trace, parc_tree, parc_frame, parc_node,
++                         parc_request](const char* phase) {
++    if (parc_trace) {
++      LOG(ERROR) << "[ParcInput] phase=" << phase
++                 << " process=" << parc_frame.child_id.value()
++                 << " frame=" << parc_frame.frame_routing_id
++                 << " tree=" << parc_tree << " node=" << parc_node
++                 << " request=" << parc_request;
++    }
++  };
++  parc_log("ax-rfh-enter");
+   // Don't perform any Accessibility action on an inactive frame.
+   if (IsInactiveAndDisallowActivation(
+           DisallowActivationReasonId::kAXPerformAction) ||
+       !render_accessibility_) {
++    parc_log("ax-rfh-inactive-or-no-channel");
+     return;
+   }
+ 
+@@ -4043,6 +4073,7 @@
+   // Don't perform the action if the WebContents is set to ignore input events.
+   // See WebContents::IgnoreInputEvents for more information.
+   if (delegate()->ShouldIgnoreInputEvents()) {
++    parc_log("ax-rfh-ignore-input");
+     return;
+   }
+ 
+@@ -4056,6 +4087,7 @@
+     }
+   }
+ 
++  parc_log("ax-rfh-ipc-send");
+   render_accessibility_->PerformAction(action_data);
+ }
+ 
+@@ -10297,6 +10329,28 @@
+   frame_tree_->controller().UpdateStateForFrame(this, state);
+ }
+ 
++void RenderFrameHostImpl::PrepareNativeMainFrameLink(
++    const GURL& url, const blink::DocumentToken& document,
++    WindowOpenDisposition disposition, std::optional<uint32_t> input_modifiers,
++    PrepareNativeMainFrameLinkCallback callback) {
++  auto* contents = WebContents::FromRenderFrameHost(this);
++  if ((disposition != WindowOpenDisposition::CURRENT_TAB &&
++       disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
++       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) ||
++      !contents || !IsInPrimaryMainFrame() || !IsActive() ||
++      IsNestedWithinFencedFrame() ||
++      document != GetDocumentToken() || !url.SchemeIsHTTPOrHTTPS() ||
++      !contents->GetMutableRendererPrefs()->native_main_frame_link_policy ||
++      !contents->GetDelegate()) {
++    std::move(callback).Run(std::nullopt);
++    return;
++  }
++  const auto lease = GetWeakDocumentPtr();
++  auto token = contents->GetDelegate()->PrepareNativeMainFrameLink(this, url, disposition, input_modifiers);
++  if (!lease.AsRenderFrameHostIfValid()) token.reset();
++  std::move(callback).Run(token);
++}
++
+ void RenderFrameHostImpl::OpenURL(blink::mojom::OpenURLParamsPtr params) {
+   // Verify and unpack the Mojo payload.
+   GURL validated_url;
+@@ -10447,7 +10501,7 @@
+       params->disposition, params->should_replace_current_entry,
+       params->user_gesture, params->triggering_event_info,
+       params->href_translate, std::move(blob_url_loader_factory),
+-      params->has_rel_opener, params->started_by_ad);
++      params->has_rel_opener, params->started_by_ad, params->native_route_token);
+ }
+ 
+ void RenderFrameHostImpl::GetAssociatedInterface(
+--- a/content/renderer/accessibility/render_accessibility_impl.cc
++++ b/content/renderer/accessibility/render_accessibility_impl.cc
+@@ -10,8 +10,10 @@
+ #include <string>
+ #include <utility>
+ 
++#include "base/command_line.h"
+ #include "base/debug/crash_logging.h"
+ #include "base/functional/bind.h"
++#include "base/logging.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/task/common/task_annotator.h"
+ #include "base/timer/elapsed_timer.h"
+@@ -42,6 +44,13 @@
+ 
+ namespace {
+ 
++// Opt-in delivery observations only; never log page content or input values.
++bool ParcInputDiagnosticsEnabled() {
++  return base::CommandLine::InitializedForCurrentProcess() &&
++         base::CommandLine::ForCurrentProcess()->HasSwitch(
++             "parc-input-diagnostics");
++}
++
+ // The minimum amount of time that should be spent in serializing code in order
+ // to report the elapsed time as a URL-keyed metric.
+ constexpr base::TimeDelta kMinSerializationTimeToSend = base::Milliseconds(100);
+@@ -321,7 +330,27 @@
+ }
+ 
+ void RenderAccessibilityImpl::PerformAction(const ui::AXActionData& data) {
++  const bool parc_trace = ParcInputDiagnosticsEnabled() &&
++                          data.action == ax::mojom::Action::kDoDefault;
++  const auto* parc_web_frame =
++      parc_trace && render_frame_ ? render_frame_->GetWebFrame() : nullptr;
++  const std::string parc_tree =
++      parc_web_frame ? parc_web_frame->GetAXTreeID().ToString() : "none";
++  const int parc_node = data.target_node_id;
++  const int parc_request = data.request_id;
++  // PerformAction may destroy this frame. No diagnostic reads it afterward.
++  const auto parc_log = [parc_trace, parc_tree, parc_node, parc_request](
++                            const char* phase, int target_type = -1,
++                            int result = -1) {
++    if (parc_trace) {
++      LOG(ERROR) << "[ParcInput] phase=" << phase << " tree=" << parc_tree
++                 << " node=" << parc_node << " request=" << parc_request
++                 << " target_type=" << target_type << " result=" << result;
++    }
++  };
++  parc_log("ax-renderer-enter");
+   if (!ax_context_) {
++    parc_log("ax-renderer-no-context");
+     return;
+   }
+   // Update layout and AX first before attempting to perform the action.
+@@ -329,6 +358,7 @@
+ 
+   WebDocument document = GetMainDocument();
+   if (document.IsNull()) {
++    parc_log("ax-renderer-no-document");
+     return;
+   }
+ 
+@@ -397,9 +427,13 @@
+     case ax::mojom::Action::kScrollRight:
+     case ax::mojom::Action::kStitchChildTree:
+     case ax::mojom::Action::kShowTooltip:
+-    case ax::mojom::Action::kHideTooltip:
+-      target->PerformAction(data);
+-      break;
++    case ax::mojom::Action::kHideTooltip: {
++      const int parc_target_type =
++          parc_trace ? static_cast<int>(target->GetType()) : -1;
++      parc_log("ax-renderer-target-dispatch", parc_target_type);
++      const bool performed = target->PerformAction(data);
++      parc_log("ax-renderer-target-result", parc_target_type, performed);
++    } break;
+     case ax::mojom::Action::kCustomAction:
+     case ax::mojom::Action::kHitTest:
+     case ax::mojom::Action::kReplaceSelectedText:
+--- a/ui/accessibility/platform/browser_accessibility_cocoa.mm
++++ b/ui/accessibility/platform/browser_accessibility_cocoa.mm
+@@ -21,6 +21,8 @@
+ #include "base/apple/bridging.h"
+ #include "base/apple/foundation_util.h"
+ #include "base/apple/scoped_cftyperef.h"
++#include "base/command_line.h"
++#include "base/logging.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
+@@ -83,6 +85,13 @@
+     "back an AXTextMarker");
+ 
+ namespace {
++// Opt-in delivery observations only; never log page content or input values.
++bool ParcInputDiagnosticsEnabled() {
++  return base::CommandLine::InitializedForCurrentProcess() &&
++         base::CommandLine::ForCurrentProcess()->HasSwitch(
++             "parc-input-diagnostics");
++}
++
+ // Test-only attribute name used by accessibility dump tests to read
+ // aria-actions custom-action names across the AXUIElementCopyAttributeValue
+ // marshaling boundary (NSAccessibilityCustomAction is not marshalable).
+@@ -3362,17 +3371,32 @@
+ }
+ 
+ - (BOOL)accessibilityPerformPress {
++  const bool parc_trace = ParcInputDiagnosticsEnabled();
++  if (parc_trace) {
++    LOG(ERROR) << "[ParcInput] phase=ax-native-press-enter";
++  }
+   if (![self instanceActive]) {
++    if (parc_trace) {
++      LOG(ERROR) << "[ParcInput] phase=ax-native-inactive";
++    }
+     return NO;
+   }
+ 
+   BrowserAccessibility* actionTarget = [self actionTarget];
+   ui::AXNode* node = actionTarget->node();
+   if (!node || !actionTarget->HasDefaultAction()) {
++    if (parc_trace) {
++      LOG(ERROR) << "[ParcInput] phase=ax-native-no-default";
++    }
+     return NO;
+   }
+ 
+   BrowserAccessibilityManager* manager = actionTarget->manager();
++  if (parc_trace) {
++    LOG(ERROR) << "[ParcInput] phase=ax-native-manager-dispatch tree="
++               << manager->GetTreeID().ToString()
++               << " node=" << actionTarget->GetId();
++  }
+   manager->DoDefaultAction(*actionTarget);
+   if (actionTarget->GetData().GetRestriction() !=
+       ax::mojom::Restriction::kNone) {

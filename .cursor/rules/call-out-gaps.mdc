@@ -1,0 +1,25 @@
+---
+description: Tell Josh about every gap you record
+alwaysApply: true
+---
+
+# Tell Josh about every gap you record
+
+This is a **must-do** rule (Josh, November 1).
+
+Whenever you write a gap, limitation, known failure, missing behaviour, risk or
+open decision into a document, commit message, ledger entry or test README, say
+it to Josh in plain words in the same turn. Say what breaks for him, not just
+where it's written down.
+
+On November 1 the codec work recorded three media gaps (WebAudio AAC,
+Widevine host signatures, implicitly signalled HE-AAC) in the docs. Only one of
+them was mentioned in chat, in passing. Josh found the others himself on GitHub.
+A gap that lives only in the docs looks like it was hidden.
+
+- Put new gaps in your reply, near the top, not buried after a success summary.
+- If an agent reports gaps, pass them on to Josh when you relay its result.
+  "Not run or tested yet" is status, not a gap: say it once in a short line,
+  not in the gap list. Don't pad the list with speculative security notes.
+- Gaps are part of the work he asked for. Say whether you're fixing it now,
+  and if not, why not and what it would take.

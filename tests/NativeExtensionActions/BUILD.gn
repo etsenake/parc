@@ -1,0 +1,35 @@
+# Installed at //cef/tests/parc_native_extension_actions; unit_tests consumer.
+assert(is_mac)
+source_set("action_tests") {
+  testonly = true
+  sources = [ "action_bridge_unittest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_extensions",
+    "//chrome/browser/extensions:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/color:color_headers",
+    "//chrome/browser/ui/extensions",
+    "//chrome/browser/ui/extensions:impl",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/toolbar",
+    "//chrome/browser/ui/toolbar:impl",
+    "//chrome/test/base:browser_with_test_window_test",
+    "//components/sessions",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/browser",
+    "//extensions/common",
+    "//extensions/common:test_support",
+    "//skia",
+    "//testing/gtest",
+    "//ui/base",
+    "//ui/color",
+    "//ui/gfx",
+    "//ui/gfx/codec",
+  ]
+}

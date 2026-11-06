@@ -1,0 +1,35 @@
+# Map to //cef/tests/parc_native_side_panel and depend on this source_set from
+# //chrome/test:browser_tests on macOS. The final overlay owns that
+# registration.
+assert(is_mac)
+
+source_set("browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [ "side_panel_browsertest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_extensions",
+    "//chrome/browser/extensions",
+    "//chrome/browser/extensions:test_support",
+    "//chrome/browser/extensions/api/side_panel",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/browser_window:create_browser_window",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+    "//chrome/browser/ui/tabs:tab_model",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/common/extensions/api",
+    "//chrome/test:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/common",
+    "//testing/gtest",
+  ]
+}

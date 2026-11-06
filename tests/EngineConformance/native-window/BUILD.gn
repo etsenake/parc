@@ -1,0 +1,17 @@
+# Installed by the reviewed source overlay at //cef/tests/parc_native_window.
+# It is deliberately separate from the browser/extension conformance harness.
+import("//testing/test.gni")
+
+assert(is_mac)
+
+test("parc_native_window_tests") {
+  sources = [ "ModalHostTests.mm" ]
+  include_dirs = [ "../../libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    "//base/test:run_all_unittests",
+    "//cef/libcef/browser/parc_native:native_components",
+    "//testing/gtest",
+    "//ui/gfx:test_support",
+  ]
+}

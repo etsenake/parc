@@ -1,0 +1,7 @@
+--- a/components/custom_handlers/register_protocol_handler_permission_request.h
++++ b/components/custom_handlers/register_protocol_handler_permission_request.h
+@@ -42,1 +42,4 @@
+   ~RegisterProtocolHandlerPermissionRequest() override;
++
++  //
++  const ProtocolHandler& handler() const { return handler_; }

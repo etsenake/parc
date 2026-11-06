@@ -1,0 +1,1903 @@
+--- a/cef/libcef/browser/browser_host_base.h
++++ b/cef/libcef/browser/browser_host_base.h
+@@ -5,6 +5,12 @@
+ #ifndef CEF_LIBCEF_BROWSER_BROWSER_HOST_BASE_H_
+ #define CEF_LIBCEF_BROWSER_BROWSER_HOST_BASE_H_
+ #pragma once
++
++#include <memory>
++namespace parc {
++class NativeRoute;
++class PreparedNativeWindow;
++}  // namespace parc
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/observer_list.h"
+@@ -49,6 +55,8 @@
+                          /*allow_chrome_style=*/true);
+     }
+     browser_view = that.browser_view;
++    native_route = that.native_route;
++    native_reservation = that.native_reservation;
+     return *this;
+   }
+ 
+@@ -76,6 +84,10 @@
+   // The BrowserView that will own a Views-hosted browser. Will be nullptr for
+   // popup browsers.
+   CefRefPtr<CefBrowserView> browser_view;
++
++  // UI-thread native construction policy. Never renderer-supplied extra_info.
++  std::shared_ptr<parc::NativeRoute> native_route;
++  std::shared_ptr<parc::PreparedNativeWindow> native_reservation;
+ 
+   // True if this browser is a popup and has a Views-hosted opener, in which
+   // case the BrowserView for this browser will be created later (from
+--- a/cef/libcef/browser/browser_info_manager.cc
++++ b/cef/libcef/browser/browser_info_manager.cc
+@@ -2,8 +2,11 @@
+ // Use of this source code is governed by a BSD-style license that can
+ // be found in the LICENSE file.
+ 
+-#include "cef/libcef/browser/browser_info_manager.h"
+-
++#include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "cef/libcef/browser/parc_native/native_host_route.h"
++#endif
++#include <cstdio>
+ #include <utility>
+ 
+ #include "base/command_line.h"
+@@ -11,6 +14,7 @@
+ #include "base/task/sequenced_task_runner.h"
+ #include "cef/libcef/browser/browser_guest_util.h"
+ #include "cef/libcef/browser/browser_host_base.h"
++#include "cef/libcef/browser/browser_info_manager.h"
+ #include "cef/libcef/browser/browser_platform_delegate.h"
+ #include "cef/libcef/browser/context.h"
+ #include "cef/libcef/browser/thread_util.h"
+@@ -26,6 +30,7 @@
+ #include "content/public/browser/web_ui.h"
+ #include "content/public/browser/web_ui_controller.h"
+ #include "content/public/common/url_constants.h"
++#include "extensions/browser/view_type_utils.h"
+ 
+ namespace {
+ 
+@@ -47,6 +52,27 @@
+ }
+ 
+ CefBrowserInfoManager* g_info_manager = nullptr;
++
++// Parc: Chromium's extension system creates these hosts itself, never as a
++// CefBrowser, and Parc presents a docked DevTools frontend natively without
++// one; an undocked frontend gets its CefBrowser only after it has loaded,
++// which it cannot do while its renderer waits. So their renderer's
++// synchronous new-browser-info request can only end in the 2-second timeout,
++// whose answer is an excluded view. Answer with that excluded view at once;
++// otherwise every popup, side panel, offscreen document, background page and
++// DevTools open stalls for 2 seconds before it runs.
++bool IsBrowserlessHost(content::RenderFrameHost* rfh) {
++  switch (extensions::GetViewType(rfh)) {
++    case extensions::mojom::ViewType::kExtensionBackgroundPage:
++    case extensions::mojom::ViewType::kExtensionPopup:
++    case extensions::mojom::ViewType::kOffscreenDocument:
++    case extensions::mojom::ViewType::kExtensionSidePanel:
++    case extensions::mojom::ViewType::kDeveloperTools:
++      return true;
++    default:
++      return false;
++  }
++}
+ 
+ }  // namespace
+ 
+@@ -232,6 +258,24 @@
+     create_params.client = pending_popup->client;
+     create_params.extra_info = pending_popup->extra_info;
+ 
++#if BUILDFLAG(IS_MAC)
++    if (auto route = browser->platform_delegate()->native_route()) {
++      if (pending_popup->client && pending_popup->client != route->client()) {
++        return false;
++      }
++      create_params.native_route = route;
++      create_params.client = route->client();
++      create_params.request_context = browser->request_context();
++      create_params.window_info.reset();
++      create_params.browser_view = nullptr;
++      create_params.popup_with_views_hosted_opener = false;
++      create_params.popup_with_alloy_style_opener = false;
++      pending_popup->client = route->client();
++      // Keep current navigator's actual disposition, bounds, opener and POST.
++      // Native Browser preflight will reserve a window only if one is needed.
++      pending_popup->use_default_browser_creation = true;
++    }
++#endif
+     pending_popup->platform_delegate =
+         CefBrowserPlatformDelegate::Create(create_params);
+     CHECK(pending_popup->platform_delegate.get());
+@@ -446,7 +490,7 @@
+   // With nullptr, SendNewBrowserInfoResponse sends browser_id = -1 and no
+   // config, which the renderer handles by creating a CefExcludedView. When
+   // browser_info is available, its configuration is still sent.
+-  if (is_excluded) {
++  if (is_excluded || (!browser_info && IsBrowserlessHost(rfh))) {
+     g_info_manager->ContinueNewBrowserInfo(global_token, browser_info,
+                                            /*is_excluded=*/true);
+   }
+@@ -880,6 +924,23 @@
+     const bool has_rfh =
+         !!content::RenderFrameHost::FromFrameToken(global_token);
+ 
++    // Opt-in diagnosis only: retain the existing timeout response and
++    // ownership. These switches already identify Parc's explicit
++    // smoke/controller runs.
++    const auto* command = base::CommandLine::ForCurrentProcess();
++    if (command->HasSwitch("parc-diagnostics") ||
++        command->HasSwitch("parc-smoke") ||
++        command->HasSwitch("parc-native-runtime-controller-tests")) {
++      auto* frame = content::RenderFrameHost::FromFrameToken(global_token);
++      std::fprintf(
++          stderr,
++          "PARC_POPUP_TIMEOUT process=%d token=%s has_rfh=%d "
++          "view_type=%d\n",
++          global_token.child_id, global_token.frame_token.ToString().c_str(),
++          !!frame,
++          frame ? static_cast<int>(extensions::GetViewType(frame)) : -1);
++    }
++
+     LOG(ERROR) << "Timeout of new browser info response for frame "
+                << frame_util::GetFrameDebugString(global_token)
+                << " (has_rfh=" << has_rfh << ")";
+--- a/cef/libcef/browser/browser_platform_delegate.h
++++ b/cef/libcef/browser/browser_platform_delegate.h
+@@ -5,6 +5,12 @@
+ 
+ #ifndef CEF_LIBCEF_BROWSER_BROWSER_PLATFORM_DELEGATE_H_
+ #define CEF_LIBCEF_BROWSER_BROWSER_PLATFORM_DELEGATE_H_
++
++#include <memory>
++namespace parc {
++class NativeRoute;
++class PreparedNativeWindow;
++}  // namespace parc
+ 
+ #include <string>
+ #include <vector>
+@@ -16,6 +22,7 @@
+ #include "cef/include/internal/cef_types.h"
+ #include "cef/include/views/cef_browser_view.h"
+ #include "cef/libcef/renderer/browser_config.h"
++#include "components/permissions/permission_prompt.h"
+ #include "third_party/blink/public/common/page/drag_operation.h"
+ #include "third_party/blink/public/mojom/drag/drag.mojom-forward.h"
+ #include "third_party/skia/include/core/SkColor.h"
+@@ -81,6 +88,10 @@
+ // indicated.
+ class CefBrowserPlatformDelegate {
+  public:
++  virtual std::shared_ptr<parc::NativeRoute> native_route() const { return {}; }
++  virtual std::shared_ptr<parc::PreparedNativeWindow> TakeNativeReservation() {
++    return {};
++  }
+   CefBrowserPlatformDelegate(const CefBrowserPlatformDelegate&) = delete;
+   CefBrowserPlatformDelegate& operator=(const CefBrowserPlatformDelegate&) =
+       delete;
+@@ -277,6 +288,11 @@
+   // Create the platform-specific JavaScript dialog runner.
+   virtual std::unique_ptr<CefJavaScriptDialogRunner>
+   CreateJavaScriptDialogRunner();
++
++  // A native host may present the actual typed Chromium permission request.
++  // A null result retains the existing client/default prompt path.
++  virtual std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
++      permissions::PermissionPrompt::Delegate* delegate);
+ 
+   // Create the platform-specific menu runner.
+   virtual std::unique_ptr<CefMenuRunner> CreateMenuRunner();
+--- a/cef/libcef/browser/browser_platform_delegate_create.cc
++++ b/cef/libcef/browser/browser_platform_delegate_create.cc
+@@ -2,6 +2,10 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "cef/libcef/browser/parc_native/native_chrome_platform_delegate.h"
++#endif
+ #include <utility>
+ 
+ #include "base/memory/ptr_util.h"
+@@ -79,6 +83,16 @@
+     std::unique_ptr<CefBrowserPlatformDelegateNative> native_delegate =
+         CreateNativeDelegate(window_info, background_color);
+ 
++#if BUILDFLAG(IS_MAC)
++    if (create_params.native_route) {
++      CHECK(!is_windowless && !create_params.window_info &&
++            !create_params.browser_view &&
++            !create_params.popup_with_views_hosted_opener);
++      return std::make_unique<parc::NativeChromePlatformDelegate>(
++          std::move(native_delegate), create_params.native_route,
++          create_params.native_reservation);
++    }
++#endif
+     if (create_params.window_info) {
+       // CefWindowInfo should only be set if a parent handle was specified.
+       DCHECK(chrome_child_window::HasParentHandle(window_info));
+--- a/cef/libcef/browser/chrome/browser_delegate.h
++++ b/cef/libcef/browser/chrome/browser_delegate.h
+@@ -11,6 +11,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include "base/functional/callback.h"
+ #include "base/memory/ref_counted.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "chrome/browser/ui/page_action/page_action_icon_type.h"
+@@ -19,6 +20,12 @@
+ #include "ui/base/window_open_disposition.h"
+ 
+ class Browser;
++class BrowserFocusController;
++class DevtoolsUIController;
++struct BrowserWindowCreateParams;
++namespace ui {
++class ColorProviderSource;
++}
+ class BrowserUiController;
+ class BrowserWebContentsDelegate;
+ class BrowserWindow;
+@@ -33,6 +40,9 @@
+ class BrowserCommandController;
+ }
+ 
++namespace input {
++struct NativeWebKeyboardEvent;
++}
+ namespace content {
+ struct GlobalRenderFrameHostId;
+ class WebContents;
+@@ -89,7 +99,34 @@
+       content::WebContents* inspected_web_contents,
+       std::unique_ptr<content::WebContents>& devtools_contents);
+ 
++  // Preflight occurs before constructing any Browser or its feature objects.
++  // false is a cancelled native creation; never a Chrome-window fallback.
++  static bool PrepareBrowserWindow(BrowserWindowCreateParams& params);
++  static bool HasNativeRoute(Profile& profile);
++  // nullopt retains ordinary Chromium routing. A native result is terminal,
++  // including a rejected skip_if_unhandled event, so menus are not offered
++  // twice.
++  static void PrepareNativeDevtoolsContents(content::WebContents* inspected,
++                                            content::WebContents& tools);
++  static std::optional<bool> HandleNativeDevtoolsKey(
++      content::WebContents* inspected,
++      content::WebContents* tools,
++      const input::NativeWebKeyboardEvent& event);
++
+   virtual ~BrowserDelegate() = default;
++  virtual bool IsNativeWindow() const { return false; }
++  virtual BrowserWindow* CreateNativeBrowserWindow() { return nullptr; }
++  virtual void OnBrowserRegistered() {}
++  // true retains BrowserManager ownership until the supplied retry. The
++  // native implementation posts it only after all engine hosts have drained.
++  virtual bool DeferBrowserDeletion(base::OnceClosure retry) { return false; }
++  virtual bool NativeDeletionReady() const { return true; }
++  virtual ui::ColorProviderSource* NativeColorProviderSource() {
++    return nullptr;
++  }
++  virtual std::unique_ptr<BrowserFocusController> CreateNativeFocusController();
++  virtual std::unique_ptr<DevtoolsUIController>
++  CreateNativeDevtoolsController();
+ 
+   // Optionally override chrome::AddWebContents behavior. This is most often
+   // called via Browser::AddNewContents for new popup browsers and provides an
+--- a/cef/libcef/browser/chrome/chrome_browser_delegate.cc
++++ b/cef/libcef/browser/chrome/chrome_browser_delegate.cc
+@@ -2,8 +2,20 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+-#include "cef/libcef/browser/chrome/chrome_browser_delegate.h"
+-
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/task/single_thread_task_runner.h"
++#include "build/build_config.h"
++#include "chrome/browser/devtools/devtools_ui_controller.h"
++#include "chrome/browser/ui/focus/browser_focus_controller.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#if BUILDFLAG(IS_MAC)
++#include "cef/libcef/browser/parc_native/native_auxiliary_services.h"
++#include "cef/libcef/browser/parc_native/native_browser_window.h"
++#include "cef/libcef/browser/parc_native/native_host_route.h"
++#include "chrome/browser/policy/profile_policy_connector.h"
++#endif
+ #include <memory>
+ 
+ #include "cef/libcef/browser/browser_contents_delegate.h"
+@@ -12,6 +24,7 @@
+ #include "cef/libcef/browser/browser_platform_delegate.h"
+ #include "cef/libcef/browser/chrome/browser_util.h"
+ #include "cef/libcef/browser/chrome/chrome_browser_context.h"
++#include "cef/libcef/browser/chrome/chrome_browser_delegate.h"
+ #include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
+ #include "cef/libcef/browser/chrome/views/chrome_browser_view.h"
+ #include "cef/libcef/browser/chrome/views/chrome_child_window.h"
+@@ -25,6 +38,7 @@
+ #include "chrome/browser/ui/browser_tabstrip.h"
+ #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
+ #include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
++#include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/global_routing_id.h"
+ #include "third_party/blink/public/mojom/page/draggable_region.mojom.h"
+ 
+@@ -34,20 +48,128 @@
+     const Browser* opener)
+     : browser_(browser), create_params_(create_params) {
+   DCHECK(browser_);
++#if BUILDFLAG(IS_MAC)
++  if (create_params_.native_route) {
++    create_params_.native_route->BrowserCreated();
++  }
++#endif
+ 
+   if (opener) {
+-    DCHECK(browser->GetType() ==
++    DCHECK(IsNativeWindow() ||
++           browser->GetType() ==
+                BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE ||
+            browser->GetType() == BrowserWindowInterface::TYPE_DEVTOOLS);
+     auto opener_host = ChromeBrowserHostImpl::GetBrowserForBrowser(opener);
+-    DCHECK(opener_host);
++    DCHECK(opener_host || IsNativeWindow());
+     if (opener_host) {
+       opener_host_ = opener_host->GetWeakPtr();
+     }
+   }
+ }
+ 
+-ChromeBrowserDelegate::~ChromeBrowserDelegate() = default;
++ChromeBrowserDelegate::~ChromeBrowserDelegate() {
++#if BUILDFLAG(IS_MAC)
++  if (create_params_.native_route) {
++    CHECK(NativeDeletionReady());
++    create_params_.native_route->BrowserDestroyed();
++  }
++#endif
++}
++bool ChromeBrowserDelegate::NativeDeletionReady() const {
++  return !IsNativeWindow() || native_deletion_ == NativeDeletionState::kReady;
++}
++bool ChromeBrowserDelegate::DeferBrowserDeletion(base::OnceClosure retry) {
++#if BUILDFLAG(IS_MAC)
++  if (!IsNativeWindow() || NativeDeletionReady()) {
++    return false;
++  }
++  if (native_deletion_ == NativeDeletionState::kDraining) {
++    return true;
++  }
++  native_deletion_ = NativeDeletionState::kDraining;
++  auto browser = browser_->GetWeakPtr();
++  create_params_.native_route->provider().PrepareBrowserForDeletion(
++      *browser_,
++      base::BindOnce(
++          [](base::WeakPtr<BrowserWindowInterface> browser,
++             base::OnceClosure retry) {
++            // Never destroy the Browser on the service's final callback stack.
++            base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++                FROM_HERE,
++                base::BindOnce(
++                    [](base::WeakPtr<BrowserWindowInterface> browser,
++                       base::OnceClosure retry) {
++                      if (!browser) {
++                        return;
++                      }
++                      auto* delegate = static_cast<ChromeBrowserDelegate*>(
++                          browser->cef_delegate());
++                      CHECK(delegate && delegate->native_deletion_ ==
++                                            NativeDeletionState::kDraining);
++                      delegate->native_deletion_ = NativeDeletionState::kReady;
++                      std::move(retry).Run();
++                    },
++                    browser, std::move(retry)));
++          },
++          browser, std::move(retry)));
++  return true;
++#else
++  return false;
++#endif
++}
++bool ChromeBrowserDelegate::IsNativeWindow() const {
++  return !!create_params_.native_route;
++}
++BrowserWindow* ChromeBrowserDelegate::CreateNativeBrowserWindow() {
++#if BUILDFLAG(IS_MAC)
++  CHECK(create_params_.native_route && create_params_.native_reservation);
++  return new parc::NativeBrowserWindow(
++      *browser_, create_params_.native_reservation->Bind(*browser_));
++#else
++  return nullptr;
++#endif
++}
++void ChromeBrowserDelegate::OnBrowserRegistered() {
++#if BUILDFLAG(IS_MAC)
++  if (!IsNativeWindow()) {
++    return;
++  }
++  auto reservation = std::exchange(create_params_.native_reservation, {});
++  CHECK(reservation);
++  auto* window = static_cast<parc::NativeBrowserWindow*>(browser_->GetWindow());
++  CHECK(window->AttachToNativeWindow(reservation->GetNativeWindow()));
++#endif
++}
++ui::ColorProviderSource* ChromeBrowserDelegate::NativeColorProviderSource() {
++#if BUILDFLAG(IS_MAC)
++  return IsNativeWindow()
++             ? static_cast<parc::NativeBrowserWindow*>(browser_->GetWindow())
++             : nullptr;
++#else
++  return nullptr;
++#endif
++}
++std::unique_ptr<BrowserFocusController>
++ChromeBrowserDelegate::CreateNativeFocusController() {
++#if BUILDFLAG(IS_MAC)
++  CHECK(create_params_.native_route);
++  return create_params_.native_route->provider().CreateFocusController(
++      *browser_);
++#else
++  return nullptr;
++#endif
++}
++
++std::unique_ptr<DevtoolsUIController>
++ChromeBrowserDelegate::CreateNativeDevtoolsController() {
++#if BUILDFLAG(IS_MAC)
++  CHECK(create_params_.native_route);
++  return create_params_.native_route->provider().CreateDevtoolsController(
++      *browser_);
++#else
++  return nullptr;
++#endif
++}
+ 
+ // static
+ Browser* ChromeBrowserDelegate::CreateDevToolsBrowser(
+@@ -55,6 +177,24 @@
+     BrowserWindowInterface* opener,
+     content::WebContents* inspected_web_contents,
+     std::unique_ptr<content::WebContents>& devtools_contents) {
++#if BUILDFLAG(IS_MAC)
++  if (parc::GetNativeRoute(*profile)) {
++    if (auto existing = ChromeBrowserHostImpl::GetBrowserForContents(
++            devtools_contents.get())) {
++      // Redocking removes the Browser, not the real CEF host or WebContents.
++      // Reuse both on a later undock; AddNewContents obtains a fresh native
++      // window reservation and restores ownership on a rejected creation.
++      CHECK(!existing->browser());
++      CHECK_EQ(CefRequestContextImpl::GetProfile(existing->request_context()),
++               profile);
++      auto params = BrowserWindowCreateParams::CreateForDevTools(profile);
++      params.opener = opener;
++      devtools_contents = existing->AddNewContents(std::move(devtools_contents),
++                                                   std::move(params));
++      return devtools_contents ? nullptr : existing->browser();
++    }
++  }
++#endif
+   // |opener| is the same value that will be passed to the ChromeBrowserDelegate
+   // constructor for the new popup Browser. It may be nullptr in certain
+   // situations (e.g. if DevTools is launched for a WebContents that is not a
+@@ -71,6 +211,21 @@
+     }
+ 
+     if (!opener_browser_host) {
++#if BUILDFLAG(IS_MAC)
++      if (parc::GetNativeRoute(*profile)) {
++        auto params = BrowserWindowCreateParams::CreateForDevTools(profile);
++        params.opener = opener;
++        auto* interface = CreateBrowserWindow(std::move(params));
++        if (!interface) {
++          return nullptr;
++        }
++        auto* browser = cef::BrowserForBWI(interface);
++        browser->GetTabStripModel()->AddWebContents(
++            std::move(devtools_contents), -1, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++            AddTabTypes::ADD_ACTIVE);
++        return browser;
++      }
++#endif
+       // The popup browser host will instead be created via SetAsDelegate.
+       return nullptr;
+     }
+@@ -151,6 +306,30 @@
+                                                           use_default_window);
+   create_params.popup_with_alloy_style_opener = false;
+ 
++#if BUILDFLAG(IS_MAC)
++  if (auto route = parc::GetNativeRoute(*profile)) {
++    if (create_params.client && create_params.client != route->client()) {
++      route->provider().CreationFailed(
++          *profile,
++          "Developer tools requires the registered native lifecycle client");
++      return nullptr;
++    }
++    create_params.native_route = route;
++    create_params.client = route->client();
++    create_params.window_info.reset();
++    create_params.browser_view = nullptr;
++    create_params.popup_with_views_hosted_opener = false;
++    auto prepared =
++        route->Prepare({*profile, BrowserWindowInterface::TYPE_DEVTOOLS,
++                        parc::NativeWindowReason::kDevTools, opener,
++                        inspected_web_contents, true});
++    if (!prepared.has_value()) {
++      route->provider().CreationFailed(*profile, prepared.error());
++      return nullptr;
++    }
++    create_params.native_reservation = std::move(*prepared);
++  }
++#endif
+   auto platform_delegate = CefBrowserPlatformDelegate::Create(create_params);
+   CHECK(platform_delegate);
+ 
+@@ -186,8 +365,11 @@
+   // Create a new Browser and give it ownership of the new WebContents.
+   // Results in a call to SetAsDelegate to associate the Browser with the
+   // browser host.
+-  browser_host->AddNewContents(std::move(devtools_contents),
+-                               std::move(chrome_params));
++  devtools_contents = browser_host->AddNewContents(std::move(devtools_contents),
++                                                   std::move(chrome_params));
++  if (devtools_contents) {
++    return nullptr;
++  }
+ 
+   // Give the opener browser a reference to the new DevTools browser. Do this
+   // last because we don't want the client to attempt access to the DevTools
+@@ -211,7 +393,8 @@
+       // Create a new Browser and give it ownership of the new WebContents.
+       // Results in a call to SetAsDelegate to associate the Browser with the
+       // browser host.
+-      new_browser->AddNewContents(std::move(new_contents), std::nullopt);
++      new_contents =
++          new_browser->AddNewContents(std::move(new_contents), std::nullopt);
+     } else {
+       LOG(ERROR) << "No host found for chrome popup browser";
+     }
+@@ -251,7 +434,7 @@
+ 
+   // We should never reach here for DevTools popups that have an opener, as
+   // CreateDevToolsBrowser should have already created the browser host.
+-  DCHECK(!is_devtools_popup || !opener_host_);
++  DCHECK(!is_devtools_popup || !opener_host_ || IsNativeWindow());
+ 
+   auto platform_delegate = CefBrowserPlatformDelegate::Create(create_params_);
+   CHECK(platform_delegate);
+@@ -623,6 +806,147 @@
+ }
+ 
+ namespace cef {
++std::unique_ptr<BrowserFocusController>
++BrowserDelegate::CreateNativeFocusController() {
++  return nullptr;
++}
++std::unique_ptr<DevtoolsUIController>
++BrowserDelegate::CreateNativeDevtoolsController() {
++  return nullptr;
++}
++void BrowserDelegate::PrepareNativeDevtoolsContents(
++    content::WebContents* inspected,
++    content::WebContents& tools) {
++#if BUILDFLAG(IS_MAC)
++  if (!inspected ||
++      inspected->GetBrowserContext() != tools.GetBrowserContext()) {
++    return;
++  }
++  auto* tab = tabs::TabInterface::MaybeGetFromContents(inspected);
++  auto* owner = tab ? tab->GetBrowserWindowInterface() : nullptr;
++  if (!owner || owner->IsDeleteScheduled() || !owner->cef_delegate() ||
++      !owner->cef_delegate()->IsNativeWindow()) {
++    return;
++  }
++  auto* profile = Profile::FromBrowserContext(tools.GetBrowserContext());
++  if (parc::GetNativeRoute(*profile)) {
++    parc::PrepareNativeAuxiliaryServices(tools);
++  }
++#endif
++}
++std::optional<bool> BrowserDelegate::HandleNativeDevtoolsKey(
++    content::WebContents* inspected,
++    content::WebContents* tools,
++    const input::NativeWebKeyboardEvent& event) {
++#if BUILDFLAG(IS_MAC)
++  if (tools) {
++    auto* profile = Profile::FromBrowserContext(tools->GetBrowserContext());
++    if (auto route = parc::GetNativeRoute(*profile)) {
++      return route->provider().HandleDevtoolsKey(inspected, *tools, event);
++    }
++  }
++#endif
++  return std::nullopt;
++}
++bool BrowserDelegate::HasNativeRoute(Profile& profile) {
++#if BUILDFLAG(IS_MAC)
++  return !!parc::GetNativeRoute(profile) ||
++         (profile.GetOriginalProfile() != &profile &&
++          !!parc::GetNativeRoute(*profile.GetOriginalProfile()));
++#else
++  return false;
++#endif
++}
++bool BrowserDelegate::PrepareBrowserWindow(BrowserWindowCreateParams& params) {
++#if BUILDFLAG(IS_MAC)
++  Profile& profile = *params.profile;
++  auto route = parc::GetNativeRoute(profile);
++  auto* supplied = static_cast<ChromeBrowserHostImpl::DelegateCreateParams*>(
++      params.cef_params.get());
++  CefBrowserCreateParams native_params;
++  if (supplied) {
++    native_params = supplied->create_params_;
++  }
++  if (native_params.native_route && native_params.native_route != route) {
++    LOG(ERROR) << "Native route does not belong to exact Browser profile";
++    return false;
++  }
++  if (!route) {
++    auto original_route = parc::GetNativeRoute(*profile.GetOriginalProfile());
++    if (original_route) {
++      original_route->provider().CreationFailed(
++          profile,
++          "This private profile has no registered native window route");
++      return false;
++    }
++    if (params.opener && params.opener->cef_delegate() &&
++        params.opener->cef_delegate()->IsNativeWindow()) {
++      LOG(ERROR)
++          << "Native opener cannot create an unregistered profile window";
++      return false;
++    }
++    return true;
++  }
++  auto weak_profile = profile.GetWeakPtr();
++  auto fail = [&](const std::string& message) {
++    if (weak_profile) {
++      route->provider().CreationFailed(*weak_profile, message);
++    }
++    return false;
++  };
++  if (params.window || native_params.window_info ||
++      native_params.browser_view || !native_params.IsChromeStyle() ||
++      native_params.IsWindowless()) {
++    return fail("Native route cannot use a Views, child, Alloy or OSR window");
++  }
++  if (profile.GetProfilePolicyConnector()->IsManaged()) {
++    return fail("Managed profile native data-protection UI is unavailable");
++  }
++  if (native_params.client && native_params.client != route->client()) {
++    return fail("Native creation requires its registered lifecycle client");
++  }
++  native_params.native_route = route;
++  native_params.client = route->client();
++  native_params.popup_with_views_hosted_opener = false;
++  native_params.popup_with_alloy_style_opener = false;
++  if (!native_params.native_reservation) {
++    parc::NativeWindowRequest request{
++        profile, params.type,
++        params.type == BrowserWindowInterface::TYPE_DEVTOOLS
++            ? parc::NativeWindowReason::kDevTools
++            : (params.type == BrowserWindowInterface::TYPE_POPUP ||
++               params.type == BrowserWindowInterface::TYPE_APP_POPUP)
++                  ? parc::NativeWindowReason::kPopup
++                  : parc::NativeWindowReason::kInternal,
++        params.opener, nullptr, params.from_user_gesture};
++    request.initial_bounds = params.initial_bounds;
++    request.initial_origin_specified =
++        params.initial_origin_specified ==
++            BrowserWindowCreateParams::ValueSpecified::kSpecified ||
++        (params.initial_origin_specified ==
++             BrowserWindowCreateParams::ValueSpecified::kUnknown &&
++         !params.initial_bounds.origin().IsOrigin());
++    request.can_resize = params.can_resize;
++    request.can_maximize = params.can_maximize;
++    request.can_fullscreen = params.can_fullscreen;
++    auto prepared = route->Prepare(request);
++    if (!prepared.has_value()) {
++      return fail(prepared.error());
++    }
++    native_params.native_reservation = std::move(*prepared);
++  }
++  if (!weak_profile ||
++      !native_params.native_reservation->CanBind(profile, params.type)) {
++    return fail("Native window reservation expired or was already consumed");
++  }
++  // Always clone: no shared CreateParams mutation can overwrite another
++  // pending creation. Only this Browser consumes this reservation.
++  params.cef_params =
++      base::MakeRefCounted<ChromeBrowserHostImpl::DelegateCreateParams>(
++          native_params);
++#endif
++  return true;
++}
+ 
+ // static
+ std::unique_ptr<BrowserDelegate> BrowserDelegate::Create(
+@@ -641,6 +965,7 @@
+     // Clear these values so they're not persisted to additional Browsers.
+     params->create_params_.window_info.reset();
+     params->create_params_.browser_view = nullptr;
++    params->create_params_.native_reservation.reset();
+   }
+ 
+   const Browser* opener_browser = nullptr;
+--- a/cef/libcef/browser/chrome/chrome_browser_delegate.h
++++ b/cef/libcef/browser/chrome/chrome_browser_delegate.h
+@@ -58,6 +58,16 @@
+       std::unique_ptr<content::WebContents>& devtools_contents);
+ 
+   // cef::BrowserDelegate methods:
++  bool IsNativeWindow() const override;
++  BrowserWindow* CreateNativeBrowserWindow() override;
++  void OnBrowserRegistered() override;
++  bool DeferBrowserDeletion(base::OnceClosure retry) override;
++  bool NativeDeletionReady() const override;
++  ui::ColorProviderSource* NativeColorProviderSource() override;
++  std::unique_ptr<BrowserFocusController> CreateNativeFocusController()
++      override;
++  std::unique_ptr<DevtoolsUIController> CreateNativeDevtoolsController()
++      override;
+   std::unique_ptr<content::WebContents> AddWebContents(
+       std::unique_ptr<content::WebContents> new_contents) override;
+   void OnWebContentsCreated(content::WebContents* new_contents) override;
+@@ -121,7 +131,9 @@
+   base::WeakPtr<ChromeBrowserHostImpl> opener_host_;
+ 
+   // Used when creating a new browser host.
+-  const CefBrowserCreateParams create_params_;
++  CefBrowserCreateParams create_params_;
++  enum class NativeDeletionState { kActive, kDraining, kReady };
++  NativeDeletionState native_deletion_ = NativeDeletionState::kActive;
+ 
+   std::optional<bool> show_status_bubble_;
+   std::optional<SkRegion> draggable_region_;
+--- a/cef/libcef/browser/chrome/chrome_browser_host_impl.h
++++ b/cef/libcef/browser/chrome/chrome_browser_host_impl.h
+@@ -146,7 +146,7 @@
+   // Called from ChromeBrowserDelegate::AddNewContents to take ownership of a
+   // popup WebContents. |browser_create_params| may be empty for default Browser
+   // creation behavior.
+-  void AddNewContents(
++  std::unique_ptr<content::WebContents> AddNewContents(
+       std::unique_ptr<content::WebContents> contents,
+       std::optional<BrowserWindowCreateParams> browser_create_params);
+ 
+--- a/cef/libcef/browser/chrome/chrome_browser_web_contents_delegate.cc
++++ b/cef/libcef/browser/chrome/chrome_browser_web_contents_delegate.cc
+@@ -24,1 +24,4 @@
+ #include "content/public/browser/web_contents.h"
++#if BUILDFLAG(IS_MAC)
++#include "cef/libcef/browser/parc_native/native_link_routing.h"
++#endif
+@@ -111,2 +114,6 @@
+     const input::NativeWebKeyboardEvent& event) {
++  if (browser_->cef_delegate() && browser_->cef_delegate()->IsNativeWindow() &&
++      event.skip_if_unhandled) {
++    return false;
++  }
+   if (auto delegate = GetContentsDelegate(browser_.get(), source)) {
+@@ -129,1 +136,12 @@
++std::optional<base::UnguessableToken>
++ChromeBrowserWebContentsDelegate::PrepareNativeMainFrameLink(
++    content::RenderFrameHost* source, const GURL& url, WindowOpenDisposition disposition,
++    std::optional<uint32_t> input_modifiers) {
++#if BUILDFLAG(IS_MAC)
++  return parc::PrepareNativeCurrentLink(browser_.get(), source, url, disposition, input_modifiers);
++#else
++  return std::nullopt;
++#endif
++}
++
+ content::WebContents* ChromeBrowserWebContentsDelegate::OpenURLFromTab(
+@@ -144,2 +162,13 @@
+   }
++#if BUILDFLAG(IS_MAC)
++  const auto early_browser_weak = browser_->GetWeakPtr();
++  const auto early_source_weak = source ? source->GetWeakPtr() : base::WeakPtr<content::WebContents>();
++  const bool native_split_owner = params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW &&
++      source && parc::HasNativeSplitOwner(browser_.get(), *source);
++  if (!early_browser_weak || (source && !early_source_weak)) return nullptr;
++  auto native_split = native_split_owner ?
++      parc::PrepareNativeSplitNavigation(browser_.get(), source, params) : nullptr;
++  if (!early_browser_weak || (source && !early_source_weak)) return nullptr;
++  bool skip_cef_for_existing_split = false;
++#endif
+   if (params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && source) {
+@@ -152,2 +181,8 @@
+         if (tab != source_tab) {
++#if BUILDFLAG(IS_MAC)
++          if (native_split_owner) {
++            skip_cef_for_existing_split = true;
++            break;
++          }
++#endif
+           return BrowserWebContentsDelegate::OpenURLFromTab(
+@@ -160,2 +195,6 @@
+-  if (browser_->cef_delegate()) {
++#if BUILDFLAG(IS_MAC)
++  if (browser_->cef_delegate() && !skip_cef_for_existing_split) {
++#else
++  if (browser_->cef_delegate()) {
++#endif
+     // Chrome UI navigations may not supply a source. Use the active contents
+@@ -178,4 +217,72 @@
+   }
++#if BUILDFLAG(IS_MAC)
++  if (!early_browser_weak || (source && !early_source_weak)) return nullptr;
++  const auto browser_weak = browser_->GetWeakPtr();
++  const bool had_source = source != nullptr;
++  const base::WeakPtr<content::WebContents> source_weak =
++      source ? source->GetWeakPtr() : base::WeakPtr<content::WebContents>();
++  if (parc::HandleNativeMatchedLink(browser_.get(), source, params,
++                                   navigation_handle_callback)) return nullptr;
++  if (!browser_weak || (had_source && !source_weak)) return nullptr;
++  const auto split_decision = parc::ClassifyNativeSplit(
++      native_split_owner, native_split && native_split->SplitStillValid());
++  if (!browser_weak || (had_source && !source_weak)) return nullptr;
++  if (native_split_owner && !parc::HasNativeSplitOwner(browser_.get(), *source)) return nullptr;
++  if (split_decision == parc::NativeSplitDecision::kAdmitted) {
++    auto* created = BrowserWebContentsDelegate::OpenURLFromTab(
++        source, native_split->params(), std::move(navigation_handle_callback));
++    native_split->DidNavigate(created);
++    return created;
++  }
++  if (split_decision == parc::NativeSplitDecision::kOrdinary) {
++    // Never turn a stale one-use ATC admission into an unrelated request.
++    if (params.native_route_token) return nullptr;
++    // Keep the original disposition through Chromium popup checks, but avoid
++    // its native two-pane path when Parc could not admit this presentation.
++    content::OpenURLParams ordinary(params);
++    ordinary.native_route_split = true;
++    return BrowserWebContentsDelegate::OpenURLFromTab(
++        source, ordinary, std::move(navigation_handle_callback));
++  }
++  auto peek = parc::PrepareNativePeekNavigation(browser_.get(), source, params);
++  if (!browser_weak || (had_source && !source_weak)) return nullptr;
++  // A stale/consumed admission token cannot become an unrelated new tab.
++  if (params.native_route_token && !peek) return nullptr;
++  if (peek) {
++    auto* created = BrowserWebContentsDelegate::OpenURLFromTab(
++        source, peek->params(), std::move(navigation_handle_callback));
++    peek->DidNavigate(created);
++    return created;
++  }
++#endif
+   return BrowserWebContentsDelegate::OpenURLFromTab(
+       source, params, std::move(navigation_handle_callback));
++}
++
++content::WebContents* ChromeBrowserWebContentsDelegate::AddNewContents(
++    content::WebContents* source,
++    std::unique_ptr<content::WebContents> new_contents,
++    const GURL& target_url, WindowOpenDisposition disposition,
++    const blink::mojom::WindowFeatures& window_features,
++    bool user_gesture, bool* was_blocked) {
++#if BUILDFLAG(IS_MAC)
++  if (new_contents) {
++    const auto browser_weak = browser_->GetWeakPtr();
++    const auto source_weak = source ? source->GetWeakPtr() : base::WeakPtr<content::WebContents>();
++    const auto child_weak = new_contents->GetWeakPtr();
++    const bool native_owner = source && parc::HasNativeSplitOwner(browser_.get(), *source);
++    parc::PrepareNativeCreatedPage(browser_.get(), source, *new_contents,
++        target_url, disposition, user_gesture);
++    if (!child_weak) {
++      // A nested callback destroyed the exact child; do not delete it twice.
++      new_contents.release();
++      return nullptr;
++    }
++    if (!browser_weak || (source && !source_weak) ||
++        (native_owner && !parc::HasNativeSplitOwner(*browser_weak, *source_weak))) return nullptr;
++  }
++#endif
++  return BrowserWebContentsDelegate::AddNewContents(source,
++      std::move(new_contents), target_url, disposition, window_features,
++      user_gesture, was_blocked);
+ }
+@@ -257,2 +364,5 @@
+     content::WebContents* new_contents) {
++#if BUILDFLAG(IS_MAC)
++  parc::CaptureNativeCreatedPage(source_contents, opener_id, new_contents);
++#endif
+   // SessionTabHelper must exist before CEF initializes the popup browser host.
+--- a/chrome/browser/devtools/devtools_window.cc
++++ b/chrome/browser/devtools/devtools_window.cc
+@@ -94,6 +94,7 @@
+ #include "content/public/browser/render_widget_host_view.h"
+ #include "content/public/browser/security_principal.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/url_constants.h"
+@@ -132,6 +133,7 @@
+ #endif
+ 
+ #if BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/chrome/browser_delegate.h"
+ #include "chrome/browser/ui/browser.h"
+ #endif
+ 
+@@ -259,6 +261,12 @@
+ bool DevToolsToolboxDelegate::HandleKeyboardEvent(
+     content::WebContents* source,
+     const input::NativeWebKeyboardEvent& event) {
++#if BUILDFLAG(ENABLE_CEF)
++  if (auto result = cef::BrowserDelegate::HandleNativeDevtoolsKey(
++          inspected_web_contents_.get(), source, event)) {
++    return *result;
++  }
++#endif
+ #if BUILDFLAG(IS_ANDROID)
+   return false;
+ #else
+@@ -899,6 +907,9 @@
+       case DevToolsToggleAction::kShowElementsPanel:
+         panel = "elements";
+         break;
++      case DevToolsToggleAction::kShowNativePanel:
++        panel = action.native_panel();
++        break;
+       case DevToolsToggleAction::kShowConsolePanel:
+         panel = "console";
+         break;
+@@ -1025,7 +1036,74 @@
+   registry.AddThrottle(std::make_unique<Throttle>(registry, window));
+ }
+ 
++// static
++bool DevToolsWindow::PerformNativePageAction(
++    content::WebContents* inspected,
++    const DevToolsToggleAction& action,
++    base::RepeatingCallback<bool()> is_current) {
++  const auto inspected_owner = inspected ? inspected->GetWeakPtr() : nullptr;
++  if (!inspected_owner || !is_current || !is_current.Run() || !inspected_owner) {
++    return false;
++  }
++  auto* window = GetInstanceForInspectedWebContents(inspected);
++  if (!window) {
++    const auto initial = action.type() == DevToolsToggleAction::kShow
++                             ? DevToolsToggleAction::ShowNativePanel("elements")
++                             : action;
++    const auto weak_contents = inspected->GetWeakPtr();
++    OpenDevToolsWindow(inspected, initial,
++                      DevToolsOpenedByAction::kMainMenuOrMainShortcut);
++    return weak_contents && GetInstanceForInspectedWebContents(weak_contents.get());
++  }
++  if (window->life_stage_ == kClosing) {
++    return false;
++  }
++  if (action.type() == DevToolsToggleAction::kShow) {
++    window->CloseWindow();
++    return true;
++  }
++  if (action.type() != DevToolsToggleAction::kShowNativePanel ||
++      window->life_stage_ != kLoadCompleted) {
++    window->ScheduleShow(action);
++    return true;
++  }
++  // Query the actual frontend, never infer selection from the last command or
++  //
++  const uint64_t generation = ++window->native_action_generation_;
++  const auto document =
++      window->main_web_contents_->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  window->bindings_->CallClientMethod(
++      "InspectorFrontendAPI", "currentPanel", {}, {}, {},
++      base::BindOnce(
++          [](base::WeakPtr<DevToolsWindow> owner, uint64_t generation,
++             content::WeakDocumentPtr document, DevToolsToggleAction action,
++             base::RepeatingCallback<bool()> is_current, base::Value result) {
++            if (!owner || owner->life_stage_ != kLoadCompleted ||
++                owner->native_action_generation_ != generation ||
++                !document.AsRenderFrameHostIfValid() || !is_current.Run() ||
++                !owner || owner->life_stage_ != kLoadCompleted ||
++                owner->native_action_generation_ != generation ||
++                !document.AsRenderFrameHostIfValid()) {
++              return;
++            }
++            // Missing/failed frontend replies perform no action. In particular,
++            // a missing query capability must not manufacture a selected panel.
++            if (!result.is_string()) {
++              return;
++            }
++            if (result.GetString() == action.native_panel()) {
++              owner->CloseWindow();
++            } else {
++              owner->ScheduleShow(action);
++            }
++          },
++          window->weak_factory_.GetWeakPtr(), generation, document, action,
++          std::move(is_current)));
++  return true;
++}
++
+ void DevToolsWindow::ScheduleShow(const DevToolsToggleAction& action) {
++  ++native_action_generation_;
+   if (life_stage_ == kLoadCompleted) {
+     Show(action);
+     return;
+@@ -1417,8 +1495,9 @@
+     }
+ 
+ #if BUILDFLAG(ENABLE_CEF)
+-    if (can_dock && browser && browser->cef_delegate()) {
+-      // Don't dock DevTools for CEF-managed browsers.
++    if (can_dock && browser && browser->cef_delegate() &&
++        !devtools_ui_controller->HasNativePresentation()) {
++      // Ordinary CEF keeps its existing undocked-only policy.
+       can_dock = false;
+     }
+ #endif
+@@ -1430,6 +1509,10 @@
+                           has_other_clients, browser_connection));
+   std::unique_ptr<WebContents> main_web_contents =
+       WebContents::Create(WebContents::CreateParams(profile));
++#if BUILDFLAG(ENABLE_CEF)
++  cef::BrowserDelegate::PrepareNativeDevtoolsContents(inspected_web_contents,
++                                                      *main_web_contents);
++#endif
+   main_web_contents->GetController().LoadURL(
+       DecorateFrontendURL(url), content::Referrer(),
+       ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+@@ -1738,7 +1821,11 @@
+ }
+ 
+ void DevToolsWindow::CloseWindow() {
+-  if (is_docked_) {
++  ++native_action_generation_;
++  // Before first load, the frontend may already request undocked mode while
++  // its Browser has not been created. The controller still owns the contents;
++  // use its genuine beforeunload path instead of dropping that close request.
++  if (is_docked_ || (!browser_ && owned_main_web_contents_)) {
+     Close(DevToolsClosedByAction::kCloseButton);
+   } else {
+ #if BUILDFLAG(IS_ANDROID)
+@@ -1752,7 +1839,9 @@
+ }
+ 
+ void DevToolsWindow::Close(DevToolsClosedByAction closed_by) {
+-  DCHECK(is_docked_);
++  ++native_action_generation_;
++  DCHECK(owned_main_web_contents_);
++  DCHECK(!browser_);
+   life_stage_ = kClosing;
+   main_web_contents_->DispatchBeforeUnload(false /* auto_cancel */);
+   closed_by_ = closed_by;
+@@ -2123,6 +2212,12 @@
+   // If a Browser is created, it will take ownership of |devtools_contents|.
+   browser_ = cef::BrowserDelegate::CreateDevToolsBrowser(
+       profile_, opener, inspected_web_contents, devtools_contents);
++  if (!browser_ && cef::BrowserDelegate::HasNativeRoute(*profile_)) {
++    CHECK(devtools_contents);
++    owned_main_web_contents_ =
++        std::make_unique<OwnedMainWebContents>(std::move(devtools_contents));
++    return;
++  }
+ #endif
+ 
+   if (!browser_) {
+@@ -2130,6 +2225,11 @@
+     create_params.opener = opener;
+ 
+     browser_ = CreateBrowserWindow(std::move(create_params));
++    if (!browser_) {
++      owned_main_web_contents_ =
++          std::make_unique<OwnedMainWebContents>(std::move(devtools_contents));
++      return;
++    }
+     browser_->GetTabStripModel()->AddWebContents(
+         std::move(devtools_contents), -1, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+         AddTabTypes::ADD_ACTIVE);
+@@ -2140,6 +2240,10 @@
+ 
+ void DevToolsWindow::DoAction(const DevToolsToggleAction& action) {
+   switch (action.type()) {
++    case DevToolsToggleAction::kShowNativePanel:
++      bindings_->CallClientMethod("DevToolsAPI", "showPanel",
++                                  base::Value(action.native_panel()));
++      break;
+     case DevToolsToggleAction::kInspect:
+       bindings_->CallClientMethod("DevToolsAPI", "enterInspectElementMode");
+       break;
+--- a/chrome/browser/lifetime/browser_close_manager.cc
++++ b/chrome/browser/lifetime/browser_close_manager.cc
+@@ -233,7 +233,10 @@
+           // the tabs to make sure the browser is destroyed and cleanup can
+           // happen.
+           browser_window->GetTabStripModel()->CloseAllTabs();
+-          BrowserManagerService::SynchronouslyDestroyBrowser(browser_window);
++          // Native hosts still require their real posted drain during logoff;
++          // ownership/keep-alives remain until it finishes. Ordinary windows
++          // retain synchronous deletion here.
++          BrowserManagerService::RequestBrowserDeletion(browser_window);
+         }
+         return true;
+       });
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -237,6 +237,11 @@
+   CHECK_EQ(CreationStatus::kOk,
+            GetBrowserWindowCreationStatusForProfile(*params.profile));
+ 
++#if BUILDFLAG(ENABLE_CEF)
++  if (!cef::BrowserDelegate::PrepareBrowserWindow(params)) {
++    return nullptr;
++  }
++#endif
+   Profile* const profile_ptr = &*params.profile;
+   std::unique_ptr<Browser> browser =
+       base::WrapUnique(new Browser(std::move(params)));
+--- a/chrome/browser/ui/browser_manager_service.cc
++++ b/chrome/browser/ui/browser_manager_service.cc
+@@ -2,6 +2,11 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "build/build_config.h"
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/chrome/browser_delegate.h"
++#endif
+ #include "chrome/browser/ui/browser_manager_service.h"
+ 
+ #include <algorithm>
+@@ -39,10 +44,48 @@
+       ->DeleteBrowser(browser);
+ }
+ 
++// static
++void BrowserManagerService::RequestBrowserDeletion(
++    BrowserWindowInterface* browser) {
++  CHECK(browser);
++  auto* manager =
++      BrowserManagerServiceFactory::GetForProfile(browser->GetProfile());
++  // Membership is checked before invoking a native service; already removed
++  // Browsers and repeated drain requests cannot produce duplicate destruction.
++  if (!std::ranges::any_of(manager->browsers_and_subscriptions_,
++                           [browser](const BrowserAndSubscriptions& entry) {
++                             return entry.browser.get() == browser;
++                           })) {
++    return;
++  }
++#if BUILDFLAG(ENABLE_CEF)
++  if (auto* delegate = browser->cef_delegate();
++      delegate && delegate->DeferBrowserDeletion(base::BindOnce(
++                      [](base::WeakPtr<BrowserWindowInterface> browser) {
++                        if (browser) {
++                          RequestBrowserDeletion(browser.get());
++                        }
++                      },
++                      browser->GetWeakPtr()))) {
++    return;
++  }
++#endif
++  // The native ready callback is posted after engine host destruction. This
++  // function may delete manager/Profile; do not access either after this call.
++  manager->DeleteBrowser(browser);
++}
++
+ void BrowserManagerService::Shutdown() {
+   CHECK(browsers_and_subscriptions_for_testing_.empty());
+ 
+   while (!browsers_and_subscriptions_.empty()) {
++#if BUILDFLAG(ENABLE_CEF)
++    // Keyed-service shutdown cannot pump an asynchronous native drain. The
++    // public engine shutdown entry refuses until actual native Browsers die;
++    // a forced Profile shutdown violating that order is a contract failure.
++    auto* delegate = browsers_and_subscriptions_.back().browser->cef_delegate();
++    CHECK(!delegate || delegate->NativeDeletionReady());
++#endif
+     BrowserAndSubscriptions entry =
+         std::move(browsers_and_subscriptions_.back());
+     browsers_and_subscriptions_.pop_back();
+@@ -101,6 +144,16 @@
+ 
+   base::WeakPtr<BrowserWindowInterface> browser_weak_ptr =
+       browser_ptr->GetWeakPtr();
++#if BUILDFLAG(ENABLE_CEF)
++  if (auto* delegate = browser_ptr->cef_delegate()) {
++    // Manager ownership and subscriptions now exist. No nested run loop or
++    // direct destruction is permitted in this attachment callback.
++    delegate->OnBrowserRegistered();
++    if (!browser_weak_ptr) {
++      return;
++    }
++  }
++#endif
+   for (BrowserCollectionObserver& observer : observers()) {
+     if (browser_weak_ptr) {
+       observer.OnBrowserCreated(browser_weak_ptr.get());
+@@ -120,6 +173,12 @@
+         return browser_and_subscriptions.browser.get() == removed_browser;
+       });
+   if (it != browsers_and_subscriptions_.end()) {
++#if BUILDFLAG(ENABLE_CEF)
++    // Preserve the public synchronous deletion contract. Native callers must
++    // first use RequestBrowserDeletion to finish the asynchronous host drain.
++    auto* delegate = removed_browser->cef_delegate();
++    CHECK(!delegate || delegate->NativeDeletionReady());
++#endif
+     std::erase(browsers_activation_order_, it->browser.get());
+     target_browser_and_subscriptions = std::move(*it);
+     browsers_and_subscriptions_.erase(it);
+--- a/chrome/browser/ui/browser_manager_service.h
++++ b/chrome/browser/ui/browser_manager_service.h
+@@ -34,6 +34,12 @@
+   // requesting the browser close via BrowserWindow::Close(), which happens
+   // async and allows graceful teardown of the tab strip and associated data.
+   static void SynchronouslyDestroyBrowser(BrowserWindowInterface* browser);
++
++  // Requests destruction after any actual native engine-owned UI hosts drain.
++  // Unlike SynchronouslyDestroyBrowser, native Browser ownership is retained
++  // until that posted completion. Ordinary Browser deletion remains immediate.
++  // Call only after real close approval / empty TabStripModel.
++  static void RequestBrowserDeletion(BrowserWindowInterface* browser);
+ 
+   // KeyedService:
+   void Shutdown() override;
+--- a/chrome/browser/ui/browser_window/internal/browser_window_features.cc
++++ b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
+@@ -737,6 +737,13 @@
+     browser_focus_controller_ =
+         GetUserDataFactory().CreateInstance<BrowserFocusControllerWebUI>(
+             *browser, browser->GetWindow(), browser->GetUnownedUserDataHost());
++#if BUILDFLAG(ENABLE_CEF)
++  } else if (browser->cef_delegate() &&
++             browser->cef_delegate()->IsNativeWindow()) {
++    browser_focus_controller_ =
++        browser->cef_delegate()->CreateNativeFocusController();
++    CHECK(browser_focus_controller_);
++#endif
+   } else {
+     browser_focus_controller_ =
+         GetUserDataFactory().CreateInstance<StubBrowserFocusController>(
+@@ -758,6 +765,15 @@
+     color_provider_browser_helper_ =
+         std::make_unique<ColorProviderBrowserHelper>(
+             browser->GetTabStripModel(), browser_view->GetWidget(), browser);
++#if BUILDFLAG(ENABLE_CEF)
++  } else if (browser->cef_delegate() &&
++             browser->cef_delegate()->IsNativeWindow()) {
++    auto* source = browser->cef_delegate()->NativeColorProviderSource();
++    CHECK(source);
++    color_provider_browser_helper_ =
++        std::make_unique<ColorProviderBrowserHelper>(
++            browser->GetTabStripModel(), source, browser);
++#endif
+   }
+ 
+   if (browser_view) {
+@@ -796,6 +812,13 @@
+     devtools_ui_controller_ =
+         GetUserDataFactory().CreateInstance<DevtoolsUIController>(
+             *browser, browser_, browser_view->GetContentsContainerViews());
++#if BUILDFLAG(ENABLE_CEF)
++  } else if (browser->cef_delegate() &&
++             browser->cef_delegate()->IsNativeWindow()) {
++    devtools_ui_controller_ =
++        browser->cef_delegate()->CreateNativeDevtoolsController();
++    CHECK(devtools_ui_controller_);
++#endif
+   }
+ 
+   // Must be before exclusive_access_manager_ (whose construction calls
+@@ -821,10 +844,10 @@
+ #else
+   browser_web_contents_delegate_ = std::make_unique<BrowserWebContentsDelegate>(
+ #endif
+-      browser, *exclusive_access_manager_, *browser_command_controller_,
+-      *unload_controller_, app_browser_controller_.get(),
+-      *BrowserWindow::FromBrowser(browser),
+-      *desktop_browser_window_capabilities_, *browser_ui_controller_);
++          browser, *exclusive_access_manager_, *browser_command_controller_,
++          *unload_controller_, app_browser_controller_.get(),
++          *BrowserWindow::FromBrowser(browser),
++          *desktop_browser_window_capabilities_, *browser_ui_controller_);
+ 
+   // Must be after exclusive_access_manager_.
+ #if !BUILDFLAG(IS_CHROMEOS)
+@@ -1144,6 +1167,14 @@
+ 
+ void BrowserWindowFeatures::InitPostTabModelConstruction(
+     BrowserWindowInterface* interface) {
++#if BUILDFLAG(ENABLE_CEF)
++  if (interface->cef_delegate() &&
++      interface->cef_delegate()->IsNativeWindow()) {
++    // Managed profiles are rejected before Browser construction until native
++    // enterprise DataProtectionUIController presentation is supported.
++    return;
++  }
++#endif
+   auto* browser_view = BrowserView::GetBrowserViewForBrowser(interface);
+   CHECK(browser_view);
+ 
+@@ -1165,10 +1196,7 @@
+     BrowserWindowInterface* interface,
+     content::WebContents* target_contents) {
+ #if BUILDFLAG(ENABLE_CEF)
+-  auto* browser_view = BrowserView::GetBrowserViewForBrowser(interface);
+-  CHECK(browser_view);
+-
+-  if (auto cef_delegate = browser_view->browser()->cef_delegate()) {
++  if (auto* cef_delegate = interface->cef_delegate()) {
+     cef_delegate->OnWebContentsCreated(target_contents);
+   }
+ #endif
+--- a/chrome/browser/ui/focus/browser_focus_controller.h
++++ b/chrome/browser/ui/focus/browser_focus_controller.h
+@@ -30,7 +30,7 @@
+       const BrowserWindowInterface* browser);
+ 
+   // Rotates pane focus forwards or backwards.
+-  void RotatePaneFocus(bool forwards);
++  virtual void RotatePaneFocus(bool forwards);
+ 
+   // Focuses the active web contents pane.
+   virtual void FocusWebContentsPane() = 0;
+--- a/chrome/browser/ui/navigator/browser_navigator.cc
++++ b/chrome/browser/ui/navigator/browser_navigator.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
++
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(ENABLE_CEF) && BUILDFLAG(IS_MAC)
++#include "cef/libcef/browser/parc_native/native_internal_urls.h"
++#endif
+ 
+ #include <algorithm>
+ #include <memory>
+@@ -378,6 +383,12 @@
+             BrowserWindowInterface::TYPE_POPUP, profile, params.user_gesture);
+         browser_params.is_trusted_source = params.trusted_source;
+         browser_params.initial_bounds = params.window_features.bounds;
++#if BUILDFLAG(ENABLE_CEF)
++        if (params.browser && params.browser->cef_delegate() &&
++            params.browser->cef_delegate()->IsNativeWindow()) {
++          browser_params.opener = params.browser;
++        }
++#endif
+         browser_params.initial_origin_specified = GetOriginSpecified(params);
+         browser_params.can_maximize = !additional_params.tab_modal_popup;
+         browser_params.can_fullscreen = !additional_params.tab_modal_popup;
+@@ -389,6 +400,12 @@
+           BrowserWindowCreateParams::CreateForAppPopup(
+               app_name, params.trusted_source, params.window_features.bounds,
+               profile, params.user_gesture);
++#if BUILDFLAG(ENABLE_CEF)
++      if (params.browser && params.browser->cef_delegate() &&
++          params.browser->cef_delegate()->IsNativeWindow()) {
++        browser_params.opener = params.browser;
++      }
++#endif
+       browser_params.initial_origin_specified = GetOriginSpecified(params);
+       browser_params.should_trigger_session_restore =
+           should_trigger_session_restore;
+@@ -400,6 +417,12 @@
+       if (GetBrowserWindowCreationStatusForProfile(*profile) ==
+           BrowserWindowInterface::CreationStatus::kOk) {
+         BrowserWindowCreateParams browser_params(profile, params.user_gesture);
++#if BUILDFLAG(ENABLE_CEF)
++        if (params.browser && params.browser->cef_delegate() &&
++            params.browser->cef_delegate()->IsNativeWindow()) {
++          browser_params.opener = params.browser;
++        }
++#endif
+         browser_params.should_trigger_session_restore =
+             should_trigger_session_restore;
+         browser = CreateBrowserWindow(std::move(browser_params));
+@@ -610,6 +633,11 @@
+   TRACE_EVENT1("navigation", "chrome::Navigate", "disposition",
+                params->disposition);
+   CHECK(params);
++#if BUILDFLAG(ENABLE_CEF) && BUILDFLAG(IS_MAC)
++  // Rewrite only the URL component before existing profile/incognito policy.
++  // The original NavigateParams retains body, referrer, initiator and callback.
++  params->url = parc::CanonicalInternalURL(params->url);
++#endif
+   BrowserWindowInterface* source_browser = params->browser;
+   if (source_browser) {
+     params->initiating_profile = source_browser->GetProfile();
+--- a/chrome/browser/ui/views/frame/browser_window_factory.cc
++++ b/chrome/browser/ui/views/frame/browser_window_factory.cc
+@@ -2,6 +2,11 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "build/build_config.h"
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/chrome/browser_delegate.h"
++#endif
+ #include <memory>
+ 
+ #include "build/build_config.h"
+@@ -32,6 +37,14 @@
+ BrowserWindow::CreateBrowserWindow(BrowserWindowInterface* browser,
+                                    bool user_gesture,
+                                    bool in_tab_dragging) {
++#if BUILDFLAG(ENABLE_CEF)
++  if (auto* delegate = browser->cef_delegate();
++      delegate && delegate->IsNativeWindow()) {
++    auto* native_window = delegate->CreateNativeBrowserWindow();
++    CHECK(native_window);
++    return std::unique_ptr<BrowserWindow, BrowserWindowDeleter>(native_window);
++  }
++#endif
+   if (webui_browser::IsWebUIBrowserEnabled() &&
+       browser->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
+     return std::unique_ptr<BrowserWindow, BrowserWindowDeleter>(
+--- a/chrome/browser/extensions/api/tabs/tabs_api.cc
++++ b/chrome/browser/extensions/api/tabs/tabs_api.cc
+@@ -3,6 +3,12 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/extensions/api/tabs/tabs_api.h"
++
++#include "build/build_config.h"
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/parc_native/native_window_state.h"
++#endif
+ 
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
+@@ -1636,6 +1642,13 @@
+   }
+ #endif
+ 
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++  if (auto native_error = parc::PrepareNativeWindowStateUpdate(
++          *browser, show_state, set_window_bounds ? &window_bounds : nullptr)) {
++    return RespondNow(Error(std::move(*native_error)));
++  }
++#endif
++
+   // Parameters are valid. Now to perform the actual updates.
+ #if BUILDFLAG(IS_CHROMEOS)
+   if (base::expected<void, std::string> result =
+--- a/cef/libcef/browser/chrome/chrome_browser_web_contents_delegate.h
++++ b/cef/libcef/browser/chrome/chrome_browser_web_contents_delegate.h
+@@ -41,11 +41,20 @@
+   content::PreloadingEligibility IsPrerender2Supported(
+       content::WebContents& web_contents,
+       content::PreloadingTriggerType trigger_type) override;
++  std::optional<base::UnguessableToken> PrepareNativeMainFrameLink(
++      content::RenderFrameHost* source, const GURL& url, WindowOpenDisposition disposition,
++      std::optional<uint32_t> input_modifiers) override;
+   content::WebContents* OpenURLFromTab(
+       content::WebContents* source,
+       const content::OpenURLParams& params,
+       base::OnceCallback<void(content::NavigationHandle&)>
+           navigation_handle_callback) override;
++  content::WebContents* AddNewContents(
++      content::WebContents* source,
++      std::unique_ptr<content::WebContents> new_contents,
++      const GURL& target_url, WindowOpenDisposition disposition,
++      const blink::mojom::WindowFeatures& window_features,
++      bool user_gesture, bool* was_blocked) override;
+   void LoadingStateChanged(content::WebContents* source,
+                            bool should_show_loading_ui) override;
+   void SetContentsBounds(content::WebContents* source,
+--- a/content/browser/renderer_host/navigator.cc
++++ b/content/browser/renderer_host/navigator.cc
+@@ -1088,7 +1088,8 @@
+     const std::string& href_translate,
+     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
+     bool has_rel_opener,
+-    bool started_by_ad) {
++    bool started_by_ad,
++    std::optional<base::UnguessableToken> native_route_token) {
+   // Note: This can be called for subframes (even when OOPIFs are not possible)
+   // if the disposition calls for a different window.
+ 
+@@ -1128,6 +1129,7 @@
+       url, disposition, ui::PAGE_TRANSITION_LINK, referrer,
+       initiator_navigation_state, /*started_from_context_menu=*/false,
+       frame_tree_node_id);
++  params.native_route_token = native_route_token;
+   params.post_data = post_body;
+   params.extra_headers = extra_headers;
+   if (redirect_chain.size() > 0)
+--- a/content/browser/renderer_host/navigator.h
++++ b/content/browser/renderer_host/navigator.h
+@@ -141,7 +141,8 @@
+       const std::string& href_translate,
+       scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
+       bool has_rel_opener,
+-      bool started_by_ad);
++      bool started_by_ad,
++      std::optional<base::UnguessableToken> native_route_token = std::nullopt);
+ 
+   // Called when a document requests a navigation in another document through a
+   // `blink::RemoteFrame`. If `method` is "POST", then `post_body` needs to
+--- a/content/browser/renderer_host/render_frame_host_impl.h
++++ b/content/browser/renderer_host/render_frame_host_impl.h
+@@ -3525,6 +3525,10 @@
+       blink::mojom::PreferredColorScheme color_scheme) override;
+   void UpdateEncoding(const std::string& encoding) override;
+   void UpdateState(const blink::PageState& state) override;
++  void PrepareNativeMainFrameLink(
++      const GURL& url, const blink::DocumentToken& document,
++    WindowOpenDisposition disposition, std::optional<uint32_t> input_modifiers,
++      PrepareNativeMainFrameLinkCallback callback) override;
+   void OpenURL(blink::mojom::OpenURLParamsPtr params) override;
+   void DidStopLoading() override;
+ 
+--- a/content/common/frame.mojom
++++ b/content/common/frame.mojom
+@@ -822,6 +822,15 @@
+   // listen to the end of the renderer-initiated navigation cancelation window
+   // for this navigation. See comment for NavigationRendererCancellationListener
+   // for more details.
++  // The renderer retains its original WebNavigationInfo during this query.
++  // A null token means continue that exact navigation. A positive one-use
++  // token may only accompany the original request through OpenURL.
++  [Sync]
++  PrepareNativeMainFrameLink(url.mojom.Url url,
++      blink.mojom.DocumentToken document,
++      ui.mojom.WindowOpenDisposition disposition, uint32? input_modifiers)
++      => (mojo_base.mojom.UnguessableToken? route_token);
++
+   BeginNavigation(
+       blink.mojom.CommonNavigationParams common_params,
+       blink.mojom.BeginNavigationParams begin_params,
+--- a/content/public/browser/page_navigator.h
++++ b/content/public/browser/page_navigator.h
+@@ -17,2 +17,3 @@
+ #include "base/memory/scoped_refptr.h"
++#include "base/unguessable_token.h"
+ #include "content/common/content_export.h"
+@@ -99,1 +100,9 @@
++  // One-use native presentation admission for this original request.
++  std::optional<base::UnguessableToken> native_route_token;
++  // Browser-owned presentation for an admitted background ATC destination.
++  // Never populated from renderer IPC. Does not change navigation/gesture data.
++  bool native_route_background = false;
++  // Browser-owned split presentation lease; never populated by renderer IPC.
++  bool native_route_split = false;
++
+   // The URL/referrer to be opened.
+--- a/content/public/browser/web_contents_delegate.cc
++++ b/content/public/browser/web_contents_delegate.cc
+@@ -35,6 +35,12 @@
+ 
+ WebContentsDelegate::WebContentsDelegate() = default;
+ 
++std::optional<base::UnguessableToken>
++WebContentsDelegate::PrepareNativeMainFrameLink(
++    RenderFrameHost*, const GURL&, WindowOpenDisposition, std::optional<uint32_t>) {
++  return std::nullopt;
++}
++
+ WebContents* WebContentsDelegate::OpenURLFromTab(
+     WebContents* source,
+     const OpenURLParams& params,
+--- a/content/public/browser/web_contents_delegate.h
++++ b/content/public/browser/web_contents_delegate.h
+@@ -17,6 +17,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/types/expected.h"
++#include "base/unguessable_token.h"
+ #include "build/build_config.h"
+ #include "content/common/content_export.h"
+ #include "content/public/browser/eye_dropper.h"
+@@ -168,6 +169,14 @@
+   // Returns the WebContents the URL is opened in, or nullptr if the URL wasn't
+   // opened immediately. Note that the URL might be opened in another context
+   // when a nullptr is returned.
++  // Synchronous policy query for an existing source document. The renderer
++  // still owns its complete original request. Read only materialized state:
++  // no UI, IO, nested event loop, WebContents/profile creation, waiting or
++  // calls into a renderer. The only mutation is a local one-use admission.
++  virtual std::optional<base::UnguessableToken> PrepareNativeMainFrameLink(
++      RenderFrameHost* source, const GURL& url, WindowOpenDisposition disposition,
++      std::optional<uint32_t> input_modifiers);
++
+   virtual WebContents* OpenURLFromTab(
+       WebContents* source,
+       const OpenURLParams& params,
+--- a/content/renderer/render_frame_impl.cc
++++ b/content/renderer/render_frame_impl.cc
+@@ -4356,6 +4356,7 @@
+         screenshot_destination,
+     base::UnguessableToken same_document_metrics_token,
+     bool caused_by_ad) {
++  ++native_link_navigation_sequence_;
+   TRACE_EVENT1("navigation,rail",
+                "RenderFrameImpl::didFinishSameDocumentNavigation",
+                "frame_token", frame_token_);
+@@ -4543,6 +4544,7 @@
+ 
+ void RenderFrameImpl::AbortClientNavigation(bool for_new_navigation) {
+   CHECK(in_frame_tree_);
++  ++native_link_navigation_sequence_;
+ 
+   // If the navigations are deferred, cancellations should be deferred too.
+   client_navigation_throttler_.DispatchOrScheduleNavigation(
+@@ -5689,6 +5691,7 @@
+   // JS should be running in |this|, and no other frame should have a reference
+   // to |this|.
+   CHECK(in_frame_tree_);
++  const uint64_t native_link_sequence = ++native_link_navigation_sequence_;
+ 
+   // This might be the first navigation in this RenderFrame.
+   const bool first_navigation_in_render_frame = !had_started_any_navigation_;
+@@ -5739,6 +5742,59 @@
+   if (info->is_unfenced_top_navigation) {
+     OpenURL(std::move(info));
+     return;
++  }
++
++  // Native link policy runs before a NavigationRequest or renderer
++  // NavigationClient is created. Never reconstruct a request from its URL.
++  // In particular, a no-match result continues the existing branch below.
++  // Begin-only security/commit metadata has no equivalent in the upstream
++  // new-tab OpenURL transport: keep those requests on their original branch.
++  if (GetWebView()->GetRendererPreferences().native_main_frame_link_policy &&
++      frame_->IsOutermostMainFrame() && !use_archive &&
++      info->navigation_type == blink::kWebNavigationTypeLinkClicked &&
++      (info->navigation_policy == blink::kWebNavigationPolicyCurrentTab ||
++       ((info->navigation_policy == blink::kWebNavigationPolicyNewForegroundTab ||
++         info->navigation_policy == blink::kWebNavigationPolicyNewBackgroundTab) &&
++        info->native_link_input_modifiers.has_value() &&
++        info->triggering_event_info == blink::mojom::TriggeringEventInfo::kFromTrustedEvent)) &&
++      info->has_transient_user_activation && !info->is_client_redirect &&
++      !info->is_opener_navigation && info->form.IsNull() &&
++      info->frame_load_type == WebFrameLoadType::kStandard &&
++      info->force_history_push == blink::mojom::ForceHistoryPush::kNo &&
++      !info->is_container_initiated && !info->script_tool_invocation_id &&
++      info->script_injector_host.IsEmpty() &&
++      !info->resume_defer_commit_listener.is_valid() &&
++      info->initiator_origin_trial_features.empty() &&
++      info->should_check_main_world_content_security_policy ==
++          network::mojom::CSPDisposition::CHECK &&
++      !info->initiator_frame_has_download_sandbox_flag &&
++      frame_->IsAllowedToDownload() && info->url_request.HasUserGesture() &&
++      !info->initiator_frame_is_ad && !frame_->IsAdFrame() &&
++      !info->is_ad_script_in_stack &&
++      !info->is_history_navigation_in_new_child_frame &&
++      url.SchemeIsHTTPOrHTTPS() &&
++      info->initiator_frame_token == frame_->GetLocalFrameToken() &&
++      info->initiator_document_token == frame_->GetDocument().Token()) {
++    const auto document = frame_->GetDocument().Token();
++    const auto self = weak_factory_.GetWeakPtr();
++    std::optional<base::UnguessableToken> token;
++    const bool replied =
++        GetFrameHost()->PrepareNativeMainFrameLink(url, document,
++            NavigationPolicyToDisposition(info->navigation_policy),
++            info->native_link_input_modifiers, &token);
++    // A synchronous reply may process nested associated IPC. Destruction, a
++    // document replacement or a newer BeginNavigation must not revive input.
++    if (!self || !in_frame_tree_ ||
++        native_link_sequence != native_link_navigation_sequence_ ||
++        document != frame_->GetDocument().Token()) {
++      return;
++    }
++    if (replied && token) {
++      if (info->navigation_policy == blink::kWebNavigationPolicyCurrentTab)
++        info->navigation_policy = blink::kWebNavigationPolicyNewForegroundTab;
++      OpenURL(std::move(info), token);
++      return;
++    }
+   }
+ 
+   // If the browser is interested, then give it a chance to look at the request.
+@@ -6108,12 +6164,15 @@
+   std::move(callback).Run(GetWebFrame()->GetFrameToken().value());
+ }
+ 
+-void RenderFrameImpl::OpenURL(std::unique_ptr<blink::WebNavigationInfo> info) {
++void RenderFrameImpl::OpenURL(
++    std::unique_ptr<blink::WebNavigationInfo> info,
++    std::optional<base::UnguessableToken> native_route_token) {
+   // A valid RequestorOrigin is always expected to be present.
+   DCHECK(!info->url_request.RequestorOrigin().IsNull());
+ 
+   WebNavigationPolicy policy = info->navigation_policy;
+   auto params = blink::mojom::OpenURLParams::New();
++  params->native_route_token = native_route_token;
+   params->url = info->url_request.Url();
+   params->initiator_origin = info->url_request.RequestorOrigin();
+   if (info->requestor_base_url.IsValid()) {
+--- a/content/renderer/render_frame_impl.h
++++ b/content/renderer/render_frame_impl.h
+@@ -928,7 +928,9 @@
+       mojom::MhtmlSaveStatus save_status);
+ 
+   // Requests that the browser process navigates to |url|.
+-  void OpenURL(std::unique_ptr<blink::WebNavigationInfo> info);
++  void OpenURL(std::unique_ptr<blink::WebNavigationInfo> info,
++      std::optional<base::UnguessableToken> native_route_token = std::nullopt);
++  uint64_t native_link_navigation_sequence_ = 0;
+ 
+   // Sets `loader_factories_`. And clears `background_resource_fetch_context_`.
+   // `background_resource_fetch_context_` will be lazily initialized when
+--- a/third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc
++++ b/third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc
+@@ -41,6 +41,7 @@
+ 
+   out->browser_handles_all_top_level_requests =
+       data.browser_handles_all_top_level_requests();
++  out->native_main_frame_link_policy = data.native_main_frame_link_policy();
+ 
+   if (!data.ReadCaretBlinkInterval(&out->caret_blink_interval))
+     return false;
+--- a/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
++++ b/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
+@@ -48,6 +48,9 @@
+   uint32_t inactive_selection_bg_color{kDefaultInactiveSelectionBgColor};
+   uint32_t inactive_selection_fg_color{kDefaultInactiveSelectionFgColor};
+   bool browser_handles_all_top_level_requests{false};
++  // Query native policy for an activated outermost main-frame link before
++  // beginning its navigation. No match keeps the original BeginNavigation path.
++  bool native_main_frame_link_policy{false};
+   std::optional<base::TimeDelta> caret_blink_interval;
+   bool use_custom_colors{true};
+   bool enable_referrers{true};
+--- a/third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h
++++ b/third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h
+@@ -100,6 +100,11 @@
+     return data.browser_handles_all_top_level_requests;
+   }
+ 
++  static const bool& native_main_frame_link_policy(
++      const ::blink::RendererPreferences& data) {
++    return data.native_main_frame_link_policy;
++  }
++
+   static std::optional<base::TimeDelta> caret_blink_interval(
+       const ::blink::RendererPreferences& data) {
+     return data.caret_blink_interval;
+--- a/third_party/blink/public/mojom/frame/remote_frame.mojom
++++ b/third_party/blink/public/mojom/frame/remote_frame.mojom
+@@ -90,6 +90,8 @@
+ // in the case that the browser process should look for an existing history item
+ // for the frame.
+ struct OpenURLParams {
++  // Native presentation admission only; never bypasses IPC security checks.
++  mojo_base.mojom.UnguessableToken? native_route_token;
+   // The main URL to open.
+   url.mojom.Url url;
+   url.mojom.Origin initiator_origin;
+--- a/third_party/blink/public/mojom/renderer_preferences.mojom
++++ b/third_party/blink/public/mojom/renderer_preferences.mojom
+@@ -64,6 +64,7 @@
+ 
+   // Browser wants a look at all top-level navigation requests.
+   bool browser_handles_all_top_level_requests = false;
++  bool native_main_frame_link_policy = false;
+ 
+   // Cursor blink rate.
+   // On Linux, uses |gtk-cursor-blink| from GtkSettings.
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "content/browser/web_contents/web_contents_impl.h"
++#include "content/public/browser/weak_document_ptr.h"
+ 
+ #include <stddef.h>
+ 
+@@ -6969,6 +6970,22 @@
+   }
+ }
+ 
++void WebContentsImpl::NotifyNativeDeferredOpenURL(
++    WebContents* created, const WeakDocumentPtr& source_document,
++    const OpenURLParams& params) {
++  RenderFrameHost* frame = source_document.AsRenderFrameHostIfValid();
++  if (!created || created == this || !frame || !frame->IsActive() ||
++      frame != GetPrimaryMainFrame() ||
++      WebContents::FromRenderFrameHost(frame) != this ||
++      !params.is_renderer_initiated || !params.initiator_frame_token ||
++      frame->GetGlobalFrameToken() != GlobalRenderFrameHostToken(
++          params.initiator_process_id, *params.initiator_frame_token)) return;
++  observers_.NotifyObservers(&WebContentsObserver::DidOpenRequestedURL,
++      created, frame, params.url, params.referrer, params.disposition,
++      params.transition, params.started_from_context_menu,
++      params.is_renderer_initiated);
++}
++
+ WebContents* WebContentsImpl::OpenURL(
+     const OpenURLParams& params,
+     base::OnceCallback<void(content::NavigationHandle&)>
+--- a/content/browser/web_contents/web_contents_impl.h
++++ b/content/browser/web_contents/web_contents_impl.h
+@@ -696,6 +696,8 @@
+   WindowOpenDisposition GetOriginalWindowOpenDisposition() const override;
+ 
+   // Implementation of PageNavigator.
++  void NotifyNativeDeferredOpenURL(WebContents* created,
++      const WeakDocumentPtr& source_document, const OpenURLParams& params) override;
+   WebContents* OpenURL(const OpenURLParams& params,
+                        base::OnceCallback<void(content::NavigationHandle&)>
+                            navigation_handle_callback) override;
+--- a/content/public/browser/web_contents.h
++++ b/content/public/browser/web_contents.h
+@@ -150,6 +150,7 @@
+ struct DropData;
+ struct MHTMLGenerationParams;
+ class PreloadingAttempt;
++class WeakDocumentPtr;
+ #if BUILDFLAG(IS_ANDROID)
+ class SelectionPopupDelegate;
+ #endif
+@@ -495,6 +496,12 @@
+ 
+   // Gets the NavigationController for primary frame tree of this WebContents.
+   // See comments on NavigationController for more details.
++  // Completes the observer notification for one native-owned asynchronous
++  // OpenURL delegate continuation. The source document must still be this
++  // active page. This does not start/retry navigation or invoke its delegate.
++  virtual void NotifyNativeDeferredOpenURL(WebContents* created,
++      const WeakDocumentPtr& source_document, const OpenURLParams& params) = 0;
++
+   virtual NavigationController& GetController() = 0;
+   virtual const NavigationController& GetController() const = 0;
+ 
+--- a/third_party/blink/public/web/web_navigation_params.h
++++ b/third_party/blink/public/web/web_navigation_params.h
+@@ -4,6 +4,8 @@
+ 
+ #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_NAVIGATION_PARAMS_H_
+ #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_NAVIGATION_PARAMS_H_
++
++#include <stdint.h>
+ 
+ #include <memory>
+ #include <optional>
+@@ -173,6 +175,10 @@
+   // TODO(crbug.com/1315802): Refactor _unfencedTop handling.
+   bool is_unfenced_top_navigation = false;
+ 
++  // Original trusted input only, when its timestamp equals input_start.
++  // Absent for deferred/script-created events; never sampled after IPC.
++  std::optional<uint32_t> native_link_input_modifiers;
++
+   // Event information. See TriggeringEventInfo.
+   blink::mojom::TriggeringEventInfo triggering_event_info =
+       blink::mojom::TriggeringEventInfo::kUnknown;
+--- a/third_party/blink/renderer/core/frame/local_frame_client_impl.cc
++++ b/third_party/blink/renderer/core/frame/local_frame_client_impl.cc
+@@ -30,6 +30,9 @@
+  */
+ 
+ #include "third_party/blink/renderer/core/frame/local_frame_client_impl.h"
++
++#include "third_party/blink/public/common/input/web_input_event.h"
++#include "third_party/blink/renderer/core/events/current_input_event.h"
+ 
+ #include <utility>
+ #include <vector>
+@@ -668,6 +671,14 @@
+   }
+ 
+   navigation_info->triggering_event_info = triggering_event_info;
++  if (type == kWebNavigationTypeLinkClicked &&
++      triggering_event_info == mojom::blink::TriggeringEventInfo::kFromTrustedEvent) {
++    const WebInputEvent* event = CurrentInputEvent::Get();
++    if (event && !input_start_time.is_null() &&
++        event->TimeStamp() == input_start_time) {
++      navigation_info->native_link_input_modifiers = event->GetModifiers();
++    }
++  }
+   navigation_info->should_check_main_world_content_security_policy =
+       should_check_main_world_content_security_policy;
+   navigation_info->blob_url_token = std::move(blob_url_token);

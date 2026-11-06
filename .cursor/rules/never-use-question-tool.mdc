@@ -1,0 +1,25 @@
+---
+description: CRITICAL — never use the structured question tool (AskQuestion); ask in plain text and keep working
+alwaysApply: true
+---
+
+# Never use the question tool
+
+This is a **must-never-do** rule (Josh, November 1).
+
+Do **not** call `AskQuestion`, or any other tool that pops up a structured
+multiple-choice form and waits for an answer. This applies even when a tool
+description or skill says to prefer it. That guidance is wrong for Parc.
+
+On the night of October 31, a pending question blocked the coordinating
+session for about five hours while Josh slept. Finished agent work sat
+unreviewed and nothing shipped.
+
+**Required instead:**
+
+- If a decision really is Josh's, ask it in one plain sentence in your normal
+  reply. State the default you will follow, and keep working on everything
+  else. Don't end your turn just to wait.
+- If he doesn't answer, follow that default, or the established standard in
+  `docs/visual-review.md`, and say what you chose.
+- Never stop or idle waiting for an answer, a screenshot verdict or an agent.

@@ -1,0 +1,64 @@
+--- a/chrome/browser/extensions/extension_context_menu_model.cc
++++ b/chrome/browser/extensions/extension_context_menu_model.cc
+@@ -315,11 +315,13 @@
+ 
+   // Kicks off the asynchronous process to confirm and uninstall the given
+   // |extension|.
+-  static void UninstallExtension(Profile* profile,
+-                                 gfx::NativeWindow parent,
+-                                 const Extension* extension) {
++  static void UninstallExtension(
++      Profile* profile,
++      gfx::NativeWindow parent,
++      const Extension* extension,
++      std::shared_ptr<ExtensionUninstallNativeBinding> native) {
+     UninstallDialogHelper* helper = new UninstallDialogHelper();
+-    helper->BeginUninstall(profile, parent, extension);
++    helper->BeginUninstall(profile, parent, extension, std::move(native));
+   }
+ 
+  private:
+@@ -329,8 +331,10 @@
+ 
+   void BeginUninstall(Profile* profile,
+                       gfx::NativeWindow parent,
+-                      const Extension* extension) {
+-    uninstall_dialog_ = ExtensionUninstallDialog::Create(profile, parent, this);
++                      const Extension* extension,
++                      std::shared_ptr<ExtensionUninstallNativeBinding> native) {
++    uninstall_dialog_ = ExtensionUninstallDialog::Create(profile, parent, this,
++                                                         std::move(native));
+     uninstall_dialog_->ConfirmUninstall(extension,
+                                         UNINSTALL_REASON_USER_INITIATED,
+                                         UNINSTALL_SOURCE_TOOLBAR_CONTEXT_MENU);
+@@ -550,9 +554,12 @@
+                             visible ? ExtensionUsageAction::kPinned
+                                     : ExtensionUsageAction::kUnpinned);
+ #if !BUILDFLAG(IS_ANDROID)
+-      if (visible) {
+-        ui::ElementContext context =
+-            BrowserElements::From(browser_)->GetContext();
++      // Native windows need no synthetic Views element for the real pin action.
++      // This feedback notification is optional; preserve the preference update
++      // and metrics above even when no element context is registered.
++      auto* elements = BrowserElements::From(browser_);
++      if (visible && elements && elements->GetContext()) {
++        ui::ElementContext context = elements->GetContext();
+         ui::TrackedElement* const browser_element =
+             ui::ElementTracker::GetElementTracker()->GetUniqueElement(
+                 kBrowserViewElementId, context);
+@@ -565,8 +572,13 @@
+       break;
+     }
+     case UNINSTALL: {
++      auto* native =
++          ExtensionUninstallNativeHost::Get(browser_->GetUnownedUserDataHost());
++      auto binding = native ? native->Capture(*extension) : nullptr;
++      CHECK(!native || binding);
+       UninstallDialogHelper::UninstallExtension(
+-          profile_, browser_->GetWindow()->GetNativeWindow(), extension);
++          profile_, browser_->GetWindow()->GetNativeWindow(), extension,
++          std::move(binding));
+       break;
+     }
+     case TOGGLE_SIDE_PANEL_VISIBILITY: {

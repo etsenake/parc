@@ -1,0 +1,75 @@
+import AppKit
+import ImageIO
+
+/// Immutable genuine renderer pixels, with the source lease retained by `valid`.
+/// Both context-image and screenshot inputs use the same local persistence path.
+@MainActor
+struct EaselImageInput {
+    let pngData: Data
+    let sourceURL: URL?
+    let pageTitle: String
+    let valid: () -> Bool
+    var capturedPage = false
+    var captureLayout: EaselCaptureLayout?
+    var capturedAt: Date?
+    var isValid: Bool { valid() }
+}
+
+/// One real image-import transaction shared by the page menu's chooser and the
+/// capture palette. The ID is resolved again at commit; a stale row never creates
+/// a substitute Easel. New-document rollback keeps failed output out of the list.
+@MainActor
+enum EaselImagePlacement {
+    @MainActor
+    struct Result {
+        // Keep the import/undo session alive until the destination editor takes
+        // it from the store's weak session registry.
+        let session: EaselSession
+        var id: UUID { session.document.id }
+        var title: String { session.document.title }
+    }
+    static func pixelSize(_ data: Data) throws -> NSSize {
+        guard data.count <= EaselStore.maximumAssetBytes,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width <= 16_384, height <= 16_384,
+              Int64(width) * Int64(height) <= 80_000_000,
+              CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else { throw EaselStoreError.invalidImage }
+        return NSSize(width: width, height: height)
+    }
+
+    static func place(_ image: EaselImageInput, in store: EaselStore, destinationID: UUID?,
+                      newTitle: String) throws -> Result {
+        guard image.isValid else { throw CocoaError(.userCancelled) }
+        let size = try pixelSize(image.pngData)
+        let session: EaselSession
+        var createdID: UUID?
+        do {
+            if let destinationID {
+                session = try store.load(destinationID)
+            } else {
+                let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                session = try store.create(title: title.isEmpty ? "Untitled Easel" : title)
+                createdID = session.document.id
+            }
+            guard image.isValid else { throw CocoaError(.userCancelled) }
+            let assetID = try session.importPNG(image.pngData)
+            let width = min(480, Double(size.width))
+            let bottom = session.document.items.map { $0.frame.y + $0.frame.height }.max() ?? 0
+            let card = image.capturedPage && image.sourceURL != nil
+            let item = EaselItem(kind: card ? .webCard : .image,
+                frame: EaselRect(x: 40, y: max(40, bottom + 32), width: width,
+                                 height: max(1, width * Double(size.height) / Double(size.width))),
+                zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1,
+                text: card ? image.pageTitle : "", url: image.sourceURL?.absoluteString, assetID: assetID, capturedAt: image.capturedAt ?? Date(),
+                captureLayout: card ? image.captureLayout : nil)
+            try session.perform(card ? "Add captured webpage" : "Add webpage image") { $0.items.append(item) }
+            return Result(session: session)
+        } catch {
+            if let createdID { try? store.delete(createdID) }
+            throw error
+        }
+    }
+}

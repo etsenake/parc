@@ -1,0 +1,76 @@
+--- a/chrome/browser/dom_distiller/BUILD.gn
++++ b/chrome/browser/dom_distiller/BUILD.gn
+@@ -34,6 +34,7 @@
+   ]
+   deps = [
+     ":dom_distiller",
++    "//cef/libcef/features:buildflags",
+     "//chrome/browser/profiles",
+     "//chrome/browser/ui/tab_contents",
+     "//chrome/common",
+--- a/chrome/browser/dom_distiller/dom_distiller_service_factory.cc
++++ b/chrome/browser/dom_distiller/dom_distiller_service_factory.cc
+@@ -11,6 +11,7 @@
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "build/build_config.h"
++#include "cef/libcef/features/features.h"
+ #include "chrome/browser/profiles/incognito_helpers.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
+@@ -60,13 +61,16 @@
+ DomDistillerServiceFactory::DomDistillerServiceFactory()
+     : ProfileKeyedServiceFactory(
+           "DomDistillerService",
+-          // Makes normal profile and off-the-record profile use same service
+-          // instance.
+           ProfileSelections::Builder()
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++              // Native reader extraction, article cache, network and preference
++              // writes belong to the actual profile, including private windows.
++              .WithRegular(ProfileSelection::kOwnInstance)
++              .WithGuest(ProfileSelection::kOwnInstance)
++#else
+               .WithRegular(ProfileSelection::kRedirectedToOriginal)
+-              // TODO(crbug.com/40257657): Check if this service is needed in
+-              // Guest mode.
+               .WithGuest(ProfileSelection::kRedirectedToOriginal)
++#endif
+               // TODO(crbug.com/41488885): Check if this service is needed for
+               // Ash Internals.
+               .WithAshInternals(ProfileSelection::kRedirectedToOriginal)
+@@ -107,10 +111,16 @@
+ 
+   std::unique_ptr<DistilledPagePrefs> distilled_page_prefs =
+       std::make_unique<DistilledPagePrefs>(profile->GetPrefs());
++  // Off-record profiles inherit default zoom but do not own ChromeZoomLevelPrefs.
++  // The distilled-page prefs above still write to the actual private PrefService.
++  Profile* zoom_profile = profile;
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++  zoom_profile = profile->GetOriginalProfile();
++#endif
+   distilled_page_prefs->SetDefaultFontScaling(
+-      profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
++      zoom_profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
+   base::CallbackListSubscription distilled_page_prefs_subscription =
+-      profile->GetZoomLevelPrefs()->RegisterDefaultZoomLevelCallback(
++      zoom_profile->GetZoomLevelPrefs()->RegisterDefaultZoomLevelCallback(
+           base::BindRepeating(&DomDistillerServiceFactory::
+                                   UpdateDistilledPagePrefsDefaultFontScaling,
+                               weak_ptr_factory_.GetWeakPtr(),
+@@ -136,8 +146,14 @@
+   DistilledPagePrefs* distilled_page_prefs = service->GetDistilledPagePrefs();
+ 
+   Profile* profile = Profile::FromBrowserContext(context);
++  // Off-record profiles inherit default zoom but do not own ChromeZoomLevelPrefs.
++  // The distilled-page prefs above still write to the actual private PrefService.
++  Profile* zoom_profile = profile;
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_CEF)
++  zoom_profile = profile->GetOriginalProfile();
++#endif
+   distilled_page_prefs->SetDefaultFontScaling(
+-      profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
++      zoom_profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
+ }
+ 
+ }  // namespace dom_distiller

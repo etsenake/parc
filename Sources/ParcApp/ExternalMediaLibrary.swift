@@ -1,0 +1,376 @@
+import AppKit
+import Combine
+import Darwin
+import ImageIO
+import QuickLookThumbnailing
+import UniformTypeIdentifiers
+
+/// A file reference, never a SavedCapture or a copied catalog asset. Path identity
+///
+struct ExternalMediaFile: Equatable, Identifiable, Sendable {
+    enum Kind: String, Sendable { case image, movie }
+    struct Revision: Equatable, Hashable, Sendable {
+        let device: Int32; let inode: UInt64; let size: Int64
+        let modified: Int; let modifiedNanos: Int; let changed: Int; let changedNanos: Int
+        init(_ value: stat) {
+            device = value.st_dev; inode = value.st_ino; size = value.st_size
+            modified = value.st_mtimespec.tv_sec; modifiedNanos = value.st_mtimespec.tv_nsec
+            changed = value.st_ctimespec.tv_sec; changedNanos = value.st_ctimespec.tv_nsec
+        }
+    }
+    let url: URL
+    let folder: URL
+    let revision: Revision
+    let kind: Kind
+    let isScreenshot: Bool
+    let isScreenRecording: Bool
+    let isLocal: Bool
+    var id: String { url.path }
+    var title: String { url.lastPathComponent }
+    var date: Date { Date(timeIntervalSince1970: Double(revision.modified)) }
+    var detail: String { !isLocal ? "Download in Finder to preview" : isScreenshot ? "Screenshot" : kind == .movie ? "Video" : "Image" }
+}
+
+struct ExternalMediaFolder: Equatable, Identifiable, Sendable {
+    enum Access: Equatable, Sendable { case available, disabled, unavailable(String) }
+    let url: URL
+    let name: String
+    let access: Access
+    var id: String { url.path }
+}
+
+enum ExternalMediaFailure: LocalizedError {
+    case changed, unavailable, invalidConfiguration, sameFile, tooLarge
+    var errorDescription: String? {
+        switch self {
+        case .changed: return "This file or its folder access changed. Refresh Media and try again."
+        case .unavailable: return "This file is not available locally. Download it in Finder, then refresh Media."
+        case .invalidConfiguration: return "Media folder preferences could not be read. The existing preferences and original files have been preserved."
+        case .sameFile: return "Choose another location to keep the original file unchanged."
+        case .tooLarge: return "This image is too large to copy as image data. Use Copy File or Save a Copy instead."
+        }
+    }
+}
+
+final class ExternalMediaAccess: @unchecked Sendable {
+    let url: URL
+    private let scoped: Bool
+    init(url: URL, scoped: Bool) { self.url = url; self.scoped = scoped }
+    deinit { if scoped { url.stopAccessingSecurityScopedResource() } }
+}
+
+@MainActor
+final class ExternalMediaLibrary: ObservableObject {
+    private final class Weak { weak var value: ExternalMediaLibrary?; init(_ value: ExternalMediaLibrary) { self.value = value } }
+    private static var owners: [String: Weak] = [:]
+    static func shared(directory: URL) -> ExternalMediaLibrary {
+        let key = directory.standardizedFileURL.path
+        if let existing = owners[key]?.value { return existing }
+        owners = owners.filter { $0.value.value != nil }
+        let value = ExternalMediaLibrary(directory: directory); owners[key] = Weak(value); return value
+    }
+    @Published private(set) var items: [ExternalMediaFile] = []
+    @Published private(set) var folders: [ExternalMediaFolder] = []
+    @Published private(set) var error: String?
+    @Published private(set) var isLoading = false
+    private let disk: ExternalMediaDisk
+    private let systemFolders: (() -> [URL])
+    private var clients = Set<UUID>()
+    private var watchers: [DispatchSourceFileSystemObject] = []
+    private var folderAccess: [ExternalMediaAccess] = []
+    private var refreshTimer: DispatchSourceTimer?
+    private var refreshTask: Task<Void, Never>?
+    private var generation: UInt64 = 0
+    private var activation: NSObjectProtocol?
+    init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders) {
+        self.systemFolders = systemFolders; disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral)
+    }
+    deinit {
+        refreshTask?.cancel(); refreshTimer?.cancel(); watchers.forEach { $0.cancel() }
+        if let activation { NotificationCenter.default.removeObserver(activation) }
+    }
+    nonisolated static func defaultFolders() -> [URL] {
+        let manager = FileManager.default
+        let desktop = manager.urls(for: .desktopDirectory, in: .userDomainMask).first!
+        let setting = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location")
+        let screenshots = setting.flatMap { path -> URL? in
+            let expanded = (path as NSString).expandingTildeInPath
+            return expanded.hasPrefix("/") ? URL(fileURLWithPath: expanded, isDirectory: true) : nil
+        } ?? desktop
+        return [manager.urls(for: .downloadsDirectory, in: .userDomainMask).first!, desktop,
+                manager.urls(for: .documentDirectory, in: .userDomainMask).first!, screenshots]
+    }
+    func activate(_ client: UUID) {
+        guard clients.insert(client).inserted else { return }
+        if activation == nil {
+            activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh() }
+            }
+        }
+        if refreshTimer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now() + 5, repeating: 5, leeway: .seconds(1))
+            timer.setEventHandler { [weak self] in MainActor.assumeIsolated {
+                if let self, !self.isLoading { self.refresh() }
+            } }
+            timer.resume(); refreshTimer = timer
+        }
+        refresh()
+    }
+    func deactivate(_ client: UUID) {
+        clients.remove(client)
+        guard clients.isEmpty else { return }
+        generation &+= 1; refreshTask?.cancel(); refreshTask = nil; stopWatching()
+        refreshTimer?.cancel(); refreshTimer = nil
+        if let activation { NotificationCenter.default.removeObserver(activation) }; activation = nil
+        items = []; folders = []; isLoading = false
+    }
+    func refresh() {
+        guard !clients.isEmpty else { return }
+        generation &+= 1; let token = generation; let roots = systemFolders()
+        refreshTask?.cancel(); isLoading = true
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshot = try await self.disk.scan(systemFolders: roots)
+                guard !Task.isCancelled, self.generation == token, !self.clients.isEmpty else { return }
+                if self.items != snapshot.items { self.items = snapshot.items }
+                if self.folders != snapshot.folders { self.folders = snapshot.folders }
+                self.error = snapshot.warning
+                self.watch(snapshot.folders); self.folderAccess = snapshot.access
+            } catch {
+                guard !Task.isCancelled, self.generation == token else { return }
+                self.items = []; self.error = error.localizedDescription; self.stopWatching()
+            }
+            self.isLoading = false
+        }
+    }
+    func contains(_ item: ExternalMediaFile) -> Bool { items.contains(item) }
+    func grant(_ url: URL) async throws {
+        // Called only with the actual URL selected by the native folder panel.
+        try await disk.grant(url); refresh()
+    }
+    func setEnabled(_ enabled: Bool, folder: URL) async throws {
+        // Remove visible results synchronously before changing access preferences.
+        generation &+= 1; refreshTask?.cancel(); stopWatching()
+        items.removeAll { $0.folder == folder }
+        try await disk.setEnabled(enabled, folder: folder); refresh()
+    }
+    func hide(_ file: ExternalMediaFile) async throws { try await disk.hide(file); items.removeAll { $0.id == file.id }; refresh() }
+    func restoreHidden() async throws { try await disk.restoreHidden(); refresh() }
+    func validate(_ file: ExternalMediaFile) async throws { try await disk.validate(file) }
+    func acquire(_ file: ExternalMediaFile) async throws -> ExternalMediaAccess { try await disk.acquire(file) }
+    func data(_ file: ExternalMediaFile) async throws -> Data { try await disk.data(file) }
+    func thumbnail(_ file: ExternalMediaFile) async throws -> Data { try await disk.thumbnail(file) }
+    func export(_ file: ExternalMediaFile, to url: URL) async throws { try await disk.export(file, to: url) }
+    private func stopWatching() { watchers.forEach { $0.cancel() }; watchers = []; folderAccess = [] }
+    private func watch(_ folders: [ExternalMediaFolder]) {
+        stopWatching()
+        for folder in folders where folder.access == .available {
+            let descriptor = Darwin.open(folder.url.path, O_EVTONLY | O_CLOEXEC)
+            guard descriptor >= 0 else { continue }
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
+                eventMask: [.write, .delete, .rename, .attrib, .revoke], queue: .main)
+            source.setCancelHandler { Darwin.close(descriptor) }
+            source.setEventHandler { [weak self] in
+                MainActor.assumeIsolated { self?.scheduleRefresh() }
+            }
+            source.resume(); watchers.append(source)
+        }
+    }
+    private func scheduleRefresh() {
+        // Coalesce bursts from an atomic save or recording producer.
+        generation &+= 1; let token = generation
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled, let self, self.generation == token else { return }
+            self.refresh()
+        }
+    }
+}
+
+actor ExternalMediaDisk {
+    struct Snapshot: Sendable { let items: [ExternalMediaFile]; let folders: [ExternalMediaFolder]; let warning: String?; let access: [ExternalMediaAccess] }
+    private struct Grant: Codable { let path: String; var bookmark: Data?; var disabled: Bool }
+    private struct Configuration: Codable { var version = 1; var grants: [Grant] = []; var hiddenPaths: Set<String> = [] }
+    private let directory: URL
+    private var configuration: Configuration?
+    private let preferencesAreEphemeral: Bool
+    private var current: [String: ExternalMediaFile] = [:]
+    init(directory: URL, preferencesAreEphemeral: Bool = false) {
+        self.directory = directory; self.preferencesAreEphemeral = preferencesAreEphemeral
+    }
+    private var manifest: URL { directory.appendingPathComponent("MediaFolders.json") }
+    private func read() throws -> Configuration {
+        if let configuration { return configuration }
+        guard FileManager.default.fileExists(atPath: manifest.path) else { let empty = Configuration(); configuration = empty; return empty }
+        guard let next = try? JSONDecoder().decode(Configuration.self, from: Data(contentsOf: manifest)), next.version == 1,
+              Set(next.grants.map(\.path)).count == next.grants.count,
+              next.grants.allSatisfy({ $0.path.hasPrefix("/") }) else { throw ExternalMediaFailure.invalidConfiguration }
+        configuration = next; return next
+    }
+    private func commit(_ next: Configuration) throws {
+        if preferencesAreEphemeral { configuration = next; return }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(next).write(to: manifest, options: .atomic); configuration = next
+    }
+    func grant(_ selected: URL) throws {
+        let scoped = selected.startAccessingSecurityScopedResource(); defer { if scoped { selected.stopAccessingSecurityScopedResource() } }
+        let root = selected.standardizedFileURL.resolvingSymlinksInPath()
+        guard try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { throw CocoaError(.fileReadUnsupportedScheme) }
+        _ = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        let bookmark = try selected.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
+        var next = try read(); next.grants.removeAll { $0.path == root.path }
+        next.grants.append(Grant(path: root.path, bookmark: bookmark, disabled: false)); try commit(next)
+    }
+    func setEnabled(_ enabled: Bool, folder: URL) throws {
+        var next = try read(); let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
+        if let index = next.grants.firstIndex(where: { $0.path == path }) {
+            next.grants[index].disabled = !enabled
+            if !enabled { next.grants[index].bookmark = nil }
+        } else { next.grants.append(Grant(path: path, bookmark: nil, disabled: !enabled)) }
+        try commit(next); current = current.filter { $0.value.folder.path != path }
+    }
+    func hide(_ file: ExternalMediaFile) throws {
+        let scope = try checkedAccess(file, requireLocal: false)
+        defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }
+        var next = try read(); next.hiddenPaths.insert(file.id); try commit(next); current[file.id] = nil
+    }
+    func restoreHidden() throws { var next = try read(); next.hiddenPaths = []; try commit(next) }
+    private func access(_ root: URL, configuration: Configuration) throws -> (URL, Bool) {
+        guard let grant = configuration.grants.first(where: { $0.path == root.path }) else { return (root, false) }
+        guard !grant.disabled else { throw ExternalMediaFailure.changed }
+        guard let bookmark = grant.bookmark else { return (root, false) }
+        var stale = false
+        let resolved = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI, .withoutMounting], relativeTo: nil, bookmarkDataIsStale: &stale)
+        guard !stale, resolved.standardizedFileURL.resolvingSymlinksInPath().path == root.path else { throw ExternalMediaFailure.changed }
+        return (resolved, resolved.startAccessingSecurityScopedResource())
+    }
+    func scan(systemFolders: [URL]) throws -> Snapshot {
+        let config = try read()
+        let roots = Set((systemFolders + config.grants.map { URL(fileURLWithPath: $0.path, isDirectory: true) })
+            .map { $0.standardizedFileURL.resolvingSymlinksInPath().path }).sorted()
+        var files: [String: ExternalMediaFile] = [:], folders: [ExternalMediaFolder] = []; var skipped = 0
+        var leases: [ExternalMediaAccess] = []
+        for path in roots {
+            try Task.checkCancellation()
+            let root = URL(fileURLWithPath: path, isDirectory: true)
+            if config.grants.contains(where: { $0.path == path && $0.disabled }) {
+                folders.append(.init(url: root, name: root.lastPathComponent, access: .disabled)); continue
+            }
+            do {
+                let (scope, scoped) = try access(root, configuration: config)
+                let lease = ExternalMediaAccess(url: scope, scoped: scoped)
+                defer { withExtendedLifetime(lease) {} }
+                let urls = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentTypeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants])
+                for url in urls {
+                    try Task.checkCancellation()
+                    do { if let file = try Self.describe(url, folder: root), !config.hiddenPaths.contains(file.id) { files[file.id] = file } }
+                    catch { skipped += 1 }
+                }
+                folders.append(.init(url: root, name: root.lastPathComponent, access: .available)); leases.append(lease)
+            } catch is CancellationError { throw CancellationError() }
+            catch { folders.append(.init(url: root, name: root.lastPathComponent, access: .unavailable(error.localizedDescription))) }
+        }
+        current = files
+        return Snapshot(items: files.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }, folders: folders,
+                        warning: skipped == 0 ? nil : "\(skipped) file\(skipped == 1 ? " was" : "s were") unavailable while Media refreshed.", access: leases)
+    }
+    static func describe(_ url: URL, folder: URL) throws -> ExternalMediaFile? {
+        var value = stat()
+        guard lstat(url.path, &value) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard (value.st_mode & S_IFMT) == S_IFREG, !url.lastPathComponent.hasPrefix("."), !url.pathExtension.lowercased().hasSuffix("download") else { return nil }
+        guard let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image) || type.conforms(to: .movie) else { return nil }
+        let screenshot = getxattr(url.path, "com.apple.metadata:kMDItemIsScreenCapture", nil, 0, 0, XATTR_NOFOLLOW) >= 0
+        let hasOrigin = getxattr(url.path, "com.apple.metadata:kMDItemWhereFroms", nil, 0, 0, XATTR_NOFOLLOW) >= 0
+        let movie = type.conforms(to: .movie)
+        return ExternalMediaFile(url: url.standardizedFileURL, folder: folder, revision: .init(value), kind: movie ? .movie : .image,
+                                 isScreenshot: screenshot, isScreenRecording: movie && !hasOrigin, isLocal: value.st_flags & UInt32(SF_DATALESS) == 0)
+    }
+    private func checkedAccess(_ file: ExternalMediaFile, requireLocal: Bool = true) throws -> (URL, Bool) {
+        guard current[file.id] == file else { throw ExternalMediaFailure.changed }
+        let scope = try access(file.folder, configuration: read())
+        do {
+            guard try Self.describe(file.url, folder: file.folder) == file else { throw ExternalMediaFailure.changed }
+            guard !requireLocal || file.isLocal else { throw ExternalMediaFailure.unavailable }
+            return scope
+        } catch { if scope.1 { scope.0.stopAccessingSecurityScopedResource() }; throw error }
+    }
+    func acquire(_ file: ExternalMediaFile) throws -> ExternalMediaAccess {
+        let scope = try checkedAccess(file); return ExternalMediaAccess(url: scope.0, scoped: scope.1)
+    }
+    func validate(_ file: ExternalMediaFile) throws {
+        let scope = try checkedAccess(file); if scope.1 { scope.0.stopAccessingSecurityScopedResource() }
+    }
+    private func openOriginal(_ file: ExternalMediaFile) throws -> Int32 {
+        let descriptor = Darwin.open(file.url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        var value = stat()
+        guard fstat(descriptor, &value) == 0, ExternalMediaFile.Revision(value) == file.revision,
+              value.st_flags & UInt32(SF_DATALESS) == 0 else { Darwin.close(descriptor); throw ExternalMediaFailure.changed }
+        return descriptor
+    }
+    private func finishRead(_ descriptor: Int32, file: ExternalMediaFile) throws {
+        var value = stat()
+        guard fstat(descriptor, &value) == 0, ExternalMediaFile.Revision(value) == file.revision,
+              try Self.describe(file.url, folder: file.folder) == file else { throw ExternalMediaFailure.changed }
+    }
+    func data(_ file: ExternalMediaFile) throws -> Data {
+        let scope = try checkedAccess(file); defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }
+        guard file.revision.size <= 256 * 1024 * 1024 else { throw ExternalMediaFailure.tooLarge }
+        let descriptor = try openOriginal(file)
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        var bytes = Data()
+        let maximum = Int(file.revision.size)
+        while bytes.count <= maximum {
+            let chunk = try handle.read(upToCount: min(1024 * 1024, maximum + 1 - bytes.count)) ?? Data()
+            if chunk.isEmpty { break }; bytes.append(chunk)
+        }
+        guard bytes.count == maximum else { throw ExternalMediaFailure.changed }
+        try finishRead(descriptor, file: file); try handle.close(); return bytes
+    }
+    func thumbnail(_ file: ExternalMediaFile) async throws -> Data {
+        let scope = try checkedAccess(file); defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }
+        let request = QLThumbnailGenerator.Request(fileAt: file.url, size: CGSize(width: 360, height: 360), scale: 1, representationTypes: .thumbnail)
+        let operation = MediaLibraryThumbnailOperation(start: { completion in
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, error in
+                guard let representation else { completion(.failure(error ?? CocoaError(.fileReadCorruptFile))); return }
+                let result = NSMutableData()
+                guard let destination = CGImageDestinationCreateWithData(result, UTType.png.identifier as CFString, 1, nil) else { completion(.failure(CocoaError(.fileReadCorruptFile))); return }
+                CGImageDestinationAddImage(destination, representation.cgImage, nil)
+                guard CGImageDestinationFinalize(destination) else { completion(.failure(CocoaError(.fileReadCorruptFile))); return }
+                completion(.success(result as Data))
+            }
+        }, stop: { QLThumbnailGenerator.shared.cancel(request) })
+        let result = try await operation.value()
+        try Task.checkCancellation(); try validate(file)
+        return result
+    }
+
+    func export(_ file: ExternalMediaFile, to destination: URL) throws {
+        let scope = try checkedAccess(file); defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }
+        guard file.url.standardizedFileURL != destination.standardizedFileURL else { throw ExternalMediaFailure.sameFile }
+        var target = stat()
+        if stat(destination.path, &target) == 0, target.st_dev == file.revision.device, target.st_ino == file.revision.inode { throw ExternalMediaFailure.sameFile }
+        let descriptor = try openOriginal(file)
+        let source = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".parc-media-" + UUID().uuidString)
+        let outputFD = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard outputFD >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let output = FileHandle(fileDescriptor: outputFD, closeOnDealloc: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        var copied: Int64 = 0
+        while copied <= file.revision.size {
+            try Task.checkCancellation()
+            let data = try source.read(upToCount: Int(min(1024 * 1024, file.revision.size - copied + 1))) ?? Data()
+            if data.isEmpty { break }
+            copied += Int64(data.count)
+            guard copied <= file.revision.size else { throw ExternalMediaFailure.changed }
+            try output.write(contentsOf: data)
+        }
+        guard copied == file.revision.size else { throw ExternalMediaFailure.changed }
+        try finishRead(descriptor, file: file); try source.close(); try output.synchronize(); try output.close()
+        guard Darwin.rename(temporary.path, destination.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+}

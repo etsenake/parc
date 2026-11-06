@@ -1,0 +1,51 @@
+import Foundation
+
+/// A Type Travel destination is an original Space, not a name lookup or a URL.
+/// The original profile is retained so reassignment cannot retarget an old row.
+struct CommandBarSpaceAction: Equatable, Identifiable {
+    let spaceID: UUID
+    let profileID: UUID
+    let name: String
+    let symbol: String
+    let profileName: String
+    let needsProfileLabel: Bool
+
+    var id: String { "focus-space:\(profileID.uuidString):\(spaceID.uuidString)" }
+    var title: String { "Focus on" }
+    var detail: String { needsProfileLabel ? profileName : "" }
+
+    func isCurrent(spaces: [BrowserSpace], profiles: [BrowserProfile]) -> Bool {
+        profiles.contains { $0.id == profileID }
+            && spaces.contains { $0.id == spaceID && $0.profileID == profileID }
+    }
+
+    static func snapshot(spaces: [BrowserSpace], profiles: [BrowserProfile]) -> [Self] {
+        let names = Dictionary(grouping: spaces, by: { normalized($0.name) })
+        return spaces.compactMap { space in
+            guard let profile = profiles.first(where: { $0.id == space.profileID }) else { return nil }
+            return Self(spaceID: space.id, profileID: space.profileID, name: space.name,
+                        symbol: space.symbol, profileName: profile.name,
+                        needsProfileLabel: (names[normalized(space.name)]?.count ?? 0) > 1)
+        }
+    }
+
+    ///
+    /// Name-prefix matches lead; otherwise preserve the user's Space order.
+    static func matching(_ actions: [Self], query: String) -> [Self] {
+        let query = normalized(query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = query.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return [] }
+        return actions.enumerated().filter { _, action in
+            let text = normalized("Focus on Space \(action.name) \(action.profileName)")
+            return words.allSatisfy { text.contains($0) }
+        }.sorted { lhs, rhs in
+            let left = normalized(lhs.element.name).hasPrefix(query)
+            let right = normalized(rhs.element.name).hasPrefix(query)
+            return left != right ? left : lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+}

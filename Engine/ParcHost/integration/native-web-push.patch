@@ -1,0 +1,45 @@
+--- a/components/gcm_driver/gcm_client_impl.cc
++++ b/components/gcm_driver/gcm_client_impl.cc
+@@ -296,9 +296,6 @@
+ }
+ 
+ void GCMClientImpl::Start(StartMode start_mode) {
+-  // Disable GCM to avoid DEPRECATED_ENDPOINT errors.
+-  return;
+-
+   DCHECK_NE(UNINITIALIZED, state_);
+   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
+ 
+@@ -795,9 +792,15 @@
+ 
+ void GCMClientImpl::Register(
+     scoped_refptr<RegistrationInfo> registration_info) {
+-  // Disable GCM to avoid DEPRECATED_ENDPOINT errors.
+-  delegate_->OnRegisterFinished(registration_info, std::string(), GCM_DISABLED);
+-  return;
++  // CEF disables all of GCM because Google answers legacy sender-ID
++  // registrations with DEPRECATED_ENDPOINT (CEF issue 4078). That also stops
++  // web push, whose Instance ID (FCM) tokens still work, so Parc refuses only
++  // the legacy registrations.
++  if (GCMRegistrationInfo::FromRegistrationInfo(registration_info.get())) {
++    delegate_->OnRegisterFinished(registration_info, std::string(),
++                                  GCM_DISABLED);
++    return;
++  }
+ 
+   DCHECK_EQ(state_, READY);
+   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
+--- a/cef/patch/patch.cfg
++++ b/cef/patch/patch.cfg
+@@ -888,11 +888,6 @@
+     'name': 'chrome_browser_metrics_tpm_476896967'
+   },
+   {
+-    # Disable GCM to avoid DEPRECATED_ENDPOINT errors.
+-    # https://github.com/chromiumembedded/cef/issues/4078
+-    'name': 'components_gcm_disable'
+-  },
+-  {
+     # Support CEF component updater API.
+     # https://github.com/chromiumembedded/cef/issues/4087
+     'name': 'component_updater_4087'

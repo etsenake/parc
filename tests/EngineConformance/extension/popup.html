@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Engine conformance</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <h1>Engine conformance</h1>
+  <p>Local fixture only · 127.0.0.1:8765</p>
+  <p id="status" role="status">Reading local results…</p>
+  <fieldset><legend>Fixture pages</legend>
+    <button data-operation="new-run">Create fixture window</button>
+    <button data-operation="identity">Check tab / window identities</button>
+    <button data-operation="inject">Run activeTab script</button>
+    <button data-operation="navigate">Navigate this fixture tab</button>
+    <button data-operation="sibling">Create sibling tab</button>
+    <button data-operation="popup">Create popup window</button>
+    <button data-operation="remove">Close this fixture tab</button>
+  </fieldset>
+  <fieldset><legend>Worker and profile</legend>
+    <button data-operation="ping">Ping worker</button>
+    <button data-operation="commands">Inspect command bindings</button>
+    <button data-operation="nonce-empty">Verify fresh profile has no nonce</button>
+    <button data-operation="nonce-create">Create profile nonce once</button>
+    <label for="expected">Previously recorded nonce</label>
+    <input id="expected" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the synthetic nonce here">
+    <button data-operation="nonce-read">Read / compare profile nonce</button>
+  </fieldset>
+  <p>Opening a new tab/window can dismiss this action. Reopen it to read the persisted result. Every page operation requires this session’s fixture page.</p>
+  <button data-operation="snapshot">Refresh local results</button>
+  <button id="export">Save local JSON report</button>
+  <label for="report">Latest 200 local records (EVENT is not PASS)</label>
+  <textarea id="report" readonly rows="13" spellcheck="false"></textarea>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

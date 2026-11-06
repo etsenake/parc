@@ -1,0 +1,787 @@
+# Installed by the reviewed overlay at //cef/libcef/browser/parc_native.
+# Shared native AppKit components and Chromium-backed native services. Other
+# services and the full window/page adapters compile in libcef_static.
+import("//components/signin/features.gni")
+import("//printing/buildflags/buildflags.gni")
+
+assert(is_mac)
+
+# Pure component conversion shared by original Chromium navigation and output.
+source_set("native_internal_urls_api") {
+  public = [ "native_internal_urls.h" ]
+  sources = public
+  public_deps = [ "//url" ]
+}
+
+# TabFeatures owns the genuine thumbnail helper for native browser profiles.
+# The predicate implementation stays in libcef_static; Chrome takes declarations.
+source_set("native_tab_preview_api") {
+  public = [ "native_tab_preview.h" ]
+  sources = public
+}
+
+# Declaration-only seam for Chrome's real Cocoa context-menu presenter.
+source_set("native_page_context_menu_api") {
+  public = [ "native_page_context_menu.h" ]
+  sources = public
+}
+
+# Chrome's original tab-sharing controller selects its native InfoBar factory.
+# This declaration-only seam avoids a reverse dependency on libcef_static.
+source_set("native_tab_sharing_api") {
+  public = [ "native_tab_sharing_api.h", "native_page_info.h" ]
+  sources = public
+  public_deps = [
+    "//chrome/browser/ui/tab_sharing",
+    "//components/content_settings/core/common",
+  ]
+}
+
+# Chrome's windows.update preflight calls the engine without depending on
+# libcef_static or acquiring a Views window. Implementation stays in the real
+# native_browser_window.mm owner.
+source_set("native_window_state_api") {
+  public = [ "native_window_state.h" ]
+  sources = public
+  public_deps = [ "//ui/base/mojom:ui_base_types" ]
+}
+
+# Chrome's picker can name the native dialog factory without a reverse
+# dependency on libcef_static or native_downloads. The used implementation
+# stays in native_downloads' existing file_dialog.mm translation unit.
+source_set("native_download_dialog_api") {
+  public = [ "download_file_dialog.h" ]
+  sources = public
+  public_deps = [
+    "//base",
+    "//ui/shell_dialogs",
+  ]
+}
+
+# Chrome callers use these declarations without acquiring libcef_static (which
+# already depends on Chrome). The implementation stays in the actual engine;
+# the application owns and links its visible PiP presenter separately.
+source_set("native_video_pip_api") {
+  public = [
+    "native_appkit_bridge.h",
+    "video_overlay_window.h",
+  ]
+  sources = public
+}
+
+# Chrome's BrowserWebContentsDelegate asks a Parc page's own alert sheet for
+# the repost warning; javascript_dialog_runner.mm implements it in libcef.
+source_set("native_repost_form_warning_api") {
+  public = [ "native_repost_form_warning_api.h" ]
+  sources = public
+}
+
+source_set("native_split_link_api") {
+  public = [ "native_split_link_api.h" ]
+  sources = public
+}
+
+source_set("native_components") {
+  public = [
+    "content_drop_bridge.h",
+    "native_internal_urls.h",
+    "autofill_save_presenter.h",
+    "browser_window.h",
+    "devtools_pane_view.h",
+    "extension_install_presenter.h",
+    "extension_uninstall_presenter.h",
+    "find_bar_view.h",
+    "focus_manager.h",
+    "http_auth_presenter.h",
+    "external_protocol_presenter.h",
+    "javascript_dialog_presenter.h",
+    "native_fullscreen_window.h",
+    "native_page_tool_appearance.h",
+    "page_host.h",
+    "pane_compositor_view.h",
+    "site_permission_presenter.h",
+    "status_text.h",
+    "window_security_reservation.h",
+  ]
+  sources = [
+    "content_drop_bridge.h",
+    "content_drop_bridge.mm",
+    "autofill_save_presenter.h",
+    "autofill_save_presenter.mm",
+    "browser_window.h",
+    "browser_window.mm",
+    "devtools_pane_view.h",
+    "devtools_pane_view.mm",
+    "extension_install_presenter.h",
+    "extension_install_presenter.mm",
+    "extension_uninstall_presenter.h",
+    "extension_uninstall_presenter.mm",
+    "find_bar_view.h",
+    "find_bar_view.mm",
+    "focus_manager.h",
+    "focus_manager.mm",
+    "http_auth_presenter.h",
+    "external_protocol_presenter.h",
+    "http_auth_presenter.mm",
+    "external_protocol_presenter.mm",
+    "javascript_dialog_presenter.h",
+    "javascript_dialog_presenter.mm",
+    "native_fullscreen_window.h",
+    "native_fullscreen_window.mm",
+    "native_page_tool_appearance.h",
+    "page_host.h",
+    "page_host.mm",
+    "pane_compositor_view.h",
+    "pane_compositor_view.mm",
+    "site_permission_presenter.h",
+    "site_permission_presenter.mm",
+    "status_text.h",
+    "status_text.mm",
+    "window_security_reservation.h",
+    "window_security_reservation.mm",
+  ]
+
+  #
+  # Keep those configs intact; do not add no_arc or warning suppressions.
+  # QuartzCore: the status pill's own CALayer/CATransaction use.
+  frameworks = [
+    "AppKit.framework",
+    "QuartzCore.framework",
+  ]
+
+  deps = [
+    "//components/remote_cocoa/app_shim",
+    "//ui/base",
+    "//ui/display",
+  ]
+
+  # browser_window.h exposes these real Chromium interfaces/types, so their
+  # include permissions and component link dependencies must reach consumers.
+  public_deps = [
+    "//base",
+    "//components/web_modal",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+  ]
+}
+
+# Both the production CEF bridge and real Chromium controller tests use this
+# implementation. Keep it independent of libcef_static and CEF-private headers
+# so the test binary does not acquire the engine's entire implementation.
+source_set("autofill_save_sessions") {
+  public = [
+    "autofill_bubble_handler.h",
+    "autofill_save_session.h",
+    "native_card_save_session.h",
+    "native_iban_session.h",
+    "native_payment_entry.h",
+    "native_payment_consent_session.h",
+    "native_payment_information_session.h",
+    "native_tab_payment_session.h",
+  ]
+  sources = [
+    "autofill_bubble_handler.h",
+    "autofill_bubble_handler.mm",
+    "autofill_save_session.h",
+    "native_card_save_session.h",
+    "native_iban_session.h",
+    "native_payment_entry.h",
+    "native_payment_consent_session.h",
+    "native_payment_information_session.h",
+    "native_tab_payment_session.h",
+    "autofill_save_session.mm",
+    "native_card_save_session.mm",
+    "native_iban_session.mm",
+    "native_payment_entry.mm",
+    "native_payment_consent_session.mm",
+    "native_payment_information_session.mm",
+    "native_tab_payment_session.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+
+  public_deps = [
+    ":native_video_pip_api",
+    "//base",
+    "//chrome/browser/ui/autofill",
+    "//components/signin/public/base:signin_buildflags",
+    "//content/public/browser",
+    "//ui/base/unowned_user_data",
+    "//ui/gfx",
+    "//ui/views",
+  ]
+  deps = [
+    ":native_components",
+    "//chrome/browser/autofill",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/autofill:impl",
+    "//chrome/browser/ui/autofill/payments:impl",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/views/autofill:save_address_profile_view",
+    "//chrome/browser/ui/views/autofill:update_address_profile_view",
+    "//chrome/browser/ui/views/autofill/payments:save_card_manage_cards_bubble_views",
+    "//chrome/browser/ui/views/autofill/payments:save_card_offer_bubble_views",
+    "//chrome/browser/ui/views/autofill/payments:save_iban_bubble_view",
+    "//chrome/browser/ui/views/autofill/payments:virtual_card_enroll_bubble_views",
+    "//chrome/browser/ui/views/autofill/payments:offer_notification_bubble_views",
+    "//chrome/browser/ui/views/autofill/payments:filled_card_information_bubble_views",
+    "//chrome/browser/ui/views/autofill/payments:omnibox_autofill_bubble_view",
+    "//chrome/browser/ui/views/autofill/payments:payments_churned_users_bubble_view",
+    "//chrome/browser/ui/views/autofill/payments:wallet_reminder_notice_bubble_view",
+    "//components/prefs",
+    "//chrome/browser/ui/views/autofill/payments:mandatory_reauth_opt_in_bubble_view",
+    "//chrome/browser/ui/views/autofill/payments:mandatory_reauth_confirmation_bubble_view",
+    "//chrome/browser/ui/views/autofill/payments:manage_saved_iban_bubble_view",
+    "//chrome/browser/ui/views/autofill/payments:save_payment_method_and_virtual_card_enroll_confirmation_bubble_views",
+    "//components/autofill/core/browser",
+    "//components/constrained_window",
+    "//components/signin/public/identity_manager",
+    "//components/tabs:public",
+    "//ui/base",
+    "//ui/base/mojom:ui_base_types",
+  ]
+  if (enable_dice_support) {
+    deps += [
+      "//chrome/browser/signin",
+      "//chrome/browser/ui/signin",
+      "//chrome/browser/ui/views/autofill:address_sign_in_promo_view",
+    ]
+  }
+}
+
+# Actual Chromium action models and supplied ExtensionViewHost sessions, shared
+# by the production engine and genuine-host browser regressions. No dependency
+# on libcef_static or private CEF implementation headers.
+source_set("native_extensions") {
+  public = [
+    "extension_action_bridge.h",
+    "extension_action_container.h",
+    "extension_context_menu.h",
+    "extension_install.h",
+    "extension_popup.h",
+    "extension_popup_presenter.h",
+    "extension_security_context.h",
+    "extension_side_panel.h",
+    "extension_uninstall.h",
+  ]
+  sources = [
+    "extension_action_bridge.h",
+    "extension_action_bridge.mm",
+    "extension_action_container.h",
+    "extension_action_container.mm",
+    "extension_context_menu.h",
+    "extension_context_menu.mm",
+    "extension_install.h",
+    "extension_install.mm",
+    "extension_parent_approval.h",
+    "extension_parent_approval.mm",
+    "extension_popup.h",
+    "extension_popup.mm",
+    "extension_popup_presenter.h",
+    "extension_popup_presenter.mm",
+    "extension_security_context.h",
+    "extension_side_panel.h",
+    "extension_side_panel.mm",
+    "extension_side_panel_input.h",
+    "extension_uninstall.h",
+    "extension_uninstall.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+
+  public_deps = [
+    ":native_video_pip_api",
+    "//content/public/browser",
+    "//base",
+    "//chrome/browser/extensions",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/extensions",
+    "//chrome/browser/ui/extensions:extension_popup_types",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/toolbar",
+    "//chrome/browser/ui/views/extensions:security_dialog_tracker",
+    "//ui/base",
+    "//ui/base/unowned_user_data",
+    "//ui/gfx",
+    "//ui/views",
+  ]
+  deps = [
+    ":native_components",
+    "//chrome/browser/devtools",
+    "//chrome/browser/picture_in_picture",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/signin",
+    "//chrome/browser/supervised_user",
+    "//components/signin/public/base",
+    "//components/signin/public/identity_manager",
+    "//components/supervised_user/core/browser",
+    "//google_apis",
+    "//services/network/public/cpp",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/color:color_headers",
+    "//chrome/browser/ui/extensions:impl",
+    "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+    "//chrome/browser/ui/tabs:tabs_public",
+    "//chrome/browser/ui/toolbar:impl",
+    "//components/input",
+    "//components/javascript_dialogs",
+    "//components/sessions",
+    "//components/tabs:public",
+    "//components/web_modal",
+    "//extensions/browser",
+    "//extensions/common",
+    "//extensions/strings",
+    "//ui/color",
+    "//ui/menus",
+    "//ui/display",
+    "//ui/strings:ui_strings",
+  ]
+}
+
+# The production CEF bridge and genuine-controller unit tests share this exact
+# implementation. It has no libcef_static dependency or CEF-private include.
+source_set("tab_retirement") {
+  public = [ "tab_retirement.h" ]
+  sources = [
+    "tab_retirement.cc",
+    "tab_retirement.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [
+    "//chrome/browser/ui:unload_controller",
+    "//chrome/browser/ui:unload_controller_impl",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//components/tabs:public",
+    "//content/public/browser",
+  ]
+}
+
+# The engine and genuine PermissionRequestManager tests share the typed native
+# adapter. The manager owns policy, persistence and temporary-grant lifetime.
+source_set("native_permissions") {
+  public = [ "site_permissions.h" ]
+  sources = [
+    "site_permissions.h",
+    "site_permissions.mm",
+  ]
+  frameworks = [
+    "AppKit.framework",
+    "UserNotifications.framework",
+  ]
+  public_deps = [
+    "//base",
+    "//components/permissions",
+  ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_components",
+    "//chrome/browser/permissions/system",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//components/custom_handlers",
+    "//components/strings:components_strings",
+    "//components/tabs:public",
+    "//components/url_formatter",
+    "//content/public/browser",
+    "//ui/base",
+    "//url",
+  ]
+}
+
+# libcef_static and the genuine-controller tests consume the same
+# implementation. No CEF runtime dependency is introduced into
+# chrome/test:unit_tests.
+source_set("tab_transfer") {
+  public = [ "tab_transfer.h" ]
+  sources = [
+    "tab_transfer.cc",
+    "tab_transfer.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [
+    "//chrome/browser/ui:unload_controller",
+    "//chrome/browser/ui:unload_controller_impl",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//components/tab_groups",
+    "//components/tabs:public",
+    "//content/public/browser",
+  ]
+}
+
+# Profile-owned download and actual platform file-selection services.
+source_set("native_downloads") {
+  public = [
+    "downloads.h",
+    "file_dialog.h",
+    "folder_upload.h",
+  ]
+  sources = [
+    "downloads.cc",
+    "downloads.h",
+    "file_dialog.h",
+    "folder_upload.h",
+    "file_dialog.mm",
+    "folder_upload.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [
+    "//base",
+    "//components/download/public/common:public",
+    "//content/public/browser",
+    "//ui/shell_dialogs",
+  ]
+  deps = [
+    ":native_download_dialog_api",
+    ":native_auxiliary_page",
+    ":native_components",
+    "//chrome/browser:browser_process",
+    "//chrome/browser/download",
+    "//chrome/browser/download:impl",
+    "//chrome/browser/enterprise",
+    "//chrome/browser/enterprise:impl",
+    "//chrome/browser/safe_browsing",
+    "//chrome/browser/safe_browsing:advanced_protection",
+    "//chrome/app:generated_resources",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/download",
+    "//chrome/browser/ui/download:impl",
+    "//net/traffic_annotation",
+    "//printing/buildflags",
+    "//chrome/common",
+    "//chrome/common:constants",
+    "//components/prefs",
+    "//components/enterprise/buildflags",
+    "//components/enterprise/connectors/core",
+    "//components/google/core/common",
+    "//components/safe_browsing:buildflags",
+    "//net",
+    "//components/tabs:public",
+    "//url",
+    "//chrome/browser/ui/dialogs:browser_dialogs",
+    "//components/web_modal",
+    "//ui/base",
+    "//ui/views",
+  ]
+  if (enable_print_preview) {
+    deps += [ "//chrome/browser/printing" ]
+  }
+}
+
+# Native presentation above the original LoginHandler/HttpAuthCoordinator.
+# No libcef_static dependency: actual controller tests use the same service.
+source_set("native_http_auth") {
+  public = [ "http_auth.h" ]
+  sources = [
+    "http_auth.h",
+    "http_auth.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_components",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/blocked_content",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/login",
+    "//chrome/browser/ui/login:impl",
+    "//components/password_manager/core/browser",
+    "//components/tabs:public",
+    "//components/web_modal",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/gfx",
+  ]
+}
+
+# Retains Chromium's actual certificate table/observer/private-key path while
+# attaching its auxiliary NSWindow to the supplied native page window.
+source_set("native_client_certificates") {
+  public = [ "client_certificates.h" ]
+  sources = [
+    "client_certificates.h",
+    "client_certificates.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_components",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ssl",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/views:ssl_client_certificate_selector",
+    "//components/tabs:public",
+    "//components/web_modal",
+    "//content/public/browser",
+    "//net",
+    "//ui/base",
+    "//ui/gfx",
+    "//ui/views",
+  ]
+}
+
+#
+# window keeps across tab switches (docs/page-compositing.md). The engine host
+# reaches it through native_devtools, which docked tools also use.
+source_set("native_pane_compositor") {
+  public = [ "pane_compositor.h" ]
+  sources = [
+    "pane_compositor.h",
+    "pane_compositor.mm",
+    "pane_compositor_policy.h",
+  ]
+  frameworks = [
+    "AppKit.framework",
+    "QuartzCore.framework",
+  ]
+  public_deps = [ "//base" ]
+  deps = [
+    ":native_components",
+    "//content/public/browser",
+    "//skia",
+    "//ui/accelerated_widget_mac",
+    "//ui/base",
+    "//ui/compositor",
+    "//ui/display",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+  ]
+}
+
+# The engine and genuine DevTools tests share actual main/toolbox presentation.
+# DevToolsWindow owns the WebContents; this service only hosts their NSViews.
+source_set("native_devtools") {
+  public = [ "devtools_pane.h" ]
+  sources = [
+    "devtools_pane.h",
+    "devtools_pane.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [
+    ":native_components",
+    ":native_pane_compositor",
+    "//base",
+    "//chrome/browser/devtools:devtools_contents_resizing_strategy",
+    "//content/public/browser",
+  ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_auxiliary_services",
+    ":native_http_auth",
+    ":native_client_certificates",
+    "//chrome/browser/devtools",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+  ]
+}
+
+#
+source_set("native_external_protocol") {
+  public = [ "external_protocol.h" ]
+  sources = [ "external_protocol.h", "external_protocol.mm" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    ":native_components",
+    "//base",
+    "//chrome/browser/external_protocol",
+    "//chrome/browser/picture_in_picture",
+    "//chrome/browser/picture_in_picture:impl",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/views:external_protocol_dialog",
+    "//components/tabs:public",
+    "//components/url_formatter",
+    "//components/web_modal",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/events",
+    "//ui/gfx",
+    "//ui/views",
+  ]
+}
+
+# Genuine Chromium WebAuthn sheets and Apple authorization anchored to the
+# actual supplied AppKit window. No BrowserView surrogate or credential store.
+source_set("native_webauthn") {
+  public = [ "webauthn.h" ]
+  sources = [ "webauthn.h", "webauthn.mm" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    ":native_components",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/views/extensions:security_dialog_tracker",
+    "//chrome/browser/ui/views/webauthn",
+    "//chrome/browser/ui/views/webauthn/ambient",
+    "//chrome/browser/ui/webauthn",
+    "//chrome/browser/webauthn",
+    "//chrome/browser/webauthn:impl",
+    "//components/tabs:public",
+    "//components/web_modal",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/gfx",
+    "//ui/views",
+  ]
+}
+
+# Shared exact auxiliary ownership; independent of private CEF runtime.
+source_set("native_auxiliary_page") {
+  public = [
+    "native_auxiliary_page.h",
+  ]
+  sources = [
+    "native_auxiliary_page.h",
+    "native_auxiliary_page.mm",
+  ]
+  frameworks = [
+    "AppKit.framework",
+  ]
+  public_deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+  deps = [
+    ":native_components",
+    "//chrome/browser/devtools",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/browser_window",
+    "//components/tabs:public",
+  ]
+}
+
+# Shared exact auxiliary ownership; independent of private CEF runtime.
+source_set("native_auxiliary_services") {
+  public = [
+    "native_auxiliary_services.h",
+  ]
+  sources = [
+    "native_auxiliary_services.h",
+    "native_auxiliary_services.mm",
+  ]
+  frameworks = [
+    "AppKit.framework",
+  ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_components",
+    ":native_downloads",
+    ":native_http_auth",
+    ":native_client_certificates",
+    "//base",
+    "//components/javascript_dialogs",
+    "//content/public/browser",
+  ]
+}
+
+# Exact page-owned OS server-certificate details; SSL decisions stay in Chrome.
+source_set("native_certificate_viewer") {
+  public = [
+    "certificate_viewer.h",
+    "certificate_viewer_presenter.h",
+  ]
+  sources = [
+    "certificate_viewer.h",
+    "certificate_viewer.mm",
+    "certificate_viewer_presenter.h",
+    "certificate_viewer_presenter.mm",
+  ]
+  frameworks = [
+    "AppKit.framework",
+    "Security.framework",
+    "SecurityInterface.framework",
+  ]
+  deps = [
+    ":native_components",
+    "//base",
+    "//chrome/browser:certificate_viewer",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/browser_window",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//net",
+    "//ui/base",
+    "//ui/gfx",
+  ]
+}
+
+# Page-owned native translation above Chromium's actual translation model.
+# Chrome retains the originating page through asynchronous intent app/icon
+# lookup. This public header does not depend on its CEF host implementation.
+source_set("native_intent_picker_api") {
+  public = [ "native_intent_picker_api.h" ]
+  sources = public
+  public_deps = [ "//components/apps/link_capturing" ]
+}
+
+source_set("native_intent_picker") {
+  public = [ "native_intent_picker.h" ]
+  sources = [ "native_intent_picker.h", "native_intent_picker.mm" ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [ "//base", "//components/apps/link_capturing", "//url" ]
+  deps = [
+    ":native_components",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/browser_window",
+    "//components/services/app_service",
+    "//components/tabs:public",
+    "//components/url_formatter",
+    "//content/public/browser",
+    "//ui/gfx",
+  ]
+}
+
+# Header-only boundary for Chrome callers. Implementation lives in libcef_static
+# to avoid a Chrome -> engine -> Chrome GN dependency cycle.
+source_set("native_password_prompt_api") {
+  public = [ "password_prompt.h" ]
+  sources = public
+}
+
+# Native UI over Chromium's actual offered sources and capture policy pipeline.
+source_set("native_capture_picker") {
+  public = [ "native_capture_picker.h" ]
+  sources = [ "native_capture_picker.h", "native_capture_picker.mm" ]
+  frameworks = [ "AppKit.framework", "CoreGraphics.framework" ]
+  public_deps = [ "//base", "//chrome/browser/media/webrtc" ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_components",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui:browser_window_header",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/common:constants",
+    "//components/tabs:public",
+    "//components/url_formatter",
+    "//content/public/browser",
+    "//media",
+    "//ui/base",
+    "//ui/gfx",
+    "//url",
+  ]
+}
+
+# Full-page reading uses Chromium's extractor and protected viewer. Its native
+#
+source_set("native_reader") {
+  public = [ "native_reader.h" ]
+  sources = [ "native_reader.h", "native_reader.cc" ]
+  public_deps = [
+    "//base",
+    "//components/dom_distiller/core",
+    "//content/public/browser",
+    "//url",
+  ]
+  deps = [
+    "//chrome/browser/dom_distiller",
+    "//chrome/common",
+    "//components/back_forward_cache",
+    "//components/dom_distiller/content/browser",
+    "//ui/base",
+  ]
+}

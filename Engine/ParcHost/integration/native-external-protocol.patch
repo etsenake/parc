@@ -1,0 +1,322 @@
+--- a/chrome/browser/external_protocol/BUILD.gn
++++ b/chrome/browser/external_protocol/BUILD.gn
+@@ -6,6 +6,7 @@
+   sources = [
+     "constants.h",
+     "external_protocol_handler.h",
++    "native_external_protocol_dialog.h",
+     "external_protocol_observer.h",
+     "features.h",
+   ]
+@@ -15,6 +16,7 @@
+     "//chrome/browser:shell_integration",
+     "//content/public/browser",
+     "//ui/base",
++    "//url",
+   ]
+ 
+   if (!is_android && !is_chromeos) {
+--- a/chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.cc
++++ b/chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.cc
+@@ -322,6 +322,28 @@
+       UpdateObserverStateForWidget(weak_widget.get());
+     }
+   }
++  native_observers_.Notify();
++}
++
++bool PictureInPictureOcclusionTracker::IsNativeRectangleOccluded(
++    const gfx::Rect& bounds) const {
++  for (const auto& [token, data] : native_windows_) {
++    if (data.window && data.visible && data.bounds.Intersects(bounds)) {
++      return true;
++    }
++  }
++  for (const auto& [widget, data] : observed_widget_data_) {
++    if (data.is_picture_in_picture_widget && widget->IsVisible() &&
++        widget->GetWindowBoundsInScreen().Intersects(bounds)) {
++      return true;
++    }
++  }
++  return false;
++}
++base::CallbackListSubscription
++PictureInPictureOcclusionTracker::ObserveNativeOccluderChanges(
++    base::RepeatingClosure callback) {
++  return native_observers_.Add(std::move(callback));
+ }
+ 
+ void PictureInPictureOcclusionTracker::UpdateObserverStateForWidget(
+@@ -356,6 +378,16 @@
+     }
+   }
+ 
++  if (!occluded) {
++    for (const auto& [token, data] : native_windows_) {
++      if (data.window && data.visible &&
++          data.window != widget->GetNativeWindow() &&
++          data.bounds.Intersects(observer_bounds)) {
++        occluded = true;
++        break;
++      }
++    }
++  }
+   auto iter = observed_widget_data_.find(widget);
+   CHECK(iter != observed_widget_data_.end());
+   if (!force_update && (occluded == iter->second.occluded)) {
+@@ -376,3 +408,33 @@
+     }
+   }
+ }
++
++uint64_t PictureInPictureOcclusionTracker::RegisterNativePictureInPictureWindow(
++    gfx::NativeWindow window) {
++  CHECK(window);
++  CHECK_NE(++next_native_token_, 0u);
++  native_windows_.emplace(next_native_token_,
++                          NativeWindowData{window, {}, false});
++  return next_native_token_;
++}
++void PictureInPictureOcclusionTracker::UpdateNativePictureInPictureWindow(
++    uint64_t token,
++    const gfx::Rect& bounds,
++    bool visible) {
++  auto it = native_windows_.find(token);
++  if (it == native_windows_.end()) {
++    return;
++  }
++  if (it->second.bounds == bounds && it->second.visible == visible) {
++    return;
++  }
++  it->second.bounds = bounds;
++  it->second.visible = visible;
++  UpdateAllObserverStates();
++}
++void PictureInPictureOcclusionTracker::RemoveNativePictureInPictureWindow(
++    uint64_t token) {
++  if (native_windows_.erase(token)) {
++    UpdateAllObserverStates();
++  }
++}
+--- a/chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h
++++ b/chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h
+@@ -7,6 +7,7 @@
+ 
+ #include <vector>
+ 
++#include "base/callback_list.h"
+ #include "base/containers/flat_map.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/observer_list.h"
+@@ -101,6 +102,22 @@
+   // Stop observing occlusion state changes.
+   void RemoveObserver(PictureInPictureOcclusionTrackerObserver* observer);
+ 
++  // Native security dialogs share the same tracked floating windows. No fake
++  // Widget is needed; callers provide actual screen-DIP bounds, refresh on
++  // their own movement, and recheck immediately before accepting input.
++  bool IsNativeRectangleOccluded(const gfx::Rect& bounds) const;
++  base::CallbackListSubscription ObserveNativeOccluderChanges(
++      base::RepeatingClosure callback);
++
++  // Real app-owned native PiP registration. Identity is weak; the owner must
++  // publish actual bounds/visibility and remove its token before releasing the
++  // window. Both native and Views security consumers use this same registry.
++  uint64_t RegisterNativePictureInPictureWindow(gfx::NativeWindow window);
++  void UpdateNativePictureInPictureWindow(uint64_t token,
++                                          const gfx::Rect& bounds,
++                                          bool visible);
++  void RemoveNativePictureInPictureWindow(uint64_t token);
++
+   // views::WidgetObserver:
+   void OnWidgetDestroying(views::Widget* widget) override;
+   void OnWidgetVisibilityChanged(views::Widget* widget,
+@@ -191,6 +208,14 @@
+   // to handle re-entrant update requests.
+   bool has_scheduled_reupdate_ = false;
+ 
++  struct NativeWindowData {
++    gfx::NativeWindow window;
++    gfx::Rect bounds;
++    bool visible = false;
++  };
++  base::flat_map<uint64_t, NativeWindowData> native_windows_;
++  uint64_t next_native_token_ = 0;
++  base::RepeatingClosureList native_observers_;
+   base::WeakPtrFactory<PictureInPictureOcclusionTracker> weak_factory_{this};
+ };
+ 
+--- a/chrome/browser/ui/views/external_protocol_dialog.cc
++++ b/chrome/browser/ui/views/external_protocol_dialog.cc
+@@ -7,9 +7,11 @@
+ #include <utility>
+ 
+ #include "base/strings/string_util.h"
++#include "base/supports_user_data.h"
+ #include "base/types/optional_util.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/external_protocol/external_protocol_handler.h"
++#include "chrome/browser/external_protocol/native_external_protocol_dialog.h"
+ #include "chrome/browser/picture_in_picture/picture_in_picture_occlusion_observer.h"
+ #include "chrome/browser/picture_in_picture/scoped_picture_in_picture_occlusion_observation.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -22,6 +24,7 @@
+ #include "components/constrained_window/constrained_window_views.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/url_formatter/elide_url.h"
++#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/weak_document_ptr.h"
+ #include "content/public/browser/web_contents.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -50,6 +53,14 @@
+       url_formatter::FormatOriginForSecurityDisplay(*origin));
+ }
+ 
++constexpr char kNativeExternalProtocolFactory[] =
++    "native-external-protocol-factory";
++class NativeFactory final : public base::SupportsUserData::Data {
++ public:
++  explicit NativeFactory(NativeExternalProtocolDialogFactory factory)
++      : callback(std::move(factory)) {}
++  NativeExternalProtocolDialogFactory callback;
++};
+ }  // namespace
+ 
+ class ExternalProtocolDialog::PictureInPictureWatcher
+@@ -95,9 +106,9 @@
+ void ExternalProtocolHandler::RunExternalProtocolDialog(
+     const GURL& url,
+     WebContents* web_contents,
+-    ui::PageTransition ignored_page_transition,
+-    bool ignored_has_user_gesture,
+-    bool ignored_is_in_fenced_frame_tree,
++    ui::PageTransition page_transition,
++    bool has_user_gesture,
++    bool is_in_fenced_frame_tree,
+     const std::optional<url::Origin>& initiating_origin,
+     content::WeakDocumentPtr initiator_document,
+     const std::u16string& program_name) {
+@@ -105,6 +116,17 @@
+ 
+   if (program_name.empty()) {
+     // ShellExecute won't do anything. Don't bother warning the user.
++    return;
++  }
++
++  if (auto* factory = static_cast<NativeFactory*>(
++          web_contents->GetUserData(kNativeExternalProtocolFactory))) {
++    auto callback = factory->callback;
++    callback.Run(web_contents,
++                 std::make_unique<NativeExternalProtocolDialogRequest>(
++                     web_contents, url, program_name, initiating_origin,
++                     std::move(initiator_document), page_transition,
++                     has_user_gesture, is_in_fenced_frame_tree));
+     return;
+   }
+ 
+@@ -275,3 +297,105 @@
+ 
+ BEGIN_METADATA(ExternalProtocolDialog)
+ END_METADATA
++
++void SetNativeExternalProtocolDialogFactory(
++    content::WebContents& contents,
++    NativeExternalProtocolDialogFactory factory) {
++  contents.SetUserData(kNativeExternalProtocolFactory,
++                       std::make_unique<NativeFactory>(std::move(factory)));
++}
++NativeExternalProtocolDialogRequest::NativeExternalProtocolDialogRequest(
++    content::WebContents* contents,
++    const GURL& target,
++    const std::u16string& program,
++    const std::optional<url::Origin>& origin,
++    content::WeakDocumentPtr document,
++    ui::PageTransition page_transition,
++    bool gesture,
++    bool fenced)
++    : url(target),
++      program_name(program),
++      initiating_origin(origin),
++      initiator_document(std::move(document)),
++      transition(page_transition),
++      has_user_gesture(gesture),
++      is_in_fenced_frame_tree(fenced),
++      contents_(contents->GetWeakPtr()) {}
++NativeExternalProtocolDialogRequest::~NativeExternalProtocolDialogRequest() =
++    default;
++bool NativeExternalProtocolDialogRequest::MayRemember() const {
++  return contents_ &&
++         Profile::FromBrowserContext(contents_->GetBrowserContext())
++             ->GetPrefs()
++             ->GetBoolean(
++                 prefs::kExternalProtocolDialogShowAlwaysOpenCheckbox) &&
++         ExternalProtocolHandler::MayRememberAllowDecisionsForThisOrigin(
++             base::OptionalToPtr(initiating_origin));
++}
++std::u16string NativeExternalProtocolDialogRequest::Title() const {
++  std::u16string elided;
++  gfx::ElideString(program_name, 32, &elided);
++  return l10n_util::GetStringFUTF16(IDS_EXTERNAL_PROTOCOL_TITLE, elided);
++}
++std::u16string NativeExternalProtocolDialogRequest::Message() const {
++  return GetMessageTextForOrigin(initiating_origin);
++}
++std::u16string NativeExternalProtocolDialogRequest::AcceptLabel() const {
++  return l10n_util::GetStringFUTF16(IDS_EXTERNAL_PROTOCOL_OK_BUTTON_TEXT,
++                                    program_name);
++}
++std::u16string NativeExternalProtocolDialogRequest::CancelLabel() const {
++  return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_CANCEL_BUTTON_TEXT);
++}
++std::u16string NativeExternalProtocolDialogRequest::RememberLabel() const {
++  if (!MayRemember()) {
++    return {};
++  }
++  return l10n_util::GetStringFUTF16(
++      IDS_EXTERNAL_PROTOCOL_CHECKBOX_PER_ORIGIN_TEXT,
++      url_formatter::FormatOriginForSecurityDisplay(
++          *initiating_origin,
++          url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC));
++}
++void NativeExternalProtocolDialogRequest::Cancel() {
++  if (decided_) {
++    return;
++  }
++  decided_ = true;
++  ExternalProtocolHandler::RecordHandleStateMetrics(
++      false, ExternalProtocolHandler::BLOCK);
++}
++void NativeExternalProtocolDialogRequest::Accept(
++    bool remember,
++    base::RepeatingCallback<bool()> can_authorize) {
++  if (decided_) {
++    return;
++  }
++  decided_ = true;
++  auto valid = [&] {
++    if (!can_authorize || !can_authorize.Run() || !contents_) {
++      return false;
++    }
++    auto* frame = initiator_document.AsRenderFrameHostIfValid();
++    return frame && content::WebContents::FromRenderFrameHost(frame)
++                            ->GetOutermostWebContents() == contents_.get();
++  };
++  if (!valid()) {
++    ExternalProtocolHandler::RecordHandleStateMetrics(
++        false, ExternalProtocolHandler::BLOCK);
++    return;
++  }
++  remember = remember && MayRemember();
++  ExternalProtocolHandler::RecordHandleStateMetrics(
++      remember, ExternalProtocolHandler::DONT_BLOCK);
++  if (remember) {
++    ExternalProtocolHandler::SetBlockState(
++        url.GetScheme(), *initiating_origin,
++        ExternalProtocolHandler::DONT_BLOCK,
++        Profile::FromBrowserContext(contents_->GetBrowserContext()));
++  }
++  if (valid()) {
++    ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(url, contents_.get(),
++                                                           initiator_document);
++  }
++}

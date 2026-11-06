@@ -1,0 +1,16 @@
+{
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs5ZpJtan1hJwPXJGtcUng6NxqfS/KY3N/oUxQpRcKQnrYM+93OhiTI5RlgBJ0zD7cJ/gSnV6gFMyOFXtqcNbLLSL6wKIAFv5URRa7UNUKLzYubwVASYz+TKJMAUXuk6+7VbfheBpKQkWiJstiM6DPjjXA+AV6B7aeVaBezFidaJBnXBY42Wd6qkuEPaDkYsdiqlXQLeEvmivDIGWHptutwnIJyza/mhSBCjXSvvm0E762L8iIa26VZth0vyWOyq+bePNSnBeb2UNG55mtXTpgDawFr08rx2EbY9haeFv1Tc0kUdSEtC7vaxFnqRq3VrvbpN/cmawRVi1AC0ckBm6fwIDAQAB",
+  "name": "Parc Internal Extension",
+  "version": "1.0",
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  },
+  "incognito": "split",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chromewebstore.google.com/*"
+  ]
+}

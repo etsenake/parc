@@ -1,0 +1,43 @@
+// Copyright 2026 Parc contributors.
+module parc.importer.mojom;
+import "sandbox/policy/mojom/sandbox.mojom";
+enum Family { kChromium, kSafari, kFirefox };
+struct Source {
+  Family family;
+  string profile_path;
+  string app_path;
+  array<uint8> source_key;
+  array<string> extension_ids;
+};
+struct History { string url; string title; int32 visits; int32 typed; int64 last_visit; bool hidden; };
+struct Bookmark { string id; string parent; string title; string url; bool folder; };
+struct Cookie {
+  string domain; string name; string value; string path;
+  int64 creation; int64 expiry; int64 last_access;
+  bool secure; bool http_only; int32 same_site; int32 priority;
+  int32 source_scheme; int32 source_port;
+  string top_frame_site; bool ancestor_cross_site;
+};
+struct Password {
+  string realm; string url; string action;
+  string username_element; string username; string password_element; string password;
+  int32 scheme; bool blocked;
+};
+struct Autofill {
+  int32 kind; map<string,string> fields;
+  int64 created; int64 last_used; int32 use_count;
+};
+struct Extension { string id; string name; };
+struct Batch {
+  uint32 category; bool success; string error; array<string> warnings;
+  array<History> history; array<Bookmark> bookmarks; array<Cookie> cookies;
+  array<Password> passwords; array<Autofill> autofill; array<Extension> extensions;
+};
+// Like Chromium's existing ProfileImport service, reading an explicitly chosen
+// external browser profile requires OS file/Keychain authorization. This service
+// receives only the native snapshot, never paths supplied by a webpage.
+[ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
+interface Reader {
+  ReadCategory(Source source, uint32 category) => (Batch batch);
+  Cancel();
+};

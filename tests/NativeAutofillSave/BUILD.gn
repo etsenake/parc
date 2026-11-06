@@ -1,0 +1,42 @@
+# Installed by the reviewed overlay at //cef/tests/parc_native_autofill.
+# Add this target to //chrome/test:unit_tests for macOS CEF builds. The tests
+# exercise the production save sessions through real Browser/Tab/controllers.
+assert(is_mac)
+
+source_set("session_tests") {
+  testonly = true
+  sources = [
+    "capability_unittest.mm",
+    "manager_capability_unittest.mm",
+    "product_policy_unittest.mm",
+    "queue_reentrancy_unittest.mm",
+    "session_unittest.mm",
+  ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:autofill_save_sessions",
+    "//cef/libcef/features:parc_product_buildflags",
+    "//chrome/browser/autofill",
+    "//chrome/browser/ui/autofill:test_support",
+    "//chrome/browser/ui/autofill:impl",
+    "//chrome/browser/ui/autofill/payments:impl",
+    "//chrome/browser/ui/autofill/payments",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test/base:browser_with_test_window_test",
+    "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/autofill/core/browser:test_support",
+    "//components/prefs",
+    "//components/signin/public/base:signin_switches",
+    "//components/tabs:public",
+    "//components/tabs:test_support",
+    "//content/public/browser",
+    "//services/metrics/public/cpp:metrics_cpp",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//ui/base/unowned_user_data",
+  ]
+}

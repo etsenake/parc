@@ -1,0 +1,65 @@
+--- a/chrome/browser/ui/toasts/toast_controller.cc
++++ b/chrome/browser/ui/toasts/toast_controller.cc
+@@ -143,6 +143,15 @@
+     return false;
+   }
+ 
++  // Parc: native AppKit browser windows register no Views toast anchor, and
++  // CreateToast CHECKs without one outside tests.
++  if (browser_window_interface_ && !webui_browser::IsWebUIBrowserEnabled() &&
++      !GetAnchorView(toast_registry_->GetToastSpecification(params.toast_id)
++                         ->is_global_scope())) {
++    RecordToastFailedToShow(params.toast_id);
++    return false;
++  }
++
+   RecordToastTriggeredToShow(params.toast_id);
+   CloseToast(toasts::ToastCloseReason::kPreempted);
+ 
+--- a/chrome/browser/ui/views/page_info/safety_tip_page_info_bubble_view.cc
++++ b/chrome/browser/ui/views/page_info/safety_tip_page_info_bubble_view.cc
+@@ -13,6 +13,7 @@
+ #include "chrome/browser/ui/views/accessibility/theme_tracking_non_accessible_image_view.h"
+ #include "chrome/browser/ui/views/bubble_anchor_util_views.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/page_info/page_info_view_factory.h"
+ #include "chrome/grit/theme_resources.h"
+ #include "components/security_state/core/security_state.h"
+@@ -231,6 +232,12 @@
+   if (!browser) {
+     return;
+   }
++  // Parc: native AppKit browser windows have no BrowserView, which the page
++  // info anchor helpers below dereference.
++  if (!BrowserView::GetBrowserViewForBrowser(browser)) {
++    std::move(close_callback).Run(SafetyTipInteraction::kNotShown);
++    return;
++  }
+ 
+   bubble_anchor_util::AnchorConfiguration configuration =
+       bubble_anchor_util::GetPageInfoAnchorConfiguration(
+--- a/chrome/browser/ui/views/file_system_access/file_system_access_restore_permission_bubble_view.cc
++++ b/chrome/browser/ui/views/file_system_access/file_system_access_restore_permission_bubble_view.cc
+@@ -10,6 +10,7 @@
+ #include "chrome/browser/ui/file_system_access/file_system_access_ui_helpers.h"
+ #include "chrome/browser/ui/views/bubble_anchor_util_views.h"
+ #include "chrome/browser/ui/views/file_system_access/file_system_access_scroll_panel.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/title_origin_label.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/permissions/permission_util.h"
+@@ -141,6 +142,13 @@
+       browser->GetActiveTabInterface()->GetContents() != web_contents) {
+     return nullptr;
+   }
++  // Parc: native AppKit browser windows have no BrowserView, which the page
++  // info anchor helpers below dereference. Answering keeps this tab's later
++  // file access requests from waiting on a bubble that never shows.
++  if (!BrowserView::GetBrowserViewForBrowser(browser)) {
++    std::move(callback).Run(permissions::PermissionAction::DISMISSED);
++    return nullptr;
++  }
+ 
+   Profile* profile =
+       web_contents

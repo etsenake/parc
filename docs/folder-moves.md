@@ -1,0 +1,93 @@
+# Folder and sidebar moves
+
+Same-window, same-Space moves use original typed tab, folder and split identities. Drag a row before or after another item to reorder it. Drop in the middle of a folder to nest the original item there. Moving a folder carries its hierarchy; moving a split with its leading grip keeps all original children, orientation and widths. A committed drop into a collapsed folder expands that destination. No page is closed, re-created or navigated by these operations.
+
+The existing folder and tab menus expose valid move destinations. Move Up, Move Down and Move Out of Folder provide keyboard/menu and accessibility alternatives through the same validated transaction. A split's move menu acts on the whole container. Its individual children retain the existing explicit Separate Tab from Split View action.
+
+## Recovered reference contract
+
+
+- Earlier folder Copy All Links analysis establishes recursive original-item traversal. The existing split batch establishes typed split containers and original child identity. These contracts are retained when one of those containers moves.
+
+
+## Parc implementation and ownership
+
+`SidebarHierarchy` projects a mixed ordered list from the existing tab/folder model. `BrowserState.sidebarItemOrder` is additive and optional on decoding. Old sessions retain their previous direct-tabs-then-folders order until a move establishes an explicit order. Split entries are stored by the original anchor, so constructing or separating a split keeps that item's established slot. Nested folder rendering, keyboard traversal, folder previews and Copy All Links consume this same projection.
+
+`SidebarMoveSession` is a process-local, one-shot capability. A pasteboard string only identifies its originating source object. The drop destination validates the original source object, native window and session again at commit. A different physical window must obtain the separate collection-transfer grant described below; a pasteboard string alone, external text or forged UUID cannot authorize it.
+
+The window snapshot binds the Space/Profile, selection/focus, relevant hierarchy, original pane/browser/native page identities, close/transfer/retirement state and native availability. The model separately validates current Profile eligibility, source/destination membership, original sibling relationships and an acyclic folder tree. It rejects self/descendant nesting, missing targets, a stale hierarchy, foreign Space/Profile requests and retiring source pages. A split with children outside this same-Space movable population is refused as a unit.
+
+A proposal is pure. Cancellation, stale rows, changed ownership and rejected targets do not change stored hierarchy. A successful commit updates the original records and replaces the session file atomically before publishing the complete state. A disk error reports failure and publishes nothing. Selected tab IDs, original URLs/history, native page wrappers, capture ownership and split geometry remain unchanged. Converting Today to pinned or back follows the existing saved-destination policy on the same tab. Native beforeunload is neither synthesized nor bypassed: this operation never closes a page or changes its Profile.
+
+## Explicit adaptations and scope
+
+
+[Sidebar multi-selection](sidebar-selection.md) now adds ordered same-Space original-item batch movement through this transaction, including selected ancestors and whole splits, with one save/publication.
+
+
+## Move to another Space
+
+
+A whole ordinary split can retain children from different original folders or from both Pinned and Today. **Move to** and **Move to → New Space** now relocate that group as one container: every original child adopts the projected group’s destination section and parent. A root group becomes a root in its anchor’s section; a group inside a moved folder stays in that original folder. A child’s old, unselected folder stays in the source Space. Dormant source order entries are removed so later separation cannot revive those old slots. Group ID, child order, anchor, proportions, custom presentation, saved/current URLs, creation provenance and Note/Easel document references remain unchanged. Selecting only a folder that contains a hidden non-anchor child still refuses the partial group; explicit roots must include the complete group.
+
+
+Every affected physical window contributes a live-owner lease. The originating window binds selection/focus, exact original claims and both hierarchies; the other owners bind their actual native pages and Note/Easel editors, including embedded Easel pages. Pending creation, transfer, retirement, close, fullscreen or affected Peek ownership refuses the move. A whole split, including one inside a folder, is eligible only when each materialized child is owned by the originating physical window. A foreign group cannot be transferred piecemeal by the single-tab transfer path. Standalone tabs keep their actual physical owner and the existing genuine transfer route when subsequently selected elsewhere.
+
+A successful save publishes the complete move without loading, closing, duplicating or reparenting WebContents. Original pages remain with their owner while window presentations reconcile the changed membership. The completion notice says **“Tab moved! Click to go there.”** Its action revalidates the original first moved item and destination Profile/Space, focuses that Space in the same physical window, expands the relevant sidebar ancestors and nonempty target folder, then scrolls and draws attention to the original row. Revealing an item is distinct from activating its page. A whole split stays whole, and the notice never invokes a single-child transfer.
+
+`SidebarItemReveal`, `BrowserStore.revealSidebarItem` and `SidebarView.revealItem` share this disclosure/scroll/attention path. The model projection alters only folder disclosure. It uses the same durable save-before-publication rule; a failed write reports the error without navigating or publishing a partial hierarchy. `BrowserWindowController.revealSidebarItem` owns actual Space eligibility and the native window/security boundary. Closing, deactivating or invalidating the original notice retires its action; no global key monitor or focus-stealing timer is introduced.
+
+### Reference and presentation
+
+
+
+
+## Create a Space with original items
+
+Ordinary New Space and Move to → New Space use the same window-owned sidebar draft. Name, existing Profile, optional typed icon and theme are edited before any Space is saved. Ordinary empty creation can choose an existing Profile or explicitly create a local Profile; a nonempty move stays in its original Profile. Explicitly creating a Profile is its own existing local operation, so cancelling the Space does not delete that Profile.
+
+The original window captures its complete presentation, focused pane, native page claims and all-window relocation leases before parking its selected panes. Those actual pages and Note/Easel editors remain alive. Cancel, Escape/Exit and footer Space navigation restore and reconcile the original presentation. A new accepted native page or stale original owner ends the draft rather than retargeting its callbacks. Icon, theme and Profile surfaces are bound to their exact draft and child instance. Native IME composition prevents Space submission. Theme closing flushes its current editing gesture into the draft only.
+
+`SidebarNewSpaceDraft` retains the new identity, original source hierarchy, root order and insertion choice. Create performs one atomic session-file replacement containing the new Space and all supported original tab/folder/split moves. There is no separately persisted empty destination. It revalidates the original physical claims and local editor/page owners at admission; a disk error publishes nothing and retains the entered draft and error for retry. Successful creation focuses the new Space without constructing a placeholder tab, replaying URLs or selecting an unrelated page. Its footer renders the persisted optional Space symbol/emoji; old sessions decode the new field as absent.
+
+
+Installed 1.170 appearance reference covers the actual native creation surface and its name/Profile/theme/Create/Cancel controls without creating personal content. Nonblank-name admission, inherited initial theme, typed native icon picker, scrollable short-window layout, immediate completion and original-owner cancellation are explicit Parc adaptations. Exact entry/finish motion and timing remain unmeasured. The traced Profile field does not establish a cross-Profile live-page migration mechanism: nonempty cross-Profile creation remains unsupported. The shared move transaction now handles mixed original folder/section placements as one complete ordinary split, with the container mapping described above. Cross-Profile and Favorite migration remain outside that admission. Source/component/compiler checks do not establish browser runtime acceptance.
+
+## Move a collection to another physical window
+
+An original in-process row, folder, whole split or selected collection can now be dropped into another ordinary Parc window using the same Profile. The destination uses the existing before/after/folder hit regions and captures its actual Space, Profile and insertion location. Selected descendants under an original selected ancestor occur once. Nested folders, empty folders, whole split IDs/order/widths, original tab IDs and Note/Easel document references remain the same. A move creates no new tab provenance or document copy.
+
+The source capability binds the original physical window, selection, focused pane, collection records and native/editor identities. Destination admission also binds its original selection and focus. A sheet, security reservation, profile removal, fullscreen, Peek, pending page creation, close/retirement, or another transfer refuses the complete drop. A live member owned by a third window refuses the complete drop. Moving between different Profiles and moving native Chromium tab groups are separate owners and are refused here.
+
+`SidebarWindowMove` composes the existing Space and mixed-hierarchy model rules into one proposal. A whole ordinary split may retain children in different saved sections or folders before the move. Its receipt captures every original child and the exact group, including order and divider geometry. The explicit destination normalizes the complete group to that container; moving an ancestor folder across Spaces retains the moved anchor folder and clears foreign source references. Partial groups, an archived/foreign child and mixed Favorite/ordinary membership refuse as a unit. Favorite admission remains separate and unchanged. `NativePageOwnership.CollectionTransfer` reserves every original ID, including unmaterialized and local-document items, as one one-shot claim. `TransferLiveTabs` holds both real Chromium `UnloadController` transfer reservations across the whole collection, detaches and inserts the same `TabModel`/`WebContents`, and attaches every original page before allowing the synchronous durable sidebar commit. It revalidates actual ownership after callback-capable operations. A rejected attachment or failed session write rolls surviving native originals back, including source order, pin state, opener relationships and selection. It never reconstructs a URL.
+
+Only after the actual posted native result does the shell attach the same original `PCBrowserView` instances to their destination panes and publish the collection claims. Notes use the original native editor and shared session; composition and failed-save barriers run before transfer and again before durable commit. An Easel keeps its same canvas, editor, session, page pool and every existing child wrapper. Its live auxiliary pages join that same native collection; only the admitted transfer can rebind their weak Browser/window lease after actual same-Profile TabModel insertion. Pending creation or retirement refuses the whole drop. Pool input and shared destructive mutations stay gated until all original children are attached and the collection claims settle; rollback rebinds those same originals to the source. See [embedded page ownership](easel-embedded-pages.md#physical-window-collection-transfer).
+
+The destination keeps an existing selected page/focused pane. An otherwise empty destination adopts the first original transferred item through the existing whole-split selection owner; exact modern local-document focus policy is an adaptation. Source presentation removes only moved originals. Both source and destination keep their cached native Browsers when a collection move leaves an empty strip, including a destination created for an attempt that is refused or rolled back. Either physical window may still own Notes, Easels or unmaterialized sidebar items. Their existing window-close owner remains responsible for retirement; Chromium's tab count cannot authorize closing unrelated shell content.
+
+If external native destruction or unexpected ownership prevents reconciliation, both windows retain the complete transaction and its actual pages. Retry reconnects to the committed owner. Close Affected Tabs uses the existing genuine whole-set `requestClosePages` consent path; it does not delete sidebar references or local documents. Keep Open leaves those reservations intact, and a later window-close request returns to recovery. No result enum alone releases a claim, and no failure invents a replacement page.
+
+### Cross-window evidence and limits
+
+
+
+
+The ordinary mixed-placement admission follow-on passes the 148-source Swift warnings-as-errors check, 56 actual collection/store assertions and all 44 existing Favorite-move assertions. The new original mixed Note/Easel scenario fails at admission against the pre-change source and passes with the complete-child rule. Coverage includes nested and root destinations in the same or a different Space, exact pane order/geometry/placement expiration, foreign/archived/mixed-Favorite refusal, failed real atomic save, durable reload and original shared document sessions. Native transfer source is unchanged; its earlier compilation is recorded below, not rerun or claimed as browser execution.
+
+The fixed private source cohort passes the complete Swift warnings-as-errors check and actual pinned compilation of `tab_transfer`, the AppKit application bridge, and five additive genuine Browser/TabStripModel test cases. The latter are compiled, not linked or executed. Forty-one isolated actual store/ownership assertions cover nested/empty folders, whole mixed document splits, original shared sessions, stale/foreign/cycle refusal, atomic disk-write failure, durable reload, competing claims, real-close accounting and one-shot empty-folder completion. No functional browser test or personal file operation was performed.
+
+The embedded-child follow-on passes the fixed 136-source Swift warnings-as-errors check and actual pinned application/page translation-unit checks, all with zero diagnostics. A reusable actual `EaselBrowserObjects`/AppKit/shared-session component passes 32 assertions for one-shot snapshots, pending/foreign/stale refusal, original page/wrapper retention, source rollback, closed-child accounting and shared deletion guards. Only the engine replies are injected; it does not instantiate Chromium or claim browser acceptance. The ordinary collection model and native fixture checks above remain separate.
+
+## Favorite / app-tray moves
+
+Favorites now participate in the same original-item move transaction. Drag a Favorite tile to reorder it, move an original tab or whole split into the tray, or move a Favorite into Pinned, Today or an existing folder. Existing Move menu and accessibility alternatives use the same one-use owner; Add/Remove Favorites also move the actual whole split rather than changing only its anchor. A folder cannot become a Favorite. The tray admits at most twelve roots; a complete split counts once, and a plural drop exceeding the limit publishes nothing.
+
+Favorite order is shared by all Spaces using that Profile. An all-Favorite split appears as one tile with its original group ID, children and geometry, including when its stored home Space differs from the currently visible Space. Moving it out assigns the whole group to the actual destination Space. Native selection, positional navigation, Control–Space and Reset All consume that same ordered projection. Original Note/Easel references and shared documents remain unchanged. A same-Profile physical-window drop uses the original collection/native/editor transfer described above, including live Easel children and rollback; it does not recreate pages or acquire another Profile.
+
+A tile captures a move lease after its original down action. Dragging cancels release actions; stale membership, selection, focus, Profile, page/window ownership, security or retirement refuses the move. Detach, hide, disable and deactivation cancel a pending source. Once an actual drag has begun, ordinary key-window transfer does not manufacture another source lease. Existing exact Command reset, Shift activation and Option release behavior remains separate from outline multi-selection. Unsupported Option-copy does not silently become a move; a whole Favorite split tile copies on Option ([SP23](split-groups.md#whole-split-copy-and-external-drags--sp23)).
+
+
+The installed 1.170 profile had no Favorite tiles; no personal content was created or moved to obtain a reference. Current tile snapshots, four-point drag threshold, eighteen-point empty-tray band, insertion line and menu/AX labels are explicit Parc adaptations. Exact populated drag/hover/pressed/disabled appearance, motion and tray haptics remain open. Tray moves do not inherit the separately recovered outline haptic. Favorite grid multi-selection, copy/external drags of single Favorites, cross-Profile moves, whole-Favorite group Rename and cross-window move Undo remain separate work. Source/component checks do not establish browser runtime acceptance.
+
+The fixed 140-source Swift cohort passes with warnings treated as errors and zero diagnostics. Focused current-source checks cover Profile-wide order, foreign/stale refusal, whole Favorite splits from another home Space, complete capacity refusal, original local-document IDs/provenance, actual save failure/reload, existing collection transfer and ordinary Space reveal, plus native Favorite pointer cancellation/one-shot behavior. Native browser transfer is reused from its separately checked prerequisite; no engine build or browser functional test is included here.

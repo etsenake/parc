@@ -1,0 +1,527 @@
+--- a/chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.cc
++++ b/chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.cc
+@@ -97,11 +97,20 @@
+     const std::vector<size_t>& indices) {
+   SetModeByCredentialCount(indices.size());
+   for (size_t i = 0; i < indices.size(); ++i) {
+-    AddChildView(CreateRow(mechanisms.at(indices.at(i)), indices.at(i)));
++    AddChildView(CreateRow(mechanisms.at(indices.at(i)),
++                           native_validation_ ? i : indices.at(i)));
+   }
+   SetButtonArea();
+ 
+   Show();
++}
++
++void AmbientSigninBubbleView::SetNativeHost(
++    gfx::NativeView parent, const gfx::Rect& anchor,
++    base::RepeatingCallback<bool()> validation) {
++  set_parent_window(parent);
++  SetAnchorRect(anchor);
++  native_validation_ = std::move(validation);
+ }
+ 
+ void AmbientSigninBubbleView::Show() {
+@@ -134,6 +143,14 @@
+ void AmbientSigninBubbleView::OnMechanismSelected(size_t index,
+                                                   const ui::Event& event) {
+   if (!controller_) {
++    return;
++  }
++  if (native_validation_) {
++    const auto validate = native_validation_;
++    if (!validate.Run()) return;
++    auto controller = controller_->GetWeakPtr();
++    Hide();
++    if (controller) controller->OnMechanismSelected(index);
+     return;
+   }
+   controller_->OnMechanismSelected(index);
+@@ -162,7 +179,18 @@
+       SetButtonLabel(ui::mojom::DialogButton::kOk,
+                      l10n_util::GetStringUTF16(
+                          IDS_PASSWORD_MANAGER_ACCOUNT_CHOOSER_SIGN_IN));
+-      SetAcceptCallback(controller_->GetSignInCallback());
++      if (native_validation_) {
++        SetAcceptCallback(base::BindOnce(
++            [](base::WeakPtr<AmbientSigninBubbleView> view) {
++              if (!view || !view->native_validation_.Run() || !view->controller_)
++                return;
++              auto callback = view->controller_->GetSignInCallback();
++              view->Hide();
++              std::move(callback).Run();
++            }, weak_ptr_factory_.GetWeakPtr()));
++      } else {
++        SetAcceptCallback(controller_->GetSignInCallback());
++      }
+       break;
+   }
+   SetButtons(buttons);
+--- a/chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.h
++++ b/chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.h
+@@ -10,6 +10,7 @@
+ #include <memory>
+ #include <vector>
+ 
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
+@@ -58,6 +59,13 @@
+       const std::vector<AuthenticatorRequestDialogModel::Mechanism>& mechanisms,
+       const std::vector<size_t>& indices);
+ 
++  // Retains the genuine row/button presentation while anchoring to a native
++  // Cocoa page rather than a BrowserView toolbar. Validation gates every pick.
++  void SetNativeHost(gfx::NativeView parent, const gfx::Rect& anchor,
++                     base::RepeatingCallback<bool()> validation);
++  base::WeakPtr<AmbientSigninBubbleView> GetWeakPtr() {
++    return weak_ptr_factory_.GetWeakPtr();
++  }
+   void Show();
+   void Hide();
+   void Close();
+@@ -73,6 +81,7 @@
+       const AuthenticatorRequestDialogModel::Mechanism& mechanism,
+       size_t index);
+ 
++  base::RepeatingCallback<bool()> native_validation_;
+   Mode mode_ = Mode::kSingleCredential;
+   raw_ptr<AmbientSigninController> controller_;
+   base::WeakPtr<views::Widget> widget_;
+--- a/chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.cc
++++ b/chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.cc
+@@ -77,6 +77,10 @@
+ AuthenticatorRequestDialogView::~AuthenticatorRequestDialogView() = default;
+ 
+ void AuthenticatorRequestDialogView::Show() {
++  const auto native_check = native_presentation_validation_;
++  if (native_check && !native_check.Run()) {
++    return;
++  }
+   if (web_contents_hidden_) {
+     // Calling Widget::Show() while the tab is not in foreground shows the
+     // dialog on the foreground tab (https://crbug.com/40630135). Instead, wait
+@@ -387,7 +391,7 @@
+   // hidden. Instead, show it when the WebContents become visible again.
+   if (web_contents_was_hidden && !web_contents_hidden_ &&
+       !GetWidget()->IsVisible()) {
+-    GetWidget()->Show();
++    Show();
+   }
+ }
+ 
+--- a/chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.h
++++ b/chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.h
+@@ -9,6 +9,7 @@
+ #include <string>
+ 
+ #include "base/check.h"
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
+@@ -60,6 +61,12 @@
+   // Shows the dialog after creation or after being hidden.
+   void Show();
+ 
++  // Native external-parent presentation must be ready before any visibility
++  // callback can show this genuine dialog on its own.
++  void SetNativePresentationValidation(base::RepeatingCallback<bool()> check) {
++    native_presentation_validation_ = std::move(check);
++  }
++
+   // Replaces the |sheet_| currently being shown in the dialog with |new_sheet|,
+   // destroying the old sheet.
+   void ReplaceCurrentSheetWith(
+@@ -90,6 +97,7 @@
+   void OnVisibilityChanged(content::Visibility visibility) override;
+ 
+  private:
++  base::RepeatingCallback<bool()> native_presentation_validation_;
+   friend class test::AuthenticatorRequestDialogViewTestApi;
+ 
+   void OtherMechanismsButtonPressed();
+--- a/chrome/browser/ui/views/webauthn/authenticator_request_dialog_view_controller_views.cc
++++ b/chrome/browser/ui/views/webauthn/authenticator_request_dialog_view_controller_views.cc
+@@ -13,6 +13,7 @@
+ #include "chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.h"
+ #include "chrome/browser/ui/views/webauthn/sheet_view_factory.h"
+ #include "chrome/browser/ui/webauthn/authenticator_request_dialog_view_controller.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "components/constrained_window/constrained_window_views.h"
+ #include "components/web_modal/web_contents_modal_dialog_manager.h"
+ #include "ui/views/widget/widget.h"
+@@ -22,6 +23,9 @@
+ AuthenticatorRequestDialogViewController::Create(
+     content::WebContents* web_contents,
+     AuthenticatorRequestDialogModel* model) {
++  if (auto* native = NativeAuthenticatorRequestContext::Get(web_contents)) {
++    return native->CreateDialog(*model);
++  }
+   // The authenticator request dialog will only be shown for common user-facing
+   // WebContents, which have a |manager|. Most other sources without managers,
+   // like service workers and extension background pages, do not allow WebAuthn
+--- a/chrome/browser/ui/webauthn/ambient/ambient_signin_controller.cc
++++ b/chrome/browser/ui/webauthn/ambient/ambient_signin_controller.cc
+@@ -23,6 +23,7 @@
+ #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
+ #include "chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.h"
+ #include "chrome/browser/ui/webauthn/webauthn_ui_helpers.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/document_user_data.h"
+@@ -39,6 +40,10 @@
+ namespace ambient_signin {
+ 
+ AmbientSigninController::~AmbientSigninController() {
++  if (auto* native = NativeAuthenticatorRequestContext::Get(
++          WebContents::FromRenderFrameHost(&render_frame_host()))) {
++    native->HideAmbient();
++  }
+   if (model_) {
+     model_->observers.RemoveObserver(this);
+     model_ = nullptr;
+@@ -69,6 +74,12 @@
+   }
+ 
+   CHECK(!credential_indices_.empty());
++  if (auto* native = NativeAuthenticatorRequestContext::Get(
++          WebContents::FromRenderFrameHost(&render_frame_host()))) {
++    ui_type_ = UiType::kBubble;
++    native->ShowAmbient(*model_, GetWeakPtr());
++    return;
++  }
+ 
+   // It is TBD how multiple credentials will work with Page Actions.
+   // For now, show the page action if there is only one mechanism, and the
+@@ -112,6 +123,10 @@
+       content::WebContents::FromRenderFrameHost(&render_frame_host());
+   if (!web_contents ||
+       web_contents->GetVisibility() == content::Visibility::HIDDEN) {
++    return;
++  }
++  if (auto* native = NativeAuthenticatorRequestContext::Get(web_contents)) {
++    native->ShowAmbient(*model_, GetWeakPtr());
+     return;
+   }
+   BrowserWindowInterface* browser =
+@@ -168,6 +183,11 @@
+ }
+ 
+ void AmbientSigninController::Close() {
++  if (auto* native = NativeAuthenticatorRequestContext::Get(
++          WebContents::FromRenderFrameHost(&render_frame_host()))) {
++    native->HideAmbient();
++    return;
++  }
+   if (ambient_signin_bubble_view_) {
+     ambient_signin_bubble_view_->DisconnectController();
+     ambient_signin_bubble_view_ = nullptr;
+@@ -196,6 +216,11 @@
+ 
+ void AmbientSigninController::TabWillEnterBackground(
+     tabs::TabInterface* tab_interface) {
++  if (auto* native = NativeAuthenticatorRequestContext::Get(
++          WebContents::FromRenderFrameHost(&render_frame_host()))) {
++    native->HideAmbient();
++    return;
++  }
+   if (!ambient_signin_bubble_view_) {
+     return;
+   }
+--- a/chrome/browser/ui/webauthn/authenticator_request_window.cc
++++ b/chrome/browser/ui/webauthn/authenticator_request_window.cc
+@@ -32,6 +32,7 @@
+ #include "chrome/browser/ui/webauthn/user_actions.h"
+ #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
+ #include "chrome/browser/webauthn/gpm_enclave_controller.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "chrome/browser/webauthn/webauthn_switches.h"
+ #include "components/signin/public/identity_manager/identity_manager.h"
+ #include "components/trusted_vault/trusted_vault_histograms.h"
+@@ -190,6 +191,14 @@
+                                       AuthenticatorRequestDialogModel* model)
+       : step_(model->step()), model_(model) {
+     model_observation_.Observe(model_);
++    if (auto* native = NativeAuthenticatorRequestContext::Get(caller_web_contents)) {
++      native_route_ = true;
++      native_window_ = native->CreateWindow(*model_);
++      if (!native_window_) {
++        CloseNativeSoon();
++        return;
++      }
++    }
+ 
+     // The original profile is used so that cookies are available. If this is an
+     // Incognito session then a warning has already been shown to the user.
+@@ -199,6 +208,10 @@
+     // If the profile is shutting down, don't attempt to create a pop-up.
+     if (GetBrowserWindowCreationStatusForProfile(*profile) !=
+         BrowserWindowInterface::CreationStatus::kOk) {
++      if (native_window_) {
++        native_window_->Cancel();
++        CloseNativeSoon();
++      }
+       return;
+     }
+ 
+@@ -207,6 +220,11 @@
+     BrowserWindowInterface* const caller_browser =
+         GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+             caller_web_contents);
++    if (native_route_ && (!caller_browser || !caller_browser->GetWindow())) {
++      native_window_->Cancel();
++      CloseNativeSoon();
++      return;
++    }
+     const gfx::Rect caller_bounds = caller_browser->GetWindow()->GetBounds();
+     const gfx::Point caller_center = caller_bounds.CenterPoint();
+ 
+@@ -223,11 +241,22 @@
+     browser_params.initial_bounds =
+         gfx::Rect(caller_center.x() - kWidth / 2,
+                   caller_center.y() - kHeight / 2, kWidth, kHeight);
++    const gfx::Rect popup_bounds = browser_params.initial_bounds;
+     browser_params.initial_origin_specified =
+         BrowserWindowCreateParams::ValueSpecified::kSpecified;
+     BrowserWindowInterface* browser =
+         CreateBrowserWindow(std::move(browser_params));
+-
++    if (!browser) {
++      if (native_window_) {
++        native_window_->Cancel();
++        CloseNativeSoon();
++      }
++      return;
++    }
++
++    if (native_route_) {
++      browser->GetWindow()->SetBounds(popup_bounds);
++    }
+     content::WebContents::CreateParams webcontents_params(profile);
+     std::unique_ptr<content::WebContents> web_contents =
+         content::WebContents::Create(webcontents_params);
+@@ -305,6 +334,14 @@
+         std::move(web_contents), /*index=*/0,
+         ui::PageTransition::PAGE_TRANSITION_AUTO_TOPLEVEL,
+         AddTabTypes::ADD_ACTIVE);
++    if (native_window_ &&
++        (!web_contents_weak_ptr_ ||
++         !native_window_->Attach(*web_contents_weak_ptr_,
++                                browser->GetWindow()->GetNativeWindow()))) {
++      native_window_->Cancel();
++      CloseNativeSoon();
++      return;
++    }
+     browser->GetWindow()->Show();
+   }
+ 
+@@ -333,6 +370,12 @@
+ 
+   // AuthenticatorRequestDialogModel::Observer:
+   void OnModelDestroyed(AuthenticatorRequestDialogModel* model) override {
++    if (native_route_) {
++      model_observation_.Reset();
++      model_ = nullptr;
++      CloseNativeSoon();
++      return;
++    }
+     CloseWindowAndDeleteSelf();
+   }
+ 
+@@ -341,11 +384,34 @@
+       // No UI step involving a window leads to another step involving another
+       // window. So any transition of the model must be to a step that doesn't
+       // have one.
+-      CloseWindowAndDeleteSelf();
++      if (native_route_) {
++        CloseNativeSoon();
++      } else {
++        CloseWindowAndDeleteSelf();
++      }
+     }
+   }
+ 
+  private:
++  void CloseNativeSoon() {
++    if (closing_) return;
++    closing_ = true;
++    // Do not destroy a Browser or its observed WebContents from a model or
++    // navigation observer stack, including reentry while creating the window.
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
++        FROM_HERE, base::BindOnce(&AuthenticatorRequestWindow::CloseNative,
++                                 weak_ptr_factory_.GetWeakPtr()));
++  }
++  void CloseNative() {
++    model_observation_.Reset();
++    model_ = nullptr;
++    Observe(nullptr);
++    reauth_observer_.reset();
++    passkey_reset_observer_.reset();
++    native_window_.reset();
++    if (web_contents_weak_ptr_) web_contents_weak_ptr_->Close();
++    delete this;
++  }
+   void CloseWindowAndDeleteSelf() {
+     if (web_contents_weak_ptr_) {
+       web_contents_weak_ptr_->Close();
+@@ -354,17 +420,32 @@
+   }
+ 
+   void OnHaveToken(std::string rapt) {
+-    if (model_) {
++    if (closing_) return;
++    if (native_window_ && !native_window_->IsValid()) {
++      native_window_->Cancel();
++      CloseNativeSoon();
++      return;
++    }
++    if (model_ && !closing_) {
+       model_->OnGPMReauthComplete(std::move(rapt));
+     }
+   }
+ 
+   void OnPasskeysReset(bool success) {
+-    if (model_) {
++    if (closing_) return;
++    if (native_window_ && !native_window_->IsValid()) {
++      native_window_->Cancel();
++      CloseNativeSoon();
++      return;
++    }
++    if (model_ && !closing_) {
+       model_->OnGPMPasskeysReset(success);
+     }
+   }
+ 
++  std::unique_ptr<NativeAuthenticatorRequestWindow> native_window_;
++  bool native_route_ = false;
++  bool closing_ = false;
+   const AuthenticatorRequestDialogModel::Step step_;
+   raw_ptr<AuthenticatorRequestDialogModel> model_;
+   std::unique_ptr<ReauthWebContentsObserver> reauth_observer_;
+--- a/chrome/browser/webauthn/BUILD.gn
++++ b/chrome/browser/webauthn/BUILD.gn
+@@ -57,6 +57,7 @@
+       "gpm_enclave_transaction.h",
+       "immediate_request_rate_limiter_factory.h",
+       "local_authentication_token.h",
++      "native_authenticator_request_context.h",
+       "passkey_model_factory.h",
+       "passkey_unlock_manager.h",
+       "passkey_unlock_manager_factory.h",
+@@ -77,6 +78,7 @@
+       "//components/webauthn/core/browser:passkey_model",
+       "//crypto",
+       "//google_apis",
++      "//ui/gfx",
+     ]
+   }
+ 
+--- a/chrome/browser/webauthn/authenticator_request_dialog_model.cc
++++ b/chrome/browser/webauthn/authenticator_request_dialog_model.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/ui/webauthn/authenticator_request_dialog_view_controller.h"
+ #include "chrome/browser/ui/webauthn/authenticator_request_window.h"
+ #include "chrome/browser/webauthn/authenticator_transport.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "chrome/browser/webauthn/webauthn_pref_names.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/device_event_log/device_event_log.h"
+@@ -157,12 +158,17 @@
+ void AuthenticatorRequestDialogModel::SetStep(Step step) {
+   FIDO_LOG(EVENT) << "UI step: " << step;
+ 
++  auto* web_contents = GetWebContentsFromFrameHostId(frame_host_id);
++  if (step_ != step) {
++    if (auto* native = NativeAuthenticatorRequestContext::Get(web_contents)) {
++      native->PrepareForStepChange(*this);
++    }
++  }
+   const StepUIType previous_ui_type = step_ui_type(step_);
+   step_ = step;
+   ui_disabled_ = false;
+ 
+   const StepUIType ui_type = step_ui_type(step_);
+-  auto* web_contents = GetWebContentsFromFrameHostId(frame_host_id);
+   if (ui_type != StepUIType::DIALOG) {
+     view_controller_.reset();
+     if (ui_type == StepUIType::WINDOW &&
+--- a/chrome/browser/webauthn/authenticator_request_scheduler.cc
++++ b/chrome/browser/webauthn/authenticator_request_scheduler.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/webauthn/chrome_authenticator_request_delegate.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_user_data.h"
+ 
+@@ -58,6 +59,9 @@
+   auto request =
+       std::make_unique<ChromeAuthenticatorRequestDelegate>(render_frame_host);
+   active_request_holder->request() = request->AsWeakPtr();
++  if (auto* native = NativeAuthenticatorRequestContext::Get(web_contents)) {
++    native->Created(*render_frame_host, request->AsWeakPtr());
++  }
+   return request;
+ }
+ 
+--- a/chrome/browser/webauthn/change_pin_controller_impl.cc
++++ b/chrome/browser/webauthn/change_pin_controller_impl.cc
+@@ -18,6 +18,7 @@
+ #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
+ #include "chrome/browser/webauthn/enclave_manager.h"
+ #include "chrome/browser/webauthn/enclave_manager_factory.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_user_data.h"
+ 
+@@ -58,6 +59,12 @@
+     return;
+   }
+   notify_pin_change_callback_ = std::move(callback);
++  if (auto* native = NativeAuthenticatorRequestContext::Get(
++          content::WebContents::FromRenderFrameHost(&render_frame_host()));
++      native && !native->BeginSettings(render_frame_host(), *model_)) {
++    Reset(/*success=*/false);
++    return;
++  }
+   model_->SetStep(Step::kGPMReauthForPinReset);
+   RecordHistogram(EnclaveChangePinEvent::kFlowStartedFromSettings);
+ }
+--- a/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc
++++ b/chrome/browser/webauthn/chrome_authenticator_request_delegate.cc
+@@ -35,6 +35,7 @@
+ #include "chrome/browser/net/system_network_context_manager.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_observer.h"
++#include "chrome/browser/webauthn/native_authenticator_request_context.h"
+ #include "components/signin/public/base/signin_buildflags.h"
+ #include "components/signin/public/base/signin_switches.h"
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+@@ -519,6 +520,10 @@
+         &ChromeAuthenticatorRequestDelegate::OnPasswordSelected,
+         weak_ptr_factory_.GetWeakPtr()));
+   }
++  if (auto* native = NativeAuthenticatorRequestContext::Get(
++          content::WebContents::FromRenderFrameHost(GetRenderFrameHost()))) {
++    native->Ready(AsWeakPtr());
++  }
+ }
+ 
+ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
+@@ -1246,6 +1251,11 @@
+     return;
+   }
+ 
++  if (auto* native = NativeAuthenticatorRequestContext::Get(web_contents)) {
++    discovery_factory->set_nswindow(native->AuthenticatorWindow(AsWeakPtr()));
++    return;
++  }
++
+   // Not all contexts in which this code runs have a BrowserWindow.
+   // Notably the dialog containing a WebContents that is used for signing
+   // into a new profile does not. Thus the NSWindow is fetched more directly.

@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Parc's PArcTooltip rebuild: configuration, palette mapping, keycaps, corners,
+placement, layout (standard and PArcTooltipLabel), offscreen drawing,
+eligibility, the presentation state machine and the shared adoption entry
+point, plus the app-wide adoption's wiring (work/cursor-tooltip-research/
+adoption-map.md). Inert: no window is shown or made key, no input is sent and
+the process never activates."""
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import tooltip_sources
+
+root = Path(__file__).resolve().parents[2]
+app = root / "Sources/ParcApp"
+
+def source(name):
+    return (app / name).read_text()
+
+sidebar = source("SidebarView.swift")
+assert 'LiveShortcutToolTip.set(toggle, label, commandID: "toggleSidebar:")' in sidebar, \
+    "the sidebar toggle no longer shows its Parc tooltip with the live binding and help"
+assert 'LiveShortcutToolTip.set(closeButton, tooltip, commandID: "closeTab:")' in sidebar \
+    and sidebar.count("bindCloseButton(tooltip: Self.closeTooltip(tab)") == 2 \
+    and '"Archive this tab" : "Close and Keep Pinned"' in sidebar, "the row Close lost the TabCellStrings tooltips"
+assert "parcTooltip = compactSplitChild ? nil : Self.rowTooltip(tooltipTab, renameable: beginRename != nil)" in sidebar \
+    and "style: .label(subtitle: hint), anchor: .cursor" in sidebar \
+    and "behavior: .onMouseIdle(delay: 1.5)" in sidebar and 'static let renameHint = "Double-click to rename"' in sidebar \
+    and "renameable && tab.customTitle == nil" in sidebar, \
+    "the tab row lost the title / rename-hint tooltip at the pointer, or a split child (ChildItemState) gained one"
+assert "if Self.isRenameClick(originalEvent), beginRename?() == true { return }" in sidebar \
+    and "row.beginRename = inGroup || isSpaceManagement || !SidebarTabTitle.isRenameable(tab) ? nil" in sidebar, \
+    "the rename hint no longer matches the row's double-click rename"
+assert 'LiveShortcutToolTip.set(resetRegion, "Reset Tab", commandID: "resetTab:", requiresBinding: true)' in sidebar
+#
+assert "footerMore.toolTip" not in sidebar and "LiveShortcutToolTip.set(footerMore" not in sidebar \
+    and "footerMore.parcTooltip" not in sidebar, "the dock + has no tooltip in Parc"
+assert 'LiveShortcutToolTip.help(row.button, "New tab", commandID: "newTab:")' in sidebar \
+    and "LiveShortcutToolTip.set(row.button" not in sidebar and "newTabRow.button.parcTooltip" not in sidebar, \
+    "the New Tab row has no tooltip in Parc; its help keeps the binding"
+assert 'LiveShortcutToolTip.help(addressButton, "Search or enter a URL", commandID: "focusAddress:")' in sidebar \
+    and "LiveShortcutToolTip.set(addressButton" not in sidebar, "the URL pill has no tooltip in Parc"
+assert 'button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled Space" : space.name,' in sidebar \
+    and "style: .dockItem(profileName: profileName)," in sidebar \
+    and "shortcut: .command(NumberedTarget.spaceBindingID(offset + 1)), anchor: .top)" in sidebar \
+    and "let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil" in sidebar, \
+    "a dock Space item's tooltip sits above it with its Profile and the Space's numbered binding"
+assert sidebar.count('"Copy Quote as URL", commandID: "copyCurrentURLAsQuote:")') == 2 \
+    and "Copy a link to the selected text" not in sidebar, "quote mode's buttons show the CopyQuoteTooltip label"
+center = source("SiteControlCenter.swift")
+assert not re.search(r"^\s*\.help\(", center, re.M) and center.count(".parcTooltip(TooltipConfiguration(") == 8 \
+    and ".parcTooltip(TooltipConfiguration(button.title, shortcut: button.commandID.map { .command($0) }))" in center, \
+    "Site Control Center's SwiftUI controls (the four, plus the restyle's headers, rows and footer) show the tooltip through the bridge"
+# Fully converted files keep no AppKit help tags.
+for name in ("SidebarView.swift", "SidebarRowActionButton.swift", "SplitPaneControl.swift", "SplitDragView.swift",
+             "SidebarSplitTitleView.swift", "SidebarSpaceHeader.swift", "SidebarMoveAttentionView.swift", "SpaceManagerView.swift",
+             "SpaceCreationView.swift", "SpaceThemeEditorView.swift", "MiniPlayerView.swift", "PageFindView.swift",
+             "PortraitCapture.swift", "ExtensionControls.swift", "ExtensionSidePanelView.swift", "DocumentsLibraryView.swift",
+             "SidebarLibraryEntry.swift", "LibraryRailTile.swift"):
+    assert not re.search(r"\btoolTip\s*=", source(name)), f"{name} sets an AppKit help tag beside the tooltip"
+entry = source("SidebarLibraryEntry.swift")
+assert "NSPanel" not in entry and ".toolTipsFont" not in entry and "TooltipConfiguration(text, shortcut: shortcut, anchorRect: rect)" in entry, \
+    "the Library entry draws its own tooltip panel again"
+assert "parcTooltip = showsLabel ? nil : TooltipConfiguration(title)" in source("LibraryRailTile.swift"), \
+    "a compact rail tile no longer carries its title"
+assert 'LiveShortcutToolTip.set(back, "Exit Library")' in source("LibraryView.swift")
+assert 'behavior: .onMouseIdle(delay: 0.6)' in source("DownloadLibraryView.swift"), "Remove Filter waits 0.6 s"
+assert 'anchor: .bottom' in source("PopupChromeView.swift"), "Little Arc's tooltips sit below their buttons"
+
+# The tooltip window never takes key, main, the mouse or accessibility, and the
+# tooltip sources never activate, key or order a window front themselves.
+sources = {name: (app / name).read_text() for name in ("Tooltip.swift", "TooltipView.swift", "TooltipController.swift")}
+for use in ("override var canBecomeKey: Bool { false }", "override var canBecomeMain: Bool { false }",
+            "window.ignoresMouseEvents = true", "override func isAccessibilityElement() -> Bool { false }"):
+    assert use in sources["TooltipController.swift"], f"the tooltip window lost a safety guarantee: {use}"
+for name, text in sources.items():
+    for call in (r"\bmakeKey", r"\bmakeMain", r"\borderFront", r"\bactivate\(", r"NSApp\.activate", r"becomeKey\("):
+        assert not re.search(call, text), f"{name} must not take focus: {call}"
+assert "event.trackingArea" not in sources["TooltipController.swift"], "tracking areas are only valid on entered/exited events"
+controller = (app / "BrowserWindowController.swift").read_text()
+assert "TooltipController.controller(for: window).palette = TooltipColorPalette(theme: self.rootView.paletteTheme)" in controller, \
+    "the browser window no longer gives its tooltips the window theme's palette (the Space's, or the incognito theme's)"
+delegate = (app / "AppDelegate.swift").read_text()
+assert "TooltipController.commandShortcut = { KeyboardShortcuts.shared.activeShortcut(for: $0) }" in delegate, \
+    "the app no longer resolves tooltip shortcuts through the live registry"
+assert "KeyboardShortcuts.shared.bindHelp(view, title: title, commandID: id, requiresBinding: requiresBinding)" in delegate, \
+    "the app no longer keeps tooltipped controls' accessibility help on the live binding"
+shortcuts = source("KeyboardShortcuts.swift")
+assert "view.toolTip" not in shortcuts and "(view as? NSControl)?.cell?.setAccessibilityHelp(help)" in shortcuts, \
+    "the registry must bind accessibility help, not help tags"
+
+with tempfile.TemporaryDirectory(prefix="parc-tooltip-") as directory:
+    scratch = Path(directory)
+    # The tooltip files with ThemeChromePalette, KeyboardShortcut and
+    # ViewDisplayFrameDriver cut from their files.
+    executable = scratch / "checks"
+    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+                    *[str(path) for path in tooltip_sources(root, scratch, [])],
+                    str(root / "tests/Support/AppKitObservation.swift"),
+                    str(Path(__file__).with_name("TooltipTests.swift")), "-o", str(executable)], check=True)
+    run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=120)
+    print(run.stdout, end="")
+    assert run.returncode == 0, run.stderr
+    # A mouse-moved event has no tracking area; reading one raises this.
+    assert "Invalid message sent to event" not in run.stdout + run.stderr, run.stderr

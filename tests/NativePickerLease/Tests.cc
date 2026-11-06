@@ -1,0 +1,35 @@
+#include "native_picker_lease.h"
+#include <cassert>
+#include <memory>
+#include <atomic>
+#include <thread>
+#include <vector>
+
+int main() {
+  std::vector<intptr_t> closed;
+  auto make = [&] { return std::make_shared<parc::NativePickerLease>(
+      [&](intptr_t id) { closed.push_back(id); }); };
+  { auto lease = make(); lease->Created(1); lease->Release(); }
+  assert((closed == std::vector<intptr_t>{1}));
+  { auto lease = make(); lease->Release(); lease->Created(2); }
+  assert((closed == std::vector<intptr_t>{1, 2}));
+  { auto lease = make(); lease->Created(3); lease->Transfer(3); lease->Release(); }
+  { auto lease = make(); lease->Transfer(4); lease->Release(); lease->Created(4); }
+  assert((closed == std::vector<intptr_t>{1, 2}));
+  { auto lease = make(); lease->Created(5); lease->Transfer(6); lease->Release(); }
+  { auto lease = make(); lease->Transfer(7); lease->Release(); lease->Created(8); }
+  assert((closed == std::vector<intptr_t>{1, 2, 5, 8}));
+  { auto lease = make(); lease->Created(9); lease->Release(); lease->Release(); }
+  assert((closed == std::vector<intptr_t>{1, 2, 5, 8, 9}));
+  // Created can race worker destruction on a different sequence. Exactly one
+  // close must occur regardless of which side observes the ID first.
+  for (int i = 0; i < 500; ++i) {
+    std::atomic<int> closes{0};
+    auto lease = std::make_shared<parc::NativePickerLease>(
+        [&](intptr_t id) { assert(id == 42); ++closes; });
+    std::thread created([lease] { lease->Created(42); });
+    std::thread released([lease] { lease->Release(); });
+    created.join(); released.join();
+    assert(closes == 1);
+  }
+}

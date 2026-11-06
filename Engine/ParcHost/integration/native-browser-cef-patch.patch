@@ -1,0 +1,103 @@
+--- a/cef/patch/patches/chrome_browser_browser.patch
++++ b/cef/patch/patches/chrome_browser_browser.patch
+@@ -37,11 +37,12 @@
+ index 7613579e79ca9afa3936ae2210e164c811d12467..4c4d286503098454abe43e5a4ac15652e9508853 100644
+ --- chrome/browser/devtools/devtools_window.cc
+ +++ chrome/browser/devtools/devtools_window.cc
+-@@ -131,6 +131,10 @@
++@@ -131,6 +131,11 @@
+  #include "components/keep_alive_registry/scoped_keep_alive.h"
+  #endif
+  
+ +#if BUILDFLAG(ENABLE_CEF)
+++#include "cef/libcef/browser/chrome/browser_delegate.h"
+ +#include "chrome/browser/ui/browser.h"
+ +#endif
+ +
+@@ -61,14 +62,15 @@
+    return profile->GetOriginalProfile();
+  }
+  
+-@@ -1405,6 +1415,13 @@ DevToolsWindow* DevToolsWindow::Create(
++@@ -1405,6 +1415,14 @@ DevToolsWindow* DevToolsWindow::Create(
+      if (!devtools_ui_controller || !devtools_ui_controller->CanDockDevtools()) {
+        can_dock = false;
+      }
+ +
+ +#if BUILDFLAG(ENABLE_CEF)
+-+    if (can_dock && browser && browser->cef_delegate()) {
+-+      // Don't dock DevTools for CEF-managed browsers.
+++    if (can_dock && browser && browser->cef_delegate() &&
+++        !devtools_ui_controller->HasNativePresentation()) {
+++      // Ordinary CEF keeps its existing undocked-only policy.
+ +      can_dock = false;
+ +    }
+ +#endif
+@@ -86,7 +88,7 @@
+      chrome::ScopedTabbedBrowserDisplayer displayer(profile_);
+      chrome::AddSelectedTabWithURL(displayer.browser_window_interface(),
+                                    fixed_url, ui::PAGE_TRANSITION_LINK);
+-@@ -2091,12 +2110,30 @@ void DevToolsWindow::CreateDevToolsBrowser() {
++@@ -2091,12 +2110,41 @@ void DevToolsWindow::CreateDevToolsBrowser() {
+        BrowserWindowInterface::CreationStatus::kOk) {
+      return;
+    }
+@@ -109,6 +111,12 @@
+ +  // If a Browser is created, it will take ownership of |devtools_contents|.
+ +  browser_ = cef::BrowserDelegate::CreateDevToolsBrowser(
+ +      profile_, opener, inspected_web_contents, devtools_contents);
+++  if (!browser_ && cef::BrowserDelegate::HasNativeRoute(*profile_)) {
+++    CHECK(devtools_contents);
+++    owned_main_web_contents_ =
+++        std::make_unique<OwnedMainWebContents>(std::move(devtools_contents));
+++    return;
+++  }
+ +#endif
+ +
+ +  if (!browser_) {
+@@ -116,6 +124,11 @@
+ +    create_params.opener = opener;
+ +
+ +    browser_ = CreateBrowserWindow(std::move(create_params));
+++    if (!browser_) {
+++      owned_main_web_contents_ =
+++          std::make_unique<OwnedMainWebContents>(std::move(devtools_contents));
+++      return;
+++    }
+ +    browser_->GetTabStripModel()->AddWebContents(
+ +        std::move(devtools_contents), -1, ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+ +        AddTabTypes::ADD_ACTIVE);
+@@ -578,12 +591,20 @@
+      if (browser_view) {
+        if (base::FeatureList::IsEnabled(features::kGlicActorUi)) {
+          std::vector<std::pair<views::WebView*, ActorOverlayWebView*>>
+-@@ -1134,6 +1142,38 @@ void BrowserWindowFeatures::InitPostBrowserViewConstruction(
++@@ -1134,6 +1142,43 @@ void BrowserWindowFeatures::InitPostBrowserViewConstruction(
+        browser_view);
+  }
+  
+ +void BrowserWindowFeatures::InitPostTabModelConstruction(
+ +    BrowserWindowInterface* interface) {
+++#if BUILDFLAG(ENABLE_CEF)
+++  if (interface->cef_delegate() &&
+++      interface->cef_delegate()->IsNativeWindow()) {
+++    // Managed profiles are rejected before Browser construction until native
+++    // enterprise DataProtectionUIController presentation is supported.
+++    return;
+++  }
+++#endif
+ +  auto* browser_view = BrowserView::GetBrowserViewForBrowser(interface);
+ +  CHECK(browser_view);
+ +
+@@ -605,10 +626,7 @@
+ +    BrowserWindowInterface* interface,
+ +    content::WebContents* target_contents) {
+ +#if BUILDFLAG(ENABLE_CEF)
+-+  auto* browser_view = BrowserView::GetBrowserViewForBrowser(interface);
+-+  CHECK(browser_view);
+-+
+-+  if (auto cef_delegate = browser_view->browser()->cef_delegate()) {
+++  if (auto* cef_delegate = interface->cef_delegate()) {
+ +    cef_delegate->OnWebContentsCreated(target_contents);
+ +  }
+ +#endif

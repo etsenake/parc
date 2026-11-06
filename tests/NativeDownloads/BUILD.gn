@@ -1,0 +1,49 @@
+# Installed at //cef/tests/parc_native_downloads.
+assert(is_mac)
+
+source_set("download_unit_tests") {
+  testonly = true
+  sources = [ "downloads_unittest.cc" ]
+  deps = [
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_downloads",
+    "//chrome/browser/download",
+    "//chrome/common:constants",
+    "//chrome/test:test_support",
+    "//components/download/public/common:public",
+    "//components/prefs",
+    "//components/sync_preferences:test_support",
+    "//content/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//url",
+  ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+}
+
+source_set("file_dialog_browser_tests") {
+  testonly = true
+  defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+  sources = [
+    "file_dialog_browsertest.mm",
+    "folder_upload_browsertest.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_components",
+    "//cef/libcef/browser/parc_native:native_downloads",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/dialogs:browser_dialogs",
+    "//components/web_modal",
+    "//ui/views",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/test:test_support",
+    "//components/tabs:public",
+    "//content/test:test_support",
+    "//testing/gtest",
+    "//ui/base",
+    "//ui/shell_dialogs",
+  ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+}

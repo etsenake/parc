@@ -1,0 +1,24 @@
+# Generated products, analysis, local data, and tool caches
+/build/
+/dist/
+/work/
+/outputs/
+/.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
+*.ips
+*.dmp
+*.macho
+*.app/
+*.dSYM/
+*.o
+*.dylib
+*.zip
+*.dmg
+*.report.json
+.env
+.env.*
+.sisyphus/
+.*-scratchpad*.md

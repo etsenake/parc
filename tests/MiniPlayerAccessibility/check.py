@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Inspect production media-control labels in an inert off-screen view.
+No browser, keyboard events, VoiceOver or accessibility actions are used.
+"""
+from pathlib import Path
+import subprocess
+import tempfile
+root = Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0, str(root / "tests/Tooltip"))
+from support import tooltip_sources
+with tempfile.TemporaryDirectory(prefix="parc-mini-ax-") as directory:
+    scratch = Path(directory)
+    sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
+    (scratch / "ActionButton.swift").write_text(sidebar[:sidebar.index("final class MenuAction")]
+        + sidebar[sidebar.index("class LayoutView: NSView {"):sidebar.index("final class FlippedStackView")]
+        # The Favorite favicon identity above ActionButton needs SplitOrientation.
+        + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
+    fixture = (root / "tests/SidebarMiniPlayerFocus/SidebarMiniPlayerFocusTests.swift").read_text()
+    fixture = fixture[fixture.index("// Stand-ins for the engine's media types"):]
+    fixture = fixture.replace('let identifier: String, title = "Song", sourceURL = "https://example.test/"',
+                              'let identifier: String, sourceURL = "https://example.test/"\n    var title = "Song"')
+    fixture = fixture.replace('let playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false',
+                              'var playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false')
+    fixture = fixture.replace('let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false',
+                              'var volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false')
+    fixture = fixture.replace('let microphoneOn = false, cameraOn = false', 'var microphoneOn = false, cameraOn = false')
+    fixture = fixture.replace('var onAction: ((PCNativeMediaAction) -> Void)?', 'var onAction: ((PCNativeMediaAction) -> Void)?\n    var acceptsAction = true')
+    fixture = fixture.replace('onAction?(action); return true', 'onAction?(action); return acceptsAction')
+    (scratch / "Fixtures.swift").write_text("import AppKit\n" + fixture)
+    executable = scratch / "checks"
+    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+                    str(root / "Sources/ParcApp/MiniPlayerView.swift"), str(root / "Sources/ParcApp/MiniPlayerMotion.swift"),
+                    str(root / "Sources/ParcApp/SidebarAccessibility.swift"),
+                    str(scratch / "ActionButton.swift"), str(scratch / "Fixtures.swift"), str(root / "Sources/ParcApp/TranslucentButtonFace.swift"), str(root / "Sources/ParcApp/ReloadControl.swift"),
+                    *map(str, tooltip_sources(root, scratch, ["ReloadControl.swift"])),
+                    str(Path(__file__).with_name("Checks.swift")), "-o", str(executable)], check=True)
+    subprocess.run([str(executable)], check=True)

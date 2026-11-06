@@ -1,0 +1,33 @@
+# Map to //cef/tests/parc_native_external_protocol and link from chrome/test:unit_tests.
+assert(is_mac)
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "dialog_unittest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [ "AppKit.framework" ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_components",
+    "//cef/libcef/browser/parc_native:native_external_protocol",
+    "//chrome/browser/external_protocol",
+    "//chrome/browser/external_protocol:impl",
+    "//chrome/browser/picture_in_picture",
+    "//chrome/browser/picture_in_picture:impl",
+    "//components/prefs",
+    "//chrome/common:constants",
+    "//ui/events",
+    "//ui/views",
+    "//ui/views:test_support",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/test/base:browser_with_test_window_test",
+    "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/web_modal",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net",
+    "//testing/gtest",
+    "//url",
+  ]
+}

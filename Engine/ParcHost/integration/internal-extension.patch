@@ -1,0 +1,44 @@
+--- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
++++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+@@ -98,6 +98,7 @@
+     case IDR_GLIC_EXTENSION_MANIFEST:
+     case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST:
+     case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST_MV3:
++    case IDR_PARC_INTERNAL_EXTENSION_MANIFEST:
+     case IDR_READING_MODE_GDOCS_HELPER_MANIFEST:
+     case IDR_WEBSTORE_MANIFEST:
+ 
+--- a/chrome/browser/extensions/component_loader.cc
++++ b/chrome/browser/extensions/component_loader.cc
+@@ -790,6 +790,8 @@
+   AddAimEligibilityExtension();
+   AddGlicExtension();
+   AddContextualTasksExtension();
++  Add(IDR_PARC_INTERNAL_EXTENSION_MANIFEST,
++      base::FilePath(FILE_PATH_LITERAL("parc_internal_extension")));
+ 
+ // http://crbug.com/41070702
+ #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -254,6 +254,8 @@
+       "network_speech_synthesis/mv3/service_worker.js",
+       "network_speech_synthesis/mv3/tts_extension.js",
+       "network_speech_synthesis/tts_extension.js",
++      "parc_internal_extension/background.js",
++      "parc_internal_extension/manifest.json",
+       "reading_mode_gdocs_helper/content.js",
+       "reading_mode_gdocs_helper/gdocs_script.js",
+       "$root_gen_dir/chrome/browser/resources/glic/extension/tsc/background.js",
+--- a/chrome/browser/resources/component_extension_resources.grd
++++ b/chrome/browser/resources/component_extension_resources.grd
+@@ -19,6 +19,9 @@
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_MV3_SERVICE_WORKER_JS" file="network_speech_synthesis/mv3/service_worker.js" type="BINDATA" />
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_MV3_JS" file="network_speech_synthesis/mv3/tts_extension.js" type="BINDATA" />
+ 
++      <include name="IDR_PARC_INTERNAL_EXTENSION_MANIFEST" file="parc_internal_extension/manifest.json" type="BINDATA" />
++      <include name="IDR_PARC_INTERNAL_EXTENSION_BACKGROUND_JS" file="parc_internal_extension/background.js" type="BINDATA" />
++
+       <include name="IDR_READING_MODE_GDOC_HELPER_CONTENT_JS" file="reading_mode_gdocs_helper/content.js" type="BINDATA" />
+       <include name="IDR_READING_MODE_GDOC_HELPER_GDOCS_SCRIPT_JS" file="reading_mode_gdocs_helper/gdocs_script.js" type="BINDATA" />
+ 

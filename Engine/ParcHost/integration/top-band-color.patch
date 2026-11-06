@@ -1,0 +1,166 @@
+diff --git a/third_party/blink/public/mojom/BUILD.gn b/third_party/blink/public/mojom/BUILD.gn
+--- a/third_party/blink/public/mojom/BUILD.gn
++++ b/third_party/blink/public/mojom/BUILD.gn
+@@ -1192,6 +1192,7 @@
+     "page/prerender_page_param.mojom",
+     "page/widget.mojom",
+     "page_state/page_state.mojom",
++    "parc/top_band_color.mojom",
+ 
+     # transferable_message.mojom depends the other messaging/ mojom files here.
+     "messaging/cloneable_message.mojom",
+diff --git a/third_party/blink/renderer/core/frame/build.gni b/third_party/blink/renderer/core/frame/build.gni
+--- a/third_party/blink/renderer/core/frame/build.gni
++++ b/third_party/blink/renderer/core/frame/build.gni
+@@ -146,6 +146,8 @@
+   "page_scale_constraints_set.h",
+   "pagination_state.cc",
+   "pagination_state.h",
++  "parc_top_band_color_tracker.cc",
++  "parc_top_band_color_tracker.h",
+   "pausable_script_executor.cc",
+   "pausable_script_executor.h",
+   "performance_monitor.cc",
+diff --git a/third_party/blink/renderer/core/frame/local_frame.h b/third_party/blink/renderer/core/frame/local_frame.h
+--- a/third_party/blink/renderer/core/frame/local_frame.h
++++ b/third_party/blink/renderer/core/frame/local_frame.h
+@@ -166,6 +166,7 @@
+ class SystemClipboard;
+ class TextFragmentHandler;
+ class TextSuggestionController;
++class TopBandColorTracker;
+ class URLLoader;
+ class VirtualKeyboardOverlayChangedObserver;
+ class WebAutofillClient;
+@@ -325,6 +326,10 @@
+   ClipPathPaintImageGenerator* GetClipPathPaintImageGenerator();
+   void SetClipPathPaintImageGeneratorForTesting(ClipPathPaintImageGenerator*);
+   LCPCriticalPathPredictor* GetLCPP();
++  //
++  TopBandColorTracker* GetTopBandColorTracker() const {
++    return top_band_color_tracker_.Get();
++  }
+ 
+   // A local root is the root of a connected subtree that contains only
+   // LocalFrames. The local root is responsible for coordinating input, layout,
+@@ -1255,6 +1260,8 @@
+ 
+   Member<LCPCriticalPathPredictor> lcpp_;
+ 
++  Member<TopBandColorTracker> top_band_color_tracker_;
++
+   bool evict_cached_session_storage_on_freeze_or_unload_ = false;
+ 
+   // Indicate if the current document's color scheme was notified.
+diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
+--- a/third_party/blink/renderer/core/frame/local_frame.cc
++++ b/third_party/blink/renderer/core/frame/local_frame.cc
+@@ -156,6 +156,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame_mojo_handler.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+ #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
++#include "third_party/blink/renderer/core/frame/parc_top_band_color_tracker.h"
+ #include "third_party/blink/renderer/core/frame/pausable_script_executor.h"
+ #include "third_party/blink/renderer/core/frame/performance_monitor.h"
+ #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+@@ -565,6 +566,7 @@
+   visitor->Trace(box_shadow_paint_image_generator_);
+   visitor->Trace(clip_path_paint_image_generator_);
+   visitor->Trace(lcpp_);
++  visitor->Trace(top_band_color_tracker_);
+   visitor->Trace(v8_local_compile_hints_producer_);
+   visitor->Trace(browser_interface_broker_proxy_);
+   visitor->Trace(frame_visibility_observers_);
+@@ -2129,6 +2131,12 @@
+   if (IsOutermostMainFrame()) {
+     intersection_state_.occlusion_state =
+         mojom::blink::FrameOcclusionState::kGuaranteedNotOccluded;
++    //
++    // ordinary page has a top bar (not an SVG image's page).
++    if (page.IsOrdinary()) {
++      top_band_color_tracker_ =
++          MakeGarbageCollected<TopBandColorTracker>(*this);
++    }
+   }
+ 
+   Initialize();
+diff --git a/third_party/blink/renderer/core/frame/local_frame_view.cc b/third_party/blink/renderer/core/frame/local_frame_view.cc
+--- a/third_party/blink/renderer/core/frame/local_frame_view.cc
++++ b/third_party/blink/renderer/core/frame/local_frame_view.cc
+@@ -95,6 +95,7 @@
+ #include "third_party/blink/renderer/core/frame/location.h"
+ #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
+ #include "third_party/blink/renderer/core/frame/pagination_state.h"
++#include "third_party/blink/renderer/core/frame/parc_top_band_color_tracker.h"
+ #include "third_party/blink/renderer/core/frame/remote_frame.h"
+ #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
+ #include "third_party/blink/renderer/core/frame/root_frame_viewport.h"
+@@ -1093,6 +1094,11 @@
+   }
+ 
+   RunCanvasOnpaintSteps();
++
++  //
++  if (TopBandColorTracker* tracker = frame_->GetTopBandColorTracker()) {
++    tracker->FireDetection();
++  }
+ }
+ 
+ void LocalFrameView::RunCanvasOnpaintSteps() {
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -230,6 +230,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame_metrics_aggregator.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+ #include "third_party/blink/renderer/core/frame/page_dismissal_scope.h"
++#include "third_party/blink/renderer/core/frame/parc_top_band_color_tracker.h"
+ #include "third_party/blink/renderer/core/frame/performance_monitor.h"
+ #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+@@ -8020,6 +8021,11 @@
+ }
+ 
+ void Document::OnLargestContentfulPaintUpdated() {
++  if (LocalFrame* frame = GetFrame()) {
++    if (TopBandColorTracker* tracker = frame->GetTopBandColorTracker()) {
++      tracker->DidUpdateLargestContentfulPaint();
++    }
++  }
+   MaybeExecuteDelayedAsyncScripts(
+       MilestoneForDelayedAsyncScript::kLcpCandidate);
+ }
+@@ -8099,6 +8105,10 @@
+     // parsing is complete and no more static text/images will arrive.
+     if (frame->View()) {
+       frame->View()->MaybeStopDeferringCommitsWithoutContentfulPaint();
++    }
++    // Parc: the top band may now report the document background.
++    if (TopBandColorTracker* tracker = frame->GetTopBandColorTracker()) {
++      tracker->DidFinishParsing();
+     }
+ 
+     // Guarantee at least one call to the client specifying a title. (If
+diff --git a/third_party/blink/renderer/core/loader/document_loader.cc b/third_party/blink/renderer/core/loader/document_loader.cc
+--- a/third_party/blink/renderer/core/loader/document_loader.cc
++++ b/third_party/blink/renderer/core/loader/document_loader.cc
+@@ -109,6 +109,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_client.h"
+ #include "third_party/blink/renderer/core/frame/navigator.h"
++#include "third_party/blink/renderer/core/frame/parc_top_band_color_tracker.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/frame/web_feature.h"
+ #include "third_party/blink/renderer/core/html/html_body_element.h"
+@@ -3316,6 +3317,11 @@
+ 
+   DidInstallNewDocument(document);
+ 
++  // Parc: a new document restarts the top-band sampling.
++  if (TopBandColorTracker* tracker = frame_->GetTopBandColorTracker()) {
++    tracker->DidCommitNavigation();
++  }
++
+   // This must be called before the document is opened, otherwise HTML parser
+   // will use stale values from HTMLParserOption.
+   DidCommitNavigation();

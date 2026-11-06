@@ -1,0 +1,9 @@
+# Optional standalone URL component executable; no browser test harness.
+executable("parc_internal_urls_tests") {
+  testonly = true
+  sources = [ "InternalURLsTests.cc" ]
+  deps = [
+    "//cef/libcef/browser/parc_native:native_internal_urls_api",
+    "//url",
+  ]
+}

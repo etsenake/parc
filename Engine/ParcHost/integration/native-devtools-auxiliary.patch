@@ -1,0 +1,152 @@
+--- a/components/javascript_dialogs/app_modal_dialog_controller.cc
++++ b/components/javascript_dialogs/app_modal_dialog_controller.cc
+@@ -77,6 +77,8 @@
+     bool is_reload,
+     content::JavaScriptDialogManager::DialogClosedCallback callback)
+     : content::WebContentsObserver(web_contents),
++      native_view_factory_(
++          AppModalDialogManager::CaptureNativeViewFactory(web_contents)),
+       title_(title),
+       extra_data_map_(extra_data_map),
+       javascript_dialog_type_(javascript_dialog_type),
+@@ -103,8 +105,10 @@
+   // view and with it `this`.
+   base::WeakPtr<AppModalDialogController> weak_this =
+       weak_ptr_factory_.GetWeakPtr();
+-  view_ = AppModalDialogManager::GetInstance()->view_factory()->Run(
+-      std::move(controller));
++  auto factory = native_view_factory_
++                     ? native_view_factory_
++                     : *AppModalDialogManager::GetInstance()->view_factory();
++  view_ = factory.Run(std::move(controller));
+   view_->ShowAppModalDialog();
+   if (weak_this && app_modal_dialog_observer) {
+     app_modal_dialog_observer->Notify(this);
+@@ -208,11 +212,24 @@
+   Invalidate();
+ }
+ 
++void AppModalDialogController::SetNativeDecisionValidator(
++    base::RepeatingCallback<bool()> validator) {
++  CHECK(!view_);
++  native_decision_validator_ = std::move(validator);
++}
++
+ void AppModalDialogController::NotifyDelegate(bool success,
+                                               const std::u16string& user_input,
+                                               bool suppress_js_messages) {
+   if (!valid_) {
+     return;
++  }
++
++  const bool native_owner_valid =
++      !native_decision_validator_ || native_decision_validator_.Run();
++  if (!native_owner_valid) {
++    success = false;
++    suppress_js_messages = false;
+   }
+ 
+   // Mark invalid immediately so that any re-entrant calls (such as OnClose()
+@@ -225,7 +242,8 @@
+   // letting the dialog queue delete it. See https://crbug.com/560439699.
+   base::WeakPtr<AppModalDialogController> weak_this =
+       weak_ptr_factory_.GetWeakPtr();
+-  CallDialogClosedCallback(success, user_input);
++  CallDialogClosedCallback(success,
++                           native_owner_valid ? user_input : std::u16string());
+   if (!weak_this) {
+     return;
+   }
+--- a/components/javascript_dialogs/app_modal_dialog_controller.h
++++ b/components/javascript_dialogs/app_modal_dialog_controller.h
+@@ -35,6 +35,8 @@
+ // onbeforeunload dialog boxes.
+ class AppModalDialogController : public content::WebContentsObserver {
+  public:
++  using ViewFactory = base::RepeatingCallback<AppModalDialogView*(
++      std::unique_ptr<AppModalDialogController>)>;
+   using ExtraDataMap = std::map<void*, ChromeJavaScriptDialogExtraData>;
+ 
+   AppModalDialogController(
+@@ -94,6 +96,11 @@
+ 
+   // Accessors.
+   std::u16string title() const { return title_; }
++  // Native ownership can change while CompleteDialog shows the next queued
++  // item. This side-effect-free validator is checked immediately before the
++  // actual result/suppression decision, not merely before queue advancement.
++  void SetNativeDecisionValidator(base::RepeatingCallback<bool()> validator);
++
+   AppModalDialogView* view() const { return view_; }
+   content::JavaScriptDialogType javascript_dialog_type() const {
+     return javascript_dialog_type_;
+@@ -132,6 +139,8 @@
+                                 const std::u16string& prompt_text);
+ 
+   // The title of the dialog.
++  ViewFactory native_view_factory_;
++  base::RepeatingCallback<bool()> native_decision_validator_;
+   const std::u16string title_;
+ 
+   // False if the dialog should no longer be shown, e.g. because the underlying
+--- a/components/javascript_dialogs/app_modal_dialog_manager.cc
++++ b/components/javascript_dialogs/app_modal_dialog_manager.cc
+@@ -13,6 +13,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/no_destructor.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/supports_user_data.h"
+ #include "build/build_config.h"
+ #include "components/javascript_dialogs/app_modal_dialog_manager_delegate.h"
+ #include "components/javascript_dialogs/app_modal_dialog_queue.h"
+@@ -57,6 +58,31 @@
+ AppModalDialogManager* AppModalDialogManager::GetInstance() {
+   static base::NoDestructor<AppModalDialogManager> instance;
+   return instance.get();
++}
++
++namespace {
++constexpr char kNativeViewFactoryProvider[] = "native-app-modal-view-provider";
++struct NativeViewFactoryData : base::SupportsUserData::Data {
++  explicit NativeViewFactoryData(
++      AppModalDialogManager::NativeViewFactoryProvider value)
++      : provider(std::move(value)) {}
++  AppModalDialogManager::NativeViewFactoryProvider provider;
++};
++}  // namespace
++void AppModalDialogManager::SetNativeViewFactoryProvider(
++    content::WebContents& contents,
++    NativeViewFactoryProvider provider) {
++  contents.SetUserData(
++      kNativeViewFactoryProvider,
++      std::make_unique<NativeViewFactoryData>(std::move(provider)));
++}
++AppModalDialogManager::AppModalViewFactory
++AppModalDialogManager::CaptureNativeViewFactory(
++    content::WebContents* contents) {
++  auto* data = contents ? static_cast<NativeViewFactoryData*>(
++                              contents->GetUserData(kNativeViewFactoryProvider))
++                        : nullptr;
++  return data ? data->provider.Run() : AppModalViewFactory();
+ }
+ 
+ void AppModalDialogManager::SetNativeDialogFactory(
+--- a/components/javascript_dialogs/app_modal_dialog_manager.h
++++ b/components/javascript_dialogs/app_modal_dialog_manager.h
+@@ -41,6 +41,16 @@
+   // Sets the AppModalViewFactory used to create platform specific
+   // dialog window instances.
+   void SetNativeDialogFactory(AppModalViewFactory factory);
++
++  // Native presentation may capture an exact page/window lease before this
++  // controller is queued. Provider must be side-effect-free and return a
++  // factory that handles invalidation itself; empty preserves the default.
++  using NativeViewFactoryProvider =
++      base::RepeatingCallback<AppModalViewFactory()>;
++  static void SetNativeViewFactoryProvider(content::WebContents& contents,
++                                           NativeViewFactoryProvider provider);
++  static AppModalViewFactory CaptureNativeViewFactory(
++      content::WebContents* contents);
+ 
+   AppModalViewFactory* view_factory() { return &view_factory_; }
+ 

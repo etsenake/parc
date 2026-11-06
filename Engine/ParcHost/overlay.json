@@ -1,0 +1,3658 @@
+{
+  "schema_version": 1,
+  "id": "parc-native-host",
+  "version": 327,
+  "source_root": "repository",
+  "upstream": {
+    "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
+    "chromium": "d0c02bfad08ec92a6ffcf989e53cd995e6381a4c"
+  },
+  "build_targets": [
+    "parc_host_harness",
+    "parc_native_window_tests"
+  ],
+  "files": [
+    {
+      "source": "Engine/ParcHost/parc_native_host.h",
+      "target": "cef/libcef/browser/chrome/views/parc_native_host.h",
+      "sha256": "7ba91475af90cce09481ea02d498d8b90295e7e2ab194845682f630be75f3f4c"
+    },
+    {
+      "source": "Engine/ParcHost/parc_native_host.mm",
+      "target": "cef/libcef/browser/chrome/views/parc_native_host.mm",
+      "sha256": "840eeba010ea0885307ca032d0bfce89e848c1c2fb3c331a2788a803c557b59e"
+    },
+    {
+      "source": "tests/EngineConformance/native/main_mac.mm",
+      "target": "cef/tests/parc_host/main_mac.mm",
+      "sha256": "90a280012b5b409d2a6d1d4446c353a3212fcf206897df5e7ac848233a91c6d9"
+    },
+    {
+      "source": "tests/EngineConformance/native/Info.plist.in",
+      "target": "cef/tests/parc_host/Info.plist.in",
+      "sha256": "c9b3000b20116c884b60db2726a40fe04b2d15620996bad0066204868e2cd9be"
+    },
+    {
+      "source": "tests/EngineConformance/native/helper-Info.plist.in",
+      "target": "cef/tests/parc_host/helper-Info.plist.in",
+      "sha256": "3523c543c266181fe26a7069b554ddf33854d7ba81412aa204fd0547d544ebfc"
+    },
+    {
+      "source": "Engine/ParcNative/BUILD.gn",
+      "target": "cef/libcef/browser/parc_native/BUILD.gn",
+      "sha256": "e126033b4aa098200b7c236c39b19621604d248e01bfdc6f6064a2ced1f01c8c"
+    },
+    {
+      "source": "Engine/ParcNative/page_host.h",
+      "target": "cef/libcef/browser/parc_native/page_host.h",
+      "sha256": "0e1977b8dc4cec29f6796b4f4f86861adea0842fae950a85efe0b477c3fc9fa4"
+    },
+    {
+      "source": "Engine/ParcNative/page_host.mm",
+      "target": "cef/libcef/browser/parc_native/page_host.mm",
+      "sha256": "ea121624c78646f7d57b2c0ee432f1316b1652b2367999020df60b675952fbc2"
+    },
+    {
+      "source": "Engine/ParcNative/pane_compositor.h",
+      "target": "cef/libcef/browser/parc_native/pane_compositor.h",
+      "sha256": "c5656b192b5a4b7f5e4d42fef04e0353e2d2de53563442574f4a53cf624a6a85"
+    },
+    {
+      "source": "Engine/ParcNative/pane_compositor.mm",
+      "target": "cef/libcef/browser/parc_native/pane_compositor.mm",
+      "sha256": "43c42b5f44f759a671b63bc2b4668da2f300ac556c9b9c66aba29c95a48d58c8"
+    },
+    {
+      "source": "Engine/ParcNative/pane_compositor_policy.h",
+      "target": "cef/libcef/browser/parc_native/pane_compositor_policy.h",
+      "sha256": "e4f235f20f7795b16a41563e157af8a9b8826981cce5d0b966499a5d8f01d215"
+    },
+    {
+      "source": "Engine/ParcNative/pane_compositor_view.h",
+      "target": "cef/libcef/browser/parc_native/pane_compositor_view.h",
+      "sha256": "e27af34f940db72b65962b64aa7122fea0365a25fc1ef47da69d50d89b404307"
+    },
+    {
+      "source": "Engine/ParcNative/pane_compositor_view.mm",
+      "target": "cef/libcef/browser/parc_native/pane_compositor_view.mm",
+      "sha256": "44ecf87f290f097675811f05e39b0a684008371de1936b12530d9fe789636ccb"
+    },
+    {
+      "source": "Engine/ParcNative/browser_window.h",
+      "target": "cef/libcef/browser/parc_native/browser_window.h",
+      "sha256": "4c3c62c94d8474604a86921404860aa6ea263c8619327d2144e562c6899183af"
+    },
+    {
+      "source": "Engine/ParcNative/browser_window.mm",
+      "target": "cef/libcef/browser/parc_native/browser_window.mm",
+      "sha256": "e3042fd1d8d50a919eba3aee50a0b37245ba5024dee1962eb1e7a433bd9289f5"
+    },
+    {
+      "source": "tests/EngineConformance/native-window/BUILD.gn",
+      "target": "cef/tests/parc_native_window/BUILD.gn",
+      "sha256": "6d6b71f7f6604b3e1de657f3a1f67993bd499840e9d90c7f9a0dd9498b41960d"
+    },
+    {
+      "source": "tests/EngineConformance/native-window/ModalHostTests.mm",
+      "target": "cef/tests/parc_native_window/ModalHostTests.mm",
+      "sha256": "fa59720ff92d157e9530234b7506f7dc9bc140cb077541e9869cc92a8347dd8c"
+    },
+    {
+      "source": "Engine/ParcNative/native_chrome_platform_delegate.h",
+      "target": "cef/libcef/browser/parc_native/native_chrome_platform_delegate.h",
+      "sha256": "ed1adb60c2cf6f0ed15055434377f15d23386a00a5d01d2f29346571f0f3bd1d"
+    },
+    {
+      "source": "Engine/ParcNative/native_chrome_platform_delegate.mm",
+      "target": "cef/libcef/browser/parc_native/native_chrome_platform_delegate.mm",
+      "sha256": "9eef79597bc3b7b15cae8b4f948cac4a26349a09ee2f72d77a22fc8c3bb83b10"
+    },
+    {
+      "source": "Engine/ParcNative/extension_keybinding_registry.h",
+      "target": "cef/libcef/browser/parc_native/extension_keybinding_registry.h",
+      "sha256": "626803b9e2fc22dbb6621d931ab1127ee98473ca25fb57a8384f6cc4e88dd677"
+    },
+    {
+      "source": "Engine/ParcNative/extension_keybinding_registry.cc",
+      "target": "cef/libcef/browser/parc_native/extension_keybinding_registry.cc",
+      "sha256": "d2e7929acf494b0b234cb5c4805f0c6d8f49e2537fce831a19f8529f319628e9"
+    },
+    {
+      "source": "Engine/ParcNative/find_bar.h",
+      "target": "cef/libcef/browser/parc_native/find_bar.h",
+      "sha256": "2b66be1af7ff9250cff78ba1cf2f18c80e1e5906d1bbc42d2e1c76d646045f7c"
+    },
+    {
+      "source": "Engine/ParcNative/find_bar.mm",
+      "target": "cef/libcef/browser/parc_native/find_bar.mm",
+      "sha256": "5a310652563da961483b95f4b0780bd6913e8c44c1327df0638ade590e7fb911"
+    },
+    {
+      "source": "Engine/ParcNative/javascript_dialog_runner.h",
+      "target": "cef/libcef/browser/parc_native/javascript_dialog_runner.h",
+      "sha256": "ff028b78e07409f6839a31a7a2fe8b282e3dbf6186eb0e0abe406a28361b5b4d"
+    },
+    {
+      "source": "Engine/ParcNative/javascript_dialog_runner.mm",
+      "target": "cef/libcef/browser/parc_native/javascript_dialog_runner.mm",
+      "sha256": "8aa492514a4f83a302fe4df92cf37566df84aa1ddbd5a19f6ce0ff55668e9559"
+    },
+    {
+      "source": "Engine/ParcNative/location_bar.h",
+      "target": "cef/libcef/browser/parc_native/location_bar.h",
+      "sha256": "3877a2454fb18727bbd702635236fd081c09a5c342830d883c8b47c0c09f15fc"
+    },
+    {
+      "source": "Engine/ParcNative/location_bar.cc",
+      "target": "cef/libcef/browser/parc_native/location_bar.cc",
+      "sha256": "efae454cfde6aef8ce90ffc95807fda0b065db154a3c47101ee1fd42f1a9fbe1"
+    },
+    {
+      "source": "Engine/ParcNative/native_browser_window.h",
+      "target": "cef/libcef/browser/parc_native/native_browser_window.h",
+      "sha256": "1f987462d44781a750b9f4797837784894e72633c9c1a75eec0326fdec6448fa"
+    },
+    {
+      "source": "Engine/ParcNative/native_browser_window.mm",
+      "target": "cef/libcef/browser/parc_native/native_browser_window.mm",
+      "sha256": "97628f3a013d7f070441eb44300d8aa1657c707344c0d096d436424e2eab6aa0"
+    },
+    {
+      "source": "Engine/ParcNative/focus_manager.h",
+      "target": "cef/libcef/browser/parc_native/focus_manager.h",
+      "sha256": "4731b1241fe4ecf0efc9aa0833ca97e8c962f870e863f7fc56bbeb2eea56c850"
+    },
+    {
+      "source": "Engine/ParcNative/focus_manager.mm",
+      "target": "cef/libcef/browser/parc_native/focus_manager.mm",
+      "sha256": "0747e2f72e54174f26f028b9f93ebc907a2d03674b521b43f0dca1e6b4235111"
+    },
+    {
+      "source": "Engine/ParcNative/find_bar_view.h",
+      "target": "cef/libcef/browser/parc_native/find_bar_view.h",
+      "sha256": "2cc1c6858bef920c64120ebb91201f641e4a0a6d441f83dd6dcc64abbb4df608"
+    },
+    {
+      "source": "Engine/ParcNative/find_bar_view.mm",
+      "target": "cef/libcef/browser/parc_native/find_bar_view.mm",
+      "sha256": "ad14482a7f06742406ffd7097627e53bbb131af08b374deec213fa38ec07cb87"
+    },
+    {
+      "source": "Engine/ParcNative/javascript_dialog_presenter.h",
+      "target": "cef/libcef/browser/parc_native/javascript_dialog_presenter.h",
+      "sha256": "cf48974c1ab8a9228dc337ec49fbc2e4bf92d111aa3db65c693059d88bfbe0ea"
+    },
+    {
+      "source": "Engine/ParcNative/javascript_dialog_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/javascript_dialog_presenter.mm",
+      "sha256": "384685b6a3b39144f17f8560f662f8c72563200f2fa9744d2e449b789025b90e"
+    },
+    {
+      "source": "Engine/ParcNative/cef_dialog_runner_default.cc",
+      "target": "cef/libcef/browser/javascript_dialog_runner_default.cc",
+      "sha256": "ae45d0318fb3b8eff751aceb4f3b6da593a8ce7113f2b49eefcfa8a4d0da9b16"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_save_presenter.h",
+      "target": "cef/libcef/browser/parc_native/autofill_save_presenter.h",
+      "sha256": "ca8acc529ee14dea5116950e1df5008c01cff0692f8d6ca103e0cd40f8a14241"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_save_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/autofill_save_presenter.mm",
+      "sha256": "55db8a5a339693350c9ba6109f86009522e2d7549715f3ab9467ecc378b261e6"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_save_session.h",
+      "target": "cef/libcef/browser/parc_native/autofill_save_session.h",
+      "sha256": "13a8188a173b00c19766d402c50136f071fd0b224fb98c5c8214c5da594f3597"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_save_session.mm",
+      "target": "cef/libcef/browser/parc_native/autofill_save_session.mm",
+      "sha256": "7a35f16a0163575d3d1d1936f73aa04e9f9a8bee7b7c63fcf8dee91ad308cb58"
+    },
+    {
+      "source": "tests/NativeWindowLookup/native_window_lookup_unittest.cc",
+      "target": "chrome/browser/ui/views/frame/parc_native_window_lookup_unittest.cc",
+      "sha256": "bbce3b87cfa2949cdd6149b8536d89292548c2df8d9c2b5384bdd17a8bfb954a"
+    },
+    {
+      "source": "tests/NativeAutofillSave/BUILD.gn",
+      "target": "cef/tests/parc_native_autofill/BUILD.gn",
+      "sha256": "16069dc108e0fba231ba371c11c2ec224537d1f47f28af53e00901c94a94d5d7"
+    },
+    {
+      "source": "tests/NativeAutofillSave/session_unittest.mm",
+      "target": "cef/tests/parc_native_autofill/session_unittest.mm",
+      "sha256": "c7aa9b711731b91fc7f532240313cf3c9fc10ee9ad90d3ab85414eb2e05a729e"
+    },
+    {
+      "source": "Engine/ParcNative/extension_action_container.h",
+      "target": "cef/libcef/browser/parc_native/extension_action_container.h",
+      "sha256": "b29b0eed17aa637b44431cca1230daf08fff354d7ae648726c20174f8aa7ff01"
+    },
+    {
+      "source": "Engine/ParcNative/extension_action_container.mm",
+      "target": "cef/libcef/browser/parc_native/extension_action_container.mm",
+      "sha256": "9e73494790c941b5c243fc6bf06bf3c5ea8359dd9175ac54c3e737631df3f2e2"
+    },
+    {
+      "source": "Engine/ParcNative/extension_popup.h",
+      "target": "cef/libcef/browser/parc_native/extension_popup.h",
+      "sha256": "2f578e9f1fb55a7d09113960700331f231c512a54a34e8786e8527fa933ec6fc"
+    },
+    {
+      "source": "Engine/ParcNative/extension_popup.mm",
+      "target": "cef/libcef/browser/parc_native/extension_popup.mm",
+      "sha256": "a778dbc9c5f46249f53ac701f0e6db9cf4d7c3ed154f790cfebd1146e429dd9e"
+    },
+    {
+      "source": "Engine/ParcNative/extension_popup_presenter.h",
+      "target": "cef/libcef/browser/parc_native/extension_popup_presenter.h",
+      "sha256": "e2053ae8cf3067972e24fb4df57a99bd89cfcda13867d232a521ea09ca22e30d"
+    },
+    {
+      "source": "Engine/ParcNative/extension_popup_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/extension_popup_presenter.mm",
+      "sha256": "41de661dbe3fa3d9ba1eb9bca8a1604be79a3d6859a81bdd05f240da438f4c86"
+    },
+    {
+      "source": "tests/NativeExtensionPopup/BUILD.gn",
+      "target": "cef/tests/parc_native_extensions/BUILD.gn",
+      "sha256": "9bf9ab014dcd63aa9c945cab3959b94e5d1c3307a649eaef0bbf904fd34363bf"
+    },
+    {
+      "source": "tests/NativeExtensionPopup/extension_popup_browsertest.mm",
+      "target": "cef/tests/parc_native_extensions/extension_popup_browsertest.mm",
+      "sha256": "717eefbe58285fae13062a7b0340af119c4a3d01b2a4cd8cf8b5e23c97289daa"
+    },
+    {
+      "source": "Engine/ParcNative/extension_context_menu.h",
+      "target": "cef/libcef/browser/parc_native/extension_context_menu.h",
+      "sha256": "cd0377540ec29068da796e9b4c2f019a7d67745975ad1aac1bd62c4b601e245c"
+    },
+    {
+      "source": "Engine/ParcNative/extension_context_menu.mm",
+      "target": "cef/libcef/browser/parc_native/extension_context_menu.mm",
+      "sha256": "f169c03cfdd88475307ddb7030e840d1fff4236980f19075d6119aeb0dc46067"
+    },
+    {
+      "source": "tests/NativeExtensionContextMenu/context_menu_browsertest.mm",
+      "target": "cef/tests/parc_native_extensions/context_menu_browsertest.mm",
+      "sha256": "ee557926f8320be081e0c75a2a15ea81b20b79d21fab029dcc5f020b3e0c9014"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_bubble_handler.h",
+      "target": "cef/libcef/browser/parc_native/autofill_bubble_handler.h",
+      "sha256": "5eef6cd69ac1f53ca257ce52888961a6c843c37624d4425d01a10b073f17aa4d"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_bubble_handler.mm",
+      "target": "cef/libcef/browser/parc_native/autofill_bubble_handler.mm",
+      "sha256": "fde571ef2e714ffedb2c2e0f5f3ff0598d0ab501f35b0a3c1fac42ac2743b830"
+    },
+    {
+      "source": "Engine/ParcNative/autofill_ui_presentation.h",
+      "target": "components/autofill/core/browser/ui/autofill_ui_presentation.h",
+      "sha256": "ad2fde37be44419d33c631cccb3704b12bfdfe3c3e6585f0ba7330f8eb62d03d"
+    },
+    {
+      "source": "tests/NativeAutofillSave/capability_unittest.mm",
+      "target": "cef/tests/parc_native_autofill/capability_unittest.mm",
+      "sha256": "f0108c47157e363a2b6e9f3a431aa2c9ce37853b01c3957710ab28b138dce765"
+    },
+    {
+      "source": "tests/NativeAutofillSave/manager_capability_unittest.mm",
+      "target": "cef/tests/parc_native_autofill/manager_capability_unittest.mm",
+      "sha256": "c720fdeca9568185dc0e333ac2f0bf0887147f3f84660dab22cb98c544782cf5"
+    },
+    {
+      "source": "tests/NativeAutofillSave/queue_reentrancy_unittest.mm",
+      "target": "cef/tests/parc_native_autofill/queue_reentrancy_unittest.mm",
+      "sha256": "cb9a1ce3c8e1545b3ac13675982e558e13a30f0fb1184b87855ec330a15978d2"
+    },
+    {
+      "source": "tests/NativeAutofillSave/product_policy_unittest.mm",
+      "target": "cef/tests/parc_native_autofill/product_policy_unittest.mm",
+      "sha256": "6ee268feba0b922c437bfc73d03c680a2660b3cb2c2e8be7cd79f587eff28d76"
+    },
+    {
+      "source": "Engine/ParcNative/extension_security_context.h",
+      "target": "cef/libcef/browser/parc_native/extension_security_context.h",
+      "sha256": "aac7f782ba8ec06ef1186e5d5a86ed199355a5ca57a6097182a892bff0da0438"
+    },
+    {
+      "source": "Engine/ParcNative/extension_uninstall.h",
+      "target": "cef/libcef/browser/parc_native/extension_uninstall.h",
+      "sha256": "e7f966cd32d54c51431fee81e0ee734ae9b941cf4e6f95bdb7a25dee5847ab95"
+    },
+    {
+      "source": "Engine/ParcNative/extension_uninstall.mm",
+      "target": "cef/libcef/browser/parc_native/extension_uninstall.mm",
+      "sha256": "30790b8d0ff5db768830341cb9d8d12ef5cfdf04f14400e5400021a13b571886"
+    },
+    {
+      "source": "Engine/ParcNative/extension_uninstall_presenter.h",
+      "target": "cef/libcef/browser/parc_native/extension_uninstall_presenter.h",
+      "sha256": "2d947e11ee4fd050add8b5ed96e9cd05e7c537e7de071a7bb00f60e9dee14b5d"
+    },
+    {
+      "source": "Engine/ParcNative/extension_uninstall_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/extension_uninstall_presenter.mm",
+      "sha256": "46bcb1d842bd2aca55f3fe2a4993b72e76f352bbb7b9e0471904924c5aaf524e"
+    },
+    {
+      "source": "Engine/ParcNative/window_security_reservation.h",
+      "target": "cef/libcef/browser/parc_native/window_security_reservation.h",
+      "sha256": "8aac42755ffa7f1a75f178946ca3320812f7673531d37103ad20c6b67d685f4d"
+    },
+    {
+      "source": "Engine/ParcNative/window_security_reservation.mm",
+      "target": "cef/libcef/browser/parc_native/window_security_reservation.mm",
+      "sha256": "d5c78b0b87ba78b348373261b4ec3729119123364c7eb55aafbd72425d8512c8"
+    },
+    {
+      "source": "Engine/ParcNative/extension_uninstall_native_host.h",
+      "target": "chrome/browser/extensions/extension_uninstall_native_host.h",
+      "sha256": "4317e9890bd0ec3e6c224463fddc16d7d0b0f27a4fde6a24018eccc969ae51bf"
+    },
+    {
+      "source": "tests/NativeExtensionUninstall/uninstall_browsertest.mm",
+      "target": "cef/tests/parc_native_extensions/uninstall_browsertest.mm",
+      "sha256": "e91116930c8c1834157edf17782966097380221163715a424f318e548c091b34"
+    },
+    {
+      "source": "Engine/ParcNative/extension_side_panel.h",
+      "target": "cef/libcef/browser/parc_native/extension_side_panel.h",
+      "sha256": "ff76853b727fd711c98ec2341fc8a66a2c66b1a2d1cc3cfe9aaaf625562e1310"
+    },
+    {
+      "source": "Engine/ParcNative/extension_side_panel_input.h",
+      "target": "cef/libcef/browser/parc_native/extension_side_panel_input.h",
+      "sha256": "d221c2a88d66d93549a983e284428b5ee53e479d34c2ad4b195f87b03f925acb"
+    },
+    {
+      "source": "Engine/ParcNative/extension_side_panel.mm",
+      "target": "cef/libcef/browser/parc_native/extension_side_panel.mm",
+      "sha256": "6ec3e7b6ccdac46c7f2c86b0d61477ba5be44f42e2426d7476a462e4aaa7bbba"
+    },
+    {
+      "source": "tests/NativeExtensionSidePanel/BUILD.gn",
+      "target": "cef/tests/parc_native_side_panel/BUILD.gn",
+      "sha256": "11833a8b62aafbe2fa2be3d454cd77e9af917296ada2840cabdfceaa69a95eb1"
+    },
+    {
+      "source": "tests/NativeExtensionSidePanel/side_panel_browsertest.mm",
+      "target": "cef/tests/parc_native_side_panel/side_panel_browsertest.mm",
+      "sha256": "02751fa66a66fe164538dafc2799eb54ea4dc9e6fd216ef87f6230122b01e9a8"
+    },
+    {
+      "source": "Engine/ParcNative/native_appkit_application.mm",
+      "target": "cef/libcef/browser/parc_native/native_appkit_application.mm",
+      "sha256": "489039e2cd0324abe29c50ecb753316b2096438483bbd928a5e16c47cc293ce9"
+    },
+    {
+      "source": "Engine/ParcNative/native_appkit_bridge.h",
+      "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
+      "sha256": "96cb4095584c59e2371a3774d7034f3f4abd865887d4ead7087f452b7c8c77c2"
+    },
+    {
+      "source": "Engine/ParcNative/native_appkit_host.h",
+      "target": "cef/libcef/browser/parc_native/native_appkit_host.h",
+      "sha256": "eac582c51a5685fe1d7a737f67f0363867cca6ed926c66d512e1af79387e131b"
+    },
+    {
+      "source": "Engine/ParcNative/native_appkit_host.mm",
+      "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
+      "sha256": "0ad8571a51e5ee0937bcb654e43a061a7deacf0eb09b011530cbd4db61790763"
+    },
+    {
+      "source": "Engine/ParcNative/native_appkit_page.h",
+      "target": "cef/libcef/browser/parc_native/native_appkit_page.h",
+      "sha256": "e1e46839b1621ed3a9ece43643c4f2ef2cc36c6ddf5a72a784876231b1452154"
+    },
+    {
+      "source": "Engine/ParcNative/native_appkit_page.mm",
+      "target": "cef/libcef/browser/parc_native/native_appkit_page.mm",
+      "sha256": "a4f93d78c2a09e04a2f50ad8438be76964b98c3f4d9292090a327b9fabd19ca7"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_shell_notify.h",
+      "target": "cef/libcef/browser/parc_native/native_page_shell_notify.h",
+      "sha256": "0dfb4c7c82853a89745e2d314df74fc43333c9b10abaadfae3c4ae75f3574d97"
+    },
+    {
+      "source": "Engine/ParcNative/native_engine_entry.h",
+      "target": "cef/libcef/browser/parc_native/native_engine_entry.h",
+      "sha256": "846053c36dac63b4c7e8cadb918ddfe78a97189adfa3c0ecba76474c24743184"
+    },
+    {
+      "source": "Engine/ParcNative/native_startup_policy.h",
+      "target": "cef/libcef/browser/parc_native/native_startup_policy.h",
+      "sha256": "157405dcebabb1e3e3992b33f792db326356f60c5e8ea42ad52dc22a6cd76dd4"
+    },
+    {
+      "source": "Engine/ParcNative/native_engine_entry.mm",
+      "target": "cef/libcef/browser/parc_native/native_engine_entry.mm",
+      "sha256": "d023deef15ba703d0a40a9d23090e42129e3ea4b08baa23e08fa4051ba2b4709"
+    },
+    {
+      "source": "Engine/ParcNative/native_exclusive_access.h",
+      "target": "cef/libcef/browser/parc_native/native_exclusive_access.h",
+      "sha256": "844ea5bfa4cbc90778c43f0fe91c9eb3e2b6f98c677aaec6589b7efeba69318f"
+    },
+    {
+      "source": "Engine/ParcNative/native_exclusive_access.mm",
+      "target": "cef/libcef/browser/parc_native/native_exclusive_access.mm",
+      "sha256": "d9793c4c086f20600bcdfee313c6bc72144abd49616f6930b84f45eb2828cbab"
+    },
+    {
+      "source": "Engine/ParcNative/native_host_route.cc",
+      "target": "cef/libcef/browser/parc_native/native_host_route.cc",
+      "sha256": "620544e22c8f3da0812f66a35ace3fe554d1179952ed5d05b600c04aabc34c04"
+    },
+    {
+      "source": "Engine/ParcNative/native_host_route.h",
+      "target": "cef/libcef/browser/parc_native/native_host_route.h",
+      "sha256": "bd8d0a463712495f226f7cce72e56ebb304d11c7af43a2c765aebe4e910859c0"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_retirement.h",
+      "target": "cef/libcef/browser/parc_native/native_page_retirement.h",
+      "sha256": "ec1f22819032917446cb419a67ab12590eeb445d2ec42409c7f7737397e96100"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_retirement.mm",
+      "target": "cef/libcef/browser/parc_native/native_page_retirement.mm",
+      "sha256": "3b1c212519c2409c774f25dcce3cb6baa319abba69c0be040d3ea131ff35661d"
+    },
+    {
+      "source": "Engine/ParcNative/tab_retirement.cc",
+      "target": "cef/libcef/browser/parc_native/tab_retirement.cc",
+      "sha256": "b569787455cd6b2d1614cde6343f8ddf16dfddb77e9fbc05fc0c646f24c7ee58"
+    },
+    {
+      "source": "Engine/ParcNative/tab_retirement.h",
+      "target": "cef/libcef/browser/parc_native/tab_retirement.h",
+      "sha256": "52f9d5593056dc640009c7e8488c12931b77e1c926fd54ff05d606ecda0d0f69"
+    },
+    {
+      "source": "tests/NativePageRetirement/BUILD.gn",
+      "target": "cef/tests/parc_native_page_retirement/BUILD.gn",
+      "sha256": "742aede0f42e5ae388b397abf48ea59a38c971ffe86736d6b5826fef0333ed92"
+    },
+    {
+      "source": "tests/NativePageRetirement/unload_preflight_unittest.cc",
+      "target": "cef/tests/parc_native_page_retirement/unload_preflight_unittest.cc",
+      "sha256": "8ceaab9fc3e3e11bbfad38ff9ee698778c71ce8015a95360986b9b9758a9377d"
+    },
+    {
+      "source": "Engine/ParcNative/site_permission_presenter.h",
+      "target": "cef/libcef/browser/parc_native/site_permission_presenter.h",
+      "sha256": "c45428052abd3af08aa6747a05b12caa99c7f229fbd41135d86f2a1e3aec11fd"
+    },
+    {
+      "source": "Engine/ParcNative/site_permission_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/site_permission_presenter.mm",
+      "sha256": "4bae038a8715d1774b2a6d43552b7648612e4c8e26b64944f6c501fa6d424a79"
+    },
+    {
+      "source": "Engine/ParcNative/site_permissions.h",
+      "target": "cef/libcef/browser/parc_native/site_permissions.h",
+      "sha256": "cecda858ec0ea57ab21f6a93c99e0af157d97080c872d0f5736de2981738fc7d"
+    },
+    {
+      "source": "Engine/ParcNative/site_permissions.mm",
+      "target": "cef/libcef/browser/parc_native/site_permissions.mm",
+      "sha256": "a63e61306ec1a28886381f9dd1ff29ea182726a41b8221e4abc8bb29d8f81310"
+    },
+    {
+      "source": "tests/NativeSitePermissions/BUILD.gn",
+      "target": "cef/tests/parc_native_permissions/BUILD.gn",
+      "sha256": "bbd50b037b179b8c700bc570afb82f327c334cb22afc7f9ad05db5aaedb4f712"
+    },
+    {
+      "source": "tests/NativeSitePermissions/permission_prompt_unittest.mm",
+      "target": "cef/tests/parc_native_permissions/permission_prompt_unittest.mm",
+      "sha256": "af3fd2a60ebf2662ebff023f0a06ed43838c17314863a57cf074cba21c90b40d"
+    },
+    {
+      "source": "Engine/ParcHost/integration/extension_install_native_host.h",
+      "target": "chrome/browser/extensions/extension_install_native_host.h",
+      "sha256": "c6175cc57bfa743bcd38eb000357e85f712e10c88e4b3fa8869d50233491d94e"
+    },
+    {
+      "source": "tests/NativeExtensionInstall/install_browsertest.mm",
+      "target": "cef/tests/parc_native_extensions/install_browsertest.mm",
+      "sha256": "9d8ede7a98e123b7811ceaacf3f42587f45a8eea1d220f3101caccbf4df3178e"
+    },
+    {
+      "source": "Engine/ParcNative/extension_install.h",
+      "target": "cef/libcef/browser/parc_native/extension_install.h",
+      "sha256": "a924573a83ddd30e858d6eed583c748f5d06b1d41ab9a1dd545944e9e7b7edf9"
+    },
+    {
+      "source": "Engine/ParcNative/extension_install.mm",
+      "target": "cef/libcef/browser/parc_native/extension_install.mm",
+      "sha256": "7ad7a02c06c2b872fca21ba4606142d8ec4834e3bf007eeffe396e716d545977"
+    },
+    {
+      "source": "Engine/ParcNative/extension_install_presenter.h",
+      "target": "cef/libcef/browser/parc_native/extension_install_presenter.h",
+      "sha256": "f8d5da4d9bd5d60b2881a7051d4f84ecc0f8d0fe01323b18590e31c3f12c5364"
+    },
+    {
+      "source": "Engine/ParcNative/extension_install_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/extension_install_presenter.mm",
+      "sha256": "f4dcabde67f7ee49228c8f9da9d883859d5efe755d722ee62085c33355c51222"
+    },
+    {
+      "source": "Engine/ParcNative/tab_transfer.h",
+      "target": "cef/libcef/browser/parc_native/tab_transfer.h",
+      "sha256": "e105c488cb3ba87c380372bb25f4a803a9249c0b2dfb2e4064ded660b25962e6"
+    },
+    {
+      "source": "Engine/ParcNative/tab_transfer.cc",
+      "target": "cef/libcef/browser/parc_native/tab_transfer.cc",
+      "sha256": "63aacf5b5db5ad2ed83546b1e4fe5b0fb97314ee4d317c5955e804687ed8b1f1"
+    },
+    {
+      "source": "tests/NativeTabTransfer/BUILD.gn",
+      "target": "cef/tests/parc_native_tab_transfer/BUILD.gn",
+      "sha256": "134aa3e9f6b33772d3afe6caf276edafe4d6909aff7928cdeaa33d114227ba8b"
+    },
+    {
+      "source": "tests/NativeTabTransfer/tab_transfer_unittest.cc",
+      "target": "cef/tests/parc_native_tab_transfer/tab_transfer_unittest.cc",
+      "sha256": "cdbb93151dfa1837b742b5dbdb82baa3cd17a179bce0dff32154f594549fcef2"
+    },
+    {
+      "source": "Engine/ParcNative/downloads.cc",
+      "target": "cef/libcef/browser/parc_native/downloads.cc",
+      "sha256": "f42c7c390d801f472a9bad736d365011e3a7198ce5a920d5e90b5639f8618128"
+    },
+    {
+      "source": "Engine/ParcNative/downloads.h",
+      "target": "cef/libcef/browser/parc_native/downloads.h",
+      "sha256": "ec3c6b8dad1a5d25a28e313ba0080a5bad5de61d08fa5a5816091c98043da9a2"
+    },
+    {
+      "source": "Engine/ParcNative/file_dialog.h",
+      "target": "cef/libcef/browser/parc_native/file_dialog.h",
+      "sha256": "b290c190ef21ce5bb81184e3af841682e8e7cb2a63bc910811d43d6707d0c44b"
+    },
+    {
+      "source": "Engine/ParcNative/file_dialog.mm",
+      "target": "cef/libcef/browser/parc_native/file_dialog.mm",
+      "sha256": "e4a537875d7b717863f39372c1a54f7840fa635597da76648975b5762d687c86"
+    },
+    {
+      "source": "tests/NativeDownloads/downloads_unittest.cc",
+      "target": "cef/tests/parc_native_downloads/downloads_unittest.cc",
+      "sha256": "7ade62ab4188d1bceed06ac34bba926ccb9bfb7c57a20a7f35bebe6c3b75a50e"
+    },
+    {
+      "source": "tests/NativeDownloads/file_dialog_browsertest.mm",
+      "target": "cef/tests/parc_native_downloads/file_dialog_browsertest.mm",
+      "sha256": "013bee3b31eb1e487534e581fc7992fc55ae3b44e58f2d5953d4a01cea0987c3"
+    },
+    {
+      "source": "tests/NativeDownloads/BUILD.gn",
+      "target": "cef/tests/parc_native_downloads/BUILD.gn",
+      "sha256": "85df6b834fe761badad5850cb5a54c0c01f5c14385ac72a06dba42ad774127f3"
+    },
+    {
+      "source": "Engine/ParcNative/http_auth.h",
+      "target": "cef/libcef/browser/parc_native/http_auth.h",
+      "sha256": "1c745110790f89e7e307cc134482f49c0284b016076de32e38c3f19d7a218b79"
+    },
+    {
+      "source": "Engine/ParcNative/http_auth.mm",
+      "target": "cef/libcef/browser/parc_native/http_auth.mm",
+      "sha256": "0d46b99fd3fe713f290de55880b111473a3cbe9102053482c1b890cea91afd07"
+    },
+    {
+      "source": "Engine/ParcNative/http_auth_presenter.h",
+      "target": "cef/libcef/browser/parc_native/http_auth_presenter.h",
+      "sha256": "90b3f784cc0c9bca1a0d963326defd71fd23aab52108f50ac771ea5179070279"
+    },
+    {
+      "source": "Engine/ParcNative/http_auth_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/http_auth_presenter.mm",
+      "sha256": "d8b396b4845f3e6407a2dbcc231415c27cc2f449fc59f14aa5db8fb8346afe3e"
+    },
+    {
+      "source": "tests/NativeHTTPAuth/BUILD.gn",
+      "target": "cef/tests/parc_native_http_auth/BUILD.gn",
+      "sha256": "2d4cf6c247cc0a5be874201a1398a18a3d50449ee1976ff4ce4a1e7b1edd40e8"
+    },
+    {
+      "source": "tests/NativeHTTPAuth/login_unittest.mm",
+      "target": "cef/tests/parc_native_http_auth/login_unittest.mm",
+      "sha256": "cbc475d6a45bd90796986df8f47c7525b442fca5d94e5c190655ea032f744e07"
+    },
+    {
+      "source": "Engine/ParcNative/status_text.h",
+      "target": "cef/libcef/browser/parc_native/status_text.h",
+      "sha256": "59f57eb4e5fb369ea4a5031e091ec1f929e1e67656b3e5de45e8098746978113"
+    },
+    {
+      "source": "Engine/ParcNative/status_text.mm",
+      "target": "cef/libcef/browser/parc_native/status_text.mm",
+      "sha256": "ad6cac8caff3de19f6fbf03ffcd273ea5dc2e7e81c4d928ded59aecee23493a5"
+    },
+    {
+      "source": "Engine/ParcNative/client_certificates.mm",
+      "target": "cef/libcef/browser/parc_native/client_certificates.mm",
+      "sha256": "af0e00965ac6a2e0b6123f85696781b37850651d16348754506b4bd307aaf08e"
+    },
+    {
+      "source": "Engine/ParcNative/client_certificates.h",
+      "target": "cef/libcef/browser/parc_native/client_certificates.h",
+      "sha256": "860b66fe41e8bb39c44866d067e6cfda161c9324b4f92309cdcb417733f2c319"
+    },
+    {
+      "source": "tests/NativeClientCertificates/BUILD.gn",
+      "target": "cef/tests/parc_native_client_certificates/BUILD.gn",
+      "sha256": "83fc65962ff43a59618300823bfcd34a386bd3c588e7368be30f145aa8cb5f87"
+    },
+    {
+      "source": "tests/NativeClientCertificates/selector_unittest.mm",
+      "target": "cef/tests/parc_native_client_certificates/selector_unittest.mm",
+      "sha256": "685bf4f69201d938d47bfd0ad5de32de6b21c42fb6e59218f39abe75e2044881"
+    },
+    {
+      "source": "Engine/ParcNative/devtools_pane.h",
+      "target": "cef/libcef/browser/parc_native/devtools_pane.h",
+      "sha256": "9ee5f6c1eb7cfe5b10da332ed395a962dac7b97297dbab590c3f83c540c7dda0"
+    },
+    {
+      "source": "Engine/ParcNative/devtools_pane.mm",
+      "target": "cef/libcef/browser/parc_native/devtools_pane.mm",
+      "sha256": "0b27dfae2b6e572428f711f2279c78e64ecb8988ef8344840ae74252c9436472"
+    },
+    {
+      "source": "Engine/ParcNative/devtools_pane_view.h",
+      "target": "cef/libcef/browser/parc_native/devtools_pane_view.h",
+      "sha256": "b43f4924a27ddffe9f189ca6b83d83ae5bda06b70c161b4f2cdb7f1e4f9a9720"
+    },
+    {
+      "source": "Engine/ParcNative/devtools_pane_view.mm",
+      "target": "cef/libcef/browser/parc_native/devtools_pane_view.mm",
+      "sha256": "9780c31635dad3c3312ff2badc0ac51f8e55b557f17c3e117a79f3767ca637e5"
+    },
+    {
+      "source": "tests/NativeDevTools/BUILD.gn",
+      "target": "cef/tests/parc_native_devtools/BUILD.gn",
+      "sha256": "69f3c3bf4b6c18dbe469a25810ee6d9e0260439ebc6b503d7f32cc2321734aba"
+    },
+    {
+      "source": "tests/NativeDevTools/devtools_browsertest.mm",
+      "target": "cef/tests/parc_native_devtools/devtools_browsertest.mm",
+      "sha256": "c7e089cbce037283174cc08fdc581465dd670f087aa3d342f72eb401086230ef"
+    },
+    {
+      "source": "tests/NativeRuntime/BUILD.gn",
+      "target": "cef/tests/parc_native_runtime/BUILD.gn",
+      "sha256": "665ac83fdef8a528eff4105ec60958a950fb83afdb56c45b36f6e8544019b065"
+    },
+    {
+      "source": "tests/NativeRuntime/runtime_driver.h",
+      "target": "cef/tests/parc_native_runtime/runtime_driver.h",
+      "sha256": "4fd0b4c567d839ca2ca4f1085552e240a8d4374137f06ab5d1a33d3affcfab18"
+    },
+    {
+      "source": "tests/NativeRuntime/runtime_driver.mm",
+      "target": "cef/tests/parc_native_runtime/runtime_driver.mm",
+      "sha256": "6cdce41a0c865ec49887342cd51f54d7f62c9814c9ef5f852a896a63d66541cb"
+    },
+    {
+      "source": "Engine/ParcNative/external_protocol.h",
+      "target": "cef/libcef/browser/parc_native/external_protocol.h",
+      "sha256": "26474392e0cf411e7ff246c16b380a6ea0f6821e2de4343815ff75935b7e6245"
+    },
+    {
+      "source": "Engine/ParcNative/external_protocol.mm",
+      "target": "cef/libcef/browser/parc_native/external_protocol.mm",
+      "sha256": "4041daa7183f72cf2dc65807144eb251da82f14248652a4cfeb0280c157aa748"
+    },
+    {
+      "source": "Engine/ParcNative/external_protocol_presenter.h",
+      "target": "cef/libcef/browser/parc_native/external_protocol_presenter.h",
+      "sha256": "d39101162ee2be8f3d0bd0365d54d9eb1659624faefc2571c963d1786a80bc17"
+    },
+    {
+      "source": "Engine/ParcNative/external_protocol_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/external_protocol_presenter.mm",
+      "sha256": "a1e6a5bdbe71a17d95fd319cc5f46ff626df128ba47d78d7dd18b8b8970d1232"
+    },
+    {
+      "source": "tests/NativeExternalProtocol/BUILD.gn",
+      "target": "cef/tests/parc_native_external_protocol/BUILD.gn",
+      "sha256": "1ee2a91b583d6c7a9ad14b72541cc9864b9ac441af1ce8f6131d3682e1a29416"
+    },
+    {
+      "source": "tests/NativeExternalProtocol/dialog_unittest.mm",
+      "target": "cef/tests/parc_native_external_protocol/dialog_unittest.mm",
+      "sha256": "4b2105595e7f7b1420af61ecb288a2d277ee3f0438282370fcb278467522d034"
+    },
+    {
+      "source": "Engine/ParcNative/native_external_protocol_dialog.h",
+      "target": "chrome/browser/external_protocol/native_external_protocol_dialog.h",
+      "sha256": "7ac4246bcb10c8f82b3b450ccf45115c008b1aff0bbe00f0cfb4ccd8ad12b32b"
+    },
+    {
+      "source": "Engine/ParcNative/webauthn.h",
+      "target": "cef/libcef/browser/parc_native/webauthn.h",
+      "sha256": "2a17560ab61765405a9778235dd82d008afbfa6558fd1245110ad644c2e69f23"
+    },
+    {
+      "source": "Engine/ParcNative/webauthn.mm",
+      "target": "cef/libcef/browser/parc_native/webauthn.mm",
+      "sha256": "aebe9b3d8963f8ec152c08eafdee763ae6dfd7abd4cb3623534edaf339716046"
+    },
+    {
+      "source": "Engine/ParcNative/native_authenticator_request_context.h",
+      "target": "chrome/browser/webauthn/native_authenticator_request_context.h",
+      "sha256": "0d8905c07365d4ef0cde4b9c8e31a9aebcf5edca72c72c09b335949db2a4c2a1"
+    },
+    {
+      "source": "tests/NativeWebAuthn/BUILD.gn",
+      "target": "cef/tests/parc_native_webauthn/BUILD.gn",
+      "sha256": "402730e71dc3cdbc868a7c83d4daa7c04171ddc40b3fb122b8ad30bbc0e73cb9"
+    },
+    {
+      "source": "tests/NativeWebAuthn/request_unittest.mm",
+      "target": "cef/tests/parc_native_webauthn/request_unittest.mm",
+      "sha256": "5b08836cac7c1cf11b864f3123fae4b31ed0abf01e0ec7eaa9ff7717073f8d7c"
+    },
+    {
+      "source": "Engine/ParcNative/native_auxiliary_page.h",
+      "target": "cef/libcef/browser/parc_native/native_auxiliary_page.h",
+      "sha256": "aa9b749911555123474111c58bc372be8a371d36b16619259d4d9b9cacab5cae"
+    },
+    {
+      "source": "Engine/ParcNative/native_auxiliary_page.mm",
+      "target": "cef/libcef/browser/parc_native/native_auxiliary_page.mm",
+      "sha256": "6cb1a15993c71199b7850b2343a324a6abc397a76b7c4691715dcc25aee00195"
+    },
+    {
+      "source": "Engine/ParcNative/native_auxiliary_services.h",
+      "target": "cef/libcef/browser/parc_native/native_auxiliary_services.h",
+      "sha256": "c387ede5f816104a714b1b665c1765d02d3a255f73c6cca8a6ac3ba234447816"
+    },
+    {
+      "source": "Engine/ParcNative/native_auxiliary_services.mm",
+      "target": "cef/libcef/browser/parc_native/native_auxiliary_services.mm",
+      "sha256": "e8e085f004d06f37698cef8b205879780d28875f2348169e5cc2b0bcef0459d0"
+    },
+    {
+      "source": "tests/NativeDevTools/auxiliary_browsertest.mm",
+      "target": "cef/tests/parc_native_devtools/auxiliary_browsertest.mm",
+      "sha256": "2b692a98a21803c6e17578bba4c049ec5448129ef13fc5b3c31c81fcb39da630"
+    },
+    {
+      "source": "Engine/ParcNative/certificate_viewer.h",
+      "target": "cef/libcef/browser/parc_native/certificate_viewer.h",
+      "sha256": "8aa3b22807db58c7bc8e98a9fd0d1b49812f71447fb440b897514f3abe7a18b8"
+    },
+    {
+      "source": "Engine/ParcNative/certificate_viewer.mm",
+      "target": "cef/libcef/browser/parc_native/certificate_viewer.mm",
+      "sha256": "efca8a759ae23516b4f8b19e33ef44794bf37dffee3ce370b6e0281882293715"
+    },
+    {
+      "source": "Engine/ParcNative/certificate_viewer_presenter.h",
+      "target": "cef/libcef/browser/parc_native/certificate_viewer_presenter.h",
+      "sha256": "81d6460554b183bd718ace9656d9d26e91cf3e69aded660120ea890a6d7c7dde"
+    },
+    {
+      "source": "Engine/ParcNative/certificate_viewer_presenter.mm",
+      "target": "cef/libcef/browser/parc_native/certificate_viewer_presenter.mm",
+      "sha256": "70a0fee24feec92dacec1e106b83520740d7ed06ec7ea8a4dac9f79df150d740"
+    },
+    {
+      "source": "Engine/ParcNative/native_server_certificate_viewer.h",
+      "target": "chrome/browser/native_server_certificate_viewer.h",
+      "sha256": "b7246a3d3643bd0830f71e891b46aba15f28a0b46cac48ffe8e160832e0a50c8"
+    },
+    {
+      "source": "tests/NativeCertificateViewer/BUILD.gn",
+      "target": "cef/tests/parc_native_certificate_viewer/BUILD.gn",
+      "sha256": "4595519763f74afc6350f46e4efb1fd010418e9f59166fb7e47aa4fe66df3ab8"
+    },
+    {
+      "source": "tests/NativeCertificateViewer/viewer_unittest.mm",
+      "target": "cef/tests/parc_native_certificate_viewer/viewer_unittest.mm",
+      "sha256": "2b2cce88abf1625121ec06dd73028003fdd59826afc51f91c0e124ebe1032297"
+    },
+    {
+      "source": "Engine/ParcNative/video_overlay_window.h",
+      "target": "cef/libcef/browser/parc_native/video_overlay_window.h",
+      "sha256": "fd49d980d39bd8a0588728ee986d6a093cf1aed5c2ed51b7b1239a07a4f88aa4"
+    },
+    {
+      "source": "Engine/ParcNative/video_overlay_window.mm",
+      "target": "cef/libcef/browser/parc_native/video_overlay_window.mm",
+      "sha256": "8afd7541ba72f158528361171c0a9af4efa69e75a288e7dc81766b23b7694081"
+    },
+    {
+      "source": "Sources/ParcEngine/VideoPiPWindow.h",
+      "target": "cef/tests/parc_native_video_pip/VideoPiPWindow.h",
+      "sha256": "2634862852faf1abe60924bd8c2ded1b0e2d0e1fffaf2a672b5169764812cc36"
+    },
+    {
+      "source": "Sources/ParcEngine/VideoPiPWindow.m",
+      "target": "cef/tests/parc_native_video_pip/VideoPiPWindow.m",
+      "sha256": "db1406949cfbd47935c786d6c7ba85afb279a3b60574698873e1a2b9554b4d6e"
+    },
+    {
+      "source": "tests/NativeVideoPiP/BUILD.gn",
+      "target": "cef/tests/parc_native_video_pip/BUILD.gn",
+      "sha256": "0c77fc202d39d678e3b35ab3de5dd89843000b5ec2886ad8d184e099b20c8da3"
+    },
+    {
+      "source": "tests/NativeVideoPiP/controller_browsertest.mm",
+      "target": "cef/tests/parc_native_video_pip/controller_browsertest.mm",
+      "sha256": "0953b487ad93d3b953ba68d01d7dc0854f7cd7cba4f324aabfac6cf619f32193"
+    },
+    {
+      "source": "tests/NativeVideoPiP/occlusion_unittest.mm",
+      "target": "cef/tests/parc_native_video_pip/occlusion_unittest.mm",
+      "sha256": "081432ac02e5f076a5270a2b932b480f9077ac79c8d8cdf9ce006e7cc0358f06"
+    },
+    {
+      "source": "Engine/ParcNative/extension_action_bridge.h",
+      "target": "cef/libcef/browser/parc_native/extension_action_bridge.h",
+      "sha256": "21018623177ece932f84758f81c81a976c71fe02597bf77dc3a10b726df0c510"
+    },
+    {
+      "source": "Engine/ParcNative/extension_action_bridge.mm",
+      "target": "cef/libcef/browser/parc_native/extension_action_bridge.mm",
+      "sha256": "2f1abab55cfb1b80e8b17108bf89019c5e804d3116c444d681833c84f1dfacaa"
+    },
+    {
+      "source": "tests/NativeExtensionActions/BUILD.gn",
+      "target": "cef/tests/parc_native_extension_actions/BUILD.gn",
+      "sha256": "675e65b069123dc1944e60330f7a9bb72a542acb07e6bdec03789827c2b1accf"
+    },
+    {
+      "source": "tests/NativeExtensionActions/action_bridge_unittest.mm",
+      "target": "cef/tests/parc_native_extension_actions/action_bridge_unittest.mm",
+      "sha256": "354ba634eaa245132c78abc04d9065ac6a7063b032050af2317c7d5be5dcab00"
+    },
+    {
+      "source": "Engine/ParcNative/sad_tab.h",
+      "target": "cef/libcef/browser/parc_native/sad_tab.h",
+      "sha256": "d1fe0b8af64c8793b684ee3932cb3ba35381c79baee3d2ecba3dbe7099b1ea8c"
+    },
+    {
+      "source": "Engine/ParcNative/sad_tab.mm",
+      "target": "cef/libcef/browser/parc_native/sad_tab.mm",
+      "sha256": "eebae181bf720c327cedcdd550a4426c322ca45db557bfe723f78644abf30f34"
+    },
+    {
+      "source": "Engine/ParcNative/folder_upload.h",
+      "target": "cef/libcef/browser/parc_native/folder_upload.h",
+      "sha256": "16b85370f1ec495e1b81077e50ec0434082cf003726b7a507121efe4b494dadb"
+    },
+    {
+      "source": "Engine/ParcNative/folder_upload.mm",
+      "target": "cef/libcef/browser/parc_native/folder_upload.mm",
+      "sha256": "9e829b5ae94f6bb535e5ab54507682ac9543d4f3ce680f8c177738431f007003"
+    },
+    {
+      "source": "tests/NativeDownloads/folder_upload_browsertest.mm",
+      "target": "cef/tests/parc_native_downloads/folder_upload_browsertest.mm",
+      "sha256": "475b856a99c6c706d79de469642f558f94e18b3dfd89fb6592dcbd8f3405527e"
+    },
+    {
+      "source": "Engine/ParcNative/download_file_dialog.h",
+      "target": "cef/libcef/browser/parc_native/download_file_dialog.h",
+      "sha256": "570ccc1badb309b6251e85eeed08b7a1e8d7b2921ebf5e87d32a74dfd43ceb87"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_tool_appearance.h",
+      "target": "cef/libcef/browser/parc_native/native_page_tool_appearance.h",
+      "sha256": "afe17218eafce2cfbb510856b3e26f755d30301dc0a75b92f8fe8238da5e4d7d"
+    },
+    {
+      "source": "Engine/ParcNative/password_prompt.h",
+      "target": "cef/libcef/browser/parc_native/password_prompt.h",
+      "sha256": "28bb4ae16e5a6213bf791bf1ea2e73993286bd6e39617b21b452e350281d189e"
+    },
+    {
+      "source": "Engine/ParcNative/password_prompt.mm",
+      "target": "cef/libcef/browser/parc_native/password_prompt.mm",
+      "sha256": "20335ad1321006adb469198b5171eb487edece36ab0dce3f833c29f35d2ffb4a"
+    },
+    {
+      "source": "Engine/ParcNative/native_capture_picker.h",
+      "target": "cef/libcef/browser/parc_native/native_capture_picker.h",
+      "sha256": "5edc12718c6d0cf70ce333058984ed7fbde75536539b2d79ca4836bde76a4550"
+    },
+    {
+      "source": "Engine/ParcNative/native_capture_picker.mm",
+      "target": "cef/libcef/browser/parc_native/native_capture_picker.mm",
+      "sha256": "a5e64ddfeb3d386a4442e7947709b01848e6b661fff0f4f48896db28be94388f"
+    },
+    {
+      "source": "Engine/ParcNative/native_card_save_session.h",
+      "target": "cef/libcef/browser/parc_native/native_card_save_session.h",
+      "sha256": "dfb1b843450de8183e9abfcda2034f1e5edbbfe1edca719d7d6aaf71288b4439"
+    },
+    {
+      "source": "Engine/ParcNative/native_card_save_session.mm",
+      "target": "cef/libcef/browser/parc_native/native_card_save_session.mm",
+      "sha256": "174ad304e79c702cd98c05e775b1744b3b71a28f3157e7d9809905369a25c2bb"
+    },
+    {
+      "source": "Engine/ParcNative/extension_parent_approval.h",
+      "target": "cef/libcef/browser/parc_native/extension_parent_approval.h",
+      "sha256": "12803d52d9bbc0608b0b46cae007811aa1dcc669c3bf689e472fea7a1527c1be"
+    },
+    {
+      "source": "Engine/ParcNative/extension_parent_approval.mm",
+      "target": "cef/libcef/browser/parc_native/extension_parent_approval.mm",
+      "sha256": "056ec662d1a2ae1143cf6e81342879106c1482b841bb85bb4ef827de613e4ef9"
+    },
+    {
+      "source": "Engine/ParcNative/native_payment_entry.h",
+      "target": "cef/libcef/browser/parc_native/native_payment_entry.h",
+      "sha256": "a8cb33ba3ddc36443ea21913df301d12a623be688d24584fab7b0930857c6bde"
+    },
+    {
+      "source": "Engine/ParcNative/native_payment_entry.mm",
+      "target": "cef/libcef/browser/parc_native/native_payment_entry.mm",
+      "sha256": "933c2e32724b04c11746244cf5b62f847022682087d3b6987dbfc9d5c9bd7846"
+    },
+    {
+      "source": "Engine/ParcNative/native_iban_session.h",
+      "target": "cef/libcef/browser/parc_native/native_iban_session.h",
+      "sha256": "22b7684407983e3f3c32ba95847ce23b2bc11af297029a33b781dc1d019e1162"
+    },
+    {
+      "source": "Engine/ParcNative/native_iban_session.mm",
+      "target": "cef/libcef/browser/parc_native/native_iban_session.mm",
+      "sha256": "a9529c2d673e6246df6a1b59cc6dfcc0bae877f548c56cfb037edddbeaaeb43f"
+    },
+    {
+      "source": "Engine/ParcNative/native_payment_consent_session.h",
+      "target": "cef/libcef/browser/parc_native/native_payment_consent_session.h",
+      "sha256": "7139147ad7794e475124b2090fc8f03bf77de099d82d6b00b6da3d741d850c7a"
+    },
+    {
+      "source": "Engine/ParcNative/native_payment_consent_session.mm",
+      "target": "cef/libcef/browser/parc_native/native_payment_consent_session.mm",
+      "sha256": "dcdbd98e1e8b24a3a28feebcf14daf756eea811db4d0c92e7d46ada17ab5818c"
+    },
+    {
+      "source": "Engine/ParcNative/native_payment_information_session.h",
+      "target": "cef/libcef/browser/parc_native/native_payment_information_session.h",
+      "sha256": "3011391fec48ce2d0bdb56690f3179fb6e39b646ef4f305b10eb832555f971d5"
+    },
+    {
+      "source": "Engine/ParcNative/native_payment_information_session.mm",
+      "target": "cef/libcef/browser/parc_native/native_payment_information_session.mm",
+      "sha256": "499c41a3d13018d494fa339806d749602665e898f413f9bb6c6022f93f5d3bd1"
+    },
+    {
+      "source": "Engine/ParcNative/native_window_state.h",
+      "target": "cef/libcef/browser/parc_native/native_window_state.h",
+      "sha256": "d3de0572edfd21911e60f930886d3d88065157d095360e9b14d48443e61deefd"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_payment_session.h",
+      "target": "cef/libcef/browser/parc_native/native_tab_payment_session.h",
+      "sha256": "9e418ccfab0379ff5970a08b9d2982d21ea089d55fbb2a846a4317882c338fe1"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_payment_session.mm",
+      "target": "cef/libcef/browser/parc_native/native_tab_payment_session.mm",
+      "sha256": "910f42f7d1571100e2f183fcd7f929db99b12cb5d96ae528e9fb937fc973293b"
+    },
+    {
+      "source": "Engine/ParcNative/native_intent_picker.h",
+      "target": "cef/libcef/browser/parc_native/native_intent_picker.h",
+      "sha256": "d5ac0a9d4cfc04470a59213bb134314b698bb4689366ac6aea67b808b6fc9fbf"
+    },
+    {
+      "source": "Engine/ParcNative/native_intent_picker.mm",
+      "target": "cef/libcef/browser/parc_native/native_intent_picker.mm",
+      "sha256": "564e11dea92b29d447bfbe1d5b15c3496ffd8f86b40ec288442323b751282c58"
+    },
+    {
+      "source": "Engine/ParcNative/native_intent_picker_api.h",
+      "target": "cef/libcef/browser/parc_native/native_intent_picker_api.h",
+      "sha256": "b00da1f6edd3d785e52471e5e34b7de1ddafc8d39a6e004365eaa6d3942f38dc"
+    },
+    {
+      "source": "Engine/ParcNative/native_fullscreen_window.h",
+      "target": "cef/libcef/browser/parc_native/native_fullscreen_window.h",
+      "sha256": "5faf2b3a25368817fcdaea35ebc8145c027217a69115e9978ec89f8ac1e0ef45"
+    },
+    {
+      "source": "Engine/ParcNative/native_fullscreen_window.mm",
+      "target": "cef/libcef/browser/parc_native/native_fullscreen_window.mm",
+      "sha256": "17a8e4a77cde6bcda8fc648aef4c6d4de8d126110118b82831a2fec1157eff7f"
+    },
+    {
+      "source": "Engine/ParcNative/native_reader.h",
+      "target": "cef/libcef/browser/parc_native/native_reader.h",
+      "sha256": "44d4405a5d97c8e1d76820284d6d1942ee396fd05e0cfe50df01421baebb2e12"
+    },
+    {
+      "source": "Engine/ParcNative/native_reader.cc",
+      "target": "cef/libcef/browser/parc_native/native_reader.cc",
+      "sha256": "ce272a898f5150b57702191b7f50c6287300884964d950ed4846bf235012c09c"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_context_menu.h",
+      "target": "cef/libcef/browser/parc_native/native_page_context_menu.h",
+      "sha256": "9e97786ebd1b3f6208f400b69fe7b876c002d705e3dc697f14bca1ac1c71242e"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_context_menu.mm",
+      "target": "cef/libcef/browser/parc_native/native_page_context_menu.mm",
+      "sha256": "be13edf17672f12c8cf04c058fa52540e04d09ca0a33a86072dde49ea027dd88"
+    },
+    {
+      "source": "Engine/ParcNative/native_blocked_popups.mm",
+      "target": "cef/libcef/browser/parc_native/native_blocked_popups.mm",
+      "sha256": "e70a234800c1d7ef05ad5a1b64e4879ceee96933bbb93ff591780c66d957514b"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_info.mm",
+      "target": "cef/libcef/browser/parc_native/native_page_info.mm",
+      "sha256": "8194d89338ba3593c266f350172ae8a62fe5f8ff3fe83129f6e2c9ef2127279e"
+    },
+    {
+      "source": "Engine/ParcNative/native_confirm_infobars.h",
+      "target": "cef/libcef/browser/parc_native/native_confirm_infobars.h",
+      "sha256": "407fc0bc6c60cd2fa66edea45bbf7bc64a96c9fcc167af05f996b5dd40ec6ea2"
+    },
+    {
+      "source": "Engine/ParcNative/native_confirm_infobars.mm",
+      "target": "cef/libcef/browser/parc_native/native_confirm_infobars.mm",
+      "sha256": "75e78ae3ba6cfaa07304532204b4bea2dca3df0f8077b4bfd3fb74dc6c7260b9"
+    },
+    {
+      "source": "Engine/ParcNative/native_search.h",
+      "target": "cef/libcef/browser/parc_native/native_search.h",
+      "sha256": "c105ac76b3b4ce1fcfc82eb9c234a693ba20591864bf976357690cc9ccceeead"
+    },
+    {
+      "source": "Engine/ParcNative/native_search.mm",
+      "target": "cef/libcef/browser/parc_native/native_search.mm",
+      "sha256": "eee0f01d971d52dbaf12381558a6985c216ce5fd76f48043a3e3dd1f1ba51bbf"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_info.h",
+      "target": "cef/libcef/browser/parc_native/native_page_info.h",
+      "sha256": "d280cc844cc86d1adad4b76c200e3a252700edbd97644c15a0d4792703cf0436"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_sharing_api.h",
+      "target": "cef/libcef/browser/parc_native/native_tab_sharing_api.h",
+      "sha256": "d4f3454f12fe5e19cd7d4d2acaf56ad26927d824be4ff4ea31c7d7b61fad196c"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_sharing.h",
+      "target": "cef/libcef/browser/parc_native/native_tab_sharing.h",
+      "sha256": "278c8a6b301fec0de45bfbf0f80e46d08d7143e4e9d9fa7ecef6a8bacef28a75"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_sharing.mm",
+      "target": "cef/libcef/browser/parc_native/native_tab_sharing.mm",
+      "sha256": "68248a4165e86b5ae2f0b2abd661e0329939c0020aa496bc76c072ccf9783747"
+    },
+    {
+      "source": "Engine/ParcNative/native_favicons.mm",
+      "target": "cef/libcef/browser/parc_native/native_favicons.mm",
+      "sha256": "f5a36c9b454de4f91bce400551229662c5bc7b126b855e1b80e3b50657c5441f"
+    },
+    {
+      "source": "Engine/ParcNative/native_shortcuts.h",
+      "target": "cef/libcef/browser/parc_native/native_shortcuts.h",
+      "sha256": "5d83e3e38b2d08160360edf4c5a48575b2e51d8c67b2b839706a4fbcfe47aa85"
+    },
+    {
+      "source": "Engine/ParcNative/native_escape_state.h",
+      "target": "cef/libcef/browser/parc_native/native_escape_state.h",
+      "sha256": "244781e7cab60d962dd14d5571cf368bd0644f0f5c1d5cb186eb3613573c2267"
+    },
+    {
+      "source": "Engine/ParcNative/native_shortcuts.mm",
+      "target": "cef/libcef/browser/parc_native/native_shortcuts.mm",
+      "sha256": "5e578eb07ffab7c1e4423d1635fb454ed05c5a0b19324bff95eff7580418625a"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_preview.h",
+      "target": "cef/libcef/browser/parc_native/native_tab_preview.h",
+      "sha256": "3848018d62774953c2c1b7bc08b99b35ee54dd4d2cdb03f8a8f94c2ee989a9e2"
+    },
+    {
+      "source": "Engine/ParcNative/native_tab_preview.mm",
+      "target": "cef/libcef/browser/parc_native/native_tab_preview.mm",
+      "sha256": "e1f8cd87fb7ca5fcea45008ad327b0bdc897c9156f962b7ebc4cde145b841779"
+    },
+    {
+      "source": "Engine/ParcNative/native_recent_pages.mm",
+      "target": "cef/libcef/browser/parc_native/native_recent_pages.mm",
+      "sha256": "6c4b78bca9ffbf42bac69d420ec06246eabeac344e337c753be84d6ad77f27b2"
+    },
+    {
+      "source": "Engine/ParcNative/native_profile_removal.h",
+      "target": "cef/libcef/browser/parc_native/native_profile_removal.h",
+      "sha256": "aabd20d8f295b961f3f06107b7c6b34a7cf52e9e52333f183f62402c0a5ddf05"
+    },
+    {
+      "source": "Engine/ParcNative/native_profile_removal.mm",
+      "target": "cef/libcef/browser/parc_native/native_profile_removal.mm",
+      "sha256": "0d3779f0a897f441d311850133a3a5087b602f7db0c80c99573d9865384cf834"
+    },
+    {
+      "source": "Engine/ParcNative/native_link_routing.h",
+      "target": "cef/libcef/browser/parc_native/native_link_routing.h",
+      "sha256": "e49696c40173dba55421a95caa3db12a4d89c45158edc99179838afc87f4313b"
+    },
+    {
+      "source": "Engine/ParcNative/native_link_routing.mm",
+      "target": "cef/libcef/browser/parc_native/native_link_routing.mm",
+      "sha256": "75b5b709361e4019d4a0a699528b754a289d59de30071d8060eff7d47c6ff78e"
+    },
+    {
+      "source": "Engine/ParcNative/native_history_swipe.h",
+      "target": "cef/libcef/browser/parc_native/native_history_swipe.h",
+      "sha256": "a3c28412e0f8c400385763d32faf8426b397ad2306cafcb15761af502a1e09d5"
+    },
+    {
+      "source": "Engine/ParcNative/native_history_swipe.mm",
+      "target": "cef/libcef/browser/parc_native/native_history_swipe.mm",
+      "sha256": "65ed0139b688c6798c3b289eddc8e3fae5db5643662c86150b01167ef7b4f36f"
+    },
+    {
+      "source": "Engine/ParcNative/native_copy_link.mm",
+      "target": "cef/libcef/browser/parc_native/native_copy_link.mm",
+      "sha256": "158ffdab2d2d12fb8813579f5f76cd6b7ce0cfb4f43592e891c49fded4217248"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_capture.mm",
+      "target": "cef/libcef/browser/parc_native/native_page_capture.mm",
+      "sha256": "ecf914979c71604189a085f2d25bc7a02994ea21de3ff4e142a5160f01da8333"
+    },
+    {
+      "source": "Engine/ParcNative/native_download_arrival.h",
+      "target": "cef/libcef/browser/parc_native/native_download_arrival.h",
+      "sha256": "7773a1aed6b89e696c3f63fc835677fc0ad6e6a0e0023df8fcb5a5453564c976"
+    },
+    {
+      "source": "Engine/ParcNative/native_download_arrival.mm",
+      "target": "cef/libcef/browser/parc_native/native_download_arrival.mm",
+      "sha256": "f80906d82f733253eda88ef20a40bc1ef13bf412c1b811ccd6510c4153d20b64"
+    },
+    {
+      "source": "Engine/ParcNative/native_media_episode_store.h",
+      "target": "cef/libcef/browser/parc_native/native_media_episode_store.h",
+      "sha256": "a0d6005d729b9902f623d9078cbaefde46c1f279e8848b1b650de506c5080108"
+    },
+    {
+      "source": "Engine/ParcNative/native_background_picture_in_picture.h",
+      "target": "cef/libcef/browser/parc_native/native_background_picture_in_picture.h",
+      "sha256": "67e3637baebfe9018df4b136d33abead174506111e309775e9118ba7641edc4e"
+    },
+    {
+      "source": "Engine/ParcNative/native_background_picture_in_picture_api.h",
+      "target": "cef/libcef/browser/parc_native/native_background_picture_in_picture_api.h",
+      "sha256": "e55cf473d719fbc31cd0ba4a20f579a0c90cc0a19d303818cdd80ba9f08fe1c0"
+    },
+    {
+      "source": "Engine/ParcNative/native_media_notify.h",
+      "target": "cef/libcef/browser/parc_native/native_media_notify.h",
+      "sha256": "c45d97f7002ec2b5da18d205a95a5c4a161c4a521abfda4b5e3db8bb94c1b2b6"
+    },
+    {
+      "source": "Engine/ParcNative/native_media_controls.mm",
+      "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
+      "sha256": "c745697f4ceed16c2d496f36ba126e311011e6538973484742cdd1ac61e37b78"
+    },
+    {
+      "source": "Engine/ParcNative/native_applescript.mm",
+      "target": "cef/libcef/browser/parc_native/native_applescript.mm",
+      "sha256": "82bd1e151ed2cf5190524be3147c89b54da7ab42c4a2e49eb4f2bd0d085a87dc"
+    },
+    {
+      "source": "Engine/ParcNative/native_internal_urls.h",
+      "target": "cef/libcef/browser/parc_native/native_internal_urls.h",
+      "sha256": "1700987f2b411142af21c3cb2c8bad9f0c82b91f3ce1fb9d714b1c086a550178"
+    },
+    {
+      "source": "tests/NativeInternalURLs/BUILD.gn",
+      "target": "cef/tests/parc_internal_urls/BUILD.gn",
+      "sha256": "5632a58b63362bbaa334ccad1970301bbdaa2edc9e6dcaf77852a379365c4507"
+    },
+    {
+      "source": "tests/NativeInternalURLs/InternalURLsTests.cc",
+      "target": "cef/tests/parc_internal_urls/InternalURLsTests.cc",
+      "sha256": "f6fc4a42f47c6775528320c5f1c84b0e0948d55ec5f639c9fcce87879e778fd0"
+    },
+    {
+      "source": "Engine/ParcNative/native_website_theme.h",
+      "target": "cef/libcef/browser/parc_native/native_website_theme.h",
+      "sha256": "3a7e0d18f5328f3caf9ed97d9f8a006b3ef7a436f489c074365f78bcf03e7277"
+    },
+    {
+      "source": "Engine/ParcNative/native_website_theme.cc",
+      "target": "cef/libcef/browser/parc_native/native_website_theme.cc",
+      "sha256": "7c36c843f382b6237e0925e58d2fc3367b840dbd550b4d0d9b6046835ef694e0"
+    },
+    {
+      "source": "Engine/ParcRenderer/website_theme_agent.h",
+      "target": "cef/libcef/renderer/website_theme_agent.h",
+      "sha256": "41b624ff3e14292722da86de61e27640e6ce37210705a25130800703d63bab17"
+    },
+    {
+      "source": "Engine/ParcRenderer/website_theme_agent.cc",
+      "target": "cef/libcef/renderer/website_theme_agent.cc",
+      "sha256": "16dac91425bf3f6057d6acc31a65c6b10cbc0a08475f98892aa3e925f2b3c1d5"
+    },
+    {
+      "source": "Engine/ParcRenderer/parc_theme.mojom",
+      "target": "cef/libcef/common/mojom/parc_theme.mojom",
+      "sha256": "919245d854e2268425a9b4b15589f15275c3da827009b8ac17a6959c84bc327c"
+    },
+    {
+      "source": "Engine/ParcRenderer/top_band_color.mojom",
+      "target": "third_party/blink/public/mojom/parc/top_band_color.mojom",
+      "sha256": "11630f1d44084dfa58fe5492873cf0c3a420a4b66839604797ce8066cf034d50"
+    },
+    {
+      "source": "Engine/ParcRenderer/top_band_color_sampling.h",
+      "target": "third_party/blink/public/common/parc/top_band_color_sampling.h",
+      "sha256": "7d9e5021e01e7236787fcd6a46a1668ca03f4a391465be0beecc00724aa8238f"
+    },
+    {
+      "source": "Engine/ParcRenderer/top_band_color_tracker.h",
+      "target": "third_party/blink/renderer/core/frame/parc_top_band_color_tracker.h",
+      "sha256": "4601c9a5727856de02e44b186816ce5364308d482e06f9d94c316b4e91487435"
+    },
+    {
+      "source": "Engine/ParcRenderer/top_band_color_tracker.cc",
+      "target": "third_party/blink/renderer/core/frame/parc_top_band_color_tracker.cc",
+      "sha256": "0184828f72db4dbad8e7eecf8207e500d508464bc644a6f45ace25dfdb1bd320"
+    },
+    {
+      "source": "Engine/ParcImport/import_snapshot.h",
+      "target": "chrome/utility/importer/parc/import_snapshot.h",
+      "sha256": "63ddb0472a79cf3a3ac2fd81dce18e0b6fbb3b15c2570c823df8ff4f46f6ed7c"
+    },
+    {
+      "source": "Engine/ParcImport/import_service.h",
+      "target": "chrome/utility/importer/parc/import_service.h",
+      "sha256": "e586b9bbaea5b6e8da96b8ece849accee6a76a9aa552a9dd0b20a2751dd9b320"
+    },
+    {
+      "source": "Engine/ParcImport/import_service.cc",
+      "target": "chrome/utility/importer/parc/import_service.cc",
+      "sha256": "b658c56f51cbe55b2eed4d7a4523a8ea71ff023ee610d99e17dc28be84948c8b"
+    },
+    {
+      "source": "Engine/ParcImport/import_reader.h",
+      "target": "chrome/utility/importer/parc/import_reader.h",
+      "sha256": "e8fae641eef0ab91b373821a50c4133d2d5f63150f658a026bf8745b2678084a"
+    },
+    {
+      "source": "Engine/ParcImport/chromium_reader.cc",
+      "target": "chrome/utility/importer/parc/chromium_reader.cc",
+      "sha256": "bafd3fe64acdbe72f68c0a2e07701fd5e4b6ee413c98e354ce559d989e9c1f9d"
+    },
+    {
+      "source": "Engine/ParcImport/import_snapshot.cc",
+      "target": "chrome/utility/importer/parc/import_snapshot.cc",
+      "sha256": "c45c4c94b786e8c2d179f52ea87e7b184537c8a9cea2472922f26cfc70c04661"
+    },
+    {
+      "source": "Engine/ParcImport/safari_reader.mm",
+      "target": "chrome/utility/importer/parc/safari_reader.mm",
+      "sha256": "6178125970c02566fe1ca81a952cf2106fcf692733d49d988af2b009b47684a9"
+    },
+    {
+      "source": "Engine/ParcImport/parc_import.mojom",
+      "target": "chrome/common/importer/parc_import.mojom",
+      "sha256": "67f5f00f8467d516b49dafcad6350634b35dc553766b581746162fba53ab8791"
+    },
+    {
+      "source": "Engine/ParcImport/firefox_reader.cc",
+      "target": "chrome/utility/importer/parc/firefox_reader.cc",
+      "sha256": "5dfb71bf5cc80072165e30ee7933035f8c3ec0006527b78b4d74645cc7d859da"
+    },
+    {
+      "source": "Engine/ParcNative/native_import_session.mm",
+      "target": "cef/libcef/browser/parc_native/native_import_session.mm",
+      "sha256": "a7c5d69ba59da7fd1f3682b359b1567fe62904b1e1e0b219a4195645fddd4491"
+    },
+    {
+      "source": "Engine/ParcNative/native_import_writer.mm",
+      "target": "cef/libcef/browser/parc_native/native_import_writer.mm",
+      "sha256": "498098ce1c70179dfdbf0bc4608c3711e13a89077c33f3b6d1e04027f7c52835"
+    },
+    {
+      "source": "Engine/ParcNative/native_import_discovery.mm",
+      "target": "cef/libcef/browser/parc_native/native_import_discovery.mm",
+      "sha256": "200845cacb95b97e8ea6c7cf0dcd8e5b01be528a4ca75e0ccbb85875fa906104"
+    },
+    {
+      "source": "Engine/ParcNative/native_import_extensions.mm",
+      "target": "cef/libcef/browser/parc_native/native_import_extensions.mm",
+      "sha256": "3ffb83b8824b194d1ec309c99164b1a30053d309b25f343397edcaa14fb720ca"
+    },
+    {
+      "source": "Engine/ParcNative/native_import_internal.h",
+      "target": "cef/libcef/browser/parc_native/native_import_internal.h",
+      "sha256": "49b4f8065b9d2c97e7921313b45957654c56d32a0c2a6d535c05c8cd4b08748e"
+    },
+    {
+      "source": "Engine/ParcNative/native_import_writer.h",
+      "target": "cef/libcef/browser/parc_native/native_import_writer.h",
+      "sha256": "a2cdc78b52550208050aa2edc3bf492647241fd6fa7e1ae770ed8c630573a359"
+    },
+    {
+      "source": "Engine/ParcNative/native_password_file.h",
+      "target": "cef/libcef/browser/parc_native/native_password_file.h",
+      "sha256": "03b99549d6c2cefbfa05f7e0ce9157ac7dff23774f1018dc077b0839871b909f"
+    },
+    {
+      "source": "Engine/ParcNative/native_password_file_import.mm",
+      "target": "cef/libcef/browser/parc_native/native_password_file_import.mm",
+      "sha256": "316ee75356d63165cec8099ececf35849f51fb8021299716e6fade1951d91eb2"
+    },
+    {
+      "source": "Engine/ParcNative/native_cast.h",
+      "target": "cef/libcef/browser/parc_native/native_cast.h",
+      "sha256": "1c3101458016d1302b91401e7bf58eb042cfef18e85e211b17625bb87c14fce0"
+    },
+    {
+      "source": "Engine/ParcNative/native_cast.mm",
+      "target": "cef/libcef/browser/parc_native/native_cast.mm",
+      "sha256": "91410e048054ba4eb120cf389f12ba50370c502f41f794a2a64da1ea63caf498"
+    },
+    {
+      "source": "Engine/ParcNative/content_drop_router.h",
+      "target": "ui/base/cocoa/content_drop_router.h",
+      "sha256": "a15b14805c05f4c88ad468a1f1ff014ec40c12adbfaf5b8fcebb94261de07f68"
+    },
+    {
+      "source": "Engine/ParcNative/content_drop_router.mm",
+      "target": "ui/base/cocoa/content_drop_router.mm",
+      "sha256": "867ccf7efdd7e5de0e20cf68e2b1982ca56339d11e4f6eae037109e733431d52"
+    },
+    {
+      "source": "Engine/ParcNative/native_search_readiness.h",
+      "target": "cef/libcef/browser/parc_native/native_search_readiness.h",
+      "sha256": "fadeff52a7bdbf733ded7eda663d1019d6a900309335fbb6cd3b4f65d5b1754d"
+    },
+    {
+      "source": "Engine/ParcNative/content_drop_bridge.h",
+      "target": "cef/libcef/browser/parc_native/content_drop_bridge.h",
+      "sha256": "ead8bcc4123333c24fcdd3c75419e8146dc0dcd18ba7a4c54742b0d750306c3a"
+    },
+    {
+      "source": "Engine/ParcNative/content_drop_bridge.mm",
+      "target": "cef/libcef/browser/parc_native/content_drop_bridge.mm",
+      "sha256": "b0504b9f198e1702da71b16dcd346f43389d98bc3105f216f8832cbab0231f85"
+    },
+    {
+      "source": "Engine/ParcHost/native/native_picker_lease.h",
+      "target": "chrome/browser/media/webrtc/parc_native_picker_lease.h",
+      "sha256": "7e8162c57898fdfd3d0071f7af1871d9e72e028402b010d8bb8f31b22fd755f3"
+    },
+    {
+      "source": "Engine/ParcNative/native_gmc_presentation.h",
+      "target": "cef/libcef/browser/parc_native/native_gmc_presentation.h",
+      "sha256": "b6f2d33981e12b8e54e284ed2a7865d393f3b6bef1c3f578753f8ef6c1d934dd"
+    },
+    {
+      "source": "Engine/ParcNative/native_gmc_presentation.mm",
+      "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
+      "sha256": "b6b36a92b94909be2007d34b59b6b364dcf58c2e1182bf2f6935878e48e1bce1"
+    },
+    {
+      "source": "Engine/ParcNative/native_repost_form_warning_api.h",
+      "target": "cef/libcef/browser/parc_native/native_repost_form_warning_api.h",
+      "sha256": "0ca696de69d0cad691d4c12c589195c3f1c74f4ab12384497941cf0415d8346f"
+    },
+    {
+      "source": "Engine/ParcNative/native_split_link_api.h",
+      "target": "cef/libcef/browser/parc_native/native_split_link_api.h",
+      "sha256": "babb533763e54043b59a803af0cb0edf593eb0906aed5adfbe0e6c17bbbeeb1e"
+    },
+    {
+      "source": "Engine/ParcInternalExtension/manifest.json",
+      "target": "chrome/browser/resources/parc_internal_extension/manifest.json",
+      "sha256": "0b7c9dfef10d1d237c9cb634b26efa2ef83b738d3f00d8295957b4bc125a62a8"
+    },
+    {
+      "source": "Engine/ParcInternalExtension/background.js",
+      "target": "chrome/browser/resources/parc_internal_extension/background.js",
+      "sha256": "78cccb9c868d05b707fa853edf16fc3dd6b5c5255b8906993f7d1511045fca64"
+    },
+    {
+      "source": "Engine/ParcHost/integration/platform_audio_file_decoder.h",
+      "target": "third_party/blink/renderer/modules/webaudio/platform_audio_file_decoder.h",
+      "sha256": "f06d08977367745243aa6486fb32024413eda8f67197516e3442adc22ceddb7c"
+    },
+    {
+      "source": "Engine/ParcHost/integration/platform_audio_file_decoder.cc",
+      "target": "third_party/blink/renderer/modules/webaudio/platform_audio_file_decoder.cc",
+      "sha256": "47fd9265826834090a6ccc5ce5454d7301a5bd85aa1b55ca94a519c9a35c06f7"
+    },
+    {
+      "source": "Engine/ParcNative/native_keychain_namespace.h",
+      "target": "cef/libcef/browser/parc_native/native_keychain_namespace.h",
+      "sha256": "aa07057df919517de3856f9979d9e791e067aa4e28911bfbbf96e865fb9d1d6d"
+    }
+  ],
+  "patches": [
+    {
+      "source": "Engine/ParcHost/integration/native-host.patch",
+      "sha256": "a134e55ee74fb0c053d23c337d4d90dec8375e8f5ca3ddb016e0710a30c5b1f5",
+      "files": [
+        {
+          "target": "cef/BUILD.gn",
+          "before_sha256": "c98b9601692fb139c5bb5c77027fb5d7313f1ecde31530bdcf8b24ac2d11453d",
+          "after_sha256": "1a0c686ffe0d651efb960d0389bf41742f8b3ff8b6862d4f395a327ba5181859"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_browser_host_impl.cc",
+          "before_sha256": "1cbbff30d85f59a345498444e20f4e6836d6388f700dc4ddcf3003fc00d50612",
+          "after_sha256": "95470aab827684214f10f411ab75c46bd072fbe33872094a7b45c0189caabe20"
+        },
+        {
+          "target": "chrome/browser/ui/actions/chrome_action_id.h",
+          "before_sha256": "085d4bb655539e8aff78b22c649656ba44fb2e58337162b3877720f90d01d90b",
+          "after_sha256": "8abd16b5ad5141226c3ba8abd8a510eff680d0a9e1d35e6d2a3c24bacbb48a5e"
+        },
+        {
+          "target": "chrome/browser/ui/side_panel/side_panel_entry_id.h",
+          "before_sha256": "cf1dd421fd0042e8c61ff5e5acd895217210d831681a4ce44a642ef789295b21",
+          "after_sha256": "980a54908e7692545da9470a56a44d6bbbcbc57c0f87f0bab72945fbff585eda"
+        },
+        {
+          "target": "tools/metrics/histograms/metadata/browser/histograms.xml",
+          "before_sha256": "f2f7c2fccde77a128e4d4a5bf8a14069e7a3785fa5d853acc50f869fc267706b",
+          "after_sha256": "865f13c5fbcdb990ad20a5e548352ede6b39a4aad971b6eef8d5d0dff4b6ba07"
+        },
+        {
+          "target": "cef/libcef/browser/javascript_dialog_runner.h",
+          "before_sha256": "79eed91c715969f6ca62b7f557563a985647083663e128a8f0b7bc729291bf00",
+          "after_sha256": "4aa95f68a827196c0232820a0bb3e00d5e577066bfbb77d7d84cc68448b59d9a"
+        },
+        {
+          "target": "cef/libcef/browser/javascript_dialog_manager.cc",
+          "before_sha256": "cb30d3b0321c486d493d811aecc2a44bfa57f965a9477a1304f8ad42a1dcdc8f",
+          "after_sha256": "494e0feeb0a5a0f5561b1a216829dbdfd91112f18529cf72d034149c3edd3a6f"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/desktop_media_picker.cc",
+          "before_sha256": "9d1618764e6ce1f6f6d940368f0dbafadfa2d1129d2df93449ca49654ec87c81",
+          "after_sha256": "4d65be07cd202ace9c4f16585e8ae4c699a3fbfafa5bc1bf1f33dbeaf06a392f"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/desktop_media_picker.h",
+          "before_sha256": "5a93b0b130a51077b5ad5c267e1218d0b6f975f51fdc8e8abfd61ec52820125f",
+          "after_sha256": "f514ced7c867e3991e53787d4c5680513d8f6dd2d0347c0d7f841b5570a0972f"
+        },
+        {
+          "target": "chrome/browser/ui/views/desktop_capture/desktop_media_picker_views.cc",
+          "before_sha256": "70d10392dd2a882646d63ea5266d36829438ee763a9106b1c6d81de1a127d079",
+          "after_sha256": "92b004c75b1ee729a3865af1464bcccdbc482383283d74e2588aa29d95ac0cc8"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/media_stream_capture_indicator.cc",
+          "before_sha256": "da35c691d8c69aa55e480fb8a63d2df141ca6a0d9967b3638ceeffefac7fc88a",
+          "after_sha256": "5e2db7cac9672280c97da38a9b0f051834776098838acad1fe928acf05edb3cd"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/media_stream_capture_indicator.h",
+          "before_sha256": "7fefe3c51b8e43f4c712150f29656f6e982b31181ba15711ebb95d82eee469b7",
+          "after_sha256": "5d79bb2d559742affb0a20bab60de3e530c7935df0b3da81de427957291602bd"
+        },
+        {
+          "target": "chrome/browser/ui/tabs/BUILD.gn",
+          "before_sha256": "bfde13cce2a499f121492b5417115552d7df47fa507ef5450400117ea79646c1",
+          "after_sha256": "c473da3ad6175c8bffb0eeffac49c517c7bd4dd429d054d496d36816757c67cf"
+        },
+        {
+          "target": "chrome/browser/ui/tabs/tab_features.cc",
+          "before_sha256": "11d896864e9a2616e3cf7d8c2b17d3d2b1669df923d07c22b5d8b2d740d7344c",
+          "after_sha256": "9d14623a15cf454888b6d28435a4ff788fd8cbb87cddba39ba782cd98a9d4c2e"
+        },
+        {
+          "target": "cef/libcef/browser/browser_context.h",
+          "before_sha256": "eaad128994e97fa15e1aa4d155239a4d109d519ddc26d3a0d6858d7ab41fba24",
+          "after_sha256": "e7d4c33f15af343bb5e5c566d59670a507ea7053819e221b6fa60f28b40c9541"
+        },
+        {
+          "target": "chrome/browser/profiles/profile_manager.h",
+          "before_sha256": "cba93d3f2d0c1dc9e6a0be507527543e6d5d5433bd0bd521b29f019c61ad7a9a",
+          "after_sha256": "612b49a97dfe3bb78f955a9165f74012b574c0d9f53539085661ea8a190d7d14"
+        },
+        {
+          "target": "chrome/browser/profiles/delete_profile_helper.cc",
+          "before_sha256": "bffa3c04cd724204cbc479c19782818f372e4d0421c3d1aa828a4fb26faaff66",
+          "after_sha256": "39248e7b920fe71aebb31adfe6130db3d08395334590339714d02d131f15eb46"
+        },
+        {
+          "target": "chrome/browser/profiles/profile_manager.cc",
+          "before_sha256": "9a5cdd3ba3a7ae2e89eed18e7a472e897db83dbd12c88b2964dcc52e612a3d41",
+          "after_sha256": "14c4df078d69b8e07580760865f569ddc7d6af68b36da08dadb6d3cfc2501531"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-window-lookup.patch",
+      "sha256": "401a5f6c3a7cd67e304ac72dbe93cc6f3517d961446a441f772cbf28f69c3d65",
+      "files": [
+        {
+          "target": "chrome/browser/ui/views/frame/browser_view.cc",
+          "before_sha256": "ad4d4bade1172cf2efd25af2b31ee1f049479885eae322fe1df7e7938f94e877",
+          "after_sha256": "dc969c5c3557722641b08c690c27f7d2e280639995c035fd1dfc15e23fb7b2cf"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/address_bubbles_controller.cc",
+          "before_sha256": "917d29ffba48ec701286b98223619eb989972c1e68908c1222d01d795146ea3f",
+          "after_sha256": "4f3bd0f2192456c3a8680f2d323dfe204e8caf5340d5e403e0f1de6123aeec67"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/save_address_bubble_controller.h",
+          "before_sha256": "d4d55469b43cf7f32298a6b6377f4af18dea5fa46369680b6610bad85b3a89b2",
+          "after_sha256": "da626b9edd5b5ea916c357d0f4ec15c0ab40d5802b5bc833df37187b2636ba13"
+        },
+        {
+          "target": "chrome/test/BUILD.gn",
+          "before_sha256": "c6ee1786182381e83e79cddde5d6d1e6d8c545dd64eb396869ebc370030dcf07",
+          "after_sha256": "70870efa85752b45f166d888234674325ebf170d9b71355869b4bf4b50d9e19e"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-autofill-cef-patch.patch",
+      "sha256": "b6304c822e42ca6a0bfdedd2e2e3d3f428d8b14b1c946785b9fd6a96d6bbc60f",
+      "files": [
+        {
+          "target": "cef/patch/patches/chrome_autofill_bubble_3796.patch",
+          "before_sha256": "118c4bdec0235dceda133679d5c03de905b196a1c33024e46af4f798a3f6ec27",
+          "after_sha256": "3a906668c623e95a24619f9a8ddd61d324d9cfa3722d6a2310574f0aed1187c5"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcNative/extension_context_menu_native.patch",
+      "sha256": "337462ffe28fa75c4178fde14bfb17c3312c4f43fb5736d066f2ae4adc8fe070",
+      "files": [
+        {
+          "target": "chrome/browser/extensions/extension_context_menu_model.cc",
+          "before_sha256": "c8f5cfc59ba611fb8455d453faabed1e1b6bc03d903504216a532ec1e8d5efa5",
+          "after_sha256": "0cce3371a4cce9b6717790b8d9e80cc710f8777b2eaece46495f1ff402b4448d"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-autofill-capabilities.patch",
+      "sha256": "c0ea5fdcf0a1b496bea8256ab58a7417fce014d54015e47b5a93f78c1044c1d9",
+      "files": [
+        {
+          "target": "cef/libcef/features/BUILD.gn",
+          "before_sha256": "2e2f686a0a56d1478f45b25065da750d732247ffed734512f1d96d3b903a167a",
+          "after_sha256": "3a77ed1ab2ceaffd929327e6a8dd66b7f1df8a556f1cecd2274069bcfbcba3bf"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/BUILD.gn",
+          "before_sha256": "06e75ba512c744b5c0fa42a9a3976e55b9f8b13ef5472b8ebf1294ecd0cac96a",
+          "after_sha256": "2b169a141f0f55946709cff2b485af7efe2175a7a2977e45f6df9f1c9d2705ea"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/autofill_ai/autofill_ai_import_data_controller_impl.cc",
+          "before_sha256": "86f87ea554df09399efe3e85b8a297a1bea91524013a61bb902c3e4b766064d6",
+          "after_sha256": "0e43d29817487ea9a003280fb628dedbfd11df4818e9f55ad74346a251c89921"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/autofill_bubble_base.h",
+          "before_sha256": "6d04919827725f4060d762e5320edbd9e6e70f4cafe5846ecef4b6d9c49a5ec6",
+          "after_sha256": "6b99d0d06cb2f9485d8cb51a5346b0d296b956d5bcc90d86bd0eeac6edbcbd32"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/autofill_bubble_controller_base.cc",
+          "before_sha256": "46af6a3395d129d3eb77ed971b43ceecfc4cccc2fcfb57146460c264f3cf2058",
+          "after_sha256": "a4fe43cf59e274aefa3bf42297407bd899fcc8e68e5a888e7fe43b08584a2523"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/autofill_bubble_controller_base.h",
+          "before_sha256": "92c001f45189a47e70bc7ff5179ec0bce5aab468a597af71da85e7743db6dd82",
+          "after_sha256": "e5b9f492ff4c2b2487cbbf065351653834e1af36db7215f895048189d866427a"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/autofill_bubble_handler.cc",
+          "before_sha256": "a1fa7a0eefc5e99068ae29bb0a1dda18e1fcacc1294d3359e98a7b3a68c48aea",
+          "after_sha256": "f16678d0fd4d1329eaabae05e88179ba0027124d3bd631ba659c35448dfda5ff"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/autofill_bubble_handler.h",
+          "before_sha256": "3bcbef5006d506a5ff1977f6e9a2fcfecfc2a07d07a98a177201c32d7a14c286",
+          "after_sha256": "b777e45a7dbc38c0a9b3a80817395743da93744d11c9183ee147025f2dfabfc7"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/bubble_controller_base.h",
+          "before_sha256": "87d7e513afe5de70f8bc312aa1a86525d33f7ac0c50415b72d688f25af2a2cc4",
+          "after_sha256": "b7cf0074c4543e60e6ca27f3b80cff2a90f7a12525c4a9a06bb06b2d7dae94e1"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/bubble_manager_impl.cc",
+          "before_sha256": "02a32a842f90d5c5e213dfaa8f841bee534817002e5f37acbb8764442e04d192",
+          "after_sha256": "878dd6f53e3cc71fb04c2417c6bf52662fffca2af7a87141c2faad1c1cbbf536"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/bubble_manager_impl.h",
+          "before_sha256": "925d8e2c7ebb5201b17b5bfd5c13a6a20e5f03aaa7a6c2001c749732c92b0939",
+          "after_sha256": "4ac77caae2112de31d5b9cccbda9b533661f37b4e6778d046fa0615eb57d9466"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/chrome_autofill_client.cc",
+          "before_sha256": "d960101a1dfda9cfa9610af008dad6230e724d57f3fd344ae9247d2df202da87",
+          "after_sha256": "9f83a077ec4ca05c215f9ddf97dbbf921f2680aed34099bcebc6ae645c771eef"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/chrome_autofill_client.h",
+          "before_sha256": "85a332759858d42fb5a46d7e8b754cd395a9e46b8ebe30643a5899e42aab934e",
+          "after_sha256": "bf6d4d728fd2c8bbedc4ea2a6698924f6682d2fb097779520d64256463714411"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.cc",
+          "before_sha256": "4df242d074a2f3f2b61e4e28495897e97895fd98545dc1a1585cf38c8a58ce8b",
+          "after_sha256": "818ad8a4165e7175f69f27a099b46ac3589247df6690ac382e7b03562e8a26d7"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/chrome_payments_autofill_client.h",
+          "before_sha256": "5a7afef360701be6971802f523238099d112da4b1fc2223c43c48ec0a12cf619",
+          "after_sha256": "91f7d29ee21bfb479adf7f88f64c18e9856d4c232adca81924c503649dcfe933"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/filled_card_information_bubble_controller_impl.cc",
+          "before_sha256": "f0755350e774ce5b3b52353406ed2dee259ed4341bd5b97366322b9b40bfbae3",
+          "after_sha256": "857c516a5e2abce6526c3b74a289d114c6c137f0352453cafb8ea8d9b0d4b055"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/iban_bubble_controller_impl.cc",
+          "before_sha256": "e6c1c7cade695e7e84b38ed5126c7542fa2ec41a3283e53014b0747bd2c1e11c",
+          "after_sha256": "85c893671064c70af24c81cb34c79bf9f0896f9b32765d98f042e2e6ee481624"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/iban_bubble_controller_impl.h",
+          "before_sha256": "c61d3da2ee25583e9d0beaca569bb8e019577a752cb442d7c23fd6ceb4f6e3a7",
+          "after_sha256": "3ae81e28bec2f567986ec6c8f620e272179c1f1500edfe7cc4bf280d917004b4"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller_impl.cc",
+          "before_sha256": "d6f454d6e3acdf7de09908299ac3f305a79b5bfc40acded170934424c9fab892",
+          "after_sha256": "89082dd4c858169aeb89fcda7cb8938096fa77af5ce12556b85fe250e348e4ca"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller_impl.h",
+          "before_sha256": "2c4bad33b48475b30efc801c9dc0e030c54253e31afa67bf0799ceb8da39483a",
+          "after_sha256": "764efe91b980e1cc89cfb07e8e85614ecf6f26c530b9bf6295097d05ec69e61c"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.cc",
+          "before_sha256": "3374c606bfa99ec6c5b5fc12017b388d6fea3bea78297430aa08593ebef18c2d",
+          "after_sha256": "8fe5cc354193d39f9990988cc77915ab28b347deb89bc1254df7b9d4fb5fbe61"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.cc",
+          "before_sha256": "d31134146f6212cfe9ef46e29719f17eccae49e0b407c5a3e29371d9f58f0618",
+          "after_sha256": "164300ecabf4b334a59b38925765be5bde37928beb8494c0da62451df015ba4b"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/payments_churned_users_bubble_controller.cc",
+          "before_sha256": "e0cf9a2bd8058b6e678ee7234107ece630b6c4a3483a99cb48ba89552f33d251",
+          "after_sha256": "93aa498d338511505eee06ea38a7253aa37d56340e9e4990a6c44352fe9d4af1"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/payments_churned_users_bubble_controller.h",
+          "before_sha256": "a5feaa2d9d92568bf70e0a3498e02ae0c4ddd3106aca6a3bc69b50f7167ce358",
+          "after_sha256": "3673b2a85957252bf4ad1bccf7bebb95d92c0201b99e00af129e805998429a20"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.cc",
+          "before_sha256": "0cc524f47913e4d00a97ef1d247ecabfaef60035ae88bcea8b8403ea1a74e375",
+          "after_sha256": "29fe4a796fd41e1de3de73945c771760d8f63873cb2dd5cc8bf016f1431dbffa"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.h",
+          "before_sha256": "90d2bbabc94c0e13addce09a08cac87ac5b4e4874091056e3a15618aa03396f2",
+          "after_sha256": "2090d757bdba9132124133818b7f6253a953db2ce71c769c1e4b90a70eceb5b9"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.cc",
+          "before_sha256": "8c3ea03931a85f21cd7cd69c359bf3e3e97a1d55d58d6cdec6ac3eab7f1bdeb5",
+          "after_sha256": "79124649bc86e11ced6610b3e4e83f4bd16c1ce76e12398b6248bbd29ba3926c"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.h",
+          "before_sha256": "896f41b8679f18220fa34b26bfb647796ac1db2e78d73711d698c2be471ced41",
+          "after_sha256": "12f9812514c70fb16423eb3d44d091a5625600431fc2d9baab111ed7594f904f"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller.cc",
+          "before_sha256": "d3013b7becf9474f84ebec1efc8dd8f5d8d63984f0a01eade82c2c25fcfb6b6d",
+          "after_sha256": "9bbc73fea6f1d2ee6bf59390c15179de979e2d1ccdee51586a3ed7653922ccba"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller.h",
+          "before_sha256": "290e32dc9d6875aa26026a67c261b69fa7a1f54ffaf17ea7e3bf84d0ac54887f",
+          "after_sha256": "3f795e52bf427e46232f8470255b8a423d936fa56961ca7064392e56a28c66a9"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_bubble_controller_unittest.cc",
+          "before_sha256": "7619c511abee582d4b6f46e0e1df640ca02b8dd1686140244fcf6e1ecfc1b8fc",
+          "after_sha256": "a56bc0b45d25011239760524de3f110bc208b4ae5489862907738c8b1dde194b"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop.cc",
+          "before_sha256": "b3db0149078cf3afeee22db33431dd9a177027c9a550f6ac1e8c714d219217af",
+          "after_sha256": "09b7beb4ff513cf1ccbe41f39d1f81f33bcf0f28165243e4ace5cac839be44d5"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop.h",
+          "before_sha256": "00ef60a691d4df8b0089fe0f59a51e2eb34bb2a8e3af7bee54365d7cab78b907",
+          "after_sha256": "a4bd788b006e606a90c402b6a88428cbd9d33a461d9ee48f163e1fe6537814c9"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop_unittest.cc",
+          "before_sha256": "849cf756ac0785276528914dc7e504d608f1e32abe6f1adb064b439d841471a8",
+          "after_sha256": "c13c059612d88bc084264c28635b487a3cda32299ad2cdb69899e8fbc7860f5c"
+        },
+        {
+          "target": "components/autofill/core/browser/BUILD.gn",
+          "before_sha256": "dc2e7aca69e1a2d0ede9102db173e21a988b30547b7b1e1f014d15def3d7c79a",
+          "after_sha256": "59db9846b74483400a2af71b2008e6324eec653aee3ec43226f1e32fa9ee5c97"
+        },
+        {
+          "target": "components/autofill/core/browser/form_import/addresses/address_profile_save_manager.cc",
+          "before_sha256": "e46b862d66e1fc273789b374d75b23e709789d051db68d669bdc72a7dd5c58c0",
+          "after_sha256": "16f4d1e1336ebd35bd13818dec55bf4a6b3d52b3d5a8bb0fab6d8446dd987812"
+        },
+        {
+          "target": "components/autofill/core/browser/form_import/addresses/autofill_profile_import_process.h",
+          "before_sha256": "f266afce90229b913411d26cfc2e50842546bd639a9d5e796d34dbbde4357747",
+          "after_sha256": "c68e634357d97f0fbaa393eba0571d7390f4988be0cf996fd8edbdf57444820b"
+        },
+        {
+          "target": "components/autofill/core/browser/foundations/autofill_client.h",
+          "before_sha256": "1147803de56142775d45eb24081e9d1d365fdaf02adc30b30a44467e467b793f",
+          "after_sha256": "e811074853d6b28ca136d4c6e449ba3e82aa4143eac348eef79e9e5a80d821cf"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/credit_card_save_manager.cc",
+          "before_sha256": "263effbf0467df53486fcdee027e5f3c79d8acd3253271e329de7c5390f8dd77",
+          "after_sha256": "61850021c7cd79aaffbdea02da2675114fdb3bcb85426e09491fd50664ac6b78"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/credit_card_save_manager_unittest.cc",
+          "before_sha256": "4b12651ed7a53ac5950b9c97072b6f08b053d4c0de84420080eef0d94db4d6b9",
+          "after_sha256": "76f68ba6be7c3cf574304535f845668e4972bb7283889902ec08aacc9ed7260b"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/iban_save_manager.cc",
+          "before_sha256": "951ba8341556a142229e6e6d22e89a85ab765202a94fb8ef607288ecfb1a911d",
+          "after_sha256": "06aa55706a0ab32c4af46c8f211fa3b1fe41b219ebb979056c113ebc3ee2b6da"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/mandatory_reauth_manager.cc",
+          "before_sha256": "e44403ff64ddf4e08626c8cd06a76fa8699debdf6741ec868ba317653dd4e51f",
+          "after_sha256": "2acfaaf9f7f3e0952bf259b885f446599aeb428c0f1fbcbe7592e4c2751a3f1c"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/payments_autofill_client.cc",
+          "before_sha256": "8430b550990051e83664c6972ee3b66ef9d30be42474431123523695096a7cbf",
+          "after_sha256": "102d0fedc2c7f0f7f612afe7996a2c1df17f1ca35ebd6d793fc8c56ca0574823"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/payments_autofill_client.h",
+          "before_sha256": "620c7c4ca5238596f9ad379f8f2640fb0dab1d7bda246b04bf4d5d0ad82a4205",
+          "after_sha256": "d3ad62e0e34ba489d83579ce63f6d42b098fb82f1f9b314897a7bb480d96bf7a"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/payments_churned_users_manager.cc",
+          "before_sha256": "7190b3966081e12cdf81e27e183d3951e7322977ca8b8cb012ac8879f8c51025",
+          "after_sha256": "2514a70c56486d3fcdf92ff7c5587f563d28c5219947b0d06c5d37e78016606d"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/virtual_card_enrollment_manager.cc",
+          "before_sha256": "9349c6e0ac7645e0f1b3aede9691a9136ba6c572a1f795e6e882e60dea86383a",
+          "after_sha256": "03ec1fbda73d5bd1020606d6ce82b44226d1d6aeaf1b4cf9585bd25d75d6c3d6"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/wallet_reminder_notice_manager.cc",
+          "before_sha256": "c8819a0811643deb47e2cd478121ebd22eac6233dd3d6568b4df33251d08f8b6",
+          "after_sha256": "b1996560791956da3fe0cdd738be104fbbe0b5bd80e39afb09ad3009071c2be5"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/wallet_reminder_notice_manager.h",
+          "before_sha256": "3f05469512259af02fee50a64b78dc0ce938be7adeedcd706b023b94ee88fada",
+          "after_sha256": "681410a752f1a3a9a51217adc2c2b34636d16a9bc22348b872d7e0230d7aeee9"
+        },
+        {
+          "target": "components/autofill/core/browser/payments/wallet_reminder_notice_manager_unittest.cc",
+          "before_sha256": "31c50008d8467980378361c0d80e3446598758c9d2d8c4827e75c772b3643bfe",
+          "after_sha256": "1eb4c55f3f128ed3389e9519168713a617555da53c5f1a2f2f5cb2e8f64ec24d"
+        },
+        {
+          "target": "components/autofill/core/browser/ui/payments/wallet_reminder_notice_ui_delegate.h",
+          "before_sha256": "a0090b88b618a500a9e71667f0e11ad126d5df0d030830c29c54d8c657abc031",
+          "after_sha256": "52d4f05edab2372435399e6af33887afdbc0d5501d75dab238d6ff7013130997"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/mandatory_reauth_bubble_controller.h",
+          "before_sha256": "73d65c5236004c2ad6f34fdfa0fd1c91a63de0fb8b46c3dac439551b5c7e12cb",
+          "after_sha256": "d1f906063b8c1441ca0d4e350b7ef343ffc7f3aa0bbcad8ac62c1269e7425cc1"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/mandatory_reauth_confirmation_bubble_view.cc",
+          "before_sha256": "8ff2ec0beca945fd78e8d7f73f7cde49f2321c7cff60aab0b49fadc2bf786cb3",
+          "after_sha256": "85e584e2af8d1dd972911da0905f3ef727507de75fa7c1e184ae751f912f92a7"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/filled_card_information_bubble_controller_impl.h",
+          "before_sha256": "ac2db4a1789bdbf207e089cdb53cf9cbaaf9c8a77c73e4f1b2764b457f2089fc",
+          "after_sha256": "280c27715c2217ccb94bade27cc7af46ca1ca75c88134157559fb5eecc56d8ff"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/offer_notification_bubble_controller.h",
+          "before_sha256": "cedd02e01519c18dfd8850513ee3477a837089cb0403dc2725669bcf2332a963",
+          "after_sha256": "64c626f9e264acf02007fede62217fdd3c59fb52f7e3b773f51f928580eff4e6"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.h",
+          "before_sha256": "49f00028e25645d43340f7ad571be93e515fa4dc95cf968af47aec70de65e695",
+          "after_sha256": "dbb3a3f7214ab55ef74b2645b778af78c8655ee5beddc02083c8466311a6d20d"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/filled_card_information_bubble_views.cc",
+          "before_sha256": "80775b48f6f69af195c96c604d7242732493e55ef9746a8a444c29c0119d3876",
+          "after_sha256": "a7cbc1f098f0afd59351c986de7068da3c214953cf0c10a555390bcea994f7f0"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/offer_notification_bubble_views.cc",
+          "before_sha256": "cb0607d3be8d35f0df355552d3153769452e12ea19f31f3d6c6978c49e728e69",
+          "after_sha256": "c20b93a0150d7627cda282688030a6bf4588728626e225c47267a93a94f0c997"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/omnibox_autofill_bubble_controller.h",
+          "before_sha256": "b88af2459ba1c7fe770bdb45f8886c2a3af1b1bbdb3f9e1564959790de4d7632",
+          "after_sha256": "168f33639e67d274d8c3e0b1aeff3adb2f1bcbd3cccc23ad9b62f28f76de00fb"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.cc",
+          "before_sha256": "42189d881834ad1a6f1a750b5ef732569a63977ecb4e43ad1e2c90744c0c516b",
+          "after_sha256": "7216890f33df2ea14e03d75d70c04e69e6aab1200c7c7df54b1348d199df96d7"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/omnibox_autofill_page_action_controller.h",
+          "before_sha256": "e98829e7a746cba5744e75e57db9ba750215176f72a1c38b270c5c2262ca3e46",
+          "after_sha256": "9b60ce4de49ef63fb2760cbac7215f6010006e29ee950a765bce9595e5d1d97f"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.cc",
+          "before_sha256": "18110dd59ece421fe96d99dfaa1d9d648473603a45997e287957016173e7b7e5",
+          "after_sha256": "091b7bf46abef727f8e226e571ebe66ec051ee81d08db8c66a188c8ce4ededad"
+        },
+        {
+          "target": "chrome/browser/ui/autofill/payments/wallet_reminder_notice_page_action_controller.h",
+          "before_sha256": "8989ae495a55b3a7ae1f26aa56dee26b60e3c81550305c0c108283583d20fc3a",
+          "after_sha256": "c3d57df553546b477b3fe327abcc40794c6f972ab876f511c03f4b9fa5f8dd65"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/omnibox_autofill_bubble_view.cc",
+          "before_sha256": "35825efb1fdd8894df878ab12ef8a69cf582202a86f29b88d6fa23ece1221bd0",
+          "after_sha256": "442252f09f2a83e618ffb49f143a4d3ae205a8d799148ad202b559b2cde80dd0"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/omnibox_autofill_bubble_view.h",
+          "before_sha256": "f076870b770c1e207d93aa15e3248795ff7a266b201b9c647ef93278195b311a",
+          "after_sha256": "cd22dfae4223772187180d658ece12c6861ca57888a3b77647c6b3ee0b532045"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/payments_churned_users_bubble_view.cc",
+          "before_sha256": "f302d0a483e9fffc3d648d8a248624d6d68d165ae1b55e4d7e017b5c34f61b91",
+          "after_sha256": "62f82a45b2b9b558f7c0bbdd7eb7b8c91969c56a844c76d7f229c181b7775510"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/payments_churned_users_bubble_view.h",
+          "before_sha256": "da0dbca77cd5683ca7dabf8868546c5934cdc4153dbfb93f77a3ea46e93207a4",
+          "after_sha256": "44ec2955abdf07faf791f1a9a0af411443afbc41bb97cbb9db0b939f47d2dee6"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/wallet_reminder_notice_bubble_view.cc",
+          "before_sha256": "a57c52d037c4c3389564d9cd9881187915f2619525de9875f1732f3619de6279",
+          "after_sha256": "0eeff5e4174f14613c57436d74283af04c2ded8ef92f029096ae22d2dfa9dedb"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/payments/wallet_reminder_notice_bubble_view.h",
+          "before_sha256": "7089592c80bc22d7c94b614c12dcefc3f0a06f657a8c6da62e1dc97bc0febf04",
+          "after_sha256": "77df3410bb4e0bcf4430031fb5ec2d42748553cc1d1025b91d9b3f8a300a0e53"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-extension-uninstall.patch",
+      "sha256": "9dd80e0f1557d5ef053d5d751153120c057b15490a845653172f085f1c70fb59",
+      "files": [
+        {
+          "target": "chrome/browser/extensions/extension_uninstall_dialog.cc",
+          "before_sha256": "e2c75da0de366dc25923176ba61d1fcc607d7524a98938b568c55b3b84090492",
+          "after_sha256": "a422184cf80e446b1bd41722f6616dd51c48014aa4e3a34066f6760ed7c181b6"
+        },
+        {
+          "target": "chrome/browser/extensions/extension_uninstall_dialog.h",
+          "before_sha256": "302b82c1b1348e79c22c920654dc48f9b65ee6dc225bd6f627ddb2070b4d2350",
+          "after_sha256": "6d208b9c7f68a47aaef0b7ef87e6aaab5b3c03b04fc81f402e051805981cca38"
+        },
+        {
+          "target": "chrome/browser/ui/extensions/extension_uninstall_dialog_impl.cc",
+          "before_sha256": "2e7ac67f38c708490ecfac8206cfd0deafacff183a76b817fa730c111e295a9e",
+          "after_sha256": "db3998d9d0538606d6e925bb7363ec95bcdb0a0f616fde32af91ed766822bc63"
+        },
+        {
+          "target": "chrome/browser/extensions/BUILD.gn",
+          "before_sha256": "b4bb3282e1640aa9e9ff3662b8baf4eba40fff0cc06c486877d242de9a772326",
+          "after_sha256": "adf07033f92c98b0bbea4074c1c8623866fa48e5254167297c7b5380e2461dfa"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-side-panel.patch",
+      "sha256": "9abc96b4482f475f9499af6f8a9fcac97cbf6d0ca5155ae09baf2624b998600e",
+      "files": [
+        {
+          "target": "chrome/browser/ui/extensions/extension_side_panel_coordinator.cc",
+          "before_sha256": "0e433763d3adfe3a5a89562e0117c565829f850d2b3d14a5aab938d591948250",
+          "after_sha256": "1c461657a8a6d4d63a56fb3dece3275f72c162669b49b6637c181dd87c9bc7e3"
+        },
+        {
+          "target": "chrome/browser/ui/extensions/extension_side_panel_coordinator.h",
+          "before_sha256": "8ee302a4e59653b4d054834a163a1b61128a9de83a68324d1cceded63737f8d3",
+          "after_sha256": "b55c39ada719d0f08c5d681a4489d01e0994cc1d32d1f390f2f6fbb9aef8f111"
+        },
+        {
+          "target": "chrome/browser/ui/extensions/extension_side_panel_manager.cc",
+          "before_sha256": "89a58056d072c7c31a92c5187c6f50fd26f1de95326529563e5e580f40b57da0",
+          "after_sha256": "1939d25cab57f15034e07174832f3da3b7cb583d1e7e353d835a904e55d060d2"
+        },
+        {
+          "target": "chrome/browser/ui/extensions/extension_side_panel_manager.h",
+          "before_sha256": "82f9f5f8c0240ba990d28672fa268b1fb6f78c1da185d68da678d614ae47cc70",
+          "after_sha256": "ba69ab94cc030ee8f2eb46058a8196a9c82160bebe3454e1d3a9430ba1c4b2f6"
+        },
+        {
+          "target": "chrome/browser/ui/side_panel/side_panel_entry.h",
+          "before_sha256": "f99e76595c8abb1a8c097ab3ba25fd6d2fdf6271c6db1f3620f8c3a8cda705c5",
+          "after_sha256": "7f2a01c9de706fbfe504bb504ae723a2c2548f7fa0b4e6d7785a16338bbdc387"
+        },
+        {
+          "target": "chrome/browser/ui/side_panel/side_panel_registry.cc",
+          "before_sha256": "058c243f4a5d5dcfba0f77ad9b9aed36b50ae451065df21dde1dd33a1baafa60",
+          "after_sha256": "60faf5ef39cca5d11fd02e666986a9e40f152a8af983634fd9f35134bb413dc0"
+        },
+        {
+          "target": "chrome/browser/ui/side_panel/side_panel_ui.h",
+          "before_sha256": "b2a1eec6fb8863137fc7b06d1f031d40ed2db834dc4c04e7e654cdb79274bf81",
+          "after_sha256": "7d9a86b4cdf729149cef6948e44e363e97b7932ae6122b104b6d276b1a757777"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-host-route.patch",
+      "sha256": "a2251a545cbc1f1f5e02d45d083272a3a021c7a024804fe7c067ab7a84f594fd",
+      "files": [
+        {
+          "target": "cef/libcef/browser/browser_host_base.h",
+          "before_sha256": "66da35a806c13f056c6954ccd69deaf3235d45406e63f39179978b9e79cbc6a3",
+          "after_sha256": "ba327673ea47241017a27f3ed29daaf3af2b04ec861a75a4fff13dee651e68c3"
+        },
+        {
+          "target": "cef/libcef/browser/browser_info_manager.cc",
+          "before_sha256": "690e54f84d5fa08d57c2c6166d97298befbf2c7c434bf0c406c6e513208b8105",
+          "after_sha256": "2fd38f3162096e2c0c72ac929f7de681c4d9ef1c1e05dcbd271ea37953655764"
+        },
+        {
+          "target": "cef/libcef/browser/browser_platform_delegate.h",
+          "before_sha256": "8b05c61e1b5780ff028172d1427376b99cda1534e629e150a2a0067b01c66d56",
+          "after_sha256": "babb1f640507e3e8c9b7e69fb760789fa6ea05f39ff5a433997a01b61436829b"
+        },
+        {
+          "target": "cef/libcef/browser/browser_platform_delegate_create.cc",
+          "before_sha256": "9a3b7c8f7abd96127f2a8535a38749cd89bc9bcdc58d62642cec507b3a24af06",
+          "after_sha256": "93ffb273595a18e3f8648424a0bca20a3eee6cad04b9579dc1ac45aff7c4786c"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/browser_delegate.h",
+          "before_sha256": "fae8eebf5064f7b41e979bf854d4e1b8e66192ff7ca5d26aad0c63fe47fa57ce",
+          "after_sha256": "eb1f8bbce628dba8ac495ec4e3f93c4d6ff9537c41ea2615dbad9231a0f4313a"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_browser_delegate.cc",
+          "before_sha256": "4a09c7dc145005615c8cd99f489317381693fd377e8890999b135aa407614cec",
+          "after_sha256": "3883ba4ade0f4814305a3eed702ae8b0da87347391b0a647d02d978de615530f"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_browser_delegate.h",
+          "before_sha256": "1d9bc1913309dd3f19b582b1dd0066ab8c12d910f0673db63f6a3d78b411c1b2",
+          "after_sha256": "80707aa9263b3ec80115124f78c742d169d2f73f8af3eeeed1a74446d4d0fd7e"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_browser_host_impl.h",
+          "before_sha256": "f16a6ca8460c77a394b950209f193e97840cca0b140d6c03bdd19cbf0c96c14a",
+          "after_sha256": "d4149b77aa98d4488ce3b2076fd6f032c35040cba5507ce1609ad492b02c89e3"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_browser_web_contents_delegate.cc",
+          "before_sha256": "e6df7e225a666a2b753d86686f93815221072e241453539c22b19e79675928c5",
+          "after_sha256": "7ad3386262b67e518e38079c485f2b86b019909ac83c2d1bcdff6686befabe56"
+        },
+        {
+          "target": "chrome/browser/devtools/devtools_window.cc",
+          "before_sha256": "ad95ee2defd3222df9224e9cffe9f991b49db2dc5a87d45b738adce540cfa873",
+          "after_sha256": "f6844aa09d5e5fd18ea659be3febd5e8a6324e8f36d2c3404565731144eebf88"
+        },
+        {
+          "target": "chrome/browser/lifetime/browser_close_manager.cc",
+          "before_sha256": "313c6a02ed029b6fe3d8ecaa7078faf8b77c2a3b9aa0ef2f214b33ba2aa0e80c",
+          "after_sha256": "83b84e75d71c2a76f7ad5f7f1d3b3ced4021f0413425c8ff373bda409f990cdc"
+        },
+        {
+          "target": "chrome/browser/ui/browser.cc",
+          "before_sha256": "7c6e61081179522a10096c2ba925d15108244325149ecf34ff24689749006275",
+          "after_sha256": "25af5d788e5605449b6de39e501f25d6c089cedffd60b10f561f6e68a5580769"
+        },
+        {
+          "target": "chrome/browser/ui/browser_manager_service.cc",
+          "before_sha256": "ad31d8e1ac19fab4bcf566d93d7c6efc339d3719548992dec64f690a8fd5e6b3",
+          "after_sha256": "0911aa17b901aeb1eb5449d06997e472a561e7e58bd32cefd2c0206373647292"
+        },
+        {
+          "target": "chrome/browser/ui/browser_manager_service.h",
+          "before_sha256": "a3c9a3328876110e9a796d81a8dfcc6d9e3169a00ae1d9b9a7a6300bf9c8f1c1",
+          "after_sha256": "8727f8be3b5f1dd1b1f83ebdbb469afcb146f2f2c1c11a1b2858bab094501d42"
+        },
+        {
+          "target": "chrome/browser/ui/browser_window/internal/browser_window_features.cc",
+          "before_sha256": "531f27291020ee1a7305f8f66294afb78678fc50c7920bf33fdfa68ea24b8965",
+          "after_sha256": "47cb7138ae9e2618ebbc23e0eadcefe55c1cd3ef1af63a8eb234923c1dfc7241"
+        },
+        {
+          "target": "chrome/browser/ui/focus/browser_focus_controller.h",
+          "before_sha256": "932a9b10e82d76a863b486d3d3392bf0a651785e3c802589be061c482db08c70",
+          "after_sha256": "d3a65c9c7bd570813d07c8811a2d4d1608b3ec16b5dc9672e4760db5e0c99c7d"
+        },
+        {
+          "target": "chrome/browser/ui/navigator/browser_navigator.cc",
+          "before_sha256": "20cbb888d9fb4665e16c91643db74af1b9ffd5f5d109af96db00f75149439e98",
+          "after_sha256": "edb8c16e314373c934845f9c93a5dc57b40b0baac4ca8335eb341d66f59270e9"
+        },
+        {
+          "target": "chrome/browser/ui/views/frame/browser_window_factory.cc",
+          "before_sha256": "48515fc4eb091e99e99aa1e945750badd41e2c654aeac551856cda861498cf76",
+          "after_sha256": "1db84c404affdd5bd91ac0b845f3abd459760e301de382450b281d639da2693a"
+        },
+        {
+          "target": "chrome/browser/extensions/api/tabs/tabs_api.cc",
+          "before_sha256": "ded6a1700616738e5aadeabe9bb5cf612a74bbfaa1a1abe53efe652e68628ae7",
+          "after_sha256": "fb1ccaa1abc2fc14aab9fbf73ccad1d88633641dd0386958d1b18f603d2582f0"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_browser_web_contents_delegate.h",
+          "before_sha256": "1f7e11ee51c7990efcd590f2c76e1ac1b6fc6e2876e0285a476fa3746a8f98a5",
+          "after_sha256": "4c909e01579e508cbd1335d5a3b2f6eb47b3627a591cf58c6dc0c576f2259eea"
+        },
+        {
+          "target": "content/browser/renderer_host/navigator.cc",
+          "before_sha256": "4e167cce315b33ed39b26ceb3f932129a27a2864eba7c83826da3077a0dd1d84",
+          "after_sha256": "286262997d7c6a29e491f197558302e6ee234a8ae7ad450a15e55bad18d36213"
+        },
+        {
+          "target": "content/browser/renderer_host/navigator.h",
+          "before_sha256": "16d587aee442d4ca3e8a2224236f275934658a4334fd94d4a55ed8402066a6cd",
+          "after_sha256": "a86c813a500cdbe723b208ec2585f703f752ec49f79f6298857479fce2045cde"
+        },
+        {
+          "target": "content/browser/renderer_host/render_frame_host_impl.h",
+          "before_sha256": "595572a345bd441ac5d2816c26303e3c78a159afb457d10e9ebe9797fbae6724",
+          "after_sha256": "cb8724d1970d3097ccc21836b0fa401f9a453ab011e6c51dff8b799212cfea72"
+        },
+        {
+          "target": "content/common/frame.mojom",
+          "before_sha256": "0e9bdc0d4c5f4e22bd5b8d289ec7f9eb63a3018515514318559249b6f67ca869",
+          "after_sha256": "366bb6ee89577aeea0d7b81086f5e625a006bf2367b6353bd662c1c4b534c76e"
+        },
+        {
+          "target": "content/public/browser/page_navigator.h",
+          "before_sha256": "072e4f26554a3f4021ef8149820fb11222a890c3586c5fd489995e911bb1fb6a",
+          "after_sha256": "54d3edd240da600a73b3d9a4389ecbbd412e8e4b937209b16b0551e09269ef4a"
+        },
+        {
+          "target": "content/public/browser/web_contents_delegate.cc",
+          "before_sha256": "78ee27b8780d117ab1de3c14bf13dcc9f4c885794ed8f9c992be8aa067cc380c",
+          "after_sha256": "4ce5fddd37773db2af61a5f3cb2e7fdbe99d94c408420c549053572f05d883c4"
+        },
+        {
+          "target": "content/public/browser/web_contents_delegate.h",
+          "before_sha256": "597bb5a5e6c8c1cb71ee5cf07af28f6f10475cd725b8b4bdd7a77682606a51d3",
+          "after_sha256": "811c7b7fb55cf5b7b2f681eece2391d8407a7738c81c7355b65f31d232147896"
+        },
+        {
+          "target": "content/renderer/render_frame_impl.cc",
+          "before_sha256": "1022dc00a64aeef2d987835c5a7d818691c72162ceee6e61bbd019bab45bd229",
+          "after_sha256": "77ea89dc3cf81cbe7c6ed84be9a25e6affaf5875756002679814949e3f10060f"
+        },
+        {
+          "target": "content/renderer/render_frame_impl.h",
+          "before_sha256": "73841d22ca5259b585723cdc63a33729ff597e5586f96f2c2e0169800511ac7d",
+          "after_sha256": "5f99e85818f4b6ea3cca66841164edbbf5421c9ae14b5c40ed9ef00d84159d59"
+        },
+        {
+          "target": "third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc",
+          "before_sha256": "dd8e04b78d064dc4f73b10ada8b1f74f26e461eb2ace82926fc6f61beb1f9824",
+          "after_sha256": "f61d1596b8cf420bd2c13d407397c3f5146020d5aaf43aa383709b6092d9a104"
+        },
+        {
+          "target": "third_party/blink/public/common/renderer_preferences/renderer_preferences.h",
+          "before_sha256": "bab5ae0d77ea862203637021017cb108657825110377b82af38135cbbd14d6ed",
+          "after_sha256": "3532127726121c25a868b93360aeb851e8f96f5fd8370cca5b2c10fdfa3dcd79"
+        },
+        {
+          "target": "third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h",
+          "before_sha256": "8e9189feed0aca7b8c9a60535d4f3ca83ed3b840572a6b841fd01225907e8ecd",
+          "after_sha256": "955bfe35e504d336f9ed44b03c6c91fd4648bc759341f78c07d23e9f0fa44b42"
+        },
+        {
+          "target": "third_party/blink/public/mojom/frame/remote_frame.mojom",
+          "before_sha256": "28663d7e1299fde7032169ace6bcff819ca45097f8d97b8eeb491dc5a8fe2796",
+          "after_sha256": "e80922c8752682a889d2efba1ddb1d9ed82464045bec0adbaf16f77312537584"
+        },
+        {
+          "target": "third_party/blink/public/mojom/renderer_preferences.mojom",
+          "before_sha256": "32b86094a6dc9fbd11fa84019263754dd5de47cbfb2404721ec3d930bbf31104",
+          "after_sha256": "4bdf8b269ed3f82f072ffd57b5940800fbe6f73d71f0d9523548fc3724ed78e5"
+        },
+        {
+          "target": "content/browser/web_contents/web_contents_impl.cc",
+          "before_sha256": "adfa7b00b153871c99baff739df6642e4dcc062a0ef0ac1f2fe127757006f8a6",
+          "after_sha256": "4494cc2fded60b21c2fc42af5a277007528af33119f7699d0ff8d698623ab732"
+        },
+        {
+          "target": "content/browser/web_contents/web_contents_impl.h",
+          "before_sha256": "3e72392bb48eefc9433b931f038994ac46b5f979608e1f0bb58db8c729190240",
+          "after_sha256": "afaa6d0cb4b16109c35bad5ca76b4369d6d219710fdf4ab2bc3f468abd2e9331"
+        },
+        {
+          "target": "content/public/browser/web_contents.h",
+          "before_sha256": "91db9c3067bed652d6e2647ec9be88be8cbb19a592a947124e0074bf91155f39",
+          "after_sha256": "49e21eacb5d3a6094b9bec4c1dc5ff1eb7f44dc1675cbb351ebcca2c86595ce2"
+        },
+        {
+          "target": "third_party/blink/public/web/web_navigation_params.h",
+          "before_sha256": "6664c8bc5f9981c1f541fea72874f1f25fab2e49d9316698565e2278bfa6d3d0",
+          "after_sha256": "29b9c96d041420e2ad52d8abe9fac272da36783ef623168ffba1bcbc20ccc8cf"
+        },
+        {
+          "target": "third_party/blink/renderer/core/frame/local_frame_client_impl.cc",
+          "before_sha256": "f6c4f4c5b8a6ef4a4570f031b315f801cc9f64fb1ab5c156c054a3dfc73403d5",
+          "after_sha256": "83938d36a3df527469d8b7afd88c36516dd7af41e8f95fd2b567a59fa1aabf46"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-page-retirement.patch",
+      "sha256": "692c3f181375d0e4d3d988740561fffbc3b10d686a7658f558bed1574dfa7268",
+      "files": [
+        {
+          "target": "chrome/browser/ui/unload_controller.h",
+          "before_sha256": "dc168f5d59bbe14f425c7e4dccba1191ea40f5b6b918a23d5c816e7de69d29b2",
+          "after_sha256": "d4d189a339ec34e94f3d641d9aa097c1c5b0cde15fc53cece8032e76191b006a"
+        },
+        {
+          "target": "chrome/browser/ui/unload_controller.cc",
+          "before_sha256": "3bb34ef06e99738258db3699f49af9e6ce69f2c602543b757206bcfecdf95b2a",
+          "after_sha256": "aa575bcdb6717689d2c370884764ce3ffd8d0d498c11608b01990f00a9b94fa9"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-site-permissions.patch",
+      "sha256": "933382509deda15c8dbd507ceecf75cb2db5f081dc50e3dd0e334a58dc9654de",
+      "files": [
+        {
+          "target": "cef/libcef/browser/browser_platform_delegate.cc",
+          "before_sha256": "b2bb3463d9ed8d971afcd0e8929b18c0e9986748d20812b8bbc831d0a95ae243",
+          "after_sha256": "8e6a40855dd933c74e0fb125e2a249a987427ba70934d4ab04ba5df7138f8184"
+        },
+        {
+          "target": "cef/libcef/browser/permission_prompt.cc",
+          "before_sha256": "19896d9df0fd0d75927a030d9a3bf8c6f4940b334b6b06fd477256e6d95e1fbc",
+          "after_sha256": "55ca111e7287dcf8d333bf9dd910f489cc31a92612ff62fd2b1f999b393be70c"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-protocol-handler-request.patch",
+      "sha256": "5053d0aedba9415320c49387c9e691a3d5fce7d3ef509209cd1795b0191b69b9",
+      "files": [
+        {
+          "target": "components/custom_handlers/register_protocol_handler_permission_request.h",
+          "before_sha256": "5a1dbf30d63d8fb43f2df3eb410f2d255777391f1fc3dd922f30ed947155346d",
+          "after_sha256": "5732b08f85dc4b4f149efa84ef7962b32b0b2c598c83e54e37981966b9ba93e0"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-extension-install.patch",
+      "files": [
+        {
+          "target": "chrome/browser/extensions/extension_install_prompt.cc",
+          "before_sha256": "6045ef4b7304a4b7927f819d1bfd0fdf6a6ee9097d24f8c154d0bdd1c1e3120d",
+          "after_sha256": "53d946631dc065d52e2f90c22e0fa10ce3f6ead7ae001e8aadd1ee47537d4ae0"
+        },
+        {
+          "target": "chrome/browser/extensions/extension_install_prompt.h",
+          "before_sha256": "2083810817ae6f722a645628686100bc50486c63d7868b1b5b5806de54f294c8",
+          "after_sha256": "42002b0cab990901a5cbe66d344bfbde0f8128dbff2b278223fae899ab3e8547"
+        },
+        {
+          "target": "chrome/browser/supervised_user/supervised_user_extensions_delegate_impl.cc",
+          "before_sha256": "6c5f88d4c2eea57d0637b041ccd78b09134934f7df39bab6afe550640238b006",
+          "after_sha256": "5e5b3bf2866eb2b16ef2d00d30f9e5dc23623f77bf7f93d95f2003e2be72a35f"
+        }
+      ],
+      "sha256": "4b9181b0a0a0aebd4a264b5da82b0df9577ec0a976563c589c21e14638d0f873"
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-downloads.patch",
+      "files": [
+        {
+          "target": "cef/libcef/browser/download_manager_delegate_impl.cc",
+          "before_sha256": "93327bbf93d9edaf023908f7240abe6e0ccd70cd331fed061fc380129e75ba0d",
+          "after_sha256": "b9939c354ace023970d1da913771df7dc06cfffc4a3df1869dd9cb642e43f500"
+        },
+        {
+          "target": "cef/libcef/browser/file_dialog_manager.cc",
+          "before_sha256": "634817ad3c4116a8258027dfcc31ad6ebe0ce905ba7cca024d0c840e322242c6",
+          "after_sha256": "fae681c5acd0570c776667c16fcc78a7b5cd5eb3b6714226cb20112cdd5561aa"
+        },
+        {
+          "target": "cef/libcef/browser/file_dialog_runner.cc",
+          "before_sha256": "20ba2f2da3be3038ecc45cf376178d00f787e2f0617f8c5c5d1e07d9df1e5535",
+          "after_sha256": "3a0c8a7c50dc441717e875da9e7b452201b4ec2827fafcfafd74c376ca89e777"
+        },
+        {
+          "target": "chrome/browser/download/BUILD.gn",
+          "before_sha256": "5be203bde12276f95a8e387e66e9f1c35da97a085946181a332ca87b054b3109",
+          "after_sha256": "a733a869d87d3d3e242b35f469a0118895be5792a773e423363bd9f6be11d480"
+        },
+        {
+          "target": "chrome/browser/download/download_file_picker.cc",
+          "before_sha256": "694311f23044517c0ed16cebd016fcec6ab6d24b3ed62f6bd2538c0e19543feb",
+          "after_sha256": "73c81ddcf8176f22f5baec016956e79e57108e9e272a2e1c926f596d22a2d972"
+        }
+      ],
+      "sha256": "1959210caba685eacae5d3233d36144ea43ba83aa9da6f5b1052fc59997f0f32"
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-http-auth.patch",
+      "files": [
+        {
+          "target": "chrome/browser/ui/login/login_handler.cc",
+          "before_sha256": "ea87063b19aa6310f4c3842747fe59d3796620794b078d12d971e376e83e044c",
+          "after_sha256": "e8441125aaf30a8584d3cb5fbd94d352c560155a414b3c527878bc27b3b9792b"
+        },
+        {
+          "target": "chrome/browser/ui/login/login_handler.h",
+          "before_sha256": "611fb68a178806db3b3c7ff00cefd395f7491ecc9688aa4624af7cf94c4d92b0",
+          "after_sha256": "3b7c24a1ededc950ff8d67cd78861937c332ddc5d7dc999ed2e4cac872198411"
+        },
+        {
+          "target": "chrome/browser/ui/views/login_handler_views.cc",
+          "before_sha256": "fa12f8d6aee2386ad8d3261a521830b22c56b22140a067f291febe46ee308794",
+          "after_sha256": "a2c89aecd5e33d49796e86f55ce2f31687d347162814015d5b95d1426f64fc89"
+        }
+      ],
+      "sha256": "46843706c9ddb7671a87e76e685e74513a61afea4d8c29b25decdf24b912837b"
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-client-certificates.patch",
+      "files": [
+        {
+          "target": "chrome/browser/ssl/ssl_client_certificate_selector.h",
+          "before_sha256": "8de0db06f4f9a0cb025b686677189cef6dc7f20e2c51d0c2be97828ca6b43668",
+          "after_sha256": "e2049b108dafb4a6fe3edf876e975ff2979dfd71fdee81108eb0b0184d1a9719"
+        },
+        {
+          "target": "chrome/browser/ui/views/certificate_selector.cc",
+          "before_sha256": "2b7694b4351addf365350f8422f417a0094c2dffd58e89b6a36b6993cb728492",
+          "after_sha256": "3616a016a65cf4c0f7e5c58ccb68d27df72ad938475a42535d2dafac62dc1157"
+        },
+        {
+          "target": "chrome/browser/ui/views/certificate_selector.h",
+          "before_sha256": "04b85f341a4e11cc22d366239c46cc2be7a03fafdc3008d28bdffd43b11e6d14",
+          "after_sha256": "9fe165963f021c238e5996e08e4be9ea6080f65571ddfb9b566d2b1577b252ef"
+        },
+        {
+          "target": "chrome/browser/ui/views/ssl_client_certificate_selector.cc",
+          "before_sha256": "d24706e3246f9f280e82758f6249a2e0a46c0f9055e0b7aad8459bdd0d4c1218",
+          "after_sha256": "246ea97c9993f0a50e34f4b9fe45062977c2b9f2742af70b39766ab69f95b27b"
+        },
+        {
+          "target": "chrome/browser/ui/views/ssl_client_certificate_selector.h",
+          "before_sha256": "b4edff0fbc8cdd9d8a5275c7ec80f7f093676d61b0bf09d3e0d6f0ee20e53ef7",
+          "after_sha256": "f36d9b7d6af1ad537f8d560014f1d8b527eaeb5a75b34928193ed8f3bd3e82c9"
+        }
+      ],
+      "sha256": "f94f95b448d5b9f451af55999eb12ad67d285c4149a5521a40a78665ea1f8b12"
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-devtools.patch",
+      "files": [
+        {
+          "target": "chrome/browser/devtools/devtools_ui_controller.cc",
+          "before_sha256": "f36095ccf26eb17202aac98ceb0e1e4d0fdb3e0cc8e8a5ed06c2383f930f3e7c",
+          "after_sha256": "455f31c20d7818585cedecc14cef2d48069dbb1e7e546846fe4995125f83f818"
+        },
+        {
+          "target": "chrome/browser/devtools/devtools_ui_controller.h",
+          "before_sha256": "110ede4d7ccfca5948df6cb0a69a39998b57cf16291c7a5df9ec4f55b0e3079a",
+          "after_sha256": "1faafe069bf990972910f2e2cf7aee6f688331b8d75f2442fd60f0a37140fa2a"
+        },
+        {
+          "target": "chrome/browser/devtools/devtools_window.h",
+          "before_sha256": "dd27c6895da41d0856345de92e0fc3cdaf0d177128c7abdc550dd5f6e1fb8843",
+          "after_sha256": "c266addd10bbb7ad7d96f89e518319d50ab0c6e2261949774d87c29f9627520f"
+        },
+        {
+          "target": "chrome/browser/devtools/devtools_window_views.cc",
+          "before_sha256": "a8d8b8f7d7db9f98c693f93da351d25222e3efa8a18cbeb5e80ffed06c5579f1",
+          "after_sha256": "3fecc42999408469edcce005afd0c84afeba92ca135c88c202f00f4dc277d257"
+        }
+      ],
+      "sha256": "a4903d875b5b9474a2c5fbc2cc167426c9a7d2ac1069db5ba06bd8cfe69f0340"
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-external-protocol.patch",
+      "sha256": "c7b691cee8caf28b4a3248db684b0510edec8497f3dc0df31938bcc9f9ee8def",
+      "files": [
+        {
+          "target": "chrome/browser/external_protocol/BUILD.gn",
+          "before_sha256": "88b0151d48c43d23bbbf1f1a84318274a822bb33a81aed700a3bc1f6769a71d8",
+          "after_sha256": "da862e93cfb44632d682c2a26bdd366719f2acff4817bd65ee353fecb9709982"
+        },
+        {
+          "target": "chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.cc",
+          "before_sha256": "3e2b1d16bcb8c1e5f6aa6c5840d2a87ac748c3943ffee430ad5441c180479ee5",
+          "after_sha256": "27601787491c2ac74da42390b7da41402a3f2b9f8e7435c419fc0aba35344ddc"
+        },
+        {
+          "target": "chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h",
+          "before_sha256": "77c8567fe08f1bfb503a906fd167e0d7cd13f3d4c01217c25732eb541013b6a1",
+          "after_sha256": "cdf5f15637e63ece520e6c1965d705a3f48fbd917ecee03e05212b088ff897f5"
+        },
+        {
+          "target": "chrome/browser/ui/views/external_protocol_dialog.cc",
+          "before_sha256": "43b1ad4d5dc056c2cba30fe59b8f6cbd435329960ae8d9342a699f3fc24f6d64",
+          "after_sha256": "36380c89a21fbcacc4bbe8dc4ff5819d8166bcd337fc5ecedd41273055f8fa6d"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-webauthn.patch",
+      "sha256": "9920d80d68b94d5684dd6f1bbdcca3ff4c7bc1673d6b55228778767673a14466",
+      "files": [
+        {
+          "target": "chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.cc",
+          "before_sha256": "4a632e0a9e4cd642eeabf8e280f67bedcda62463c2dbdf87859ed2dc91dcb380",
+          "after_sha256": "f01ec9a1cd29ab7734af104bb7aa9ea4a1b698e43d7f7e7e607f3fe6e20938aa"
+        },
+        {
+          "target": "chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.h",
+          "before_sha256": "b0d920dd373c61701fac2f6f08ee096dbaffc1f27f0b247a427fbcc21e5fce0b",
+          "after_sha256": "603be28103472dcf3c4771046f907e6635f4c77ee4d43a0923ff3d801db23a9b"
+        },
+        {
+          "target": "chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.cc",
+          "before_sha256": "67d52b8e8490648fe3a0e1e2c9a18bf46808aee63440c1a6c37c30989e9334f9",
+          "after_sha256": "a532d7f33132288ef107b163a0a5e146897c503bbee0b39b26a0ec2bbe7552b5"
+        },
+        {
+          "target": "chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.h",
+          "before_sha256": "1860bdeea3987ad83c22a2aab7b42f26e5f4401c64df7739538d12810933d1e7",
+          "after_sha256": "cad4a55ff2d933077b48aa2699b933aa72e4a0750718e4f5b5a1eca4ace07a2e"
+        },
+        {
+          "target": "chrome/browser/ui/views/webauthn/authenticator_request_dialog_view_controller_views.cc",
+          "before_sha256": "4f58a9cc7f5f9b5812d83639f0da5488fa4a8a81a77f93df2ee1bdc7a3e6b760",
+          "after_sha256": "9a34de7c0878a1077d30dcfa4c02d6e311062867177e71cf942f4f102d566f69"
+        },
+        {
+          "target": "chrome/browser/ui/webauthn/ambient/ambient_signin_controller.cc",
+          "before_sha256": "87fdf5ce9c288c78b73547e64c435c5f0a4dc8c04c4873f2a085a6a2a6b725fc",
+          "after_sha256": "6ddbed125a4b11a19e1303a8f183ef97a19d6f57ef773719abc588f7aac8f185"
+        },
+        {
+          "target": "chrome/browser/ui/webauthn/authenticator_request_window.cc",
+          "before_sha256": "dac9537ccfc2802bae45ead5f9f3d41cb852c5065e1fca0f7c9dc0871e45c722",
+          "after_sha256": "cbd88d163088e3a4e8f93a0e6a05e9af68c1c7f9379fa28980c6188e49691652"
+        },
+        {
+          "target": "chrome/browser/webauthn/BUILD.gn",
+          "before_sha256": "934572c8ec66589c9893a3c1813841e76a8c85e23644c4bd571e19bcc428f114",
+          "after_sha256": "55c9c840deb8f07104d6a9c74cffdfc9008297c3521df0e473765b564bbb27dd"
+        },
+        {
+          "target": "chrome/browser/webauthn/authenticator_request_dialog_model.cc",
+          "before_sha256": "3f0f8c54316923c45da9cddc310ca64ab37610959d0e4d6e31bf227bf086fee4",
+          "after_sha256": "23780c50d41469e98be980fdc940b02398d4c560d6d1291d1a812feb6830785c"
+        },
+        {
+          "target": "chrome/browser/webauthn/authenticator_request_scheduler.cc",
+          "before_sha256": "24f141603b6e70a761369d9b0e89daf5187b2fd545673b1c53ebdfef9270bc56",
+          "after_sha256": "dd5c836e500f59697eeecbe26199680eb500e8c4a53684e2caaed52bbe279edd"
+        },
+        {
+          "target": "chrome/browser/webauthn/change_pin_controller_impl.cc",
+          "before_sha256": "bebb3537461e2291b9a7b4f600d3bdbcdc6735f68141ba277cd8d2837723a3a3",
+          "after_sha256": "4fb0d749db6116d8810bed24885c5ce1babd8b816ed00fd63e2b677a8bde325c"
+        },
+        {
+          "target": "chrome/browser/webauthn/chrome_authenticator_request_delegate.cc",
+          "before_sha256": "9adc8fe0032af599fc950ad2e963801a3a3a096f789b95e547408ce1f81363ce",
+          "after_sha256": "cddbff2650b4bbc8ff2f1670475ed3cb885abd289f5cbe89c2c5e35a094a28f9"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-devtools-auxiliary.patch",
+      "sha256": "b6f01ba84424b99bf160f151192c6c73fdb73a1e124648b0d39922ab48369379",
+      "files": [
+        {
+          "target": "components/javascript_dialogs/app_modal_dialog_controller.cc",
+          "before_sha256": "2b993c475822f7bf2860764fafeb7f84f5fe41370fc9a0eeb97f729e0fa0fe55",
+          "after_sha256": "1776770af5c5652cd14c5d92465b15989f2cf325ada13bdc72e52ed58cc90cdd"
+        },
+        {
+          "target": "components/javascript_dialogs/app_modal_dialog_controller.h",
+          "before_sha256": "228cc2eb68c8903a79d57a35b2c14bcf62f741a92100f2c84cb89b94cc6fa417",
+          "after_sha256": "9f91e50a79afb06576c9b0b15b7ef43215c8d517b7206301625893136f6aadb7"
+        },
+        {
+          "target": "components/javascript_dialogs/app_modal_dialog_manager.cc",
+          "before_sha256": "c5aa332a6c657cf0bbb3084fa3254796ffa8de0807a52dcd64243d3a62f6835b",
+          "after_sha256": "bfd9b72be4c811bd5432f48202671ffe43b555a2ea8e616a12300f2d0dde4456"
+        },
+        {
+          "target": "components/javascript_dialogs/app_modal_dialog_manager.h",
+          "before_sha256": "a9420308e2b5432e1605b42ec1f114664da3cfb0cec100ab25609f9b53865cdf",
+          "after_sha256": "52208d1ef1046267a638920e7e26e474e2eb657527356c935d8e73f5acc98350"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-server-certificate-viewer.patch",
+      "sha256": "e56324b43098cb040efda7591f51e651c795db50cbd789991ad20c35d3a2ca03",
+      "files": [
+        {
+          "target": "chrome/browser/BUILD.gn",
+          "before_sha256": "a61cb6b87f4a2f42b09ae3116ab8bffde3d80f95011f260368f6c5581bc2cab9",
+          "after_sha256": "8e3f4a0effa17d086603971dc5dc5d0806272e9e96c4235ca508a86503a62ab3"
+        },
+        {
+          "target": "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc",
+          "before_sha256": "fa405eb2021b3c54d50957ad4710cef1342e7a49cf1d71bfbde2567ad9b7edd0",
+          "after_sha256": "26f977690072aed08e5e1b8502e5bdfa04e9c8fe9298e78524d1ff30d0dfccf6"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-browser-cef-patch.patch",
+      "sha256": "24f9ca2533886998716a139c0d8fd82a760b266df7e0f7c4a4d8bab4b7374576",
+      "files": [
+        {
+          "target": "cef/patch/patches/chrome_browser_browser.patch",
+          "before_sha256": "d69bb9e9c911884d94517c7f95fd5f7251d4091b061dca605544c0ce94000794",
+          "after_sha256": "3a0ac404b6c9b46788fd396dfb77403e558553ace4e59a8e6c2aaf13b8bcc5f0"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-video-pip.patch",
+      "sha256": "641240d55a078e189db2155834ffd7799f11bfabebadd0567596b9a1d08d2753",
+      "files": [
+        {
+          "target": "chrome/browser/chrome_content_browser_client.cc",
+          "before_sha256": "3aa369221d8acba8f2b12f071f4a03a51f80686ef2fcc53ce1512a7c7a2b4274",
+          "after_sha256": "bd17558dea8f52a7baeaa9f85628f7aa15d82bcbfd24ab3a5d032f49b976a607"
+        },
+        {
+          "target": "chrome/browser/ui/browser_web_contents_delegate/BUILD.gn",
+          "before_sha256": "7f302fcdf966511031657aa112ade3b0b5fbd3682186064db3d445db9ace8a0b",
+          "after_sha256": "c30553c1ad5f2c9e35044e0be1232d876fdf74ccce72a65394c401b65c1807bf"
+        },
+        {
+          "target": "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc",
+          "before_sha256": "3da36864557eaa878b73c7133347c7416ba492e0fa20805940e1f7d5145b673c",
+          "after_sha256": "2030202ea2c7da04db3d8a4f21af37881ba0d6b9353cd863c55b8153193afab0"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-sad-tab.patch",
+      "sha256": "1e2452f1d1c4ea74a7270858886ab69a31c1652c1fd95ce1a0e2c1b7b78ee588",
+      "files": [
+        {
+          "target": "chrome/browser/ui/sad_tab.cc",
+          "before_sha256": "0d6748fe62aedf32117b37dede2f6557b8f7645c1214cb8513f325b3bd961da3",
+          "after_sha256": "4efef0ffbfd9076e79210e63a8301add2845b3ed71a2c87824788acdaabb6e43"
+        },
+        {
+          "target": "chrome/browser/ui/sad_tab.h",
+          "before_sha256": "83398c125285e8c5f8643944baf0e9e4eea1e59e59f932e2c4de9e8646b81e2f",
+          "after_sha256": "a268b0b2bdfdd7d7746be29525774baa7c14eaaadb7deb5ada2cf010072a876f"
+        },
+        {
+          "target": "chrome/browser/ui/sad_tab_controller.cc",
+          "before_sha256": "f27895f484d5d13cd84d624622d2813c3e0d122893fe0863515a367d80ec950d",
+          "after_sha256": "44220ebad379f84c7c67e8bee6b4bc486403c3d15608c99f9193ff79198906e8"
+        },
+        {
+          "target": "chrome/browser/ui/sad_tab_controller.h",
+          "before_sha256": "d6e0c3c771ddb9c985219695d151a4efe2cf016b6c318c45afa7a2762b6b7bb9",
+          "after_sha256": "383b58dc5d8533074a8d6bd4bf77daa9d0ef9852bce5de84fb39aeec2828cced"
+        },
+        {
+          "target": "chrome/browser/ui/views/tab_contents/chrome_web_contents_view_focus_helper.cc",
+          "before_sha256": "82123c4501e950aaf35df2517605b6144739082a02affd8f745811116228407b",
+          "after_sha256": "7273a4900605d8f302c2ecc8eef0b0090f723f5e554328be8127a6649ab10223"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-input-diagnostics.patch",
+      "sha256": "01bf77af5c14bb84facce74563c6737c3c2991c701ab64afa243917276e185ce",
+      "files": [
+        {
+          "target": "content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm",
+          "before_sha256": "2943c4e20c457ee6340253cba8150e233edaed1bf024afb3bd83e2abb6aaa24b",
+          "after_sha256": "7f7fbb4c258994b4c01ceafbce0562e7e42e630dec8cb6b28de158283d6f3085"
+        },
+        {
+          "target": "content/browser/renderer_host/render_frame_host_impl.cc",
+          "before_sha256": "87c5cbdf69feb548bad0b11ae5a27cd6d8f142cba10b802d442822b6c23142c4",
+          "after_sha256": "951f9b64e756e40c78d377dd4af1122c143bd3692e135efd5b97d18c62ed0d09"
+        },
+        {
+          "target": "content/renderer/accessibility/render_accessibility_impl.cc",
+          "before_sha256": "0f4df60e29eac1b199360fd38b8e952961b3c05604ebb845c84604bcc1b7c17f",
+          "after_sha256": "96fe92bbd1f23cade97f6ff99526a3497ef7c19b819d1c697a89e332b9a447b2"
+        },
+        {
+          "target": "ui/accessibility/platform/browser_accessibility_cocoa.mm",
+          "before_sha256": "4c850586a86a3a90b51d48ba7e8ec81f27be82b154d44d23877be86b38df9075",
+          "after_sha256": "8ea9e4fafd4cefa02e3dee8b8ae1b56536b0ecbca7bf6db2abc06ea9bf157692"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-folder-upload.patch",
+      "sha256": "24ffd44ed5f79353f0a60d48b660bfbabe12dedf6ebedbfc492b59b7cae22f57",
+      "files": [
+        {
+          "target": "chrome/browser/file_select_helper.cc",
+          "before_sha256": "9684bd4797e0541d5009f37bd98a41a8948b6dafc8fa9fba23e3b160e01a267a",
+          "after_sha256": "128c688ce62270cbd2a801817d95563f9a10df60690668af62ee57bfe3d8a95d"
+        },
+        {
+          "target": "chrome/browser/ui/dialogs/browser_dialogs.cc",
+          "before_sha256": "c9d5488baa98b291d9b03600c3f0181f6341c1063d482e12ed65a334d6cb05f7",
+          "after_sha256": "2b9e7fd07b9ba3260f9d5127b7dcd6dc3ff27cd2ff9c122517dff1b20f5668d4"
+        },
+        {
+          "target": "chrome/browser/ui/dialogs/browser_dialogs.h",
+          "before_sha256": "f36f00742fee75e626c44b174c7faa6c61daa3211c83dc03b2f5154094027238",
+          "after_sha256": "bde5362d96ec78818440e5b8de69da53f3293843a733c16aa69f7e13656c1a40"
+        },
+        {
+          "target": "components/web_modal/web_contents_modal_dialog_manager.cc",
+          "before_sha256": "3ffa32d5e2f2e8fc378a11a7c919bca3025c7956c64ff9e56ef6cf320e62eb46",
+          "after_sha256": "58a2cdb87c13edddae51650dd0ddd05d8ef82525775e6dadbc9d06a6534c0ec9"
+        },
+        {
+          "target": "ui/views/bubble/bubble_dialog_model_host.cc",
+          "before_sha256": "c32d057f665a4df006653a15ade663d2ca9f1f8b75ac850b851c751d1cd013d4",
+          "after_sha256": "80853a21ef2edf16cdc04faee3c249b9adc4e4cd1b3122b230450f48fa19a41c"
+        },
+        {
+          "target": "ui/views/bubble/bubble_dialog_model_host.h",
+          "before_sha256": "9bf8943688781f6af379dff75c1fee9064076d1272f9d3e6603aedc4cf00cef0",
+          "after_sha256": "33df520ddfb603afdf939478b4da844fcdcba1ce1c6d4543aa9b4d85a68fd4ab"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-password-prompt.patch",
+      "sha256": "fe16a5cc5d3058ae92992d5e612d8ca7755257af11610a816c40734e9ca6cc79",
+      "files": [
+        {
+          "target": "chrome/browser/ui/passwords/BUILD.gn",
+          "before_sha256": "e9d218698a7f5893696f61a2eded2b319fb790a2cae3e6cc22bfdb44a0ff6115",
+          "after_sha256": "bf31310a3dd8cae7eb8b78a0006471751f8c5286e176417b5d9e5b68a392a18f"
+        },
+        {
+          "target": "chrome/browser/ui/passwords/manage_passwords_ui_controller.cc",
+          "before_sha256": "f4fe8721af7d7109fc702e3245de41185bcb1e9ce993a99e2dbd2a95248f4f5d",
+          "after_sha256": "d1c69d3333d23b212579b2b0ae047e5d649f8767902fc1bd8b7e0c91407d853f"
+        },
+        {
+          "target": "chrome/browser/ui/passwords/manage_passwords_ui_controller.h",
+          "before_sha256": "09174199e4230ca0480ffa9b660a8c6cdc444fbbd708bc5da05d82ba956b2e0b",
+          "after_sha256": "f4ed2f7761e3acb242c279a474bbe1ec41fb89246aff88b0594f6e20a465ff82"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-address-editor.patch",
+      "sha256": "f109266f6bc79c503780c9b2c77ef41fba59b35459c7bd7d6cabd7d157cc5dc2",
+      "files": [
+        {
+          "target": "chrome/browser/ui/views/autofill/edit_address_profile_view.cc",
+          "before_sha256": "a7b20311f1a34b38d125918bab0b2238e6d7ca5a1d7cc5542df0dd7d28165c52",
+          "after_sha256": "1464360c7fa6e1b75f60f553df6c119a37d6ac8d4e941f6338ad31136b4ee400"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/edit_address_profile_view.h",
+          "before_sha256": "8ec8feee24db100df6c1c6f9af2721625d69130221e563c695c3bc976c81f09f",
+          "after_sha256": "de2bb7077253a261dabe6c6dca25c71892a2822676e01c266298ffa1b86edf00"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-address-account.patch",
+      "sha256": "9135e806675e88bf0f65acea70b8bcae57932b96811c966b716bbbd6c5c91841",
+      "files": [
+        {
+          "target": "chrome/browser/ui/signin/promos/bubble_signin_promo_delegate.h",
+          "before_sha256": "2260cd29ce139bfa1536da4f6f0d2d7b861340ae60a46ed3aa69aa29f9299e8c",
+          "after_sha256": "ea6a36112df3fdf2c58e73914d14be1c11a629f200e957fc4f5125d130c25363"
+        },
+        {
+          "target": "chrome/browser/ui/signin/promos/bubble_signin_promo_view.cc",
+          "before_sha256": "932f35dbce4fc9d465223b44f4ece039d48b8f10a25fe63a6f37c36892a4ee85",
+          "after_sha256": "1e76650868277cb55363cf326b662af0fae2a8d4d23127d7b5060fe5e7314cc3"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/address_sign_in_promo_view.cc",
+          "before_sha256": "80a5fd08f9725a0f2bf760463f7bd53dd6ae686bca6cf5540cf2a645fd0669f6",
+          "after_sha256": "1b95a2667331b720d937db0a2538378388227435460b0729b52af2b060bbb874"
+        },
+        {
+          "target": "chrome/browser/ui/views/autofill/address_sign_in_promo_view.h",
+          "before_sha256": "1ede25cbb57d3add6791ff35504a4a1ce9e76ca134f0397c444ff32d3d6aa57e",
+          "after_sha256": "1aa9c9de91ff87bf62636abc78e9552873642dad27f52fb79ba7857aa2aacfa9"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-intent-picker.patch",
+      "sha256": "f43e5aa61aef322ad2b7aea949a6b6af223820fafae57417dd1b1982dac63e9f",
+      "files": [
+        {
+          "target": "chrome/browser/ui/BUILD.gn",
+          "before_sha256": "514ca47345496d3bae819520b0d7c39d18a502bb59a1f5d00f2baf9dd4e294a0",
+          "after_sha256": "bf61d5dbac16bda9bfdbea378382fadd487fb25b6d90a395efcb3592453a6a0d"
+        },
+        {
+          "target": "chrome/browser/ui/intent_picker_tab_helper.cc",
+          "before_sha256": "e654e0f19da4005e7c230abb40df6a842ac915fcf2d9908ef3283bda1ba9f3c4",
+          "after_sha256": "b375e4f9342455c0c1724c6a0644f4888623d1ad2a0dee2add22b101c58b0ab4"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-fullscreen-window.patch",
+      "sha256": "ddbf11c7f6cb39bb985f7702100430764700ff52d23ce41726fadf9d9e638ca1",
+      "files": [
+        {
+          "target": "components/remote_cocoa/app_shim/native_widget_ns_window_fullscreen_controller.h",
+          "before_sha256": "8228d51f45fa31355a2d7b02a1381ea55d3635761a62ab7c6438151c62fe5d31",
+          "after_sha256": "d2648ea80911bdab0964911ef2abc0cc47e65ba5f5e3752d6524cdffe9be1b3a"
+        },
+        {
+          "target": "components/remote_cocoa/app_shim/native_widget_ns_window_fullscreen_controller.mm",
+          "before_sha256": "8f6e89996d07cf09e0bf9acc327d5cd59253228a2ffb568e0fdc4122e14a26f2",
+          "after_sha256": "e274327bc2474492bf6ed8401a1ae1f9ee63cd137719b463b97a6c11c08a95b2"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-reader.patch",
+      "sha256": "370ed3cbc290a92e06435aa106de85bbbfea92e3a0478edd788e544cc68ddbe5",
+      "files": [
+        {
+          "target": "chrome/browser/dom_distiller/BUILD.gn",
+          "before_sha256": "042b308f129f6748a68d9bfb8b3167f9e7e762dd6787586c6e11e07a56c0239a",
+          "after_sha256": "61d771ba85b53f3ead44678112b2ac67e6252f2bebf08c6f9b64b3f8ccc30859"
+        },
+        {
+          "target": "chrome/browser/dom_distiller/dom_distiller_service_factory.cc",
+          "before_sha256": "8d41f2c52cc47de7ed14217e233879e93b2d3082e79a9245d7b6366fb4f4cdec",
+          "after_sha256": "84e67203bdf5e19b3ef38b20eb11e863151afd4f9a9e8b88611ae8ec483919bc"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-page-context-menu.patch",
+      "sha256": "7e4ffc1c22d8c12924819080968d858b4afdf326f39f918225010c2a463397e2",
+      "files": [
+        {
+          "target": "cef/libcef/browser/chrome/chrome_context_menu_handler.cc",
+          "before_sha256": "0d81297c0290f17f3cfda22109c314562195efe701af6633e8f755756718b326",
+          "after_sha256": "948230b9c66100187b82b2f82745084afe15fb6717662627bfe772f4c59d0103"
+        },
+        {
+          "target": "chrome/browser/ui/cocoa/BUILD.gn",
+          "before_sha256": "b345aba1d212e77ae23500b0b66b03a162323bee4be321214fde505a0f2685e1",
+          "after_sha256": "352622a2fe6f45851d4962b5e8a68a8b251759c7c6c8021047c0c0a344677e5e"
+        },
+        {
+          "target": "chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm",
+          "before_sha256": "b9a0e37745765bf69f8647a9c61a0ff607eda14fa9304ae8242aac628af72631",
+          "after_sha256": "ab16b68175c6af96f9bd1c3e8864d991163070650519a202570d24b6682ff5a0"
+        },
+        {
+          "target": "cef/patch/patches/chrome_browser_context_menus.patch",
+          "before_sha256": "bcf69d1f1f5fdf55bc4005ada02ba8ea93617bcb79ef341353175cd609fe13ef",
+          "after_sha256": "79a1138e7cac7630ca52245502f1202ef325e54f39fea51cd0ebfad817d474c4"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-tab-sharing.patch",
+      "sha256": "d449e3ee6d67cfb135d72f8c61db01cdb77a40f6bcb8ce9e7b3f4d725fb088ea",
+      "files": [
+        {
+          "target": "chrome/browser/ui/tab_sharing/BUILD.gn",
+          "before_sha256": "28b0f0ae867066563bfafee17448bcdb70000a08315864e1d87efebbeaef89cc",
+          "after_sha256": "9f285b1141038b289b9b5742860b29cf29213d2e039e8d0e7c4081f42d9e1cbc"
+        },
+        {
+          "target": "chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.cc",
+          "before_sha256": "bd9de637add231d713b28cdf5fe6e54663c81d94be8bc67f03268333431dde4c",
+          "after_sha256": "decc12b41f311629361b071810de892297e5eb2c564a2843e5c47f892ed1639e"
+        },
+        {
+          "target": "chrome/browser/ui/views/tab_sharing/BUILD.gn",
+          "before_sha256": "36db378133e4eb8ba49006d51ece5925fc12133853a8e622eb48be4d405ab2c5",
+          "after_sha256": "e47c6a8cc77c4b32b7a9cc147172a0ec94d2bce91022147ae99bf1fc27c1b57a"
+        },
+        {
+          "target": "chrome/browser/ui/views/tab_sharing/tab_sharing_status_message_view.cc",
+          "before_sha256": "a2e1439b2922b64f0d6771c836c604f624471a9d1b83b802d2ed71fa00347455",
+          "after_sha256": "252dafcb24358eab68a2ef3802c6431ab2196419a944bb369d5c24f1c451b2f3"
+        },
+        {
+          "target": "chrome/browser/ui/views/tab_sharing/tab_sharing_status_message_view.h",
+          "before_sha256": "9e2ec986a56a679acd0059f561f82a56c3ca59efcdc067edaca7e36aac21cf90",
+          "after_sha256": "7cd781f66ec9d7dbcec904b62dabcde346039b95ea3eaa5e11a0838676b7fd4a"
+        },
+        {
+          "target": "chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc",
+          "before_sha256": "0f7975dc5b96c499ae202234b07451fc7b51994f801d2287beeeed6285a35652",
+          "after_sha256": "0fa7b7b89377e17e0f3a745bbb7401ec725faf2fe8a39b85b0cbaab3396deb31"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-history-swipe.patch",
+      "sha256": "51ffb604311d591d1ea0202a1de5e74df387bde6341da065b248427e120fd140",
+      "files": [
+        {
+          "target": "cef/libcef/browser/chrome/chrome_web_contents_view_delegate_cef.h",
+          "before_sha256": "10f7d2b24d5aff09cc37621db5b72b9f3ba212d489027718b1f13d3ea8d30468",
+          "after_sha256": "ffa955e75b7423692f64b13c63d83f7e7263487634abe85e6c0b2fe2eac35793"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_web_contents_view_delegate_cef_mac.mm",
+          "before_sha256": "49057bd027763281ca4de92965fc2beb23f2bd8a945091018314ebb43627bb5d",
+          "after_sha256": "eea07f6f1a1d95c52bced92aa91abf9d6bece8580e2b6eadaf5a60627b701963"
+        },
+        {
+          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.h",
+          "before_sha256": "8dd69476d985a4334cda4c1ade46b803252444fb9ee9fe77e118d7cd720e4e82",
+          "after_sha256": "720dcb3add1b8afe67d7d8fa008e969bb95170f8e4ad2aacac4675bb928fb351"
+        },
+        {
+          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.mm",
+          "before_sha256": "9cf334170f7df7622636619f2f411078495fabc9c894bea3fda7b38bff503661",
+          "after_sha256": "bf5dbda7fb8ac4478f0b37e358320be4fe01e57503900846ba22850c1c39529f"
+        },
+        {
+          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.h",
+          "before_sha256": "c37647ca16b7e8305fb0c27774505b49228257e80488274f0a39bf50e5ace555",
+          "after_sha256": "09dc83149e8b84955dc09c1d75ee2bbc59c45e73474ef3f715c1c6cd6a289a98"
+        },
+        {
+          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.mm",
+          "before_sha256": "178748abeda855f05269e48e1f366a97b9e88af8adea5c8fbfb7ae8ae545d8e9",
+          "after_sha256": "ace8dde6eaa15d050574f423a1aecd163ce0b051710fcbd1e564db22082f96ed"
+        },
+        {
+          "target": "chrome/browser/ui/cocoa/history_overlay_controller.mm",
+          "before_sha256": "e1086d41c02e3a798cd3f15934280c88622bf03b38e3257d36595e726e9fce80",
+          "after_sha256": "1eb0664d8feb3329d2e55002fa7a0c3511e0a3d1c3c698a59a387bcdeee7cc79"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-media-controls.patch",
+      "sha256": "ffcc35418f9d98f9db52f2ca62ab976018a6903c8870b7fd20d928a6ef1abc41",
+      "files": [
+        {
+          "target": "content/browser/media/session/media_session_impl.cc",
+          "before_sha256": "75cf754cd56de9dceea712415e74ae8a262e7e1b9a4a0782ff5b12d93dc28e33",
+          "after_sha256": "6ced9d6c1e093423687361bc5487bcede01dff1408ce7a091bd82cde45845270"
+        },
+        {
+          "target": "content/browser/media/session/media_session_impl.h",
+          "before_sha256": "134148f2fe0f2c38074d83bb984b3bcf710164b4f7cbd04cfa714d7cfd68a929",
+          "after_sha256": "a60962996e40adfda7aa295b345e81c35ee70df4f69f1b2b1c247dd83235091f"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-developer-panels.patch",
+      "sha256": "f83211df38a627d00fef18c9c73d12aee8c2fc0cce447d81fe84b17d5371a06d",
+      "files": [
+        {
+          "target": "chrome/browser/devtools/devtools_toggle_action.cc",
+          "before_sha256": "0e72a64c970430ce8de29e674bb32b0576433d7b04d1ac329a2efc186e0499ac",
+          "after_sha256": "e7a167d1ed522787c408882738c5c56122cf7fce01ed9344f610d3b6dd51cc1a"
+        },
+        {
+          "target": "chrome/browser/devtools/devtools_toggle_action.h",
+          "before_sha256": "cb0a4e2a97258229b0422fc5112cd4601c4ae7de6546a530dedde40c92922e04",
+          "after_sha256": "ddb2dec25f3da2ee814c50a4a0155be7b642f926b299eea072f792940cb15177"
+        },
+        {
+          "target": "third_party/devtools-frontend/src/front_end/core/host/InspectorFrontendHost.ts",
+          "before_sha256": "2b47503f963e0c9f748daec5be6a0c6f75f3468c1e3499d5b2374597068d729d",
+          "after_sha256": "787f32417824ddcca5dc2adc9d31032ae0835b3499b25054694d2588f07badc7"
+        },
+        {
+          "target": "third_party/devtools-frontend/src/front_end/ui/legacy/InspectorView.ts",
+          "before_sha256": "d59454a55fa53f7b298f5bacfaa8d996742166518613fedc6a823d87df8c060b",
+          "after_sha256": "5cfcf1ae4094c9b5eec1add3d5db394440b6ad81498ac55afc4ceacb2574be16"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-applescript-lifecycle.patch",
+      "sha256": "7b422f18c6c114dde4b6d20558cb28ddb168c5be4d40e9232e314ed9eacfb145",
+      "files": [
+        {
+          "target": "content/browser/renderer_host/page_lifecycle_state_manager.h",
+          "before_sha256": "7df95e3deb200003fc7d7891f945fa3b03406d798f450856528ef7ee7098d3d4",
+          "after_sha256": "35124f6917958a8fd62033f14570af305853fe83eaf27cafa2e655294b5be869"
+        },
+        {
+          "target": "content/browser/renderer_host/page_lifecycle_state_manager.cc",
+          "before_sha256": "e149a33f348be28f769ab972b36ab283461f6273e1c240fd5a3d8935ea3ab290",
+          "after_sha256": "a37073cb05baf9f0246e4dfb24407898fa45658a4fd8b859fa721de2d02d4a36"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-internal-urls.patch",
+      "sha256": "c97f485a6f5f422d0b15e7a3c13e6d8156071e3462ea6df4aeae4897b3486464",
+      "files": [
+        {
+          "target": "cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc",
+          "before_sha256": "648863665fb84a50c1694d33f007fe0ca431c5dc8bcb8a9d6d3579b580c30eb4",
+          "after_sha256": "5f8a62b1638d529356671ecdd6e3ece04e99e6067a4a2d97f1c29d6e4a6537a1"
+        },
+        {
+          "target": "cef/libcef/browser/chrome/chrome_content_browser_client_cef.h",
+          "before_sha256": "abc3b138d978bc1c61fd581025eae513bee40122449b7ce8ed4b4244969eb458",
+          "after_sha256": "59e916cf0ab2190da99c35695a8c5d9e08dbcb7a8ce7373cbe82fa6f81d0e78c"
+        },
+        {
+          "target": "cef/libcef/common/chrome/chrome_content_client_cef.cc",
+          "before_sha256": "eb2cfdbe9cf12e44ee8d33e9ef3325cdccbbef15d5607bb6a0b97dafb20f04fc",
+          "after_sha256": "b8a654b250a45dff4c493a701c6680ef29a944f580f0c5040fc1ce089efbd5ed"
+        },
+        {
+          "target": "chrome/browser/autocomplete/BUILD.gn",
+          "before_sha256": "41ce631208d0cbf4c795515ae4c612d3d66b6780c22b4152d63fcaf0b31d3d69",
+          "after_sha256": "54719897dfbf6da52b1001a5cf10ea9d2384589e8b954df79e4480e62d1d5787"
+        },
+        {
+          "target": "chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc",
+          "before_sha256": "2548ac88d2f89808f3646f145b89e36589b3b9807f48291ba84b9ffd44ac8ebe",
+          "after_sha256": "34178bd1b6df4e833b895ee2012acacfe8c7ea389485a6a672f60f4f5916b470"
+        },
+        {
+          "target": "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc",
+          "before_sha256": "daf8e532bb87f5a35588ad3e48b91f5c284d92497f2d5c6a592971f72e5e0653",
+          "after_sha256": "fa44ab04a62326264c3e044d5edea7bea26c5201ee74dd843997fe36336381d1"
+        },
+        {
+          "target": "chrome/browser/renderer_context_menu/BUILD.gn",
+          "before_sha256": "a3b3a9ccfcac5ad98a9ebdd6292a4179e2167ae6caa526adad5d10ac2ab4b8ae",
+          "after_sha256": "877c668c4d96c941ec0bb3d9608a75d34d6d5ddde88f4fa9d47f9d9bbc53ae8b"
+        },
+        {
+          "target": "chrome/browser/renderer_context_menu/render_view_context_menu.cc",
+          "before_sha256": "e75b29997d5aa0fe8f0a800c9abf1a5c8e2c29f66cfbd071b9a5f835b7d96cfe",
+          "after_sha256": "85b7b0ce3a44f9ac69fe431c6cc1dd4b2e7901d1a601d947e2cfb5b2c9a76e81"
+        },
+        {
+          "target": "chrome/browser/ui/navigator/BUILD.gn",
+          "before_sha256": "40dba9884f123d262086c9c168e61a77c3ee1790b51fd2f3fbf8b9a98d55ec2e",
+          "after_sha256": "762fb211612da38a3086424f2e51e31b8b65fd8615800f8e4ee8d4962ed36068"
+        },
+        {
+          "target": "content/public/common/BUILD.gn",
+          "before_sha256": "7dca5be98df593d5eba6a83731a0142a526885c11e9993d5cda71207c6239e63",
+          "after_sha256": "ed35e2b97df1d1e8d0bd1814bb190d5dba1aa1e7a177cf2420f9fbbd526e694a"
+        },
+        {
+          "target": "content/public/common/url_utils.cc",
+          "before_sha256": "585cd6b0da19df03a777b2debf7dd5baac90f70d5e0e25b71d0f4e52947ae031",
+          "after_sha256": "295faf79bbd52421e7b6b4e11c3396064fc21cda89a4ab8d8d092be1000f03a3"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-embedded-pages.patch",
+      "sha256": "a3da097ac75b4578702088c9c1636013952801bf7b8145d441d9584fea3e344e",
+      "files": [
+        {
+          "target": "components/sessions/content/session_tab_helper.h",
+          "before_sha256": "bdcdf3411b24343aeb7a9fd78a102d24dbce600b67b607b14c7d58612cbf5488",
+          "after_sha256": "40eef195db94e7e09061586d12dbbafb36038fb1660f859d50b448f973791030"
+        },
+        {
+          "target": "components/sessions/content/session_tab_helper.cc",
+          "before_sha256": "8cbc8d20cc7937f182a3cfe8f7f50e3a40573d02f0c61eb65e5759523e88babc",
+          "after_sha256": "beba803690401021e44f9d2768a15f2d03a3856e561a4a113460d4b87e99ad91"
+        },
+        {
+          "target": "components/sessions/core/live_tab.h",
+          "before_sha256": "e793387ebd457cfcda44992952706175c9c19642572e8958b199498aa63157dd",
+          "after_sha256": "4514d4526930a74596d850967bf795065a2184083078dba13d0698a2b9af6b5f"
+        },
+        {
+          "target": "components/sessions/content/content_live_tab.h",
+          "before_sha256": "c5a8286e7ef4ce93c10c64dd1e23fff0a87fddb63de24938f4d5337bb789cfaf",
+          "after_sha256": "0fdde7b17dea6fb85111fd8efcafaf6782d8e1882296774023876441b085a0c4"
+        },
+        {
+          "target": "components/sessions/content/content_live_tab.cc",
+          "before_sha256": "49fc7f921ce1c239e0b0bf9ec0ca6d945d284dac229e17955d4e779462b126bc",
+          "after_sha256": "bdd255276302864648beb02a3414d925cd2edb1c6b4288b8fbae2528fdb1094c"
+        },
+        {
+          "target": "components/sessions/core/tab_restore_service_helper.cc",
+          "before_sha256": "e59b5d010ae61300756f43694d1267f3d480bff4654e4dbe4974c973943193d3",
+          "after_sha256": "335098ced050fa54f9578dcc147e97d88c2b49f9bcb423764f9386120212afb3"
+        },
+        {
+          "target": "chrome/browser/sessions/session_service_base.cc",
+          "before_sha256": "87a9a1f9600672f4aefc62487a00c028bcae1f7b9bd2015c961a53a272327bf9",
+          "after_sha256": "ff3194037fdef29a55114f136cdbf44f2c74dc6528c185d2376b8b6690640556"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/website-theme.patch",
+      "sha256": "8e3978182b749385e609becf5d4e4920d04e716460c4cdd4fb555e1c96aaf8fd",
+      "files": [
+        {
+          "target": "cef/libcef/common/mojom/BUILD.gn",
+          "before_sha256": "8b06415a7677460263dc19a5ce7ef44b9d68631b553c67a17eb2bc6114329fa6",
+          "after_sha256": "431b16c8f1d1ae2db03b5ce8f0aa25a1d2f702e2f167e0bd47244ee2638a241f"
+        },
+        {
+          "target": "cef/libcef/renderer/chrome/chrome_content_renderer_client_cef.cc",
+          "before_sha256": "0a50e820e5b17f35f900eee9ecec6bd0ec134bf3bfe26a16691a7d8047ea8106",
+          "after_sha256": "12bc8af2c52ba46bb449f72a391de11e0ffe18a0184b867288d5f63dc668bce3"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-browser-import.patch",
+      "sha256": "16871bd00d0d02d44d17665fdc2cc94d2a9b16ebf052d4c4be63c4b51e2e9e98",
+      "files": [
+        {
+          "target": "chrome/common/importer/BUILD.gn",
+          "before_sha256": "6071d68a09b7a207e84f1f948e801f0939bf444973aa3a681be365ea57b35c05",
+          "after_sha256": "7d14fe876b572324e15692bfb69cf569e0c4dc02eac33b16f9f9a0616cea3a83"
+        },
+        {
+          "target": "chrome/utility/BUILD.gn",
+          "before_sha256": "d87297c3d6f9e2fe32e029cb01e97db9e5644277fb5a3ab611ad3be6515497f2",
+          "after_sha256": "53f7e0ca5340b17a357a15a77ef1800a3c22a8da0f08af8bfc42dcd645cc489b"
+        },
+        {
+          "target": "chrome/utility/services.cc",
+          "before_sha256": "b2a5353549137293c1a0b6143e544cadd15e647a3a7d75af637fa2aa15e22a10",
+          "after_sha256": "11d82d545451e5c95b6c907a127816e10368ec97e4eebc3de0a35d991bbd7339"
+        },
+        {
+          "target": "components/history/core/browser/history_backend.cc",
+          "before_sha256": "d976fb7c4d14dad348af7fefaa5f5370df04c8d9f038003b9c18efa0179efd85",
+          "after_sha256": "87fe1e891b2bd0af33ce39a98c85d1a5a12fc8a57b01684b218a691aea3e6f2d"
+        },
+        {
+          "target": "components/history/core/browser/history_backend.h",
+          "before_sha256": "dd57fa68996a4a55bedd5f9c04e45de2e19751786364830fa104a73d7f0640a5",
+          "after_sha256": "2945021de9b2bb94f666cba9cee6848c309fb4a2d1bd8fa4f801a89f58c1a8ca"
+        },
+        {
+          "target": "components/webdata/common/web_database.cc",
+          "before_sha256": "260e5db1fbce6e4c9263d405039c440a8d48aac2df0bb79fbeae42db33d9c92a",
+          "after_sha256": "205afb6617718ab3b99fa945f6cc150142c603aee1b14626a4a57bb345975cf4"
+        },
+        {
+          "target": "components/webdata/common/web_database.h",
+          "before_sha256": "b3a4cdc7e5f8cd8256b61c2631abc206798d69baba87a404f511da9096e8d641",
+          "after_sha256": "f9f5770bb923eea1a92defb3a109b78454d6dd712657cbddc7661132291f2790"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-cast.patch",
+      "sha256": "48d5fdfd47698bcbd5bf5b22aae8a725115ff0a56b9307d8846d9edc6020c511",
+      "files": [
+        {
+          "target": "chrome/browser/ui/views/media_router/cast_dialog_view.cc",
+          "before_sha256": "e3ada1cc7f8aa102dbdfb522b46fd64bbb0841a0cd10400c177a1a36c885c72d",
+          "after_sha256": "6e4add36cc06d491456ba094ddc8c6bd14e2f7250157306fb9b707b55c7692e2"
+        },
+        {
+          "target": "chrome/browser/ui/webui/access_code_cast/access_code_cast_dialog.cc",
+          "before_sha256": "f56f736f0724681d30c19e1ccf4dab6bfd14d6a5bc269bea0f42223f10a1ea3c",
+          "after_sha256": "eb644365248d40b5f7165c36152ff8e945f9b3f8fa71703a76085e076cac5f38"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-external-split-drop.patch",
+      "sha256": "cdee17d4d5e5e06b77310c2320c9998efc79685d222c26588e84e2bd724ebb88",
+      "files": [
+        {
+          "target": "content/app_shim_remote_cocoa/web_contents_view_cocoa.mm",
+          "before_sha256": "21dcbb23c547fff01e212ec2f7ac972fe1dbd04a37fd1860fdb7b42605279d05",
+          "after_sha256": "8bc1719bd76d8d52bafef1d208c6d89771d0d736e96639f3b3fdb16d51593b17"
+        },
+        {
+          "target": "ui/base/BUILD.gn",
+          "before_sha256": "b51917a8f31173406eef9a7c7896934c0b493c802fc1552817fc96b66b940830",
+          "after_sha256": "6998c43d6134cfe0857d473a715276655c0248351c9ecef01742e059f0e067b1"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-presentation.patch",
+      "sha256": "993f05253779ee2afc24dcf8a9b964fa9add7ee0ddfd78f40bcde3c38d847b46",
+      "files": [
+        {
+          "target": "chrome/browser/ui/views/media_router/media_router_dialog_controller_views.cc",
+          "before_sha256": "907ec84d4706f9f9c5d5446eec0c55b7a53459fc712971b2dd2b411aaecca0fa",
+          "after_sha256": "de7256d13ebb6e51c0075959a6f868e6b87846165ecc313f2f094892e3b12f04"
+        },
+        {
+          "target": "chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h",
+          "before_sha256": "bca1db8cbfd53010f5590d5f7ea86fe9a227c4e242fb472c4cf889882c3a321f",
+          "after_sha256": "f5c3d1e90a905a01743d7f8d28ea98ad904a94718ea5b0bad08af57e112b1de5"
+        },
+        {
+          "target": "components/media_router/browser/presentation/start_presentation_context.cc",
+          "before_sha256": "3e6f7af1ac9473b313faf7bac65d247fc752d8d3efc5251b79a8922c4b7af47c",
+          "after_sha256": "4c1424fea0606967a757c07decc2ed0582b71066917fc4fc807adbd753c707bf"
+        },
+        {
+          "target": "components/media_router/browser/presentation/start_presentation_context.h",
+          "before_sha256": "df3c51018693062078930f6344aefe3e8dbb620eb9e818fdd1d7fa0c2a85f3c9",
+          "after_sha256": "91b1959c8be8370917c87f470ed6b066bb8907c58d77caa8f15c435f2dd87467"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-delegated-picker.patch",
+      "sha256": "270ea6df918fc6d692fcce1227d6940ddbeffcc8f16c465c73273b59316557cc",
+      "files": [
+        {
+          "target": "chrome/browser/media/webrtc/BUILD.gn",
+          "before_sha256": "c527635041838684ff81ac8ec15457579e4147b67c7c64963b647d78f40bb585",
+          "after_sha256": "51bd354a011dc32db79587516335d208659f27769f2f7b913556b8f5081cd5a9"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/delegated_source_list_capturer.cc",
+          "before_sha256": "56f7c8df715b12192c32698b11c458a77172759dfe23d8380689e28c9b26f694",
+          "after_sha256": "2f827c1bb283363a1c644fb9413e0876d4ca763e4b7c5b794457bd42eb86e55f"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/delegated_source_list_capturer.h",
+          "before_sha256": "2dcd511e27015074aee4ed92f813bb6dadb11def3b4ba8bfd99dc904fcd7c009",
+          "after_sha256": "52de3d833211634158c4db940282e993f2ed39a46ea28ba3c34c55780ee22c01"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/desktop_media_list.h",
+          "before_sha256": "eb7ca6000e75be4bd6c0f39b9c8af716523145b5349c92194ac1944623f43ae5",
+          "after_sha256": "881bf297fe562ab1294d9aed0b365131d0e17fad978fcdae1e417532229acb24"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/native_desktop_media_list.cc",
+          "before_sha256": "23a9a327f933dc46bc564348e1a73abe93814da9d9927d3232136abf9f92226a",
+          "after_sha256": "53d6735c96b77542a70840c85ce1fa40b82db255becc71dd6f9dd67496b32882"
+        },
+        {
+          "target": "chrome/browser/media/webrtc/native_desktop_media_list.h",
+          "before_sha256": "387a283c2582fce45438b8f552520876f92f19820dcaf5aa9f88162c04c39664",
+          "after_sha256": "878de000a05fd5896ef185f3a288227b02afd6b378f0fc6380948519f7a13a16"
+        },
+        {
+          "target": "chrome/browser/ui/views/desktop_capture/desktop_media_list_controller.cc",
+          "before_sha256": "7a929357dd21938676867a4bb5470dd44264e4eb7c5668ce569010e3540f5c79",
+          "after_sha256": "e955fbcf454bd4196fc4a7fa2a955d333e863f2597b9f1a75e1ee2b64595e075"
+        },
+        {
+          "target": "chrome/browser/ui/views/desktop_capture/desktop_media_list_controller.h",
+          "before_sha256": "c9e331ebe93e79ed40dca2a969394fd5fd9477164a1238de47683fec1e9a1c00",
+          "after_sha256": "21f4209c9c6a14dedaa3b3a89441aae6ac5b254a5e6d96d4cbcaddeab710b019"
+        },
+        {
+          "target": "third_party/webrtc/modules/desktop_capture/delegated_source_list_controller.h",
+          "before_sha256": "20b5bdc8b9558b1877d17b64b9b0b8a51ed834468220cc22728bfcabaf46eb63",
+          "after_sha256": "209805a325f2d199e220f4026df2a3ad3642824c40fcef25870bfd3d88cd1003"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-current-tab-picker.patch",
+      "sha256": "c788a6798c19529ba27263b29c4056b52f92d9e8cf42c9d4954a8e1074103d90",
+      "files": [
+        {
+          "target": "chrome/browser/ui/views/desktop_capture/share_this_tab_dialog_views.cc",
+          "before_sha256": "c3784cad9b61efeb15142a98036047bdf887912fcb73079847cdae459da2929b",
+          "after_sha256": "438a3334c2d040a3e0892e609241ef3c3f6c4bc2d3af75d16980f97f6a0e77a0"
+        },
+        {
+          "target": "chrome/browser/ui/views/desktop_capture/share_this_tab_dialog_views.h",
+          "before_sha256": "05f6fac4f5f3adc1b902253b1da2c2c5b108987de758277bf2a17cc529717f2c",
+          "after_sha256": "50fc5edc0e06fcb7ebe3a31dfab1b149ed176ac447d403d6f50e48623cbc391e"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
+      "sha256": "274d22b2a4a971bc85146613a6d0e95e2b9c5cdf6b1200294a363d2d4fb9dc8b",
+      "files": [
+        {
+          "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
+          "before_sha256": "0b436a3ead52929981a8b505e9111e103390c1b88383359f7a37b19b4281d99d",
+          "after_sha256": "7a869987aefe30c329677f0362fb91a9b3de95f59673dd19e0d5ed2b5dbb38e7"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.h",
+          "before_sha256": "8c21375ac513e677105aa2ff6a8c3af71730187043e5c6a13166eed06c96fa47",
+          "after_sha256": "8a12a9fe3d8568192026574d89f168f90d50f7d7064efdfa48d877a040e04c87"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/media_notification_service.cc",
+          "before_sha256": "b48fc7716a23f1cd594b84db1a9b3e7c62b9f15b8d5125af45dc62de4a4aef1f",
+          "after_sha256": "b28c1e267b72e9613d380d196bcb4cdae327cdf1be479e8959641d7ff6b0cee7"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/media_notification_service.h",
+          "before_sha256": "f54ed351b6ff7f5d519e51b9eb8a97db6239f8a0ed7355de627c341d75fd754f",
+          "after_sha256": "414c0eb094a1e6e9e68abb2f7fce08d5ef6a4535264e72957149faa544907d9c"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc",
+          "before_sha256": "7386ce0b9e2267a443fbb2615fb3d8eb88b699dbd22bec448b5e46a0f1d9080f",
+          "after_sha256": "f45972367af6b1ca19c481540e6021a9d4608b717ce8651e6bec7dfe8118ce79"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc",
+          "before_sha256": "88736f03101713372d634a08b821fd846bbf351ec29cd33e77ee1844973d3078",
+          "after_sha256": "b08b1e6384ed4f0982103e0a7aa95e02b48a2065a135714b6ff1d763e3372cbd"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer.h",
+          "before_sha256": "7c158951626b3d6c35cae496f4eadc202dee89c1090a9832a53ea6852e09dd65",
+          "after_sha256": "f9ad1e6752b720cb965e346392fb12ec73653d455a978adb59644be287900149"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer_unittest.cc",
+          "before_sha256": "c1da64d1b955d7282cbc2af9a4012e6c5f153bb276de930ccc84c98dc1e093ff",
+          "after_sha256": "063e3d857ad60b2be18011b466001a28c1dee624db998c48fc867b2cc747a867"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/cast_device_selector_view.cc",
+          "before_sha256": "f80ff2da9bd20e5d7678a6b81069e971a5bad72cad89044e0a6878b200d9dd3f",
+          "after_sha256": "919143d5bbad44e9f504f5ca3fb67af25c4b2486274627a7c2e96d3b2dc2ba8d"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/cast_device_selector_view.h",
+          "before_sha256": "f37cbb5f8a9a947a9c65476ff1091b0f691fa03868c896f4f94db91269fc4d14",
+          "after_sha256": "f0ba278088d57ef3b591f3070e3b0d69ecff79f437ac241c8cce6b3050d3cf29"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view.cc",
+          "before_sha256": "48b24885ab9ed53978c4404653e6d7eb77efcd760bb93c229c9fcb3f2723b12c",
+          "after_sha256": "807e504eae0b11f9d71b1bd439804269de7bedf5ea355083a6ece87cfb375f1b"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view.h",
+          "before_sha256": "72e621dff02a8bdfccb3ff17e340d139b02ff52bccb598b7bcc58b6a5a54997a",
+          "after_sha256": "fa1980add82d348741c1eca6bb97ca2f236e6f5739e720c8a879b8c34813f84e"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/media_item_ui_helper.cc",
+          "before_sha256": "9f1c55526c223fb380a647c0520b926ba64d99116d08ead04749c1952c6b6d15",
+          "after_sha256": "e1f89fc6d3d260e7f561138a0ece89883bcf2f464632962a4dc22a8042bb3524"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/media_item_ui_helper.h",
+          "before_sha256": "6468f8311fd604823e9101bdf5669dee2bc30017a0c6f7bd8fead208c149ea89",
+          "after_sha256": "a8bf0fd6a3d2a649c2ba5e5bffccbbad29deee9cc6a1bec3a4f5aeaffe52eebd"
+        },
+        {
+          "target": "chrome/browser/ui/views/toolbar/webui_media_toolbar_button.cc",
+          "before_sha256": "8a4c677edfa95cfd852b7c391686aa86acb4ae15d8a8270dc8cc6471a8b05b17",
+          "after_sha256": "db52320b4b386b1946668e6d967dd40d51fe5c4e3d942e6a667e6358e13312cf"
+        },
+        {
+          "target": "components/global_media_controls/media_item_manager_impl.cc",
+          "before_sha256": "b494ca861a9fd99c0c92e651c2a83c758dd77e9c7991e55d7bb5e5b7c7bf4762",
+          "after_sha256": "671816647de1e8de135ba82babcc4d26eff241615e6b1622b687f78dd2ddb154"
+        },
+        {
+          "target": "components/global_media_controls/media_item_manager_impl_unittest.cc",
+          "before_sha256": "2e979191b31e7248d9169c107f45f2f8b3047703ade4eca3bd18445850e22aac",
+          "after_sha256": "ef6c4148b57fadf50f145f056165858319da8f8a5e7f58a00be533a078ac7d75"
+        },
+        {
+          "target": "components/global_media_controls/public/supplemental_device_picker_producer.cc",
+          "before_sha256": "4749578b82099d56167099bd2e8bacc9553e9dabf6f8e71362deedc0f8a465d3",
+          "after_sha256": "0af64910596bb33b0e567c7f28522f219c08916f6465b1c4a55d0b4e6782cb4c"
+        },
+        {
+          "target": "components/global_media_controls/public/supplemental_device_picker_producer.h",
+          "before_sha256": "6328d32af98cd2d64307334bbce12268315e977e175767ea4367c9ad8c4a0133",
+          "after_sha256": "2faf9f1651b69c5c6dc3d48db764454cdcb59462fd43eb23a56214f666cf7f88"
+        },
+        {
+          "target": "components/global_media_controls/public/supplemental_device_picker_producer_unittest.cc",
+          "before_sha256": "009e290f91a810cf56ce5be73b06eb9444a64ecc23f6ff41a07a43fec39a2493",
+          "after_sha256": "529efbcde90fbd2559c8a5f45846ac1d37d7195ae7df6e3e7829365fceb5d7d1"
+        },
+        {
+          "target": "components/global_media_controls/public/views/media_item_ui_updated_view.cc",
+          "before_sha256": "1cb3886d4d32af5a6aa0fd49c5737b54f36fde36bbbdb36e354e887d071a2c43",
+          "after_sha256": "213d64a29473cf291981a0a4b007e9e295732935598f9d03efb31a246a410505"
+        },
+        {
+          "target": "components/global_media_controls/public/views/media_item_ui_updated_view.h",
+          "before_sha256": "189d38c4984b7975863e2487a0939a291327caf2ace58fa6006271753a9f6ef1",
+          "after_sha256": "56e5484ef36a52229a7d26c0fdd6a9496fb9b6f1dd30600c0122bf16a3da4215"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/blink-overlay-scrollbar-fade.patch",
+      "sha256": "2876a0948af6362129d9ba4842a288886831b03894077586256ed366deac58b7",
+      "files": [
+        {
+          "target": "third_party/blink/renderer/core/scroll/scrollable_area.cc",
+          "before_sha256": "3b087e28580cea25454d6127d643d3d857124f1bb46a6e700e05d09b386d1842",
+          "after_sha256": "21e4f97520f5eda5f8c1217652289d8461ac23cde9c290c0c2397d3a5e970821"
+        },
+        {
+          "target": "third_party/blink/renderer/core/scroll/scrollable_area_test.cc",
+          "before_sha256": "f884d8c3119fde949bd9678c3d3eeda046c2b8fc7409f5a40c90771417fb5b8e",
+          "after_sha256": "09b49b1339de79b9fa1f1eac407b523b3de5deef4d070fc6fc32c27a2d1c960a"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/internal-extension.patch",
+      "sha256": "03f7770a65be1ecf00805f29e871722fff046fb1b29e92bb0b026a6a1dbc3cf5",
+      "files": [
+        {
+          "target": "chrome/browser/extensions/component_extensions_allowlist/allowlist.cc",
+          "before_sha256": "03d9d5d4cccd3b74ec2b8e4d486945aa3501499f1dbd9e319b1ed1fa3b275ad5",
+          "after_sha256": "3548c22a79d19cdbc503dcf79841341fe5685636e4a67e760a22a7508c94446d"
+        },
+        {
+          "target": "chrome/browser/extensions/component_loader.cc",
+          "before_sha256": "d7b01c4cb7a1c25cb128b75022caaf678a189c006fb6d67da95634ffefb73267",
+          "after_sha256": "daa0409315e7dfb71cfb38fb85f221ccd2739ca9457300d3f921e312ec4f5a8f"
+        },
+        {
+          "target": "chrome/browser/resources/BUILD.gn",
+          "before_sha256": "c7a38ad0cfa90f600b99d3ce6ea394f84680e7e812f0ec8251d53615efa1e57e",
+          "after_sha256": "143b948958b689bc35a4dc1289df5c963cce46f1c1405f1266da5fec2452731a"
+        },
+        {
+          "target": "chrome/browser/resources/component_extension_resources.grd",
+          "before_sha256": "1c895106a9e658cf9b3dc6a492ea2b4d751f78bd875ec77e3171e3b8365d84de",
+          "after_sha256": "65b5f15c4527ac8a3062e9a348727b502e1821e5583ce3c98cfea39bc8fc4474"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/platform-codecs.patch",
+      "sha256": "d083e55aceba81c0eeae7c437247b0bae684d448885473c48a6570921f8bf478",
+      "files": [
+        {
+          "target": "media/BUILD.gn",
+          "before_sha256": "41f7ff2890339e4797a29774ac593f4e13d220592cb8e0e2352f890f112fd9ea",
+          "after_sha256": "cbb155525ea97faa0d6682f7f1c006d5213d1c25f1b17d3a8cc9d460c23cec64"
+        },
+        {
+          "target": "media/ffmpeg/ffmpeg_common.cc",
+          "before_sha256": "549bb4dfd04bfbc09b1e29b00d9dccf6d86d41a37267ab3a97372722ec2cbb45",
+          "after_sha256": "929662cc7cc872e5e4391327d370d7cfbd3d03b62b8f87ef43001288c9953149"
+        },
+        {
+          "target": "media/filters/mac/audio_toolbox_audio_decoder.h",
+          "before_sha256": "16120b335888e8770c5e5d3834284f69d0b75b91d3b2cb6d30072a564843ad46",
+          "after_sha256": "fbe09cbd741382b79bdb2401ed0cd04614eaa871c124fffd6d2857f4c7a7ff44"
+        },
+        {
+          "target": "media/filters/mac/audio_toolbox_audio_decoder.cc",
+          "before_sha256": "af1a96e77017bdb95ee236ea99b567810c7d47af9525b8d3e8ffa0cd7270cadc",
+          "after_sha256": "326f8365d777946edda80ebfb2a2a1b8a23382a4d33e3afb63158d0860b40222"
+        },
+        {
+          "target": "media/renderers/audio_renderer_impl.cc",
+          "before_sha256": "d8c6991ce143092cbc1e954290ecb7531511085c1e48455c4783d4219b893f51",
+          "after_sha256": "16acef26262b1c63de12bfdf073997f2e6b1209bdfd10ccb04bd799ac4e689a9"
+        },
+        {
+          "target": "third_party/blink/renderer/platform/peerconnection/rtc_video_decoder_adapter.cc",
+          "before_sha256": "7ed77e47bda32e4e4bac936d560c9555ef0c0d04bacff571108d3959f1622838",
+          "after_sha256": "a747f95834dca08c021dce0360c5e11533594cd11c4f208b7dc253cd9b551828"
+        },
+        {
+          "target": "third_party/blink/renderer/platform/peerconnection/webrtc_util.cc",
+          "before_sha256": "bb1421793346bb35e134e1ff39af055adb3761cc4f89bdd6869bfeac366fa5d6",
+          "after_sha256": "eae4fb3766f86fb3d4c9770afb22d7684426e8185165d2b48fd33a418c1d2b6a"
+        },
+        {
+          "target": "third_party/ffmpeg/BUILD.gn",
+          "before_sha256": "23753f7fc167adf7387e796b5345c5f3cd812ed0f446b09fe251927a22771989",
+          "after_sha256": "d57432efff42cf8a7f7d2758633aad3e974d7b0c5f935cc1acede1a4c77afe74"
+        },
+        {
+          "target": "third_party/ffmpeg/chromium/config/Chromium/mac/arm64/config.h",
+          "before_sha256": "ad3aa0b8d861227b47bdc05857dceb858bd19284534ef309da7c6d1b6c42e960",
+          "after_sha256": "c9d94aa6d9e71751ce31a00859b5163d2c13c9e57b587da10a5dd25380f6dfbd"
+        },
+        {
+          "target": "third_party/ffmpeg/chromium/config/Chromium/mac/arm64/config_components.h",
+          "before_sha256": "f9411729b8c2bce3b4adb477893205900f04e1574fc25ede7502e4b830e5eee6",
+          "after_sha256": "dd1ccdba1c0619e93240d7dc04325fdcb7376d73c1bd72b7ef75f48c6355f1be"
+        },
+        {
+          "target": "third_party/ffmpeg/chromium/config/Chromium/mac/arm64/libavcodec/parser_list.c",
+          "before_sha256": "6a004f9bc097280a252a03d656a4b14ba109717eb46a3e4692683d67df72d1be",
+          "after_sha256": "117d2bd3ff22ef9fe43a42f862689b766fe3c136c304635053cff96fba989208"
+        },
+        {
+          "target": "third_party/ffmpeg/chromium/config/Chromium/mac/arm64/libavformat/demuxer_list.c",
+          "before_sha256": "3bf2a158ad6fbf424a4100f51e6bbf6fc1e8bfa31c196cf6080721668e7cb70b",
+          "after_sha256": "71b14f15be7909233422de758a5c9e6a9e4ab1a773ea666fd621cd6cf40aa5f5"
+        },
+        {
+          "target": "third_party/ffmpeg/libavformat/aacdec.c",
+          "before_sha256": "e98aae3021c81df2019767caf3d748e3b9b3a13d39ce78424a1619858e1f4f9c",
+          "after_sha256": "04fa44efffafc2f4636c56daa7bac078c2ad804ddd5a486150701365f84930c1"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/webaudio-aac.patch",
+      "sha256": "1a12de3dab5b0e03ce228388bda088fd69e4de64d1648e0b66c1348d7b92129f",
+      "files": [
+        {
+          "target": "media/filters/audio_file_reader.h",
+          "before_sha256": "90e150cbae60fd60bee644647a5cb9b8f6350b89aa60aba588867aa8bc611410",
+          "after_sha256": "f960acf0dbd07b90ef2f6e7add53b08c1557a34ce1c6836a0ea574097a34f263"
+        },
+        {
+          "target": "media/filters/audio_file_reader.cc",
+          "before_sha256": "feb8a3a1396833809113a31a09a566b122bf304e29910f97c16292483fd239cc",
+          "after_sha256": "1dd214f77ae73913c15e906ae0fa39ea11b73aee7493af41d4679ac95023a354"
+        },
+        {
+          "target": "media/mojo/clients/BUILD.gn",
+          "before_sha256": "c7a41e1448addb3e08dcf9000bf8714c3e258aa0c749b76cbe1da41e4b0d6065",
+          "after_sha256": "3aa84e7cc60c040f6ba836795fe11ac9175ec462b8c1cc3e542b00cc0cec6a48"
+        },
+        {
+          "target": "media/mojo/clients/mojo_audio_decoder.h",
+          "before_sha256": "9e50b5a412912f229960ee26ecef64d897ede71145afa22c6488786155d6d525",
+          "after_sha256": "4708964086f70cfc7b90876a0ab84ae24b1bb9b550cd9d0e21c7a3bde6de9d5b"
+        },
+        {
+          "target": "media/mojo/clients/mojo_audio_decoder.cc",
+          "before_sha256": "3a032f0e97018cecc44ee7b6d05c8b9d56a563cb8aa12dfb52eb6a7ae4a98ed4",
+          "after_sha256": "ab5e7977c748f84314e3a222dc32ef412f6f3565a1bb0e977fce7270f537f109"
+        },
+        {
+          "target": "media/mojo/services/mojo_audio_decoder_service.h",
+          "before_sha256": "3ccac43d296c9031a231e53c945fc44cb83bce65c1a42867297bba2834d363d5",
+          "after_sha256": "295d4fcf6f3bc01b2c9f5f01acdf7392e4b51ccba5c1e0cf97e08aa272ad765e"
+        },
+        {
+          "target": "media/mojo/services/mojo_audio_decoder_service.cc",
+          "before_sha256": "fd5904522fbc55691b3ebff8958dd17be66ff2ee2d5281ccc4ac6dccdcb8803f",
+          "after_sha256": "b79eb5d0b85dbc80fc312248e28f05b5a7eb795ec7d664c955be9b940a6a59d8"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/webaudio/BUILD.gn",
+          "before_sha256": "6a798f6b49db47491a828c201ec479642d9b2726088fb4a4ee5e8167ac7a1a82",
+          "after_sha256": "9d95930ba05629f049962fcc488a967941eca7b13e7885b38049839f61351ca6"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/webaudio/base_audio_context.h",
+          "before_sha256": "d8565a3b0a3b11a4a7b69918b07692f7d90401738356a546d863627a6383ecda",
+          "after_sha256": "acb39cfde4d6c07fabef4941d870ec295cd21bde9e25df5522bdf8cfb8bfee45"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/webaudio/base_audio_context.cc",
+          "before_sha256": "208ac18731142b8c3cf4e117a266ab3abb1a249bd02498c2aaaa76566f6906fa",
+          "after_sha256": "5fdf3a491ac18e40a1f9583060cdd10f334a00e7b0ed74fbe43039787037ff49"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/cdm-helper.patch",
+      "sha256": "9f813cc3bed205350289acc61383bcdd1fcb1ddce82b56f355567d02fafe8e00",
+      "files": [
+        {
+          "target": "chrome/browser/child_process_host_flags.h",
+          "before_sha256": "c094ac97e85e2fc0eb659d411b9a90c6cf642cf55a4f2cdbdf4fff294b5b3716",
+          "after_sha256": "2a4a3e2f4463f14f49988c7cee8118fd25767e13c2819374697101ffe1f7794c"
+        },
+        {
+          "target": "content/browser/media/service_factory.cc",
+          "before_sha256": "0522d0d43cf3a74bdad9c5e7035b4bb77f297318ded797f5201ded86f133bcee",
+          "after_sha256": "a122d9e442c1c9158eaa1c9765faf4cdc123c14518f3c11d3061d6b3d5d72f0d"
+        },
+        {
+          "target": "content/browser/media/service_factory.h",
+          "before_sha256": "f55d1b4e24157e109c55916645a355fc2c07b1c0207c79051e209db818f85800",
+          "after_sha256": "9cd16af19aaaf9d00d1cc4ec32720e7d2e3c9652e7f68a13396fd3e952d5da5a"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-extension-action-icon.patch",
+      "sha256": "5961f13a4e056a01a279e31159ddde55408905975bc004872d782deeebcf3977",
+      "files": [
+        {
+          "target": "chrome/browser/ui/extensions/extension_action_view_model.h",
+          "before_sha256": "464e8a97529dcf5f6e4dd81590d115b7ed4e7c240f26d57c879ae728d6ae6713",
+          "after_sha256": "aad7aa5eb36001f52f1c8e98d34c389fea258e081832db60f441e1de3cb8934b"
+        },
+        {
+          "target": "chrome/browser/ui/extensions/extension_action_view_model.cc",
+          "before_sha256": "dc9dee1aa4332b3664614f83901c2c0774bb03f9734fa3eeba6f5ec4f85feb6e",
+          "after_sha256": "98900b000ab29c2b4eddc34f9e7005c55fd526b5aa72c18d9981d6ce32ae98c9"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/top-band-color.patch",
+      "sha256": "206c401162d6bee45b72f73dfdfc04bece7f6c1b8e08364a2ee52f1c5d620e5b",
+      "files": [
+        {
+          "target": "third_party/blink/public/mojom/BUILD.gn",
+          "before_sha256": "e9f47a1701971ede7acae7954576ff5ba99e28b7152041950665ab90dfbd542f",
+          "after_sha256": "9d6c1fce6513f7511062945a32be4884067e762551ce6e7081616ef923c16f86"
+        },
+        {
+          "target": "third_party/blink/renderer/core/frame/build.gni",
+          "before_sha256": "17c57cf52916851823c96e78c07d148ab1178840552e55adc1ca2f0d1b11cef4",
+          "after_sha256": "4d2685fa7389528a4a2f84e27730bccf80a2005298085f67bf4bbc2c819020bf"
+        },
+        {
+          "target": "third_party/blink/renderer/core/frame/local_frame.h",
+          "before_sha256": "e0e7f42ecd10063043aace80509a10b8dcfa2ee6c9642ffadeee21f573b5dd4c",
+          "after_sha256": "e9e8d62547b4124437aa8fd5f47252672e2dcca4d3f3e54bc8076f2e0c0f672b"
+        },
+        {
+          "target": "third_party/blink/renderer/core/frame/local_frame.cc",
+          "before_sha256": "0aa36be248d7deab26bf101f4f01ab89d43ba841bffab696e4752222968b1c13",
+          "after_sha256": "86dfdf22eb618bdb66120af2c6bea0869764ab3da338e7e5da452cce1ad4eefc"
+        },
+        {
+          "target": "third_party/blink/renderer/core/frame/local_frame_view.cc",
+          "before_sha256": "f43bd7fa49d6b7ca1729d5e2df7ea08864a87a913fd4ad60bec26c96d74110fe",
+          "after_sha256": "554616aaf841c8a002d10f1e61d99a018a5503b58454e2ad225439a7d2ee3606"
+        },
+        {
+          "target": "third_party/blink/renderer/core/dom/document.cc",
+          "before_sha256": "9f6b0a23062180fba604ebe4c73e6f03efdce2767af104605f9ffb0250466552",
+          "after_sha256": "fb6a4e345efda91e1889064757517ad0481947505e961901f810c6f376e5dc8a"
+        },
+        {
+          "target": "third_party/blink/renderer/core/loader/document_loader.cc",
+          "before_sha256": "233436e5799c143bc0be090a59b7d51ae4bb1b8022279d946e4dbf516b51a305",
+          "after_sha256": "4288da7613b8743ace59e79507124cbe1afb27d47c4949375ed2a8c59032470d"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-document-pip-content-settings.patch",
+      "sha256": "9d2462ac39dd5703f5da22cfbaa61360d3b9b27c99a3033f579daf3838a38d50",
+      "files": [
+        {
+          "target": "chrome/browser/content_settings/chrome_content_settings_utils.cc",
+          "before_sha256": "f04876b833211e1ecf593c9f0cbcb824196bc83dce2b6a89cfe9872ef9daca45",
+          "after_sha256": "5f8e5d620c8da66e800681b8040381b94caabc76745bdbccbf12e61ee4b58437"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-auto-pip-host-occlusion.patch",
+      "sha256": "001b939dcc2715f8e62d98ec2ec4be32ea3dd99b7a2b1e1840ca6b2dd5ba2399",
+      "files": [
+        {
+          "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h",
+          "before_sha256": "8d04b3dc944c41be95d473829eb396c8709fbe25384afbee0c7ddd430de30f28",
+          "after_sha256": "4e241af10a4df8f4f71715a78bf8d80c8b9399b5660569d00de42ceba17e20a7"
+        },
+        {
+          "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc",
+          "before_sha256": "184a6d15b62037cdf22573229f4df156bfd3ca69b007aac07abafb435f45d99e",
+          "after_sha256": "d4da029e6075e708e241508d4a50dcc3dc13154c2d0a6eceab23814757ab8001"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-views-bubble-guards.patch",
+      "sha256": "162dab784f9d861dd007d721618c805647e7abe103f7747fd36c6e87ddeb86eb",
+      "files": [
+        {
+          "target": "chrome/browser/ui/toasts/toast_controller.cc",
+          "before_sha256": "02c930d48a2cd5ba1052219059902584e4a9a038e28eceb4718eb903ec750415",
+          "after_sha256": "1d14c62bdf32df9d74fc4d157b1f6a8fb2a4a4db73fcdad43d8ffefac31f03b0"
+        },
+        {
+          "target": "chrome/browser/ui/views/page_info/safety_tip_page_info_bubble_view.cc",
+          "before_sha256": "60e0780d2c2092a0edd2fcd4104a8b932b772014f2fcdf0761eef3888794f19c",
+          "after_sha256": "d5e56519610add10bb87c35d746ce608831964974d762df8cb4dd55891d74b65"
+        },
+        {
+          "target": "chrome/browser/ui/views/file_system_access/file_system_access_restore_permission_bubble_view.cc",
+          "before_sha256": "fe36c05f5f11a7c25eee1b453eb8c1124bbaef7a5ba3b0127e42d683674ef492",
+          "after_sha256": "83aacd74b4c6f47fadb2422e99e0c0e7b0a362d2dfc5404ae99b60d250b22d95"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-session-cookies.patch",
+      "sha256": "c663962f50fd549f450b2b722fcdd24f10977b125b1bdd98451767ebf386e91c",
+      "files": [
+        {
+          "target": "chrome/browser/profiles/profile_impl.cc",
+          "before_sha256": "badbd32e37f3808bc0b9828f86155da4076098c4e9924cf32202eec7e2f94b5f",
+          "after_sha256": "8a4e4d8c5baeeac6187796bf08a11cf80748e1f7ff8cdb14cdabf510240fb467"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-web-push.patch",
+      "sha256": "80a1a4492b7d34d4b9a6db2ec9d2c8f549ecde3b3a0a01241c0fcefcf8bf9b66",
+      "files": [
+        {
+          "target": "components/gcm_driver/gcm_client_impl.cc",
+          "before_sha256": "dce835f58cb9c76c6b890f919e9994b1421b3bd90e69a30214b95b6379fadede",
+          "after_sha256": "42cff365690c17675f09531251439bd6c4d41238a5e496b59e482cb21d463c48"
+        },
+        {
+          "target": "cef/patch/patch.cfg",
+          "before_sha256": "e8d628429f48920cbe3427a3ad711ba8dd26f127e539fd1138f781f6f045793c",
+          "after_sha256": "40b453ba46f70d42868b7a85c7010818e188b02811e2fddac39398cd865d2b6d"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-toolbar-logo.patch",
+      "sha256": "b75fbc8a7d1c60f7021c00ce1abe50016a65b92a92bc039d1313d33ee8c6e38d",
+      "files": [
+        {
+          "target": "chrome/browser/ui/webui/theme_source.cc",
+          "before_sha256": "7b36b746c634d490ffe59401615b20dec5163ff82fcfdcaff5afa12a0d2d007a",
+          "after_sha256": "5c1d431f2431fb1f71914471d1fb4eb7ca4c86fb3d04099a01f9c6917c946310"
+        },
+        {
+          "target": "ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts",
+          "before_sha256": "485e17e9973658521769277fa884592ab0055b6df125859ef78211a356a9c2d2",
+          "after_sha256": "12b200790e53e705dd983f845058e0a561a2c47b8aad0f83e354408fb981249c"
+        }
+      ]
+    }
+  ]
+}

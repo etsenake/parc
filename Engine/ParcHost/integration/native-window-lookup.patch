@@ -1,0 +1,271 @@
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1211,12 +1211,16 @@
+   // level NativeView.
+   if (const auto* widget = views::Widget::GetTopLevelWidgetForNativeView(
+           web_contents->GetNativeView())) {
+-    return BrowserView::GetBrowserViewForNativeWindow(
+-        widget->GetNativeWindow());
+-  }
+-  const auto* browser =
++    if (auto* view = BrowserView::GetBrowserViewForNativeWindow(
++            widget->GetNativeWindow())) {
++      return view;
++    }
++  }
++  auto* browser =
+       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
+-  return browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  // The actual tab owner can supply a native BrowserWindow without a
++  // BrowserView/Widget property. Preserve that window and its real services.
++  return BrowserWindow::FromBrowser(browser);
+ }
+ 
+ // static
+--- a/chrome/browser/ui/autofill/address_bubbles_controller.cc
++++ b/chrome/browser/ui/autofill/address_bubbles_controller.cc
+@@ -57,7 +57,7 @@
+     base::WeakPtr<AddressBubbleControllerDelegate> delegate) {
+   auto browser_window =
+       BrowserWindow::FindBrowserWindowWithWebContents(web_contents);
+-  if (!browser_window) {
++  if (!browser_window || !browser_window->GetAutofillBubbleHandler()) {
+     return nullptr;
+   }
+   auto controller = std::make_unique<SaveAddressBubbleController>(
+@@ -76,7 +76,7 @@
+     base::WeakPtr<AddressBubbleControllerDelegate> delegate) {
+   auto browser_window =
+       BrowserWindow::FindBrowserWindowWithWebContents(web_contents);
+-  if (!browser_window) {
++  if (!browser_window || !browser_window->GetAutofillBubbleHandler()) {
+     return nullptr;
+   }
+   auto update_controller = std::make_unique<UpdateAddressBubbleController>(
+@@ -91,7 +91,7 @@
+                                     const AutofillProfile& autofill_profile) {
+   auto browser_window =
+       BrowserWindow::FindBrowserWindowWithWebContents(web_contents);
+-  if (!browser_window) {
++  if (!browser_window || !browser_window->GetAutofillBubbleHandler()) {
+     return nullptr;
+   }
+   // TODO(crbug.com/381390420): Expose the `AutofillBubbleHandler` in
+@@ -129,6 +129,22 @@
+     AutofillClient::SaveAddressBubbleType save_address_bubble_type,
+     bool user_has_any_profile_saved,
+     AutofillClient::AddressProfileSavePromptCallback callback) {
++  const auto kind =
++      original_profile ? AutofillUiPresentation::kAddressUpdate
++      : save_address_bubble_type ==
++              AutofillClient::SaveAddressBubbleType::kMigrateToAccount
++          ? AutofillUiPresentation::kAddressMigration
++      : save_address_bubble_type ==
++              AutofillClient::SaveAddressBubbleType::kHomeWorkNameEmailMerge
++          ? AutofillUiPresentation::kAddressMerge
++      : profile.IsAccountProfile() ? AutofillUiPresentation::kAccountAddressSave
++                                   : AutofillUiPresentation::kLocalAddressSave;
++  if (!AutofillBubbleHandler::IsPresentationSupported(web_contents, kind)) {
++    std::move(callback).Run(
++        AutofillClient::AddressPromptUserDecision::kAutoDeclined, std::nullopt);
++    return;
++  }
++
+   AddressBubblesController::CreateForWebContents(web_contents);
+   auto* controller = AddressBubblesController::FromWebContents(web_contents);
+   bool is_save_bubble = !original_profile;
+@@ -173,6 +189,8 @@
+ void AddressBubblesController::OnUserDecision(
+     AutofillClient::AddressPromptUserDecision decision,
+     base::optional_ref<const AutofillProfile> profile) {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++
+   if (decision == AutofillClient::AddressPromptUserDecision::kEditDeclined) {
+     // Reopen this bubble if the user canceled editing.
+     shown_by_user_gesture_ = false;
+@@ -181,7 +199,13 @@
+   }
+   if (address_profile_save_prompt_callback_) {
+     std::move(address_profile_save_prompt_callback_).Run(decision, profile);
++    if (!weak) {
++      return;
++    }
+     MaybeShowSignInPromo(profile);
++    if (!weak) {
++      return;
++    }
+   }
+ 
+   if (decision == AutofillClient::AddressPromptUserDecision::kAccepted ||
+@@ -199,7 +223,11 @@
+ }
+ 
+ void AddressBubblesController::OnBubbleClosed() {
++  auto weak = weak_ptr_factory_.GetWeakPtr();
+   ResetBubbleViewAndInformBubbleManager();
++  if (!weak) {
++    return;
++  }
+   is_showing_sign_in_promo_ = false;
+   UpdatePageActionIcon();
+ }
+@@ -254,8 +282,44 @@
+   CHECK(!bubble_view());
+   CHECK(show_bubble_view_callback_);
+ 
+-  SetBubbleView(*show_bubble_view_callback_.Run(
+-      web_contents(), shown_by_user_gesture_, GetWeakPtr()));
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  auto* view = show_bubble_view_callback_.Run(
++      web_contents(), shown_by_user_gesture_, GetWeakPtr());
++  if (!weak) {
++    return;
++  }
++  if (!view) {
++    MarkPresentationUnavailable();
++    show_bubble_view_callback_.Reset();
++    is_showing_sign_in_promo_ = false;
++    auto callback = std::move(address_profile_save_prompt_callback_);
++    UpdatePageActionIcon();
++    if (callback) {
++      std::move(callback).Run(
++          AutofillClient::AddressPromptUserDecision::kAutoDeclined,
++          std::nullopt);
++    }
++    return;
++  }
++  SetBubbleView(*view);
++  ObservePresentation(
++      {}, base::BindOnce(
++              [](base::WeakPtr<AddressBubblesController> weak) {
++                if (!weak) {
++                  return;
++                }
++                weak->show_bubble_view_callback_.Reset();
++                weak->is_showing_sign_in_promo_ = false;
++                auto callback =
++                    std::move(weak->address_profile_save_prompt_callback_);
++                weak->UpdatePageActionIcon();
++                if (callback) {
++                  std::move(callback).Run(
++                      AutofillClient::AddressPromptUserDecision::kAutoDeclined,
++                      std::nullopt);
++                }
++              },
++              weak));
+ }
+ 
+ BubbleType AddressBubblesController::GetBubbleType() const {
+@@ -324,11 +388,14 @@
+ void AddressBubblesController::MaybeShowIOSDektopAddressPromo() {
+   auto browser_window =
+       BrowserWindow::FindBrowserWindowWithWebContents(web_contents());
+-  if (!browser_window) {
+-    return;
+-  }
+-  BrowserWindowInterface* browser =
+-      browser_window->AsBrowserView()->browser();
++  auto* browser_view =
++      browser_window ? browser_window->AsBrowserView() : nullptr;
++  if (!browser_view) {
++    // This optional Chrome promotion requires its actual Views anchor. A
++    // native BrowserWindow can complete address saving without that surface.
++    return;
++  }
++  BrowserWindowInterface* browser = browser_view->browser();
+ 
+   // Verify if user is eligible for iOS promo, and attempt showing if they are.
+   ios_promos_utils::VerifyIOSPromoEligibility(
+@@ -340,7 +407,9 @@
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+   // Do nothing if there is no autofill profile or the sign in promo should not
+   // be shown.
+-  if (!autofill_profile.has_value() ||
++  if (!AutofillBubbleHandler::IsPresentationSupported(
++          web_contents(), AutofillUiPresentation::kAddressSignInPromo) ||
++      !autofill_profile.has_value() ||
+       !signin::ShouldShowAddressSignInPromo(
+           *Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
+           autofill_profile.value())) {
+@@ -353,8 +422,12 @@
+   HideBubble(/*initiated_by_bubble_manager=*/false);
+ 
+   // Open the bubble with the sign in promo.
+-  SetBubbleView(*ShowSignInPromo(web_contents(), autofill_profile.value()));
+-  CHECK(bubble_view());
++  auto* view = ShowSignInPromo(web_contents(), autofill_profile.value());
++  if (!view) {
++    MarkPresentationUnavailable();
++    return;
++  }
++  SetBubbleView(*view);
+   is_showing_sign_in_promo_ = true;
+   UpdatePageActionIcon();
+ #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+--- a/chrome/browser/ui/autofill/save_address_bubble_controller.h
++++ b/chrome/browser/ui/autofill/save_address_bubble_controller.h
+@@ -47,6 +47,9 @@
+   virtual std::u16string GetOkButtonLabel() const;
+   std::u16string GetNegativeButtonLabel() const;
+   const AutofillProfile& GetAutofillProfile() const { return address_profile_; }
++  AutofillClient::SaveAddressBubbleType GetSaveAddressBubbleType() const {
++    return save_address_bubble_type_;
++  }
+ 
+   // The value returned by the cancel button callback depends on whether
+   // the address is to be saved into user's account. Different values are needed
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -12,6 +12,7 @@
+ import("//build/config/ui.gni")
+ import("//build/config/vpython.gni")
+ import("//build/toolchain/toolchain.gni")
++import("//cef/libcef/features/features.gni")
+ import("//chrome/browser/buildflags.gni")
+ import("//chrome/browser/downgrade/buildflags.gni")
+ import("//chrome/common/features.gni")
+@@ -2597,6 +2598,18 @@
+         "//chrome/browser/ui:browser_commands_mac",
+         "//chrome/updater:browser_sources",
+       ]
++      if (enable_cef) {
++        deps += [
++          "//cef/tests/parc_native_extensions:context_menu_browser_tests",
++          "//cef/tests/parc_native_downloads:file_dialog_browser_tests",
++          "//cef/tests/parc_native_extensions:install_browser_tests",
++          "//cef/tests/parc_native_extensions:popup_browser_tests",
++          "//cef/tests/parc_native_devtools:browser_tests",
++          "//cef/tests/parc_native_video_pip:browser_tests",
++          "//cef/tests/parc_native_extensions:uninstall_browser_tests",
++          "//cef/tests/parc_native_side_panel:browser_tests",
++        ]
++      }
+     }
+ 
+     if (enable_guest_view) {
+@@ -7491,6 +7504,25 @@
+       "../browser/ui/views/web_apps/view_visible_in_active_widget_notifier_unittest.cc",
+     ]
+     sources += [ "../browser/ui/views/profiles/avatar_badge_view_unittest.cc" ]
++    if (is_mac) {
++      sources += [ "../browser/ui/views/frame/parc_native_window_lookup_unittest.cc" ]
++      if (enable_cef) {
++        deps += [
++          "//cef/tests/parc_native_autofill:session_tests",
++          "//cef/tests/parc_native_extension_actions:action_tests",
++          "//cef/tests/parc_native_downloads:download_unit_tests",
++          "//cef/tests/parc_native_http_auth:unit_tests",
++          "//cef/tests/parc_native_external_protocol:unit_tests",
++          "//cef/tests/parc_native_certificate_viewer:unit_tests",
++          "//cef/tests/parc_native_client_certificates:unit_tests",
++          "//cef/tests/parc_native_webauthn:unit_tests",
++          "//cef/tests/parc_native_video_pip:unit_tests",
++          "//cef/tests/parc_native_page_retirement:unit_tests",
++          "//cef/tests/parc_native_tab_transfer:unit_tests",
++          "//cef/tests/parc_native_permissions:unit_tests",
++        ]
++      }
++    }
+ 
+     # TODO(crbug.com/353332589): Remove this dependency when the
+     # views/autofill/popup/ unit tests get modularized.

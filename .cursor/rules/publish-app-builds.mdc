@@ -1,0 +1,21 @@
+---
+description: Publish every new app build to GitHub
+alwaysApply: true
+---
+# Publish every new app build to GitHub
+
+This is a **must-do** rule (Josh, November 1).
+
+Package every app Josh will run with the one command that also publishes it as
+a private GitHub pre-release, so he can use it on his other Macs without
+building there. Push the commit to `origin/main` first; the script refuses an
+unpushed or dirty checkout.
+
+```sh
+bash scripts/package-app.sh <sealed engine-artifacts.json>
+```
+
+Tell Josh the release tag. Don't repeat the install caveats (keep the
+`development` folder together, ARM64 only, `gh` download avoids quarantine);
+he knows them. They're documented in `tests/Packaging/README.md`, "Publishing
+app builds", for agents.

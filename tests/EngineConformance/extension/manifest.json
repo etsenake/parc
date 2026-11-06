@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Parc Engine Conformance",
+  "version": "1.0.0",
+  "description": "User-driven, loopback-only engine and MV3 extension conformance checks.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "background": {"service_worker": "worker.js", "type": "module"},
+  "action": {"default_title": "Parc Engine Conformance", "default_popup": "popup.html"},
+  "commands": {
+    "fixture-command": {
+      "suggested_key": {"default": "Ctrl+Shift+8", "mac": "MacCtrl+Shift+8"},
+      "description": "Record a local conformance command event"
+    },
+    "_execute_action": {
+      "suggested_key": {"default": "Ctrl+Shift+9", "mac": "MacCtrl+Shift+9"}
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+  }
+}

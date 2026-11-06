@@ -1,0 +1,32 @@
+# Map to //cef/tests/parc_native_certificate_viewer.
+assert(is_mac)
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "viewer_unittest.mm" ]
+  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  frameworks = [
+    "AppKit.framework",
+    "Security.framework",
+    "SecurityInterface.framework",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cef/libcef/browser/parc_native:native_components",
+    "//cef/libcef/browser/parc_native:native_certificate_viewer",
+    "//chrome/browser:certificate_viewer",
+    "//chrome/browser/ssl",
+    "//chrome/browser/ssl:impl",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/webui/certificate_viewer",
+    "//chrome/test/base:browser_with_test_window_test",
+    "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/security_interstitials/content:security_interstitial_page",
+    "//components/security_interstitials/core",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}

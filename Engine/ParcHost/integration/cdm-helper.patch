@@ -1,0 +1,79 @@
+--- a/chrome/browser/child_process_host_flags.h
++++ b/chrome/browser/child_process_host_flags.h
+@@ -16,6 +16,10 @@
+   // alerts instead of banners which are shown by the main app.
+   kChildProcessHelperAlerts =
+       content::ChildProcessHost::CHILD_EMBEDDER_FIRST + 1,
++
++  // Starts a CDM utility process in a helper signed without library
++  // validation, so it can load a CDM signed by another developer team.
++  kChildProcessHelperCdm = content::ChildProcessHost::CHILD_EMBEDDER_FIRST + 2,
+ #endif  // BUILDFLAG(IS_MAC)
+ };
+ 
+--- a/content/browser/media/service_factory.cc
++++ b/content/browser/media/service_factory.cc
+@@ -25,6 +25,7 @@
+ #include "mojo/public/cpp/bindings/remote_set.h"
+ 
+ #if BUILDFLAG(IS_MAC)
++#include "content/public/browser/child_process_host.h"
+ #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+ #include "sandbox/mac/seatbelt_extension.h"
+ #endif  // BUILDFLAG(IS_MAC)
+@@ -40,6 +41,8 @@
+ namespace {
+ 
+ #if BUILDFLAG(IS_MAC)
++int g_cdm_service_child_flags = ChildProcessHost::CHILD_NORMAL;
++
+ #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
+ // TODO(xhwang): Move this to a common place.
+ const base::FilePath::CharType kSignatureFileExtension[] =
+@@ -248,6 +251,9 @@
+     ServiceProcessHost::Options options;
+     options.WithDisplayName(display_name);
+     options.WithSite(site);
++#if BUILDFLAG(IS_MAC)
++    options.WithChildFlags(g_cdm_service_child_flags);
++#endif  // BUILDFLAG(IS_MAC)
+     if (base::FeatureList::IsEnabled(media::kCdmProcessPriorityElevation)) {
+       options.WithPriority(base::Process::Priority::kUserBlocking);
+     }
+@@ -294,6 +300,12 @@
+   EraseCdmService<media::mojom::CdmService>({cdm_type, browser_context, site});
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++void SetCdmServiceChildFlags(int flags) {
++  g_cdm_service_child_flags = flags;
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(IS_WIN)
+ media::mojom::MediaFoundationService& GetMediaFoundationService(
+     const media::CdmType& cdm_type,
+--- a/content/browser/media/service_factory.h
++++ b/content/browser/media/service_factory.h
+@@ -7,6 +7,7 @@
+ 
+ #include "base/token.h"
+ #include "build/build_config.h"
++#include "content/common/content_export.h"
+ #include "content/public/common/cdm_info.h"
+ #include "media/mojo/mojom/cdm_service.mojom-forward.h"
+ #include "url/gurl.h"
+@@ -32,6 +33,13 @@
+                      const GURL& site,
+                      const media::CdmType& cdm_type);
+ 
++#if BUILDFLAG(IS_MAC)
++// Sets the ChildProcessHost flags that CdmService processes start with. A
++// value other than CHILD_NORMAL must be resolved by the embedder's
++// ContentBrowserClient::GetChildProcessPath(). Call before the first CDM use.
++CONTENT_EXPORT void SetCdmServiceChildFlags(int flags);
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(IS_WIN)
+ // Gets an instance of the MediaFoundationService for the `browser_context` and
+ // the `site`. Instances are started lazily as needed. The CDM located at
