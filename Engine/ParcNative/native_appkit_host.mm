@@ -41,6 +41,7 @@
 #include "content/public/browser/eye_dropper.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "devtools_pane.h"
 #include "extension_action_bridge.h"
@@ -145,6 +146,26 @@ bool MenuKey(const input::NativeWebKeyboardEvent& event) {
           NSEventModifierFlagDeviceIndependentFlagsMask) &&
          [NSApp.mainMenu performKeyEquivalent:native];
 }
+// Chromium's own visibility tracking still runs for Parc's pages:
+// WebContentsViewCocoa re-reads WebContentsOcclusionCheckerMac's flag for its
+// window when its view is shown, hidden or moved and on each checker update,
+// and marks the page occluded a second later. The flag also counts a window
+// fully covered by another of the app's windows, which macOS reports visible,
+// but it follows macOS's occlusion state without the key-window exception
+// WindowCurrentlyOccluded makes, so it can stop the front window's page
+// painting with no pass to follow.
+class PageVisibilityWatch final : public content::WebContentsObserver {
+ public:
+  PageVisibilityWatch(content::WebContents& contents,
+                      base::RepeatingCallback<void(content::Visibility)> changed)
+      : content::WebContentsObserver(&contents), changed_(std::move(changed)) {}
+  void OnVisibilityChanged(content::Visibility visibility) override {
+    changed_.Run(visibility);
+  }
+
+ private:
+  base::RepeatingCallback<void(content::Visibility)> changed_;
+};
 }  // namespace
 
 class AppKitBrowserHost final : public NativeBrowserWindowHost,
@@ -1226,8 +1247,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       }
       // A shown page in a covered window, on another Space or behind
       // sleeping displays is OCCLUDED, as in Chrome: it stops painting and
-      // its timers throttle. Chromium's own view tracking never sees Parc's
-      // hosted pages, so without this they rendered at full rate unseen.
+      // its timers throttle. Chromium's own view tracking ignores a page until
+      // it has seen it shown and re-reads only on its own triggers
+      // (PageVisibilityWatch), so without this they rendered at full rate
+      // unseen.
       if (shown && !occluded &&
           contents->GetVisibility() != content::Visibility::VISIBLE) {
         contents->WasShown();
@@ -1397,6 +1420,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     base::CallbackListSubscription detach;
     base::CallbackListSubscription discard;
     std::unique_ptr<NativeWebsiteTheme> theme;
+    std::unique_ptr<PageVisibilityWatch> visibility;
   };
   bool Attach(content::WebContents& contents,
               PCNativePage* page,
@@ -1512,6 +1536,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           return found != host->pages_.end() &&
               found->second.page.nativeView.window == host->window_;
         }, weak, contents_weak));
+    entry.visibility = std::make_unique<PageVisibilityWatch>(
+        contents,
+        base::BindRepeating(&AppKitBrowserHost::PageVisibilityChanged, weak));
     pages_.emplace(&contents, std::move(entry));
     pages_.at(&contents).theme->SetStylesheet(website_theme_);
     action_bridge_->Changed();
@@ -1541,6 +1568,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     PageBinding entry = std::move(found->second);
     pages_.erase(found);
     entry.theme.reset();  // Revoke before callback-capable owner detachment.
+    entry.visibility.reset();
     // Even reattaching this exact page later cannot revive a snapshot captured
     // before its native ownership boundary was removed.
     action_bridge_->Changed();
@@ -1633,6 +1661,15 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                   usingBlock:^(NSNotification*) {
                     if (auto* self = weak.get()) {
                       self->WindowOcclusionChanged();
+                      // A window coming on screen gets a pass even when it was
+                      // never marked occluded: a pass that ran while it was
+                      // off screen hid its pages, and one ordered in without
+                      // becoming key (a restored background window) gets no
+                      // other. Chromium's checker posts this notification for
+                      // the window too whenever its own flag changes.
+                      if (!any_window && !self->WindowCurrentlyOccluded()) {
+                        self->Synchronize();
+                      }
                     }
                   }];
       [app_activity_observers_ addObject:occlusion];
@@ -1699,15 +1736,22 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     // next draw, so the page started occluded (no paint, background priority)
     // and stayed white. A window covered by other apps or behind another
     // Parc window is not in the key window's chain and still goes occluded.
-    if (NSApp.isActive) {
-      for (NSWindow* key = NSApp.keyWindow; key;
-           key = key.sheetParent ?: key.parentWindow) {
-        if (key == window_) {
-          return false;
-        }
-      }
+    if (InActiveKeyChain()) {
+      return false;
     }
     return !(window_.occlusionState & NSWindowOcclusionStateVisible);
+  }
+  bool InActiveKeyChain() const {
+    if (!window_ || !NSApp.isActive) {
+      return false;
+    }
+    for (NSWindow* key = NSApp.keyWindow; key;
+         key = key.sheetParent ?: key.parentWindow) {
+      if (key == window_) {
+        return true;
+      }
+    }
+    return false;
   }
   // Uncovering shows pages at once. Covering waits a second, like Chromium's
   // WebContentsViewCocoa, so a window dragged across does not hide and
@@ -1717,8 +1761,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       return;
     }
     if (!WindowCurrentlyOccluded()) {
+      // A cover cancelled before the timer may still have let Chromium
+      // occlude a page (PageVisibilityChanged leaves that to the timer).
+      const bool covering = occlusion_timer_.IsRunning();
       occlusion_timer_.Stop();
-      if (window_occluded_) {
+      if (window_occluded_ || covering) {
         window_occluded_ = false;
         Synchronize();
       }
@@ -1728,6 +1775,26 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       occlusion_timer_.Start(FROM_HERE, base::Seconds(1), this,
                              &AppKitBrowserHost::ApplyWindowOcclusion);
     }
+  }
+  // A visibility change no pass made (PageVisibilityWatch) is followed by a
+  // pass, which applies Parc's decision again. Chromium's occlusion stands
+  // unless the window is in the active key window's chain: one Parc also
+  // counts as covered is left to the occlusion timer, and one covered by
+  // another of the app's windows stays occluded.
+  void PageVisibilityChanged(content::Visibility visibility) {
+    if (synchronizing_visibility_ || tearing_down_ || draining_ || !window_) {
+      return;
+    }
+    if (visibility == content::Visibility::OCCLUDED) {
+      if (WindowCurrentlyOccluded()) {
+        WindowOcclusionChanged();
+        return;
+      }
+      if (!InActiveKeyChain()) {
+        return;
+      }
+    }
+    Synchronize();
   }
   void ApplyWindowOcclusion() {
     if (tearing_down_ || draining_ || window_occluded_ ||
