@@ -59,7 +59,9 @@ class FairPlayCdmClient {
 //   message  [{"keyID": "<base64>", "payload": "<base64 SPC>"}, ...]
 //   response [{"keyID": "<base64>", "payload": "<base64 CKC>"} or
 //             {"keyID": "<base64>", "error": <integer>}, ...]
-// keyID is the KeyInfo key ID. As in WebKit, an UpdateSession with the
+// keyID is the KeyInfo key ID; each response entry goes to the request whose
+// message entry carried that keyID, and a response naming a keyID twice is
+// rejected. As in WebKit, an UpdateSession with the
 // literal "renew" asks for a renewal message for the session's last key.
 class FairPlayCdm {
  public:

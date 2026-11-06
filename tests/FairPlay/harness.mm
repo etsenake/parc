@@ -8,6 +8,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <QuartzCore/QuartzCore.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdarg>
@@ -759,6 +760,10 @@ class Player : public fp::FairPlayRendererClient {
   // Flushes in the same task as the end of stream that completes both
   // streams (whose OnEnded is then already queued).
   bool flush_at_end_of_stream = false;
+  // Like a batched DemuxerStream read: keeps enqueuing behind a sample held
+  // for a key, through end of stream, instead of waiting for readiness.
+  bool batch_reads = false;
+  int ends_sent = 0;
 
   double Time() { return renderer_.GetMediaTime().InSeconds(); }
 
@@ -858,7 +863,7 @@ class Player : public fp::FairPlayRendererClient {
     if (!(stream == fp::StreamType::kVideo ? has_video_ : has_audio_)) return;
     Feed& feed = stream == fp::StreamType::kVideo ? video_feed_ : audio_feed_;
     const ft::TrackInfo& default_info = stream == fp::StreamType::kVideo ? video_info_ : audio_info_;
-    while (renderer_.IsReadyForMoreData(stream)) {
+    while (batch_reads || renderer_.IsReadyForMoreData(stream)) {
       while (feed.segment < feed.segments.size() && feed.index >= feed.segments[feed.segment]->size()) {
         ++feed.segment;
         feed.index = 0;
@@ -866,6 +871,7 @@ class Player : public fp::FairPlayRendererClient {
       if (feed.segment >= feed.segments.size()) {
         if (feed.end_of_stream && !feed.end_sent) {
           feed.end_sent = true;
+          ++ends_sent;
           renderer_.SetEndOfStream(stream);
           if (flush_at_end_of_stream && (!has_video_ || video_feed_.end_sent) &&
               (!has_audio_ || audio_feed_.end_sent)) {
@@ -897,6 +903,7 @@ class Player : public fp::FairPlayRendererClient {
       fp::EnqueueResult result = renderer_.Enqueue(stream, buffer);
       if (result == fp::EnqueueResult::kWaitingForKey) {
         ++waiting_results;
+        if (batch_reads) continue;
         return;
       }
       if (result == fp::EnqueueResult::kRejected) {
@@ -1962,6 +1969,265 @@ std::vector<Step> WaitingForKeyScenario() {
   return steps;
 }
 
+// Whole GOPs from the start of |segment|: video in decode order up to the
+// first keyframe at least |min_seconds| in (so every frame decodes), and the
+// audio that ends by the last video frame's end.
+struct Clip {
+  std::vector<ft::Sample> video, audio;
+  double start = 0, end = 0;
+};
+
+Clip ClipFrom(const Media& video, const Media& audio, size_t segment, double min_seconds) {
+  Clip clip;
+  const std::vector<ft::Sample>& frames = video.segments[segment];
+  const double scale = video.info.timescale;
+  clip.start = frames.empty() ? 0 : double(frames.front().pts) / scale;
+  for (size_t i = 0; i < frames.size(); ++i) {
+    if (i && frames[i].is_keyframe && double(frames[i].pts) / scale >= clip.start + min_seconds) break;
+    clip.video.push_back(frames[i]);
+    clip.end = std::max(clip.end, double(frames[i].pts + frames[i].duration) / scale);
+  }
+  for (const ft::Sample& sample : audio.segments[segment]) {
+    if (double(sample.pts + sample.duration) / audio.info.timescale <= clip.end + 1e-6) clip.audio.push_back(sample);
+  }
+  return clip;
+}
+
+// Timeline of one player's buffering and end, for checks made after the fact.
+struct Timeline {
+  double enough_time = -1;  // Media time at the last HAVE_ENOUGH.
+  double enough_wall = 0;
+  bool enough_before_key = false;
+  int enough_after_key = 0;
+  double nothing_time = -1;
+  double ended_time = -1;
+  double ended_wall = 0;
+  bool key_requested = false;
+  std::function<void()> on_enough, on_nothing, on_ended;
+};
+
+// Records every HAVE_ENOUGH, HAVE_NOTHING and OnEnded of |player| into
+// |line|. The player's hooks fire once, so each re-arms them.
+void Record(Player* player, std::shared_ptr<Timeline> line) {
+  player->on_have_enough = [player, line] {
+    line->enough_time = player->Time();
+    line->enough_wall = CFAbsoluteTimeGetCurrent();
+    line->enough_before_key |= !line->key_requested;
+    line->enough_after_key += line->key_requested;
+    Record(player, line);
+    if (auto f = std::move(line->on_enough)) f();
+  };
+  player->on_have_nothing = [player, line] {
+    line->nothing_time = player->Time();
+    Record(player, line);
+    if (auto f = std::move(line->on_nothing)) f();
+  };
+  player->on_ended = [player, line] {
+    line->ended_time = player->Time();
+    line->ended_wall = CFAbsoluteTimeGetCurrent();
+    if (auto f = std::move(line->on_ended)) f();
+  };
+}
+
+// Runs |done| now if |happened|, else when |slot| fires (or after |timeout|).
+void WaitFor(bool happened, std::function<void()>* slot, double timeout, const std::string& label,
+             std::function<void(bool)> done) {
+  auto finish = Once(timeout, label, done);
+  if (happened) {
+    finish(true);
+  } else {
+    *slot = [finish] { finish(true); };
+  }
+}
+
+// A short clip (an ad, or a seek into the last seconds) enqueued in full
+// with end of stream on both streams before its license arrives. Nothing
+// counts as enough while its samples wait for the key, so the clock stays at
+// the start despite rate 1; once the key arrives it plays from the start and
+// ends at the clip's end, on time.
+std::vector<Step> EndBeforeKeyScenario() {
+  World* w = g_world;
+  auto clip = std::make_shared<Clip>(ClipFrom(w->video, w->audio, 0, 2.0));
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  auto line = std::make_shared<Timeline>();
+  struct Probe {
+    double max_time = -1;
+    int samples = 0;
+    dispatch_source_t timer = nil;
+  };
+  auto probe = std::make_shared<Probe>();
+  auto frames = std::make_shared<int64_t>(0);
+  const double hold = clip->end - clip->start + 1.0;
+  std::vector<Step> steps;
+  steps.push_back(Section(Format("%.3f s clip with end of stream enqueued %.1f s before its license",
+                                 clip->end - clip->start, hold)));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("eos-before-key");
+    w->player = std::make_shared<Player>("eos-before-key", Framing::kChromium, &w->video, &w->audio,
+                                         (*keys)->cdm.get(), w->host);
+    w->player->batch_reads = true;
+    Record(w->player.get(), line);
+    w->player->renderer().Flush([=] {
+      Log("eos-before-key: %zu video and %zu audio samples, %.3f-%.3f s, then end of stream",
+          clip->video.size(), clip->audio.size(), clip->start, clip->end);
+      w->player->SetFeeds({&clip->video}, {&clip->audio}, true);
+      probe->timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+      dispatch_source_set_timer(probe->timer, DISPATCH_TIME_NOW, NSEC_PER_MSEC * 10, NSEC_PER_MSEC);
+      dispatch_source_set_event_handler(probe->timer, ^{
+        if (w->player) {
+          probe->max_time = std::max(probe->max_time, w->player->Time());
+          ++probe->samples;
+        }
+      });
+      dispatch_resume(probe->timer);
+      // Chromium's CompleteSeek order.
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(int64_t(clip->start * 1e6)));
+      w->player->renderer().SetPlaybackRate(1);
+      After(hold, done);
+    });
+  });
+  steps.push_back([=](Done done) {
+    dispatch_source_cancel(probe->timer);
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(w->player->ends_sent == 2 && w->player->waiting_events == 1 && s.video_enqueued == 0 &&
+              s.audio_enqueued == 0,
+          "eos-before-key: every sample held for the key, end of stream on both streams",
+          Format("ends %d, waiting events %d, held results %d, enqueued v/a %llu/%llu", w->player->ends_sent,
+                 w->player->waiting_events, w->player->waiting_results, s.video_enqueued, s.audio_enqueued));
+    Check(!line->enough_before_key && !w->player->have_enough && !w->player->ended,
+          Format("eos-before-key: no HAVE_ENOUGH and no OnEnded during the %.1f s without the key", hold));
+    Check(probe->samples > 0 && std::fabs(probe->max_time - clip->start) < 0.001,
+          Format("eos-before-key: clock held at %.3f at rate 1 without the key (max %.3f over %d samples)",
+                 clip->start, probe->max_time, probe->samples));
+    line->key_requested = true;
+    AcquireLicense(keys->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "eos-before-key",
+                   [=](bool) { done(); });
+  });
+  steps.push_back([=](Done done) {
+    WaitFor(line->enough_after_key > 0, &line->on_enough, 10,
+            "eos-before-key: HAVE_ENOUGH once the key arrives", [=](bool ok) {
+              if (ok) {
+                Check(line->enough_time - clip->start < 0.1,
+                      Format("eos-before-key: playback starts from the clip's start (t=%.3f at HAVE_ENOUGH)",
+                             line->enough_time));
+              }
+              done();
+            });
+  });
+  steps.push_back([=](Done done) {
+    WaitFor(line->ended_time >= 0, &line->on_ended, clip->end - clip->start + 5,
+            "eos-before-key: OnEnded at the clip's end", [=](bool ok) {
+              if (ok) {
+                double played = line->ended_wall - line->enough_wall;
+                double expected = clip->end - std::max(line->enough_time, clip->start);
+                Check(std::fabs(line->ended_time - clip->end) < 0.3,
+                      Format("eos-before-key: ended at the clip's end (t=%.3f, end %.3f)", line->ended_time,
+                             clip->end));
+                Check(line->enough_time >= 0 && std::fabs(played - expected) < 0.35,
+                      Format("eos-before-key: no skip, %.3f s of wall time from HAVE_ENOUGH to OnEnded for "
+                             "%.3f s of media",
+                             played, expected));
+              }
+              done();
+            });
+  });
+  steps.push_back([=](Done done) {
+    Metrics(w->player, "eos-before-key", int64_t(clip->video.size() / 2), frames)(done);
+  });
+  steps.push_back([=](Done done) {
+    CheckHealthy(*w->player, "eos-before-key");
+    w->player.reset();
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
+// A clear lead, then a protected tail whose key hasn't arrived, then end of
+// stream (a key change in the last period). The clock stops where the
+// enqueued data ends instead of running on past the held samples, and
+// resumes from there once the key arrives. Video only: resuming audio from an
+// underflow onto protected samples after clear ones moves the synchronizer's
+// clock back to about zero whether or not a key was held, a separate defect.
+std::vector<Step> HeldTailScenario() {
+  World* w = g_world;
+  auto tail = std::make_shared<Clip>(ClipFrom(w->video, w->audio, 1, 1.5));
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  auto line = std::make_shared<Timeline>();
+  std::vector<Step> steps;
+  steps.push_back(Section(Format("clear video lead, then a %.3f s protected tail and end of stream before its license",
+                                 tail->end - tail->start)));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("held-tail");
+    w->player = std::make_shared<Player>("held-tail", Framing::kChromium, &w->video, nullptr,
+                                         (*keys)->cdm.get(), w->host);
+    Record(w->player.get(), line);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds({&w->clear_video.segments[0]}, {}, false);
+      WaitFor(false, &line->on_enough, 10, "held-tail: HAVE_ENOUGH on the clear lead", [=](bool) {
+        // The rest arrives in one batch: the protected tail, held for its
+        // key, then end of stream.
+        w->player->batch_reads = true;
+        w->player->AppendFeeds({&tail->video}, {}, true);
+        done();
+      });
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+      w->player->renderer().SetPlaybackRate(1);
+    });
+  });
+  steps.push_back([=](Done done) {
+    WaitFor(false, &line->on_nothing, 12, "held-tail: HAVE_NOTHING where the clear lead ends", [=](bool ok) {
+      if (ok) {
+        Check(line->nothing_time > 5.6 && line->nothing_time < 6.1,
+              Format("held-tail: stopped at t=%.3f, the end of the enqueued data (6.0)", line->nothing_time));
+      }
+      done();
+    });
+  });
+  steps.push_back([=](Done done) {
+    double before = w->player->Time();
+    After(1.0, [=] {
+      double t = w->player->Time();
+      fp::RendererStatus s = w->player->renderer().GetStatus();
+      Check(w->player->ends_sent == 1 && std::fabs(t - before) < 0.02 && !w->player->ended,
+            Format("held-tail: clock stopped while the tail waits for its key (%.3f -> %.3f over 1 s), "
+                   "end of stream sent",
+                   before, t),
+            Format("ends %d, protected enqueued %llu", w->player->ends_sent, s.protected_enqueued));
+      line->key_requested = true;
+      AcquireLicense(keys->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "held-tail",
+                     [=](bool) { done(); });
+    });
+  });
+  steps.push_back([=](Done done) {
+    WaitFor(line->enough_after_key > 0, &line->on_enough, 10, "held-tail: HAVE_ENOUGH once the key arrives",
+            [=](bool) { done(); });
+  });
+  steps.push_back([=](Done done) {
+    WaitFor(line->ended_time >= 0, &line->on_ended, tail->end - tail->start + 5,
+            "held-tail: OnEnded at the tail's end", [=](bool ok) {
+              if (ok) {
+                double played = line->ended_wall - line->enough_wall;
+                double expected = tail->end - line->enough_time;
+                Check(std::fabs(line->ended_time - tail->end) < 0.3,
+                      Format("held-tail: ended at the tail's end (t=%.3f, end %.3f)", line->ended_time, tail->end));
+                Check(std::fabs(played - expected) < 0.35,
+                      Format("held-tail: no skip, %.3f s of wall time from HAVE_ENOUGH (t=%.3f) to OnEnded for "
+                             "%.3f s of media",
+                             played, line->enough_time, expected));
+              }
+              done();
+            });
+  });
+  steps.push_back([=](Done done) {
+    CheckHealthy(*w->player, "held-tail");
+    w->player.reset();
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> InitDataScenario(fp::InitDataType type, std::vector<uint8_t> init_data) {
   World* w = g_world;
   std::string label = std::string("init data ") + fp::InitDataTypeName(type);
@@ -2031,12 +2297,74 @@ std::vector<Step> MultiKeyScenario(bool with_fairplay) {
     Log("%s: cenc init data %zu bytes", label.c_str(), init_data.size());
     *keys = MakeKeySystem(label, kMultiKeyToken);
     int messages_before = 0;
+    // The message is held to check it names each key once, and that a
+    // response naming a key twice is still rejected before anything reaches
+    // AVFoundation; then the real exchange runs.
+    (*keys)->client->hold = true;
+    (*keys)->client->on_message = [=] {
+      KeySystem* ks = keys->get();
+      NSArray* entries = [NSJSONSerialization JSONObjectWithData:Data(ks->client->held_message) options:0 error:nil];
+      std::vector<std::vector<uint8_t>> named;
+      std::vector<NSString*> named64;
+      if ([entries isKindOfClass:[NSArray class]]) {
+        for (NSDictionary* entry in entries) {
+          NSString* key64 = [entry isKindOfClass:[NSDictionary class]] ? entry[@"keyID"] : nil;
+          NSData* key = [key64 isKindOfClass:[NSString class]]
+                            ? [[NSData alloc] initWithBase64EncodedString:key64 options:0]
+                            : nil;
+          named.push_back(key ? Bytes(key) : std::vector<uint8_t>());
+          named64.push_back(key64);
+        }
+      }
+      bool each_once = named.size() == key_ids.size();
+      std::string names;
+      for (const auto& id : key_ids) each_once &= std::count(named.begin(), named.end(), id) == 1;
+      for (const auto& id : named) names += (names.empty() ? "" : ", ") + ft::Hex(id);
+      Check(each_once, label + ": the license message has one SPC per key, each named by its own key ID",
+            "[" + names + "]");
+      // Two responses that name a key twice: alone, and among all three.
+      // Each must be rejected before any entry reaches AVFoundation. If an
+      // entry got through, its request would no longer await a response, and
+      // the real exchange that follows could not complete.
+      std::vector<std::string> cases;
+      if (each_once) {
+        auto entry = [&](size_t i) {
+          return "{\"keyID\":\"" + std::string(named64[i].UTF8String) + "\",\"payload\":\"AAAA\"}";
+        };
+        cases = {"[" + entry(0) + "," + entry(0) + "]",
+                 "[" + entry(0) + "," + entry(1) + "," + entry(2) + "," + entry(1) + "]"};
+      }
+      auto respond = [=] {
+        KeySystem* ks = keys->get();
+        ks->client->hold = false;
+        ks->client->Respond(ks->client->held_session, ks->client->held_message);
+      };
+      if (cases.empty()) {
+        respond();
+        return;
+      }
+      auto rejected = std::make_shared<int>(0);
+      auto answered = std::make_shared<size_t>(0);
+      for (const std::string& body : cases) {
+        size_t total = cases.size();
+        ks->cdm->UpdateSession(ks->client->held_session, Bytes(body), [=](const fp::Result& r) {
+          *rejected += r.exception == fp::Exception::kTypeError;
+          if (++*answered < total) return;
+          Check(*rejected == int(total),
+                label + ": a response naming a key twice (alone, or among all three) is rejected with TypeError",
+                Format("%d of %zu rejected", *rejected, total));
+          respond();
+        });
+      }
+    };
     AcquireLicense(keys->get(), fp::InitDataType::kCenc, init_data, label,
                    [=](bool ok) {
                      *acquired = ok;
                      KeySystem* ks = keys->get();
-                     Check(ks->client->messages == messages_before + 1 && ks->client->keys.size() == 3,
-                           label + ": one license message for all three keys, three keys reported",
+                     size_t usable = 0;
+                     for (const fp::KeyInfo& key : ks->client->keys) usable += key.status == fp::KeyStatus::kUsable;
+                     Check(ks->client->messages == messages_before + 1 && ks->client->keys.size() == 3 && usable == 3,
+                           label + ": one license message for all three keys, three keys reported usable",
                            Format("%d message(s), [%s]", ks->client->messages, KeysText(ks->client->keys).c_str()));
                      done();
                    },
@@ -2768,6 +3096,8 @@ void RunAll() {
   add("NoHangScenario()", NoHangScenario());
   add("RenewalScenario()", RenewalScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
+  add("EndBeforeKeyScenario()", EndBeforeKeyScenario());
+  add("HeldTailScenario()", HeldTailScenario());
 
   std::string sinf_json = Format("{\"sinf\":[\"%s\"]}",
                                  [Data(w->video.info.sinf_payload) base64EncodedStringWithOptions:0].UTF8String);

@@ -57,13 +57,23 @@ reframing: Annex B with SPS/PPS before keyframes, ADTS on AAC, microseconds,
 6. Underflow: 6 s of data, HAVE_NOTHING with the clock stopped, then more data
    and recovery.
 7. Samples before keys: encrypted samples are held, then played when the
-   license arrives.
+   license arrives. A short clip enqueued in full with end of stream before
+   its license gets no HAVE_ENOUGH and a clock held at its start (rate 1 set),
+   then plays from the start once the key arrives and ends on time. A clear
+   video lead followed by a protected tail and end of stream, before the
+   tail's license, stops the clock where the clear data ends and resumes there
+   when the key arrives.
 8. sinf, keyids and cenc init data (cenc both with the vector's own pssh boxes
    and with a FairPlay pssh added): each gets a license and plays 3 s.
 9. Netflix's key flow on Axinom's three-key vector ("CMAF H264 MultiKey",
    cbcs). One `cenc` request carries the vector's pssh boxes plus a FairPlay
-   pssh naming all three keys. That produces one JSON message with three SPCs
-   and one JSON response, then video and audio play under different keys. A
+   pssh naming all three keys. That produces one JSON message with three SPCs,
+   each named by its own key ID; a response naming a key twice is rejected;
+   one JSON response makes all three keys usable, then video and audio play
+   under different keys. The FairPlay pssh is version 0 (key IDs only in its
+   `fpsd`), so the plan names no key IDs and each request carries only its
+   own: a version 1 box with the key IDs in its header gets no request from
+   AVFoundation at all on macOS 27.2. A
    second run does the same without the FairPlay pssh, using the Widevine key
    IDs.
 10. HEVC: "CMAF H265 SingleKey" (cbcs, its own token and key), Chromium-framed,

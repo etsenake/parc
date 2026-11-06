@@ -516,7 +516,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     StopRequest(stream);
     state.armed = false;
     // A stream that ends before AVFoundation considers it sufficient (a short
-    // clip, the last segment) counts as enough from here on.
+    // clip, the last segment) counts as enough from here on, once none of its
+    // samples wait for a key.
     UpdateBuffering();
     ScheduleEndIfComplete();
   }
@@ -1388,18 +1389,23 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
   }
 
+  // A stream that reached end of stream with every sample in its renderer
+  // has all it will get. Samples still held for a key are not there yet.
+  static bool Complete(const Stream& state) { return state.end_of_stream && state.held.empty(); }
+
   // HAVE_ENOUGH once every configured renderer reports enough data for a
-  // reliable start; then latched, because that property toggles as queues
-  // drain and refill. Only CheckUnderflow drops back to HAVE_NOTHING.
+  // reliable start, or is complete; then latched, because that property
+  // toggles as queues drain and refill. Only CheckUnderflow drops back to
+  // HAVE_NOTHING. OnKeysChanged re-evaluates once no sample is held.
   void UpdateBuffering() {
     if (have_enough_) {
       return;
     }
     bool have_enough = true;
-    if (video_renderer_ && !video_.end_of_stream) {
+    if (video_renderer_ && !Complete(video_)) {
       have_enough &= video_renderer_.hasSufficientMediaDataForReliablePlaybackStart;
     }
-    if (audio_ && !audio_stream_.end_of_stream) {
+    if (audio_ && !Complete(audio_stream_)) {
       have_enough &= audio_.hasSufficientMediaDataForReliablePlaybackStart;
     }
     if (!have_enough) {
@@ -1414,8 +1420,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   // Underflow, as RendererImpl handles it: when the clock reaches the end of
-  // what a stream without end of stream has been given, stop the clock and
-  // report HAVE_NOTHING; UpdateBuffering restarts it once data is back.
+  // what an incomplete stream (no end of stream yet, or samples held for a
+  // key) has been given, stop the clock and report HAVE_NOTHING;
+  // UpdateBuffering restarts it once data is back.
   void CheckUnderflow() {
     if (!have_enough_ || status_.rate == 0) {
       return;
@@ -1423,7 +1430,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     double now = GetMediaTime().InSeconds();
     for (StreamType stream : {StreamType::kVideo, StreamType::kAudio}) {
       const Stream& state = StreamFor(stream);
-      if (!RendererFor(stream) || state.end_of_stream || state.enqueued_end < 0) {
+      if (!RendererFor(stream) || Complete(state) || state.enqueued_end < 0) {
         continue;
       }
       if (state.enqueued_end - now < 0.05) {

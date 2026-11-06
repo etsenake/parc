@@ -51,10 +51,12 @@ class FairPlayRendererClient {
   virtual void OnError(RendererError error, const std::string& description) = 0;
   virtual void OnVideoNaturalSizeChange(int32_t width, int32_t height) = 0;
   // media::BUFFERING_HAVE_ENOUGH once every configured renderer has enough
-  // data for a reliable start; BUFFERING_HAVE_NOTHING when the clock reaches
-  // the end of a stream's data before its end of stream (underflow). On
-  // underflow the renderer stops its clock and restarts it at the playback
-  // rate once it has enough again. Flush resets to HAVE_NOTHING silently.
+  // data for a reliable start (a stream at end of stream counts once none of
+  // its samples wait for a key); BUFFERING_HAVE_NOTHING when the clock reaches
+  // the end of a stream's data before its end of stream, or before samples
+  // held for a key behind it go out (underflow). On underflow the renderer
+  // stops its clock and restarts it at the playback rate once it has enough
+  // again. Flush resets to HAVE_NOTHING silently.
   virtual void OnBufferingStateChange(bool have_enough) = 0;
 };
 

@@ -365,6 +365,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
         done(Result::Error(Exception::kTypeError, "license response is not a non-empty JSON array"));
         return;
       }
+      std::set<std::vector<uint8_t>> named;
       std::set<Request*> answered;
       for (id item in entries) {
         if (![item isKindOfClass:[NSDictionary class]]) {
@@ -381,18 +382,29 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
           return;
         }
         std::vector<uint8_t> key = ToVector(key_id);
-        auto match = std::find_if(awaiting.begin(), awaiting.end(), [&](Request* request) {
-          return request->reported_key_id == key ||
-                 std::find(request->key_ids.begin(), request->key_ids.end(), key) !=
-                     request->key_ids.end();
-        });
+        if (!named.insert(key).second) {
+          done(Result::Error(Exception::kTypeError, "license response names a key twice"));
+          return;
+        }
+        // An entry answers the request whose message entry carried its keyID;
+        // only a keyID no request reports falls back to a request whose init
+        // data names it (one request standing for several keys).
+        auto match = std::find_if(awaiting.begin(), awaiting.end(),
+                                  [&](Request* request) { return request->reported_key_id == key; });
+        if (match == awaiting.end()) {
+          match = std::find_if(awaiting.begin(), awaiting.end(), [&](Request* request) {
+            return std::find(request->key_ids.begin(), request->key_ids.end(), key) !=
+                   request->key_ids.end();
+          });
+        }
         if (match == awaiting.end()) {
           done(Result::Error(Exception::kTypeError,
                              "license response names a key with no pending request"));
           return;
         }
         if (!answered.insert(*match).second) {
-          done(Result::Error(Exception::kTypeError, "license response names a key twice"));
+          done(Result::Error(Exception::kTypeError,
+                             "license response answers one key request twice"));
           return;
         }
         id payload = entry[@"payload"];
@@ -782,13 +794,13 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                    });
   }
 
-  // Key IDs and SPC content identifier for a request, as WebKit's
-  // CDMPrivateFairPlayStreaming::keyIDsForRequest derives them: the UTF-8
-  // identifier string, the identifier data, or the sinf key ID.
   // Key IDs and SPC content identifier for a request. Requests made through
   // sinf or a FairPlay pssh come back named by their 16-byte key ID; WebKit's
   // CDMPrivateFairPlayStreaming::keyIDsForRequest uses that (or the UTF-8
   // identifier string) as the content identifier unless the plan names one.
+  // A request named by a key ID carries that key alone, even when its call's
+  // init data names several: AVFoundation makes one request per key (macOS
+  // 14.4+ hands them over together), and each gets its own CKC.
   static void DeriveIdentity(Session* session, Request* request) {
     request->key_ids.clear();
     request->content_identifier.clear();
@@ -799,11 +811,12 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     id identifier = request->request.identifier;
     if ([identifier isKindOfClass:[NSData class]] && [identifier length] == 16) {
       request->key_ids.push_back(ToVector(identifier));
-    }
-    if (call) {
+    } else if (call) {
       for (const auto& key_id : call->key_ids) {
         AddUnique(&request->key_ids, key_id);
       }
+    }
+    if (call) {
       request->content_identifier = call->content_identifier;
     }
     if (request->content_identifier.empty()) {
