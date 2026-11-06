@@ -433,6 +433,11 @@ class LicenseClient : public fp::FairPlayCdmClient {
 
   fp::FairPlayCdm* cdm = nullptr;
   bool json = false;
+  // With |hold|, messages wait in held_* until Respond() is called.
+  bool hold = false;
+  std::string held_session;
+  std::vector<uint8_t> held_message;
+  std::function<void()> on_message;
   int messages = 0;
   int keys_events = 0;
   bool closed = false;
@@ -449,6 +454,17 @@ class LicenseClient : public fp::FairPlayCdmClient {
       Log("%s: message JSON %.*s...", name_.c_str(), int(std::min<size_t>(message.size(), 120)),
           reinterpret_cast<const char*>(message.data()));
     }
+    if (hold) {
+      held_session = session_id;
+      held_message = message;
+      if (on_message) on_message();
+      return;
+    }
+    Respond(session_id, message);
+  }
+
+  // The page's license round trip: POST each SPC, then update().
+  void Respond(const std::string& session_id, const std::vector<uint8_t>& message) {
     NSData* body = Data(message);
     std::string session = session_id;  // Blocks capture reference parameters by reference.
     std::string name = name_;
@@ -1358,6 +1374,82 @@ std::vector<Step> UnderflowScenario() {
 // Chromium's order when MediaKeys come first: SetCdm, then Initialize. The
 // renderers must still join the key session (protected samples would
 // otherwise fail with -11800 "no content key present").
+// Responses a page could send: each must be rejected (TypeError) without
+// touching AVFoundation, then the real response still works.
+std::vector<Step> ResponseValidationScenario() {
+  World* w = g_world;
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("malformed JSON license responses from the page"));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("responses");
+    KeySystem* ks = keys->get();
+    ks->client->json = true;
+    ks->client->hold = true;
+    ks->client->on_message = [=] { done(); };
+    NSString* kid64 = [[[[Data(g_key_id) base64EncodedStringWithOptions:0]
+        stringByReplacingOccurrencesOfString:@"+" withString:@"-"]
+        stringByReplacingOccurrencesOfString:@"/" withString:@"_"]
+        stringByReplacingOccurrencesOfString:@"=" withString:@""];
+    ks->cdm->CreateSessionAndGenerateRequest(
+        fp::InitDataType::kKeyIds, Bytes(Format("{\"kids\":[\"%s\"]}", kid64.UTF8String)),
+        [ks](const fp::Result& r, const std::string& id) {
+          ks->session = id;
+          Check(r.ok(), "responses: generateRequest resolves", r.ok() ? id : r.message);
+        });
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    std::string k = [[Data(g_key_id) base64EncodedStringWithOptions:0] UTF8String];
+    std::vector<std::pair<std::string, std::string>> cases = {
+        {"top-level {\"error\":null}", "{\"error\":null}"},
+        {"empty array", "[]"},
+        {"empty object", "{}"},
+        {"payload with error null", "[{\"keyID\":\"" + k + "\",\"payload\":\"AAAA\",\"error\":null}]"},
+        {"error null only", "[{\"keyID\":\"" + k + "\",\"error\":null}]"},
+        {"error as a string", "[{\"keyID\":\"" + k + "\",\"error\":\"x\"}]"},
+        {"payload as a number", "[{\"keyID\":\"" + k + "\",\"payload\":5}]"},
+        {"keyID listed twice", "[{\"keyID\":\"" + k + "\",\"payload\":\"AAAA\"},{\"keyID\":\"" + k +
+                                   "\",\"payload\":\"AAAA\"}]"},
+        {"entry not an object", "[1]"},
+        {"keyID not base64", "[{\"keyID\":\"!!\",\"payload\":\"AAAA\"}]"},
+        {"not JSON", "license"},
+    };
+    int rejected = 0;
+    std::string failures;
+    for (const auto& [name, body] : cases) {
+      bool type_error = false;
+      ks->cdm->UpdateSession(ks->session, Bytes(body), [&](const fp::Result& r) {
+        type_error = r.exception == fp::Exception::kTypeError;
+      });
+      if (type_error) {
+        ++rejected;
+      } else {
+        failures += (failures.empty() ? "" : ", ") + name;
+      }
+    }
+    Check(rejected == int(cases.size()),
+          Format("responses: %d malformed JSON responses each rejected with TypeError, no crash",
+                 int(cases.size())),
+          failures.empty() ? "" : "accepted: " + failures);
+    Check(!ks->cdm->HasUsableKey(g_key_id), "responses: no key from a malformed response");
+    // The real license still goes through afterwards.
+    auto finish = Once(30, "responses: real license after the malformed ones", [=](bool) { done(); });
+    ks->client->on_update = [=](bool ok, const std::string& detail) {
+      Check(ok && ks->cdm->HasUsableKey(g_key_id),
+            "responses: the real response is accepted afterwards and the key is usable", detail);
+      finish(true);
+    };
+    ks->client->hold = false;
+    ks->client->Respond(ks->client->held_session, ks->client->held_message);
+  });
+  steps.push_back([=](Done done) {
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> CdmFirstScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -1831,6 +1923,7 @@ void RunAll() {
   add("MixedScenario()", MixedScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
+  add("ResponseValidationScenario()", ResponseValidationScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
 
   std::string sinf_json = Format("{\"sinf\":[\"%s\"]}",

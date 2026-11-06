@@ -281,17 +281,24 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       NSArray* entries = [NSJSONSerialization JSONObjectWithData:ToNSData(response)
                                                          options:0
                                                            error:nil];
-      if (![entries isKindOfClass:[NSArray class]]) {
-        done(Result::Error(Exception::kTypeError, "license response is not a JSON array"));
+      // The response comes from the page: validate every entry before acting
+      // on any of them.
+      if (![entries isKindOfClass:[NSArray class]] || !entries.count) {
+        done(Result::Error(Exception::kTypeError, "license response is not a non-empty JSON array"));
         return;
       }
-      for (NSDictionary* entry in entries) {
-        NSString* key_id_string =
-            [entry isKindOfClass:[NSDictionary class]] ? entry[@"keyID"] : nil;
+      std::set<Request*> answered;
+      for (id item in entries) {
+        if (![item isKindOfClass:[NSDictionary class]]) {
+          done(Result::Error(Exception::kTypeError, "license response entry is not an object"));
+          return;
+        }
+        NSDictionary* entry = item;
+        NSString* key_id_string = entry[@"keyID"];
         NSData* key_id = [key_id_string isKindOfClass:[NSString class]]
                              ? [[NSData alloc] initWithBase64EncodedString:key_id_string options:0]
                              : nil;
-        if (!key_id) {
+        if (!key_id.length) {
           done(Result::Error(Exception::kTypeError, "license response entry has no keyID"));
           return;
         }
@@ -306,18 +313,28 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                              "license response names a key with no pending request"));
           return;
         }
+        if (!answered.insert(*match).second) {
+          done(Result::Error(Exception::kTypeError, "license response names a key twice"));
+          return;
+        }
         id payload = entry[@"payload"];
         id error = entry[@"error"];
-        if ([payload isKindOfClass:[NSString class]] == [error isKindOfClass:[NSNumber class]]) {
+        if ((payload != nil) == (error != nil)) {
           done(Result::Error(Exception::kTypeError,
                              "license response entry needs exactly one of payload or error"));
           return;
         }
         if (error) {
+          if (![error isKindOfClass:[NSNumber class]]) {
+            done(Result::Error(Exception::kTypeError, "license response error is not a number"));
+            return;
+          }
           errors.push_back({*match, [error integerValue]});
           continue;
         }
-        NSData* ckc = [[NSData alloc] initWithBase64EncodedString:payload options:0];
+        NSData* ckc = [payload isKindOfClass:[NSString class]]
+                          ? [[NSData alloc] initWithBase64EncodedString:payload options:0]
+                          : nil;
         if (!ckc.length) {
           done(Result::Error(Exception::kTypeError, "license response payload isn't base64"));
           return;
