@@ -109,8 +109,26 @@ tree counts as live.
   visible tree gets it back at its next commit.
 - A hand-on goes to the newest live claim. With three trees showing the token,
   that can be a parked tree whose stale claim is newer than the visible tree's.
-Both need a stale frame to arrive after the page has moved; neither is known to
-happen in Parc. Closing them needs compositor visibility in the GPU process.
+- Window drag: a page moved to another window draws through that window's
+  compositor, while its old window's compositor can stay parked (an idle spare)
+  with a held frame that still embeds the page's video surface. If the video
+  surface then gets a same-size frame, both displays redraw and both trees
+  commit. That happens when the page is hidden for over half a second and
+  shown again, so the submitter re-sends the hole frame. The parked tree can
+  then take the layer if it commits last, and the video in the new window
+  stays empty until the page's next frame there. A size change gives the
+  video surface a new ID, which a stale held frame no longer sees.
+These need a frame drawn by a compositor that isn't on screen. Closing them
+needs parked pane compositors to stop drawing, as the PiP window now does when
+hidden, which the GPU process can't infer. Calling
+`ui::Compositor::SetVisible(false)` in `NativePaneCompositor::SuspendDrawing`
+(and `true` in `ResumeDrawing`) would do it. As far as the source shows, it
+would leave the held CALayer tree alone: on Mac `DiscardBackbuffer` is a no-op
+for the buffer-queue device, buffer destruction sits behind
+`kVizBufferQueueDiscardOnVisibilityChange` (off), and a hidden display just
+stops drawing. It is still an untested change to every tab switch's held-frame
+hand-off, so it is left to Parc's page compositing (`docs/page-compositing.md`)
+rather than made from this path.
 
 ## When the frame can't be all CALayers
 
@@ -186,67 +204,106 @@ behaves the same way for filters it can't composite.
   the matched host and its transform layer update in place. The video plays
   without compositor frames, because the AVSampleBufferDisplayLayer renders
   itself; only geometry changes need frames.
-- **Window resize and fullscreen:** with `kCATransactionV2`, a resize makes
-  `CALayerTreeCoordinator` drop its tree and CAContext before the next commit.
-  That tree's hosts are destroyed, so the next tree builds a new host, which
-  takes the layer. Parc's fullscreen keeps the page in its own window and
-  compositor, so it follows this path. Low-power fullscreen detachment
-  (`kFullscreenLowPowerBackdropMac`) is off upstream; if it were turned on, a
-  protected layer would count as the video layer.
+- **Window resize and fullscreen:** a resize is a new frame at a new size.
+  The tree matches the same host, and only the transform and rect change.
+  `kCATransactionV2` is off upstream. With it on, a resize makes
+  `CALayerTreeCoordinator` drop its tree and CAContext before the next commit,
+  and the next tree builds a new host, which takes the layer, all inside one
+  CATransaction. Parc's fullscreen keeps the page in its own window and
+  compositor, so it is a resize. The video element itself entering fullscreen
+  ends its PiP (`HTMLVideoElement::DidEnterFullscreen`, called only when the new
+  fullscreen element is the video). A container entering fullscreen, as
+  Netflix's player does, leaves PiP running; the page still draws no video
+  quad, so the video stays in the PiP window. Low-power
+  fullscreen detachment (`kFullscreenLowPowerBackdropMac`) is off upstream; if
+  it were on, a protected layer would count as the video layer.
 - **Moving between windows:** Parc's pane compositors belong to a window, so a
   page moved to another window, or shown by another pane compositor after a
   tab switch, is drawn by a different `CALayerTreeCoordinator`. All
   coordinators live on the GPU main thread of the same process. The tree that
-  draws the page takes the layer at its first commit. A parked compositor
-  whose last tree still names the token doesn't commit, so it never takes the
-  layer back. If it draws again, it does, as the latest committer, and when it
-  then drops the token the layer returns to the page's tree. A layer can only
-  be in one place.
-- **Hidden page:** a page with no compositor has no tree holding the layer,
-  so the layer is detached. Whether a detached AVSampleBufferDisplayLayer keeps
-  decoding, or sets `requiresFlushToResumeDecoding`, is Apple's behaviour and
-  is unverified (see the checks below). The renderer side handles it.
+  draws the page takes the layer at its first commit. Within one window, only
+  the compositor that last drew a hidden page embeds its video, and that
+  compositor either keeps the page or draws the incoming page over its held
+  frame (`ChoosePaneCompositor`). So a tab switch never leaves a second tree
+  naming the token. A parked pane compositor is only suspended (`SuspendDrawing`): it
+  sends no frames of its own, but its display still redraws when a surface
+  its held frame embeds changes. See the known limits above for when that
+  matters. When a tree that took the layer drops the token, the layer returns
+  to the page's tree. A layer can only be in one place.
+- **Tab switch and hidden page:** the pane compositor moves on to the new
+  page, so the old page's tree drops the token and the layer is detached
+  (nothing else shows it). Half a second later the video surface submits an
+  empty frame (`VideoFrameSubmitter::SubmitEmptyFrameIfNeeded`). When the page
+  is shown again, the submitter sends the hole frame again and the page's tree
+  takes the layer. Whether a detached AVSampleBufferDisplayLayer keeps decoding
+  or sets `requiresFlushToResumeDecoding` is unverified; fairplay-core
+  re-enqueues from the last keyframe when it does. While hidden,
+  `WebMediaPlayerImpl::ShouldDisableVideoWhenHidden` may also disable the video
+  track of an A/V MSE player that isn't in PiP. A disabled stream ends video in
+  the FairPlay renderer, so `fairplay-media`'s next increment makes that
+  function return false for FairPlay players: the track stays enabled while
+  hidden, as in PiP.
 - **Teardown:** the renderer flushes with removal of the displayed image,
   then unregisters. The tree that holds the layer releases it at its next
   commit: that commit's lookup misses, the host goes black, and the layer is
   removed from it. Until then the flushed layer shows nothing. The tree's own
   reference is released when the tree goes away.
 
-## Picture in Picture readiness (M3, design only)
+## Picture in Picture (M3)
 
-Parc's PiP window (`Engine/ParcNative/video_overlay_window.mm`, presented by
-`PCVideoPiPPresenter` in `Sources/ParcEngine/VideoPiPWindow.m`) has its own
-`RecyclableCompositorMac`. Its root layer embeds the video's surface (the
-`SetSurfaceId` it gets from Chromium's PiP controller) and shows it through
-`AcceleratedWidgetMac` and `DisplayCALayerTree` in the panel's video view. For
-a FairPlay video that surface holds the hole frame, so:
+Beyond the compositor above, the only engine change is in Parc's PiP window:
+it stops drawing while hidden (step 4). The steps below are what the pinned
+source does, plus the natural-size contract with `fairplay-media`.
+`CALayerTreeTest.ProtectedLayerPictureInPicture` runs the CALayer side of this
+sequence.
 
-- The PiP compositor's aggregated frame contains the same `VideoHoleDrawQuad`
-  at the PiP window's size. It goes through the same CA overlay path, into the
-  PiP compositor's own `CARendererLayerTree` in the same GPU process.
-- That tree takes the registered layer at its first commit, so the playing
-  video moves into the PiP panel with no extra engine API. Leaving PiP destroys
-  that compositor's tree and detaches its host, and the page's next frame takes
-  the layer back.
-- `preventsCapture` and the panel's rounded corners still apply: the browser
-  process masks the remote CALayerHost.
-
-What M3 still needs from the engine:
-
-1. Make sure the page stops drawing the in-page video quad while in PiP.
-   Otherwise every page frame (scrolling, animation behind the panel) takes the
-   layer back from the idle PiP compositor, whose video plays without frames.
-   If Blink keeps embedding the surface in the page during PiP, the fix is to
-   hide the page's video SurfaceLayer while it is in PiP (the in-page
-   placeholder covers it anyway), not a registry change.
-2. A first frame in the PiP compositor as soon as it opens. Check that the
-   video surface's existing frame is aggregated there without a new hole
-   frame.
-3. The FairPlay renderer client must report natural size to the PiP
-   controller (`WebMediaPlayer::NaturalSize`), so `setNaturalSize:` sizes the
-   panel.
-4. AVKit's system PiP (`AVPictureInPictureController` with a sample-buffer
-   content source) isn't usable: it needs the display layer in the browser
+1. **The page stops drawing its video.** `WebMediaPlayerImpl::OnDisplayTypeChanged`
+   calls `client_->SetCcLayer(nullptr)` for `kVideoPictureInPicture` unless
+   `IsInAutoPIP()`, and restores the layer when PiP ends. `IsInAutoPIP()` is
+   true only for persistent video, which only Android sets
+   (`WebContentsAndroid::SetHasPersistentVideo`). So on Mac the page's frames
+   don't name the token during PiP, and they can't pull the layer back from the
+   PiP window, whose video plays without compositor frames.
+2. **The PiP window's first frame.** The same call posts
+   `VideoFrameCompositor::SetForceSubmit(true)`, so `VideoFrameSubmitter`
+   submits its current frame (the hole frame) at once and keeps submitting
+   while the page is hidden. Its same-frame check skips that submission only
+   while the surface still holds the hole frame. After a hidden page's empty
+   frame, the check is reset and the hole frame goes out again. Its wait for a
+   compositor ack can't hold the hole frame back either: an empty frame clears
+   it, a frame in flight is the same hole frame, and a size change bypasses
+   it. Parc's window
+   (`Engine/ParcNative/video_overlay_window.mm`) embeds the surface stretched
+   to its view (`LayerSurface::SetShowSurface`) in its own
+   `RecyclableCompositorMac`. That is a browser compositor, so its display uses
+   `OverlayProcessorMac` like a page's. The hole quad is promoted, and the PiP
+   window's tree takes the layer at its first commit, at the panel's size.
+   `preventsCapture` still applies.
+3. **Natural size.** Blink's `StartSession` and `PictureInPictureSession::Update`
+   send `WebMediaPlayerImpl::NaturalSize()`, which reaches
+   `NativeVideoOverlayWindow::UpdateNaturalSize`, then
+   `-[PCVideoPiPPresenter setNaturalSize:]`. That value is set from the
+   stream's config with the metadata (`OnMetadata`), then changes only through
+   `RendererClient::OnVideoNaturalSizeChange`. Updates also follow surface ID
+   changes, which the hole frame's size changes cause. Contract, agreed with
+   `fairplay-media` for its next increment: FairPlayRendererClient forwards
+   each size to the pipeline's `OnVideoNaturalSizeChange` first, then repaints
+   the hole frame at that size, and the GPU adapter reports the config's size
+   once when the core starts.
+4. **Leaving PiP.** The page adds its video layer back and its next frame
+   takes the layer. Parc hides the PiP window for reuse, and
+   `NativeVideoOverlayWindow::Hide` now also makes its compositor invisible
+   (`ui::Compositor::SetVisible(false)`, as `NativeWidgetMacNSWindowHost` does
+   for hidden windows). It also starts invisible until `ShowInactive`.
+   Suspending alone only deferred the window's own commits: its display still
+   redrew when the embedded video surface got a frame (for example the hole
+   frame again after the page was hidden and shown). That draw would take the
+   layer from the page. A hidden window now keeps its last tree without
+   drawing. If the window is closed before the page's frame arrives, the layer
+   is in no tree until that frame, which follows at once because adding the
+   layer triggers a commit.
+5. **Not AVKit.** System PiP (`AVPictureInPictureController` with a
+   sample-buffer content source) needs the display layer in the browser
    process, and this layer lives in the GPU process. Parc's own panel is the
    path.
 
@@ -254,9 +311,10 @@ What M3 still needs from the engine:
 
 1. The overlay applies, and `accelerated_widget_mac`, `viz_service` and
    `gl` compile. Optionally build and run `accelerated_widget_mac_unittests`
-   with `--gtest_filter=CALayerTreeTest.ProtectedLayer`. It checks placement,
-   reuse across frames, taking the layer back from an idle tree, handing it
-   back when a late tree drops the token, and the black host.
+   with `--gtest_filter='CALayerTreeTest.ProtectedLayer*'`. `ProtectedLayer`
+   checks placement, reuse across frames, taking the layer back from an idle
+   tree, handing it back when a late tree drops the token, and the black host.
+   `ProtectedLayerPictureInPicture` runs the PiP sequence.
 2. Ordinary video is unchanged: YouTube and an MSE test page still show
    yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
    `--show-mac-overlay-borders`.
@@ -266,9 +324,23 @@ What M3 still needs from the engine:
    and back, and drag the tab to another window. The video follows each time
    and never shows stale content.
 5. Screenshots (⌘⇧4) and screen sharing show black where the video is.
-6. Hidden tab for about 30 seconds, then back: does the video resume, or
+   Watch the macOS fullscreen transition too: its animation is a window
+   snapshot and may show the video black for its half second.
+6. Picture in Picture from the video's context menu or the page's button:
+   - The video moves into Parc's panel, orange-bordered, at the panel's
+     aspect ratio, and the page shows its placeholder.
+   - Resizing the panel follows. A screenshot of the panel is black.
+   - Leaving PiP puts the video back in the page.
+   - Repeat with auto PiP on a tab switch.
+   - Put the video element itself into fullscreen while in PiP: PiP ends and
+     the video shows in the page.
+   - Put Netflix's player container into fullscreen while in PiP: PiP stays
+     and the video stays in the panel.
+   - After leaving PiP, hide and show the tab: the video shows in the page,
+     not in the hidden panel.
+7. Hidden tab for about 30 seconds, then back: does the video resume, or
    does the display layer report `requiresFlushToResumeDecoding`?
-7. `chrome://histograms/Compositing.Renderer.CALayerResult` while playing:
+8. `chrome://histograms/Compositing.Renderer.CALayerResult` while playing:
    mostly success (0) on Netflix's and Apple TV+'s players.
 
 ## Verification done without a build
