@@ -621,6 +621,36 @@ static void TestRestoreContentAfterNativeDetach(void) {
   [window close];
 }
 
+// Chromium's history swipe overlay goes in a container above the page and
+// the pane compositor's display view, which never takes input.
+static void TestHistoryOverlayContainer(void) {
+  ++groups;
+  NSWindow *window = Window();
+  RendererView *renderer = nil;
+  NSView *page = Page(&renderer);
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  [window.contentView addSubview:host];
+  NSView *container = host.historyOverlayContainer;
+  Check(container && container.superview == host && host.subviews.lastObject == container,
+        "the history overlay container is the host's top subview");
+  Check(NSEqualRects(container.frame, host.bounds) && container.clipsToBounds,
+        "the container covers and clips to the host");
+  Check(!container.acceptsFirstResponder &&
+            [container hitTest:NSMakePoint(10, 10)] == nil,
+        "the container never takes focus or clicks");
+  Check(host.rendererResponder == renderer, "the renderer stays the responder");
+  NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
+  [host setInfobarView:shelf preferredHeight:30];
+  Check(host.historyOverlayContainer == container && host.subviews.lastObject == container,
+        "the same container returns above a later infobar shelf");
+  [host setFrameSize:NSMakeSize(500, 300)];
+  Check(NSEqualRects(container.frame, host.bounds), "the container follows the host's size");
+  [host invalidate];
+  Check(host.historyOverlayContainer == nil && container.superview == nil,
+        "invalidation removes the container");
+  [window close];
+}
+
 int main(void) {
   @autoreleasepool {
     [NSApplication sharedApplication];
@@ -637,6 +667,7 @@ int main(void) {
       TestVisibilityReentrantOwnership();
       TestPaneCompositorViewIsNeverTheRenderer();
       TestRestoreContentAfterNativeDetach();
+      TestHistoryOverlayContainer();
     } @catch (NSException *exception) {
       std::fprintf(stderr, "FAIL: unexpected AppKit exception: %s\n", exception.description.UTF8String);
       return 1;
