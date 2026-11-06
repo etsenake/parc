@@ -25,7 +25,7 @@ class PublishedSigningTests(unittest.TestCase):
         (self.repo / "Resources").mkdir()
         shutil.copy2(REPO / "scripts/package-app.sh", self.repo / "scripts/package-app.sh")
         shutil.copy2(REPO / "scripts/app_version.py", self.repo / "scripts/app_version.py")
-        shutil.copy2(REPO / "app-version.json", self.repo / "app-version.json")
+        (self.repo / "app-version.json").write_text(json.dumps({"version": "1.0.0", "build": 1}) + "\n")
         (self.repo / "Engine/ParcHost/overlay.json").write_text('{"version": 316}')
         self.manifest = self.root / "engine.json"
         self.manifest.write_text(json.dumps({"engine_dir": str(self.root / "engine")}))
