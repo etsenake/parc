@@ -595,7 +595,23 @@ enum class Framing { kChromium, kIso };
 
 using SegmentList = std::vector<const std::vector<ft::Sample>*>;
 
+// What Chromium hands a renderer (MP4StreamParser): no video decoder record,
+// Dolby Vision as profile and level only, no dac3/dec3, and encryption as
+// the scheme alone.
+bool g_chromium_inputs_default = false;
+
+fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool chromium_inputs);
+fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool chromium_inputs);
+
 fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing) {
+  return VideoConfigFor(info, framing, false);
+}
+
+fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing) {
+  return AudioConfigFor(info, framing, false);
+}
+
+fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool chromium_inputs) {
   fp::VideoConfig vc;
   const uint32_t f = info.original_format;
   if (f == fp::FourCC('h', 'v', 'c', '1') || f == fp::FourCC('h', 'e', 'v', '1')) {
@@ -617,19 +633,35 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing) {
   vc.coded_width = info.width;
   vc.coded_height = info.height;
   vc.encryption = info.encryption;
+  if (chromium_inputs) {
+    vc.extra_data.clear();
+    const std::vector<uint8_t>& dv = info.dolby_vision_config;
+    if (dv.size() >= 5) {
+      vc.dolby_vision_profile = dv[2] >> 1;
+      vc.dolby_vision_level = ((dv[2] & 1) << 5) | (dv[3] >> 3);
+      vc.dolby_vision_compatibility_id = dv[4] >> 4;
+    }
+    vc.dolby_vision_config.clear();
+    vc.encryption = fp::TrackEncryption{info.encryption.scheme, {}, {}, 0, {}};
+  }
   return vc;
 }
 
-fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing) {
+fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool chromium_inputs) {
   fp::AudioConfig ac;
-  ac.codec = fp::AudioCodec::kAAC;
+  const uint32_t f = info.original_format;
+  const bool aac = f == fp::FourCC('m', 'p', '4', 'a');
+  ac.codec = aac ? fp::AudioCodec::kAAC
+                 : f == fp::FourCC('e', 'c', '-', '3') ? fp::AudioCodec::kEAC3 : fp::AudioCodec::kAC3;
   ac.extra_data = info.codec_config;
-  ac.framing = framing == Framing::kChromium && ft::AacObjectType(info.codec_config, true) <= 4
+  if (chromium_inputs && !aac) ac.extra_data.clear();
+  ac.framing = framing == Framing::kChromium && aac && ft::AacObjectType(info.codec_config, true) <= 4
                    ? fp::AudioFraming::kADTS
                    : fp::AudioFraming::kRaw;
   ac.sample_rate = int32_t(info.sample_rate);
   ac.channels = info.channels;
   ac.encryption = info.encryption;
+  if (chromium_inputs) ac.encryption = fp::TrackEncryption{info.encryption.scheme, {}, {}, 0, {}};
   return ac;
 }
 
@@ -639,8 +671,10 @@ class Player : public fp::FairPlayRendererClient {
   // |cdm_first| calls SetCdm before Initialize, Chromium's order when
   // MediaKeys were attached before playback.
   Player(std::string name, Framing framing, const Media* video, const Media* audio,
-         fp::FairPlayCdm* cdm, NSView* host, bool cdm_first = false)
-      : name_(std::move(name)),
+         fp::FairPlayCdm* cdm, NSView* host, bool cdm_first = false,
+         bool chromium_inputs = g_chromium_inputs_default)
+      : chromium_inputs_(chromium_inputs),
+        name_(std::move(name)),
         framing_(framing),
         has_video_(video != nullptr),
         has_audio_(audio != nullptr),
@@ -649,9 +683,9 @@ class Player : public fp::FairPlayRendererClient {
         renderer_(this, MainPoster()),
         host_(host) {
     std::optional<fp::VideoConfig> vc;
-    if (has_video_) vc = VideoConfigFor(video_info_, framing);
+    if (has_video_) vc = VideoConfigFor(video_info_, framing, chromium_inputs_);
     std::optional<fp::AudioConfig> ac;
-    if (has_audio_) ac = AudioConfigFor(audio_info_, framing);
+    if (has_audio_) ac = AudioConfigFor(audio_info_, framing, chromium_inputs_);
     fp::Result result = fp::Result::Ok();
     if (cdm_first) {
       result = renderer_.SetCdm(cdm);
@@ -705,6 +739,8 @@ class Player : public fp::FairPlayRendererClient {
   std::function<void()> on_ended;
   int underflows = 0;
   int need_data_calls = 0;
+  int reconfigures = 0;
+  std::vector<std::pair<int32_t, int32_t>> natural_sizes;
   // Flushes in the same task as the end of stream that completes both
   // streams (whose OnEnded is then already queued).
   bool flush_at_end_of_stream = false;
@@ -712,8 +748,18 @@ class Player : public fp::FairPlayRendererClient {
   double Time() { return renderer_.GetMediaTime().InSeconds(); }
 
   void SetFeeds(SegmentList video, SegmentList audio, bool end_of_stream) {
-    video_feed_ = Feed{std::move(video), 0, 0, end_of_stream, false};
-    audio_feed_ = Feed{std::move(audio), 0, 0, end_of_stream, false};
+    video_feed_ = Feed{std::move(video), 0, 0, end_of_stream, false, {}, nullptr};
+    audio_feed_ = Feed{std::move(audio), 0, 0, end_of_stream, false, {}, nullptr};
+  }
+
+  // Segments that each come with their own track (an adaptive-streaming
+  // switch). Chromium converts each with its own init segment; a new audio
+  // track reaches the renderer as Reconfigure (DemuxerStream kConfigChanged),
+  // video as different in-band parameter sets.
+  void SetFeedsWithTracks(SegmentList video, std::vector<const ft::TrackInfo*> video_tracks, SegmentList audio,
+                          std::vector<const ft::TrackInfo*> audio_tracks, bool end_of_stream) {
+    video_feed_ = Feed{std::move(video), 0, 0, end_of_stream, false, std::move(video_tracks), nullptr};
+    audio_feed_ = Feed{std::move(audio), 0, 0, end_of_stream, false, std::move(audio_tracks), nullptr};
   }
 
   // More data arrives (as from the network): append and push it; with
@@ -762,6 +808,7 @@ class Player : public fp::FairPlayRendererClient {
   void OnVideoNaturalSizeChange(int32_t width, int32_t height) override {
     natural_width = width;
     natural_height = height;
+    natural_sizes.push_back({width, height});
   }
   void OnBufferingStateChange(bool enough) override {
     have_enough = enough;
@@ -788,12 +835,14 @@ class Player : public fp::FairPlayRendererClient {
     size_t index = 0;
     bool end_of_stream = false;
     bool end_sent = false;
+    std::vector<const ft::TrackInfo*> tracks;  // Per segment, or empty.
+    const ft::TrackInfo* current = nullptr;
   };
 
   void Pump(fp::StreamType stream) {
     if (!(stream == fp::StreamType::kVideo ? has_video_ : has_audio_)) return;
     Feed& feed = stream == fp::StreamType::kVideo ? video_feed_ : audio_feed_;
-    const ft::TrackInfo& info = stream == fp::StreamType::kVideo ? video_info_ : audio_info_;
+    const ft::TrackInfo& default_info = stream == fp::StreamType::kVideo ? video_info_ : audio_info_;
     while (renderer_.IsReadyForMoreData(stream)) {
       while (feed.segment < feed.segments.size() && feed.index >= feed.segments[feed.segment]->size()) {
         ++feed.segment;
@@ -811,6 +860,18 @@ class Player : public fp::FairPlayRendererClient {
         }
         return;
       }
+      const ft::TrackInfo& info = feed.tracks.empty() ? default_info : *feed.tracks[feed.segment];
+      if (!feed.tracks.empty() && feed.current && feed.current != &info) {
+        // A different track: audio needs Reconfigure; video signals itself
+        // in-band (and gets Reconfigure too when full configs are in use).
+        fp::Result result = stream == fp::StreamType::kAudio
+                                ? renderer_.Reconfigure(AudioConfigFor(info, framing_, chromium_inputs_))
+                                : (chromium_inputs_ ? fp::Result::Ok()
+                                                    : renderer_.Reconfigure(VideoConfigFor(info, framing_, false)));
+        ++reconfigures;
+        if (!result.ok()) errors.push_back("Reconfigure: " + result.message);
+      }
+      feed.current = &info;
       const ft::Sample& sample = (*feed.segments[feed.segment])[feed.index++];
       if (sample.pts + sample.duration <= 0) {
         continue;  // Before zero: MSE's append window drops it in Chromium.
@@ -831,6 +892,7 @@ class Player : public fp::FairPlayRendererClient {
     }
   }
 
+  bool chromium_inputs_;
   std::string name_;
   Framing framing_;
   bool has_video_;
@@ -1188,7 +1250,8 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
 
 struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
-  Media hev1, hev1_in_band, dolby_vision, av1, xhe_aac, he_aac, he_aac_v2;
+  Media hev1, hev1_in_band, dolby_vision, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
+      he_aac_after_clear;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
   std::vector<std::unique_ptr<KeySystem>> retired;
@@ -1300,14 +1363,17 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   return steps;
 }
 
-std::vector<Step> MixedScenario() {
+// |chromium_inputs|: Chromium's configs, so the protected formats must be
+// built from the first encrypted sample's key ID, after clear ones.
+std::vector<Step> MixedScenario(bool chromium_inputs = false) {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
   std::vector<Step> steps;
-  steps.push_back(Section("clear lead: segment 0 from the clear variant, then protected samples"));
+  steps.push_back(Section(std::string("clear lead: segment 0 from the clear variant, then protected samples") +
+                          (chromium_inputs ? " (Chromium inputs: empty record, scheme-only encryption)" : "")));
   steps.push_back([=](Done done) {
     w->player = std::make_shared<Player>("mixed", Framing::kChromium, &w->video, &w->audio,
-                                         w->main_keys->cdm.get(), w->host);
+                                         w->main_keys->cdm.get(), w->host, false, chromium_inputs);
     w->player->renderer().Flush([=] {
       SegmentList video{&w->clear_video.segments[0], &w->video.segments[1], &w->video.segments[2]};
       SegmentList audio{&w->clear_audio.segments[0], &w->audio.segments[1], &w->audio.segments[2]};
@@ -1909,7 +1975,7 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
         ft::FourCCString(info.sample_entry).c_str(), info.codec_config.size(),
         info.dolby_vision_config.empty() ? "" : Format(", dovi %s", ft::Hex(info.dolby_vision_config).c_str()).c_str(),
         SampleCount(*media), end);
-    w->player = std::make_shared<Player>(label, Framing::kChromium, video, audio, nullptr, w->host);
+    w->player = std::make_shared<Player>(label, Framing::kChromium, video, audio, nullptr, w->host, false, true);
     w->player->renderer().Flush([=] {
       w->player->SetFeeds(video ? Segments(*video, 0, 1) : SegmentList(),
                           audio ? Segments(*audio, 0, 1) : SegmentList(), true);
@@ -2002,6 +2068,160 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
                                         layers.find(protected_type.substr(5)) != std::string::npos);
     Check(ok, label + ": protected format description is Apple's '" + protected_type + "'",
           result.ok() ? "'" + type + "'" + (layers.empty() ? "" : " layers " + layers) : result.message);
+    done();
+  });
+  return steps;
+}
+
+// The core rebuilds what Chromium leaves out; each must equal the box the
+// file itself carries.
+void BuilderSelfTests() {
+  World* w = g_world;
+  auto first_keyframe_av1 = [](const Media& m) -> std::optional<std::vector<uint8_t>> {
+    for (const ft::Sample& sample : m.segments[0]) {
+      if (!sample.is_keyframe) continue;
+      if (auto obu = fp::Av1SequenceHeaderObu(sample.data.data(), sample.data.size())) {
+        return fp::Av1CodecConfigurationRecord(*obu);
+      }
+    }
+    return std::nullopt;
+  };
+  for (const Media* m : {&w->av1, &w->av1_10bit}) {
+    auto built = first_keyframe_av1(*m);
+    Check(built && *built == m->info.codec_config,
+          "builders: av1C from the first keyframe's sequence header equals the file's",
+          "file " + ft::Hex(m->info.codec_config) + (built ? ", built " + ft::Hex(*built) : ", none"));
+  }
+  const std::vector<uint8_t>& dv = w->dolby_vision.info.dolby_vision_config;
+  Check(fp::DolbyVisionConfigurationRecord(5, 5, 0) == dv,
+        "builders: Dolby Vision record from profile 5, level 5, compatibility 0 equals the file's dvcC",
+        ft::Hex(dv));
+  auto dac3 = fp::Ac3SpecificBoxPayload(w->ac3.segments[0][0].data.data(), w->ac3.segments[0][0].data.size());
+  Check(dac3 && *dac3 == w->ac3.info.codec_config, "builders: dac3 from the first AC-3 syncframe equals the file's",
+        "file " + ft::Hex(w->ac3.info.codec_config) + (dac3 ? ", built " + ft::Hex(*dac3) : ", none"));
+  auto dec3 = fp::Eac3SpecificBoxPayload(w->eac3.segments[0][0].data.data(), w->eac3.segments[0][0].data.size());
+  const std::vector<uint8_t>& file = w->eac3.info.codec_config;
+  // data_rate (13 bits) is informational: computed from the frames it is the
+  // true rate; the file's muxer wrote another. The substream fields must match.
+  bool same = dec3 && file.size() >= dec3->size() && dec3->size() >= 5 && ((*dec3)[1] & 0x07) == (file[1] & 0x07) &&
+              std::equal(dec3->begin() + 2, dec3->end(), file.begin() + 2);
+  Check(same, "builders: dec3 from the first E-AC-3 syncframe matches the file's substream fields",
+        "file " + ft::Hex(file) + (dec3 ? ", built " + ft::Hex(*dec3) : ", none"));
+}
+
+// Chromium's configs for protected playback: no decoder record (built from
+// in-band SPS/PPS) and only the encryption scheme (protected formats built
+// from each sample's key ID, pattern and 16-byte IV).
+std::vector<Step> ChromiumInputsScenario() {
+  World* w = g_world;
+  auto frames = std::make_shared<int64_t>(0);
+  std::vector<Step> steps;
+  steps.push_back(Section("Chromium inputs: protected playback with an empty record and scheme-only encryption"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("chromium-inputs", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host, false, true);
+    StartAt(w->player, &w->video, &w->audio, 0, 3, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 5, 1, "chromium-inputs play 5s")(done); });
+  steps.push_back([=](Done done) { Metrics(w->player, "chromium-inputs", 90, frames)(done); });
+  steps.push_back([=](Done done) {
+    StartAt(w->player, &w->video, &w->audio, 6, 9, 40, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "chromium-inputs after seek 3s")(done); });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(ft::FourCCString(s.video_format) == "avc1" && ft::FourCCString(s.video_protected_format) == "qavc" &&
+              ft::FourCCString(s.audio_protected_format) == "qaac",
+          "chromium-inputs: formats built from the bitstream and the samples' key ID",
+          Format("video '%s'/'%s', audio '%s'", ft::FourCCString(s.video_format).c_str(),
+                 ft::FourCCString(s.video_protected_format).c_str(),
+                 ft::FourCCString(s.audio_protected_format).c_str()));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// An adaptive-streaming switch, as Chromium delivers it: 288p, 720p, 288p
+// segments (one key), each converted with its own init segment, no record in
+// the config. The renderer must rebuild its formats from each new keyframe.
+std::vector<Step> QualitySwitchScenario() {
+  World* w = g_world;
+  auto frames = std::make_shared<int64_t>(0);
+  std::vector<Step> steps;
+  steps.push_back(Section("quality switch 288p -> 720p -> 288p (Chromium inputs, protected)"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("switch", Framing::kChromium, &w->video_288, &w->audio,
+                                         w->main_keys->cdm.get(), w->host, false, true);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeedsWithTracks({&w->video_288.segments[0], &w->video.segments[1], &w->video_288.segments[2]},
+                                    {&w->video_288.info, &w->video.info, &w->video_288.info},
+                                    Segments(w->audio, 0, 3), {}, true);
+      auto go = Once(10, "switch: HAVE_ENOUGH", [=](bool) {
+        w->player->renderer().SetPlaybackRate(1);
+        done();
+      });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) {
+    auto finish = Once(26, "switch: OnEnded after the third segment", [=](bool) { done(); });
+    if (w->player->ended) finish(true);
+    else w->player->on_ended = [finish] { finish(true); };
+  });
+  steps.push_back([=](Done done) {
+    std::string sizes;
+    for (auto& [width, height] : w->player->natural_sizes) sizes += Format("%s%dx%d", sizes.empty() ? "" : " -> ", width, height);
+    const auto& n = w->player->natural_sizes;
+    bool sequence = n.size() >= 3 && n[0] == std::make_pair(512, 288) &&
+                    std::find(n.begin(), n.end(), std::make_pair(1280, 720)) != n.end() && n.back() == std::make_pair(512, 288);
+    Check(sequence, "switch: natural size follows the segments", sizes);
+    CheckHealthy(*w->player, "switch");
+    Metrics(w->player, "switch", 380, frames)(done);
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// A new AudioSpecificConfig mid-stream (AAC-LC, then HE-AAC), which only
+// Reconfigure can signal.
+std::vector<Step> AudioReconfigureScenario() {
+  World* w = g_world;
+  double end = EndSeconds(w->he_aac_after_clear);
+  std::vector<Step> steps;
+  steps.push_back(Section("audio Reconfigure: AAC-LC, then HE-AAC (Chromium's kConfigChanged)"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("audio-switch", Framing::kChromium, nullptr, &w->clear_audio, nullptr,
+                                         w->host, false, true);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeedsWithTracks({}, {}, {&w->clear_audio.segments[0], &w->he_aac_after_clear.segments[0]},
+                                    {&w->clear_audio.info, &w->he_aac_after_clear.info}, true);
+      auto go = Once(10, "audio-switch: HAVE_ENOUGH", [=](bool) {
+        w->player->renderer().SetPlaybackRate(1);
+        done();
+      });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) {
+    auto finish = Once(end + 8, "audio-switch: OnEnded", [=](bool ok) {
+      double t = w->player->Time();
+      if (ok) Check(std::fabs(t - end) < 0.3, Format("audio-switch: ended at the end (t=%.3f, end %.3f)", t, end));
+      Check(w->player->reconfigures == 1, "audio-switch: one Reconfigure, accepted",
+            Format("%d", w->player->reconfigures));
+      CheckHealthy(*w->player, "audio-switch");
+      done();
+    });
+    if (w->player->ended) finish(true);
+    else w->player->on_ended = [finish] { finish(true); };
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
     done();
   });
   return steps;
@@ -2106,6 +2326,7 @@ void RunAll() {
   Check(fp::FairPlayCdm::IsSupported(), "FairPlayCdm::IsSupported on this Mac",
         NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
   SelfTests(w->video, w->audio);
+  BuilderSelfTests();
   {
     std::vector<uint8_t> boxes = w->video.info.pssh_boxes;
     std::vector<uint8_t> fairplay =
@@ -2139,6 +2360,9 @@ void RunAll() {
   add("MainScenario(Framing::kChromium, true)", MainScenario(Framing::kChromium, true));
   add("MainScenario(Framing::kIso, false)", MainScenario(Framing::kIso, false));
   add("MixedScenario()", MixedScenario());
+  add("MixedScenario(chromium)", MixedScenario(true));
+  add("ChromiumInputsScenario()", ChromiumInputsScenario());
+  add("QualitySwitchScenario()", QualitySwitchScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
   add("SeekOrderScenario()", SeekOrderScenario());
@@ -2176,6 +2400,10 @@ void RunAll() {
   add("CodecScenario(xHE-AAC (mp4a.40.42), nullptr, &w->xhe_aac, qusa)", CodecScenario("xHE-AAC (mp4a.40.42)", nullptr, &w->xhe_aac, "qusa"));
   add("CodecScenario(HE-AAC (mp4a.40.5), nullptr, &w->he_aac, qaac,qach)", CodecScenario("HE-AAC (mp4a.40.5)", nullptr, &w->he_aac, "qaac,qach"));
   add("CodecScenario(HE-AACv2 (mp4a.40.29), nullptr, &w->he_aac_v2, qaac,qacp)", CodecScenario("HE-AACv2 (mp4a.40.29)", nullptr, &w->he_aac_v2, "qaac,qacp"));
+  add("CodecScenario(AC-3)", CodecScenario("AC-3 (ac-3)", nullptr, &w->ac3, "qac3"));
+  add("CodecScenario(E-AC-3)", CodecScenario("E-AC-3 (ec-3)", nullptr, &w->eac3, "qec3"));
+  add("CodecScenario(AV1 10-bit)", CodecScenario("AV1 10-bit (av01)", &w->av1_10bit, nullptr, "qav1"));
+  add("AudioReconfigureScenario()", AudioReconfigureScenario());
   add("CloseScenario()", CloseScenario());
   Sequence(steps, Finish);
 }
@@ -2237,11 +2465,24 @@ int main(int argc, char** argv) {
                 LoadChromiumFile(@"bear-av1.mp4", &world.av1, &error) &&
                 LoadChromiumFile(@"noise-xhe-aac-44kHz.mp4", &world.xhe_aac, &error) &&
                 EncodeAac(kAudioFormatMPEG4AAC_HE, 4, &world.he_aac, &error) &&
-                EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 4, &world.he_aac_v2, &error);
+                EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 4, &world.he_aac_v2, &error) &&
+                LoadChromiumFile(@"bear-av1-320x180-10bit.mp4", &world.av1_10bit, &error) &&
+                LoadChromiumFile(@"bear-ac3-only-frag.mp4", &world.ac3, &error) &&
+                LoadChromiumFile(@"bear-eac3-only-frag.mp4", &world.eac3, &error) &&
+                LoadMedia(kProtectedBase, @"video-H264-288-400k.m3u8", 3, &world.video_288, &error);
       dispatch_async(dispatch_get_main_queue(), ^{
         if (!Check(ok, "download and parse the Axinom vector", error)) Finish();
         g_certificate = Bytes(certificate);
-        if (ok) world.hev1_in_band = InBandParameterSetsOnly(world.hev1);
+        if (ok) {
+          world.hev1_in_band = InBandParameterSetsOnly(world.hev1);
+          // HE-AAC continuing the clear AAC-LC segment, for an audio Reconfigure.
+          world.he_aac_after_clear = world.he_aac;
+          int64_t shift = int64_t(EndSeconds(world.clear_audio) * world.he_aac.info.timescale + 0.5);
+          for (ft::Sample& sample : world.he_aac_after_clear.segments[0]) {
+            sample.pts += shift;
+            sample.dts += shift;
+          }
+        }
         Log("certificate %zu bytes; video %zu segments, audio %zu segments", g_certificate.size(),
             world.video.segments.size(), world.audio.segments.size());
         RunAll();

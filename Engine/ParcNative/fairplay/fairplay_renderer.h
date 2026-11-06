@@ -101,9 +101,20 @@ class FairPlayRenderer {
   FairPlayRenderer(const FairPlayRenderer&) = delete;
   FairPlayRenderer& operator=(const FairPlayRenderer&) = delete;
 
-  // Builds the format descriptions and renderers. At least one config.
+  // Builds the format descriptions and renderers. At least one config. Takes
+  // Chromium's configs as they are: empty video records and AC-3/E-AC-3
+  // boxes are built from the first keyframe or syncframe, and encryption
+  // may carry only the scheme.
   Result Initialize(const std::optional<VideoConfig>& video,
                     const std::optional<AudioConfig>& audio);
+
+  // A new decoder config for the samples enqueued from now on (Chromium's
+  // DemuxerStream kConfigChanged). Video records are also rebuilt by
+  // themselves when a keyframe carries different parameter sets or AV1
+  // sequence header; audio changes the bitstream can't signal (a new
+  // AudioSpecificConfig) need this call.
+  Result Reconfigure(const VideoConfig& config);
+  Result Reconfigure(const AudioConfig& config);
 
   // Joins the renderers to |cdm|'s AVContentKeySession as content key
   // recipients (borrowed; call SetCdm(nullptr) before destroying it). May come

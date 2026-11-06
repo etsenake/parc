@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "fairplay_types.h"
@@ -79,6 +80,32 @@ std::vector<uint8_t> AudioSampleEntry(uint32_t type,
 std::vector<uint8_t> ProtectSampleEntry(const std::vector<uint8_t>& entry,
                                         bool video,
                                         const TrackEncryption& tenc);
+
+// Chromium hands a renderer empty decoder records (MP4StreamParser builds every
+// video VideoDecoderConfig with EmptyExtraData() and gives AC-3/E-AC-3 no
+// dac3/dec3), so these rebuild them from the bitstream.
+
+// The sequence header OBU of a low-overhead-format AV1 temporal unit, with its
+// size field (as av1C configOBUs carry it). nullopt if there is none.
+std::optional<std::vector<uint8_t>> Av1SequenceHeaderObu(const uint8_t* data, size_t size);
+
+// AV1CodecConfigurationRecord ('av1C' payload) for a sequence header OBU from
+// Av1SequenceHeaderObu: seq_profile, level, tier, bit depth, monochrome and
+// chroma fields parsed from it, then the OBU as configOBUs.
+std::optional<std::vector<uint8_t>> Av1CodecConfigurationRecord(const std::vector<uint8_t>& sequence_header_obu);
+
+// DOVIDecoderConfigurationRecord ('dvcC'/'dvvC' payload, 24 bytes) for a
+// single-layer stream: RPU and base layer present, no enhancement layer.
+// Profile 5 has compatibility ID 0.
+std::vector<uint8_t> DolbyVisionConfigurationRecord(int profile, int level, int compatibility_id);
+
+// 'dac3' payload from the first AC-3 syncframe in |data|.
+std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, size_t size);
+
+// 'dec3' payload from the E-AC-3 syncframes of one access unit: data rate and
+// one entry per independent substream with its dependent-substream count.
+// bsmod and asvc are written as 0 and chan_loc as 0 (not parsed).
+std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size);
 
 // Wraps |payload| in an ISO box header.
 std::vector<uint8_t> MakeBox(uint32_t type, const std::vector<uint8_t>& payload);

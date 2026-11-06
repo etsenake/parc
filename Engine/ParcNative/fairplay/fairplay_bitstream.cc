@@ -39,6 +39,54 @@ struct StartCode {
   size_t subsample;      // Index of the subsample whose clear range holds it.
 };
 
+// MSB-first bit reader; reads past the end set failed() and return 0.
+class BitReader {
+ public:
+  BitReader(const uint8_t* data, size_t size) : data_(data), size_(size) {}
+  uint64_t Get(int bits) {
+    uint64_t value = 0;
+    for (int i = 0; i < bits; ++i) {
+      if (position_ >= size_ * 8) {
+        failed_ = true;
+        return 0;
+      }
+      value = (value << 1) | ((data_[position_ / 8] >> (7 - position_ % 8)) & 1);
+      ++position_;
+    }
+    return value;
+  }
+  // AV1 uvlc().
+  uint64_t Uvlc() {
+    int leading_zeros = 0;
+    while (!failed_ && Get(1) == 0) {
+      if (++leading_zeros >= 32) {
+        failed_ = true;
+        return 0;
+      }
+    }
+    return leading_zeros ? Get(leading_zeros) + ((uint64_t{1} << leading_zeros) - 1) : 0;
+  }
+  bool failed() const { return failed_; }
+
+ private:
+  const uint8_t* data_;
+  size_t size_;
+  size_t position_ = 0;
+  bool failed_ = false;
+};
+
+// AV1 leb128() at |data|; returns bytes used, 0 if malformed.
+size_t ReadLeb128(const uint8_t* data, size_t size, uint64_t* value) {
+  *value = 0;
+  for (size_t i = 0; i < 8 && i < size; ++i) {
+    *value |= static_cast<uint64_t>(data[i] & 0x7f) << (7 * i);
+    if (!(data[i] & 0x80)) {
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 bool ConvertAnnexBToLengthPrefixed(const uint8_t* data,
@@ -286,6 +334,308 @@ std::vector<uint8_t> ProtectSampleEntry(const std::vector<uint8_t>& entry,
   out[3] = static_cast<uint8_t>(size);
   const char* type = video ? "encv" : "enca";
   std::copy(type, type + 4, out.begin() + 4);
+  return out;
+}
+
+std::optional<std::vector<uint8_t>> Av1SequenceHeaderObu(const uint8_t* data, size_t size) {
+  constexpr int kObuSequenceHeader = 1;
+  size_t pos = 0;
+  while (pos < size) {
+    const uint8_t header = data[pos];
+    const int type = (header >> 3) & 0x0f;
+    const bool extension = header & 0x04;
+    const bool has_size = header & 0x02;
+    const size_t header_size = 1 + (extension ? 1 : 0);
+    if (pos + header_size > size) {
+      return std::nullopt;
+    }
+    uint64_t obu_size = size - pos - header_size;
+    size_t leb_size = 0;
+    if (has_size) {
+      leb_size = ReadLeb128(data + pos + header_size, size - pos - header_size, &obu_size);
+      if (!leb_size) {
+        return std::nullopt;
+      }
+    }
+    const size_t payload = pos + header_size + leb_size;
+    if (obu_size > size - payload) {
+      return std::nullopt;
+    }
+    if (type == kObuSequenceHeader) {
+      std::vector<uint8_t> obu(data + pos, data + pos + header_size);
+      obu[0] |= 0x02;  // obu_has_size_field
+      uint64_t remaining = obu_size;
+      do {
+        uint8_t byte = remaining & 0x7f;
+        remaining >>= 7;
+        obu.push_back(static_cast<uint8_t>(byte | (remaining ? 0x80 : 0)));
+      } while (remaining);
+      obu.insert(obu.end(), data + payload, data + payload + obu_size);
+      return obu;
+    }
+    pos = payload + static_cast<size_t>(obu_size);
+  }
+  return std::nullopt;
+}
+
+std::optional<std::vector<uint8_t>> Av1CodecConfigurationRecord(
+    const std::vector<uint8_t>& sequence_header_obu) {
+  if (sequence_header_obu.size() < 3) {
+    return std::nullopt;
+  }
+  const bool extension = sequence_header_obu[0] & 0x04;
+  size_t header = 1 + (extension ? 1 : 0);
+  uint64_t obu_size = 0;
+  size_t leb = ReadLeb128(sequence_header_obu.data() + header, sequence_header_obu.size() - header, &obu_size);
+  if (!leb || obu_size > sequence_header_obu.size() - header - leb) {
+    return std::nullopt;
+  }
+  BitReader r(sequence_header_obu.data() + header + leb, static_cast<size_t>(obu_size));
+  // sequence_header_obu() (AV1 spec 5.5), as far as color_config().
+  const int seq_profile = static_cast<int>(r.Get(3));
+  r.Get(1);  // still_picture
+  const bool reduced_still_picture_header = r.Get(1);
+  int seq_level_idx_0 = 0;
+  int seq_tier_0 = 0;
+  if (reduced_still_picture_header) {
+    seq_level_idx_0 = static_cast<int>(r.Get(5));
+  } else {
+    bool decoder_model_info_present = false;
+    int buffer_delay_length = 0;
+    if (r.Get(1)) {  // timing_info_present_flag
+      r.Get(32);     // num_units_in_display_tick
+      r.Get(32);     // time_scale
+      if (r.Get(1)) r.Uvlc();  // equal_picture_interval, num_ticks_per_picture_minus_1
+      decoder_model_info_present = r.Get(1);
+      if (decoder_model_info_present) {
+        buffer_delay_length = static_cast<int>(r.Get(5)) + 1;
+        r.Get(32);  // num_units_in_decoding_tick
+        r.Get(5);   // buffer_removal_time_length_minus_1
+        r.Get(5);   // frame_presentation_time_length_minus_1
+      }
+    }
+    const bool initial_display_delay_present = r.Get(1);
+    const int operating_points = static_cast<int>(r.Get(5)) + 1;
+    for (int i = 0; i < operating_points && !r.failed(); ++i) {
+      r.Get(12);  // operating_point_idc
+      int level = static_cast<int>(r.Get(5));
+      int tier = level > 7 ? static_cast<int>(r.Get(1)) : 0;
+      if (i == 0) {
+        seq_level_idx_0 = level;
+        seq_tier_0 = tier;
+      }
+      if (decoder_model_info_present && r.Get(1)) {
+        r.Get(buffer_delay_length);  // decoder_buffer_delay
+        r.Get(buffer_delay_length);  // encoder_buffer_delay
+        r.Get(1);                    // low_delay_mode_flag
+      }
+      if (initial_display_delay_present && r.Get(1)) {
+        r.Get(4);  // initial_display_delay_minus_1
+      }
+    }
+  }
+  const int width_bits = static_cast<int>(r.Get(4)) + 1;
+  const int height_bits = static_cast<int>(r.Get(4)) + 1;
+  r.Get(width_bits);
+  r.Get(height_bits);
+  if (!reduced_still_picture_header && r.Get(1)) {  // frame_id_numbers_present_flag
+    r.Get(4);
+    r.Get(3);
+  }
+  r.Get(1);  // use_128x128_superblock
+  r.Get(1);  // enable_filter_intra
+  r.Get(1);  // enable_intra_edge_filter
+  if (!reduced_still_picture_header) {
+    r.Get(1);  // enable_interintra_compound
+    r.Get(1);  // enable_masked_compound
+    r.Get(1);  // enable_warped_motion
+    r.Get(1);  // enable_dual_filter
+    const bool enable_order_hint = r.Get(1);
+    if (enable_order_hint) {
+      r.Get(1);  // enable_jnt_comp
+      r.Get(1);  // enable_ref_frame_mvs
+    }
+    int force_screen_content_tools = 2;  // SELECT_SCREEN_CONTENT_TOOLS
+    if (!r.Get(1)) {                     // seq_choose_screen_content_tools
+      force_screen_content_tools = static_cast<int>(r.Get(1));
+    }
+    if (force_screen_content_tools > 0 && !r.Get(1)) {  // seq_choose_integer_mv
+      r.Get(1);                                          // seq_force_integer_mv
+    }
+    if (enable_order_hint) {
+      r.Get(3);  // order_hint_bits_minus_1
+    }
+  }
+  r.Get(1);  // enable_superres
+  r.Get(1);  // enable_cdef
+  r.Get(1);  // enable_restoration
+  // color_config()
+  const int high_bitdepth = static_cast<int>(r.Get(1));
+  int twelve_bit = 0;
+  if (seq_profile == 2 && high_bitdepth) {
+    twelve_bit = static_cast<int>(r.Get(1));
+  }
+  const int monochrome = seq_profile == 1 ? 0 : static_cast<int>(r.Get(1));
+  int color_primaries = 2, transfer = 2, matrix = 2;
+  if (r.Get(1)) {  // color_description_present_flag
+    color_primaries = static_cast<int>(r.Get(8));
+    transfer = static_cast<int>(r.Get(8));
+    matrix = static_cast<int>(r.Get(8));
+  }
+  int subsampling_x = 1, subsampling_y = 1, chroma_sample_position = 0;
+  if (monochrome) {
+    r.Get(1);  // color_range
+  } else if (color_primaries == 1 && transfer == 13 && matrix == 0) {
+    subsampling_x = subsampling_y = 0;  // sRGB, 4:4:4
+  } else {
+    r.Get(1);  // color_range
+    if (seq_profile == 0) {
+      subsampling_x = subsampling_y = 1;
+    } else if (seq_profile == 1) {
+      subsampling_x = subsampling_y = 0;
+    } else if (twelve_bit) {
+      subsampling_x = static_cast<int>(r.Get(1));
+      subsampling_y = subsampling_x ? static_cast<int>(r.Get(1)) : 0;
+    } else {
+      subsampling_x = 1;
+      subsampling_y = 0;
+    }
+    if (subsampling_x && subsampling_y) {
+      chroma_sample_position = static_cast<int>(r.Get(2));
+    }
+  }
+  if (r.failed()) {
+    return std::nullopt;
+  }
+  std::vector<uint8_t> record{
+      0x81,  // marker, version 1
+      static_cast<uint8_t>((seq_profile << 5) | (seq_level_idx_0 & 0x1f)),
+      static_cast<uint8_t>((seq_tier_0 << 7) | (high_bitdepth << 6) | (twelve_bit << 5) | (monochrome << 4) |
+                           (subsampling_x << 3) | (subsampling_y << 2) | (chroma_sample_position & 3)),
+      0x00,  // no initial_presentation_delay
+  };
+  Append(&record, sequence_header_obu);
+  return record;
+}
+
+std::vector<uint8_t> DolbyVisionConfigurationRecord(int profile, int level, int compatibility_id) {
+  std::vector<uint8_t> record(24, 0);
+  record[0] = 1;  // dv_version_major
+  record[1] = 0;  // dv_version_minor
+  const uint16_t fields = static_cast<uint16_t>(((profile & 0x7f) << 9) | ((level & 0x3f) << 3) |
+                                                (1 << 2) |  // rpu_present
+                                                (0 << 1) |  // el_present
+                                                1);         // bl_present
+  record[2] = static_cast<uint8_t>(fields >> 8);
+  record[3] = static_cast<uint8_t>(fields);
+  record[4] = static_cast<uint8_t>((compatibility_id & 0x0f) << 4);
+  return record;
+}
+
+std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, size_t size) {
+  for (size_t pos = 0; pos + 8 <= size; ++pos) {
+    if (data[pos] != 0x0b || data[pos + 1] != 0x77) {
+      continue;
+    }
+    BitReader r(data + pos + 4, size - pos - 4);  // after syncword and crc1
+    const int fscod = static_cast<int>(r.Get(2));
+    const int frmsizecod = static_cast<int>(r.Get(6));
+    const int bsid = static_cast<int>(r.Get(5));
+    const int bsmod = static_cast<int>(r.Get(3));
+    const int acmod = static_cast<int>(r.Get(3));
+    if ((acmod & 1) && acmod != 1) r.Get(2);  // cmixlev
+    if (acmod & 4) r.Get(2);                  // surmixlev
+    if (acmod == 2) r.Get(2);                 // dsurmod
+    const int lfeon = static_cast<int>(r.Get(1));
+    if (r.failed() || fscod == 3 || bsid > 8) {
+      return std::nullopt;
+    }
+    const uint32_t bits = (uint32_t(fscod) << 22) | (uint32_t(bsid) << 17) | (uint32_t(bsmod) << 14) |
+                          (uint32_t(acmod) << 11) | (uint32_t(lfeon) << 10) | (uint32_t(frmsizecod >> 1) << 5);
+    return std::vector<uint8_t>{static_cast<uint8_t>(bits >> 16), static_cast<uint8_t>(bits >> 8),
+                                static_cast<uint8_t>(bits)};
+  }
+  return std::nullopt;
+}
+
+std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size) {
+  struct Substream {
+    int fscod = 0, bsid = 0, acmod = 0, lfeon = 0, dependents = 0;
+  };
+  std::vector<Substream> independent;
+  uint64_t bits_per_second = 0;
+  size_t pos = 0;
+  while (pos + 6 <= size) {
+    if (data[pos] != 0x0b || data[pos + 1] != 0x77) {
+      if (independent.empty()) {
+        return std::nullopt;
+      }
+      break;
+    }
+    BitReader r(data + pos + 2, size - pos - 2);
+    const int strmtyp = static_cast<int>(r.Get(2));
+    r.Get(3);  // substreamid
+    const size_t frame_bytes = (static_cast<size_t>(r.Get(11)) + 1) * 2;
+    const int fscod = static_cast<int>(r.Get(2));
+    int blocks = 6;
+    int sample_rate = 0;
+    if (fscod == 3) {
+      const int fscod2 = static_cast<int>(r.Get(2));
+      sample_rate = fscod2 == 0 ? 24000 : fscod2 == 1 ? 22050 : fscod2 == 2 ? 16000 : 0;
+    } else {
+      static const int kBlocks[4] = {1, 2, 3, 6};
+      blocks = kBlocks[r.Get(2)];
+      sample_rate = fscod == 0 ? 48000 : fscod == 1 ? 44100 : 32000;
+    }
+    const int acmod = static_cast<int>(r.Get(3));
+    const int lfeon = static_cast<int>(r.Get(1));
+    const int bsid = static_cast<int>(r.Get(5));
+    if (r.failed() || !sample_rate || bsid <= 10 || bsid > 16 || frame_bytes > size - pos) {
+      return std::nullopt;
+    }
+    bits_per_second += uint64_t(frame_bytes) * 8 * uint64_t(sample_rate) / (uint64_t(blocks) * 256);
+    if (strmtyp == 0 || strmtyp == 2) {  // independent
+      independent.push_back({fscod == 3 ? 3 : fscod, bsid, acmod, lfeon, 0});
+    } else if (strmtyp == 1 && !independent.empty()) {  // dependent
+      ++independent.back().dependents;
+    }
+    pos += frame_bytes;
+  }
+  if (independent.empty() || independent.size() > 8) {
+    return std::nullopt;
+  }
+
+  std::vector<uint8_t> out;
+  uint64_t accumulator = 0;
+  int count = 0;
+  auto put = [&](uint64_t value, int bits) {
+    for (int i = bits - 1; i >= 0; --i) {
+      accumulator = (accumulator << 1) | ((value >> i) & 1);
+      if (++count == 8) {
+        out.push_back(static_cast<uint8_t>(accumulator));
+        accumulator = 0;
+        count = 0;
+      }
+    }
+  };
+  put(std::min<uint64_t>(bits_per_second / 1000, 0x1fff), 13);  // data_rate, kbit/s
+  put(independent.size() - 1, 3);                                // num_ind_sub
+  for (const Substream& sub : independent) {
+    put(sub.fscod, 2);
+    put(sub.bsid, 5);
+    put(0, 1);  // reserved
+    put(0, 1);  // asvc
+    put(0, 3);  // bsmod
+    put(sub.acmod, 3);
+    put(sub.lfeon, 1);
+    put(0, 3);  // reserved
+    put(sub.dependents, 4);
+    if (sub.dependents) {
+      put(0, 9);  // chan_loc (not parsed)
+    } else {
+      put(0, 1);  // reserved
+    }
+  }
   return out;
 }
 

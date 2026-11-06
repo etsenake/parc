@@ -157,6 +157,64 @@ bool RecordHasParameterSets(VideoCodec codec, const std::vector<uint8_t>& record
   return vps && sps && pps;
 }
 
+// The parameter set NAL units in an avcC (SPS, PPS) or hvcC (VPS, SPS, PPS).
+std::vector<std::vector<uint8_t>> ParameterSetsInRecord(VideoCodec codec, const std::vector<uint8_t>& record) {
+  std::vector<std::vector<uint8_t>> sets;
+  auto take = [&](size_t* pos) {
+    if (*pos + 2 > record.size()) return false;
+    size_t length = (size_t(record[*pos]) << 8) | record[*pos + 1];
+    if (*pos + 2 + length > record.size()) return false;
+    sets.emplace_back(record.begin() + *pos + 2, record.begin() + *pos + 2 + length);
+    *pos += 2 + length;
+    return true;
+  };
+  if (codec == VideoCodec::kH264) {
+    if (record.size() < 7) return sets;
+    size_t pos = 6;
+    for (int k = 0; k < (record[5] & 0x1f); ++k) {
+      if (!take(&pos)) return sets;
+    }
+    if (pos >= record.size()) return sets;
+    int pps = record[pos++];
+    for (int k = 0; k < pps; ++k) {
+      if (!take(&pos)) return sets;
+    }
+    return sets;
+  }
+  if (record.size() < 23) return sets;
+  size_t pos = 23;
+  for (uint8_t a = 0; a < record[22] && pos + 3 <= record.size(); ++a) {
+    const uint8_t type = record[pos] & 0x3f;
+    const uint32_t count = (uint32_t(record[pos + 1]) << 8) | record[pos + 2];
+    pos += 3;
+    for (uint32_t k = 0; k < count; ++k) {
+      size_t before = sets.size();
+      if (!take(&pos)) return sets;
+      if (type < 32 || type > 34) sets.resize(before);  // Only VPS/SPS/PPS.
+    }
+  }
+  return sets;
+}
+
+// Parameter set NAL units in a length-prefixed access unit.
+std::vector<std::vector<uint8_t>> ParameterSetsInSample(VideoCodec codec, const uint8_t* data, size_t size,
+                                                        size_t length_size) {
+  const bool avc = codec == VideoCodec::kH264;
+  std::vector<std::vector<uint8_t>> sets;
+  for (size_t pos = 0; pos + length_size <= size;) {
+    size_t length = 0;
+    for (size_t k = 0; k < length_size; ++k) length = (length << 8) | data[pos + k];
+    pos += length_size;
+    if (!length || length > size - pos) break;
+    const uint8_t type = avc ? (data[pos] & 0x1f) : ((data[pos] >> 1) & 0x3f);
+    if (avc ? (type == 7 || type == 8) : (type >= 32 && type <= 34)) {
+      sets.emplace_back(data + pos, data + pos + length);
+    }
+    pos += length;
+  }
+  return sets;
+}
+
 uint32_t ConfigBox(VideoCodec codec) {
   switch (codec) {
     case VideoCodec::kH264:
@@ -219,26 +277,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     audio_config_ = audio;
     std::string error;
     if (video) {
-      if (!RecordHasParameterSets(video->codec, video->extra_data)) {
-        // Parameter sets only in-band: the formats are built from the first
-        // keyframe's (ConfigureFromInBandParameterSets).
-        if (video->extra_data.empty() || video->coded_width <= 0 || video->coded_height <= 0) {
-          return Result::Error(Exception::kTypeError, "video config needs a decoder record and size");
-        }
-        awaiting_parameter_sets_ = true;
-      } else if (Result result = CreateVideoFormats(&error); !result.ok()) {
+      if (Result result = ConfigureVideo(*video, &error); !result.ok()) {
         return result;
       }
     }
     if (audio) {
-      CMFormatDescriptionRef clear = nullptr;
-      if (Result result = CreateAudioFormat(*audio, nullptr, &clear); !result.ok()) {
+      if (Result result = ConfigureAudio(*audio, &error); !result.ok()) {
         return result;
-      }
-      audio_clear_format_.Reset(clear);
-      if (IsEncrypted(audio->encryption) &&
-          !ProtectedFormat(StreamType::kAudio, audio->encryption.default_key_id, &error)) {
-        return Result::Error(Exception::kNotSupported, error);
       }
     }
     synchronizer_ = [[AVSampleBufferRenderSynchronizer alloc] init];
@@ -288,11 +333,6 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       });
       AddNotification(center, requires_flush, video_renderer_,
                       [](Impl& impl, NSNotification*) { impl.CheckRendererStatus(); });
-      int32_t width = video->natural_width ? video->natural_width : video->coded_width;
-      int32_t height = video->natural_height ? video->natural_height : video->coded_height;
-      Post([width, height](Impl& impl) {
-        impl.client_->OnVideoNaturalSizeChange(width, height);
-      });
     }
     if (audio) {
       audio_ = [[AVSampleBufferAudioRenderer alloc] init];
@@ -385,6 +425,24 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     });
     OnKeysChanged();
     return Result::Ok();
+  }
+
+  // A new decoder config mid-stream (Chromium's DemuxerStream kConfigChanged)
+  // for the samples enqueued from now on; encrypted-ness can't change.
+  Result Reconfigure(const VideoConfig& config) {
+    if (!video_renderer_) {
+      return Result::Error(Exception::kInvalidState, "no video stream");
+    }
+    std::string error;
+    return ConfigureVideo(config, &error);
+  }
+
+  Result Reconfigure(const AudioConfig& config) {
+    if (!audio_) {
+      return Result::Error(Exception::kInvalidState, "no audio stream");
+    }
+    std::string error;
+    return ConfigureAudio(config, &error);
   }
 
   void* display_layer() const { return (__bridge void*)layer_; }
@@ -511,13 +569,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     };
     status.video_format = subtype(video_clear_format_.get());
     status.audio_format = subtype(audio_clear_format_.get());
-    if (video_config_ && !video_protected_formats_.empty()) {
-      auto it = video_protected_formats_.find(video_config_->encryption.default_key_id);
-      status.video_protected_format = it != video_protected_formats_.end() ? subtype(it->second->get()) : 0;
+    if (!video_protected_formats_.empty()) {
+      status.video_protected_format = subtype(video_protected_formats_.begin()->second->get());
     }
-    if (audio_config_ && !audio_protected_formats_.empty()) {
-      auto it = audio_protected_formats_.find(audio_config_->encryption.default_key_id);
-      status.audio_protected_format = it != audio_protected_formats_.end() ? subtype(it->second->get()) : 0;
+    if (!audio_protected_formats_.empty()) {
+      status.audio_protected_format = subtype(audio_protected_formats_.begin()->second->get());
     }
     if (video_renderer_) {
       if (@available(macOS 14.0, *)) {
@@ -770,6 +826,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
+  // (Re)creates the clear video format and drops the protected ones, which
+  // are rebuilt per key ID; one is built up front when the key ID is known.
   Result CreateVideoFormats(std::string* error) {
     CMFormatDescriptionRef clear = nullptr;
     if (Result result = CreateVideoFormat(*video_config_, nullptr, &clear); !result.ok()) {
@@ -777,38 +835,133 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     video_clear_format_.Reset(clear);
     video_protected_formats_.clear();
-    if (IsEncrypted(video_config_->encryption) &&
-        !ProtectedFormat(StreamType::kVideo, video_config_->encryption.default_key_id, error)) {
+    const TrackEncryption& encryption = video_config_->encryption;
+    if (IsEncrypted(encryption) && !encryption.default_key_id.empty() &&
+        !ProtectedFormat(StreamType::kVideo, encryption.default_key_id, std::nullopt, error)) {
       return Result::Error(Exception::kNotSupported, *error);
     }
     return Result::Ok();
   }
 
-  // For a record without parameter sets (an hev1/avc3 stream that carries
-  // them only in-band): collects them from the first sample that has them,
-  // lets CoreMedia build the record, and creates the formats from it.
-  bool ConfigureFromInBandParameterSets(const uint8_t* data, size_t size, std::string* error) {
+  Result CreateAudioFormats(std::string* error) {
+    CMFormatDescriptionRef clear = nullptr;
+    if (Result result = CreateAudioFormat(*audio_config_, nullptr, &clear); !result.ok()) {
+      return result;
+    }
+    audio_clear_format_.Reset(clear);
+    audio_protected_formats_.clear();
+    const TrackEncryption& encryption = audio_config_->encryption;
+    if (IsEncrypted(encryption) && !encryption.default_key_id.empty() &&
+        !ProtectedFormat(StreamType::kAudio, encryption.default_key_id, std::nullopt, error)) {
+      return Result::Error(Exception::kNotSupported, *error);
+    }
+    return Result::Ok();
+  }
+
+  // Takes |config| for the samples enqueued from now on. A record that isn't
+  // complete yet (empty, or without parameter sets) waits for the next
+  // keyframe.
+  Result ConfigureVideo(const VideoConfig& config, std::string* error) {
+    if (config.coded_width <= 0 || config.coded_height <= 0 || config.coded_width > 0xffff ||
+        config.coded_height > 0xffff) {
+      return Result::Error(Exception::kTypeError, "video config needs a coded size");
+    }
+    video_config_ = config;
+    if (config.codec == VideoCodec::kDolbyVision && config.dolby_vision_config.empty() &&
+        config.dolby_vision_profile >= 0) {
+      video_config_->dolby_vision_config = DolbyVisionConfigurationRecord(
+          config.dolby_vision_profile, config.dolby_vision_level, config.dolby_vision_compatibility_id);
+    }
+    parameter_sets_.clear();
+    av1_sequence_header_.clear();
+    video_clear_format_.Reset(nullptr);
+    video_protected_formats_.clear();
+    const bool complete = config.codec == VideoCodec::kAV1
+                              ? !config.extra_data.empty()
+                              : RecordHasParameterSets(config.codec, config.extra_data);
+    awaiting_video_config_ = !complete;
+    if (complete) {
+      if (config.codec != VideoCodec::kAV1) {
+        parameter_sets_ = ParameterSetsInRecord(config.codec, config.extra_data);
+      }
+      if (Result result = CreateVideoFormats(error); !result.ok()) {
+        return result;
+      }
+    }
+    int32_t width = config.natural_width ? config.natural_width : config.coded_width;
+    int32_t height = config.natural_height ? config.natural_height : config.coded_height;
+    ReportNaturalSize(width, height);
+    return Result::Ok();
+  }
+
+  Result ConfigureAudio(const AudioConfig& config, std::string* error) {
+    audio_config_ = config;
+    audio_clear_format_.Reset(nullptr);
+    audio_protected_formats_.clear();
+    awaiting_audio_config_ = config.extra_data.empty() && config.codec != AudioCodec::kAAC;
+    if (awaiting_audio_config_) {
+      return Result::Ok();
+    }
+    return CreateAudioFormats(error);
+  }
+
+  void ReportNaturalSize(int32_t width, int32_t height) {
+    if (width == natural_width_ && height == natural_height_) {
+      return;
+    }
+    natural_width_ = width;
+    natural_height_ = height;
+    Post([width, height](Impl& impl) { impl.client_->OnVideoNaturalSizeChange(width, height); });
+  }
+
+  // Keyframes carry the decoder configuration in-band (Chromium re-inserts
+  // SPS/PPS/VPS before each one; AV1 keyframes start with a sequence header).
+  // Builds the record from it when the config had none, and rebuilds it when
+  // it changes (an adaptive-streaming switch).
+  bool UpdateVideoConfigFromKeyframe(const uint8_t* data, size_t size, std::string* error) {
     const VideoCodec codec = video_config_->codec;
+    if (codec == VideoCodec::kAV1) {
+      std::optional<std::vector<uint8_t>> obu = Av1SequenceHeaderObu(data, size);
+      if (!obu) {
+        *error = "no AV1 sequence header before the first frame";
+        return !awaiting_video_config_;
+      }
+      if (!awaiting_video_config_ && *obu == av1_sequence_header_) {
+        return true;
+      }
+      std::optional<std::vector<uint8_t>> record = Av1CodecConfigurationRecord(*obu);
+      if (!record) {
+        *error = "malformed AV1 sequence header";
+        return false;
+      }
+      if (!awaiting_video_config_ && *record == video_config_->extra_data) {
+        av1_sequence_header_ = *obu;
+        return true;
+      }
+      video_config_->extra_data = *record;
+      av1_sequence_header_ = *obu;
+      awaiting_video_config_ = false;
+      Result result = CreateVideoFormats(error);
+      if (!result.ok()) *error = result.message;
+      return result.ok();
+    }
     const bool avc = codec == VideoCodec::kH264;
     const std::vector<uint8_t>& record = video_config_->extra_data;
     size_t length_size = 4;  // Annex B input is rewritten with 4-byte lengths.
-    if (video_config_->format == BitstreamFormat::kLengthPrefixed) {
+    if (video_config_->format == BitstreamFormat::kLengthPrefixed && record.size() > (avc ? 4u : 21u)) {
       length_size = (record[avc ? 4 : 21] & 3) + 1;
     }
-    std::vector<std::vector<uint8_t>> sets;
-    for (size_t pos = 0; pos + length_size <= size;) {
-      size_t length = 0;
-      for (size_t k = 0; k < length_size; ++k) length = (length << 8) | data[pos + k];
-      pos += length_size;
-      if (!length || pos + length > size) break;
-      uint8_t type = avc ? (data[pos] & 0x1f) : ((data[pos] >> 1) & 0x3f);
-      bool parameter_set = avc ? (type == 7 || type == 8) : (type >= 32 && type <= 34);
-      if (parameter_set) sets.emplace_back(data + pos, data + pos + length);
-      pos += length;
-    }
+    std::vector<std::vector<uint8_t>> sets = ParameterSetsInSample(codec, data, size, length_size);
     if (sets.empty()) {
       *error = "no parameter sets in the config record or before the first frame";
-      return false;
+      return !awaiting_video_config_;
+    }
+    auto sorted = [](std::vector<std::vector<uint8_t>> v) {
+      std::sort(v.begin(), v.end());
+      return v;
+    };
+    if (!awaiting_video_config_ && sorted(sets) == sorted(parameter_sets_)) {
+      return true;
     }
     std::vector<const uint8_t*> pointers;
     std::vector<size_t> sizes;
@@ -831,6 +984,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     NSDictionary* atoms = (__bridge NSDictionary*)CMFormatDescriptionGetExtension(
         format, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms);
     NSData* built = atoms[avc ? @"avcC" : @"hvcC"];
+    CMVideoDimensions coded = CMVideoFormatDescriptionGetDimensions(format);
+    CGSize presentation = CMVideoFormatDescriptionGetPresentationDimensions(format, true, false);
     CFRelease(format);
     if (!built) {
       *error = "CoreMedia built no decoder record from the parameter sets";
@@ -838,28 +993,63 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     const uint8_t* bytes = static_cast<const uint8_t*>(built.bytes);
     video_config_->extra_data.assign(bytes, bytes + built.length);
-    awaiting_parameter_sets_ = false;
+    if (coded.width > 0 && coded.height > 0) {
+      video_config_->coded_width = coded.width;
+      video_config_->coded_height = coded.height;
+    }
+    parameter_sets_ = sets;
+    awaiting_video_config_ = false;
     Result result = CreateVideoFormats(error);
     if (!result.ok()) {
       *error = result.message;
       return false;
     }
+    ReportNaturalSize(static_cast<int32_t>(presentation.width), static_cast<int32_t>(presentation.height));
     return true;
   }
 
-  // The protected format description for samples encrypted with |key_id|;
-  // keys are matched by the format description's 'tenc' key ID, so each key
-  // gets its own.
+  bool UpdateAudioConfigFromSyncframe(const uint8_t* data, size_t size, std::string* error) {
+    std::optional<std::vector<uint8_t>> payload = audio_config_->codec == AudioCodec::kEAC3
+                                                      ? Eac3SpecificBoxPayload(data, size)
+                                                      : Ac3SpecificBoxPayload(data, size);
+    if (!payload) {
+      *error = "no AC-3/E-AC-3 syncframe in the first audio sample";
+      return false;
+    }
+    audio_config_->extra_data = *payload;
+    awaiting_audio_config_ = false;
+    Result result = CreateAudioFormats(error);
+    if (!result.ok()) *error = result.message;
+    return result.ok();
+  }
+
+  // The protected format description for samples encrypted with |key_id|
+  // (and |pattern|): recipients match keys by the format description's 'tenc'
+  // key ID, so each key gets its own. Fields the config lacks come from the
+  // sample: its pattern, and per-sample 16-byte IVs when no constant IV is
+  // known (Chromium copies the constant IV into every DecryptConfig).
   CMFormatDescriptionRef ProtectedFormat(StreamType stream, const std::vector<uint8_t>& key_id,
+                                         const std::optional<EncryptionPattern>& pattern,
                                          std::string* error) {
     auto& cache = stream == StreamType::kVideo ? video_protected_formats_ : audio_protected_formats_;
-    auto it = cache.find(key_id);
+    std::vector<uint8_t> cache_key = key_id;
+    if (pattern) {
+      cache_key.push_back(pattern->crypt_byte_block);
+      cache_key.push_back(pattern->skip_byte_block);
+    }
+    auto it = cache.find(cache_key);
     if (it != cache.end()) {
       return it->second->get();
     }
     TrackEncryption encryption = stream == StreamType::kVideo ? video_config_->encryption
                                                                : audio_config_->encryption;
     encryption.default_key_id = key_id;
+    if (pattern) {
+      encryption.default_pattern = *pattern;
+    }
+    if (encryption.default_constant_iv.empty() && encryption.default_per_sample_iv_size == 0) {
+      encryption.default_per_sample_iv_size = 16;
+    }
     CMFormatDescriptionRef format = nullptr;
     Result result = stream == StreamType::kVideo
                         ? CreateVideoFormat(*video_config_, &encryption, &format)
@@ -871,7 +1061,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     auto holder = std::make_unique<ScopedFormat>();
     holder->Reset(format);
     CMFormatDescriptionRef raw = holder->get();
-    cache[key_id] = std::move(holder);
+    cache[cache_key] = std::move(holder);
     return raw;
   }
 
@@ -944,13 +1134,18 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (encrypted) {
       key_id = sample.decrypt->key_id.empty() ? encryption.default_key_id : sample.decrypt->key_id;
     }
-    if (stream == StreamType::kVideo && awaiting_parameter_sets_ &&
-        !ConfigureFromInBandParameterSets(bytes, size, error)) {
+    if (stream == StreamType::kVideo && (awaiting_video_config_ || sample.is_keyframe) &&
+        !UpdateVideoConfigFromKeyframe(bytes, size, error)) {
+      CFRelease(block);
+      return false;
+    }
+    if (stream == StreamType::kAudio && awaiting_audio_config_ &&
+        !UpdateAudioConfigFromSyncframe(bytes, size, error)) {
       CFRelease(block);
       return false;
     }
     CMFormatDescriptionRef format =
-        encrypted ? ProtectedFormat(stream, key_id, error)
+        encrypted ? ProtectedFormat(stream, key_id, sample.decrypt->pattern, error)
                   : (stream == StreamType::kVideo ? video_clear_format_.get()
                                                   : audio_clear_format_.get());
     if (!format) {
@@ -1072,13 +1267,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     auto fired = std::make_shared<std::atomic<bool>>(false);
     [renderer requestMediaDataWhenReadyOnQueue:RequestQueue()
                                     usingBlock:^{
+                                      // Only hand over; stopping the request
+                                      // happens on the owner sequence, so every
+                                      // AVFoundation control call (rates,
+                                      // flushes, requests) comes from one thread.
                                       if (fired->exchange(true)) {
                                         return;
                                       }
-                                      [renderer stopRequestingMediaData];
-                                      (*poster)([weak, stream, generation] {
+                                      (*poster)([weak, stream, generation, renderer] {
                                         auto impl = weak.lock();
                                         if (impl && impl->generation_ == generation) {
+                                          [renderer stopRequestingMediaData];
                                           impl->StreamFor(stream).armed = false;
                                           impl->DeliverNeedData(stream);
                                         }
@@ -1253,7 +1452,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool have_enough_ = false;
   // The clock waits for HAVE_ENOUGH (start, seek or underflow).
   bool clock_held_ = true;
-  bool awaiting_parameter_sets_ = false;
+  bool awaiting_video_config_ = false;  // Record comes from the next keyframe.
+  bool awaiting_audio_config_ = false;  // dac3/dec3 from the next syncframe.
+  std::vector<std::vector<uint8_t>> parameter_sets_;  // Behind the current record.
+  std::vector<uint8_t> av1_sequence_header_;
+  int32_t natural_width_ = 0;
+  int32_t natural_height_ = 0;
   uint64_t generation_ = 0;  // Bumped by Flush; stale posted tasks compare it.
   bool ended_ = false;
   bool video_failure_reported_ = false;
@@ -1271,6 +1475,14 @@ FairPlayRenderer::~FairPlayRenderer() {
 Result FairPlayRenderer::Initialize(const std::optional<VideoConfig>& video,
                                     const std::optional<AudioConfig>& audio) {
   return impl_->Initialize(video, audio);
+}
+
+Result FairPlayRenderer::Reconfigure(const VideoConfig& config) {
+  return impl_->Reconfigure(config);
+}
+
+Result FairPlayRenderer::Reconfigure(const AudioConfig& config) {
+  return impl_->Reconfigure(config);
 }
 
 Result FairPlayRenderer::SetCdm(FairPlayCdm* cdm) {

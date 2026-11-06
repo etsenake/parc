@@ -247,6 +247,10 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
             case FourCC('d', 'v', 'v', 'C'):
               track->dolby_vision_config.assign(c, c + child.payload_size);
               break;
+            case FourCC('d', 'a', 'c', '3'):
+            case FourCC('d', 'e', 'c', '3'):
+              track->codec_config.assign(c, c + child.payload_size);
+              break;
             case FourCC('e', 's', 'd', 's'):
               track->esds_payload.assign(c, c + child.payload_size);
               track->codec_config = AscFromEsds(c, child.payload_size);
@@ -768,7 +772,7 @@ EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
       AvcToAnnexB(track.codec_config, hevc, sample.is_keyframe, storage,
                   sample.decrypt ? &subsamples : nullptr);
     }
-  } else if (AacObjectType(track.codec_config, true) <= 4) {
+  } else if (f == FourCC('m', 'p', '4', 'a') && AacObjectType(track.codec_config, true) <= 4) {
     // PrepareAACBuffer adds ADTS when the config fits it (not xHE-AAC).
     std::vector<uint8_t> header = AdtsHeader(track.codec_config, storage->size());
     if (sample.decrypt) {

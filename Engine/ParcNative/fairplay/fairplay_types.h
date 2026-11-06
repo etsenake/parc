@@ -76,8 +76,11 @@ struct EncodedSample {
   std::optional<DecryptInfo> decrypt;  // nullopt for clear samples.
 };
 
-// Track-level protection, from 'schm'/'tenc' (or Chromium's
-// EncryptionScheme on the decoder config plus the first DecryptConfig).
+// Track-level protection, from 'schm'/'tenc'. Only |scheme| is required:
+// Chromium gives a renderer just the decoder config's EncryptionScheme, so
+// when the key ID, pattern or IV fields are empty the renderer takes them
+// from each sample's DecryptInfo (protected formats are built per key ID from
+// the first encrypted sample, which also handles clear lead).
 struct TrackEncryption {
   EncryptionScheme scheme = EncryptionScheme::kUnencrypted;
   std::vector<uint8_t> default_key_id;  // 16 bytes.
@@ -109,10 +112,18 @@ struct VideoConfig {
   uint32_t sample_entry = 0;
   // AVCDecoderConfigurationRecord ('avcC' payload), HEVCDecoderConfigurationRecord
   // ('hvcC', also for Dolby Vision) or AV1CodecConfigurationRecord ('av1C').
+  // May be empty, as Chromium's MP4 parser always leaves it: the renderer then
+  // builds it from the first keyframe (in-band SPS/PPS/VPS, or AV1's sequence
+  // header OBU), and rebuilds it whenever a keyframe brings different ones.
   std::vector<uint8_t> extra_data;
   // Dolby Vision: DOVIDecoderConfigurationRecord, carried as 'dvcC' for
-  // profiles up to 7 and 'dvvC' from 8.
+  // profiles up to 7 and 'dvvC' from 8. When empty and dolby_vision_profile
+  // is set (Chromium carries only profile and level), it is built from
+  // profile, level and compatibility ID (0 for profile 5).
   std::vector<uint8_t> dolby_vision_config;
+  int dolby_vision_profile = -1;
+  int dolby_vision_level = 0;
+  int dolby_vision_compatibility_id = 0;
   BitstreamFormat format = BitstreamFormat::kLengthPrefixed;
   int32_t coded_width = 0;
   int32_t coded_height = 0;
@@ -123,8 +134,9 @@ struct VideoConfig {
 
 struct AudioConfig {
   AudioCodec codec = AudioCodec::kAAC;
-  // AAC: AudioSpecificConfig (any object type). AC-3: 'dac3' payload.
-  // E-AC-3: 'dec3' payload.
+  // AAC: AudioSpecificConfig (any object type; required). AC-3: 'dac3'
+  // payload. E-AC-3: 'dec3' payload. For AC-3/E-AC-3 it may be empty, as
+  // Chromium leaves it: the renderer builds it from the first syncframe.
   std::vector<uint8_t> extra_data;
   AudioFraming framing = AudioFraming::kRaw;
   int32_t sample_rate = 0;
