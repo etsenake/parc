@@ -51,9 +51,10 @@ cannot prove a remote machine is dead.
    reject new app/helper crash reports. Post-launch checks preserve the normal
    custom Finder icon metadata. No browser-driving regressions are run.
 5. Verify release/acceptance evidence, promote stable/latest, update and push
-   `~/homebrew-tap`, refresh the installed tap, audit the cask, and actually
-   exercise the Homebrew upgrade. The profile is checked byte-for-byte before
-   opening that installation too. No uninstall/zap/profile reset is used.
+   `~/homebrew-tap`, refresh the installed tap and audit the cask. **Never run
+   `brew upgrade`, `brew install` or `brew reinstall` automatically.** Josh runs
+   `brew upgrade --cask etsenake/tap/parc` himself. Updating the tap is publication;
+   upgrading the installed Homebrew receipt is a separate user action.
 6. Remove this run's superseded rollback app bundles only after acceptance;
    register the installed app. Keep the newest pristine package, profile backups,
    reports, receipts, seals and engine output. Keep `build/` excluded from

@@ -374,8 +374,6 @@ class Release:
         self.git("fetch", "origin", "main", cwd=installed_tap, retries=2)
         self.git("merge", "--ff-only", "origin/main", cwd=installed_tap)
         self.command(["brew", "audit", "--cask", "etsenake/tap/parc"], name="tap-audit")
-        self.command([sys.executable, source / 'scripts/release_brew.py', self.state['package'],
-                      Path(self.state['run']) / 'homebrew'], name='homebrew-upgrade')
         self.checkpoint(tap=str(tap), tap_commit=self.git("rev-parse", "HEAD", cwd=tap))
 
     def finish(self):
@@ -399,7 +397,7 @@ class Release:
         removed = []
         # Only exact rollback bundles owned by this run are eligible. The newest
         # pristine package, reports, profiles, seals and compiled output remain.
-        for relative in ('install/previous-Parc.app', 'homebrew/before-Parc.app', 'homebrew/manual-Parc.app'):
+        for relative in ('install/previous-Parc.app',):
             old = Path(self.state['run']) / relative
             if old.is_dir() and not old.is_symlink():
                 self.command([lsregister, '-u', old], name='unregister-old-app')
@@ -421,7 +419,7 @@ class Release:
                     'strict_signature_before_launch_verified': acceptance['prelaunch_strict_verified'],
                     'signature_after_launch_verified': acceptance['installed_code_hashes_verified'],
                     'application_window_verified': False, 'browser_functionality_acceptance_claimed': False,
-                    'homebrew': {'version': self.state['version']['version'], 'tap_commit': self.state['tap_commit']},
+                    'homebrew': {'cask_version': self.state['version']['version'], 'tap_commit': self.state['tap_commit'], 'upgrade': 'manual_not_run'},
                     'completed_utc': now(), 'master_release_run': self.state['run']}
         save(state_path, previous)
         self.checkpoint(removed_rollback_apps=removed, lease_release_started=True)
