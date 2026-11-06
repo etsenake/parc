@@ -85,10 +85,21 @@ calls `removeFromSuperlayer` on its own CALayer) can never detach the registered
 layer from a newer tree. A CALayer has one superlayer, so the hosting rule is:
 the tree committing now takes the layer. A compositor that stopped drawing (a
 hidden or parked pane compositor) keeps its last tree but never commits, so it
-can't hold the layer away from the compositor that shows the page now. The cost
-is that two trees that both keep drawing the same token would trade the layer
-every frame. Only one surface embedded in two live compositors does that, and
-Picture in Picture must avoid it (below).
+can't hold the layer away from the compositor that shows the page now.
+
+Every committed content layer that shows a registered layer is recorded,
+process-wide, with its commit order. When the holder lets the layer go (its
+tree replaced by one without the token, a new token in its host, its
+coordinator's tree dropped on resize, or teardown), the layer moves at once to
+the most recently committed layer that still shows it in a live tree. So a
+stale frame committed late (Parc holds the previous page's frame during a tab
+switch) and then replaced can't strand it. The visible tree gets it back
+without a commit of its own, which may never come because the video plays
+without compositor frames.
+
+The cost is that two trees that both keep drawing the same token trade the
+layer every frame. Only one surface embedded in two live compositors does that,
+and Picture in Picture must avoid it (below).
 
 ## When the frame can't be all CALayers
 
@@ -177,8 +188,9 @@ behaves the same way for filters it can't composite.
   coordinators live on the GPU main thread of the same process. The tree that
   draws the page takes the layer at its first commit. A parked compositor
   whose last tree still names the token doesn't commit, so it never takes the
-  layer back. If it draws again, it does, as the latest committer. A layer can
-  only be in one place.
+  layer back. If it draws again, it does, as the latest committer, and when it
+  then drops the token the layer returns to the page's tree. A layer can only
+  be in one place.
 - **Hidden page:** a page with no compositor has no tree holding the layer,
   so the layer is detached. Whether a detached AVSampleBufferDisplayLayer keeps
   decoding, or sets `requiresFlushToResumeDecoding`, is Apple's behaviour and
@@ -232,8 +244,8 @@ What M3 still needs from the engine:
 1. The overlay applies, and `accelerated_widget_mac`, `viz_service` and
    `gl` compile. Optionally build and run `accelerated_widget_mac_unittests`
    with `--gtest_filter=CALayerTreeTest.ProtectedLayer`. It checks placement,
-   reuse across frames, taking the layer back from an idle tree, and the black
-   host.
+   reuse across frames, taking the layer back from an idle tree, handing it
+   back when a late tree drops the token, and the black host.
 2. Ordinary video is unchanged: YouTube and an MSE test page still show
    yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
    `--show-mac-overlay-borders`.

@@ -32,7 +32,7 @@
  };
  
  // The CARendererLayerTree will construct a hierarchy of CALayers from a linear
-@@ -97,8 +101,10 @@
+@@ -97,9 +101,16 @@
    class ContentLayer;
    friend class ContentLayer;
  
@@ -42,9 +42,15 @@
 -      std::unordered_map<IOSurfaceRef, base::WeakPtr<ContentLayer>>;
 +      std::unordered_map<const void*, base::WeakPtr<ContentLayer>>;
  
++  // Parc: the committed content layers that show each registered protected
++  // layer, process-wide, for handing the layer on when its holder lets go.
++  struct ProtectedLayerClaims;
++  static ProtectedLayerClaims& GetProtectedLayerClaims();
++
    void MatchLayersToOldTree(CARendererLayerTree* old_tree);
  
-@@ -242,7 +248,9 @@
+   class RootLayer {
+@@ -242,7 +253,9 @@
                   bool nearest_neighbor_filter,
                   const gfx::HDRMetadata& hdr_metadata,
                   gfx::ProtectedVideoType protected_video_type,
@@ -55,17 +61,23 @@
  
      ContentLayer(ContentLayer&& layer) = delete;
      ContentLayer(const ContentLayer&) = delete;
-@@ -252,6 +260,9 @@
+@@ -252,6 +265,15 @@
      ~ContentLayer();
      void CommitToCA(CALayer* last_committed_ca_layer);
  
-+    // Puts `protected_layer_` in this layer's host, filling it.
++    // Puts `protected_layer_` in this layer's host, filling it, and records
++    // this committed layer as showing it.
 +    void CommitProtectedLayer();
++    // Sizes the registered layer to fill this layer's host.
++    void FillProtectedLayer();
++    // When no committed tree attached to its coordinator holds `layer`, moves
++    // it into the host of the most recently committed layer that shows it.
++    static void HandOnProtectedLayer(CALayer* layer);
 +
      CARendererLayerTree* tree() { return parent_layer_->tree(); }
      void UpdateMapAndMatchOldLayers(CALayerMap& old_ca_layer_map,
                                      int& layer_order,
-@@ -298,6 +309,12 @@
+@@ -298,6 +320,12 @@
      // AVSampleBufferDisplayLayer, then |ca_layer| will point to |av_layer|.
      AVSampleBufferDisplayLayer* __strong av_layer_;
  
@@ -80,7 +92,15 @@
      CALayer* __strong update_indicator_layer_;
 --- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
 +++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
-@@ -26,6 +26,7 @@
+@@ -12,6 +12,7 @@
+ 
+ #include <array>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/apple/foundation_util.h"
+ #include "base/apple/scoped_cftyperef.h"
+@@ -26,6 +27,7 @@
  #include "components/viz/common/resources/shared_image_format.h"
  #include "third_party/skia/include/core/SkCanvas.h"
  #include "third_party/skia/include/core/SkColor.h"
@@ -88,7 +108,51 @@
  #include "ui/base/cocoa/animation_utils.h"
  #include "ui/base/ui_base_switches.h"
  #include "ui/gfx/geometry/dip_util.h"
-@@ -462,7 +463,11 @@
+@@ -278,6 +280,17 @@
+ 
+   return AVSampleBufferDisplayLayerEnqueueCVPixelBuffer(av_layer,
+                                                         cv_pixel_buffer.get());
++}
++
++// Parc: whether `host`, a content layer's CALayer, is still in a committed
++// tree attached to its coordinator. Five superlayers up are the transform,
++// rounded-corner, clipping and root layers, then the coordinator's layer.
++bool IsHostInLiveTree(CALayer* host) {
++  CALayer* layer = host;
++  for (int depth = 0; depth < 5 && layer; ++depth) {
++    layer = layer.superlayer;
++  }
++  return layer != nil;
+ }
+ 
+ CATransform3D ToCATransform3D(const gfx::Transform& t) {
+@@ -390,6 +403,25 @@
+ CARendererLayerTree::SolidColorContents::GetMap() {
+   static base::NoDestructor<Map> map;
+   return map.get();
++}
++
++// Every CALayerTreeCoordinator in the GPU process commits on its main thread,
++// so this is only used there.
++struct CARendererLayerTree::ProtectedLayerClaims {
++  struct Claim {
++    uint64_t sequence = 0;
++    raw_ptr<ContentLayer> content_layer;
++  };
++  uint64_t last_sequence = 0;
++  // Keyed by the registered layer, which each claimant retains.
++  std::unordered_map<const void*, std::vector<Claim>> by_layer;
++};
++
++// static
++CARendererLayerTree::ProtectedLayerClaims&
++CARendererLayerTree::GetProtectedLayerClaims() {
++  static base::NoDestructor<ProtectedLayerClaims> claims;
++  return *claims;
+ }
+ 
+ CARendererLayerTree::CARendererLayerTree(
+@@ -462,7 +494,11 @@
      CALayerMap& old_ca_layer_map,
      int& layer_order,
      int& last_old_layer_order) {
@@ -101,7 +165,7 @@
  
    if (!io_surface_ref)
      return;
-@@ -673,7 +678,8 @@
+@@ -673,7 +709,8 @@
            return false;
  
          // See if this is the video layer.
@@ -111,7 +175,7 @@
            found_video_layer = true;
            if (!transform_layer.transform_.IsPositiveScaleOrTranslation())
              return false;
-@@ -789,7 +795,8 @@
+@@ -789,7 +826,8 @@
      bool nearest_neighbor_filter,
      const gfx::HDRMetadata& hdr_metadata,
      gfx::ProtectedVideoType protected_video_type,
@@ -121,7 +185,7 @@
      : parent_layer_(parent_layer),
        io_surface_(io_surface),
        cv_pixel_buffer_(cv_pixel_buffer),
-@@ -843,9 +850,19 @@
+@@ -843,9 +881,19 @@
    }
  
    // Determine which type of CALayer subclass we should use.
@@ -144,7 +208,29 @@
      type_ = CALayerType::kHDRCopier;
    } else if (io_surface) {
      // Only allow YUV frames which fill the layer's contents or protected
-@@ -968,7 +985,8 @@
+@@ -903,6 +951,21 @@
+ CARendererLayerTree::ContentLayer::~ContentLayer() {
+   [ca_layer_ removeFromSuperlayer];
+   [update_indicator_layer_ removeFromSuperlayer];
++  if (protected_layer_) {
++    // Drop this layer's claim, then hand the registered layer on if it was in
++    // this host (now detached) or another tree that let it go.
++    auto& by_layer = GetProtectedLayerClaims().by_layer;
++    auto it = by_layer.find((__bridge const void*)protected_layer_);
++    if (it != by_layer.end()) {
++      std::erase_if(it->second, [this](const ProtectedLayerClaims::Claim& c) {
++        return c.content_layer == this;
++      });
++      if (it->second.empty()) {
++        by_layer.erase(it);
++      }
++    }
++    HandOnProtectedLayer(protected_layer_);
++  }
+ }
+ 
+ bool CARendererLayerTree::RootLayer::AddContentLayer(
+@@ -968,7 +1031,8 @@
        params.contents_rect, params.rect, params.background_color,
        params.io_surface_color_space, params.edge_aa_mask, params.opacity,
        params.nearest_neighbor_filter, params.hdr_metadata,
@@ -154,7 +240,7 @@
  }
  
  void CARendererLayerTree::RootLayer::CommitToCA(CALayer* superlayer,
-@@ -1163,12 +1181,14 @@
+@@ -1163,12 +1227,14 @@
      DCHECK(old_layer_->ca_layer_);
      std::swap(ca_layer_, old_layer_->ca_layer_);
      std::swap(av_layer_, old_layer_->av_layer_);
@@ -170,7 +256,7 @@
      // If the HDR headroom has changed then the HDRCopierLayer's tone mapping
      // may change, so re-draw this layer.
      if (old_layer_->type_ == CALayerType::kHDRCopier &&
-@@ -1209,6 +1229,12 @@
+@@ -1209,6 +1275,12 @@
          break;
        case CALayerType::kDefault:
          ca_layer_ = [[CALayer alloc] init];
@@ -183,7 +269,7 @@
      }
      ca_layer_.anchorPoint = CGPointZero;
    }
-@@ -1265,6 +1291,9 @@
+@@ -1265,6 +1337,9 @@
          // https://crbug.com/702369
        }
        break;
@@ -193,7 +279,7 @@
      case CALayerType::kDefault:
        if (update_contents) {
          if (io_surface_) {
-@@ -1279,7 +1308,8 @@
+@@ -1279,7 +1354,8 @@
        break;
    }
  
@@ -203,7 +289,7 @@
      if (@available(macOS 26, iOS 26, *)) {
        float max_hdr_headroom = cc::ToneMapUtil::GetMaxHdrHeadroom(
            io_surface_color_space_, hdr_metadata_);
-@@ -1298,7 +1328,7 @@
+@@ -1298,7 +1374,7 @@
    }
  
    if (update_contents_rect) {
@@ -212,7 +298,7 @@
        ca_layer_.contentsRect = contents_rect_.ToCGRect();
    }
    if (update_rect) {
-@@ -1330,6 +1360,9 @@
+@@ -1330,6 +1406,9 @@
      ca_layer_.magnificationFilter = ca_filter_;
      ca_layer_.minificationFilter = ca_filter_;
    }
@@ -222,7 +308,7 @@
  
  #if BUILDFLAG(IS_MAC)
    static bool show_overlay_borders =
-@@ -1360,6 +1393,11 @@
+@@ -1360,6 +1439,11 @@
            green = blue = 1;
          }
          break;
@@ -234,22 +320,27 @@
        case CALayerType::kDefault:
          if (pixel_format == 0) {
            // Grey is no IOSurface (a solid color layer).
-@@ -1410,6 +1448,70 @@
-     }
-   }
+@@ -1412,4 +1496,107 @@
  #endif
-+}
-+
+ }
+ 
 +void CARendererLayerTree::ContentLayer::CommitProtectedLayer() {
-+  // Let go of a layer this host took for another token.
++  // Let go of a layer this host took for another token, handing it on to
++  // another tree that still shows it.
 +  if (hosted_layer_ && hosted_layer_ != protected_layer_ &&
 +      hosted_layer_.superlayer == ca_layer_) {
-+    [hosted_layer_ removeFromSuperlayer];
++    CALayer* released = hosted_layer_;
++    [released removeFromSuperlayer];
++    HandOnProtectedLayer(released);
 +  }
 +  hosted_layer_ = protected_layer_;
 +  if (!protected_layer_) {
 +    return;
 +  }
++
++  ProtectedLayerClaims& claims = GetProtectedLayerClaims();
++  claims.by_layer[(__bridge const void*)protected_layer_].push_back(
++      {++claims.last_sequence, this});
 +
 +  // A layer has one superlayer, and the tree committing now takes it. A tree
 +  // that stopped drawing (a hidden or parked compositor) keeps its last tree
@@ -260,9 +351,12 @@
 +  if (protected_layer_.superlayer != ca_layer_) {
 +    [ca_layer_ addSublayer:protected_layer_];
 +  }
++  FillProtectedLayer();
++}
 +
-+  // Fill the host. The host carries the quad's rect and opacity; its
-+  // ancestors carry the transform, clip and rounded corners.
++void CARendererLayerTree::ContentLayer::FillProtectedLayer() {
++  // The host carries the quad's rect and opacity; its ancestors carry the
++  // transform, clip and rounded corners.
 +  const CGRect bounds = ca_layer_.bounds;
 +  if (!CGPointEqualToPoint(protected_layer_.anchorPoint, CGPointZero)) {
 +    protected_layer_.anchorPoint = CGPointZero;
@@ -302,8 +396,37 @@
 +      av_layer.geometryFlipped = YES;
 +    }
 +  }
- }
- 
++}
++
++// static
++void CARendererLayerTree::ContentLayer::HandOnProtectedLayer(CALayer* layer) {
++  if (IsHostInLiveTree(layer.superlayer)) {
++    return;
++  }
++  // Its holder let it go or went away. A tree that showed it may not commit
++  // again for a long time (video plays without compositor frames), so move it
++  // now to the newest committed layer that shows it, if one is still live.
++  auto& by_layer = GetProtectedLayerClaims().by_layer;
++  auto it = by_layer.find((__bridge const void*)layer);
++  if (it == by_layer.end()) {
++    return;
++  }
++  ContentLayer* newest = nullptr;
++  uint64_t newest_sequence = 0;
++  for (const auto& claim : it->second) {
++    ContentLayer* candidate = claim.content_layer;
++    if (claim.sequence > newest_sequence && candidate->ca_layer_ &&
++        IsHostInLiveTree(candidate->ca_layer_)) {
++      newest = candidate;
++      newest_sequence = claim.sequence;
++    }
++  }
++  if (newest) {
++    [newest->ca_layer_ addSublayer:layer];
++    newest->FillProtectedLayer();
++  }
++}
++
  }  // namespace ui
 --- a/ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm
 +++ b/ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm
@@ -323,7 +446,7 @@
  
    bool allow_av_layers = true;
    bool allow_solid_color_layers = true;
-@@ -71,15 +73,29 @@
+@@ -71,13 +73,27 @@
      io_surface = properties->io_surface;
      io_surface_color_space = properties->color_space;
    }
@@ -338,8 +461,8 @@
 +      gfx::HDRMetadata(), properties->protected_video_type, false);
 +  params.protected_layer_token = properties->protected_layer_token;
 +  return tree->ScheduleCALayer(params);
- }
- 
++}
++
 +// The single content layer under `superlayer` in a committed tree.
 +CALayer* OnlyContentLayerIn(CALayer* superlayer) {
 +  CALayer* layer = superlayer;
@@ -350,12 +473,10 @@
 +    layer = layer.sublayers[0];
 +  }
 +  return layer;
-+}
-+
+ }
+ 
  void UpdateCALayerTree(std::unique_ptr<ui::CARendererLayerTree>& ca_layer_tree,
-                        CALayerProperties* properties,
-                        CALayer* superlayer) {
-@@ -977,7 +993,80 @@
+@@ -977,7 +993,92 @@
      EXPECT_FALSE(av_layer_new.preventsCapture);
    }
  }
@@ -412,6 +533,18 @@
 +  host = GetOnlyContentLayer();
 +  EXPECT_EQ(host, av_layer.superlayer);
 +  EXPECT_EQ(0u, other_host.sublayers.count);
++
++  // If the other tree takes it again (a held frame committed late) and then
++  // drops the token, the layer goes straight back to the first tree, which
++  // doesn't commit.
++  UpdateCALayerTree(other_tree, &properties, other_superlayer);
++  EXPECT_EQ(OnlyContentLayerIn(other_superlayer), av_layer.superlayer);
++  CALayerProperties plain;
++  plain.background_color = SkColors::kRed;
++  UpdateCALayerTree(other_tree, &plain, other_superlayer);
++  EXPECT_EQ(host, av_layer.superlayer);
++  EXPECT_EQ(gfx::Rect(0, 0, 32, 64),
++            gfx::ToEnclosingRect(gfx::RectF(av_layer.frame)));
 +
 +  // Destroying the idle tree leaves the layer where it is.
 +  other_tree.reset();

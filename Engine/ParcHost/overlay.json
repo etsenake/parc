@@ -3666,7 +3666,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "c54a9543e67cc0a45224a65712bfb5e9399f4112fb70e9dfb47d46dcf6f074fa",
+      "sha256": "14da831d1a8fd8f228818fe2bf4ffe9b2c634d2061be267ac37f52b32fbc1d09",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -3676,17 +3676,17 @@
         {
           "target": "ui/accelerated_widget_mac/ca_renderer_layer_tree.h",
           "before_sha256": "e5db9584240a3e6250d085ec80802d9e092b0e19513b656e9c816a165368c3f6",
-          "after_sha256": "37520f908af9a6063538b22a845dcd85f05824d2ab61894f13061fb91d6512a3"
+          "after_sha256": "cf04640da942150a822d6e97eee1ffbd8a55eb0bed8022c906c77152d3af2e4b"
         },
         {
           "target": "ui/accelerated_widget_mac/ca_renderer_layer_tree.mm",
           "before_sha256": "508007e7ff92bc89dd300680e51136ded485f27c83c6f4fd7bc5b31f61e474c3",
-          "after_sha256": "e15f32c47a15b1a9ba94f44744a21665bf97216006a6086ed3420868e91df093"
+          "after_sha256": "d2f537add9a1e4f18b4f5eeb0402b34af1dd9c0f295adfe316a974787180257e"
         },
         {
           "target": "ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm",
           "before_sha256": "e4a284b5b6219f47d50e13ef70dd379d91f9563ae3a337c4ae022f5dabfb11e2",
-          "after_sha256": "fcb46fd712d1d6a02a6f80bca11854a43c8b62376b83946be152e414b38aa22e"
+          "after_sha256": "9bca9caac1520122a13e0e5bfb6afa5d8a4aed0bf5583f76253b77d63a62140f"
         },
         {
           "target": "ui/gl/ca_renderer_layer_params.h",
