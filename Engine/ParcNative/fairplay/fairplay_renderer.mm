@@ -309,6 +309,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!video && !audio) {
       return Result::Error(Exception::kTypeError, "no stream to render");
     }
+    // Each attempt reports its own natural size; a failed attempt's queued
+    // report is dropped (ReportNaturalSize checks the attempt).
+    ++initialize_attempt_;
+    natural_width_ = 0;
+    natural_height_ = 0;
     video_config_ = video;
     audio_config_ = audio;
     std::string error;
@@ -440,13 +445,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     layer_ = nil;
     video_renderer_ = nil;
     audio_ = nil;
-    // A CDM set before Initialize waits for the next attempt, and that
-    // attempt reports the natural size afresh.
+    // A CDM set before Initialize waits for the next attempt.
     FairPlayCdm* pending_cdm = pending_cdm_;
     Shutdown();
     pending_cdm_ = pending_cdm;
-    natural_width_ = 0;
-    natural_height_ = 0;
     synchronizer_ = nil;
     if (CMTimebaseRef timebase = timebase_.exchange(nullptr)) {
       CFRelease(timebase);
@@ -1096,9 +1098,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     natural_width_ = width;
     natural_height_ = height;
-    // Not after an Initialize that failed (no synchronizer then).
-    Post([width, height](Impl& impl) {
-      if (impl.synchronizer_) {
+    // Only for the Initialize attempt that queued it, and only if that
+    // attempt succeeded (a synchronizer exists).
+    const uint64_t attempt = initialize_attempt_;
+    Post([width, height, attempt](Impl& impl) {
+      if (impl.synchronizer_ && impl.initialize_attempt_ == attempt) {
         impl.client_->OnVideoNaturalSizeChange(width, height);
       }
     });
@@ -1782,6 +1786,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> video_protected_formats_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> audio_protected_formats_;
   bool output_device_set_ = false;  // SetAudioOutputDevice named a device.
+  uint64_t initialize_attempt_ = 0;  // Bumped by every Initialize call.
   // Cache keys of the protected formats last used (GetStatus reports them).
   std::vector<uint8_t> video_protected_key_;
   std::vector<uint8_t> audio_protected_key_;

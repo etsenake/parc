@@ -1594,6 +1594,63 @@ std::vector<Step> LayerDetachScenario() {
   return steps;
 }
 
+// Initialize that fails on its config, retried at once and later: exactly one
+// natural size per successful attempt, never the failed attempt's.
+std::vector<Step> InitializeRetryScenario() {
+  World* w = g_world;
+  std::vector<Step> steps;
+  steps.push_back(Section("Initialize retried after a config failure: natural size reported once, for the retry"));
+  struct CountingClient : fp::FairPlayRendererClient {
+    std::vector<std::pair<int32_t, int32_t>> sizes;
+    void OnNeedData(fp::StreamType) override {}
+    void OnWaitingForKey() override {}
+    void OnEnded() override {}
+    void OnError(fp::RendererError, const std::string&) override {}
+    void OnVideoNaturalSizeChange(int32_t width, int32_t height) override { sizes.push_back({width, height}); }
+    void OnBufferingStateChange(bool) override {}
+  };
+  for (bool same_task : {true, false}) {
+    steps.push_back([=](Done done) {
+      auto client = std::make_shared<CountingClient>();
+      auto renderer = std::make_shared<fp::FairPlayRenderer>(client.get(), MainPoster());
+      // Same task: the failed attempt's size differs, so a stale report shows.
+      // Later: both attempts have the same size, so a size left recorded by
+      // the failed attempt would make the retry report none.
+      fp::VideoConfig failed_video = VideoConfigFor(w->video.info, Framing::kChromium, true);
+      if (same_task) {
+        failed_video.natural_width = 111;
+        failed_video.natural_height = 77;
+      }
+      fp::AudioConfig bad_audio = AudioConfigFor(w->audio.info, Framing::kChromium, true);
+      bad_audio.extra_data.clear();  // AAC needs its AudioSpecificConfig.
+      const fp::VideoConfig vc = VideoConfigFor(w->video.info, Framing::kChromium, true);
+      const fp::AudioConfig ac = AudioConfigFor(w->audio.info, Framing::kChromium, true);
+      const std::string label = same_task ? "retried in the same task" : "retried later";
+      fp::Result failed = renderer->Initialize(failed_video, bad_audio);
+      Check(!failed.ok(), "initialize retry: Initialize with an AAC config lacking its AudioSpecificConfig fails",
+            failed.ok() ? "succeeded" : failed.message);
+      auto retry = [=] {
+        fp::Result retried = renderer->Initialize(vc, ac);
+        Check(retried.ok(), "initialize retry: the retry (" + label + ") succeeds", retried.message);
+        After(0.3, [=] {
+          std::string seen;
+          for (auto [width, height] : client->sizes) seen += Format("%s%dx%d", seen.empty() ? "" : ", ", width, height);
+          Check(client->sizes.size() == 1 && client->sizes[0] == std::make_pair(vc.coded_width, vc.coded_height),
+                "initialize retry: one natural size, the retry's (" + label + ")", seen.empty() ? "none" : seen);
+          (void)renderer;
+          done();
+        });
+      };
+      if (same_task) {
+        retry();
+      } else {
+        After(0.3, retry);
+      }
+    });
+  }
+  return steps;
+}
+
 // Run inside a sandbox that denies Core Audio's services: the audio
 // renderer is invalid and the synchronizer refuses it, which must fail
 // Initialize with an error instead of throwing out of it.
@@ -3718,6 +3775,7 @@ void RunAll() {
   add("UnderflowScenario()", UnderflowScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
   add("LayerDetachScenario()", LayerDetachScenario());
+  add("InitializeRetryScenario()", InitializeRetryScenario());
   if (g_audio_unavailable) add("AudioUnavailableScenario()", AudioUnavailableScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
   add("SeekOrderScenario()", SeekOrderScenario());
