@@ -476,10 +476,11 @@
  }
  
  void UpdateCALayerTree(std::unique_ptr<ui::CARendererLayerTree>& ca_layer_tree,
-@@ -977,7 +993,92 @@
+@@ -976,6 +992,152 @@
+     EXPECT_EQ(av_layer_new, av_layer_old);
      EXPECT_FALSE(av_layer_new.preventsCapture);
    }
- }
++}
 +
 +// Parc: a quad carrying a registered FairPlay layer's token puts that layer in
 +// the tree where the quad is, follows the quad, moves to whichever tree
@@ -489,7 +490,7 @@
 +      [[AVSampleBufferDisplayLayer alloc] init];
 +  const base::UnguessableToken token = base::UnguessableToken::Create();
 +  ASSERT_TRUE(ui::ProtectedLayerRegistry::Register(token, av_layer));
- 
++
 +  CALayerProperties properties;
 +  properties.protected_layer_token = token;
 +  properties.protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
@@ -566,9 +567,68 @@
 +  EXPECT_EQ(0, rgba[0] + rgba[1] + rgba[2]);
 +}
 +
++// Parc: Picture in Picture moves a FairPlay layer between the page's tree and
++// the PiP window's tree. WebMediaPlayerImpl stops drawing the video in the page
++// while in PiP, and a hidden PiP window keeps its last tree without committing.
++TEST_F(CALayerTreeTest, ProtectedLayerPictureInPicture) {
++  AVSampleBufferDisplayLayer* av_layer =
++      [[AVSampleBufferDisplayLayer alloc] init];
++  const base::UnguessableToken token = base::UnguessableToken::Create();
++  ASSERT_TRUE(ui::ProtectedLayerRegistry::Register(token, av_layer));
++
++  CALayerProperties page_video;
++  page_video.protected_layer_token = token;
++  page_video.protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
++  page_video.background_color = SkColors::kTransparent;
++  page_video.is_clipped = false;
++  page_video.rect = gfx::Rect(0, 0, 640, 360);
++  CALayerProperties pip_video = page_video;
++  pip_video.rect = gfx::Rect(0, 0, 320, 180);
++  CALayerProperties page_placeholder;
++  page_placeholder.background_color = SkColors::kRed;
++
++  std::unique_ptr<ui::CARendererLayerTree> page_tree;
++  std::unique_ptr<ui::CARendererLayerTree> pip_tree;
++  CALayer* pip_superlayer = [[CALayer alloc] init];
++  UpdateCALayerTree(page_tree, &page_video, superlayer_);
++  EXPECT_EQ(GetOnlyContentLayer(), av_layer.superlayer);
++
++  // Entering PiP: the PiP window's first frame takes the layer, and the
++  // page's next frame, without the video, leaves it there.
++  UpdateCALayerTree(pip_tree, &pip_video, pip_superlayer);
++  CALayer* pip_host = OnlyContentLayerIn(pip_superlayer);
++  ASSERT_TRUE(pip_host);
++  EXPECT_EQ(pip_host, av_layer.superlayer);
++  UpdateCALayerTree(page_tree, &page_placeholder, superlayer_);
++  EXPECT_EQ(pip_host, av_layer.superlayer);
++  EXPECT_EQ(gfx::Rect(0, 0, 320, 180),
++            gfx::ToEnclosingRect(gfx::RectF(av_layer.frame)));
++
++  // Leaving PiP: the page draws the video again and takes it back from the
++  // hidden PiP window, which doesn't commit.
++  UpdateCALayerTree(page_tree, &page_video, superlayer_);
++  CALayer* page_host = GetOnlyContentLayer();
++  EXPECT_EQ(page_host, av_layer.superlayer);
++  EXPECT_EQ(0u, pip_host.sublayers.count);
++  EXPECT_EQ(gfx::Rect(0, 0, 640, 360),
++            gfx::ToEnclosingRect(gfx::RectF(av_layer.frame)));
++
++  // A second session reuses the PiP window, which draws again.
++  UpdateCALayerTree(pip_tree, &pip_video, pip_superlayer);
++  EXPECT_EQ(OnlyContentLayerIn(pip_superlayer), av_layer.superlayer);
++  UpdateCALayerTree(page_tree, &page_placeholder, superlayer_);
++
++  // Closing the window before the page draws the video leaves the layer in
++  // no tree until the page's frame takes it.
++  pip_tree.reset();
++  EXPECT_TRUE(!av_layer.superlayer || !av_layer.superlayer.superlayer);
++  UpdateCALayerTree(page_tree, &page_video, superlayer_);
++  EXPECT_EQ(GetOnlyContentLayer(), av_layer.superlayer);
++
++  ui::ProtectedLayerRegistry::Unregister(token);
+ }
+ 
  // Test fullscreen low power detection.
- TEST_F(CALayerTreeTest, FullscreenLowPower) {
-   base::test::ScopedFeatureList features;
 --- a/ui/gl/ca_renderer_layer_params.h
 +++ b/ui/gl/ca_renderer_layer_params.h
 @@ -8,6 +8,7 @@

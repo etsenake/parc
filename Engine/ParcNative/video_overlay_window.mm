@@ -264,6 +264,11 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
     surface_layer_->SetFallbackBackgroundColor(SkColors::kBlack);
     compositor_->compositor()->SetRootLayer(surface_layer_.get());
     compositor_->compositor()->SetBackgroundColor(SK_ColorBLACK);
+    // Draws only while shown (ShowInactive). A suspended compositor only defers
+    // its own commits; its display still redraws when the embedded video
+    // surface changes. A hidden window drawing a FairPlay video would take the
+    // video's protected layer back from the page (COMPOSITING.md).
+    compositor_->compositor()->SetVisible(false);
     compositor_->widget()->SetNSView(this);
     auto weak = weak_factory_.GetWeakPtr();
     gfx::Rect source = web_contents()->GetContainerBounds();
@@ -324,11 +329,14 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   void Hide() override {
     compositor_->Suspend();
     compositor_->widget()->SetSuspended(true);
+    // Stop drawing, as NativeWidgetMacNSWindowHost does for a hidden window.
+    compositor_->compositor()->SetVisible(false);
     [presenter_ hide];  // Last access: occlusion observers can delete this.
   }
   void ShowInactive() override {
     // The real controller reuses its hidden overlay for subsequent sessions.
     PiPInputDiagnostics::Begin(web_contents(), presenter_.panel);
+    compositor_->compositor()->SetVisible(true);
     compositor_->widget()->SetSuspended(false);
     [presenter_
         showInactive];  // Last access: real native callbacks may delete.

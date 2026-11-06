@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 352,
+  "version": 353,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -835,7 +835,7 @@
     {
       "source": "Engine/ParcNative/video_overlay_window.mm",
       "target": "cef/libcef/browser/parc_native/video_overlay_window.mm",
-      "sha256": "8afd7541ba72f158528361171c0a9af4efa69e75a288e7dc81766b23b7694081"
+      "sha256": "d5afc4e8027241a4adb643ba857ca1cf69966caa843d56eb3659668b0e46105d"
     },
     {
       "source": "Sources/ParcEngine/VideoPiPWindow.h",
@@ -3826,7 +3826,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "14da831d1a8fd8f228818fe2bf4ffe9b2c634d2061be267ac37f52b32fbc1d09",
+      "sha256": "ab15205c48af0efb0e957fcd0400a97ce43d17d80c225c9073a0b3949f97f984",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -3846,7 +3846,7 @@
         {
           "target": "ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm",
           "before_sha256": "e4a284b5b6219f47d50e13ef70dd379d91f9563ae3a337c4ae022f5dabfb11e2",
-          "after_sha256": "9bca9caac1520122a13e0e5bfb6afa5d8a4aed0bf5583f76253b77d63a62140f"
+          "after_sha256": "2f7065b544f3b09136aac29aad28cc2f90888fca2d97eecb598df240e733941c"
         },
         {
           "target": "ui/gl/ca_renderer_layer_params.h",
