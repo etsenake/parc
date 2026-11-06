@@ -924,6 +924,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           tab ? tab->GetWeakPtr() : base::WeakPtr<tabs::TabInterface>();
       const bool attached = platform->PageHostDidAttach();
       if (attached && weak) {
+        weak->visibility_retries_ = 0;
         weak->Synchronize();
       }
       return attached && weak && contents_weak && tab_weak &&
@@ -1068,7 +1069,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   // run only after AppKit's run loop has exited and committed that arrangement
   // with the incoming page still hidden, showing the pane's backing.
   void SynchronizeVisibilityNow() {
-    if (tearing_down_ || draining_ || !window_ || synchronizing_visibility_) {
+    if (tearing_down_ || draining_ || !window_) {
+      return;
+    }
+    if (synchronizing_visibility_) {
+      Synchronize();
       return;
     }
     std::vector<base::WeakPtr<content::WebContents>> snapshot;
@@ -1078,18 +1083,30 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     SynchronizeVisibility(snapshot);
   }
-  // A pass a native callback starts during another is left to the outer one,
-  // which reruns through Synchronize when what it showed has changed.
+  // A pass a native callback asks for during another becomes a queued full
+  // pass, which supersedes the outer one.
   void SynchronizeVisibility(
       const std::vector<base::WeakPtr<content::WebContents>>& snapshot) {
-    if (tearing_down_ || draining_ || !window_ || synchronizing_visibility_) {
+    if (tearing_down_ || draining_ || !window_) {
+      return;
+    }
+    if (synchronizing_visibility_) {
+      Synchronize();
       return;
     }
     auto weak = weak_factory_.GetWeakPtr();
+    const uint64_t visibility_generation = synchronize_generation_;
     synchronizing_visibility_ = true;
+    pass_visible_ = nil;
     ApplyVisibility(snapshot);
     if (weak) {
       synchronizing_visibility_ = false;
+      // Also after a pass that stopped early without queueing a newer one.
+      if (pass_visible_ && !tearing_down_ && !draining_ &&
+          visibility_generation == synchronize_generation_) {
+        RetryUnsettledVisibility(pass_visible_, pass_occluded_);
+      }
+      pass_visible_ = nil;
     }
   }
   void ApplyVisibility(
@@ -1110,6 +1127,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         visibility_generation != synchronize_generation_) {
       return;
     }
+    pass_visible_ = visible;
+    pass_occluded_ = occluded;
     // Actual shell pane visibility, not TabStripModel's single active index,
     // determines compositor visibility for independently displayed split pages.
     for (auto contents : snapshot) {
@@ -1231,6 +1250,45 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (side_panel_) {
       side_panel_->HostStateChanged();
     }
+  }
+  // Every page the shell shows in an on-screen window must end a pass drawing
+  // (or occluded with its window). One that did not — skipped while still
+  // attaching, refused by its host — gets a few short delayed passes, so a
+  // trigger missed on any path corrects itself. A page that can never attach
+  // stops retrying until a clean pass or a new attachment resets the budget.
+  void RetryUnsettledVisibility(NSArray<PCNativePage*>* visible,
+                                bool occluded) {
+    bool unsettled = false;
+    if (window_ && window_.visible && !window_.miniaturized) {
+      for (PCNativePage* page in visible) {
+        content::WebContents* contents = ContentsForNativePage(page);
+        // A host the shell itself hid is meant to stay hidden.
+        if (!contents || page.isEmbedded || !Owns(*contents) ||
+            (page.nativeView.window == window_ &&
+             page.nativeView.hiddenOrHasHiddenAncestor)) {
+          continue;
+        }
+        const auto visibility = contents->GetVisibility();
+        if (occluded ? visibility == content::Visibility::HIDDEN
+                     : visibility != content::Visibility::VISIBLE) {
+          unsettled = true;
+          break;
+        }
+      }
+    }
+    if (!unsettled) {
+      visibility_retries_ = 0;
+      visibility_retry_timer_.Stop();
+      return;
+    }
+    if (visibility_retries_ >= kVisibilityRetryLimit ||
+        visibility_retry_timer_.IsRunning()) {
+      return;
+    }
+    ++visibility_retries_;
+    visibility_retry_timer_.Start(
+        FROM_HERE, base::Milliseconds(50 << visibility_retries_), this,
+        &AppKitBrowserHost::Synchronize);
   }
   bool RequestPageFocus(content::WebContents& contents) {
     const auto weak = weak_factory_.GetWeakPtr();
@@ -1467,6 +1525,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     pane->Refresh(true);
     // A page is created hidden. Whatever attached it (the shell's own adoption
     // included), a full pass follows and shows it if its pane is on screen.
+    visibility_retries_ = 0;
     Synchronize();
     return valid() && attached_here();
   }
@@ -1606,6 +1665,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   void RemoveAppActivityObservers() {
     occlusion_timer_.Stop();
+    visibility_retry_timer_.Stop();
+    visibility_retries_ = 0;
     window_occluded_ = false;
     displays_asleep_ = false;
     for (id observer in workspace_observers_) {
@@ -1711,6 +1772,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   NSMutableArray* __strong app_activity_observers_;
   NSMutableArray* __strong workspace_observers_;
   base::OneShotTimer occlusion_timer_;
+  static constexpr int kVisibilityRetryLimit = 4;
+  base::OneShotTimer visibility_retry_timer_;
+  int visibility_retries_ = 0;
+  NSArray<PCNativePage*>* __strong pass_visible_;
+  bool pass_occluded_ = false;
   bool window_occluded_ = false;
   bool displays_asleep_ = false;
   NSInteger attention_ = 0;
