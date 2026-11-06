@@ -82,11 +82,13 @@ Mojo services).
 
 The host exists so the tree's existing reuse and removal code (each destructor
 calls `removeFromSuperlayer` on its own CALayer) can never detach the registered
-layer from a newer tree. A CALayer has one superlayer, and the hosting rule
-follows from that. A host takes the layer when the host is new, when it held
-another token's layer, or when no live tree holds the layer (its current host
-has no superlayer). Otherwise another, newer host took it, and this tree leaves
-it alone instead of taking it back on every commit.
+layer from a newer tree. A CALayer has one superlayer, so the hosting rule is:
+the tree committing now takes the layer. A compositor that stopped drawing (a
+hidden or parked pane compositor) keeps its last tree but never commits, so it
+can't hold the layer away from the compositor that shows the page now. The cost
+is that two trees that both keep drawing the same token would trade the layer
+every frame. Only one surface embedded in two live compositors does that, and
+Picture in Picture must avoid it (below).
 
 ## When the frame can't be all CALayers
 
@@ -102,10 +104,14 @@ under controls and subtitles exactly as in the all-CALayer case.
 
 Frames that take this underlay route (the user sees no difference):
 
-- **Video capture or a root copy request:** this tab shared with
-  getDisplayMedia or tab capture, `CopyFromSurface` snapshots such as Parc's tab
-  previews and page capture, DevTools screenshots. The captured image shows
-  black where the video is, as Safari's does.
+- **Video capture or a copy request on the root surface** (the whole
+  compositor, not the page). Tab capture, getDisplayMedia of this tab,
+  `CopyFromSurface` snapshots (Parc's tab previews and page capture) and
+  DevTools screenshots attach to the page's surface instead. The aggregator
+  then keeps the page in its own pass for the copy and still copies the hole
+  quad into the root pass, because the quad requires an overlay. So the screen
+  usually stays all-CALayer. The captured image is black where the video is,
+  as in Safari (magenta in DCHECK builds; transparent for a root-surface copy).
 - **More than 128 quads in the root pass** (300 with five or more videos;
   `kCALayerNewLimit` is off by default). Busy pages, such as a browse grid with
   a preview playing, can exceed this.
@@ -127,7 +133,8 @@ underlay can't be used:
   requires an overlay as solid black in release builds (magenta with DCHECKs).
 - **The quad itself can't be a CALayer:** a blend mode other than src-over on
   the video, non-uniform corner radii, or a clip change inside a 3D sorting
-  context.
+  context. The hole stays in the primary plane, drawn black, and other videos'
+  underlays in the same frame are kept.
 - **Software compositing** (GPU compositing disabled). The patch makes
   `SoftwareRenderer` draw the hole black instead of its unsupported-quad white.
 - **No layer is registered under the token:** the renderer is gone, or the GPU
@@ -167,11 +174,11 @@ behaves the same way for filters it can't composite.
 - **Moving between windows:** Parc's pane compositors belong to a window, so a
   page moved to another window, or shown by another pane compositor after a
   tab switch, is drawn by a different `CALayerTreeCoordinator`. All
-  coordinators live on the GPU main thread of the same process. The new tree's
-  new host takes the layer, and the old tree doesn't take it back, even if a
-  stale frame there still names the token. If two live trees both show the
-  token, as when one surface is embedded twice, the newest host wins. A layer
-  can only be in one place.
+  coordinators live on the GPU main thread of the same process. The tree that
+  draws the page takes the layer at its first commit. A parked compositor
+  whose last tree still names the token doesn't commit, so it never takes the
+  layer back. If it draws again, it does, as the latest committer. A layer can
+  only be in one place.
 - **Hidden page:** a page with no compositor has no tree holding the layer,
   so the layer is detached. Whether a detached AVSampleBufferDisplayLayer keeps
   decoding, or sets `requiresFlushToResumeDecoding`, is Apple's behaviour and
@@ -194,20 +201,21 @@ a FairPlay video that surface holds the hole frame, so:
 - The PiP compositor's aggregated frame contains the same `VideoHoleDrawQuad`
   at the PiP window's size. It goes through the same CA overlay path, into the
   PiP compositor's own `CARendererLayerTree` in the same GPU process.
-- That tree's new host takes the registered layer under the hosting rule, so
-  the playing video moves into the PiP panel with no extra engine API. Leaving
-  PiP destroys that compositor's tree and detaches its host, and the page's
-  next frame takes the layer back.
+- That tree takes the registered layer at its first commit, so the playing
+  video moves into the PiP panel with no extra engine API. Leaving PiP destroys
+  that compositor's tree and detaches its host, and the page's next frame takes
+  the layer back.
 - `preventsCapture` and the panel's rounded corners still apply: the browser
   process masks the remote CALayerHost.
 
 What M3 still needs from the engine:
 
-1. Confirm Blink stops drawing the in-page video quad while in PiP. Otherwise
-   both trees name the token, and the PiP host wins only because it is newer.
-   A page frame that builds a new host (a page relayout during PiP) would pull
-   the layer back. If that happens, the fix is a "suppressed" flag on the
-   page's SurfaceLayer, not a registry change.
+1. Make sure the page stops drawing the in-page video quad while in PiP.
+   Otherwise every page frame (scrolling, animation behind the panel) takes the
+   layer back from the idle PiP compositor, whose video plays without frames.
+   If Blink keeps embedding the surface in the page during PiP, the fix is to
+   hide the page's video SurfaceLayer while it is in PiP (the in-page
+   placeholder covers it anyway), not a registry change.
 2. A first frame in the PiP compositor as soon as it opens. Check that the
    video surface's existing frame is aggregated there without a new hole
    frame.
@@ -224,7 +232,8 @@ What M3 still needs from the engine:
 1. The overlay applies, and `accelerated_widget_mac`, `viz_service` and
    `gl` compile. Optionally build and run `accelerated_widget_mac_unittests`
    with `--gtest_filter=CALayerTreeTest.ProtectedLayer`. It checks placement,
-   reuse across frames, the hand-off between trees and the black host.
+   reuse across frames, taking the layer back from an idle tree, and the black
+   host.
 2. Ordinary video is unchanged: YouTube and an MSE test page still show
    yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
    `--show-mac-overlay-borders`.

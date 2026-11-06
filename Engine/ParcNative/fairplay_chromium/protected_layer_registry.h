@@ -18,10 +18,11 @@
 //  - Register before the token leaves the GPU process, so every quad that can
 //    name the token finds the layer. Unregister when the renderer is
 //    destroyed, after flushing the layer with removal of its displayed image.
-//  - The compositor owns the layer's place in the tree: superlayer, frame,
-//    transform, opacity, hidden, masksToBounds, cornerRadius, videoGravity and
-//    preventsCapture. The renderer owns only media: enqueue, flush, the
-//    content key recipient, the render synchronizer and the time base.
+//  - The compositor owns the layer's place in the tree: superlayer,
+//    anchorPoint, position, bounds, transform, opacity, hidden,
+//    geometryFlipped, videoGravity and preventsCapture. The renderer owns only
+//    media: enqueue, flush, the content key recipient, the render synchronizer
+//    and the time base.
 //  - A token names one layer for its whole life. Never re-register a token for
 //    another layer; make a new token.
 //

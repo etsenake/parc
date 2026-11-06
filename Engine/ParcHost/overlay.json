@@ -1455,7 +1455,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/protected_layer_registry.h",
       "target": "ui/accelerated_widget_mac/protected_layer_registry.h",
-      "sha256": "4d83c7e21ffc49bf4057bde002bc9121138b084528a3678a79965a481cb36c5f"
+      "sha256": "fa32abf94d57424bdb6ff2af64f0434d81e3d1c06fdab38646e1dd5c34edcc10"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/protected_layer_registry.mm",
@@ -3666,7 +3666,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "51a83d84eec1cf5893d9253c1a830e5759c815677faae5c072af68412d2af63b",
+      "sha256": "c54a9543e67cc0a45224a65712bfb5e9399f4112fb70e9dfb47d46dcf6f074fa",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -3676,17 +3676,17 @@
         {
           "target": "ui/accelerated_widget_mac/ca_renderer_layer_tree.h",
           "before_sha256": "e5db9584240a3e6250d085ec80802d9e092b0e19513b656e9c816a165368c3f6",
-          "after_sha256": "b1bf156b3202ce459010d394bfdc36fb6c48d9deb5e4453737b1a5c323e77499"
+          "after_sha256": "37520f908af9a6063538b22a845dcd85f05824d2ab61894f13061fb91d6512a3"
         },
         {
           "target": "ui/accelerated_widget_mac/ca_renderer_layer_tree.mm",
           "before_sha256": "508007e7ff92bc89dd300680e51136ded485f27c83c6f4fd7bc5b31f61e474c3",
-          "after_sha256": "b9690fd26cc3c0190dbe391a8f9df4ec341d28d8cde4ac628b95b0a1b7483eee"
+          "after_sha256": "e15f32c47a15b1a9ba94f44744a21665bf97216006a6086ed3420868e91df093"
         },
         {
           "target": "ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm",
           "before_sha256": "e4a284b5b6219f47d50e13ef70dd379d91f9563ae3a337c4ae022f5dabfb11e2",
-          "after_sha256": "7d617ae45a3bdfab277d26b1ce4a9bc75ef37238af0bcf25f8d3565537ddb405"
+          "after_sha256": "fcb46fd712d1d6a02a6f80bca11854a43c8b62376b83946be152e414b38aa22e"
         },
         {
           "target": "ui/gl/ca_renderer_layer_params.h",
@@ -3701,7 +3701,7 @@
         {
           "target": "components/viz/service/display/ca_layer_overlay.cc",
           "before_sha256": "5cd1ee86cff67c5fa24995edd03f8d84ae8200f86445fd610959564fbfd16689",
-          "after_sha256": "9552c5d1b9e1f66947b02e1c705f9f811beb9e74a163ee8f107265437d91203f"
+          "after_sha256": "6f76351e8216d458199d4dd86f555609a308d738f53ea8a825cb6f0d16a7ac22"
         },
         {
           "target": "components/viz/service/display/skia_renderer.cc",
