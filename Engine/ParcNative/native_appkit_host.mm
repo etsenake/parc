@@ -923,6 +923,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       const auto tab_weak =
           tab ? tab->GetWeakPtr() : base::WeakPtr<tabs::TabInterface>();
       const bool attached = platform->PageHostDidAttach();
+      if (attached && weak) {
+        weak->Synchronize();
+      }
       return attached && weak && contents_weak && tab_weak &&
              !weak->draining_ && !weak->tearing_down_ &&
              weak->Owns(*contents_weak) &&
@@ -1093,6 +1096,15 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       const std::vector<base::WeakPtr<content::WebContents>>& snapshot) {
     auto weak = weak_factory_.GetWeakPtr();
     const uint64_t visibility_generation = synchronize_generation_;
+    // Occlusion is read fresh. The cached flag only marks a window that has
+    // stayed covered for a second; a window back on screen whose notification
+    // has not arrived (or never will) shows its pages instead of leaving a
+    // newly attached one occluded and white.
+    if (window_occluded_ && !WindowCurrentlyOccluded()) {
+      occlusion_timer_.Stop();
+      window_occluded_ = false;
+    }
+    const bool occluded = window_occluded_;
     NSArray<PCNativePage*>* visible = [binding_.client visibleNativePages];
     if (!weak || tearing_down_ || draining_ ||
         visibility_generation != synchronize_generation_) {
@@ -1193,10 +1205,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // sleeping displays is OCCLUDED, as in Chrome: it stops painting and
       // its timers throttle. Chromium's own view tracking never sees Parc's
       // hosted pages, so without this they rendered at full rate unseen.
-      if (shown && !window_occluded_ &&
+      if (shown && !occluded &&
           contents->GetVisibility() != content::Visibility::VISIBLE) {
         contents->WasShown();
-      } else if (shown && window_occluded_ &&
+      } else if (shown && occluded &&
                  contents->GetVisibility() != content::Visibility::OCCLUDED) {
         contents->WasOccluded();
       } else if (!shown &&
@@ -1453,6 +1465,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                                   }
                                 }));
     pane->Refresh(true);
+    // A page is created hidden. Whatever attached it (the shell's own adoption
+    // included), a full pass follows and shows it if its pane is on screen.
+    Synchronize();
     return valid() && attached_here();
   }
   void Detach(content::WebContents& contents) {
@@ -1539,14 +1554,18 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                   }];
       [app_activity_observers_ addObject:observer];
     }
+    // Key changes anywhere in the app count: an extension popup or sheet
+    // becoming key keeps its parent window in front (WindowCurrentlyOccluded).
     for (NSNotificationName name in @[
            NSWindowDidChangeOcclusionStateNotification,
            NSWindowDidBecomeKeyNotification,
            NSWindowDidResignKeyNotification
          ]) {
+      const bool any_window =
+          name != NSWindowDidChangeOcclusionStateNotification;
       id occlusion = [NSNotificationCenter.defaultCenter
           addObserverForName:name
-                      object:window_
+                      object:any_window ? nil : window_
                        queue:nil
                   usingBlock:^(NSNotification*) {
                     if (auto* self = weak.get()) {
@@ -1608,14 +1627,20 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (displays_asleep_) {
       return true;
     }
-    // The active app's key window is in front. A link from another app
+    // The active app's key window is in front, and so is the window an
+    // extension popup or sheet that is key belongs to. A link from another app
     // activates Parc with its new page already attached to a window that was
     // covered; the occlusion notification only follows the window server's
     // next draw, so the page started occluded (no paint, background priority)
     // and stayed white. A window covered by other apps or behind another
-    // Parc window is not the active key window and still goes occluded.
-    if (NSApp.isActive && window_.isKeyWindow) {
-      return false;
+    // Parc window is not in the key window's chain and still goes occluded.
+    if (NSApp.isActive) {
+      for (NSWindow* key = NSApp.keyWindow; key;
+           key = key.sheetParent ?: key.parentWindow) {
+        if (key == window_) {
+          return false;
+        }
+      }
     }
     return !(window_.occlusionState & NSWindowOcclusionStateVisible);
   }
