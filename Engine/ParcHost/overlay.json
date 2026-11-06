@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 350,
+  "version": 351,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1606,6 +1606,16 @@
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client_factory.cc",
       "target": "content/renderer/media/fairplay/fairplay_renderer_client_factory.cc",
       "sha256": "f5609e5be45db6e7c974c62f6f5e1e613a21ac28fa28f07135803f946e619dfc"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/fairplay_key_system_info.h",
+      "target": "components/cdm/renderer/fairplay_key_system_info.h",
+      "sha256": "722f722b58c1cb1fb56b75a47a1944ddd262863eb9ebe369b1bc8b9744463d78"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/fairplay_key_system_info.cc",
+      "target": "components/cdm/renderer/fairplay_key_system_info.cc",
+      "sha256": "dbb3d464887fcbeb81586e5bfb4e53f819ca1923b535327d710efd81d602809d"
     }
   ],
   "patches": [
@@ -3867,12 +3877,27 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "316aac7bd53d1015d704c5b3e79307d363a1d4b64e7244cb7ccfa614369f6bcb",
+      "sha256": "25e28f58e5d6d40c956c01e098f4a303fb745b051d89818153d4ef298011786c",
       "files": [
+        {
+          "target": "components/cdm/renderer/BUILD.gn",
+          "before_sha256": "41c815a3614bbb1c728447635c1bd1a7e67c28cddab567b0df9677ea2dcebb39",
+          "after_sha256": "4b076afa8861f800956a5116da5ba91e9db2ff0c9f2012c930d51029c3e52250"
+        },
+        {
+          "target": "components/cdm/renderer/key_system_support_update.cc",
+          "before_sha256": "2654abc9c374246137e738c96c92dfb5eb4ab778cc528064020f64b03271b2d8",
+          "after_sha256": "ba91b9c7572136cb040c4b829a63564b0321ea7aac9754f5d60438d47e05678a"
+        },
         {
           "target": "content/browser/BUILD.gn",
           "before_sha256": "9419aa1fbfc0f5e2e80f1391e13ac919cd1e2dd97053d50f78353a8fb206f1d3",
           "after_sha256": "1f2fa211b3ba0c83e37dc0e6238d195a9e999ae5c68874aecc098f2690e775d5"
+        },
+        {
+          "target": "content/browser/media/cdm_registry_impl.cc",
+          "before_sha256": "ab23f6d4d35dbb5ef708ff785e884327ca27e8babb8eb2d46888610ef78c8c23",
+          "after_sha256": "f322f681a4e5251a00d1477845754eb12dd1e82f288e86e76e383d3100925464"
         },
         {
           "target": "content/browser/media/frameless_media_interface_proxy.cc",
@@ -3925,6 +3950,11 @@
           "after_sha256": "fed24034e130eade95f54951d00cf1b819c5ca17cc8ed921a648c7e71721581a"
         },
         {
+          "target": "media/base/media_switches.cc",
+          "before_sha256": "b1e51dbd3a611e5b50163861487e2f95884e92fe1b12c9e11ff3060f4e45cecc",
+          "after_sha256": "2861393bcaf381ee3e34de323039b34911e67f85a89bdb9cc728627f74ce8acd"
+        },
+        {
           "target": "media/base/pipeline_impl.cc",
           "before_sha256": "ea503b9ce7daeaa8d952b0621bca7f8d42b7769fab798cd1cb66fdcf8eda146d",
           "after_sha256": "da5c1dcff5678e9db889b8420af134b47b34f4c3fcb05bd2b317ec131e15552c"
@@ -3938,6 +3968,11 @@
           "target": "media/base/renderer.h",
           "before_sha256": "22e0fceeebdbdd863f23618420e3ce629631ec77ef9bcd8fd6b839172df9070d",
           "after_sha256": "eab7ca04fb3dc4916d18de474446d96a15639c0c4ae0c06bb9e2195bb8d5367c"
+        },
+        {
+          "target": "media/cdm/supported_audio_codecs.cc",
+          "before_sha256": "b389154322409db501e0e5450c4198c6d2931eaf66a6235797f8e7ee66dd53d0",
+          "after_sha256": "8658eeb6fbf529f406d0bc106d4f46ff4ef0f7db2ea2dce2d98bfd7a7ebde60d"
         },
         {
           "target": "media/mojo/clients/mojo_cdm.cc",

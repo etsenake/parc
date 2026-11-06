@@ -42,6 +42,8 @@ SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_
                     'disable_fieldtrial_testing_config=true '
                     'proprietary_codecs=true ffmpeg_branding="Chromium" enable_ffmpeg_video_decoders=false '
                     'media_use_openh264=false enable_hangout_services_extension=true '
+                    'enable_platform_dolby_vision=true enable_platform_encrypted_dolby_vision=true '
+                    'enable_platform_ac3_eac3_audio=true '
                     'target_cpu="arm64" enable_dsyms=false use_remoteexec=false')
 GIT = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir="]
 ORIGINS = {

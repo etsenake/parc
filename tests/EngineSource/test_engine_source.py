@@ -301,6 +301,16 @@ class EngineSourceTests(unittest.TestCase):
             self.assertIn(define, self.env["GN_DEFINES"].split())
             self.assertIn(define, shipping)
 
+    def test_development_and_shipping_engines_build_fairplay_platform_codecs(self):
+        # FairPlay's Dolby Vision (encrypted only) and AC-3/E-AC-3 decode.
+        shipping = engine.shipping_environment(self.workspace, self.lock, 0)["GN_DEFINES"].split()
+        for define in ("enable_platform_dolby_vision=true",
+                       "enable_platform_encrypted_dolby_vision=true",
+                       "enable_platform_ac3_eac3_audio=true"):
+            self.assertIn(define, self.lock["build"]["gn_defines"].split())
+            self.assertIn(define, self.env["GN_DEFINES"].split())
+            self.assertIn(define, shipping)
+
     def previous_lock(self, **build):
         previous = copy.deepcopy(self.lock)
         previous["build"]["gn_defines"] = PREVIOUS_DEFINES

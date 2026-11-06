@@ -1,3 +1,95 @@
+--- a/components/cdm/renderer/BUILD.gn
++++ b/components/cdm/renderer/BUILD.gn
+@@ -58,4 +58,13 @@
+     ]
+     deps += [ "//components/cdm/common" ]
+   }
++
++  if (is_mac) {
++    # Parc: Apple FairPlay Streaming.
++    sources += [
++      "fairplay_key_system_info.cc",
++      "fairplay_key_system_info.h",
++    ]
++    deps += [ "//third_party/parc_fairplay:key_system" ]
++  }
+ }
+--- a/components/cdm/renderer/key_system_support_update.cc
++++ b/components/cdm/renderer/key_system_support_update.cc
+@@ -41,6 +41,11 @@
+ #include "components/cdm/renderer/android_key_system_info.h"
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
++#if BUILDFLAG(IS_MAC)
++#include "components/cdm/renderer/fairplay_key_system_info.h"
++#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(ENABLE_PLAYREADY)
+ #include "components/cdm/common/playready_cdm_common.h"
+ #include "components/cdm/renderer/playready_key_system_info.h"
+@@ -59,7 +64,7 @@
+ namespace {
+ 
+ #if BUILDFLAG(ENABLE_WIDEVINE) || BUILDFLAG(IS_ANDROID) || \
+-    BUILDFLAG(ENABLE_PLAYREADY)
++    BUILDFLAG(ENABLE_PLAYREADY) || BUILDFLAG(IS_MAC)
+ SupportedCodecs GetVP9Codecs(
+     const base::flat_set<media::VideoCodecProfile>& profiles) {
+   if (profiles.empty()) {
+@@ -249,7 +254,7 @@
+   return supported_codecs;
+ }
+ #endif  // BUILDFLAG(ENABLE_WIDEVINE) || BUILDFLAG(IS_ANDROID) ||
+-        // BUILDFLAG(ENABLE_PLAYREADY)
++        // BUILDFLAG(ENABLE_PLAYREADY) || BUILDFLAG(IS_MAC)
+ 
+ #if BUILDFLAG(ENABLE_WIDEVINE)
+ 
+@@ -500,6 +505,29 @@
+ }
+ #endif  // BUILDFLAG(IS_WIN)
+ 
++#if BUILDFLAG(IS_MAC)
++// Parc: Apple FairPlay Streaming, registered by the browser's CdmRegistry with
++// a software-secure capability only. Temporary sessions persist nothing, so
++// it is offered in incognito too.
++void AddFairPlay(const media::KeySystemCapability& capability,
++                 KeySystemInfos* key_systems) {
++  if (!capability.sw_cdm_capability_or_status.has_value()) {
++    DVLOG(2) << __func__ << ": FairPlay NOT supported";
++    return;
++  }
++  const auto& sw_secure_capability =
++      capability.sw_cdm_capability_or_status.value();
++  if (!sw_secure_capability.session_types.contains(
++          CdmSessionType::kTemporary)) {
++    DVLOG(1) << "Temporary sessions must be supported.";
++    return;
++  }
++  key_systems->push_back(std::make_unique<FairPlayKeySystemInfo>(
++      GetSupportedCodecs(sw_secure_capability),
++      sw_secure_capability.encryption_schemes));
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(IS_ANDROID)
+ void AddAndroidPlatformKeySystem(const std::string& key_system,
+                                  const media::KeySystemCapability& capability,
+@@ -575,6 +603,13 @@
+     }
+ #endif  // BUILDFLAG(IS_WIN)
+ 
++#if BUILDFLAG(IS_MAC)
++    if (key_system == parc::fairplay::kFairPlayKeySystem) {
++      AddFairPlay(capability, &key_systems);
++      continue;
++    }
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(IS_ANDROID)
+     AddAndroidPlatformKeySystem(key_system, capability, can_persist_data,
+                                 &key_systems);
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
 @@ -2765,6 +2765,9 @@
@@ -10,6 +102,82 @@
        "//ui/accelerated_widget_mac",
        "//ui/events:dom_keyboard_layout",
      ]
+--- a/content/browser/media/cdm_registry_impl.cc
++++ b/content/browser/media/cdm_registry_impl.cc
+@@ -39,6 +39,15 @@
+ #include "content/browser/gpu/gpu_data_manager_impl.h"
+ #include "content/browser/media/key_system_support_win.h"
+ #include "gpu/config/gpu_driver_bug_workaround_type.h"
++#endif
++
++#if BUILDFLAG(IS_MAC)
++#include "base/files/file_path.h"
++#include "base/version.h"
++#include "media/base/audio_codecs.h"
++#include "media/base/content_decryption_module.h"
++#include "media/base/encryption_scheme.h"
++#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
+ #endif
+ 
+ namespace content {
+@@ -232,6 +241,45 @@
+ }
+ #endif  // BUILDFLAG(IS_WIN)
+ 
++#if BUILDFLAG(IS_MAC)
++// Parc: Apple FairPlay Streaming. It has no CDM library or CDM process: the
++// CDM and its renderer are created by the GPU process's media service (see
++// MediaInterfaceProxy::CreateCdm), which decodes with VideoToolbox and
++// CoreAudio's protected decoders. AV1 is left out because only M3 and later
++// decode it in hardware, which FairPlay requires.
++CdmInfo GetFairPlayCdmInfo() {
++  media::CdmCapability capability;
++  capability.audio_codecs = {media::AudioCodec::kAAC};
++#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
++  capability.audio_codecs.insert(media::AudioCodec::kAC3);
++  capability.audio_codecs.insert(media::AudioCodec::kEAC3);
++#endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
++  capability.video_codecs.emplace(media::VideoCodec::kH264,
++                                  media::VideoCodecInfo());
++#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
++  capability.video_codecs.emplace(media::VideoCodec::kHEVC,
++                                  media::VideoCodecInfo());
++#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
++#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
++  capability.video_codecs.emplace(
++      media::VideoCodec::kDolbyVision,
++      media::VideoCodecInfo(
++          {media::DOLBYVISION_PROFILE5, media::DOLBYVISION_PROFILE8}));
++#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
++  capability.encryption_schemes = {media::EncryptionScheme::kCenc,
++                                   media::EncryptionScheme::kCbcs};
++  capability.session_types = {media::CdmSessionType::kTemporary};
++  // Fixed, so FairPlay never shares per-CDM-type isolation with another CDM.
++  constexpr media::CdmType kFairPlayCdmType{0x9c5f2a7d3e1b4f60ull,
++                                            0x8a3d6e0f1c2b7a95ull};
++  return CdmInfo(parc::fairplay::kFairPlayKeySystem,
++                 CdmInfo::Robustness::kSoftwareSecure, std::move(capability),
++                 /*supports_sub_key_systems=*/true,
++                 parc::fairplay::kFairPlayCdmDisplayName, kFairPlayCdmType,
++                 base::Version(), base::FilePath());
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ }  // namespace
+ 
+ // static
+@@ -263,6 +311,11 @@
+ 
+   // Let embedders register CDMs.
+   GetContentClient()->AddContentDecryptionModules(&cdms_, nullptr);
++
++#if BUILDFLAG(IS_MAC)
++  // Parc: FairPlay Streaming, after the embedder's CDMs.
++  cdms_.push_back(GetFairPlayCdmInfo());
++#endif  // BUILDFLAG(IS_MAC)
+ }
+ 
+ void CdmRegistryImpl::RegisterCdm(const CdmInfo& info) {
 --- a/content/browser/media/frameless_media_interface_proxy.cc
 +++ b/content/browser/media/frameless_media_interface_proxy.cc
 @@ -137,6 +137,14 @@
@@ -375,6 +543,20 @@
   protected:
    CdmContext();
  };
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -1208,8 +1208,10 @@
+ // When ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is enabled at build time, allow
+ // the support of encrypted Dolby Vision. Have no effect when
+ // ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is disabled.
++// Parc: on for macOS too, where FairPlay Streaming plays encrypted Dolby
++// Vision; clear Dolby Vision stays unsupported in Media Source.
+ BASE_FEATURE(kPlatformEncryptedDolbyVision,
+-#if BUILDFLAG(IS_WIN)
++#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+              base::FEATURE_ENABLED_BY_DEFAULT
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT
 --- a/media/base/pipeline_impl.cc
 +++ b/media/base/pipeline_impl.cc
 @@ -734,6 +734,14 @@
@@ -415,6 +597,30 @@
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
+--- a/media/cdm/supported_audio_codecs.cc
++++ b/media/cdm/supported_audio_codecs.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "media/cdm/supported_audio_codecs.h"
+ 
++#include "build/build_config.h"
+ #include "media/media_buildflags.h"
+ 
+ namespace media {
+@@ -16,9 +17,11 @@
+ #if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+         AudioCodec::kDTS, AudioCodec::kDTSE, AudioCodec::kDTSXP2,
+ #endif  // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+-#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
++// Parc enables AC-3/E-AC-3 on macOS for FairPlay Streaming only; library
++// CDMs (Widevine) keep the audio codecs they had without it.
++#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO) && !BUILDFLAG(IS_MAC)
+         AudioCodec::kAC3, AudioCodec::kEAC3,
+-#endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
++#endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO) && !BUILDFLAG(IS_MAC)
+ #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+   };
+ }
 --- a/media/mojo/clients/mojo_cdm.cc
 +++ b/media/mojo/clients/mojo_cdm.cc
 @@ -65,6 +65,9 @@
