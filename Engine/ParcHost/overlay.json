@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 367,
+  "version": 368,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3947,7 +3947,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "35cc81b557af98fd3ab76fd317e70b64bc2d6dd1f475ce7ad50ef62988f0ae82",
+      "sha256": "4373718c21c04c5f8ad1c68c16c0874932679a052c59d862edbff8076bab9847",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -3967,7 +3967,7 @@
         {
           "target": "content/browser/media/cdm_registry_impl.cc",
           "before_sha256": "ab23f6d4d35dbb5ef708ff785e884327ca27e8babb8eb2d46888610ef78c8c23",
-          "after_sha256": "f322f681a4e5251a00d1477845754eb12dd1e82f288e86e76e383d3100925464"
+          "after_sha256": "0eb52b186f6326f4d11336df8453631de0c32851f3006d766a66833c6422ba22"
         },
         {
           "target": "content/browser/media/frameless_media_interface_proxy.cc",

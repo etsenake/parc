@@ -208,6 +208,8 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
   still says no to `dvh1`/`dvhe`, clear Dolby Vision is rejected at the init
   segment, and EME offers it only through key systems whose codecs list it,
   which means FairPlay and not Widevine. That is Chromium's model on Windows.
+  FairPlay's `CdmInfo` lists profile 5 only. The adapter and core can also play
+  profile 8, but sites aren't offered it (Josh's decision, November 6).
 - AC-3/E-AC-3 is ordinary codec support (Josh's decision, November 6): pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:

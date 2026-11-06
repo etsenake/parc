@@ -120,7 +120,7 @@
  #endif
  
  namespace content {
-@@ -232,6 +241,45 @@
+@@ -232,6 +241,46 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -144,10 +144,11 @@
 +                                  media::VideoCodecInfo());
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
 +#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
++  // Profile 5 only. The renderer can also play profile 8, but it isn't
++  // offered.
 +  capability.video_codecs.emplace(
 +      media::VideoCodec::kDolbyVision,
-+      media::VideoCodecInfo(
-+          {media::DOLBYVISION_PROFILE5, media::DOLBYVISION_PROFILE8}));
++      media::VideoCodecInfo({media::DOLBYVISION_PROFILE5}));
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
 +  capability.encryption_schemes = {media::EncryptionScheme::kCenc,
 +                                   media::EncryptionScheme::kCbcs};
@@ -166,7 +167,7 @@
  }  // namespace
  
  // static
-@@ -263,6 +311,11 @@
+@@ -263,6 +312,11 @@
  
    // Let embedders register CDMs.
    GetContentClient()->AddContentDecryptionModules(&cdms_, nullptr);
