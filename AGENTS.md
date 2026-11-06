@@ -20,7 +20,11 @@ stopped crash investigation in this chat. Root and the Homebrew agent continue
 release tooling, setup, documentation and inert checks only. Do not launch,
 replace, rebuild or repackage Parc again until Josh supplies the ready build
 signal. Preserve the existing release tags, notarized assets, profiles and engine
-caches; do not promote a candidate whose bounded startup check failed.
+caches. A launch observation interrupted by Josh deliberately testing another
+behavior is not an isolated startup failure. Josh confirmed 1.0.0 launched and
+worked normally; preserve the interrupted raw observation and record that user
+confirmation separately. Use honest automated or explicit user-confirmed
+acceptance when promoting a release; never invent a passed automated check.
 
 **CRITICAL — CURSOR AGENTS MUST NEVER MIGRATE THIS CHAT. User direction, October 31. This has broken coordinator visibility more than once.**
 

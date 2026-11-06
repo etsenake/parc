@@ -3249,6 +3249,17 @@ and inert checks. No further app launch, replacement, engine/app build or
 repackaging is authorized in this chat until Josh signals the new source is
 ready. Preserve other agents' edits and the shared engine caches.
 
+**User correction:** the crash was not a startup failure. Josh explicitly
+confirmed that 1.0.0 launched and worked normally, then crashed when he
+deliberately triggered a specific behavior during testing. Root's earlier
+startup-failure classification was incorrect. The raw process/crash observation
+is retained as an uncontrolled interval, and Josh's normal-startup confirmation
+is recorded separately. The existing 1.0.0 release can be stable and promoted to
+the tap without waiting for the separately owned behavior fix. No new app build
+or installed-app change is being made here; Josh will signal the next ready
+build. Future promotion accepts either an isolated passed observation or an
+explicitly recorded user confirmation, bound to the exact release artifacts.
+
 The official overlay 327 engine built and sealed from `ba53bf63` with three
 incremental actions in 2m23.54s; source lock and shipping flags are unchanged.
 Versioning and DMG/Homebrew tooling are published in `cd78e23e`. The
@@ -3257,22 +3268,26 @@ both ZIP and DMG. App submission `05dcbc42-4fdb-4d2b-814a-ee8d6d8e995c` and DMG
 submission `9c612964-9edc-464a-8450-b37fcc915ac5` were accepted, stapled and
 Gatekeeper verified. All production signing uses Team `94HKA7L2DR` and the
 unchanged Developer ID requirement. Immediate installation/open occurred at
-03:15:40 UTC November 6, but its bounded startup observation failed at 20.05s
-with a new crash report. The legacy-key migration marker was observed; this
-does not establish encrypted restart acceptance.
+03:15:40 UTC November 6. Its observer recorded an exit at 20.05s with a new crash
+report during Josh's deliberate behavior testing. Josh confirmed normal startup
+worked; do not call this an isolated startup failure or an automated pass. The
+legacy-key migration marker was observed; this does not establish encrypted
+restart acceptance.
 
 The authorized failure rollback completed at 03:17:12 UTC before Josh's stop
-direction arrived, restoring the original notarized 0.1.0 app. That app also
-exited, and further crash reports exist; neither candidate has current startup
-acceptance. No additional app changes are being made here. Failed 1.0 and the
-latest pristine package, reports and engine seals are preserved in
+direction arrived, restoring the original notarized 0.1.0 app. That restoration
+was based on root's incorrect interpretation of the uncontrolled observation.
+No additional app changes are being made here while the other agent owns the
+behavior investigation. The retained 1.0 artifact and latest pristine package,
+raw reports and engine seals are preserved in
 `build/install-1.0.0-production-20261106T030536Z` and
 `build/app-1.0.0-production-20261106T030536Z`.
 
 The public tap is cloned at `~/homebrew-tap`, with the bootstrap cask published
 in `eabcc781d95d74fa065da5f10c9183454c276c05`; the existing 0.1.0 app was adopted
-without replacing it. The failed 1.0 candidate is not promoted to the cask.
-The next corrected candidate needs a new immutable version, normally 1.0.1,
+without replacing it. The 1.0.0 cask promotion uses Josh's explicit acceptance
+of normal startup; it is independent of the specific behavior fix. The next
+changed app needs a new immutable version, normally 1.0.1,
 followed by the same signing, notarization, immediate installation, bounded
 startup and Homebrew promotion checks. Recurring refresh remains deleted.
 
@@ -3323,8 +3338,8 @@ Keychain account through normal user authorization. It leaves the Chromium
 item, previous Parc keys and ciphertext intact, uses a nonsecret atomic marker,
 and fails closed on denial/conflict. Fake-adapter policy checks cover migration,
 retries/races and preservation; shipping-flag native compilation passes.
-The first 1.0 candidate delivered this change but failed its startup observation;
-Josh assigned that crash elsewhere. One Chromium approval may still be needed
+The first 1.0 candidate delivered this change and Josh confirmed normal startup;
+he assigned a separately triggered behavior crash elsewhere. One Chromium approval may still be needed
 during migration on another existing profile. Actual encrypted
 restart and fully rendered/responsive browser acceptance remain unverified;
 protected authorization has not been inspected or bypassed. See the

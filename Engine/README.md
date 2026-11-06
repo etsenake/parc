@@ -259,11 +259,14 @@ ciphertext remain intact. The namespace marker contains no secret. See the
 The official shipping engine built three incremental actions in 2m23.54s and
 sealed from `ba53bf63`, preserving objects/caches. App source `cd78e23e` produced
 the Developer ID app and DMG in `v1.0.0`; both have accepted Apple notarization
-and validated stapled tickets. The app was immediately installed and opened,
-but failed the bounded startup check. It is not promoted to Homebrew. Josh
-assigned crash investigation elsewhere and stopped it in this chat; another
-app build waits for his ready signal. The migration marker was observed, but
-encrypted restart and browser functionality are not claimed.
+and validated stapled tickets. The app was immediately installed and opened.
+The observer recorded a crash while Josh was deliberately testing a separate
+behavior; Josh clarified that normal startup and use worked. That interrupted
+observation does not establish a startup failure. His confirmation is recorded
+separately for release acceptance without rewriting the raw observer result.
+Josh assigned the specific behavior crash elsewhere and stopped investigation
+here; another app build waits for his ready signal. The migration marker was
+observed, but encrypted restart is not claimed.
 
 Overlay 326 stops quitting from crashing while a Profile is still loading.
 Settings asks for the selected Profile's search and download preferences as
