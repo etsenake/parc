@@ -1450,6 +1450,62 @@ std::vector<Step> ResponseValidationScenario() {
   return steps;
 }
 
+// Chromium's CompleteSeek: StartPlayingFrom and SetPlaybackRate in one task.
+// The clock must stay at the seek time until HAVE_ENOUGH, then run.
+std::vector<Step> SeekOrderScenario() {
+  World* w = g_world;
+  struct Probe {
+    double max_before = -1;
+    double at_enough = -1;
+    int samples = 0;
+    dispatch_source_t timer = nil;
+  };
+  auto probe = std::make_shared<Probe>();
+  std::vector<Step> steps;
+  steps.push_back(Section("Chromium seek order: StartPlayingFrom + SetPlaybackRate(1) in one task"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("seek-order", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds(Segments(w->video, 6, 10), Segments(w->audio, 6, 10), false);
+      auto finish = Once(10, "seek-order: HAVE_ENOUGH", [=](bool) {
+        dispatch_source_cancel(probe->timer);
+        done();
+      });
+      w->player->on_have_enough = [=] {
+        probe->at_enough = w->player->Time();
+        finish(true);
+      };
+      probe->timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+      dispatch_source_set_timer(probe->timer, DISPATCH_TIME_NOW, NSEC_PER_MSEC * 10, NSEC_PER_MSEC);
+      dispatch_source_set_event_handler(probe->timer, ^{
+        if (w->player && !w->player->have_enough) {
+          probe->max_before = std::max(probe->max_before, w->player->Time());
+          ++probe->samples;
+        }
+      });
+      dispatch_resume(probe->timer);
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(40000000));
+      w->player->renderer().SetPlaybackRate(1);
+    });
+  });
+  steps.push_back([=](Done done) {
+    Check(probe->max_before >= 0 && std::fabs(probe->max_before - 40.0) < 0.001 &&
+              std::fabs(probe->at_enough - 40.0) < 0.001,
+          Format("seek-order: clock held at 40.000 until HAVE_ENOUGH (max %.3f over %d samples, %.3f at HAVE_ENOUGH)",
+                 probe->max_before, probe->samples, probe->at_enough));
+    done();
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "seek-order after HAVE_ENOUGH 3s")(done); });
+  steps.push_back([=](Done done) {
+    Check(w->player->underflows == 0, "seek-order: no underflow after the start",
+          Format("%d", w->player->underflows));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> CdmFirstScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -1923,6 +1979,7 @@ void RunAll() {
   add("MixedScenario()", MixedScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
+  add("SeekOrderScenario()", SeekOrderScenario());
   add("ResponseValidationScenario()", ResponseValidationScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
 

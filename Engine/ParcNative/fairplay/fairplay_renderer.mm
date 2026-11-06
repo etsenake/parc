@@ -452,18 +452,24 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ScheduleEndIfComplete();
   }
 
+  // The clock stays at |time| until both renderers have enough data, whatever
+  // rate is set meanwhile: Chromium's CompleteSeek calls StartPlayingFrom and
+  // SetPlaybackRate in one task, and RendererImpl starts its time source only
+  // on HAVE_ENOUGH. The requested rate is kept and applied then.
   void StartPlayingFrom(MediaTime time) {
     start_time_ = time;
     ended_ = false;
+    have_enough_ = false;
+    clock_held_ = true;
     [synchronizer_ setRate:0 time:ToCMTime(time)];
-    status_.rate = 0;
     NotifyNeedData(StreamType::kVideo);
     NotifyNeedData(StreamType::kAudio);
+    UpdateBuffering();
   }
 
   void SetPlaybackRate(double rate) {
     status_.rate = static_cast<float>(rate);
-    if (!underflowed_) {
+    if (!clock_held_) {
       synchronizer_.rate = static_cast<float>(rate);
     }
   }
@@ -487,7 +493,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // Like RendererImpl::Flush: back to HAVE_NOTHING without a callback; the
     // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
-    underflowed_ = false;
+    clock_held_ = true;
     Post([done](Impl&) { done(); });
   }
 
@@ -1101,8 +1107,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return;
     }
     have_enough_ = true;
-    if (underflowed_) {
-      underflowed_ = false;
+    if (clock_held_) {
+      clock_held_ = false;
       synchronizer_.rate = status_.rate;
     }
     Post([](Impl& impl) { impl.client_->OnBufferingStateChange(true); });
@@ -1123,7 +1129,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
       if (state.enqueued_end - now < 0.05) {
         have_enough_ = false;
-        underflowed_ = true;
+        clock_held_ = true;
         synchronizer_.rate = 0;
         client_->OnBufferingStateChange(false);
         return;
@@ -1227,7 +1233,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   MediaTime start_time_;
   bool waiting_reported_ = false;
   bool have_enough_ = false;
-  bool underflowed_ = false;
+  // The clock waits for HAVE_ENOUGH (start, seek or underflow).
+  bool clock_held_ = true;
   bool awaiting_parameter_sets_ = false;
   bool ended_ = false;
   bool video_failure_reported_ = false;
