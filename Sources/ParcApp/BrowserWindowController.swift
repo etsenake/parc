@@ -3260,8 +3260,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if splitInsertion?.isValid == false { cancelSplitInsertion(restoreFocus: false) }
         if pendingCommandSplitValidation?() == false { cancelPendingCommandSplit() }
         tabSwitcher?.dismissIfInvalid()
-        defer { reconcileFind(); pageCapture?.reconcile(); easelImageDestination?.dismissIfInvalid(); sidebarPreviews?.reconcile(); reconcileCommandBar() }
-        guard presentation.isReady, !isClosing, !wholeWindowClose, !rendering, !promotingPeek, transferringTabIDs.isEmpty, collectionTransfer == nil else { return }
+        defer { reconcileFind(); pageCapture?.reconcile(); easelImageDestination?.dismissIfInvalid(); sidebarPreviews?.reconcile(); reconcileCommandBar(); checkPanePresentation() }
+        guard canRender else { return }
         let presentedRevision = store.stateRevision
         let previousSession = sessionRecord
         presentation.reconcile(sharedState) { ownership.canUse($0, owner: presentationID) }
@@ -3354,7 +3354,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard ownership.claim(tab.id, owner: presentationID), let pane = panes[tab.id] else { continue }
             if InternalPage.isInternal(tab.url) {
                 showInternalPage(tab, in: pane)
-            } else if (tab.url == "about:blank" || tab.url.isEmpty) && browsers[tab.id]?.nativePage == nil && pendingSearchNavigations[tab.id] == nil {
+            } else if rendersBlank(tab) {
                 pane.showBlank()
             } else {
                 var restoredHistory: NSObject?
@@ -3404,6 +3404,63 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         lastChromeRevision = presentedRevision
         refreshEmptyWindowSidebar()
         scheduleUntargetedReturns()
+    }
+
+    private var canRender: Bool {
+        presentation.isReady && !isClosing && !wholeWindowClose && !rendering && !promotingPeek
+            && transferringTabIDs.isEmpty && collectionTransfer == nil
+    }
+    /// A tab with no address yet and no page shows the pane's blank backing.
+    private func rendersBlank(_ tab: BrowserTab) -> Bool {
+        (tab.url == "about:blank" || tab.url.isEmpty) && browsers[tab.id]?.nativePage == nil
+            && pendingSearchNavigations[tab.id] == nil
+    }
+
+    /// The shell side of the engine's page self-checks (overlays 330 and 334):
+    /// after every render, metadata-only refresh and presentation change, a
+    /// displayed tab that render would give its page, but whose pane still
+    /// shows the blank backing, a placeholder or native content, or has no
+    /// page view, gets a few short renders. A path that never rendered after
+    /// its page arrived then corrects itself; a clean check resets the budget.
+    private var panePresentationRetries = 0
+    private var panePresentationRetryPending = false
+    private func checkPanePresentation() {
+        guard canRender else { return }
+        guard panesMissingTheirPage() else {
+            panePresentationRetries = 0
+            return
+        }
+        guard !panePresentationRetryPending, panePresentationRetries < 4 else { return }
+        panePresentationRetries += 1
+        panePresentationRetryPending = true
+        let delay = 0.05 * Double(1 << (panePresentationRetries - 1))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.panePresentationRetryPending = false
+            // A transfer renders when it ends and that render's check resumes
+            // from here, without this attempt spent.
+            guard self.canRender else { self.panePresentationRetries -= 1; return }
+            if self.panesMissingTheirPage() { self.render(self.store.state) } else { self.panePresentationRetries = 0 }
+        }
+    }
+    /// Only what render itself would change: its per-tab branches, read
+    /// without claiming or creating anything.
+    private func panesMissingTheirPage() -> Bool {
+        let placeholderIDs = presentation.displayedPlaceholders
+        for id in presentation.displayedTabIDs {
+            guard let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+                  !placeholderIDs.contains(id), !(closingTabIDs.contains(id) && easelEditors[id] != nil),
+                  ownership.canUse(id, owner: presentationID), let pane = panes[id],
+                  !InternalPage.isInternal(tab.url), !rendersBlank(tab) else { continue }
+            guard let browser = browsers[id] else {
+                if !applyingNativeSelection && !store.retiringTabIDs.contains(id) { return true }
+                continue
+            }
+            if pane.browser === browser, pane.showsLocalContent || (!pane.showsFailure && browser.isHidden) {
+                return true
+            }
+        }
+        return false
     }
 
     private var emptyWindowHoldsSidebar: Bool {
@@ -3527,6 +3584,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let tab = store.state.tabs.first { $0.id == currentTabID }
         window?.title = activePeek.map { "\($0.browser.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
         refreshLoadingIndicators()
+        checkPanePresentation()
         return true
     }
 
@@ -3813,6 +3871,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func refreshPagePresentation(_ id: UUID) {
+        defer { checkPanePresentation() }
         guard !isClosing, !wholeWindowClose, !transferringTabIDs.contains(id),
               let browser = browsers[id], let pane = panes[id] else { return }
         let rendererHadFocus = browser.window?.firstResponder as? NSView
@@ -15851,6 +15910,8 @@ private final class BrowserPane: NSView {
         return browser
     }
     var showsFailure: Bool { surface == .failure }
+    /// The blank backing, a placeholder or native content stands in for the page.
+    var showsLocalContent: Bool { surface == .local }
     var onReload: (() -> Void)? { didSet { error.onReload = onReload } }
     var onRetryRenderer: ((RendererCrashPresentation) -> Void)? { didSet { error.onRetryRenderer = onRetryRenderer } }
     var onRendererPresented: ((RendererCrashPresentation) -> Bool)? { didSet { error.onRendererPresented = onRendererPresented } }
