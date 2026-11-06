@@ -8,6 +8,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <QuartzCore/QuartzCore.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -703,6 +704,10 @@ class Player : public fp::FairPlayRendererClient {
   std::function<void()> on_have_nothing;
   std::function<void()> on_ended;
   int underflows = 0;
+  int need_data_calls = 0;
+  // Flushes in the same task as the end of stream that completes both
+  // streams (whose OnEnded is then already queued).
+  bool flush_at_end_of_stream = false;
 
   double Time() { return renderer_.GetMediaTime().InSeconds(); }
 
@@ -733,7 +738,10 @@ class Player : public fp::FairPlayRendererClient {
   }
 
   // media::RendererClient side.
-  void OnNeedData(fp::StreamType stream) override { Pump(stream); }
+  void OnNeedData(fp::StreamType stream) override {
+    ++need_data_calls;
+    Pump(stream);
+  }
   void OnWaitingForKey() override {
     ++waiting_events;
     Log("%s: waiting for key", name_.c_str());
@@ -795,6 +803,11 @@ class Player : public fp::FairPlayRendererClient {
         if (feed.end_of_stream && !feed.end_sent) {
           feed.end_sent = true;
           renderer_.SetEndOfStream(stream);
+          if (flush_at_end_of_stream && (!has_video_ || video_feed_.end_sent) &&
+              (!has_audio_ || audio_feed_.end_sent)) {
+            flush_at_end_of_stream = false;
+            renderer_.Flush([] {});
+          }
         }
         return;
       }
@@ -1561,6 +1574,48 @@ std::vector<Step> ShortEndScenario() {
   return steps;
 }
 
+// Tasks queued before a Flush must not land after it: an OnEnded queued by
+// the end of stream (a seek near the end), and OnNeedData queued by
+// StartPlayingFrom.
+std::vector<Step> FlushRaceScenario() {
+  World* w = g_world;
+  std::vector<Step> steps;
+  steps.push_back(Section("Flush racing queued OnEnded and OnNeedData"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("flush-race", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    w->player->renderer().Flush([=] {
+      // Nothing to play: end of stream on both, then Flush in that same task.
+      w->player->SetFeeds({}, {}, true);
+      w->player->flush_at_end_of_stream = true;
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+      After(1.0, [=] {
+        Check(!w->player->ended, "flush-race: no OnEnded after a Flush that followed the end of stream");
+        done();
+      });
+    });
+  });
+  steps.push_back([=](Done done) {
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds(Segments(w->video, 0, 1), Segments(w->audio, 0, 1), false);
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+      int before = w->player->need_data_calls;
+      w->player->renderer().Flush([] {});
+      After(0.5, [=] {
+        Check(w->player->need_data_calls == before,
+              "flush-race: no OnNeedData between Flush and the next StartPlayingFrom",
+              Format("%d call(s)", w->player->need_data_calls - before));
+        done();
+      });
+    });
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> CdmFirstScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -1976,6 +2031,58 @@ std::vector<Step> CloseScenario() {
   return steps;
 }
 
+// Watchdog: the run must never wait forever. A main-queue heartbeat is
+// checked from a background queue; if the main thread stalls for 15 s, or the
+// whole run exceeds its time limit, the main thread's stack is sampled into
+// the log and the process exits with status 3 (stall) or 4 (time limit).
+std::atomic<double> g_heartbeat{0};
+double g_time_limit = 480;
+
+void StartWatchdog() {
+  static dispatch_source_t beat =
+      dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+  dispatch_source_set_timer(beat, DISPATCH_TIME_NOW, NSEC_PER_SEC / 2, NSEC_PER_SEC / 10);
+  dispatch_source_set_event_handler(beat, ^{
+    g_heartbeat = Now();
+  });
+  dispatch_resume(beat);
+  static dispatch_source_t check = dispatch_source_create(
+      DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+  dispatch_source_set_timer(check, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), NSEC_PER_SEC,
+                            NSEC_PER_SEC / 10);
+  dispatch_source_set_event_handler(check, ^{
+    double now = Now();
+    double stalled = now - g_heartbeat.load();
+    bool stall = g_heartbeat.load() > 0 && stalled > 15;
+    bool over = now > g_time_limit;
+    if (!stall && !over) return;
+    if (stall) {
+      Log("WATCHDOG: main thread stalled for %.0f s; sampling its stack", stalled);
+    } else {
+      Log("WATCHDOG: run exceeded its %.0f s limit; sampling the main thread", g_time_limit);
+    }
+    std::string path = std::string(NSTemporaryDirectory().UTF8String) +
+                       Format("fairplay-proof-sample-%d.txt", getpid());
+    std::string command = Format("/usr/bin/sample %d 2 -file '%s' >/dev/null 2>&1", getpid(), path.c_str());
+    if (system(command.c_str()) == 0) {
+      NSString* text = [NSString stringWithContentsOfFile:@(path.c_str()) encoding:NSUTF8StringEncoding error:nil];
+      NSArray* lines = [text componentsSeparatedByString:@"\n"];
+      bool main_thread = false;
+      int printed = 0;
+      for (NSString* line in lines) {
+        if ([line containsString:@"com.apple.main-thread"]) main_thread = true;
+        else if (main_thread && [line containsString:@"Thread_"]) break;
+        if (main_thread && printed++ < 80) printf("    %s\n", line.UTF8String);
+      }
+      Log("WATCHDOG: full sample in %s", path.c_str());
+    }
+    Log("== summary: %d checks, %d failed, then %s", g_checks, g_failures, stall ? "STALLED" : "TIMED OUT");
+    fflush(stdout);
+    _exit(stall ? 3 : 4);
+  });
+  dispatch_resume(check);
+}
+
 void Finish() {
   Log("== summary: %d checks, %d failed", g_checks, g_failures);
   for (const std::string& name : g_failed) Log("   failed: %s", name.c_str());
@@ -2036,6 +2143,7 @@ void RunAll() {
   add("CdmFirstScenario()", CdmFirstScenario());
   add("SeekOrderScenario()", SeekOrderScenario());
   add("ShortEndScenario()", ShortEndScenario());
+  add("FlushRaceScenario()", FlushRaceScenario());
   add("ResponseValidationScenario()", ResponseValidationScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
 
@@ -2080,6 +2188,7 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IOLBF, 0);
     static World world;
     g_world = &world;
+    StartWatchdog();
     NSString* video_playlist = @"video-H264-720-2100k.m3u8";
     g_cache_dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"parc-fairplay-cache"];
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -2088,6 +2197,7 @@ int main(int argc, char** argv) {
       else if (flag == "--video-playlist") video_playlist = @(argv[i + 1]);
       else if (flag == "--segments") world.segments = std::max(10, atoi(argv[i + 1]));
       else if (flag == "--only") g_only = argv[i + 1];
+      else if (flag == "--time-limit") g_time_limit = atof(argv[i + 1]);
     }
     [[NSFileManager defaultManager] createDirectoryAtPath:g_cache_dir withIntermediateDirectories:YES
                                                attributes:nil error:nil];

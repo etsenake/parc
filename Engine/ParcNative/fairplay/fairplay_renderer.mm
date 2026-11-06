@@ -427,7 +427,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       state.held.push_back(std::move(held));
       if (!waiting_reported_) {
         waiting_reported_ = true;
-        Post([](Impl& impl) { impl.client_->OnWaitingForKey(); });
+        PostInGeneration([](Impl& impl) { impl.client_->OnWaitingForKey(); });
       }
       return EnqueueResult::kWaitingForKey;
     }
@@ -490,6 +490,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     waiting_reported_ = false;
     ended_ = false;
+    ++generation_;
     // Like RendererImpl::Flush: back to HAVE_NOTHING without a callback; the
     // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
@@ -642,6 +643,19 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     std::weak_ptr<Impl> weak = weak_from_this();
     (*poster_)([weak, task] {
       if (auto impl = weak.lock()) {
+        task(*impl);
+      }
+    });
+  }
+
+  // Posts |task| for the current flush generation only: anything about the
+  // media before a Flush (end reached, more data wanted, buffering) is
+  // dropped if it lands after it.
+  void PostInGeneration(std::function<void(Impl&)> task) {
+    std::weak_ptr<Impl> weak = weak_from_this();
+    uint64_t generation = generation_;
+    (*poster_)([weak, task, generation] {
+      if (auto impl = weak.lock(); impl && impl->generation_ == generation) {
         task(*impl);
       }
     });
@@ -1054,6 +1068,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     state.armed = true;
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
+    uint64_t generation = generation_;
     auto fired = std::make_shared<std::atomic<bool>>(false);
     [renderer requestMediaDataWhenReadyOnQueue:RequestQueue()
                                     usingBlock:^{
@@ -1061,8 +1076,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                                         return;
                                       }
                                       [renderer stopRequestingMediaData];
-                                      (*poster)([weak, stream] {
-                                        if (auto impl = weak.lock()) {
+                                      (*poster)([weak, stream, generation] {
+                                        auto impl = weak.lock();
+                                        if (impl && impl->generation_ == generation) {
                                           impl->StreamFor(stream).armed = false;
                                           impl->DeliverNeedData(stream);
                                         }
@@ -1075,7 +1091,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!RendererFor(stream) || StreamFor(stream).end_of_stream) {
       return;
     }
-    Post([stream](Impl& impl) { impl.DeliverNeedData(stream); });
+    PostInGeneration([stream](Impl& impl) { impl.DeliverNeedData(stream); });
   }
 
   void DeliverNeedData(StreamType stream) {
@@ -1111,7 +1127,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       clock_held_ = false;
       synchronizer_.rate = status_.rate;
     }
-    Post([](Impl& impl) { impl.client_->OnBufferingStateChange(true); });
+    PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(true); });
   }
 
   // Underflow, as RendererImpl handles it: when the clock reaches the end of
@@ -1148,17 +1164,19 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       end = audio_stream_.last_end;
     }
     if (!end.IsValid() || GetMediaTime().InSeconds() >= end.InSeconds()) {
-      Post([](Impl& impl) { impl.FireEnded(); });
+      PostInGeneration([](Impl& impl) { impl.FireEnded(); });
       return;
     }
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
+    uint64_t generation = generation_;
     end_observer_ = [synchronizer_
         addBoundaryTimeObserverForTimes:@[ [NSValue valueWithCMTime:ToCMTime(end)] ]
                                   queue:RequestQueue()
                              usingBlock:^{
-                               (*poster)([weak] {
-                                 if (auto impl = weak.lock()) {
+                               (*poster)([weak, generation] {
+                                 auto impl = weak.lock();
+                                 if (impl && impl->generation_ == generation) {
                                    impl->FireEnded();
                                  }
                                });
@@ -1236,6 +1254,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // The clock waits for HAVE_ENOUGH (start, seek or underflow).
   bool clock_held_ = true;
   bool awaiting_parameter_sets_ = false;
+  uint64_t generation_ = 0;  // Bumped by Flush; stale posted tasks compare it.
   bool ended_ = false;
   bool video_failure_reported_ = false;
   bool audio_failure_reported_ = false;

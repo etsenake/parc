@@ -18,4 +18,13 @@ xcrun clang++ "${flags[@]}" -c "$tests/fmp4_parser.cc" -o "$output/fmp4_parser.o
 xcrun clang++ "${flags[@]}" -fobjc-arc -c "$tests/harness.mm" -o "$output/harness.o"
 xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation -framework AudioToolbox \
   -framework CoreMedia -framework QuartzCore -o "$output/fairplay-proof"
-"$output/fairplay-proof" --cache "${PARC_FAIRPLAY_CACHE:-${TMPDIR:-/tmp}/parc-fairplay-cache}" "$@"
+# The harness exits by itself on a stalled main thread (sampling its stack)
+# or after --time-limit seconds (default 480); this cap backs that up.
+"$output/fairplay-proof" --cache "${PARC_FAIRPLAY_CACHE:-${TMPDIR:-/tmp}/parc-fairplay-cache}" "$@" &
+proof=$!
+( sleep 600; kill -TERM "$proof" 2>/dev/null ) &
+cap=$!
+status=0
+wait "$proof" || status=$?
+kill "$cap" 2>/dev/null || true
+exit "$status"
