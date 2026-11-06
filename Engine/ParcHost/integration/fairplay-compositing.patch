@@ -12,3 +12,607 @@
    ]
  
    defines = [
+--- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.h
++++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.h
+@@ -19,6 +19,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/unguessable_token.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/accelerated_widget_mac/accelerated_widget_mac_export.h"
+ #include "ui/gfx/geometry/rect.h"
+@@ -45,6 +46,9 @@
+   kVideo,
+   // A CAMetalLayer that copies half-float or 10-bit IOSurfaces.
+   kHDRCopier,
++  // Parc: a CALayer this tree owns, hosting the layer a FairPlay renderer
++  // registered in ProtectedLayerRegistry (an AVSampleBufferDisplayLayer).
++  kProtectedLayer,
+ };
+ 
+ // The CARendererLayerTree will construct a hierarchy of CALayers from a linear
+@@ -97,8 +101,10 @@
+   class ContentLayer;
+   friend class ContentLayer;
+ 
++  // Keyed by a content layer's IOSurfaceRef or, for kProtectedLayer, by the
++  // registered CALayer, so that layer keeps its host across frames.
+   using CALayerMap =
+-      std::unordered_map<IOSurfaceRef, base::WeakPtr<ContentLayer>>;
++      std::unordered_map<const void*, base::WeakPtr<ContentLayer>>;
+ 
+   void MatchLayersToOldTree(CARendererLayerTree* old_tree);
+ 
+@@ -242,7 +248,9 @@
+                  bool nearest_neighbor_filter,
+                  const gfx::HDRMetadata& hdr_metadata,
+                  gfx::ProtectedVideoType protected_video_type,
+-                 bool is_render_pass_draw_quad);
++                 bool is_render_pass_draw_quad,
++                 const std::optional<base::UnguessableToken>&
++                     protected_layer_token);
+ 
+     ContentLayer(ContentLayer&& layer) = delete;
+     ContentLayer(const ContentLayer&) = delete;
+@@ -252,6 +260,10 @@
+     ~ContentLayer();
+     void CommitToCA(CALayer* last_committed_ca_layer);
+ 
++    // Puts `protected_layer_` in this layer's host, filling it. `host_is_new`
++    // when `ca_layer_` was created in this commit.
++    void CommitProtectedLayer(bool host_is_new);
++
+     CARendererLayerTree* tree() { return parent_layer_->tree(); }
+     void UpdateMapAndMatchOldLayers(CALayerMap& old_ca_layer_map,
+                                     int& layer_order,
+@@ -298,6 +310,12 @@
+     // AVSampleBufferDisplayLayer, then |ca_layer| will point to |av_layer|.
+     AVSampleBufferDisplayLayer* __strong av_layer_;
+ 
++    // For kProtectedLayer: the registered layer this content layer shows (nil
++    // if its token is not registered), and the layer `ca_layer_`, its host,
++    // last took as a sublayer. The host moves between trees with `ca_layer_`.
++    CALayer* __strong protected_layer_;
++    CALayer* __strong hosted_layer_;
++
+     // Layer used to colorize content when it updates, if borders are
+     // enabled.
+     CALayer* __strong update_indicator_layer_;
+--- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
++++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
+@@ -26,6 +26,7 @@
+ #include "components/viz/common/resources/shared_image_format.h"
+ #include "third_party/skia/include/core/SkCanvas.h"
+ #include "third_party/skia/include/core/SkColor.h"
++#include "ui/accelerated_widget_mac/protected_layer_registry.h"
+ #include "ui/base/cocoa/animation_utils.h"
+ #include "ui/base/ui_base_switches.h"
+ #include "ui/gfx/geometry/dip_util.h"
+@@ -462,7 +463,11 @@
+     CALayerMap& old_ca_layer_map,
+     int& layer_order,
+     int& last_old_layer_order) {
+-  IOSurfaceRef io_surface_ref = io_surface_.get();
++  // A protected layer has no IOSurface; the registered layer it shows
++  // identifies it across frames instead, so it keeps its host.
++  const void* io_surface_ref =
++      io_surface_ ? static_cast<const void*>(io_surface_.get())
++                  : (__bridge const void*)protected_layer_;
+ 
+   if (!io_surface_ref)
+     return;
+@@ -673,7 +678,8 @@
+           return false;
+ 
+         // See if this is the video layer.
+-        if (content_layer.type_ == CALayerType::kVideo) {
++        if (content_layer.type_ == CALayerType::kVideo ||
++            content_layer.type_ == CALayerType::kProtectedLayer) {
+           found_video_layer = true;
+           if (!transform_layer.transform_.IsPositiveScaleOrTranslation())
+             return false;
+@@ -789,7 +795,8 @@
+     bool nearest_neighbor_filter,
+     const gfx::HDRMetadata& hdr_metadata,
+     gfx::ProtectedVideoType protected_video_type,
+-    bool is_render_pass_draw_quad)
++    bool is_render_pass_draw_quad,
++    const std::optional<base::UnguessableToken>& protected_layer_token)
+     : parent_layer_(parent_layer),
+       io_surface_(io_surface),
+       cv_pixel_buffer_(cv_pixel_buffer),
+@@ -843,9 +850,19 @@
+   }
+ 
+   // Determine which type of CALayer subclass we should use.
+-  if (!UseCALayerContentsHeadroom() &&
+-      metal::ShouldUseHDRCopier(io_surface.get(), hdr_metadata_,
+-                                io_surface_color_space)) {
++  if (protected_layer_token) {
++    // Parc: a FairPlay renderer's display layer goes where its video quad is.
++    // There are no decoded pixels to draw instead, so while no layer is
++    // registered under the token (its renderer is gone, or the GPU process
++    // restarted) the area is black rather than whatever lies below.
++    type_ = CALayerType::kProtectedLayer;
++    protected_layer_ = ProtectedLayerRegistry::Lookup(*protected_layer_token);
++    if (!protected_layer_) {
++      background_color_ = SkColors::kBlack;
++    }
++  } else if (!UseCALayerContentsHeadroom() &&
++             metal::ShouldUseHDRCopier(io_surface.get(), hdr_metadata_,
++                                       io_surface_color_space)) {
+     type_ = CALayerType::kHDRCopier;
+   } else if (io_surface) {
+     // Only allow YUV frames which fill the layer's contents or protected
+@@ -968,7 +985,8 @@
+       params.contents_rect, params.rect, params.background_color,
+       params.io_surface_color_space, params.edge_aa_mask, params.opacity,
+       params.nearest_neighbor_filter, params.hdr_metadata,
+-      params.protected_video_type, params.is_render_pass_draw_quad);
++      params.protected_video_type, params.is_render_pass_draw_quad,
++      params.protected_layer_token);
+ }
+ 
+ void CARendererLayerTree::RootLayer::CommitToCA(CALayer* superlayer,
+@@ -1158,17 +1176,20 @@
+   bool update_ca_edge_aa_mask = true;
+   bool update_opacity = true;
+   bool update_ca_filter = true;
++  bool host_is_new = false;
+ 
+   if (old_layer_ && old_layer_->type_ == type_) {
+     DCHECK(old_layer_->ca_layer_);
+     std::swap(ca_layer_, old_layer_->ca_layer_);
+     std::swap(av_layer_, old_layer_->av_layer_);
++    std::swap(hosted_layer_, old_layer_->hosted_layer_);
+     update_contents =
+         old_layer_->io_surface_ != io_surface_ ||
+         old_layer_->io_surface_color_space_ != io_surface_color_space_ ||
+         old_layer_->cv_pixel_buffer_ != cv_pixel_buffer_ ||
+         old_layer_->solid_color_contents_ != solid_color_contents_ ||
+-        old_layer_->hdr_metadata_ != hdr_metadata_;
++        old_layer_->hdr_metadata_ != hdr_metadata_ ||
++        old_layer_->protected_layer_ != protected_layer_;
+     // If the HDR headroom has changed then the HDRCopierLayer's tone mapping
+     // may change, so re-draw this layer.
+     if (old_layer_->type_ == CALayerType::kHDRCopier &&
+@@ -1209,6 +1230,13 @@
+         break;
+       case CALayerType::kDefault:
+         ca_layer_ = [[CALayer alloc] init];
++        break;
++      case CALayerType::kProtectedLayer:
++        // A host this tree owns. The tree's reuse and removal act on the host,
++        // never on the registered layer, which another tree may take next.
++        ca_layer_ = [[CALayer alloc] init];
++        host_is_new = true;
++        break;
+     }
+     ca_layer_.anchorPoint = CGPointZero;
+   }
+@@ -1265,6 +1293,9 @@
+         // https://crbug.com/702369
+       }
+       break;
++    case CALayerType::kProtectedLayer:
++      // The registered layer is placed below, once the host has its frame.
++      break;
+     case CALayerType::kDefault:
+       if (update_contents) {
+         if (io_surface_) {
+@@ -1279,7 +1310,8 @@
+       break;
+   }
+ 
+-  if (UseCALayerContentsHeadroom() && update_contents) {
++  if (UseCALayerContentsHeadroom() && update_contents &&
++      type_ != CALayerType::kProtectedLayer) {
+     if (@available(macOS 26, iOS 26, *)) {
+       float max_hdr_headroom = cc::ToneMapUtil::GetMaxHdrHeadroom(
+           io_surface_color_space_, hdr_metadata_);
+@@ -1298,7 +1330,7 @@
+   }
+ 
+   if (update_contents_rect) {
+-    if (type_ != CALayerType::kVideo)
++    if (type_ != CALayerType::kVideo && type_ != CALayerType::kProtectedLayer)
+       ca_layer_.contentsRect = contents_rect_.ToCGRect();
+   }
+   if (update_rect) {
+@@ -1330,6 +1362,9 @@
+     ca_layer_.magnificationFilter = ca_filter_;
+     ca_layer_.minificationFilter = ca_filter_;
+   }
++  if (type_ == CALayerType::kProtectedLayer) {
++    CommitProtectedLayer(host_is_new);
++  }
+ 
+ #if BUILDFLAG(IS_MAC)
+   static bool show_overlay_borders =
+@@ -1360,6 +1395,11 @@
+           green = blue = 1;
+         }
+         break;
++      case CALayerType::kProtectedLayer:
++        // Orange is a FairPlay renderer's layer.
++        red = 1;
++        green = 0.5;
++        break;
+       case CALayerType::kDefault:
+         if (pixel_format == 0) {
+           // Grey is no IOSurface (a solid color layer).
+@@ -1412,4 +1452,73 @@
+ #endif
+ }
+ 
++void CARendererLayerTree::ContentLayer::CommitProtectedLayer(bool host_is_new) {
++  // Let go of a layer this host took for another token.
++  if (hosted_layer_ && hosted_layer_ != protected_layer_ &&
++      hosted_layer_.superlayer == ca_layer_) {
++    [hosted_layer_ removeFromSuperlayer];
++  }
++  const bool hosted_other_layer = hosted_layer_ != protected_layer_;
++  hosted_layer_ = protected_layer_;
++  if (!protected_layer_) {
++    return;
++  }
++
++  // A layer has one superlayer. Take it when this host is new or held
++  // another layer, or when no live tree holds it. Otherwise a newer host in
++  // another tree took it (the page moved to another window's compositor) and
++  // keeps it; this tree must not take it back on every commit.
++  if (protected_layer_.superlayer != ca_layer_) {
++    CALayer* current_host = protected_layer_.superlayer;
++    const bool held_by_live_tree =
++        current_host && current_host.superlayer != nil;
++    if (!host_is_new && !hosted_other_layer && held_by_live_tree) {
++      return;
++    }
++    [ca_layer_ addSublayer:protected_layer_];
++  }
++
++  // Fill the host. The host carries the quad's rect and opacity; its
++  // ancestors carry the transform, clip and rounded corners.
++  const CGRect bounds = ca_layer_.bounds;
++  if (!CGPointEqualToPoint(protected_layer_.anchorPoint, CGPointZero)) {
++    protected_layer_.anchorPoint = CGPointZero;
++  }
++  if (!CGPointEqualToPoint(protected_layer_.position, CGPointZero)) {
++    protected_layer_.position = CGPointZero;
++  }
++  if (!CGRectEqualToRect(protected_layer_.bounds, bounds)) {
++    protected_layer_.bounds = bounds;
++  }
++  if (!CATransform3DIsIdentity(protected_layer_.transform)) {
++    protected_layer_.transform = CATransform3DIdentity;
++  }
++  if (protected_layer_.opacity != 1) {
++    protected_layer_.opacity = 1;
++  }
++  if (protected_layer_.hidden) {
++    protected_layer_.hidden = NO;
++  }
++  if ([protected_layer_ isKindOfClass:[AVSampleBufferDisplayLayer class]]) {
++    AVSampleBufferDisplayLayer* av_layer =
++        static_cast<AVSampleBufferDisplayLayer*>(protected_layer_);
++    // Protected video is never captured: screenshots and screen sharing show
++    // black here, as in Safari.
++    if (!av_layer.preventsCapture) {
++      av_layer.preventsCapture = YES;
++    }
++    // cc laid the quad out at the video's display aspect ratio (object-fit is
++    // already applied), so the frame fills it, as Chromium's own video
++    // AVSampleBufferDisplayLayers do.
++    if (![av_layer.videoGravity isEqualToString:AVLayerVideoGravityResize]) {
++      av_layer.videoGravity = AVLayerVideoGravityResize;
++    }
++    // The workaround Chromium's video layers use for transformed HDR content,
++    // which is otherwise flipped vertically (https://crbug.com/398425794).
++    if (!av_layer.geometryFlipped) {
++      av_layer.geometryFlipped = YES;
++    }
++  }
++}
++
+ }  // namespace ui
+--- a/ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm
++++ b/ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm
+@@ -15,6 +15,7 @@
+ #include "testing/gtest_mac.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/accelerated_widget_mac/ca_renderer_layer_tree.h"
++#include "ui/accelerated_widget_mac/protected_layer_registry.h"
+ #include "ui/gfx/geometry/dip_util.h"
+ #include "ui/gfx/geometry/point_conversions.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
+@@ -50,6 +51,7 @@
+   base::apple::ScopedCFTypeRef<CVPixelBufferRef> cv_pixel_buffer;
+   gfx::ProtectedVideoType protected_video_type =
+       gfx::ProtectedVideoType::kClear;
++  std::optional<base::UnguessableToken> protected_layer_token;
+ 
+   bool allow_av_layers = true;
+   bool allow_solid_color_layers = true;
+@@ -71,13 +73,27 @@
+     io_surface = properties->io_surface;
+     io_surface_color_space = properties->color_space;
+   }
+-  return tree->ScheduleCALayer(ui::CARendererLayerParams(
++  ui::CARendererLayerParams params(
+       properties->is_clipped, properties->clip_rect,
+       properties->rounded_corner_bounds, properties->sorting_context_id,
+       properties->transform, io_surface, io_surface_color_space,
+       properties->contents_rect, properties->rect, properties->background_color,
+       properties->edge_aa_mask, properties->opacity, properties->filter,
+-      gfx::HDRMetadata(), properties->protected_video_type, false));
++      gfx::HDRMetadata(), properties->protected_video_type, false);
++  params.protected_layer_token = properties->protected_layer_token;
++  return tree->ScheduleCALayer(params);
++}
++
++// The single content layer under `superlayer` in a committed tree.
++CALayer* OnlyContentLayerIn(CALayer* superlayer) {
++  CALayer* layer = superlayer;
++  for (int depth = 0; depth < 5; ++depth) {
++    if (layer.sublayers.count != 1) {
++      return nil;
++    }
++    layer = layer.sublayers[0];
++  }
++  return layer;
+ }
+ 
+ void UpdateCALayerTree(std::unique_ptr<ui::CARendererLayerTree>& ca_layer_tree,
+@@ -979,6 +995,75 @@
+ }
+ 
+ // Test fullscreen low power detection.
++// Parc: a quad carrying a registered FairPlay layer's token puts that layer in
++// the tree where the quad is, follows the quad, moves to the newest tree that
++// shows it and leaves black when the layer is gone.
++TEST_F(CALayerTreeTest, ProtectedLayer) {
++  AVSampleBufferDisplayLayer* av_layer =
++      [[AVSampleBufferDisplayLayer alloc] init];
++  const base::UnguessableToken token = base::UnguessableToken::Create();
++  ASSERT_TRUE(ui::ProtectedLayerRegistry::Register(token, av_layer));
++
++  CALayerProperties properties;
++  properties.protected_layer_token = token;
++  properties.protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
++  properties.background_color = SkColors::kTransparent;
++  properties.is_clipped = false;
++  properties.rect = gfx::Rect(16, 32, 64, 128);
++  std::unique_ptr<ui::CARendererLayerTree> ca_layer_tree;
++
++  // The registered layer fills a host at the quad's rect and can't be
++  // captured.
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  CALayer* host = GetOnlyContentLayer();
++  EXPECT_FALSE([host isKindOfClass:[AVSampleBufferDisplayLayer class]]);
++  EXPECT_EQ(host, av_layer.superlayer);
++  EXPECT_EQ(1u, host.sublayers.count);
++  EXPECT_EQ(gfx::Rect(16, 32, 64, 128),
++            gfx::ToEnclosingRect(gfx::RectF(host.frame)));
++  EXPECT_EQ(gfx::Rect(0, 0, 64, 128),
++            gfx::ToEnclosingRect(gfx::RectF(av_layer.frame)));
++  EXPECT_TRUE(av_layer.preventsCapture);
++  EXPECT_NSEQ(AVLayerVideoGravityResize, av_layer.videoGravity);
++
++  // The next frame keeps the host, and the layer follows the quad.
++  properties.rect = gfx::Rect(8, 8, 32, 64);
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  EXPECT_EQ(host, GetOnlyContentLayer());
++  EXPECT_EQ(host, av_layer.superlayer);
++  EXPECT_EQ(gfx::Rect(0, 0, 32, 64),
++            gfx::ToEnclosingRect(gfx::RectF(av_layer.frame)));
++
++  // Another compositor's tree showing the same quad takes the layer, and the
++  // first tree's next frame doesn't take it back.
++  CALayer* other_superlayer = [[CALayer alloc] init];
++  std::unique_ptr<ui::CARendererLayerTree> other_tree;
++  UpdateCALayerTree(other_tree, &properties, other_superlayer);
++  CALayer* other_host = OnlyContentLayerIn(other_superlayer);
++  ASSERT_TRUE(other_host);
++  EXPECT_EQ(other_host, av_layer.superlayer);
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  EXPECT_EQ(other_host, av_layer.superlayer);
++
++  // Once that tree is gone, the first tree takes it again.
++  other_tree.reset();
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  host = GetOnlyContentLayer();
++  EXPECT_EQ(host, av_layer.superlayer);
++
++  // Without a registered layer the host is black and empty, and the layer is
++  // out of the visible tree.
++  ui::ProtectedLayerRegistry::Unregister(token);
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  host = GetOnlyContentLayer();
++  EXPECT_EQ(0u, host.sublayers.count);
++  EXPECT_TRUE(!av_layer.superlayer || !av_layer.superlayer.superlayer);
++  ASSERT_TRUE(host.backgroundColor);
++  EXPECT_EQ(1, CGColorGetAlpha(host.backgroundColor));
++  const CGFloat* rgba = CGColorGetComponents(host.backgroundColor);
++  EXPECT_EQ(0, rgba[0] + rgba[1] + rgba[2]);
++}
++
+ TEST_F(CALayerTreeTest, FullscreenLowPower) {
+   base::test::ScopedFeatureList features;
+   features.InitWithFeatures({ui::kFullscreenLowPowerBackdropMac}, {});
+--- a/ui/gl/ca_renderer_layer_params.h
++++ b/ui/gl/ca_renderer_layer_params.h
+@@ -8,6 +8,7 @@
+ #include <optional>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "base/unguessable_token.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "ui/gfx/color_space.h"
+ #include "ui/gfx/geometry/point.h"
+@@ -66,6 +67,9 @@
+   gfx::HDRMetadata hdr_metadata;
+   gfx::ProtectedVideoType protected_video_type;
+   bool is_render_pass_draw_quad;
++  // Parc: set for a FairPlay video quad. The layer registered under this token
++  // in ui::ProtectedLayerRegistry is shown at |rect| instead of |io_surface|.
++  std::optional<base::UnguessableToken> protected_layer_token;
+ };
+ 
+ }  // namespace ui
+--- a/components/viz/service/display/overlay_candidate.h
++++ b/components/viz/service/display/overlay_candidate.h
+@@ -11,6 +11,7 @@
+ 
+ #include "base/containers/flat_map.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/unguessable_token.h"
+ #include "build/build_config.h"
+ #include "components/viz/common/quads/aggregated_render_pass.h"
+ #include "components/viz/common/quads/texture_draw_quad.h"
+@@ -248,6 +249,11 @@
+ 
+   // The edge anti-aliasing mask property for the CALayer.
+   unsigned edge_aa_mask = 0;
++
++  // Parc: a FairPlay video, from a VideoHoleDrawQuad. It has no resource; the
++  // GPU process shows the layer registered under this token in
++  // ui::ProtectedLayerRegistry.
++  std::optional<base::UnguessableToken> protected_layer_token;
+ #endif  // BUILDFLAG(IS_APPLE)
+ 
+   // A (ideally) unique key used to temporally identify a specific overlay
+--- a/components/viz/service/display/ca_layer_overlay.cc
++++ b/components/viz/service/display/ca_layer_overlay.cc
+@@ -17,6 +17,7 @@
+ #include "components/viz/common/quads/solid_color_draw_quad.h"
+ #include "components/viz/common/quads/texture_draw_quad.h"
+ #include "components/viz/common/quads/tile_draw_quad.h"
++#include "components/viz/common/quads/video_hole_draw_quad.h"
+ #include "components/viz/service/display/display_resource_provider.h"
+ #include "ui/base/cocoa/remote_layer_api.h"
+ #include "ui/gfx/buffer_types.h"
+@@ -210,6 +211,21 @@
+   ca_layer_overlay->uv_rect.InvScale(texture_size.width(),
+                                      texture_size.height());
+   ca_layer_overlay->nearest_neighbor_filter = quad->nearest_neighbor;
++  return gfx::kCALayerSuccess;
++}
++
++// Parc: a FairPlay video. Its frames exist only inside the renderer's
++// AVSampleBufferDisplayLayer in the GPU process, so the quad can only be shown
++// as a CALayer; CARendererLayerTree puts the layer registered under the token
++// at this quad's place.
++gfx::CALayerResult FromVideoHoleQuad(const VideoHoleDrawQuad* quad,
++                                     OverlayCandidate* ca_layer_overlay) {
++  if (quad->overlay_plane_id.is_empty()) {
++    return gfx::kCALayerFailedUnknown;
++  }
++  ca_layer_overlay->protected_layer_token = quad->overlay_plane_id;
++  ca_layer_overlay->protected_video_type =
++      gfx::ProtectedVideoType::kHardwareProtected;
+   return gfx::kCALayerSuccess;
+ }
+ 
+@@ -295,6 +311,10 @@
+             ca_layer_overlay);
+       case DrawQuad::Material::kSurfaceContent:
+         return gfx::kCALayerFailedSurfaceContent;
++      case DrawQuad::Material::kVideoHole:
++        yuv_draw_quad_count += 1;
++        return FromVideoHoleQuad(VideoHoleDrawQuad::MaterialCast(quad),
++                                 ca_layer_overlay);
+       default:
+         break;
+     }
+@@ -403,6 +423,14 @@
+       }
+     }
+ 
++    // Parc: a FairPlay video can't be drawn into the primary plane, so when
++    // the frame can't be all CALayers it still goes to an underlay below a
++    // hole in the primary plane, keeping page content drawn over it on top.
++    if (quad->material == DrawQuad::Material::kVideoHole) {
++      force_quad_to_overlay = true;
++      protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
++    }
++
+     if (force_quad_to_overlay) {
+       if (!PutQuadInSeparateOverlay(it, resource_provider, render_pass,
+                                     display_rect, quad, protected_video_type,
+--- a/components/viz/service/display/skia_renderer.cc
++++ b/components/viz/service/display/skia_renderer.cc
+@@ -3036,6 +3036,15 @@
+     DCHECK(!overlay.rpdq);
+ #endif
+ 
++#if BUILDFLAG(IS_APPLE)
++    if (overlay.protected_layer_token) {
++      // Parc: a FairPlay video layer, placed by the GPU process. There is no
++      // resource to lock or mailbox to send.
++      DCHECK(!overlay.resource_id);
++      continue;
++    }
++#endif
++
+     if (overlay.is_solid_color) {
+       DCHECK(overlay.color);
+       DCHECK(!overlay.resource_id);
+--- a/components/viz/service/display/software_renderer.cc
++++ b/components/viz/service/display/software_renderer.cc
+@@ -365,7 +365,12 @@
+       // Quad and the quad would then reach here unexpectedly. Therefore
+       // we should skip NOTREACHED() so an untrusted render is not capable
+       // of causing a crash.
+-      DrawUnsupportedQuad(quad);
++      // Parc: FairPlay video under software compositing has no overlay to
++      // show it, so its area is black, as SkiaRenderer draws a quad that
++      // requires an overlay.
++      current_paint_.setColor(SkColors::kBlack);
++      current_paint_.setAlpha(quad->shared_quad_state->opacity * 255);
++      current_canvas_->drawRect(gfx::RectToSkRect(quad->rect), current_paint_);
+       break;
+   }
+ 
+--- a/components/viz/service/display_embedder/output_presenter_gl.cc
++++ b/components/viz/service/display_embedder/output_presenter_gl.cc
+@@ -160,22 +160,23 @@
+     io_surface_color_space = access->representation()->color_space();
+     backpressure_fences = access->GetBackpressureFences();
+   }
+-  presenter_->ScheduleCALayer(
+-      ui::CARendererLayerParams(
+-          overlay_plane_candidate.clip_rect.has_value(),
+-          overlay_plane_candidate.clip_rect.value_or(gfx::Rect()),
+-          overlay_plane_candidate.rounded_corners,
+-          overlay_plane_candidate.sorting_context_id,
+-          std::get<gfx::Transform>(overlay_plane_candidate.transform),
+-          io_surface, io_surface_color_space, overlay_plane_candidate.uv_rect,
+-          gfx::ToEnclosingRect(overlay_plane_candidate.display_rect),
+-          overlay_plane_candidate.color.value_or(SkColors::kTransparent),
+-          overlay_plane_candidate.edge_aa_mask, overlay_plane_candidate.opacity,
+-          overlay_plane_candidate.nearest_neighbor_filter,
+-          overlay_plane_candidate.hdr_metadata,
+-          overlay_plane_candidate.protected_video_type,
+-          overlay_plane_candidate.is_render_pass_draw_quad),
+-      std::move(backpressure_fences));
++  ui::CARendererLayerParams params(
++      overlay_plane_candidate.clip_rect.has_value(),
++      overlay_plane_candidate.clip_rect.value_or(gfx::Rect()),
++      overlay_plane_candidate.rounded_corners,
++      overlay_plane_candidate.sorting_context_id,
++      std::get<gfx::Transform>(overlay_plane_candidate.transform), io_surface,
++      io_surface_color_space, overlay_plane_candidate.uv_rect,
++      gfx::ToEnclosingRect(overlay_plane_candidate.display_rect),
++      overlay_plane_candidate.color.value_or(SkColors::kTransparent),
++      overlay_plane_candidate.edge_aa_mask, overlay_plane_candidate.opacity,
++      overlay_plane_candidate.nearest_neighbor_filter,
++      overlay_plane_candidate.hdr_metadata,
++      overlay_plane_candidate.protected_video_type,
++      overlay_plane_candidate.is_render_pass_draw_quad);
++  // Parc: a FairPlay video layer, placed by CARendererLayerTree.
++  params.protected_layer_token = overlay_plane_candidate.protected_layer_token;
++  presenter_->ScheduleCALayer(params, std::move(backpressure_fences));
+ 
+ #endif
+ }

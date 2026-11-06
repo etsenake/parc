@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 343,
+  "version": 344,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1455,7 +1455,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/protected_layer_registry.h",
       "target": "ui/accelerated_widget_mac/protected_layer_registry.h",
-      "sha256": "38d8a44f4cbfe69518d201b9b41fb2a301f5b0cb8b4b6fe46ea2992837758290"
+      "sha256": "4d83c7e21ffc49bf4057bde002bc9121138b084528a3678a79965a481cb36c5f"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/protected_layer_registry.mm",
@@ -3666,12 +3666,57 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "99f27c531aabc8cb109e07b38679dffdd9997b932f21e91e7b4ef8cf2b7965d6",
+      "sha256": "51a83d84eec1cf5893d9253c1a830e5759c815677faae5c072af68412d2af63b",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
           "before_sha256": "5c3e0c348092a2d6d86447ae8be4d18ce741502765401845607515d2fbd74472",
           "after_sha256": "dc502ad7a6a239660195712b7e7c92c60bc908aae1eed37cdde6ff9136b0472c"
+        },
+        {
+          "target": "ui/accelerated_widget_mac/ca_renderer_layer_tree.h",
+          "before_sha256": "e5db9584240a3e6250d085ec80802d9e092b0e19513b656e9c816a165368c3f6",
+          "after_sha256": "b1bf156b3202ce459010d394bfdc36fb6c48d9deb5e4453737b1a5c323e77499"
+        },
+        {
+          "target": "ui/accelerated_widget_mac/ca_renderer_layer_tree.mm",
+          "before_sha256": "508007e7ff92bc89dd300680e51136ded485f27c83c6f4fd7bc5b31f61e474c3",
+          "after_sha256": "b9690fd26cc3c0190dbe391a8f9df4ec341d28d8cde4ac628b95b0a1b7483eee"
+        },
+        {
+          "target": "ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm",
+          "before_sha256": "e4a284b5b6219f47d50e13ef70dd379d91f9563ae3a337c4ae022f5dabfb11e2",
+          "after_sha256": "7d617ae45a3bdfab277d26b1ce4a9bc75ef37238af0bcf25f8d3565537ddb405"
+        },
+        {
+          "target": "ui/gl/ca_renderer_layer_params.h",
+          "before_sha256": "6cfdccde2f01b5950accf2ff462ca44afaccbe12b91e63216c4612b0cafddfe0",
+          "after_sha256": "57c7039115de674e2fb34ac96a52744190a25a8e587f05f78c2dbaa929639994"
+        },
+        {
+          "target": "components/viz/service/display/overlay_candidate.h",
+          "before_sha256": "f53c9dbc694c978e7394ab6071597ba9da4c58fc2656961b46a254914932bb0e",
+          "after_sha256": "a733266e85412b154980e95224d3bf2875fb53ee49ca5da00fb8e0c45b419200"
+        },
+        {
+          "target": "components/viz/service/display/ca_layer_overlay.cc",
+          "before_sha256": "5cd1ee86cff67c5fa24995edd03f8d84ae8200f86445fd610959564fbfd16689",
+          "after_sha256": "9552c5d1b9e1f66947b02e1c705f9f811beb9e74a163ee8f107265437d91203f"
+        },
+        {
+          "target": "components/viz/service/display/skia_renderer.cc",
+          "before_sha256": "2c7761108e997c98092abe7692c6e320837e90cde9f45409019e3804ff895473",
+          "after_sha256": "0af4fddb9221af679ad3c9e3b6d7d213aadbb3756c5a6b5cf075137a5ae2949e"
+        },
+        {
+          "target": "components/viz/service/display/software_renderer.cc",
+          "before_sha256": "a3cf6c8da4eecc4648370ef633bff75a752ef9653ac419193f082230e56350d4",
+          "after_sha256": "4c3da666ddf6fdb30e3928b31f44a5dcd39ff3f5d173f13abac003f378449f9d"
+        },
+        {
+          "target": "components/viz/service/display_embedder/output_presenter_gl.cc",
+          "before_sha256": "f1ea7ae327d6999d37c1b624d547dedd40757315d010a548b5c7120562750ed0",
+          "after_sha256": "52984e8bc68718be3c3212cb9ae1239f7143ccb63c07475d33c871014d8118bf"
         }
       ]
     }

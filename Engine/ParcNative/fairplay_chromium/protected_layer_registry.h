@@ -11,8 +11,8 @@
 // paints media::VideoFrame::CreateVideoHoleFrame(token, natural_size, ts).
 // cc turns that frame into a viz::VideoHoleDrawQuad carrying the token, and
 // CARendererLayerTree puts the registered layer where the quad is, in z-order
-// among the page's other CALayers, with preventsCapture = YES. (That
-// compositor change lands separately; until it does, nothing reads this.)
+// among the page's other CALayers, with preventsCapture = YES. See
+// COMPOSITING.md beside this file's source in the Parc repository.
 //
 // Contract with the registering side (the FairPlay renderer):
 //  - Register before the token leaves the GPU process, so every quad that can
