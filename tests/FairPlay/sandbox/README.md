@@ -70,6 +70,20 @@ the pinned Chromium checkout (`--source`, default the shared engine source, or
 | `hevc` | Axinom "CMAF H265 SingleKey": 720p HEVC + AAC, both protected, `skd` |
 | `dolby-vision` | Chromium's clear Dolby Vision profile 5 clip |
 | `eac3`, `ac3` | Chromium's clear E-AC-3 and AC-3 clips |
+| `audio-switch` | An audio language switch through MSE `changeType`: `h264`'s protected video throughout, audio its protected AAC to 2 s, then Chromium's clear E-AC-3 clip, then the AAC again |
+| `video-switch` | A video codec switch through `changeType` (clear): Chromium's H.264 clip to 1.5 s, then its HEVC clip, then the H.264 clip again |
+
+In the switch scenarios each part continues the timeline, and the player
+calls `FairPlayRenderer::Reconfigure` with the new codec's config before the
+part's first sample, as the GPU adapter does on the demuxer's
+`kConfigChanged`. They also pass only if the core built each part's format in
+order (`aac ` → `ec-3` → `aac `, `avc1` → `hvc1` → `avc1`), the clock got
+past the last switch, and the clock never ran out of data after it started
+(no HAVE_NOTHING). For AAC the format check only shows the core took the new
+config (it builds AAC's clear format at once); E-AC-3's comes from its first
+syncframe, video's from the first keyframe. The video switch and the E-AC-3
+leg are clear: protected HEVC after H.264 under one CDM, and E-AC-3's box
+built from an encrypted syncframe after a switch, aren't exercised.
 
 No public FairPlay vector has Dolby Vision, E-AC-3 or AC-3. Their clear clips
 use the same decoders and output a protected sample does once it is
@@ -103,6 +117,8 @@ With the rules in the patch, every scenario passes:
 | `hevc` | 5.2 s, key usable, 164 frames (125 due), 53 of 62 between the counts, 0 dropped, 0 corrupted, `qhvc`/`qaac` |
 | `dolby-vision` | to the clip's end, 120 frames (116 due, all decoded by the first count), 0 dropped, 0 corrupted, `dvh1` |
 | `eac3`, `ac3` | to the clip's end, audio rendering |
+| `audio-switch` | 5.2 s, formats `aac ` → `ec-3` → `aac `, no underflow, video 167 frames (125 due), 56 of 62 between the counts, 0 dropped, 0 corrupted |
+| `video-switch` | 5.2 s, formats `avc1` → `hvc1` → `avc1`, no underflow, 198 frames (152 due), 73 of 77 between the counts, 0 dropped, 0 corrupted |
 
 Without the FairPlay rules, `h264` fails at renderer Initialize:
 `AVSampleBufferRenderSynchronizer addRenderer:` refuses the audio renderer

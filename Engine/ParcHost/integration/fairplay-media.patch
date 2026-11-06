@@ -640,6 +640,43 @@
   protected:
    CdmContext();
  };
+--- a/media/base/demuxer.cc
++++ b/media/base/demuxer.cc
+@@ -16,4 +16,6 @@
+ // Do nothing by default.
+ void Demuxer::DisableCanChangeType() {}
+ 
++void Demuxer::RestrictCanChangeType(ChangeTypeFilter filter) {}
++
+ }  // namespace media
+--- a/media/base/demuxer.h
++++ b/media/base/demuxer.h
+@@ -9,8 +9,10 @@
+ 
+ #include <memory>
+ #include <optional>
++#include <string>
+ #include <vector>
+ 
++#include "base/functional/callback.h"
+ #include "base/time/time.h"
+ #include "media/base/container_names.h"
+ #include "media/base/demuxer_stream.h"
+@@ -181,6 +183,14 @@
+ 
+   // Allow canChangeType to be disabled.
+   virtual void DisableCanChangeType();
++
++  // Parc: limits canChangeType to the types `filter` accepts (the content
++  // type and codecs SourceBuffer.changeType() names), for a renderer that
++  // switches only among the codecs it plays (the FairPlay Renderer).
++  using ChangeTypeFilter =
++      base::RepeatingCallback<bool(const std::string& content_type,
++                                   const std::string& codecs)>;
++  virtual void RestrictCanChangeType(ChangeTypeFilter filter);
+ };
+ 
+ }  // namespace media
 --- a/media/base/media_switches.cc
 +++ b/media/base/media_switches.cc
 @@ -1208,8 +1208,10 @@
@@ -694,6 +731,75 @@
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
+--- a/media/filters/chunk_demuxer.cc
++++ b/media/filters/chunk_demuxer.cc
+@@ -899,6 +899,11 @@
+   supports_change_type_ = false;
+ }
+ 
++void ChunkDemuxer::RestrictCanChangeType(ChangeTypeFilter filter) {
++  base::AutoLock auto_lock(lock_);
++  change_type_filter_ = std::move(filter);
++}
++
+ bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
+                                     base::TimeDelta currentMediaTime,
+                                     size_t newDataSize) {
+@@ -1162,6 +1167,10 @@
+     return false;
+   }
+ 
++  if (change_type_filter_ && !change_type_filter_.Run(content_type, codecs)) {
++    return false;
++  }
++
+   // CanChangeType() doesn't care if there has or hasn't been received a first
+   // initialization segment for the source buffer corresponding to |id|.
+ 
+--- a/media/filters/chunk_demuxer.h
++++ b/media/filters/chunk_demuxer.h
+@@ -313,6 +313,7 @@
+   void SetPlaybackRate(double rate) override {}
+ 
+   void DisableCanChangeType() override;
++  void RestrictCanChangeType(ChangeTypeFilter filter) override;
+ 
+   // Appends media data to the source buffer's stream parser associated with
+   // `id`. No parsing is done, just buffering the media data for future parsing
+@@ -597,6 +598,8 @@
+       track_id_to_demux_stream_map_;
+ 
+   bool supports_change_type_ = true;
++  // Parc: see Demuxer::RestrictCanChangeType(). Guarded by `lock_`.
++  ChangeTypeFilter change_type_filter_;
+ };
+ 
+ }  // namespace media
+--- a/media/filters/demuxer_manager.cc
++++ b/media/filters/demuxer_manager.cc
+@@ -232,6 +232,11 @@
+   demuxer_->DisableCanChangeType();
+ }
+ 
++void DemuxerManager::RestrictDemuxerCanChangeType(
++    Demuxer::ChangeTypeFilter filter) {
++  demuxer_->RestrictCanChangeType(std::move(filter));
++}
++
+ PipelineStatus DemuxerManager::CreateDemuxer(
+     bool load_media_source,
+     DataSource::Preload preload,
+--- a/media/filters/demuxer_manager.h
++++ b/media/filters/demuxer_manager.h
+@@ -111,6 +111,8 @@
+   std::optional<container_names::MediaContainerName> GetContainerForMetrics();
+   void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
+   void DisableDemuxerCanChangeType();
++  // Parc: see Demuxer::RestrictCanChangeType().
++  void RestrictDemuxerCanChangeType(Demuxer::ChangeTypeFilter filter);
+ 
+   // Returns a forwarded error/success from |on_demuxer_created|, or an error
+   // if a demuxer couldn't be created.
 --- a/media/cdm/supported_audio_codecs.cc
 +++ b/media/cdm/supported_audio_codecs.cc
 @@ -4,6 +4,7 @@
@@ -1269,7 +1375,69 @@
 +)
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.cc
-@@ -356,7 +356,11 @@
+@@ -121,6 +121,13 @@
+ #include "media/base/android/media_codec_util.h"
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++#include "media/base/audio_codecs.h"
++#include "media/base/media_types.h"
++#include "media/base/mime_util.h"
++#include "media/base/video_codecs.h"
++#endif  // BUILDFLAG(IS_MAC)
++
+ namespace blink {
+ 
+ namespace {
+@@ -167,6 +174,47 @@
+   sink->SwitchOutputDevice(device_id,
+                            ConvertToBaseOnceCallback(std::move(callback)));
+ }
++
++#if BUILDFLAG(IS_MAC)
++// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
++// ones FairPlay's CdmInfo lists, and Dolby Vision profile 8, which it plays
++// without offering it. An empty list leaves the decision to the demuxer.
++bool IsFairPlayChangeTypeSupported(const std::string& content_type,
++                                   const std::string& codecs) {
++  std::vector<std::string> codec_ids;
++  media::SplitCodecs(codecs, &codec_ids);
++  for (const std::string& codec_id : codec_ids) {
++    if (std::optional<media::AudioType> audio =
++            media::ParseAudioCodecString(content_type, codec_id)) {
++      if (audio->codec != media::AudioCodec::kAAC &&
++          audio->codec != media::AudioCodec::kAC3 &&
++          audio->codec != media::AudioCodec::kEAC3) {
++        return false;
++      }
++      continue;
++    }
++    std::optional<media::VideoType> video =
++        media::ParseVideoCodecString(content_type, codec_id);
++    if (!video) {
++      return false;
++    }
++    switch (video->codec) {
++      case media::VideoCodec::kH264:
++      case media::VideoCodec::kHEVC:
++        break;
++      case media::VideoCodec::kDolbyVision:
++        if (video->profile != media::DOLBYVISION_PROFILE5 &&
++            video->profile != media::DOLBYVISION_PROFILE8) {
++          return false;
++        }
++        break;
++      default:
++        return false;
++    }
++  }
++  return true;
++}
++#endif  // BUILDFLAG(IS_MAC)
+ 
+ bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+@@ -356,7 +404,11 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
  bool UsesAudioService(media::RendererType renderer_type) {
@@ -1282,18 +1450,23 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -3020,7 +3024,9 @@
-   renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
- 
-   // TODO(crbug.com/40261162): Support codec changing for Media Foundation.
--  if (renderer_type_ == media::RendererType::kMediaFoundation) {
-+  // Parc: the FairPlay Renderer can't change codecs either.
-+  if (renderer_type_ == media::RendererType::kMediaFoundation ||
-+      renderer_type_ == media::RendererType::kFairPlay) {
+@@ -3023,6 +3075,15 @@
+   if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
    }
++#if BUILDFLAG(IS_MAC)
++  // Parc: the FairPlay Renderer switches codecs (an audio language change
++  // from E-AC-3 to AAC), but only among those it plays; others throw
++  // NotSupportedError from changeType() instead of failing playback.
++  if (renderer_type_ == media::RendererType::kFairPlay) {
++    demuxer_manager_->RestrictDemuxerCanChangeType(
++        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
++  }
++#endif  // BUILDFLAG(IS_MAC)
  
-@@ -3153,6 +3159,12 @@
+   bool new_uses_audio_service = UsesAudioService(renderer_type_);
+   if (new_uses_audio_service != old_uses_audio_service)
+@@ -3153,6 +3214,12 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -1306,7 +1479,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3805,26 @@
+@@ -3793,6 +3860,26 @@
      return false;
    }
  

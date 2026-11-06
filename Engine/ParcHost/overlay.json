@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 368,
+  "version": 369,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1505,7 +1505,7 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_renderer.mm",
       "target": "third_party/parc_fairplay/core/fairplay_renderer.mm",
-      "sha256": "61b0bf054bc582fe4bcfcd7678a33477ce70cb41a153d25db76e08bd29389eb0"
+      "sha256": "cea7f39b073e2a91b9d0df653fd89ee3606afc91b27b0a932d0cdb937c7d8daf"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_types.h",
@@ -1585,7 +1585,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_adapter.mm",
       "target": "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.mm",
-      "sha256": "9004afe7ec218521893d18373e2dcf638ebfdda4a696cefd59b3a071d437a156"
+      "sha256": "50acb1d1861691b41a344f605ec7ba7f70c2f0c0e2888909d937b98c43a7c5ca"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client.h",
@@ -3947,7 +3947,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "4373718c21c04c5f8ad1c68c16c0874932679a052c59d862edbff8076bab9847",
+      "sha256": "68bcbdb753730dc11841fb9b4a00796b251771c6c132e16f39f060959d974413",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4020,6 +4020,16 @@
           "after_sha256": "fed24034e130eade95f54951d00cf1b819c5ca17cc8ed921a648c7e71721581a"
         },
         {
+          "target": "media/base/demuxer.cc",
+          "before_sha256": "0921018413b5862b1dca96425cf57a4dfd13f4de43befc3d9184ab0e450e1395",
+          "after_sha256": "185642d288fc022f487208a7a04dca68fc7a73f989a29be167e68a94d1b371a8"
+        },
+        {
+          "target": "media/base/demuxer.h",
+          "before_sha256": "c1d509071e28586fdca660554f95b6da3c3adad1c2fdfbe5a5481ce36af5a356",
+          "after_sha256": "c404f49c9176efed79bed53630caeb03adfdf5e23ebd00e63b051d07152d2382"
+        },
+        {
           "target": "media/base/media_switches.cc",
           "before_sha256": "b1e51dbd3a611e5b50163861487e2f95884e92fe1b12c9e11ff3060f4e45cecc",
           "after_sha256": "2861393bcaf381ee3e34de323039b34911e67f85a89bdb9cc728627f74ce8acd"
@@ -4038,6 +4048,26 @@
           "target": "media/base/renderer.h",
           "before_sha256": "22e0fceeebdbdd863f23618420e3ce629631ec77ef9bcd8fd6b839172df9070d",
           "after_sha256": "eab7ca04fb3dc4916d18de474446d96a15639c0c4ae0c06bb9e2195bb8d5367c"
+        },
+        {
+          "target": "media/filters/chunk_demuxer.cc",
+          "before_sha256": "bfe9309a25c772e3362e2da90ccf528e21ad98abb3621566484e585d6ca4c3ee",
+          "after_sha256": "f23dbfe512f763e7fbbcc8dd46a8c2614a61e0b619f105f731aae0d056d71f4d"
+        },
+        {
+          "target": "media/filters/chunk_demuxer.h",
+          "before_sha256": "7882b1b7d0ec10bc36f06ca11b835bd474163070b8b0d032e719c8ecbd5250d9",
+          "after_sha256": "b09307452e0580e01874ac644d65058bcf2e46cc3c53c5a49d092d0fe6e5b536"
+        },
+        {
+          "target": "media/filters/demuxer_manager.cc",
+          "before_sha256": "01afd177b93b47f3cfa4ef41cbf58783cd4693a68b16f6c5ed89db21338c6ccd",
+          "after_sha256": "393e0561847663e3c2c25fe2697498a334c6731387fd51e47b6cf28e2903bb23"
+        },
+        {
+          "target": "media/filters/demuxer_manager.h",
+          "before_sha256": "dca616bcfcd5d0b523d55469e57370e4f8da6ff7a887f6c45a8a2a6bd736215c",
+          "after_sha256": "d9d03594ec4a2ae46d99d0235dd57c6ae58abff524fb68e451e3c2e5af42c52a"
         },
         {
           "target": "media/cdm/supported_audio_codecs.cc",
@@ -4142,7 +4172,7 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "409af07d15a5ac1933677042650f26580040814544c69e6fbb4beb70ee3d8c22"
+          "after_sha256": "72a973f176d8fa37331c44fbcc456e7dc17427a9b55bd11bf61cb4dbd88ca66b"
         }
       ]
     },

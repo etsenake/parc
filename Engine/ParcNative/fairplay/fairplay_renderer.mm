@@ -530,8 +530,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
-  // A new decoder config mid-stream (Chromium's DemuxerStream kConfigChanged)
-  // for the samples enqueued from now on; encrypted-ness can't change.
+  // A new decoder config mid-stream (Chromium's DemuxerStream kConfigChanged,
+  // also a new codec after MSE changeType) for the samples enqueued from now
+  // on. Clear and protected samples may follow either way: each sample's
+  // DecryptInfo picks its format, as with clear lead.
   Result Reconfigure(const VideoConfig& config) {
     if (!video_renderer_) {
       return Result::Error(Exception::kInvalidState, "no video stream");

@@ -26,6 +26,7 @@
 #include <sys/sysctl.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdarg>
@@ -247,6 +248,33 @@ bool LoadHls(const std::string& base, const std::string& playlist, int max_segme
   return true;
 }
 
+// Appends |from|'s samples to |to| as a new part, moved |shift_seconds| later.
+void Splice(fpsb::Track* to, const fpsb::Track& from, std::vector<ft::Sample> samples, double shift_seconds) {
+  if (to->parts.empty()) {
+    to->parts.push_back(to->info);
+    to->part_of_sample.assign(to->samples.size(), 0);
+  }
+  const int64_t shift = int64_t(shift_seconds * from.info.timescale);
+  for (ft::Sample& s : samples) {
+    s.pts += shift;
+    s.dts += shift;
+    to->samples.push_back(std::move(s));
+    to->part_of_sample.push_back(uint8_t(to->parts.size()));
+  }
+  to->parts.push_back(from.info);
+}
+
+double Seconds(const fpsb::Track& track, int64_t ticks) {
+  return double(ticks) / track.info.timescale;
+}
+
+// End of the last sample, in seconds.
+double EndOf(const fpsb::Track& track, const std::vector<ft::Sample>& samples) {
+  double end = 0;
+  for (const ft::Sample& s : samples) end = std::max(end, Seconds(track, s.pts + s.duration));
+  return end;
+}
+
 // A fragmented MP4 from Chromium's media/test/data (run.py extracts them from
 // the pinned checkout), holding its init segment and fragments.
 bool LoadFile(const std::string& path, fpsb::Track* track, std::string* error) {
@@ -289,6 +317,45 @@ bool LoadScenario(const std::string& name, const std::string& media_dir, fpsb::S
     if (!protected_vector(kHevcBase, "video-H265-720-2100k.m3u8", 3, kHevcToken)) return false;
     s->init_data_type = "skd";
     s->init_data.assign(kHevcSkd, kHevcSkd + sizeof(kHevcSkd) - 1);
+    return true;
+  }
+  if (name == "audio-switch") {
+    // An audio language switch through MSE changeType: protected 720p H.264
+    // video throughout, audio protected AAC, then clear E-AC-3, then AAC again.
+    if (!protected_vector(kH264Base, "video-H264-720-2100k.m3u8", 3, kH264Token)) return false;
+    s->init_data_type = "cenc";
+    s->init_data = s->video.info.pssh_boxes;
+    fpsb::Track aac = std::move(s->audio), eac3;
+    if (!LoadFile(media_dir + "/bear-eac3-only-frag.mp4", &eac3, error)) return false;
+    std::vector<ft::Sample> first, last;
+    for (const ft::Sample& x : aac.samples) {
+      if (Seconds(aac, x.pts) < 2.0) first.push_back(x);
+    }
+    const double switch_back = EndOf(aac, first) + EndOf(eac3, eac3.samples);
+    for (const ft::Sample& x : aac.samples) {
+      if (Seconds(aac, x.pts) >= switch_back) last.push_back(x);
+    }
+    s->audio = fpsb::Track{true, aac.info, first, {}, {}};
+    Splice(&s->audio, eac3, eac3.samples, EndOf(aac, first));
+    Splice(&s->audio, aac, last, 0);
+    return true;
+  }
+  if (name == "video-switch") {
+    // A video codec switch through MSE changeType (clear): H.264, then HEVC,
+    // then H.264 again, each from a keyframe and continuing the timeline.
+    fpsb::Track h264, hevc;
+    if (!LoadFile(media_dir + "/bear-640x360-v_frag.mp4", &h264, error) ||
+        !LoadFile(media_dir + "/bear-320x240-v_frag-hevc.mp4", &hevc, error)) {
+      return false;
+    }
+    std::vector<ft::Sample> first;
+    for (const ft::Sample& x : h264.samples) {
+      if (Seconds(h264, x.pts) < 1.5) first.push_back(x);
+    }
+    const double hevc_start = EndOf(h264, first);
+    s->video = fpsb::Track{true, h264.info, first, {}, {}};
+    Splice(&s->video, hevc, hevc.samples, hevc_start);
+    Splice(&s->video, h264, h264.samples, hevc_start + EndOf(hevc, hevc.samples));
     return true;
   }
   // Clear clips for codecs no public FairPlay vector has. Their decoders and

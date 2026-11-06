@@ -93,14 +93,38 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info) {
   return ac;
 }
 
-double Seconds(const fpsb::Track& track, int64_t ticks) {
-  return track.info.timescale ? double(ticks) / track.info.timescale : 0;
+// The source a sample came from (several after a changeType splice).
+const ft::TrackInfo& InfoFor(const fpsb::Track& track, size_t i) {
+  return track.parts.empty() ? track.info : track.parts[track.part_of_sample[i]];
+}
+
+size_t PartOf(const fpsb::Track& track, size_t i) {
+  return track.parts.empty() ? 0 : track.part_of_sample[i];
+}
+
+double PtsSeconds(const fpsb::Track& track, size_t i) {
+  const uint32_t timescale = InfoFor(track, i).timescale;
+  return timescale ? double(track.samples[i].pts) / timescale : 0;
 }
 
 double EndSeconds(const fpsb::Track& track) {
   double end = 0;
-  for (const ft::Sample& s : track.samples) end = std::max(end, Seconds(track, s.pts + s.duration));
+  for (size_t i = 0; i < track.samples.size(); ++i) {
+    const uint32_t timescale = InfoFor(track, i).timescale;
+    if (timescale) {
+      end = std::max(end, double(track.samples[i].pts + track.samples[i].duration) / timescale);
+    }
+  }
   return end;
+}
+
+// The clear format subtype the core builds for a source (its status
+// reports it), e.g. 'aac ' for an mp4a track.
+std::string ClearFormatFor(const ft::TrackInfo& info) {
+  const uint32_t f = info.original_format;
+  if (f == fp::FourCC('m', 'p', '4', 'a')) return "aac ";
+  if (f == fp::FourCC('h', 'e', 'v', '1')) return "hvc1";
+  return ft::FourCCString(f);
 }
 
 fp::PostTask MainPoster() {
@@ -226,7 +250,13 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     Log("natural size %dx%d", width, height);
   }
   void OnBufferingStateChange(bool have_enough) override {
-    Log("buffering %s", have_enough ? "HAVE_ENOUGH" : "HAVE_NOTHING");
+    Log("buffering %s at %.3f", have_enough ? "HAVE_ENOUGH" : "HAVE_NOTHING",
+        renderer_.GetMediaTime().InSeconds());
+    if (have_enough) {
+      had_enough_ = true;
+    } else if (had_enough_) {
+      ++underflows_;
+    }
   }
 
   static void Fail(const std::string& reason);
@@ -247,12 +277,29 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     const bool video = stream == fp::StreamType::kVideo;
     const fpsb::Track& track = video ? s_.video : s_.audio;
     size_t& next = video ? next_video_ : next_audio_;
+    std::vector<std::string>& formats = video ? video_formats_ : audio_formats_;
     while (next < track.samples.size() && renderer_.IsReadyForMoreData(stream)) {
+      const ft::TrackInfo& info = InfoFor(track, next);
+      const bool first_of_part = next == 0 || PartOf(track, next) != PartOf(track, next - 1);
+      if (first_of_part && next > 0) {
+        // What the GPU adapter does on the demuxer's kConfigChanged after
+        // changeType: the new config, then the new samples.
+        fp::Result r = video ? renderer_.Reconfigure(VideoConfigFor(info)) : renderer_.Reconfigure(AudioConfigFor(info));
+        if (!r.ok()) Fail(std::string("Reconfigure (") + (video ? "video" : "audio") + "): " + r.message);
+        Log("%s switched to %s at %.3f (media time %.3f)", video ? "video" : "audio",
+            ft::FourCCString(info.original_format).c_str(), PtsSeconds(track, next),
+            renderer_.GetMediaTime().InSeconds());
+      }
       std::vector<uint8_t> storage;
       fp::DecryptInfo decrypt;
-      fp::EncodedSample sample = ft::ChromiumBuffer(track.info, track.samples[next], &storage, &decrypt);
+      fp::EncodedSample sample = ft::ChromiumBuffer(info, track.samples[next], &storage, &decrypt);
       if (renderer_.Enqueue(stream, sample) == fp::EnqueueResult::kRejected) {
         Fail(std::string("enqueue rejected (") + (video ? "video" : "audio") + ")");
+      }
+      if (first_of_part && !track.parts.empty()) {
+        // The core builds a part's format from its first (key)frame.
+        const fp::RendererStatus status = renderer_.GetStatus();
+        formats.push_back(ft::FourCCString(video ? status.video_format : status.audio_format));
       }
       ++next;
     }
@@ -297,8 +344,8 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
   // Video samples presented before |time|.
   int64_t FramesDue(double time) const {
     int64_t due = 0;
-    for (const ft::Sample& sample : s_.video.samples) {
-      if (Seconds(s_.video, sample.pts) < time) ++due;
+    for (size_t i = 0; i < s_.video.samples.size(); ++i) {
+      if (PtsSeconds(s_.video, i) < time) ++due;
     }
     return due;
   }
@@ -311,6 +358,30 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     if (s.decode_failures) failures.push_back(std::to_string(s.decode_failures) + " decode failures");
     if (s_.video.present && s.video != fp::RenderingStatus::kRendering) failures.push_back("video not rendering");
     if (s_.audio.present && s.audio != fp::RenderingStatus::kRendering) failures.push_back("audio not rendering");
+    // A changeType splice: every part's format built, in order, and the clock
+    // past the last switch.
+    std::string switches;
+    for (const fpsb::Track* track : {&s_.video, &s_.audio}) {
+      if (track->parts.empty()) continue;
+      const std::vector<std::string>& seen = track == &s_.video ? video_formats_ : audio_formats_;
+      std::string expected;
+      for (const ft::TrackInfo& part : track->parts) expected += (expected.empty() ? "" : ">") + ClearFormatFor(part);
+      std::string got;
+      for (const std::string& f : seen) got += (got.empty() ? "" : ">") + f;
+      switches += std::string(" ") + (track == &s_.video ? "video" : "audio") + " formats " + got;
+      if (got != expected) failures.push_back("formats " + got + ", expected " + expected);
+      double last_switch = 0;
+      for (size_t i = 1; i < track->samples.size(); ++i) {
+        if (PartOf(*track, i) != PartOf(*track, i - 1)) last_switch = PtsSeconds(*track, i);
+      }
+      if (media_time < last_switch + 0.5) failures.push_back("played no further than the last switch");
+    }
+    if (!switches.empty()) {
+      switches += " underflows " + std::to_string(underflows_);
+      // A switch that stalls the renderer shows as the clock running out of
+      // data (HAVE_NOTHING after playback started).
+      if (underflows_) failures.push_back(std::to_string(underflows_) + " underflows around the switches");
+    }
     if (s_.protected_media) {
       if (!usable_) failures.push_back("key not usable");
       if (s_.video.present && !s.video_protected_format) failures.push_back("no protected video format");
@@ -353,7 +424,7 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
       // Screen capture by another process does this; the frames above decoded.
       g_host->finish(fpsb::Outcome::kInconclusive, "output obscured" + detail + State());
     }
-    g_host->finish(fpsb::Outcome::kPass, s_.name + detail + State());
+    g_host->finish(fpsb::Outcome::kPass, s_.name + switches + detail + State());
   }
 
   const fpsb::Scenario& s_;
@@ -367,6 +438,10 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
   size_t next_audio_ = 0;
   bool video_ended_ = false;
   bool audio_ended_ = false;
+  bool had_enough_ = false;
+  int underflows_ = 0;
+  std::vector<std::string> video_formats_;
+  std::vector<std::string> audio_formats_;
   bool first_requested_ = false;
   bool have_first_ = false;
   fp::VideoMetrics first_metrics_;

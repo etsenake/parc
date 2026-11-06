@@ -487,10 +487,17 @@ void FairPlayRendererAdapter::OnBuffersRead(
 void FairPlayRendererAdapter::HandleConfigChange(fp::StreamType type) {
   Stream& stream = StreamFor(type);
   fp::Result result;
+  // A new config, possibly a new codec (MSE changeType, e.g. an audio
+  // language switch from E-AC-3 to AAC): the core builds formats for the
+  // samples that follow, protected ones per key ID as they arrive.
   if (type == fp::StreamType::kVideo) {
     VideoDecoderConfig config = stream.demuxer_stream->video_decoder_config();
-    if (config.codec() != video_config_.codec()) {
-      LOG(ERROR) << "FairPlay renderer can't change the video codec";
+    const bool dolby_vision_ok =
+        config.codec() != VideoCodec::kDolbyVision ||
+        DolbyVisionProfileNumber(config.profile()) >= 0;
+    if (!ToVideoCodec(config.codec()) || !dolby_vision_ok) {
+      LOG(ERROR) << "FairPlay renderer can't play "
+                 << config.AsHumanReadableString();
       ReportError(DECODER_ERROR_NOT_SUPPORTED);
       return;
     }
@@ -499,8 +506,9 @@ void FairPlayRendererAdapter::HandleConfigChange(fp::StreamType type) {
     client_->OnVideoConfigChange(config);
   } else {
     AudioDecoderConfig config = stream.demuxer_stream->audio_decoder_config();
-    if (config.codec() != audio_config_.codec()) {
-      LOG(ERROR) << "FairPlay renderer can't change the audio codec";
+    if (!ToAudioCodec(config.codec())) {
+      LOG(ERROR) << "FairPlay renderer can't play "
+                 << config.AsHumanReadableString();
       ReportError(DECODER_ERROR_NOT_SUPPORTED);
       return;
     }

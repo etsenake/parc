@@ -42,6 +42,11 @@ struct Track {
   bool present = false;
   parc::fairplay::test::TrackInfo info;
   std::vector<parc::fairplay::test::Sample> samples;
+  // A track spliced from several sources, as after MSE changeType: sample i
+  // belongs to parts[part_of_sample[i]] (in that part's timescale). Empty for
+  // one source (|info|). The player reconfigures the renderer at each change.
+  std::vector<parc::fairplay::test::TrackInfo> parts;
+  std::vector<uint8_t> part_of_sample;
 };
 
 struct Scenario {

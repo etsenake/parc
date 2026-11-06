@@ -75,7 +75,7 @@ Netflix adds Dolby Vision SourceBuffers (`dvhe.05.01`, `dvhe.05.04`) and Apple
 TV+ uses `dvh1.05.01`. Both ask first and drop to other streams on a "no".
 Chromium plays Dolby Vision only encrypted here: fairplay-media builds with
 `enable_platform_encrypted_dolby_vision`, turns `kPlatformEncryptedDolbyVision`
-on for macOS and lists profiles 5 and 8 for FairPlay. Chromium's own rules then
+on for macOS and lists profile 5 for FairPlay. Chromium's own rules then
 already answer yes for `addSourceBuffer`, `changeType`, EME capabilities and
 `mediaCapabilities.decodingInfo` with a key system, and no for clear Dolby
 Vision everywhere else. On a Safari-identity document Parc also answers yes,

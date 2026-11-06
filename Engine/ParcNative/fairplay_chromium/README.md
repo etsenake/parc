@@ -105,7 +105,17 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
    encryption scheme only. H.264/HEVC/DV go as Annex B, AV1 as stored, AAC with
    ADTS. The core builds protected formats from each sample's `DecryptConfig`
    (key ID, pattern, 16-byte IV), so clear lead works. `kConfigChanged` goes
-   to `FairPlayRenderer::Reconfigure`.
+   to `FairPlayRenderer::Reconfigure`, also for a new codec: MSE `changeType`
+   stays allowed for FairPlay players (Netflix switches audio languages, e.g.
+   E-AC-3 to AAC, and video codecs the same way), but only among the codecs
+   the renderer plays: `WebMediaPlayerImpl` gives the demuxer a filter
+   (`Demuxer::RestrictCanChangeType`) that accepts AAC, AC-3, E-AC-3, H.264,
+   HEVC and Dolby Vision 5 and 8, so any other codec makes `changeType()`
+   throw NotSupportedError instead of failing playback. The core builds the
+   new formats from the next samples, protected ones per key ID.
+   `tests/FairPlay/sandbox` switches protected AAC → clear E-AC-3 → protected
+   AAC under protected H.264, and clear H.264 → HEVC → H.264, with no
+   underflow.
 5. With video, the adapter registers the core's `AVSampleBufferDisplayLayer` in
    `ui::ProtectedLayerRegistry` under a new `UnguessableToken` and sends
    `OnLayerRegistered(token, natural_size)`. The client paints
@@ -165,7 +175,6 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
   the next seek; a disabled `ChunkDemuxerStream` answers with end of stream.
   The background-tab optimization that does the same is turned off for
   FairPlay players.
-- A codec change through MSE `changeType` ends playback with an error.
 - A `setMediaKeys` that arrives after a clear pipeline already chose
   `RendererImpl` doesn't switch renderers (same as MediaFoundation upstream).
 - `setSinkId` isn't wired. The core has `SetAudioOutputDevice`, but

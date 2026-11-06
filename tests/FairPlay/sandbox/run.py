@@ -32,11 +32,12 @@ REPO = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_SOURCE = pathlib.Path(
     "/Users/josh/Documents/Codex/2026-10-23/re/work/engine-source/chromium/src")
 PROBE_NAME = "fpsbprobe"  # Short: the kernel logs at most 16 bytes of name.
-SCENARIOS = ["h264", "hevc", "dolby-vision", "eac3", "ac3"]
+SCENARIOS = ["h264", "hevc", "dolby-vision", "eac3", "ac3", "audio-switch", "video-switch"]
 # Clear clips for the codecs no public FairPlay vector has, from the pinned
 # checkout's media/test/data.
 CHROMIUM_MEDIA = ["glass-blowing2-dolby-vision-profile-5-frag.mp4",
-                  "bear-eac3-only-frag.mp4", "bear-ac3-only-frag.mp4"]
+                  "bear-eac3-only-frag.mp4", "bear-ac3-only-frag.mp4",
+                  "bear-640x360-v_frag.mp4", "bear-320x240-v_frag-hevc.mp4"]
 OUTCOMES = {0: "PASS", 1: "FAIL", 2: "SETUP-FAIL", 3: "INCONCLUSIVE", 4: "TIMEOUT"}
 GRANT = re.compile(r'\((global-name|xpc-service-name|iokit-user-client-class|subpath|literal|path)'
                    r'\s+"([^"]*)"\)')
