@@ -64,8 +64,9 @@ Logs and atomic state are under `build/releases/<run>/`; current state is
 individual `*.log` files hold command output, and `state.json` records frozen
 source/version/overlay, process and stage status. Installation also updates
 `build/recurring-prod-refresh/state.json`; this does not recreate the deleted
-recurring automation. `PARC_RELEASE_QUIET_SECONDS=900` optionally waits for 15
-minutes of unchanged remote main before the version transaction.
+recurring automation. The release command starts immediately when invoked; it
+contains no quiet-window timer. Tonight's one-time wait for other contributors
+to finish was a coordination instruction, not release-command behavior.
 
 Network operations retry unchanged inputs. Returned compile failures preserve
 objects and rerun incrementally. Apple submission IDs/receipts resume pending

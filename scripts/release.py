@@ -206,22 +206,6 @@ class Release:
         self.command(["xcrun", "notarytool", "history", "--keychain-profile", self.env["PARC_NOTARY_PROFILE"], "--output-format", "json"], capture=True, retries=2)
         self.checkpoint(identity=identity, notary_profile=self.env["PARC_NOTARY_PROFILE"])
 
-    def wait_quiet(self):
-        seconds = int(self.env.get('PARC_RELEASE_QUIET_SECONDS', '0'))
-        if not seconds or self.state.get('source_frozen'):
-            return
-        while True:
-            head = self.git('ls-remote', 'origin', 'refs/heads/main').split()[0]
-            if head != self.state.get('quiet_head'):
-                self.checkpoint(quiet_head=head, quiet_since=time.time())
-                self.emit('Main changed; quiet window restarted', commit=head, required_seconds=seconds)
-            quiet = max(0, time.time() - self.state['quiet_since'])
-            self.checkpoint(quiet_seconds=round(quiet, 1))
-            if quiet >= seconds:
-                self.emit('Main quiet window complete; freezing the release snapshot')
-                return
-            time.sleep(min(30, seconds - quiet))
-
     def published(self, commit):
         return subprocess.run(["git", "merge-base", "--is-ancestor", commit, "origin/main"],
                               cwd=self.root, env=self.env, capture_output=True).returncode == 0
@@ -235,9 +219,7 @@ class Release:
         if not self.state.get("version"):
             if self.git("status", "--porcelain"):
                 raise Failure("Start on clean main; never reset/stash/clean local changes")
-            self.wait_quiet()
-            if self.git("status", "--porcelain"):
-                raise Failure("Local edits appeared during the quiet window; preserved without building")
+            self.checkpoint(quiet_seconds=None, quiet_head=None, quiet_since=None)
             self.git("fetch", "origin", "main", retries=2)
             self.git("merge", "--ff-only", "origin/main")
             previous = app_version.read(self.root)
