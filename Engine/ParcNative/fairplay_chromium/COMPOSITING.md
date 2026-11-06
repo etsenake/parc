@@ -101,34 +101,59 @@ The cost is that two trees that both keep drawing the same token trade the
 layer every frame. Only one surface embedded in two live compositors does that,
 and Picture in Picture must avoid it (below).
 
-Known limits: "live" means attached to its coordinator, because the GPU
-process doesn't know which compositors are visible, so a parked compositor's
-tree counts as live.
-- A compositor that commits a late stale frame naming the token and is then
-  parked (not replaced by a frame without the token) keeps the layer. The
-  visible tree gets it back at its next commit.
-- A hand-on goes to the newest live claim. With three trees showing the token,
-  that can be a parked tree whose stale claim is newer than the visible tree's.
-- Window drag: a page moved to another window draws through that window's
-  compositor, while its old window's compositor can stay parked (an idle spare)
-  with a held frame that still embeds the page's video surface. If the video
-  surface then gets a same-size frame, both displays redraw and both trees
-  commit. That happens when the page is hidden for over half a second and
-  shown again, so the submitter re-sends the hole frame. The parked tree can
-  then take the layer if it commits last, and the video in the new window
-  stays empty until the page's next frame there. A size change gives the
-  video surface a new ID, which a stale held frame no longer sees.
-These need a frame drawn by a compositor that isn't on screen. Closing them
-needs parked pane compositors to stop drawing, as the PiP window now does when
-hidden, which the GPU process can't infer. Calling
-`ui::Compositor::SetVisible(false)` in `NativePaneCompositor::SuspendDrawing`
-(and `true` in `ResumeDrawing`) would do it. As far as the source shows, it
-would leave the held CALayer tree alone: on Mac `DiscardBackbuffer` is a no-op
-for the buffer-queue device, buffer destruction sits behind
-`kVizBufferQueueDiscardOnVisibilityChange` (off), and a hidden display just
-stops drawing. It is still an untested change to every tab switch's held-frame
-hand-off, so it is left to Parc's page compositing (`docs/page-compositing.md`)
-rather than made from this path.
+Parked pane compositors never take a layer. A parked (suspended) pane
+compositor still redraws when a surface its held frame embeds changes, and the
+GPU process can't tell it from one on screen. So Parc tells viz:
+`NativePaneCompositor::SuspendDrawing` (and the constructor, since a compositor
+starts parked) calls `ui::Compositor::SetProtectedLayersAllowed(false)`.
+`ResumeDrawing` sets it back to true before unsuspending, but only when the
+display's held frame is the resumed page's own (`held_frame_page_`). When the
+held frame is another page's (a spare reused after a page moved away),
+redrawing it would place that page's video and take it from the compositor
+showing it. So the flag stays false until the new page's first frame is on
+screen (`RequestSuccessfulPresentationTimeForNextFrame`, which queues a
+callback and makes no frame). The flag goes through
+`viz::mojom::DisplayPrivate::SetProtectedLayersAllowed` to
+`viz::Display::SetProtectedLayersAllowed` and then to `CALayerOverlayProcessor`.
+While it is false, a FairPlay hole quad becomes a black solid-color CALayer
+with no token on the all-CALayer path, or stays in the primary plane, drawn
+black (magenta with DCHECKs), when the frame falls back to underlays. Either
+way, a parked display's tree never takes or claims the layer.
+
+When the flag changes on a display whose last frame had a FairPlay hole,
+`Display` redraws that frame once (full damage on the root surface, as
+`SetColorMatrix` does). On parking, the redraw replaces the parked tree's
+protected host with the black layer: the old host is destroyed, its claim
+dropped, and the layer handed on to the newest live tree that shows it. On
+resuming, the redraw places the layer again. This closes the window-drag race,
+where the old window's spare redrew after a same-size hole frame and took the
+layer. It also closes the two cases where a parked tree kept the layer, or
+received it by hand-on, through a claim made before it parked.
+
+Ordinary pages are unchanged:
+- The flag is read only in the `kVideoHole` branches of `FromDrawQuad` and
+  `PutForcedOverlayContentIntoUnderlays`. Nothing else in a frame depends on
+  it (`CALayerOverlayTest.ProtectedLayersFlagLeavesOrdinaryFramesAlone`).
+- `Display` redraws only when the last frame had a FairPlay hole. Otherwise
+  the change is a stored boolean, with no damage and no draw.
+- `ui::Compositor` sends it only when it changes, and again after a new frame
+  sink, as it does `SetOutputIsSecure`.
+- `SuspendDrawing` and `ResumeDrawing` still suspend and unsuspend the widget
+  and compositor exactly as before, in the same order. The flag is one extra
+  call in each, after `Suspend()` and before `SetSuspended(false)`. Resuming
+  for another page's held frame also queues a presentation callback, which
+  makes no frame.
+- The hand-off policy (`pane_compositor_policy.h`: `ChoosePaneCompositor`,
+  `PaneHeldFrameFits`, the sweep) is untouched, and its 50 checks
+  (`tests/PaneCompositorPolicy`) pass.
+
+So a tab switch from a page without FairPlay video keeps the previous frame
+until the new page's first frame, as 04b9741d and 115676bb made it. For a page
+with FairPlay video, the redraw that parking triggers shows the video area of
+the held frame black. The next page keeps showing it that way until its own
+frame arrives, and the video is never placed in that compositor meanwhile. A
+page shown again in its own compositor gets its video back with the first
+redraw.
 
 ## When the frame can't be all CALayers
 
@@ -225,11 +250,10 @@ behaves the same way for filters it can't composite.
   the compositor that last drew a hidden page embeds its video, and that
   compositor either keeps the page or draws the incoming page over its held
   frame (`ChoosePaneCompositor`). So a tab switch never leaves a second tree
-  naming the token. A parked pane compositor is only suspended (`SuspendDrawing`): it
-  sends no frames of its own, but its display still redraws when a surface
-  its held frame embeds changes. See the known limits above for when that
-  matters. When a tree that took the layer drops the token, the layer returns
-  to the page's tree. A layer can only be in one place.
+  naming the token. A page dragged to another window leaves its old window's
+  compositor parked, and a parked compositor never takes the layer (above).
+  When a tree that took the layer drops the token, the layer returns to the
+  page's tree. A layer can only be in one place.
 - **Tab switch and hidden page:** the pane compositor moves on to the new
   page, so the old page's tree drops the token and the layer is detached
   (nothing else shows it). Half a second later the video surface submits an
@@ -240,9 +264,11 @@ behaves the same way for filters it can't composite.
   re-enqueues from the last keyframe when it does. While hidden,
   `WebMediaPlayerImpl::ShouldDisableVideoWhenHidden` may also disable the video
   track of an A/V MSE player that isn't in PiP. A disabled stream ends video in
-  the FairPlay renderer, so `fairplay-media`'s next increment makes that
-  function return false for FairPlay players: the track stays enabled while
-  hidden, as in PiP.
+  the FairPlay renderer, so `fairplay-media` makes that function return false
+  for FairPlay players (06350901): the track stays enabled while hidden, as in
+  PiP. It also turns off idle and background auto-suspend for them, since a
+  suspended renderer would drop its layer while the painted hole frame still
+  named it.
 - **Teardown:** the renderer flushes with removal of the displayed image,
   then unregisters. The tree that holds the layer releases it at its next
   commit: that commit's lookup misses, the host goes black, and the layer is
@@ -285,11 +311,11 @@ sequence.
    `-[PCVideoPiPPresenter setNaturalSize:]`. That value is set from the
    stream's config with the metadata (`OnMetadata`), then changes only through
    `RendererClient::OnVideoNaturalSizeChange`. Updates also follow surface ID
-   changes, which the hole frame's size changes cause. Contract, agreed with
-   `fairplay-media` for its next increment: FairPlayRendererClient forwards
-   each size to the pipeline's `OnVideoNaturalSizeChange` first, then repaints
-   the hole frame at that size, and the GPU adapter reports the config's size
-   once when the core starts.
+   changes, which the hole frame's size changes cause. As agreed with
+   `fairplay-media` (06350901), FairPlayRendererClient forwards each size to
+   the pipeline's `OnVideoNaturalSizeChange` first, then repaints the hole
+   frame at that size, and the GPU adapter reports the config's size once at
+   the first `StartPlayingFrom`.
 4. **Leaving PiP.** The page adds its video layer back and its next frame
    takes the layer. Parc hides the PiP window for reuse, and
    `NativeVideoOverlayWindow::Hide` now also makes its compositor invisible
@@ -314,7 +340,10 @@ sequence.
    with `--gtest_filter='CALayerTreeTest.ProtectedLayer*'`. `ProtectedLayer`
    checks placement, reuse across frames, taking the layer back from an idle
    tree, handing it back when a late tree drops the token, and the black host.
-   `ProtectedLayerPictureInPicture` runs the PiP sequence.
+   `ProtectedLayerPictureInPicture` runs the PiP sequence. `viz_unittests`
+   with `--gtest_filter='CALayerOverlayTest.Protected*'` checks that a parked
+   display shows the hole black without a token, and that the flag leaves an
+   ordinary frame alone.
 2. Ordinary video is unchanged: YouTube and an MSE test page still show
    yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
    `--show-mac-overlay-borders`.
@@ -322,7 +351,9 @@ sequence.
    an orange-bordered host with the video inside, under the page's controls.
 4. Scroll, resize the window, enter and leave fullscreen, switch tabs away
    and back, and drag the tab to another window. The video follows each time
-   and never shows stale content.
+   and never shows stale content. After the drag, hide and show the tab in the
+   new window: the video stays there. Ordinary tab switches still show the
+   previous page until the new one draws.
 5. Screenshots (⌘⇧4) and screen sharing show black where the video is.
    Watch the macOS fullscreen transition too: its animation is a window
    snapshot and may show the video black for its half second.
