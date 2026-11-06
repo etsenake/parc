@@ -81,10 +81,24 @@ protected authorization, resolve unrelated local edits or invent acceptance.
 
 GitHub CLI login, full Xcode/license, Homebrew, available disk space and an
 unlocked normal login Keychain are prerequisites. Signing private keys do not
-automatically follow an Apple ID login. Transfer the selected Developer ID
-certificate **with its private key** as an encrypted PKCS#12 backup using
-Keychain Access; keep its password separately in a password manager. Import it
-on the other Mac. The command selects the sole matching Team Developer ID if
+automatically follow an Apple ID login. The selected identity can be backed up to an unlocked 1Password vault:
+
+```sh
+python3 scripts/signing-backup.py backup
+```
+
+The helper exports only the selected identity as password-encrypted PKCS#12,
+generates a strong password in memory, and stores both as concealed fields via
+1Password's standard input. No secret enters argv, logs, plaintext files or Git.
+It verifies a fresh vault read before reporting success and preserves an existing
+backup. Set `PARC_SIGNING_VAULT` if the account has no default vault. Normal
+Keychain export approval may be required. The current CLI is not signed in, so
+**the actual secure backup remains pending `op signin`/vault unlock**.
+
+On another Mac with that vault available, the release command automatically
+restores a missing identity into the normal login Keychain; explicit recovery is
+`python3 scripts/signing-backup.py restore`. You can also transfer just this
+identity manually using Keychain Access and encrypted PKCS#12. The command selects the sole matching Team Developer ID if
 `~/.config/parc/signing-identity` does not yet exist; multiple identities require
 one-time `scripts/setup-signing.sh` selection. Never commit private keys or
 passwords, put passwords in command arguments, export all identities, or fall

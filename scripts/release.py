@@ -11,6 +11,7 @@ from pathlib import Path
 import platform
 import re
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -185,6 +186,9 @@ class Release:
         self.command(["xcodebuild", "-checkFirstLaunchStatus"], capture=True)
         identity_path = Path.home() / ".config/parc/signing-identity"
         identities = self.command(["security", "find-identity", "-v", "-p", "codesigning"], capture=True)
+        if not re.search(r'"Developer ID Application: [^"\n]+ \(' + TEAM + r'\)"', identities) and shutil.which('op'):
+            self.command([sys.executable, self.root / 'scripts/signing-backup.py', 'restore'], name='restore-signing-identity')
+            identities = self.command(['security','find-identity','-v','-p','codesigning'], capture=True)
         if not identity_path.is_file():
             candidates = re.findall(r'"(Developer ID Application: [^"\n]+ \(' + TEAM + r'\))"', identities)
             if len(candidates) != 1:
@@ -231,6 +235,8 @@ class Release:
             if self.git("status", "--porcelain"):
                 raise Failure("Start on clean main; never reset/stash/clean local changes")
             self.wait_quiet()
+            if self.git("status", "--porcelain"):
+                raise Failure("Local edits appeared during the quiet window; preserved without building")
             self.git("fetch", "origin", "main", retries=2)
             self.git("merge", "--ff-only", "origin/main")
             previous = app_version.read(self.root)
