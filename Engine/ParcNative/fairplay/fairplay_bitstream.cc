@@ -532,49 +532,144 @@ std::vector<uint8_t> DolbyVisionConfigurationRecord(int profile, int level, int 
   return record;
 }
 
-std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, size_t size) {
-  for (size_t pos = 0; pos + 8 <= size; ++pos) {
-    if (data[pos] != 0x0b || data[pos + 1] != 0x77) {
-      continue;
-    }
-    BitReader r(data + pos + 4, size - pos - 4);  // after syncword and crc1
-    const int fscod = static_cast<int>(r.Get(2));
-    const int frmsizecod = static_cast<int>(r.Get(6));
-    const int bsid = static_cast<int>(r.Get(5));
-    const int bsmod = static_cast<int>(r.Get(3));
-    const int acmod = static_cast<int>(r.Get(3));
-    if ((acmod & 1) && acmod != 1) r.Get(2);  // cmixlev
-    if (acmod & 4) r.Get(2);                  // surmixlev
-    if (acmod == 2) r.Get(2);                 // dsurmod
-    const int lfeon = static_cast<int>(r.Get(1));
-    if (r.failed() || fscod == 3 || bsid > 8) {
-      return std::nullopt;
-    }
-    const uint32_t bits = (uint32_t(fscod) << 22) | (uint32_t(bsid) << 17) | (uint32_t(bsmod) << 14) |
-                          (uint32_t(acmod) << 11) | (uint32_t(lfeon) << 10) | (uint32_t(frmsizecod >> 1) << 5);
-    return std::vector<uint8_t>{static_cast<uint8_t>(bits >> 16), static_cast<uint8_t>(bits >> 8),
-                                static_cast<uint8_t>(bits)};
-  }
-  return std::nullopt;
+namespace {
+
+std::vector<uint8_t> Dac3(int fscod, int bsid, int bsmod, int acmod, int lfeon, int bit_rate_code) {
+  const uint32_t bits = (uint32_t(fscod) << 22) | (uint32_t(bsid) << 17) | (uint32_t(bsmod) << 14) |
+                        (uint32_t(acmod) << 11) | (uint32_t(lfeon) << 10) | (uint32_t(bit_rate_code) << 5);
+  return {static_cast<uint8_t>(bits >> 16), static_cast<uint8_t>(bits >> 8), static_cast<uint8_t>(bits)};
 }
 
-std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size) {
-  struct Substream {
-    int fscod = 0, bsid = 0, acmod = 0, lfeon = 0, dependents = 0;
+// Whether bytes [offset, offset + length) of a sample are clear. A null
+// layout means a clear sample; an empty one, a wholly protected sample.
+bool IsClear(const std::vector<SubsampleEntry>* subsamples, size_t offset, size_t length) {
+  if (!subsamples) {
+    return true;
+  }
+  size_t pos = 0;
+  for (const SubsampleEntry& entry : *subsamples) {
+    if (offset < pos) {
+      return false;
+    }
+    const size_t clear_end = pos + entry.clear_bytes;
+    if (offset + length <= clear_end) {
+      return true;
+    }
+    pos = clear_end + entry.cypher_bytes;
+  }
+  return false;
+}
+
+// fscod for 48/44.1/32 kHz, -1 otherwise.
+int FscodFor(int sample_rate) {
+  return sample_rate == 48000 ? 0 : sample_rate == 44100 ? 1 : sample_rate == 32000 ? 2 : -1;
+}
+
+// acmod/lfeon for a channel count: 1 1/0, 2 2/0, 3 3/0, 4 2/2, 5 3/2, 6 3/2+LFE.
+bool LayoutFor(int channels, int* acmod, int* lfeon) {
+  static const int kAcmod[7] = {-1, 1, 2, 3, 6, 7, 7};
+  if (channels < 1 || channels > 6) return false;
+  *acmod = kAcmod[channels];
+  *lfeon = channels == 6;
+  return true;
+}
+
+}  // namespace
+
+std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, size_t size,
+                                                          const std::vector<SubsampleEntry>* subsamples) {
+  // Syncword, crc1 and the BSI fields read below fit in 8 bytes.
+  if (size < 8 || !IsClear(subsamples, 0, 8) || data[0] != 0x0b || data[1] != 0x77) {
+    return std::nullopt;
+  }
+  BitReader r(data + 4, size - 4);  // after syncword and crc1
+  const int fscod = static_cast<int>(r.Get(2));
+  const int frmsizecod = static_cast<int>(r.Get(6));
+  const int bsid = static_cast<int>(r.Get(5));
+  const int bsmod = static_cast<int>(r.Get(3));
+  const int acmod = static_cast<int>(r.Get(3));
+  if ((acmod & 1) && acmod != 1) r.Get(2);  // cmixlev
+  if (acmod & 4) r.Get(2);                  // surmixlev
+  if (acmod == 2) r.Get(2);                 // dsurmod
+  const int lfeon = static_cast<int>(r.Get(1));
+  if (r.failed() || fscod == 3 || bsid > 8 || frmsizecod > 37) {
+    return std::nullopt;
+  }
+  return Dac3(fscod, bsid, bsmod, acmod, lfeon, frmsizecod >> 1);
+}
+
+std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, int channels) {
+  int acmod = 0, lfeon = 0;
+  const int fscod = FscodFor(sample_rate);
+  if (fscod < 0 || !LayoutFor(channels, &acmod, &lfeon)) {
+    return std::nullopt;
+  }
+  return Dac3(fscod, 8, 0, acmod, lfeon, 0);
+}
+
+int DefaultDolbyVisionCompatibilityId(int profile) {
+  return profile == 8 || profile == 9 ? 1 : 0;
+}
+
+namespace {
+
+struct Eac3Substream {
+  int fscod = 0, bsid = 0, acmod = 0, lfeon = 0, dependents = 0, chan_loc = 0;
+};
+
+std::vector<uint8_t> Dec3(uint64_t data_rate_kbps, const std::vector<Eac3Substream>& independent) {
+  std::vector<uint8_t> out;
+  uint64_t accumulator = 0;
+  int count = 0;
+  auto put = [&](uint64_t value, int bits) {
+    for (int i = bits - 1; i >= 0; --i) {
+      accumulator = (accumulator << 1) | ((value >> i) & 1);
+      if (++count == 8) {
+        out.push_back(static_cast<uint8_t>(accumulator));
+        accumulator = 0;
+        count = 0;
+      }
+    }
   };
-  std::vector<Substream> independent;
+  put(std::min<uint64_t>(data_rate_kbps, 0x1fff), 13);  // data_rate
+  put(independent.size() - 1, 3);                         // num_ind_sub
+  for (const Eac3Substream& sub : independent) {
+    put(sub.fscod, 2);
+    put(sub.bsid, 5);
+    put(0, 1);  // reserved
+    put(0, 1);  // asvc
+    put(0, 3);  // bsmod
+    put(sub.acmod, 3);
+    put(sub.lfeon, 1);
+    put(0, 3);  // reserved
+    put(sub.dependents, 4);
+    if (sub.dependents) {
+      put(sub.chan_loc & 0x1ff, 9);
+    } else {
+      put(0, 1);  // reserved
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size,
+                                                           const std::vector<SubsampleEntry>* subsamples) {
+  std::vector<Eac3Substream> independent;
+  std::vector<int> independent_ids;
+  std::vector<std::pair<int, int>> dependent_ids;  // (parent index, substreamid)
+  std::vector<std::pair<int, int>> rated;           // (strmtyp class, substreamid) counted once
   uint64_t bits_per_second = 0;
   size_t pos = 0;
   while (pos + 6 <= size) {
-    if (data[pos] != 0x0b || data[pos + 1] != 0x77) {
-      if (independent.empty()) {
-        return std::nullopt;
-      }
+    // The header fields read below (through chanmap) fit in 12 bytes.
+    if (!IsClear(subsamples, pos, std::min<size_t>(12, size - pos)) || data[pos] != 0x0b || data[pos + 1] != 0x77) {
       break;
     }
     BitReader r(data + pos + 2, size - pos - 2);
     const int strmtyp = static_cast<int>(r.Get(2));
-    r.Get(3);  // substreamid
+    const int substreamid = static_cast<int>(r.Get(3));
     const size_t frame_bytes = (static_cast<size_t>(r.Get(11)) + 1) * 2;
     const int fscod = static_cast<int>(r.Get(2));
     int blocks = 6;
@@ -590,53 +685,58 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
     const int acmod = static_cast<int>(r.Get(3));
     const int lfeon = static_cast<int>(r.Get(1));
     const int bsid = static_cast<int>(r.Get(5));
-    if (r.failed() || !sample_rate || bsid <= 10 || bsid > 16 || frame_bytes > size - pos) {
+    r.Get(5);                  // dialnorm
+    if (r.Get(1)) r.Get(8);    // compre, compr
+    if (acmod == 0) {
+      r.Get(5);                // dialnorm2
+      if (r.Get(1)) r.Get(8);  // compr2e, compr2
+    }
+    int chanmap = 0;
+    if (strmtyp == 1 && r.Get(1)) {  // chanmape
+      chanmap = static_cast<int>(r.Get(16));
+    }
+    if (r.failed() || !sample_rate || bsid <= 10 || bsid > 16 || frame_bytes > size - pos || strmtyp == 3) {
       return std::nullopt;
     }
-    bits_per_second += uint64_t(frame_bytes) * 8 * uint64_t(sample_rate) / (uint64_t(blocks) * 256);
-    if (strmtyp == 0 || strmtyp == 2) {  // independent
-      independent.push_back({fscod == 3 ? 3 : fscod, bsid, acmod, lfeon, 0});
-    } else if (strmtyp == 1 && !independent.empty()) {  // dependent
-      ++independent.back().dependents;
+    // A substream's rate counts once, however many syncframes (1, 2 or 3
+    // blocks each) make up its six blocks in this access unit.
+    const int kind = strmtyp == 1 ? 1 : 0;
+    const int parent = static_cast<int>(independent.size()) - 1;
+    const std::pair<int, int> rate_key{kind == 1 ? 100 + parent : 0, substreamid};
+    if (std::find(rated.begin(), rated.end(), rate_key) == rated.end()) {
+      rated.push_back(rate_key);
+      bits_per_second += uint64_t(frame_bytes) * 8 * uint64_t(sample_rate) / (uint64_t(blocks) * 256);
+    }
+    if (kind == 0) {
+      if (std::find(independent_ids.begin(), independent_ids.end(), substreamid) == independent_ids.end()) {
+        independent_ids.push_back(substreamid);
+        independent.push_back({fscod == 3 ? 3 : fscod, bsid, acmod, lfeon, 0, 0});
+      }
+    } else if (parent >= 0) {
+      const std::pair<int, int> dependent{parent, substreamid};
+      if (std::find(dependent_ids.begin(), dependent_ids.end(), dependent) == dependent_ids.end()) {
+        dependent_ids.push_back(dependent);
+        ++independent[parent].dependents;
+      }
+      // chanmap bit 0 (MSB) is L; dec3's chan_loc lists bits 5-12 (Lc/Rc
+      // through Cvh) then bit 14 (LFE2), MSB first.
+      independent[parent].chan_loc |= (((chanmap >> 3) & 0xff) << 1) | ((chanmap >> 1) & 1);
     }
     pos += frame_bytes;
   }
   if (independent.empty() || independent.size() > 8) {
     return std::nullopt;
   }
+  return Dec3(bits_per_second / 1000, independent);
+}
 
-  std::vector<uint8_t> out;
-  uint64_t accumulator = 0;
-  int count = 0;
-  auto put = [&](uint64_t value, int bits) {
-    for (int i = bits - 1; i >= 0; --i) {
-      accumulator = (accumulator << 1) | ((value >> i) & 1);
-      if (++count == 8) {
-        out.push_back(static_cast<uint8_t>(accumulator));
-        accumulator = 0;
-        count = 0;
-      }
-    }
-  };
-  put(std::min<uint64_t>(bits_per_second / 1000, 0x1fff), 13);  // data_rate, kbit/s
-  put(independent.size() - 1, 3);                                // num_ind_sub
-  for (const Substream& sub : independent) {
-    put(sub.fscod, 2);
-    put(sub.bsid, 5);
-    put(0, 1);  // reserved
-    put(0, 1);  // asvc
-    put(0, 3);  // bsmod
-    put(sub.acmod, 3);
-    put(sub.lfeon, 1);
-    put(0, 3);  // reserved
-    put(sub.dependents, 4);
-    if (sub.dependents) {
-      put(0, 9);  // chan_loc (not parsed)
-    } else {
-      put(0, 1);  // reserved
-    }
+std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, int channels) {
+  int acmod = 0, lfeon = 0;
+  const int fscod = FscodFor(sample_rate);
+  if (fscod < 0 || !LayoutFor(channels, &acmod, &lfeon)) {
+    return std::nullopt;
   }
-  return out;
+  return Dec3(0, {{fscod, 16, acmod, lfeon, 0, 0}});
 }
 
 }  // namespace parc::fairplay

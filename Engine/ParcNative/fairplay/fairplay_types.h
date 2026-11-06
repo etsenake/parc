@@ -119,11 +119,12 @@ struct VideoConfig {
   // Dolby Vision: DOVIDecoderConfigurationRecord, carried as 'dvcC' for
   // profiles up to 7 and 'dvvC' from 8. When empty and dolby_vision_profile
   // is set (Chromium carries only profile and level), it is built from
-  // profile, level and compatibility ID (0 for profile 5).
+  // profile, level and compatibility ID; -1 means unknown and takes
+  // DefaultDolbyVisionCompatibilityId (0 for profile 5).
   std::vector<uint8_t> dolby_vision_config;
   int dolby_vision_profile = -1;
   int dolby_vision_level = 0;
-  int dolby_vision_compatibility_id = 0;
+  int dolby_vision_compatibility_id = -1;
   BitstreamFormat format = BitstreamFormat::kLengthPrefixed;
   int32_t coded_width = 0;
   int32_t coded_height = 0;
@@ -136,7 +137,8 @@ struct AudioConfig {
   AudioCodec codec = AudioCodec::kAAC;
   // AAC: AudioSpecificConfig (any object type; required). AC-3: 'dac3'
   // payload. E-AC-3: 'dec3' payload. For AC-3/E-AC-3 it may be empty, as
-  // Chromium leaves it: the renderer builds it from the first syncframe.
+  // Chromium leaves it: the renderer builds it from the first syncframe's
+  // clear header, or from sample_rate and channels when it is encrypted.
   std::vector<uint8_t> extra_data;
   AudioFraming framing = AudioFraming::kRaw;
   int32_t sample_rate = 0;

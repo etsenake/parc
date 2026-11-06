@@ -137,6 +137,26 @@ renderer builds one from the first keyframe's in-band sets
 (`CMVideoFormatDescriptionCreateFromHEVCParameterSets` /
 `...H264ParameterSets`) before creating the formats.
 
+Chromium's configs carry less than the file did, and the renderer takes them
+as they are:
+- Video records are always empty (`EmptyExtraData()`). The record comes from
+  the first keyframe (in-band sets, or AV1's sequence header OBU) and is
+  rebuilt when a keyframe brings different ones. A keyframe that repeats only
+  some kinds (SPS and PPS under a known VPS) keeps the earlier sets of the
+  other kinds. A rebuild that fails leaves the previous record and formats in
+  place. The config's natural size wins over the stream's own display size.
+- Dolby Vision arrives as profile and level only. The `dvcC`/`dvvC` is built
+  from them, with compatibility ID 0 for profiles 4, 5 and 7 and 1 (HDR10)
+  assumed for 8 and 9.
+- AC-3 and E-AC-3 carry no `dac3`/`dec3`. The box is parsed from the first
+  syncframe's header when it is in clear bytes (E-AC-3 substreams grouped by
+  type and ID). When the whole sample is encrypted, the box comes from the
+  config's sample rate and channel count, with the bit rate written as 0
+  (CoreMedia decodes such boxes; checked with clear AC-3 and E-AC-3).
+- Encryption is the scheme alone. Protected formats are built per key ID (and
+  pattern) from each sample's `DecryptConfig`, with 16-byte per-sample IVs
+  (Chromium copies a constant IV into every sample).
+
 ## Netflix's profile
 
 Observed in a WKWebView with Safari's user agent: standard EME with

@@ -650,7 +650,7 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool 
     if (dv.size() >= 5) {
       vc.dolby_vision_profile = dv[2] >> 1;
       vc.dolby_vision_level = ((dv[2] & 1) << 5) | (dv[3] >> 3);
-      vc.dolby_vision_compatibility_id = dv[4] >> 4;
+      // Chromium has no compatibility ID; the renderer's default applies.
     }
     vc.dolby_vision_config.clear();
     vc.encryption = fp::TrackEncryption{info.encryption.scheme, {}, {}, 0, {}};
@@ -676,6 +676,9 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool 
   return ac;
 }
 
+// Edits a scenario's configs before Initialize.
+using ConfigAdjust = std::function<void(std::optional<fp::VideoConfig>*, std::optional<fp::AudioConfig>*)>;
+
 class Player : public fp::FairPlayRendererClient {
  public:
   // Either stream may be null (single-stream codec checks).
@@ -683,7 +686,7 @@ class Player : public fp::FairPlayRendererClient {
   // MediaKeys were attached before playback.
   Player(std::string name, Framing framing, const Media* video, const Media* audio,
          fp::FairPlayCdm* cdm, NSView* host, bool cdm_first = false,
-         bool chromium_inputs = g_chromium_inputs_default)
+         bool chromium_inputs = g_chromium_inputs_default, ConfigAdjust adjust = nullptr)
       : chromium_inputs_(chromium_inputs),
         name_(std::move(name)),
         framing_(framing),
@@ -697,6 +700,7 @@ class Player : public fp::FairPlayRendererClient {
     if (has_video_) vc = VideoConfigFor(video_info_, framing, chromium_inputs_);
     std::optional<fp::AudioConfig> ac;
     if (has_audio_) ac = AudioConfigFor(audio_info_, framing, chromium_inputs_);
+    if (adjust) adjust(&vc, &ac);
     fp::Result result = fp::Result::Ok();
     if (cdm_first) {
       result = renderer_.SetCdm(cdm);
@@ -1261,7 +1265,7 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
 
 struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
-  Media hev1, hev1_in_band, dolby_vision, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
+  Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
       he_aac_after_clear;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
@@ -2153,6 +2157,40 @@ Media InBandParameterSetsOnly(const Media& media) {
   return out;
 }
 
+double EndSeconds(const Media& media);
+
+// The in-band stream played twice in a row, the second copy's keyframes
+// without their VPS: a later keyframe that repeats only SPS and PPS, which
+// must merge with the VPS already known instead of replacing it.
+Media VpsOnFirstKeyframeOnly(const Media& media) {
+  Media out = media;
+  const size_t length_size = (media.info.codec_config[21] & 3) + 1;
+  const int64_t shift = int64_t(EndSeconds(media) * media.info.timescale + 0.5);
+  int stripped = 0;
+  for (std::vector<ft::Sample> segment : media.segments) {
+    for (ft::Sample& sample : segment) {
+      sample.pts += shift;
+      sample.dts += shift;
+      if (!sample.is_keyframe) continue;
+      std::vector<uint8_t> kept;
+      for (size_t pos = 0; pos + length_size < sample.data.size();) {
+        size_t length = 0;
+        for (size_t k = 0; k < length_size; ++k) length = (length << 8) | sample.data[pos + k];
+        const size_t end = std::min(sample.data.size(), pos + length_size + length);
+        if (((sample.data[pos + length_size] >> 1) & 0x3f) != 32) {
+          kept.insert(kept.end(), sample.data.begin() + pos, sample.data.begin() + end);
+        }
+        pos = end;
+      }
+      stripped += kept.size() != sample.data.size();
+      sample.data = std::move(kept);
+    }
+    out.segments.push_back(std::move(segment));
+  }
+  Check(stripped > 0, Format("hev1 VPS dropped from %d keyframes of the second copy", stripped));
+  return out;
+}
+
 double EndSeconds(const Media& media) {
   double end = 0;
   for (const auto& segment : media.segments) {
@@ -2171,8 +2209,14 @@ size_t SampleCount(const Media& media) {
 // framing, played to OnEnded; then the protected format description the
 // renderer builds for it (Apple's FairPlay type). No FairPlay-protected sample
 // of these codecs is public, so protected decode stays unproven.
+struct CodecOptions {
+  ConfigAdjust adjust;
+  // When set, every natural size reported must be this one.
+  std::pair<int32_t, int32_t> natural_size{0, 0};
+};
+
 std::vector<Step> CodecScenario(const std::string& label, const Media* video, const Media* audio,
-                                const std::string& protected_type) {
+                                const std::string& protected_type, CodecOptions options = {}) {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
   const Media* media = video ? video : audio;
@@ -2185,10 +2229,11 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
         ft::FourCCString(info.sample_entry).c_str(), info.codec_config.size(),
         info.dolby_vision_config.empty() ? "" : Format(", dovi %s", ft::Hex(info.dolby_vision_config).c_str()).c_str(),
         SampleCount(*media), end);
-    w->player = std::make_shared<Player>(label, Framing::kChromium, video, audio, nullptr, w->host, false, true);
+    w->player = std::make_shared<Player>(label, Framing::kChromium, video, audio, nullptr, w->host, false, true,
+                                         options.adjust);
     w->player->renderer().Flush([=] {
-      w->player->SetFeeds(video ? Segments(*video, 0, 1) : SegmentList(),
-                          audio ? Segments(*audio, 0, 1) : SegmentList(), true);
+      w->player->SetFeeds(video ? Segments(*video, 0, video->segments.size()) : SegmentList(),
+                          audio ? Segments(*audio, 0, audio->segments.size()) : SegmentList(), true);
       auto go = Once(10, label + ": HAVE_ENOUGH", [=](bool) {
         w->player->renderer().SetPlaybackRate(1);
         done();
@@ -2207,6 +2252,17 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
       fp::RendererStatus s = w->player->renderer().GetStatus();
       Log("%s: formats video '%s' audio '%s'", label.c_str(), ft::FourCCString(s.video_format).c_str(),
           ft::FourCCString(s.audio_format).c_str());
+      if (options.natural_size.first) {
+        std::string sizes;
+        bool all = !w->player->natural_sizes.empty();
+        for (auto [width, height] : w->player->natural_sizes) {
+          sizes += Format("%s%dx%d", sizes.empty() ? "" : ", ", width, height);
+          all &= width == options.natural_size.first && height == options.natural_size.second;
+        }
+        Check(all, label + Format(": only the config's natural size %dx%d is reported", options.natural_size.first,
+                                  options.natural_size.second),
+              sizes);
+      }
       done();
     });
     if (w->player->ended) {
@@ -2317,6 +2373,131 @@ void BuilderSelfTests() {
               std::equal(dec3->begin() + 2, dec3->end(), file.begin() + 2);
   Check(same, "builders: dec3 from the first E-AC-3 syncframe matches the file's substream fields",
         "file " + ft::Hex(file) + (dec3 ? ", built " + ft::Hex(*dec3) : ", none"));
+
+  // Synthetic E-AC-3 access units: 48 kHz, bsid 16.
+  auto frame = [](int strmtyp, int substreamid, int numblkscod, int acmod, int lfeon, int chanmap, size_t bytes) {
+    std::vector<uint8_t> out;
+    uint64_t acc = 0;
+    int count = 0;
+    auto put = [&](uint64_t value, int bits) {
+      for (int i = bits - 1; i >= 0; --i) {
+        acc = (acc << 1) | ((value >> i) & 1);
+        if (++count == 8) {
+          out.push_back(uint8_t(acc));
+          acc = count = 0;
+        }
+      }
+    };
+    put(0x0b77, 16);
+    put(strmtyp, 2);
+    put(substreamid, 3);
+    put(bytes / 2 - 1, 11);
+    put(0, 2);  // fscod 48 kHz
+    put(numblkscod, 2);
+    put(acmod, 3);
+    put(lfeon, 1);
+    put(16, 5);  // bsid
+    put(31, 5);  // dialnorm
+    put(0, 1);   // compre
+    if (strmtyp == 1) {
+      put(chanmap >= 0, 1);
+      if (chanmap >= 0) put(chanmap, 16);
+    }
+    while (count) put(0, 1);
+    out.resize(bytes, 0);
+    return out;
+  };
+  auto join = [](std::vector<std::vector<uint8_t>> parts) {
+    std::vector<uint8_t> out;
+    for (auto& part : parts) out.insert(out.end(), part.begin(), part.end());
+    return out;
+  };
+  // Two 3-block syncframes of one independent substream: one dec3 entry, its
+  // 192 kb/s counted once.
+  std::vector<uint8_t> halves = join({frame(0, 0, 2, 7, 1, -1, 384), frame(0, 0, 2, 7, 1, -1, 384)});
+  auto grouped = fp::Eac3SpecificBoxPayload(halves.data(), halves.size());
+  const std::vector<uint8_t> grouped_expected = {0x06, 0x00, 0x20, 0x0f, 0x00};
+  Check(grouped && *grouped == grouped_expected,
+        "builders: dec3 groups an independent substream's syncframes into one entry",
+        grouped ? ft::Hex(*grouped) : "none");
+  // 5.1 independent plus a dependent substream adding Lrs/Rrs (7.1): one
+  // dependent, chan_loc Lrs/Rrs, 320 kb/s.
+  std::vector<uint8_t> seven_one = join({frame(0, 0, 3, 7, 1, -1, 768), frame(1, 0, 3, 2, 0, 0x0200, 512)});
+  auto dependent = fp::Eac3SpecificBoxPayload(seven_one.data(), seven_one.size());
+  const std::vector<uint8_t> dependent_expected = {0x0a, 0x00, 0x20, 0x0f, 0x02, 0x80};
+  Check(dependent && *dependent == dependent_expected,
+        "builders: dec3 counts dependent substreams and writes their chan_loc",
+        dependent ? ft::Hex(*dependent) : "none");
+  // Encrypted samples: only clear headers are read.
+  const std::vector<fp::SubsampleEntry> all_protected;
+  const std::vector<fp::SubsampleEntry> clear_header = {{12, uint32_t(halves.size() - 12)}};
+  auto from_protected = fp::Eac3SpecificBoxPayload(halves.data(), halves.size(), &all_protected);
+  auto from_clear_header = fp::Eac3SpecificBoxPayload(halves.data(), halves.size(), &clear_header);
+  Check(!from_protected && from_clear_header && *from_clear_header == grouped_expected,
+        "builders: dec3 reads only syncframe headers in clear bytes",
+        Format("whole-sample protected: %s; clear header: %s", from_protected ? ft::Hex(*from_protected).c_str() : "none",
+               from_clear_header ? ft::Hex(*from_clear_header).c_str() : "none"));
+  const std::vector<uint8_t>& ac3_sample = w->ac3.segments[0][0].data;
+  const std::vector<fp::SubsampleEntry> ac3_clear8 = {{8, uint32_t(ac3_sample.size() - 8)}};
+  const std::vector<fp::SubsampleEntry> ac3_clear4 = {{4, uint32_t(ac3_sample.size() - 4)}};
+  auto ac3_ok = fp::Ac3SpecificBoxPayload(ac3_sample.data(), ac3_sample.size(), &ac3_clear8);
+  Check(ac3_ok && *ac3_ok == w->ac3.info.codec_config &&
+            !fp::Ac3SpecificBoxPayload(ac3_sample.data(), ac3_sample.size(), &ac3_clear4) &&
+            !fp::Ac3SpecificBoxPayload(ac3_sample.data(), ac3_sample.size(), &all_protected),
+        "builders: dac3 reads the syncframe only when its header is in clear bytes");
+  // From the decoder config: the same layout fields as the files' boxes (the
+  // bit rate is unknown and written as 0).
+  auto ac3_config = fp::Ac3SpecificBoxFromConfig(int(w->ac3.info.sample_rate), w->ac3.info.channels);
+  const std::vector<uint8_t>& ac3_file = w->ac3.info.codec_config;
+  Check(ac3_config && ac3_config->size() == 3 && ac3_file.size() == 3 && (*ac3_config)[0] == ac3_file[0] &&
+            ((*ac3_config)[1] & 0xfc) == (ac3_file[1] & 0xfc),
+        "builders: dac3 from rate and channels has the file's fscod, bsid, bsmod, acmod and lfeon",
+        "file " + ft::Hex(ac3_file) + (ac3_config ? ", built " + ft::Hex(*ac3_config) : ", none") +
+            Format(" (%u Hz, %u channels)", w->ac3.info.sample_rate, w->ac3.info.channels));
+  auto eac3_config = fp::Eac3SpecificBoxFromConfig(int(w->eac3.info.sample_rate), w->eac3.info.channels);
+  Check(eac3_config && eac3_config->size() >= 5 && file.size() >= eac3_config->size() &&
+            ((*eac3_config)[1] & 0x07) == (file[1] & 0x07) &&
+            std::equal(eac3_config->begin() + 2, eac3_config->end(), file.begin() + 2),
+        "builders: dec3 from rate and channels has the file's substream fields",
+        "file " + ft::Hex(file) + (eac3_config ? ", built " + ft::Hex(*eac3_config) : ", none") +
+            Format(" (%u Hz, %u channels)", w->eac3.info.sample_rate, w->eac3.info.channels));
+  Check(fp::DefaultDolbyVisionCompatibilityId(5) == 0 && fp::DefaultDolbyVisionCompatibilityId(8) == 1,
+        "builders: Dolby Vision compatibility ID defaults to 0 for profile 5 and 1 (HDR10) for profile 8");
+
+  // Chromium's whole-sample-encrypted AC-3/E-AC-3: no dac3/dec3 in the config
+  // and no clear syncframe, so the renderer builds the box from rate and
+  // channels and the protected format comes out as Apple's.
+  for (auto [media, type] : {std::pair<const Media*, const char*>{&w->ac3, "qac3"}, {&w->eac3, "qec3"}}) {
+    struct NullClient : fp::FairPlayRendererClient {
+      void OnNeedData(fp::StreamType) override {}
+      void OnWaitingForKey() override {}
+      void OnEnded() override {}
+      void OnError(fp::RendererError, const std::string&) override {}
+      void OnVideoNaturalSizeChange(int32_t, int32_t) override {}
+      void OnBufferingStateChange(bool) override {}
+    } client;
+    fp::FairPlayRenderer renderer(&client, [](std::function<void()>) {});
+    fp::AudioConfig ac = AudioConfigFor(media->info, Framing::kChromium, true);
+    ac.encryption.scheme = fp::EncryptionScheme::kCbcs;
+    fp::Result result = renderer.Initialize(std::nullopt, ac);
+    const ft::Sample& first = media->segments[0][0];
+    fp::EncodedSample sample;
+    sample.data = first.data.data();
+    sample.size = first.data.size();
+    sample.pts = fp::MediaTime::FromMicroseconds(0);
+    sample.duration = fp::MediaTime::FromMicroseconds(32000);
+    sample.is_keyframe = true;
+    sample.decrypt = fp::DecryptInfo{fp::EncryptionScheme::kCbcs, g_key_id, std::vector<uint8_t>(16, 0x5a), {},
+                                     fp::EncryptionPattern{0, 0}};
+    fp::EnqueueResult enqueued = result.ok() ? renderer.Enqueue(fp::StreamType::kAudio, sample)
+                                             : fp::EnqueueResult::kRejected;
+    fp::RendererStatus s = renderer.GetStatus();
+    Check(enqueued == fp::EnqueueResult::kWaitingForKey && ft::FourCCString(s.audio_protected_format) == type,
+          std::string("renderer: whole-sample-encrypted ") + (media == &w->ac3 ? "AC-3" : "E-AC-3") +
+              " with no config box gets '" + type + "' built from rate and channels",
+          Format("Initialize %s, enqueue %d, protected '%s'", result.ok() ? "ok" : result.message.c_str(),
+                 int(enqueued), ft::FourCCString(s.audio_protected_format).c_str()));
+  }
 }
 
 // Chromium's configs for protected playback: no decoder record (built from
@@ -2620,6 +2801,31 @@ void RunAll() {
   add("CodecScenario(AC-3)", CodecScenario("AC-3 (ac-3)", nullptr, &w->ac3, "qac3"));
   add("CodecScenario(E-AC-3)", CodecScenario("E-AC-3 (ec-3)", nullptr, &w->eac3, "qec3"));
   add("CodecScenario(AV1 10-bit)", CodecScenario("AV1 10-bit (av01)", &w->av1_10bit, nullptr, "qav1"));
+  add("CodecScenario(hev1 VPS once)",
+      CodecScenario("hev1 with the VPS on the first keyframe only", &w->hev1_vps_once, nullptr, ""));
+  {
+    const std::pair<int32_t, int32_t> natural{int32_t(w->hev1_in_band.info.width) * 4 / 3,
+                                              int32_t(w->hev1_in_band.info.height)};
+    add("CodecScenario(config natural size)",
+        CodecScenario("hev1 in-band with a config natural size", &w->hev1_in_band, nullptr, "",
+                      {[natural](std::optional<fp::VideoConfig>* vc, std::optional<fp::AudioConfig>*) {
+                         (*vc)->natural_width = natural.first;
+                         (*vc)->natural_height = natural.second;
+                       },
+                       natural}));
+  }
+  auto from_config = [](bool eac3) {
+    return [eac3](std::optional<fp::VideoConfig>*, std::optional<fp::AudioConfig>* ac) {
+      auto box = eac3 ? fp::Eac3SpecificBoxFromConfig((*ac)->sample_rate, (*ac)->channels)
+                      : fp::Ac3SpecificBoxFromConfig((*ac)->sample_rate, (*ac)->channels);
+      Check(box.has_value(), std::string(eac3 ? "dec3" : "dac3") + " from rate and channels is built");
+      if (box) (*ac)->extra_data = *box;
+    };
+  };
+  add("CodecScenario(AC-3 config box)",
+      CodecScenario("AC-3 with dac3 from rate and channels", nullptr, &w->ac3, "", {from_config(false)}));
+  add("CodecScenario(E-AC-3 config box)",
+      CodecScenario("E-AC-3 with dec3 from rate and channels", nullptr, &w->eac3, "", {from_config(true)}));
   add("AudioReconfigureScenario()", AudioReconfigureScenario());
   add("CloseScenario()", CloseScenario());
   Sequence(steps, Finish);
@@ -2692,6 +2898,7 @@ int main(int argc, char** argv) {
         g_certificate = Bytes(certificate);
         if (ok) {
           world.hev1_in_band = InBandParameterSetsOnly(world.hev1);
+          world.hev1_vps_once = VpsOnFirstKeyframeOnly(world.hev1_in_band);
           // HE-AAC continuing the clear AAC-LC segment, for an audio Reconfigure.
           world.he_aac_after_clear = world.he_aac;
           int64_t shift = int64_t(EndSeconds(world.clear_audio) * world.he_aac.info.timescale + 0.5);

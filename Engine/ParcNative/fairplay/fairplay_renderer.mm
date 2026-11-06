@@ -8,6 +8,7 @@
 #include <atomic>
 #include <deque>
 #include <map>
+#include <mutex>
 
 #include "fairplay_bitstream.h"
 #include "fairplay_key_session.h"
@@ -50,9 +51,19 @@ class ScopedFormat {
     format_ = format;
   }
   CMFormatDescriptionRef get() const { return format_; }
+  void Swap(ScopedFormat& other) { std::swap(format_, other.format_); }
 
  private:
   CMFormatDescriptionRef format_ = nullptr;
+};
+
+// Serializes stopping a renderer's media-data request between the owner
+// sequence and the request block. |current| names the live request; the
+// owner bumps it whenever it stops or re-arms, so a block from an older
+// request never stops a newer one.
+struct RequestGate {
+  std::mutex mutex;
+  uint64_t current = 0;
 };
 
 NSData* ToNSData(const std::vector<uint8_t>& bytes) {
@@ -260,8 +271,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       [synchronizer_ removeTimeObserver:clock_observer_];
       clock_observer_ = nil;
     }
-    [video_renderer_ stopRequestingMediaData];
-    [audio_ stopRequestingMediaData];
+    StopRequest(StreamType::kVideo);
+    StopRequest(StreamType::kAudio);
     synchronizer_.rate = 0;
   }
 
@@ -502,7 +513,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return;
     }
     state.end_of_stream = true;
-    [RendererFor(stream) stopRequestingMediaData];
+    StopRequest(stream);
     state.armed = false;
     // A stream that ends before AVFoundation considers it sufficient (a short
     // clip, the last segment) counts as enough from here on.
@@ -542,7 +553,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     for (StreamType stream : {StreamType::kVideo, StreamType::kAudio}) {
       id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
       Stream& state = StreamFor(stream);
-      [renderer stopRequestingMediaData];
+      StopRequest(stream);
       [renderer flush];
       state = Stream();
     }
@@ -569,12 +580,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     };
     status.video_format = subtype(video_clear_format_.get());
     status.audio_format = subtype(audio_clear_format_.get());
-    if (!video_protected_formats_.empty()) {
-      status.video_protected_format = subtype(video_protected_formats_.begin()->second->get());
-    }
-    if (!audio_protected_formats_.empty()) {
-      status.audio_protected_format = subtype(audio_protected_formats_.begin()->second->get());
-    }
+    auto last_protected = [](const auto& cache, const std::vector<uint8_t>& key) -> CMFormatDescriptionRef {
+      auto it = cache.find(key);
+      return it == cache.end() ? nullptr : it->second->get();
+    };
+    status.video_protected_format = subtype(last_protected(video_protected_formats_, video_protected_key_));
+    status.audio_protected_format = subtype(last_protected(audio_protected_formats_, audio_protected_key_));
     if (video_renderer_) {
       if (@available(macOS 14.0, *)) {
         AVSampleBufferVideoRenderer* renderer = layer_.sampleBufferRenderer;
@@ -833,11 +844,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (Result result = CreateVideoFormat(*video_config_, nullptr, &clear); !result.ok()) {
       return result;
     }
+    // Nothing changes unless every format builds.
+    ScopedFormat previous_clear;
+    previous_clear.Swap(video_clear_format_);
     video_clear_format_.Reset(clear);
+    auto previous_protected = std::move(video_protected_formats_);
     video_protected_formats_.clear();
     const TrackEncryption& encryption = video_config_->encryption;
     if (IsEncrypted(encryption) && !encryption.default_key_id.empty() &&
         !ProtectedFormat(StreamType::kVideo, encryption.default_key_id, std::nullopt, error)) {
+      video_clear_format_.Swap(previous_clear);
+      video_protected_formats_ = std::move(previous_protected);
       return Result::Error(Exception::kNotSupported, *error);
     }
     return Result::Ok();
@@ -848,11 +865,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (Result result = CreateAudioFormat(*audio_config_, nullptr, &clear); !result.ok()) {
       return result;
     }
+    // Nothing changes unless every format builds.
+    ScopedFormat previous_clear;
+    previous_clear.Swap(audio_clear_format_);
     audio_clear_format_.Reset(clear);
+    auto previous_protected = std::move(audio_protected_formats_);
     audio_protected_formats_.clear();
     const TrackEncryption& encryption = audio_config_->encryption;
     if (IsEncrypted(encryption) && !encryption.default_key_id.empty() &&
         !ProtectedFormat(StreamType::kAudio, encryption.default_key_id, std::nullopt, error)) {
+      audio_clear_format_.Swap(previous_clear);
+      audio_protected_formats_ = std::move(previous_protected);
       return Result::Error(Exception::kNotSupported, *error);
     }
     return Result::Ok();
@@ -869,8 +892,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     video_config_ = config;
     if (config.codec == VideoCodec::kDolbyVision && config.dolby_vision_config.empty() &&
         config.dolby_vision_profile >= 0) {
+      const int compatibility_id = config.dolby_vision_compatibility_id >= 0
+                                       ? config.dolby_vision_compatibility_id
+                                       : DefaultDolbyVisionCompatibilityId(config.dolby_vision_profile);
       video_config_->dolby_vision_config = DolbyVisionConfigurationRecord(
-          config.dolby_vision_profile, config.dolby_vision_level, config.dolby_vision_compatibility_id);
+          config.dolby_vision_profile, config.dolby_vision_level, compatibility_id);
     }
     parameter_sets_.clear();
     av1_sequence_header_.clear();
@@ -917,7 +943,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // Keyframes carry the decoder configuration in-band (Chromium re-inserts
   // SPS/PPS/VPS before each one; AV1 keyframes start with a sequence header).
   // Builds the record from it when the config had none, and rebuilds it when
-  // it changes (an adaptive-streaming switch).
+  // it changes (an adaptive-streaming switch). A failed rebuild leaves the
+  // previous record, sets and formats in place.
   bool UpdateVideoConfigFromKeyframe(const uint8_t* data, size_t size, std::string* error) {
     const VideoCodec codec = video_config_->codec;
     if (codec == VideoCodec::kAV1) {
@@ -938,12 +965,16 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         av1_sequence_header_ = *obu;
         return true;
       }
+      std::vector<uint8_t> previous = std::move(video_config_->extra_data);
       video_config_->extra_data = *record;
+      if (Result result = CreateVideoFormats(error); !result.ok()) {
+        video_config_->extra_data = std::move(previous);
+        *error = result.message;
+        return false;
+      }
       av1_sequence_header_ = *obu;
       awaiting_video_config_ = false;
-      Result result = CreateVideoFormats(error);
-      if (!result.ok()) *error = result.message;
-      return result.ok();
+      return true;
     }
     const bool avc = codec == VideoCodec::kH264;
     const std::vector<uint8_t>& record = video_config_->extra_data;
@@ -956,6 +987,18 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       *error = "no parameter sets in the config record or before the first frame";
       return !awaiting_video_config_;
     }
+    // A keyframe may repeat only some sets (a new SPS and PPS under the same
+    // VPS): the ones of a kind it doesn't carry stay as they were.
+    auto kind = [avc](const std::vector<uint8_t>& nal) {
+      return avc ? (nal[0] & 0x1f) : ((nal[0] >> 1) & 0x3f);
+    };
+    for (const std::vector<uint8_t>& earlier : parameter_sets_) {
+      if (!earlier.empty() && std::none_of(sets.begin(), sets.end(), [&](const std::vector<uint8_t>& set) {
+            return kind(set) == kind(earlier);
+          })) {
+        sets.push_back(earlier);
+      }
+    }
     auto sorted = [](std::vector<std::vector<uint8_t>> v) {
       std::sort(v.begin(), v.end());
       return v;
@@ -963,6 +1006,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!awaiting_video_config_ && sorted(sets) == sorted(parameter_sets_)) {
       return true;
     }
+    // CoreMedia takes them in kind order: (VPS,) SPS, PPS.
+    std::stable_sort(sets.begin(), sets.end(), [&](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+      return kind(a) < kind(b);
+    });
     std::vector<const uint8_t*> pointers;
     std::vector<size_t> sizes;
     for (const auto& set : sets) {
@@ -985,42 +1032,59 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         format, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms);
     NSData* built = atoms[avc ? @"avcC" : @"hvcC"];
     CMVideoDimensions coded = CMVideoFormatDescriptionGetDimensions(format);
-    CGSize presentation = CMVideoFormatDescriptionGetPresentationDimensions(format, true, false);
+    CGSize presentation = CMVideoFormatDescriptionGetPresentationDimensions(format, true, true);
     CFRelease(format);
     if (!built) {
       *error = "CoreMedia built no decoder record from the parameter sets";
       return false;
     }
+    const VideoConfig previous = *video_config_;
     const uint8_t* bytes = static_cast<const uint8_t*>(built.bytes);
     video_config_->extra_data.assign(bytes, bytes + built.length);
     if (coded.width > 0 && coded.height > 0) {
       video_config_->coded_width = coded.width;
       video_config_->coded_height = coded.height;
     }
-    parameter_sets_ = sets;
-    awaiting_video_config_ = false;
-    Result result = CreateVideoFormats(error);
-    if (!result.ok()) {
+    if (Result result = CreateVideoFormats(error); !result.ok()) {
+      *video_config_ = previous;
       *error = result.message;
       return false;
     }
-    ReportNaturalSize(static_cast<int32_t>(presentation.width), static_cast<int32_t>(presentation.height));
+    parameter_sets_ = std::move(sets);
+    awaiting_video_config_ = false;
+    // The config's natural size (Chromium's, from tkhd and pasp) wins; the
+    // stream's own display size is used only when the config has none.
+    if (!video_config_->natural_width || !video_config_->natural_height) {
+      ReportNaturalSize(static_cast<int32_t>(presentation.width), static_cast<int32_t>(presentation.height));
+    }
     return true;
   }
 
-  bool UpdateAudioConfigFromSyncframe(const uint8_t* data, size_t size, std::string* error) {
-    std::optional<std::vector<uint8_t>> payload = audio_config_->codec == AudioCodec::kEAC3
-                                                      ? Eac3SpecificBoxPayload(data, size)
-                                                      : Ac3SpecificBoxPayload(data, size);
+  // dac3/dec3 from the first syncframe's clear header; when the syncframes
+  // are encrypted (whole-sample audio encryption), from the config's sample
+  // rate and channel count.
+  bool UpdateAudioConfigFromSyncframe(const uint8_t* data, size_t size,
+                                      const std::vector<SubsampleEntry>* subsamples, std::string* error) {
+    const bool eac3 = audio_config_->codec == AudioCodec::kEAC3;
+    std::optional<std::vector<uint8_t>> payload =
+        eac3 ? Eac3SpecificBoxPayload(data, size, subsamples) : Ac3SpecificBoxPayload(data, size, subsamples);
+    if (!payload && subsamples) {
+      payload = eac3 ? Eac3SpecificBoxFromConfig(audio_config_->sample_rate, audio_config_->channels)
+                     : Ac3SpecificBoxFromConfig(audio_config_->sample_rate, audio_config_->channels);
+    }
     if (!payload) {
-      *error = "no AC-3/E-AC-3 syncframe in the first audio sample";
+      *error = subsamples ? "AC-3/E-AC-3 config needs a 48, 44.1 or 32 kHz rate and 1-6 channels"
+                          : "no AC-3/E-AC-3 syncframe at the start of the first audio sample";
       return false;
     }
     audio_config_->extra_data = *payload;
+    if (Result result = CreateAudioFormats(error); !result.ok()) {
+      audio_config_->extra_data.clear();
+      *error = result.message;
+      return false;
+    }
     awaiting_audio_config_ = false;
-    Result result = CreateAudioFormats(error);
-    if (!result.ok()) *error = result.message;
-    return result.ok();
+    return true;
   }
 
   // The protected format description for samples encrypted with |key_id|
@@ -1037,6 +1101,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       cache_key.push_back(pattern->crypt_byte_block);
       cache_key.push_back(pattern->skip_byte_block);
     }
+    (stream == StreamType::kVideo ? video_protected_key_ : audio_protected_key_) = cache_key;
     auto it = cache.find(cache_key);
     if (it != cache.end()) {
       return it->second->get();
@@ -1140,7 +1205,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return false;
     }
     if (stream == StreamType::kAudio && awaiting_audio_config_ &&
-        !UpdateAudioConfigFromSyncframe(bytes, size, error)) {
+        !UpdateAudioConfigFromSyncframe(bytes, size, encrypted ? &subsamples : nullptr, error)) {
       CFRelease(block);
       return false;
     }
@@ -1251,9 +1316,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     UpdateBuffering();
   }
 
-  // Asks AVFoundation to say when |stream| can take more. The block runs
-  // repeatedly while the renderer is ready, so it stops itself on first call
-  // and hands over to the owner sequence.
+  // Asks AVFoundation to say when |stream| can take more. AVFoundation calls
+  // the block repeatedly while the renderer is ready, so the first call stops
+  // the request right there (Apple's documented pattern) and hands over to the
+  // owner sequence. The gate keeps that stop from landing on a newer request:
+  // the owner holds it around every request and stop call, and a block that
+  // finds it taken returns and is called again.
   void ArmRequest(StreamType stream) {
     Stream& state = StreamFor(stream);
     id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
@@ -1263,26 +1331,42 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     state.armed = true;
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
+    std::shared_ptr<RequestGate> gate = GateFor(stream);
     uint64_t generation = generation_;
-    auto fired = std::make_shared<std::atomic<bool>>(false);
+    std::lock_guard<std::mutex> lock(gate->mutex);
+    const uint64_t request = ++gate->current;
     [renderer requestMediaDataWhenReadyOnQueue:RequestQueue()
                                     usingBlock:^{
-                                      // Only hand over; stopping the request
-                                      // happens on the owner sequence, so every
-                                      // AVFoundation control call (rates,
-                                      // flushes, requests) comes from one thread.
-                                      if (fired->exchange(true)) {
+                                      std::unique_lock<std::mutex> held(gate->mutex, std::try_to_lock);
+                                      if (!held.owns_lock() || gate->current != request) {
                                         return;
                                       }
-                                      (*poster)([weak, stream, generation, renderer] {
+                                      ++gate->current;
+                                      [renderer stopRequestingMediaData];
+                                      held.unlock();
+                                      (*poster)([weak, stream, generation] {
                                         auto impl = weak.lock();
                                         if (impl && impl->generation_ == generation) {
-                                          [renderer stopRequestingMediaData];
                                           impl->StreamFor(stream).armed = false;
                                           impl->DeliverNeedData(stream);
                                         }
                                       });
                                     }];
+  }
+
+  void StopRequest(StreamType stream) {
+    id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
+    if (!renderer) {
+      return;
+    }
+    std::shared_ptr<RequestGate> gate = GateFor(stream);
+    std::lock_guard<std::mutex> lock(gate->mutex);
+    ++gate->current;
+    [renderer stopRequestingMediaData];
+  }
+
+  std::shared_ptr<RequestGate> GateFor(StreamType stream) const {
+    return stream == StreamType::kVideo ? video_gate_ : audio_gate_;
   }
 
   // Client callbacks are posted, never made from inside a renderer call.
@@ -1429,10 +1513,15 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   std::optional<VideoConfig> video_config_;
   std::optional<AudioConfig> audio_config_;
+  const std::shared_ptr<RequestGate> video_gate_ = std::make_shared<RequestGate>();
+  const std::shared_ptr<RequestGate> audio_gate_ = std::make_shared<RequestGate>();
   ScopedFormat video_clear_format_;
   ScopedFormat audio_clear_format_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> video_protected_formats_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> audio_protected_formats_;
+  // Cache keys of the protected formats last used (GetStatus reports them).
+  std::vector<uint8_t> video_protected_key_;
+  std::vector<uint8_t> audio_protected_key_;
   std::vector<id<AVContentKeyRecipient>> recipients_;
 
   AVSampleBufferRenderSynchronizer* synchronizer_ = nil;

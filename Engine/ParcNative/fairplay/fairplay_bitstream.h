@@ -99,13 +99,34 @@ std::optional<std::vector<uint8_t>> Av1CodecConfigurationRecord(const std::vecto
 // Profile 5 has compatibility ID 0.
 std::vector<uint8_t> DolbyVisionConfigurationRecord(int profile, int level, int compatibility_id);
 
-// 'dac3' payload from the first AC-3 syncframe in |data|.
-std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, size_t size);
+// 'dac3' payload from the AC-3 syncframe at the start of |data|.
+// |subsamples| is null for a clear sample; for an encrypted one it is the
+// sample's layout (empty: all protected), and only a syncframe header lying in
+// clear bytes is read, since a syncword found in ciphertext would be noise.
+std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, size_t size,
+                                                          const std::vector<SubsampleEntry>* subsamples = nullptr);
 
-// 'dec3' payload from the E-AC-3 syncframes of one access unit: data rate and
-// one entry per independent substream with its dependent-substream count.
-// bsmod and asvc are written as 0 and chan_loc as 0 (not parsed).
-std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size);
+// 'dec3' payload from the E-AC-3 syncframes of one access unit, reading only
+// headers in clear bytes as above. Syncframes are grouped by stream type and
+// substream ID: one entry per independent substream with its dependent
+// substreams' count and chan_loc (the chanmap bits 5-12 and 14 that dec3
+// defines); data_rate sums each substream's rate. bsmod and asvc are written
+// as 0, and no Atmos extension is written.
+std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size,
+                                                           const std::vector<SubsampleEntry>* subsamples = nullptr);
+
+// The same boxes from the decoder config alone, for streams whose syncframes
+// are encrypted (whole-sample cbcs/cenc audio): sample rate gives fscod,
+// channel count gives acmod and lfeon (6 = 3/2 + LFE). The bit rate is
+// unknown and written as 0. nullopt for an unsupported rate or layout.
+std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, int channels);
+std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, int channels);
+
+// The Dolby Vision base-layer compatibility ID for a profile when the stream
+// doesn't say (Chromium carries only profile and level): 0 for profiles 4, 5
+// and 7 (no compatible base layer); for 8 and 9 the ID can't be known from
+// the profile, and 1 (HDR10) is assumed.
+int DefaultDolbyVisionCompatibilityId(int profile);
 
 // Wraps |payload| in an ISO box header.
 std::vector<uint8_t> MakeBox(uint32_t type, const std::vector<uint8_t>& payload);
