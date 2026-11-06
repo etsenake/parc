@@ -42,13 +42,16 @@ struct FairPlayIdentitySites: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey { case version, safari, chrome }
 
-    /// A site as the engine compares it: lowercase host characters only, at most
-    /// 253 of them, without leading or trailing dots. Anything else is refused.
+    /// A site as the engine compares it: a lowercased canonical host of at most
+    /// 253 visible ASCII characters, without leading or trailing dots. Every
+    /// host Chromium reports passes, so a site the engine learned is never
+    /// dropped here; URL punctuation that can't be in a host is refused.
     static func normalized(_ site: String) -> String? {
         let value = site.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789.-_:[]")
+        let refused = Set("/\\?#@ ")
         guard !value.isEmpty, value.count <= 253, !value.hasPrefix("."), !value.hasSuffix("."),
-              value.allSatisfy({ allowed.contains($0) }) else { return nil }
+              value.unicodeScalars.allSatisfy({ $0.value > 0x20 && $0.value < 0x7f }),
+              !value.contains(where: { refused.contains($0) }) else { return nil }
         return value
     }
 

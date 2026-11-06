@@ -41,11 +41,13 @@ final class FairPlayIdentityController {
         apply(.safari, site: site, profilePath: profilePath, offTheRecord: offTheRecord)
     }
 
-    /// The last private window closed: its choices end with it.
+    /// The last private window closed: its choices end with it. Every known
+    /// Profile's private lists go back to the Profile's, including sites the
+    /// engine learned in a private window just before it closed.
     func forgetPrivateChoices() {
-        let paths = Array(privateChoices.keys)
+        let paths = Set(privateChoices.keys).union(profiles.keys)
         privateChoices.removeAll()
-        for path in paths { push(path) }
+        for path in paths.sorted() { push(path) }
     }
 
     private enum Change { case learn, chrome, safari }

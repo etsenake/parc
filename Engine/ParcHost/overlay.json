@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 348,
+  "version": 349,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -390,12 +390,12 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_application.mm",
-      "sha256": "5298b07e607743e50965a0530b5e8be9a26978934d3c362f1f44b3a4a9e4be36"
+      "sha256": "5632181dcba337cb29878da100b357def377890773874094172c4f7861b01af6"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "331e6abbc3a4029fffb66701db2f583140e393e6edf458305234e28303c49cec"
+      "sha256": "a2adf9a2e32a4594e6cd5563e650dc432b1cba0da98d24070be39acc309ae76a"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1560,12 +1560,12 @@
     {
       "source": "Engine/ParcNative/fairplay_identity.h",
       "target": "cef/libcef/browser/parc_native/fairplay_identity.h",
-      "sha256": "0647ef37c64a4174be185bd63be35657d1ea7a075c8cfacc5575fb84e7a5a53a"
+      "sha256": "48ee839e3cdce110c82b0ec12df1454ec41be6a325133ff30776c0a95223b4af"
     },
     {
       "source": "Engine/ParcNative/fairplay_identity.mm",
       "target": "cef/libcef/browser/parc_native/fairplay_identity.mm",
-      "sha256": "f35e50ffb706dac6dbf2431ec71781ab1b11aca5d4358ca6daf9fa23af2594ae"
+      "sha256": "6498815056aa947ab736a50b9f0fc7d7ef2ca48fef0ed0ab1236828998bba62a"
     },
     {
       "source": "Engine/ParcRenderer/parc_safari_identity.h",

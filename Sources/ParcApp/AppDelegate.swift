@@ -1511,6 +1511,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return controller
     }
 
+    /// The engine learned a FairPlay site for Safari's identity, whichever page
+    /// asked (docs/fairplay-identity.md).
+    func nativeApplicationDidLearnSafariIdentity(forSite site: String, profilePath: String, offTheRecord: Bool) {
+        FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
+    }
     func nativeApplicationPrivateDownloadDidUpdate(_ update: [String: Any], context: PCNativePrivateDownloadContext) {
         guard update["profilePath"] as? String == context.profilePath else { return }
         store.recordTransientDownload(update, contextID: context.identifier)

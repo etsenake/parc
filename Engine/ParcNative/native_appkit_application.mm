@@ -82,6 +82,7 @@
 #include "native_appkit_page.h"
 #include "native_search.h"
 #include "native_profile_removal.h"
+#include "fairplay_identity.h"
 #include "native_capture_picker.h"
 #include "native_gmc_presentation.h"
 #include "native_browser_window.h"
@@ -4041,6 +4042,21 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
 
 bool NativeProfileRemovalApplicationReady() {
   return ready && !quitting && !preparing_global_close;
+}
+
+void NotifyNativeApplicationLearnedSafariIdentity(NSString* site,
+                                                  NSString* profile_path,
+                                                  bool off_the_record) {
+  CHECK(NSThread.isMainThread);
+  id<PCNativeBrowserApplicationClient> client = application_client;
+  if ([client respondsToSelector:@selector
+              (nativeApplicationDidLearnSafariIdentityForSite:
+                                                  profilePath:
+                                                 offTheRecord:)]) {
+    [client nativeApplicationDidLearnSafariIdentityForSite:site
+                                               profilePath:profile_path
+                                              offTheRecord:off_the_record];
+  }
 }
 
 NSError* CheckNativeProfileRemovalOwners(const base::FilePath& path,

@@ -11,6 +11,8 @@
 #ifndef CEF_LIBCEF_BROWSER_PARC_NATIVE_FAIRPLAY_IDENTITY_H_
 #define CEF_LIBCEF_BROWSER_PARC_NATIVE_FAIRPLAY_IDENTITY_H_
 
+#import <Foundation/Foundation.h>
+
 namespace content {
 class WebContents;
 }
@@ -24,6 +26,14 @@ void InstallFairPlayIdentity();
 // Gives a native page's contents their per-site identity. Idempotent; call
 // before the contents load anything the identity should apply to.
 void AttachFairPlayIdentity(content::WebContents& contents);
+
+// Tells the shell's application client that the engine learned `site` for the
+// browsing context of the Profile at `profile_path` (its private context with
+// `off_the_record`). Defined in native_appkit_application.mm, which owns the
+// client. Main thread only.
+void NotifyNativeApplicationLearnedSafariIdentity(NSString* site,
+                                                  NSString* profile_path,
+                                                  bool off_the_record);
 
 }  // namespace parc
 

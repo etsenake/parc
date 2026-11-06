@@ -92,6 +92,38 @@ reloading:
   evicted and loaded again; Chromium does that when the requested identity
   differs.
 
+## How Parc learns a site
+
+Asking for Widevine while in Chrome's identity is the signal. fairplay-media's
+hook (`parc::fairplay::SetWidevineCdmRequestObserver`, called from
+`MediaInterfaceProxy::CreateCdm` for `com.widevine.alpha` and its sub key
+systems) reaches `OnWidevineCdmRequest` in `fairplay_identity.mm` before the
+CDM exists:
+
+- The request is let through (Widevine as today) when the page isn't a
+  native page, isn't the tab's primary page, has no site, or the asking frame
+  is in another process than the main document, so a reload couldn't give it
+  Safari's identity. It's also let through when the user chose Chrome for the
+  site.
+- Otherwise the CDM is held, so no Widevine license request ever leaves.
+  Netflix signs users out after a failed one. The main document's site joins
+  the context's Safari sites at once. The page's observer gets
+  `nativePage:didLearnSafariIdentityForSite:`, and the application client gets
+  `nativeApplicationDidLearnSafariIdentityForSite:profilePath:offTheRecord:`
+  even when no page forwards it, so the shell always records it. The site's
+  running service workers stop (they restart with Safari's user agent), and
+  every open page of that site in the context reloads with Safari's identity.
+- The page holding the request reloads. If it's a POST result, its address
+  loads again as a GET in place of its entry; a page a script wrote into its
+  initial entry (`document.open`) has no address of its own and is left
+  alone. If another navigation is waiting on a beforeunload dialog, or the
+  browser is quitting or closing every window, the reload waits and tries
+  again every half second until the dialog is answered or the page closes.
+  Further held requests from the same page don't restart its workers again.
+- A page already in Safari's identity shouldn't reach Widevine, which is
+  hidden there. If one does, its request is held without a reload, so it
+  can't loop.
+
 ## The lists: storage and undo
 
 The shell keeps the lists (`Sources/ParcApp/FairPlayIdentityController.swift`,
@@ -103,7 +135,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   read, or that a newer Parc wrote, stays untouched and changes stay in
   memory.
 - A private window starts with its Profile's lists. Its own choices go on top
-  in memory, are never written, and end when the last private window closes.
+  in memory, are never written, and end when the last private window closes;
+  every Profile's private lists then go back to the Profile's, including a
+  site learned in a private window just before it closed.
 - At engine start, the shell gives the engine every Profile's lists for its
   normal and private context, before any page loads. Every change is given to
   the engine again, and open pages update.
@@ -138,6 +172,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - Chromium copies each committing subframe's identity into the page's
   history entry. Parc puts the main document's identity back after every
   subframe commit, so restoring or prerendering the entry uses the right one.
+- A shared worker that is already running when its site's identity changes
+  keeps the old user agent until it ends. Service workers are stopped and
+  restart with the new one.
 - A service worker's own script request carries Chrome's user agent. The
   network service fills it in, and only the worker's script and fetches see
   Safari's.

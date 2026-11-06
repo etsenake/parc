@@ -951,6 +951,15 @@ NS_SWIFT_UI_ACTOR
 NS_SWIFT_UI_ACTOR
 @protocol PCNativeBrowserApplicationClient <NSObject>
 @optional
+// The engine learned that `site` needs Safari's identity for Apple FairPlay
+// in the browsing context of the Profile at `profilePath` (its private
+// context with offTheRecord) and reloaded its pages (docs/fairplay-identity.md).
+// Delivered for every learned site, whether or not a page observer also
+// received nativePage:didLearnSafariIdentityForSite:.
+- (void)nativeApplicationDidLearnSafariIdentityForSite:(NSString*)site
+                                           profilePath:(NSString*)profilePath
+                                          offTheRecord:(BOOL)offTheRecord
+    NS_SWIFT_NAME(nativeApplicationDidLearnSafariIdentity(forSite:profilePath:offTheRecord:));
 // Live private records join the shared presentation only in memory. Context
 // retirement is delivered after native invalidation; never serialize updates.
 - (void)nativeApplicationPrivateDownloadDidUpdate:(NSDictionary<NSString*, id>*)update

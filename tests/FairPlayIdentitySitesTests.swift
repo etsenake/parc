@@ -31,6 +31,12 @@ struct FairPlayIdentitySitesTests {
         check(FairPlayIdentitySites.normalized("netflix.com.") == nil, "trailing dot refused")
         check(FairPlayIdentitySites.normalized("net flix.com") == nil, "space refused")
         check(FairPlayIdentitySites.normalized("netflix.com/watch") == nil, "path refused")
+        check(FairPlayIdentitySites.normalized("a~b!c$d&e+f,g;h=i.example") == "a~b!c$d&e+f,g;h=i.example",
+              "every host character Chromium keeps is accepted")
+        check(FairPlayIdentitySites.normalized("[::1]") == "[::1]", "IPv6 host")
+        check(FairPlayIdentitySites.normalized("A%2A.example") == "a%2a.example",
+              "escaped host characters lowercased as the engine reports them")
+        check(FairPlayIdentitySites.normalized("café.example") == nil, "non-ASCII refused (Chromium reports punycode)")
         check(FairPlayIdentitySites.normalized(String(repeating: "a", count: 254)) == nil, "too long refused")
         let sites = FairPlayIdentitySites(safari: ["B.com", "a.com", "a.com", "bad site"], chrome: ["b.com"])
         check(sites.safari == ["a.com"], "init sorts, dedupes, drops invalid and Chrome sites")

@@ -18,7 +18,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/browser/media/parc_fairplay_hooks.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -28,9 +30,12 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/parc_worker_identity.h"
 #include "content/public/browser/reload_type.h"
+#include "content/public/browser/service_worker_context.h"
+#include "content/public/browser/service_worker_running_info.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/site_isolation_policy.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -42,7 +47,9 @@
 #include "net/base/schemeful_site.h"
 #include "services/network/public/cpp/web_sandbox_flags.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
@@ -95,7 +102,9 @@ std::string SiteForURL(const GURL& url) {
   }
   std::string domain = net::registry_controlled_domains::GetDomainAndRegistry(
       origin, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
-  return domain.empty() ? origin.host() : domain;
+  // Lowercased like the shell's lists: a canonical host is lowercase except
+  // for the hex digits of escapes such as %2A.
+  return base::ToLowerASCII(domain.empty() ? origin.host() : domain);
 }
 
 // Present on a main document that was committed with Safari's identity.
@@ -152,6 +161,16 @@ void ReloadContents(base::WeakPtr<content::WebContents> contents) {
   }
 }
 
+// Loads the page's address again as a GET in place of its entry: for a page
+// holding a Widevine request whose entry can't simply reload (a POST result,
+// or the initial entry after document.open).
+void LoadAgain(content::WebContents* contents, const GURL& url) {
+  content::NavigationController::LoadURLParams params(url);
+  params.should_replace_current_entry = true;
+  params.transition_type = ui::PAGE_TRANSITION_RELOAD;
+  contents->GetController().LoadURLWithParams(params);
+}
+
 class FairPlayIdentityHelper final
     : public content::WebContentsObserver,
       public content::WebContentsUserData<FairPlayIdentityHelper> {
@@ -161,36 +180,70 @@ class FairPlayIdentityHelper final
   // The lists changed: reload the page when its main document no longer
   // presents the identity its site now has. A page whose main frame is
   // navigating is left to that navigation, which checks again when it
-  // commits; a POST result is never resubmitted; a discarded page reloads
-  // with the new identity when it is shown.
-  void ReconcileWithLists() {
+  // commits; a discarded page reloads with the new identity when it is
+  // shown. A POST result is never resubmitted, unless `held`: the page holds
+  // a Widevine request and can't play until it loads again.
+  void ReconcileWithLists(bool held = false) {
     content::WebContents* contents = web_contents();
     if (!contents || contents->IsBeingDestroyed() || contents->WasDiscarded()) {
       return;
     }
-    // Checked again when that navigation ends without committing; one that
-    // commits is checked at its commit.
-    if (!primary_navigations_.empty() ||
-        contents->GetController().GetPendingEntry()) {
-      reconcile_pending_ = true;
+    reconcile_held_ = reconcile_held_ || held;
+    content::NavigationEntry* pending =
+        contents->GetController().GetPendingEntry();
+    // This helper's own reload is waiting on a beforeunload dialog; it applies
+    // the identity when it starts, and a "Stay" answer is the user's choice.
+    if (primary_navigations_.empty() && pending &&
+        pending->GetUniqueID() == own_reload_entry_id_) {
       return;
     }
+    // Checked again when that navigation ends without committing; one that
+    // commits is checked at its commit. A pending entry with no navigation
+    // yet is waiting on a beforeunload dialog, which may be cancelled, and
+    // while the browser quits or closes every window the pages may stay
+    // after all, so in those cases look again shortly.
+    const bool ready = NativeProfileRemovalApplicationReady();
+    if (!primary_navigations_.empty() || pending || !ready) {
+      reconcile_pending_ = true;
+      if ((primary_navigations_.empty() || !ready) && !retry_scheduled_) {
+        retry_scheduled_ = true;
+        content::GetUIThreadTaskRunner({})->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(&FairPlayIdentityHelper::Retry,
+                           contents->GetWeakPtr()),
+            base::Milliseconds(500));
+      }
+      return;
+    }
+    const bool was_held = reconcile_held_;
     reconcile_pending_ = false;
+    reconcile_held_ = false;
     content::NavigationEntry* entry =
         contents->GetController().GetLastCommittedEntry();
-    if (!entry || entry->IsInitialEntry() || entry->GetHasPostData()) {
-      return;
-    }
     content::RenderFrameHost* main_frame = contents->GetPrimaryMainFrame();
     const std::string site = SiteForURL(main_frame->GetLastCommittedURL());
-    if (site.empty()) {
+    if (!entry || site.empty()) {
       return;
     }
     const bool wanted = fairplay_identity::PresentsSafari(
         ListsForContext(contents->GetBrowserContext()), site);
-    if (wanted != MainDocumentPresentsSafari(main_frame)) {
-      ReloadContents(contents->GetWeakPtr());
+    if (wanted == MainDocumentPresentsSafari(main_frame)) {
+      return;
     }
+    // The initial entry of a page a script wrote (document.open) has no
+    // address of its own to load again.
+    if (entry->IsInitialEntry()) {
+      return;
+    }
+    if (entry->GetHasPostData()) {
+      if (was_held) {
+        LoadAgain(contents, main_frame->GetLastCommittedURL());
+        RememberOwnReload(contents);
+      }
+      return;
+    }
+    ReloadContents(contents->GetWeakPtr());
+    RememberOwnReload(contents);
   }
 
  private:
@@ -281,6 +334,8 @@ class FairPlayIdentityHelper final
     }
     if (navigation->IsInPrimaryMainFrame()) {
       reconcile_pending_ = false;
+      reconcile_held_ = false;
+      own_reload_entry_id_ = 0;
     }
     if (!navigation->IsInMainFrame()) {
       KeepEntryOnMainDocument(frame);
@@ -345,6 +400,12 @@ class FairPlayIdentityHelper final
     }
   }
 
+  void RememberOwnReload(content::WebContents* contents) {
+    content::NavigationEntry* pending =
+        contents->GetController().GetPendingEntry();
+    own_reload_entry_id_ = pending ? pending->GetUniqueID() : 0;
+  }
+
   static void Reconcile(base::WeakPtr<content::WebContents> contents) {
     if (!contents) {
       return;
@@ -354,9 +415,24 @@ class FairPlayIdentityHelper final
     }
   }
 
+  static void Retry(base::WeakPtr<content::WebContents> contents) {
+    if (!contents) {
+      return;
+    }
+    if (auto* helper = FromWebContents(contents.get())) {
+      helper->retry_scheduled_ = false;
+      if (helper->reconcile_pending_) {
+        helper->ReconcileWithLists();
+      }
+    }
+  }
+
   std::map<int64_t, bool> main_frame_decisions_;
   std::set<int64_t> primary_navigations_;
   bool reconcile_pending_ = false;
+  bool reconcile_held_ = false;
+  bool retry_scheduled_ = false;
+  int own_reload_entry_id_ = 0;
   int reloaded_entry_id_ = 0;
 };
 
@@ -396,22 +472,151 @@ std::set<std::string> SitesFromArray(NSArray<NSString*>* array) {
   return sites;
 }
 
-void ReconcileContext(const ContextKey& key) {
+// A running service worker keeps the user agent it started with, so one of a
+// site whose identity changed is stopped; it starts again with the new one
+// when its pages reload.
+void StopServiceWorkersForSites(content::BrowserContext* context,
+                                const std::set<std::string>& sites) {
+  if (!context || sites.empty()) {
+    return;
+  }
+  content::ServiceWorkerContext* workers =
+      context->GetDefaultStoragePartition()->GetServiceWorkerContext();
+  if (!workers) {
+    return;
+  }
+  std::vector<blink::StorageKey> keys;
+  for (const auto& [version_id, info] :
+       workers->GetRunningServiceWorkerInfos()) {
+    if (sites.count(SiteForURL(info.scope))) {
+      keys.push_back(info.key);
+    }
+  }
+  for (const blink::StorageKey& key : keys) {
+    workers->StopAllServiceWorkersForStorageKey(key);
+  }
+}
+
+// The sites whose identity differs between two lists.
+std::set<std::string> ChangedSites(const SiteLists& before,
+                                   const SiteLists& after) {
+  std::set<std::string> all;
+  for (const auto* list :
+       {&before.safari, &before.chrome, &after.safari, &after.chrome}) {
+    all.insert(list->begin(), list->end());
+  }
+  std::set<std::string> changed;
+  for (const std::string& site : all) {
+    if (fairplay_identity::PresentsSafari(before, site) !=
+        fairplay_identity::PresentsSafari(after, site)) {
+      changed.insert(site);
+    }
+  }
+  return changed;
+}
+
+// Brings a context's workers and open pages to the identity their sites now
+// have. `held` is the page holding a Widevine request, if any.
+void ReconcileContext(const ContextKey& key,
+                      const std::set<std::string>& changed_sites,
+                      base::WeakPtr<content::WebContents> held) {
   std::vector<base::WeakPtr<content::WebContents>> pages;
+  content::BrowserContext* context = nullptr;
   for (FairPlayIdentityHelper* helper : Helpers()) {
     content::WebContents* contents = helper->web_contents();
     if (contents && KeyForContext(contents->GetBrowserContext()) == key) {
       pages.push_back(contents->GetWeakPtr());
+      context = contents->GetBrowserContext();
     }
   }
+  StopServiceWorkersForSites(context, changed_sites);
   for (const auto& contents : pages) {
     if (!contents) {
       continue;
     }
     if (auto* helper = FairPlayIdentityHelper::FromWebContents(contents.get())) {
-      helper->ReconcileWithLists();
+      helper->ReconcileWithLists(held && held.get() == contents.get());
     }
   }
+}
+
+
+void FinishLearning(ContextKey key,
+                    std::string site,
+                    bool newly_learned,
+                    base::WeakPtr<content::WebContents> requester) {
+  NSString* learned = base::SysUTF8ToNSString(site);
+  // The page's observer hears it (PCBrowserView forwards it to the page's
+  // owner), and so does the application, which records it for the context
+  // even when no page forwards it: a closed tab, a page not yet adopted.
+  if (requester && !requester->IsBeingDestroyed()) {
+    if (PCNativePage* page = ExistingNativePage(requester.get())) {
+      id<PCNativePageObserver> observer = page.observer;
+      if ([observer respondsToSelector:@selector(nativePage:
+                                           didLearnSafariIdentityForSite:)]) {
+        [observer nativePage:page didLearnSafariIdentityForSite:learned];
+      }
+    }
+  }
+  const bool requester_alive = requester && !requester->IsBeingDestroyed();
+  // A private session that ended meanwhile took its choices with it.
+  if (!key.second || requester_alive) {
+    NotifyNativeApplicationLearnedSafariIdentity(
+        learned, base::SysUTF8ToNSString(key.first), key.second);
+  }
+  // A newly learned site's workers restart, and every open page of the site
+  // in that context, the requester included, reloads with Safari's identity.
+  // A page waits while the browser quits or closes every window, in case it
+  // stays.
+  std::set<std::string> changed;
+  if (newly_learned) {
+    changed.insert(site);
+  }
+  ReconcileContext(key, changed, requester);
+}
+
+// fairplay-media's hook (content/browser/media/parc_fairplay_hooks.h), on the
+// UI thread, for every Widevine CDM a frame asks for. Returning true holds
+// the CDM, so no Widevine license request leaves; Netflix signs a user out
+// after a failed one. Never ends the document itself: learning and reloads
+// run after the hook returns.
+bool OnWidevineCdmRequest(content::RenderFrameHost* frame,
+                          const std::string& /*key_system*/) {
+  if (!frame || SafariUserAgentString().empty()) {
+    return false;
+  }
+  content::WebContents* contents =
+      content::WebContents::FromRenderFrameHost(frame);
+  if (!contents || contents->IsBeingDestroyed() ||
+      !FairPlayIdentityHelper::FromWebContents(contents)) {
+    return false;
+  }
+  content::RenderFrameHost* main_frame = frame->GetMainFrame();
+  if (main_frame != contents->GetPrimaryMainFrame()) {
+    return false;
+  }
+  fairplay_identity::WidevineRequestFrame facts;
+  facts.site = SiteForURL(main_frame->GetLastCommittedURL());
+  facts.follows_main_frame = SharesMainDocumentProcess(frame);
+  facts.page_safari = MainDocumentPresentsSafari(main_frame);
+  content::BrowserContext* context = contents->GetBrowserContext();
+  switch (fairplay_identity::DecideWidevineRequest(ListsForContext(context),
+                                                   facts)) {
+    case fairplay_identity::WidevineRequest::kAllow:
+      return false;
+    case fairplay_identity::WidevineRequest::kHold:
+      return true;
+    case fairplay_identity::WidevineRequest::kHoldAndLearn:
+      break;
+  }
+  // Learned now, so the reload that follows presents Safari's identity even
+  // before the shell records it; the shell's next lists include it.
+  const ContextKey key = KeyForContext(context);
+  const bool newly_learned = AllLists()[key].safari.insert(facts.site).second;
+  content::GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE, base::BindOnce(&FinishLearning, key, facts.site,
+                                newly_learned, contents->GetWeakPtr()));
+  return true;
 }
 
 }  // namespace
@@ -436,6 +641,8 @@ void InstallFairPlayIdentity() {
   }
   SafariUserAgentString() = fairplay_identity::SafariUserAgent(value);
   content::SetParcWorkerIdentityHook(&ApplyWorkerIdentity);
+  parc::fairplay::SetWidevineCdmRequestObserver(
+      base::BindRepeating(&OnWidevineCdmRequest));
 }
 
 void AttachFairPlayIdentity(content::WebContents& contents) {
@@ -465,6 +672,10 @@ void AttachFairPlayIdentity(content::WebContents& contents) {
       found->second.chrome == lists.chrome) {
     return;
   }
+  const parc::fairplay_identity::SiteLists before =
+      found != all.end() ? found->second
+                         : parc::fairplay_identity::SiteLists();
+  std::set<std::string> changed = parc::ChangedSites(before, lists);
   all[key] = std::move(lists);
   // No page exists before the engine is ready, and pages are closing while it
   // quits. Otherwise reload after the caller returns, so no navigation
@@ -473,7 +684,9 @@ void AttachFairPlayIdentity(content::WebContents& contents) {
     return;
   }
   content::GetUIThreadTaskRunner({})->PostTask(
-      FROM_HERE, base::BindOnce(&parc::ReconcileContext, key));
+      FROM_HERE,
+      base::BindOnce(&parc::ReconcileContext, key, std::move(changed),
+                     base::WeakPtr<content::WebContents>()));
 }
 @end
 
