@@ -8,7 +8,7 @@
  #include "content/public/browser/service_worker_context.h"
  #include "content/public/browser/service_worker_external_request_result.h"
  #include "content/public/common/content_client.h"
-@@ -246,7 +247,27 @@
+@@ -246,7 +247,28 @@
    return control;
  }
  
@@ -25,18 +25,19 @@
 +void ApplyParcWorkerIdentity(BrowserContext* browser_context,
 +                             const GURL& script_url,
 +                             const GURL& top_level_site,
++                             RenderFrameHost* creator_frame,
 +                             std::string* user_agent,
 +                             blink::UserAgentMetadata* metadata) {
 +  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 +  if (g_parc_worker_identity_hook && browser_context) {
 +    g_parc_worker_identity_hook(browser_context, script_url, top_level_site,
-+                                user_agent, metadata);
++                                creator_frame, user_agent, metadata);
 +  }
 +}
  
  constexpr base::TimeDelta ServiceWorkerVersion::kTimeoutTimerDelay;
  constexpr base::TimeDelta ServiceWorkerVersion::kStartNewWorkerTimeout;
-@@ -2794,6 +2815,12 @@
+@@ -2794,6 +2816,13 @@
    ContentBrowserClient* browser_client = GetContentClient()->browser();
    params->user_agent = browser_client->GetUserAgent();
    params->ua_metadata = browser_client->GetUserAgentMetadata();
@@ -44,7 +45,8 @@
 +  if (context() && context()->wrapper()) {
 +    ApplyParcWorkerIdentity(context()->wrapper()->browser_context(),
 +                            script_url_, key_.top_level_site().GetURL(),
-+                            &params->user_agent, &params->ua_metadata);
++                            /*creator_frame=*/nullptr, &params->user_agent,
++                            &params->ua_metadata);
 +  }
    params->is_installed = IsInstalled(status_);
    params->script_url_to_skip_throttling = updated_script_url_;
@@ -70,8 +72,8 @@
 +      GetContentClient()->browser()->GetUserAgentMetadata();
 +  ApplyParcWorkerIdentity(
 +      GetProcessHost()->GetBrowserContext(), instance_.url(),
-+      instance_.worker_storage_key().top_level_site().GetURL(), &user_agent,
-+      &ua_metadata);
++      instance_.worker_storage_key().top_level_site().GetURL(),
++      /*creator_frame=*/nullptr, &user_agent, &ua_metadata);
 +
    // Send the CreateSharedWorker message.
    factory_.Bind(std::move(factory));
@@ -88,3 +90,95 @@
        std::move(renderer_preferences), std::move(preference_watcher_receiver),
        std::move(content_settings), std::move(container_info),
        std::move(result.main_script_load_params),
+--- a/content/browser/service_worker/service_worker_loader_helpers.cc
++++ b/content/browser/service_worker/service_worker_loader_helpers.cc
+@@ -28,6 +28,7 @@
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
++#include "content/public/browser/parc_worker_identity.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_features.h"
+@@ -301,6 +302,24 @@
+       /*should_update_existing_headers=*/false, renderer_preferences,
+       /*is_for_worker_script=*/true);
+ 
++  // Parc: a Safari site's service worker requests its scripts, imports and
++  // update checks included, with Safari's user agent, as its own fetches are
++  // (parc_worker_identity.h). The worker is named by its origin: an import
++  // from another site follows the worker.
++  {
++    const std::string default_user_agent =
++        GetContentClient()->browser()->GetUserAgent();
++    std::string user_agent = default_user_agent;
++    blink::UserAgentMetadata metadata;
++    ApplyParcWorkerIdentity(&browser_context, storage_key.origin().GetURL(),
++                            storage_key.top_level_site().GetURL(),
++                            /*creator_frame=*/nullptr, &user_agent, &metadata);
++    if (user_agent != default_user_agent) {
++      request.headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
++                                user_agent);
++    }
++  }
++
+   // Set the accept header to '*/*'.
+   // https://fetch.spec.whatwg.org/#concept-fetch
+   request.headers.SetHeader(net::HttpRequestHeaders::kAccept,
+--- a/content/browser/worker_host/worker_script_fetcher.cc
++++ b/content/browser/worker_host/worker_script_fetcher.cc
+@@ -35,6 +35,7 @@
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/child_process_host.h"
+ #include "content/public/browser/content_browser_client.h"
++#include "content/public/browser/parc_worker_identity.h"
+ #include "content/public/browser/global_request_id.h"
+ #include "content/public/browser/network_service_instance.h"
+ #include "content/public/browser/shared_cors_origin_access_list.h"
+@@ -106,7 +107,9 @@
+ // TODO(nhiroki): Align this function with AddAdditionalRequestHeaders() in
+ // navigation_request.cc, FrameFetchContext, and WorkerFetchContext.
+ void AddAdditionalRequestHeaders(network::ResourceRequest* resource_request,
+-                                 BrowserContext* browser_context) {
++                                 BrowserContext* browser_context,
++                                 const GURL& top_level_site,
++                                 RenderFrameHost* creator_frame) {
+   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M160);
+ 
+   // TODO(nhiroki): Return early when the request is neither HTTP nor HTTPS
+@@ -125,6 +128,21 @@
+       &resource_request->headers, browser_context,
+       /*should_update_existing_headers=*/false, renderer_preferences,
+       /*is_for_worker_script=*/true);
++
++  // Parc: a worker script is requested with the user agent its worker will
++  // have (parc_worker_identity.h): a dedicated worker's is its creating
++  // document's, a shared worker's is its site's.
++  const std::string default_user_agent =
++      GetContentClient()->browser()->GetUserAgent();
++  std::string user_agent = default_user_agent;
++  blink::UserAgentMetadata metadata;
++  ApplyParcWorkerIdentity(browser_context, resource_request->url,
++                          top_level_site, creator_frame, &user_agent,
++                          &metadata);
++  if (user_agent != default_user_agent) {
++    resource_request->headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
++                                        user_agent);
++  }
+ }
+ 
+ void DidCreateScriptLoader(
+@@ -389,7 +407,12 @@
+       outside_fetch_client_settings_object->insecure_requests_policy ==
+       blink::mojom::InsecureRequestsPolicy::kUpgrade;
+ 
+-  AddAdditionalRequestHeaders(resource_request.get(), browser_context);
++  AddAdditionalRequestHeaders(
++      resource_request.get(), browser_context,
++      request_initiator_storage_key.top_level_site().GetURL(),
++      request_destination == network::mojom::RequestDestination::kWorker
++          ? &ancestor_render_frame_host
++          : nullptr);
+ 
+   // Notify that the request for fetching the main worker script is about to
+   // start to DevTools. It fires `Network.onRequestWillBeSent` event. For

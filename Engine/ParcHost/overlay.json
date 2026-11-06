@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 362,
+  "version": 363,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1565,7 +1565,7 @@
     {
       "source": "Engine/ParcNative/fairplay_identity.mm",
       "target": "cef/libcef/browser/parc_native/fairplay_identity.mm",
-      "sha256": "9606432a84222a61bb7aa135acb6098c8bcbe2d0a0fe26694b0edc1992e4c9be"
+      "sha256": "41b54b793d3738e7b71330442638e4d5c45f7c20b624223198ce741a4f87fc98"
     },
     {
       "source": "Engine/ParcRenderer/parc_safari_identity.h",
@@ -1575,7 +1575,7 @@
     {
       "source": "Engine/ParcHost/integration/parc_worker_identity.h",
       "target": "content/public/browser/parc_worker_identity.h",
-      "sha256": "4f093131e426cdf020271e76c3515eaeba801387716b8390479171ace70df5bd"
+      "sha256": "842b905595f1ef4ed78eeab6057b6042f953f2231985aa57d3d2c260b0d4ae73"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_adapter.h",
@@ -4189,17 +4189,27 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-workers.patch",
-      "sha256": "94c2f2e965c1d7d094ec60720a3cc678b64dec794c3c09d38bbd749c033b2886",
+      "sha256": "c61db94866f7a54763572e99633d9fad8dda8a4b8ffb71483fadbb9124246b0c",
       "files": [
         {
           "target": "content/browser/service_worker/service_worker_version.cc",
           "before_sha256": "641c53b12f75c057b2e58f733c269a035086542c0f0541218b017a2ff4bece45",
-          "after_sha256": "1aa736cafe36cea538e6b72b8099920d98c08791be0d582eabb048b3fe5b7b8c"
+          "after_sha256": "abf485e7c3e7e40f094f3e3a5e35c3c22f1a4c8e953b635fbf731a94bb702421"
         },
         {
           "target": "content/browser/worker_host/shared_worker_host.cc",
           "before_sha256": "85c95af160a0fdd426844f33daa2aca00047989d3999347970d2d75cf63fb4bf",
-          "after_sha256": "17d25f089b537379ae02fc8e7465be64864e1818ec45717f56072dabe38562cf"
+          "after_sha256": "e5c4af55ce1d654d378fdf4dcf970cc492f15577ce71a48deea46bf300e44864"
+        },
+        {
+          "target": "content/browser/service_worker/service_worker_loader_helpers.cc",
+          "before_sha256": "0943f05d95a96e59b095aaf631d5e4fd872e277030ee056cbac86d13f2543039",
+          "after_sha256": "b5996d91019ab03e62d14fb9653e8e807d2b0cc58e141ccc2838b0651272772f"
+        },
+        {
+          "target": "content/browser/worker_host/worker_script_fetcher.cc",
+          "before_sha256": "c9f93076f6c081df5e28eeff37a6ac16e195b779d49025e42317e041aef1573a",
+          "after_sha256": "43e468f10d709db54633451a8962aea78a5f3df94a855ee0dd071988f3ffc75b"
         }
       ]
     }

@@ -34,9 +34,14 @@ On a page that presents Safari's identity:
   answers unsupported. Apple TV+ probes PlayReady, Widevine and ClearKey
   before FairPlay, so it would pick Widevine and fail if it answered. FairPlay
   and ClearKey stay available (Safari has ClearKey too).
-- Service and shared workers of the site start with the same user agent, so
-  their `navigator.userAgent` and their fetches match. Dedicated workers
-  already take their document's user agent.
+- Service and shared workers of the site start with the same user agent
+  (not those partitioned under another site's page, where the site's frames
+  stay Chrome), so their `navigator.userAgent` and their fetches match, and
+  their scripts
+  (service worker scripts, imports and update checks, shared worker scripts)
+  are requested with it. A service worker's imports from another site follow
+  the worker. Dedicated workers take their document's user agent, and the
+  browser requests their scripts with that document's identity.
 
 ## Dolby audio
 
@@ -270,7 +275,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   (`WorkerOrWorkletScriptController::PrepareForEvaluation`), and the Widevine
   refusal in `requestMediaKeySystemAccess` and `decodingInfo`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
-  a hook that service and shared workers call as they start.
+  a hook that service and shared workers call as they start, and that worker
+  script requests consult for their `User-Agent` (a dedicated worker's with
+  its creating frame).
 - `native-host.patch` adds the new sources to `libcef_static`, and
   `native-host-route.patch` makes the renderer apply the override from each
   frame's local root.
@@ -300,9 +307,6 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - A shared worker that is already running when its site's identity changes
   keeps the old user agent until it ends. Service workers are stopped and
   restart with the new one.
-- A service worker's own script request carries Chrome's user agent. The
-  network service fills it in, and only the worker's script and fetches see
-  Safari's.
 - `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
   WebKit's engine policy (below). It is visible to a page that inspects it,
   for example through `Function.prototype.toString`. Workers and isolated

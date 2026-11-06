@@ -515,20 +515,29 @@ class FairPlayIdentityHelper final
 WEB_CONTENTS_USER_DATA_KEY_IMPL(FairPlayIdentityHelper);
 
 // A service or shared worker of a Safari site, outside any other site's
-// storage partition, starts with Safari's user agent and no client-hint
-// metadata, as its documents do.
+// storage partition, starts, and requests its scripts, with Safari's user
+// agent and no client-hint metadata, as its documents do. A dedicated
+// worker's script is requested with the identity of the document that
+// created it, which the worker takes over in the renderer.
 void ApplyWorkerIdentity(content::BrowserContext* context,
                          const GURL& script_url,
                          const GURL& top_level_site,
+                         content::RenderFrameHost* creator_frame,
                          std::string* user_agent,
                          blink::UserAgentMetadata* metadata) {
   if (SafariUserAgentString().empty()) {
     return;
   }
-  const std::string site = SiteForURL(script_url);
-  if (site.empty() || site != SiteForURL(top_level_site) ||
-      !fairplay_identity::PresentsSafari(ListsForContext(context), site)) {
-    return;
+  if (creator_frame) {
+    if (!FramePresentsSafari(creator_frame)) {
+      return;
+    }
+  } else {
+    const std::string site = SiteForURL(script_url);
+    if (site.empty() || site != SiteForURL(top_level_site) ||
+        !fairplay_identity::PresentsSafari(ListsForContext(context), site)) {
+      return;
+    }
   }
   *user_agent = SafariUserAgentString();
   *metadata = blink::UserAgentMetadata();

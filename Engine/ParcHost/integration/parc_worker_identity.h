@@ -4,7 +4,8 @@
 // WebContents user agent override, but service and shared workers start
 // outside any WebContents with the browser-wide user agent. This hook lets
 // the embedder give such a worker its site's identity, so its
-// navigator.userAgent and its fetches match the documents of that site.
+// navigator.userAgent and its fetches match the documents of that site, and
+// gives each worker script request the user agent of the worker it loads.
 // Installed at content/public/browser/parc_worker_identity.h.
 #ifndef CONTENT_PUBLIC_BROWSER_PARC_WORKER_IDENTITY_H_
 #define CONTENT_PUBLIC_BROWSER_PARC_WORKER_IDENTITY_H_
@@ -22,13 +23,18 @@ struct UserAgentMetadata;
 namespace content {
 
 class BrowserContext;
+class RenderFrameHost;
 
-// Called on the UI thread as a worker starts, with its script URL and the
-// top-level site of its storage partition, after content filled in the
-// browser-wide user agent and metadata. The hook may replace both.
+// Called on the UI thread as a worker starts or its script is requested,
+// with the URL that names the worker (its script, or for a service worker
+// its origin), the top-level site of its storage partition and, for a
+// dedicated worker, the frame of the document that created it (nullptr for
+// service and shared workers), after content filled in the browser-wide user
+// agent and metadata. The hook may replace both.
 using ParcWorkerIdentityHook = void (*)(BrowserContext* browser_context,
                                         const GURL& script_url,
                                         const GURL& top_level_site,
+                                        RenderFrameHost* creator_frame,
                                         std::string* user_agent,
                                         blink::UserAgentMetadata* metadata);
 
@@ -41,6 +47,7 @@ CONTENT_EXPORT void SetParcWorkerIdentityHook(ParcWorkerIdentityHook hook);
 void ApplyParcWorkerIdentity(BrowserContext* browser_context,
                              const GURL& script_url,
                              const GURL& top_level_site,
+                             RenderFrameHost* creator_frame,
                              std::string* user_agent,
                              blink::UserAgentMetadata* metadata);
 
