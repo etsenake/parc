@@ -134,11 +134,14 @@ std::vector<uint8_t> AscFromEsds(const uint8_t* p, size_t n) {
   };
   uint8_t tag = 0;
   size_t length = 0;
-  if (!read_descriptor(&tag, &length) || tag != 3) return {};
+  if (!read_descriptor(&tag, &length) || tag != 3 || pos + 3 > n) return {};
   pos += 2;  // ES_ID
   uint8_t flags = p[pos++];
   if (flags & 0x80) pos += 2;
-  if (flags & 0x40) pos += 1 + p[pos];
+  if (flags & 0x40) {
+    if (pos >= n) return {};
+    pos += 1 + p[pos];
+  }
   if (flags & 0x20) pos += 2;
   if (!read_descriptor(&tag, &length) || tag != 4) return {};
   pos += 13;
@@ -217,11 +220,12 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
         return true;
       }
       case FourCC('s', 't', 's', 'd'): {
-        if (n < 8) return false;
-        // First sample entry only.
+        if (n < 16) return false;
+        // First sample entry only: a VisualSampleEntry's fixed fields take 78
+        // bytes after the box header, an AudioSampleEntry's 28.
         const uint8_t* entry = p + 8;
         size_t entry_size = Be32(entry);
-        if (entry_size < 8 || entry_size > n - 8) return false;
+        if (entry_size < (track->is_video ? 8u + 78 : 8u + 28) || entry_size > n - 8) return false;
         track->sample_entry = Be32(entry + 4);
         track->original_format = track->sample_entry;
         track->sample_entry_box.assign(entry, entry + entry_size);
@@ -328,74 +332,93 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
         const uint8_t* p = b.payload;
         size_t n = b.payload_size;
         switch (b.type) {
+          // Every read below is bounds-checked against the box payload; a
+          // field running past it makes the segment malformed.
           case FourCC('t', 'f', 'h', 'd'): {
+            if (n < 8) return false;
             flags = Be32(p) & 0xffffff;
             size_t pos = 8;
-            if (flags & 0x1) { base = Be64(p + pos); pos += 8; }
+            auto field = [&](size_t width) { return pos + width <= n; };
+            if (flags & 0x1) { if (!field(8)) return false; base = Be64(p + pos); pos += 8; }
             if (flags & 0x2) pos += 4;
-            if (flags & 0x8) { default_duration = Be32(p + pos); pos += 4; }
-            if (flags & 0x10) { default_size = Be32(p + pos); pos += 4; }
-            if (flags & 0x20) { default_flags = Be32(p + pos); pos += 4; }
+            if (flags & 0x8) { if (!field(4)) return false; default_duration = Be32(p + pos); pos += 4; }
+            if (flags & 0x10) { if (!field(4)) return false; default_size = Be32(p + pos); pos += 4; }
+            if (flags & 0x20) { if (!field(4)) return false; default_flags = Be32(p + pos); pos += 4; }
             return pos <= n;
           }
           case FourCC('t', 'f', 'd', 't'):
+            if (n < 4 || n < (p[0] == 1 ? 12u : 8u)) return false;
             decode_time = p[0] == 1 ? Be64(p + 4) : Be32(p + 4);
             return true;
           case FourCC('t', 'r', 'u', 'n'): {
+            if (n < 8) return false;
             uint8_t version = p[0];
             uint32_t tf = Be32(p) & 0xffffff;
             uint32_t count = Be32(p + 4);
             size_t pos = 8;
+            auto field = [&]() { return pos + 4 <= n; };
             int32_t data_offset = 0;
-            if (tf & 0x1) { data_offset = int32_t(Be32(p + pos)); pos += 4; }
+            if (tf & 0x1) { if (!field()) return false; data_offset = int32_t(Be32(p + pos)); pos += 4; }
             uint32_t first_flags = 0;
             bool has_first = tf & 0x4;
-            if (has_first) { first_flags = Be32(p + pos); pos += 4; }
+            if (has_first) { if (!field()) return false; first_flags = Be32(p + pos); pos += 4; }
             uint64_t offset = base + int64_t(data_offset);
             for (uint32_t i = 0; i < count; ++i) {
               Entry e{offset, default_size, default_duration, default_flags, 0};
-              if (tf & 0x100) { e.duration = Be32(p + pos); pos += 4; }
-              if (tf & 0x200) { e.size = Be32(p + pos); pos += 4; }
-              if (tf & 0x400) { e.flags = Be32(p + pos); pos += 4; }
+              if (tf & 0x100) { if (!field()) return false; e.duration = Be32(p + pos); pos += 4; }
+              if (tf & 0x200) { if (!field()) return false; e.size = Be32(p + pos); pos += 4; }
+              if (tf & 0x400) { if (!field()) return false; e.flags = Be32(p + pos); pos += 4; }
               else if (i == 0 && has_first) e.flags = first_flags;
               if (tf & 0x800) {
+                if (!field()) return false;
                 e.cto = version ? int64_t(int32_t(Be32(p + pos))) : int64_t(Be32(p + pos));
                 pos += 4;
               }
-              if (pos > n) return false;
               offset += e.size;
               entries.push_back(e);
             }
             return true;
           }
           case FourCC('s', 'e', 'n', 'c'):
+            if (n < 8) return false;  // version/flags and sample_count
             senc_flags = Be32(p) & 0xffffff;
             senc.assign(p + 4, p + n);
             return true;
           case FourCC('s', 'a', 'i', 'z'): {
+            if (n < 4) return false;
             size_t pos = 4;
             if (Be32(p) & 1) pos += 8;
+            if (pos + 5 > n) return false;
             saiz_default = p[pos];
             saiz_count = Be32(p + pos + 1);
             pos += 5;
-            if (!saiz_default) saiz_sizes.assign(p + pos, p + std::min(n, pos + saiz_count));
+            if (!saiz_default) {
+              if (n - pos < saiz_count) return false;
+              saiz_sizes.assign(p + pos, p + pos + saiz_count);
+            }
             return true;
           }
           case FourCC('s', 'a', 'i', 'o'): {
+            if (n < 4) return false;
             uint8_t version = p[0];
             size_t pos = 4;
             if (Be32(p) & 1) pos += 8;
+            if (pos + 4 > n) return false;
             uint32_t count = Be32(p + pos);
             pos += 4;
+            const size_t width = version ? 8 : 4;
+            if ((n - pos) / width < count) return false;
             for (uint32_t i = 0; i < count; ++i) {
               saio_offsets.push_back(version ? Be64(p + pos) : Be32(p + pos));
-              pos += version ? 8 : 4;
+              pos += width;
             }
             return true;
           }
           case FourCC('s', 'b', 'g', 'p'): {
+            if (n < 8) return false;
             if (Be32(p + 4) != FourCC('s', 'e', 'i', 'g')) return true;
             size_t pos = 8 + (p[0] == 1 ? 4 : 0);
+            if (pos + 4 > n) return false;
             uint32_t count = Be32(p + pos);
             pos += 4;
             for (uint32_t i = 0; i < count && pos + 8 <= n; ++i, pos += 8) {
@@ -546,7 +569,9 @@ bool ParseProgressiveFile(const std::vector<uint8_t>& data,
     };
     switch (box.type) {
       case FourCC('s', 't', 's', 'z'): {
+        if (n < 12) return false;
         uint32_t fixed = Be32(p + 4), count = Be32(p + 8);
+        if (!fixed && (n - 12) / 4 < count) return false;
         for (uint32_t i = 0; i < count; ++i) sizes.push_back(fixed ? fixed : Be32(p + 12 + 4 * i));
         return true;
       }
@@ -647,6 +672,7 @@ bool AvcToAnnexB(const std::vector<uint8_t>& record,
     size_t pos = 6;
     uint32_t sps = record[5] & 0x1f;
     for (int list = 0; list < 2; ++list) {
+      if (list == 1 && pos >= record.size()) break;
       uint32_t count = list == 0 ? sps : record[pos++];
       for (uint32_t k = 0; k < count && pos + 2 <= record.size(); ++k) {
         uint32_t len = Be16(&record[pos]);
