@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 339,
+  "version": 340,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -390,7 +390,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_application.mm",
-      "sha256": "04d37807a6f8da503a0ab954e72d33b53526dfef916abf514aa79c9dcebde7ea"
+      "sha256": "5298b07e607743e50965a0530b5e8be9a26978934d3c362f1f44b3a4a9e4be36"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -405,17 +405,17 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "29d19915f6385bb33c402fa99f904bb3682d97e5115fd1818e77c09323ed8636"
+      "sha256": "aae756346a67ad9781d67b099c04f78ef75eb72c672395734f0549950d24a16e"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_page.h",
-      "sha256": "e1e46839b1621ed3a9ece43643c4f2ef2cc36c6ddf5a72a784876231b1452154"
+      "sha256": "618683d40d00e6c1ff1da9b66abc2c45834815c6820ecee88d74e82033e31123"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_page.mm",
-      "sha256": "a4f93d78c2a09e04a2f50ad8438be76964b98c3f4d9292090a327b9fabd19ca7"
+      "sha256": "645602921ce978adaea4c1bf3ebeae82d5a57922942c87a6e9559c6e42ce2639"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -1160,7 +1160,7 @@
     {
       "source": "Engine/ParcNative/native_link_routing.mm",
       "target": "cef/libcef/browser/parc_native/native_link_routing.mm",
-      "sha256": "75b5b709361e4019d4a0a699528b754a289d59de30071d8060eff7d47c6ff78e"
+      "sha256": "6a49aa50a167dd661e1db81edf0055e033360dea6095e07c090c7cf80401e856"
     },
     {
       "source": "Engine/ParcNative/native_history_swipe.h",

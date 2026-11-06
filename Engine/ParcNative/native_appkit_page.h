@@ -41,5 +41,11 @@ void SetNativePageClosedCallback(PCNativePage* page,
 // were captured from.
 std::unique_ptr<content::WebContents> CreateRestoredContents(
     NSObject* state, Profile& profile, bool initially_hidden);
+// True once for contents CreateRestoredContents made: they load only when a
+// native host has attached and laid them out at their real size, as Chrome's
+// AddRestoredTab resizes before LoadIfNecessary. Loaded at 0x0, a page's first
+// layout has width 0 and can stay wrong after the real size arrives.
+bool HasRestoredLoadPending(content::WebContents& contents);
+bool TakeRestoredLoadPending(content::WebContents& contents);
 }  // namespace parc
 #endif

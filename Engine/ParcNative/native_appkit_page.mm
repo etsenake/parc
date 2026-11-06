@@ -2436,11 +2436,27 @@ constexpr int kMaxArchivedNavigationSize =
 @end
 
 namespace parc {
+namespace {
+const char kRestoredLoadPendingKey = 0;
+}  // namespace
 std::unique_ptr<content::WebContents> CreateRestoredContents(
     NSObject* state, Profile& profile, bool initially_hidden) {
   if (![state isKindOfClass:[PCNativeNavigationState class]]) return nullptr;
-  return [static_cast<PCNativeNavigationState*>(state)
+  auto contents = [static_cast<PCNativeNavigationState*>(state)
       restoredContentsForProfile:&profile
                           hidden:initially_hidden];
+  if (contents) {
+    contents->SetUserData(&kRestoredLoadPendingKey,
+                          std::make_unique<base::SupportsUserData::Data>());
+  }
+  return contents;
+}
+bool HasRestoredLoadPending(content::WebContents& contents) {
+  return contents.GetUserData(&kRestoredLoadPendingKey) != nullptr;
+}
+bool TakeRestoredLoadPending(content::WebContents& contents) {
+  if (!contents.GetUserData(&kRestoredLoadPendingKey)) return false;
+  contents.RemoveUserData(&kRestoredLoadPendingKey);
+  return true;
 }
 }  // namespace parc

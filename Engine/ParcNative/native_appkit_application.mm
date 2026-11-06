@@ -2334,13 +2334,16 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           abandon(error ?: parc::Error(@"The restored page's owner changed."));
           return;
         }
-        auto restored = parc::CreateRestoredContents(navigation, *browser->GetProfile(), background);
+        // Created hidden like every other page: only the host's visibility
+        // pass, after sizing it, can make it VISIBLE and so start its load.
+        auto restored = parc::CreateRestoredContents(navigation, *browser->GetProfile(),
+                                                     /*initially_hidden=*/true);
         if (!restored) {
           abandon(parc::Error(@"The page's history belongs to another Profile."));
           return;
         }
         //
-        // and the restored current entry loads below.
+        // and the restored current entry loads once attached at its size.
         auto weak_browser = browser->GetWeakPtr();
         auto* contents = restored.get();
         auto* tabs = browser->GetTabStripModel();
@@ -2363,7 +2366,8 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           completion(nil, inserted_failure(@"The restored page has no native owner."));
           return;
         }
-        contents->GetController().LoadIfNecessary();
+        // It loads once attached and laid out at its size (AppKitBrowserHost
+        // Attach), as Chrome's AddRestoredTab sizes before LoadIfNecessary.
         auto* platform = static_cast<parc::NativeChromePlatformDelegate*>(cef->platform_delegate());
         PCNativePage* page = parc::GetOrCreateNativePage(*contents, *platform, path);
         if (![binding pageDidAttach:page container:destination]) {

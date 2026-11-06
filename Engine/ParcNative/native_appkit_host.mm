@@ -39,6 +39,7 @@
 #include "components/apps/link_capturing/intent_picker_info.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "content/public/browser/eye_dropper.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -1209,6 +1210,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // A page joins one of the window's persistent compositors before it
       // appears, so it replaces the previous page's last frame instead of a
       //
+      // A restored page not yet loaded is sized before the unhide below:
+      // Chromium starts its load on the first VISIBLE report.
+      if (shown && HasRestoredLoadPending(*contents)) {
+        SizeRestoredPage(*pane, page_host);
+        if (!attached_here()) {
+          return;
+        }
+      }
       if (shown) {
         const auto compositor = ShowInPaneCompositor(*contents, window,
                                                      PaneRole::kPage);
@@ -1244,6 +1253,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       }
       if (!shown) {
         HidePaneCompositor(*contents);
+      } else if (HasRestoredLoadPending(*contents)) {
+        LoadRestoredPageIfSized(*contents, *pane, page_host);
+        if (!attached_here()) {
+          return;
+        }
       }
       // A shown page in a covered window, on another Space or behind
       // sleeping displays is OCCLUDED, as in Chrome: it stops painting and
@@ -1477,6 +1491,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!valid()) {
       return false;
     }
+    // Entering the window, a restored page's first VISIBLE report starts its
+    // load (NavigationController::SetActive); give it its size first.
+    if (HasRestoredLoadPending(*contents_weak)) {
+      SizeRestoredPage(*pane, view);
+      if (!valid()) {
+        return false;
+      }
+    }
     [container addSubview:presentation];
     auto attached_here = [&] {
       return presentation.superview == container &&
@@ -1554,11 +1576,46 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                                   }
                                 }));
     pane->Refresh(true);
+    if (!valid() || !attached_here()) {
+      return false;
+    }
+    LoadRestoredPageIfSized(*contents_weak, *pane, view);
+    if (!valid() || !attached_here()) {
+      return false;
+    }
     // A page is created hidden. Whatever attached it (the shell's own adoption
     // included), a full pass follows and shows it if its pane is on screen.
     visibility_retries_ = 0;
     Synchronize();
     return valid() && attached_here();
+  }
+  // A restored page (CreateRestoredContents) starts loading only once its
+  // view has the size of the place it is attached to, as Chrome's
+  // AddRestoredTab resizes before LoadIfNecessary. Loaded at 0x0, the page's
+  // first layout has width 0, which a restored load from cache can finish
+  // with, and some pages stay blank until the next resize. Attached at no
+  // size yet (a parked pane), it loads at a later pass that shows it.
+  static void LoadRestoredPageIfSized(content::WebContents& contents,
+                                      NativeDevToolsPane& pane,
+                                      NSView* page_host) {
+    if (!HasRestoredLoadPending(contents)) {
+      return;
+    }
+    SizeRestoredPage(pane, page_host);
+    NSView* native = contents.GetNativeView().GetNativeNSView();
+    if (native.bounds.size.width < 1 || native.bounds.size.height < 1 ||
+        !TakeRestoredLoadPending(contents)) {
+      return;
+    }
+    contents.GetController().LoadIfNecessary();
+  }
+  // Frames the page host in its pane (NativeDevToolsPane::Layout) and lays
+  // out the host's constraints, which size the WebContents view, without
+  // waiting for AppKit to mark either view dirty.
+  static void SizeRestoredPage(NativeDevToolsPane& pane, NSView* page_host) {
+    pane.Layout();
+    page_host.needsLayout = YES;
+    [page_host layoutSubtreeIfNeeded];
   }
   void Detach(content::WebContents& contents) {
     auto found = pages_.find(&contents);

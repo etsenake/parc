@@ -1054,7 +1054,8 @@ void AbandonNativeCreatedPagePresentation(content::WebContents& contents) {
       !parc::AppKitBrowserAcceptsNewPages(*browser)) return NO;
   auto admission = std::make_unique<parc::CreatedPage>(*source, *frame, *browser);
   if (!parc::CanPresentSource(*admission)) return NO;
-  auto restored = parc::CreateRestoredContents(navigation, *browser->GetProfile(), false);
+  auto restored = parc::CreateRestoredContents(navigation, *browser->GetProfile(),
+                                               /*initially_hidden=*/true);
   if (!restored) return [self openPeekWithURL:url];
   // The restored page carries the same parent provenance a created Peek
   // gets, so the posted reconciliation offers it as this parent's Peek.
@@ -1063,8 +1064,8 @@ void AbandonNativeCreatedPagePresentation(content::WebContents& contents) {
   auto* created = restored.get();
   created->SetUserData(&parc::kCreatedPageKey, std::move(admission));
   auto* tabs = browser->GetTabStripModel();
+  // Loads once its Peek attaches it at its size (AppKitBrowserHost Attach).
   tabs->InsertWebContentsAt(tabs->count(), std::move(restored), AddTabTypes::ADD_ACTIVE);
-  created->GetController().LoadIfNecessary();
   return YES;
 }
 @end
