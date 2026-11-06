@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 342,
+  "version": 343,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1451,6 +1451,16 @@
       "source": "Engine/ParcNative/native_keychain_namespace.h",
       "target": "cef/libcef/browser/parc_native/native_keychain_namespace.h",
       "sha256": "aa07057df919517de3856f9979d9e791e067aa4e28911bfbbf96e865fb9d1d6d"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/protected_layer_registry.h",
+      "target": "ui/accelerated_widget_mac/protected_layer_registry.h",
+      "sha256": "38d8a44f4cbfe69518d201b9b41fb2a301f5b0cb8b4b6fe46ea2992837758290"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/protected_layer_registry.mm",
+      "target": "ui/accelerated_widget_mac/protected_layer_registry.mm",
+      "sha256": "3e2545e664294f36047167616e8df1e76f20829aace2ed8e49206d29738daa41"
     }
   ],
   "patches": [
@@ -3651,6 +3661,17 @@
           "target": "ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts",
           "before_sha256": "485e17e9973658521769277fa884592ab0055b6df125859ef78211a356a9c2d2",
           "after_sha256": "12b200790e53e705dd983f845058e0a561a2c47b8aad0f83e354408fb981249c"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
+      "sha256": "99f27c531aabc8cb109e07b38679dffdd9997b932f21e91e7b4ef8cf2b7965d6",
+      "files": [
+        {
+          "target": "ui/accelerated_widget_mac/BUILD.gn",
+          "before_sha256": "5c3e0c348092a2d6d86447ae8be4d18ce741502765401845607515d2fbd74472",
+          "after_sha256": "dc502ad7a6a239660195712b7e7c92c60bc908aae1eed37cdde6ff9136b0472c"
         }
       ]
     }

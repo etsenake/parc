@@ -1,0 +1,14 @@
+--- a/ui/accelerated_widget_mac/BUILD.gn
++++ b/ui/accelerated_widget_mac/BUILD.gn
+@@ -14,6 +14,11 @@
+     "ca_layer_tree_coordinator.mm",
+     "ca_renderer_layer_tree.h",
+     "ca_renderer_layer_tree.mm",
++
++    # Parc: FairPlay renderers' display layers, by token, for
++    # CARendererLayerTree to place.
++    "protected_layer_registry.h",
++    "protected_layer_registry.mm",
+   ]
+ 
+   defines = [
