@@ -249,14 +249,18 @@ bool LoadMedia(NSString* base, NSString* playlist_name, int count, Media* media,
 NSString* const kChromiumTestData =
     @"https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.48/media/test/data/";
 
-bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
-  NSString* path = [g_cache_dir stringByAppendingPathComponent:[@"chromium_" stringByAppendingString:name]];
+// A whole MP4 (fragmented or progressive) from |url|, cached as |cache_name|;
+// |base64| for Gitiles' ?format=TEXT.
+bool LoadMp4File(NSString* url, NSString* cache_name, bool base64, Media* media, std::string* error) {
+  NSString* name = cache_name;
+  NSString* path = [g_cache_dir stringByAppendingPathComponent:cache_name];
   NSData* data = [NSData dataWithContentsOfFile:path];
   if (!data) {
-    Http http = Fetch([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name], @"GET", nil, @{});
-    data = http.status == 200 ? [[NSData alloc] initWithBase64EncodedData:http.body
-                                                                  options:NSDataBase64DecodingIgnoreUnknownCharacters]
-                              : nil;
+    Http http = Fetch(url, @"GET", nil, @{});
+    data = http.status != 200 ? nil
+           : base64           ? [[NSData alloc] initWithBase64EncodedData:http.body
+                                                            options:NSDataBase64DecodingIgnoreUnknownCharacters]
+                              : http.body;
     if (!data) {
       *error = Format("GET %s -> %ld", name.UTF8String, http.status);
       return false;
@@ -273,6 +277,15 @@ bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
   media->segments.push_back(std::move(samples));
   return true;
 }
+
+bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
+  return LoadMp4File([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
+                     [@"chromium_" stringByAppendingString:name], true, media, error);
+}
+
+// DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator):
+// an independent 5.1 substream plus a dependent one with Lrs/Rrs.
+NSString* const kDdp71 = @"https://dash.akamaized.net/dash264/TestCasesMCA/dolby/2/1/ChID_voices_71_768_ddp_A.mp4";
 
 struct EncodeState {
   double phase_l = 0;
@@ -797,6 +810,8 @@ class Player : public fp::FairPlayRendererClient {
   }
 
   fp::FairPlayRenderer& renderer() { return renderer_; }
+  AVSampleBufferDisplayLayer* layer() const { return layer_; }
+  NSView* host() const { return host_; }
   const std::string& name() const { return name_; }
   bool has_video() const { return has_video_; }
   bool has_audio() const { return has_audio_; }
@@ -1333,6 +1348,7 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
 
 struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
+  Media eac3_71;  // First 5 s of kDdp71.
   Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
       he_aac_after_clear;
   NSView* host = nil;
@@ -1344,6 +1360,8 @@ struct World {
 
 World* g_world = nullptr;
 std::string g_only;
+// Set when the harness runs in a sandbox that denies Core Audio's services.
+bool g_audio_unavailable = false;
 
 Step Section(const std::string& title) {
   return [title](Done done) {
@@ -1520,6 +1538,104 @@ std::string DefaultOutputDeviceUid() {
   std::string result = ((__bridge NSString*)uid).UTF8String;
   CFRelease(uid);
   return result;
+}
+
+// A page that loses its compositor has its display layer taken out of every
+// layer tree, then put back. Playback must carry on without a seek; if the
+// layer reports requiresFlushToResumeDecoding, the renderer re-feeds it from
+// the last keyframe itself.
+std::vector<Step> LayerDetachScenario() {
+  World* w = g_world;
+  auto before = std::make_shared<fp::RendererStatus>();
+  auto frames = std::make_shared<int64_t>(0);
+  std::vector<Step> steps;
+  steps.push_back(Section("layer detach: the display layer leaves its tree mid-playback for 3 s, then returns"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("layer-detach", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, &w->video, &w->audio, 0, 6, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "layer-detach before detaching")(done); });
+  steps.push_back([=](Done done) { Metrics(w->player, "layer-detach before detaching", 40, frames)(done); });
+  steps.push_back([=](Done done) {
+    *before = w->player->renderer().GetStatus();
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [w->player->layer() removeFromSuperlayer];
+    [CATransaction commit];
+    Log("layer-detach: display layer removed from its tree");
+    Run(w->player, 3, 1, "layer-detach while detached")(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Log("layer-detach: while detached requires-flush=%d resets=%llu re-delivered=%llu", s.video_requires_flush,
+        (unsigned long long)(s.video_decoder_resets - before->video_decoder_resets),
+        (unsigned long long)(s.redelivered - before->redelivered));
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    w->player->layer().frame = w->player->host().layer.bounds;
+    [w->player->host().layer addSublayer:w->player->layer()];
+    [CATransaction commit];
+    Log("layer-detach: display layer back in its tree");
+    Run(w->player, 3, 1, "layer-detach after reattaching")(done);
+  });
+  steps.push_back([=](Done done) { Metrics(w->player, "layer-detach after reattaching", 120, frames)(done); });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Log("layer-detach: in all requires-flush=%d resets=%llu re-delivered=%llu", s.video_requires_flush,
+        (unsigned long long)(s.video_decoder_resets - before->video_decoder_resets),
+        (unsigned long long)(s.redelivered - before->redelivered));
+    Check(!s.video_requires_flush, "layer-detach: the video renderer doesn't still need a flush");
+    Check(w->player->underflows == 0, "layer-detach: no HAVE_NOTHING across detach and reattach",
+          Format("%d", w->player->underflows));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// Run inside a sandbox that denies Core Audio's services: the audio
+// renderer is invalid and the synchronizer refuses it, which must fail
+// Initialize with an error instead of throwing out of it.
+std::vector<Step> AudioUnavailableScenario() {
+  World* w = g_world;
+  std::vector<Step> steps;
+  steps.push_back(Section("Core Audio unavailable (sandboxed): Initialize fails instead of throwing"));
+  steps.push_back([=](Done done) {
+    struct NullClient : fp::FairPlayRendererClient {
+      void OnNeedData(fp::StreamType) override {}
+      void OnWaitingForKey() override {}
+      void OnEnded() override {}
+      void OnError(fp::RendererError, const std::string&) override {}
+      void OnVideoNaturalSizeChange(int32_t, int32_t) override {}
+      void OnBufferingStateChange(bool) override {}
+    } client;
+    const fp::VideoConfig vc = VideoConfigFor(w->video.info, Framing::kChromium, true);
+    const fp::AudioConfig ac = AudioConfigFor(w->audio.info, Framing::kChromium, true);
+    struct Case {
+      bool video, audio;
+      const char* label;
+    };
+    for (Case c : {Case{false, true, "audio only"}, Case{true, true, "video and audio"}, Case{true, false, "video only"}}) {
+      fp::FairPlayRenderer renderer(&client, [](std::function<void()>) {});
+      fp::Result result = renderer.Initialize(c.video ? std::optional<fp::VideoConfig>(vc) : std::nullopt,
+                                              c.audio ? std::optional<fp::AudioConfig>(ac) : std::nullopt);
+      if (c.audio) {
+        Check(!result.ok() && result.message.find("audio renderer") != std::string::npos,
+              std::string("audio unavailable: Initialize with ") + c.label + " returns an error",
+              result.ok() ? "succeeded" : result.message);
+        fp::Result again = renderer.Initialize(std::nullopt, ac);
+        Check(!again.ok() && again.exception != fp::Exception::kInvalidState,
+              std::string("audio unavailable: after the failure (") + c.label + ") the renderer is still uninitialized",
+              again.message);
+      } else {
+        Check(result.ok(), std::string("audio unavailable: Initialize with ") + c.label + " still succeeds",
+              result.message);
+      }
+    }
+    done();
+  });
+  return steps;
 }
 
 // Moving audio to another output (setSinkId) makes AVSampleBufferAudioRenderer
@@ -3059,7 +3175,7 @@ void BuilderSelfTests() {
   // dependent, chan_loc Lrs/Rrs, 320 kb/s.
   std::vector<uint8_t> seven_one = join({frame(0, 0, 3, 7, 1, -1, 768), frame(1, 0, 3, 2, 0, 0x0200, 512)});
   auto dependent = fp::Eac3SpecificBoxPayload(seven_one.data(), seven_one.size());
-  const std::vector<uint8_t> dependent_expected = {0x0a, 0x00, 0x20, 0x0f, 0x02, 0x80};
+  const std::vector<uint8_t> dependent_expected = {0x0a, 0x00, 0x20, 0x0f, 0x02, 0x02};
   Check(dependent && *dependent == dependent_expected,
         "builders: dec3 counts dependent substreams and writes their chan_loc",
         dependent ? ft::Hex(*dependent) : "none");
@@ -3122,8 +3238,15 @@ void BuilderSelfTests() {
       layout += Format("%s%u:%03x", layout.empty() ? "" : " ", dependents, chan_loc);
     }
   }
-  Check(layout == "1:080 1:040", "builders: dec3 credits each dependent substream to its own program",
+  Check(layout == "1:002 1:004", "builders: dec3 credits each dependent substream to its own program",
         two ? ft::Hex(*two) + " -> " + layout : "none");
+  // A real 7.1 stream from Dolby's muxer: the box built from its first
+  // syncframes must equal the file's, chan_loc included.
+  const std::vector<uint8_t>& au71 = w->eac3_71.segments[0][0].data;
+  auto built71 = fp::Eac3SpecificBoxPayload(au71.data(), au71.size());
+  Check(built71 && *built71 == w->eac3_71.info.codec_config,
+        "builders: dec3 from a 7.1 Dolby Digital Plus access unit equals the file's (Lrs/Rrs in chan_loc)",
+        "file " + ft::Hex(w->eac3_71.info.codec_config) + (built71 ? ", built " + ft::Hex(*built71) : ", none"));
   // Parameter set IDs: the files' own sets declare 0; synthetic PPS with ID 1.
   std::string ids;
   auto add_ids = [&](bool hevc, const std::vector<uint8_t>& record) {
@@ -3178,6 +3301,10 @@ void BuilderSelfTests() {
   // Chromium's whole-sample-encrypted AC-3/E-AC-3: no dac3/dec3 in the config
   // and no clear syncframe, so the renderer builds the box from rate and
   // channels and the protected format comes out as Apple's.
+  if (g_audio_unavailable) {
+    Log("builders: renderer audio checks skipped (Core Audio is denied in this run)");
+    return;
+  }
   struct Fallback {
     const Media* media;
     const char* type;
@@ -3548,6 +3675,8 @@ void RunAll() {
   add("QualitySwitchScenario()", QualitySwitchScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
+  add("LayerDetachScenario()", LayerDetachScenario());
+  if (g_audio_unavailable) add("AudioUnavailableScenario()", AudioUnavailableScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
   add("SeekOrderScenario()", SeekOrderScenario());
   add("ShortEndScenario()", ShortEndScenario());
@@ -3592,6 +3721,8 @@ void RunAll() {
   add("CodecScenario(HE-AACv2 (mp4a.40.29), nullptr, &w->he_aac_v2, qaac,qacp)", CodecScenario("HE-AACv2 (mp4a.40.29)", nullptr, &w->he_aac_v2, "qaac,qacp"));
   add("CodecScenario(AC-3)", CodecScenario("AC-3 (ac-3)", nullptr, &w->ac3, "qac3"));
   add("CodecScenario(E-AC-3)", CodecScenario("E-AC-3 (ec-3)", nullptr, &w->eac3, "qec3"));
+  add("CodecScenario(E-AC-3 7.1)", CodecScenario("E-AC-3 7.1 (DASH-IF channel ID, dec3 built from syncframes)",
+                                                 nullptr, &w->eac3_71, "qec3"));
   add("CodecScenario(AV1 10-bit)", CodecScenario("AV1 10-bit (av01)", &w->av1_10bit, nullptr, "qav1"));
   add("CodecScenario(hev1 VPS once)",
       CodecScenario("hev1 with the VPS on the first keyframe only", &w->hev1_vps_once, nullptr, ""));
@@ -3648,6 +3779,7 @@ int main(int argc, char** argv) {
       else if (flag == "--segments") world.segments = std::max(10, atoi(argv[i + 1]));
       else if (flag == "--only") g_only = argv[i + 1];
       else if (flag == "--time-limit") g_time_limit = atof(argv[i + 1]);
+      else if (flag == "--audio-unavailable") g_audio_unavailable = atoi(argv[i + 1]) != 0;
     }
     [[NSFileManager defaultManager] createDirectoryAtPath:g_cache_dir withIntermediateDirectories:YES
                                                attributes:nil error:nil];
@@ -3691,12 +3823,20 @@ int main(int argc, char** argv) {
                 LoadChromiumFile(@"bear-av1-320x180-10bit.mp4", &world.av1_10bit, &error) &&
                 LoadChromiumFile(@"bear-ac3-only-frag.mp4", &world.ac3, &error) &&
                 LoadChromiumFile(@"bear-eac3-only-frag.mp4", &world.eac3, &error) &&
+                LoadMp4File(kDdp71, @"dashif_ChID_voices_71_768_ddp_A.mp4", false, &world.eac3_71, &error) &&
                 LoadMedia(kProtectedBase, @"video-H264-288-400k.m3u8", 3, &world.video_288, &error);
       dispatch_async(dispatch_get_main_queue(), ^{
         if (!Check(ok, "download and parse the Axinom vector", error)) Finish();
         g_certificate = Bytes(certificate);
         if (ok) {
           world.hev1_in_band = InBandParameterSetsOnly(world.hev1);
+          {
+            std::vector<ft::Sample>& samples = world.eac3_71.segments[0];
+            const int64_t limit = int64_t(world.eac3_71.info.timescale) * 5;
+            samples.erase(std::remove_if(samples.begin(), samples.end(),
+                                         [limit](const ft::Sample& sample) { return sample.pts >= limit; }),
+                          samples.end());
+          }
           world.hev1_vps_once = VpsOnFirstKeyframeOnly(world.hev1_in_band);
           // HE-AAC continuing the clear AAC-LC segment, for an audio Reconfigure.
           world.he_aac_after_clear = world.he_aac;

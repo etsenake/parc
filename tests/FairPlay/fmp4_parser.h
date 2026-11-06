@@ -77,7 +77,8 @@ bool ParseProgressiveFile(const std::vector<uint8_t>& data,
 // Chromium's DecoderBuffer form of |sample|: H.264/HEVC converted to Annex B
 // with parameter sets inserted before keyframes (AVC::ConvertFrameToAnnexB,
 // InsertParamSetsAnnexB), AAC prefixed with ADTS (PrepareAACBuffer), times in
-// microseconds, the constant IV copied in and every IV padded to 16 bytes
+// microseconds with no decode timestamp (mojom::DecoderBuffer has none), the
+// constant IV copied in and every IV padded to 16 bytes
 // (TrackRunIterator::GetDecryptConfig), subsamples adjusted to match.
 EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
                              std::vector<uint8_t>* storage, DecryptInfo* decrypt_storage);

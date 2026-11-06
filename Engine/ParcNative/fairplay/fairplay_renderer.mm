@@ -366,7 +366,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       } else {
         video_renderer_ = layer_;
       }
-      [synchronizer_ addRenderer:video_renderer_];
+      if (Result result = AddToSynchronizer(video_renderer_, "video"); !result.ok()) {
+        return result;
+      }
       Observe(video_renderer_, @"status");
       Observe(video_renderer_, @"error");
       AddNotification(center,
@@ -383,7 +385,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     if (audio) {
       audio_ = [[AVSampleBufferAudioRenderer alloc] init];
-      [synchronizer_ addRenderer:audio_];
+      if (Result result = AddToSynchronizer(audio_, "audio"); !result.ok()) {
+        return result;
+      }
       Observe(audio_, @"status");
       Observe(audio_, @"error");
       // The flush time belongs to the timeline of the moment AVFoundation
@@ -414,6 +418,34 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
     }
     return Result::Ok();
+  }
+
+  // -addRenderer: throws for a renderer AVFoundation couldn't set up (an
+  // AVSampleBufferAudioRenderer is invalid when Core Audio's services are out
+  // of reach, as in a sandbox that denies them). Initialize then fails and
+  // leaves the renderer uninitialized instead of taking the process down.
+  Result AddToSynchronizer(id<AVQueuedSampleBufferRendering> renderer, const char* kind) {
+    NSString* reason = nil;
+    @try {
+      [synchronizer_ addRenderer:renderer];
+    } @catch (NSException* exception) {
+      reason = exception.reason ?: exception.name;
+    }
+    if (!reason) {
+      return Result::Ok();
+    }
+    std::string message = std::string("the synchronizer refused the ") + kind + " renderer: " + reason.UTF8String;
+    // Renderers go first, so Shutdown sends nothing more to an invalid one;
+    // it still removes what was observed through its own records.
+    layer_ = nil;
+    video_renderer_ = nil;
+    audio_ = nil;
+    Shutdown();
+    synchronizer_ = nil;
+    if (CMTimebaseRef timebase = timebase_.exchange(nullptr)) {
+      CFRelease(timebase);
+    }
+    return Result::Error(Exception::kNotSupported, message);
   }
 
   // The renderers join the key system's AVContentKeySession as content key
@@ -1350,8 +1382,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       CFRelease(block);
       return false;
     }
+    // Chromium's DecoderBuffer has no decode timestamp. Copying the PTS would
+    // make it run backwards across reordered frames, so it stays invalid and
+    // AVFoundation decodes in enqueue order.
     CMSampleTimingInfo timing = {ToCMTime(sample.duration), ToCMTime(sample.pts),
-                                 sample.dts.IsValid() ? ToCMTime(sample.dts) : ToCMTime(sample.pts)};
+                                 sample.dts.IsValid() ? ToCMTime(sample.dts) : kCMTimeInvalid};
     if (!sample.duration.IsValid()) {
       timing.duration = kCMTimeInvalid;
     }

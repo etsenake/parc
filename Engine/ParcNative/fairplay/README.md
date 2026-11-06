@@ -154,6 +154,11 @@ as they are:
   config's sample rate and channel count (6.1 and 7.1 as their 5.1 core), with
   the bit rate written as 0 (CoreMedia decodes such boxes; checked with clear
   AC-3 and E-AC-3).
+- Buffers carry no decode timestamp (`mojom::DecoderBuffer` has none). The
+  sample's decode time stays `kCMTimeInvalid` and AVFoundation decodes in
+  enqueue order; on the reordered Axinom H.264 vector this plays exactly as
+  with real decode times (and as with the PTS copied in, which the layer also
+  tolerates).
 - Encryption is the scheme alone. Protected formats are built per key ID (and
   pattern) from each sample's `DecryptConfig`, with 16-byte per-sample IVs
   (Chromium copies a constant IV into every sample).
@@ -265,6 +270,14 @@ so this forces the following on the Chromium integration.
   `DoNotDisplay`. No public trigger exists on macOS, so this path is untested.
 - `RendererStatus` counts both (`audio_automatic_flushes`,
   `video_decoder_resets`, `redelivered`).
+- Taking the display layer out of its tree for 3 s and putting it back (a
+  page losing its compositor) doesn't interrupt decoding or set
+  `requiresFlushToResumeDecoding` on this macOS: playback continues, no
+  underflow, no corrupted frames.
+- When the synchronizer refuses a renderer (an `AVSampleBufferAudioRenderer`
+  is invalid when Core Audio's services are out of reach, and
+  `-addRenderer:` throws), `Initialize` returns an error and the renderer
+  stays uninitialized instead of throwing out of the call.
 - Layer creation is committed in an explicit `CATransaction`, since the owner
   sequence may have no run loop.
 

@@ -728,9 +728,16 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
         dependent_ids.push_back(dependent);
         ++independent[current].dependents;
       }
-      // chanmap bit 0 (MSB) is L; dec3's chan_loc lists bits 5-12 (Lc/Rc
-      // through Cvh) then bit 14 (LFE2), MSB first.
-      independent[current].chan_loc |= (((chanmap >> 3) & 0xff) << 1) | ((chanmap >> 1) & 1);
+      // chanmap numbers its locations from the MSB (bit 0 = L); dec3's
+      // chan_loc numbers them from the LSB: bit k is chanmap location 5 + k
+      // (Lc/Rc, Lrs/Rrs, Cs, Ts, Lsd/Rsd, Lw/Rw, Lvh/Rvh, Cvh) and bit 8 is
+      // location 14 (LFE2). Dolby's muxer writes Lrs/Rrs as 0x002 (checked
+      // against DASH-IF's 7.1 channel-ID stream).
+      int chan_loc = (chanmap >> 1) & 1 ? 0x100 : 0;
+      for (int k = 0; k < 8; ++k) {
+        chan_loc |= ((chanmap >> (10 - k)) & 1) << k;
+      }
+      independent[current].chan_loc |= chan_loc;
     }
     pos += frame_bytes;
   }

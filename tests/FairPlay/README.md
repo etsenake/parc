@@ -259,3 +259,17 @@ probed through its runtime interface)
   missed `OnEnded` (one stopped getting need-data). The same clips pass when
   run alone with the window in front. The harness now holds an
   `NSActivityUserInitiated | NSActivityLatencyCritical` activity for its run.
+- `-[AVSampleBufferRenderSynchronizer addRenderer:]` throws
+  `NSInvalidArgumentException` ("invalid renderer") for an
+  `AVSampleBufferAudioRenderer` created while `com.apple.audio.audiohald`,
+  `com.apple.audio.AudioSession` and `com.apple.coremedia.routingcontext.xpc`
+  are denied (`sandbox-exec`); the proof script runs that case.
+- `AVSampleBufferDisplayLayer` plays reordered H.264 the same with real decode
+  times, with `kCMTimeInvalid`, or with the PTS copied in (decode times
+  running backwards): 0 dropped and 0 corrupted frames each way.
+- Removing the display layer from its tree for 3 s mid-playback neither stops
+  decoding nor sets `requiresFlushToResumeDecoding`.
+- DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator)
+  carries `dec3` `chan_loc` = 0x002 for Lrs/Rrs: bit 0 is the LSB. CoreMedia's
+  format description reads that box (and the 5.1-only one) as 6 channels, and
+  the stream decodes to the end.

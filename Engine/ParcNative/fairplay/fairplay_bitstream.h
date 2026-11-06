@@ -109,8 +109,8 @@ std::optional<std::vector<uint8_t>> Ac3SpecificBoxPayload(const uint8_t* data, s
 // 'dec3' payload from the E-AC-3 syncframes of one access unit, reading only
 // headers in clear bytes as above. Syncframes are grouped by stream type and
 // substream ID: one entry per independent substream with its dependent
-// substreams' count and chan_loc (the chanmap bits 5-12 and 14 that dec3
-// defines); data_rate sums each substream's rate. bsmod and asvc are written
+// substreams' count and chan_loc (chanmap locations 5-12 and 14, LSB first,
+// as Dolby's muxer writes them); data_rate sums each substream's rate. bsmod and asvc are written
 // as 0, and no Atmos extension is written.
 std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, size_t size,
                                                            const std::vector<SubsampleEntry>* subsamples = nullptr);

@@ -817,7 +817,9 @@ EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
   out.data = storage->data();
   out.size = storage->size();
   out.pts = micros(sample.pts);
-  out.dts = micros(sample.dts);
+  // A DecoderBuffer reaching the GPU process carries only its timestamp (the
+  // PTS): mojom::DecoderBuffer has no decode timestamp.
+  out.dts = MediaTime::Invalid();
   out.duration = micros(sample.duration);
   out.is_keyframe = sample.is_keyframe;
   if (sample.decrypt) {

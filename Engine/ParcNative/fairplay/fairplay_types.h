@@ -70,7 +70,9 @@ struct EncodedSample {
   const uint8_t* data = nullptr;
   size_t size = 0;
   MediaTime pts;
-  MediaTime dts;  // Invalid means same as pts.
+  // Invalid when unknown, as from Chromium's DecoderBuffer (it carries no
+  // decode timestamp): AVFoundation then decodes in enqueue order.
+  MediaTime dts;
   MediaTime duration;
   bool is_keyframe = false;
   std::optional<DecryptInfo> decrypt;  // nullopt for clear samples.
