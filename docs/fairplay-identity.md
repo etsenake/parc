@@ -92,6 +92,52 @@ reloading:
   evicted and loaded again; Chromium does that when the requested identity
   differs.
 
+## ManagedMediaSource
+
+Apple TV+ plays titles through Safari's `ManagedMediaSource`, which Chromium
+doesn't have. Whether its player falls back to plain `MediaSource` wasn't
+tested. So the main world of every Safari-identity document gets a
+`ManagedMediaSource` before any of the page's scripts run. The script is
+`Engine/ParcRenderer/parc_managed_media_source.h`, run from
+`LocalWindowProxy::Initialize` next to the `userAgentData` removal.
+
+- `ManagedMediaSource` extends Chromium's `MediaSource`, so appends, MSE
+  parsing and FairPlay decryption are Chromium's. It adds `streaming`,
+  `startstreaming`/`endstreaming` with `onstartstreaming`/`onendstreaming`,
+  and a static `isTypeSupported` that answers like `MediaSource`'s.
+- Its SourceBuffers are `ManagedSourceBuffer`s that fire `bufferedchange`, a
+  `BufferedChangeEvent` with `addedRanges` and `removedRanges` as
+  `TimeRanges`, queued as a task after every append or removal that changes
+  the buffered ranges, including eviction during an append. Changes made
+  without one (end of stream, garbage collection under memory pressure) are
+  reported by the once-a-second check, up to a second late.
+- `streaming` follows WebKit's thresholds while the source is open or ended:
+  it turns true (`startstreaming`) while less than 10 s ahead of the playback
+  position is buffered, and false (`endstreaming`) once 30 s are or
+  everything to the end is. A seek back after `endOfStream()` starts it
+  again. It's checked on the media element's playback events, after each
+  append and once a second while the source is open; that check holds the
+  source weakly, so a torn-down player can still be collected. Without a
+  known media element the source may start streaming but never stops, so a
+  player that obeys it can't stall.
+- It can be attached through `src` or `setAttribute('src')` with an object
+  URL, through a `<source>` child, or through `srcObject`, as Safari allows
+  (`setAttribute` is followed on media and `<source>` elements only).
+  Chromium's `srcObject` takes only MediaStreams, so a managed source assigned
+  there plays through an object URL. While it does, `srcObject` returns the
+  source, `src` and `currentSrc` are empty as in Safari, `load()` attaches it
+  again, and clearing `srcObject` restores any `src` set before.
+- `ManagedMediaSource.canConstructInDedicatedWorker` is `false`, since workers
+  don't get the script. Its errors aren't muted, and a document that can't
+  run scripts doesn't get it.
+- A popup's initial empty document can hand its window and script context to
+  the same-origin page it loads. That page loses `userAgentData` in every
+  world when it takes the window over, but it doesn't get `ManagedMediaSource`:
+  the window's globals may hold the opener's getters, and no script may run in
+  the middle of a commit.
+- `scripts/test-fairplay-identity.sh` runs the exact script against a model of
+  the media APIs (`tests/FairPlayIdentity/managed_media_source.mjs`).
+
 ## How Parc learns a site
 
 Asking for Widevine while in Chrome's identity is the signal. fairplay-media's
@@ -178,7 +224,10 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - A service worker's own script request carries Chrome's user agent. The
   network service fills it in, and only the worker's script and fetches see
   Safari's.
-- Chromium has no `ManagedMediaSource`, which Apple TV+ constructs.
+- `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
+  WebKit's engine policy (below). It is visible to a page that inspects it,
+  for example through `Function.prototype.toString`. Workers and isolated
+  worlds don't get it.
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used

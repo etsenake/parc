@@ -13,3 +13,10 @@ xcrun swiftc -parse-as-library -warnings-as-errors \
   "$repo_root/Sources/ParcCore/FairPlayIdentity.swift" \
   "$repo_root/tests/FairPlayIdentitySitesTests.swift" -o "$output/sites"
 "$output/sites"
+# The ManagedMediaSource script Safari-identity pages get, against a model of
+# Chromium's media APIs.
+if command -v node >/dev/null 2>&1; then
+  node "$repo_root/tests/FairPlayIdentity/managed_media_source.mjs"
+else
+  echo "managed media source: skipped (node not installed)"
+fi
