@@ -23,6 +23,12 @@ struct PaneRect {
   double height = 0;
 };
 
+// Points.
+struct PaneSize {
+  double width = 0;
+  double height = 0;
+};
+
 // What a compositor displays: a page, or a docked DevTools frontend beside
 // one. A held frame is only ever shown again in the same role.
 enum class PaneRole { kPage, kDevTools };
@@ -37,13 +43,17 @@ struct PaneCompositorSlot {
   bool marked = false;
   // The role of the page it last displayed.
   PaneRole role = PaneRole::kPage;
-  // Where it was last on screen.
+  // Where its display view was last on screen. Ranks candidates only: a
+  // page's place can be stale when it is taken, as its view may be parked
+  // or not yet laid out, so no place is ever trusted to decide the frame.
   std::optional<PaneRect> rect;
+  // The size its frame is drawn at: its root layer's bounds, in points.
+  std::optional<PaneSize> size;
   // Larger is more recent: the last time its page was attached or hidden.
   uint64_t last_used = 0;
 };
 
-// The share of each place the other must cover for a held frame to be shown
+// The share of each size the other must cover for a held frame to be shown
 // in the new one: the same pane, give or take a few points of chrome.
 inline constexpr double kHeldFrameOverlap = 0.9;
 
@@ -55,25 +65,31 @@ inline double PaneOverlapArea(const PaneRect& a, const PaneRect& b) {
   return width > 0 && height > 0 ? width * height : 0;
 }
 
-// Whether a page in `role` at `request` may show the frame `slot` holds until
-// its own arrives: the same role, and the two places cover at least
-// kHeldFrameOverlap of each other. Otherwise the frame is another pane's (the
-// other side of a split, a Peek card, the half a docked DevTools left) and is
-// cleared first.
+// Whether a page in `role` of `request` size may show the frame `slot` holds
+// until its own arrives: the same role, and the held frame's size and the
+// page's covering at least kHeldFrameOverlap of each other, so a top bar
+// coming or going still counts. A frame of another size is another pane's
+// (the other side of a split, a Peek card, the half a docked DevTools left)
+// and is cleared first. Sizes decide, not places: the frame is drawn at the
+// size the compositor's layer has now, while the places recorded for a page
+// leaving the screen and one about to be shown can differ for the same pane
+// (the shell parks pages, and lays the incoming one out after the hand-off),
+// and clearing on that difference emptied the pane on ordinary tab switches.
 inline bool PaneHeldFrameFits(const PaneCompositorSlot& slot,
                               PaneRole role,
-                              const std::optional<PaneRect>& request) {
-  if (slot.role != role || !slot.rect || !request) {
+                              const std::optional<PaneSize>& request) {
+  if (slot.role != role || !slot.size || !request) {
     return false;
   }
-  const double held = slot.rect->width * slot.rect->height;
+  const double held = slot.size->width * slot.size->height;
   const double wanted = request->width * request->height;
   if (held <= 0 || wanted <= 0) {
     return false;
   }
-  const double overlap = PaneOverlapArea(*slot.rect, *request);
-  return overlap >= kHeldFrameOverlap * held &&
-         overlap >= kHeldFrameOverlap * wanted;
+  const double shared = std::min(slot.size->width, request->width) *
+                        std::min(slot.size->height, request->height);
+  return shared >= kHeldFrameOverlap * held &&
+         shared >= kHeldFrameOverlap * wanted;
 }
 
 struct PaneCompositorChoice {
@@ -82,16 +98,18 @@ struct PaneCompositorChoice {
   bool keeps_frame = false;
 };
 
-// The compositor a page about to be shown in `role` at `request` takes, or
-// nullopt to create one. Any compositor off screen qualifies; reusing one
-// spares building a compositor and its GPU surface. Prefers one whose held
-// frame fits the page (the same pane's last frame), the largest overlap
-// among those, then a free one over one holding a hidden page, then the most
-// recently used.
+// The compositor a page about to be shown in `role`, of `request_size` and
+// at `request` when known, takes, or nullopt to create one. Any compositor
+// off screen qualifies; reusing one spares building a compositor and its GPU
+// surface. Prefers one whose held frame fits the page, the one last on
+// screen overlapping the page most among those (each side of a split keeps
+// its own side), then a free one over one holding a hidden page, then the
+// most recently used.
 inline std::optional<PaneCompositorChoice> ChoosePaneCompositor(
     const std::vector<PaneCompositorSlot>& slots,
     PaneRole role,
-    const std::optional<PaneRect>& request) {
+    const std::optional<PaneRect>& request,
+    const std::optional<PaneSize>& request_size) {
   std::optional<PaneCompositorChoice> best;
   std::tuple<bool, double, bool, uint64_t> best_key;
   for (size_t index = 0; index < slots.size(); ++index) {
@@ -99,8 +117,10 @@ inline std::optional<PaneCompositorChoice> ChoosePaneCompositor(
     if (slot.on_screen) {
       continue;
     }
-    const bool fits = PaneHeldFrameFits(slot, role, request);
-    const double area = fits ? PaneOverlapArea(*slot.rect, *request) : 0;
+    const bool fits = PaneHeldFrameFits(slot, role, request_size);
+    const double area = fits && slot.rect && request
+                            ? PaneOverlapArea(*slot.rect, *request)
+                            : 0;
     const auto key = std::make_tuple(fits, area, !slot.attached, slot.last_used);
     if (!best || key > best_key) {
       best = PaneCompositorChoice{index, fits};

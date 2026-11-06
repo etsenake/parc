@@ -337,6 +337,10 @@ PaneCompositorSlot NativePaneCompositor::Slot() const {
   slot.marked = marked_;
   slot.role = role_;
   slot.rect = rect_;
+  if (root_ && !root_->bounds().IsEmpty()) {
+    slot.size = PaneSize{static_cast<double>(root_->bounds().width()),
+                         static_cast<double>(root_->bounds().height())};
+  }
   slot.last_used = last_used_;
   return slot;
 }
@@ -725,7 +729,18 @@ NativePaneCompositorPool::Taken NativePaneCompositorPool::Take(NSView* view,
     slots.push_back(compositor->Slot());
     candidates.push_back(compositor.get());
   }
-  if (const auto choice = ChoosePaneCompositor(slots, role, WindowRect(view))) {
+  // The size the page will be drawn at: UpdateSurface floors the display
+  // view's bounds, which Place sets to the page view's, the same way.
+  std::optional<PaneSize> size;
+  const gfx::Size dip = gfx::ToFlooredSize(
+      gfx::SizeF(static_cast<float>(view.bounds.size.width),
+                 static_cast<float>(view.bounds.size.height)));
+  if (!dip.IsEmpty()) {
+    size = PaneSize{static_cast<double>(dip.width()),
+                    static_cast<double>(dip.height())};
+  }
+  if (const auto choice =
+          ChoosePaneCompositor(slots, role, WindowRect(view), size)) {
     return {candidates[choice->index], choice->keeps_frame, false};
   }
   compositors_.push_back(std::make_unique<NativePaneCompositor>(*this));

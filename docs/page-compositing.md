@@ -49,15 +49,21 @@ through protocol tables), whether its overlay sits above or below the page
   one whose display view has left the screen, else gets a new one. Taking one
   does.
 - **Held frames.** The display view still holds the last frame it drew. The
-  new page keeps showing it until its own frame arrives only when it was the
-  same pane's (`PaneHeldFrameFits`): the same role (page or docked DevTools),
-  and each place covering at least 90% of the other, so a top bar coming or
+  new page keeps showing it until its own frame arrives only when it fits the
+  page (`PaneHeldFrameFits`): the same role (page or docked DevTools), and
+  the size the compositor draws at (its root layer's bounds) and the page
+  view's size each covering at least 90% of the other, so a top bar coming or
   going still counts. Otherwise the frame belongs to another pane (the other
   side of a split, a whole pane under a Peek card, the page a docked DevTools
   narrowed) and the display is cleared before the page is placed, so it shows
-  the pane's own backing as a fresh compositor would. A fitting compositor is
-  preferred, then the largest overlap, then a free one, then the most
-  recently used.
+  the pane's own backing as a fresh compositor would. Sizes decide, not
+  places: until overlay 342 the rule compared the place recorded for the
+  departing page with the incoming view's place in the window, and the two
+  differ for the same pane whenever the shell has parked one or not yet laid
+  the other out, so an ordinary tab switch cleared the display and showed the
+  pane's white backing until the new page's first frame. The places still
+  rank candidates: a fitting compositor is preferred, then the one last shown
+  overlapping the page most, then a free one, then the most recently used.
 - **Drawing.** A compositor stops drawing as soon as its display view leaves
   the screen (the page, or an ancestor such as the pane Parc parks, is
   hidden, or it leaves the window), unless a capture lock is held, and its

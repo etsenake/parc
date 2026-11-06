@@ -24,6 +24,7 @@ using parc::PaneCompositorSweep;
 using parc::PaneHeldFrameFits;
 using parc::PaneRect;
 using parc::PaneRole;
+using parc::PaneSize;
 using parc::PlanPaneCompositorSweep;
 
 constexpr PaneRect kWhole{0, 0, 1000, 800};
@@ -34,6 +35,14 @@ constexpr PaneRect kInspected{0, 0, 600, 800};
 constexpr PaneRect kTools{600, 0, 400, 800};
 constexpr PaneRect kPeek{100, 80, 800, 640};
 
+std::optional<PaneSize> SizeOf(std::optional<PaneRect> rect) {
+  if (!rect) {
+    return std::nullopt;
+  }
+  return PaneSize{rect->width, rect->height};
+}
+
+// A compositor whose frame is drawn at `rect`'s size, last on screen there.
 PaneCompositorSlot Slot(bool on_screen,
                         bool attached,
                         std::optional<PaneRect> rect,
@@ -44,6 +53,7 @@ PaneCompositorSlot Slot(bool on_screen,
   slot.on_screen = on_screen;
   slot.attached = attached;
   slot.rect = rect;
+  slot.size = SizeOf(rect);
   slot.last_used = last_used;
   slot.marked = marked;
   slot.role = role;
@@ -56,9 +66,15 @@ bool Is(const std::optional<PaneCompositorChoice>& choice,
   return choice && choice->index == index && choice->keeps_frame == keeps_frame;
 }
 
+// A page about to be shown at `request`, sized to it.
 std::optional<PaneCompositorChoice> Page(const std::vector<PaneCompositorSlot>& slots,
                                          std::optional<PaneRect> request) {
-  return ChoosePaneCompositor(slots, PaneRole::kPage, request);
+  return ChoosePaneCompositor(slots, PaneRole::kPage, request, SizeOf(request));
+}
+
+std::optional<PaneCompositorChoice> Tools(const std::vector<PaneCompositorSlot>& slots,
+                                          std::optional<PaneRect> request) {
+  return ChoosePaneCompositor(slots, PaneRole::kDevTools, request, SizeOf(request));
 }
 
 void TabSwitchInOnePane() {
@@ -77,6 +93,21 @@ void TabSwitchInOnePane() {
   // A few points of difference (a top bar appearing) is still the same pane.
   Check(Is(Page(parked, PaneRect{0, 36, 1000, 764}), 0, true),
         "the same pane less its top bar keeps the frame");
+  // The place recorded for the parked page, or the incoming page's place,
+  // is not the pane's: the shell parks pages elsewhere and lays the incoming
+  // one out after the hand-off. The frame is the pane's size, so it stays.
+  PaneCompositorSlot elsewhere = Slot(false, true, PaneRect{-5000, -5000, 1000, 800}, 1);
+  Check(Is(Page({elsewhere}, kWhole), 0, true),
+        "a frame of the pane's size stays whatever place was recorded for it");
+  elsewhere.rect = std::nullopt;
+  Check(Is(Page({elsewhere}, kWhole), 0, true),
+        "a frame of the pane's size stays with no place recorded");
+  Check(Is(ChoosePaneCompositor(parked, PaneRole::kPage, PaneRect{-5000, -5000, 1000, 800},
+                                SizeOf(kWhole)),
+           0, true),
+        "a page whose place is not yet its pane's keeps the frame of its size");
+  Check(Is(ChoosePaneCompositor(parked, PaneRole::kPage, std::nullopt, SizeOf(kWhole)), 0, true),
+        "a page not yet in the window keeps the frame of its size");
 }
 
 void OnScreenIsNeverTaken() {
@@ -99,14 +130,15 @@ void AnotherPanesFrameIsCleared() {
   // A|B closes to one page: neither half is that page's pane.
   Check(Is(Page(split, kWhole), 1, false),
         "a page over a whole split shows neither half; the most recent is cleared");
-  const std::vector<PaneCompositorSlot> half = {Slot(true, true, kLeft, 5),
-                                                Slot(false, true, kRight, 4)};
-  Check(Is(Page(half, kLeft), 1, false),
-        "a page never shows the frame of the pane beside it");
-  // A page far from where the frame was drawn.
+  // Two frames of the pane's size: the one drawn in the pane is preferred.
+  const std::vector<PaneCompositorSlot> sides = {Slot(false, true, kRight, 5),
+                                                 Slot(false, true, kLeft, 4)};
+  Check(Is(Page(sides, kLeft), 1, true),
+        "among frames of the pane's size the one last shown in the pane is taken");
+  // A frame of another size, wherever it was drawn.
   const std::vector<PaneCompositorSlot> apart = {Slot(false, true, PaneRect{2000, 0, 10, 10}, 1)};
   Check(Is(Page(apart, kWhole), 0, false),
-        "a compositor from elsewhere is reused, cleared, rather than making a new one");
+        "a compositor of another size is reused, cleared, rather than making a new one");
   // Leaving a tab with docked DevTools: the narrowed page's frame is not the
   // whole pane's, and the tools' frame is not a page's.
   const std::vector<PaneCompositorSlot> docked = {
@@ -118,10 +150,11 @@ void AnotherPanesFrameIsCleared() {
         "a page wider than the inspected page it replaces starts cleared");
   Check(Is(Page(docked, kInspected), 0, true),
         "returning to the docked tab keeps the inspected page's frame");
-  Check(Is(ChoosePaneCompositor(docked, PaneRole::kDevTools, kTools), 1, true),
-        "returning DevTools keeps its own frame");
-  Check(Is(ChoosePaneCompositor(docked, PaneRole::kDevTools, kWhole), 1, false),
+  Check(Is(Tools(docked, kTools), 1, true), "returning DevTools keeps its own frame");
+  Check(Is(Tools(docked, kWhole), 1, false),
         "a page's frame is never shown as DevTools, nor the reverse");
+  Check(Is(Tools({Slot(false, true, kTools, 1)}, kTools), 0, false),
+        "a page's frame of the tools' size is not shown as DevTools");
 }
 
 void Preferences() {
@@ -137,26 +170,39 @@ void Preferences() {
                                                    Slot(false, false, kRight, 2)};
   Check(Is(Page(neither, kWhole), 1, false),
         "between cleared ones a free compositor wins over a hidden page's");
-  const std::vector<PaneCompositorSlot> unplaced = {Slot(false, true, std::nullopt, 7),
-                                                    Slot(false, true, std::nullopt, 8)};
-  Check(Is(Page(unplaced, kWhole), 1, false),
-        "without a last place nothing fits and the most recent is cleared");
-  Check(Is(Page(unplaced, std::nullopt), 1, false),
-        "a page with no window place still reuses one, cleared");
+  const std::vector<PaneCompositorSlot> unsized = {Slot(false, true, std::nullopt, 7),
+                                                   Slot(false, true, std::nullopt, 8)};
+  Check(Is(Page(unsized, kWhole), 1, false),
+        "a compositor that has drawn nothing fits nothing; the most recent is cleared");
+  Check(Is(Page(unsized, std::nullopt), 1, false),
+        "a page of no size yet still reuses one, cleared");
+  Check(Is(Page({Slot(false, true, kWhole, 7)}, std::nullopt), 0, false),
+        "a page of no size yet never keeps a frame");
 }
 
 void FitRule() {
   const PaneCompositorSlot whole = Slot(false, true, kWhole, 1);
-  Check(PaneHeldFrameFits(whole, PaneRole::kPage, kWhole), "identical places fit");
-  Check(PaneHeldFrameFits(whole, PaneRole::kPage, PaneRect{0, 0, 1000, 720}),
-        "90% of the held place fits");
-  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, PaneRect{0, 0, 1000, 719}),
-        "less than 90% of the held place does not");
-  Check(!PaneHeldFrameFits(Slot(false, true, PaneRect{0, 0, 1000, 719}, 1), PaneRole::kPage, kWhole),
-        "a held place covering less than 90% of the request does not");
-  Check(!PaneHeldFrameFits(whole, PaneRole::kDevTools, kWhole), "another role does not");
-  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, std::nullopt), "no request place does not");
-  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, PaneRect{0, 0, 0, 0}), "an empty place does not");
+  Check(PaneHeldFrameFits(whole, PaneRole::kPage, PaneSize{1000, 800}), "identical sizes fit");
+  Check(PaneHeldFrameFits(whole, PaneRole::kPage, PaneSize{1000, 720}),
+        "90% of the held size fits");
+  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, PaneSize{1000, 719}),
+        "less than 90% of the held size does not");
+  Check(!PaneHeldFrameFits(Slot(false, true, PaneRect{0, 0, 1000, 719}, 1), PaneRole::kPage,
+                           PaneSize{1000, 800}),
+        "a held size covering less than 90% of the request does not");
+  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, PaneSize{1200, 667}),
+        "the same area in another shape does not");
+  Check(!PaneHeldFrameFits(whole, PaneRole::kDevTools, PaneSize{1000, 800}), "another role does not");
+  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, std::nullopt), "no request size does not");
+  Check(!PaneHeldFrameFits(whole, PaneRole::kPage, PaneSize{0, 0}), "an empty size does not");
+  PaneCompositorSlot unsized = whole;
+  unsized.size = std::nullopt;
+  Check(!PaneHeldFrameFits(unsized, PaneRole::kPage, PaneSize{1000, 800}),
+        "a compositor that has drawn nothing holds no frame");
+  PaneCompositorSlot moved = whole;
+  moved.rect = kPeek;
+  Check(PaneHeldFrameFits(moved, PaneRole::kPage, PaneSize{1000, 800}),
+        "the place last recorded does not decide");
 }
 
 void SweepRetiresIdleCompositorsAtTheSecondSweep() {
