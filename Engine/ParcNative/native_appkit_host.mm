@@ -3,9 +3,7 @@
 #include "cef/libcef/browser/parc_native/native_internal_urls.h"
 #include "native_link_routing.h"
 
-#include <algorithm>
 #include <cmath>
-#include <os/log.h>
 #include <map>
 #include <memory>
 #include <set>
@@ -130,12 +128,6 @@ class AppKitBrowserHost;
 
 namespace parc {
 namespace {
-
-// Product diagnostics: one line per page-picture repair, naming its cause.
-os_log_t PictureLog() {
-  static os_log_t log = os_log_create("org.parc.Browser", "PagePicture");
-  return log;
-}
 
 std::map<const BrowserWindowInterface*, base::WeakPtr<AppKitBrowserHost>>&
 Hosts() {
@@ -1384,7 +1376,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     picture_check_timer_.Start(FROM_HERE,
                                kPictureCheckDelay *
-                                   (1 << std::min(picture_repairs_, kPictureRepairLimit)),
+                                   (1 << picture_repairs_),
                                this, &AppKitBrowserHost::CheckPictures);
   }
   void CheckPictures() {
@@ -1405,8 +1397,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       picture_pages_ = [visible copy] ?: @[];
       picture_repairs_ = 0;
     }
-    std::vector<std::pair<base::WeakPtr<content::WebContents>, const char*>>
-        missing;
+    std::vector<base::WeakPtr<content::WebContents>> missing;
     std::set<const content::WebContents*> checked;
     picture_confirmation_pending_ = false;
     for (PCNativePage* page in visible) {
@@ -1419,8 +1410,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         continue;
       }
       checked.insert(contents);
-      if (const char* cause = MissingPictureCause(*contents, window)) {
-        missing.emplace_back(contents->GetWeakPtr(), cause);
+      if (MissingPictureCause(*contents, window)) {
+        missing.push_back(contents->GetWeakPtr());
       }
     }
     // Watches of pages no longer shown here (or destroyed) are dropped.
@@ -1436,22 +1427,12 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       return;
     }
     if (picture_repairs_ >= kPictureRepairLimit) {
-      if (picture_repairs_ == kPictureRepairLimit) {
-        ++picture_repairs_;
-        os_log(PictureLog(),
-               "Shown page still without a picture after %d repairs: %{public}s",
-               kPictureRepairLimit, missing.front().second);
-      }
       return;
     }
     ++picture_repairs_;
-    for (const auto& [contents, cause] : missing) {
+    for (const auto& contents : missing) {
       if (contents && weak && !tearing_down_ && !draining_ &&
           window_ == window && Owns(*contents)) {
-        os_log(PictureLog(),
-               "Repairing a shown page without a picture: %{public}s "
-               "(repair %d)",
-               cause, picture_repairs_);
         RepairPicture(*contents, window);
         if (weak && contents && !tearing_down_ && !draining_ &&
             window_ == window) {
@@ -1504,8 +1485,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     bounds.set_y(NSHeight(window.frame) - bounds.bottom());
     return bounds;
   }
-  // Why a shown page has no picture, or nullptr when it has one. The names
-  // go to the PagePicture log so a white page reported later names its cause.
+  // Why a shown page has no picture, or nullptr when it has one.
   const char* MissingPictureCause(content::WebContents& contents,
                                   NSWindow* window) {
     // A loading page shows the loading bar and Chromium's own first-frame
