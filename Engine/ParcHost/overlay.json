@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 365,
+  "version": 366,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3947,7 +3947,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "25e28f58e5d6d40c956c01e098f4a303fb745b051d89818153d4ef298011786c",
+      "sha256": "fd43504e80ce4949af3ea92296e08c9bb6e33d02f7d84fe511dc704aad8b1d80",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4127,7 +4127,7 @@
         {
           "target": "sandbox/policy/mac/gpu.sb",
           "before_sha256": "0af280195b91c69d084be46620b359e676e996607d0d109e50b03ea47e31ec83",
-          "after_sha256": "04300cc1772808e44ae696f9bbdd2b3609420b73dbd7b0e2da92706ff4ad2084"
+          "after_sha256": "aefd7086ea686bb590a21ee4543e04707735f10638d398e4c68bdea7bcff3f64"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",

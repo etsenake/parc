@@ -1036,45 +1036,56 @@
    // be a nullptr if the host chose not to bind the InterfacePtr.
 --- a/sandbox/policy/mac/gpu.sb
 +++ b/sandbox/policy/mac/gpu.sb
-@@ -205,3 +205,39 @@
+@@ -205,3 +205,50 @@
        (allow file-read* file-write*
          (subpath helper-bundle-cache-dir)
  )))
 +
 +; Parc: FairPlay Streaming playback in the media service (AVContentKeySession,
-+; AVSampleBufferDisplayLayer, AVSampleBufferAudioRenderer). Rules follow
-+; WebKit's GPU process profile (com.apple.WebKit.GPUProcess.sb) and Chromium's
-+; audio service profile (audio.sb), which already hosts an
-+; AVSampleBufferAudioRenderer. IPC shared memory for CoreAudio ("AudioIO") and
-+; preference reads are already allowed above.
++; AVSampleBufferDisplayLayer, AVSampleBufferAudioRenderer). Each rule was
++; checked by playing FairPlay in this profile with AVFoundation loaded inside
++; it (tests/FairPlay/sandbox), against WebKit's GPU process profile
++; (com.apple.WebKit.GPUProcess.sb) and Chromium's audio service profile
++; (audio.sb). IPC shared memory for CoreAudio ("AudioIO") and preference reads
++; are already allowed above.
 +(allow mach-lookup
-+  ; FairPlay Streaming key daemon: SPC creation and CKC processing for
-+  ; AVContentKeySession (WebKit GPUProcess.sb; also in the App Sandbox).
++  ; FairPlay Streaming's key daemon, for SPCs and CKCs. AVContentKeySession
++  ; uses either name and falls back to the other; without both no request is
++  ; generated (WebKit GPUProcess.sb; also in the App Sandbox).
 +  (global-name "com.apple.lskdd")
 +  (global-name "com.apple.lskdd.xpc")
-+  ; CoreAudio HAL for AVSampleBufferAudioRenderer output (audio.sb).
++  ; CoreAudio's HAL: without it AVSampleBufferAudioRenderer fails to render
++  ; (audio.sb).
 +  (global-name "com.apple.audio.audiohald")
-+  (global-name "com.apple.audio.coreaudiod")
-+  (global-name "com.apple.audio.AudioSession")
-+  ; Needed for AVSampleBufferAudioRenderer creation (audio.sb).
++  ; Without it AVSampleBufferAudioRenderer is invalid and the render
++  ; synchronizer rejects it (audio.sb).
 +  (global-name "com.apple.coremedia.routingcontext.xpc")
-+  ; Out-of-process audio converters (WebKit GPUProcess.sb) and the HAL
-+  ; plug-in helper (audio.sb).
-+  (xpc-service-name "com.apple.audio.AudioConverterService")
++  ; Looked up while audio plays; built-in output plays without them, other
++  ; routes are unverified (audio.sb).
++  (global-name "com.apple.audio.AudioSession")
 +  (xpc-service-name "com.apple.audio.SandboxHelper")
 +)
 +
-+; CoreAudio kernel-driver user clients on Intel Macs (audio.sb).
++; WebKit narrows these two to a few methods with apply-message-filter, but
++; sandbox_init refuses message filters from a non-Apple process (EPERM), so
++; each grant covers the whole user client.
 +(allow iokit-open
-+  (iokit-user-client-class "IOAudioControlUserClient")
-+  (iokit-user-client-class "IOAudioEngineUserClient")
++  ; The hardware video decoder. Protected video is decoded in this process
++  ; through AVD, not in VideoToolbox's XPC decoder; without it decoding fails
++  ; (WebKit GPUProcess.sb).
++  (iokit-user-client-class "AppleAVDUserClient")
++  ; The display pipe: without it the content key never becomes usable
++  ; (WebKit GPUProcess.sb, arm64).
++  (iokit-user-client-class "IOMobileFramebufferUserClient")
 +)
 +
-+; HAL plug-ins and the component cache read by the CoreAudio client
-+; (audio.sb, WebKit GPUProcess.sb).
++; CoreAudio's component bundles (only AudioCodecs.component is allowed above).
++; Without CoreAudio.component audio never starts. AudioDSP.component is read
++; while audio plays; built-in output plays without it (audio.sb allows all of
++; /System/Library/Components).
 +(allow file-read*
-+  (path (user-homedir-path "/Library/Caches/com.apple.coreaudio.components.plist"))
-+  (subpath "/Library/Audio/Plug-Ins/HAL")
++  (subpath "/System/Library/Components/CoreAudio.component")
++  (subpath "/System/Library/Components/AudioDSP.component")
 +)
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.cc

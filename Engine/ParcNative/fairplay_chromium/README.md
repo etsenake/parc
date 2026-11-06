@@ -202,29 +202,51 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
 
 ## GPU sandbox additions
 
-Reference: WebKit's `com.apple.WebKit.GPUProcess.sb` (macOS ships it in
-WebKit.framework's Resources), the App Sandbox (`application.sb`), and
-Chromium's own `audio.sb`, which already hosts an AVSampleBufferAudioRenderer.
+Checked on this Mac (Apple Silicon, macOS 27.2) by playing FairPlay inside
+Chromium's real GPU seatbelt profile, without a build:
+[tests/FairPlay/sandbox](../../../tests/FairPlay/sandbox/README.md) (run with
+`python3 tests/FairPlay/sandbox/run.py`, and `--ablate --ablate-groups` for the
+table). AVFoundation and the core load inside the sandbox there, as in Parc's
+GPU helper. The scenarios are protected H.264 and HEVC with AAC (Axinom), plus
+Chromium's clear Dolby Vision 5, E-AC-3 and AC-3 clips. References: WebKit's
+`com.apple.WebKit.GPUProcess.sb`, the App Sandbox (`application.sb`) and
+Chromium's own `audio.sb`.
 
-| Rule | Why |
+| Rule | Why (what the probe shows without it) |
 | --- | --- |
-| mach-lookup `com.apple.lskdd`, `com.apple.lskdd.xpc` | FairPlay Streaming's key daemon (SPC/CKC for AVContentKeySession). WebKit's GPU process and the App Sandbox allow exactly these; `fairplayd`/`fpsd` are App Store DRM and are not needed. |
-| mach-lookup `com.apple.audio.audiohald`, `com.apple.audio.coreaudiod`, `com.apple.audio.AudioSession` | CoreAudio HAL client for AVSampleBufferAudioRenderer output (audio.sb). |
-| mach-lookup `com.apple.coremedia.routingcontext.xpc` | Needed to create AVSampleBufferAudioRenderer (audio.sb's comment). |
-| xpc `com.apple.audio.AudioConverterService` | Out-of-process audio converters (WebKit GPU process). |
-| xpc `com.apple.audio.SandboxHelper` | HAL plug-in helper (audio.sb, WebKit). |
-| iokit-open `IOAudioControlUserClient`, `IOAudioEngineUserClient` | Intel Macs' kernel audio drivers (audio.sb). |
-| file-read `/Library/Audio/Plug-Ins/HAL`, `~/Library/Caches/com.apple.coreaudio.components.plist` | HAL plug-ins and component cache (audio.sb, WebKit). |
+| mach-lookup `com.apple.lskdd`, `com.apple.lskdd.xpc` | FairPlay Streaming's key daemon. Without both, `generateRequest` fails (-42664); either alone is enough. WebKit's GPU process and the App Sandbox allow both. `fairplayd`/`fpsd` are App Store DRM and aren't needed. |
+| mach-lookup `com.apple.audio.audiohald` | AVSampleBufferAudioRenderer can't render (-11800 over -101). |
+| mach-lookup `com.apple.coremedia.routingcontext.xpc` | AVSampleBufferAudioRenderer is invalid and the synchronizer refuses it ("invalid renderer"), so renderer Initialize fails. |
+| mach-lookup `com.apple.audio.AudioSession`, xpc `com.apple.audio.SandboxHelper` | Looked up while audio plays; built-in output plays without them. Kept for other routes, which the probe can't exercise (both in `audio.sb`). |
+| iokit `AppleAVDUserClient` | Protected video is decoded in this process on the hardware decoder, not in VideoToolbox's XPC decoder. Without it decoding fails (-11839 over -12913). WebKit's GPU process allows it. |
+| iokit `IOMobileFramebufferUserClient` | Without it the content key never becomes usable (output protection). WebKit allows it on arm64. |
+| file-read `/System/Library/Components/CoreAudio.component` | Without it audio never starts and playback stalls. Only `AudioCodecs.component` was allowed. |
+| file-read `/System/Library/Components/AudioDSP.component` | Read while audio plays; built-in output plays without it. `audio.sb` allows all of `/System/Library/Components`. |
 
-The rules apply to every GPU process (Chromium's GPU profile has no
-per-feature switch), not only to pages playing FairPlay.
+Replaced by a filter that never matches, every other rule fails playback,
+with a kernel denial naming it (the two lskdd names only as a pair). Only
+`AudioSession`, `SandboxHelper` and `AudioDSP.component` play without
+theirs. Message filters aren't available: WebKit lets its GPU process call only a
+few AVD and display-pipe methods (`apply-message-filter`), but
+`sandbox_init` refuses a profile with message filters from a non-Apple
+process (EPERM, checked with the probe). So both IOKit grants cover the whole
+user client, in every GPU process: Chromium's GPU profile does have
+parameters (`RESTRICT_GPU_DARWIN_USER_DIRS`, `DISABLE_METAL_SHADER_CACHE`), but
+FairPlay is on in every build, so a parameter wouldn't narrow anything. The
+way to keep this attack surface out of the GPU process is a separate FairPlay
+media process that hosts the display layer through `CAContext`/`CALayerHost`.
 
 Already allowed by `gpu.sb`: all preference reads, all POSIX shared memory
-(CoreAudio's `AudioIO` regions), `com.apple.coremedia.videodecoder`, and
-`com.apple.CARenderServer`. If Josh's first build logs other GPU sandbox
-denials during playback, candidates from WebKit's profile are
-`com.apple.mediaremoted.xpc` and `com.apple.coremedia.samplebufferconsumer.xpc`.
-To check: `log stream --predicate 'eventMessage CONTAINS "deny" AND process CONTAINS "GPU"'`.
+(CoreAudio's `AudioIO`), `com.apple.coremedia.videodecoder` and
+`com.apple.CARenderServer`. Still denied while FairPlay plays, without effect:
+`tccd.system`, `audioanalyticsd` (WebKit denies it too), `UsageTrackingAgent`,
+distributed notifications, a few sysctls and `/System/Library/Audio/Tunings`.
+`IOSurfaceAcceleratorClient` is denied too: H.264 and HEVC open it, Dolby
+Vision doesn't, and all play without it. On-screen scaling isn't covered,
+because the probe's layer is in no window. `AudioConverterService` is never looked up, E-AC-3 and AC-3
+included. The probe doesn't cover Intel Macs, external displays, AirPlay or
+Bluetooth route changes. To check a real build, use
+`log stream --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "Helper (GPU)"'`.
 
 ## What Josh's first build should test
 
@@ -278,7 +300,7 @@ system registration are on main.
    Shaka's Widevine demo asset) play as before. In media-internals their
    renderer is "RendererImpl", not "FairPlayRenderer".
 5. If FairPlay fails, first check Console for GPU sandbox denials:
-   `log stream --predicate 'eventMessage CONTAINS "deny" AND process CONTAINS "Helper (GPU)"'`.
+   `log stream --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "Helper (GPU)"'`.
    Then check media-internals' log for "FairPlay renderer" errors.
 
 ## Checks run without a build
