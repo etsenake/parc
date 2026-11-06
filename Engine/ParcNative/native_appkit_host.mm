@@ -2094,7 +2094,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   static constexpr int kVisibilityRetryLimit = 4;
   base::OneShotTimer visibility_retry_timer_;
   int visibility_retries_ = 0;
-  static constexpr base::TimeDelta kPictureCheckDelay = base::Milliseconds(750);
+  // A missed case shows at most a brief blank: 200 ms, then 0.4, 0.8 and
+  // 1.6 s after each repair. A check reads a few values per shown page; a
+  // repair of a renderer still drawing costs it one frame, its in-flight
+  // frame showing meanwhile as the fallback.
+  static constexpr base::TimeDelta kPictureCheckDelay = base::Milliseconds(200);
   static constexpr int kPictureRepairLimit = 4;
   base::OneShotTimer picture_check_timer_;
   int picture_repairs_ = 0;
