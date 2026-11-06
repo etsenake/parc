@@ -185,6 +185,8 @@ compile_and_run command-bar-ranking CommandBar/RankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
 # Actual selected-row scope resolver with inert native-publication fixtures.
 bash "$repo_root/scripts/test-command-bar-site-search.sh"
+# Production filtering -> ranking -> scope/Return, with inert publications.
+bash "$repo_root/scripts/test-command-bar-navigation.sh"
 # Trigger phrases and weighted bumps as the command bar builds command candidates.
 compile_and_run command-bar-command-ranking CommandBar/CommandRankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift" \

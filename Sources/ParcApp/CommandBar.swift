@@ -879,6 +879,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             scopeName: unavailableScopeName ?? scopedName,
             selectionID: explicitSelectionID,
             nativeError: nativeError,
+            nativeRevision: snapshotRevision,
             nativeResultIDs: nativeResults.map {
                 "native:\($0.search):\($0.url.absoluteString):\($0.title)"
             },
@@ -1016,8 +1017,8 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
                 menuCommandID: result.command?.id, menuText: result.command.map { $0.title + " " + $0.group },
                 typed: result.typedCommand))
         }
-        //
-        // survives, so Return keeps a target.
+        // The leading native request survives presentation filtering. A literal
+        // input fallback is needed only before a native answer or after failure.
         let nativeRows = nativeResultRows(scoped: false)
         if nativeRows.isEmpty || explicitSelectionID == "query:" + query {
             // An explicitly selected input row remains the same intent when
@@ -1088,13 +1089,14 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     }
     private func nativeResultRows(scoped: Bool) -> [Result] {
         var keys = Set<String>()
-        var rows: [Result?] = nativeResults.map { navigation in
+        let extensionFirst = extensionActions.contains { $0.resultIndex == 0 }
+        var rows: [Result?] = nativeResults.enumerated().map { index, navigation in
             let key = navigation.search
                 ? CommandBarRowDiff.searchKey(navigation.editText.isEmpty ? navigation.title : navigation.editText)
                 : CommandBarRowDiff.pageKey(navigation.url)
             var id = "native:" + key, occurrence = 1
             while !keys.insert(id).inserted { occurrence += 1; id = "native:\(key)#\(occurrence)" }
-            return nativeRow(navigation, id: id, scoped: scoped)
+            return nativeRow(navigation, id: id, scoped: scoped, preserveDefault: index == 0 && !extensionFirst)
         }
         // Extension action positions refer to the same original native order;
         // they carry no copyable URL or synthetic navigation destination.
@@ -1107,7 +1109,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         }
         return rows.compactMap { $0 }
     }
-    private func nativeRow(_ navigation: PCNativeSearchNavigation, id: String, scoped: Bool) -> Result? {
+    private func nativeRow(_ navigation: PCNativeSearchNavigation, id: String, scoped: Bool, preserveDefault: Bool) -> Result? {
         // A keyword scope lists only its own engine's matches.
         if scoped {
             return Result(id: id, title: navigation.title.isEmpty ? input.stringValue : navigation.title, detail: "",
@@ -1116,7 +1118,8 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         // A held snapshot belongs to the input it answered, not the field's text.
         guard let row = CommandBarResultText.nativeRow(matchType: Self.matchType(of: navigation), isSearch: navigation.search,
                                                       contents: navigation.title, description: navigation.detail,
-                                                      url: navigation.url.absoluteString, input: nativeInput) else { return nil }
+                                                      url: navigation.url.absoluteString, input: nativeInput,
+                                                      preserveDefault: preserveDefault) else { return nil }
         return Result(id: id, title: row.title, detail: "", symbol: row.symbol, subtitle: row.subtitle,
                       isSearch: row.isSearch, url: navigation.url, navigation: navigation)
     }

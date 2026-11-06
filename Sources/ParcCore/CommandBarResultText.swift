@@ -133,10 +133,16 @@ enum CommandBarResultText {
     /// mask `0x430`: indices 4, 5 and 10); navigation suggestions keep their
     /// contents. History and navigation suggestions add the URL subtitle
     ///
+    ///
+    /// own navigate/search-what-you-typed candidates; Parc retains the native
+    /// request instead, with the same presentation fallback as an older engine.
+    /// Dropping it would silently promote a different destination or search.
     static func nativeRow(matchType: String?, isSearch: Bool, contents: String, description: String,
-                          url: String, input: String) -> NativeRow? {
+                          url: String, input: String, preserveDefault: Bool = false) -> NativeRow? {
         let shown = contents.isEmpty ? displayURL(url) : contents
-        switch nativeKind(matchType: matchType, isSearch: isSearch, contents: contents, description: description, input: input) {
+        let kind = nativeKind(matchType: matchType, isSearch: isSearch, contents: contents, description: description, input: input)
+            ?? (preserveDefault ? nativeKind(matchType: nil, isSearch: isSearch, contents: contents, description: description, input: input) : nil)
+        switch kind {
         case .search:
             return NativeRow(title: shown, subtitle: nil, symbol: "magnifyingglass", isSearch: true)
         case .history:

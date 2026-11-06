@@ -542,6 +542,49 @@ fails before the tab-site-search correction. These are inert component checks,
 plus full-module Swift compilation, not browser-runtime acceptance. No engine
 change or app package is part of this source correction.
 
+**November 6 broader navigation audit.** Josh confirmed that the old installed
+build opens `google.com` with the homepage absent, and that `www.google.com`
+selects the existing homepage correctly. Those are user observations, separate
+from the isolated checks below; the exact pre-existing YouTube tab URL was not
+captured.
+
+drop Chromium's leading website request (for example a bookmark or personalized
+navigation result), then renumber a search as the default; (2) identical
+URL/title strings caused the open-bar cache to skip a new native publication,
+leaving rows with previous request objects, so current-publication scope and
+deletion identity checks no longer matched. The first published native result
+now survives the display filter with its original request and native search
+flag; when an extension action owns position zero, that action keeps priority
+and later native rows retain the filter. The fingerprint now includes the
+native snapshot revision. Each new publication replaces payloads and rebinds
+row actions; the existing row diff still keeps unchanged views, and idle chrome
+refreshes still skip rebuilding.
+
+own `navigateWhatYouTyped` / `searchWhatYouTyped` archetypes, while Parc delegates
+classification and complete requests to Chromium. Presentation must not erase
+that leading request. No host allowlist, dot detector, reconstructed URL,
+search template or substitute GET is added. Native generation checks, original
+Profile/engine-revision validation and scoped keyword-mode navigation remain
+unchanged.
+
+`scripts/test-command-bar-navigation.sh` compiles the production native-row
+filter, complete ordinary ranking, publication fingerprint, selected-scope
+resolver, held-answer Return boundary and shell tab-eligibility filter against
+inert native-publication objects. The initial audit reproduced 19 assertion
+failures across filtering and publication identity before correction. The
+finished matrix covers default result types with/without open tabs; bare,
+`www`, scheme, mixed-case, path, port, IPv4/IPv6, international and escaped URLs;
+zero/one/multiple matching tabs; another Space versus another Profile; current,
+archived, closing and transferring tabs; previous accidental searches; separate
+paths/query strings/fragments; true searches and dot-containing search terms;
+no provider answer; Return while a reply is pending; explicit search selection;
+ordinary/background/split submission; leading extension actions; and repeated
+same-looking publications. This exercises app decisions given native requests,
+not Chromium's live classification/network/history service or browser navigation.
+The existing editing, hold, row-text, ranking, scope and Return suites plus the
+full Swift module check also pass. No new app package or automated browser-runtime
+acceptance is claimed.
+
 
 The engine restarts Chromium's controller on each edit instead of clobbering it, as Chrome's omnibox does. Google's cached suggestions and the matches Chromium carries over from still-running providers therefore stay in each keystroke's first answer until the network replaces them. A new scope, engine change or empty input still starts fresh.
 

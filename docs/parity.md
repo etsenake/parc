@@ -87,6 +87,15 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   cover the source. Root reviews directly on main under the current contract.
   No browser-runtime acceptance or new app package is claimed.
   [Cause and reference](command-bar.md#typing-stability-and-ranking).
+  Follow-up audit also preserves the leading native request when its Chromium
+  payloads on every native publication even when displayed text is unchanged.
+  Both additional failures were reproduced before correction. The production
+  pipeline fixture covers spelling/URL forms, duplicate and unrelated tabs,
+  Profile/Space eligibility, stale publications, pending replies, explicit
+  selection, modifier submissions and extension ordering; focused existing
+  suites and whole-module typechecking cover the finished source. These checks
+  use inert native requests and do not establish live Chromium classification
+  or packaged browser acceptance. No additional engine change or package.
 
 - **Cursor `cursor/cb-site-search` — website scope colour, pill glow and Tab hint (November 1).**
   Checkout `work/cursor-cb-site-search`; asked for directly by Josh while the

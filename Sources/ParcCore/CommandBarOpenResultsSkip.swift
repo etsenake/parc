@@ -48,6 +48,7 @@ enum CommandBarOpenResultsSkip {
         scopeName: String,
         selectionID: String?,
         nativeError: String?,
+        nativeRevision: UInt64 = 0,
         nativeResultIDs: [String],
         extensionActionIDs: [String],
         extensionLaunchIDs: [String],
@@ -73,6 +74,10 @@ enum CommandBarOpenResultsSkip {
             "scope:\(scopeName)",
             "sel:\(selectionID ?? "-")",
             "err:\(nativeError ?? "-")",
+            // Same-looking publications carry new request/scope/deletion
+            // objects. Rebuild their payloads, then let the row diff retain
+            // unchanged views. Ordinary chrome refreshes keep this revision.
+            "publication:\(nativeRevision)",
             "fav:\(favoriteActionID ?? "-")|\(favoriteEligible ? "1" : "0")",
             "ren:\(favoriteRenameID ?? "-")|\(renameEligible ? "1" : "0")",
             "bg:\(retainedBackgroundID ?? "-")|\(retainedBackgroundRow.map(String.init) ?? "-")",
