@@ -79,15 +79,18 @@ on for macOS and lists profiles 5 and 8 for FairPlay. Chromium's own rules then
 already answer yes for `addSourceBuffer`, `changeType`, EME capabilities and
 `mediaCapabilities.decodingInfo` with a key system, and no for clear Dolby
 Vision everywhere else. On a Safari-identity document Parc also answers yes,
-as Safari does, for the profiles FairPlay plays (5 and 8: `dvh1.05.*`,
-`dvhe.05.*`, `dvh1.08.*`, `dvhe.08.*`):
+as Safari does, for profile 5 (`dvh1.05.*`, `dvhe.05.*`):
 
 - `MediaSource.isTypeSupported` checks the rest of the type without those
   codecs, as `addSourceBuffer` already does.
 - `HTMLMediaElement.canPlayType` does the same; a type naming only them
   answers "probably".
 
-Other Dolby Vision profiles keep Chromium's answer. The choice among
+Other Dolby Vision profiles, profile 8 (`dvh1.08.*`, `dvhe.08.*`) included,
+keep Chromium's answer there. EME and `decodingInfo` with a key system follow
+the profiles fairplay-media lists for FairPlay; `addSourceBuffer` and
+`changeType` accept every Dolby Vision profile, as Chromium does once
+encrypted Dolby Vision is on. The choice among
 `<source type>` children keeps Chromium's answer too: a `<source>` plays as a
 plain file, where clear Dolby Vision can't decode, and failing after its
 metadata loaded wouldn't fall back to the next `<source>`. Clear Dolby Vision

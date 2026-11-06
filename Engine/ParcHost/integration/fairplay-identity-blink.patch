@@ -315,9 +315,9 @@
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
    // specified, allow DV regardless of `enforce_codec_specificity`.
 +  // Parc: a document presenting Safari's identity is told yes by
-+  // isTypeSupported too for the Dolby Vision profiles FairPlay plays
-+  // encrypted, 5 and 8 (its CDM capability in fairplay-media.patch), as Safari
-+  // tells it; other profiles stay in the query and answer as before
++  // isTypeSupported too for Dolby Vision profile 5, which FairPlay plays
++  // encrypted (its CDM capability in fairplay-media.patch), as Safari tells
++  // it; other profiles stay in the query and answer as before
 +  // (parc_safari_identity.h).
 +  const bool parc_fairplay_profiles_only =
 +      enforce_codec_specificity &&
@@ -332,15 +332,14 @@
      // Remove any detected DolbyVision codec from the query to GetSupportsType.
      std::string filtered_codecs;
      std::vector<std::string> parsed_codec_ids;
-@@ -608,7 +629,10 @@
+@@ -608,7 +629,9 @@
        if (auto result =
                media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
                                             /*allow_ambiguous_matches=*/false)) {
 -        if (result->codec == media::VideoCodec::kDolbyVision) {
 +        if (result->codec == media::VideoCodec::kDolbyVision &&
 +            (!parc_fairplay_profiles_only ||
-+             result->profile == media::DOLBYVISION_PROFILE5 ||
-+             result->profile == media::DOLBYVISION_PROFILE8)) {
++             result->profile == media::DOLBYVISION_PROFILE5)) {
            continue;
          }
        }
@@ -371,7 +370,7 @@
  #include "third_party/blink/renderer/platform/wtf/vector.h"
  #include "ui/accessibility/accessibility_features.h"
  #include "ui/display/screen_info.h"
-@@ -1069,10 +1073,79 @@
+@@ -1069,10 +1073,78 @@
    return network_state_;
  }
  
@@ -379,10 +378,10 @@
 +
 +// Parc: what a document is told about a type under its identity
 +// (parc_safari_identity.h). AC-3 and E-AC-3 answer yes only under Safari's
-+// identity. With `fairplay_dolby_vision`, under it, the Dolby Vision profiles
-+// FairPlay plays encrypted (5 and 8, its CDM capability in
-+// fairplay-media.patch) answer yes as in Safari: the rest of the type is
-+// checked without them, as Chromium's Media Source and EME already do for
++// identity. With `fairplay_dolby_vision`, under it, Dolby Vision profile 5,
++// which FairPlay plays encrypted (its CDM capability in
++// fairplay-media.patch), answers yes as in Safari: the rest of the type is
++// checked without it, as Chromium's Media Source and EME already do for
 +// encrypted Dolby Vision. Clear Dolby Vision still can't play, so choosing a
 +// <source> leaves it out. A document without a window of its own answers for
 +// the window that created it.
@@ -411,8 +410,7 @@
 +      if (id.ContainsOnlyAsciiOrEmpty()) {
 +        const std::optional<media::VideoType> parsed =
 +            media::ParseDolbyVisionCodecId(id.Ascii());
-+        if (parsed && (parsed->profile == media::DOLBYVISION_PROFILE5 ||
-+                       parsed->profile == media::DOLBYVISION_PROFILE8)) {
++        if (parsed && parsed->profile == media::DOLBYVISION_PROFILE5) {
 +          dolby_vision = true;
 +          continue;
 +        }
@@ -452,7 +450,7 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -3898,7 +3971,8 @@
+@@ -3898,7 +3970,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
