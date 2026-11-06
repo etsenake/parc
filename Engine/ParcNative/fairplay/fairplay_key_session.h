@@ -51,6 +51,9 @@ class FairPlayCdmClient {
   virtual void OnSessionClosed(const std::string& session_id) = 0;
 };
 
+// Every promise callback and client callback runs in a later task posted to the
+// owner sequence, never inside a call into this class.
+//
 // Messages. skd and sinf sessions send the raw SPC and take the raw CKC.
 // cenc and keyids sessions send and take a JSON array, one entry per key:
 //   message  [{"keyID": "<base64>", "payload": "<base64 SPC>"}, ...]
@@ -95,7 +98,9 @@ class FairPlayCdm {
                                        SessionCallback done);
 
   // Resolves once AVFoundation has accepted (or rejected) every CKC in
-  // |response|; key statuses follow through OnSessionKeysChange.
+  // |response|; key statuses follow through OnSessionKeysChange. Calls made
+  // while an update is in flight run in order after it. During a renewal the
+  // answered key stays usable until the renewal's response settles.
   void UpdateSession(const std::string& session_id,
                      std::vector<uint8_t> response,
                      ResultCallback done);
@@ -106,6 +111,10 @@ class FairPlayCdm {
   // Temporary sessions only: expires the keys and reports them released,
   // leaving the session open until CloseSession.
   void RemoveSession(const std::string& session_id, ResultCallback done);
+
+  // generateRequest and update() reject if AVFoundation hasn't answered
+  // within |seconds| (default 15).
+  void SetRequestTimeout(double seconds);
 
   // True if some open session holds a usable key for |key_id|.
   bool HasUsableKey(const std::vector<uint8_t>& key_id) const;

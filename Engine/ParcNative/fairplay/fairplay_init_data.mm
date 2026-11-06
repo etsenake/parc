@@ -177,11 +177,12 @@ const char* InitDataTypeName(InitDataType type) {
 }
 
 std::optional<std::vector<uint8_t>> KeyIdFromSkdUri(const std::string& uri) {
-  static const std::string kScheme = "skd://";
-  if (uri.compare(0, kScheme.size(), kScheme) != 0) {
+  static constexpr char kScheme[] = "skd://";
+  constexpr size_t kSchemeSize = sizeof(kScheme) - 1;
+  if (uri.compare(0, kSchemeSize, kScheme) != 0) {
     return std::nullopt;
   }
-  std::string host = uri.substr(kScheme.size());
+  std::string host = uri.substr(kSchemeSize);
   host = host.substr(0, host.find_first_of(":/?#"));
   host.erase(std::remove(host.begin(), host.end(), '-'), host.end());
   if (host.size() != 32) {

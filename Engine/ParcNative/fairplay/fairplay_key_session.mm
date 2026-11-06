@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 
 #include <algorithm>
+#include <deque>
 #include <map>
 #include <set>
 
@@ -110,7 +111,11 @@ void AddUnique(std::vector<std::vector<uint8_t>>* list, const std::vector<uint8_
 class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl> {
  public:
   struct Request {
-    AVContentKeyRequest* request = nil;
+    AVContentKeyRequest* request = nil;  // The answered (or first) request.
+    // A renewal in flight. The answered request and its key stay in use until
+    // it succeeds (then it replaces them) or fails (then it is dropped).
+    AVContentKeyRequest* renewal = nil;
+    AVContentKey* key = nil;  // The last key a response produced.
     int call = -1;                               // Plan entry that produced it.
     std::vector<std::vector<uint8_t>> key_ids;  // 16-byte key IDs.
     std::vector<uint8_t> content_identifier;     // SPC content identifier.
@@ -135,6 +140,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::vector<Batch> batches;
     SessionCallback generate_done;
     ResultCallback update_done;
+    uint64_t update_serial = 0;  // Identifies the update a timeout belongs to.
+    // update() calls made while one is in flight run in order after it.
+    std::deque<std::pair<std::vector<uint8_t>, ResultCallback>> queued_updates;
     std::set<Request*> update_pending;
     bool update_succeeded = false;
     NSError* update_error = nil;
@@ -147,6 +155,32 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       : client_(client), poster_(std::make_shared<const PostTask>(std::move(post_task))) {}
 
   ~Impl() { Shutdown(); }
+
+  // Promise and client callbacks always run in a later task on the owner
+  // sequence, never inside a call into the key system, so they can call back
+  // in (close the session, update it) without meeting half-updated state.
+  ResultCallback Posted(ResultCallback done) const {
+    std::shared_ptr<const PostTask> poster = poster_;
+    return [poster, done](const Result& result) { (*poster)([done, result] { done(result); }); };
+  }
+
+  SessionCallback Posted(SessionCallback done) const {
+    std::shared_ptr<const PostTask> poster = poster_;
+    return [poster, done](const Result& result, const std::string& id) {
+      (*poster)([done, result, id] { done(result, id); });
+    };
+  }
+
+  void Deliver(std::function<void(FairPlayCdmClient*)> call) {
+    std::weak_ptr<Impl> weak = weak_from_this();
+    (*poster_)([weak, call] {
+      if (auto impl = weak.lock()) {
+        call(impl->client_);
+      }
+    });
+  }
+
+  void SetRequestTimeout(double seconds) { request_timeout_ = seconds; }
 
   // Expiring the shared session makes every recipient inoperable, so it
   // happens only when the key system goes away.
@@ -232,24 +266,68 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                                        initializationData:initialization_data
                                                   options:options];
     }
+    // AVFoundation may drop a request without a delegate call (an NSData
+    // identifier without init data, for one): don't let generateRequest hang.
+    std::string id = raw->id;
+    ScheduleTimeout([id](Impl& impl) {
+      Session* session = impl.Find(id);
+      if (!session || !session->generate_done) {
+        return;
+      }
+      SessionCallback done = std::move(session->generate_done);
+      impl.RevokeKeys(session);
+      impl.sessions_.erase(id);
+      done(Result::Error(Exception::kNotSupported, "no license request from AVFoundation in time"), "");
+    });
   }
 
+  // EME lets a page call update() again before the last one settled
+  // (licenses fetched in parallel); those run in order.
   void UpdateSession(const std::string& session_id,
                      std::vector<uint8_t> response,
                      ResultCallback done) {
+    Session* session = Find(session_id);
+    if (session && (session->update_done || !session->queued_updates.empty())) {
+      session->queued_updates.push_back({std::move(response), std::move(done)});
+      return;
+    }
+    UpdateSessionNow(session_id, std::move(response), std::move(done));
+  }
+
+  void StartQueuedUpdate(const std::string& session_id) {
+    std::weak_ptr<Impl> weak = weak_from_this();
+    (*poster_)([weak, session_id] {
+      auto impl = weak.lock();
+      Session* session = impl ? impl->Find(session_id) : nullptr;
+      if (!session || session->update_done || session->queued_updates.empty()) {
+        return;
+      }
+      auto [response, done] = std::move(session->queued_updates.front());
+      session->queued_updates.pop_front();
+      impl->UpdateSessionNow(session_id, std::move(response), std::move(done));
+    });
+  }
+
+  void UpdateSessionNow(const std::string& session_id,
+                        std::vector<uint8_t> response,
+                        ResultCallback inner_done) {
+    // Whatever way this update settles, the next queued one starts after it.
+    std::weak_ptr<Impl> weak = weak_from_this();
+    ResultCallback done = [weak, session_id, inner_done](const Result& result) {
+      inner_done(result);
+      if (auto impl = weak.lock()) {
+        impl->StartQueuedUpdate(session_id);
+      }
+    };
     Session* session = Find(session_id);
     if (!session || session->keys_removed) {
       done(Result::Error(Exception::kInvalidState, "session is closed or removed"));
       return;
     }
-    if (session->update_done) {
-      done(Result::Error(Exception::kInvalidState, "an update is already in progress"));
-      return;
-    }
-    static const std::string kRenew = "renew";
+    static constexpr char kRenew[] = "renew";
     if (std::string(response.begin(), response.end()) == kRenew) {
       for (auto it = session->requests.rbegin(); it != session->requests.rend(); ++it) {
-        if (HasReceivedResponse((*it)->request)) {
+        if (HasReceivedResponse((*it)->request) && !(*it)->renewal) {
           [av_session_ renewExpiringResponseDataForContentKeyRequest:(*it)->request];
           done(Result::Ok());
           return;
@@ -347,7 +425,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     session->update_error = nil;
     for (auto& [request, code] : errors) {
       request->awaiting_response = false;
-      [request->request
+      [Active(*request)
           processContentKeyResponseError:[NSError errorWithDomain:@"PCFairPlayLicenseError"
                                                              code:code
                                                          userInfo:nil]];
@@ -362,10 +440,20 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     session->update_done = std::move(done);
+    const uint64_t serial = ++session->update_serial;
+    ScheduleTimeout([session_id, serial](Impl& impl) {
+      Session* s = impl.Find(session_id);
+      if (!s || !s->update_done || s->update_serial != serial) {
+        return;
+      }
+      s->update_pending.clear();
+      ResultCallback pending = std::move(s->update_done);
+      pending(Result::Error(Exception::kInvalidState, "license response not processed in time"));
+    });
     for (auto& [request, ckc] : responses) {
       AVContentKeyResponse* key_response =
           [AVContentKeyResponse contentKeyResponseWithFairPlayStreamingKeyResponseData:ckc];
-      [request->request processContentKeyResponse:key_response];
+      [Active(*request) processContentKeyResponse:key_response];
     }
   }
 
@@ -380,7 +468,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     RejectPending(session.get(), "session closed");
     RevokeKeys(session.get());
     done(Result::Ok());
-    client_->OnSessionClosed(session_id);
+    Deliver([session_id](FairPlayCdmClient* client) { client->OnSessionClosed(session_id); });
     NotifyObservers();
   }
 
@@ -416,10 +504,14 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
         continue;
       }
       for (const auto& request : session->requests) {
-        AVContentKey* key = request->request.contentKey;
-        if (key && HasReceivedResponse(request->request) &&
-            std::find(request->key_ids.begin(), request->key_ids.end(), key_id) !=
-                request->key_ids.end()) {
+        // The cached key covers a renewal in flight, which may reuse the
+        // request object and clear its contentKey until it is answered.
+        AVContentKey* key = request->key;
+        if (!key && HasReceivedResponse(request->request)) {
+          key = request->request.contentKey;
+        }
+        if (key && std::find(request->key_ids.begin(), request->key_ids.end(), key_id) !=
+                       request->key_ids.end()) {
           return key;
         }
       }
@@ -449,10 +541,18 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
           }
         }
       }
-      if (!request) {
-        session->requests.push_back(std::make_unique<Request>());
-        request = session->requests.back().get();
+      if (request) {
+        // Keep the answered request and its key; the renewal runs beside them.
+        if (!request->key) {
+          request->key = request->request.contentKey;
+        }
+        request->renewal = av_request;
+        request->spc = nil;
+        added.push_back(request);
+        continue;
       }
+      session->requests.push_back(std::make_unique<Request>());
+      request = session->requests.back().get();
       request->request = av_request;
       request->spc = nil;
       request->error = nil;
@@ -507,7 +607,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     for (Batch& batch : session->batches) {
       for (Request* request : batch.requests) {
-        if (request->request == av_request && !request->spc && !request->error) {
+        if (Active(*request) == av_request && !request->spc && !request->error) {
           request->spc = spc;
           request->error = spc ? nil : (error ?: [NSError errorWithDomain:@"PCFairPlayError"
                                                                      code:-1
@@ -523,15 +623,30 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   void OnRequestSucceeded(AVContentKeyRequest* av_request) {
     Session* session = SessionFor(av_request);
     if (Request* request = session ? FindRequest(session, av_request) : nullptr) {
+      if (request->renewal == av_request) {
+        request->request = av_request;
+        request->renewal = nil;
+      }
       request->error = nil;
+      if (AVContentKey* key = request->request.contentKey) {
+        request->key = key;
+      }
       Settle(session, request, nil);
     }
   }
 
   void OnRequestFailed(AVContentKeyRequest* av_request, NSError* error) {
     Session* session = SessionFor(av_request);
-    Request* request = session ? FindRequest(session, av_request) : nullptr;
+    if (!session) {
+      return;
+    }
+    Request* request = FindRequest(session, av_request);
     if (!request) {
+      // A request that failed before AVFoundation provided it: count it as a
+      // failed SPC of the session's license request so generateRequest settles.
+      if (session->generate_done) {
+        AddFailedRequest(session, av_request, error);
+      }
       return;
     }
     if (error.code == kSecurityLevelError) {
@@ -539,12 +654,33 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     std::string session_id = session->id;
+    const bool renewal = request->renewal == av_request;
     // A failure before the SPC exists fails that SPC (and may end the session).
     OnSpc(av_request, nil, error);
-    if (Find(session_id)) {
-      request->error = error;
-      Settle(session, request, error);
+    if (!Find(session_id)) {
+      return;
     }
+    if (renewal) {
+      // The answered request and its key stay in use.
+      request->renewal = nil;
+    } else {
+      request->error = error;
+    }
+    Settle(session, request, error);
+  }
+
+  void AddFailedRequest(Session* session, AVContentKeyRequest* av_request, NSError* error) {
+    session->requests.push_back(std::make_unique<Request>());
+    Request* request = session->requests.back().get();
+    request->request = av_request;
+    request->error = error ?: [NSError errorWithDomain:@"PCFairPlayError" code:-4 userInfo:nil];
+    for (Batch& batch : session->batches) {
+      if (batch.type == MessageType::kLicenseRequest && batch.requests.size() < batch.expected) {
+        batch.requests.push_back(request);
+        break;
+      }
+    }
+    SendReadyBatches(session);
   }
 
   void OnProtectionStatusChanged() {
@@ -603,10 +739,14 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   // before that a closed session's keys remain usable until the key system is
   // destroyed.
   static void RevokeKeys(Session* session) {
-    if (@available(macOS 14.4, *)) {
-      for (auto& request : session->requests) {
+    for (auto& request : session->requests) {
+      if (@available(macOS 14.4, *)) {
         [request->request.contentKey revoke];
+        if (request->key != request->request.contentKey) {
+          [request->key revoke];
+        }
       }
+      request->key = nil;
     }
   }
 
@@ -617,11 +757,29 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   static Request* FindRequest(Session* session, AVContentKeyRequest* av_request) {
     for (auto& request : session->requests) {
-      if (request->request == av_request) {
+      if (request->request == av_request || request->renewal == av_request) {
         return request.get();
       }
     }
     return nullptr;
+  }
+
+  // The request an SPC and response belong to: the renewal while one runs.
+  static AVContentKeyRequest* Active(const Request& request) {
+    return request.renewal ?: request.request;
+  }
+
+  void ScheduleTimeout(std::function<void(Impl&)> task) {
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(request_timeout_ * NSEC_PER_SEC)),
+                   DelegateQueue(), ^{
+                     (*poster)([weak, task] {
+                       if (auto impl = weak.lock()) {
+                         task(*impl);
+                       }
+                     });
+                   });
   }
 
   // Key IDs and SPC content identifier for a request, as WebKit's
@@ -663,12 +821,22 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   }
 
   void MakeSpc(Request* request) {
-    AVContentKeyRequest* av_request = request->request;
+    AVContentKeyRequest* av_request = Active(*request);
+    // Failures are posted: OnSpc can end the session, and callers loop over
+    // its requests.
+    auto fail = [this, av_request](NSInteger code, NSString* description) {
+      std::weak_ptr<Impl> weak = weak_from_this();
+      NSError* error = [NSError errorWithDomain:@"PCFairPlayError"
+                                           code:code
+                                       userInfo:@{NSLocalizedDescriptionKey : description ?: @""}];
+      (*poster_)([weak, av_request, error] {
+        if (auto impl = weak.lock()) {
+          impl->OnSpc(av_request, nil, error);
+        }
+      });
+    };
     if (request->content_identifier.empty()) {
-      OnSpc(av_request, nil,
-            [NSError errorWithDomain:@"PCFairPlayError"
-                                code:-2
-                            userInfo:@{NSLocalizedDescriptionKey : @"no content identifier"}]);
+      fail(-2, @"no content identifier");
       return;
     }
     std::weak_ptr<Impl> weak = weak_from_this();
@@ -685,10 +853,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                                            });
                                          }];
     } @catch (NSException* exception) {
-      OnSpc(av_request, nil,
-            [NSError errorWithDomain:@"PCFairPlayError"
-                                code:-3
-                            userInfo:@{NSLocalizedDescriptionKey : exception.reason ?: @""}]);
+      fail(-3, exception.reason);
     }
   }
 
@@ -746,7 +911,11 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
           return;
         }
       }
-      client_->OnSessionMessage(session_id, ready.type, ToVector(message));
+      std::vector<uint8_t> bytes = ToVector(message);
+      MessageType type = ready.type;
+      Deliver([session_id, type, bytes](FairPlayCdmClient* client) {
+        client->OnSessionMessage(session_id, type, bytes);
+      });
       session = Find(session_id);
       if (!session) {
         return;
@@ -787,6 +956,11 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       ResultCallback done = std::move(session->update_done);
       done(Result::Error(Exception::kInvalidState, reason));
     }
+    while (!session->queued_updates.empty()) {
+      ResultCallback done = std::move(session->queued_updates.front().second);
+      session->queued_updates.pop_front();
+      done(Result::Error(Exception::kInvalidState, reason));
+    }
   }
 
   static KeyStatus StatusOf(const Session& session, const Request& request) {
@@ -796,6 +970,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     AVContentKeyRequest* av_request = request.request;
     if (av_request.error.code == kSecurityLevelError) {
       return KeyStatus::kOutputRestricted;
+    }
+    if (request.renewal && request.key) {
+      return KeyStatus::kUsable;  // The answered key stays in use meanwhile.
     }
     KeyStatus status = KeyStatus::kStatusPending;
     switch (av_request.status) {
@@ -869,20 +1046,30 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (changed || additional) {
       session->last_keys = keys;
       std::string session_id = session->id;
-      client_->OnSessionKeysChange(session_id, additional, keys);
+      Deliver([session_id, additional, keys](FairPlayCdmClient* client) {
+        client->OnSessionKeysChange(session_id, additional, keys);
+      });
     }
     NotifyObservers();
   }
 
+  // Posted like client callbacks. Observers registered when it runs are told
+  // (they may unregister themselves while being notified).
   void NotifyObservers() {
-    // Observers may unregister themselves while being notified.
-    std::vector<KeysChangedCallback> callbacks;
-    for (auto& [id, callback] : observers_) {
-      callbacks.push_back(callback);
-    }
-    for (auto& callback : callbacks) {
-      callback();
-    }
+    std::weak_ptr<Impl> weak = weak_from_this();
+    (*poster_)([weak] {
+      auto impl = weak.lock();
+      if (!impl) {
+        return;
+      }
+      std::vector<KeysChangedCallback> callbacks;
+      for (auto& [id, callback] : impl->observers_) {
+        callbacks.push_back(callback);
+      }
+      for (auto& callback : callbacks) {
+        callback();
+      }
+    });
   }
 
   FairPlayCdmClient* client_;
@@ -890,6 +1077,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   AVContentKeySession* av_session_ = nil;  // Shared by every EME session.
   PCFairPlayContentKeyDelegate* delegate_ = nil;
   NSData* certificate_ = nil;
+  double request_timeout_ = 15;  // Seconds for generateRequest and update().
   std::map<std::string, std::unique_ptr<Session>> sessions_;
   uint64_t next_session_number_ = 0;
   std::map<uint64_t, KeysChangedCallback> observers_;
@@ -903,10 +1091,10 @@ bool FairPlayCdm::IsSupported() {
 }
 
 bool FairPlayCdm::IsKeySystemSupported(const std::string& key_system) {
-  static const std::string kKeySystem = "com.apple.fps";
-  return key_system == kKeySystem ||
-         (key_system.size() > kKeySystem.size() + 1 &&
-          key_system.compare(0, kKeySystem.size() + 1, kKeySystem + ".") == 0);
+  static constexpr char kPrefix[] = "com.apple.fps.";
+  constexpr size_t kPrefixSize = sizeof(kPrefix) - 1;
+  return key_system == "com.apple.fps" ||
+         (key_system.size() > kPrefixSize && key_system.compare(0, kPrefixSize, kPrefix) == 0);
 }
 
 bool FairPlayCdm::IsInitDataTypeSupported(const std::string& init_data_type) {
@@ -921,27 +1109,31 @@ FairPlayCdm::~FairPlayCdm() {
 }
 
 void FairPlayCdm::SetServerCertificate(std::vector<uint8_t> certificate, ResultCallback done) {
-  impl_->SetServerCertificate(std::move(certificate), std::move(done));
+  impl_->SetServerCertificate(std::move(certificate), impl_->Posted(std::move(done)));
 }
 
 void FairPlayCdm::CreateSessionAndGenerateRequest(InitDataType type,
                                                   std::vector<uint8_t> init_data,
                                                   SessionCallback done) {
-  impl_->CreateSession(type, std::move(init_data), std::move(done));
+  impl_->CreateSession(type, std::move(init_data), impl_->Posted(std::move(done)));
 }
 
 void FairPlayCdm::UpdateSession(const std::string& session_id,
                                 std::vector<uint8_t> response,
                                 ResultCallback done) {
-  impl_->UpdateSession(session_id, std::move(response), std::move(done));
+  impl_->UpdateSession(session_id, std::move(response), impl_->Posted(std::move(done)));
 }
 
 void FairPlayCdm::CloseSession(const std::string& session_id, ResultCallback done) {
-  impl_->CloseSession(session_id, std::move(done));
+  impl_->CloseSession(session_id, impl_->Posted(std::move(done)));
 }
 
 void FairPlayCdm::RemoveSession(const std::string& session_id, ResultCallback done) {
-  impl_->RemoveSession(session_id, std::move(done));
+  impl_->RemoveSession(session_id, impl_->Posted(std::move(done)));
+}
+
+void FairPlayCdm::SetRequestTimeout(double seconds) {
+  impl_->SetRequestTimeout(seconds);
 }
 
 bool FairPlayCdm::HasUsableKey(const std::vector<uint8_t>& key_id) const {

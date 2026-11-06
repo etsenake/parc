@@ -439,6 +439,9 @@ class LicenseClient : public fp::FairPlayCdmClient {
   std::string held_session;
   std::vector<uint8_t> held_message;
   std::function<void()> on_message;
+  std::vector<fp::MessageType> message_types;
+  // Closes the session from inside OnSessionKeysChange (re-entrancy check).
+  bool close_on_keys_change = false;
   int messages = 0;
   int keys_events = 0;
   bool closed = false;
@@ -449,6 +452,7 @@ class LicenseClient : public fp::FairPlayCdmClient {
                         fp::MessageType type,
                         const std::vector<uint8_t>& message) override {
     ++messages;
+    message_types.push_back(type);
     Log("%s: message %s type=%d %zu bytes%s", name_.c_str(), session_id.c_str(), int(type),
         message.size(), json ? " (JSON)" : " (raw SPC)");
     if (json) {
@@ -514,6 +518,10 @@ class LicenseClient : public fp::FairPlayCdmClient {
     keys = new_keys;
     Log("%s: keys change %s additional=%d [%s]", name_.c_str(), session_id.c_str(),
         has_additional_usable_key, KeysText(new_keys).c_str());
+    if (close_on_keys_change) {
+      close_on_keys_change = false;
+      cdm->CloseSession(session_id, [](const fp::Result&) {});
+    }
   }
 
   void OnSessionClosed(const std::string& session_id) override {
@@ -521,7 +529,7 @@ class LicenseClient : public fp::FairPlayCdmClient {
     Log("%s: session %s closed", name_.c_str(), session_id.c_str());
   }
 
- private:
+  // POSTs one SPC to the license service (blocking; off the main thread).
   static std::vector<uint8_t> Post(NSData* spc, const std::string& name, NSString* token,
                                    std::string* failure) {
     Http http = Fetch(kLicenseUrl, @"POST", spc,
@@ -537,6 +545,9 @@ class LicenseClient : public fp::FairPlayCdmClient {
     return Bytes(http.body);
   }
 
+  NSString* token() const { return token_; }
+
+ private:
   std::string name_;
   NSString* token_;
 };
@@ -555,9 +566,9 @@ std::unique_ptr<KeySystem> MakeKeySystem(const std::string& name, NSString* toke
   ks->client = std::make_unique<LicenseClient>(name, token);
   ks->cdm = std::make_unique<fp::FairPlayCdm>(ks->client.get(), MainPoster());
   ks->client->cdm = ks->cdm.get();
-  bool resolved = false;
-  ks->cdm->SetServerCertificate(g_certificate, [&](const fp::Result& r) { resolved = r.ok(); });
-  Check(resolved, name + ": SetServerCertificate resolves");
+  ks->cdm->SetServerCertificate(g_certificate, [name](const fp::Result& r) {
+    Check(r.ok(), name + ": SetServerCertificate resolves", r.message);
+  });
   return ks;
 }
 
@@ -1497,23 +1508,27 @@ std::vector<Step> ResponseValidationScenario() {
         {"keyID not base64", "[{\"keyID\":\"!!\",\"payload\":\"AAAA\"}]"},
         {"not JSON", "license"},
     };
-    int rejected = 0;
-    std::string failures;
+    auto rejected = std::make_shared<int>(0);
+    auto answered = std::make_shared<int>(0);
+    auto failures = std::make_shared<std::string>();
+    auto all_answered = std::make_shared<Done>();
     for (const auto& [name, body] : cases) {
-      bool type_error = false;
-      ks->cdm->UpdateSession(ks->session, Bytes(body), [&](const fp::Result& r) {
-        type_error = r.exception == fp::Exception::kTypeError;
+      std::string case_name = name;
+      size_t total = cases.size();
+      ks->cdm->UpdateSession(ks->session, Bytes(body), [=](const fp::Result& r) {
+        if (r.exception == fp::Exception::kTypeError) {
+          ++*rejected;
+        } else {
+          *failures += (failures->empty() ? "" : ", ") + case_name;
+        }
+        if (size_t(++*answered) == total && *all_answered) (*all_answered)();
       });
-      if (type_error) {
-        ++rejected;
-      } else {
-        failures += (failures.empty() ? "" : ", ") + name;
-      }
     }
-    Check(rejected == int(cases.size()),
+    *all_answered = [=] {
+    Check(*rejected == int(cases.size()),
           Format("responses: %d malformed JSON responses each rejected with TypeError, no crash",
                  int(cases.size())),
-          failures.empty() ? "" : "accepted: " + failures);
+          failures->empty() ? "" : "accepted: " + *failures);
     Check(!ks->cdm->HasUsableKey(g_key_id), "responses: no key from a malformed response");
     // The real license still goes through afterwards.
     auto finish = Once(30, "responses: real license after the malformed ones", [=](bool) { done(); });
@@ -1524,6 +1539,7 @@ std::vector<Step> ResponseValidationScenario() {
     };
     ks->client->hold = false;
     ks->client->Respond(ks->client->held_session, ks->client->held_message);
+    };
   });
   steps.push_back([=](Done done) {
     w->retired.push_back(std::move(*keys));
@@ -1677,6 +1693,200 @@ std::vector<Step> FlushRaceScenario() {
   });
   steps.push_back([=](Done done) {
     w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// Callbacks never run inside a call into the key system, so a client can
+// re-enter it: here the session is closed from inside OnSessionKeysChange.
+std::vector<Step> ReentrancyScenario() {
+  World* w = g_world;
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("callbacks: posted, and safe to re-enter (close inside OnSessionKeysChange)"));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("reentry");
+    KeySystem* ks = keys->get();
+    bool ran = false;
+    ks->cdm->SetServerCertificate(g_certificate, [&ran](const fp::Result&) { ran = true; });
+    Check(!ran, "reentry: promise callbacks run in a later task, not inside the call");
+    ks->client->close_on_keys_change = true;
+    auto finish = Once(30, "reentry: session closed from inside OnSessionKeysChange", [=](bool) { done(); });
+    ks->client->on_update = [=](bool ok, const std::string& detail) {
+      Check(ok, "reentry: update resolves", detail);
+      After(0.5, [=] {
+        Check(ks->client->closed && !ks->cdm->HasUsableKey(g_key_id),
+              "reentry: closing inside the keys callback completes (OnSessionClosed, key gone), no crash");
+        finish(true);
+      });
+    };
+    ks->cdm->CreateSessionAndGenerateRequest(fp::InitDataType::kSkd, Bytes(std::string(kSkd)),
+                                             [ks](const fp::Result& r, const std::string& id) {
+                                               ks->session = id;
+                                               Check(r.ok(), "reentry: generateRequest resolves");
+                                             });
+  });
+  steps.push_back([=](Done done) {
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
+// Two update() calls back to back (licenses fetched in parallel): the second
+// waits for the first instead of being rejected.
+std::vector<Step> QueuedUpdateScenario() {
+  World* w = g_world;
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("update() twice in a row on a three-key session"));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("queued", kMultiKeyToken);
+    KeySystem* ks = keys->get();
+    ks->client->json = true;
+    ks->client->hold = true;
+    ks->client->on_message = [=] { done(); };
+    ks->cdm->CreateSessionAndGenerateRequest(fp::InitDataType::kCenc, w->multi_video.info.pssh_boxes,
+                                             [ks](const fp::Result& r, const std::string& id) {
+                                               ks->session = id;
+                                               Check(r.ok(), "queued: generateRequest resolves");
+                                             });
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    NSData* body = Data(ks->client->held_message);
+    NSString* token = ks->client->token();
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+      NSArray* entries = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
+      NSMutableArray* answers = [NSMutableArray array];
+      for (NSDictionary* entry in entries) {
+        std::string failure;
+        NSData* spc = [[NSData alloc] initWithBase64EncodedString:entry[@"payload"] options:0];
+        std::vector<uint8_t> ckc = LicenseClient::Post(spc, "queued", token, &failure);
+        [answers addObject:@{@"keyID" : entry[@"keyID"], @"payload" : [Data(ckc) base64EncodedStringWithOptions:0]}];
+      }
+      dispatch_async(dispatch_get_main_queue(), ^{
+        auto first = Bytes([NSJSONSerialization dataWithJSONObject:@[ answers.firstObject ] options:0 error:nil]);
+        auto rest = Bytes([NSJSONSerialization
+            dataWithJSONObject:[answers subarrayWithRange:NSMakeRange(1, answers.count - 1)]
+                       options:0
+                         error:nil]);
+        auto results = std::make_shared<std::vector<bool>>();
+        auto check = [=](const fp::Result& r) {
+          results->push_back(r.ok());
+          if (results->size() < 2) return;
+          After(0.3, [=] {
+            bool all = true;
+            for (const auto& key : ks->client->keys) all &= key.status == fp::KeyStatus::kUsable;
+            Check((*results)[0] && (*results)[1] && ks->client->keys.size() == 3 && all,
+                  "queued: both updates resolve, in order, and all three keys are usable",
+                  KeysText(ks->client->keys));
+            done();
+          });
+        };
+        ks->cdm->UpdateSession(ks->session, first, check);
+        ks->cdm->UpdateSession(ks->session, rest, check);
+      });
+    });
+  });
+  steps.push_back([=](Done done) {
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
+// A request AVFoundation can't serve (a FairPlay pssh with no key entry):
+// generateRequest must settle, through the failure path or the timeout.
+std::vector<Step> NoHangScenario() {
+  World* w = g_world;
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("generateRequest that AVFoundation can't serve settles (3 s timeout)"));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("no-hang");
+    KeySystem* ks = keys->get();
+    ks->cdm->SetRequestTimeout(3);
+    std::vector<uint8_t> pssh = FairPlayPssh(std::vector<std::vector<uint8_t>>{}, fp::FourCC('c', 'b', 'c', 's'));
+    double started = Now();
+    auto finish = Once(8, "no-hang: generateRequest settles", [=](bool) { done(); });
+    ks->cdm->CreateSessionAndGenerateRequest(fp::InitDataType::kCenc, pssh,
+                                             [=](const fp::Result& r, const std::string&) {
+                                               Check(!r.ok(), Format("no-hang: rejected after %.1f s", Now() - started),
+                                                     r.message);
+                                               finish(true);
+                                             });
+  });
+  steps.push_back([=](Done done) {
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
+// License renewal while playing: the answered key stays usable while the
+// renewal is in flight, after it succeeds, and after a failed one.
+std::vector<Step> RenewalScenario() {
+  World* w = g_world;
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("license renewal during playback"));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("renewal");
+    AcquireLicense(keys->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "renewal", [=](bool) { done(); });
+  });
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("renewal", Framing::kChromium, &w->video, &w->audio, (*keys)->cdm.get(),
+                                         w->host);
+    StartAt(w->player, &w->video, &w->audio, 0, 4, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->client->hold = true;
+    auto finish = Once(10, "renewal: renewal message", [=](bool) { done(); });
+    ks->client->on_message = [finish] { finish(true); };
+    ks->cdm->UpdateSession(ks->session, Bytes(std::string("renew")), [](const fp::Result& r) {
+      Check(r.ok(), "renewal: update(\"renew\") resolves", r.message);
+    });
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    Check(!ks->client->message_types.empty() && ks->client->message_types.back() == fp::MessageType::kLicenseRenewal,
+          "renewal: a license-renewal message is sent");
+    Check(ks->cdm->HasUsableKey(g_key_id), "renewal: key still usable while the renewal is in flight");
+    Run(w->player, 2, 1, "renewal in flight, playing 2s")(done);
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    auto finish = Once(30, "renewal: response processed", [=](bool) { done(); });
+    ks->client->on_update = [=](bool ok, const std::string& detail) {
+      Check(ok && ks->cdm->HasUsableKey(g_key_id), "renewal: renewal response accepted, key usable", detail);
+      finish(true);
+    };
+    ks->client->hold = false;
+    ks->client->Respond(ks->client->held_session, ks->client->held_message);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "renewal answered, playing 2s")(done); });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->client->hold = true;
+    ks->client->on_message = [=] {
+      ks->cdm->UpdateSession(ks->client->held_session, Bytes(std::string("not a ckc")), [=](const fp::Result& r) {
+        Check(!r.ok(), "renewal: a bad renewal response is rejected", r.message);
+        After(0.3, [=] {
+          Check(ks->cdm->HasUsableKey(g_key_id) && w->player->waiting_events == 0,
+                "renewal: the answered key stays usable after a failed renewal, no OnWaitingForKey");
+          done();
+        });
+      });
+    };
+    ks->cdm->UpdateSession(ks->session, Bytes(std::string("renew")), [](const fp::Result&) {});
+  });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "renewal failed, still playing 2s")(done); });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    w->retired.push_back(std::move(*keys));
     done();
   });
   return steps;
@@ -2233,20 +2443,23 @@ std::vector<Step> CloseScenario() {
   steps.push_back(Section("session close and remove"));
   steps.push_back([=](Done done) {
     KeySystem* ks = w->main_keys.get();
-    bool removed = false;
-    ks->cdm->RemoveSession(ks->session, [&](const fp::Result& r) { removed = r.ok(); });
-    Check(removed && !ks->cdm->HasUsableKey(g_key_id) && !ks->client->keys.empty() &&
-              ks->client->keys[0].status == fp::KeyStatus::kReleased,
-          "remove: keys reported released and no longer attachable", KeysText(ks->client->keys));
-    bool closed = false;
-    ks->cdm->CloseSession(ks->session, [&](const fp::Result& r) { closed = r.ok(); });
-    Check(closed && ks->client->closed, "close: promise resolves and OnSessionClosed fires");
-    bool rejected = false;
-    ks->cdm->UpdateSession(ks->session, {1, 2, 3}, [&](const fp::Result& r) {
-      rejected = r.exception == fp::Exception::kInvalidState;
+    ks->cdm->RemoveSession(ks->session, [=](const fp::Result& r) {
+      After(0.2, [=] {
+        Check(r.ok() && !ks->cdm->HasUsableKey(g_key_id) && !ks->client->keys.empty() &&
+                  ks->client->keys[0].status == fp::KeyStatus::kReleased,
+              "remove: keys reported released and no longer attachable", KeysText(ks->client->keys));
+        ks->cdm->CloseSession(ks->session, [=](const fp::Result& closed) {
+          After(0.2, [=] {
+            Check(closed.ok() && ks->client->closed, "close: promise resolves and OnSessionClosed fires");
+            ks->cdm->UpdateSession(ks->session, {1, 2, 3}, [=](const fp::Result& update) {
+              Check(update.exception == fp::Exception::kInvalidState,
+                    "close: update on a closed session is rejected (InvalidStateError)");
+              done();
+            });
+          });
+        });
+      });
     });
-    Check(rejected, "close: update on a closed session is rejected (InvalidStateError)");
-    done();
   });
   return steps;
 }
@@ -2369,6 +2582,10 @@ void RunAll() {
   add("ShortEndScenario()", ShortEndScenario());
   add("FlushRaceScenario()", FlushRaceScenario());
   add("ResponseValidationScenario()", ResponseValidationScenario());
+  add("ReentrancyScenario()", ReentrancyScenario());
+  add("QueuedUpdateScenario()", QueuedUpdateScenario());
+  add("NoHangScenario()", NoHangScenario());
+  add("RenewalScenario()", RenewalScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
 
   std::string sinf_json = Format("{\"sinf\":[\"%s\"]}",

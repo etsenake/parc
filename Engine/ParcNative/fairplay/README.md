@@ -220,6 +220,20 @@ so this forces the following on the Chromium integration.
   joins the same session; keys are matched by key ID, so any element can use
   any usable key of that MediaKeys.
 
+## Key session contract
+
+- Every promise callback and client callback runs in a later task on the owner
+  sequence, never inside a call into `FairPlayCdm`, so a client may re-enter
+  it (for example, close the session from `OnSessionKeysChange`).
+- `UpdateSession` calls made while one is in flight run in order after it.
+- `generateRequest` and `update()` reject after `SetRequestTimeout` seconds
+  (default 15) if AVFoundation never answers. A failure for a request
+  AVFoundation never provided fails that request's part of the license request.
+- A renewal (`update("renew")`, or one AVFoundation starts) runs beside the
+  answered request. The answered key stays usable until the renewal succeeds
+  (it then replaces the key) or fails (it is dropped).
+- A JSON license response is validated entirely before any of it is applied.
+
 ## Messages
 
 skd and sinf sessions exchange the raw SPC and CKC. cenc and keyids sessions

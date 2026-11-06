@@ -222,5 +222,16 @@ probed through its runtime interface)
   `qusa`, `qac3`, `qec3`, `qflc`, `qlac` and `qapc`.
 - `outputObscuredDueToInsufficientExternalProtection` turns on while
   something on the Mac captures the screen; decoding continues.
+- Constant-IV cbcs content also decrypts when every sample carries its IV as a
+  `CryptorIV` attachment and the `tenc` says 16-byte per-sample IVs, which is
+  what a renderer can build from Chromium's input (a 16-byte IV on every
+  DecryptConfig, no `tenc`). Proven on the Axinom vector with the Chromium
+  configs.
+- AVFoundation silently drops a request it can't serve: a FairPlay pssh that
+  names no key gets no delegate call at all, not even a failure. The key
+  session's request timeout is what keeps `generateRequest` from hanging.
+- A malformed CKC for a renewal fails with `CoreMediaErrorDomain -42681`. The
+  answered key keeps working.
 - The ad-hoc signed command-line harness gets SPCs, CKCs and protected playback
-  with no app bundle and no entitlement.
+  with no app bundle and no entitlement. It ran unsandboxed; the sandbox profile
+  of the engine process that hosts the core must allow FairPlay (unverified).
