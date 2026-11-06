@@ -619,8 +619,10 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing) {
 class Player : public fp::FairPlayRendererClient {
  public:
   // Either stream may be null (single-stream codec checks).
+  // |cdm_first| calls SetCdm before Initialize, Chromium's order when
+  // MediaKeys were attached before playback.
   Player(std::string name, Framing framing, const Media* video, const Media* audio,
-         fp::FairPlayCdm* cdm, NSView* host)
+         fp::FairPlayCdm* cdm, NSView* host, bool cdm_first = false)
       : name_(std::move(name)),
         framing_(framing),
         has_video_(video != nullptr),
@@ -633,11 +635,17 @@ class Player : public fp::FairPlayRendererClient {
     if (has_video_) vc = VideoConfigFor(video_info_, framing);
     std::optional<fp::AudioConfig> ac;
     if (has_audio_) ac = AudioConfigFor(audio_info_, framing);
-    fp::Result result = renderer_.Initialize(vc, ac);
+    fp::Result result = fp::Result::Ok();
+    if (cdm_first) {
+      result = renderer_.SetCdm(cdm);
+      Check(result.ok(), name_ + ": SetCdm before Initialize is accepted", result.message);
+    }
+    result = renderer_.Initialize(vc, ac);
     Check(result.ok(), name_ + ": renderer Initialize", result.message);
     result = renderer_.SetCdm(cdm);
-    Check(result.ok(), name_ + ": SetCdm joins the display layer and audio renderer to the "
-                       "key system's AVContentKeySession as content key recipients",
+    Check(result.ok(), name_ + (cdm_first ? ": SetCdm with the same CDM after Initialize is a no-op"
+                                          : ": SetCdm joins the display layer and audio renderer to the "
+                                            "key system's AVContentKeySession as content key recipients"),
           result.message);
     layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
     if (has_video_) Check(layer_ != nil, name_ + ": display layer exists");
@@ -1157,6 +1165,7 @@ struct World {
 };
 
 World* g_world = nullptr;
+std::string g_only;
 
 Step Section(const std::string& title) {
   return [title](Done done) {
@@ -1340,6 +1349,28 @@ std::vector<Step> UnderflowScenario() {
   steps.push_back([=](Done done) {
     Check(w->player->underflows == 1, "underflow: exactly one HAVE_NOTHING (no flapping)",
           Format("%d", w->player->underflows));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// Chromium's order when MediaKeys come first: SetCdm, then Initialize. The
+// renderers must still join the key session (protected samples would
+// otherwise fail with -11800 "no content key present").
+std::vector<Step> CdmFirstScenario() {
+  World* w = g_world;
+  auto frames = std::make_shared<int64_t>(0);
+  std::vector<Step> steps;
+  steps.push_back(Section("SetCdm before Initialize (Chromium's order with MediaKeys attached first)"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("cdm-first", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host, true);
+    StartAt(w->player, &w->video, &w->audio, 0, 2, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "cdm-first play 3s")(done); });
+  steps.push_back([=](Done done) { Metrics(w->player, "cdm-first", 50, frames)(done); });
+  steps.push_back([=](Done done) {
     w->player.reset();
     done();
   });
@@ -1782,6 +1813,11 @@ void RunAll() {
   }
 
   std::vector<Step> steps;
+  // --only <text> keeps the scenario groups whose call names contain <text>.
+  auto add = [&steps](const std::string& name, std::vector<Step> group) {
+    if (!g_only.empty() && name.find(g_only) == std::string::npos) return;
+    steps.insert(steps.end(), group.begin(), group.end());
+  };
   steps.push_back(Section("license exchange (skd init data) for the playback scenarios"));
   steps.push_back([=](Done done) {
     w->main_keys = MakeKeySystem("main");
@@ -1790,11 +1826,12 @@ void RunAll() {
       done();
     });
   });
-  for (Step& s : MainScenario(Framing::kChromium, true)) steps.push_back(s);
-  for (Step& s : MainScenario(Framing::kIso, false)) steps.push_back(s);
-  for (Step& s : MixedScenario()) steps.push_back(s);
-  for (Step& s : UnderflowScenario()) steps.push_back(s);
-  for (Step& s : WaitingForKeyScenario()) steps.push_back(s);
+  add("MainScenario(Framing::kChromium, true)", MainScenario(Framing::kChromium, true));
+  add("MainScenario(Framing::kIso, false)", MainScenario(Framing::kIso, false));
+  add("MixedScenario()", MixedScenario());
+  add("UnderflowScenario()", UnderflowScenario());
+  add("CdmFirstScenario()", CdmFirstScenario());
+  add("WaitingForKeyScenario()", WaitingForKeyScenario());
 
   std::string sinf_json = Format("{\"sinf\":[\"%s\"]}",
                                  [Data(w->video.info.sinf_payload) base64EncodedStringWithOptions:0].UTF8String);
@@ -1802,11 +1839,9 @@ void RunAll() {
       stringByReplacingOccurrencesOfString:@"+" withString:@"-"]
       stringByReplacingOccurrencesOfString:@"/" withString:@"_"]
       stringByReplacingOccurrencesOfString:@"=" withString:@""];
-  for (Step& s : InitDataScenario(fp::InitDataType::kSinf, Bytes(sinf_json))) steps.push_back(s);
-  for (Step& s : InitDataScenario(fp::InitDataType::kKeyIds,
-                                  Bytes(Format("{\"kids\":[\"%s\"]}", kid64.UTF8String))))
-    steps.push_back(s);
-  for (Step& s : InitDataScenario(fp::InitDataType::kCenc, w->video.info.pssh_boxes)) steps.push_back(s);
+  add("InitDataScenario(fp::InitDataType::kSinf, Bytes(sinf_json))", InitDataScenario(fp::InitDataType::kSinf, Bytes(sinf_json)));
+  add("InitDataScenario(fp::InitDataType::kKeyIds, Bytes(Format({kids:[%s]}, kid64.UTF8String)))", InitDataScenario(fp::InitDataType::kKeyIds, Bytes(Format("{\"kids\":[\"%s\"]}", kid64.UTF8String))));
+  add("InitDataScenario(fp::InitDataType::kCenc, w->video.info.pssh_boxes)", InitDataScenario(fp::InitDataType::kCenc, w->video.info.pssh_boxes));
   // Chromium's cenc init data is every pssh in the moov; put a FairPlay box
   // among the vector's own so the WebKit path (FairPlay pssh to AVFoundation
   // as {"pssh": ...}) runs.
@@ -1814,20 +1849,20 @@ void RunAll() {
   std::vector<uint8_t> fairplay =
       FairPlayPssh(g_key_id, fp::FourCC('c', 'b', 'c', 's'));
   with_fairplay.insert(with_fairplay.end(), fairplay.begin(), fairplay.end());
-  for (Step& s : InitDataScenario(fp::InitDataType::kCenc, with_fairplay)) steps.push_back(s);
-  for (Step& s : MultiKeyScenario(true)) steps.push_back(s);
-  for (Step& s : MultiKeyScenario(false)) steps.push_back(s);
-  for (Step& s : HevcScenario()) steps.push_back(s);
+  add("InitDataScenario(fp::InitDataType::kCenc, with_fairplay)", InitDataScenario(fp::InitDataType::kCenc, with_fairplay));
+  add("MultiKeyScenario(true)", MultiKeyScenario(true));
+  add("MultiKeyScenario(false)", MultiKeyScenario(false));
+  add("HevcScenario()", HevcScenario());
   // hev1 decodes only when presented as hvc1, so its protected form is qhvc
   // (Apple's own parser would label the entry qhev).
-  for (Step& s : CodecScenario("hev1 (HEVC)", &w->hev1, nullptr, "qhvc")) steps.push_back(s);
-  for (Step& s : CodecScenario("hev1 with parameter sets only in-band", &w->hev1_in_band, nullptr, "")) steps.push_back(s);
-  for (Step& s : CodecScenario("Dolby Vision profile 5 (dvh1)", &w->dolby_vision, nullptr, "qdh1")) steps.push_back(s);
-  for (Step& s : CodecScenario("AV1 (av01)", &w->av1, nullptr, "qav1")) steps.push_back(s);
-  for (Step& s : CodecScenario("xHE-AAC (mp4a.40.42)", nullptr, &w->xhe_aac, "qusa")) steps.push_back(s);
-  for (Step& s : CodecScenario("HE-AAC (mp4a.40.5)", nullptr, &w->he_aac, "qaac,qach")) steps.push_back(s);
-  for (Step& s : CodecScenario("HE-AACv2 (mp4a.40.29)", nullptr, &w->he_aac_v2, "qaac,qacp")) steps.push_back(s);
-  for (Step& s : CloseScenario()) steps.push_back(s);
+  add("CodecScenario(hev1 (HEVC), &w->hev1, nullptr, qhvc)", CodecScenario("hev1 (HEVC)", &w->hev1, nullptr, "qhvc"));
+  add("CodecScenario(hev1 with parameter sets only in-band, &w->hev1_in_band, nullptr, )", CodecScenario("hev1 with parameter sets only in-band", &w->hev1_in_band, nullptr, ""));
+  add("CodecScenario(Dolby Vision profile 5 (dvh1), &w->dolby_vision, nullptr, qdh1)", CodecScenario("Dolby Vision profile 5 (dvh1)", &w->dolby_vision, nullptr, "qdh1"));
+  add("CodecScenario(AV1 (av01), &w->av1, nullptr, qav1)", CodecScenario("AV1 (av01)", &w->av1, nullptr, "qav1"));
+  add("CodecScenario(xHE-AAC (mp4a.40.42), nullptr, &w->xhe_aac, qusa)", CodecScenario("xHE-AAC (mp4a.40.42)", nullptr, &w->xhe_aac, "qusa"));
+  add("CodecScenario(HE-AAC (mp4a.40.5), nullptr, &w->he_aac, qaac,qach)", CodecScenario("HE-AAC (mp4a.40.5)", nullptr, &w->he_aac, "qaac,qach"));
+  add("CodecScenario(HE-AACv2 (mp4a.40.29), nullptr, &w->he_aac_v2, qaac,qacp)", CodecScenario("HE-AACv2 (mp4a.40.29)", nullptr, &w->he_aac_v2, "qaac,qacp"));
+  add("CloseScenario()", CloseScenario());
   Sequence(steps, Finish);
 }
 
@@ -1846,6 +1881,7 @@ int main(int argc, char** argv) {
       if (flag == "--cache") g_cache_dir = @(argv[i + 1]);
       else if (flag == "--video-playlist") video_playlist = @(argv[i + 1]);
       else if (flag == "--segments") world.segments = std::max(10, atoi(argv[i + 1]));
+      else if (flag == "--only") g_only = argv[i + 1];
     }
     [[NSFileManager defaultManager] createDirectoryAtPath:g_cache_dir withIntermediateDirectories:YES
                                                attributes:nil error:nil];

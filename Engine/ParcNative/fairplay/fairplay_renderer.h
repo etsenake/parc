@@ -106,10 +106,13 @@ class FairPlayRenderer {
                     const std::optional<AudioConfig>& audio);
 
   // Joins the renderers to |cdm|'s AVContentKeySession as content key
-  // recipients (borrowed; call SetCdm(nullptr) before destroying it). Must come
-  // before the first Enqueue and can't move to another CDM afterwards:
-  // AVFoundation allows recipients to join one session, before they process
-  // media, and SetCdm(nullptr) leaves them unable to decrypt.
+  // recipients (borrowed; call SetCdm(nullptr) before destroying it). May come
+  // before Initialize (Chromium's order when MediaKeys were set first; the
+  // CDM is attached when the renderers exist) or after it, but before the
+  // first Enqueue, and can't move to another CDM afterwards: AVFoundation
+  // allows recipients to join one session, before they process media, and
+  // SetCdm(nullptr) leaves them unable to decrypt. Setting the same CDM again
+  // is a no-op.
   Result SetCdm(FairPlayCdm* cdm);
 
   // The AVSampleBufferDisplayLayer to composite, borrowed. Nonnull once

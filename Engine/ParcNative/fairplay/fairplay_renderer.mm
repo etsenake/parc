@@ -184,7 +184,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   ~Impl() { Shutdown(); }
 
   void Shutdown() {
-    SetCdm(nullptr);
+    pending_cdm_ = nullptr;
+    AttachCdm(nullptr);
     for (id token : notification_tokens_) {
       [[NSNotificationCenter defaultCenter] removeObserver:token];
     }
@@ -303,6 +304,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                         ++impl.status_.audio_automatic_flushes;
                       });
     }
+    if (FairPlayCdm* cdm = pending_cdm_) {
+      pending_cdm_ = nullptr;
+      if (Result result = AttachCdm(cdm); !result.ok()) {
+        return result;
+      }
+    }
     return Result::Ok();
   }
 
@@ -311,7 +318,21 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // instead, but on macOS it needs the private
   // com.apple.private.coremedia.allow-fps-attachment entitlement (WebKit's GPU
   // process has it; other processes get -11836 <- -12161, "not authorized").
+  //
+  // Chromium's pipeline calls SetCdm before Initialize when MediaKeys were
+  // attached first (the usual EME order); the CDM is then kept and attached
+  // when Initialize creates the renderers.
   Result SetCdm(FairPlayCdm* cdm) {
+    if (!synchronizer_) {
+      pending_cdm_ = cdm;
+      return Result::Ok();
+    }
+    return AttachCdm(cdm);
+  }
+
+  // Joins both renderers to |cdm|'s key session; cdm_ is set only once every
+  // recipient joined. A null |cdm| detaches.
+  Result AttachCdm(FairPlayCdm* cdm) {
     if (cdm == cdm_) {
       return Result::Ok();
     }
@@ -326,25 +347,36 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         DetachContentKeyRecipient(cdm_->impl(), recipient);
       }
       recipients_.clear();
+      cdm_ = nullptr;
     }
-    cdm_ = cdm;
-    if (!cdm_) {
+    if (!cdm) {
       return Result::Ok();
     }
+    std::vector<id<AVContentKeyRecipient>> joined;
+    Result result = Result::Ok();
     for (id object : {(id)layer_, (id)audio_}) {
       if (!object) {
         continue;
       }
       if (![object conformsToProtocol:@protocol(AVContentKeyRecipient)]) {
-        return Result::Error(Exception::kNotSupported,
-                             "renderer is not an AVContentKeyRecipient on this OS");
+        result = Result::Error(Exception::kNotSupported,
+                               "renderer is not an AVContentKeyRecipient on this OS");
+        break;
       }
-      Result result = AttachContentKeyRecipient(cdm_->impl(), (id<AVContentKeyRecipient>)object);
+      result = AttachContentKeyRecipient(cdm->impl(), (id<AVContentKeyRecipient>)object);
       if (!result.ok()) {
-        return result;
+        break;
       }
-      recipients_.push_back((id<AVContentKeyRecipient>)object);
+      joined.push_back((id<AVContentKeyRecipient>)object);
     }
+    if (!result.ok()) {
+      for (id<AVContentKeyRecipient> recipient : joined) {
+        DetachContentKeyRecipient(cdm->impl(), recipient);
+      }
+      return result;
+    }
+    cdm_ = cdm;
+    recipients_ = std::move(joined);
     std::weak_ptr<Impl> weak = weak_from_this();
     observer_id_ = cdm_->AddKeysChangedObserver([weak] {
       if (auto impl = weak.lock()) {
@@ -1169,6 +1201,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   FairPlayRendererClient* client_;
   std::shared_ptr<const PostTask> poster_;
   FairPlayCdm* cdm_ = nullptr;
+  FairPlayCdm* pending_cdm_ = nullptr;  // Set before Initialize.
   uint64_t observer_id_ = 0;
 
   std::optional<VideoConfig> video_config_;
