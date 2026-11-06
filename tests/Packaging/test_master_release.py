@@ -46,6 +46,23 @@ class Repository(unittest.TestCase):
         for kind, expected in [('major','2.0.0'),('minor','1.1.0'),('patch','1.0.1')]:
             self.assertEqual(release.next_version('1.0.0', kind), expected)
 
+    def test_combined_log_appends_across_runners_and_includes_captured_errors(self):
+        first = release.Release(self.root, 'minor')
+        first.secrets.append('fixture-secret')
+        first.emit('first run')
+        captured = first.command([sys.executable, '-c',
+                                  'import sys; print("fixture-secret"); print("stderr detail", file=sys.stderr)'],
+                                 capture=True)
+        self.assertIn('[REDACTED]', captured)
+        second = release.Release(self.root, 'minor')
+        second.emit('second run')
+        with self.assertRaisesRegex(release.Failure, 'nightly-release.log'):
+            second.command([sys.executable, '-c', 'print("failure detail"); raise SystemExit(3)'])
+        contents = (self.root / 'build/master-release-development/nightly-release.log').read_text()
+        for expected in ('first run', 'stderr detail', '[REDACTED]', 'second run', 'failure detail'):
+            self.assertIn(expected, contents)
+        self.assertNotIn('fixture-secret', contents)
+
     def test_snapshot_remains_frozen_when_main_changes_and_rejects_extra_resources(self):
         commit = self.git('rev-parse', 'HEAD'); source = self.root / 'build/source'
         release_inputs.create(self.root, source, commit)

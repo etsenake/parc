@@ -249,7 +249,7 @@ PY
   codesign --verify --deep --strict "$run/development/Parc.app"
 else
   if ! python3 scripts/build.py "${build_args[@]}" --output "$run/development" --configuration release --purpose "$purpose" \
-    --sign-identity "$sign_identity" >"$run/package-output.log" 2>&1; then
+    --sign-identity "$sign_identity" 2>&1 | tee "$run/package-output.log"; then
     echo "error: packaging failed; see $run/package.log and $run/package-output.log" >&2
     exit 1
   fi

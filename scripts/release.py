@@ -69,6 +69,8 @@ class Release:
         self.kind = kind
         self.base = self.root / "build/releases"
         self.base.mkdir(parents=True, exist_ok=True)
+        self.log = self.root / "build/master-release-development/nightly-release.log"
+        self.log.parent.mkdir(parents=True, exist_ok=True)
         self.current = self.base / "current.json"
         self.state = {}
         self.env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1", HOMEBREW_NO_INSTALL_CLEANUP="1", GIT_TERMINAL_PROMPT="0", PYTHONDONTWRITEBYTECODE="1")
@@ -80,7 +82,10 @@ class Release:
         line = json.dumps(value, sort_keys=True)
         for secret in self.secrets:
             line = line.replace(secret, "[REDACTED]")
-        print(f"[{value['time']}] {value['stage']}: {json.loads(line)['message']}", flush=True)
+        message = f"[{value['time']}] {value['stage']}: {json.loads(line)['message']}"
+        with self.log.open("a") as stream:
+            stream.write(message + "\n")
+        print(message, flush=True)
         if self.state.get("run"):
             with (Path(self.state["run"]) / "events.jsonl").open("a") as stream:
                 stream.write(line + "\n")
@@ -113,11 +118,12 @@ class Release:
                 self.checkpoint(command_pid=child.pid, command=args, command_started_utc=now())
                 output = []
                 try:
-                    with log.open("a") if log else open(os.devnull, "w") as stream:
+                    with self.log.open("a") as combined, (log.open("a") if log else open(os.devnull, "w")) as stream:
                         for line in child.stdout:
                             for secret in self.secrets:
                                 line = line.replace(secret, "[REDACTED]")
                             stream.write(line); stream.flush()
+                            combined.write(line); combined.flush()
                             if capture:
                                 output.append(line)
                             elif line.strip():
@@ -139,7 +145,7 @@ class Release:
             if attempt < retries:
                 self.emit("Transient operation failed; retrying unchanged inputs", exit_code=code)
                 time.sleep(min(10 * (attempt + 1), 30))
-        raise Failure(f"Command failed ({code}); see {log}")
+        raise Failure(f"Command failed ({code}); see {self.log}")
 
     def git(self, *args, **kwargs):
         return self.command(["git", *args], capture=True, **kwargs)

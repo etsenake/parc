@@ -49,6 +49,12 @@ preserved and refused rather than adopted or discarded.
 
 ## Logs and recovery
 
+All releases append stage messages and command output to the same file:
+`build/master-release-development/nightly-release.log`. Follow it with
+`tail -f build/master-release-development/nightly-release.log`; it includes
+engine generation/compilation, packaging, signing, notarization and publication.
+No shell redirection is needed, and a new run never truncates the log.
+
 `build/releases/current.json` identifies the active run/stage/version/source and
 command PID. Each `build/releases/<run>/` contains atomic `state.json`, an
 `events.jsonl` stage journal and individual command logs. Swift/compiler detail
