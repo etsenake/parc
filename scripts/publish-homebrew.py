@@ -158,6 +158,11 @@ def verify_acceptance(acceptance, tag, commit, app_version, report_sha):
 
 def promote_release(release, acceptance, app_version, report_sha):
     verify_acceptance(acceptance, release["tag_name"], release["target_commitish"], app_version, report_sha)
+    promote_verified_artifacts(release)
+
+
+def promote_verified_artifacts(release):
+    """Called only after ZIP, DMG, signatures, Apple ticket and source verification."""
     verify_tag(release["tag_name"], release["target_commitish"])
     if github("api", f"repos/{REPOSITORY}", "--jq", ".private") != "true":
         raise ValueError("Parc release assets must remain in the private repository")
@@ -216,15 +221,18 @@ end
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tag", help="versioned candidate tag, for example v1.0.1")
-    parser.add_argument("--acceptance", required=True, type=Path,
+    evidence = parser.add_mutually_exclusive_group(required=True)
+    evidence.add_argument("--artifact-only", action="store_true", help="publish verified notarized artifacts without installation or startup checks")
+    evidence.add_argument("--acceptance", type=Path,
                         help="passed receipt from scripts/record-release-acceptance.py")
     parser.add_argument("--tap", required=True, type=Path, help="existing etsenake/homebrew-tap clone")
     parser.add_argument("--resume", action="store_true", help="reconcile this release's exact generated cask")
     args = parser.parse_args()
     tap = args.tap.resolve()
     try:
-        acceptance = json.loads(args.acceptance.read_text())
-        require_evidence(acceptance)
+        acceptance = json.loads(args.acceptance.read_text()) if args.acceptance else None
+        if acceptance is not None:
+            require_evidence(acceptance)
         dirty = run("git", "status", "--porcelain", cwd=tap)
         if dirty and (not args.resume or dirty.strip() not in ('M Casks/parc.rb', 'M  Casks/parc.rb')):
             raise ValueError("The tap clone has unrelated edits; preserved without overwriting")
@@ -246,7 +254,8 @@ def main():
             github("release", "download", args.tag, "--repo", REPOSITORY,
                 "--pattern", f"Parc-{args.tag.removeprefix('v')}-arm64.zip", "--output", str(archive))
             app_version, _, commit, report, report_sha = verify_release(release, archive)
-            verify_acceptance(acceptance, args.tag, commit, app_version, report_sha)
+            if acceptance is not None:
+                verify_acceptance(acceptance, args.tag, commit, app_version, report_sha)
             dmg = Path(temporary) / "Parc.dmg"
             github("release", "download", args.tag, "--repo", REPOSITORY,
                 "--pattern", f'Parc-{app_version["version"]}-arm64.dmg', "--output", str(dmg))
@@ -265,7 +274,10 @@ def main():
             if dirty and target.read_text() != cask(version, digest):
                 raise ValueError("Local cask edits differ from this verified release; preserved")
         target.write_text(cask(version, digest))
-        promote_release(release, acceptance, app_version, report_sha)
+        if acceptance is not None:
+            promote_release(release, acceptance, app_version, report_sha)
+        else:
+            promote_verified_artifacts(release)
         print(f"Promoted {args.tag} and updated {target} from {commit}; verify, commit and push the tap.")
     except (OSError, ValueError, KeyError, dmg_tool.Refusal, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, "error: " + str(error) + "\n")

@@ -351,18 +351,12 @@ class Release:
         self.command(["bash", source / "scripts/package-app.sh", "--stable", self.state["manifest"]], name="package-publish")
         self.checkpoint(package=str(package_run / "development"))
 
-    def install(self):
-        source = Path(self.state["source"])
-        self.command([sys.executable, source / "scripts/release_install.py", "--package", self.state["package"],
-                      "--tag", self.state["tag"], "--commit", self.state["commit"], "--receipts", Path(self.state["run"]) / "install"], name="install-open-verify")
-        self.checkpoint(acceptance=str(Path(self.state["run"]) / "install/acceptance.json"))
-
     def tap(self):
         source = Path(self.state["source"]); tap = Path.home() / "homebrew-tap"
         if not tap.exists():
             self.command(["git", "clone", "https://github.com/etsenake/homebrew-tap.git", tap], name="tap-clone", retries=2)
-        self.command([sys.executable, source / "scripts/publish-homebrew.py", self.state["tag"], "--tap", tap,
-                      "--acceptance", self.state["acceptance"], "--resume"], name="tap-update")
+        self.command([sys.executable, self.root / "scripts/publish-homebrew.py", self.state["tag"], "--tap", tap,
+                      "--artifact-only", "--resume"], name="tap-update")
         self.git("diff", "--check", cwd=tap)
         self.command(["brew", "ruby", "--", "-c", tap / "Casks/parc.rb"], name="tap-syntax")
         if self.git("status", "--porcelain", cwd=tap):
@@ -387,52 +381,29 @@ class Release:
         self.checkpoint(tap=str(tap), tap_commit=self.git("rev-parse", "HEAD", cwd=tap))
 
     def finish(self):
-        self.checkpoint(stage='cleanup')
-        app = Path('/Applications/Parc.app')
-        source = Path(self.state['source'])
-        check = module(source, 'record-release-acceptance')
-        report = json.loads((Path(self.state['package']) / 'package-report.json').read_text())
-        check.verify_installed(app, report, strict=False)
-        lsregister = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
-        state_path = self.root / 'build/recurring-prod-refresh/state.json'
-        if state_path.exists() and not (Path(self.state['run']) / 'previous-refresh-state.json').exists():
-            save(Path(self.state['run']) / 'previous-refresh-state.json', json.loads(state_path.read_text()))
-        acceptance_path = Path(self.state['run']) / 'homebrew/acceptance.json'
-        if not acceptance_path.exists():
-            acceptance_path = Path(self.state['acceptance'])
-        acceptance = json.loads(acceptance_path.read_text())
-        report_path = Path(self.state['package']) / 'package-report.json'
-        check.publisher.verify_acceptance(acceptance, self.state['tag'], self.state['commit'],
-                                          report['app_version'], sha(report_path))
-        removed = []
-        # Only exact rollback bundles owned by this run are eligible. The newest
-        # pristine package, reports, profiles, seals and compiled output remain.
-        for relative in ('install/previous-Parc.app',):
-            old = Path(self.state['run']) / relative
-            if old.is_dir() and not old.is_symlink():
-                self.command([lsregister, '-u', old], name='unregister-old-app')
-                shutil.rmtree(old)
-                removed.append(str(old))
-        self.command([lsregister, '-f', app], name='register-installed-app')
-        previous = {'schema_version': 2, 'status': 'installed_master_release_verified',
-                    'automation_id': 'refresh-parc-production-app', 'automation_status': 'deleted_by_user',
-                    'installed_app': str(app), 'installed_source_commit': self.state['commit'],
+        self.checkpoint(stage='verify-release')
+        package = Path(self.state['package'])
+        check = module(self.root, 'record-release-acceptance')
+        report_path = package / 'package-report.json'
+        report = json.loads(report_path.read_text())
+        check.publisher.dmg_tool.require_report(report, TEAM)
+        check.verify_installed(package / 'Parc.app', report, strict=True)
+        check.publisher.verify_tag(self.state['tag'], self.state['commit'])
+        published = json.loads(self.github('api', 'repos/' + REPOSITORY + '/releases/tags/' + self.state['tag']))
+        if published['draft'] or published['prerelease'] or published['target_commitish'] != self.state['commit']:
+            raise Failure('Final GitHub release/source promotion was not verified')
+        delivery = {'schema_version': 1, 'status': 'published', 'source_commit': self.state['commit'],
                     'engine_overlay': self.state['overlay'], 'overlay_identity': report['overlay']['identity'],
-                    'source_lock_sha256': report['source_lock_sha256'], 'engine_manifest': self.state['manifest'],
-                    'engine_manifest_file_sha256': self.state['manifest_sha256'], 'package': self.state['package'],
-                    'package_report': str(report_path), 'package_report_sha256': sha(report_path),
-                    'release_tag': self.state['tag'], 'release_url': 'https://github.com/' + REPOSITORY + '/releases/tag/' + self.state['tag'],
+                    'engine_manifest': self.state['manifest'], 'engine_manifest_sha256': self.state['manifest_sha256'],
+                    'package': str(package), 'package_report_sha256': sha(report_path),
+                    'release_tag': self.state['tag'], 'release_url': published['html_url'],
                     'app_version': self.state['version'], 'signing_team': report['signing_team'],
-                    'signing_identity': report['signing_identity'], 'notarization': report['notarization'],
-                    'launch_observation': str(acceptance_path), 'launch_result': acceptance['launch_observation'],
-                    'designated_requirement': acceptance['designated_requirement'], 'code_image_count': len(report['signed_images']),
-                    'strict_signature_before_launch_verified': acceptance['prelaunch_strict_verified'],
-                    'signature_after_launch_verified': acceptance['installed_code_hashes_verified'],
-                    'application_window_verified': False, 'browser_functionality_acceptance_claimed': False,
-                    'homebrew': {'cask_version': self.state['version']['version'], 'tap_commit': self.state['tap_commit'], 'upgrade': 'manual_not_run'},
-                    'completed_utc': now(), 'master_release_run': self.state['run']}
-        save(state_path, previous)
-        self.checkpoint(removed_rollback_apps=removed, lease_release_started=True)
+                    'notarization': report['notarization'], 'tap_commit': self.state['tap_commit'],
+                    'installed_or_launched_by_release_script': False, 'runtime_acceptance_claimed': False,
+                    'homebrew_upgrade': 'manual', 'completed_utc': now(), 'run': self.state['run']}
+        save(Path(self.state['run']) / 'delivery.json', delivery)
+        save(self.base / 'latest.json', delivery)
+        self.checkpoint(lease_release_started=True)
         release_lease.release(self.state['lease'])
         self.checkpoint(lease=None, status='complete', stage='complete', completed_utc=now())
 
@@ -454,7 +425,7 @@ class Release:
             lease = release_lease.acquire(self.state['id'], self.state.get('commit') or self.git('rev-parse', 'origin/main'), self.state.get('lease'))
             self.checkpoint(lease=lease)
             for name, action in [("source", self.prepare), ("engine", self.engine), ("package", self.package),
-                                 ("install", self.install), ("homebrew", self.tap)]:
+                                 ("homebrew", self.tap)]:
                 if name in self.state["completed"]:
                     if name == 'source':
                         release_inputs.verify(self.root, self.state['source'], self.state['commit'])
@@ -467,7 +438,7 @@ class Release:
                 self.state["completed"].append(name)
                 self.checkpoint()
             self.finish()
-            self.emit("Released " + self.state["tag"] + "; installed app and Homebrew cask verified")
+            self.emit("Released " + self.state["tag"] + "; notarized assets and published Homebrew cask verified")
             return 0
         except (Failure, RuntimeError, OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:
             self.emit(str(error))

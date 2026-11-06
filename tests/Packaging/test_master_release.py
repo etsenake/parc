@@ -118,16 +118,18 @@ class Pipeline(Repository):
             runner.checkpoint(manifest=str(manifest), manifest_sha256=release.sha(manifest))
         runner.engine = engine
         runner.package = lambda: calls.append('publish')
-        def fail_install():
-            calls.append('install'); raise release.Failure('interrupted install')
-        runner.install = fail_install
-        runner.tap = lambda: calls.append('tap')
+        runner.install = Mock(side_effect=AssertionError('Release must never install or launch'))
+        def fail_tap():
+            calls.append('tap'); raise release.Failure('interrupted tap publication')
+        runner.tap = fail_tap
         with patch.object(release_lease, 'acquire', return_value='lease'), patch.object(release_lease, 'release'):
             self.assertEqual(runner.run(), 1)
-            runner.install = lambda: calls.append('install')
+            runner.tap = lambda: calls.append('tap')
             with patch.object(release_inputs, 'verify'):
                 self.assertEqual(runner.run(), 0)
-        self.assertEqual(calls, ['source','engine','publish','install','install','tap'])
+        runner.install.assert_not_called()
+        self.assertEqual(calls, ['source','engine','publish','tap','tap'])
+
 
 
 class Install(unittest.TestCase):
