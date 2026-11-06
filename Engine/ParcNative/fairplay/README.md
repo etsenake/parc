@@ -99,6 +99,70 @@ The core uses the public path WebKit used before adopting that API:
   14.4 a closed session's keys stay usable until the `FairPlayCdm` is
   destroyed.
 
+## Format descriptions
+
+The renderer builds the ISO sample entry each stream would have carried, with
+its `avcC`/`hvcC`/`av1C`/`dvcC`/`dvvC`/`esds`/`dac3`/`dec3` box. When the track
+is protected, it wraps the entry as `encv`/`enca` with a `sinf`. CoreMedia's
+public parser then turns it into a format description
+(`CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData` /
+`CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData`, ISO
+flavor).
+
+For a protected entry this produces exactly what Apple's own
+`AVStreamDataParser` produces, so each codec's FairPlay type comes from Apple
+rather than from a table:
+
+| Stream | Protected type |
+| --- | --- |
+| H.264 | `qavc` |
+| HEVC | `qhvc` |
+| Dolby Vision `dvh1` | `qdh1` (`hvcC` + `dvcC`) |
+| AV1 | `qav1` |
+| AAC-LC | `qaac` |
+| HE-AAC | `qaac`, with a `qach` layer in its format list |
+| HE-AACv2 | `qaac`, with `qacp` and `qach` layers |
+| xHE-AAC | `qusa` |
+
+The core's `sinf` and `tenc` bytes equal those in the Axinom files. Its
+synthesized entries convert to the same format descriptions as the files' own
+entries.
+
+`hev1`, `avc3` and `dvhe` are presented to CoreMedia as `hvc1`, `avc1` and
+`dvh1`. VideoToolbox configures its decoder only from the format description's
+record: `AVSampleBufferDisplayLayer` rejects every frame of an `hev1`
+description (`-12906`) that it decodes as `hvc1`. Chromium re-inserts parameter
+sets before keyframes in any case. When the record has no parameter sets, the
+renderer builds one from the first keyframe's in-band sets
+(`CMVideoFormatDescriptionCreateFromHEVCParameterSets` /
+`...H264ParameterSets`) before creating the formats.
+
+## Netflix's profile
+
+Observed in a WKWebView with Safari's user agent: standard EME with
+`requestMediaKeySystemAccess("com.apple.fps.3_0")` and `cenc` init data
+(344 and 272 bytes), a 27–39 KB license message, a 3,555-byte response and
+three usable key IDs; media through MSE as `avc1`, `hev1`, `dvhe`/`dvh1`
+profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
+`mp4a.40.42` (xHE-AAC).
+
+- `FairPlayCdm::IsKeySystemSupported` accepts `com.apple.fps` and
+  `com.apple.fps.<version>`, as WebKit does. The legacy prefixed
+  `WebKitMediaKeys` that Netflix also probes (`com.apple.fps.2_0`) has no
+  Chromium counterpart.
+- A `cenc` FairPlay pssh naming several keys yields one JSON license message
+  with an SPC per key, and one JSON response makes them all usable (proven
+  with Axinom's three-key vector).
+- Codecs: `VideoCodec::kHEVC` (`hvc1`/`hev1`), `kDolbyVision` (`dvh1`/`dvhe`,
+  `hvcC` + `dvcC`/`dvvC`), `kAV1` (`av1C`, never Annex B) and `AudioCodec::kAAC`
+  for every AudioSpecificConfig object type. Each decodes through the renderer
+  from Chromium's own test media (tests/FairPlay). No public FairPlay-protected
+  sample exists for Dolby Vision, AV1, HE-AAC or xHE-AAC, so only their
+  protected format descriptions are checked, not protected decoding. On this M3, VideoToolbox
+  hardware-decodes `avc1`, `hvc1`, `dvh1` and `av01`; CoreAudio has protected
+  decoders for AAC, HE-AAC, HE-AACv2, xHE-AAC, AC-3 and E-AC-3. AV1 needs M3 or
+  later.
+
 ## Messages
 
 skd and sinf sessions exchange the raw SPC and CKC. cenc and keyids sessions

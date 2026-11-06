@@ -10,7 +10,7 @@ scripts/test-fairplay-core.sh
 
 The script compiles the core and the harness with clang only (C++20,
 `-Wall -Wextra -Werror`, macOS 13.0 target, ARC), then runs it. It needs
-network access and opens a visible window for about 90 seconds. Downloads
+network access and opens a visible window for about two minutes. Downloads
 are cached in `$PARC_FAIRPLAY_CACHE` (default `$TMPDIR/parc-fairplay-cache`).
 Exit status is the number of failed checks clamped to 1.
 
@@ -60,9 +60,20 @@ reframing: Annex B with SPS/PPS before keyframes, ADTS on AAC, microseconds,
    license arrives.
 8. sinf, keyids and cenc init data (cenc both with the vector's own pssh boxes
    and with a FairPlay pssh added): each gets a license and plays 3 s.
-9. HEVC: "CMAF H265 SingleKey" (cbcs, its own token and key), Chromium-framed,
-   5 s.
-10. Session remove and close.
+9. Netflix's key flow on Axinom's three-key vector ("CMAF H264 MultiKey",
+   cbcs). One `cenc` request carries the vector's pssh boxes plus a FairPlay
+   pssh naming all three keys. That produces one JSON message with three SPCs
+   and one JSON response, then video and audio play under different keys. A
+   second run does the same without the FairPlay pssh, using the Widevine key
+   IDs.
+10. HEVC: "CMAF H265 SingleKey" (cbcs, its own token and key), Chromium-framed,
+    5 s.
+11. Netflix's codecs through the renderer's clear path, Chromium-framed and
+    played to `OnEnded`, each followed by a check of its protected format type.
+    Media comes from Chromium's `media/test/data`: `hev1` (also with its
+    parameter sets moved in-band), Dolby Vision profile 5, AV1 and xHE-AAC.
+    HE-AAC and HE-AACv2 are encoded locally with AudioToolbox.
+12. Session remove and close.
 
 ## Results
 
@@ -95,12 +106,36 @@ Recorded 2026-11-06 on this MacBook Air (macOS 27.2, build 26B123): 186 checks,
 - Remove reports the key released and unusable; close fires
   `OnSessionClosed`; an update after close is rejected (InvalidStateError).
 
+Netflix profile (2026-11-06, 249 checks, 0 failed):
+
+- Three keys: the `cenc` init data was 890 bytes (vector boxes plus a FairPlay
+  pssh). It produced one 31,225-byte JSON license message with three SPCs;
+  Netflix's messages were 27–39 KB. Three Axinom CKCs went back in one JSON
+  response, and `b54ec914…` (audio), `c868c702…` (720p video) and `c83c4ea8…`
+  all became usable. Playback: 3.923 s over 4.001 s, 133 frames, 0 dropped or
+  corrupted. The same works with only the Widevine key IDs.
+- Clear-path decoding with Chromium framing, each played to `OnEnded` at the
+  clip's end:
+  - hev1: 82/82 frames, 0 corrupted;
+  - hev1 with in-band parameter sets only: 82/82;
+  - Dolby Vision profile 5: 120/120 frames, 0 corrupted;
+  - AV1: 82/82 frames;
+  - xHE-AAC, HE-AAC, HE-AACv2: each ended on time.
+- Protected types: `qhvc`, `qdh1`, `qav1`, `qusa`, and `qaac` with `qach` or
+  `qacp` layers.
+- During some runs `outputObscuredDueToInsufficientExternalProtection` went
+  true for about 30 s while frames kept decoding. That is consistent with
+  screen capture by another process on this Mac. The harness logs it rather
+  than failing.
+
 Screenshots of the window show no picture, as expected for protected video.
 Playback is proven by the clock, the renderer status and AVFoundation's frame
 counts instead.
 
-Not verified: E-AC-3 and AC-3 (the `qec3`/`qac3` types are assumed; no
-FairPlay vector was available), cenc-scheme content (8-byte IV truncation and
+Not verified: protected decoding of Dolby Vision, AV1, HE-AAC and xHE-AAC (no
+public FairPlay vector exists; their clear decoding and protected format types
+are proven), `dvhe`/`avc3` (normalized like `hev1`, untested), E-AC-3 and AC-3
+(not exercised at all), Dolby Vision profile 8 (`dvvC`), cenc-scheme content (8-byte IV truncation and
 the `CryptorIV` attachment are unexercised because both vectors use a constant
 IV), per-sample key rotation within one track (one format description per key
 ID is implemented, but untested), license renewal, macOS versions below 27,
@@ -168,5 +203,24 @@ probed through its runtime interface)
   `kCMSampleAttachmentKey_CryptorInitializationVector` is the string
   `CryptorIV`; the core sets it only for per-sample IVs. CMAF cbcs audio has no
   subsample attachment (whole-sample protection).
+- CoreMedia's public `CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData`
+  and `CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData` (ISO
+  flavor) turn an `encv`/`enca` sample entry into the same format description
+  `AVStreamDataParser` builds, including `VerbatimISOSampleEntry`. The core
+  relies on them for every codec. Protected types they report: `qhev` (hev1),
+  `qdh1` (dvh1, keeping `hvcC` and `dvcC`), `qav1`, `qusa` (xHE-AAC), and
+  `qaac` for HE-AAC and HE-AACv2 with `qach`/`qacp` layers in the format list.
+- VideoToolbox configures its decoder only from the format description's
+  record. An `hev1` description fails every frame (`-12906`) for samples that
+  decode as `hvc1`. A record without parameter sets fails too (`-4` as `hvc1`,
+  `-12906` as `hev1`), even when every keyframe carries them in-band.
+- A stream that ends before AVFoundation reports
+  `hasSufficientMediaDataForReliablePlaybackStart` (a 2 s clip) must count as
+  enough at end of stream, or HAVE_ENOUGH never fires.
+- On this M3, VideoToolbox hardware-decodes `avc1`, `hvc1`, `dvh1` and `av01`
+  (not `vp09`). CoreAudio lists protected decoders `qaac`, `qach`, `qacp`,
+  `qusa`, `qac3`, `qec3`, `qflc`, `qlac` and `qapc`.
+- `outputObscuredDueToInsufficientExternalProtection` turns on while
+  something on the Mac captures the screen; decoding continues.
 - The ad-hoc signed command-line harness gets SPCs, CKCs and protected playback
   with no app bundle and no entitlement.
