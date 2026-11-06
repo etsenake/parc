@@ -107,8 +107,9 @@ enum class AudioFraming { kRaw, kADTS };
 struct VideoConfig {
   VideoCodec codec = VideoCodec::kH264;
   // ISO sample entry type: 0 picks avc1, hvc1, dvh1 or av01. Pass avc3, hev1
-  // or dvhe for streams whose parameter sets travel in-band; Apple maps each
-  // to its own protected type (hev1 -> qhev, not qhvc).
+  // or dvhe for streams whose parameter sets travel in-band; the renderer
+  // presents them as avc1, hvc1 and dvh1 (VideoToolbox configures only from
+  // the record), so their protected types are qavc, qhvc and qdh1.
   uint32_t sample_entry = 0;
   // AVCDecoderConfigurationRecord ('avcC' payload), HEVCDecoderConfigurationRecord
   // ('hvcC', also for Dolby Vision) or AV1CodecConfigurationRecord ('av1C').

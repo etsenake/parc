@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -408,12 +409,68 @@ std::function<void(bool)> Once(double timeout, const std::string& label, std::fu
   return finish;
 }
 
+void PollUntil(double deadline, std::function<bool()> ready, std::function<void(bool)> done) {
+  if (ready()) {
+    done(true);
+    return;
+  }
+  if (CFAbsoluteTimeGetCurrent() >= deadline) {
+    done(false);
+    return;
+  }
+  After(0.01, [=] { PollUntil(deadline, ready, done); });
+}
+
+// Calls |done(true)| once |ready| holds (checked every 10 ms), or
+// |done(false)| once |timeout| seconds have passed.
+void WaitUntil(double timeout, std::function<bool()> ready, std::function<void(bool)> done) {
+  PollUntil(CFAbsoluteTimeGetCurrent() + timeout, std::move(ready), std::move(done));
+}
+
+// The core's posted tasks can be held back, to line up a callback the
+// renderer has already queued against a Flush. Never destroyed: AVFoundation
+// threads may still post while exit() runs static destructors.
+struct PostHold {
+  std::mutex mutex;
+  bool holding = false;
+  std::vector<std::function<void()>> tasks;
+};
+PostHold& Hold() {
+  static PostHold* hold = new PostHold;
+  return *hold;
+}
+
 fp::PostTask MainPoster() {
   return [](std::function<void()> task) {
+    PostHold& hold = Hold();
+    std::lock_guard<std::mutex> lock(hold.mutex);
+    if (hold.holding) {
+      hold.tasks.push_back(std::move(task));
+      return;
+    }
     dispatch_async(dispatch_get_main_queue(), ^{
       task();
     });
   };
+}
+
+void HoldPosts() {
+  std::lock_guard<std::mutex> lock(Hold().mutex);
+  Hold().holding = true;
+}
+
+// Queues the held tasks on the main queue, in order, and stops holding.
+void ReleasePosts() {
+  PostHold& hold = Hold();
+  std::lock_guard<std::mutex> lock(hold.mutex);
+  hold.holding = false;
+  for (std::function<void()>& task : hold.tasks) {
+    std::function<void()> run = std::move(task);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      run();
+    });
+  }
+  hold.tasks.clear();
 }
 
 // ----------------------------------------------------------- license flow
@@ -767,6 +824,9 @@ class Player : public fp::FairPlayRendererClient {
   int ends_sent = 0;
 
   double Time() { return renderer_.GetMediaTime().InSeconds(); }
+  bool EndOfStreamSent() const {
+    return (!has_video_ || video_feed_.end_sent) && (!has_audio_ || audio_feed_.end_sent);
+  }
 
   void SetFeeds(SegmentList video, SegmentList audio, bool end_of_stream) {
     video_feed_ = Feed{std::move(video), 0, 0, end_of_stream, false, {}, nullptr};
@@ -1572,9 +1632,6 @@ std::vector<Step> UnderflowScenario() {
   return steps;
 }
 
-// Chromium's order when MediaKeys come first: SetCdm, then Initialize. The
-// renderers must still join the key session (protected samples would
-// otherwise fail with -11800 "no content key present").
 // Responses a page could send: each must be rejected (TypeError) without
 // touching AVFoundation, then the real response still works.
 std::vector<Step> ResponseValidationScenario() {
@@ -1764,11 +1821,87 @@ std::vector<Step> ShortEndScenario() {
   return steps;
 }
 
+double EndSeconds(const Media& media);
+
 // Tasks queued before a Flush must not land after it: an OnEnded queued by
-// the end of stream (a seek near the end), and OnNeedData queued by
-// StartPlayingFrom.
+// the end of stream (a seek near the end) or by the end-time observer, and
+// OnNeedData queued by StartPlayingFrom or by an answered media request. Each
+// held callback also gets a control run without the Flush, which must
+// deliver it.
 std::vector<Step> FlushRaceScenario() {
   World* w = g_world;
+  const double end = std::max(EndSeconds(w->video), EndSeconds(w->audio));
+  // Holds the core's posts until a media request has been answered (a
+  // renderer ready again, its hand-over held), then releases them, after a
+  // Flush when |flush|.
+  auto held_request = [w](bool flush) -> Step {
+    return [w, flush](Done done) {
+      const std::string run = flush ? "with a Flush" : "control, no Flush";
+      HoldPosts();
+      auto fired = [w] {
+        return w->player->renderer().IsReadyForMoreData(fp::StreamType::kVideo) ||
+               w->player->renderer().IsReadyForMoreData(fp::StreamType::kAudio);
+      };
+      // Hand-overs queued before the hold run first and refill the renderers.
+      After(0.3, [=] {
+        const int at_hold = w->player->need_data_calls;
+        WaitUntil(5, fired, [=](bool ok) {
+          Check(ok, "flush-race: a renderer asks for more data while the hand-over is held (" + run + ")");
+          After(0.2, [=] {
+            int before = w->player->need_data_calls;
+            Check(before == at_hold, "flush-race: no OnNeedData while the hand-over is held (" + run + ")",
+                  Format("%d call(s)", before - at_hold));
+            if (flush) w->player->renderer().Flush([] {});
+            ReleasePosts();
+            After(0.5, [=] {
+              int calls = w->player->need_data_calls - before;
+              if (flush) {
+                Check(calls == 0, "flush-race: a media request answered before a Flush gives no OnNeedData after it",
+                      Format("%d call(s)", calls));
+              } else {
+                Check(calls > 0, "flush-race: control: the held hand-over, released without a Flush, gives OnNeedData",
+                      Format("%d call(s)", calls));
+              }
+              done();
+            });
+          });
+        });
+      });
+    };
+  };
+  // Starts 3 s before the end with end of stream, so the end time is
+  // watched; holds the core's posts across it, then releases them, after a
+  // Flush when |flush|.
+  auto near_end = [w, end](Done done) {
+    w->player->ended = false;
+    StartAt(w->player, &w->video, &w->audio, w->segments - 1, w->segments, end - 3, 1, true)(done);
+  };
+  auto held_end = [w, end](bool flush) -> Step {
+    return [w, end, flush](Done done) {
+      const std::string run = flush ? "with a Flush" : "control, no Flush";
+      WaitUntil(2.5, [w] { return w->player->EndOfStreamSent(); }, [=](bool sent) {
+        Check(sent && w->player->Time() < end - 0.2,
+              "flush-race: both streams reach end of stream before the end time (" + run + ")",
+              Format("sent %d at t=%.3f, end %.3f", sent, w->player->Time(), end));
+        HoldPosts();
+        WaitUntil(5, [w, end] { return w->player->Time() > end + 0.2; }, [=](bool ok) {
+          Check(ok, Format("flush-race: the clock passes the end (%.3f) while the end callback is held (%s)", end,
+                           run.c_str()),
+                Format("t=%.3f", w->player->Time()));
+          if (flush) w->player->renderer().Flush([] {});
+          ReleasePosts();
+          After(0.5, [=] {
+            if (flush) {
+              Check(!w->player->ended, "flush-race: an end time reached before a Flush gives no OnEnded after it");
+            } else {
+              Check(w->player->ended, "flush-race: control: the held end callback, released without a Flush, gives OnEnded");
+            }
+            done();
+          });
+        });
+      });
+    };
+  };
   std::vector<Step> steps;
   steps.push_back(Section("Flush racing queued OnEnded and OnNeedData"));
   steps.push_back([=](Done done) {
@@ -1799,6 +1932,36 @@ std::vector<Step> FlushRaceScenario() {
       });
     });
   });
+  // A media request AVFoundation already answered (its hand-over queued)
+  // when the Flush comes: dropped, and the next start still gets data.
+  steps.push_back([=](Done done) {
+    StartAt(w->player, &w->video, &w->audio, 0, w->segments, 0, 1, false)(done);
+  });
+  steps.push_back(held_request(false));
+  steps.push_back(held_request(true));
+  steps.push_back([=](Done done) {
+    w->player->SetFeeds(Segments(w->video, 0, w->segments), Segments(w->audio, 0, w->segments), false);
+    auto go = Once(10, "flush-race: HAVE_ENOUGH after the dropped request", [=](bool) {
+      w->player->renderer().SetPlaybackRate(1);
+      done();
+    });
+    w->player->on_have_enough = [go] { go(true); };
+    w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+  });
+  steps.push_back([=](Done done) {
+    int before = w->player->need_data_calls;
+    Run(w->player, 4, 1, "flush-race: play 4s after the dropped request")([=] {
+      Check(w->player->need_data_calls > before, "flush-race: media requests keep coming after the dropped one",
+            Format("%d call(s) in 4s", w->player->need_data_calls - before));
+      done();
+    });
+  });
+  // The end-of-stream boundary observer fired before a Flush (its OnEnded
+  // queued): dropped after it.
+  steps.push_back(near_end);
+  steps.push_back(held_end(false));
+  steps.push_back(near_end);
+  steps.push_back(held_end(true));
   steps.push_back([=](Done done) {
     w->player.reset();
     done();
@@ -2000,6 +2163,9 @@ std::vector<Step> RenewalScenario() {
   return steps;
 }
 
+// Chromium's order when MediaKeys come first: SetCdm, then Initialize. The
+// renderers must still join the key session (protected samples would
+// otherwise fail with -11800 "no content key present").
 std::vector<Step> CdmFirstScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -2582,7 +2748,51 @@ Media InBandParameterSetsOnly(const Media& media) {
   return out;
 }
 
-double EndSeconds(const Media& media);
+// The protected H.264 vector's first |segments| with SPS and PPS only
+// in-band: the avcC keeps its length size but lists none, and each keyframe
+// starts with them, length-prefixed, inside its first subsample's clear bytes.
+Media InBandAvcParameterSetsOnly(const Media& media, size_t segments) {
+  Media out;
+  out.info = media.info;
+  out.segments.assign(media.segments.begin(), media.segments.begin() + std::min(segments, media.segments.size()));
+  const std::vector<uint8_t>& record = media.info.codec_config;
+  if (!Check(record.size() >= 7, "in-band-protected: the vector's avcC has a full header")) return out;
+  const size_t length_size = (record[4] & 3) + 1;
+  std::vector<uint8_t> prefix;
+  size_t pos = 6;
+  bool ok = true;
+  auto take = [&] {
+    if (pos + 2 > record.size()) return ok = false;
+    const size_t len = (size_t(record[pos]) << 8) | record[pos + 1];
+    if (pos + 2 + len > record.size()) return ok = false;
+    for (size_t b = length_size; b-- > 0;) prefix.push_back(uint8_t(len >> (8 * b)));
+    prefix.insert(prefix.end(), record.begin() + pos + 2, record.begin() + pos + 2 + len);
+    pos += 2 + len;
+    return true;
+  };
+  for (int k = 0; ok && k < (record[5] & 0x1f); ++k) take();
+  ok = ok && pos < record.size();
+  for (int k = 0, pps = ok ? record[pos++] : 0; ok && k < pps; ++k) take();
+  if (!Check(ok && !prefix.empty(), "in-band-protected: SPS and PPS read from the vector's avcC")) return out;
+  out.info.codec_config.assign(record.begin(), record.begin() + 5);
+  out.info.codec_config.push_back(0xe0);  // No SPS.
+  out.info.codec_config.push_back(0);     // No PPS.
+  for (auto& segment : out.segments) {
+    for (ft::Sample& sample : segment) {
+      if (!sample.is_keyframe) continue;
+      const size_t size = sample.data.size();
+      sample.data.insert(sample.data.begin(), prefix.begin(), prefix.end());
+      if (!sample.decrypt) continue;
+      std::vector<fp::SubsampleEntry>& subsamples = sample.decrypt->subsamples;
+      if (subsamples.empty()) {
+        subsamples.push_back({uint32_t(prefix.size()), uint32_t(size)});
+      } else {
+        subsamples[0].clear_bytes += uint32_t(prefix.size());
+      }
+    }
+  }
+  return out;
+}
 
 // The in-band stream played twice in a row, the second copy's keyframes
 // without their VPS: a later keyframe that repeats only SPS and PPS, which
@@ -3043,6 +3253,47 @@ std::vector<Step> ChromiumInputsScenario() {
   return steps;
 }
 
+// Protected samples whose SPS and PPS travel only in-band, length-prefixed
+// (ChromiumInputsScenario covers Annex B): the record comes from the first
+// protected keyframe, and the protected format is rebuilt on it.
+std::vector<Step> ProtectedInBandScenario() {
+  World* w = g_world;
+  auto media = std::make_shared<Media>();
+  auto frames = std::make_shared<int64_t>(0);
+  std::vector<Step> steps;
+  steps.push_back(Section("protected samples with SPS and PPS only in-band (length-prefixed)"));
+  steps.push_back([=](Done done) {
+    *media = InBandAvcParameterSetsOnly(w->video, 2);
+    // Video only, so every protected sample counted is video.
+    w->player = std::make_shared<Player>("in-band-protected", Framing::kIso, media.get(), nullptr,
+                                         w->main_keys->cdm.get(), w->host);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds(Segments(*media, 0, 2), {}, false);
+      auto go = Once(10, "in-band-protected: HAVE_ENOUGH", [=](bool) {
+        w->player->renderer().SetPlaybackRate(1);
+        done();
+      });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) { Run(w->player, 4, 1, "in-band-protected play 4s")(done); });
+  steps.push_back([=](Done done) { Metrics(w->player, "in-band-protected", 70, frames)(done); });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.protected_enqueued > 0 && s.protected_enqueued == s.video_enqueued &&
+              ft::FourCCString(s.video_format) == "avc1" &&
+              ft::FourCCString(s.video_protected_format) == "qavc",
+          "in-band-protected: protected samples played on a record built from in-band SPS and PPS",
+          Format("protected %llu of %llu, video '%s'/'%s'", s.protected_enqueued, s.video_enqueued,
+                 ft::FourCCString(s.video_format).c_str(),
+                 ft::FourCCString(s.video_protected_format).c_str()));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 // An adaptive-streaming switch, as Chromium delivers it: 288p, 720p, 288p
 // segments (one key), each converted with its own init segment, no record in
 // the config. The renderer must rebuild its formats from each new keyframe.
@@ -3293,6 +3544,7 @@ void RunAll() {
   add("MixedScenario()", MixedScenario());
   add("MixedScenario(chromium)", MixedScenario(true));
   add("ChromiumInputsScenario()", ChromiumInputsScenario());
+  add("ProtectedInBandScenario()", ProtectedInBandScenario());
   add("QualitySwitchScenario()", QualitySwitchScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());

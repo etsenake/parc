@@ -877,7 +877,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // carried, converted by CoreMedia's public sample-description parser
   // (kCMImageDescriptionFlavor_ISOFamily). For a protected entry ('encv'/'enca'
   // with 'sinf') that yields exactly what AVStreamDataParser produces: Apple's
-  // FairPlay type for the codec (qavc, qhvc, qhev, qdh1, qav1, qaac, qach,
+  // FairPlay type for the codec (qavc, qhvc, qdh1, qav1, qaac, qach,
   // qusa, ...), CommonEncryptionOriginalFormat, CommonEncryptionProtected, the
   // 'tenc' payload and the config and 'sinf' atoms. Content key recipients
   // match keys by that 'tenc' key ID.
@@ -1602,7 +1602,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // HAVE_ENOUGH once every configured renderer reports enough data for a
   // reliable start, or is complete; then latched, because that property
   // toggles as queues drain and refill. Only CheckUnderflow drops back to
-  // HAVE_NOTHING. OnKeysChanged re-evaluates once no sample is held.
+  // HAVE_NOTHING. OnKeysChanged re-evaluates once no sample is held. The
+  // property is read, not observed: AVFoundation posts no KVO for it, and it
+  // turns true on the enqueue that fills the renderer's preroll; every Submit
+  // is followed by this call.
   void UpdateBuffering() {
     if (have_enough_) {
       return;
