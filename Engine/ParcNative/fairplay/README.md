@@ -163,6 +163,63 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
   decoders for AAC, HE-AAC, HE-AACv2, xHE-AAC, AC-3 and E-AC-3. AV1 needs M3 or
   later.
 
+## M1 constraints from key delivery
+
+Keys reach the renderer only because its `AVSampleBufferDisplayLayer` and
+`AVSampleBufferAudioRenderer` are recipients of the CDM's `AVContentKeySession`
+object. `addContentKeyRecipient:` takes the object itself, not an identifier,
+so this forces the following on the Chromium integration.
+
+- **One process for the CDM and every renderer using it.** A MediaKeys'
+  `FairPlayCdm` and the `FairPlayRenderer` of each media element it is attached
+  to must live in the same process, on one sequence. Chromium already has this
+  shape on Windows: `MediaFoundationService` hosts `MediaFoundationCdm` and
+  `MediaFoundationRenderer` together, and the renderer finds the CDM through
+  the in-process `CdmContext`. The FairPlay CDM and renderer should be served
+  the same way, as the `media::mojom::ContentDecryptionModule` and
+  `media::mojom::Renderer` of one service, with `SetCdm` resolving the
+  `cdm_id` within that process.
+- **The video layer must be composited from that process.** No `VideoFrame`
+  ever exists, so Chromium can only place the layer.
+  - In the GPU process (WebKit's choice), the layer can join the
+    `CARendererLayerTree` that `ca_renderer_layer_tree.mm` already builds with
+    `AVSampleBufferDisplayLayer`s.
+  - In a separate service process, it needs remote hosting (a `CAContext` and
+    `CALayerHost`, as the GPU process uses towards the browser).
+  - In the browser process, Parc's AppKit page host can parent it directly.
+  - In every case the video element's rect, clipping, visibility and z-order,
+    plus Picture in Picture, must be forwarded to the layer, as
+    `MediaFoundationRendererExtension` forwards the output rect on Windows.
+    Canvas `drawImage`, WebGL, `captureStream` and `requestVideoFrameCallback`
+    on protected video get no pixels.
+- **That process's sandbox must allow FairPlay.** SPC generation, decryption
+  and protected decode go through system FairPlay and CoreMedia services. The
+  harness proves them only unsandboxed; the Chromium sandbox profile of the
+  hosting process needs the matching allowances (unverified).
+- **The renderer replaces Chromium's decode path for these streams.** Samples
+  stay encrypted from the demuxer to `Enqueue`; there is no `media::Decryptor`
+  (`CdmContext::GetDecryptor` returns null), no `DecryptingDemuxerStream` and
+  no software fallback. The pipeline must choose the FairPlay renderer when a
+  `com.apple.fps` CDM is attached, like the MediaFoundation renderer type for
+  MediaFoundation CDMs.
+- **The CDM is fixed per renderer, from before the first sample.** Recipients
+  must join before processing media and can join only one session, so
+  `SetCdm` precedes the first encrypted (or clear-lead) sample and can't change
+  later. That matches `RendererImpl`, which refuses to change a set CDM. If
+  `setMediaKeys` arrives after playback began on another renderer, the
+  pipeline must switch renderers rather than retrofit this one.
+- **Audio bypasses Chromium's audio stack.** `AVSampleBufferAudioRenderer`
+  plays to the system directly: Web Audio `createMediaElementSource` gets
+  silence. Volume, mute, audio focus and ducking must map to `SetVolume` and
+  `SetMuted`. `setSinkId` would need `audioOutputDeviceUniqueID`, which the
+  core doesn't expose yet.
+- **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`. It
+  starts on HAVE_ENOUGH and stops on underflow inside the renderer, as
+  `RendererImpl` does.
+- **Several media elements can share one MediaKeys.** Each renderer's layer
+  joins the same session; keys are matched by key ID, so any element can use
+  any usable key of that MediaKeys.
+
 ## Messages
 
 skd and sinf sessions exchange the raw SPC and CKC. cenc and keyids sessions
