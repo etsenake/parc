@@ -46,6 +46,37 @@ class Repository(unittest.TestCase):
         for kind, expected in [('major','2.0.0'),('minor','1.1.0'),('patch','1.0.1')]:
             self.assertEqual(release.next_version('1.0.0', kind), expected)
 
+    def test_refresh_failed_source_preserves_version_and_original_archive(self):
+        runner = self.runner()
+        runner.prepare()
+        old_commit, old_source = runner.state['commit'], runner.state['source']
+        runner.checkpoint(status='stopped', stage='engine', completed=['source'],
+                          command_pid=None, error='compiler error',
+                          engine_seal_path=str(Path(runner.state['run']) / 'engine-artifacts.json'))
+        for item in runner.locks: item.close()
+        (self.root / 'Resources/icon').write_bytes(b'fixed source')
+        self.git('add', '.'); self.git('commit', '-m', 'Fix source'); self.git('push', 'origin', 'main')
+        refreshed = release.Release(self.root, 'minor', refresh_source=True)
+        refreshed.start()
+        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
+        refreshed.refresh_inputs()
+        self.assertEqual(refreshed.state['version'], {'version': '1.1.0', 'build': 2})
+        self.assertEqual(refreshed.state['commit'], self.git('rev-parse', 'HEAD'))
+        release_inputs.verify(self.root, old_source, old_commit)
+        release_inputs.verify(self.root, refreshed.state['source'], refreshed.state['commit'])
+        self.assertEqual(refreshed.state['source_history'][0]['error'], 'compiler error')
+        self.git('tag', 'v1.1.0'); self.git('push', 'origin', 'v1.1.0')
+        with self.assertRaisesRegex(release.Failure, 'immutable'):
+            refreshed.refresh_inputs()
+
+    def test_refresh_rejects_active_stage(self):
+        runner = self.runner()
+        for item in runner.locks: item.close()
+        refreshed = release.Release(self.root, 'minor', refresh_source=True)
+        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
+        with self.assertRaisesRegex(release.Failure, 'stopped engine'):
+            refreshed.start()
+
     def test_combined_log_appends_across_runners_and_includes_captured_errors(self):
         first = release.Release(self.root, 'minor')
         first.secrets.append('fixture-secret')

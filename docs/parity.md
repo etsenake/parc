@@ -74,6 +74,15 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 
 ## Current ownership and handoffs
 
+- **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
+  an incorrect const qualifier from the FairPlay `CdmContextRef` loop in
+  `WebMediaPlayerImpl`; its non-const `GetCdmContext()` call caused the official
+  engine compilation to fail. No behavior or family completion change. The
+  release command now supports an explicit source refresh for stopped,
+  unpublished engine builds, retaining the version, original source archive
+  and compiled objects. Artifact delivery remains pending the resumed release;
+  this source correction does not establish browser-runtime acceptance.
+
 - **Codex root — Cmd-T domain ranking and site search (November 6).**
   Corrects the November 2 unified-ranking regression: merging Chromium's
   default website result into an existing tab now preserves its admission and

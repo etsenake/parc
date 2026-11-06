@@ -1492,7 +1492,7 @@
 +  // Before that renderer exists, the attached or attaching CDM tells. An
 +  // encrypted stream still waiting for its CDM has no renderer to save power
 +  // on yet, and may get the FairPlay one.
-+  for (const media::CdmContextRef* ref :
++  for (media::CdmContextRef* ref :
 +       {cdm_context_ref_.get(), pending_cdm_context_ref_.get()}) {
 +    if (ref && ref->GetCdmContext()->RequiresFairPlayRenderer()) {
 +      return false;

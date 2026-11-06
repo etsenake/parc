@@ -64,9 +64,10 @@ def module(source, name):
 
 
 class Release:
-    def __init__(self, root=ROOT, kind="patch"):
+    def __init__(self, root=ROOT, kind="patch", refresh_source=False):
         self.root = Path(root).resolve()
         self.kind = kind
+        self.refresh_source = refresh_source
         self.base = self.root / "build/releases"
         self.base.mkdir(parents=True, exist_ok=True)
         self.log = self.root / "build/master-release-development/nightly-release.log"
@@ -160,17 +161,53 @@ class Release:
             if prior.get("status") not in TERMINAL:
                 if prior["release_type"] != self.kind:
                     raise Failure("An unfinished " + prior["release_type"] + " release must resume before another bump")
+                if self.refresh_source and (prior.get('status') != 'stopped'
+                        or prior.get('stage') != 'engine'
+                        or prior.get('completed') != ['source']
+                        or prior.get('command_pid') is not None):
+                    raise Failure('Source refresh requires a stopped engine stage with no active command or packaged artifacts')
+                self.refresh_previous = dict(prior)
                 self.state = prior
                 if (prior.get('status') == 'stopped' and prior.get('command_pid')
                         and 'shipping-build' in prior.get('command', [])):
                     self.state['interrupted_process_group'] = prior['command_pid']
                 self.emit("Resuming the existing release; version and inputs remain frozen")
         if not self.state:
+            if self.refresh_source:
+                raise Failure('Source refresh requires an existing stopped release')
             run = self.base / (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8])
             run.mkdir(mode=0o700)
             self.state = {"schema_version": 1, "id": run.name, "run": str(run), "release_type": self.kind,
                           "started_utc": now(), "status": "running", "stage": "preflight", "completed": []}
         self.checkpoint(status="running", error=None)
+
+    def refresh_inputs(self):
+        """Explicitly replace failed, unpublished build inputs; retain the old archive."""
+        if self.git('status', '--porcelain'):
+            raise Failure('Source refresh requires clean main; local edits were preserved')
+        if self.git('branch', '--show-current') != 'main':
+            raise Failure('Source refresh requires main')
+        self.git('fetch', 'origin', 'main', retries=2)
+        self.git('merge', '--ff-only', 'origin/main')
+        if app_version.read(self.root) != self.state['version']:
+            raise Failure('Source refresh cannot change the saved release version')
+        if self.git('ls-remote', 'origin', 'refs/tags/' + self.state['tag']):
+            raise Failure('A published release tag is immutable; source refresh refused')
+        if (Path(self.state['run']) / 'package').exists() or Path(self.state['engine_seal_path']).exists():
+            raise Failure('Source refresh refused after sealing or packaging; existing artifacts were preserved')
+        commit = self.git('rev-parse', 'HEAD')
+        if not self.published(commit):
+            raise Failure('Refreshed source must be published on origin/main')
+        self.git('merge-base', '--is-ancestor', self.state['commit'], commit)
+        release_inputs.verify(self.root, self.state['source'], self.state['commit'])
+        source = Path(self.state['run']) / ('source-' + commit)
+        release_inputs.create(self.root, source, commit)
+        history = list(self.state.get('source_history', []))
+        history.append({'commit': self.state['commit'], 'source': self.state['source'],
+                        'overlay': self.state.get('overlay'), 'error': self.refresh_previous.get('error'),
+                        'refreshed_utc': now()})
+        self.checkpoint(commit=commit, source=str(source), source_history=history)
+        self.emit('Refreshed unpublished release inputs to ' + commit + '; previous archive and compiled objects preserved')
 
     def auth(self):
         clean = {key: value for key, value in self.env.items() if key not in ("GH_TOKEN", "GITHUB_TOKEN")}
@@ -430,6 +467,8 @@ class Release:
                 self.git('fetch', 'origin', 'main', retries=2)
             lease = release_lease.acquire(self.state['id'], self.state.get('commit') or self.git('rev-parse', 'origin/main'), self.state.get('lease'))
             self.checkpoint(lease=lease)
+            if self.refresh_source:
+                self.refresh_inputs()
             for name, action in [("source", self.prepare), ("engine", self.engine), ("package", self.package),
                                  ("homebrew", self.tap)]:
                 if name in self.state["completed"]:
@@ -461,8 +500,10 @@ class Release:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--type", required=True, choices=("major", "minor", "patch"))
+    parser.add_argument("--refresh-source", action="store_true",
+                        help="Use published fixes for a stopped, unsealed engine build without bumping again")
     args = parser.parse_args()
-    return Release(kind=args.type).run()
+    return Release(kind=args.type, refresh_source=args.refresh_source).run()
 
 
 if __name__ == "__main__":

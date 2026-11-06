@@ -85,6 +85,13 @@ are reused when app packaging resumes. Tooling corrections are committed on
 canonical main and the same command is rerun; no manual receipt edits or cache
 cleanup are needed.
 
+If compilation exposes a source bug, fix, check and publish the source on main,
+then run `bash scripts/release.sh --type minor --refresh-source` (using the saved
+release type). This explicitly freezes a new published source archive for the
+same version and retains the failed archive, source history and compiled objects.
+It is restricted to a stopped engine stage before sealing or packaging; existing
+version tags remain immutable. Ordinary resumes keep their original frozen inputs.
+
 The command cannot repair arbitrary source bugs, revoke/reissue certificates,
 bypass protected authorization, resolve someone else's local edits, or invent
 successful checks. It stops with exact logs and preserves previous artifacts for
