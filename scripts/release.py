@@ -404,16 +404,6 @@ class Release:
         report = json.loads((Path(self.state['package']) / 'package-report.json').read_text())
         check.verify_installed(app, report, strict=False)
         lsregister = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
-        removed = []
-        # Only exact rollback bundles owned by this run are eligible. The newest
-        # pristine package, reports, profiles, seals and compiled output remain.
-        for relative in ('install/previous-Parc.app', 'homebrew/before-Parc.app', 'homebrew/manual-Parc.app'):
-            old = Path(self.state['run']) / relative
-            if old.is_dir() and not old.is_symlink():
-                self.command([lsregister, '-u', old], name='unregister-old-app')
-                shutil.rmtree(old)
-                removed.append(str(old))
-        self.command([lsregister, '-f', app], name='register-installed-app')
         state_path = self.root / 'build/recurring-prod-refresh/state.json'
         if state_path.exists() and not (Path(self.state['run']) / 'previous-refresh-state.json').exists():
             save(Path(self.state['run']) / 'previous-refresh-state.json', json.loads(state_path.read_text()))
@@ -424,6 +414,16 @@ class Release:
         report_path = Path(self.state['package']) / 'package-report.json'
         check.publisher.verify_acceptance(acceptance, self.state['tag'], self.state['commit'],
                                           report['app_version'], sha(report_path))
+        removed = []
+        # Only exact rollback bundles owned by this run are eligible. The newest
+        # pristine package, reports, profiles, seals and compiled output remain.
+        for relative in ('install/previous-Parc.app', 'homebrew/before-Parc.app', 'homebrew/manual-Parc.app'):
+            old = Path(self.state['run']) / relative
+            if old.is_dir() and not old.is_symlink():
+                self.command([lsregister, '-u', old], name='unregister-old-app')
+                shutil.rmtree(old)
+                removed.append(str(old))
+        self.command([lsregister, '-f', app], name='register-installed-app')
         previous = {'schema_version': 2, 'status': 'installed_master_release_verified',
                     'automation_id': 'refresh-parc-production-app', 'automation_status': 'deleted_by_user',
                     'installed_app': str(app), 'installed_source_commit': self.state['commit'],
