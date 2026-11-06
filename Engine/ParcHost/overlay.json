@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 328,
+  "version": 329,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -45,12 +45,12 @@
     {
       "source": "Engine/ParcNative/page_host.h",
       "target": "cef/libcef/browser/parc_native/page_host.h",
-      "sha256": "0e1977b8dc4cec29f6796b4f4f86861adea0842fae950a85efe0b477c3fc9fa4"
+      "sha256": "9f19ac63d76947f41a167f4e2ce67467282dcb6905f30118a331fe7919bed814"
     },
     {
       "source": "Engine/ParcNative/page_host.mm",
       "target": "cef/libcef/browser/parc_native/page_host.mm",
-      "sha256": "ea121624c78646f7d57b2c0ee432f1316b1652b2367999020df60b675952fbc2"
+      "sha256": "428fd8d4e776bffc252ecbd906c268e724157811afc25980824f0532fbd442eb"
     },
     {
       "source": "Engine/ParcNative/pane_compositor.h",
@@ -1170,7 +1170,7 @@
     {
       "source": "Engine/ParcNative/native_history_swipe.mm",
       "target": "cef/libcef/browser/parc_native/native_history_swipe.mm",
-      "sha256": "65ed0139b688c6798c3b289eddc8e3fae5db5643662c86150b01167ef7b4f36f"
+      "sha256": "4a565e8abfeeca32480a66a3889562a798af589a3815e5d9551046e1c1ee2fbb"
     },
     {
       "source": "Engine/ParcNative/native_copy_link.mm",

@@ -11,6 +11,20 @@
 // Explicit invalidation/constraint cleanup below are source-owned lifetime
 // safeguards; they are not claims of recovered original destructor behavior.
 
+//
+// and returns nil from hitTest:, so the overlay never takes page input.
+@interface PCNativeHistoryOverlayContainerView : NSView
+@end
+
+@implementation PCNativeHistoryOverlayContainerView
+- (BOOL)acceptsFirstResponder {
+  return NO;
+}
+- (NSView *)hitTest:(NSPoint)point {
+  return nil;
+}
+@end
+
 @interface PCNativePageHost () {
   NSView *_contentView;
   NSArray<NSLayoutConstraint *> *_contentConstraints;
@@ -18,6 +32,7 @@
   NSArray<NSLayoutConstraint *> *_infobarConstraints;
   NSLayoutConstraint *_infobarHeight;
   NSLayoutConstraint *_contentTop;
+  NSView *_historyOverlayContainer;
   __weak id<PCNativePageHostObserver> _observer;
   BOOL _invalidated;
 }
@@ -189,6 +204,34 @@
          (!visible || !host.hiddenOrHasHiddenAncestor);
 }
 
+- (NSView *)historyOverlayContainer {
+  NSAssert(NSThread.isMainThread, @"Native page hosts require the main thread");
+  if (_invalidated) {
+    return nil;
+  }
+  // -[WebContentsPaneHostView initWithFrame:] 0x4749ef4 adds it clipped,
+  // above the compositor overlay. An infobar shelf added later goes above
+  // it, so restore it to the top; autoresizing survives that re-add.
+  if (!_historyOverlayContainer) {
+    _historyOverlayContainer =
+        [[PCNativeHistoryOverlayContainerView alloc] initWithFrame:self.bounds];
+    _historyOverlayContainer.autoresizingMask =
+        NSViewWidthSizable | NSViewHeightSizable;
+    _historyOverlayContainer.clipsToBounds = YES;
+  }
+  if (self.subviews.lastObject != _historyOverlayContainer) {
+    [self addSubview:_historyOverlayContainer positioned:NSWindowAbove
+          relativeTo:nil];
+  }
+  if (_invalidated || _historyOverlayContainer.superview != self) {
+    return nil;
+  }
+  if (!NSEqualRects(_historyOverlayContainer.frame, self.bounds)) {
+    _historyOverlayContainer.frame = self.bounds;
+  }
+  return _historyOverlayContainer;
+}
+
 - (void)viewDidMoveToWindow {
   [super viewDidMoveToWindow];
   if (!_invalidated) {
@@ -260,6 +303,8 @@
   _infobarHeight = nil;
   [_infobarView removeFromSuperview];
   _infobarView = nil;
+  [_historyOverlayContainer removeFromSuperview];
+  _historyOverlayContainer = nil;
   [NSLayoutConstraint deactivateConstraints:_contentConstraints];
   _contentConstraints = nil;
   NSView *contentView = _contentView;

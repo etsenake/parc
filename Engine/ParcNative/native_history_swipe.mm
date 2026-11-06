@@ -20,6 +20,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #import "native_appkit_page.h"
 #include "native_host_route.h"
+#import "page_host.h"
 #import "window_security_reservation.h"
 
 // These are the existing superclass implementations; the recognizer remains
@@ -186,6 +187,16 @@ class SwipeSession final : public content::WebContentsObserver {
 - (void)touchesEndedWithEvent:(NSEvent*)event {
   if (_native && ![self currentOwner]) { [self cancelSession]; return; }
   [super touchesEndedWithEvent:event];
+}
+//
+// its history container, above the pane compositor that shows the page.
+- (NSView*)viewThatWantsHistoryOverlay {
+  NSView* view = [super viewThatWantsHistoryOverlay];
+  for (NSView* ancestor = view.superview; ancestor; ancestor = ancestor.superview) {
+    if ([ancestor isKindOfClass:PCNativePageHost.class])
+      return [(PCNativePageHost*)ancestor historyOverlayContainer] ?: view;
+  }
+  return view;
 }
 - (BOOL)shouldAllowHistorySwiping {
   return [super shouldAllowHistorySwiping] && (!_native || [self currentOwner]);
