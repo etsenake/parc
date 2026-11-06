@@ -1,0 +1,61 @@
+# Installed by the reviewed overlay at //third_party/parc_fairplay.
+# Parc's FairPlay Streaming playback for Chromium on macOS. core/ is the
+# engine-independent playback core (Engine/ParcNative/fairplay in the Parc
+# repository); chromium/ adapts it to media::ContentDecryptionModule for the
+# GPU process's media service. See Engine/ParcNative/fairplay_chromium/README.md.
+#
+# It lives under third_party so Chromium's clang style plugin and
+# unsafe-buffers checks, which the core predates, don't apply to it.
+
+assert(is_mac)
+
+# Key system names only, for the browser and the renderer.
+source_set("key_system") {
+  public = [ "chromium/fairplay_key_system.h" ]
+  sources = public
+}
+
+source_set("core") {
+  visibility = [ ":*" ]
+  public = [
+    "core/fairplay_init_data.h",
+    "core/fairplay_key_session.h",
+    "core/fairplay_renderer.h",
+    "core/fairplay_types.h",
+  ]
+  sources = [
+    "core/fairplay_bitstream.cc",
+    "core/fairplay_bitstream.h",
+    "core/fairplay_init_data.mm",
+    "core/fairplay_key_session.mm",
+    "core/fairplay_key_session_internal.h",
+    "core/fairplay_renderer.mm",
+  ]
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+  frameworks = [
+    "AVFoundation.framework",
+    "AudioToolbox.framework",
+    "CoreFoundation.framework",
+    "CoreMedia.framework",
+    "Foundation.framework",
+  ]
+}
+
+# The GPU process's FairPlay CDM, linked into //media/mojo/services.
+source_set("gpu") {
+  visibility = [ "//media/mojo/services:*" ]
+  sources = [
+    "chromium/fairplay_cdm_adapter.cc",
+    "chromium/fairplay_cdm_adapter.h",
+    "chromium/fairplay_cdm_factory.cc",
+    "chromium/fairplay_cdm_factory.h",
+    "chromium/fairplay_task_runner.h",
+  ]
+  public_deps = [ ":key_system" ]
+  deps = [
+    ":core",
+    "//base",
+    "//media",
+  ]
+}

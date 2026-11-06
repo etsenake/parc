@@ -1,0 +1,367 @@
+--- a/content/browser/BUILD.gn
++++ b/content/browser/BUILD.gn
+@@ -2765,6 +2765,9 @@
+       "//components/remote_cocoa/common:mojo",
+       "//media",
+       "//services/webnn/public/cpp",
++
++      # Parc: FairPlay Streaming key system names (MediaInterfaceProxy).
++      "//third_party/parc_fairplay:key_system",
+       "//ui/accelerated_widget_mac",
+       "//ui/events:dom_keyboard_layout",
+     ]
+--- a/content/browser/media/media_interface_proxy.h
++++ b/content/browser/media/media_interface_proxy.h
+@@ -187,6 +187,12 @@
+ 
+   base::ThreadChecker thread_checker_;
+ 
++  // Parc: Widevine CreateCdm requests held by the observer installed with
++  // parc::fairplay::SetWidevineCdmRequestObserver(). They are never run.
++  // Declared before |receivers_| so the pipes close first and the callbacks
++  // are destroyed with this document.
++  std::vector<CreateCdmCallback> held_widevine_cdm_callbacks_;
++
+   // Receivers for incoming interface requests from the the RenderFrameImpl.
+   mojo::ReceiverSet<media::mojom::InterfaceFactory> receivers_;
+ 
+--- a/content/browser/media/media_interface_proxy.cc
++++ b/content/browser/media/media_interface_proxy.cc
+@@ -22,6 +22,7 @@
+ #include "build/build_config.h"
+ #include "content/browser/media/cdm_storage_common.h"
+ #include "content/browser/media/media_web_contents_observer.h"
++#include "content/browser/media/parc_fairplay_hooks.h"
+ #include "content/browser/renderer_host/render_frame_host_delegate.h"
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
+ #include "content/public/browser/browser_context.h"
+@@ -34,6 +35,7 @@
+ #include "content/public/common/cdm_info.h"
+ #include "content/public/common/content_client.h"
+ #include "media/base/cdm_context.h"
++#include "media/base/key_system_names.h"
+ #include "media/cdm/cdm_type.h"
+ #include "media/media_buildflags.h"
+ #include "media/mojo/buildflags.h"
+@@ -85,6 +87,42 @@
+ #include "media/base/media_switches.h"
+ #include "mojo/public/cpp/bindings/message.h"
+ #endif  // BUILDFLAG(ENABLE_OOP_VIDEO_DECODER)
++
++#if BUILDFLAG(IS_MAC)
++#include "content/browser/media/cdm_registry_impl.h"
++#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
++#endif  // BUILDFLAG(IS_MAC)
++
++namespace {
++
++// Parc: the observer installed by parc::fairplay::SetWidevineCdmRequestObserver
++// (content/browser/media/parc_fairplay_hooks.h). Set before the browser
++// threads start or on the UI thread, and read on the UI thread.
++parc::fairplay::WidevineCdmRequestObserver& WidevineCdmRequestObserverSlot() {
++  static base::NoDestructor<parc::fairplay::WidevineCdmRequestObserver>
++      observer;
++  return *observer;
++}
++
++// Widevine requests held per document; more fail instead of piling up.
++constexpr size_t kMaxHeldWidevineCdmRequests = 16;
++
++// "com.widevine.alpha" and its sub key systems.
++bool IsWidevineKeySystemName(const std::string& key_system) {
++  static constexpr char kWidevineKeySystemName[] = "com.widevine.alpha";
++  return key_system == kWidevineKeySystemName ||
++         media::IsSubKeySystemOf(key_system, kWidevineKeySystemName);
++}
++
++}  // namespace
++
++namespace parc::fairplay {
++
++void SetWidevineCdmRequestObserver(WidevineCdmRequestObserver observer) {
++  WidevineCdmRequestObserverSlot() = std::move(observer);
++}
++
++}  // namespace parc::fairplay
+ 
+ namespace content {
+ 
+@@ -527,6 +565,58 @@
+                                     CreateCdmCallback create_cdm_cb) {
+   CHECK(thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M160);
+   DVLOG(1) << __func__ << ": cdm_config=" << cdm_config;
++
++  // Parc: let the observer hold a Widevine CDM request. A copy, in case the
++  // observer replaces itself while it runs.
++  parc::fairplay::WidevineCdmRequestObserver widevine_observer =
++      WidevineCdmRequestObserverSlot();
++  if (widevine_observer && IsWidevineKeySystemName(cdm_config.key_system)) {
++    base::WeakPtr<MediaInterfaceProxy> weak_this = weak_factory_.GetWeakPtr();
++    const bool hold =
++        widevine_observer.Run(&render_frame_host(), cdm_config.key_system);
++    if (!weak_this) {
++      // The observer ended this document; its pipes are already closed.
++      return;
++    }
++    if (hold) {
++      if (held_widevine_cdm_callbacks_.size() >= kMaxHeldWidevineCdmRequests) {
++        std::move(create_cdm_cb)
++            .Run(mojo::NullRemote(), nullptr,
++                 media::CreateCdmStatus::kCdmCreationAborted);
++        return;
++      }
++      DVLOG(1) << __func__ << ": Widevine CDM request held";
++      held_widevine_cdm_callbacks_.push_back(std::move(create_cdm_cb));
++      return;
++    }
++  }
++
++#if BUILDFLAG(IS_MAC)
++  // Parc: FairPlay Streaming CDMs are created by the media service in the GPU
++  // process, which also hosts the FairPlay renderers that join the CDM's
++  // AVContentKeySession. They have no CDM library or CDM process.
++  if (parc::fairplay::IsFairPlayKeySystem(cdm_config.key_system)) {
++    // Like every other CDM, only once registered (CdmRegistryImpl::Init), so
++    // a renderer can't create one that Blink never offered.
++    if (!CdmRegistryImpl::GetInstance()->GetCdmInfo(
++            cdm_config.key_system, CdmInfo::Robustness::kSoftwareSecure)) {
++      std::move(create_cdm_cb)
++          .Run(mojo::NullRemote(), nullptr,
++               media::CreateCdmStatus::kUnsupportedKeySystem);
++      return;
++    }
++    auto* factory = media_interface_factory_ptr_->Get();
++    if (!factory) {
++      std::move(create_cdm_cb)
++          .Run(mojo::NullRemote(), nullptr,
++               media::CreateCdmStatus::kCdmFactoryCreationFailed);
++      return;
++    }
++    factory->CreateCdm(cdm_config,
++                       WrapCreateCdmCallback(std::move(create_cdm_cb)));
++    return;
++  }
++#endif  // BUILDFLAG(IS_MAC)
+ 
+   // Handle `use_hw_secure_codecs` cases first.
+ #if BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA)
+--- a/media/base/cdm_context.h
++++ b/media/base/cdm_context.h
+@@ -21,6 +21,12 @@
+ #if BUILDFLAG(IS_CHROMEOS)
+ namespace chromeos {
+ class ChromeOsCdmContext;
++}
++#endif
++
++#if BUILDFLAG(IS_MAC)
++namespace parc::fairplay {
++class FairPlayCdm;
+ }
+ #endif
+ 
+@@ -125,6 +131,19 @@
+   virtual chromeos::ChromeOsCdmContext* GetChromeOsCdmContext();
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++  // Parc: returns whether the CDM is FairPlay Streaming, whose keys reach
++  // only the FairPlay media Renderer hosted next to it in the GPU process.
++  // Like RequiresMediaFoundationRenderer(), this is a sync call made in the
++  // render process to set up the media pipeline.
++  virtual bool RequiresFairPlayRenderer();
++
++  // Parc: returns the FairPlay key session behind this CDM, which the
++  // FairPlay Renderer in the same process joins as a content key recipient.
++  // Returns nullptr for every other CDM and in the render process.
++  virtual parc::fairplay::FairPlayCdm* GetFairPlayCdm();
++#endif
++
+  protected:
+   CdmContext();
+ };
+--- a/media/base/cdm_context.cc
++++ b/media/base/cdm_context.cc
+@@ -59,4 +59,14 @@
+ }
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++bool CdmContext::RequiresFairPlayRenderer() {
++  return false;
++}
++
++parc::fairplay::FairPlayCdm* CdmContext::GetFairPlayCdm() {
++  return nullptr;
++}
++#endif
++
+ }  // namespace media
+--- a/media/mojo/mojom/content_decryption_module.mojom
++++ b/media/mojo/mojom/content_decryption_module.mojom
+@@ -169,6 +169,11 @@
+   // Whether MediaFoundationRenderer is required by the CDM.
+   [EnableIf=is_win]
+   bool requires_media_foundation_renderer;
++
++  // Parc: whether the CDM is FairPlay Streaming, whose keys reach only the
++  // FairPlay Renderer hosted in the same media service.
++  [EnableIf=is_mac]
++  bool requires_fairplay_renderer;
+ };
+ 
+ // Factory interface used for creating ContentDecryptionModule instances.
+--- a/media/mojo/clients/mojo_cdm.h
++++ b/media/mojo/clients/mojo_cdm.h
+@@ -87,6 +87,9 @@
+ #if BUILDFLAG(IS_WIN)
+   bool RequiresMediaFoundationRenderer() final;
+ #endif  // BUILDFLAG(IS_WIN)
++#if BUILDFLAG(IS_MAC)
++  bool RequiresFairPlayRenderer() final;
++#endif  // BUILDFLAG(IS_MAC)
+ 
+  private:
+   ~MojoCdm() final;
+@@ -151,6 +154,9 @@
+ #if BUILDFLAG(IS_WIN)
+   bool requires_media_foundation_renderer_ GUARDED_BY(lock_) = false;
+ #endif  // BUILDFLAG(IS_WIN)
++#if BUILDFLAG(IS_MAC)
++  bool requires_fairplay_renderer_ GUARDED_BY(lock_) = false;
++#endif  // BUILDFLAG(IS_MAC)
+ 
+   CdmConfig cdm_config_;
+ 
+--- a/media/mojo/clients/mojo_cdm.cc
++++ b/media/mojo/clients/mojo_cdm.cc
+@@ -65,6 +65,9 @@
+       requires_media_foundation_renderer_(
+           cdm_context->requires_media_foundation_renderer),
+ #endif  // BUILDFLAG(IS_WIN)
++#if BUILDFLAG(IS_MAC)
++      requires_fairplay_renderer_(cdm_context->requires_fairplay_renderer),
++#endif  // BUILDFLAG(IS_MAC)
+       cdm_config_(cdm_config),
+       session_message_cb_(session_message_cb),
+       session_closed_cb_(session_closed_cb),
+@@ -319,6 +322,13 @@
+   return requires_media_foundation_renderer_;
+ }
+ #endif  // BUILDFLAG(IS_WIN)
++
++#if BUILDFLAG(IS_MAC)
++bool MojoCdm::RequiresFairPlayRenderer() {
++  base::AutoLock auto_lock(lock_);
++  return requires_fairplay_renderer_;
++}
++#endif  // BUILDFLAG(IS_MAC)
+ 
+ void MojoCdm::OnSessionMessage(const std::string& session_id,
+                                MessageType message_type,
+--- a/media/mojo/services/mojo_cdm_service.cc
++++ b/media/mojo/services/mojo_cdm_service.cc
+@@ -184,6 +184,10 @@
+     mojo_cdm_context->requires_media_foundation_renderer =
+         cdm_context->RequiresMediaFoundationRenderer();
+ #endif  // BUILDFLAG(IS_WIN)
++#if BUILDFLAG(IS_MAC)
++    mojo_cdm_context->requires_fairplay_renderer =
++        cdm_context->RequiresFairPlayRenderer();
++#endif  // BUILDFLAG(IS_MAC)
+   }
+ 
+   std::move(init_cb).Run(std::move(mojo_cdm_context),
+--- a/media/mojo/services/gpu_mojo_media_client_mac.cc
++++ b/media/mojo/services/gpu_mojo_media_client_mac.cc
+@@ -6,12 +6,18 @@
+ 
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
++#include "build/build_config.h"
+ #include "media/base/audio_decoder.h"
+ #include "media/base/offloading_audio_encoder.h"
+ #include "media/filters/mac/audio_toolbox_audio_decoder.h"
+ #include "media/filters/mac/audio_toolbox_audio_encoder.h"
+ #include "media/gpu/mac/video_toolbox_video_decoder.h"
+ #include "media/mojo/services/gpu_mojo_media_client.h"
++
++#if BUILDFLAG(IS_MAC)
++#include "media/base/cdm_factory.h"
++#include "third_party/parc_fairplay/chromium/fairplay_cdm_factory.h"
++#endif
+ 
+ namespace media {
+ 
+@@ -63,6 +69,16 @@
+   VideoDecoderType GetPlatformDecoderImplementationType() final {
+     return VideoDecoderType::kVideoToolbox;
+   }
++
++#if BUILDFLAG(IS_MAC)
++  // Parc: FairPlay Streaming CDMs live in this media service, next to the
++  // FairPlay renderers that join their key sessions. Library CDMs (Widevine)
++  // are created by their own CdmService and never reach this factory.
++  std::unique_ptr<CdmFactory> CreatePlatformCdmFactory(
++      mojom::FrameInterfaceFactory* frame_interfaces) final {
++    return std::make_unique<FairPlayCdmFactory>();
++  }
++#endif  // BUILDFLAG(IS_MAC)
+ };
+ 
+ std::unique_ptr<GpuMojoMediaClient> CreateGpuMediaService(
+--- a/media/mojo/services/BUILD.gn
++++ b/media/mojo/services/BUILD.gn
+@@ -111,6 +111,10 @@
+     sources += [ "gpu_mojo_media_client_android.cc" ]
+   } else if (is_apple) {
+     sources += [ "gpu_mojo_media_client_mac.cc" ]
++    if (is_mac) {
++      # Parc: FairPlay Streaming CDM (and renderer) for the GPU media service.
++      deps += [ "//third_party/parc_fairplay:gpu" ]
++    }
+   } else if (is_win) {
+     sources += [ "gpu_mojo_media_client_win.cc" ]
+   } else if (use_linux_video_acceleration) {
+--- a/sandbox/policy/mac/gpu.sb
++++ b/sandbox/policy/mac/gpu.sb
+@@ -205,3 +205,39 @@
+       (allow file-read* file-write*
+         (subpath helper-bundle-cache-dir)
+ )))
++
++; Parc: FairPlay Streaming playback in the media service (AVContentKeySession,
++; AVSampleBufferDisplayLayer, AVSampleBufferAudioRenderer). Rules follow
++; WebKit's GPU process profile (com.apple.WebKit.GPUProcess.sb) and Chromium's
++; audio service profile (audio.sb), which already hosts an
++; AVSampleBufferAudioRenderer. IPC shared memory for CoreAudio ("AudioIO") and
++; preference reads are already allowed above.
++(allow mach-lookup
++  ; FairPlay Streaming key daemon: SPC creation and CKC processing for
++  ; AVContentKeySession (WebKit GPUProcess.sb; also in the App Sandbox).
++  (global-name "com.apple.lskdd")
++  (global-name "com.apple.lskdd.xpc")
++  ; CoreAudio HAL for AVSampleBufferAudioRenderer output (audio.sb).
++  (global-name "com.apple.audio.audiohald")
++  (global-name "com.apple.audio.coreaudiod")
++  (global-name "com.apple.audio.AudioSession")
++  ; Needed for AVSampleBufferAudioRenderer creation (audio.sb).
++  (global-name "com.apple.coremedia.routingcontext.xpc")
++  ; Out-of-process audio converters (WebKit GPUProcess.sb) and the HAL
++  ; plug-in helper (audio.sb).
++  (xpc-service-name "com.apple.audio.AudioConverterService")
++  (xpc-service-name "com.apple.audio.SandboxHelper")
++)
++
++; CoreAudio kernel-driver user clients on Intel Macs (audio.sb).
++(allow iokit-open
++  (iokit-user-client-class "IOAudioControlUserClient")
++  (iokit-user-client-class "IOAudioEngineUserClient")
++)
++
++; HAL plug-ins and the component cache read by the CoreAudio client
++; (audio.sb, WebKit GPUProcess.sb).
++(allow file-read*
++  (path (user-homedir-path "/Library/Caches/com.apple.coreaudio.components.plist"))
++  (subpath "/Library/Audio/Plug-Ins/HAL")
++)
