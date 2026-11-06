@@ -15,10 +15,6 @@ namespace content {
 class WebContents;
 }
 
-namespace ui {
-class Layer;
-}
-
 namespace parc {
 
 class NativePaneCompositorPool;
@@ -64,40 +60,6 @@ PaneCompositorShow ShowInPaneCompositor(content::WebContents& contents,
 // page until another page in the window needs it or a sweep retires it.
 // Ignored while the compositor is still on screen for a newer owner.
 void HidePaneCompositor(content::WebContents& contents);
-
-// Whether a page the shell shows in `window` has a picture there. Its view
-// draws nothing by itself once it has drawn through a compositor, so a page
-// that is visible to Chromium can still show the pane's backing.
-enum class PanePicture {
-  kPresenting,
-  // No compositor of this window holds the page.
-  kNotAttached,
-  // Its compositor is off screen or not drawing.
-  kNotDrawing,
-  // Drawing, but sized for another place or with no frame since the page
-  // joined it.
-  kNoFrame,
-  // Mid hand-off; ask again later.
-  kBusy,
-};
-PanePicture PaneCompositorPicture(const content::WebContents& contents,
-                                  NSWindow* window);
-
-// What a resize does to the page's compositor: placed over the page's current
-// bounds, drawing if on screen, its surface at the current size and a full
-// redraw requested. Ignored unless the page is attached and shown.
-void RefreshPaneCompositor(const content::WebContents& contents);
-
-// True once after `contents` joins a compositor or is shown again in one:
-// the page then needs a new surface (RequestRepaintOnNewSurface), since one
-// evicted while hidden, or a renderer already visible and so never told to
-// draw again, leaves it blank until a resize.
-bool TakePaneCompositorRenewal(const content::WebContents& contents);
-
-// The layer `contents`' renderers draw into while it is attached in `window`,
-// for checking that its renderer view is still parented there.
-ui::Layer* PaneCompositorLayer(const content::WebContents& contents,
-                               NSWindow* window);
 
 // Before CefShutdown, with the message loop returned: detaches every page and
 // destroys every compositor while Chromium's ImageTransportFactory still

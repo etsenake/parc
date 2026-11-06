@@ -170,13 +170,7 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   void Detach(bool restore_view);
   // Drops the frame the display view holds.
   void ClearDisplay();
-  // `renew` gives the root a new surface id at an unchanged size, as a resize
-  // would; RecyclableCompositorMac allocates one only when the size changes.
-  void UpdateSurface(bool renew = false);
-  PanePicture Picture() const;
-  void Refresh();
-  // Once per attachment or re-show: the page needs a new surface of its own.
-  bool TakePageRenewal() { return !busy() && std::exchange(renew_page_, false); }
+  void UpdateSurface();
 
   // ui::ViewsHostableView::Host:
   ui::Layer* GetUiLayer() const override;
@@ -217,10 +211,6 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   int capture_locks_ = 0;
   bool page_shown_ = false;
   bool drawing_ = false;
-  // The display view has received a frame since the page attached or the
-  // display was cleared.
-  bool presented_ = false;
-  bool renew_page_ = false;
   bool marked_ = false;
   bool reserved_ = false;
   bool detaching_ = false;
@@ -237,7 +227,6 @@ class NativePaneCompositorPool final
   NativePaneCompositorPool(const NativePaneCompositorPool&) = delete;
   NativePaneCompositorPool& operator=(const NativePaneCompositorPool&) = delete;
 
-  NSWindow* window() const { return window_; }
   void AddHost() { ++hosts_; }
   void RemoveHost();
   uint64_t NextUse() { return ++uses_; }
@@ -369,8 +358,6 @@ bool NativePaneCompositor::Attach(content::WebContents& contents,
   keep_pool_ = base::WrapRefCounted(&pool_.get());
   Attachments()[&contents] = weak_factory_.GetWeakPtr();
   marked_ = false;
-  presented_ = false;
-  renew_page_ = true;
   // Where the page is, though it may not be shown yet.
   rect_ = WindowRect(view);
   Place();
@@ -385,7 +372,6 @@ void NativePaneCompositor::Show(uint64_t use) {
   if (!page_shown_) {
     page_shown_ = true;
     last_used_ = use;
-    renew_page_ = true;
   }
   marked_ = false;
   Place();
@@ -473,7 +459,6 @@ void NativePaneCompositor::ClearDisplay() {
   // A new tree on an already sized layer gets a zero-sized child (the
   // ordering video_overlay_window.mm notes), so size it as AppKit's first
   // sizing of the layer did; its autoresizing follows later resizes.
-  presented_ = false;
   [CATransaction begin];
   [CATransaction setDisableActions:YES];
   tree_.reset();
@@ -523,43 +508,7 @@ void NativePaneCompositor::ReleaseCaptureLock() {
 
 void NativePaneCompositor::AcceleratedWidgetCALayerParamsUpdated(
     gfx::CALayerParams params) {
-  presented_ = !params.IsEmpty();
   tree_->UpdateCALayerTree(std::move(params));
-}
-
-PanePicture NativePaneCompositor::Picture() const {
-  if (busy()) {
-    return PanePicture::kBusy;
-  }
-  if (!page_shown_ || !on_screen() || !drawing_ ||
-      overlay_.superview != contents_view_) {
-    return PanePicture::kNotDrawing;
-  }
-  const NSSize size = overlay_.bounds.size;
-  const gfx::Size dip = gfx::ToFlooredSize(gfx::SizeF(
-      static_cast<float>(size.width), static_cast<float>(size.height)));
-  // An empty place has nothing to show.
-  if (dip.IsEmpty()) {
-    return PanePicture::kPresenting;
-  }
-  if (!presented_ || !NSEqualRects(overlay_.frame, contents_view_.bounds) ||
-      root_->bounds().size() != dip) {
-    return PanePicture::kNoFrame;
-  }
-  return PanePicture::kPresenting;
-}
-
-void NativePaneCompositor::Refresh() {
-  if (!attached() || busy() || !page_shown_) {
-    return;
-  }
-  marked_ = false;
-  Place();
-  if (on_screen()) {
-    ResumeDrawing();
-  }
-  UpdateSurface(/*renew=*/true);
-  compositor_->compositor()->ScheduleFullRedraw();
 }
 
 NSView* NativePaneCompositor::RendererView() const {
@@ -597,7 +546,7 @@ void NativePaneCompositor::Place() {
   UpdateSurface();
 }
 
-void NativePaneCompositor::UpdateSurface(bool renew) {
+void NativePaneCompositor::UpdateSurface() {
   NSWindow* window = overlay_.window;
   const NSSize size = overlay_.bounds.size;
   if (!window || size.width < 1 || size.height < 1) {
@@ -610,16 +559,9 @@ void NativePaneCompositor::UpdateSurface(bool renew) {
   const gfx::Size dip = gfx::ToFlooredSize(gfx::SizeF(
       static_cast<float>(size.width), static_cast<float>(size.height)));
   root_->SetBounds(gfx::Rect(dip));
-  const gfx::Size pixels =
-      gfx::ToRoundedSize(gfx::ConvertSizeToPixels(dip, scale));
-  if (renew) {
-    // Two ids in one task, before any commit: only the second is drawn.
-    compositor_->UpdateSurface(
-        gfx::Size(pixels.width() + 1, pixels.height()), scale,
-        display.GetColorSpaces(), display.id(), display.display_frequency());
-  }
-  compositor_->UpdateSurface(pixels, scale, display.GetColorSpaces(),
-                             display.id(), display.display_frequency());
+  compositor_->UpdateSurface(
+      gfx::ToRoundedSize(gfx::ConvertSizeToPixels(dip, scale)), scale,
+      display.GetColorSpaces(), display.id(), display.display_frequency());
 }
 
 void NativePaneCompositor::GeometryChanged() {
@@ -765,11 +707,6 @@ PaneCompositorShow NativePaneCompositorPool::Show(
   if (!target->Attach(*weak_contents, view, hostable) || !weak_target) {
     ScheduleSweep();
     return PaneCompositorShow::kBusy;
-  }
-  if (!taken.created) {
-    // A pool compositor keeps its root surface id until a size change; the
-    // page joining it gets a new one, as a resize would give it.
-    target->UpdateSurface(/*renew=*/true);
   }
   target->Show(NextUse());
   ScheduleSweep();
@@ -927,44 +864,6 @@ void HidePaneCompositor(content::WebContents& contents) {
   NativePaneCompositorPool& pool = compositor->pool();
   compositor->Hide(pool.NextUse());
   pool.ScheduleSweep();
-}
-
-PanePicture PaneCompositorPicture(const content::WebContents& contents,
-                                  NSWindow* window) {
-  CHECK(NSThread.isMainThread);
-  NativePaneCompositor* compositor = AttachedCompositor(contents);
-  if (ShutDown() || !compositor || !window ||
-      compositor->pool().window() != window) {
-    return PanePicture::kNotAttached;
-  }
-  return compositor->Picture();
-}
-
-void RefreshPaneCompositor(const content::WebContents& contents) {
-  CHECK(NSThread.isMainThread);
-  if (ShutDown()) {
-    return;
-  }
-  if (NativePaneCompositor* compositor = AttachedCompositor(contents)) {
-    compositor->Refresh();
-  }
-}
-
-bool TakePaneCompositorRenewal(const content::WebContents& contents) {
-  CHECK(NSThread.isMainThread);
-  NativePaneCompositor* compositor = AttachedCompositor(contents);
-  return !ShutDown() && compositor && compositor->TakePageRenewal();
-}
-
-ui::Layer* PaneCompositorLayer(const content::WebContents& contents,
-                               NSWindow* window) {
-  CHECK(NSThread.isMainThread);
-  NativePaneCompositor* compositor = AttachedCompositor(contents);
-  if (ShutDown() || !compositor || compositor->busy() || !window ||
-      compositor->pool().window() != window) {
-    return nullptr;
-  }
-  return compositor->GetUiLayer();
 }
 
 void ShutDownPaneCompositors() {
