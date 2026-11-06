@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 355,
+  "version": 356,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1465,12 +1465,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_bitstream.cc",
       "target": "third_party/parc_fairplay/core/fairplay_bitstream.cc",
-      "sha256": "de4bc4c8cc5d08fd3a66f6fc11d3e9722fd4af5536c05c171b97d4acff962b1f"
+      "sha256": "3ac53af50a5c20f1bfe75237ac9a422eb34d9e4fe62284a1e119e06b7947bb7b"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_bitstream.h",
       "target": "third_party/parc_fairplay/core/fairplay_bitstream.h",
-      "sha256": "18652ebe6e253b2f13325c042fc728cd325a614168355e4a2e273335ece7c7b6"
+      "sha256": "400f24dfe8288172c1857a7d437844a24dea1ce97f852a3694af4542fd811e4a"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_init_data.h",
@@ -1490,7 +1490,7 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.mm",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.mm",
-      "sha256": "90b4e6762d6919a496dd19b49c59a91632dabd80e4aaf4d97abd405cfe88d93d"
+      "sha256": "9054d5d1b057ea029fc7da6792fd21ada842fb79d765506a828274bd88936402"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session_internal.h",
@@ -1500,12 +1500,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_renderer.h",
       "target": "third_party/parc_fairplay/core/fairplay_renderer.h",
-      "sha256": "5bef4bb69d89ca16a6ee9f8052120cef920740d55a0e06f2f9e30edcd07fb382"
+      "sha256": "97b89c72f91d5f1937cfaaf6593e18c3d3b96dbe5ca7cafc36dfdd11b055ceda"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_renderer.mm",
       "target": "third_party/parc_fairplay/core/fairplay_renderer.mm",
-      "sha256": "dd70febe5001ef0a57c77a3e5d8d2edfb0c19eec176fea00d59ec067c566e0b5"
+      "sha256": "38d9a96312986a481216a66473d96150dadea6529df8478b690dc21517b2784a"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_types.h",
@@ -1515,7 +1515,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/BUILD.gn",
       "target": "third_party/parc_fairplay/BUILD.gn",
-      "sha256": "e169bfe2fd40cb13aa77e354b6657a7550d411d63832d5966eb1d5e2701c8ec7"
+      "sha256": "47e9977da676731518b6e97a6294eab73496ec7c5db1ed5477421bb3515b19bc"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_key_system.h",
