@@ -244,11 +244,10 @@
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
  #include "third_party/blink/renderer/core/html/track/video_track_list.h"
-@@ -563,6 +564,16 @@
- 
+@@ -564,6 +565,16 @@
    String codecs = content_type.Parameter("codecs");
    ContentType filtered_content_type = content_type;
-+
+ 
 +  // Parc: AC-3 and E-AC-3 only under Safari's identity, for isTypeSupported,
 +  // addSourceBuffer and changeType alike (parc_safari_identity.h).
 +  if (IsParcSafariOnlyAudioCodecs(codecs) &&
@@ -258,12 +257,56 @@
 +             << ") -> false (Dolby audio outside Safari's identity)";
 +    return false;
 +  }
- 
++
  #if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
    // Mime util doesn't include the mp2t container in order to prevent codec
+   // support leaking into HtmlMediaElement.canPlayType. If the stream parser
+@@ -595,10 +606,20 @@
+   // from the codecs in the `filtered_content_type`.
+   // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
+   // specified, allow DV regardless of `enforce_codec_specificity`.
++  // Parc: a document presenting Safari's identity is told yes by
++  // isTypeSupported too for the Dolby Vision profiles FairPlay plays
++  // encrypted, 5 and 8 (its CDM capability in fairplay-media.patch), as Safari
++  // tells it; other profiles stay in the query and answer as before
++  // (parc_safari_identity.h).
++  const bool parc_fairplay_profiles_only =
++      enforce_codec_specificity &&
++      !base::FeatureList::IsEnabled(
++          media::kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled) &&
++      IsParcSafariIdentityUserAgent(context->UserAgent());
+   if (base::FeatureList::IsEnabled(media::kPlatformEncryptedDolbyVision) &&
+       (base::FeatureList::IsEnabled(
+            media::kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled) ||
+-       !enforce_codec_specificity)) {
++       !enforce_codec_specificity || parc_fairplay_profiles_only)) {
+     // Remove any detected DolbyVision codec from the query to GetSupportsType.
+     std::string filtered_codecs;
+     std::vector<std::string> parsed_codec_ids;
+@@ -608,7 +629,10 @@
+       if (auto result =
+               media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
+                                            /*allow_ambiguous_matches=*/false)) {
+-        if (result->codec == media::VideoCodec::kDolbyVision) {
++        if (result->codec == media::VideoCodec::kDolbyVision &&
++            (!parc_fairplay_profiles_only ||
++             result->profile == media::DOLBYVISION_PROFILE5 ||
++             result->profile == media::DOLBYVISION_PROFILE8)) {
+           continue;
+         }
+       }
 --- a/third_party/blink/renderer/core/html/media/html_media_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
-@@ -71,6 +71,7 @@
+@@ -45,6 +45,8 @@
+ #include "media/base/media_content_type.h"
+ #include "media/base/media_switches.h"
+ #include "media/base/media_track.h"
++#include "media/base/video_codec_string_parsers.h"
++#include "media/media_buildflags.h"
+ #include "services/media_session/public/mojom/media_session.mojom-blink.h"
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #include "third_party/blink/public/common/features.h"
+@@ -71,6 +73,7 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -271,21 +314,82 @@
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -1069,10 +1070,30 @@
+@@ -127,6 +130,7 @@
+ #include "third_party/blink/renderer/platform/wtf/casting.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+ #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
++#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "ui/accessibility/accessibility_features.h"
+ #include "ui/display/screen_info.h"
+@@ -1069,10 +1073,79 @@
    return network_state_;
  }
  
 +namespace {
 +
-+// Parc: AC-3 and E-AC-3 answer yes only under Safari's identity
-+// (parc_safari_identity.h). A document without a window of its own answers
-+// for the window that created it.
-+bool ParcHidesSafariOnlyAudio(const Document& document, const String& type) {
-+  if (!IsParcSafariOnlyAudioCodecs(ContentType(type).Parameter("codecs"))) {
-+    return false;
-+  }
++// Parc: what a document is told about a type under its identity
++// (parc_safari_identity.h). AC-3 and E-AC-3 answer yes only under Safari's
++// identity. With `fairplay_dolby_vision`, under it, the Dolby Vision profiles
++// FairPlay plays encrypted (5 and 8, its CDM capability in
++// fairplay-media.patch) answer yes as in Safari: the rest of the type is
++// checked without them, as Chromium's Media Source and EME already do for
++// encrypted Dolby Vision. Clear Dolby Vision still can't play, so choosing a
++// <source> leaves it out. A document without a window of its own answers for
++// the window that created it.
++MIMETypeRegistry::SupportsType ParcSupportsType(const Document& document,
++                                                const String& type,
++                                                bool fairplay_dolby_vision) {
++  const ContentType content_type(type);
++  const String codecs = content_type.Parameter("codecs");
 +  ExecutionContext* context = document.GetExecutionContext();
-+  return !context || !IsParcSafariIdentityUserAgent(context->UserAgent());
++  const bool safari =
++      context && IsParcSafariIdentityUserAgent(context->UserAgent());
++  if (!safari && IsParcSafariOnlyAudioCodecs(codecs)) {
++    return MIMETypeRegistry::kNotSupported;
++  }
++#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
++  if (safari && fairplay_dolby_vision &&
++      base::FeatureList::IsEnabled(media::kPlatformEncryptedDolbyVision) &&
++      EqualIgnoringAsciiCase(content_type.GetType(), "video/mp4") &&
++      !codecs.empty()) {
++    StringBuilder others;
++    wtf_size_t other_count = 0;
++    bool dolby_vision = false;
++    bool empty_entry = false;
++    for (const String& codec : codecs.Split(',')) {
++      const String id = codec.StripWhiteSpace();
++      if (id.ContainsOnlyAsciiOrEmpty()) {
++        const std::optional<media::VideoType> parsed =
++            media::ParseDolbyVisionCodecId(id.Ascii());
++        if (parsed && (parsed->profile == media::DOLBYVISION_PROFILE5 ||
++                       parsed->profile == media::DOLBYVISION_PROFILE8)) {
++          dolby_vision = true;
++          continue;
++        }
++      }
++      empty_entry = empty_entry || id.empty();
++      if (other_count++) {
++        others.Append(',');
++      }
++      others.Append(id);
++    }
++    // A malformed list (an empty entry) answers as before.
++    if (dolby_vision && !empty_entry) {
++      if (!other_count) {
++        return MIMETypeRegistry::kSupported;
++      }
++      StringBuilder without_dolby_vision;
++      without_dolby_vision.Append(content_type.GetType());
++      without_dolby_vision.Append("; codecs=\"");
++      without_dolby_vision.Append(others);
++      without_dolby_vision.Append('"');
++      return HTMLMediaElement::GetSupportsType(
++          ContentType(without_dolby_vision.ToString()));
++    }
++  }
++#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
++  return HTMLMediaElement::GetSupportsType(content_type);
 +}
 +
 +}  // namespace
@@ -293,21 +397,19 @@
  V8CanPlayTypeResult HTMLMediaElement::canPlayType(
      const String& mime_type) const {
    MIMETypeRegistry::SupportsType support =
-       GetSupportsType(ContentType(mime_type));
-+
-+  if (support != MIMETypeRegistry::kNotSupported &&
-+      ParcHidesSafariOnlyAudio(GetDocument(), mime_type)) {
-+    support = MIMETypeRegistry::kNotSupported;
-+  }
+-      GetSupportsType(ContentType(mime_type));
++      ParcSupportsType(GetDocument(), mime_type,
++                       /*fairplay_dolby_vision=*/true);
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -3899,6 +3920,8 @@
+@@ -3898,7 +3971,8 @@
+         DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
-       if (!GetSupportsType(ContentType(type)))
-+        goto checkAgain;
-+      if (ParcHidesSafariOnlyAudio(GetDocument(), type))
+-      if (!GetSupportsType(ContentType(type)))
++      if (!ParcSupportsType(GetDocument(), type,
++                            /*fairplay_dolby_vision=*/false))
          goto checkAgain;
      }
  

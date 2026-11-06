@@ -64,6 +64,30 @@ context's user agent like the rest of the identity:
   selector skips that capability and judges the rest of the configuration as
   before. Widevine's own audio support is unchanged.
 
+## Dolby Vision
+
+Netflix adds Dolby Vision SourceBuffers (`dvhe.05.01`, `dvhe.05.04`) and Apple
+TV+ uses `dvh1.05.01`. Both ask first and drop to other streams on a "no".
+Chromium plays Dolby Vision only encrypted here: fairplay-media builds with
+`enable_platform_encrypted_dolby_vision`, turns `kPlatformEncryptedDolbyVision`
+on for macOS and lists profiles 5 and 8 for FairPlay. Chromium's own rules then
+already answer yes for `addSourceBuffer`, `changeType`, EME capabilities and
+`mediaCapabilities.decodingInfo` with a key system, and no for clear Dolby
+Vision everywhere else. On a Safari-identity document Parc also answers yes,
+as Safari does, for the profiles FairPlay plays (5 and 8: `dvh1.05.*`,
+`dvhe.05.*`, `dvh1.08.*`, `dvhe.08.*`):
+
+- `MediaSource.isTypeSupported` checks the rest of the type without those
+  codecs, as `addSourceBuffer` already does.
+- `HTMLMediaElement.canPlayType` does the same; a type naming only them
+  answers "probably".
+
+Other Dolby Vision profiles keep Chromium's answer. The choice among
+`<source type>` children keeps Chromium's answer too: a `<source>` plays as a
+plain file, where clear Dolby Vision can't decode, and failing after its
+metadata loaded wouldn't fall back to the next `<source>`. Clear Dolby Vision
+still can't play, and `decodingInfo` without a key system still answers no.
+
 ## Which documents present it
 
 A site is a registrable domain, private registries included, so
