@@ -51,6 +51,29 @@ import Foundation
         let merged = [page("https://www.youtube.com/", 0, title: "YouTube"), tab("YouTube", "https://youtube.com")]
         let mergedOrder = CommandBarRanking.rank(merged, query: "you")
         expect(mergedOrder == [1], "the tab replaces Chromium's row for its page")
+
+        // Cmd-T with the site already open: dedup must retain the native
+        // default's position, even when www makes the tab a weak text match.
+        for (host, title) in [("google.com", "Google"), ("youtube.com", "YouTube")] {
+            let website = "https://www.\(host)/"
+            let results = [page(website, 0), search(host, 1), tab(title, website)]
+            expect(CommandBarRanking.rank(results, query: host) == [2, 1],
+                   "\(host) keeps its website default after merging with the open tab")
+            let repeated = results + [tab(host + " - Google Search", "https://www.google.com/search?q=" + host)]
+            expect(CommandBarRanking.rank(repeated, query: host).first == 2,
+                   "an earlier accidental search for \(host) cannot displace its website default")
+        }
+        let escaped = [page("https://example.com/hello%20world", 0), search("hello world", 1),
+                       tab("A page", "https://example.com/hello%20world")]
+        expect(CommandBarRanking.rank(escaped, query: "hello world").first == 2,
+               "a merged default remains admitted when Chromium matched text the local scorer cannot")
+        let commandAndTab = [page("https://archive.org/", 0), search("arc", 1),
+                             tab("Archive", "https://archive.org/"), command("Archive Tab")]
+        expect(CommandBarRanking.rank(commandAndTab, query: "arc").prefix(2).elementsEqual([3, 2]),
+               "the leading Type Travel action still precedes the merged default")
+        let searchDefault = [search("google", 0), page("https://www.google.com/", 1), tab("Google", "https://www.google.com/")]
+        expect(CommandBarRanking.rank(searchDefault, query: "google").first == 0,
+               "merging a non-default website does not replace a genuine search default")
         let github = [page("https://github.com/etsenake/parc/pulls?q=1", 0, title: "Pull requests"),
                       tab("Pull requests", "https://github.com/etsenake/parc/pulls")]
         expect(CommandBarRanking.rank(github, query: "pull").count == 1, "listed sites dedup by title and host")

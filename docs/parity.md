@@ -74,6 +74,20 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 
 ## Current ownership and handoffs
 
+- **Codex root — Cmd-T domain ranking and site search (November 6).**
+  Corrects the November 2 unified-ranking regression: merging Chromium's
+  default website result into an existing tab now preserves its admission and
+  default position, so `google.com`/`youtube.com` cannot fall behind a search
+  merely because their tab URL starts with `www.`. Website tab, top-site and
+  recent-history rows can offer the actual published site-search engine, as
+  identity and native scope entry retains its session/engine validation.
+  CMD03/CMD10 correction and partial CMD24 work; no family count changes.
+  Both failures reproduced before correction in inert regression fixtures;
+  focused ranking/scope/Return/editing checks and the full Swift module check
+  cover the source. Root reviews directly on main under the current contract.
+  No browser-runtime acceptance or new app package is claimed.
+  [Cause and reference](command-bar.md#typing-stability-and-ranking).
+
 - **Cursor `cursor/cb-site-search` — website scope colour, pill glow and Tab hint (November 1).**
   Checkout `work/cursor-cb-site-search`; asked for directly by Josh while the
   Command bar family stays Codex's. Partial CMD26/CMD27 work; it changes no

@@ -183,6 +183,8 @@ compile_and_run command-bar-native-hold CommandBar/NativeHoldTests \
 #
 compile_and_run command-bar-ranking CommandBar/RankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
+# Actual selected-row scope resolver with inert native-publication fixtures.
+bash "$repo_root/scripts/test-command-bar-site-search.sh"
 # Trigger phrases and weighted bumps as the command bar builds command candidates.
 compile_and_run command-bar-command-ranking CommandBar/CommandRankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift" \

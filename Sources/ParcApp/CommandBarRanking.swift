@@ -135,11 +135,16 @@ enum CommandBarRanking {
             if let other = kept[candidate.key], candidates[other].archetype <= candidate.archetype { continue }
             kept[candidate.key] = index
         }
+        // Dedup can replace Chromium's default with an existing tab. That
+        // surviving row inherits the default's admission and preferred rank;
+        // otherwise a search for "google.com" beats the www.google.com tab.
+        let defaultIndex = candidates.first(where: { $0.archetype == .chromium && $0.chromiumRank == 0 })
+            .flatMap { kept[$0.key] }
         let prepared = Query(query)
         var scored: [(index: Int, score: Double, quality: Double)] = []
         for index in kept.values {
             let candidate = candidates[index]
-            let quality = candidate.archetype == .chromium ? 1 : match(prepared, candidate.texts)
+            let quality = candidate.archetype == .chromium || index == defaultIndex ? 1 : match(prepared, candidate.texts)
             guard quality > 0 else { continue }
             let score: Double
             switch candidate.archetype {
@@ -170,10 +175,7 @@ enum CommandBarRanking {
         if let lead = scored.first(where: { candidates[$0.index].archetype == .typeTravel && $0.quality >= 0.9 }) {
             take(lead.index)
         }
-        if let chromiumDefault = scored.first(where: { candidates[$0.index].archetype == .chromium
-            && candidates[$0.index].chromiumRank == 0 }) {
-            take(chromiumDefault.index)
-        }
+        if let defaultIndex { take(defaultIndex) }
         for entry in scored { take(entry.index) }
         return order
     }

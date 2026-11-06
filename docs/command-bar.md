@@ -71,6 +71,7 @@ The window leases the original session, Space, profile, selected pane IDs, focus
 ## Website search scope
 
 
+
 Accepted entry clears the field and shows the actual native engine name in a scope pill. Native `snapshotChanged` supplies the active identity and scoped results. Publication revisions order snapshots; they are never compared to a navigation token's distinct search-preferences revision. A new query clears old offers immediately. The field keeps its own typed text; asynchronous provider snapshots do not replace composition or text selection.
 
 
@@ -527,6 +528,19 @@ search translation unit is separately compiler-checked. This component does not
 load a browser or personal Profile, and does not claim packaged browser behavior.
 
 ## Typing stability and ranking
+
+**November 6 domain regression correction.** The November 2 unified-ranking change
+(`b6000e1c`) discarded Chromium's default priority when its website result merged
+with an open tab. A bare `google.com` or `youtube.com` only weakly matched that
+tab's `www.` URL, letting a search for the domain (or a tab from an earlier such
+search) take Return. Dedup now carries the default's admission and preferred
+position to the surviving row, preserving the leading Type Travel rule and
+original tab-switch dispatch. A genuine search default remains a search. The
+ranking fixtures reproduce the failure before the fix for both domains, with
+and without an earlier search tab; the production scope-resolver fixture also
+fails before the tab-site-search correction. These are inert component checks,
+plus full-module Swift compilation, not browser-runtime acceptance. No engine
+change or app package is part of this source correction.
 
 
 The engine restarts Chromium's controller on each edit instead of clobbering it, as Chrome's omnibox does. Google's cached suggestions and the matches Chromium carries over from still-running providers therefore stay in each keystroke's first answer until the network replaces them. A new scope, engine change or empty input still starts fresh.

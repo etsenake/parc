@@ -1387,18 +1387,31 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
               (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
               results.indices.contains(table.selectedRow) else { return nil }
         let result = results[table.selectedRow]
+        guard !result.isExpired else { return nil }
         if let action = result.extensionAction {
             guard extensionDisposition != nil else { return nil }
             return scopeOffers.first { $0.extensionAction === action }
         }
-        guard let navigation = result.navigation else { return nil }
-        if let offer = scopeOffers.first(where: { $0.result === navigation && (!$0.isExtension || extensionDisposition != nil) }) {
-            return offer
+        let pageURL: URL?
+        if let navigation = result.navigation {
+            if let offer = scopeOffers.first(where: { $0.result === navigation && (!$0.isExtension || extensionDisposition != nil) }) {
+                return offer
+            }
+            guard !navigation.search, nativeResults.contains(where: { $0 === navigation }) else { return nil }
+            pageURL = navigation.url
+        } else if result.tabID != nil || result.input != nil {
+            //
+            //
+            // a native website result becomes Switch to Tab. Return still
+            // uses the original tab ID, never this URL as a navigation token.
+            pageURL = result.url
+        } else {
+            return nil
         }
         //
         //
-        guard !navigation.search, let host = navigation.url.host,
-              nativeResults.contains(where: { $0 === navigation }) else { return nil }
+        guard let pageURL, ["http", "https"].contains(pageURL.scheme?.lowercased() ?? ""),
+              let host = pageURL.host else { return nil }
         return CommandBarSiteColor.scope(forPageHost: host, in: siteScopes) { Self.site(of: $0)?.host }
     }
     /// The engine's template, empty-query search host and prepopulated flag.
