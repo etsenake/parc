@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 346,
+  "version": 347,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -105,7 +105,7 @@
     {
       "source": "Engine/ParcNative/native_chrome_platform_delegate.mm",
       "target": "cef/libcef/browser/parc_native/native_chrome_platform_delegate.mm",
-      "sha256": "9eef79597bc3b7b15cae8b4f948cac4a26349a09ee2f72d77a22fc8c3bb83b10"
+      "sha256": "1779c64c3dd6c7428d7516ae4fcb1831d02bfd05a40037ebf1eac0444372995c"
     },
     {
       "source": "Engine/ParcNative/extension_keybinding_registry.h",
@@ -395,7 +395,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "96cb4095584c59e2371a3774d7034f3f4abd865887d4ead7087f452b7c8c77c2"
+      "sha256": "331e6abbc3a4029fffb66701db2f583140e393e6edf458305234e28303c49cec"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -415,7 +415,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_page.mm",
-      "sha256": "4695e15a81fed27be63127117b7802e05f758f1de7d80af30b925c9df370a634"
+      "sha256": "bcd23c4eea883a5060841602e68289487f6260aeb3aee06404033f1f3e8fafde"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -435,7 +435,7 @@
     {
       "source": "Engine/ParcNative/native_engine_entry.mm",
       "target": "cef/libcef/browser/parc_native/native_engine_entry.mm",
-      "sha256": "d023deef15ba703d0a40a9d23090e42129e3ea4b08baa23e08fa4051ba2b4709"
+      "sha256": "969c0d288b4288bbcf8e91ef03c6887b19c7523f5581938d9e099587364f1c36"
     },
     {
       "source": "Engine/ParcNative/native_exclusive_access.h",
@@ -1551,17 +1551,42 @@
       "source": "Engine/ParcNative/fairplay_chromium/parc_fairplay_hooks.h",
       "target": "content/browser/media/parc_fairplay_hooks.h",
       "sha256": "64e205c57470ac671775d18eed67f3e2817647e1e5d8369445579751e9520b57"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_identity_policy.h",
+      "target": "cef/libcef/browser/parc_native/fairplay_identity_policy.h",
+      "sha256": "a214c55dadcfe79fb5e99c0fc3f47a991934c817de3aba6d777ebafd8fcfac77"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_identity.h",
+      "target": "cef/libcef/browser/parc_native/fairplay_identity.h",
+      "sha256": "0647ef37c64a4174be185bd63be35657d1ea7a075c8cfacc5575fb84e7a5a53a"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_identity.mm",
+      "target": "cef/libcef/browser/parc_native/fairplay_identity.mm",
+      "sha256": "f35e50ffb706dac6dbf2431ec71781ab1b11aca5d4358ca6daf9fa23af2594ae"
+    },
+    {
+      "source": "Engine/ParcRenderer/parc_safari_identity.h",
+      "target": "third_party/blink/renderer/core/frame/parc_safari_identity.h",
+      "sha256": "c7cc66d76be3ac99cfc615e6e8e903ec73c4b0ec11266dc9c01caca0ca50ae7e"
+    },
+    {
+      "source": "Engine/ParcHost/integration/parc_worker_identity.h",
+      "target": "content/public/browser/parc_worker_identity.h",
+      "sha256": "4f093131e426cdf020271e76c3515eaeba801387716b8390479171ace70df5bd"
     }
   ],
   "patches": [
     {
       "source": "Engine/ParcHost/integration/native-host.patch",
-      "sha256": "a134e55ee74fb0c053d23c337d4d90dec8375e8f5ca3ddb016e0710a30c5b1f5",
+      "sha256": "292c40eae09c65fdf2e35e32acdf52efcc7e1c329bd0cef8f8ebd5d432a440c6",
       "files": [
         {
           "target": "cef/BUILD.gn",
           "before_sha256": "c98b9601692fb139c5bb5c77027fb5d7313f1ecde31530bdcf8b24ac2d11453d",
-          "after_sha256": "1a0c686ffe0d651efb960d0389bf41742f8b3ff8b6862d4f395a327ba5181859"
+          "after_sha256": "cd8ec9219c0ded6160f798543397a288daf16f23eeaa1811a5f7f19d2834326e"
         },
         {
           "target": "cef/libcef/browser/chrome/chrome_browser_host_impl.cc",
@@ -3873,6 +3898,53 @@
           "target": "sandbox/policy/mac/gpu.sb",
           "before_sha256": "0af280195b91c69d084be46620b359e676e996607d0d109e50b03ea47e31ec83",
           "after_sha256": "04300cc1772808e44ae696f9bbdd2b3609420b73dbd7b0e2da92706ff4ad2084"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
+      "sha256": "4dea6a4d7eabd033468e7ac86fa39dc1889ba2d8135493f316aa62c6b32291f3",
+      "files": [
+        {
+          "target": "third_party/blink/renderer/core/frame/navigator.cc",
+          "before_sha256": "df8ed975407e288da7b276c3db97f92dfaf796f9e2b4e6e13679ee508713d904",
+          "after_sha256": "e46c4feacb072cab589c9e74969ed0747339941ec4814291906b9358ce002e8a"
+        },
+        {
+          "target": "third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc",
+          "before_sha256": "bd093e3dba56c043ccc4a9396b2afca512c96eee9f3697450d8d27c4ccad2189",
+          "after_sha256": "f8e7897e796ce79d4c2cbb2d8aa0f2a36ff8cb14095d723ffaa83482ad5a385e"
+        },
+        {
+          "target": "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc",
+          "before_sha256": "ba67558c4c5a61aa7a8a46f113321c4d83cc75f3f0915ddeff30d1ab83dab71c",
+          "after_sha256": "0e1e0f1b4f5a005139379e02bd4233b5e644ecb6397532214ae42b085b062005"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc",
+          "before_sha256": "9850b5b2106baa86e553a5ce7fd947d5102e83f333ce555785c819ea6588b06e",
+          "after_sha256": "76242c2a0b8efe171ae27a44d210d76db0268217a25ab086aa68249c51076e12"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc",
+          "before_sha256": "31deb598eb56995fafbe96c1eebd1376a0eae40c6376a21632ce3506e9986b71",
+          "after_sha256": "9d6dd6867385f5d37d1ad0cad6bd536878882fc1d22518c7b6f290995d245623"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/fairplay-identity-workers.patch",
+      "sha256": "94c2f2e965c1d7d094ec60720a3cc678b64dec794c3c09d38bbd749c033b2886",
+      "files": [
+        {
+          "target": "content/browser/service_worker/service_worker_version.cc",
+          "before_sha256": "641c53b12f75c057b2e58f733c269a035086542c0f0541218b017a2ff4bece45",
+          "after_sha256": "1aa736cafe36cea538e6b72b8099920d98c08791be0d582eabb048b3fe5b7b8c"
+        },
+        {
+          "target": "content/browser/worker_host/shared_worker_host.cc",
+          "before_sha256": "85c95af160a0fdd426844f33daa2aca00047989d3999347970d2d75cf63fb4bf",
+          "after_sha256": "17d25f089b537379ae02fc8e7465be64864e1818ec45717f56072dabe38562cf"
         }
       ]
     }

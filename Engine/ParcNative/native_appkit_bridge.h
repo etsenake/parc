@@ -363,6 +363,13 @@ NS_SWIFT_UI_ACTOR
 // Explicit engine focus only; metadata changes must not steal address focus.
 - (void)nativePage:(PCNativePage*)page
     requestFocusForRendererCrash:(PCNativeRendererCrash*)crash;
+// The engine held this page's request for a Widevine CDM, so no Widevine
+// license request left, added `site` to the Safari sites of the page's
+// browsing context and reloaded the site's pages with Safari's identity
+// (docs/fairplay-identity.md). The shell records the site for that context:
+// the page's Profile, or its private context when
+// fairPlayIdentityOffTheRecord is YES.
+- (void)nativePage:(PCNativePage*)page didLearnSafariIdentityForSite:(NSString*)site;
 @end
 
 // One immutable snapshot per actual native SadTab instance. Status is the
@@ -2203,6 +2210,39 @@ NS_SWIFT_UI_ACTOR
 + (void)installICloudPasswordsExtensionToProfilePath:(NSString*)profilePath
     completion:(void (^)(NSError* _Nullable))completion
     NS_SWIFT_NAME(installICloudPasswordsExtension(toProfilePath:completion:));
+@end
+
+// Safari's identity for the sites that need Apple FairPlay, Chrome's
+// everywhere else (docs/fairplay-identity.md). A site is a registrable domain
+// as the engine reports it ("netflix.com"). A page whose main document is on
+// a Safari site presents Safari's user agent, vendor and key systems (no
+// Widevine, no UA client hints, no navigator.userAgentData), as do its frames
+// on that site and the site's workers; frames on other sites and every other
+// page stay Chrome.
+NS_SWIFT_UI_ACTOR
+@interface PCNativeBrowserApplication (FairPlayIdentity)
+// Replaces the engine's lists for one browsing context: the Profile at
+// `profilePath`, or with offTheRecord its private browsing context. Safari
+// sites present Safari's identity; Chrome sites are the user's choice and win
+// over a Safari entry, and learning never adds them. Open pages whose main
+// document's identity no longer matches reload. Callable before the Profile
+// or private context exists; the engine keeps the lists in memory only.
++ (void)setFairPlayIdentitySafariSites:(NSArray<NSString*>*)safariSites
+                           chromeSites:(NSArray<NSString*>*)chromeSites
+                           profilePath:(NSString*)profilePath
+                          offTheRecord:(BOOL)offTheRecord
+    NS_SWIFT_NAME(setFairPlayIdentity(safariSites:chromeSites:profilePath:offTheRecord:));
+@end
+
+NS_SWIFT_UI_ACTOR
+@interface PCNativePage (FairPlayIdentity)
+// The site of the committed main document; nil when it has none (not HTTP(S),
+// or nothing committed).
+@property(nonatomic, readonly, nullable, copy) NSString* fairPlayIdentitySite;
+// The committed main document presents Safari's identity.
+@property(nonatomic, readonly) BOOL usesSafariIdentity;
+// The page belongs to a private browsing context.
+@property(nonatomic, readonly) BOOL fairPlayIdentityOffTheRecord;
 @end
 
 NS_ASSUME_NONNULL_END

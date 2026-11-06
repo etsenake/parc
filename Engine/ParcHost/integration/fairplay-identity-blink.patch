@@ -1,0 +1,166 @@
+--- a/third_party/blink/renderer/core/frame/navigator.cc
++++ b/third_party/blink/renderer/core/frame/navigator.cc
+@@ -28,6 +28,7 @@
+ #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
+ #include "third_party/blink/renderer/core/loader/frame_loader.h"
+@@ -48,6 +49,10 @@
+   // https://code.google.com/p/chromium/issues/detail?id=276813
+   // https://www.w3.org/Bugs/Public/show_bug.cgi?id=27786
+   // https://groups.google.com/a/chromium.org/forum/#!topic/blink-dev/QrgyulnqvmE
++  // Parc: a document presenting Safari's identity reports Safari's vendor.
++  if (IsParcSafariIdentityUserAgent(userAgent())) {
++    return "Apple Computer, Inc.";
++  }
+   return "Google Inc.";
+ }
+ 
+--- a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
++++ b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
+@@ -45,6 +45,7 @@
+ #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_html_document.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_navigator.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_page_popup_controller_binding.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
+ #include "third_party/blink/renderer/core/execution_context/agent.h"
+@@ -52,6 +53,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_client.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/html/document_name_collection.h"
+ #include "third_party/blink/renderer/core/html/html_document.h"
+ #include "third_party/blink/renderer/core/html/html_iframe_element.h"
+@@ -240,6 +242,31 @@
+   lifecycle_ = next_status;
+ }
+ 
++namespace {
++
++// Parc: Safari has no navigator.userAgentData, so a document presenting
++// Safari's identity has none either, in every world. The [SecureContext]
++// attribute is installed when the prototype is created, which
++// PrototypeForType does, so it is removed after that and before any script
++// of the page runs.
++void ApplyParcSafariIdentity(ScriptState* script_state,
++                             LocalDOMWindow* window) {
++  if (!IsParcSafariIdentityUserAgent(window->UserAgent())) {
++    return;
++  }
++  v8::Local<v8::Object> prototype =
++      script_state->PerContextData()->PrototypeForType(
++          V8Navigator::GetWrapperTypeInfo());
++  if (prototype.IsEmpty()) {
++    return;
++  }
++  std::ignore = prototype->Delete(
++      script_state->GetContext(),
++      V8AtomicString(script_state->GetIsolate(), "userAgentData"));
++}
++
++}  // namespace
++
+ void LocalWindowProxy::Initialize() {
+   TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
+                GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
+@@ -309,6 +336,7 @@
+   }
+ 
+   InstallConditionalFeatures();
++  ApplyParcSafariIdentity(script_state_, GetFrame()->DomWindow());
+ 
+   if (World().IsMainWorld()) {
+     probe::DidCreateMainWorldContext(GetFrame());
+--- a/third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc
++++ b/third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc
+@@ -38,7 +38,9 @@
+ #include "third_party/blink/public/mojom/origin_trials/origin_trial_feature.mojom-blink.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_state_impl.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_worker_navigator.h"
+ #include "third_party/blink/renderer/core/execution_context/agent.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/inspector/worker_thread_debugger.h"
+ #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
+ #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+@@ -294,6 +296,22 @@
+   // and V8 can extend the context with origin trial features.
+   isolate_->InstallConditionalFeatures(script_state_->GetContext());
+   ExtensionsRegistry::GetInstance().InstallExtensions(script_state_);
++
++  // Parc: a worker of a document presenting Safari's identity carries
++  // Safari's user agent and, like Safari, has no navigator.userAgentData
++  // (third_party/blink/renderer/core/frame/parc_safari_identity.h). Removed
++  // before the worker's script is evaluated.
++  if (global_scope_->IsWorkerGlobalScope() &&
++      IsParcSafariIdentityUserAgent(global_scope_->UserAgent())) {
++    ScriptState::Scope scope(script_state_);
++    v8::Local<v8::Object> prototype = per_context_data->PrototypeForType(
++        V8WorkerNavigator::GetWrapperTypeInfo());
++    if (!prototype.IsEmpty()) {
++      std::ignore = prototype->Delete(
++          script_state_->GetContext(),
++          V8AtomicString(isolate_, "userAgentData"));
++    }
++  }
+ }
+ 
+ void WorkerOrWorkletScriptController::DisableEvalInternal(
+--- a/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
+@@ -19,6 +19,7 @@
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_session.h"
+@@ -189,6 +190,15 @@
+           window, resolver, key_system, supported_configurations);
+   auto promise = resolver->Promise();
+ 
++  // Parc: a document presenting Safari's identity is refused Widevine as
++  // Chromium refuses a key system it does not support.
++  if (IsParcSafariHiddenKeySystem(key_system) &&
++      IsParcSafariIdentityUserAgent(window->UserAgent())) {
++    initializer->RequestNotSupported(
++        "Unsupported keySystem or supportedConfigurations.");
++    return promise;
++  }
++
+   // Defer to determine support until the prerendering page is activated.
+   if (window->document()->IsPrerendering()) {
+     window->document()->AddPostPrerenderingActivationStep(
+--- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
++++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
+@@ -50,6 +50,7 @@
+ #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
+@@ -1353,6 +1354,15 @@
+   // undefined. See comment above Promise() in script_promise_resolver.h
+   auto promise = resolver->Promise();
+ 
++  // Parc: a document presenting Safari's identity gets no Widevine
++  // (third_party/blink/renderer/core/frame/parc_safari_identity.h).
++  if (IsParcSafariHiddenKeySystem(key_system_config->keySystem()) &&
++      IsParcSafariIdentityUserAgent(execution_context->UserAgent())) {
++    initializer->RequestNotSupported(
++        "Unsupported keySystem or supportedConfigurations.");
++    return promise;
++  }
++
+   EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
+       To<LocalDOMWindow>(execution_context))
+       ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));

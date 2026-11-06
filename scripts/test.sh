@@ -77,6 +77,8 @@ bash "$repo_root/scripts/test-page-shell-notify.sh"
 bash "$repo_root/scripts/test-top-band-color.sh"
 # Pure pane compositor hand-off and sweep rules; no browser execution.
 bash "$repo_root/scripts/test-pane-compositor-policy.sh"
+# Pure FairPlay identity site, navigation and Widevine rules; no browser execution.
+bash "$repo_root/scripts/test-fairplay-identity.sh"
 # Page host containment and the pane compositor view in real offscreen AppKit,
 # and the two other suites that build the page host on its own.
 bash "$repo_root/tests/NativePageHost/run.sh"

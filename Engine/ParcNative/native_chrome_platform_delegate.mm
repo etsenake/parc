@@ -20,6 +20,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "external_protocol.h"
+#include "fairplay_identity.h"
 #include "file_dialog.h"
 #include "folder_upload.h"
 #include "http_auth.h"
@@ -114,6 +115,9 @@ void NativeChromePlatformDelegate::WebContentsCreated(
   InstallNativeServerCertificateViewer(*contents);
   InstallNativeExternalProtocol(*contents);
   InstallNativeWebAuthn(*contents);
+  // Before the first navigation: Chromium starts a popup's or new tab's load
+  // before the tab reaches the tab strip.
+  AttachFairPlayIdentity(*contents);
   NSView* native_view = contents->GetNativeView().GetNativeNSView();
   CHECK(native_view);
   impl_->observer = [PCNativePlatformPageObserver new];

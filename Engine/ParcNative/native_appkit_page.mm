@@ -10,6 +10,7 @@
 #include "content/public/browser/restore_type.h"
 #include "content/public/browser/session_storage_namespace_handle.h"
 #include "native_link_routing.h"
+#include "fairplay_identity.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -1444,6 +1445,7 @@ PCNativePage* GetOrCreateNativePage(content::WebContents& contents,
   state->SetPage(page);
   Pages().emplace(&contents, PageRecord{page});
   AttachNativeConfirmInfoBars(contents);
+  AttachFairPlayIdentity(contents);
   return page;
 }
 bool RebindNativeEmbeddedPageForTransfer(PCNativePage* page,

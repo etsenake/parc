@@ -38,7 +38,7 @@
      "//components/plugins/renderer",
      "//components/pref_registry",
      "//components/printing/browser",
-@@ -1097,6 +1107,81 @@
+@@ -1097,6 +1107,84 @@
  
    if (is_mac) {
      sources += includes_mac + [
@@ -85,6 +85,9 @@
 +      "libcef/browser/parc_native/native_appkit_host.mm",
 +      "libcef/browser/parc_native/native_link_routing.h",
 +      "libcef/browser/parc_native/native_link_routing.mm",
++      "libcef/browser/parc_native/fairplay_identity.h",
++      "libcef/browser/parc_native/fairplay_identity.mm",
++      "libcef/browser/parc_native/fairplay_identity_policy.h",
 +      "libcef/browser/parc_native/native_appkit_page.h",
 +      "libcef/browser/parc_native/native_appkit_page.mm",
 +      "libcef/browser/parc_native/native_confirm_infobars.h",
@@ -120,7 +123,7 @@
        "libcef/browser/chrome/chrome_content_browser_client_cef_mac.mm",
        "libcef/browser/chrome/chrome_web_contents_view_delegate_cef_mac.mm",
        "libcef/browser/native/browser_platform_delegate_native_mac.h",
-@@ -1121,7 +1206,104 @@
+@@ -1121,7 +1209,104 @@
        "//chrome/app/chrome_main_mac.mm",
      ]
  
@@ -226,7 +229,7 @@
    } else {
      sources += [
        "libcef/browser/chrome/chrome_web_contents_view_delegate_cef.cc",
-@@ -2312,6 +2494,21 @@
+@@ -2312,6 +2497,21 @@
      output_path = "{{bundle_resources_dir}}/English.lproj"
    }
  

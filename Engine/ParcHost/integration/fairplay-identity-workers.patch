@@ -1,0 +1,90 @@
+--- a/content/browser/service_worker/service_worker_version.cc
++++ b/content/browser/service_worker/service_worker_version.cc
+@@ -59,6 +59,7 @@
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
+ #include "content/public/browser/page_navigator.h"
++#include "content/public/browser/parc_worker_identity.h"
+ #include "content/public/browser/service_worker_context.h"
+ #include "content/public/browser/service_worker_external_request_result.h"
+ #include "content/public/common/content_client.h"
+@@ -246,7 +247,27 @@
+   return control;
+ }
+ 
++// Parc: see content/public/browser/parc_worker_identity.h.
++ParcWorkerIdentityHook g_parc_worker_identity_hook = nullptr;
++
+ }  // namespace
++
++// Installed on the main thread before content starts, so no thread check.
++void SetParcWorkerIdentityHook(ParcWorkerIdentityHook hook) {
++  g_parc_worker_identity_hook = hook;
++}
++
++void ApplyParcWorkerIdentity(BrowserContext* browser_context,
++                             const GURL& script_url,
++                             const GURL& top_level_site,
++                             std::string* user_agent,
++                             blink::UserAgentMetadata* metadata) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  if (g_parc_worker_identity_hook && browser_context) {
++    g_parc_worker_identity_hook(browser_context, script_url, top_level_site,
++                                user_agent, metadata);
++  }
++}
+ 
+ constexpr base::TimeDelta ServiceWorkerVersion::kTimeoutTimerDelay;
+ constexpr base::TimeDelta ServiceWorkerVersion::kStartNewWorkerTimeout;
+@@ -2794,6 +2815,12 @@
+   ContentBrowserClient* browser_client = GetContentClient()->browser();
+   params->user_agent = browser_client->GetUserAgent();
+   params->ua_metadata = browser_client->GetUserAgentMetadata();
++  // Parc: the worker presents its site's identity, as its documents do.
++  if (context() && context()->wrapper()) {
++    ApplyParcWorkerIdentity(context()->wrapper()->browser_context(),
++                            script_url_, key_.top_level_site().GetURL(),
++                            &params->user_agent, &params->ua_metadata);
++  }
+   params->is_installed = IsInstalled(status_);
+   params->script_url_to_skip_throttling = updated_script_url_;
+   params->main_script_load_params = std::move(main_script_load_params_);
+--- a/content/browser/worker_host/shared_worker_host.cc
++++ b/content/browser/worker_host/shared_worker_host.cc
+@@ -40,6 +40,7 @@
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
++#include "content/public/browser/parc_worker_identity.h"
+ #include "content/public/browser/permission_controller.h"
+ #include "content/public/browser/permission_descriptor_util.h"
+ #include "content/public/browser/service_worker_context.h"
+@@ -482,6 +483,16 @@
+                                    .GetWebExposedIsolationInfo()
+                                    .is_isolated();
+ 
++  // Parc: the worker presents its site's identity, as its documents do
++  // (content/public/browser/parc_worker_identity.h).
++  std::string user_agent = GetContentClient()->browser()->GetUserAgent();
++  blink::UserAgentMetadata ua_metadata =
++      GetContentClient()->browser()->GetUserAgentMetadata();
++  ApplyParcWorkerIdentity(
++      GetProcessHost()->GetBrowserContext(), instance_.url(),
++      instance_.worker_storage_key().top_level_site().GetURL(), &user_agent,
++      &ua_metadata);
++
+   // Send the CreateSharedWorker message.
+   factory_.Bind(std::move(factory));
+   factory_->CreateSharedWorker(
+@@ -489,9 +500,8 @@
+       instance_.worker_storage_key().origin(),
+       creator_policy_container_host_ &&
+           creator_policy_container_host_->policies().is_web_secure_context,
+-      GetContentClient()->browser()->GetUserAgent(),
+-      GetContentClient()->browser()->GetUserAgentMetadata(),
+-      devtools_handle_->pause_on_start(), devtools_handle_->dev_tools_token(),
++      user_agent, ua_metadata, devtools_handle_->pause_on_start(),
++      devtools_handle_->dev_tools_token(),
+       std::move(renderer_preferences), std::move(preference_watcher_receiver),
+       std::move(content_settings), std::move(container_info),
+       std::move(result.main_script_load_params),
