@@ -52,6 +52,7 @@ enum CommandBarCommandPresentation {
         "viewSource": "curlybraces", "developerTools": "hammer.fill", "inspectElements": "scope",
         "javaScriptConsole": "terminal", "networkInspector": "wifi", "toggleScriptPermission": "curlybraces" /* Parc */,
         "toggleDeveloperMode": "hammer.fill", "captureRenderingMetrics": "flag" /* Parc */,
+        "toggleFairPlayIdentity": "safari" /* Parc */,
         "checkAutoArchive": "archivebox" /* Parc */, "toggleFullScreen": "arrow.up.left.and.arrow.down.right", "exit": "escape",
         "createFolder": "folder", "togglePin": "pin", "duplicateCurrentItem": "plus.square.on.square",
         "revealCurrentTabInSidebar": "arrow.left.circle", "openInCurrentSpace": "macwindow.on.rectangle" /* Parc */,

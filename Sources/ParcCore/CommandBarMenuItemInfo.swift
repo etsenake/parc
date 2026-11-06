@@ -94,6 +94,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "split:": .init(triggers: ["Add Split View", "Split View", "Create Split View Pane", "New Split View", "Split"]),
         "toggleArcToolbar:": .init(triggers: ["Toggle Hide Show Toolbar"]),
         "toggleDeveloperMode:": .init(triggers: ["Developer Mode", "Enable Developer Mode", "Disable Developer Mode"]),
+        "toggleFairPlayIdentity:": .init(triggers: ["Safari Identity", "Chrome Identity", "FairPlay"]),
         "toggleFullScreen:": .init(triggers: ["Enter Full Screen", "Exit Full Screen", "Full Screen", "Toggle Full Screen"]),
         "togglePin:": .init(triggers: ["save"]),
         "toggleSidebar:": .init(triggers: ["Toggle Sidebar"], bump: 0.5),

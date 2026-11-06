@@ -12999,6 +12999,48 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             revision = browser.readerRevision; self.host = host
         }
     }
+    /// View > Use Chrome/Safari Identity for This Site (docs/fairplay-identity.md):
+    /// the current page's site and the choice it offers, bound to that page.
+    private final class FairPlayIdentityMenuRequest {
+        weak var owner: BrowserWindowController?
+        weak var page: PCNativePage?
+        let site: String
+        let profilePath: String
+        let offTheRecord: Bool
+        let useChrome: Bool
+        init(owner: BrowserWindowController, page: PCNativePage, site: String, offTheRecord: Bool, useChrome: Bool) {
+            self.owner = owner; self.page = page; self.site = site
+            profilePath = page.profilePath; self.offTheRecord = offTheRecord; self.useChrome = useChrome
+        }
+    }
+    /// Offered only for a site Parc learned (Chrome identity) or one the user
+    /// moved back to Chrome (Safari identity).
+    func prepareFairPlayIdentityMenuItem(_ item: NSMenuItem) -> Bool {
+        item.representedObject = nil
+        guard let page = currentBrowser?.nativePage, !page.isClosed, let site = page.fairPlayIdentitySite else { return false }
+        let offTheRecord = page.fairPlayIdentityOffTheRecord
+        let useChrome: Bool
+        switch FairPlayIdentityController.shared.identity(of: site, profilePath: page.profilePath, offTheRecord: offTheRecord) {
+        case .safari: useChrome = true
+        case .chrome: useChrome = false
+        case .undecided: return false
+        }
+        item.title = useChrome ? "Use Chrome Identity for This Site" : "Use Safari Identity for This Site"
+        item.representedObject = FairPlayIdentityMenuRequest(owner: self, page: page, site: site,
+                                                             offTheRecord: offTheRecord, useChrome: useChrome)
+        return true
+    }
+    func toggleFairPlayIdentity(from item: NSMenuItem) {
+        guard let request = item.representedObject as? FairPlayIdentityMenuRequest, request.owner === self,
+              let page = request.page, currentBrowser?.nativePage === page, !page.isClosed,
+              page.fairPlayIdentitySite == request.site else { return }
+        let identity = FairPlayIdentityController.shared
+        if request.useChrome {
+            identity.useChromeIdentity(for: request.site, profilePath: request.profilePath, offTheRecord: request.offTheRecord)
+        } else {
+            identity.useSafariIdentity(for: request.site, profilePath: request.profilePath, offTheRecord: request.offTheRecord)
+        }
+    }
     private var developerModeTitle: String {
         guard let host = currentBrowser?.nativePage?.developerModeSiteHost else { return "Turn on Developer Mode for this site" }
         return DeveloperModePreferences.shared.isEnabled(host: host)
@@ -15684,6 +15726,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func browserViewDidRequestClose(_ view: PCBrowserView) {
         guard let id = id(for: view), view.nativePage?.isClosed == true else { return }
         releaseClosedTab(id, updateSavedTab: !wholeWindowClose && !modelRetirementIDs.contains(id) && !transferringTabIDs.contains(id))
+    }
+    /// The engine learned a FairPlay site for Safari's identity (docs/fairplay-identity.md).
+    func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
+                     profilePath: String, offTheRecord: Bool) {
+        FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
     }
     func browserView(_ view: PCBrowserView, didFailWithError error: Error) {
         if (error as NSError).code == NSURLErrorCancelled { return }

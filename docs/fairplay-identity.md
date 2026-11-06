@@ -99,8 +99,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 
 - A Profile's lists are `Parc FairPlay Identity.json` in its engine folder,
   so they go with the Profile when it's removed. A file that can't be decoded
-  is moved aside as `.damaged`, not overwritten; one that can't be read stays
-  untouched and changes stay in memory.
+  is moved aside as `.damaged-<time>`, not overwritten. One that can't be
+  read, or that a newer Parc wrote, stays untouched and changes stay in
+  memory.
 - A private window starts with its Profile's lists. Its own choices go on top
   in memory, are never written, and end when the last private window closes.
 - At engine start, the shell gives the engine every Profile's lists for its

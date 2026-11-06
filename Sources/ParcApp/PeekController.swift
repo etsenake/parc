@@ -358,6 +358,11 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     /// A loaded icon arrives only as a favicon-only change; the owner's
     /// Favorite tile badge shows this Peek's live favicon (BR-03).
     func browserViewDidChangeFavicon(_ view: PCBrowserView) { publishPresentationIfChanged() }
+    /// The engine learned a FairPlay site for Safari's identity (docs/fairplay-identity.md).
+    func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
+                     profilePath: String, offTheRecord: Bool) {
+        FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
+    }
     func browserView(_ view: PCBrowserView, didFailWithError error: Error) {
         guard (error as NSError).code != NSURLErrorCancelled, browser.rendererCrash == nil else { return }
         failure.showNavigationFailure(error.localizedDescription)

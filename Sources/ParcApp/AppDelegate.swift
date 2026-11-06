@@ -293,6 +293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 pendingImportResume = try? BrowserImportRestartIntent.take(from: root)
                 if pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
                 ProfileRemovalController.shared.configure(store: store)
+                // Safari's identity for learned FairPlay sites, before any page loads.
+                FairPlayIdentityController.shared.start(profilePaths: store.state.profiles.map {
+                    store.independentEngineProfilePath(for: $0.id)
+                })
                 // Only a run that actually started counts: a failed start or a
                 // launch handed to an already running Parc leaves the marker.
                 LaunchContinuity(running: true, build: Self.buildIdentity).write(in: root)
@@ -1485,6 +1489,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // Private windows' site colours live only until the last one closes.
             if controller.isPrivateBrowsing, self?.windows.contains(where: \.isPrivateBrowsing) == false {
                 TopBarColorClient.privateBrowsing.forgetAll()
+                FairPlayIdentityController.shared.forgetPrivateChoices()
             }
             self?.earlyDownloadWindowIDs.remove(controller.sessionID)
             self?.scheduleMiniPlayerRefresh()
@@ -1874,6 +1879,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 return tools.canToggleClosed
             }
             return front?.preparePageToolMenuItem(item, tool: .developerTools) ?? false
+        }
+        if item.action == #selector(toggleFairPlayIdentity) {
+            guard let owner = front else { item.representedObject = nil; return false }
+            return owner.prepareFairPlayIdentityMenuItem(item)
         }
         if item.action == #selector(castPage) {
             guard let owner = browserInputCommandWindow else { item.representedObject = nil; return false }
@@ -2307,6 +2316,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if let editor = NSApp.keyWindow as? EaselImageExporting { return editor.exportEaselImage() }
         if front?.canExportEaselImage == true { front?.exportEaselImage() } else { front?.performPageTool(.save) }
     }
+    @objc private func toggleFairPlayIdentity(_ sender: NSMenuItem) { front?.toggleFairPlayIdentity(from: sender) }
     @objc private func castPage(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
         browserInputCommandWindow?.performPageTool(from: item)
@@ -2514,6 +2524,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 item.representedObject = nil
                 item.isEnabled = front?.prepareScriptPermissionMenuItem(item, preservingTarget: false) ?? false
             }
+        }
+        if menu === splitCommandsMenu,
+           let item = menu.items.first(where: { $0.action == #selector(toggleFairPlayIdentity) }) {
+            item.representedObject = nil
+            item.isHidden = !(front?.prepareFairPlayIdentityMenuItem(item) ?? false)
         }
         if menu === splitCommandsMenu {
             // Freeze each command's original pane before menu tracking. A
@@ -2778,6 +2793,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         view.addItem(.separator())
         item("Enter Reader", #selector(toggleReaderMode), in: view)
         item("Cast", #selector(castPage), in: view)
+        // Shown only for a site with an identity choice (docs/fairplay-identity.md).
+        item("Use Chrome Identity for This Site", #selector(toggleFairPlayIdentity), in: view)
+        view.items.last?.toolTip = "Sites that play video through Apple FairPlay offer it only to Safari, so Parc shows them Safari's identity."
+        view.items.last?.isHidden = true
         view.addItem(.separator())
         let developer = NSMenu(title: "Developer")
         scriptPermissionMenu = developer; developer.delegate = self

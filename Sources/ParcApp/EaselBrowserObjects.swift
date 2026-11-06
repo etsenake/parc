@@ -465,6 +465,11 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         if !loading { recordURL(view) }
         refresh(view)
     }
+    /// The engine learned a FairPlay site for Safari's identity (docs/fairplay-identity.md).
+    func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
+                     profilePath: String, offTheRecord: Bool) {
+        FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
+    }
     func browserView(_ view: PCBrowserView, didFailWithError error: Error) {
         entries.values.first { $0.view.browser === view }?.view.setStatus(error.localizedDescription, retry: true)
     }

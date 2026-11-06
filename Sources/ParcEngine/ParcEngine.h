@@ -56,6 +56,13 @@ NS_SWIFT_UI_ACTOR
 - (void)browserView:(PCBrowserView*)view
     didFailWithError:(NSError*)error
     NS_SWIFT_NAME(browserView(_:didFailWithError:));
+// The engine learned that `site` needs Safari's identity for FairPlay; record
+// it for the page's Profile, or its private context (docs/fairplay-identity.md).
+- (void)browserView:(PCBrowserView*)view
+    didLearnSafariIdentityForSite:(NSString*)site
+                      profilePath:(NSString*)profilePath
+                     offTheRecord:(BOOL)offTheRecord
+    NS_SWIFT_NAME(browserView(_:didLearnSafariIdentityForSite:profilePath:offTheRecord:));
 
 @end
 

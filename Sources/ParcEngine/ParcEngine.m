@@ -690,6 +690,17 @@ static void PCFinishEngineTermination(void* unused) {
     [target browserView:self openLinkInSplitView:url];
   }
 }
+- (void)nativePage:(PCNativePage*)page didLearnSafariIdentityForSite:(NSString*)site {
+  // Recorded even while closing: the engine already learned the site.
+  if (page != _nativePage || page.observer != self || site.length == 0) return;
+  id<PCBrowserViewDelegate> target = self.delegate;
+  if ([target respondsToSelector:@selector(browserView:didLearnSafariIdentityForSite:profilePath:offTheRecord:)]) {
+    [target browserView:self
+        didLearnSafariIdentityForSite:site
+                          profilePath:page.profilePath
+                         offTheRecord:page.fairPlayIdentityOffTheRecord];
+  }
+}
 - (void)nativePageFaviconDidChange:(PCNativePage*)page {
   if (page != _nativePage || _disposed || page.observer != self) return;
   id<PCBrowserViewDelegate> target = self.delegate;
