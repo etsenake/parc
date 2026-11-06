@@ -7,7 +7,9 @@
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/CoreAudio.h>
+#import <CoreVideo/CoreVideo.h>
 #import <QuartzCore/QuartzCore.h>
+#import <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
 #include <atomic>
@@ -1350,7 +1352,7 @@ struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
   Media eac3_71;  // First 5 s of kDdp71.
   Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
-      he_aac_after_clear;
+      he_aac_after_clear, avc_bframes;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
   std::vector<std::unique_ptr<KeySystem>> retired;
@@ -3605,6 +3607,319 @@ std::vector<Step> AudioReconfigureScenario() {
   return steps;
 }
 
+// ------------------------------------------------------------ frame order
+
+// A 420v picture's luma: the mean of each cell of a 32x18 grid, normalized
+// so small level differences between decode paths don't matter. Empty for
+// another format or an unreadable buffer.
+std::vector<float> LumaSignature(CVPixelBufferRef buffer) {
+  constexpr int kColumns = 32, kRows = 18;
+  if (CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) return {};
+  CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+  const size_t width = CVPixelBufferGetWidthOfPlane(buffer, 0);
+  const size_t height = CVPixelBufferGetHeightOfPlane(buffer, 0);
+  const size_t row = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0);
+  const uint8_t* base = static_cast<const uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(buffer, 0));
+  std::vector<double> sums(kColumns * kRows, 0);
+  std::vector<int> counts(kColumns * kRows, 0);
+  for (size_t y = 0; base && y < height; y += 2) {
+    for (size_t x = 0; x < width; x += 2) {
+      const size_t cell = (y * kRows / height) * kColumns + x * kColumns / width;
+      sums[cell] += base[y * row + x];
+      ++counts[cell];
+    }
+  }
+  CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+  if (!base || !width || !height) return {};
+  std::vector<float> cells(sums.size());
+  double mean = 0, deviation = 0;
+  for (size_t i = 0; i < cells.size(); ++i) {
+    cells[i] = float(counts[i] ? sums[i] / counts[i] : 0);
+    mean += cells[i];
+  }
+  mean /= cells.size();
+  for (float c : cells) deviation += (c - mean) * (c - mean);
+  deviation = std::sqrt(deviation / cells.size()) + 1e-6;
+  for (float& c : cells) c = float((c - mean) / deviation);
+  return cells;
+}
+
+// Infinite unless both signatures are complete.
+double SignatureDistance(const std::vector<float>& a, const std::vector<float>& b) {
+  if (a.empty() || a.size() != b.size()) return INFINITY;
+  double sum = 0;
+  for (size_t i = 0; i < a.size(); ++i) sum += (a[i] - b[i]) * (a[i] - b[i]);
+  return sum / a.size();
+}
+
+struct ReferenceFrame {
+  double pts = 0;
+  std::vector<float> signature;
+};
+
+// A readable (420v) copy of |image|: what a display layer shows may be in a
+// compressed format ('&8v0'). Null when it can't be converted.
+CVPixelBufferRef ReadableCopy(CVPixelBufferRef image) {
+  static VTPixelTransferSessionRef transfer = [] {
+    VTPixelTransferSessionRef session = nullptr;
+    VTPixelTransferSessionCreate(nullptr, &session);
+    return session;
+  }();
+  CVPixelBufferRef copy = nullptr;
+  if (!transfer ||
+      CVPixelBufferCreate(nullptr, CVPixelBufferGetWidth(image), CVPixelBufferGetHeight(image),
+                          kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nullptr, &copy) != kCVReturnSuccess) {
+    return nullptr;
+  }
+  if (VTPixelTransferSessionTransferImage(transfer, image, copy) != noErr) {
+    CVPixelBufferRelease(copy);
+    return nullptr;
+  }
+  return copy;
+}
+
+// The clip decoded by VideoToolbox from its own record, in decode order with
+// the file's decode timestamps: one signature per picture, in presentation
+// order.
+std::vector<ReferenceFrame> DecodeReference(const Media& clip, std::string* error) {
+  const ft::TrackInfo& info = clip.info;
+  const bool avc = info.original_format == fp::FourCC('a', 'v', 'c', '1') ||
+                   info.original_format == fp::FourCC('a', 'v', 'c', '3');
+  const std::vector<uint8_t> entry = fp::VisualSampleEntry(
+      avc ? fp::FourCC('a', 'v', 'c', '1') : fp::FourCC('h', 'v', 'c', '1'), info.width, info.height,
+      {fp::MakeBox(avc ? fp::FourCC('a', 'v', 'c', 'C') : fp::FourCC('h', 'v', 'c', 'C'), info.codec_config)});
+  CMVideoFormatDescriptionRef format = nullptr;
+  OSStatus status = CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+      nullptr, entry.data(), entry.size(), kCFStringEncodingUTF8, kCMImageDescriptionFlavor_ISOFamily, &format);
+  VTDecompressionSessionRef session = nullptr;
+  if (status == noErr) {
+    NSDictionary* attributes = @{(id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)};
+    status = VTDecompressionSessionCreate(nullptr, format, nullptr, (__bridge CFDictionaryRef)attributes, nullptr,
+                                          &session);
+  }
+  if (status != noErr) {
+    *error = "decoder setup " + std::to_string(status);
+    if (format) CFRelease(format);
+    return {};
+  }
+  auto frames = std::make_shared<std::vector<ReferenceFrame>>();
+  auto mutex = std::make_shared<std::mutex>();
+  auto failures = std::make_shared<std::atomic<int>>(0);
+  const int32_t timescale = int32_t(info.timescale);
+  for (const auto& segment : clip.segments) {
+    for (const ft::Sample& sample : segment) {
+      const size_t size = sample.data.size();
+      CMBlockBufferRef block = nullptr;
+      CMSampleBufferRef buffer = nullptr;
+      CMSampleTimingInfo timing = {CMTimeMake(sample.duration, timescale), CMTimeMake(sample.pts, timescale),
+                                   CMTimeMake(sample.dts, timescale)};
+      if (CMBlockBufferCreateWithMemoryBlock(nullptr, nullptr, size, kCFAllocatorDefault, nullptr, 0, size,
+                                             kCMBlockBufferAssureMemoryNowFlag, &block) != noErr ||
+          CMBlockBufferReplaceDataBytes(sample.data.data(), block, 0, size) != noErr ||
+          CMSampleBufferCreateReady(nullptr, block, format, 1, 1, &timing, 1, &size, &buffer) != noErr) {
+        ++*failures;
+      } else {
+        VTDecompressionSessionDecodeFrameWithOutputHandler(
+            session, buffer, 0, nullptr,
+            ^(OSStatus decoded, VTDecodeInfoFlags, CVImageBufferRef image, CMTime pts, CMTime) {
+              if (decoded != noErr || !image) {
+                ++*failures;
+                return;
+              }
+              std::vector<float> signature = LumaSignature(image);
+              std::lock_guard<std::mutex> lock(*mutex);
+              frames->push_back({CMTimeGetSeconds(pts), std::move(signature)});
+            });
+      }
+      if (buffer) CFRelease(buffer);
+      if (block) CFRelease(block);
+    }
+  }
+  VTDecompressionSessionWaitForAsynchronousFrames(session);
+  VTDecompressionSessionInvalidate(session);
+  CFRelease(session);
+  CFRelease(format);
+  if (*failures) *error = std::to_string(failures->load()) + " pictures failed to decode";
+  std::sort(frames->begin(), frames->end(),
+            [](const ReferenceFrame& a, const ReferenceFrame& b) { return a.pts < b.pts; });
+  return *frames;
+}
+
+// Samples whose presentation time is below an earlier one in decode order:
+// the B-frames (and other reordered pictures).
+int ReorderedSamples(const Media& media) {
+  int reordered = 0;
+  int64_t latest = INT64_MIN;
+  for (const auto& segment : media.segments) {
+    for (const ft::Sample& sample : segment) {
+      reordered += sample.pts < latest;
+      latest = std::max(latest, sample.pts);
+    }
+  }
+  return reordered;
+}
+
+// A stream with B-frames, as Chromium hands it over: Annex B, no decoder
+// record and no decode timestamps (DecoderBuffer carries none). Paused at
+// points through the clip, the displayed picture must be the one VideoToolbox
+// decodes for that time with the file's own decode timestamps. Then the clip
+// plays straight through: every frame reaches the renderer, none corrupted.
+// A few dropped frames are allowed, since a busy machine drops them with real
+// decode timestamps too; late B-frames from missing ones would drop about one
+// per reordered picture, so drops must stay under half that.
+std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
+  World* w = g_world;
+  auto references = std::make_shared<std::vector<ReferenceFrame>>();
+  const double end = EndSeconds(*clip);
+  const size_t samples = SampleCount(*clip);
+  const int reordered = ReorderedSamples(*clip);
+  // The layer presents for the coming display refresh, so the next picture
+  // may already show up to one refresh (16.7 ms at 60 Hz) before its time;
+  // capped below a frame so a picture shown a frame early still fails.
+  const double frame = double(clip->segments[0][0].duration) / clip->info.timescale;
+  const double display_lead = std::min(0.020, 0.6 * frame);
+  std::vector<Step> steps;
+  steps.push_back(Section(label + ": reordered frames, Chromium framing, no decode timestamps"));
+  steps.push_back([=](Done done) {
+    std::vector<uint8_t> storage;
+    fp::DecryptInfo decrypt;
+    const fp::EncodedSample first = ft::ChromiumBuffer(clip->info, clip->segments[0][0], &storage, &decrypt);
+    Check(reordered > 0 && !first.dts.IsValid(), label + ": the stream reorders frames and the buffers carry no DTS",
+          Format("%d of %zu samples reordered", reordered, samples));
+    std::string error;
+    *references = DecodeReference(*clip, &error);
+    const bool readable = std::all_of(references->begin(), references->end(),
+                                      [](const ReferenceFrame& r) { return !r.signature.empty(); });
+    Check(error.empty() && readable && references->size() == samples,
+          label + ": VideoToolbox decodes the reference pictures with the file's decode timestamps",
+          Format("%zu of %zu %s", references->size(), samples, error.c_str()));
+    done();
+  });
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>(label, Framing::kChromium, clip, nullptr, nullptr, w->host, false, true);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds(Segments(*clip, 0, clip->segments.size()), {}, true);
+      auto go = Once(10, label + ": HAVE_ENOUGH", [=](bool) { done(); });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) {
+    if (@available(macOS 14.4, *)) {
+      AVSampleBufferVideoRenderer* renderer =
+          ((__bridge AVSampleBufferDisplayLayer*)w->player->renderer().display_layer()).sampleBufferRenderer;
+      struct Tally {
+        int passes = 0, checked = 0, wrong = 0, unreadable = 0, leading = 0, last_index = -1, still = 0;
+        double last_time = -1;
+        bool backwards = false, stalled = false;
+        std::string first_wrong, format;
+      };
+      auto tally = std::make_shared<Tally>();
+      auto next = std::make_shared<std::function<void()>>();
+      auto finish = [=] {
+        *next = nullptr;
+        // A point with no displayed picture to read (nothing drawn at that
+        // moment, as when the window isn't on screen) proves nothing either
+        // way; at least 15 must be read.
+        Check(tally->checked >= 15 && tally->wrong == 0 && !tally->backwards && !tally->stalled,
+              label + ": every paused point read shows the picture due then, in presentation order",
+              Format("%d points in %d passes (%d showing the next picture within %.0f ms of it), %d wrong, "
+                     "%d unreadable (%s)%s%s%s",
+                     tally->checked, tally->passes, tally->leading, display_lead * 1000, tally->wrong,
+                     tally->unreadable, tally->format.c_str(), tally->backwards ? ", went backwards" : "",
+                     tally->stalled ? ", clock stalled" : "",
+                     tally->first_wrong.empty() ? "" : (", first wrong: " + tally->first_wrong).c_str()));
+        done();
+      };
+      *next = [=] {
+        // Play a little at half speed, pause, let the layer settle, then
+        // read its picture.
+        w->player->renderer().SetPlaybackRate(0.5);
+        After(0.07, [=] {
+          w->player->renderer().SetPlaybackRate(0);
+          After(0.06, [=] {
+            const double t = w->player->Time();
+            ++tally->passes;
+            tally->still = t > tally->last_time ? 0 : tally->still + 1;
+            tally->stalled |= tally->still >= 5;
+            tally->last_time = t;
+            const std::vector<ReferenceFrame>& refs = *references;
+            int due = -1;
+            for (size_t i = 0; i < refs.size() && refs[i].pts <= t + 1e-4; ++i) due = int(i);
+            const bool near_boundary = due < 0 || t - refs[due].pts < 0.004;
+            if (!near_boundary) {
+              CVPixelBufferRef shown = [renderer copyDisplayedPixelBuffer];
+              CVPixelBufferRef readable = shown ? ReadableCopy(shown) : nullptr;
+              std::vector<float> signature;
+              if (shown) tally->format = ft::FourCCString(CVPixelBufferGetPixelFormatType(shown));
+              if (readable) {
+                signature = LumaSignature(readable);
+                CVPixelBufferRelease(readable);
+              }
+              if (shown) CVPixelBufferRelease(shown);
+              if (signature.empty()) {
+                ++tally->unreadable;
+              } else {
+                int best = 0;
+                for (size_t i = 1; i < refs.size(); ++i) {
+                  if (SignatureDistance(signature, refs[i].signature) <
+                      SignatureDistance(signature, refs[best].signature)) {
+                    best = int(i);
+                  }
+                }
+                ++tally->checked;
+                tally->backwards |= best < tally->last_index;
+                tally->last_index = std::max(tally->last_index, best);
+                const bool leading = best == due + 1 && refs[best].pts - t < display_lead;
+                tally->leading += leading;
+                if (best != due && !leading) {
+                  ++tally->wrong;
+                  if (tally->first_wrong.empty()) {
+                    tally->first_wrong = Format("t=%.3f shows %.3f, due %.3f", t, refs[best].pts, refs[due].pts);
+                  }
+                }
+              }
+            }
+            if (t < end - 0.1 && tally->passes < 150 && !tally->stalled) {
+              (*next)();
+            } else {
+              finish();
+            }
+          });
+        });
+      };
+      (*next)();
+    } else {
+      Log("%s: display order not checked before macOS 14.4", label.c_str());
+      done();
+    }
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    w->player = std::make_shared<Player>(label, Framing::kChromium, clip, nullptr, nullptr, w->host, false, true);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds(Segments(*clip, 0, clip->segments.size()), {}, true);
+      auto finish = Once(end + 8, label + ": OnEnded when played straight through", [=](bool) { done(); });
+      w->player->on_ended = [finish] { finish(true); };
+      w->player->on_have_enough = [=] { w->player->renderer().SetPlaybackRate(1); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) {
+    CheckHealthy(*w->player, label);
+    w->player->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      Check(m.available && m.total_frames == int64_t(samples) && m.corrupted_frames == 0 &&
+                m.dropped_frames < reordered / 2,
+            label + ": every frame reaches the renderer, none corrupted, drops under half the reordered pictures",
+            Format("total %lld of %zu, corrupted %lld, dropped %lld (limit %d)", m.total_frames, samples,
+                   m.corrupted_frames, m.dropped_frames, reordered / 2));
+      w->player.reset();
+      done();
+    });
+  });
+  return steps;
+}
+
 std::vector<Step> CloseScenario() {
   World* w = g_world;
   std::vector<Step> steps;
@@ -3850,6 +4165,8 @@ void RunAll() {
   add("CodecScenario(E-AC-3 config box)",
       CodecScenario("E-AC-3 with dec3 from rate and channels", nullptr, &w->eac3, "", {from_config(true)}));
   add("AudioReconfigureScenario()", AudioReconfigureScenario());
+  add("ReorderScenario(H.264)", ReorderScenario("H.264 with B-frames", &w->avc_bframes));
+  add("ReorderScenario(HEVC)", ReorderScenario("HEVC with B-frames", &w->hev1));
   add("CloseScenario()", CloseScenario());
   Sequence(steps, Finish);
 }
@@ -3915,6 +4232,7 @@ int main(int argc, char** argv) {
                 LoadMedia(kMultiKeyBase, video_playlist, 2, &world.multi_video, &error) &&
                 LoadMedia(kMultiKeyBase, @"audio-en.m3u8", 2, &world.multi_audio, &error) &&
                 LoadChromiumFile(@"bear-320x240-v_frag-hevc.mp4", &world.hev1, &error) &&
+                LoadChromiumFile(@"bear-640x360-v_frag.mp4", &world.avc_bframes, &error) &&
                 LoadChromiumFile(@"glass-blowing2-dolby-vision-profile-5-frag.mp4", &world.dolby_vision, &error) &&
                 LoadChromiumFile(@"bear-av1.mp4", &world.av1, &error) &&
                 LoadChromiumFile(@"noise-xhe-aac-44kHz.mp4", &world.xhe_aac, &error) &&

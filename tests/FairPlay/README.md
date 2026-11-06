@@ -44,7 +44,8 @@ sinf/schm/tenc, and per sample its bytes, timing (edit list applied), keyframe
 flag and DecryptConfig with subsamples from senc or saiz/saio (both are read
 and must agree) and seig groups. `ChromiumBuffer` then applies Chromium's
 reframing: Annex B with SPS/PPS before keyframes, ADTS on AAC, microseconds,
-16-byte IVs.
+16-byte IVs, and no decode timestamps (DecoderBuffer has none, so B-frames
+arrive in decode order with presentation times only).
 
 1. Offline self-tests on the downloaded segments: box builders against the
    file's own `sinf`, the AAC cookie through CoreAudio, Annex B and ADTS round

@@ -17,7 +17,7 @@ done
 xcrun clang++ "${flags[@]}" -c "$tests/fmp4_parser.cc" -o "$output/fmp4_parser.o"
 xcrun clang++ "${flags[@]}" -fobjc-arc -c "$tests/harness.mm" -o "$output/harness.o"
 xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation -framework AudioToolbox \
-  -framework CoreAudio -framework CoreMedia -framework QuartzCore -o "$output/fairplay-proof"
+  -framework CoreAudio -framework CoreMedia -framework CoreVideo -framework QuartzCore -framework VideoToolbox -o "$output/fairplay-proof"
 cache="${PARC_FAIRPLAY_CACHE:-${TMPDIR:-/tmp}/parc-fairplay-cache}"
 # Runs the proof with a hard cap of $1 seconds. The harness exits by itself on
 # a stalled main thread (sampling its stack) or after --time-limit seconds
