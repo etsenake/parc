@@ -76,6 +76,7 @@
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/favicon/core/favicon_driver_observer.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_metadata_provider.h"
 #include "content/public/browser/render_frame_host.h"
@@ -1166,6 +1167,24 @@ class NativePageState final
   void PrimaryPageChanged(content::Page& page) override {
     [status_text_ reset];
     top_band_->Bind(&page.GetMainDocument(), /*rebind=*/false);
+    ResendVisualProperties(page);
+  }
+  // RenderWidgetHostImpl::SynchronizeVisualProperties drops size updates
+  // while a navigation's new main frame is not active yet, or its widget is
+  // not initialized, and Chromium does not re-send them at commit: it relies
+  // on the widget's creation-time size and the update WasShown sends. A page
+  // already visible when it commits (created visible, or navigating while
+  // shown) gets no WasShown, so a size the host gave it during the navigation
+  // was lost and the renderer kept its old size, 0x0 for a page created
+  // before attachment. Re-send at each commit; a size that already matches
+  // sends nothing (StoredVisualPropertiesNeedsUpdate).
+  static void ResendVisualProperties(content::Page& page) {
+    auto* host = content::RenderWidgetHostImpl::From(
+        page.GetMainDocument().GetRenderWidgetHost());
+    content::RenderWidgetHostViewBase* view = host ? host->GetView() : nullptr;
+    if (view && view->HasSize()) {
+      host->SynchronizeVisualPropertiesIgnoringPendingAck();
+    }
   }
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
