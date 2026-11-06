@@ -39,7 +39,7 @@ Lands on main in three increments, each building on its own:
 | Renderer selection | `CdmContext::RequiresFairPlayRenderer()` / `GetFairPlayCdm()`, carried to the render process as `mojom::CdmContext.requires_fairplay_renderer`; `PipelineImpl` then asks for `RendererType::kFairPlay` |
 | GPU `media::Renderer` | `fairplay_renderer_adapter.{h,mm}` over `parc::fairplay::FairPlayRenderer`, created by `GpuMojoMediaClientMac::CreateFairPlayRenderer` through `InterfaceFactory.CreateFairPlayRenderer` |
 | Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered in `MediaFactory` as `kFairPlay` (never the base renderer) |
-| Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` (fairplay-compositing) |
+| Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |
 | Key system registration | `GetFairPlayCdmInfo()` in `CdmRegistryImpl::Init` (browser); `fairplay_key_system_info.{h,cc}` → `//components/cdm/renderer`, added by `key_system_support_update.cc` (renderer) |
 | Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `media_interface_proxy.cc`), for fairplay-identity |
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
@@ -96,13 +96,14 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
    `MojoCdmServiceContext`. `SetCdm(cdm_id)` therefore resolves the frame's
    FairPlay CDM, and the adapter hands its key session to the core
    (`FairPlayRenderer::SetCdm`, before `Initialize` is fine).
-4. `StartPlayingFrom` reads the first buffer of each stream. Chromium's decoder
-   configs carry no key IDs (`VideoDecoderConfig::extra_data()` is even empty
-   for MP4 video), so the core is initialized from those buffers. That covers
-   the key ID, the cbcs pattern and the IV of the first `DecryptConfig`, plus
-   the config's codec, coded and natural size, the AudioSpecificConfig, and
-   Dolby Vision's profile and level. H.264/HEVC/DV go as Annex B, AV1 as
-   stored, AAC with ADTS.
+4. `Initialize` hands the core Chromium's decoder configs as they are: the
+   codec, the coded and natural size, the AudioSpecificConfig (empty
+   `extra_data` for MP4 video and for AC-3/E-AC-3, which the core builds from
+   the first keyframe or syncframe), Dolby Vision's profile and level, and the
+   encryption scheme only. H.264/HEVC/DV go as Annex B, AV1 as stored, AAC with
+   ADTS. The core builds protected formats from each sample's `DecryptConfig`
+   (key ID, pattern, 16-byte IV), so clear lead works. `kConfigChanged` goes
+   to `FairPlayRenderer::Reconfigure`.
 5. With video, the adapter registers the core's `AVSampleBufferDisplayLayer` in
    `ui::ProtectedLayerRegistry` under a new `UnguessableToken` and sends
    `OnLayerRegistered(token, natural_size)`. The client paints
@@ -138,23 +139,19 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
   `createMediaElementSource`, `setSinkId` and the tab's audio indicator don't
   see it.
 
-## Known gaps (need the core or a later increment)
+## Known gaps
 
-- Clear lead: the first buffers carry no `DecryptConfig`, so the core gets no
-  key ID at `Initialize`. fairplay-core is making it build each protected
-  format from the first encrypted sample. Until then, encrypted tracks that
-  start clear fail to initialize.
-- Empty decoder records: H.264/HEVC records are built by the core from the
-  in-band parameter sets. AV1's `av1C` and AC-3/E-AC-3's `dac3`/`dec3` are
-  being added to the core (from the sequence header and the first sync frame).
-- Config changes: a new init segment with the same codec keeps the core's
-  format until the core rebuilds it from new in-band parameter sets (asked of
-  fairplay-core). A codec change ends playback with an error.
 - `requiresFlushToResumeDecoding` (layer detached while the page has no
-  compositor) is reported by the core but not yet recovered.
-- No DTS on `DecoderBuffer`; see the note sent to fairplay-core about B-frames.
+  compositor) is reported by the core but not yet recovered; fairplay-core's
+  next batch adds recovery.
+- A page that turns its own video track off (`videoTracks`) ends video until
+  the next seek; a disabled `ChunkDemuxerStream` answers with end of stream.
+  The background-tab optimization that does the same is turned off for
+  FairPlay players.
+- A codec change through MSE `changeType` ends playback with an error.
 - A `setMediaKeys` that arrives after a clear pipeline already chose
   `RendererImpl` doesn't switch renderers (same as MediaFoundation upstream).
+- `setSinkId` isn't wired yet (the core is adding `SetAudioOutputDevice`).
 
 ## Widevine request hook
 
@@ -194,6 +191,10 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:
   `media/cdm/supported_audio_codecs.cc` leaves AC-3/E-AC-3 out of library CDMs
   on macOS, so Widevine sites negotiate the same codecs as today.
+- Upstream side effects of the flags, the same as on Windows: every page's
+  `addSourceBuffer`/`changeType` now accept `dvh1`/`dvhe` (only to reject a
+  clear Dolby Vision init segment later, where it threw NotSupportedError
+  before), and ClearKey's EME also offers AC-3/E-AC-3.
 - Changing `gn_defines` changes the source lock's digest, so Josh's existing
   workspace needs `scripts/engine-source.py reconfigure` before the next build.
   The media buildflag headers change, so dependents of
@@ -282,18 +283,35 @@ system registration are on main.
 
 ## Checks run without a build
 
-- Every hunk re-read against the pinned source (d0c02bfa). All twelve targets
-  are byte-identical to `git show d0c02bfa:<path>`, and no CEF patch or
-  earlier overlay touches them.
+Nothing here builds the engine. For each increment:
+
+- Every hunk was re-read against the pinned source (d0c02bfa). Each target is
+  byte-identical to `git show d0c02bfa:<path>` (no CEF patch or earlier overlay
+  touches it), and none is a target of another overlay patch on main.
 - The overlay tool's exact applier (`apply_context_patch` in
   `scripts/engine-source.py`) applies `fairplay-media.patch` to those
-  preimages with matching after-hashes. Every manifest input digest checks
-  out and no target is duplicated.
-- `tests/EngineSource` (75) and `tests/EngineConformance/native` (6) pass.
-- `-fsyntax-only` with Apple clang, C++23 and the SDK's libc++ against the
-  pinned headers, with stub buildflag headers: `fairplay_cdm_adapter.cc`,
-  `fairplay_cdm_factory.cc` and the patched `media/base/cdm_context.cc`
-  compile clean at `-Wall`.
-- Not compiled: `media_interface_proxy.cc`, `mojo_cdm{,_service}.cc` and
-  `gpu_mojo_media_client_mac.cc`. They need generated mojom and perfetto
-  headers that only exist in a build directory.
+  preimages with matching after-hashes. Every manifest input digest matches,
+  no target is duplicated, and no new file exists upstream.
+- `tests/EngineSource` and `tests/EngineConformance/native` pass. The codec
+  defines have their own test (`test_development_and_shipping_engines_build_fairplay_platform_codecs`).
+  against the pinned headers and stub buildflag headers. These compile clean
+  at `-Wall`: `fairplay_cdm_adapter.cc`, `fairplay_cdm_factory.cc`,
+  `fairplay_renderer_adapter.mm` (with fairplay-compositing's registry
+  header), `fairplay_key_system_info.cc`, and the patched
+  `media/base/cdm_context.cc`, `media/base/renderer.cc`,
+  `media/base/pipeline_impl.cc` and `media/cdm/supported_audio_codecs.cc`.
+- Not compiled, because they need generated mojom or perfetto headers that only
+  exist in a build directory: `media_interface_proxy.cc`,
+  `frameless_media_interface_proxy.cc`, `mojo_cdm.cc`, `mojo_cdm_service.cc`,
+  `interface_factory_impl.cc`, `mojo_media_client.cc`,
+  `gpu_mojo_media_client_mac.cc`, `mojo_renderer_factory.cc`, the
+  render-process `media_interface_factory.cc`, `media_factory.cc`,
+  `fairplay_renderer_client{,_factory}.cc`, `key_system_support_update.cc`
+  and `cdm_registry_impl.cc`. Those hunks follow the existing
+  MediaFoundation code next to them line for line, and were re-read for exact
+  signatures.
+- Each increment had an independent read-only review before main, and its
+  findings were fixed.
+
+Unverified until Josh builds: compilation of the files above, mojom
+generation, `gn check`, the GPU sandbox rules, and all runtime behaviour.

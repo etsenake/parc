@@ -202,8 +202,8 @@ void FairPlayCdmAdapter::CloseSession(
   base::WeakPtr<FairPlayCdmAdapter> weak = weak_factory_.GetWeakPtr();
   scoped_refptr<base::SequencedTaskRunner> task_runner = task_runner_;
   // Blink drops the session when the close promise resolves, so the closed
-  // event must reach it first. The core settles the promise before it calls
-  // OnSessionClosed (both inside this call), so settle it from a task.
+  // event must reach it first. The core posts the promise result ahead of
+  // OnSessionClosed; one more hop puts the resolution after the event.
   cdm_->CloseSession(session_id, [weak, task_runner,
                                   promise_id](const fp::Result& result) {
     task_runner->PostTask(

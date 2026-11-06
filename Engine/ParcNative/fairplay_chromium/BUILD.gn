@@ -42,7 +42,9 @@ source_set("core") {
   ]
 }
 
-# The GPU process's FairPlay CDM, linked into //media/mojo/services.
+# The GPU process's FairPlay CDM and Renderer, linked into
+# //media/mojo/services. The render process's client is compiled into
+# //content/renderer (content/renderer/media/fairplay).
 source_set("gpu") {
   visibility = [ "//media/mojo/services:*" ]
   sources = [
@@ -50,6 +52,8 @@ source_set("gpu") {
     "chromium/fairplay_cdm_adapter.h",
     "chromium/fairplay_cdm_factory.cc",
     "chromium/fairplay_cdm_factory.h",
+    "chromium/fairplay_renderer_adapter.h",
+    "chromium/fairplay_renderer_adapter.mm",
     "chromium/fairplay_task_runner.h",
   ]
   public_deps = [ ":key_system" ]
@@ -57,5 +61,11 @@ source_set("gpu") {
     ":core",
     "//base",
     "//media",
+    "//ui/accelerated_widget_mac",
+    "//ui/gfx/geometry",
+  ]
+  frameworks = [
+    "AVFoundation.framework",
+    "QuartzCore.framework",
   ]
 }
