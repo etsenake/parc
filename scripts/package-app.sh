@@ -10,6 +10,8 @@
 # tests/Packaging/README.md.
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+git_root="${PARC_RELEASE_REPOSITORY:-$repo_root}"
+git() { if [ "$git_root" = "$repo_root" ]; then command git "$@"; else command git -C "$git_root" "$@"; fi; }
 github_repo="etsenake/parc"
 keep=3
 tag_pattern='^app-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$'
@@ -51,13 +53,17 @@ started=$SECONDS
 # build.py reads these paths whether or not Git tracks the files.
 inputs=(Sources Resources Engine scripts app-version.json)
 check_checkout() {
+  if [ -n "${PARC_RELEASE_COMMIT:-}" ]; then
+    python3 "$repo_root/scripts/release_inputs.py" "$git_root" "$repo_root" "$commit"
+    return
+  fi
   if [ "$(git rev-parse HEAD)" != "$commit" ] || [ -n "$(git status --porcelain --untracked-files=all -- "${inputs[@]}")" ]; then
     echo "error: the checkout must stay clean at $commit while packaging" >&2
     exit 1
   fi
 }
 git fetch -q origin
-commit="$(git rev-parse HEAD)"
+commit="${PARC_RELEASE_COMMIT:-$(git rev-parse HEAD)}"
 check_checkout
 if ! git merge-base --is-ancestor "$commit" origin/main; then
   echo "error: $commit is not on origin/main" >&2
@@ -67,14 +73,14 @@ app_version="$(python3 scripts/app_version.py show)"
 stable_tag="v$app_version"
 if [ -n "$stable" ]; then
   stable_ref="$(git ls-remote --tags origin "refs/tags/$stable_tag")"
-  if [ -n "$stable_ref" ]; then
+  if [ -n "$stable_ref" ] && [ -z "${PARC_PACKAGE_RUN:-}" ]; then
     echo "error: $stable_tag already exists; advance app-version.json before another stable release" >&2
     exit 1
   fi
 fi
 # build.py copies Resources wholesale, so ignored files there would ship too.
 find Resources -name .DS_Store -delete
-if [ -n "$(git status --porcelain --ignored=matching --untracked-files=all -- Resources)" ]; then
+if [ -z "${PARC_RELEASE_COMMIT:-}" ] && [ -n "$(git status --porcelain --ignored=matching --untracked-files=all -- Resources)" ]; then
   echo "error: Resources has ignored files that would be packaged:" >&2
   git status --porcelain --ignored=matching --untracked-files=all -- Resources >&2
   exit 1
@@ -82,9 +88,20 @@ fi
 overlay="$(python3 -c 'import json; print(json.load(open("Engine/ParcHost/overlay.json"))["version"])')"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 short="${commit:0:8}"
-run="$repo_root/build/local-${local_test:+test-}$stamp"
+run="${PARC_PACKAGE_RUN:-$repo_root/build/local-${local_test:+test-}$stamp}"
 mkdir -p "$repo_root/build"
-mkdir "$run"
+if [ -n "${PARC_PACKAGE_RUN:-}" ]; then
+  mkdir -p "$run"
+  python3 - "$run" "$commit" "$overlay" "${stable:-}" <<'PY'
+import json,os,sys
+from pathlib import Path
+p=Path(sys.argv[1])/'package-inputs.json';want={'commit':sys.argv[2],'overlay':int(sys.argv[3]),'stable':bool(sys.argv[4])}
+if p.exists() and json.loads(p.read_text())!=want:raise SystemExit('error: package run belongs to different frozen inputs')
+if not p.exists():p.write_text(json.dumps(want,indent=2)+'\n')
+PY
+else
+  mkdir "$run"
+fi
 
 # An Apple-issued identity's Team ID keeps macOS's Keychain and privacy grants
 # across builds; ad-hoc signatures change with every build. scripts/setup-signing.sh
@@ -192,9 +209,9 @@ if [ -n "$from_release" ]; then
   cache="$repo_root/build/release-cache/$release_tag"
   zip="$cache/$asset"
   if [ ! -f "$zip" ] || [ "sha256:$(shasum -a 256 "$zip" | cut -d' ' -f1)" != "$digest" ]; then
-    # Keep only the engine package in use.
-    rm -rf -- "$repo_root/build/release-cache"
+    # Preserve other releases and caches. Replace only a failed download.
     mkdir -p "$cache"
+    if [ -f "$zip" ]; then mv "$zip" "$zip.invalid-$(date +%s)"; fi
     gh release download "$release_tag" -R "$github_repo" -p "$asset" -D "$cache" </dev/null
   fi
   if [ "sha256:$(shasum -a 256 "$zip" | cut -d' ' -f1)" != "$digest" ]; then
@@ -211,7 +228,11 @@ if [ -n "$from_release" ]; then
   fi
   description="Standalone package built from $commit on engine overlay $overlay, reusing the engine of $release_tag; signed $signed_with."
 else
-  cp "$manifest" "$run/engine-artifacts.json"
+  if [ -f "$run/engine-artifacts.json" ]; then
+    cmp "$manifest" "$run/engine-artifacts.json" || { echo "error: engine seal changed during package run" >&2; exit 1; }
+  else
+    cp "$manifest" "$run/engine-artifacts.json"
+  fi
   build_args=(build --engine-dir "$engine" --manifest "$run/engine-artifacts.json")
   description="Package built from $commit on engine overlay $overlay; signed $signed_with."
 fi
@@ -219,10 +240,19 @@ fi
 # build.py writes its own package.log in the run directory.
 purpose=distribution
 if [ -n "$local_test" ]; then purpose=development; fi
-if ! python3 scripts/build.py "${build_args[@]}" --output "$run/development" --configuration release --purpose "$purpose" \
-  --sign-identity "$sign_identity" >"$run/package-output.log" 2>&1; then
-  echo "error: packaging failed; see $run/package.log and $run/package-output.log" >&2
-  exit 1
+if [ -n "${PARC_PACKAGE_RUN:-}" ] && [ -f "$run/development/package-report.json" ]; then
+  python3 - "$run/development/package-report.json" "$sign_identity" "$sign_team" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+if r.get('configuration')!='release' or r.get('purpose')!='distribution' or r.get('signing_identity')!=sys.argv[2] or r.get('signing_team')!=sys.argv[3]:raise SystemExit('error: refusing to resume an incompatible package')
+PY
+  codesign --verify --deep --strict "$run/development/Parc.app"
+else
+  if ! python3 scripts/build.py "${build_args[@]}" --output "$run/development" --configuration release --purpose "$purpose" \
+    --sign-identity "$sign_identity" >"$run/package-output.log" 2>&1; then
+    echo "error: packaging failed; see $run/package.log and $run/package-output.log" >&2
+    exit 1
+  fi
 fi
 check_checkout
 if [ -z "$local_test" ]; then
@@ -269,8 +299,11 @@ if [ -n "$stable" ]; then
   release_options=(--prerelease --latest=false)
   title="Parc $app_version candidate (engine overlay $overlay)"
 fi
-trap 'rm -rf -- "$archive" "$run/engine-release"' EXIT
-ditto -c -k --sequesterRsrc --keepParent "$run/development" "$archive"
+if [ -z "${PARC_PACKAGE_RUN:-}" ]; then trap 'rm -rf -- "$archive" "$run/engine-release"' EXIT; fi
+if [ ! -f "$archive" ]; then
+  ditto -c -k --sequesterRsrc --keepParent "$run/development" "$archive.partial"
+  mv "$archive.partial" "$archive"
+fi
 assets=("$archive")
 if [ -n "$stable" ]; then
   dmg="$run/Parc-$app_version-arm64.dmg"
@@ -279,9 +312,23 @@ if [ -n "$stable" ]; then
   check_checkout
   assets+=("$dmg")
 fi
-gh release create "$tag" "${assets[@]}" -R "$github_repo" "${release_options[@]}" --target "$commit" \
-  --title "$title" \
-  --notes "$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
+if [ -n "${PARC_PACKAGE_RUN:-}" ] && gh release view "$tag" -R "$github_repo" --json targetCommitish >"$run/existing-release.json" 2>/dev/null; then
+  python3 - "$run/existing-release.json" "$commit" <<'PY'
+import json,sys
+if json.load(open(sys.argv[1]))['targetCommitish']!=sys.argv[2]:raise SystemExit('error: existing release belongs to another source commit')
+PY
+  # Reconcile partially uploaded assets by immutable GitHub SHA-256, never clobber.
+  python3 "$repo_root/scripts/release_assets.py" "$tag" "$commit" "${assets[@]}"
+else
+  gh release create "$tag" "${assets[@]}" -R "$github_repo" "${release_options[@]}" --target "$commit" \
+    --title "$title" \
+    --notes "$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
+fi
+if [ -n "${PARC_PACKAGE_RUN:-}" ]; then
+  python3 "$repo_root/scripts/release_assets.py" "$tag" "$commit" "${assets[@]}"
+  echo "published $tag; ready for immediate installation"
+  exit 0
+fi
 echo "published $tag in $(( (SECONDS - started) / 60 ))m$(( (SECONDS - started) % 60 ))s"
 
 gh release list -R "$github_repo" --limit 200 --json tagName,createdAt,isDraft,isPrerelease \

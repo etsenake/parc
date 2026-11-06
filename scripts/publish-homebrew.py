@@ -219,13 +219,15 @@ def main():
     parser.add_argument("--acceptance", required=True, type=Path,
                         help="passed receipt from scripts/record-release-acceptance.py")
     parser.add_argument("--tap", required=True, type=Path, help="existing etsenake/homebrew-tap clone")
+    parser.add_argument("--resume", action="store_true", help="reconcile this release's exact generated cask")
     args = parser.parse_args()
     tap = args.tap.resolve()
     try:
         acceptance = json.loads(args.acceptance.read_text())
         require_evidence(acceptance)
-        if run("git", "status", "--porcelain", cwd=tap):
-            raise ValueError("The tap clone must be clean before updating")
+        dirty = run("git", "status", "--porcelain", cwd=tap)
+        if dirty and (not args.resume or dirty.strip() not in ('M Casks/parc.rb', 'M  Casks/parc.rb')):
+            raise ValueError("The tap clone has unrelated edits; preserved without overwriting")
         origin = run("git", "remote", "get-url", "origin", cwd=tap).removesuffix(".git")
         if origin not in (f"https://github.com/{TAP_REPOSITORY}", f"git@github.com:{TAP_REPOSITORY}"):
             raise ValueError("The tap origin is not " + TAP_REPOSITORY)
@@ -256,8 +258,12 @@ def main():
         target = tap / "Casks/parc.rb"
         if target.exists():
             match = re.search(r'^  version "([0-9.]+)(?:,[^"]+)?"$', target.read_text(), re.M)
-            if not match or tuple(map(int, version.split("."))) <= tuple(map(int, match[1].split("."))):
-                raise ValueError("The release must advance the tap's current version")
+            equal = match and version == match[1]
+            if (not match or tuple(map(int, version.split("."))) < tuple(map(int, match[1].split(".")))
+                    or (equal and (not args.resume or target.read_text() != cask(version, digest)))):
+                raise ValueError("The release must advance the tap or resume its identical verified cask")
+            if dirty and target.read_text() != cask(version, digest):
+                raise ValueError("Local cask edits differ from this verified release; preserved")
         target.write_text(cask(version, digest))
         promote_release(release, acceptance, app_version, report_sha)
         print(f"Promoted {args.tag} and updated {target} from {commit}; verify, commit and push the tap.")

@@ -1,5 +1,9 @@
 # Versioned Parc releases and Homebrew
 
+For new production releases, use [the complete release command](master-release.md):
+`bash scripts/release.sh --type minor`. The individual commands below remain
+available for evidence inspection and focused recovery.
+
 Josh explicitly confirmed normal startup of **1.0.0**. The earlier uncontrolled
 observer was interrupted by his deliberate test of a specific behavior; keep
 its raw result unchanged and do not present it as an automated pass. The

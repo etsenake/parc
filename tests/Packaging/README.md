@@ -1,6 +1,10 @@
 # Independent engine packaging
 
 
+For complete production releases use [the master release command](../../docs/master-release.md):
+`bash scripts/release.sh --type major|minor|patch` (choose one release type). The
+commands below remain the individual building blocks.
+
 ## Inputs and commands
 
 Use an absolute `--engine-dir` for the locked `Release_GN_arm64` output. First finish the reviewed native-host overlay with `scripts/engine-source.py build`. A successful source-tool completion must record phase `built`; manually linked files and a still-running build cannot be sealed. The matching reviewed source overlay must include the actual public native bridge headers and compiled exports.

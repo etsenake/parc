@@ -3242,6 +3242,19 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
+**Latest direction — November 5:** Josh authorizes the final nightly **1.1.0**
+release after remote main has been unchanged for 10–15 minutes. Root must use
+and test the new [master release command](master-release.md), not manually run
+the older pipeline. This supersedes the ready-signal hold below for that release.
+Root continues alone on canonical main; the behavior crash remains assigned
+elsewhere. The recurring refresh stays deleted. The command handles frozen
+inputs, reviewed cumulative overlays, incremental shipping engine, production
+signing/notarization, immutable publication, immediate profile-safe installation,
+bounded startup, and Homebrew publication/upgrade. Credential portability still
+requires actual one-time private-key provisioning and a synced notary profile;
+the existing Mac's working credentials are sufficient for this release but are
+not evidence of an iCloud backup.
+
 **Latest authorized Homebrew test — November 5:** Josh asked for a real tap
 upgrade without losing browser data, authorizing this specific existing-release
 installation. Root upgraded 0.1.0 to 1.0.0 with
