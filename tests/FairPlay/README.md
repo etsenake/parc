@@ -142,14 +142,15 @@ Screenshots of the window show no picture, as expected for protected video.
 Playback is proven by the clock, the renderer status and AVFoundation's frame
 counts instead.
 
-Not verified: protected decoding of Dolby Vision, AV1, HE-AAC and xHE-AAC (no
-public FairPlay vector exists; their clear decoding and protected format types
-are proven), `dvhe`/`avc3` (normalized like `hev1`, untested), E-AC-3 and AC-3
-(not exercised at all), Dolby Vision profile 8 (`dvvC`), cenc-scheme content (8-byte IV truncation and
-the `CryptorIV` attachment are unexercised because both vectors use a constant
-IV), per-sample key rotation within one track (one format description per key
-ID is implemented, but untested), license renewal, macOS versions below 27,
-external displays and HDCP.
+Protected decoding of the other codecs is in [codecs/](codecs/README.md). It
+covers Dolby Vision (`dvh1`, `dvhe`), AV1, HE-AAC, HE-AACv2, xHE-AAC, AC-3,
+E-AC-3, 7.1 E-AC-3 and the cenc scheme, using content encrypted locally under
+Axinom's published key. Its results list what still fails.
+
+Not verified: `avc3` (normalized like `hev1`, untested), Dolby Vision profile
+8 (`dvvC`), per-sample key rotation within one track (one format description
+per key ID is implemented, but untested), license renewal, macOS versions
+below 27, external displays and HDCP.
 
 ## Apple API behaviour
 
@@ -236,7 +237,9 @@ probed through its runtime interface)
   `CryptorIV` attachment and the `tenc` says 16-byte per-sample IVs, which is
   what a renderer can build from Chromium's input (a 16-byte IV on every
   DecryptConfig, no `tenc`). Proven on the Axinom vector with the Chromium
-  configs.
+  configs. Axinom's content IV equals the IV in its CKC, though. With a
+  different content IV, `qavc`, `qhvc` and `qdh1` fail every frame, so the IV
+  used is the license's ([codecs/](codecs/README.md)).
 - AVFoundation silently drops a request it can't serve: a FairPlay pssh that
   names no key gets no delegate call at all, not even a failure. The key
   session's request timeout is what keeps `generateRequest` from hanging.
