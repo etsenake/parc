@@ -1812,6 +1812,22 @@ bool BrowserRetiringForPath(PCNativeBrowserWindow* binding, NSString* path) {
   }
   return false;
 }
+// A parked request holds a reservation, so the retiring Browser's
+// unregistration cannot report this window empty before the retry runs.
+void ParkUntilBrowserRetires(PCNativeBrowserWindow* binding,
+                             base::OnceClosure retry) {
+  ++[binding state].pending_reservations;
+  [binding state].retirement_waiters.push_back(base::BindOnce(
+      [](PCNativeBrowserWindow* binding, base::OnceClosure retry) {
+        CHECK([binding state].pending_reservations);
+        --[binding state].pending_reservations;
+        std::move(retry).Run();
+        // A retry that failed before reserving leaves the window as empty as
+        // the suppressed notification found it.
+        NotifyEmptyBinding(binding, false);
+      },
+      binding, std::move(retry)));
+}
 }  // namespace
 void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
                               BrowserWindowInterface& browser,
@@ -2022,7 +2038,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     __weak PCNativeBrowserWindow* weak_self = self;
     __weak NSView* weak_target = container;
     void (^retry_completion)(PCNativePage*, NSError*) = [completion copy];
-    _state->retirement_waiters.push_back(base::BindOnce(^{
+    parc::ParkUntilBrowserRetires(self, base::BindOnce(^{
       PCNativeBrowserWindow* binding = weak_self;
       NSView* target = weak_target;
       if (!binding || !target) {
@@ -2199,6 +2215,23 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   if ((!search && _state->private_mode) || !validateOwner || !validateOwner() || !url || !self.window || container.window != self.window ||
       !path.isAbsolutePath || ![path isEqualToString:path.stringByStandardizingPath]) {
     completion(nil, parc::Error(@"The supplied background page owner is unavailable."));
+    return;
+  }
+  if (parc::BrowserRetiringForPath(self, path)) {
+    __weak PCNativeBrowserWindow* weak_self = self;
+    __weak NSView* weak_target = container;
+    BOOL (^retry_owner)(void) = [validateOwner copy];
+    void (^retry_completion)(PCNativePage*, NSError*) = [completion copy];
+    parc::ParkUntilBrowserRetires(self, base::BindOnce(^{
+      PCNativeBrowserWindow* binding = weak_self;
+      NSView* target = weak_target;
+      if (!binding || !target) {
+        retry_completion(nil, parc::Error(@"The background page's window closed."));
+        return;
+      }
+      [binding openBackgroundURL:url profilePath:path container:target
+          searchNavigation:search validateOwner:retry_owner completion:retry_completion];
+    }));
     return;
   }
   __weak NSView* weak_container = container;
@@ -3931,7 +3964,7 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
   }
   if (BrowserRetiringForPath(binding, path)) {
     __weak PCNativeBrowserWindow* weak_binding = binding;
-    [binding state].retirement_waiters.push_back(base::BindOnce(
+    ParkUntilBrowserRetires(binding, base::BindOnce(
         [](PCNativeBrowserWindow* __weak weak_binding, NSString* path,
            base::OnceCallback<void(BrowserWindowInterface*, bool, NSError*)> callback) {
           if (PCNativeBrowserWindow* binding = weak_binding) {
