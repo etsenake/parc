@@ -711,10 +711,13 @@ class Player : public fp::FairPlayRendererClient {
     audio_feed_ = Feed{std::move(audio), 0, 0, end_of_stream, false};
   }
 
-  // More data arrives (as from the network): append and push it.
-  void AppendFeeds(const SegmentList& video, const SegmentList& audio) {
+  // More data arrives (as from the network): append and push it; with
+  // |end_of_stream| it is the last.
+  void AppendFeeds(const SegmentList& video, const SegmentList& audio, bool end_of_stream = false) {
     video_feed_.segments.insert(video_feed_.segments.end(), video.begin(), video.end());
     audio_feed_.segments.insert(audio_feed_.segments.end(), audio.begin(), audio.end());
+    video_feed_.end_of_stream |= end_of_stream;
+    audio_feed_.end_of_stream |= end_of_stream;
     Pump(fp::StreamType::kVideo);
     Pump(fp::StreamType::kAudio);
   }
@@ -1506,6 +1509,58 @@ std::vector<Step> SeekOrderScenario() {
   return steps;
 }
 
+// A short final chunk after an underflow (or a short ad, or a seek into the
+// last second): too little for AVFoundation's sufficiency test, so end of
+// stream must count as HAVE_ENOUGH or the clock never restarts.
+std::vector<Step> ShortEndScenario() {
+  World* w = g_world;
+  auto tail_video = std::make_shared<std::vector<ft::Sample>>();
+  auto tail_audio = std::make_shared<std::vector<ft::Sample>>();
+  const double tail_end = 6.5;
+  for (const ft::Sample& sample : w->video.segments[1]) {
+    if (double(sample.pts + sample.duration) / w->video.info.timescale <= tail_end) tail_video->push_back(sample);
+  }
+  for (const ft::Sample& sample : w->audio.segments[1]) {
+    if (double(sample.pts + sample.duration) / w->audio.info.timescale <= tail_end) tail_audio->push_back(sample);
+  }
+  std::vector<Step> steps;
+  steps.push_back(Section("underflow, then a 0.5 s final chunk with end of stream"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("short-end", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, &w->video, &w->audio, 0, 1, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) {
+    auto finish = Once(12, "short-end: underflow at 6 s", [=](bool) { done(); });
+    w->player->on_have_nothing = [finish] { finish(true); };
+  });
+  steps.push_back([=](Done done) {
+    auto enough = std::make_shared<bool>(false);
+    w->player->on_have_enough = [enough] { *enough = true; };
+    auto finish = Once(8, "short-end: OnEnded after the final chunk", [=](bool ok) {
+      double t = w->player->Time();
+      Check(*enough, "short-end: end of stream counts as HAVE_ENOUGH for the short chunk");
+      if (ok) {
+        double end = 0;
+        for (const ft::Sample& sample : *tail_audio) end = std::max(end, double(sample.pts + sample.duration) / w->audio.info.timescale);
+        for (const ft::Sample& sample : *tail_video) end = std::max(end, double(sample.pts + sample.duration) / w->video.info.timescale);
+        Check(std::fabs(t - end) < 0.3, Format("short-end: ended at the chunk's end (t=%.3f, end %.3f)", t, end));
+      }
+      done();
+    });
+    w->player->on_ended = [finish] { finish(true); };
+    Log("short-end: appending %zu video and %zu audio samples (to %.1f s) with end of stream",
+        tail_video->size(), tail_audio->size(), tail_end);
+    w->player->AppendFeeds({tail_video.get()}, {tail_audio.get()}, true);
+  });
+  steps.push_back([=](Done done) {
+    CheckHealthy(*w->player, "short-end");
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> CdmFirstScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -1980,6 +2035,7 @@ void RunAll() {
   add("UnderflowScenario()", UnderflowScenario());
   add("CdmFirstScenario()", CdmFirstScenario());
   add("SeekOrderScenario()", SeekOrderScenario());
+  add("ShortEndScenario()", ShortEndScenario());
   add("ResponseValidationScenario()", ResponseValidationScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
 
