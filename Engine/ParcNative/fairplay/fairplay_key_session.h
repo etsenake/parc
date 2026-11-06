@@ -69,6 +69,16 @@ class FairPlayCdm {
   // content key recipients (FairPlayRenderer's key path).
   static bool IsSupported();
 
+  // EME key system names this CDM serves, as WebKit's
+  // CDMFactoryFairPlayStreaming::supportsKeySystem: "com.apple.fps" and any
+  // "com.apple.fps.<version>" (Netflix requests "com.apple.fps.3_0"). Matching
+  // is case-sensitive. The prefixed legacy WebKitMediaKeys API that pages also
+  // probe ("com.apple.fps.2_0") has no Chromium counterpart.
+  static bool IsKeySystemSupported(const std::string& key_system);
+
+  // "cenc", "sinf", "skd" and, as a Parc extension, "keyids".
+  static bool IsInitDataTypeSupported(const std::string& init_data_type);
+
   FairPlayCdm(FairPlayCdmClient* client, PostTask post_task);
   ~FairPlayCdm();
   FairPlayCdm(const FairPlayCdm&) = delete;

@@ -885,6 +885,17 @@ bool FairPlayCdm::IsSupported() {
          [AVSampleBufferAudioRenderer conformsToProtocol:@protocol(AVContentKeyRecipient)];
 }
 
+bool FairPlayCdm::IsKeySystemSupported(const std::string& key_system) {
+  static const std::string kKeySystem = "com.apple.fps";
+  return key_system == kKeySystem ||
+         (key_system.size() > kKeySystem.size() + 1 &&
+          key_system.compare(0, kKeySystem.size() + 1, kKeySystem + ".") == 0);
+}
+
+bool FairPlayCdm::IsInitDataTypeSupported(const std::string& init_data_type) {
+  return InitDataTypeFromName(init_data_type).has_value();
+}
+
 FairPlayCdm::FairPlayCdm(FairPlayCdmClient* client, PostTask post_task)
     : impl_(std::make_shared<Impl>(client, std::move(post_task))) {}
 

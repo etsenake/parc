@@ -43,6 +43,10 @@ NSString* const kCertificateUrl = @"https://tools.axinom.com/FPScert/fairplay.ce
 NSString* const kToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
 // EXT-X-KEY URI in the vector's HLS playlists (KEYFORMAT com.apple.streamingkeydelivery).
 const char* const kSkd = "skd://302f80dd-411e-4886-bca5-bb1f8018a024:77FD1889AAF4143B085548B3C0F95B9A";
+// "CMAF H264 MultiKey (cbcs)": three keys (audio, SD video, HD video) under
+// one token, the shape of Netflix's three-key FairPlay licenses.
+NSString* const kMultiKeyBase = @"https://media.axprod.net/TestVectors/MultiKey/Cmaf_h264_1080p_cbcs/";
+NSString* const kMultiKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImI1NGVjOTE0LTE5MmQtNGVhMS1hYzE5LWY0MjllYjQ5ODI2OCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiUldKemlSUDRqQkhjd2tJYzRTd1h5QT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4M2M0ZWE4LTBmMmEtNDUyMy04NTFjLWZiZWNjZGMwZjIwMiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiSHFoK1BCNVU1OStvclMzVGVZQ2lOUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4NjhjNzAyLWM3MWItNDA2NC1hZTJiLWMyNGY3Y2MxMDc5MiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiLy9nM2pmdktjUlliaHBwRW04c3BqUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.09GZO7pokr1k24NXKxIV7qyEZ2lhtbpfMoKfP7vzSns";
 // "CMAF H265 SingleKey" from the same table, for the HEVC check.
 NSString* const kHevcBase = @"https://media.axprod.net/TestVectors/H265/protected_cmaf_1080p_h265_singlekey/";
 NSString* const kHevcToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImFiY2M0NGU1LWMxMjItNDVhYi1hYzgwLWE1YjM1MjJhMGEzMSIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAibGs1aERneXl1NXl6a3QzMWlVWmF4UT09IiwKICAgICAgICAiaXYiOiAiczhnNHNFemp4Yml2R1pDVGxxU3pQQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.lAwTqoU-rkmyk8QtSn0RrsleMefe2Y5-E5YGoala7yM";
@@ -424,13 +428,18 @@ std::unique_ptr<KeySystem> MakeKeySystem(const std::string& name, NSString* toke
 // that the renderer can find a key for the content's key ID.
 void AcquireLicense(KeySystem* ks, fp::InitDataType type, std::vector<uint8_t> init_data,
                     const std::string& label, std::function<void(bool)> done,
-                    std::vector<uint8_t> key_id = g_key_id) {
+                    std::vector<std::vector<uint8_t>> key_ids = {g_key_id}) {
   auto finish = Once(30, label + ": license", done);
   ks->client->json = type == fp::InitDataType::kCenc || type == fp::InitDataType::kKeyIds;
-  ks->client->on_update = [ks, label, finish, key_id](bool ok, const std::string& detail) {
+  ks->client->on_update = [ks, label, finish, key_ids](bool ok, const std::string& detail) {
     Check(ok, label + ": update resolves after the license server round trip", detail);
-    bool usable = ks->cdm->HasUsableKey(key_id);
-    Check(usable, label + ": renderer-side key lookup finds the content key " + ft::Hex(key_id),
+    bool usable = true;
+    std::string names;
+    for (const auto& key_id : key_ids) {
+      usable &= ks->cdm->HasUsableKey(key_id);
+      names += (names.empty() ? "" : ", ") + ft::Hex(key_id);
+    }
+    Check(usable, label + ": renderer-side key lookup finds every content key (" + names + ")",
           KeysText(ks->client->keys));
     finish(ok && usable);
   };
@@ -902,8 +911,7 @@ void SelfTests(const Media& video, const Media& audio) {
 // ISOFairPlayStreamingPsshBox parses it: fpsd { fpsi(scheme), fpsk { fkri(key
 // ID), fkai(asset ID), fkvl(versions) } }. The vector itself carries only
 // PlayReady and Widevine boxes.
-std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t scheme,
-                                  const std::string& asset_id) {
+std::vector<uint8_t> FairPlayPssh(const std::vector<std::vector<uint8_t>>& key_ids, uint32_t scheme) {
   auto full = [](uint32_t type, std::vector<uint8_t> payload) {
     payload.insert(payload.begin(), {0, 0, 0, 0});
     return fp::MakeBox(type, payload);
@@ -915,21 +923,28 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
     a.insert(a.end(), b.begin(), b.end());
     return a;
   };
-  std::vector<uint8_t> fpsk = cat(cat(full(fp::FourCC('f', 'k', 'r', 'i'), key_id),
-                                      fp::MakeBox(fp::FourCC('f', 'k', 'a', 'i'), Bytes(asset_id))),
-                                  fp::MakeBox(fp::FourCC('f', 'k', 'v', 'l'), be32(1)));
-  std::vector<uint8_t> fpsd = fp::MakeBox(
-      fp::FourCC('f', 'p', 's', 'd'),
-      cat(full(fp::FourCC('f', 'p', 's', 'i'), be32(scheme)), fp::MakeBox(fp::FourCC('f', 'p', 's', 'k'), fpsk)));
+  std::vector<uint8_t> fpsd_payload = full(fp::FourCC('f', 'p', 's', 'i'), be32(scheme));
+  for (const auto& key_id : key_ids) {
+    std::string asset = ft::Hex(key_id);
+    std::vector<uint8_t> fpsk = cat(cat(full(fp::FourCC('f', 'k', 'r', 'i'), key_id),
+                                        fp::MakeBox(fp::FourCC('f', 'k', 'a', 'i'), Bytes(asset))),
+                                    fp::MakeBox(fp::FourCC('f', 'k', 'v', 'l'), be32(1)));
+    fpsd_payload = cat(fpsd_payload, fp::MakeBox(fp::FourCC('f', 'p', 's', 'k'), fpsk));
+  }
+  std::vector<uint8_t> fpsd = fp::MakeBox(fp::FourCC('f', 'p', 's', 'd'), fpsd_payload);
   std::vector<uint8_t> payload(fp::kFairPlaySystemId, fp::kFairPlaySystemId + 16);
   payload = cat(cat(payload, be32(uint32_t(fpsd.size()))), fpsd);
   return full(fp::FourCC('p', 's', 's', 'h'), payload);
 }
 
+std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t scheme) {
+  return FairPlayPssh(std::vector<std::vector<uint8_t>>{key_id}, scheme);
+}
+
 // --------------------------------------------------------------- scenarios
 
 struct World {
-  Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio;
+  Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
   std::vector<std::unique_ptr<KeySystem>> retired;
@@ -1211,6 +1226,80 @@ std::vector<Step> InitDataScenario(fp::InitDataType type, std::vector<uint8_t> i
   return steps;
 }
 
+// Netflix's flow: one generateRequest("cenc") naming three keys, one JSON
+// message carrying three SPCs, one JSON response with three CKCs, then video
+// and audio under different keys. |with_fairplay| adds a FairPlay pssh for the
+// three keys to the vector's PlayReady/Widevine boxes (Netflix's init data
+// carries one); without it the core falls back to the Widevine key IDs.
+std::vector<Step> MultiKeyScenario(bool with_fairplay) {
+  World* w = g_world;
+  std::string label = with_fairplay ? "multikey cenc+fairplay pssh" : "multikey cenc (widevine key IDs)";
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  auto acquired = std::make_shared<bool>(false);
+  auto frames = std::make_shared<int64_t>(0);
+  std::vector<Step> steps;
+  steps.push_back(Section(label + ": three keys in one session, video and audio under different keys"));
+  steps.push_back([=](Done done) {
+    std::vector<std::vector<uint8_t>> key_ids;
+    auto boxes = fp::ParsePsshBoxes(w->multi_video.info.pssh_boxes);
+    for (const auto& box : *boxes) {
+      for (const auto& id : fp::KeyIdsFromPssh(box)) key_ids.push_back(id);
+    }
+    const auto& video_key = w->multi_video.info.encryption.default_key_id;
+    const auto& audio_key = w->multi_audio.info.encryption.default_key_id;
+    Check(key_ids.size() == 3 && video_key != audio_key,
+          label + ": vector names three key IDs; video and audio use different ones",
+          "video " + ft::Hex(video_key) + ", audio " + ft::Hex(audio_key));
+    std::vector<uint8_t> init_data = w->multi_video.info.pssh_boxes;
+    if (with_fairplay) {
+      std::vector<uint8_t> fairplay = FairPlayPssh(key_ids, fp::FourCC('c', 'b', 'c', 's'));
+      init_data.insert(init_data.end(), fairplay.begin(), fairplay.end());
+    }
+    Log("%s: cenc init data %zu bytes", label.c_str(), init_data.size());
+    *keys = MakeKeySystem(label, kMultiKeyToken);
+    int messages_before = 0;
+    AcquireLicense(keys->get(), fp::InitDataType::kCenc, init_data, label,
+                   [=](bool ok) {
+                     *acquired = ok;
+                     KeySystem* ks = keys->get();
+                     Check(ks->client->messages == messages_before + 1 && ks->client->keys.size() == 3,
+                           label + ": one license message for all three keys, three keys reported",
+                           Format("%d message(s), [%s]", ks->client->messages, KeysText(ks->client->keys).c_str()));
+                     done();
+                   },
+                   key_ids);
+  });
+  steps.push_back([=](Done done) {
+    if (!*acquired) {
+      done();
+      return;
+    }
+    w->player = std::make_shared<Player>(label, Framing::kChromium, w->multi_video, w->multi_audio,
+                                         (*keys)->cdm.get(), w->host);
+    StartAt(w->player, &w->multi_video, &w->multi_audio, 0, 2, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) {
+    if (!*acquired) {
+      done();
+      return;
+    }
+    Run(w->player, 4, 1, label + " play 4s")(done);
+  });
+  steps.push_back([=](Done done) {
+    if (!*acquired) {
+      done();
+      return;
+    }
+    Metrics(w->player, label, 80, frames)(done);
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> HevcScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -1231,7 +1320,7 @@ std::vector<Step> HevcScenario() {
                      *acquired = ok;
                      done();
                    },
-                   key_id);
+                   {key_id});
   });
   steps.push_back([=](Done done) {
     if (!*acquired) {
@@ -1297,13 +1386,24 @@ void Finish() {
 
 void RunAll() {
   World* w = g_world;
+  Check(fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps") &&
+            fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.1_0") &&
+            fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.2_0") &&
+            fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.3_0") &&
+            !fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.") &&
+            !fp::FairPlayCdm::IsKeySystemSupported("com.apple.fpsx") &&
+            !fp::FairPlayCdm::IsKeySystemSupported("COM.APPLE.FPS") &&
+            !fp::FairPlayCdm::IsKeySystemSupported("com.widevine.alpha") &&
+            fp::FairPlayCdm::IsInitDataTypeSupported("cenc") &&
+            !fp::FairPlayCdm::IsInitDataTypeSupported("webm"),
+        "key system names: com.apple.fps and com.apple.fps.<version> (case-sensitive); cenc init data");
   Check(fp::FairPlayCdm::IsSupported(), "FairPlayCdm::IsSupported on this Mac",
         NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
   SelfTests(w->video, w->audio);
   {
     std::vector<uint8_t> boxes = w->video.info.pssh_boxes;
     std::vector<uint8_t> fairplay =
-        FairPlayPssh(g_key_id, fp::FourCC('c', 'b', 'c', 's'), "302f80dd-411e-4886-bca5-bb1f8018a024");
+        FairPlayPssh(g_key_id, fp::FourCC('c', 'b', 'c', 's'));
     boxes.insert(boxes.end(), fairplay.begin(), fairplay.end());
     auto plan = fp::PlanContentKeyRequests(fp::InitDataType::kCenc, boxes);
     NSDictionary* json = plan.calls.size() == 1
@@ -1347,9 +1447,11 @@ void RunAll() {
   // as {"pssh": ...}) runs.
   std::vector<uint8_t> with_fairplay = w->video.info.pssh_boxes;
   std::vector<uint8_t> fairplay =
-      FairPlayPssh(g_key_id, fp::FourCC('c', 'b', 'c', 's'), "302f80dd-411e-4886-bca5-bb1f8018a024");
+      FairPlayPssh(g_key_id, fp::FourCC('c', 'b', 'c', 's'));
   with_fairplay.insert(with_fairplay.end(), fairplay.begin(), fairplay.end());
   for (Step& s : InitDataScenario(fp::InitDataType::kCenc, with_fairplay)) steps.push_back(s);
+  for (Step& s : MultiKeyScenario(true)) steps.push_back(s);
+  for (Step& s : MultiKeyScenario(false)) steps.push_back(s);
   for (Step& s : HevcScenario()) steps.push_back(s);
   for (Step& s : CloseScenario()) steps.push_back(s);
   Sequence(steps, Finish);
@@ -1401,7 +1503,9 @@ int main(int argc, char** argv) {
                 LoadMedia(kClearBase, video_playlist, 1, &world.clear_video, &error) &&
                 LoadMedia(kClearBase, @"audio-en.m3u8", 1, &world.clear_audio, &error) &&
                 LoadMedia(kHevcBase, @"video-H265-720-2100k.m3u8", 2, &world.hevc_video, &error) &&
-                LoadMedia(kHevcBase, @"audio-en.m3u8", 2, &world.hevc_audio, &error);
+                LoadMedia(kHevcBase, @"audio-en.m3u8", 2, &world.hevc_audio, &error) &&
+                LoadMedia(kMultiKeyBase, video_playlist, 2, &world.multi_video, &error) &&
+                LoadMedia(kMultiKeyBase, @"audio-en.m3u8", 2, &world.multi_audio, &error);
       dispatch_async(dispatch_get_main_queue(), ^{
         if (!Check(ok, "download and parse the Axinom vector", error)) Finish();
         g_certificate = Bytes(certificate);
