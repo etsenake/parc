@@ -57,9 +57,28 @@ std::vector<uint8_t> TrackEncryptionBoxPayload(const TrackEncryption& tenc);
 std::vector<uint8_t> ProtectionSchemeInfoPayload(uint32_t original_format,
                                                  const TrackEncryption& tenc);
 
-// AAC magic cookie in the layout AVStreamDataParser produces: an 'esds' atom
-// header followed directly by the ES_Descriptor (no version/flags).
-std::vector<uint8_t> AacMagicCookie(const std::vector<uint8_t>& audio_specific_config);
+// 'esds' FullBox payload (version/flags + ES_Descriptor) for an AAC
+// AudioSpecificConfig of any object type (LC, HE-AAC, HE-AACv2, xHE-AAC).
+std::vector<uint8_t> AacEsdsPayload(const std::vector<uint8_t>& audio_specific_config);
+
+// ISO/IEC 14496-12 VisualSampleEntry (box header included) of |type| with
+// |children| (decoder configuration and other boxes) appended.
+std::vector<uint8_t> VisualSampleEntry(uint32_t type,
+                                       uint16_t width,
+                                       uint16_t height,
+                                       const std::vector<std::vector<uint8_t>>& children);
+
+// AudioSampleEntry (version 0, box header included) with |children|.
+std::vector<uint8_t> AudioSampleEntry(uint32_t type,
+                                      uint16_t channels,
+                                      uint32_t sample_rate,
+                                      const std::vector<std::vector<uint8_t>>& children);
+
+// The protected form of a clear sample entry (ISO/IEC 23001-7): renamed to
+// 'encv'/'enca' with a 'sinf' (frma = original type, schm, schi/tenc) appended.
+std::vector<uint8_t> ProtectSampleEntry(const std::vector<uint8_t>& entry,
+                                        bool video,
+                                        const TrackEncryption& tenc);
 
 // Wraps |payload| in an ISO box header.
 std::vector<uint8_t> MakeBox(uint32_t type, const std::vector<uint8_t>& payload);

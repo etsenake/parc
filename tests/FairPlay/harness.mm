@@ -240,6 +240,126 @@ bool LoadMedia(NSString* base, NSString* playlist_name, int count, Media* media,
   return true;
 }
 
+// Chromium's own media test files (media/test/data at the pinned tag): one
+// fragmented MP4 holding the init segment and its fragments.
+NSString* const kChromiumTestData =
+    @"https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.48/media/test/data/";
+
+bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
+  NSString* path = [g_cache_dir stringByAppendingPathComponent:[@"chromium_" stringByAppendingString:name]];
+  NSData* data = [NSData dataWithContentsOfFile:path];
+  if (!data) {
+    Http http = Fetch([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name], @"GET", nil, @{});
+    data = http.status == 200 ? [[NSData alloc] initWithBase64EncodedData:http.body
+                                                                  options:NSDataBase64DecodingIgnoreUnknownCharacters]
+                              : nil;
+    if (!data) {
+      *error = Format("GET %s -> %ld", name.UTF8String, http.status);
+      return false;
+    }
+    [data writeToFile:path atomically:YES];
+  }
+  std::vector<ft::Sample> samples;
+  if (!ft::ParseInitSegment(Bytes(data), &media->info, error) ||
+      !ft::ParseMediaSegment(Bytes(data), media->info, &samples, error) ||
+      (samples.empty() && !ft::ParseProgressiveFile(Bytes(data), media->info, &samples, error))) {
+    *error = std::string(name.UTF8String) + ": " + *error;
+    return false;
+  }
+  media->segments.push_back(std::move(samples));
+  return true;
+}
+
+struct EncodeState {
+  double phase_l = 0;
+  double phase_r = 0;
+  int64_t remaining = 0;
+  std::vector<float> buffer;
+};
+
+OSStatus ProvidePcm(AudioConverterRef, UInt32* packets, AudioBufferList* data,
+                    AudioStreamPacketDescription**, void* user) {
+  auto* state = static_cast<EncodeState*>(user);
+  UInt32 frames = std::min<UInt32>(*packets, UInt32(std::min<int64_t>(state->remaining, 4096)));
+  state->buffer.resize(size_t(frames) * 2);
+  for (UInt32 i = 0; i < frames; ++i) {
+    state->buffer[2 * i] = float(0.3 * std::sin(state->phase_l));
+    state->buffer[2 * i + 1] = float(0.3 * std::sin(state->phase_r));
+    state->phase_l += 2 * M_PI * 440 / 44100;
+    state->phase_r += 2 * M_PI * 660 / 44100;
+  }
+  state->remaining -= frames;
+  *packets = frames;
+  data->mBuffers[0].mData = state->buffer.data();
+  data->mBuffers[0].mDataByteSize = frames * 8;
+  data->mBuffers[0].mNumberChannels = 2;
+  return noErr;
+}
+
+// HE-AAC / HE-AACv2 track encoded with AudioToolbox (no such MP4 sample is in
+// Chromium's test data): 44.1 kHz stereo tones, packets and the encoder's
+// AudioSpecificConfig, as an MP4 parser would hand them over.
+bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* error) {
+  AudioStreamBasicDescription in = {44100, kAudioFormatLinearPCM,
+                                    kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked, 8, 1, 8, 2, 32, 0};
+  AudioStreamBasicDescription out = {};
+  out.mFormatID = format;
+  out.mSampleRate = 44100;
+  out.mChannelsPerFrame = 2;
+  UInt32 size = sizeof(out);
+  AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, nullptr, &size, &out);
+  AudioConverterRef converter = nullptr;
+  OSStatus status = AudioConverterNew(&in, &out, &converter);
+  if (status != noErr) {
+    *error = Format("AudioConverterNew %d", int(status));
+    return false;
+  }
+  size = sizeof(out);
+  AudioConverterGetProperty(converter, kAudioConverterCurrentOutputStreamDescription, &size, &out);
+  UInt32 max_packet = 0;
+  size = sizeof(max_packet);
+  AudioConverterGetProperty(converter, kAudioConverterPropertyMaximumOutputPacketSize, &size, &max_packet);
+  EncodeState state;
+  state.remaining = int64_t(seconds * 44100);
+  std::vector<uint8_t> buffer(size_t(max_packet) * 16);
+  std::vector<AudioStreamPacketDescription> descriptions(16);
+  std::vector<ft::Sample> samples;
+  int64_t pts = 0;
+  for (;;) {
+    UInt32 packets = 16;
+    AudioBufferList list = {1, {{2, UInt32(buffer.size()), buffer.data()}}};
+    status = AudioConverterFillComplexBuffer(converter, ProvidePcm, &state, &packets, &list, descriptions.data());
+    if (status != noErr || packets == 0) break;
+    for (UInt32 i = 0; i < packets; ++i) {
+      const AudioStreamPacketDescription& d = descriptions[i];
+      ft::Sample sample;
+      sample.data.assign(buffer.begin() + d.mStartOffset, buffer.begin() + d.mStartOffset + d.mDataByteSize);
+      sample.pts = sample.dts = pts;
+      sample.duration = out.mFramesPerPacket;
+      sample.is_keyframe = true;
+      pts += out.mFramesPerPacket;
+      samples.push_back(std::move(sample));
+    }
+  }
+  UInt32 cookie_size = 0;
+  AudioConverterGetPropertyInfo(converter, kAudioConverterCompressionMagicCookie, &cookie_size, nullptr);
+  std::vector<uint8_t> cookie(cookie_size);
+  AudioConverterGetProperty(converter, kAudioConverterCompressionMagicCookie, &cookie_size, cookie.data());
+  AudioConverterDispose(converter);
+  media->info.is_video = false;
+  media->info.timescale = uint32_t(out.mSampleRate);
+  media->info.sample_entry = media->info.original_format = fp::FourCC('m', 'p', '4', 'a');
+  media->info.channels = 2;
+  media->info.sample_rate = uint32_t(out.mSampleRate);
+  media->info.codec_config = ft::AscFromDescriptor(cookie.data(), cookie.size());
+  if (media->info.codec_config.empty() || samples.empty()) {
+    *error = Format("encoder produced %zu packets, %zu-byte cookie", samples.size(), cookie.size());
+    return false;
+  }
+  media->segments.push_back(std::move(samples));
+  return true;
+}
+
 // -------------------------------------------------------- async sequencing
 
 using Done = std::function<void()>;
@@ -458,34 +578,61 @@ enum class Framing { kChromium, kIso };
 
 using SegmentList = std::vector<const std::vector<ft::Sample>*>;
 
+fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing) {
+  fp::VideoConfig vc;
+  const uint32_t f = info.original_format;
+  if (f == fp::FourCC('h', 'v', 'c', '1') || f == fp::FourCC('h', 'e', 'v', '1')) {
+    vc.codec = fp::VideoCodec::kHEVC;
+  } else if (f == fp::FourCC('d', 'v', 'h', '1') || f == fp::FourCC('d', 'v', 'h', 'e')) {
+    vc.codec = fp::VideoCodec::kDolbyVision;
+  } else if (f == fp::FourCC('a', 'v', '0', '1')) {
+    vc.codec = fp::VideoCodec::kAV1;
+  } else {
+    vc.codec = fp::VideoCodec::kH264;
+  }
+  vc.sample_entry = f;
+  vc.extra_data = info.codec_config;
+  vc.dolby_vision_config = info.dolby_vision_config;
+  // Chromium hands AV1 over as stored, everything else as Annex B.
+  vc.format = framing == Framing::kChromium && vc.codec != fp::VideoCodec::kAV1
+                  ? fp::BitstreamFormat::kAnnexB
+                  : fp::BitstreamFormat::kLengthPrefixed;
+  vc.coded_width = info.width;
+  vc.coded_height = info.height;
+  vc.encryption = info.encryption;
+  return vc;
+}
+
+fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing) {
+  fp::AudioConfig ac;
+  ac.codec = fp::AudioCodec::kAAC;
+  ac.extra_data = info.codec_config;
+  ac.framing = framing == Framing::kChromium && ft::AacObjectType(info.codec_config, true) <= 4
+                   ? fp::AudioFraming::kADTS
+                   : fp::AudioFraming::kRaw;
+  ac.sample_rate = int32_t(info.sample_rate);
+  ac.channels = info.channels;
+  ac.encryption = info.encryption;
+  return ac;
+}
+
 class Player : public fp::FairPlayRendererClient {
  public:
-  Player(std::string name, Framing framing, const Media& video, const Media& audio,
+  // Either stream may be null (single-stream codec checks).
+  Player(std::string name, Framing framing, const Media* video, const Media* audio,
          fp::FairPlayCdm* cdm, NSView* host)
       : name_(std::move(name)),
         framing_(framing),
-        video_info_(video.info),
-        audio_info_(audio.info),
+        has_video_(video != nullptr),
+        has_audio_(audio != nullptr),
+        video_info_(video ? video->info : ft::TrackInfo()),
+        audio_info_(audio ? audio->info : ft::TrackInfo()),
         renderer_(this, MainPoster()),
         host_(host) {
-    fp::VideoConfig vc;
-    vc.codec = video_info_.original_format == fp::FourCC('h', 'v', 'c', '1') ||
-                       video_info_.original_format == fp::FourCC('h', 'e', 'v', '1')
-                   ? fp::VideoCodec::kHEVC
-                   : fp::VideoCodec::kH264;
-    vc.extra_data = video_info_.codec_config;
-    vc.format = framing == Framing::kChromium ? fp::BitstreamFormat::kAnnexB
-                                              : fp::BitstreamFormat::kLengthPrefixed;
-    vc.coded_width = video_info_.width;
-    vc.coded_height = video_info_.height;
-    vc.encryption = video_info_.encryption;
-    fp::AudioConfig ac;
-    ac.codec = fp::AudioCodec::kAAC;
-    ac.extra_data = audio_info_.codec_config;
-    ac.framing = framing == Framing::kChromium ? fp::AudioFraming::kADTS : fp::AudioFraming::kRaw;
-    ac.sample_rate = int32_t(audio_info_.sample_rate);
-    ac.channels = audio_info_.channels;
-    ac.encryption = audio_info_.encryption;
+    std::optional<fp::VideoConfig> vc;
+    if (has_video_) vc = VideoConfigFor(video_info_, framing);
+    std::optional<fp::AudioConfig> ac;
+    if (has_audio_) ac = AudioConfigFor(audio_info_, framing);
     fp::Result result = renderer_.Initialize(vc, ac);
     Check(result.ok(), name_ + ": renderer Initialize", result.message);
     result = renderer_.SetCdm(cdm);
@@ -493,7 +640,7 @@ class Player : public fp::FairPlayRendererClient {
                        "key system's AVContentKeySession as content key recipients",
           result.message);
     layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
-    Check(layer_ != nil, name_ + ": display layer exists");
+    if (has_video_) Check(layer_ != nil, name_ + ": display layer exists");
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer_.frame = host_.layer.bounds;
@@ -518,6 +665,8 @@ class Player : public fp::FairPlayRendererClient {
 
   fp::FairPlayRenderer& renderer() { return renderer_; }
   const std::string& name() const { return name_; }
+  bool has_video() const { return has_video_; }
+  bool has_audio() const { return has_audio_; }
   std::vector<std::string> errors;
   int waiting_events = 0;
   int waiting_results = 0;
@@ -607,6 +756,7 @@ class Player : public fp::FairPlayRendererClient {
   };
 
   void Pump(fp::StreamType stream) {
+    if (!(stream == fp::StreamType::kVideo ? has_video_ : has_audio_)) return;
     Feed& feed = stream == fp::StreamType::kVideo ? video_feed_ : audio_feed_;
     const ft::TrackInfo& info = stream == fp::StreamType::kVideo ? video_info_ : audio_info_;
     while (renderer_.IsReadyForMoreData(stream)) {
@@ -643,6 +793,8 @@ class Player : public fp::FairPlayRendererClient {
 
   std::string name_;
   Framing framing_;
+  bool has_video_;
+  bool has_audio_;
   ft::TrackInfo video_info_;
   ft::TrackInfo audio_info_;
   fp::FairPlayRenderer renderer_;
@@ -684,14 +836,23 @@ Step StartAt(std::shared_ptr<Player> player, const Media* video, const Media* au
 
 void CheckHealthy(Player& player, const std::string& label) {
   fp::RendererStatus s = player.renderer().GetStatus();
-  Check(s.video == fp::RenderingStatus::kRendering, label + ": video renderer status is rendering",
-        StatusName(s.video) + std::string(" ") + s.video_error);
-  Check(s.audio == fp::RenderingStatus::kRendering, label + ": audio renderer status is rendering",
-        StatusName(s.audio) + std::string(" ") + s.audio_error);
+  if (player.has_video()) {
+    Check(s.video == fp::RenderingStatus::kRendering, label + ": video renderer status is rendering",
+          StatusName(s.video) + std::string(" ") + s.video_error);
+  }
+  if (player.has_audio()) {
+    Check(s.audio == fp::RenderingStatus::kRendering, label + ": audio renderer status is rendering",
+          StatusName(s.audio) + std::string(" ") + s.audio_error);
+  }
   Check(s.decode_failures == 0 && player.errors.empty(),
         label + ": no decode, key or enqueue errors",
         player.errors.empty() ? Format("decode failures %llu", s.decode_failures) : player.errors.front());
-  Check(!s.output_obscured, label + ": output not obscured for insufficient protection");
+  // Screen capture or an unprotected display makes AVFoundation obscure
+  // protected output; that's protection working, not a playback failure.
+  if (s.output_obscured) {
+    Log("%s: NOTE output obscured for insufficient external protection (screen capture or display)",
+        label.c_str());
+  }
 }
 
 // Plays for |seconds| and checks the synchronizer clock moved by rate * seconds.
@@ -764,18 +925,60 @@ void SelfTests(const Media& video, const Media& audio) {
             std::equal(tenc.begin(), tenc.end(), v.sinf_payload.end() - 41),
         "core: tenc payload is the 41 bytes AVStreamDataParser reports");
 
-  // AAC cookie: CoreAudio derives the stream format from it.
-  std::vector<uint8_t> cookie = fp::AacMagicCookie(a.codec_config);
-  AudioStreamBasicDescription asbd = {};
-  asbd.mFormatID = kAudioFormatMPEG4AAC;
-  UInt32 size = sizeof(asbd);
-  OSStatus status = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, UInt32(cookie.size()),
-                                           cookie.data(), &size, &asbd);
-  Check(status == noErr && asbd.mSampleRate == a.sample_rate && asbd.mChannelsPerFrame == a.channels &&
-            asbd.mFramesPerPacket == 1024,
-        "core: AAC magic cookie ('esds' + ES_Descriptor) decodes to the track format",
-        Format("status %d, %.0f Hz %u ch %u frames/packet", int(status), asbd.mSampleRate,
-               asbd.mChannelsPerFrame, asbd.mFramesPerPacket));
+  // The core's synthesized protected sample entries, through CoreMedia's
+  // public converter, give the same format descriptions as the file's own
+  // encv/enca entries.
+  auto same_format = [&](const ft::TrackInfo& t, const char* label) {
+    CMFormatDescriptionRef ours = nullptr;
+    CMFormatDescriptionRef file = nullptr;
+    std::vector<uint8_t> entry;
+    if (t.is_video) {
+      entry = fp::ProtectSampleEntry(
+          fp::VisualSampleEntry(t.original_format, t.width, t.height,
+                                {fp::MakeBox(fp::FourCC('a', 'v', 'c', 'C'), t.codec_config)}),
+          true, t.encryption);
+      CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+          nullptr, entry.data(), entry.size(), kCFStringEncodingUTF8, kCMImageDescriptionFlavor_ISOFamily, &ours);
+      CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+          nullptr, t.sample_entry_box.data(), t.sample_entry_box.size(), kCFStringEncodingUTF8,
+          kCMImageDescriptionFlavor_ISOFamily, &file);
+    } else {
+      entry = fp::ProtectSampleEntry(
+          fp::AudioSampleEntry(t.original_format, t.channels, t.sample_rate,
+                               {fp::MakeBox(fp::FourCC('e', 's', 'd', 's'), fp::AacEsdsPayload(t.codec_config))}),
+          false, t.encryption);
+      CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData(
+          nullptr, entry.data(), entry.size(), kCMSoundDescriptionFlavor_ISOFamily, &ours);
+      CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData(
+          nullptr, t.sample_entry_box.data(), t.sample_entry_box.size(), kCMSoundDescriptionFlavor_ISOFamily, &file);
+    }
+    bool same = ours && file && CMFormatDescriptionGetMediaSubType(ours) == CMFormatDescriptionGetMediaSubType(file);
+    for (NSString* key in @[ @"CommonEncryptionOriginalFormat", @"CommonEncryptionProtected",
+                             @"CommonEncryptionTrackEncryptionBox" ]) {
+      same = same && [(__bridge id)CMFormatDescriptionGetExtension(ours, (__bridge CFStringRef)key)
+                         isEqual:(__bridge id)CMFormatDescriptionGetExtension(file, (__bridge CFStringRef)key)];
+    }
+    NSDictionary* a = ours ? (__bridge NSDictionary*)CMFormatDescriptionGetExtension(
+                                 ours, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms)
+                           : nil;
+    NSDictionary* b = file ? (__bridge NSDictionary*)CMFormatDescriptionGetExtension(
+                                 file, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms)
+                           : nil;
+    same = same && [a[@"sinf"] isEqual:b[@"sinf"]] && (!t.is_video || [a[@"avcC"] isEqual:b[@"avcC"]]);
+    if (same && !t.is_video) {
+      const AudioStreamBasicDescription* x = CMAudioFormatDescriptionGetStreamBasicDescription(ours);
+      const AudioStreamBasicDescription* y = CMAudioFormatDescriptionGetStreamBasicDescription(file);
+      same = x->mFormatID == y->mFormatID && x->mSampleRate == y->mSampleRate &&
+             x->mChannelsPerFrame == y->mChannelsPerFrame && x->mFramesPerPacket == y->mFramesPerPacket;
+    }
+    Check(same, std::string("core: synthesized protected ") + label +
+                    " sample entry converts to the same format description as the file's own entry",
+          ours ? ft::FourCCString(CMFormatDescriptionGetMediaSubType(ours)) : "no format description");
+    if (ours) CFRelease(ours);
+    if (file) CFRelease(file);
+  };
+  same_format(v, "video");
+  same_format(a, "audio");
 
   // Parser: senc and saiz/saio agree (ParseMediaSegment refuses otherwise),
   // subsamples cover every video sample.
@@ -945,6 +1148,7 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
 
 struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
+  Media hev1, hev1_in_band, dolby_vision, av1, xhe_aac, he_aac, he_aac_v2;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
   std::vector<std::unique_ptr<KeySystem>> retired;
@@ -968,7 +1172,7 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   std::vector<Step> steps;
   steps.push_back(Section(name + " framing: play / pause / rate / seek / end of stream"));
   steps.push_back([=](Done done) {
-    w->player = std::make_shared<Player>(name, framing, w->video, w->audio, w->main_keys->cdm.get(), w->host);
+    w->player = std::make_shared<Player>(name, framing, &w->video, &w->audio, w->main_keys->cdm.get(), w->host);
     done();
   });
   auto& p = w->player;  // Captured by reference to the World slot below.
@@ -1061,7 +1265,7 @@ std::vector<Step> MixedScenario() {
   std::vector<Step> steps;
   steps.push_back(Section("clear lead: segment 0 from the clear variant, then protected samples"));
   steps.push_back([=](Done done) {
-    w->player = std::make_shared<Player>("mixed", Framing::kChromium, w->video, w->audio,
+    w->player = std::make_shared<Player>("mixed", Framing::kChromium, &w->video, &w->audio,
                                          w->main_keys->cdm.get(), w->host);
     w->player->renderer().Flush([=] {
       SegmentList video{&w->clear_video.segments[0], &w->video.segments[1], &w->video.segments[2]};
@@ -1104,7 +1308,7 @@ std::vector<Step> UnderflowScenario() {
   std::vector<Step> steps;
   steps.push_back(Section("underflow: data runs out mid-playback, then more arrives"));
   steps.push_back([=](Done done) {
-    w->player = std::make_shared<Player>("underflow", Framing::kChromium, w->video, w->audio,
+    w->player = std::make_shared<Player>("underflow", Framing::kChromium, &w->video, &w->audio,
                                          w->main_keys->cdm.get(), w->host);
     StartAt(w->player, &w->video, &w->audio, 0, 1, 0, 1, false)(done);
   });
@@ -1149,7 +1353,7 @@ std::vector<Step> WaitingForKeyScenario() {
   steps.push_back(Section("samples before keys: renderer holds them, then attaches keys when they arrive"));
   steps.push_back([=](Done done) {
     *keys = MakeKeySystem("late-keys");
-    w->player = std::make_shared<Player>("late", Framing::kChromium, w->video, w->audio, (*keys)->cdm.get(), w->host);
+    w->player = std::make_shared<Player>("late", Framing::kChromium, &w->video, &w->audio, (*keys)->cdm.get(), w->host);
     w->player->renderer().Flush([=] {
       w->player->SetFeeds(Segments(w->video, 0, 3), Segments(w->audio, 0, 3), false);
       w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
@@ -1208,7 +1412,7 @@ std::vector<Step> InitDataScenario(fp::InitDataType type, std::vector<uint8_t> i
       done();
       return;
     }
-    w->player = std::make_shared<Player>(label, Framing::kChromium, w->video, w->audio, (*keys)->cdm.get(), w->host);
+    w->player = std::make_shared<Player>(label, Framing::kChromium, &w->video, &w->audio, (*keys)->cdm.get(), w->host);
     StartAt(w->player, &w->video, &w->audio, 0, 2, 0, 1, false)(done);
   });
   steps.push_back([=](Done done) {
@@ -1274,7 +1478,7 @@ std::vector<Step> MultiKeyScenario(bool with_fairplay) {
       done();
       return;
     }
-    w->player = std::make_shared<Player>(label, Framing::kChromium, w->multi_video, w->multi_audio,
+    w->player = std::make_shared<Player>(label, Framing::kChromium, &w->multi_video, &w->multi_audio,
                                          (*keys)->cdm.get(), w->host);
     StartAt(w->player, &w->multi_video, &w->multi_audio, 0, 2, 0, 1, false)(done);
   });
@@ -1327,7 +1531,7 @@ std::vector<Step> HevcScenario() {
       done();
       return;
     }
-    w->player = std::make_shared<Player>("hevc", Framing::kChromium, w->hevc_video, w->hevc_audio,
+    w->player = std::make_shared<Player>("hevc", Framing::kChromium, &w->hevc_video, &w->hevc_audio,
                                          (*keys)->cdm.get(), w->host);
     StartAt(w->player, &w->hevc_video, &w->hevc_audio, 0, 2, 0, 1, false)(done);
   });
@@ -1348,6 +1552,167 @@ std::vector<Step> HevcScenario() {
   steps.push_back([=](Done done) {
     w->player.reset();
     w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
+// An hev1 stream whose hvcC has no parameter sets: the VPS/SPS/PPS move into
+// every keyframe, as such streams carry them.
+Media InBandParameterSetsOnly(const Media& media) {
+  Media out = media;
+  const std::vector<uint8_t>& record = media.info.codec_config;
+  size_t length_size = (record[21] & 3) + 1;
+  std::vector<uint8_t> prefix;
+  size_t pos = 23;
+  for (uint8_t a = 0; a < record[22] && pos + 3 <= record.size(); ++a) {
+    uint8_t type = record[pos] & 0x3f;
+    uint32_t count = (record[pos + 1] << 8) | record[pos + 2];
+    pos += 3;
+    for (uint32_t k = 0; k < count; ++k) {
+      size_t len = (record[pos] << 8) | record[pos + 1];
+      if (type >= 32 && type <= 34) {
+        for (size_t b = length_size; b-- > 0;) prefix.push_back(uint8_t(len >> (8 * b)));
+        prefix.insert(prefix.end(), record.begin() + pos + 2, record.begin() + pos + 2 + len);
+      }
+      pos += 2 + len;
+    }
+  }
+  out.info.codec_config.assign(record.begin(), record.begin() + 23);
+  out.info.codec_config[22] = 0;
+  for (auto& segment : out.segments) {
+    for (ft::Sample& sample : segment) {
+      if (sample.is_keyframe) sample.data.insert(sample.data.begin(), prefix.begin(), prefix.end());
+    }
+  }
+  return out;
+}
+
+double EndSeconds(const Media& media) {
+  double end = 0;
+  for (const auto& segment : media.segments) {
+    for (const ft::Sample& s : segment) end = std::max(end, double(s.pts + s.duration) / media.info.timescale);
+  }
+  return end;
+}
+
+size_t SampleCount(const Media& media) {
+  size_t count = 0;
+  for (const auto& segment : media.segments) count += segment.size();
+  return count;
+}
+
+// A codec Netflix uses, through the renderer's clear path with Chromium's
+// framing, played to OnEnded; then the protected format description the
+// renderer builds for it (Apple's FairPlay type). No FairPlay-protected sample
+// of these codecs is public, so protected decode stays unproven.
+std::vector<Step> CodecScenario(const std::string& label, const Media* video, const Media* audio,
+                                const std::string& protected_type) {
+  World* w = g_world;
+  auto frames = std::make_shared<int64_t>(0);
+  const Media* media = video ? video : audio;
+  double end = EndSeconds(*media);
+  std::vector<Step> steps;
+  steps.push_back(Section(label + " (clear path, Chromium framing, played to the end)"));
+  steps.push_back([=](Done done) {
+    const ft::TrackInfo& info = media->info;
+    Log("%s: entry %s, config %zu bytes%s, %zu samples, %.3fs", label.c_str(),
+        ft::FourCCString(info.sample_entry).c_str(), info.codec_config.size(),
+        info.dolby_vision_config.empty() ? "" : Format(", dovi %s", ft::Hex(info.dolby_vision_config).c_str()).c_str(),
+        SampleCount(*media), end);
+    w->player = std::make_shared<Player>(label, Framing::kChromium, video, audio, nullptr, w->host);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeeds(video ? Segments(*video, 0, 1) : SegmentList(),
+                          audio ? Segments(*audio, 0, 1) : SegmentList(), true);
+      auto go = Once(10, label + ": HAVE_ENOUGH", [=](bool) {
+        w->player->renderer().SetPlaybackRate(1);
+        done();
+      });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) {
+    auto finish = Once(end + 8, label + ": OnEnded", [=](bool ok) {
+      double t = w->player->Time();
+      if (ok) {
+        Check(std::fabs(t - end) < 0.3, label + Format(": ended at the clip's end (t=%.3f, end %.3f)", t, end));
+      }
+      CheckHealthy(*w->player, label);
+      fp::RendererStatus s = w->player->renderer().GetStatus();
+      Log("%s: formats video '%s' audio '%s'", label.c_str(), ft::FourCCString(s.video_format).c_str(),
+          ft::FourCCString(s.audio_format).c_str());
+      done();
+    });
+    if (w->player->ended) {
+      finish(true);
+    } else {
+      w->player->on_ended = [finish] { finish(true); };
+    }
+  });
+  if (video) {
+    steps.push_back([=](Done done) {
+      Metrics(w->player, label, int64_t(SampleCount(*video) * 9 / 10), frames)(done);
+    });
+  }
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    if (protected_type.empty()) {
+      done();
+      return;
+    }
+    // The protected form: same config with a cbcs track encryption.
+    fp::TrackEncryption tenc;
+    tenc.scheme = fp::EncryptionScheme::kCbcs;
+    tenc.default_pattern = video ? fp::EncryptionPattern{1, 9} : fp::EncryptionPattern{0, 0};
+    tenc.default_key_id = g_key_id;
+    tenc.default_constant_iv = std::vector<uint8_t>(16, 0x5a);
+    struct NullClient : fp::FairPlayRendererClient {
+      void OnNeedData(fp::StreamType) override {}
+      void OnWaitingForKey() override {}
+      void OnEnded() override {}
+      void OnError(fp::RendererError, const std::string&) override {}
+      void OnVideoNaturalSizeChange(int32_t, int32_t) override {}
+      void OnBufferingStateChange(bool) override {}
+    } client;
+    fp::FairPlayRenderer renderer(&client, [](std::function<void()>) {});
+    std::optional<fp::VideoConfig> vc;
+    std::optional<fp::AudioConfig> ac;
+    if (video) {
+      vc = VideoConfigFor(video->info, Framing::kChromium);
+      vc->encryption = tenc;
+    } else {
+      ac = AudioConfigFor(audio->info, Framing::kChromium);
+      ac->encryption = tenc;
+    }
+    fp::Result result = renderer.Initialize(vc, ac);
+    fp::RendererStatus s = renderer.GetStatus();
+    std::string type = ft::FourCCString(video ? s.video_protected_format : s.audio_protected_format);
+    std::string layers;
+    if (audio) {
+      // The format list says which AAC layers the protected description
+      // carries (HE-AAC rides in 'qaac' with an SBR/PS layer listed).
+      std::vector<uint8_t> entry = fp::ProtectSampleEntry(
+          fp::AudioSampleEntry(fp::FourCC('m', 'p', '4', 'a'), audio->info.channels, audio->info.sample_rate,
+                               {fp::MakeBox(fp::FourCC('e', 's', 'd', 's'), fp::AacEsdsPayload(audio->info.codec_config))}),
+          false, tenc);
+      CMFormatDescriptionRef format = nullptr;
+      CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData(nullptr, entry.data(), entry.size(),
+                                                                     kCMSoundDescriptionFlavor_ISOFamily, &format);
+      size_t list_size = 0;
+      const AudioFormatListItem* list = format ? CMAudioFormatDescriptionGetFormatList(format, &list_size) : nullptr;
+      for (size_t i = 0; list && i < list_size / sizeof(AudioFormatListItem); ++i) {
+        layers += (layers.empty() ? "" : ",") + ft::FourCCString(list[i].mASBD.mFormatID) +
+                  Format("@%.0f", list[i].mASBD.mSampleRate);
+      }
+      if (format) CFRelease(format);
+    }
+    bool ok = result.ok() && (protected_type.find(',') == std::string::npos
+                                  ? type == protected_type
+                                  : protected_type.substr(0, 4) == type &&
+                                        layers.find(protected_type.substr(5)) != std::string::npos);
+    Check(ok, label + ": protected format description is Apple's '" + protected_type + "'",
+          result.ok() ? "'" + type + "'" + (layers.empty() ? "" : " layers " + layers) : result.message);
     done();
   });
   return steps;
@@ -1453,6 +1818,15 @@ void RunAll() {
   for (Step& s : MultiKeyScenario(true)) steps.push_back(s);
   for (Step& s : MultiKeyScenario(false)) steps.push_back(s);
   for (Step& s : HevcScenario()) steps.push_back(s);
+  // hev1 decodes only when presented as hvc1, so its protected form is qhvc
+  // (Apple's own parser would label the entry qhev).
+  for (Step& s : CodecScenario("hev1 (HEVC)", &w->hev1, nullptr, "qhvc")) steps.push_back(s);
+  for (Step& s : CodecScenario("hev1 with parameter sets only in-band", &w->hev1_in_band, nullptr, "")) steps.push_back(s);
+  for (Step& s : CodecScenario("Dolby Vision profile 5 (dvh1)", &w->dolby_vision, nullptr, "qdh1")) steps.push_back(s);
+  for (Step& s : CodecScenario("AV1 (av01)", &w->av1, nullptr, "qav1")) steps.push_back(s);
+  for (Step& s : CodecScenario("xHE-AAC (mp4a.40.42)", nullptr, &w->xhe_aac, "qusa")) steps.push_back(s);
+  for (Step& s : CodecScenario("HE-AAC (mp4a.40.5)", nullptr, &w->he_aac, "qaac,qach")) steps.push_back(s);
+  for (Step& s : CodecScenario("HE-AACv2 (mp4a.40.29)", nullptr, &w->he_aac_v2, "qaac,qacp")) steps.push_back(s);
   for (Step& s : CloseScenario()) steps.push_back(s);
   Sequence(steps, Finish);
 }
@@ -1505,10 +1879,17 @@ int main(int argc, char** argv) {
                 LoadMedia(kHevcBase, @"video-H265-720-2100k.m3u8", 2, &world.hevc_video, &error) &&
                 LoadMedia(kHevcBase, @"audio-en.m3u8", 2, &world.hevc_audio, &error) &&
                 LoadMedia(kMultiKeyBase, video_playlist, 2, &world.multi_video, &error) &&
-                LoadMedia(kMultiKeyBase, @"audio-en.m3u8", 2, &world.multi_audio, &error);
+                LoadMedia(kMultiKeyBase, @"audio-en.m3u8", 2, &world.multi_audio, &error) &&
+                LoadChromiumFile(@"bear-320x240-v_frag-hevc.mp4", &world.hev1, &error) &&
+                LoadChromiumFile(@"glass-blowing2-dolby-vision-profile-5-frag.mp4", &world.dolby_vision, &error) &&
+                LoadChromiumFile(@"bear-av1.mp4", &world.av1, &error) &&
+                LoadChromiumFile(@"noise-xhe-aac-44kHz.mp4", &world.xhe_aac, &error) &&
+                EncodeAac(kAudioFormatMPEG4AAC_HE, 4, &world.he_aac, &error) &&
+                EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 4, &world.he_aac_v2, &error);
       dispatch_async(dispatch_get_main_queue(), ^{
         if (!Check(ok, "download and parse the Axinom vector", error)) Finish();
         g_certificate = Bytes(certificate);
+        if (ok) world.hev1_in_band = InBandParameterSetsOnly(world.hev1);
         Log("certificate %zu bytes; video %zu segments, audio %zu segments", g_certificate.size(),
             world.video.segments.size(), world.audio.segments.size());
         RunAll();

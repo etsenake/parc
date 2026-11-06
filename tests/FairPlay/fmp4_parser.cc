@@ -224,6 +224,7 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
         if (entry_size < 8 || entry_size > n - 8) return false;
         track->sample_entry = Be32(entry + 4);
         track->original_format = track->sample_entry;
+        track->sample_entry_box.assign(entry, entry + entry_size);
         size_t children = 0;
         if (track->is_video) {
           track->width = uint16_t(Be16(entry + 8 + 24));
@@ -239,7 +240,12 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
           switch (child.type) {
             case FourCC('a', 'v', 'c', 'C'):
             case FourCC('h', 'v', 'c', 'C'):
+            case FourCC('a', 'v', '1', 'C'):
               track->codec_config.assign(c, c + child.payload_size);
+              break;
+            case FourCC('d', 'v', 'c', 'C'):
+            case FourCC('d', 'v', 'v', 'C'):
+              track->dolby_vision_config.assign(c, c + child.payload_size);
               break;
             case FourCC('e', 's', 'd', 's'):
               track->esds_payload.assign(c, c + child.payload_size);
@@ -519,6 +525,95 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
   return true;
 }
 
+bool ParseProgressiveFile(const std::vector<uint8_t>& data,
+                          const TrackInfo& track,
+                          std::vector<Sample>* samples,
+                          std::string* error) {
+  std::vector<uint32_t> sizes, durations, sync;
+  std::vector<std::pair<uint32_t, uint32_t>> stts, ctts, stsc;  // (count, value) / (first chunk, per chunk)
+  std::vector<uint64_t> chunks;
+  bool has_stss = false;
+  std::function<bool(const Box&)> visit = [&](const Box& box) -> bool {
+    const uint8_t* p = box.payload;
+    size_t n = box.payload_size;
+    auto entries = [&](size_t width) -> uint32_t {
+      uint32_t count = n >= 8 ? Be32(p + 4) : 0;
+      return 8 + size_t(count) * width <= n ? count : 0;
+    };
+    switch (box.type) {
+      case FourCC('s', 't', 's', 'z'): {
+        uint32_t fixed = Be32(p + 4), count = Be32(p + 8);
+        for (uint32_t i = 0; i < count; ++i) sizes.push_back(fixed ? fixed : Be32(p + 12 + 4 * i));
+        return true;
+      }
+      case FourCC('s', 't', 'c', 'o'):
+        for (uint32_t i = 0, c = entries(4); i < c; ++i) chunks.push_back(Be32(p + 8 + 4 * i));
+        return true;
+      case FourCC('c', 'o', '6', '4'):
+        for (uint32_t i = 0, c = entries(8); i < c; ++i) chunks.push_back(Be64(p + 8 + 8 * i));
+        return true;
+      case FourCC('s', 't', 's', 'c'):
+        for (uint32_t i = 0, c = entries(12); i < c; ++i) stsc.push_back({Be32(p + 8 + 12 * i), Be32(p + 12 + 12 * i)});
+        return true;
+      case FourCC('s', 't', 't', 's'):
+        for (uint32_t i = 0, c = entries(8); i < c; ++i) stts.push_back({Be32(p + 8 + 8 * i), Be32(p + 12 + 8 * i)});
+        return true;
+      case FourCC('c', 't', 't', 's'):
+        for (uint32_t i = 0, c = entries(8); i < c; ++i) ctts.push_back({Be32(p + 8 + 8 * i), Be32(p + 12 + 8 * i)});
+        return true;
+      case FourCC('s', 't', 's', 's'):
+        has_stss = true;
+        for (uint32_t i = 0, c = entries(4); i < c; ++i) sync.push_back(Be32(p + 8 + 4 * i));
+        return true;
+      case FourCC('s', 't', 's', 'd'):
+        return true;
+      default:
+        if (IsContainer(box.type)) return Boxes(p, n, visit);
+        return true;
+    }
+  };
+  if (!Boxes(data.data(), data.size(), visit) || sizes.empty() || chunks.empty() || stsc.empty()) {
+    *error = "no progressive sample tables";
+    return false;
+  }
+  // Sample offsets from chunks and samples-per-chunk runs.
+  std::vector<uint64_t> offsets;
+  for (size_t c = 0; c < chunks.size() && offsets.size() < sizes.size(); ++c) {
+    uint32_t per_chunk = 0;
+    for (const auto& run : stsc) {
+      if (run.first <= c + 1) per_chunk = run.second;
+    }
+    uint64_t offset = chunks[c];
+    for (uint32_t k = 0; k < per_chunk && offsets.size() < sizes.size(); ++k) {
+      offsets.push_back(offset);
+      offset += sizes[offsets.size() - 1];
+    }
+  }
+  auto expand = [](const std::vector<std::pair<uint32_t, uint32_t>>& runs) {
+    std::vector<uint32_t> out;
+    for (const auto& run : runs) out.insert(out.end(), run.first, run.second);
+    return out;
+  };
+  std::vector<uint32_t> deltas = expand(stts), offsets_ct = expand(ctts);
+  int64_t dts = 0;
+  for (size_t i = 0; i < sizes.size() && i < offsets.size(); ++i) {
+    if (offsets[i] + sizes[i] > data.size()) {
+      *error = "sample outside the file";
+      return false;
+    }
+    Sample s;
+    s.data.assign(data.begin() + offsets[i], data.begin() + offsets[i] + sizes[i]);
+    s.dts = dts - track.edit_media_time;
+    s.pts = s.dts + (i < offsets_ct.size() ? int32_t(offsets_ct[i]) : 0);
+    s.duration = i < deltas.size() ? deltas[i] : (deltas.empty() ? 0 : deltas.back());
+    s.is_keyframe = !track.is_video || !has_stss ||
+                    std::find(sync.begin(), sync.end(), uint32_t(i + 1)) != sync.end();
+    dts += s.duration;
+    samples->push_back(std::move(s));
+  }
+  return true;
+}
+
 bool AvcToAnnexB(const std::vector<uint8_t>& record,
                  bool hevc,
                  bool insert_parameter_sets,
@@ -610,9 +705,41 @@ bool AvcToAnnexB(const std::vector<uint8_t>& record,
   return true;
 }
 
+int AacObjectType(const std::vector<uint8_t>& asc, bool core) {
+  if (asc.size() < 2) return 0;
+  int type = asc[0] >> 3;
+  if (type == 31) return 32 + (((asc[0] & 7) << 3) | (asc[1] >> 5));
+  if (!core || (type != 5 && type != 29)) return type;
+  // Explicit hierarchical signaling: frequency index (4 bits, 24 more if 15),
+  // channel config (4), extension frequency index (4, 24 more if 15), then the
+  // core object type (5).
+  size_t bit = 5;
+  auto read = [&](int n) {
+    int v = 0;
+    for (int i = 0; i < n; ++i, ++bit) {
+      if (bit / 8 >= asc.size()) return -1;
+      v = (v << 1) | ((asc[bit / 8] >> (7 - bit % 8)) & 1);
+    }
+    return v;
+  };
+  if (read(4) == 15) read(24);
+  read(4);
+  if (read(4) == 15) read(24);
+  return read(5);
+}
+
+std::vector<uint8_t> AscFromDescriptor(const uint8_t* p, size_t n) {
+  // A bare ES_Descriptor (tag 3) gets the version/flags AscFromEsds skips.
+  std::vector<uint8_t> esds;
+  if (n && p[0] == 0x03) esds.insert(esds.end(), {0, 0, 0, 0});
+  esds.insert(esds.end(), p, p + n);
+  return AscFromEsds(esds.data(), esds.size());
+}
+
 std::vector<uint8_t> AdtsHeader(const std::vector<uint8_t>& asc, size_t payload_size) {
   if (asc.size() < 2) return {};
-  uint8_t object_type = asc[0] >> 3;
+  uint8_t object_type = uint8_t(AacObjectType(asc, true));
+  if (object_type < 1 || object_type > 4) object_type = 2;
   uint8_t frequency_index = uint8_t(((asc[0] & 7) << 1) | (asc[1] >> 7));
   uint8_t channel_config = (asc[1] >> 3) & 0x0f;
   size_t frame_length = payload_size + 7;
@@ -630,12 +757,19 @@ EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
   *storage = sample.data;
   std::vector<SubsampleEntry> subsamples;
   if (sample.decrypt) subsamples = sample.decrypt->subsamples;
+  const uint32_t f = track.original_format;
   if (track.is_video) {
-    bool hevc = track.original_format == FourCC('h', 'v', 'c', '1') ||
-                track.original_format == FourCC('h', 'e', 'v', '1');
-    AvcToAnnexB(track.codec_config, hevc, sample.is_keyframe, storage,
-                sample.decrypt ? &subsamples : nullptr);
-  } else {
+    // MP4StreamParser converts H.264, HEVC and Dolby Vision (not profile 10);
+    // AV1 passes through.
+    bool avc = f == FourCC('a', 'v', 'c', '1') || f == FourCC('a', 'v', 'c', '3');
+    bool hevc = f == FourCC('h', 'v', 'c', '1') || f == FourCC('h', 'e', 'v', '1') ||
+                f == FourCC('d', 'v', 'h', '1') || f == FourCC('d', 'v', 'h', 'e');
+    if (avc || hevc) {
+      AvcToAnnexB(track.codec_config, hevc, sample.is_keyframe, storage,
+                  sample.decrypt ? &subsamples : nullptr);
+    }
+  } else if (AacObjectType(track.codec_config, true) <= 4) {
+    // PrepareAACBuffer adds ADTS when the config fits it (not xHE-AAC).
     std::vector<uint8_t> header = AdtsHeader(track.codec_config, storage->size());
     if (sample.decrypt) {
       if (subsamples.empty()) {

@@ -29,9 +29,11 @@ struct TrackInfo {
   bool is_video = false;
   uint32_t sample_entry = 0;     // encv/enca/avc1/hvc1/mp4a...
   uint32_t original_format = 0;  // frma, or the sample entry when clear.
-  std::vector<uint8_t> codec_config;  // avcC/hvcC payload, or AAC AudioSpecificConfig.
+  std::vector<uint8_t> codec_config;  // avcC/hvcC/av1C payload, or AAC AudioSpecificConfig.
+  std::vector<uint8_t> dolby_vision_config;  // dvcC/dvvC payload.
   std::vector<uint8_t> esds_payload;  // esds FullBox payload (audio).
   std::vector<uint8_t> sinf_payload;  // As found in the file.
+  std::vector<uint8_t> sample_entry_box;  // The stsd entry, whole.
   uint16_t width = 0;
   uint16_t height = 0;
   uint16_t channels = 0;
@@ -65,6 +67,13 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
                        std::vector<Sample>* samples,
                        std::string* error);
 
+// Samples of a progressive (unfragmented) MP4 from its moov sample tables
+// (clear tracks only).
+bool ParseProgressiveFile(const std::vector<uint8_t>& data,
+                          const TrackInfo& track,
+                          std::vector<Sample>* samples,
+                          std::string* error);
+
 // Chromium's DecoderBuffer form of |sample|: H.264/HEVC converted to Annex B
 // with parameter sets inserted before keyframes (AVC::ConvertFrameToAnnexB,
 // InsertParamSetsAnnexB), AAC prefixed with ADTS (PrepareAACBuffer), times in
@@ -85,6 +94,10 @@ bool AvcToAnnexB(const std::vector<uint8_t>& record,
                  std::vector<SubsampleEntry>* subsamples);
 std::vector<uint8_t> AdtsHeader(const std::vector<uint8_t>& audio_specific_config,
                                 size_t payload_size);
+// AudioSpecificConfig object type, and the core type for SBR/PS (5, 29).
+int AacObjectType(const std::vector<uint8_t>& audio_specific_config, bool core);
+// The AudioSpecificConfig inside an ES_Descriptor or 'esds' payload.
+std::vector<uint8_t> AscFromDescriptor(const uint8_t* data, size_t size);
 
 std::string FourCCString(uint32_t value);
 std::string Hex(const std::vector<uint8_t>& bytes);

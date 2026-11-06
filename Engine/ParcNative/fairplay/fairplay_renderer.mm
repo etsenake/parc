@@ -20,15 +20,10 @@
 using parc::fairplay::FairPlayRenderer;
 using parc::fairplay::PostTask;
 
-// Format description and sample attachment keys. CoreMedia exports these
-// strings but its headers name only some of them; the values below are what
-// AVStreamDataParser produces for CMAF cbcs content (and what WebKit writes
-// when it rebuilds protected samples in its GPU process, CMUtilities.mm).
-// kCMFormatDescriptionExtension_ProtectedContentOriginalFormat is
-// "CommonEncryptionOriginalFormat" and is used through its public symbol.
-static const CFStringRef kCommonEncryptionProtected = CFSTR("CommonEncryptionProtected");
-static const CFStringRef kCommonEncryptionTrackEncryptionBox =
-    CFSTR("CommonEncryptionTrackEncryptionBox");
+// Sample attachment keys. CoreMedia exports these strings without naming
+// them in its headers; they are what AVStreamDataParser attaches to protected
+// samples (and what WebKit writes when it rebuilds protected samples in its GPU
+// process, CMUtilities.mm).
 // kCMSampleAttachmentKey_CryptorInitializationVector (exported, no header).
 static const CFStringRef kCryptorIV = CFSTR("CryptorIV");
 // Sum of the sample's clear bytes; AVStreamDataParser sets it with the
@@ -41,14 +36,6 @@ static const CFStringRef kBytesOfClearDataCount = CFSTR("BytesOfClearDataCount")
 
 namespace parc::fairplay {
 namespace {
-
-// FairPlay protected sample entry types, as AVStreamDataParser reports them.
-constexpr uint32_t kProtectedAVC = FourCC('q', 'a', 'v', 'c');
-constexpr uint32_t kProtectedHEVC = FourCC('q', 'h', 'v', 'c');
-constexpr uint32_t kProtectedAAC = FourCC('q', 'a', 'a', 'c');
-// Unverified: no FairPlay AC-3/E-AC-3 vector was available.
-constexpr uint32_t kProtectedAC3 = FourCC('q', 'a', 'c', '3');
-constexpr uint32_t kProtectedEAC3 = FourCC('q', 'e', 'c', '3');
 
 class ScopedFormat {
  public:
@@ -101,17 +88,86 @@ MediaTime FromCMTime(CMTime time) {
   return {time.value, time.timescale};
 }
 
-// Extensions shared by protected video and audio format descriptions.
-void AddProtectionExtensions(NSMutableDictionary* extensions,
-                             NSMutableDictionary* atoms,
-                             uint32_t original_format,
-                             const TrackEncryption& encryption) {
-  extensions[(__bridge NSString*)kCMFormatDescriptionExtension_ProtectedContentOriginalFormat] =
-      @(original_format);
-  extensions[(__bridge NSString*)kCommonEncryptionProtected] = @YES;
-  extensions[(__bridge NSString*)kCommonEncryptionTrackEncryptionBox] =
-      ToNSData(TrackEncryptionBoxPayload(encryption));
-  atoms[@"sinf"] = ToNSData(ProtectionSchemeInfoPayload(original_format, encryption));
+uint32_t DefaultSampleEntry(VideoCodec codec) {
+  switch (codec) {
+    case VideoCodec::kH264:
+      return FourCC('a', 'v', 'c', '1');
+    case VideoCodec::kHEVC:
+      return FourCC('h', 'v', 'c', '1');
+    case VideoCodec::kDolbyVision:
+      return FourCC('d', 'v', 'h', '1');
+    case VideoCodec::kAV1:
+      return FourCC('a', 'v', '0', '1');
+  }
+  return 0;
+}
+
+bool SampleEntryMatches(VideoCodec codec, uint32_t entry) {
+  switch (codec) {
+    case VideoCodec::kH264:
+      return entry == FourCC('a', 'v', 'c', '1') || entry == FourCC('a', 'v', 'c', '3');
+    case VideoCodec::kHEVC:
+      return entry == FourCC('h', 'v', 'c', '1') || entry == FourCC('h', 'e', 'v', '1');
+    case VideoCodec::kDolbyVision:
+      return entry == FourCC('d', 'v', 'h', '1') || entry == FourCC('d', 'v', 'h', 'e');
+    case VideoCodec::kAV1:
+      return entry == FourCC('a', 'v', '0', '1');
+  }
+  return false;
+}
+
+// The entry type CoreMedia decodes. hev1, avc3 and dvhe mark parameter sets
+// that travel in-band, but VideoToolbox configures its decoder only from the
+// format description's record: AVSampleBufferDisplayLayer rejects every frame
+// of an 'hev1' description (-12906) that it decodes as 'hvc1'. Chromium
+// re-inserts parameter sets before keyframes anyway, so the out-of-band type
+// is always used (and the record built from in-band sets when it has none).
+uint32_t DecodableSampleEntry(uint32_t entry) {
+  if (entry == FourCC('h', 'e', 'v', '1')) return FourCC('h', 'v', 'c', '1');
+  if (entry == FourCC('a', 'v', 'c', '3')) return FourCC('a', 'v', 'c', '1');
+  if (entry == FourCC('d', 'v', 'h', 'e')) return FourCC('d', 'v', 'h', '1');
+  return entry;
+}
+
+// Whether a decoder configuration record carries the parameter sets
+// VideoToolbox needs (SPS for avcC; VPS, SPS and PPS for hvcC).
+bool RecordHasParameterSets(VideoCodec codec, const std::vector<uint8_t>& record) {
+  if (codec == VideoCodec::kAV1) {
+    return true;
+  }
+  if (codec == VideoCodec::kH264) {
+    return record.size() >= 7 && (record[5] & 0x1f) > 0;
+  }
+  if (record.size() < 23) {
+    return false;
+  }
+  bool vps = false, sps = false, pps = false;
+  size_t pos = 23;
+  for (uint8_t a = 0; a < record[22] && pos + 3 <= record.size(); ++a) {
+    uint8_t type = record[pos] & 0x3f;
+    uint32_t count = (uint32_t(record[pos + 1]) << 8) | record[pos + 2];
+    vps |= type == 32 && count;
+    sps |= type == 33 && count;
+    pps |= type == 34 && count;
+    pos += 3;
+    for (uint32_t k = 0; k < count && pos + 2 <= record.size(); ++k) {
+      pos += 2 + ((uint32_t(record[pos]) << 8) | record[pos + 1]);
+    }
+  }
+  return vps && sps && pps;
+}
+
+uint32_t ConfigBox(VideoCodec codec) {
+  switch (codec) {
+    case VideoCodec::kH264:
+      return FourCC('a', 'v', 'c', 'C');
+    case VideoCodec::kHEVC:
+    case VideoCodec::kDolbyVision:
+      return FourCC('h', 'v', 'c', 'C');
+    case VideoCodec::kAV1:
+      return FourCC('a', 'v', '1', 'C');
+  }
+  return 0;
 }
 
 bool IsEncrypted(const TrackEncryption& encryption) {
@@ -162,14 +218,15 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     audio_config_ = audio;
     std::string error;
     if (video) {
-      CMFormatDescriptionRef clear = nullptr;
-      if (Result result = CreateVideoFormat(*video, nullptr, &clear); !result.ok()) {
+      if (!RecordHasParameterSets(video->codec, video->extra_data)) {
+        // Parameter sets only in-band: the formats are built from the first
+        // keyframe's (ConfigureFromInBandParameterSets).
+        if (video->extra_data.empty() || video->coded_width <= 0 || video->coded_height <= 0) {
+          return Result::Error(Exception::kTypeError, "video config needs a decoder record and size");
+        }
+        awaiting_parameter_sets_ = true;
+      } else if (Result result = CreateVideoFormats(&error); !result.ok()) {
         return result;
-      }
-      video_clear_format_.Reset(clear);
-      if (IsEncrypted(video->encryption) &&
-          !ProtectedFormat(StreamType::kVideo, video->encryption.default_key_id, &error)) {
-        return Result::Error(Exception::kNotSupported, error);
       }
     }
     if (audio) {
@@ -357,6 +414,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     state.end_of_stream = true;
     [RendererFor(stream) stopRequestingMediaData];
     state.armed = false;
+    // A stream that ends before AVFoundation considers it sufficient (a short
+    // clip, the last segment) counts as enough from here on.
+    UpdateBuffering();
     ScheduleEndIfComplete();
   }
 
@@ -407,6 +467,19 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   RendererStatus GetStatus() const {
     RendererStatus status = status_;
     status.time = GetMediaTime();
+    auto subtype = [](CMFormatDescriptionRef format) {
+      return format ? CMFormatDescriptionGetMediaSubType(format) : 0;
+    };
+    status.video_format = subtype(video_clear_format_.get());
+    status.audio_format = subtype(audio_clear_format_.get());
+    if (video_config_ && !video_protected_formats_.empty()) {
+      auto it = video_protected_formats_.find(video_config_->encryption.default_key_id);
+      status.video_protected_format = it != video_protected_formats_.end() ? subtype(it->second->get()) : 0;
+    }
+    if (audio_config_ && !audio_protected_formats_.empty()) {
+      auto it = audio_protected_formats_.find(audio_config_->encryption.default_key_id);
+      status.audio_protected_format = it != audio_protected_formats_.end() ? subtype(it->second->get()) : 0;
+    }
     if (video_renderer_) {
       if (@available(macOS 14.0, *)) {
         AVSampleBufferVideoRenderer* renderer = layer_.sampleBufferRenderer;
@@ -414,9 +487,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         status.video_error = renderer.error ? Describe(renderer.error) : "";
         status.video_requires_flush = renderer.requiresFlushToResumeDecoding;
       } else {
+// macOS 13 has only the layer's own queue state (deprecated from 15).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         status.video = Map(layer_.status);
         status.video_error = layer_.error ? Describe(layer_.error) : "";
         status.video_requires_flush = layer_.requiresFlushToResumeDecoding;
+#pragma clang diagnostic pop
       }
       if (@available(macOS 14.4, *)) {
         status.video_ready_for_display = layer_.readyForDisplay;
@@ -556,32 +633,48 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     notification_tokens_.push_back(token);
   }
 
-  // Clear format description when |encryption| is null; otherwise the
-  // protected form AVStreamDataParser produces for CMAF: a FairPlay protected
-  // sample entry type, the original format, the 'tenc' payload and a 'sinf'
-  // atom. Content key recipients match keys by the 'tenc' key ID.
+  // Format descriptions come from the ISO sample entry the stream would have
+  // carried, converted by CoreMedia's public sample-description parser
+  // (kCMImageDescriptionFlavor_ISOFamily). For a protected entry ('encv'/'enca'
+  // with 'sinf') that yields exactly what AVStreamDataParser produces: Apple's
+  // FairPlay type for the codec (qavc, qhvc, qhev, qdh1, qav1, qaac, qach,
+  // qusa, ...), CommonEncryptionOriginalFormat, CommonEncryptionProtected, the
+  // 'tenc' payload and the config and 'sinf' atoms. Content key recipients
+  // match keys by that 'tenc' key ID.
   static Result CreateVideoFormat(const VideoConfig& config,
                                   const TrackEncryption* encryption,
                                   CMFormatDescriptionRef* out) {
-    if (config.extra_data.empty() || config.coded_width <= 0 || config.coded_height <= 0) {
+    if (config.extra_data.empty() || config.coded_width <= 0 || config.coded_height <= 0 ||
+        config.coded_width > 0xffff || config.coded_height > 0xffff) {
       return Result::Error(Exception::kTypeError, "video config needs a decoder record and size");
     }
-    const bool hevc = config.codec == VideoCodec::kHEVC;
-    const uint32_t clear_type = hevc ? FourCC('h', 'v', 'c', '1') : FourCC('a', 'v', 'c', '1');
-    NSMutableDictionary* atoms =
-        [@{(hevc ? @"hvcC" : @"avcC") : ToNSData(config.extra_data)} mutableCopy];
-    NSMutableDictionary* extensions = [NSMutableDictionary dictionary];
-    if (encryption) {
-      AddProtectionExtensions(extensions, atoms, clear_type, *encryption);
+    const uint32_t declared = config.sample_entry ? config.sample_entry
+                                                  : DefaultSampleEntry(config.codec);
+    if (!SampleEntryMatches(config.codec, declared)) {
+      return Result::Error(Exception::kTypeError, "sample entry type doesn't match the codec");
     }
-    extensions[(__bridge NSString*)kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] =
-        atoms;
-    uint32_t type = encryption ? (hevc ? kProtectedHEVC : kProtectedAVC) : clear_type;
-    OSStatus status = CMVideoFormatDescriptionCreate(kCFAllocatorDefault, type, config.coded_width,
-                                                     config.coded_height,
-                                                     (__bridge CFDictionaryRef)extensions, out);
-    if (status != noErr) {
-      return Result::Error(Exception::kNotSupported, "CMVideoFormatDescriptionCreate failed",
+    const uint32_t entry_type = DecodableSampleEntry(declared);
+    if (config.codec == VideoCodec::kAV1 && config.format == BitstreamFormat::kAnnexB) {
+      return Result::Error(Exception::kTypeError, "AV1 samples are never Annex B");
+    }
+    std::vector<std::vector<uint8_t>> children{MakeBox(ConfigBox(config.codec), config.extra_data)};
+    if (config.codec == VideoCodec::kDolbyVision && config.dolby_vision_config.size() >= 3) {
+      const uint8_t profile = config.dolby_vision_config[2] >> 1;
+      children.push_back(MakeBox(profile > 7 ? FourCC('d', 'v', 'v', 'C') : FourCC('d', 'v', 'c', 'C'),
+                                 config.dolby_vision_config));
+    }
+    std::vector<uint8_t> entry =
+        VisualSampleEntry(entry_type, static_cast<uint16_t>(config.coded_width),
+                          static_cast<uint16_t>(config.coded_height), children);
+    if (encryption) {
+      entry = ProtectSampleEntry(entry, true, *encryption);
+    }
+    OSStatus status = CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+        kCFAllocatorDefault, entry.data(), entry.size(), kCFStringEncodingUTF8,
+        kCMImageDescriptionFlavor_ISOFamily, out);
+    if (status != noErr || !*out) {
+      return Result::Error(Exception::kNotSupported,
+                           "CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData failed",
                            static_cast<uint32_t>(status));
     }
     return Result::Ok();
@@ -590,72 +683,116 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   static Result CreateAudioFormat(const AudioConfig& config,
                                   const TrackEncryption* encryption,
                                   CMFormatDescriptionRef* out) {
-    AudioStreamBasicDescription asbd = {};
-    std::vector<uint8_t> cookie;
-    uint32_t clear_type = 0;
-    uint32_t protected_type = 0;
-    NSMutableDictionary* atoms = [NSMutableDictionary dictionary];
+    uint32_t entry_type = 0;
+    std::vector<std::vector<uint8_t>> children;
     switch (config.codec) {
-      case AudioCodec::kAAC: {
+      case AudioCodec::kAAC:
         if (config.extra_data.empty()) {
           return Result::Error(Exception::kTypeError, "AAC config needs an AudioSpecificConfig");
         }
-        cookie = AacMagicCookie(config.extra_data);
-        asbd.mFormatID = kAudioFormatMPEG4AAC;
-        UInt32 size = sizeof(asbd);
-        if (AudioFormatGetProperty(kAudioFormatProperty_FormatInfo,
-                                   static_cast<UInt32>(cookie.size()), cookie.data(), &size,
-                                   &asbd) != noErr) {
-          asbd = {};
-          asbd.mFormatID = kAudioFormatMPEG4AAC;
-          asbd.mSampleRate = config.sample_rate;
-          asbd.mChannelsPerFrame = static_cast<UInt32>(config.channels);
-          asbd.mFramesPerPacket = 1024;
-        }
-        clear_type = FourCC('m', 'p', '4', 'a');
-        protected_type = kProtectedAAC;
+        entry_type = FourCC('m', 'p', '4', 'a');
+        children.push_back(MakeBox(FourCC('e', 's', 'd', 's'), AacEsdsPayload(config.extra_data)));
         break;
-      }
       case AudioCodec::kAC3:
-      case AudioCodec::kEAC3: {
-        const bool enhanced = config.codec == AudioCodec::kEAC3;
-        asbd.mFormatID = enhanced ? kAudioFormatEnhancedAC3 : kAudioFormatAC3;
-        asbd.mSampleRate = config.sample_rate;
-        asbd.mChannelsPerFrame = static_cast<UInt32>(config.channels);
-        asbd.mFramesPerPacket = 1536;
-        if (!config.extra_data.empty()) {
-          atoms[enhanced ? @"dec3" : @"dac3"] = ToNSData(config.extra_data);
-        }
-        clear_type = enhanced ? FourCC('e', 'c', '-', '3') : FourCC('a', 'c', '-', '3');
-        protected_type = enhanced ? kProtectedEAC3 : kProtectedAC3;
+        entry_type = FourCC('a', 'c', '-', '3');
+        children.push_back(MakeBox(FourCC('d', 'a', 'c', '3'), config.extra_data));
         break;
-      }
+      case AudioCodec::kEAC3:
+        entry_type = FourCC('e', 'c', '-', '3');
+        children.push_back(MakeBox(FourCC('d', 'e', 'c', '3'), config.extra_data));
+        break;
     }
-    AudioChannelLayout layout = {};
-    size_t layout_size = 0;
-    if (asbd.mChannelsPerFrame == 1 || asbd.mChannelsPerFrame == 2) {
-      layout.mChannelLayoutTag =
-          asbd.mChannelsPerFrame == 1 ? kAudioChannelLayoutTag_Mono : kAudioChannelLayoutTag_Stereo;
-      layout_size = sizeof(layout);
-    }
-    NSMutableDictionary* extensions = [NSMutableDictionary dictionary];
+    std::vector<uint8_t> entry =
+        AudioSampleEntry(entry_type, static_cast<uint16_t>(config.channels),
+                         static_cast<uint32_t>(config.sample_rate), children);
     if (encryption) {
-      AddProtectionExtensions(extensions, atoms, clear_type, *encryption);
-      asbd.mFormatID = protected_type;
+      entry = ProtectSampleEntry(entry, false, *encryption);
     }
-    if (atoms.count) {
-      extensions[(__bridge NSString*)kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] =
-          atoms;
-    }
-    OSStatus status = CMAudioFormatDescriptionCreate(
-        kCFAllocatorDefault, &asbd, layout_size, layout_size ? &layout : nullptr, cookie.size(),
-        cookie.empty() ? nullptr : cookie.data(),
-        extensions.count ? (__bridge CFDictionaryRef)extensions : nullptr, out);
-    if (status != noErr) {
-      return Result::Error(Exception::kNotSupported, "CMAudioFormatDescriptionCreate failed",
+    OSStatus status = CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData(
+        kCFAllocatorDefault, entry.data(), entry.size(), kCMSoundDescriptionFlavor_ISOFamily, out);
+    if (status != noErr || !*out) {
+      return Result::Error(Exception::kNotSupported,
+                           "CMAudioFormatDescriptionCreateFromBigEndianSoundDescriptionData failed",
                            static_cast<uint32_t>(status));
     }
     return Result::Ok();
+  }
+
+  Result CreateVideoFormats(std::string* error) {
+    CMFormatDescriptionRef clear = nullptr;
+    if (Result result = CreateVideoFormat(*video_config_, nullptr, &clear); !result.ok()) {
+      return result;
+    }
+    video_clear_format_.Reset(clear);
+    video_protected_formats_.clear();
+    if (IsEncrypted(video_config_->encryption) &&
+        !ProtectedFormat(StreamType::kVideo, video_config_->encryption.default_key_id, error)) {
+      return Result::Error(Exception::kNotSupported, *error);
+    }
+    return Result::Ok();
+  }
+
+  // For a record without parameter sets (an hev1/avc3 stream that carries
+  // them only in-band): collects them from the first sample that has them,
+  // lets CoreMedia build the record, and creates the formats from it.
+  bool ConfigureFromInBandParameterSets(const uint8_t* data, size_t size, std::string* error) {
+    const VideoCodec codec = video_config_->codec;
+    const bool avc = codec == VideoCodec::kH264;
+    const std::vector<uint8_t>& record = video_config_->extra_data;
+    size_t length_size = 4;  // Annex B input is rewritten with 4-byte lengths.
+    if (video_config_->format == BitstreamFormat::kLengthPrefixed) {
+      length_size = (record[avc ? 4 : 21] & 3) + 1;
+    }
+    std::vector<std::vector<uint8_t>> sets;
+    for (size_t pos = 0; pos + length_size <= size;) {
+      size_t length = 0;
+      for (size_t k = 0; k < length_size; ++k) length = (length << 8) | data[pos + k];
+      pos += length_size;
+      if (!length || pos + length > size) break;
+      uint8_t type = avc ? (data[pos] & 0x1f) : ((data[pos] >> 1) & 0x3f);
+      bool parameter_set = avc ? (type == 7 || type == 8) : (type >= 32 && type <= 34);
+      if (parameter_set) sets.emplace_back(data + pos, data + pos + length);
+      pos += length;
+    }
+    if (sets.empty()) {
+      *error = "no parameter sets in the config record or before the first frame";
+      return false;
+    }
+    std::vector<const uint8_t*> pointers;
+    std::vector<size_t> sizes;
+    for (const auto& set : sets) {
+      pointers.push_back(set.data());
+      sizes.push_back(set.size());
+    }
+    CMFormatDescriptionRef format = nullptr;
+    OSStatus status =
+        avc ? CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                  kCFAllocatorDefault, pointers.size(), pointers.data(), sizes.data(),
+                  static_cast<int>(length_size), &format)
+            : CMVideoFormatDescriptionCreateFromHEVCParameterSets(
+                  kCFAllocatorDefault, pointers.size(), pointers.data(), sizes.data(),
+                  static_cast<int>(length_size), nullptr, &format);
+    if (status != noErr || !format) {
+      *error = "in-band parameter sets rejected: " + std::to_string(status);
+      return false;
+    }
+    NSDictionary* atoms = (__bridge NSDictionary*)CMFormatDescriptionGetExtension(
+        format, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms);
+    NSData* built = atoms[avc ? @"avcC" : @"hvcC"];
+    CFRelease(format);
+    if (!built) {
+      *error = "CoreMedia built no decoder record from the parameter sets";
+      return false;
+    }
+    const uint8_t* bytes = static_cast<const uint8_t*>(built.bytes);
+    video_config_->extra_data.assign(bytes, bytes + built.length);
+    awaiting_parameter_sets_ = false;
+    Result result = CreateVideoFormats(error);
+    if (!result.ok()) {
+      *error = result.message;
+      return false;
+    }
+    return true;
   }
 
   // The protected format description for samples encrypted with |key_id|;
@@ -716,12 +853,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
       bytes = converted.data();
       size = converted.size();
-    } else if (stream == StreamType::kAudio && audio_config_->framing == AudioFraming::kADTS) {
+    } else if (stream == StreamType::kAudio && audio_config_->framing == AudioFraming::kADTS &&
+               AdtsHeaderSize(sample.data, sample.size)) {
       size_t header = AdtsHeaderSize(sample.data, sample.size);
-      if (!header) {
-        *error = "missing ADTS header";
-        return false;
-      }
       bytes += header;
       size -= header;
       if (encrypted && !RemoveLeadingClearBytes(header, size, &subsamples)) {
@@ -757,6 +891,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     std::vector<uint8_t> key_id;
     if (encrypted) {
       key_id = sample.decrypt->key_id.empty() ? encryption.default_key_id : sample.decrypt->key_id;
+    }
+    if (stream == StreamType::kVideo && awaiting_parameter_sets_ &&
+        !ConfigureFromInBandParameterSets(bytes, size, error)) {
+      CFRelease(block);
+      return false;
     }
     CMFormatDescriptionRef format =
         encrypted ? ProtectedFormat(stream, key_id, error)
@@ -1056,6 +1195,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool waiting_reported_ = false;
   bool have_enough_ = false;
   bool underflowed_ = false;
+  bool awaiting_parameter_sets_ = false;
   bool ended_ = false;
   bool video_failure_reported_ = false;
   bool audio_failure_reported_ = false;

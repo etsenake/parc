@@ -1,5 +1,6 @@
 #include "fairplay_bitstream.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace parc::fairplay {
@@ -215,16 +216,77 @@ std::vector<uint8_t> ProtectionSchemeInfoPayload(uint32_t original_format,
   return out;
 }
 
-std::vector<uint8_t> AacMagicCookie(const std::vector<uint8_t>& audio_specific_config) {
-  // DecoderConfigDescriptor: AAC (0x40), audio stream (5 << 2 | reserved 1),
-  // zero buffer size and bitrates, then DecoderSpecificInfo.
+std::vector<uint8_t> AacEsdsPayload(const std::vector<uint8_t>& audio_specific_config) {
+  // DecoderConfigDescriptor: MPEG-4 audio (0x40), audio stream (5 << 2 |
+  // reserved 1), zero buffer size and bitrates, then DecoderSpecificInfo.
   std::vector<uint8_t> decoder_config{0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   Append(&decoder_config, Descriptor(0x05, audio_specific_config));
   std::vector<uint8_t> es{0, 0, 0};  // ES_ID 0, no stream dependence/URL/OCR.
   Append(&es, Descriptor(0x04, decoder_config));
   Append(&es, Descriptor(0x06, {0x02}));  // SLConfigDescriptor, predefined MP4.
-  std::vector<uint8_t> es_descriptor = Descriptor(0x03, es);
-  return MakeBox(FourCC('e', 's', 'd', 's'), es_descriptor);
+  std::vector<uint8_t> out{0, 0, 0, 0};  // version, flags
+  Append(&out, Descriptor(0x03, es));
+  return out;
+}
+
+std::vector<uint8_t> VisualSampleEntry(uint32_t type,
+                                       uint16_t width,
+                                       uint16_t height,
+                                       const std::vector<std::vector<uint8_t>>& children) {
+  std::vector<uint8_t> payload(6, 0);                 // reserved
+  payload.insert(payload.end(), {0, 1});              // data_reference_index
+  payload.insert(payload.end(), 16, 0);               // pre_defined, reserved
+  payload.push_back(static_cast<uint8_t>(width >> 8));
+  payload.push_back(static_cast<uint8_t>(width));
+  payload.push_back(static_cast<uint8_t>(height >> 8));
+  payload.push_back(static_cast<uint8_t>(height));
+  AppendBE32(&payload, 0x00480000);                   // horizresolution, 72 dpi
+  AppendBE32(&payload, 0x00480000);                   // vertresolution
+  AppendBE32(&payload, 0);                            // reserved
+  payload.insert(payload.end(), {0, 1});              // frame_count
+  payload.insert(payload.end(), 32, 0);               // compressorname
+  payload.insert(payload.end(), {0x00, 0x18, 0xff, 0xff});  // depth, pre_defined -1
+  for (const auto& child : children) {
+    Append(&payload, child);
+  }
+  return MakeBox(type, payload);
+}
+
+std::vector<uint8_t> AudioSampleEntry(uint32_t type,
+                                      uint16_t channels,
+                                      uint32_t sample_rate,
+                                      const std::vector<std::vector<uint8_t>>& children) {
+  std::vector<uint8_t> payload(6, 0);                 // reserved
+  payload.insert(payload.end(), {0, 1});              // data_reference_index
+  payload.insert(payload.end(), 8, 0);                // reserved
+  payload.push_back(static_cast<uint8_t>(channels >> 8));
+  payload.push_back(static_cast<uint8_t>(channels));
+  payload.insert(payload.end(), {0, 16, 0, 0, 0, 0});  // samplesize, pre_defined, reserved
+  AppendBE32(&payload, sample_rate <= 0xffff ? sample_rate << 16 : 0);
+  for (const auto& child : children) {
+    Append(&payload, child);
+  }
+  return MakeBox(type, payload);
+}
+
+std::vector<uint8_t> ProtectSampleEntry(const std::vector<uint8_t>& entry,
+                                        bool video,
+                                        const TrackEncryption& tenc) {
+  if (entry.size() < 8) {
+    return {};
+  }
+  uint32_t original = (static_cast<uint32_t>(entry[4]) << 24) | (static_cast<uint32_t>(entry[5]) << 16) |
+                      (static_cast<uint32_t>(entry[6]) << 8) | entry[7];
+  std::vector<uint8_t> out = entry;
+  Append(&out, MakeBox(FourCC('s', 'i', 'n', 'f'), ProtectionSchemeInfoPayload(original, tenc)));
+  uint32_t size = static_cast<uint32_t>(out.size());
+  out[0] = static_cast<uint8_t>(size >> 24);
+  out[1] = static_cast<uint8_t>(size >> 16);
+  out[2] = static_cast<uint8_t>(size >> 8);
+  out[3] = static_cast<uint8_t>(size);
+  const char* type = video ? "encv" : "enca";
+  std::copy(type, type + 4, out.begin() + 4);
+  return out;
 }
 
 }  // namespace parc::fairplay

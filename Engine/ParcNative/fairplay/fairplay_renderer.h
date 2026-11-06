@@ -77,6 +77,12 @@ struct RendererStatus {
   uint64_t audio_automatic_flushes = 0;
   float rate = 0;
   MediaTime time;
+  // Media subtypes of the clear and default protected format descriptions
+  // (e.g. 'avc1' and 'qavc'), 0 when absent.
+  uint32_t video_format = 0;
+  uint32_t video_protected_format = 0;
+  uint32_t audio_format = 0;
+  uint32_t audio_protected_format = 0;
 };
 
 struct VideoMetrics {

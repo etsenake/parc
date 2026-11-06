@@ -86,22 +86,33 @@ struct TrackEncryption {
   std::vector<uint8_t> default_constant_iv;
 };
 
-enum class VideoCodec { kH264, kHEVC };
+enum class VideoCodec { kH264, kHEVC, kDolbyVision, kAV1 };
+// kAAC covers every AudioSpecificConfig object type: LC, HE-AAC (5),
+// HE-AACv2 (29) and xHE-AAC/USAC (42).
 enum class AudioCodec { kAAC, kAC3, kEAC3 };
 
 // How video access units are framed. ISO-BMFF samples are length-prefixed;
-// Chromium's MP4 parser converts H.264/HEVC to Annex B and re-inserts
-// parameter sets on keyframes before handing buffers to a renderer.
+// Chromium's MP4 parser converts H.264, HEVC and Dolby Vision (not profile
+// 10) to Annex B and re-inserts parameter sets on keyframes before handing
+// buffers to a renderer. AV1 stays as stored (kLengthPrefixed).
 enum class BitstreamFormat { kLengthPrefixed, kAnnexB };
 
-// Chromium's MP4 parser prepends a 7-byte ADTS header to every AAC sample.
+// Chromium's MP4 parser prepends a 7-byte ADTS header to AAC samples whose
+// config fits ADTS (not xHE-AAC). With kADTS a header is stripped when present.
 enum class AudioFraming { kRaw, kADTS };
 
 struct VideoConfig {
   VideoCodec codec = VideoCodec::kH264;
-  // AVCDecoderConfigurationRecord ('avcC' payload) or
-  // HEVCDecoderConfigurationRecord ('hvcC' payload).
+  // ISO sample entry type: 0 picks avc1, hvc1, dvh1 or av01. Pass avc3, hev1
+  // or dvhe for streams whose parameter sets travel in-band; Apple maps each
+  // to its own protected type (hev1 -> qhev, not qhvc).
+  uint32_t sample_entry = 0;
+  // AVCDecoderConfigurationRecord ('avcC' payload), HEVCDecoderConfigurationRecord
+  // ('hvcC', also for Dolby Vision) or AV1CodecConfigurationRecord ('av1C').
   std::vector<uint8_t> extra_data;
+  // Dolby Vision: DOVIDecoderConfigurationRecord, carried as 'dvcC' for
+  // profiles up to 7 and 'dvvC' from 8.
+  std::vector<uint8_t> dolby_vision_config;
   BitstreamFormat format = BitstreamFormat::kLengthPrefixed;
   int32_t coded_width = 0;
   int32_t coded_height = 0;
@@ -112,7 +123,8 @@ struct VideoConfig {
 
 struct AudioConfig {
   AudioCodec codec = AudioCodec::kAAC;
-  // AAC: AudioSpecificConfig. AC-3: 'dac3' payload. E-AC-3: 'dec3' payload.
+  // AAC: AudioSpecificConfig (any object type). AC-3: 'dac3' payload.
+  // E-AC-3: 'dec3' payload.
   std::vector<uint8_t> extra_data;
   AudioFraming framing = AudioFraming::kRaw;
   int32_t sample_rate = 0;
