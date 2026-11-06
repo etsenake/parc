@@ -480,6 +480,73 @@ fit a free Parc. Open source itself doesn't conflict with the signatures: the
 key stays outside the repository, and only official builds would be signed.
 Anyone else's build of Parc would be an unsigned host.
 
+### Apple FairPlay inside Chromium (decision, November 6)
+
+Waiting on Google's certificate isn't acceptable (above), so Josh chose to play
+protected video through Apple's FairPlay while the page stays in Chromium. A
+first attempt that moved whole DRM sites into a WebKit view was discarded: it
+needed a second engine's worth of parity work (extensions, passwords, cookies,
+DevTools, capture) for one feature.
+
+**What the services do.** A throwaway WKWebView app with Safari's user agent
+(`work/drm-webkit-test`, not committed) logged both services' media calls on
+this Mac, signed in:
+
+- **Netflix** (watch page, 3840x2160 Dolby Vision): standard EME,
+  `requestMediaKeySystemAccess("com.apple.fps.3_0")` with `initDataTypes:
+  ["cenc"]` and temporary sessions; `generateRequest("cenc", …)`; license
+  accepted and three keys usable; media through MSE (`blob:` URLs). It offers
+  avc1, hev1, dvhe (Dolby Vision profile 5) and av01 video, mp4a.40.5 (HE-AAC)
+  audio, and probes mp4a.40.42 (xHE-AAC).
+- **Apple TV+** (signed-in titles): the same EME shape (`com.apple.fps.3_0`,
+  `cenc`), media through `ManagedMediaSource`, dvh1.05.01 video with ac-3 /
+  ec-3 audio. License requests go to `play-edge.itunes.apple.com/…/fpsRequest`.
+  Signed-out preview tiles use native HLS (`video.src` = `.m3u8`), titles don't.
+  The site's store must match the account's: tv.apple.com (US) on a Canadian
+  account gets `"status": -1002` for every key, in Safari too; tv.apple.com/ca
+  gets `"status": 0`.
+
+Both services granted keys to an app that is not Safari, so presenting
+Safari's identity is enough; neither checked for Safari itself.
+
+**Design.** The page never leaves Chromium. Chromium gains a FairPlay key system
+(`com.apple.fps` and its versioned names), registered the way Windows registers
+PlayReady (`components/cdm/renderer/playready_key_system_info.*`), and a
+renderer selected for it, as `RendererType::kMediaFoundation` is on Windows.
+Chromium's MSE demuxer keeps parsing the page's chunks; instead of decoding,
+the renderer hands the still-encrypted samples and their DecryptConfig to
+Apple's public sample-buffer playback: an `AVContentKeySession` (FairPlay
+Streaming) for the license exchange, which passes through the page like any
+EME exchange, then client-built CMSampleBuffers carrying
+`kCMFormatDescriptionExtension_ProtectedContentOriginalFormat`,
+`kCMSampleAttachmentKey_CryptorSubsampleAuxiliaryData` and an attached
+`AVContentKey` (`AVSampleBufferAttachContentKey`), enqueued to
+`AVSampleBufferDisplayLayer` and `AVSampleBufferAudioRenderer` under an
+`AVSampleBufferRenderSynchronizer`. Apple documents this use. The display layer
+takes the video quad's place in Chromium's CoreAnimation tree
+(`ui/accelerated_widget_mac/ca_renderer_layer_tree.mm` already draws video
+through AVSampleBufferDisplayLayer and marks protected video
+`preventsCapture`), so page content drawn over the video (controls,
+subtitles) stays on top. Sites offer FairPlay only to Safari, so Parc presents
+Safari's identity (user agent and key-system support) only to sites that need
+it, learned when a page asks for Widevine; there is no built-in site list.
+Extensions, passwords, cookies, history, DevTools, Peek and capture are
+unaffected, since the page is an ordinary Chromium page.
+
+**Milestones.** M0: the engine-independent FairPlay core
+(`Engine/ParcNative/fairplay/`) plays Axinom's public FairPlay test vectors
+from parsed fMP4 chunks on a Mac, standalone. M1: the key system, renderer and
+compositing in the engine; proof is the same stream in a normal Parc tab. M2:
+Safari identity for DRM sites; Netflix and Apple TV+. M3: Picture in Picture in
+Parc's own window (the display layer can move there), fullscreen, and codecs.
+
+**Known open points.** Chromium has no `ManagedMediaSource`; Apple TV+'s
+player must fall back to `MediaSource` (checked in M2). Dolby Vision and
+AC-3 / E-AC-3 need `enable_platform_dolby_vision` and
+`enable_platform_ac3_eac3_audio`; without them Parc doesn't report those codecs
+and services fall back to HEVC HDR / AAC. Screenshots of protected video are
+black, as in Safari. Every engine step needs a build on Josh's other Mac.
+
 ### Library validation
 
 Google signs the downloaded CDM with its own team ID (`EQHXZ8M8AV`). A
