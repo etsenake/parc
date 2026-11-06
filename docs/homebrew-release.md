@@ -1,5 +1,10 @@
 # Versioned Parc releases and Homebrew
 
+**Current release-only scope:** no app installation/launch, startup checks or
+Homebrew install/upgrade occurs in the master command. It verifies notarized
+artifacts and publishes the cask; Josh upgrades manually. Historical local test
+commands below are optional, separate actions, not release stages.
+
 For new production releases, use [the complete release command](master-release.md):
 `bash scripts/release.sh --type minor`. The individual commands below remain
 available for evidence inspection and focused recovery.
@@ -90,10 +95,10 @@ An upload without a confirmed submission ID requires reconciliation with
 log even after acceptance. Keep passwords and private keys in the normal local
 Keychain. Do not retag, overwrite assets or recompile to resolve a pending job.
 
-## Install immediately, then record startup
+## Optional separate manual installation and startup record
 
-Install and open each completed published candidate before tap metadata,
-documentation or newer-main work. Quit the current Parc normally first. Stage
+The master release command never runs this section. Run it only under a separate
+explicit local-install/test instruction. Quit the current Parc normally first. Stage
 a fresh bundle and preserve the old one; never merge bundles or alter the
 profile. These are future-candidate commands, to run only after Josh's signal:
 
@@ -162,7 +167,18 @@ access its profile/Keychain. Its receipt explicitly says `user-confirmed` and
 hash and parsed result are retained without changing `passed` or its duration.
 The 1.0.0 receipt uses Josh's November 5 confirmation of normal startup.
 
-## Promote and publish the tap
+## Publish the tap from verified notarized artifacts
+
+The master uses `python3 scripts/publish-homebrew.py <tag> --tap ~/homebrew-tap
+--artifact-only --resume`. This checks published ZIP/DMG hashes, actual mounted
+app signatures/Apple ticket, tag/source/version and report before stable/latest
+promotion and cask publication. It never runs the app. This path requires no
+startup receipt and makes no startup claim.
+
+The historical acceptance-backed path below remains available for separately
+authorized local checks, but is not required or run by the release command.
+
+## Optional acceptance-backed tap publication
 
 After either valid acceptance route, the publisher verifies the ZIP/DMG GitHub digests,
 exact tag object/commit, archived report hash/version and receipt, production

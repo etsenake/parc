@@ -1,5 +1,15 @@
 # Parc working contract
 
+**Current release-script scope — November 5, latest Josh correction:**
+`release.sh --type major|minor|patch` is release-only: build engine/app, Developer
+ID sign, notarize/staple, publish GitHub assets, and publish/verify the tap cask.
+It must never wait for main to be quiet, install/replace/quit/open the local app,
+run startup/browser checks, or run Homebrew install/upgrade/reinstall. Josh runs
+Homebrew upgrade himself. This supersedes historical immediate-install and
+startup-promotion requirements for this release command and tonight's 1.1.0 run.
+Artifact signature/hash/source/notarization checks remain required; never claim
+runtime acceptance from them. Root continues directly on main without agents.
+
 **Current Codex chat — November 5:** Josh directs root to do all work itself,
 directly in `/Users/josh.etsenake/parc` on `main`, with no subagents or new
 worktrees. Root owns this Mac's shared engine, packaging, production signing,

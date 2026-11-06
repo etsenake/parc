@@ -3242,6 +3242,17 @@ subsystem document, not left only in Codex messages.
 
 ## Shared engine ownership
 
+**Latest release scope correction — November 5:** Josh requires a release-only
+master command: engine/app build, Developer ID signing, app/DMG notarization,
+GitHub publication and version/URL/checksum publication to the Homebrew tap.
+No local install, app quit/open, runtime checks or Homebrew install/upgrade are
+part of it. Josh upgrades manually. No quiet-window logic belongs in the script;
+tonight's one-time coordination wait is finished. These directions supersede the
+older install-on-publication and startup-promotion gates for this command and
+1.1.0. Pristine artifact signatures, code hashes, source identity and actual Apple
+acceptance remain verified; no startup acceptance is claimed. The installed
+1.0.0 app/profile remain untouched by this release. See [the command](master-release.md).
+
 **Latest direction — November 5:** Josh authorizes the final nightly **1.1.0**
 release after remote main has been unchanged for 10–15 minutes. Root must use
 and test the new [master release command](master-release.md), not manually run

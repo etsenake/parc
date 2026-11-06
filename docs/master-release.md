@@ -1,83 +1,88 @@
 # Production release command
 
-From clean `main` on an Apple Silicon Mac:
-
 ```sh
 bash scripts/release.sh --type minor
 # Other release types: --type patch or --type major
 ```
 
-This is the production entry point. It needs no agent to sequence engine work,
-packaging, publication, installation or cask updates. A minor release after
-1.0.0 is 1.1.0; the bundle build number increases independently. Rerun the same
-command to resume an unfinished release without another version bump.
+Run from clean main on an Apple Silicon Mac. This command is **release-only**:
+engine/app build, production signing, notarization, GitHub assets and Homebrew
+cask publication. It never installs/replaces/quits/opens Parc, runs startup or
+browser tests, or invokes Homebrew install/upgrade/reinstall. Josh runs
+`brew upgrade --cask etsenake/tap/parc` himself. There is no quiet-window timer.
+The earlier one-night wait was coordination, not a feature of this command.
 
-The command checks GitHub login, Xcode/license, the configured Developer ID
-Application identity for Team `94HKA7L2DR`, and `parc-notary`. It fast-forwards
-clean main, commits and immediately pushes the version, then extracts verified
-Git inputs into ignored build storage. This is an immutable build-input archive,
-not another Git checkout/worktree. Later commits cannot retarget the release.
-All source edits remain visible on canonical main. Local edits are preserved and
-cause a clear refusal instead of an automatic stash/reset/clean.
+A minor release after 1.0.0 is 1.1.0; the Apple bundle build increases
+independently. Rerun the same command after interruption. It resumes the saved
+version and frozen inputs instead of bumping twice.
 
-A nonblocking local lock serializes refresh/release/install operations. An
-atomic temporary GitHub tag lease, `parc-release-in-progress`, prevents two
-Macs releasing simultaneously. It is distinct from immutable version tags.
-An interrupted run keeps its lease for resumption on the original Mac. Never
-steal a live lease. If that Mac/storage is permanently lost, an operator must
-verify it is stopped before removing only that temporary lease; the command
-cannot prove a remote machine is dead.
+## Pipeline
 
-## Stages and recovery
+1. Check GitHub login, Xcode/license, Developer ID Application identity for Team
+   `94HKA7L2DR`, Homebrew tooling and the `parc-notary` profile. No ad-hoc fallback.
+2. Fast-forward clean main, commit and immediately push the version, then extract
+   verified Git inputs into ignored build storage. This is an immutable input
+   archive, not another Git checkout/worktree. Later commits cannot retarget the
+   engine or package. Local edits cause a clear refusal and are never reset,
+   stashed, cleaned or overwritten.
+3. Find `PARC_ENGINE_WORKSPACE`, `work/engine` or `~/ParcBuild/engine`; use the
+   current reviewed cumulative overlay, not every intermediate overlay. Fetch
+   before overlay/build operations. Reuse a compatible sealed official ARM64
+   non-component engine. Otherwise generate and compile incrementally, preserving
+   objects/caches. Build-flag lock changes use verified reconfiguration with the
+   exact prior lock; upstream changes get a separate versioned workspace.
+4. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple the
+   app, create/sign/notarize/staple the DMG, and publish ZIP/DMG through
+   `package-app.sh`. Verify actual release/tag, pristine signatures, stable Team
+   and requirement, signed-image hashes, source/overlay identity and Apple
+   acceptance. Existing version tags and uploaded bytes are immutable.
+5. Download/verify the published ZIP and DMG, including the mounted app's actual
+   signatures and ticket. Promote stable/latest and update/push the cask's
+   version, URL and checksum in `~/homebrew-tap`. Refresh the local tap metadata,
+   check Ruby syntax and audit the cask. **Updating the tap does not install or
+   upgrade the app.** Runtime acceptance is neither required nor claimed by this
+   artifact-only release path. Separate manual startup tools remain optional.
 
-1. Find `PARC_ENGINE_WORKSPACE`, `work/engine`, or `~/ParcBuild/engine`. Apply
-   the single current reviewed cumulative overlay after fetching main. Do not
-   rebuild each intermediate overlay or renumber manifests automatically.
-2. Reuse a compatible completed official non-component ARM64 engine. A real
-   input change triggers normal generation and incremental shipping compilation,
-   preserving output and caches. Build-flag-only lock changes use verified
-   `reconfigure` with the exact previous lock from Git history. An upstream
-   dependency change uses a separate versioned workspace, preserving the old one.
-   A new machine without a restored workspace performs the pinned source sync;
-   restore the [saved engine workspace](engine-artifacts.md) first to avoid it.
-3. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple
-   the app, create/sign/notarize/staple the DMG, and publish ZIP/DMG using
-   `package-app.sh`. Stable version tags and uploaded bytes are immutable.
-   Interrupted uploads reconcile matching digests and upload only missing assets.
-4. Immediately stop Parc, make and verify a private profile backup, stage a
-   standalone bundle, retain rollback, replace `/Applications/Parc.app`, and open
-   it normally. Strict signing, Team/requirement, ticket and every signed-image
-   hash are checked before opening. Observe the same process for 90 seconds and
-   reject new app/helper crash reports. Post-launch checks preserve the normal
-   custom Finder icon metadata. No browser-driving regressions are run.
-5. Verify release/acceptance evidence, promote stable/latest, update and push
-   `~/homebrew-tap`, refresh the installed tap and audit the cask. **Never run
-   `brew upgrade`, `brew install` or `brew reinstall` automatically.** Josh runs
-   `brew upgrade --cask etsenake/tap/parc` himself. Updating the tap is publication;
-   upgrading the installed Homebrew receipt is a separate user action.
-6. Remove this run's superseded rollback app bundles only after acceptance;
-   register the installed app. Keep the newest pristine package, profile backups,
-   reports, receipts, seals and engine output. Keep `build/` excluded from
-   Spotlight Search Privacy so retained artifacts do not appear as extra apps.
+On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
+first to avoid a full pinned source sync/build. An unowned existing workspace is
+preserved and refused rather than adopted or discarded.
 
-Logs and atomic state are under `build/releases/<run>/`; current state is
-`build/releases/current.json`. `events.jsonl` records stage transitions,
-individual `*.log` files hold command output, and `state.json` records frozen
-source/version/overlay, process and stage status. Installation also updates
-`build/recurring-prod-refresh/state.json`; this does not recreate the deleted
-recurring automation. The release command starts immediately when invoked; it
-contains no quiet-window timer. Tonight's one-time wait for other contributors
-to finish was a coordination instruction, not release-command behavior.
+## Logs and recovery
 
-Network operations retry unchanged inputs. Returned compile failures preserve
-objects and rerun incrementally. Apple submission IDs/receipts resume pending
-status/stapling without duplicate submissions. An upload without a confirmed
-Apple submission ID stops for reconciliation rather than submitting again.
-A failed startup stops without automatic downgrade, relaunch or promotion;
-failed evidence is never rewritten as passed. A process interrupted before a
-completed startup result can receive a fresh recorded observation on resumption.
-The command does not repair source bugs, revoke/reissue certificates, bypass
-protected authorization, resolve unrelated local edits or invent acceptance.
+`build/releases/current.json` identifies the active run/stage/version/source and
+command PID. Each `build/releases/<run>/` contains atomic `state.json`, an
+`events.jsonl` stage journal and individual command logs. Swift/compiler detail
+is in `package/package-output.log`. Final publication metadata is in
+`delivery.json` and `build/releases/latest.json`; it records that no app was
+installed/launched and no runtime acceptance is claimed. The deleted recurring
+refresh automation is not recreated and its installed-app state is not rewritten.
+
+A nonblocking local lock serializes release/legacy refresh operations. An atomic
+temporary GitHub tag lease, `parc-release-in-progress`, prevents two Macs
+releasing concurrently. An interrupted run keeps its lease for resumption on the
+original Mac. Never steal a live lease. If the original Mac/storage is permanently
+lost, an operator must establish it is stopped before removing only that temporary
+lease; this command cannot prove a remote machine is dead.
+
+Returned network failures retry unchanged inputs. Pending Apple submissions
+resume their stored IDs rather than uploading again. An ambiguous upload with no
+confirmed ID stops for reconciliation instead of duplicating it. Interrupted
+GitHub uploads compare existing SHA-256 digests and upload only missing assets.
+
+For a cancelled shipping operation, the script requires the original owned
+process group to be gone, acquires the engine operation lock, verifies exact
+source/overlay/fingerprint/GN arguments, preserves the original receipt, and
+converts only the cancelled operation into a resumable failure. GN/Ninja must
+then actually succeed before sealing. Completed objects and caches are retained;
+a recovery never fabricates a built receipt. Completed source and engine stages
+are reused when app packaging resumes. Tooling corrections are committed on
+canonical main and the same command is rerun; no manual receipt edits or cache
+cleanup are needed.
+
+The command cannot repair arbitrary source bugs, revoke/reissue certificates,
+bypass protected authorization, resolve someone else's local edits, or invent
+successful checks. It stops with exact logs and preserves previous artifacts for
+those conditions. One-time prerequisites are described below.
 
 ## Credentials on another Mac
 

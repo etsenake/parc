@@ -12,7 +12,7 @@ The [parity ledger](docs/parity.md) is the sole current record of progress, prio
 
 Local development requires an Apple Silicon Mac, Xcode with Swift and Python 3.12 or later. Restore the saved Chromium workspace to keep its existing compiled objects and build cache. The last completed app-and-engine package is available separately. See the [engine artifact guide](docs/engine-artifacts.md).
 
-- [Production release command](docs/master-release.md): one command for engine, app, signing, notarization, GitHub, installation and Homebrew.
+- [Production release command](docs/master-release.md): one command for engine, app, signing, notarization, GitHub and Homebrew cask publication.
 - [Engine source and native integration](Engine/README.md): pinned dependencies, source workspace, reviewed integration and engine build commands.
 - [Application packaging](tests/Packaging/README.md): seal a completed engine, compile the native app and package its helper processes, resources and icons.
 - [Working contract](AGENTS.md): implementation, reverse engineering, coordination and repository rules.

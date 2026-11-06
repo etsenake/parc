@@ -210,5 +210,32 @@ class HomebrewReleaseTests(unittest.TestCase):
             publisher.promote_release(self.release, self.acceptance(), self.report["app_version"], "f" * 64)
 
 
+
+class ArtifactOnlyPublicationTests(unittest.TestCase):
+    def test_artifact_only_publishes_after_verification_without_startup(self):
+        import sys
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temporary:
+            tap = Path(temporary); (tap / 'Casks').mkdir(); (tap / 'lib').mkdir()
+            (tap / 'lib/parc_private_release_download_strategy.rb').touch()
+            app_version = {'version':'1.1.0','build':2}
+            release = {'tag_name':'v1.1.0','target_commitish':'a'*40,'name':'Parc 1.1.0 candidate'}
+            def run(*args, **kwargs):
+                if args[:3] == ('git','remote','get-url'): return 'https://github.com/etsenake/homebrew-tap.git'
+                if args[:3] == ('git','branch','--show-current'): return 'main'
+                if args[:2] == ('git','show'): return json.dumps(app_version)
+                return ''
+            def github(*args):
+                if args[0]=='api': return json.dumps(release)
+                return ''
+            for failure in (False, True):
+                with self.subTest(invalid_dmg=failure), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume']), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup:
+                    if failure:
+                        with self.assertRaises(SystemExit): publisher.main()
+                        promote.assert_not_called()
+                    else:
+                        publisher.main(); promote.assert_called_once_with(release)
+                    startup.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
