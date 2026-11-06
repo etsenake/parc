@@ -38,6 +38,32 @@ On a page that presents Safari's identity:
   their `navigator.userAgent` and their fetches match. Dedicated workers
   already take their document's user agent.
 
+## Dolby audio
+
+AC-3 and E-AC-3 (Dolby Digital and Dolby Digital Plus) answer yes only in a
+document presenting Safari's identity; every other page keeps Chromium's
+answer from before Parc turned them on. Apple TV+ asks for `ac-3` and `ec-3`
+next to Dolby Vision. fairplay-media turns on `enable_platform_ac3_eac3_audio`
+and lists both codecs for FairPlay; the gate is in Blink and keys on the
+context's user agent like the rest of the identity:
+
+- `MediaSource.isTypeSupported`, `addSourceBuffer` and `SourceBuffer.changeType`
+  (`MediaSource::IsTypeSupportedInternal`), for the codec IDs `ac-3`, `ec-3`,
+  `mp4a.a5` and `mp4a.a6`.
+- `HTMLMediaElement.canPlayType`, the choice among `<source type>` children,
+  `mediaCapabilities.decodingInfo` and WebCodecs `AudioDecoder`
+  (`isConfigSupported` and `configure`), so a Chrome page never hears
+  "probably" from one and "no" from another. A document without a window of
+  its own answers for the window that created it.
+  On a Chrome page `AudioDecoder.configure()` with a Dolby codec fails with
+  `NotSupportedError`, as the WebCodecs spec asks for an unsupported codec,
+  where Chromium without the codecs reported `OperationError` from decoder
+  setup.
+- EME: `MediaKeySystemAccessInitializerBase` gives an audio capability naming
+  AC-3 or E-AC-3 an unknown codec outside Safari's identity, so the key-system
+  selector skips that capability and judges the rest of the configuration as
+  before. Widevine's own audio support is unchanged.
+
 ## Which documents present it
 
 A site is a registrable domain, private registries included, so

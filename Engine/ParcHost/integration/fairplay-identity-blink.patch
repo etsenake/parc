@@ -200,7 +200,25 @@
  #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
-@@ -1353,6 +1354,15 @@
+@@ -921,6 +922,17 @@
+     DCHECK(valid_content_type);
+   }
+ 
++  // Parc: AC-3 and E-AC-3 only under Safari's identity
++  // (third_party/blink/renderer/core/frame/parc_safari_identity.h).
++  if (config->hasAudio() && IsParcSafariOnlyAudioCodecs(audio_codec_str)) {
++    ExecutionContext* execution_context = ExecutionContext::From(script_state);
++    if (!execution_context ||
++        !IsParcSafariIdentityUserAgent(execution_context->UserAgent())) {
++      return CreateResolvedPromiseToDecodingInfoWith(false, script_state,
++                                                     config);
++    }
++  }
++
+   // MSE support is cheap to check (regex matching). Do it first. Also, note
+   // that MSE support is not implied by EME support, so do it irrespective of
+   // whether we have a KeySystem configuration.
+@@ -1353,6 +1365,15 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
  
@@ -216,3 +234,155 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
+--- a/third_party/blink/renderer/modules/mediasource/media_source.cc
++++ b/third_party/blink/renderer/modules/mediasource/media_source.cc
+@@ -29,6 +29,7 @@
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+ #include "third_party/blink/renderer/core/dom/events/event_queue.h"
+ #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
+ #include "third_party/blink/renderer/core/html/track/video_track_list.h"
+@@ -563,6 +564,16 @@
+ 
+   String codecs = content_type.Parameter("codecs");
+   ContentType filtered_content_type = content_type;
++
++  // Parc: AC-3 and E-AC-3 only under Safari's identity, for isTypeSupported,
++  // addSourceBuffer and changeType alike (parc_safari_identity.h).
++  if (IsParcSafariOnlyAudioCodecs(codecs) &&
++      !IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    DVLOG(1) << __func__ << "(" << type << ", "
++             << base::ToString(enforce_codec_specificity)
++             << ") -> false (Dolby audio outside Safari's identity)";
++    return false;
++  }
+ 
+ #if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
+   // Mime util doesn't include the mp2t container in order to prevent codec
+--- a/third_party/blink/renderer/core/html/media/html_media_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
+@@ -71,6 +71,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_client.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+@@ -1069,10 +1070,30 @@
+   return network_state_;
+ }
+ 
++namespace {
++
++// Parc: AC-3 and E-AC-3 answer yes only under Safari's identity
++// (parc_safari_identity.h). A document without a window of its own answers
++// for the window that created it.
++bool ParcHidesSafariOnlyAudio(const Document& document, const String& type) {
++  if (!IsParcSafariOnlyAudioCodecs(ContentType(type).Parameter("codecs"))) {
++    return false;
++  }
++  ExecutionContext* context = document.GetExecutionContext();
++  return !context || !IsParcSafariIdentityUserAgent(context->UserAgent());
++}
++
++}  // namespace
++
+ V8CanPlayTypeResult HTMLMediaElement::canPlayType(
+     const String& mime_type) const {
+   MIMETypeRegistry::SupportsType support =
+       GetSupportsType(ContentType(mime_type));
++
++  if (support != MIMETypeRegistry::kNotSupported &&
++      ParcHidesSafariOnlyAudio(GetDocument(), mime_type)) {
++    support = MIMETypeRegistry::kNotSupported;
++  }
+ 
+   V8CanPlayTypeResult can_play =
+       V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
+@@ -3899,6 +3920,8 @@
+                  << type << "'";
+       }
+       if (!GetSupportsType(ContentType(type)))
++        goto checkAgain;
++      if (ParcHidesSafariOnlyAudio(GetDocument(), type))
+         goto checkAgain;
+     }
+ 
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc
+@@ -13,6 +13,7 @@
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+@@ -106,6 +107,18 @@
+     DCHECK(config->hasAudioCapabilities());
+     web_config.audio_capabilities =
+         ConvertCapabilities(config->audioCapabilities());
++    // Parc: AC-3 and E-AC-3 only under Safari's identity
++    // (parc_safari_identity.h). A capability naming them gets a codec no key
++    // system supports, so it is skipped like any unsupported capability
++    // while the configuration's other capabilities still count.
++    if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent())) {
++      for (WebMediaKeySystemMediaCapability& capability :
++           web_config.audio_capabilities) {
++        if (IsParcSafariOnlyAudioCodecs(capability.codecs)) {
++          capability.codecs = WebString::FromAscii("parc.safari-only");
++        }
++      }
++    }
+ 
+     DCHECK(config->hasVideoCapabilities());
+     web_config.video_capabilities =
+--- a/third_party/blink/renderer/modules/webcodecs/audio_decoder.cc
++++ b/third_party/blink/renderer/modules/webcodecs/audio_decoder.cc
+@@ -25,6 +25,8 @@
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_decoder_init.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_decoder_support.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_encoded_audio_chunk.h"
++#include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+ #include "third_party/blink/renderer/modules/webcodecs/array_buffer_util.h"
+ #include "third_party/blink/renderer/modules/webcodecs/audio_data.h"
+@@ -209,7 +211,15 @@
+   }
+ 
+   AudioDecoderSupport* support = AudioDecoderSupport::Create();
+-  support->setSupported(media::IsDecoderSupportedAudioType(*audio_type));
++  bool supported = media::IsDecoderSupportedAudioType(*audio_type);
++  // Parc: AC-3 and E-AC-3 only under Safari's identity
++  // (third_party/blink/renderer/core/frame/parc_safari_identity.h).
++  if (supported && IsParcSafariOnlyAudioCodecs(config->codec())) {
++    ExecutionContext* context = ExecutionContext::From(script_state);
++    supported =
++        context && IsParcSafariIdentityUserAgent(context->UserAgent());
++  }
++  support->setSupported(supported);
+   support->setConfig(CopyConfig(*config));
+   return ToResolvedPromise<AudioDecoderSupport>(script_state, support);
+ }
+@@ -352,6 +362,17 @@
+     const ConfigType& config,
+     String* js_error_message) {
+   DCHECK(js_error_message);
++  // Parc: AC-3 and E-AC-3 only under Safari's identity
++  // (third_party/blink/renderer/core/frame/parc_safari_identity.h).
++  if (IsParcSafariOnlyAudioCodecs(config.codec())) {
++    ExecutionContext* context = GetExecutionContext();
++    if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent())) {
++      *js_error_message =
++          "Unsupported configuration. Check isConfigSupported() prior to "
++          "calling configure().";
++      return std::nullopt;
++    }
++  }
+   return MakeMediaAudioDecoderConfig(config, js_error_message /* out */);
+ }
+ 
