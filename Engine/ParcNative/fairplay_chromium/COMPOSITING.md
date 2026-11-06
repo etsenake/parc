@@ -101,6 +101,17 @@ The cost is that two trees that both keep drawing the same token trade the
 layer every frame. Only one surface embedded in two live compositors does that,
 and Picture in Picture must avoid it (below).
 
+Known limits: "live" means attached to its coordinator, because the GPU
+process doesn't know which compositors are visible, so a parked compositor's
+tree counts as live.
+- A compositor that commits a late stale frame naming the token and is then
+  parked (not replaced by a frame without the token) keeps the layer. The
+  visible tree gets it back at its next commit.
+- A hand-on goes to the newest live claim. With three trees showing the token,
+  that can be a parked tree whose stale claim is newer than the visible tree's.
+Both need a stale frame to arrive after the page has moved; neither is known to
+happen in Parc. Closing them needs compositor visibility in the GPU process.
+
 ## When the frame can't be all CALayers
 
 `OverlayProcessorMac` first tries to turn every root-pass quad into a CALayer.
