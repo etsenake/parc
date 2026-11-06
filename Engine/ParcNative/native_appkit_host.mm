@@ -3,7 +3,9 @@
 #include "cef/libcef/browser/parc_native/native_internal_urls.h"
 #include "native_link_routing.h"
 
+#include <algorithm>
 #include <cmath>
+#include <os/log.h>
 #include <map>
 #include <memory>
 #include <set>
@@ -44,6 +46,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/public/browser/eye_dropper.h"
+#include "components/viz/common/frame_timing_details.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/page_visibility_state.h"
@@ -77,6 +80,7 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_surface.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 #include "window_security_reservation.h"
 
@@ -126,6 +130,13 @@ class AppKitBrowserHost;
 
 namespace parc {
 namespace {
+
+// Product diagnostics: one line per page-picture repair, naming its cause.
+os_log_t PictureLog() {
+  static os_log_t log = os_log_create("org.parc.Browser", "PagePicture");
+  return log;
+}
+
 std::map<const BrowserWindowInterface*, base::WeakPtr<AppKitBrowserHost>>&
 Hosts() {
   static base::NoDestructor<
@@ -1282,14 +1293,18 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // renderer never draws for the new compositor) or its frame was evicted
       // while hidden. A page that kept its frame shows it at once, so an
       // ordinary switch does not wait for a new surface.
+      // Every show, attachment or compositor change also asks for the
+      // outcome: the compositor's next frame reaching the screen.
       if (attached_here() && shown && !occluded &&
           contents->GetVisibility() == content::Visibility::VISIBLE &&
-          TakePaneCompositorRenewal(*contents) &&
-          (was_visible || frame_evicted)) {
-        RenewPageSurface(*contents);
-        if (!attached_here()) {
-          return;
+          !contents->IsLoading() && TakePaneCompositorRenewal(*contents)) {
+        if (was_visible || frame_evicted) {
+          RenewPageSurface(*contents);
+          if (!attached_here()) {
+            return;
+          }
         }
+        RequestPresentation(*contents, window);
       }
       const auto pip_visibility =
           !shown ? parc::BackgroundPipVisibility::kHidden
@@ -1360,7 +1375,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       return;
     }
     picture_check_timer_.Start(FROM_HERE,
-                               kPictureCheckDelay * (1 << picture_repairs_),
+                               kPictureCheckDelay *
+                                   (1 << std::min(picture_repairs_, kPictureRepairLimit)),
                                this, &AppKitBrowserHost::CheckPictures);
   }
   void CheckPictures() {
@@ -1368,7 +1384,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (tearing_down_ || draining_ || !window || synchronizing_visibility_) {
       return;
     }
-    if (!window.visible || window.miniaturized || window_occluded_) {
+    if (!window.visible || window.miniaturized || window_occluded_ ||
+        displays_asleep_) {
       return;
     }
     auto weak = weak_factory_.GetWeakPtr();
@@ -1380,7 +1397,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       picture_pages_ = [visible copy] ?: @[];
       picture_repairs_ = 0;
     }
-    std::vector<base::WeakPtr<content::WebContents>> missing;
+    std::vector<std::pair<base::WeakPtr<content::WebContents>, const char*>>
+        missing;
+    std::set<const content::WebContents*> checked;
     for (PCNativePage* page in visible) {
       content::WebContents* contents = ContentsForNativePage(page);
       // Pages not yet VISIBLE are the visibility retries' (overlay 330).
@@ -1390,22 +1409,41 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           contents->GetVisibility() != content::Visibility::VISIBLE) {
         continue;
       }
-      if (PagePictureMissing(*contents, window)) {
-        missing.push_back(contents->GetWeakPtr());
+      checked.insert(contents);
+      if (const char* cause = MissingPictureCause(*contents, window)) {
+        missing.emplace_back(contents->GetWeakPtr(), cause);
       }
     }
+    // Watches of pages no longer shown here (or destroyed) are dropped.
+    std::erase_if(presentation_watches_, [&](const auto& entry) {
+      return !checked.contains(entry.first);
+    });
     if (missing.empty()) {
       picture_repairs_ = 0;
       return;
     }
     if (picture_repairs_ >= kPictureRepairLimit) {
+      if (picture_repairs_ == kPictureRepairLimit) {
+        ++picture_repairs_;
+        os_log(PictureLog(),
+               "Shown page still without a picture after %d repairs: %{public}s",
+               kPictureRepairLimit, missing.front().second);
+      }
       return;
     }
     ++picture_repairs_;
-    for (const auto& contents : missing) {
+    for (const auto& [contents, cause] : missing) {
       if (contents && weak && !tearing_down_ && !draining_ &&
           window_ == window && Owns(*contents)) {
+        os_log(PictureLog(),
+               "Repairing a shown page without a picture: %{public}s "
+               "(repair %d)",
+               cause, picture_repairs_);
         RepairPicture(*contents, window);
+        if (weak && contents && !tearing_down_ && !draining_ &&
+            window_ == window) {
+          RequestPresentation(*contents, window);
+        }
       }
       if (!weak) {
         return;
@@ -1453,35 +1491,56 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     bounds.set_y(NSHeight(window.frame) - bounds.bottom());
     return bounds;
   }
-  bool PagePictureMissing(content::WebContents& contents, NSWindow* window) {
+  // Why a shown page has no picture, or nullptr when it has one. The names
+  // go to the PagePicture log so a white page reported later names its cause.
+  const char* MissingPictureCause(content::WebContents& contents,
+                                  NSWindow* window) {
     // A loading page shows the loading bar and Chromium's own first-frame
     // timeout; a crashed or hung renderer cannot draw whatever is re-sent.
     if (contents.IsBeingDestroyed() || contents.IsLoading() ||
         contents.IsCrashed()) {
-      return false;
+      return nullptr;
     }
     switch (PaneCompositorPicture(contents, window)) {
       case PanePicture::kBusy:
-        return false;
+        return nullptr;
       case PanePicture::kPresenting:
         break;
-      default:
-        return true;
+      case PanePicture::kNotAttached:
+        return "compositor not attached";
+      case PanePicture::kNotDrawing:
+        return "compositor not drawing";
+      case PanePicture::kNoFrame:
+        return "compositor has no current frame";
     }
     content::RenderWidgetHostViewMac* view = PageWidgetView(contents);
     content::RenderWidgetHostImpl* host = view ? view->host() : nullptr;
     if (!host || !host->GetProcess()->IsInitializedAndNotDead() ||
         host->IsCurrentlyUnresponsive()) {
-      return false;
+      return nullptr;
     }
-    if (host->IsHidden() || !DrawsIntoPaneCompositor(*view, contents, window)) {
-      return true;
+    if (host->IsHidden()) {
+      return "widget hidden";
+    }
+    if (!DrawsIntoPaneCompositor(*view, contents, window)) {
+      return "renderer not parented to compositor";
+    }
+    // The page's own layer, as the compositor draws it: in this compositor's
+    // tree, every ancestor visible, not transparent, not empty.
+    const ui::Layer* layer =
+        view->BrowserCompositor()->GetDelegatedFrameHostLayer();
+    ui::Layer* pane_layer = PaneCompositorLayer(contents, window);
+    if (!layer || !pane_layer ||
+        layer->GetCompositor() != pane_layer->GetCompositor() ||
+        !layer->IsVisible() || layer->GetCombinedOpacity() <= 0 ||
+        layer->bounds().IsEmpty()) {
+      return "page layer not drawn";
     }
     NSView* native = view->GetNativeView().GetNativeNSView();
     bool attached = false;
     const gfx::Size size = ViewBoundsInWindow(native, &attached).size();
     if (!size.IsEmpty() && size != view->GetRequestedRendererSize()) {
-      return true;
+      return "view size stale";
     }
     content::DelegatedFrameHost* frame_host =
         view->BrowserCompositor()->GetDelegatedFrameHost();
@@ -1492,9 +1551,50 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         host->render_frame_metadata_provider()
             ->LastRenderFrameMetadata()
             .local_surface_id;
-    return !frame_host->HasPrimarySurface() || !embedded.is_valid() ||
-           !drawn || !drawn->is_valid() ||
-           !drawn->IsSameOrNewerThan(embedded.local_surface_id());
+    if (!frame_host->HasPrimarySurface() || !embedded.is_valid() ||
+        !drawn || !drawn->is_valid() ||
+        !drawn->IsSameOrNewerThan(embedded.local_surface_id())) {
+      return "renderer surface stale";
+    }
+    // The outcome: a frame of this page's compositor reached the screen
+    // since the page was shown, attached or repaired there.
+    auto watch = presentation_watches_.find(&contents);
+    if (watch != presentation_watches_.end()) {
+      if (!watch->second.presented) {
+        return "no presentation";
+      }
+      presentation_watches_.erase(watch);
+    }
+    return nullptr;
+  }
+  // Asks the page's compositor to report its next frame reaching the screen,
+  // and draws one. Unanswered at the next check, it is a missing picture.
+  void RequestPresentation(content::WebContents& contents, NSWindow* window) {
+    ui::Layer* layer = PaneCompositorLayer(contents, window);
+    ui::Compositor* compositor = layer ? layer->GetCompositor() : nullptr;
+    // Without a compositor the picture checks report the page themselves.
+    if (!compositor) {
+      presentation_watches_.erase(&contents);
+      return;
+    }
+    PresentationWatch& watch = presentation_watches_[&contents];
+    watch.serial = ++presentation_serial_;
+    watch.presented = false;
+    compositor->RequestSuccessfulPresentationTimeForNextFrame(base::BindOnce(
+        [](base::WeakPtr<AppKitBrowserHost> self,
+           const content::WebContents* key, uint64_t serial,
+           const viz::FrameTimingDetails&) {
+          if (!self) {
+            return;
+          }
+          auto found = self->presentation_watches_.find(key);
+          if (found != self->presentation_watches_.end() &&
+              found->second.serial == serial) {
+            found->second.presented = true;
+          }
+        },
+        weak_factory_.GetWeakPtr(), &contents, watch.serial));
+    compositor->ScheduleFullRedraw();
   }
   // What a resize does: the compositor re-placed and redrawn at the current
   // size, the renderer view's bounds re-read, a new surface embedded and the
@@ -1956,6 +2056,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     picture_check_timer_.Stop();
     picture_repairs_ = 0;
     picture_pages_ = nil;
+    presentation_watches_.clear();
     window_occluded_ = false;
     displays_asleep_ = false;
     for (id observer in workspace_observers_) {
@@ -2103,6 +2204,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   base::OneShotTimer picture_check_timer_;
   int picture_repairs_ = 0;
   NSArray<PCNativePage*>* __strong picture_pages_;
+  struct PresentationWatch {
+    uint64_t serial = 0;
+    bool presented = false;
+  };
+  // Keys are compared only; a destroyed page's entry is pruned at a check.
+  std::map<const content::WebContents*, PresentationWatch>
+      presentation_watches_;
+  uint64_t presentation_serial_ = 0;
   NSArray<PCNativePage*>* __strong pass_visible_;
   bool pass_occluded_ = false;
   bool window_occluded_ = false;
