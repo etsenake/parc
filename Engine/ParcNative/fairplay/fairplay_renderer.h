@@ -151,9 +151,10 @@ class FairPlayRenderer {
   void SetPlaybackRate(double rate);
   void SetVolume(float volume);
   void SetMuted(bool muted);
-  // Core Audio device UID for the audio output (HTMLMediaElement.setSinkId);
-  // empty picks the current system default device (AVFoundation takes no
-  // "follow the default" value once a device was set). The audio renderer
+  // Core Audio device UID for the audio output (HTMLMediaElement.setSinkId).
+  // Empty keeps following the system default until a device has been named;
+  // after that it picks the default device of the moment (AVFoundation takes
+  // no "follow the default" value once a device was set). The audio renderer
   // flushes itself on a switch, and the queued samples are delivered again.
   Result SetAudioOutputDevice(const std::string& unique_id);
 

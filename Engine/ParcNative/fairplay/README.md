@@ -233,8 +233,9 @@ so this forces the following on the Chromium integration.
   plays to the system directly: Web Audio `createMediaElementSource` gets
   silence. Volume, mute, audio focus and ducking must map to `SetVolume` and
   `SetMuted`; `setSinkId` maps to `SetAudioOutputDevice` (a Core Audio device
-  UID, empty for the current default device, since
-  `audioOutputDeviceUniqueID` throws on nil).
+  UID). Empty keeps following the system default until a device is named;
+  after that it names the default device of the moment, since
+  `audioOutputDeviceUniqueID` throws on nil.
 - **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`,
   which may be called from any thread (it reads a retained `CMTimebase`). It
   starts on HAVE_ENOUGH and stops on underflow inside the renderer, as
@@ -255,7 +256,8 @@ so this forces the following on the Chromium integration.
   the first sample it dropped. The renderer keeps the audio it enqueued from
   half a second behind the clock on, and enqueues everything from the flush
   time again; otherwise the queued duration would play as silence while the
-  clock runs on. Proven with a device switch during protected playback (one
+  clock runs on. A flush time outside what was enqueued since the last Flush
+  (a late notice from the previous timeline) is ignored. Proven with a device switch during protected playback (one
   flush, 107 samples re-delivered, no underflow).
 - **Video decoder resets.** When `requiresFlushToResumeDecoding` turns on, the
   renderer flushes the video renderer and enqueues again from the last

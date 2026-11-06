@@ -1476,16 +1476,26 @@ std::vector<Step> AudioDeviceSwitchScenario() {
     StartAt(w->player, &w->video, &w->audio, 0, 5, 0, 1, false)(done);
   });
   steps.push_back([=](Done done) { Run(w->player, 2, 1, "device-switch before the switch")(done); });
-  for (bool to_explicit : {true, false}) {
+  // "" first is a no-op (still following the default). Naming the device in
+  // use flushes the audio renderer on this Mac, which must be re-delivered.
+  // "" afterwards names the default device again (no flush expected).
+  enum class Expect { kNoFlush, kFlush, kEither };
+  struct Switch {
+    bool explicit_device;
+    Expect expect;
+    const char* label;
+  };
+  for (Switch change : {Switch{false, Expect::kNoFlush, "the system default before any device"},
+                        Switch{true, Expect::kFlush, "the explicit device"},
+                        Switch{false, Expect::kEither, "the system default again"}}) {
     steps.push_back([=](Done done) {
       *before = w->player->renderer().GetStatus();
-      std::string uid = to_explicit ? DefaultOutputDeviceUid() : "";
+      std::string uid = change.explicit_device ? DefaultOutputDeviceUid() : "";
       Log("device-switch: audio output -> %s", uid.empty() ? "system default" : uid.c_str());
       fp::Result result = w->player->renderer().SetAudioOutputDevice(uid);
       Check(result.ok(), std::string("device-switch: SetAudioOutputDevice(") + (uid.empty() ? "default" : uid) + ")",
             result.message);
-      Run(w->player, 3, 1, std::string("device-switch after switching to ") +
-                               (to_explicit ? "the explicit device" : "the system default"))(done);
+      Run(w->player, 3, 1, std::string("device-switch after switching to ") + change.label)(done);
     });
     steps.push_back([=](Done done) {
       fp::RendererStatus s = w->player->renderer().GetStatus();
@@ -1493,8 +1503,19 @@ std::vector<Step> AudioDeviceSwitchScenario() {
       const uint64_t redelivered = s.redelivered - before->redelivered;
       Log("device-switch: %llu automatic flushes, %llu samples re-delivered", (unsigned long long)flushes,
           (unsigned long long)redelivered);
-      Check(flushes == 0 || redelivered > 0, "device-switch: an automatic audio flush is followed by re-delivery",
-            Format("%llu flushes, %llu re-delivered", (unsigned long long)flushes, (unsigned long long)redelivered));
+      const std::string counts =
+          Format("%llu flushes, %llu re-delivered", (unsigned long long)flushes, (unsigned long long)redelivered);
+      if (change.expect == Expect::kNoFlush) {
+        Check(flushes == 0, std::string("device-switch: switching to ") + change.label + " changes nothing", counts);
+      } else if (change.expect == Expect::kFlush) {
+        Check(flushes >= 1 && redelivered > 0,
+              std::string("device-switch: switching to ") + change.label +
+                  " flushes the audio renderer and the dropped audio is re-delivered",
+              counts);
+      } else {
+        Check(flushes == 0 || redelivered > 0, "device-switch: an automatic audio flush is followed by re-delivery",
+              counts);
+      }
       Check(w->player->underflows == 0, "device-switch: no HAVE_NOTHING across the switch",
             Format("%d", w->player->underflows));
       done();
@@ -2917,9 +2938,29 @@ void BuilderSelfTests() {
   const uint8_t avc_pps1[] = {0x68, 0x40}, hevc_pps1[] = {0x44, 0x01, 0x40};
   auto avc1 = fp::ParameterSetId(false, avc_pps1, sizeof(avc_pps1));
   auto hevc1 = fp::ParameterSetId(true, hevc_pps1, sizeof(hevc_pps1));
-  Check(ids == "00/000" && avc1 == 1u && hevc1 == 1u,
+  // H.264 PPS 200: ue(200) = 7 zeros, 1, then 7 bits of 201 - 128 = 73.
+  const uint8_t avc_pps200[] = {0x68, 0x01, 0x92, 0x80};
+  auto avc200 = fp::ParameterSetId(false, avc_pps200, sizeof(avc_pps200));
+  // HEVC SPS 3 with one sub-layer (level present), emulation-prevented: the
+  // 96-bit general profile_tier_level of zeros needs 0x03 after each 00 00.
+  std::vector<uint8_t> rbsp = {0x03};                 // VPS 0, max_sub_layers_minus1 1, nesting 1
+  rbsp.insert(rbsp.end(), 12, 0x00);                  // general profile, tier, level
+  rbsp.insert(rbsp.end(), {0x40, 0x00, 0x00, 0x24});  // flags 0 1, reserved, level, ue(3), stop
+  std::vector<uint8_t> sps3 = {0x42, 0x01};
+  int zeros = 0;
+  for (uint8_t b : rbsp) {
+    if (zeros == 2 && b <= 3) {
+      sps3.push_back(0x03);
+      zeros = 0;
+    }
+    sps3.push_back(b);
+    zeros = b == 0 ? zeros + 1 : 0;
+  }
+  auto hevc_sps3 = fp::ParameterSetId(true, sps3.data(), sps3.size());
+  Check(ids == "00/000" && avc1 == 1u && hevc1 == 1u && avc200 == 200u && hevc_sps3 == 3u,
         "builders: parameter set IDs read from H.264 SPS/PPS and HEVC VPS/SPS/PPS",
-        ids + Format(", PPS 1: %d %d", avc1 ? int(*avc1) : -1, hevc1 ? int(*hevc1) : -1));
+        ids + Format(", PPS 1: %d %d, H.264 PPS 200: %d, HEVC SPS 3 with a sub-layer: %d", avc1 ? int(*avc1) : -1,
+                     hevc1 ? int(*hevc1) : -1, avc200 ? int(*avc200) : -1, hevc_sps3 ? int(*hevc_sps3) : -1));
   auto core = fp::Eac3SpecificBoxFromConfig(48000, 8);
   Check(core && core == fp::Eac3SpecificBoxFromConfig(48000, 6),
         "builders: dec3 from a 7.1 config describes its 5.1 core", core ? ft::Hex(*core) : "none");
@@ -2927,7 +2968,14 @@ void BuilderSelfTests() {
   // Chromium's whole-sample-encrypted AC-3/E-AC-3: no dac3/dec3 in the config
   // and no clear syncframe, so the renderer builds the box from rate and
   // channels and the protected format comes out as Apple's.
-  for (auto [media, type] : {std::pair<const Media*, const char*>{&w->ac3, "qac3"}, {&w->eac3, "qec3"}}) {
+  struct Fallback {
+    const Media* media;
+    const char* type;
+    int channels;  // 0: the file's.
+  };
+  for (Fallback fallback : {Fallback{&w->ac3, "qac3", 0}, Fallback{&w->eac3, "qec3", 0}, Fallback{&w->eac3, "qec3", 8}}) {
+    const Media* media = fallback.media;
+    const char* type = fallback.type;
     struct NullClient : fp::FairPlayRendererClient {
       void OnNeedData(fp::StreamType) override {}
       void OnWaitingForKey() override {}
@@ -2939,6 +2987,7 @@ void BuilderSelfTests() {
     fp::FairPlayRenderer renderer(&client, [](std::function<void()>) {});
     fp::AudioConfig ac = AudioConfigFor(media->info, Framing::kChromium, true);
     ac.encryption.scheme = fp::EncryptionScheme::kCbcs;
+    if (fallback.channels) ac.channels = fallback.channels;
     fp::Result result = renderer.Initialize(std::nullopt, ac);
     const ft::Sample& first = media->segments[0][0];
     fp::EncodedSample sample;
@@ -2954,7 +3003,8 @@ void BuilderSelfTests() {
     fp::RendererStatus s = renderer.GetStatus();
     Check(enqueued == fp::EnqueueResult::kWaitingForKey && ft::FourCCString(s.audio_protected_format) == type,
           std::string("renderer: whole-sample-encrypted ") + (media == &w->ac3 ? "AC-3" : "E-AC-3") +
-              " with no config box gets '" + type + "' built from rate and channels",
+              Format(" (%d channels)", ac.channels) + " with no config box gets '" + type +
+              "' built from rate and channels",
           Format("Initialize %s, enqueue %d, protected '%s'", result.ok() ? "ok" : result.message.c_str(),
                  int(enqueued), ft::FourCCString(s.audio_protected_format).c_str()));
   }

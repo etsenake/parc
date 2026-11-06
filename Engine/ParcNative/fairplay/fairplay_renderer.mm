@@ -606,11 +606,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!audio_) {
       return Result::Error(Exception::kInvalidState, "no audio stream");
     }
+    if (unique_id.empty() && !output_device_set_) {
+      return Result::Ok();  // Still following the system default.
+    }
     NSString* uid = unique_id.empty() ? DefaultOutputDeviceUid() : @(unique_id.c_str());
     if (!uid.length) {
       return Result::Error(Exception::kNotSupported, "no default audio output device");
     }
     audio_.audioOutputDeviceUniqueID = uid;
+    // Once a device was named the renderer stays pinned to one, so every
+    // later "" names the default of that moment.
+    output_device_set_ = true;
     return Result::Ok();
   }
 
@@ -1188,9 +1194,15 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     const bool eac3 = audio_config_->codec == AudioCodec::kEAC3;
     std::optional<std::vector<uint8_t>> payload =
         eac3 ? Eac3SpecificBoxPayload(data, size, subsamples) : Ac3SpecificBoxPayload(data, size, subsamples);
+    const int32_t channels = audio_config_->channels;
     if (!payload && subsamples) {
-      payload = eac3 ? Eac3SpecificBoxFromConfig(audio_config_->sample_rate, audio_config_->channels)
-                     : Ac3SpecificBoxFromConfig(audio_config_->sample_rate, audio_config_->channels);
+      payload = eac3 ? Eac3SpecificBoxFromConfig(audio_config_->sample_rate, channels)
+                     : Ac3SpecificBoxFromConfig(audio_config_->sample_rate, channels);
+      // A 6.1/7.1 config gets the box of its 5.1 core; the sample entry
+      // says 6 channels to match it.
+      if (payload && channels > 6) {
+        audio_config_->channels = 6;
+      }
     }
     if (!payload) {
       *error = subsamples ? "AC-3/E-AC-3 config needs a 48, 44.1 or 32 kHz rate and 1-8 channels"
@@ -1200,6 +1212,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     audio_config_->extra_data = *payload;
     if (Result result = CreateAudioFormats(error); !result.ok()) {
       audio_config_->extra_data.clear();
+      audio_config_->channels = channels;
       *error = result.message;
       return false;
     }
@@ -1442,7 +1455,15 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // dropped; without re-delivery the queued duration would play as silence.
   void OnAudioFlushedAutomatically(double flush_time) {
     ++status_.audio_automatic_flushes;
-    for (const Submitted& entry : audio_stream_.submitted) {
+    // A flush of the previous timeline whose notice arrives after Flush
+    // carries a time outside what was enqueued since; acting on it would
+    // queue the new audio twice.
+    const std::deque<Submitted>& submitted = audio_stream_.submitted;
+    if (submitted.empty() || flush_time + 1e-6 < submitted.front().start ||
+        flush_time > audio_stream_.enqueued_end + 1e-6) {
+      return;
+    }
+    for (const Submitted& entry : submitted) {
       if (entry.start + 1e-6 >= flush_time) {
         [audio_ enqueueSampleBuffer:entry.buffer];
         ++status_.redelivered;
@@ -1711,6 +1732,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   ScopedFormat audio_clear_format_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> video_protected_formats_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> audio_protected_formats_;
+  bool output_device_set_ = false;  // SetAudioOutputDevice named a device.
   // Cache keys of the protected formats last used (GetStatus reports them).
   std::vector<uint8_t> video_protected_key_;
   std::vector<uint8_t> audio_protected_key_;

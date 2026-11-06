@@ -768,13 +768,17 @@ std::optional<uint32_t> ParameterSetId(bool hevc, const uint8_t* nal, size_t siz
   }
   BitReader r(rbsp.data(), rbsp.size());
   uint64_t id = 0;
+  uint64_t max_id = 0;
   if (!hevc && type == 7) {
     r.Get(24);  // profile_idc, constraint flags, level_idc
     id = r.Uvlc();
+    max_id = 31;
   } else if (!hevc && type == 8) {
     id = r.Uvlc();
+    max_id = 255;
   } else if (hevc && type == 32) {
     id = r.Get(4);
+    max_id = 15;
   } else if (hevc && type == 33) {
     r.Get(4);  // sps_video_parameter_set_id
     const int sub_layers = static_cast<int>(r.Get(3));
@@ -793,12 +797,14 @@ std::optional<uint32_t> ParameterSetId(bool hevc, const uint8_t* nal, size_t siz
       if (level_present[i]) r.Get(8);
     }
     id = r.Uvlc();
+    max_id = 15;
   } else if (hevc && type == 34) {
     id = r.Uvlc();
+    max_id = 63;
   } else {
     return std::nullopt;
   }
-  if (r.failed() || id > 63) {
+  if (r.failed() || id > max_id) {
     return std::nullopt;
   }
   return static_cast<uint32_t>(id);
