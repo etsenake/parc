@@ -421,7 +421,7 @@ TV, where Safari reloads the page: Parc is better here: **kept**
 video can't be cast (Safari uses AirPlay). Native HLS video, FairPlay
 included, now AirPlays from the page's button and the Mini Player through the
 system route list: **fixed** c3c53b1d (no device picker of Parc's own: listing
-devices needs Apple-only entitlements; Josh agreed). Still user-felt: no
+devices needs Apple-only entitlements; Josh agreed). Josh approved the Mini
 "playing on <TV>" placard over the video, no AirPlay button in Parc's in-page
 controls, the standard Remote Playback API opens Chrome's Cast dialog where
 Safari opens AirPlay, and `webkitWirelessVideoPlaybackDisabled` is missing:
