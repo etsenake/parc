@@ -40,13 +40,25 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **57**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **58**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
 entry here shows its commit, and each fix's follow-ups are fixed. The live
 slot list and queue are in `work/safari-media-audit-src/RUNNING_LOG.md`.
+
+### Casting after leaving the page (CAST-4, CAST-5)
+
+A cast still connecting, or of a video played under five seconds, ended when
+the page entered the back/forward cache: **fixed** ed1b5e34 (overlay 578).
+A progressive file whose data at the paused position isn't downloaded yet
+shows no picture on the TV while the page is cached and evicts it past about
+1 MB; a background tab frozen outside the cache loses a cast that connects
+after freezing: **in progress** (CAST-5). An unmeasured paused cast is sized
+at 30 fps, so a paused 1080p60 video can start on a TV without 4K support
+where Chromium's measurement would refuse it: **left** (no frame rate exists
+in the config; the TV's own limit still applies).
 
 ## Reading log
 
