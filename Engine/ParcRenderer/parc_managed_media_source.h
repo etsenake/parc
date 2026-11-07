@@ -9,9 +9,11 @@
 // addedRanges and removedRanges) whenever their buffered ranges change; static
 // isTypeSupported; attachment through `src` or `<source>` with an object URL
 // or through `srcObject`, which Chromium accepts only for MediaStreams and so
-// is mapped to an object URL. `streaming` follows WebKit's managed policy:
-// true while less than 10 s ahead of the playback position is buffered, false
-// once 30 s are or everything to the end is. Dedicated workers of such
+// is mapped to an object URL. `streaming` follows WebKit's managed policy
+// (ManagedMediaSource::monitorSourceBuffers): true while the next 10 s aren't
+// buffered, false once the next 30 s are (capped at the duration once the
+// source has ended), changing at once with its event queued as a task.
+// Dedicated workers of such
 // documents get it too, where it attaches through MediaSource's `handle`.
 // tests/FairPlayIdentity/managed_media_source.mjs runs this exact script
 // against a model of the media APIs.
@@ -41,9 +43,13 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
   const setPrototype = Object.setPrototypeOf;
   const createObjectURL = g.URL && g.URL.createObjectURL;
   const revokeObjectURL = g.URL && g.URL.revokeObjectURL;
+  // WebKit's ManagedMediaSource thresholds and MediaSourcePrivate's gap
+  // tolerances: a gap shorter than the tolerance counts as buffered.
   const LOW_SECONDS = 10;
   const HIGH_SECONDS = 30;
-  const AT_END_SECONDS = 0.1;
+  const START_GAP_SECONDS = 1;
+  const GAP_SECONDS = 0.125;
+  const AUDIO_GAP_SECONDS = 0.25;
   const POLL_MS = 1000;
   const MEDIA_EVENTS = ['timeupdate', 'seeking', 'seeked', 'waiting', 'playing', 'emptied'];
   const mediaPrototype = g.HTMLMediaElement && g.HTMLMediaElement.prototype;
@@ -160,6 +166,38 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     get removedRanges() { return events.get(this).removed; }
   }
 
+  // Whether a SourceBuffer of this type carries audio, which widens the gap
+  // tolerance where its ranges cover the time.
+  function carriesAudio(type) {
+    const value = String(type);
+    return /^\s*audio\//i.test(value) ||
+        /(^|[\s,"'=])(mp4a|ac-3|ec-3|ec\+3|ac-4|dts[cehlx]|mh[am]1|opus|flac|vorbis|alac|mp3|[if]pcm)([.,"'\s]|$)/i.test(
+            value.slice(value.indexOf(';') + 1));
+  }
+
+  // Replaces a SourceBuffer member in place, keeping its attributes, so
+  // ManagedSourceBuffer.prototype keeps only the members WebKit gives it.
+  function wrapMember(name, wrap) {
+    const descriptor = describe(NativeSourceBuffer.prototype, name);
+    if (!descriptor) {
+      return;
+    }
+    define(NativeSourceBuffer.prototype, name, wrap(descriptor));
+  }
+  wrapMember('changeType', (descriptor) => ({
+    // A method definition, so not constructible, like the native one.
+    value: {changeType(type) {
+      const result = descriptor.value.apply(this, arguments);
+      const state = buffers.get(this);
+      if (state) {
+        state.audio = carriesAudio(type);
+      }
+      return result;
+    }}.changeType,
+    writable: descriptor.writable, enumerable: descriptor.enumerable,
+    configurable: descriptor.configurable,
+  }));
+
   class ManagedSourceBuffer extends NativeSourceBuffer {
     constructor() { illegal(); }
     get onbufferedchange() { return handlerOf(this, 'bufferedchange'); }
@@ -257,59 +295,155 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     }
   }
 
-  function bufferedAhead(source, time) {
-    const list = source.activeSourceBuffers.length ? source.activeSourceBuffers
-                                                   : source.sourceBuffers;
-    if (!list.length) {
-      return 0;
-    }
-    let ahead = Infinity;
-    for (let i = 0; i < list.length; ++i) {
-      let buffered;
-      try {
-        buffered = list[i].buffered;
-      } catch (e) {
-        return 0;
+  // a ∩ b, both sorted lists of disjoint [start, end] pairs.
+  function intersect(a, b) {
+    const out = [];
+    for (let i = 0, j = 0; i < a.length && j < b.length;) {
+      const start = Math.max(a[i][0], b[j][0]);
+      const end = Math.min(a[i][1], b[j][1]);
+      if (start < end) {
+        out.push([start, end]);
       }
-      let here = 0;
-      for (let j = 0; j < buffered.length; ++j) {
-        if (buffered.start(j) <= time + AT_END_SECONDS && buffered.end(j) > time) {
-          here = buffered.end(j) - time;
-          break;
-        }
+      if (a[i][1] < b[j][1]) {
+        ++i;
+      } else {
+        ++j;
       }
-      ahead = Math.min(ahead, here);
     }
-    return ahead;
+    return out;
   }
 
-  // WebKit's policy, run while the source is open or ended (an ended source
-  // reopens on the next append, which a seek back needs). Without a known
-  // playback position the source may start streaming but never stops, so a
-  // player that obeys it can't stall.
+  // The media source's buffered ranges as WebKit's MediaSourcePrivate has
+  // them: the intersection of its active SourceBuffers' ranges, each one's
+  // last range reaching the highest end time once the source has ended, and
+  // the union of the ranges of those carrying audio.
+  function sourceBuffered(source, ended) {
+    const list = source.activeSourceBuffers;
+    const all = [];
+    let highest = 0;
+    for (let i = 0; i < list.length; ++i) {
+      let ranges;
+      try {
+        ranges = snapshot(list[i].buffered);
+      } catch (e) {
+        ranges = [];
+      }
+      all.push({ranges, audio: !!(buffers.get(list[i]) || {}).audio});
+      if (ranges.length) {
+        highest = Math.max(highest, ranges[ranges.length - 1][1]);
+      }
+    }
+    let buffered = null;
+    const audio = [];
+    for (const entry of all) {
+      const ranges = entry.ranges;
+      if (entry.audio) {
+        audio.push(...ranges);
+      }
+      if (ended && ranges.length) {
+        ranges[ranges.length - 1] = [ranges[ranges.length - 1][0], highest];
+      }
+      buffered = buffered ? intersect(buffered, ranges) : ranges;
+    }
+    return {buffered: buffered || [], audio};
+  }
+
+  // MediaSourcePrivate::gapToleranceAtTime.
+  function tolerance(time, ranges) {
+    const buffered = ranges.buffered;
+    if (time >= 0 && time < START_GAP_SECONDS && buffered.length &&
+        buffered[0][0] <= START_GAP_SECONDS && time < buffered[0][0]) {
+      return START_GAP_SECONDS;
+    }
+    return ranges.audio.some(([start, end]) => time >= start && time <= end)
+        ? AUDIO_GAP_SECONDS : GAP_SECONDS;
+  }
+
+  function nearest(list, time) {
+    let closest = NaN;
+    let delta = Infinity;
+    for (const [start, end] of list) {
+      if (time >= start && time <= end) {
+        return time;
+      }
+      for (const edge of [start, end]) {
+        if (Math.abs(edge - time) < delta) {
+          delta = Math.abs(edge - time);
+          closest = edge;
+        }
+      }
+    }
+    return closest;
+  }
+
+  // MediaSourcePrivate::isBuffered: [from, to] is buffered, give or take the
+  // gap tolerance at its ends and at each gap inside it.
+  function isBuffered(ranges, from, to) {
+    const inside = intersect(ranges.buffered, [[from, to]]);
+    if (!inside.length ||
+        !(Math.abs(nearest(inside, from) - from) <= tolerance(from, ranges)) ||
+        !(Math.abs(nearest(inside, to) - to) <= tolerance(to, ranges))) {
+      return false;
+    }
+    for (let i = 1; i < inside.length; ++i) {
+      if (inside[i][0] - inside[i - 1][1] > tolerance(inside[i - 1][1], ranges)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // WebKit's ManagedMediaSource::setStreaming: the attribute changes at once
+  // and its event follows as a task.
+  function setStreaming(source, state, streaming) {
+    if (state.streaming === streaming) {
+      return;
+    }
+    state.streaming = streaming;
+    g.setTimeout(() => {
+      source.dispatchEvent(new NativeEvent(streaming ? 'startstreaming' : 'endstreaming'));
+    }, 0);
+  }
+
+  // WebKit's ManagedMediaSource::monitorSourceBuffers, run whenever the
+  // playback position, the buffered ranges or the source's state change.
+  // Without a known playback position the source may start streaming but
+  // never stops, so a player that obeys it can't stall.
   function evaluate(source) {
     const state = sources.get(source);
     if (!state) {
       return;
     }
-    let wanted = state.streaming;
     if (source.readyState === 'closed') {
-      wanted = false;
-    } else {
-      const element = elementOf(source, state);
-      const time = element ? element.currentTime : 0;
-      const ahead = bufferedAhead(source, time);
-      const duration = source.duration;
-      const toEnd = Number.isFinite(duration) ? Math.max(0, duration - time) : Infinity;
-      if (element && ahead >= Math.min(HIGH_SECONDS, toEnd - AT_END_SECONDS)) {
-        wanted = false;
-      } else if (ahead < Math.min(LOW_SECONDS, toEnd - AT_END_SECONDS)) {
-        wanted = true;
-      }
+      setStreaming(source, state, false);
+      return;
     }
-    if (wanted !== state.streaming) {
-      state.streaming = wanted;
-      source.dispatchEvent(new NativeEvent(wanted ? 'startstreaming' : 'endstreaming'));
+    if (!source.activeSourceBuffers.length) {
+      setStreaming(source, state, true);
+      return;
+    }
+    const element = elementOf(source, state);
+    const time = element ? element.currentTime : 0;
+    const ended = source.readyState === 'ended';
+    const duration = source.duration;
+    if (element && ended && time >= duration) {
+      setStreaming(source, state, false);
+      return;
+    }
+    const limitAhead = (upper) => ended ? Math.min(duration, time + upper) : time + upper;
+    const ranges = sourceBuffered(source, ended);
+    if (!state.streaming) {
+      if (!isBuffered(ranges, time, Math.max(time, limitAhead(LOW_SECONDS)))) {
+        setStreaming(source, state, true);
+      }
+      return;
+    }
+    if (!element) {
+      return;
+    }
+    const ahead = limitAhead(HIGH_SECONDS);
+    if (time >= ahead || isBuffered(ranges, time, ahead)) {
+      setStreaming(source, state, false);
     }
   }
 
@@ -339,7 +473,7 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       }, POLL_MS);
       state.timer = timer;
     }
-    g.setTimeout(() => evaluate(source), 0);
+    evaluate(source);
   }
 
   function closed(source) {
@@ -365,9 +499,12 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
         streaming: false, element: null, url: '', revokeOnOpen: false,
         timer: 0, watched: new WeakSet(), unwatch: [],
       });
-      this.addEventListener('sourceopen', () => opened(this));
-      this.addEventListener('sourceended', () => evaluate(this));
-      this.addEventListener('sourceclose', () => closed(this));
+      // Capturing listeners added first run before any of the page's, so
+      // `streaming` is current when the page hears these events, as in
+      // WebKit, which updates it as the state changes.
+      this.addEventListener('sourceopen', () => opened(this), true);
+      this.addEventListener('sourceended', () => evaluate(this), true);
+      this.addEventListener('sourceclose', () => closed(this), true);
     }
     get streaming() {
       const state = sources.get(this);
@@ -383,15 +520,21 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     addSourceBuffer(type) {
       const sourceBuffer = super.addSourceBuffer(type);
       setPrototype(sourceBuffer, ManagedSourceBuffer.prototype);
-      buffers.set(sourceBuffer, {ranges: []});
+      buffers.set(sourceBuffer, {ranges: [], audio: carriesAudio(type)});
       const ref = new NativeWeakRef(this);
-      sourceBuffer.addEventListener('updateend', () => {
-        bufferedChanged(sourceBuffer);
+      const update = () => {
         const live = ref.deref();
         if (live) {
           evaluate(live);
         }
-      });
+      };
+      // WebKit re-evaluates as an append or removal completes, before
+      // `update` and `updateend` reach the page.
+      sourceBuffer.addEventListener('update', update, true);
+      sourceBuffer.addEventListener('updateend', () => {
+        bufferedChanged(sourceBuffer);
+        update();
+      }, true);
       return sourceBuffer;
     }
     static isTypeSupported(type) {

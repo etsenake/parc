@@ -41,8 +41,13 @@ function makeWorld(options = {}) {
       this._ranges = [];
     }
     get buffered() { return nativeRanges(this._ranges); }
+    changeType(type) { this.type = type; }
     // Test helper: an append or eviction finished with these ranges.
-    _finish(list) { this._ranges = list; this.dispatchEvent(new Event('updateend')); }
+    _finish(list) {
+      this._ranges = list;
+      this.dispatchEvent(new Event('update'));
+      this.dispatchEvent(new Event('updateend'));
+    }
   }
   SourceBuffer.token = Symbol('sb');
   class SourceBufferList extends Array {}
@@ -63,6 +68,8 @@ function makeWorld(options = {}) {
     }
     static isTypeSupported(type) { return /^video\/mp4|^audio\/mp4/.test(type); }
     static get canConstructInDedicatedWorker() { return true; }
+    _deactivate(sb) { this.activeSourceBuffers.splice(this.activeSourceBuffers.indexOf(sb), 1); }
+    _activate(sb) { this.activeSourceBuffers.push(sb); }
     _open() { this.readyState = 'open'; this.dispatchEvent(new Event('sourceopen')); }
     _end() { this.readyState = 'ended'; this.dispatchEvent(new Event('sourceended')); }
     _close() { this.readyState = 'closed'; this.dispatchEvent(new Event('sourceclose')); }
@@ -215,7 +222,9 @@ function makeWorld(options = {}) {
 
   video.currentTime = 25;
   video.dispatchEvent(new context.Event('timeupdate'));
-  check(source.streaming === true && starts === 2, 'startstreaming again under 10 s ahead');
+  check(source.streaming === true && starts === 1, 'streaming changes at once, its event is a task');
+  world.run();
+  check(starts === 2, 'startstreaming again under 10 s ahead');
 
   sb._finish([[10, 40]]);
   world.run();
@@ -233,11 +242,12 @@ function makeWorld(options = {}) {
   source.duration = 45;
   sb._finish([[20, 45]]);
   world.run();
-  check(source.streaming === false, 'buffered to the end stops streaming');
+  check(source.streaming === true,
+        'buffered to the duration of an open source: still streaming (WebKit caps at the duration once ended)');
 
   // End of stream, then a seek back into data that was evicted.
   source._end();
-  check(source.streaming === false, 'ended and fully buffered: not streaming');
+  check(source.streaming === false, 'ended and buffered to the end: not streaming');
   video.currentTime = 2;
   video.dispatchEvent(new context.Event('seeking'));
   check(source.streaming === true, 'a seek back after endOfStream starts streaming again');
@@ -262,6 +272,95 @@ function makeWorld(options = {}) {
   check(video.attributes.get('src') === 'https://example.com/poster-fallback.mp4',
         'clearing srcObject restores the src attribute set before');
   check(world.revoked.includes(reattached), 'its URL is revoked');
+}
+
+// ---- WebKit's streaming policy (ManagedMediaSource::monitorSourceBuffers).
+{
+  const world = makeWorld();
+  const { context } = world;
+  const source = new context.ManagedMediaSource();
+  const video = new context.HTMLVideoElement();
+  video.srcObject = source;
+  let seenInSourceOpen = null;
+  source.addEventListener('sourceopen', () => { seenInSourceOpen = source.streaming; }, true);
+  const order = [];
+  source.addEventListener('sourceopen', () => order.push('sourceopen'));
+  source.addEventListener('startstreaming', () => order.push('startstreaming'));
+  source.addEventListener('endstreaming', () => order.push('endstreaming'));
+  source._open();
+  check(seenInSourceOpen === true, 'streaming is already true when the page hears sourceopen');
+  world.run();
+  check(order.join() === 'sourceopen,startstreaming', 'startstreaming follows sourceopen as its own task');
+
+  const first = source.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+  source._deactivate(first);
+  first._finish([[0, 60]]);
+  check(source.streaming === true, 'with no active SourceBuffer the source streams, whatever is buffered');
+  source._activate(first);
+  let streamingDuringUpdate = null;
+  first.addEventListener('update', () => { streamingDuringUpdate = source.streaming; }, true);
+  first._finish([[0, 60]]);
+  check(streamingDuringUpdate === false, 'once active, 30 s ahead stops it before the page hears update');
+  world.run();
+
+  const audio = source.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
+  audio._finish([[0, 8]]);
+  check(source.streaming === true, 'the active SourceBuffers\' intersection decides: 8 s of audio ahead');
+  audio._finish([[0, 60]]);
+  check(source.streaming === false, 'all of them 30 s ahead stops it');
+
+  // Both transitions in one task queue both events, in order.
+  world.run();
+  order.length = 0;
+  audio._finish([[0, 5]]);
+  audio._finish([[0, 60]]);
+  check(order.length === 0, 'no event fires synchronously');
+  world.run();
+  check(order.join() === 'startstreaming,endstreaming', 'each change queues its own event');
+
+  // Ended with the playback position at the duration: never streaming.
+  source.duration = 20;
+  first._finish([]);
+  check(source.streaming === true, 'nothing buffered: streaming');
+  video.currentTime = 20;
+  source._end();
+  check(source.streaming === false, 'ended at the duration: not streaming, though nothing is buffered');
+  video.currentTime = 5;
+  video.dispatchEvent(new context.Event('seeking'));
+  check(source.streaming === true, 'a seek back from the end starts streaming');
+}
+
+// ---- WebKit's gap tolerances: 125 ms, 250 ms where audio covers the gap,
+// 1 s before the first range near the start.
+{
+  const world = makeWorld();
+  const { context } = world;
+  const source = new context.ManagedMediaSource();
+  const video = new context.HTMLVideoElement();
+  video.srcObject = source;
+  source._open();
+  const sb = source.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+  sb._finish([[0, 10], [10.1, 40]]);
+  check(source.streaming === false, 'a gap under 125 ms counts as buffered');
+  video.currentTime = 5;
+  sb._finish([[0, 10], [10.2, 40]]);
+  check(source.streaming === true, 'a 200 ms gap with no audio across it is a hole');
+  const muxed = source.addSourceBuffer('video/mp4; codecs="avc1.640028,mp4a.40.2"');
+  muxed._finish([[0, 40]]);
+  check(source.streaming === false, 'audio across the gap widens the tolerance to 250 ms');
+  muxed.changeType('video/mp4; codecs="avc1.640028"');
+  video.dispatchEvent(new context.Event('timeupdate'));
+  check(source.streaming === true, 'after changeType to video only, the gap is a hole again');
+  let constructed = true;
+  try { new (muxed.changeType)('video/mp4'); } catch (e) { constructed = e.name !== 'TypeError'; }
+  check(!constructed, 'the wrapped changeType is not a constructor, like the native one');
+
+  video.currentTime = 0;
+  sb._finish([[0.5, 40]]);
+  muxed._finish([[0.5, 40]]);
+  check(source.streaming === false, 'a first range starting within 1 s covers the start');
+  sb._finish([[1.5, 40]]);
+  check(source.streaming === true, 'a first range starting after 1 s leaves the start unbuffered');
 }
 
 // ---- Attachment through src with an object URL, setAttribute, and <source>.

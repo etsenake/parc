@@ -198,15 +198,24 @@ tested. So the main world of every Safari-identity document gets a
   the buffered ranges, including eviction during an append. Changes made
   without one (end of stream, garbage collection under memory pressure) are
   reported by the once-a-second check, up to a second late.
-- `streaming` follows WebKit's thresholds while the source is open or ended:
-  it turns true (`startstreaming`) while less than 10 s ahead of the playback
-  position is buffered, and false (`endstreaming`) once 30 s are or
-  everything to the end is. A seek back after `endOfStream()` starts it
-  again. It's checked on the media element's playback events, after each
-  append and once a second while the source is open; that check holds the
-  source weakly, so a torn-down player can still be collected. Without a
-  known media element the source may start streaming but never stops, so a
-  player that obeys it can't stall.
+- `streaming` follows WebKit's `ManagedMediaSource::monitorSourceBuffers`.
+  With no active SourceBuffer it's true. Otherwise it turns true while the
+  next 10 s after the playback position aren't buffered, and false once the
+  next 30 s are; only once the source has ended are those windows capped at
+  the duration, and an ended source whose position reached the duration
+  stops. Buffered means the intersection of the active SourceBuffers' ranges
+  (each reaching the highest end time once ended), with WebKit's gap
+  tolerances: 125 ms, 250 ms where a SourceBuffer carrying audio covers the
+  gap, and 1 s before a first range that starts within the first second. The
+  attribute changes at once and `startstreaming`/`endstreaming` follow as
+  tasks, so it's already true when the page hears `sourceopen`, and current
+  when it hears `update`, `updateend`, `sourceended` and `sourceclose`. A seek
+  back after `endOfStream()` starts it again. It's checked on the media
+  element's playback events, as appends and removals complete and once a
+  second while the source is open; that check holds the source weakly, so a
+  torn-down player can still be collected. Without a known media element the
+  source may start streaming but never stops, so a player that obeys it
+  can't stall.
 - It can be attached through `src` or `setAttribute('src')` with an object
   URL, through a `<source>` child, or through `srcObject`, as Safari allows
   (`setAttribute` is followed on media and `<source>` elements only).
