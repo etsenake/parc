@@ -209,7 +209,13 @@ tested. So the main world of every Safari-identity document gets a
   answers `"high"` as WebKit's always does (so `qualitychange` never fires),
   and `onqualitychange`; `streaming`, `startstreaming`/`endstreaming` with
   `onstartstreaming`/`onendstreaming`; and a static `isTypeSupported` that
-  answers like `MediaSource`'s, as WebKit's does.
+  answers like `MediaSource`'s, as WebKit's does. The three interfaces have
+  exactly the members of WebKit's IDL: `addSourceBuffer` stays on
+  `MediaSource.prototype` and `canConstructInDedicatedWorker` comes from
+  `MediaSource`; the constructor converts WebKit's `MediaSourceInit`;
+  `BufferedChangeEvent` requires its init dictionary, takes only `TimeRanges`
+  and reports ranges not given as `null`; members called on another object
+  throw as WebIDL's do.
 - Its SourceBuffers are `ManagedSourceBuffer`s that fire `bufferedchange`, a
   `BufferedChangeEvent` with `addedRanges` and `removedRanges` as
   `TimeRanges`, whenever their buffered ranges change. WebKit queues it while

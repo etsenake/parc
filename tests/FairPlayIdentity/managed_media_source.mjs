@@ -27,6 +27,7 @@ function makeWorld(options = {}) {
   class TimeRanges {
     constructor() { throw new TypeError('Illegal constructor'); }
   }
+  Object.defineProperty(TimeRanges.prototype, Symbol.toStringTag, { value: 'TimeRanges', configurable: true });
   function nativeRanges(list) {
     const value = Object.create(TimeRanges.prototype);
     Object.defineProperty(value, 'length', { value: list.length });
@@ -104,7 +105,10 @@ function makeWorld(options = {}) {
         if (list.includes(sb)) list.splice(list.indexOf(sb), 1);
       }
     }
-    static isTypeSupported(type) { return /^video\/mp4|^audio\/mp4/.test(type); }
+    static isTypeSupported(type) {
+      if (!arguments.length) throw new TypeError('1 argument required');
+      return /^video\/mp4|^audio\/mp4/.test(type);
+    }
     static get canConstructInDedicatedWorker() { return true; }
     _deactivate(sb) { this.activeSourceBuffers.splice(this.activeSourceBuffers.indexOf(sb), 1); }
     _activate(sb) { this.activeSourceBuffers.push(sb); }
@@ -203,18 +207,64 @@ function makeWorld(options = {}) {
   managed.onqualitychange = () => ++qualityEvents;
   managed.dispatchEvent(new context.Event('qualitychange'));
   check(typeof managed.onqualitychange === 'function' && qualityEvents === 1, 'onqualitychange is an event handler');
-  check(Object.getOwnPropertyNames(ManagedMediaSource.prototype).slice(0, 6).join() ===
+  check(Object.getOwnPropertyNames(ManagedMediaSource.prototype).join() ===
         'constructor,quality,onqualitychange,streaming,onstartstreaming,onendstreaming',
-        'members in the order of WebKit\'s ManagedMediaSource.idl');
+        'exactly the members of WebKit\'s ManagedMediaSource.idl, in order');
+  check(Object.getOwnPropertyNames(ManagedMediaSource).sort().join() === 'isTypeSupported,length,name,prototype' &&
+        Object.getOwnPropertyDescriptor(ManagedMediaSource, 'isTypeSupported').enumerable &&
+        ManagedMediaSource.length === 0 && ManagedMediaSource.isTypeSupported.length === 1,
+        'the interface object has WebKit\'s statics; canConstructInDedicatedWorker comes from MediaSource');
+  let noArgument = false;
+  try { ManagedMediaSource.isTypeSupported(); } catch (e) { noArgument = e.name === 'TypeError'; }
+  check(noArgument, 'isTypeSupported() without a type throws like MediaSource\'s');
+  for (const name of ['onqualitychange', 'onstartstreaming', 'onendstreaming']) {
+    let foreign = false;
+    try { Object.getOwnPropertyDescriptor(ManagedMediaSource.prototype, name).get.call(new MediaSource()); }
+    catch (e) { foreign = e.name === 'TypeError'; }
+    check(foreign, name + ' on a plain MediaSource is an illegal invocation');
+  }
+  let badInit = false;
+  try { new ManagedMediaSource(5); } catch (e) { badInit = e.name === 'TypeError'; }
+  check(badInit, 'a non-dictionary init is a TypeError');
+  let readDetachable = false;
+  new ManagedMediaSource({ get detachable() { readDetachable = true; return false; } });
+  check(readDetachable, 'MediaSourceInit.detachable is read');
+  const plainSB = new MediaSource().addSourceBuffer('video/mp4');
+  check(Object.getPrototypeOf(plainSB) === SourceBuffer.prototype, 'a plain MediaSource still makes plain SourceBuffers');
+  let foreignHandler = false;
+  try { Object.getOwnPropertyDescriptor(ManagedSourceBuffer.prototype, 'onbufferedchange').set.call(plainSB, () => {}); }
+  catch (e) { foreignHandler = e.name === 'TypeError'; }
+  check(foreignHandler, 'onbufferedchange on a plain SourceBuffer is an illegal invocation');
   check(Object.getOwnPropertyDescriptor(ManagedMediaSource.prototype, 'quality').enumerable &&
         Object.getOwnPropertyDescriptor(ManagedMediaSource.prototype, 'onqualitychange').enumerable,
         'quality and onqualitychange are enumerable');
   let threw = false;
   try { new ManagedSourceBuffer(); } catch (e) { threw = e.name === 'TypeError'; }
   check(threw, 'ManagedSourceBuffer has no public constructor');
-  const event = new BufferedChangeEvent('bufferedchange');
-  check(event.addedRanges.length === 0 && event.removedRanges.length === 0, 'empty event ranges');
+  let oneArgument = false;
+  try { new BufferedChangeEvent('bufferedchange'); } catch (e) { oneArgument = e.name === 'TypeError'; }
+  check(oneArgument && BufferedChangeEvent.length === 2, 'the init dictionary is required, as WebKit\'s IDL has it');
+  const event = new BufferedChangeEvent('bufferedchange', {});
+  check(event.addedRanges === null && event.removedRanges === null, 'ranges not given are null');
   check(event instanceof context.Event, 'BufferedChangeEvent is an Event');
+  const given = new BufferedChangeEvent('bufferedchange', { addedRanges: plainSB.buffered });
+  check(given.addedRanges === given.addedRanges && given.addedRanges instanceof context.TimeRanges &&
+        given.removedRanges === null, 'given TimeRanges are kept, the same object each time');
+  let notRanges = false;
+  try { new BufferedChangeEvent('bufferedchange', { removedRanges: [[0, 1]] }); } catch (e) { notRanges = e.name === 'TypeError'; }
+  check(notRanges, 'ranges that are not TimeRanges are a TypeError');
+  let readRemoved = false;
+  try {
+    new BufferedChangeEvent('bufferedchange', { addedRanges: {}, get removedRanges() { readRemoved = true; } });
+  } catch (e) {}
+  check(!readRemoved, 'an invalid addedRanges throws before removedRanges is read');
+  const otherFrameRanges = Object.create({ [Symbol.toStringTag]: 'TimeRanges' });
+  check(new BufferedChangeEvent('x', { addedRanges: otherFrameRanges }).addedRanges === otherFrameRanges,
+        'another frame\'s TimeRanges are accepted');
+  let foreignEvent = false;
+  try { Object.getOwnPropertyDescriptor(BufferedChangeEvent.prototype, 'addedRanges').get.call(new context.Event('x')); }
+  catch (e) { foreignEvent = e.name === 'TypeError'; }
+  check(foreignEvent, 'addedRanges on another event is an illegal invocation');
 }
 
 // Running twice changes nothing.

@@ -110,7 +110,7 @@ WebKit: `Modules/mediasource/ManagedMediaSource.*`, `ManagedSourceBuffer.*`,
 
 | Piece | Status | Owner |
 |---|---|---|
-| Constructor, extends MediaSource, `isTypeSupported` | present | fp-mms-presentation |
+| Constructor, extends MediaSource, `isTypeSupported` | present (exactly WebKit's IDL members, `MediaSourceInit`, statics, brand checks) | fp-mms-presentation |
 | `streaming`, `startstreaming`/`endstreaming`, handlers | present (WebKit's policy, gap tolerances and timing: attribute at once, events as tasks; never stops without a known element) | fp-mms-presentation |
 | `quality` (`"high"`) and `onqualitychange` (WebKit IDL, unconditional) | present | fp-mms-presentation |
 | `ManagedSourceBuffer` `bufferedchange`, `onbufferedchange`, `BufferedChangeEvent` | present (WebKit's timing: inside the operation, before `update`/`updateend`, with `updating` true and its guards; other changes as tasks) | fp-mms-presentation |

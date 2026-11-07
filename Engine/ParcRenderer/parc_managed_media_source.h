@@ -155,17 +155,45 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
         (typeof value === 'object' && value !== null) ? value : null;
   }
 
-  class BufferedChangeEvent extends NativeEvent {
-    constructor(type, init) {
-      super(type, init);
-      const options = init || {};
-      events.set(this, {
-        added: options.addedRanges || ranges([]),
-        removed: options.removedRanges || ranges([]),
-      });
+  // WebIDL's brand check for members called on another object.
+  function brand(map, target) {
+    if (!map.has(target)) {
+      throw new TypeError('Illegal invocation');
     }
-    get addedRanges() { return events.get(this).added; }
-    get removedRanges() { return events.get(this).removed; }
+  }
+
+  // TimeRanges from this realm or another frame's, and those built here.
+  const toStringOf = Object.prototype.toString;
+  function isTimeRanges(value) {
+    return value !== null && (typeof value === 'object' || typeof value === 'function') &&
+        toStringOf.call(value) === '[object TimeRanges]';
+  }
+
+  // As WebKit's BufferedChangeEvent.idl: the init dictionary is a required
+  // argument, its ranges must be TimeRanges, and those not given are null.
+  class BufferedChangeEvent extends NativeEvent {
+    constructor(type, eventInitDict) {
+      if (arguments.length < 2) {
+        throw new TypeError('Failed to construct \'BufferedChangeEvent\': 2 arguments required, but only ' +
+                            arguments.length + ' present.');
+      }
+      super(type, eventInitDict);
+      const init = eventInitDict === undefined || eventInitDict === null ? {} : eventInitDict;
+      // Each member is read and checked in turn, as WebIDL converts them.
+      const member = (name) => {
+        const value = init[name];
+        if (value !== undefined && !isTimeRanges(value)) {
+          throw new TypeError('Failed to construct \'BufferedChangeEvent\': The provided value for ' +
+                              name + ' is not of type \'TimeRanges\'.');
+        }
+        return value === undefined ? null : value;
+      };
+      const added = member('addedRanges');
+      const removed = member('removedRanges');
+      events.set(this, {added, removed});
+    }
+    get addedRanges() { brand(events, this); return events.get(this).added; }
+    get removedRanges() { brand(events, this); return events.get(this).removed; }
   }
 
   // Whether a SourceBuffer of this type carries audio, which widens the gap
@@ -386,8 +414,8 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
 
   class ManagedSourceBuffer extends NativeSourceBuffer {
     constructor() { illegal(); }
-    get onbufferedchange() { return handlerOf(this, 'bufferedchange'); }
-    set onbufferedchange(value) { setHandler(this, 'bufferedchange', value); }
+    get onbufferedchange() { brand(buffers, this); return handlerOf(this, 'bufferedchange'); }
+    set onbufferedchange(value) { brand(buffers, this); setHandler(this, 'bufferedchange', value); }
   }
 
   // A SourceBuffer's buffered ranges against the last ones reported:
@@ -697,7 +725,17 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
   }
 
   class ManagedMediaSource extends NativeMediaSource {
+    // WebKit's constructor takes an optional MediaSourceInit, whose
+    // `detachable` member is read as the dictionary is converted.
     constructor() {
+      const init = arguments[0];
+      if (init !== undefined && init !== null) {
+        if (typeof init !== 'object' && typeof init !== 'function') {
+          throw new TypeError('Failed to construct \'ManagedMediaSource\': ' +
+                              'The provided value is not of type \'MediaSourceInit\'.');
+        }
+        void !!init.detachable;
+      }
       super();
       sources.set(this, {
         streaming: false, element: null, url: '', revokeOnOpen: false,
@@ -718,8 +756,8 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       }
       return 'high';
     }
-    get onqualitychange() { return handlerOf(this, 'qualitychange'); }
-    set onqualitychange(value) { setHandler(this, 'qualitychange', value); }
+    get onqualitychange() { brand(sources, this); return handlerOf(this, 'qualitychange'); }
+    set onqualitychange(value) { brand(sources, this); setHandler(this, 'qualitychange', value); }
     get streaming() {
       const state = sources.get(this);
       if (!state) {
@@ -727,37 +765,50 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       }
       return state.streaming;
     }
-    get onstartstreaming() { return handlerOf(this, 'startstreaming'); }
-    set onstartstreaming(value) { setHandler(this, 'startstreaming', value); }
-    get onendstreaming() { return handlerOf(this, 'endstreaming'); }
-    set onendstreaming(value) { setHandler(this, 'endstreaming', value); }
-    addSourceBuffer(type) {
-      const sourceBuffer = super.addSourceBuffer(type);
-      setPrototype(sourceBuffer, ManagedSourceBuffer.prototype);
-      const ref = new NativeWeakRef(this);
-      const state = {
-        ranges: [], audio: carriesAudio(type), source: ref, operation: '',
-        reporting: false, aborted: false, swallowUpdateend: false,
-      };
-      buffers.set(sourceBuffer, state);
-      // Capturing listeners added first, so these run before the page's.
-      // WebKit re-evaluates `streaming` as an append or removal completes.
-      sourceBuffer.addEventListener('update', (event) => {
-        operationCompleted(ref.deref(), sourceBuffer, state, event);
-      }, true);
-      sourceBuffer.addEventListener('updateend', (event) => {
-        operationEnded(ref.deref(), sourceBuffer, state, event);
-      }, true);
-      return sourceBuffer;
-    }
+    get onstartstreaming() { brand(sources, this); return handlerOf(this, 'startstreaming'); }
+    set onstartstreaming(value) { brand(sources, this); setHandler(this, 'startstreaming', value); }
+    get onendstreaming() { brand(sources, this); return handlerOf(this, 'endstreaming'); }
+    set onendstreaming(value) { brand(sources, this); setHandler(this, 'endstreaming', value); }
+    // As MediaSource.isTypeSupported, which WebKit's calls; called without
+    // an argument it throws as the native one does.
     static isTypeSupported(type) {
-      return NativeMediaSource.isTypeSupported(type);
-    }
-    // Dedicated workers of a Safari-identity document get this script too.
-    static get canConstructInDedicatedWorker() {
-      return NativeMediaSource.canConstructInDedicatedWorker === true;
+      return NativeMediaSource.isTypeSupported.apply(NativeMediaSource, arguments);
     }
   }
+
+  // SourceBuffers a managed source creates are ManagedSourceBuffers. Added to
+  // MediaSource's addSourceBuffer in place, so ManagedMediaSource.prototype
+  // has only WebKit's members, and canConstructInDedicatedWorker comes from
+  // MediaSource as in WebKit (true where Chromium offers MediaSource to
+  // dedicated workers, which get this script too).
+  function adopt(source, sourceBuffer, type) {
+    setPrototype(sourceBuffer, ManagedSourceBuffer.prototype);
+    const ref = new NativeWeakRef(source);
+    const state = {
+      ranges: [], audio: carriesAudio(type), source: ref, operation: '',
+      reporting: false, aborted: false, swallowUpdateend: false,
+    };
+    buffers.set(sourceBuffer, state);
+    // Capturing listeners added first, so these run before the page's.
+    // WebKit re-evaluates `streaming` as an append or removal completes.
+    sourceBuffer.addEventListener('update', (event) => {
+      operationCompleted(ref.deref(), sourceBuffer, state, event);
+    }, true);
+    sourceBuffer.addEventListener('updateend', (event) => {
+      operationEnded(ref.deref(), sourceBuffer, state, event);
+    }, true);
+  }
+  wrapMember(mediaSourcePrototype, 'addSourceBuffer', (descriptor) => ({
+    value: {addSourceBuffer(type) {
+      if (!sources.has(this) || !arguments.length) {
+        return descriptor.value.apply(this, arguments);
+      }
+      const typeString = `${type}`;
+      const sourceBuffer = descriptor.value.call(this, typeString);
+      adopt(this, sourceBuffer, typeString);
+      return sourceBuffer;
+    }}.addSourceBuffer,
+  }));
 
   // Interface objects and members look like the WebIDL ones: interfaces are
   // writable, configurable and not enumerable; members are enumerable.
@@ -773,7 +824,7 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
            {value: name, configurable: true});
     define(g, name, {value, writable: true, configurable: true});
   }
-  define(ManagedMediaSource, 'canConstructInDedicatedWorker', {enumerable: true});
+  define(ManagedMediaSource, 'isTypeSupported', {enumerable: true});
 
   // Object URLs of managed sources, so `src` finds the element that plays one.
   function createObjectURLNative(object) {
