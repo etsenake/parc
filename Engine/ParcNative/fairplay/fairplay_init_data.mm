@@ -152,6 +152,17 @@ bool IsValidScheme(uint32_t scheme) {
          scheme == Type("cenc");
 }
 
+// WebKit's name for an mpts request (extractKeyIDsMpts), which names no key.
+constexpr char kMptsRequestKeyId[] = "TransportStreamIdentifier";
+
+// A JSON number, as WebKit's JSON getInteger takes one (any number, a
+// fraction truncated). NSJSONSerialization gives true and false as NSNumber
+// too; WebKit's JSON keeps them booleans.
+bool IsJsonNumber(id value) {
+  return [value isKindOfClass:[NSNumber class]] &&
+         CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID();
+}
+
 }  // namespace
 
 std::optional<InitDataType> InitDataTypeFromName(const std::string& name) {
@@ -159,6 +170,7 @@ std::optional<InitDataType> InitDataTypeFromName(const std::string& name) {
   if (name == "sinf") return InitDataType::kSinf;
   if (name == "cenc") return InitDataType::kCenc;
   if (name == "keyids") return InitDataType::kKeyIds;
+  if (name == "mpts") return InitDataType::kMpts;
   return std::nullopt;
 }
 
@@ -172,6 +184,8 @@ const char* InitDataTypeName(InitDataType type) {
       return "cenc";
     case InitDataType::kKeyIds:
       return "keyids";
+    case InitDataType::kMpts:
+      return "mpts";
   }
   return "";
 }
@@ -513,6 +527,28 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
           call.content_identifier = ToVector(content_id);
         }
       }
+      return plan;
+    }
+    case InitDataType::kMpts: {
+      // WebKit accepts what extractKeyIDsMpts reads: an object whose "cont"
+      // is "mpts" and whose "codc" and "mtyp" are numbers. The init data goes
+      // to AVFoundation unchanged (sanitizeMpts) with no identifier, as for
+      // sinf. The request comes back named by no key ID, so the plan names its
+      // SPC "TransportStreamIdentifier" as WebKit does, and key statuses
+      // report that name. key_ids stays empty: it lists the 16-byte key IDs
+      // renderers and JSON license responses match, and mpts names none.
+      NSDictionary* root = ParseJSON(init_data);
+      NSString* container = [root isKindOfClass:[NSDictionary class]] ? root[@"cont"] : nil;
+      if (![container isKindOfClass:[NSString class]] || ![container isEqualToString:@"mpts"] ||
+          !IsJsonNumber(root[@"codc"]) || !IsJsonNumber(root[@"mtyp"])) {
+        return Fail("mpts init data is not {\"codc\": number, \"mtyp\": number, \"cont\": \"mpts\"}");
+      }
+      ContentKeyRequestPlan call;
+      call.initialization_data = init_data;
+      call.content_identifier.assign(kMptsRequestKeyId,
+                                     kMptsRequestKeyId + sizeof(kMptsRequestKeyId) - 1);
+      InitDataPlan plan;
+      plan.calls.push_back(std::move(call));
       return plan;
     }
   }

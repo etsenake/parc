@@ -87,7 +87,7 @@ class FairPlayCdm {
   // probe ("com.apple.fps.2_0") has no Chromium counterpart.
   static bool IsKeySystemSupported(const std::string& key_system);
 
-  // "cenc", "sinf", "skd" and, as a Parc extension, "keyids".
+  // "cenc", "sinf", "skd", "mpts" and, as a Parc extension, "keyids".
   static bool IsInitDataTypeSupported(const std::string& init_data_type);
 
   FairPlayCdm(FairPlayCdmClient* client, PostTask post_task);

@@ -85,10 +85,10 @@ receivers on macOS for it.
    close promise resolves, and the core settles the promise before it reports
    the session closed.
 
-Init data: `cenc`, `keyids`, and on Safari-identity documents `sinf` and
-`skd` (fairplay-media.patch adds both to `EmeInitDataType`; Blink treats them
-as unregistered elsewhere). `sinf` and `skd` pass to the core unchanged, as
-WebKit passes them. Netflix and Apple TV+ use `cenc` only. Sessions:
+Init data: `cenc`, `keyids`, and on Safari-identity documents `sinf`, `skd`
+and `mpts` (fairplay-media.patch adds them to `EmeInitDataType`; Blink treats
+them as unregistered elsewhere). `sinf`, `skd` and `mpts` pass to the core
+unchanged, as WebKit passes them. Netflix and Apple TV+ use `cenc` only. Sessions:
 temporary, and Safari's `persistent-usage-record` on Safari-identity documents
 (fairplay-media.patch adds it to Blink's and Chromium's session types; the key
 system info offers it only where the render process can persist data, and the

@@ -1371,6 +1371,25 @@ void SelfTests(const Media& video, const Media& audio) {
             legacy_kids.calls[0].content_identifier == Bytes(std::string("asset-7")) && null_id.error.empty() &&
             null_id.calls.size() == 1 && null_id.calls[0].content_identifier == g_key_id,
         "init data: keyids with a contentId names the SPC by it; without a usable one, by the key ID");
+  // WebKit's mpts (macOS): the JSON passed through with no identifier, the
+  // request named "TransportStreamIdentifier" (extractKeyIDsMpts), the raw
+  // SPC/CKC exchange, and no 16-byte key ID for renderers.
+  const std::string mpts_json = "{\"codc\":1,\"mtyp\":2,\"cont\":\"mpts\"}";
+  auto mpts = fp::PlanContentKeyRequests(fp::InitDataType::kMpts, Bytes(mpts_json));
+  Check(mpts.error.empty() && !mpts.json_messages && mpts.calls.size() == 1 &&
+            mpts.calls[0].identifier.empty() && mpts.calls[0].initialization_data == Bytes(mpts_json) &&
+            mpts.calls[0].content_identifier == Bytes(std::string("TransportStreamIdentifier")) &&
+            mpts.calls[0].key_ids.empty() && fp::InitDataTypeFromName("mpts") == fp::InitDataType::kMpts &&
+            std::string(fp::InitDataTypeName(fp::InitDataType::kMpts)) == "mpts",
+        "init data: mpts JSON -> passed through unchanged, SPC named TransportStreamIdentifier");
+  bool mpts_rejects = true;
+  for (const char* malformed : {"{\"codc\":1,\"mtyp\":2,\"cont\":\"mp4\"}", "{\"codc\":1,\"mtyp\":2}",
+                                "{\"codc\":\"1\",\"mtyp\":2,\"cont\":\"mpts\"}",
+                                "{\"codc\":1,\"mtyp\":true,\"cont\":\"mpts\"}",
+                                "{\"mtyp\":2,\"cont\":\"mpts\"}", "[1,2,\"mpts\"]", "mpts", ""}) {
+    mpts_rejects &= !fp::PlanContentKeyRequests(fp::InitDataType::kMpts, Bytes(std::string(malformed))).error.empty();
+  }
+  Check(mpts_rejects, "init data: mpts needs an object with numeric codc and mtyp and cont \"mpts\"");
   Check(!fp::PlanContentKeyRequests(fp::InitDataType::kKeyIds, Bytes(std::string("{\"kids\":[\"AAA\"]}"))).error.empty() &&
             !fp::PlanContentKeyRequests(fp::InitDataType::kCenc, Bytes(std::string("junk"))).error.empty() &&
             !fp::PlanContentKeyRequests(fp::InitDataType::kSkd, {}).error.empty(),
@@ -4279,8 +4298,9 @@ void RunAll() {
             !fp::FairPlayCdm::IsKeySystemSupported("COM.APPLE.FPS") &&
             !fp::FairPlayCdm::IsKeySystemSupported("com.widevine.alpha") &&
             fp::FairPlayCdm::IsInitDataTypeSupported("cenc") &&
+            fp::FairPlayCdm::IsInitDataTypeSupported("mpts") &&
             !fp::FairPlayCdm::IsInitDataTypeSupported("webm"),
-        "key system names: com.apple.fps and com.apple.fps.<version> (case-sensitive); cenc init data");
+        "key system names: com.apple.fps and com.apple.fps.<version> (case-sensitive); cenc and mpts init data");
   Check(fp::FairPlayCdm::IsSupported(), "FairPlayCdm::IsSupported on this Mac",
         NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
   SelfTests(w->video, w->audio);

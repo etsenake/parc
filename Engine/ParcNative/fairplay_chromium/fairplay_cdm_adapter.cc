@@ -30,6 +30,8 @@ std::optional<fp::InitDataType> ToFairPlayInitDataType(
       return fp::InitDataType::kSinf;
     case EmeInitDataType::SKD:
       return fp::InitDataType::kSkd;
+    case EmeInitDataType::MPTS:
+      return fp::InitDataType::kMpts;
     case EmeInitDataType::WEBM:
     case EmeInitDataType::UNKNOWN:
       return std::nullopt;

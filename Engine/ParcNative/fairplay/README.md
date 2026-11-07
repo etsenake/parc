@@ -17,8 +17,8 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
   MediaTime, Result).
 - `fairplay_key_session.{h,mm}`: `FairPlayCdm`, sessions over
   `AVContentKeySession` (`AVContentKeySystemFairPlayStreaming`).
-- `fairplay_init_data.{h,mm}`: skd, sinf, cenc and keyids init data, mirroring
-  WebKit's FairPlay CDM.
+- `fairplay_init_data.{h,mm}`: skd, sinf, cenc, mpts and keyids init data,
+  mirroring WebKit's FairPlay CDM.
 - `fairplay_renderer.{h,mm}`: `FairPlayRenderer`, an
   `AVSampleBufferDisplayLayer` and an `AVSampleBufferAudioRenderer` under an
   `AVSampleBufferRenderSynchronizer`.
@@ -320,7 +320,7 @@ so this forces the following on the Chromium integration.
 
 ## Messages
 
-skd and sinf sessions exchange the raw SPC and CKC. cenc and keyids sessions
+skd, sinf and mpts sessions exchange the raw SPC and CKC. cenc and keyids sessions
 exchange JSON arrays of `{"keyID", "payload"}` entries (WebKit's cenc format;
 a response entry may carry `"error"` instead). `UpdateSession` with the literal
 `renew` requests a renewal message, as in WebKit.
@@ -328,7 +328,10 @@ a response entry may carry `"error"` instead). `UpdateSession` with the literal
 The SPC's content identifier follows WebKit: the whole skd URI as UTF-8 for skd,
 the raw 16-byte key ID for sinf and FairPlay pssh requests (and, as a Parc
 extension, for keyids and for cenc without a FairPlay pssh, which requests the
-key IDs the other pssh boxes name). WebKit's legacy `com.apple.fps.2_N`
+key IDs the other pssh boxes name), and `TransportStreamIdentifier` for mpts
+init data (`{"codc": n, "mtyp": n, "cont": "mpts"}`, passed to AVFoundation
+unchanged), which names no key ID; key statuses report that name, and no
+renderer can use the key. WebKit's legacy `com.apple.fps.2_N`
 sessions name the SPC by the page's bytes instead; Parc's legacy script
 (`Engine/ParcRenderer/parc_webkit_media_keys.h`) sends them as keyids init data
 `{"initDataType": "cenc"|"sinf", "initData": "<base64>", "contentId":

@@ -98,13 +98,14 @@
                                  &key_systems);
 --- a/components/cdm/renderer/external_clear_key_key_system_info.cc
 +++ b/components/cdm/renderer/external_clear_key_key_system_info.cc
-@@ -67,6 +67,9 @@
+@@ -67,6 +67,10 @@
      case media::EmeInitDataType::KEYIDS:
        return true;
  
 +    // Parc: FairPlay's types.
 +    case media::EmeInitDataType::SINF:
 +    case media::EmeInitDataType::SKD:
++    case media::EmeInitDataType::MPTS:
      case media::EmeInitDataType::UNKNOWN:
        return false;
    }
@@ -865,7 +866,7 @@
  }  // namespace media
 --- a/media/base/eme_constants.cc
 +++ b/media/base/eme_constants.cc
-@@ -16,6 +16,10 @@
+@@ -16,6 +16,12 @@
        return "cenc";
      case EmeInitDataType::KEYIDS:
        return "keyids";
@@ -873,10 +874,12 @@
 +      return "sinf";
 +    case EmeInitDataType::SKD:
 +      return "skd";
++    case EmeInitDataType::MPTS:
++      return "mpts";
      case EmeInitDataType::UNKNOWN:
        return "unknown";
    }
-@@ -33,6 +37,12 @@
+@@ -33,6 +39,15 @@
    if (init_data_type == "webm") {
      return EmeInitDataType::WEBM;
    }
@@ -886,24 +889,29 @@
 +  if (init_data_type == "skd") {
 +    return EmeInitDataType::SKD;
 +  }
++  if (init_data_type == "mpts") {
++    return EmeInitDataType::MPTS;
++  }
  
    return EmeInitDataType::UNKNOWN;
  }
 --- a/media/base/eme_constants.h
 +++ b/media/base/eme_constants.h
-@@ -23,7 +23,14 @@
+@@ -23,7 +23,16 @@
    WEBM,
    CENC,
    KEYIDS,
 -  kMaxValue = KEYIDS,
 +  // Parc: Apple FairPlay Streaming's types, as WebKit registers them
 +  // (CDMFairPlayStreaming.cpp): "sinf", JSON {"sinf": ["<base64 sinf box
-+  // payload>"]}, and "skd", an HLS key URI. Only FairPlay's key system info
-+  // supports them, and Blink accepts them only from a document presenting
-+  // Safari's identity (parc_safari_identity.h).
++  // payload>"]}, "skd", an HLS key URI, and "mpts", JSON {"codc": <number>,
++  // "mtyp": <number>, "cont": "mpts"} for MPEG-2 TS content (macOS). Only
++  // FairPlay's key system info supports them, and Blink accepts them only
++  // from a document presenting Safari's identity (parc_safari_identity.h).
 +  SINF,
 +  SKD,
-+  kMaxValue = SKD,
++  MPTS,
++  kMaxValue = MPTS,
  };
  
  // Returns the canonical string representation of |init_data_type| as defined
@@ -1010,13 +1018,14 @@
    }
  
    NOTREACHED() << "Unexpected session type " << static_cast<int>(session_type);
-@@ -129,6 +133,9 @@
+@@ -129,6 +133,10 @@
        return cdm::kKeyIds;
      case EmeInitDataType::WEBM:
        return cdm::kWebM;
 +    // Parc: FairPlay's types never reach a library CDM.
 +    case EmeInitDataType::SINF:
 +    case EmeInitDataType::SKD:
++    case EmeInitDataType::MPTS:
      case EmeInitDataType::UNKNOWN:
        break;
    }
@@ -2266,13 +2275,14 @@
 +)
 --- a/third_party/blink/renderer/platform/media/key_system_config_selector_unittest.cc
 +++ b/third_party/blink/renderer/platform/media/key_system_config_selector_unittest.cc
-@@ -240,6 +240,9 @@
+@@ -240,6 +240,10 @@
                                 EmeInitDataType init_data_type) const override {
      switch (init_data_type) {
        case EmeInitDataType::UNKNOWN:
 +      // Parc: FairPlay's types.
 +      case EmeInitDataType::SINF:
 +      case EmeInitDataType::SKD:
++      case EmeInitDataType::MPTS:
          return false;
        case EmeInitDataType::WEBM:
          return init_data_type_webm_supported_;
@@ -2287,22 +2297,23 @@
      case WebEncryptedMediaSessionType::kUnknown:
        break;
    }
-@@ -106,6 +108,14 @@
-       media::CreateKeyIdsInitData(key_ids, sanitized_init_data);
+@@ -107,6 +109,15 @@
        return true;
      }
-+
+ 
 +    // Parc: FairPlay's types, passed through as WebKit passes them
-+    // (CDMPrivateFairPlayStreaming::sanitizeSinf, sanitizeSkd). The FairPlay
-+    // CDM parses both and rejects malformed ones.
++    // (CDMPrivateFairPlayStreaming::sanitizeSinf, sanitizeSkd, sanitizeMpts).
++    // The FairPlay CDM parses them and rejects malformed ones.
 +    case media::EmeInitDataType::SINF:
 +    case media::EmeInitDataType::SKD:
++    case media::EmeInitDataType::MPTS:
 +      sanitized_init_data->assign(init_data.begin(), init_data.end());
 +      return true;
- 
++
      case media::EmeInitDataType::UNKNOWN:
        break;
-@@ -376,7 +386,8 @@
+   }
+@@ -376,7 +387,8 @@
    DCHECK(!session_id.IsEmpty());
    DCHECK(session_id_.empty());
    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);

@@ -72,11 +72,11 @@ On a page that presents Safari's identity:
   answers unsupported. Apple TV+ probes PlayReady, Widevine and ClearKey
   before FairPlay, so it would pick Widevine and fail if it answered. FairPlay
   and ClearKey stay available (Safari has ClearKey too).
-- FairPlay takes WebKit's init data types `sinf` and `skd` besides `cenc`:
-  `requestMediaKeySystemAccess` keeps them in a FairPlay configuration and
-  `generateRequest` accepts them. Every other page treats them as the
-  unregistered names they were before. Netflix and Apple TV+ ask for `cenc`
-  only.
+- FairPlay takes WebKit's init data types `sinf`, `skd` and `mpts` (MPEG-2
+  TS, macOS) besides `cenc`: `requestMediaKeySystemAccess` keeps them in a
+  FairPlay configuration and `generateRequest` accepts them. Every other page
+  treats them as the unregistered names they were before. Netflix and Apple
+  TV+ ask for `cenc` only.
 - A Media Source element fires `encrypted` with `sinf` init data,
   `{"sinf":["<base64 sinf payload>"]}`, for each protected track of an
   initialization segment, as Safari's Media Source does. The MP4 parser
@@ -482,7 +482,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   (`Engine/ParcRenderer/parc_managed_media_source.h`,
   `parc_webkit_media_keys.h`), the `getStatusForPolicy` removal
   (`parc_safari_media_keys.h`), the video presentation API
-  (`parc_webkit_presentation.h`), FairPlay's `sinf` and `skd` init data gate,
+  (`parc_webkit_presentation.h`), FairPlay's `sinf`, `skd` and `mpts` init
+  data gate,
   and the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,

@@ -14,7 +14,7 @@ namespace parc::fairplay {
 // description (see fairplay_renderer.h), so every request is made through init
 // data that AVFoundation turns into a request named by that key ID: sinf JSON
 // or a FairPlay 'pssh' as {"pssh": "<base64>"}. Requests named any other way
-// (an skd URI) produce licenses no renderer can use.
+// (an skd URI, mpts) produce licenses no renderer can use.
 enum class InitDataType {
   // UTF-8 "skd://..." URI from an HLS EXT-X-KEY. The whole URI is the SPC
   // content identifier (WebKit). When the URI's host is the key ID (a UUID or
@@ -40,6 +40,13 @@ enum class InitDataType {
   // "<base64>"} plans the inner init data and names every SPC by contentId;
   // {"kids": [...], "contentId": "<base64>"} does the same for key IDs.
   kKeyIds,
+  // JSON {"codc": <number>, "mtyp": <number>, "cont": "mpts"}: MPEG-2 TS
+  // content (WebKit on macOS, HAVE(FAIRPLAYSTREAMING_MTPS_INITDATA)). Passed
+  // through as the request's init data with no identifier. It names no key
+  // ID, so WebKit names the request "TransportStreamIdentifier"
+  // (extractKeyIDsMpts): that is the SPC content identifier and the key ID
+  // key statuses report. Its key can't be used by a renderer.
+  kMpts,
 };
 
 std::optional<InitDataType> InitDataTypeFromName(const std::string& name);
@@ -53,14 +60,14 @@ struct ContentKeyRequestPlan {
   // rule for requests AVFoundation names by key ID).
   std::vector<uint8_t> content_identifier;
   // 16-byte key IDs this call is expected to produce keys for. Empty when the
-  // init data names none (an opaque skd URI).
+  // init data names none (an opaque skd URI, mpts).
   std::vector<std::vector<uint8_t>> key_ids;
 };
 
 struct InitDataPlan {
   std::vector<ContentKeyRequestPlan> calls;
   // cenc/keyids sessions exchange JSON arrays of {keyID, payload} entries;
-  // skd/sinf sessions exchange the raw SPC and CKC.
+  // skd/sinf/mpts sessions exchange the raw SPC and CKC.
   bool json_messages = false;
   std::string error;  // Non-empty: the init data is malformed or unsupported.
 };

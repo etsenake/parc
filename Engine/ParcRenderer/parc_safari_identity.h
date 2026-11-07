@@ -57,15 +57,16 @@ inline bool IsParcSafariOnlyAudioCodecs(const String& codecs) {
   return false;
 }
 
-// FairPlay's EME initialization data types, as WebKit registers them
-// (CDMFairPlayStreaming.cpp): "sinf", which Safari's Media Source fires
-// `encrypted` with, and "skd", an HLS key URI. fairplay-media.patch adds them
-// to media::EmeInitDataType; anywhere but under Safari's identity
-// requestMediaKeySystemAccess and generateRequest treat them as the
-// unregistered names they were before. Compared case-sensitively, as EME
-// compares init data types.
+// FairPlay's EME initialization data types, as WebKit registers them on
+// macOS (CDMFairPlayStreaming.cpp): "sinf", which Safari's Media Source fires
+// `encrypted` with, "skd", an HLS key URI, and "mpts", MPEG-2 TS content
+// described as JSON. fairplay-media.patch adds them to media::EmeInitDataType;
+// anywhere but under Safari's identity requestMediaKeySystemAccess and
+// generateRequest treat them as the unregistered names they were before.
+// Compared case-sensitively, as EME compares init data types.
 inline bool IsParcSafariOnlyInitDataType(const String& init_data_type) {
-  return init_data_type == "sinf" || init_data_type == "skd";
+  return init_data_type == "sinf" || init_data_type == "skd" ||
+         init_data_type == "mpts";
 }
 
 // Values of WebKit's EME IDL enums that Blink declares as DOMString:
