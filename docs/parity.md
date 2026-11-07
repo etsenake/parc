@@ -91,6 +91,10 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   through `d61bc7bd` remain outside this release and the completed watch scope.
   The final ten-minute post-release watch completed without new contributor
   commits. All required compiler corrections and this delivery record are pushed.
+  Claude's separate takeover subsequently started v1.3.7, run
+  `20261107T161516Z-e5341d39`, and owns its shared engine/build operations.
+  Its matching takeover record is `build/master-release-development/claude-takeover.json`;
+  Codex root's completed watch ends at v1.3.6 and does not interrupt that run.
   Logs continue in `build/master-release-development/nightly-release.log`.
   No installation, launch or browser-runtime acceptance is claimed.
   The v1.3.4 compilation exposed two errors in `parc_webkit_need_key.h`:
