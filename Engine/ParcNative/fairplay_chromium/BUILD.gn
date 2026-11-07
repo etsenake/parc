@@ -18,6 +18,7 @@ source_set("key_system") {
 source_set("core") {
   visibility = [ ":*" ]
   public = [
+    "core/fairplay_hls_player.h",
     "core/fairplay_init_data.h",
     "core/fairplay_key_session.h",
     "core/fairplay_renderer.h",
@@ -26,6 +27,8 @@ source_set("core") {
   sources = [
     "core/fairplay_bitstream.cc",
     "core/fairplay_bitstream.h",
+    "core/fairplay_hls_player.mm",
+    "core/fairplay_hls_player_internal.h",
     "core/fairplay_init_data.mm",
     "core/fairplay_key_session.mm",
     "core/fairplay_key_session_internal.h",
