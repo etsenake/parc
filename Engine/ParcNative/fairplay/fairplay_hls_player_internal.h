@@ -43,4 +43,13 @@ class HlsKeyRequestHandler {
 // otherwise outlive the player or be removed first.
 void SetHlsKeyRequestHandler(FairPlayHlsPlayer::Impl* player, HlsKeyRequestHandler* handler);
 
+// For the harness: delivers a KVO notification for the item's |key_path| to
+// the player's observer as AVFoundation would, on the calling thread, with
+// |new_value| (and as the prior notification when |prior|). Nothing once the
+// item doesn't exist or the player shut down.
+void HlsPlayerDeliverItemChangeForTesting(FairPlayHlsPlayer::Impl* player,
+                                          NSString* key_path,
+                                          id new_value,
+                                          bool prior);
+
 }  // namespace parc::fairplay

@@ -377,6 +377,37 @@ void VodTs() {
   Check(!rig.client.ready_states.empty() && rig.client.ready_states.back() == fp::HlsReadyState::kHaveEnoughData,
         "WebKit's readyState reaches HAVE_ENOUGH_DATA");
   Check(!rig.client.loaded.empty(), "loaded ranges reported");
+  // Each KVO notification carries its own value, as WebKit caches them: a dip
+  // to an empty buffer and back, all notified before the owner sequence runs,
+  // still reaches the client (underflow, then enough data again).
+  size_t buffering_before_dip = 0;
+  size_t ready_before_dip = 0;
+  OnOwner([&] {
+    buffering_before_dip = rig.client.buffering.size();
+    ready_before_dip = rig.client.ready_states.size();
+    fp::FairPlayHlsPlayer::Impl* impl = rig.player->impl();
+    for (auto [key, value] : std::vector<std::pair<NSString*, BOOL>>{{@"playbackBufferFull", NO},
+                                                                   {@"playbackLikelyToKeepUp", NO},
+                                                                   {@"playbackBufferEmpty", YES},
+                                                                   {@"playbackBufferEmpty", NO},
+                                                                   {@"playbackLikelyToKeepUp", YES}}) {
+      fp::HlsPlayerDeliverItemChangeForTesting(impl, key, nil, true);
+      fp::HlsPlayerDeliverItemChangeForTesting(impl, key, @(value), false);
+    }
+  });
+  Check(WaitFor(
+            [&] {
+              const std::vector<bool>& b = rig.client.buffering;
+              return b.size() >= buffering_before_dip + 2 && !b[buffering_before_dip] && b.back();
+            },
+            5),
+        "a buffer dip quicker than the owner sequence reaches the client, then its recovery");
+  OnOwner([&] {
+    const std::vector<fp::HlsReadyState>& r = rig.client.ready_states;
+    bool dipped = r.size() > ready_before_dip && r[ready_before_dip] == fp::HlsReadyState::kHaveCurrentData;
+    Check(dipped && r.back() == fp::HlsReadyState::kHaveEnoughData,
+          "WebKit's readyState follows it: HAVE_CURRENT_DATA, then HAVE_ENOUGH_DATA");
+  });
   OnOwner([&] { rig.player->SetRate(0); });
   WaitFor([] { return false; }, 0.5);
   double paused_at = rig.Time();

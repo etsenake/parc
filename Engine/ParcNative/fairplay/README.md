@@ -447,7 +447,12 @@ service runs it for Safari-identity pages
 - State then comes from the item: once it is `readyToPlay` its duration,
   seekable window and presentation size follow as changes, a seek made
   before that waits for it (only the latest), and buffering follows
-  `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`; loaded
+  `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`. As
+  WebKit, the item's status, those three and the layer's `readyForDisplay`
+  are taken from each KVO notification's own value (the buffering keys once
+  no prior notification awaits its change), never read live, so a dip and
+  recovery that both happen before the owner sequence runs still reach the
+  client; after every seek the state is reported again, changed or not; loaded
   ranges, end, and a failed item (a decode error, as WebKit's `updateStates`;
   `AVPlayerItemFailedToPlayToEndTime` isn't one, as WebKit doesn't observe
   it). A metadata key AVFoundation cancels is a format error, as WebKit's

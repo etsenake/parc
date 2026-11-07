@@ -259,6 +259,8 @@ class HlsTaskBridge;
 // readyForDisplay: the first video frame (WebKit's hasAvailableVideoFrame).
 - (void)observeLayer:(AVPlayerLayer*)layer;
 - (void)stop;
+// HlsPlayerDeliverItemChangeForTesting.
+- (void)deliverItemChange:(NSString*)keyPath newValue:(id)newValue prior:(BOOL)prior;
 @end
 
 namespace parc::fairplay {
@@ -1077,11 +1079,14 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
 
   // Observations (from PCHlsObserver, on the owner sequence).
 
-  void OnItemStatus() {
+  // The status each KVO notification carried, as WebKit caches it
+  // (m_cachedItemStatus).
+  void OnItemStatus(AVPlayerItemStatus status) {
     if (shut_down_ || !item_) {
       return;
     }
-    if (item_.status == AVPlayerItemStatusFailed) {
+    cached_status_ = status;
+    if (status == AVPlayerItemStatusFailed) {
       ReportFailure(item_.error);
       if (pending_seek_) {
         FinishSeek(std::move(pending_seek_->done), false);
@@ -1089,7 +1094,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       }
       return;
     }
-    if (item_.status != AVPlayerItemStatusReadyToPlay || item_ready_) {
+    if (status != AVPlayerItemStatusReadyToPlay || item_ready_) {
       return;
     }
     item_ready_ = true;
@@ -1157,7 +1162,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     const bool has_video = HasVideo();
     bool first_frame_available = false;
-    if (!player_layer_.readyForDisplay) {
+    if (!cached_ready_for_display_) {
       reported_first_frame_ = false;
     } else if (!reported_first_frame_ && has_video) {
       reported_first_frame_ = true;
@@ -1166,10 +1171,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     HlsReadyState state = ready_state_;
     // playerItemStatus: likely to keep up, then a full buffer, then an empty
     // one, else ready to play; nothing while its status is unknown or failed.
-    if (item_ready_ && item_.status == AVPlayerItemStatusReadyToPlay) {
-      if (item_.playbackLikelyToKeepUp || item_.playbackBufferFull) {
+    if (item_ready_ && cached_status_ == AVPlayerItemStatusReadyToPlay) {
+      if (cached_likely_to_keep_up_ || cached_buffer_full_) {
         state = HlsReadyState::kHaveEnoughData;
-      } else if (item_.playbackBufferEmpty) {
+      } else if (cached_buffer_empty_) {
         state = HlsReadyState::kHaveCurrentData;
       } else if (ready_state_ != HlsReadyState::kHaveEnoughData && (!has_video || reported_first_frame_) &&
                  MaxTimeLoaded() > CurrentTime()) {
@@ -1194,7 +1199,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   // while hasEnabledVideo stays YES); audio when an enabled audible track
   // exists or hasEnabledAudio says so.
   bool HasVideo() const {
-    if (player_layer_.readyForDisplay) {
+    if (cached_ready_for_display_) {
       return true;
     }
     if ([item_ respondsToSelector:@selector(hasEnabledVideo)] && item_.hasEnabledVideo) {
@@ -1231,15 +1236,50 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     return max;
   }
 
-  void OnLayerReadyForDisplay() { OnMediaTypes(); }
+  // The layer's readyForDisplay as each KVO notification carried it (WebKit's
+  // m_cachedIsReadyForDisplay).
+  void OnLayerReadyForDisplay(bool ready) {
+    cached_ready_for_display_ = ready;
+    OnMediaTypes();
+  }
+
+  // playbackLikelyToKeepUp, playbackBufferEmpty and playbackBufferFull as
+  // WebKit takes them: each notification's own value is cached, and the state
+  // is worked out once no prior notification awaits its change
+  // (m_pendingStatusChanges). Reading the item's live values instead would
+  // lose a change and its reversal that both happen before this sequence
+  // runs: a seek's dip and recovery, or a short stall.
+  enum class BufferingKey { kLikelyToKeepUp, kBufferEmpty, kBufferFull };
+
+  void OnBufferingWillChange() { pending_status_changes_++; }
+
+  void OnBufferingDidChange(BufferingKey key, bool value) {
+    switch (key) {
+      case BufferingKey::kLikelyToKeepUp:
+        cached_likely_to_keep_up_ = value;
+        break;
+      case BufferingKey::kBufferEmpty:
+        cached_buffer_empty_ = value;
+        break;
+      case BufferingKey::kBufferFull:
+        cached_buffer_full_ = value;
+        break;
+    }
+    if (pending_status_changes_ > 0) {
+      pending_status_changes_--;
+    }
+    if (!pending_status_changes_) {
+      OnBuffering();
+    }
+  }
 
   void OnBuffering() {
     UpdateReadyState();
     if (shut_down_ || !item_ready_) {
       return;
     }
-    bool have_enough = item_.playbackLikelyToKeepUp || item_.playbackBufferFull;
-    if (!have_enough && !item_.playbackBufferEmpty && last_have_enough_.has_value()) {
+    bool have_enough = cached_likely_to_keep_up_ || cached_buffer_full_;
+    if (!have_enough && !cached_buffer_empty_ && last_have_enough_.has_value()) {
       return;  // Between the two: keep the last state.
     }
     if (last_have_enough_ == have_enough) {
@@ -1354,6 +1394,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   AVURLAsset* asset() const { return asset_; }
   AVPlayer* player() const { return player_; }
   AVPlayerItem* item() const { return item_; }
+  PCHlsObserver* observer() const { return shut_down_ ? nil : observer_; }
 
   PCHlsPlayerLayer* PlayerLayer() {
     if (!player_layer_ && player_ && !shut_down_) {
@@ -1509,6 +1550,15 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   bool reported_first_frame_ = false;
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
+  // The item's and the layer's KVO values as their notifications carried
+  // them, with WebKit's initial values (its m_cached* members), and the prior
+  // buffering notifications still awaiting their change.
+  AVPlayerItemStatus cached_status_ = AVPlayerItemStatusUnknown;
+  bool cached_likely_to_keep_up_ = false;
+  bool cached_buffer_empty_ = false;
+  bool cached_buffer_full_ = false;
+  bool cached_ready_for_display_ = false;
+  int pending_status_changes_ = 0;
   HlsTimeline timeline_;
   // The media types last reported (OnMetadata, OnMediaTypesChange).
   bool has_audio_ = false;
@@ -1537,6 +1587,15 @@ AVPlayerLayer* HlsPlayerLayer(FairPlayHlsPlayer::Impl* impl) {
 void SetHlsKeyRequestHandler(FairPlayHlsPlayer::Impl* impl, HlsKeyRequestHandler* handler) {
   if (impl) {
     impl->SetKeyRequestHandler(handler);
+  }
+}
+
+void HlsPlayerDeliverItemChangeForTesting(FairPlayHlsPlayer::Impl* impl,
+                                          NSString* key_path,
+                                          id new_value,
+                                          bool prior) {
+  if (impl) {
+    [impl->observer() deliverItemChange:key_path newValue:new_value prior:prior];
   }
 }
 
@@ -1907,10 +1966,17 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
            forKeyPath:@"outputObscuredDueToInsufficientExternalProtection"
               options:0
               context:kPlayerObscured];
-  NSKeyValueObservingOptions options = NSKeyValueObservingOptionInitial;
-  [item addObserver:self forKeyPath:@"status" options:options context:kItemStatus];
+  // The values each notification carries, as WebKit observes them: the
+  // buffering keys with their prior notifications too.
+  [item addObserver:self
+         forKeyPath:@"status"
+            options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
+            context:kItemStatus];
   for (NSString* key in _bufferingKeys) {
-    [item addObserver:self forKeyPath:key options:0 context:kItemBuffering];
+    [item addObserver:self
+           forKeyPath:key
+              options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionPrior
+              context:kItemBuffering];
   }
   [item addObserver:self forKeyPath:@"loadedTimeRanges" options:0 context:kItemLoaded];
   [item addObserver:self forKeyPath:@"seekableTimeRanges" options:0 context:kItemSeekable];
@@ -1936,7 +2002,7 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
     }
     _layer = layer;
   }
-  [layer addObserver:self forKeyPath:@"readyForDisplay" options:0 context:kLayerReady];
+  [layer addObserver:self forKeyPath:@"readyForDisplay" options:NSKeyValueObservingOptionNew context:kLayerReady];
 }
 
 - (void)stop {
@@ -1986,10 +2052,38 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
                       ofObject:(id)object
                         change:(NSDictionary*)change
                        context:(void*)context {
+  std::weak_ptr<FairPlayHlsPlayer::Impl> weak = _impl;
+  id newValue = change[NSKeyValueChangeNewKey];
+  if (newValue == [NSNull null]) {
+    newValue = nil;
+  }
   if (context == kItemStatus) {
-    [self post:&FairPlayHlsPlayer::Impl::OnItemStatus];
+    AVPlayerItemStatus status =
+        newValue ? static_cast<AVPlayerItemStatus>([newValue integerValue]) : static_cast<AVPlayerItem*>(object).status;
+    (*_poster)([weak, status] {
+      if (auto impl = weak.lock()) {
+        impl->OnItemStatus(status);
+      }
+    });
   } else if (context == kItemBuffering) {
-    [self post:&FairPlayHlsPlayer::Impl::OnBuffering];
+    using Key = FairPlayHlsPlayer::Impl::BufferingKey;
+    if ([change[NSKeyValueChangeNotificationIsPriorKey] boolValue]) {
+      (*_poster)([weak] {
+        if (auto impl = weak.lock()) {
+          impl->OnBufferingWillChange();
+        }
+      });
+      return;
+    }
+    Key key = [keyPath isEqualToString:@"playbackLikelyToKeepUp"] ? Key::kLikelyToKeepUp
+              : [keyPath isEqualToString:@"playbackBufferEmpty"]  ? Key::kBufferEmpty
+                                                                  : Key::kBufferFull;
+    bool value = newValue ? [newValue boolValue] : [[object valueForKey:keyPath] boolValue];
+    (*_poster)([weak, key, value] {
+      if (auto impl = weak.lock()) {
+        impl->OnBufferingDidChange(key, value);
+      }
+    });
   } else if (context == kItemLoaded) {
     [self post:&FairPlayHlsPlayer::Impl::OnLoadedRanges];
   } else if (context == kItemSeekable) {
@@ -2003,7 +2097,12 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
   } else if (context == kPlayerObscured) {
     [self post:&FairPlayHlsPlayer::Impl::OnOutputObscured];
   } else if (context == kLayerReady) {
-    [self post:&FairPlayHlsPlayer::Impl::OnLayerReadyForDisplay];
+    bool ready = newValue ? [newValue boolValue] : static_cast<AVPlayerLayer*>(object).readyForDisplay;
+    (*_poster)([weak, ready] {
+      if (auto impl = weak.lock()) {
+        impl->OnLayerReadyForDisplay(ready);
+      }
+    });
   } else {
     [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
   }
@@ -2011,6 +2110,37 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
 
 - (void)itemDidPlayToEnd:(NSNotification*)notification {
   [self post:&FairPlayHlsPlayer::Impl::OnEnded];
+}
+
+- (void)deliverItemChange:(NSString*)keyPath newValue:(id)newValue prior:(BOOL)prior {
+  AVPlayerItem* item = nil;
+  @synchronized(self) {
+    if (_stopped) {
+      return;
+    }
+    item = _item;
+  }
+  if (!item) {
+    return;
+  }
+  void* context = nullptr;
+  if ([keyPath isEqualToString:@"status"]) {
+    context = kItemStatus;
+  } else if ([_bufferingKeys containsObject:keyPath]) {
+    context = kItemBuffering;
+  } else if ([keyPath isEqualToString:@"loadedTimeRanges"]) {
+    context = kItemLoaded;
+  } else {
+    return;
+  }
+  NSMutableDictionary* change = [NSMutableDictionary dictionary];
+  change[NSKeyValueChangeKindKey] = @(NSKeyValueChangeSetting);
+  if (prior) {
+    change[NSKeyValueChangeNotificationIsPriorKey] = @YES;
+  } else if (newValue) {
+    change[NSKeyValueChangeNewKey] = newValue;
+  }
+  [self observeValueForKeyPath:keyPath ofObject:item change:change context:context];
 }
 
 @end
