@@ -4019,15 +4019,14 @@
  
    weak_factory_.InvalidateWeakPtrsAndDoom();
  
-@@ -1108,21 +1171,57 @@
-   UpdateBackgroundVideoOptimizationState();
+@@ -1109,20 +1172,64 @@
    UpdatePlayState();
  }
-+
+ 
 +void WebMediaPlayerImpl::ParcOnFrozenInBackForwardCache() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  DCHECK(paused_);
- 
++
 +  // OnFrozen() without suspending the pipeline, which would resume a
 +  // streaming source at 0. A streaming source also keeps its reader: a new
 +  // one would download it again from the start.
@@ -4071,6 +4070,14 @@
 +#if BUILDFLAG(IS_MAC)
 +  parc_keeps_ready_state = ParcPlaysNativeHls();
 +#endif  // BUILDFLAG(IS_MAC)
++  // Parc: and so does Safari's src= element: AVPlayer's readyState follows the
++  // item's buffer, not the seek (MediaPlayerPrivateAVFoundation::updateStates).
++  // A seek into buffered media keeps it and ends at the target's first frame
++  // (ParcFinishUrlSeekAtFrame()); one outside lowers it as before.
++  ++parc_url_seek_id_;
++  parc_url_seek_keeps_ready_state_ =
++      !parc_keeps_ready_state && ParcUrlSeekKeepsReadyState(time);
++  parc_keeps_ready_state |= parc_url_seek_keeps_ready_state_;
 +  if (ready_state_ > WebMediaPlayer::kReadyStateHaveMetadata &&
 +      !parc_keeps_ready_state) {
      SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
@@ -4078,7 +4085,7 @@
  
    // For playing zero duration video-only media, if we can elide the seek, use a
    // large delay to avoid an expensive spin loop. Per spec we must still deliver
-@@ -1421,6 +1520,24 @@
+@@ -1421,6 +1528,24 @@
      return std::numeric_limits<double>::quiet_NaN();
  
    return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
@@ -4103,7 +4110,7 @@
  }
  
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-@@ -1498,6 +1615,21 @@
+@@ -1498,6 +1623,21 @@
      return WebTimeRanges();
    }
  
@@ -4125,7 +4132,7 @@
    if (demuxer_manager_->IsLiveContent()) {
      return WebTimeRanges();
    }
-@@ -1664,6 +1796,20 @@
+@@ -1664,6 +1804,20 @@
      WebContentDecryptionModuleResult result) {
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -4146,7 +4153,7 @@
  
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
-@@ -1694,7 +1840,84 @@
+@@ -1694,7 +1848,84 @@
      media::EmeInitDataType init_data_type,
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
@@ -4231,7 +4238,7 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +1951,34 @@
+@@ -1728,6 +1959,34 @@
    client_->SetTrackState(track, state);
  }
  
@@ -4266,7 +4273,7 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  
  UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1777,6 +2028,147 @@
+@@ -1777,6 +2036,147 @@
  }
  #endif
  
@@ -4414,7 +4421,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2212,152 @@
+@@ -1820,11 +2220,152 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -4567,7 +4574,7 @@
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -1835,17 +2368,43 @@
+@@ -1835,17 +2376,43 @@
    // If the CDM is set from the constructor there is no promise
    // (`set_cdm_result_`) to fulfill.
    if (success) {
@@ -4611,7 +4618,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1900,6 +2459,21 @@
+@@ -1900,6 +2467,79 @@
    }
  
    attempting_suspended_start_ = false;
@@ -4630,10 +4637,68 @@
 +    }
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
++
++  // A pipeline restart reports a seek too (PipelineController::Start), which
++  // isn't the kept one.
++  if (std::exchange(parc_url_seek_keeps_ready_state_, false)) {
++    ParcFinishUrlSeekAtFrame();
++  }
  }
  
++bool WebMediaPlayerImpl::ParcUrlSeekKeepsReadyState(
++    base::TimeDelta time) const {
++  return load_type_ == kLoadTypeURL && client_->PresentsParcSafariIdentity() &&
++         ready_state_ > WebMediaPlayer::kReadyStateHaveMetadata &&
++         Buffered().Contain(time.InSecondsF());
++}
++
++// WebKit ends the seek with AVPlayer's (seekCompleted resolves it once
++// readyState is HAVE_CURRENT_DATA or more), which for video is once the frame
++// at the target is up. The pipeline posts its seek's end before the renderer
++// decodes anything, so the compositor's next frame is the target's; one
++// processed before the callback arrives leaves the seek to the renderer's
++// BUFFERING_HAVE_ENOUGH, as does a video with no first frame yet (its callback
++// is OnFirstFrame()'s).
++void WebMediaPlayerImpl::ParcFinishUrlSeekAtFrame() {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  if (!should_notify_time_changed_ ||
++      ready_state_ < WebMediaPlayer::kReadyStateHaveCurrentData) {
++    return;
++  }
++  if (!HasVideo()) {
++    should_notify_time_changed_ = false;
++    client_->TimeChanged();
++    return;
++  }
++  if (!has_first_frame_) {
++    return;
++  }
++  PostCrossThreadTask(
++      *vfc_task_runner_, FROM_HERE,
++      CrossThreadBindOnce(
++          &VideoFrameCompositor::SetOnNewProcessedFrameCallback,
++          CrossThreadUnretained(compositor_.get()),
++          CrossThreadBindOnce(base::BindPostTaskToCurrentDefault(
++              ConvertToBaseOnceCallback(CrossThreadBindOnce(
++                  &WebMediaPlayerImpl::ParcOnUrlSeekFrame, weak_this_,
++                  parc_url_seek_id_))))));
++}
++
++void WebMediaPlayerImpl::ParcOnUrlSeekFrame(uint64_t seek_id,
++                                            base::TimeTicks frame_time,
++                                            bool is_frame_readable) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  if (seek_id != parc_url_seek_id_ || seeking_ ||
++      !should_notify_time_changed_ ||
++      ready_state_ < WebMediaPlayer::kReadyStateHaveCurrentData) {
++    return;
++  }
++  should_notify_time_changed_ = false;
++  client_->TimeChanged();
++}
++
  void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
-@@ -1988,6 +2562,22 @@
+@@ -1988,6 +2628,22 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -4656,7 +4721,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2108,7 +2698,10 @@
+@@ -2108,7 +2764,10 @@
      return;
  
    ended_ = true;
@@ -4668,7 +4733,7 @@
      client_->TimeChanged();
    }
  
-@@ -2136,19 +2729,27 @@
+@@ -2136,19 +2795,27 @@
    MaybeSetContainerNameForMetrics();
  
    pipeline_metadata_ = metadata;
@@ -4703,7 +4768,7 @@
  
      if (overlay_enabled_) {
        // SurfaceView doesn't support rotated video, so transition back if
-@@ -2197,6 +2798,10 @@
+@@ -2197,6 +2864,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -4714,7 +4779,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2238,6 +2843,16 @@
+@@ -2238,6 +2909,16 @@
  void WebMediaPlayerImpl::OnBufferingStateChange(
      media::BufferingState state,
      media::BufferingStateChangeReason reason) {
@@ -4731,7 +4796,7 @@
    OnBufferingStateChangeInternal(state, reason, false);
  }
  
-@@ -2362,9 +2977,23 @@
+@@ -2362,9 +3043,23 @@
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
  
@@ -4755,7 +4820,7 @@
      // The SetReadyState() call below may clear
      // `skip_metrics_due_to_startup_suspend_` so report this first.
      if (!have_reported_time_to_play_ready_ &&
-@@ -2379,8 +3008,11 @@
+@@ -2379,8 +3074,11 @@
      }
  
      // Warning: This call may be re-entrant.
@@ -4769,7 +4834,7 @@
  
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
-@@ -2397,7 +3029,9 @@
+@@ -2397,7 +3095,9 @@
      }
  
      // Blink expects a timeChanged() in response to a seek().
@@ -4780,7 +4845,7 @@
        should_notify_time_changed_ = false;
        client_->TimeChanged();
      }
-@@ -2434,8 +3068,11 @@
+@@ -2434,8 +3134,11 @@
  
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
@@ -4794,7 +4859,7 @@
    }
  
    UpdatePlayState();
-@@ -2462,6 +3099,23 @@
+@@ -2462,6 +3165,23 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -4818,7 +4883,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,12 +3672,45 @@
+@@ -3018,12 +3738,45 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -4864,7 +4929,7 @@
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
      client_->DidUseAudioServiceChange(new_uses_audio_service);
-@@ -3038,6 +3725,14 @@
+@@ -3038,6 +3791,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -4879,7 +4944,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3848,27 @@
+@@ -3153,6 +3914,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -4907,7 +4972,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +3886,11 @@
+@@ -3170,6 +3952,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -4919,7 +4984,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3332,6 +4053,17 @@
+@@ -3332,6 +4119,17 @@
    // kReadyStateHaveMetadata.
    bool can_stay_suspended = (is_stale || have_future_data) && is_suspended &&
                              paused_ && !seeking_ && !needs_first_frame_;
@@ -4937,7 +5002,7 @@
  
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
-@@ -3530,6 +4262,12 @@
+@@ -3530,6 +4328,12 @@
      return;
    }
  
@@ -4950,7 +5015,7 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3769,6 +4507,13 @@
+@@ -3769,6 +4573,13 @@
    // This takes precedent over every restriction except PiP.
    if (!is_background_video_playback_enabled_)
      return true;
@@ -4964,7 +5029,7 @@
  
    if (is_flinging_)
      return false;
-@@ -3793,6 +4538,29 @@
+@@ -3793,6 +4604,29 @@
      return false;
    }
  
@@ -5037,7 +5102,21 @@
    bool IsEnded() const override;
  
    // Shared between the WebMediaPlayer and DemuxerManager::Client interfaces.
-@@ -445,6 +457,14 @@
+@@ -421,5 +433,13 @@
+   void OnPipelineResumed();
+   void OnPipelineSeeked(bool time_updated);
+ 
++  // Parc: a Safari-identity src= seek (DoSeek()): whether it keeps the
++  // readyState, and its end at the target's first frame.
++  bool ParcUrlSeekKeepsReadyState(base::TimeDelta time) const;
++  void ParcFinishUrlSeekAtFrame();
++  void ParcOnUrlSeekFrame(uint64_t seek_id,
++                          base::TimeTicks frame_time,
++                          bool is_frame_readable);
++
+   // media::Pipeline::Client overrides.
+   void OnError(media::PipelineStatus status) override;
+@@ -445,6 +465,14 @@
    void OnProgress() override;
    void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data) override;
@@ -5052,7 +5131,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +475,35 @@
+@@ -455,6 +483,35 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -5088,7 +5167,7 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -533,6 +582,33 @@
+@@ -533,6 +590,33 @@
  
    // Called when a CDM has been attached to the |pipeline_|.
    void OnCdmAttached(bool success);
@@ -5122,7 +5201,20 @@
  
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-@@ -885,6 +961,35 @@
+@@ -828,6 +912,12 @@
+   // changes.
+   bool should_notify_time_changed_ = false;
+ 
++  // Parc: whether the last seek kept the readyState
++  // (ParcUrlSeekKeepsReadyState()), and that seek's number, which a frame
++  // the compositor reports for it carries.
++  bool parc_url_seek_keeps_ready_state_ = false;
++  uint64_t parc_url_seek_id_ = 0;
++
+   bool overlay_enabled_ = false;
+ 
+   // Cors and Caching flags set during `Load` and used while creating demuxers.
+@@ -885,6 +975,35 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -5158,7 +5250,7 @@
    scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
  
    // Video rendering members.
-@@ -919,6 +1024,13 @@
+@@ -919,6 +1038,13 @@
    // Whether the EME playback has been blocked waiting for the CDM to be set
    // or waiting for decryption key.
    bool has_waiting_for_key_ = false;
@@ -5182,16 +5274,32 @@
  };
  
  class MockWebMediaPlayerEncryptedMediaClient
-@@ -524,6 +525,8 @@
+@@ -524,6 +525,24 @@
    void SetPaused(bool is_paused) { wmpi_->paused_ = is_paused; }
    void SetSeeking(bool is_seeking) { wmpi_->seeking_ = is_seeking; }
    void SetEnded(bool is_ended) { wmpi_->ended_ = is_ended; }
 +  bool IsPaused() const { return wmpi_->paused_; }
 +  void OnEnded() { wmpi_->OnEnded(); }
++  void SetHasFirstFrame() { wmpi_->has_first_frame_ = true; }
++  void SetBufferedBytes(int64_t buffered_bytes, int64_t total_bytes) {
++    wmpi_->buffered_data_source_host_->SetTotalBytes(total_bytes);
++    wmpi_->buffered_data_source_host_->AddBufferedByteRange(0, buffered_bytes);
++  }
++  void OnPipelineSeeked(bool time_updated) {
++    wmpi_->OnPipelineSeeked(time_updated);
++  }
++  bool ShouldNotifyTimeChanged() const {
++    return wmpi_->should_notify_time_changed_;
++  }
++  void PaintFrame() {
++    compositor_->PaintSingleFrame(
++        media::VideoFrame::CreateBlackFrame(gfx::Size(16, 16)),
++        /*repaint_duplicate_frame=*/false);
++  }
    void SetTickClock(const base::TickClock* clock) {
      wmpi_->SetTickClockForTest(clock);
    }
-@@ -571,7 +574,35 @@
+@@ -571,7 +590,35 @@
  
    void OnVideoConfigChange(const media::VideoDecoderConfig& config) {
      wmpi_->OnVideoConfigChange(config);
@@ -5227,7 +5335,7 @@
  
    WebMediaPlayerImpl::PlayState ComputePlayState() {
      return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
-@@ -1807,6 +1838,32 @@
+@@ -1807,6 +1854,32 @@
                             1.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
                             /*end_of_media=*/false));
    wmpi_->OnTimeUpdate();
@@ -5260,7 +5368,146 @@
  }
  
  TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
-@@ -2771,9 +2828,46 @@
+@@ -1908,4 +1981,138 @@
+   wmpi_->OnTimeUpdate();
+ }
+ 
++// A src= player whose first 10% (1s) is buffered, at HAVE_ENOUGH_DATA.
++class WebMediaPlayerImplParcUrlSeekTest : public WebMediaPlayerImplTest {
++ protected:
++  void SetUpPlayer(bool safari_identity,
++                   bool has_video,
++                   bool has_first_frame = true) {
++    InitializeWebMediaPlayerImpl();
++    ON_CALL(client_, PresentsParcSafariIdentity())
++        .WillByDefault(Return(safari_identity));
++    SetMetadata(/*has_audio=*/true, has_video);
++    SetDuration(base::Seconds(10));
++    SetBufferedBytes(100, 1000);
++    SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
++    if (has_first_frame) {
++      SetHasFirstFrame();
++    }
++    testing::Mock::VerifyAndClearExpectations(&client_);
++  }
++};
++
++// Safari keeps readyState through a seek into buffered media and ends it at
++// the target's first frame: no waiting, canplay, playing or canplaythrough.
++TEST_F(WebMediaPlayerImplParcUrlSeekTest,
++       SafariSeekIntoBufferedKeepsReadyState) {
++  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
++
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  wmpi_->Seek(0.5);
++  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
++  EXPECT_TRUE(wmpi_->Seeking());
++
++  // The pipeline's seek alone doesn't end the element's (no TimeChanged()):
++  // the target's frame isn't up.
++  OnPipelineSeeked(/*time_updated=*/true);
++  CycleThreads();
++  EXPECT_FALSE(wmpi_->Seeking());
++  testing::Mock::VerifyAndClearExpectations(&client_);
++
++  // Its first frame does, before the renderer reports HAVE_ENOUGH.
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged());
++  PaintFrame();
++  CycleThreads();
++  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
++  testing::Mock::VerifyAndClearExpectations(&client_);
++
++  // Once.
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  PaintFrame();
++  CycleThreads();
++}
++
++TEST_F(WebMediaPlayerImplParcUrlSeekTest, SafariAudioSeekEndsWithPipelineSeek) {
++  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/false);
++
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  wmpi_->Seek(0.5);
++  testing::Mock::VerifyAndClearExpectations(&client_);
++
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged());
++  OnPipelineSeeked(/*time_updated=*/true);
++  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
++}
++
++// A frame of an earlier seek doesn't end a later one.
++TEST_F(WebMediaPlayerImplParcUrlSeekTest, SafariSeekIgnoresEarlierSeeksFrame) {
++  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
++
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  wmpi_->Seek(0.5);
++  OnPipelineSeeked(/*time_updated=*/true);
++  CycleThreads();
++  wmpi_->Seek(0.7);
++  // The first seek's frame reaches the main thread only after the second
++  // seek's pipeline part is done.
++  PaintFrame();
++  media_thread_.FlushForTesting();
++  OnPipelineSeeked(/*time_updated=*/true);
++  CycleThreads();
++  testing::Mock::VerifyAndClearExpectations(&client_);
++
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged());
++  PaintFrame();
++  CycleThreads();
++}
++
++// Before the first frame the compositor's callback is OnFirstFrame()'s, so a
++// frame doesn't end the seek (the renderer's HAVE_ENOUGH does); readyState is
++// still kept.
++TEST_F(WebMediaPlayerImplParcUrlSeekTest, SafariSeekBeforeFirstFrameWaits) {
++  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true,
++              /*has_first_frame=*/false);
++
++  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  wmpi_->Seek(0.5);
++  OnPipelineSeeked(/*time_updated=*/true);
++  CycleThreads();
++  PaintFrame();
++  CycleThreads();
++  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
++  EXPECT_TRUE(ShouldNotifyTimeChanged());
++}
++
++TEST_F(WebMediaPlayerImplParcUrlSeekTest,
++       SafariSeekOutsideBufferedLowersReadyState) {
++  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
++
++  EXPECT_CALL(client_, ReadyStateChanged());
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  wmpi_->Seek(5);
++  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
++  OnPipelineSeeked(/*time_updated=*/true);
++  PaintFrame();
++  CycleThreads();
++}
++
++TEST_F(WebMediaPlayerImplParcUrlSeekTest, ChromeSeekLowersReadyState) {
++  SetUpPlayer(/*safari_identity=*/false, /*has_video=*/true);
++
++  EXPECT_CALL(client_, ReadyStateChanged());
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  wmpi_->Seek(0.5);
++  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
++  OnPipelineSeeked(/*time_updated=*/true);
++  PaintFrame();
++  CycleThreads();
++}
++
+ TEST_F(WebMediaPlayerImplTest, NoStreams) {
+@@ -2771,9 +2978,46 @@
    OnVideoConfigChange(new_color_config);
    ASSERT_EQ(last_reporter, GetVideoStatsReporter());
    ASSERT_EQ(media::VP8PROFILE_MIN, GetVideoStatsReporterCodecProfile());
@@ -5307,7 +5554,7 @@
  
  TEST_F(WebMediaPlayerImplTest, NaturalSizeChange) {
    InitializeWebMediaPlayerImpl();
-@@ -3024,6 +3118,66 @@
+@@ -3024,6 +3268,66 @@
    EXPECT_FALSE(IsPausedBecauseFrameHidden());
  }
  
@@ -5374,7 +5621,7 @@
  // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
  // visibility changes should not affect the playback state.
  TEST_F(WebMediaPlayerImplTest, DisabledFlagShouldPauseWhenFrameIsHidden) {
-@@ -3090,6 +3244,20 @@
+@@ -3090,6 +3394,20 @@
    ASSERT_TRUE(IsSuspended());
  }
  
@@ -5395,7 +5642,7 @@
  TEST_F(WebMediaPlayerImplTest, BackgroundIdlePauseTimerDependsOnAudio) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
-@@ -3113,6 +3281,26 @@
+@@ -3113,6 +3431,26 @@
        PausePlayback(WebMediaPlayer::PauseReason::kSuspendedPlayerIdleTimeout));
    FireIdlePauseTimer();
    base::RunLoop().RunUntilIdle();
@@ -5422,7 +5669,7 @@
  }
  
  // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
-@@ -3815,6 +4003,55 @@
+@@ -3815,6 +4153,55 @@
    }
  }
  
