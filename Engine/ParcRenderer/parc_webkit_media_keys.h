@@ -1242,6 +1242,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // - 'media-source': a protected track's sinf ({"sinf":[base64]}), kept for
   //   the element's com.apple.fps.2_N keys (CDMSessionAVContentKeySession's
   //   source buffer init data);
+  // - 'load': the element loads anew (no init data, no event);
   // - 'skd': an HLS key request the player now holds (4-byte little-endian
   //   length, then the URI as UTF-16), for a legacy session to take
   //   (MediaPlayerPrivateAVFoundationObjC::m_keyURIToRequestMap);
@@ -1249,6 +1250,15 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   //   the player its key (clearKeyRequested).
   function keyNeeded(element, initData, kind, provideKey) {
     if (!isMediaElement(element) || !isUint8Array(initData)) {
+      return null;
+    }
+    // A new load: WebKit's new player has no renderer session, init data or
+    // held key requests (HTMLMediaElement::mediaEngineWasUpdated sets only
+    // the CDM), so this element's go.
+    if (kind === 'load') {
+      apply(weakMapDelete, elementInitData, [element]);
+      apply(weakMapDelete, elementKeyRequests, [element]);
+      setRendererSession(element, null);
       return null;
     }
     if (kind === 'clearkey' && textDecode &&

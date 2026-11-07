@@ -237,6 +237,14 @@ inline void ScheduleParcWebKitNeedKey(HTMLMediaElement& element,
   element.ScheduleEvent(event);
 }
 
+// A new load of |element| (HTMLMediaElement::StartPlayerLoad): the hook,
+// called with kind "load", forgets the init data and key requests the
+// previous player gave the element and its renderer session, as WebKit's new
+// player starts without them. It raises nothing.
+inline void ParcWebKitMediaKeysNewLoad(HTMLMediaElement& element) {
+  ScheduleParcWebKitNeedKey(element, base::span<const uint8_t>(), "load");
+}
+
 // A key request of WebKit's AVFoundation player
 // (MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource), by the
 // scheme of |key_uri|, the request URL's absolute string as UTF-8: skd:// is

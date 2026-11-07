@@ -757,6 +757,20 @@ for (const sinf of [true, false]) {
   await settle();
   check(tagOf(world.log.filter((entry) => entry[0] === 'generateRequest').pop()) === 'E',
         "attaching the keys gives their latest session the element's init data");
+
+  // A new load: WebKit's new player has no renderer session or init data, so
+  // the next title's session waits for its own init data.
+  needKey(hook, video, [], 'load');
+  const nextTitle = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
+  const nextEvents = [];
+  nextTitle.addEventListener('webkitkeymessage', (event) => nextEvents.push(text(event.message)));
+  nextTitle.addEventListener('webkitkeyerror', () => nextEvents.push('error:' + nextTitle.error.code));
+  await settle();
+  nextTitle.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  check(nextEvents.join() === 'certificate,error:1',
+        "after a new load the previous title's init data is gone: InvalidPlayerState");
+  check(needKey(hook, video, [], 'load') === null, 'a load raises no event');
 }
 
 // ---- Secure stop (CDMSessionAVContentKeySession: keyrelease, acknowledged,

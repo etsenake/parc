@@ -1534,15 +1534,16 @@
  #include "services/media_session/public/mojom/media_session.mojom-blink.h"
  #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
  #include "third_party/blink/public/common/features.h"
-@@ -54,6 +57,7 @@
+@@ -54,6 +57,8 @@
  #include "third_party/blink/public/platform/web_media_player.h"
  #include "third_party/blink/public/platform/web_media_player_source.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
++#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h"
 +#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_can_play_type_result.h"
  #include "third_party/blink/renderer/core/core_initializer.h"
  #include "third_party/blink/renderer/core/core_probes_inl.h"
-@@ -71,6 +75,7 @@
+@@ -71,6 +76,7 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -1550,7 +1551,7 @@
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -86,6 +91,7 @@
+@@ -86,6 +92,7 @@
  #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
  #include "third_party/blink/renderer/core/html/media/media_source_handle.h"
  #include "third_party/blink/renderer/core/html/media/media_source_tracer.h"
@@ -1558,7 +1559,7 @@
  #include "third_party/blink/renderer/core/html/time_ranges.h"
  #include "third_party/blink/renderer/core/html/track/audio_track.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
-@@ -127,6 +133,7 @@
+@@ -127,6 +134,7 @@
  #include "third_party/blink/renderer/platform/wtf/casting.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
@@ -1566,7 +1567,7 @@
  #include "third_party/blink/renderer/platform/wtf/vector.h"
  #include "ui/accessibility/accessibility_features.h"
  #include "ui/display/screen_info.h"
-@@ -803,6 +810,9 @@
+@@ -803,6 +811,9 @@
  void HTMLMediaElement::ParseAttribute(
      const AttributeModificationParams& params) {
    const QualifiedName& name = params.name;
@@ -1576,7 +1577,7 @@
    if (name == html_names::kSrcAttr) {
      DVLOG(2) << "parseAttribute(" << *this
               << ", kSrcAttr, old=" << params.old_value
-@@ -1069,10 +1079,133 @@
+@@ -1069,10 +1080,133 @@
    return network_state_;
  }
  
@@ -1711,7 +1712,7 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -1112,6 +1245,7 @@
+@@ -1112,6 +1246,7 @@
  // in resource selection algorithm.
  void HTMLMediaElement::InvokeLoadAlgorithm() {
    DVLOG(3) << "invokeLoadAlgorithm(" << *this << ")";
@@ -1719,7 +1720,20 @@
  
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -2727,7 +2861,11 @@
+@@ -1760,6 +1895,12 @@
+     source = WebMediaPlayerSource(WebURL(kurl));
+   }
+ 
++  // Parc: each load makes a new player in WebKit, whose renderer has no
++  // legacy key session or init data until the new media gives some
++  // (HTMLMediaElement::mediaEngineWasUpdated only sets the CDM); the legacy
++  // EME script forgets what the previous load gave this element.
++  ParcWebKitMediaKeysNewLoad(*this);
++
+   web_media_player_ =
+       frame->Client()->CreateWebMediaPlayer(*this, source, this);
+ 
+@@ -2727,7 +2868,11 @@
    ScheduleNamedEvent(event_type_names::kSeeking);
  
    // 11 - Set the current playback position to the given new playback position.
@@ -1732,7 +1746,7 @@
    web_media_player_->OnTimeUpdate();
  
    // 14-17 are handled, if necessary, when the engine signals a readystate
-@@ -2898,6 +3036,52 @@
+@@ -2898,6 +3043,52 @@
    ReportCurrentTimeToMediaSource();
  }
  
@@ -1785,7 +1799,7 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -3160,6 +3344,7 @@
+@@ -3160,6 +3351,7 @@
  
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
    DVLOG(2) << "play(" << *this << ")";
@@ -1793,7 +1807,7 @@
  
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3400,6 +3585,9 @@
+@@ -3400,6 +3592,9 @@
      return;
    }
  
@@ -1803,7 +1817,7 @@
    volume_ = vol;
  
    ScheduleNamedEvent(event_type_names::kVolumechange);
-@@ -3438,6 +3626,7 @@
+@@ -3438,6 +3633,7 @@
  
  void HTMLMediaElement::setMuted(bool muted) {
    DVLOG(2) << "setMuted(" << *this << ", " << base::ToString(muted) << ")";
@@ -1811,7 +1825,7 @@
  
    bool was_muted = this->muted();
  
-@@ -3562,10 +3751,23 @@
+@@ -3562,10 +3758,23 @@
  
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
                                           TrackBase::ChangeSource source) {
@@ -1835,7 +1849,7 @@
  
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3679,9 +3881,163 @@
+@@ -3679,9 +3888,163 @@
    }
  }
  
@@ -1999,7 +2013,7 @@
  
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +4046,16 @@
+@@ -3690,6 +4053,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -2016,7 +2030,7 @@
    // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
  
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4264,8 @@
+@@ -3898,7 +4271,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -2026,7 +2040,7 @@
          goto checkAgain;
      }
  
-@@ -4845,6 +5212,7 @@
+@@ -4845,6 +5219,7 @@
    visitor->Trace(deferred_load_timer_);
    visitor->Trace(media_source_tracer_);
    visitor->Trace(audio_tracks_);
@@ -2034,7 +2048,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4873,7 +5241,8 @@
+@@ -4873,7 +5248,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
