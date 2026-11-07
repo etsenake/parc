@@ -29,7 +29,8 @@
 //   route (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md): the init data
 //   names the key URI of a request the attached
 //   player holds, the content ID and the certificate; the SPC is the first
-//   message; every update answers the request and fires `webkitkeyadded`.
+//   message; every update answers the request and fires `webkitkeyadded`;
+//   an obscured output raises `webkitkeyerror` (systemCode 'HDCP').
 // - `HTMLMediaElement.webkitSetMediaKeys`/`webkitKeys` (keys follow the last
 //   element they were set on; clearing them on any element that holds them
 //   detaches them, as WebKitMediaKeys::setMediaElement does), the event and
@@ -115,6 +116,8 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const generateRequest = sessionPrototype && sessionPrototype.generateRequest;
   const updateModern = sessionPrototype && sessionPrototype.update;
   const closeModern = sessionPrototype && sessionPrototype.close;
+  const keyStatusesOf = getter(sessionPrototype, 'keyStatuses');
+  const statusMapForEach = g.MediaKeyStatusMap && g.MediaKeyStatusMap.prototype.forEach;
   const messageEventPrototype = g.MediaKeyMessageEvent && g.MediaKeyMessageEvent.prototype;
   const messageOf = getter(messageEventPrototype, 'message');
   const messageTypeOf = getter(messageEventPrototype, 'messageType');
@@ -193,6 +196,9 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const UNKNOWN = 1;
   const CLIENT = 2;
   const DOMAIN = 6;
+  // The systemCode WebKit's AVFoundation player gives a legacy session when
+  // its output becomes obscured ('HDCP').
+  const HDCP_SYSTEM_CODE = 0x48444350;
   const INVALID_PLAYER_STATE = 1;
   const KEY_SYSTEM_NOT_SUPPORTED = 2;
   const NO_EXPIRED_SESSIONS = 0x216d6f72;  // '!mor'
@@ -768,11 +774,15 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     } else if (session.pending.length) {
       session.pending.shift();
     }
-    return then(apply(updateModern, session.modern, [response]), () => {
-      if (session.open) {
-        fire(session.object, plainEvent('webkitkeyadded'));
-      }
-    }, (error) => sendError(session, UNKNOWN, systemCodeOf(error)));
+    // CDMSessionAVContentKeySession::update hands the CKC to AVFoundation
+    // and reports the key stored at once (WebKitMediaKeySession::
+    // addKeyTimerFired fires webkitkeyadded); its key session has no failure
+    // callback, so a CKC AVFoundation rejects raises no webkitkeyerror.
+    const updated = apply(updateModern, session.modern, [response]);
+    if (session.open) {
+      fire(session.object, plainEvent('webkitkeyadded'));
+    }
+    return then(updated, undefined, () => {});
   }
 
   // CDMSessionAVFoundationObjC::generateKeyRequest: the init data names the
@@ -803,25 +813,45 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         const modern = apply(createModernSession, mediaKeys, [keys.sessionType]);
         session.modern = modern;
         apply(addListener, modern, ['message', (event) => onModernMessage(session, event)]);
+        apply(addListener, modern, ['keystatuseschange', () => onHlsKeyStatuses(session, modern)]);
         return then(apply(generateRequest, modern, ['skd', request]), undefined, failed);
       }, failed);
     }), failed));
   }
 
-  // CDMSessionAVFoundationObjC::update: every key is the answer to the held
-  // request, and WebKit reports it added. It never renews, so "renew" isn't
-  // passed to Parc's CDM, which would read it as a renewal request.
-  function processHlsKey(session, key) {
-    const added = () => {
-      if (session.open) {
-        fire(session.object, plainEvent('webkitkeyadded'));
-      }
-    };
-    if (!session.modern || equalsAscii(key, 'renew')) {
-      added();
-      return undefined;
+  // MediaPlayerPrivateAVFoundationObjC::
+  // outputObscuredDueToInsufficientExternalProtectionChanged: when the
+  // player's output becomes obscured, its legacy session gets a key error
+  // with systemCode 'HDCP' (CDMSessionAVFoundationObjC::playerDidReceiveError).
+  // Parc's native HLS player shows an obscured output as output-restricted
+  // keys (fairplay_hls_keys.h).
+  function onHlsKeyStatuses(session, modern) {
+    let restricted = false;
+    const statuses = keyStatusesOf && apply(keyStatusesOf, modern, []);
+    if (statuses && statusMapForEach) {
+      apply(statusMapForEach, statuses, [(status) => {
+        if (status === 'output-restricted') {
+          restricted = true;
+        }
+      }]);
     }
-    return then(apply(updateModern, session.modern, [key]), added, added);
+    if (restricted && !session.outputObscured) {
+      sendError(session, DOMAIN, HDCP_SYSTEM_CODE);
+    }
+    session.outputObscured = restricted;
+  }
+
+  // CDMSessionAVFoundationObjC::update: every key is the answer to the held
+  // request, and WebKit reports it added at once, whatever AVFoundation makes
+  // of it. It never renews, so "renew" isn't passed to Parc's CDM, which
+  // would read it as a renewal request.
+  function processHlsKey(session, key) {
+    const updated = session.modern && !equalsAscii(key, 'renew') ?
+        apply(updateModern, session.modern, [key]) : undefined;
+    if (session.open) {
+      fire(session.object, plainEvent('webkitkeyadded'));
+    }
+    return updated && then(updated, undefined, () => {});
   }
 
   // WTF::base64Decode without options: the standard alphabet, padding

@@ -73,9 +73,20 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
     get initData() { return this.#data; }
   }
   const spc = (keys, tag) => 'SPC(' + keys.certificate + ',' + tag + ')';
+  class MediaKeyStatusMap {
+    #map;
+    constructor(map) { this.#map = map; }
+    forEach(callback) { for (const [keyId, status] of this.#map) callback(status, keyId, this); }
+  }
   class MediaKeySession extends EventTarget {
-    #keys; #json = false; #lastKey = null;
+    #keys; #json = false; #lastKey = null; #statuses = new Map();
     constructor(keys) { super(); this.#keys = keys; }
+    get keyStatuses() { return new MediaKeyStatusMap(this.#statuses); }
+    // The CDM reporting key statuses (keystatuseschange).
+    setStatuses(entries) {
+      this.#statuses = new Map(entries);
+      this.dispatchEvent(new Event('keystatuseschange'));
+    }
     send(type, entries) {
       const body = this.#json ? JSON.stringify(entries.map(([keyID, payload]) =>
           ({keyID, payload: Buffer.from(payload, 'latin1').toString('base64')}))) : entries[0][1];
@@ -149,6 +160,10 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
       if (body === 'renew') {
         this.send('license-renewal', [[this.#lastKey, spc(this.#keys, 'renew:' + this.#lastKey)]]);
       }
+      // A CKC AVFoundation rejects.
+      const ckc = this.#json && body.startsWith('[') ?
+          JSON.parse(body).map((entry) => Buffer.from(entry.payload, 'base64').toString('latin1')).join() : body;
+      if (ckc === 'BAD-CKC') return Promise.reject(new TypeError('license response rejected'));
       return Promise.resolve();
     }
     close() { log.push(['close']); return Promise.resolve(); }
@@ -162,7 +177,11 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
       log.push(['setServerCertificate', this.certificate]);
       return Promise.resolve(true);
     }
-    createSession(type) { log.push(['createSession', type]); return new MediaKeySession(this); }
+    createSession(type) {
+      const session = new MediaKeySession(this);
+      log.push(['createSession', type, session]);
+      return session;
+    }
   }
   class MediaKeySystemAccess {
     #configuration;
@@ -205,7 +224,7 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
   const context = {
     MediaSource, DOMException, Event, EventTarget, atob, btoa, setTimeout, TextDecoder,
     TextEncoder, crypto,
-    MediaKeyMessageEvent, MediaEncryptedEvent, MediaKeySession, MediaKeys,
+    MediaKeyMessageEvent, MediaEncryptedEvent, MediaKeySession, MediaKeyStatusMap, MediaKeys,
     MediaKeySystemAccess, Navigator, navigator: new Navigator(), HTMLMediaElement, MediaError,
     calls, log,
   };
@@ -549,6 +568,10 @@ const skdInitData = (uri) => {
         Buffer.from(updates[0][0].payload, 'base64').toString() === 'CKC-A',
         'each CKC answers the oldest SPC, wrapped for the CDM');
   check(events.filter((e) => e[0] === 'added').length === 2, 'webkitkeyadded after each accepted CKC');
+  session.update(new Uint8Array(bytesOf('BAD-CKC')));
+  await settle();
+  check(events.filter((e) => e[0] === 'added').length === 3 && !events.some((e) => e[0] === 'error'),
+        "a CKC AVFoundation rejects is still added, as WebKit's legacy key session has no failure callback");
 
   session.update(new Uint8Array(bytesOf('renew')));
   await settle();
@@ -946,6 +969,18 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(world.log.filter((entry) => entry[0] === 'update').pop()[1] === 'CKC' && events.pop() === 'added' &&
         !events.some((event) => event.includes('renew')),
         'every update is an answer for the AVFoundation player, which never renews');
+  const modern = world.log.filter((entry) => entry[0] === 'createSession').pop()[2];
+  modern.setStatuses([['skd://key1', 'output-restricted']]);
+  await settle();
+  check(events.pop() === 'error:6' && session.error.systemCode === 0x48444350,
+        "an obscured output is WebKit's HDCP key error (DOMAIN, systemCode 'HDCP')");
+  modern.setStatuses([['skd://key1', 'output-restricted']]);
+  modern.setStatuses([['skd://key1', 'usable']]);
+  await settle();
+  check(!events.some((event) => event.startsWith('error')), 'once per change into an obscured output');
+  modern.setStatuses([['skd://key1', 'output-restricted']]);
+  await settle();
+  check(events.pop() === 'error:6', 'and again when the output is obscured again');
 
   const taken = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://key1', 'asset-9', 'CERT'));
   const unknown = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://other', 'x', 'CERT'));
