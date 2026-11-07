@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 523,
+  "version": 524,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4648,7 +4648,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "2fb1ca039247c10c8d6123b8a904fe5f0a1cc7972efa875d6ba63440d9a3649e",
+      "sha256": "820cbf3f452a05282c07991d0e9ab332bb9e8b9c9c518691355b63f0c90eb392",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4683,7 +4683,17 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.cc",
           "before_sha256": "cbe10ab50ec054bd72cd04df8dfcdb84d11ae88a6ffcc073c0555c3010429bc0",
-          "after_sha256": "4a4ab9adffec2ea5b9140d2e00fc4710749f1f7f1bd3194539ead8a371b49c78"
+          "after_sha256": "1eac14f0786be89560446f89f815f6c252f3137c8626520290058c9321f84352"
+        },
+        {
+          "target": "third_party/blink/renderer/core/dom/events/event_queue.h",
+          "before_sha256": "64462d86e407c1555f00882e91246ab3c9506adc3007462b5afe4d4c4dbea143",
+          "after_sha256": "7ea7315eb1d7bc3addba1df84ffc9fe18f7f4e68c978eb6ba08666fe2bf1efc2"
+        },
+        {
+          "target": "third_party/blink/renderer/core/dom/events/event_queue.cc",
+          "before_sha256": "39d3c48426e64a079a30467960841005cf7dbdce966384eab4157b66ffbdeb12",
+          "after_sha256": "01cab4c9d00405df54627b936e0dc22dcb396ebdcfe2ade082858e2618b65679"
         },
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.h",
@@ -4913,7 +4923,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element_test.cc",
           "before_sha256": "10bf01e97e98cc4ad176a4ec1f3fccc307960f79a9231fe361cf1b8ca272b88f",
-          "after_sha256": "f1100d7fdb7750bd0cb1c0ef942da5160152dc8f3ef004ddec312593ba3a1445"
+          "after_sha256": "beed7be45c2faa1e6ab0f02e361a008b0f5f07a0263d9ed6ba650b37e49660bc"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/cue_timeline.cc",
