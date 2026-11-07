@@ -31,6 +31,11 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
   `-[AVPlayerLayer videoPerformanceMetrics]` on a private queue every 250 ms
   while playing and reported as deltas (ObjC++ only). Proven by
   [tests/FairPlay/hls_presentation](../../../tests/FairPlay/hls_presentation/README.md).
+- `fairplay_hls_media_selection.{h,mm}`: `HlsMediaSelection`, the native HLS
+  player's audio and text tracks and cues exactly as Safari's AVFoundation
+  player exposes them (see Native HLS tracks below);
+  `fairplay_hls_media_selection_internal.h` attaches it to the player's
+  `AVPlayer` and item (ObjC++ only).
 - `fairplay_hls_player.{h,mm}`: `FairPlayHlsPlayer`, Safari's native HLS route
   (`<video src="….m3u8">`) through `AVPlayer`, with every load handed to the
   embedder's `HlsLoader` (see below and
@@ -400,3 +405,42 @@ its end reaching the live edge.
 `tests/FairPlay/sandbox` (`--scenarios hls-ts,hls-fmp4`) plays both clear
 streams inside Chromium's GPU seatbelt profile with only the MSE route's
 FairPlay rules, every load going through the unsandboxed helper.
+
+## Native HLS tracks
+
+`HlsMediaSelection` is a port of WebKit's AVFoundation track code
+(`MediaPlayerPrivateAVFoundationObjC`'s `tracksChanged`, `updateAudioTracks`,
+`processMediaSelectionOptions`, `setCurrentTextTrack` and legible output,
+`configureInbandTracks`, `MediaSelectionGroupAVFObjC`,
+`AVTrackPrivateAVFObjCImpl`, `InbandTextTrackPrivateAVF(ObjC)`). It is
+compiled into the core but not yet called by the GPU service.
+
+- audioTracks: the audible group's playable options (the item's audio tracks
+  when there is no group). WebKit, not AVFoundation, picks the option: the
+  player's `appliesMediaSelectionCriteriaAutomatically` is NO, and until the
+  page enables a track the group follows the user's languages and the
+  accessibility audio characteristics (audio descriptions). Ids, kinds,
+  labels, languages and indexes come from the asset track WebKit finds for
+  the option, else the option, exactly as WebKit derives them (so an id can
+  repeat, and `description` is WebKit's audio kind keyword).
+- textTracks: the legible group's playable options, numbered from 0 in order
+  of discovery; kinds `captions` (closed captions, SDH), `forced` or
+  `subtitles`. The legible output serves one track, the first showing, else
+  the last hidden; no option is selected until the page shows one.
+- Cues: one `AVPlayerItemLegibleOutput` (2 s advance, player rendering
+  suppressed, source and rules styling) with WebVTT as native samples. WebVTT
+  arrives as ISO WebVTT cue boxes (`kWebVtt`, plus the `vttC` header once per
+  track); everything else (CEA-608/708, other formats) as generic cues added
+  open-ended and completed, extended or, on a seek or output flush, removed
+  as WebKit does. The page side turns them into `VTTCue`s.
+
+Proof: `scripts/test-fairplay-hls-tracks.sh`
+([harness](../../../tests/FairPlay/hls_media_selection_harness.mm)) runs the
+selection on a serial queue with no run loop over Apple's
+`bipbop_16x9_variant` (two audio renditions, eight WebVTT subtitle options
+with forced ones) and `img_bipbop_adv_example_fmp4` (CEA-608 CC1): the track
+lists, kinds, labels, languages and defaults; WebKit's automatic audio
+choice; enabling audio 2 selecting its option and audio 1 then reporting
+disabled; show/hide/disable picking the legible option; WebVTT and CEA-608
+cues with their timing; a seek flushing the open caption; teardown with cues
+flowing.

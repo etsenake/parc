@@ -29,6 +29,9 @@ source_set("core") {
     "core/fairplay_bitstream.h",
     "core/fairplay_hls_frame_stats.h",
     "core/fairplay_hls_frame_stats.mm",
+    "core/fairplay_hls_media_selection.h",
+    "core/fairplay_hls_media_selection.mm",
+    "core/fairplay_hls_media_selection_internal.h",
     "core/fairplay_hls_player.mm",
     "core/fairplay_hls_player_internal.h",
     "core/fairplay_hls_timeline.cc",
@@ -47,6 +50,7 @@ source_set("core") {
     "CoreFoundation.framework",
     "CoreMedia.framework",
     "Foundation.framework",
+    "MediaAccessibility.framework",
     "QuartzCore.framework",
   ]
 }
