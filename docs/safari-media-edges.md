@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **67**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **68**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -720,9 +720,14 @@ garbage; a mid-page `abort()` drops the partial page; checksum-failed pages
 are skipped; the final FLAC frame's duration follows its header; a mixed
 Ogg-plus-video `decodingInfo` query says no;
 PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected
-PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`) and 20, and
-4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (**in progress**, MS-4d, 200-400
-lines); AMR and H.263 in 3GPP failed: **fixed** 8459d88a (AudioToolbox/VideoToolbox
+PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`), 20, 8.x in `hvc1`
+and HLG tagging differed: **fixed** d8f9bace (measured against this Mac's
+AVStreamDataParser and AVSampleBufferDisplayLayer). Profiles 4 and 7: Safari
+fails to decode them (and refuses them in `isTypeSupported`), Parc plays the
+base layer: **kept** (Parc better). `decodingInfo` for `dav1.10`/`dvh1.20`
+not matching `isTypeSupported`, and 8.2/10.2 SDR-compatible bases shown as
+PQ: **in progress** (MS-4d2). `dav1` on M1/M2 refused by inference
+(**unchecked**); real profile 20 content **unchecked**; AMR and H.263 in 3GPP failed: **fixed** 8459d88a (AudioToolbox/VideoToolbox
 decoders). Still: `canPlayType` is silent for 3gpp/3gpp2 and samr/sawb/s263
 where Safari says maybe or probably; MPEG-4 Part 2 video (`mp4v.20.x`) in
 3GPP fails; raw .amr/.awb files don't play: **left**, pending Josh (Safari
