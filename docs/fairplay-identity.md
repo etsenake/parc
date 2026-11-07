@@ -47,6 +47,13 @@ On a page that presents Safari's identity:
   supported, a type may also list the other kind's FairPlay codecs, and an
   unparsable type skips only that capability. The HLS types join once
   Parc's native HLS route is on.
+- Videos have Safari's presentation API (`webkitSupportsPresentationMode`,
+  `webkitSetPresentationMode`, `webkitPresentationMode`,
+  `webkitpresentationmodechanged`), as WebKit has it on macOS. A main-world
+  script (`Engine/ParcRenderer/parc_webkit_presentation.h`) maps it onto
+  Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's
+  picture-in-picture panel and fullscreen window present the video and the
+  standard API's state always agrees with it.
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`
@@ -458,7 +465,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   `ManagedMediaSource` and `WebKitMediaKeys` scripts
   (`Engine/ParcRenderer/parc_managed_media_source.h`,
   `parc_webkit_media_keys.h`), the `getStatusForPolicy` removal
-  (`parc_safari_media_keys.h`), FairPlay's `sinf` and `skd` init data gate,
+  (`parc_safari_media_keys.h`), the video presentation API
+  (`parc_webkit_presentation.h`), FairPlay's `sinf` and `skd` init data gate,
   and the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
@@ -519,7 +527,12 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   `HTMLMediaElement.prototype`. Its legacy HLS key systems wait for native
   HLS (TELUS TV+'s Shaka setup and Disney+'s native client use
   `com.apple.fps.1_0`). `getStatusForPolicy` is removed by a main-world
-  script too, so isolated worlds (extensions) still see it.
+  script too, so isolated worlds (extensions) still see it. The video
+  presentation API is a script as well and overrides `addEventListener` on
+  `HTMLVideoElement.prototype`; its events are script-made (`isTrusted`
+  false), and changes the page or the browser starts through the standard
+  APIs report their new mode when Chromium's own event for them arrives
+  rather than as the change begins.
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used

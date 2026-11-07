@@ -19,7 +19,8 @@ choice, with the default followed). Owner is the session driving the row:
 - `fp-eme-modern`: modern EME.
 - `fp-eme-caps`: capability answers and `requestMediaKeySystemAccess`
   configuration handling (taken over from fp-eme-modern).
-- `fp-mms-presentation`: ManagedMediaSource and presentation/fullscreen.
+- `fp-mms-presentation`: ManagedMediaSource.
+- `fp-presentation`: presentation/fullscreen.
 - `fp-native-hls`: native HLS on AVPlayer and `skd` in the CDM.
 - `fp-netflix-identity`, `fp-frame-stats`, `fp-compositor-groups`: their
   in-flight changes (WebKitMediaKeys probe, frame counts, protected layer
@@ -121,18 +122,21 @@ WebKit: `Modules/mediasource/ManagedMediaSource.*`, `ManagedSourceBuffer.*`,
 
 ## Presentation and fullscreen
 
-WebKit: `html/HTMLVideoElement.{idl,cpp}`, `HTMLMediaElement.cpp`. Parc maps
-onto Chromium's Picture-in-Picture and fullscreen (`native-video-pip.patch`,
-`native-fullscreen-window.patch`).
+WebKit: `html/HTMLVideoElement.{idl,cpp}`, `HTMLMediaElement.cpp`,
+`MediaElementSession.cpp` (macOS: video fullscreen is element fullscreen).
+Parc: `Engine/ParcRenderer/parc_webkit_presentation.h`, a main-world script on
+Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's panel
+(`native-video-pip.patch`) and fullscreen window
+(`native-fullscreen-window.patch`) present the video.
 
 | Piece | Safari | Parc | Status | Owner |
 |---|---|---|---|---|
-| `webkitSupportsPresentationMode(mode)` | fullscreen/picture-in-picture/inline support | absent | missing | fp-mms-presentation |
-| `webkitSetPresentationMode(mode)` | enters/leaves PiP or video fullscreen; ignored while changing; needs a user gesture except PiP→PiP | absent | missing | fp-mms-presentation |
-| `webkitPresentationMode` | `inline`/`fullscreen`/`picture-in-picture` | absent | missing | fp-mms-presentation |
-| `webkitpresentationmodechanged` event | on every mode change | absent | missing | fp-mms-presentation |
-| `webkitEnterFullscreen`/`webkitExitFullscreen` (+ `FullScreen` aliases), `webkitSupportsFullscreen`, `webkitDisplayingFullscreen` | per IDL | Chromium has them | present | fp-mms-presentation |
-| `webkitbeginfullscreen`/`webkitendfullscreen` events | fired around video fullscreen | absent | missing | fp-mms-presentation |
+| `webkitSupportsPresentationMode(mode)` | fullscreen/picture-in-picture/inline support | inline always; fullscreen once a load started; picture in picture once there's video | present | fp-presentation |
+| `webkitSetPresentationMode(mode)` | enters/leaves PiP or video fullscreen; ignored while changing; needs a user gesture except PiP→PiP | same, over the standard APIs; gesture = transient activation, without WebKit's lift of the rule once the element had a gesture-started play or load (needs a native hook; next) | different | fp-presentation |
+| `webkitPresentationMode` | `inline`/`fullscreen`/`picture-in-picture` | same; changes this API starts report as WebKit's do, others when Chromium's event arrives | present | fp-presentation |
+| `webkitpresentationmodechanged` event | on every mode change | same, before the standard event, but script-made (`isTrusted` false; native dispatch next) | different | fp-presentation |
+| `webkitEnterFullscreen`/`webkitExitFullscreen` (+ `FullScreen` aliases), `webkitSupportsFullscreen`, `webkitDisplayingFullscreen` | per IDL | absent (the pinned Chromium removed them) | missing | fp-presentation |
+| `webkitbeginfullscreen`/`webkitendfullscreen` events | macOS: end only on fullscreen → PiP, begin never (element fullscreen) | absent | missing | fp-presentation |
 | Protected picture in PiP/fullscreen | AVSampleBufferDisplayLayer moves | compositor places the protected layer | pending | fp-compositor-groups |
 | `webkitDecodedFrameCount`/`webkitDroppedFrameCount`, `getVideoPlaybackQuality` | decoder counts | FairPlay renderer reports | pending | fp-frame-stats |
 | AirPlay (`webkitShowPlaybackTargetPicker`, `webkitCurrentPlaybackTargetIsWireless`, `webkitWirelessVideoPlaybackDisabled`, `WebKitPlaybackTargetAvailabilityEvent`) | AVFoundation routes | absent; players feature-detect it and hide AirPlay | decision: casting, not playback; default left absent | fp-mms-presentation |
