@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 561,
+  "version": 562,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -2428,7 +2428,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-host-route.patch",
-      "sha256": "a09d1b5602459a629de6a9415f882faaeb6db5abf7ca23e3a37ab22bb6adc99e",
+      "sha256": "512b153596fd4ce0996fc1d066bbc9238d53bf2d94272d4fc05ee1a42d3f825a",
       "files": [
         {
           "target": "cef/libcef/browser/browser_host_base.h",
@@ -2543,7 +2543,7 @@
         {
           "target": "content/browser/renderer_host/render_frame_host_impl.h",
           "before_sha256": "595572a345bd441ac5d2816c26303e3c78a159afb457d10e9ebe9797fbae6724",
-          "after_sha256": "cb8724d1970d3097ccc21836b0fa401f9a453ab011e6c51dff8b799212cfea72"
+          "after_sha256": "4eef053954a222b6104d522c889898d41ee89b570625354db73a604d35005bd0"
         },
         {
           "target": "content/common/frame.mojom",
@@ -3004,7 +3004,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-input-diagnostics.patch",
-      "sha256": "c485087f26007f88ad18262ca8e6dabcbe284536e07ad6a465c5f4c310f654cb",
+      "sha256": "e450a0f68c663d5a69c1060227b7298fd4cdbd9d8ac3f0eee64b98486bb5a34e",
       "files": [
         {
           "target": "content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm",
@@ -3014,7 +3014,7 @@
         {
           "target": "content/browser/renderer_host/render_frame_host_impl.cc",
           "before_sha256": "87c5cbdf69feb548bad0b11ae5a27cd6d8f142cba10b802d442822b6c23142c4",
-          "after_sha256": "dd6a0822a4b0aea501554f804d9232d40bef9e752f6c2f345f93805035bf28af"
+          "after_sha256": "395f964e84c020f2f631ae4f7b7f0a7b5d9a5aa3341c2c59a7297243d1667721"
         },
         {
           "target": "content/renderer/accessibility/render_accessibility_impl.cc",
@@ -4217,7 +4217,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "8e9badb6d7303cd684e45cb03904eaad51ec0a39adac14e4564660ebfabc41b0",
+      "sha256": "381854426ea3fa59e721403026384cc073335c5d424d66043887e577fa68b5db",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4777,22 +4777,37 @@
         {
           "target": "media/remoting/renderer_controller.cc",
           "before_sha256": "3130f979f11db47e8d4d49ffc19439650edf1b624f4259c8be974abd4a759acb",
-          "after_sha256": "9d85b3334c5b940623682d830a2ebc6fc4108c17005956520f070b6abfc37776"
+          "after_sha256": "3d25521a2038722db022564e0fe03aa0b0cc13508e8b0190f10951c1d3b74bbe"
         },
         {
           "target": "media/remoting/renderer_controller_unittest.cc",
           "before_sha256": "9df966d710bbe7491e398d4823cb1515699943213c39456ee109e4d3ba5e1f69",
-          "after_sha256": "715cc1c0bc6c82ff9592f6940882bbd5807fa5f79929891ee3a3330281369d13"
+          "after_sha256": "ea7fcb70c42cb04df274a0b9e2a64f92010de02eed33dc03622e8379113a05b2"
         },
         {
           "target": "content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc",
           "before_sha256": "d06af8c5e93f27d8ea84282f893a4c4c905699afb931a848364b8e2a5437ee2d",
-          "after_sha256": "4b7722cd4a0fc3ad3857503a9c4a4243abc557a1486d08a10e66c403a2542290"
+          "after_sha256": "ccdc03a12304af14ba2c8d886aceefc3f8d6a027fdff99e4c8eb4a5c47c72dce"
         },
         {
           "target": "media/base/stream_parser_buffer.h",
           "before_sha256": "44cfef48165d63cd993e91709b2c7cd265bdbe278bcffd9dbedfe70c171db3b3",
           "after_sha256": "307619789862f5c2ef6e682b9273a6726df1ce51cdf78af4a298d06ec15f8256"
+        },
+        {
+          "target": "media/remoting/renderer_controller.h",
+          "before_sha256": "6d6da932ec6d5a42111219f4be14d6165ae4ec4cec8f7e1e6e5fb2b22e5b572b",
+          "after_sha256": "104f9f2056fdd19e403500380393ffb878b4a7e0acfd1d522c89761ff607daf4"
+        },
+        {
+          "target": "content/browser/media/media_web_contents_observer.h",
+          "before_sha256": "45d5177521fd4a581f435d9f10d80a3641d7a28606568e4d02b289ca42b0e76c",
+          "after_sha256": "d2cef51a24310e8dfeec39a92107b156de3bdfe313adc38c3bc75868187e0408"
+        },
+        {
+          "target": "content/browser/media/media_web_contents_observer.cc",
+          "before_sha256": "28ec2033b17901278ecd73f5a09ac8f1956ab49eeec1582f716ec085d01196b8",
+          "after_sha256": "28ff298bc3e4e17f9dc9ac3918963fa349f29a1e42a517fe69a58321749b557d"
         }
       ]
     },

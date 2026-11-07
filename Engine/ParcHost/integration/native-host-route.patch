@@ -1527,7 +1527,18 @@
    // `blink::RemoteFrame`. If `method` is "POST", then `post_body` needs to
 --- a/content/browser/renderer_host/render_frame_host_impl.h
 +++ b/content/browser/renderer_host/render_frame_host_impl.h
-@@ -3525,6 +3525,10 @@
+@@ -1755,6 +1755,10 @@
+   // Start a timer that will evict this RenderFrameHost from the
+   // BackForwardCache after time to live.
+   void StartBackForwardCacheEvictionTimer();
++
++  // Parc: the eviction timer's end, |waited| after it started. A page that
++  // is still casting a video stays a while longer.
++  void OnBackForwardCacheEvictionTimeout(base::TimeDelta waited);
+ 
+   bool IsBackForwardCacheDisabled() const;
+ 
+@@ -3525,6 +3529,10 @@
        blink::mojom::PreferredColorScheme color_scheme) override;
    void UpdateEncoding(const std::string& encoding) override;
    void UpdateState(const blink::PageState& state) override;

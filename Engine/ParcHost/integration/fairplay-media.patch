@@ -12073,12 +12073,59 @@
  TEST_F(Mp2tStreamParserTest, HLSSampleAES) {
    std::vector<std::string> decrypted_video_buffers;
    std::vector<std::string> decrypted_audio_buffers;
+--- a/media/remoting/renderer_controller.h
++++ b/media/remoting/renderer_controller.h
+@@ -228,6 +228,11 @@
+   // local rendering.
+   bool is_media_remoting_requested_ = false;
+ 
++  // Parc: true once a sink has become available since the request. The
++  // request is for that sink's session (the browser asks before its session
++  // negotiates), and goes with it if it ends before remoting started.
++  bool requested_session_available_ = false;
++
+   // Records session events of interest.
+   SessionMetricsRecorder metrics_recorder_;
+ 
 --- a/media/remoting/renderer_controller.cc
 +++ b/media/remoting/renderer_controller.cc
-@@ -387,6 +387,15 @@
+@@ -126,6 +126,9 @@
+     mojom::RemotingSinkMetadataPtr metadata) {
+   DCHECK(thread_checker_.CalledOnValidThread());
+   sink_metadata_ = std::move(metadata);
++  if (is_media_remoting_requested_) {
++    requested_session_available_ = true;
++  }
+ 
+   UpdateAndMaybeSwitch(SINK_AVAILABLE, UNKNOWN_STOP_TRIGGER);
+ }
+@@ -136,6 +139,13 @@
+   // Prevent the clients to start any future remoting sessions. Won't affect the
+   // behavior of the currently-running session (if any).
+   sink_metadata_ = nullptr;
++  // Parc: a requested session that ends before remoting started (Remote
++  // Playback's start timeout) takes its request with it, so a later
++  // mirroring session's remoting isn't taken for it (OnFrozen()). A sink
++  // that was already there when the request came is the session it replaces.
++  if (requested_session_available_ && !remote_rendering_started_) {
++    is_media_remoting_requested_ = false;
++  }
+ }
+ 
+ void RendererController::OnStarted() {
+@@ -210,6 +220,7 @@
+ 
+ void RendererController::OnMediaRemotingRequested() {
+   is_media_remoting_requested_ = true;
++  requested_session_available_ = false;
+   UpdateAndMaybeSwitch(REQUESTED_BY_BROWSER, UNKNOWN_STOP_TRIGGER);
+ }
+ 
+@@ -386,6 +397,15 @@
+ void RendererController::OnFrozen() {
    DCHECK(thread_checker_.CalledOnValidThread());
    DCHECK(is_paused_);
- 
++
 +  // Parc: as WebKit's suspend() leaves a paused player on its AirPlay
 +  // target, a session casting this element (Remote Playback, which ends when
 +  // remoting stops) stays, paused on the receiver, for the user to resume.
@@ -12087,16 +12134,19 @@
 +  if (is_media_remoting_requested_) {
 +    return;
 +  }
-+
+ 
    // If the element is frozen we want to stop remoting.
    UpdateAndMaybeSwitch(UNKNOWN_START_TRIGGER, MEDIA_ELEMENT_FROZEN);
- }
 --- a/media/remoting/renderer_controller_unittest.cc
 +++ b/media/remoting/renderer_controller_unittest.cc
-@@ -414,7 +414,24 @@
-   RunUntilIdle();
-   ExpectInLocalRendering();
- }
+@@ -410,6 +410,48 @@
+   ExpectInRemoting();
+ 
+   // Freezing should kick rendering back to local.
++  controller_->OnFrozen();
++  RunUntilIdle();
++  ExpectInLocalRendering();
++}
 +
 +TEST_F(RendererControllerTest, ParcOnFrozenKeepsRequestedRemoting) {
 +  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8),
@@ -12104,7 +12154,7 @@
 +  controller_->OnMediaRemotingRequested();
 +  RunUntilIdle();
 +  ExpectInRemoting();
- 
++
 +  controller_->OnPaused();
 +  controller_->OnFrozen();
 +  RunUntilIdle();
@@ -12115,12 +12165,32 @@
 +  ExpectInRemoting();
 +}
 +
- #if BUILDFLAG(IS_ANDROID)
- TEST_F(RendererControllerTest, RemotePlaybackHlsCompatibility) {
-   controller_ = FakeRemoterFactory::CreateController(true);
++TEST_F(RendererControllerTest, ParcRequestEndsWithItsUnstartedSession) {
++  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
++  controller_->OnPaused();
++  controller_->OnMediaRemotingRequested();
++  // The requested session comes and times out before playback resumes.
++  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
++  controller_->OnSinkGone();
++  RunUntilIdle();
++
++  // A later tab mirroring session remotes only the dominant video, and hands
++  // the receiver back to the tab when the page freezes.
++  controller_->OnSinkAvailable(GetDefaultSinkMetadata(true));
++  controller_->OnPlaying();
++  RunUntilIdle();
++  ExpectInLocalRendering();
++
++  controller_->OnBecameDominantVisibleContent(true);
++  RunUntilIdle();
++  ExpectInRemoting();
++  controller_->OnPaused();
+   controller_->OnFrozen();
+   RunUntilIdle();
+   ExpectInLocalRendering();
 --- a/content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc
 +++ b/content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc
-@@ -7,9 +7,13 @@
+@@ -7,9 +7,14 @@
  #include "base/memory/memory_pressure_listener_registry.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory_coordinator/memory_coordinator_features.h"
@@ -12130,14 +12200,28 @@
 +#include "base/test/bind.h"
  #include "base/test/scoped_feature_list.h"
 +#include "base/test/test_mock_time_task_runner.h"
++#include "content/browser/media/media_web_contents_observer.h"
 +#include "content/browser/media/parc_fairplay_hooks.h"
  #include "content/public/browser/web_contents_delegate.h"
  #include "content/public/browser/web_contents_observer.h"
  #include "content/public/test/back_forward_cache_util.h"
-@@ -115,7 +119,39 @@
+@@ -17,6 +22,11 @@
+ #include "content/test/test_render_frame_host.h"
+ #include "content/test/test_render_view_host.h"
+ #include "content/test/test_web_contents.h"
++#include "media/mojo/mojom/media_player.mojom.h"
++#include "mojo/public/cpp/bindings/associated_remote.h"
++#include "mojo/public/cpp/bindings/pending_associated_receiver.h"
++#include "mojo/public/cpp/bindings/pending_associated_remote.h"
++#include "services/media_session/public/mojom/media_session.mojom.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/blink/public/common/scheduler/web_scheduler_tracked_feature.h"
+@@ -114,8 +124,120 @@
+     return tree;
    }
    base::test::ScopedFeatureList scoped_feature_list_;
- };
++};
 +
 +// Parc: a Safari-identity page stays as long as WebKit keeps one
 +// (BackForwardCacheExpirationInterval); other pages keep Chromium's time.
@@ -12161,7 +12245,7 @@
 +  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), GetNextUrl());
 +  ASSERT_TRUE(safari && safari->IsInBackForwardCache());
 +  ASSERT_TRUE(chrome && chrome->IsInBackForwardCache());
- 
++
 +  task_runner->FastForwardBy(base::Minutes(11));
 +  EXPECT_TRUE(!chrome || chrome->is_evicted_from_back_forward_cache());
 +  ASSERT_TRUE(safari);
@@ -12171,10 +12255,89 @@
 +  EXPECT_TRUE(!safari || safari->is_evicted_from_back_forward_cache());
 +}
 +
++// Parc: a player in a frame, telling the browser whether it casts.
++class ParcCastingPlayer {
++ public:
++  ParcCastingPlayer(MediaWebContentsObserver* observer, RenderFrameHost* frame) {
++    observer->BindMediaPlayerHost(
++        frame->GetGlobalId(),
++        player_host_.BindNewEndpointAndPassDedicatedReceiver());
++    mojo::PendingAssociatedRemote<media::mojom::MediaPlayer> player;
++    player_receiver_ = player.InitWithNewEndpointAndPassReceiver();
++    player_host_->OnMediaPlayerAdded(std::move(player),
++                                     observer_.BindNewEndpointAndPassReceiver(),
++                                     /*player_id=*/1);
++    player_host_.FlushForTesting();
++  }
++
++  void SetCasting(bool started) {
++    observer_->OnRemotePlaybackMetadataChange(
++        media_session::mojom::RemotePlaybackMetadata::New(
++            "vp8", "opus", /*remote_playback_disabled=*/false, started,
++            std::nullopt, /*is_encrypted_media=*/false));
++    observer_.FlushForTesting();
++  }
++
++ private:
++  mojo::AssociatedRemote<media::mojom::MediaPlayerHost> player_host_;
++  mojo::PendingAssociatedReceiver<media::mojom::MediaPlayer> player_receiver_;
++  mojo::AssociatedRemote<media::mojom::MediaPlayerObserver> observer_;
+ };
++
++// Parc: a page casting a video stays as long as WebKit keeps its AirPlay
++// route after the video stopped (an hour); other pages keep their time.
++TEST_F(BackForwardCacheImplTest, ParcCastingPageStaysAnHour) {
++  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>();
++  contents()->GetController().GetBackForwardCache().SetTaskRunnerForTesting(
++      task_runner);
++
++  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), GetNextUrl());
++  base::WeakPtr<RenderFrameHostImpl> casting =
++      contents()->GetPrimaryMainFrame()->GetWeakPtr();
++  ParcCastingPlayer player(contents()->media_web_contents_observer(),
++                           casting.get());
++  player.SetCasting(true);
++  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), GetNextUrl());
++  base::WeakPtr<RenderFrameHostImpl> other =
++      contents()->GetPrimaryMainFrame()->GetWeakPtr();
++  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), GetNextUrl());
++  ASSERT_TRUE(casting && casting->IsInBackForwardCache());
++  ASSERT_TRUE(other && other->IsInBackForwardCache());
++
++  task_runner->FastForwardBy(base::Minutes(11));
++  EXPECT_TRUE(!other || other->is_evicted_from_back_forward_cache());
++  task_runner->FastForwardBy(base::Minutes(48));
++  ASSERT_TRUE(casting);
++  EXPECT_FALSE(casting->is_evicted_from_back_forward_cache());
+ 
++  task_runner->FastForwardBy(base::Minutes(2));
++  EXPECT_TRUE(!casting || casting->is_evicted_from_back_forward_cache());
++}
++
++TEST_F(BackForwardCacheImplTest, ParcPageWhoseCastEndedKeepsItsTime) {
++  auto task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>();
++  contents()->GetController().GetBackForwardCache().SetTaskRunnerForTesting(
++      task_runner);
++
++  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), GetNextUrl());
++  base::WeakPtr<RenderFrameHostImpl> page =
++      contents()->GetPrimaryMainFrame()->GetWeakPtr();
++  ParcCastingPlayer player(contents()->media_web_contents_observer(),
++                           page.get());
++  player.SetCasting(true);
++  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), GetNextUrl());
++  ASSERT_TRUE(page && page->IsInBackForwardCache());
++
++  // The user ends the cast while the page is cached.
++  player.SetCasting(false);
++
++  task_runner->FastForwardBy(base::Minutes(11));
++  EXPECT_TRUE(!page || page->is_evicted_from_back_forward_cache());
++}
++
  TEST_F(BackForwardCacheImplTest, CrossOriginReachableFrameCount) {
    auto tree_root = SetUpTree();
    // The reachable cross-origin frames are b-1 and b-3 and b-4.
-
 --- a/media/base/stream_parser_buffer.h
 +++ b/media/base/stream_parser_buffer.h
 @@ -189,6 +189,12 @@
@@ -12199,3 +12362,75 @@
    scoped_refptr<StreamParserBuffer> preroll_buffer_;
  };
  
+--- a/content/browser/media/media_web_contents_observer.h
++++ b/content/browser/media/media_web_contents_observer.h
+@@ -61,6 +61,7 @@
+ namespace content {
+ 
+ class AudibleMetrics;
++class RenderFrameHostImpl;
+ class WebContentsImpl;
+ 
+ // Used to authorize a frame to bypass the browser's audio service for
+@@ -155,6 +156,9 @@
+   // Returns whether or not the given player id is active.
+   bool IsPlayerActive(const MediaPlayerId& player_id) const;
+ 
++  // Parc: whether a player in |main_frame|'s page renders on a cast receiver.
++  static bool IsRemotePlaybackStartedInPage(RenderFrameHostImpl* main_frame);
++
+   bool has_audio_wake_lock_for_testing() const {
+     return has_audio_wake_lock_for_testing_;
+   }
+@@ -261,6 +265,8 @@
+     void NotifyAudioStreamMonitorIfNeeded();
+     void OnVideoFrameAvailabilityChanged(bool available) override;
+ 
++    bool remote_playback_started() const { return remote_playback_started_; }
++
+    private:
+     PlayerInfo* GetPlayerInfo();
+ 
+@@ -278,6 +284,7 @@
+ 
+     // Helps monitor audio stream when not using AudioService.
+     bool uses_audio_service_ = true;
++    bool remote_playback_started_ = false;
+     std::unique_ptr<AudioStreamMonitor::AudibleClientRegistration>
+         audio_client_registration_;
+ 
+--- a/content/browser/media/media_web_contents_observer.cc
++++ b/content/browser/media/media_web_contents_observer.cc
+@@ -379,6 +379,24 @@
+   return false;
+ }
+ 
++// static
++bool MediaWebContentsObserver::IsRemotePlaybackStartedInPage(
++    RenderFrameHostImpl* main_frame) {
++  auto* web_contents = WebContentsImpl::FromRenderFrameHostImpl(main_frame);
++  MediaWebContentsObserver* observer =
++      web_contents ? web_contents->media_web_contents_observer() : nullptr;
++  if (!observer) {
++    return false;
++  }
++  return std::ranges::any_of(
++      observer->media_player_observer_hosts_, [main_frame](const auto& entry) {
++        RenderFrameHost* frame =
++            RenderFrameHost::FromID(entry.first.frame_routing_id);
++        return frame && frame->GetOutermostMainFrame() == main_frame &&
++               entry.second->remote_playback_started();
++      });
++}
++
+ // MediaWebContentsObserver::MediaPlayerHostImpl
+ 
+ MediaWebContentsObserver::MediaPlayerHostImpl::MediaPlayerHostImpl(
+@@ -523,6 +541,7 @@
+     OnRemotePlaybackMetadataChange(
+         media_session::mojom::RemotePlaybackMetadataPtr
+             remote_playback_metadata) {
++  remote_playback_started_ = remote_playback_metadata->remote_playback_started;
+   media_web_contents_observer_->OnRemotePlaybackMetadataChange(
+       media_player_id_, std::move(remote_playback_metadata));
+ }
