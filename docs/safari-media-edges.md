@@ -113,7 +113,10 @@ blob through the AVFoundation player, which stays idle under `preload`
 none until the page plays (`MediaPlayerPrivateAVFoundation.cpp:191-205`,
 `761-768`); Media Source blobs open in both.
 
-HME-3 to HME-6 and HME-17: **in progress** (fix agent E2, load algorithm).
+HME-3 to HME-6 and HME-17: **fixed** 7000e39a. A resumed lazy load still
+restarts resource selection in a microtask where WebKit queues a task, so
+`networkState` turns `NETWORK_LOADING` one task early: **in progress** (fix
+agent E2b).
 
 **HME-7. Media Source readyState and seeks.** Chromium
 `web_media_player_impl.cc:1123-1125` drops `readyState` to `HAVE_METADATA` at
@@ -176,6 +179,15 @@ Playing scrub starts and resumes it 500 ms after the last step
 seeks (`html_media_element.cc:5365-5379`) don't pause. **In progress** (fix
 agent HME-34).
 
+**HME-35. A new load rejects waiting `play()` promises.** Chromium
+`html_media_element.cc:1182-1212` rejects pending play promises only when
+`networkState` isn't `NETWORK_EMPTY` and the element isn't paused. WebKit
+`HTMLMediaElement.cpp:1766, 3194-3211` rejects them with `AbortError` on
+every load, explicit or not, unless an in-flight play admission will settle
+them. A page that calls `play()` before any source and then sets `src` sees
+its promise rejected in Safari and fulfilled in Parc. **In progress** (fix
+agent HME-35).
+
 **HME-13. `currentTime` while playing.** Chromium
 `html_media_element.cc:2818-2841` holds the official playback position
 until the next microtask, and while waiting for data. WebKit
@@ -223,8 +235,11 @@ one `progress`, then `suspend`.
 arrived on a Media Source element. WebKit `HTMLMediaElement.cpp:3962-3994`
 asks the player, and Safari's Media Source player doesn't support progress
 monitoring (`MediaPlayerPrivateMediaSourceAVFObjC.mm:1594-1598`), so a Media
-Source element gets no periodic `progress` (or `stalled`). **In progress**
-(fix agent E2).
+Source element gets no periodic `progress` (or `stalled`). **Fixed** 7000e39a:
+a successful `endOfStream()` makes the element idle with `progress` and
+`suspend`, as Safari's player reports Loaded only then. Parc sets that idle
+state synchronously where Safari's arrives from the player a task later:
+**in progress** (fix agent E2b).
 
 **HME-19. Default `preload`.** Chromium `html_media_element.cc:3074-3111`
 makes a missing or invalid `preload` metadata (and forces metadata on
