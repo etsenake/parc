@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 509,
+  "version": 510,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4967,6 +4967,17 @@
           "target": "cef/patch/patches/webkit_move_pip.patch",
           "before_sha256": "bd1b19d93bcdae6b485477e5c8d37eba9186651757275021e5f3ddca63916b7c",
           "after_sha256": "e563dacea102f5d25447de5e19f3888b13e45c0fe49c5a13aa7a0a1f19199084"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/fairplay-idl-validation.patch",
+      "sha256": "70df453cb73c1bfcc4400e6204f4c9e191b3ef9e411e17f39094aa9cdd345515",
+      "files": [
+        {
+          "target": "third_party/blink/renderer/bindings/scripts/validator/rules/supported_extended_attributes.py",
+          "before_sha256": "5544c6844731699217ad6e5e498ce3e522a09aaafdcf04f5ec4634adb83d709f",
+          "after_sha256": "c33708b8ff03634325873f342167192f9ec1e7dfda0af8722afbeaf74709a324"
         }
       ]
     }

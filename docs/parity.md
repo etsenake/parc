@@ -102,6 +102,12 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   unsupported-error handling are preserved, rather than substituting an encode
   capability. All 28 focused native media compilation checks pass, including
   the corrected source, before the next resume.
+  The v1.3.5 Web IDL validation refused the new identity-conditional secure
+  attribute even though its generator handled it. The validator now accepts
+  plain `SecureContext` and only the named `ParcSafariIdentityEme` condition;
+  unknown conditions and identifier lists remain rejected. Full generated IDL
+  validation, negative condition checks and all seven affected generated EME
+  compilation units pass before the frozen release refreshes and resumes.
 
 - **Codex root — monitored release sequence (November 6).** Root owns shared
   engine/build/packaging operations directly on main, without agents or worktrees.
