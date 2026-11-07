@@ -37,7 +37,7 @@
 #include "base/containers/span.h"
 #include "media/mojo/mojom/video_decode_perf_history.mojom-blink.h"
 #include "mojo/public/cpp/bindings/remote.h"
-#include "third_party/blink/public/common/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/parc_webkit_skd_init_data.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
@@ -83,7 +83,8 @@ inline void ParcCanPlayAVFoundationType(
     return;
   }
   const String type = ToCoreString(isolate, info[0].As<v8::String>());
-  DEFINE_STATIC_LOCAL(HashMap<String, bool>, answers, ());
+  using TypeSupportAnswers = HashMap<String, bool>;
+  DEFINE_STATIC_LOCAL(TypeSupportAnswers, answers, ());
   auto it = answers.find(type);
   if (it != answers.end()) {
     info.GetReturnValue().Set(it->value);

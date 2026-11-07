@@ -86,6 +86,11 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   `20261107T080400Z-4332c06b`. Further contributor changes await the next patch.
   Logs continue in `build/master-release-development/nightly-release.log`.
   No installation, launch or browser-runtime acceptance is claimed.
+  The v1.3.4 compilation exposed two errors in `parc_webkit_need_key.h`:
+  Chromium's broker proxy header lives in public/platform, and the static-local
+  macro needs a type alias to avoid parsing the HashMap template comma as a
+  fourth argument. Both includers compile with the corrected header under the
+  actual shipping flags. The same release resumes with preserved objects.
 
 - **Codex root — monitored release sequence (November 6).** Root owns shared
   engine/build/packaging operations directly on main, without agents or worktrees.
