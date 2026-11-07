@@ -592,7 +592,7 @@
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-@@ -96,21 +97,68 @@
+@@ -96,21 +97,76 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -616,6 +616,14 @@
 +          web_config.init_data_types[j] = media::EmeInitDataType::UNKNOWN;
 +        }
 +      }
++    }
++    // Parc: under Safari's identity FairPlay refuses a configuration naming
++    // no init data type, as WebKit's FairPlay CDM does: its
++    // supportsConfiguration finds none of its types in an empty list. An
++    // unknown type makes the selector refuse it the same way.
++    if (parc_safari_fairplay && !is_from_media_capabilities &&
++        web_config.init_data_types.empty()) {
++      web_config.init_data_types.push_back(media::EmeInitDataType::UNKNOWN);
 +    }
  
      DCHECK(config->hasAudioCapabilities());
