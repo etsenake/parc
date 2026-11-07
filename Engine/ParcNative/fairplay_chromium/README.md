@@ -236,22 +236,45 @@ EME's false, when there are none), other types reject with NotSupported.
 
 ## Ready state, stalls and keys (what the page sees)
 
-The FairPlay Renderer follows WebKit's Media Source model
-(`MediaSource::monitorSourceBuffers`, `AudioVideoRendererAVFObjC`,
-`MediaPlayerPrivateMediaSourceAVFObjC::resetStallForTime`,
-`HTMLMediaElement::mediaPlayerWaitingForKeyChanged`), within Chromium's
-two-state buffering:
+A Safari-identity Media Source element, whichever renderer plays it, takes
+its readyState as WebKit's does (`WebMediaPlayerImpl::ParcMonitorSourceBuffers`
+after `MediaSource::monitorSourceBuffers`,
+`MediaPlayerPrivateMediaSourceAVFObjC::updateStateFromReadyState` and
+`seekTask`); the FairPlay Renderer follows WebKit's renderer
+(`AudioVideoRendererAVFObjC`, `resetStallForTime`,
+`HTMLMediaElement::mediaPlayerWaitingForKeyChanged`):
 
-- `loadedmetadata` once the init segments are parsed. HAVE_ENOUGH, and with
-  it `canplay` and `canplaythrough` together, once every stream has 3 s
-  buffered past the current time (samples given to the renderer, encrypted
-  ones held for a key included), has ended, or AVFoundation has enough for a
-  reliable start. Keys don't matter, so a page that licenses only after
-  `canplay` plays, as in Safari. Safari fires `canplay` as soon as any data is
-  ahead and `canplaythrough` at 3 s; Chromium reports both at once.
-- `play()` before the keys: `playing` fires and `currentTime` stays at the
-  start until the keys let samples reach the renderers, as Safari's
-  synchronizer waits for `allRenderersHaveAvailableSamples`.
+- `loadedmetadata` once the init segments are parsed. Then readyState comes
+  from the buffered ranges at the current time (or a seek's target), with
+  WebKit's gap allowances: HAVE_METADATA when that time isn't buffered,
+  HAVE_ENOUGH (`canplaythrough`) when 3 s past it are (up to the duration
+  once ended), HAVE_FUTURE (`canplay`) with any data ahead, otherwise
+  HAVE_CURRENT. It is checked after appends, removals, end of stream and
+  duration changes, while playing, at stalls and resumptions, and at a seek's
+  start and end.
+- With video, HAVE_CURRENT or more waits for a video frame, as WebKit's
+  player waits for `hasAvailableVideoFrame`: the renderer's first HAVE_ENOUGH
+  after the start or a seek, which the FairPlay Renderer reports only once a
+  frame decoded there (`readyForDisplay`; before macOS 14.4, which reports
+  no decoded frame, it doesn't wait: see Known gaps). So protected video
+  stays at HAVE_METADATA until its keys arrive and a frame decodes, with or
+  without a CDM (before one, Chromium creates no renderer at all); a page
+  that waits for `canplay` before licensing waits for ever, as in Safari.
+  Audio-only elements aren't held: encrypted audio reaches `canplay` and
+  `canplaythrough` from buffered data before any CDM or key.
+- A SourceBuffer added after the others initialized joins the buffered
+  ranges with its first init segment, so readyState drops to HAVE_METADATA
+  and rises through HAVE_FUTURE as its data comes. One that brings a new kind
+  of track restarts the renderer, and with video waits for the new
+  renderer's frame, as after a seek.
+- A seek keeps readyState: into buffered data it fires only `seeking`,
+  `timeupdate` and `seeked`; into unbuffered data `waiting`, then `canplay`
+  and `canplaythrough` as data comes, and `playing` after `seeked`. It
+  finishes once the pipeline's seek is done and the renderer has its samples
+  (for video, the frame), not at a readyState change.
+- `play()` before the keys: `currentTime` stays at the start until the keys
+  let samples reach the renderers, as Safari's synchronizer waits for
+  `allRenderersHaveAvailableSamples`; `playing` comes with `canplay`.
 - Waiting for a key runs WebKit's Wait for Key on the element
   (`HTMLMediaElement::ParcWaitForKey`), once per blocked episode: `readyState`
   drops to HAVE_CURRENT_DATA if the current time is buffered, else
@@ -279,11 +302,14 @@ two-state buffering:
   Safari does.
 - A stall happens only at the buffered end (the end of what a stream without
   end of stream was given), on a synchronizer boundary rather than a poll:
-  `waiting`, then `canplay`/`playing` once HAVE_ENOUGH is back. Safari resumes
-  as soon as any data is ahead (HAVE_FUTURE_DATA).
+  `waiting`, then `canplay`/`playing` as soon as any data is ahead, as in
+  Safari; the picture resumes once the renderer has enough again.
 
 ## Known gaps
 
+- Before macOS 14.4 the FairPlay Renderer can't tell when a video frame
+  decoded (no `readyForDisplay`), so protected video reaches `canplay`
+  before its keys and a seek finishes before its frame, unlike Safari.
 - FairPlay keys that arrive after playback started, and a switch into Dolby
   Vision while Chromium's renderer plays, cost one rebuffer that Safari
   doesn't have. Safari attaches each sample's key itself

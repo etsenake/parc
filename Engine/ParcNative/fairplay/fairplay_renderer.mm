@@ -407,7 +407,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       // readyForDisplay isn't key-value observable (VideoFrameAvailable).
       if (@available(macOS 14.4, *)) {
         AddNotification(center, AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification, layer_,
-                        [](Impl& impl, NSNotification*) { impl.UpdateClock(); });
+                        [](Impl& impl, NSNotification*) { impl.UpdateBuffering(); });
       }
     }
     if (audio) {
@@ -1780,9 +1780,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   // After a start, seek or decoder reset, whether a frame decoded: readyForDisplay on
   // macOS 14.4+ (AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification
-  // runs UpdateClock). Earlier macOS posts nothing when a frame decodes, and a
-  // full queue under a stopped clock enqueues nothing more to look again, so
-  // there the clock doesn't wait.
+  // runs UpdateBuffering). Earlier macOS posts nothing when a frame decodes,
+  // and a full queue under a stopped clock enqueues nothing more to look
+  // again, so there neither the clock nor HAVE_ENOUGH waits.
   bool VideoFrameAvailable() const {
     if (!video_reset_pending_ || Complete(video_)) {
       return true;
@@ -1906,15 +1906,16 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // has all it will get. Samples still held for a key are not there yet.
   static bool Complete(const Stream& state) { return state.end_of_stream && state.held.empty(); }
 
-  // HAVE_ENOUGH as WebKit's MediaSource::monitorSourceBuffers decides it:
-  // from the data each stream was given, keys or not, so a page that waits
-  // for canplay before it licenses still gets it. Every configured stream has
-  // reached end of stream, or was given samples (enqueued or held for a key)
-  // reaching kEnoughAheadSeconds past the clock, or its renderer has enough
-  // for a reliable start. Latched; only a stall drops back to HAVE_NOTHING.
-  // Every enqueue and key change calls this; AVFoundation posts no KVO for
-  // its sufficiency property, which turns true on the enqueue that fills the
-  // renderer's preroll.
+  // HAVE_ENOUGH: every configured stream has reached end of stream, or was
+  // given samples (enqueued or held for a key) reaching kEnoughAheadSeconds
+  // past the clock, or its renderer has enough for a reliable start; and
+  // after a start or seek a video frame decoded (VideoFrameAvailable), which
+  // the player takes as WebKit's available video frame (the element's
+  // readyState itself comes from the buffered ranges). Latched; only a stall
+  // drops back to HAVE_NOTHING. Every enqueue, key change and readyForDisplay
+  // change calls this; AVFoundation posts no KVO for its sufficiency
+  // property, which turns true on the enqueue that fills the renderer's
+  // preroll.
   void UpdateBuffering() {
     if (!renderers_have_samples_) {
       // WebKit's allRenderersHaveAvailableSamples: every configured renderer
@@ -1945,7 +1946,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       if (audio_) {
         have_enough &= enough(audio_stream_, audio_);
       }
-      if (have_enough) {
+      if (have_enough && VideoFrameAvailable()) {
         have_enough_ = true;
         PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(true); });
       }
