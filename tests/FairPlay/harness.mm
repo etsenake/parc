@@ -4051,20 +4051,68 @@ std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
   return steps;
 }
 
+// Media Source's sinf init data for a track, as Parc's MP4 parser reports it.
+std::vector<uint8_t> SinfInitData(const std::vector<uint8_t>& sinf_payload) {
+  return Bytes("{\"sinf\":[\"" +
+               std::string([Data(sinf_payload) base64EncodedStringWithOptions:0].UTF8String) + "\"]}");
+}
+
 std::vector<Step> CloseScenario() {
   World* w = g_world;
   std::vector<Step> steps;
+  // Safari's Media Source fires `encrypted` for a protected track only while
+  // no session of the element's MediaKeys has a request for its key ID
+  // (AudioVideoRendererAVFObjC::setInitData, sessionForKeyIDs): a request
+  // awaiting its license counts, remove() keeps a session's requests and
+  // close() drops them.
+  const fp::InitDataType sinf = fp::InitDataType::kSinf;
+  const std::vector<uint8_t> video_sinf = SinfInitData(w->video.info.sinf_payload);
+  const std::vector<uint8_t> audio_sinf = SinfInitData(w->audio.info.sinf_payload);
+  fp::TrackEncryption other_key = w->video.info.encryption;
+  other_key.default_key_id.assign(16, 0x5a);
+  const std::vector<uint8_t> other_sinf =
+      SinfInitData(fp::ProtectionSchemeInfoPayload(w->video.info.original_format, other_key));
+  steps.push_back(Section("session for init data: which sessions cover a track's key ID"));
+  steps.push_back([=](Done done) {
+    // Kept in w->retired afterwards: its license answer may still arrive.
+    auto holder = std::make_shared<std::unique_ptr<KeySystem>>(MakeKeySystem("session for init data"));
+    KeySystem* pending = holder->get();
+    Check(!pending->cdm->HasSessionForInitData(sinf, video_sinf),
+          "session for init data: a MediaKeys without sessions covers no key ID (encrypted fires)");
+    pending->cdm->CreateSessionAndGenerateRequest(
+        sinf, video_sinf, [=](const fp::Result& r, const std::string& id) {
+          Check(r.ok() && pending->cdm->HasSessionForInitData(sinf, video_sinf) &&
+                    pending->cdm->HasSessionForInitData(sinf, audio_sinf) &&
+                    !pending->cdm->HasSessionForInitData(sinf, other_sinf) &&
+                    !pending->cdm->HasSessionForInitData(sinf, Bytes(std::string("{\"sinf\":[]}"))),
+                "session for init data: a request awaiting its license covers its key ID, for every "
+                "track naming it, and no other");
+          pending->cdm->CloseSession(id, [=](const fp::Result& closed) {
+            Check(closed.ok() && !pending->cdm->HasSessionForInitData(sinf, video_sinf),
+                  "session for init data: a closed session covers nothing");
+            w->retired.push_back(std::move(*holder));
+            done();
+          });
+        });
+  });
   steps.push_back(Section("session close and remove"));
   steps.push_back([=](Done done) {
     KeySystem* ks = w->main_keys.get();
+    Check(ks->cdm->HasSessionForInitData(sinf, video_sinf) &&
+              !ks->cdm->HasSessionForInitData(sinf, other_sinf),
+          "session for init data: an answered skd request covers the tracks' key ID");
     ks->cdm->RemoveSession(ks->session, [=](const fp::Result& r) {
       After(0.2, [=] {
         Check(r.ok() && !ks->cdm->HasUsableKey(g_key_id) && !ks->client->keys.empty() &&
                   ks->client->keys[0].status == fp::KeyStatus::kReleased,
               "remove: keys reported released and no longer attachable", KeysText(ks->client->keys));
+        Check(ks->cdm->HasSessionForInitData(sinf, video_sinf),
+              "session for init data: a removed session still covers its key ID");
         ks->cdm->CloseSession(ks->session, [=](const fp::Result& closed) {
           After(0.2, [=] {
             Check(closed.ok() && ks->client->closed, "close: promise resolves and OnSessionClosed fires");
+            Check(!ks->cdm->HasSessionForInitData(sinf, video_sinf),
+                  "session for init data: a closed session covers nothing");
             ks->cdm->UpdateSession(ks->session, {1, 2, 3}, [=](const fp::Result& update) {
               Check(update.exception == fp::Exception::kInvalidState,
                     "close: update on a closed session is rejected (InvalidStateError)");

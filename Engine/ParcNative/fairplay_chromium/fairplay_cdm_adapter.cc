@@ -1,5 +1,6 @@
 #include "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.h"
 
+#include <optional>
 #include <utility>
 
 #include "base/check.h"
@@ -17,6 +18,24 @@ namespace media {
 namespace {
 
 namespace fp = parc::fairplay;
+
+std::optional<fp::InitDataType> ToFairPlayInitDataType(
+    EmeInitDataType init_data_type) {
+  switch (init_data_type) {
+    case EmeInitDataType::CENC:
+      return fp::InitDataType::kCenc;
+    case EmeInitDataType::KEYIDS:
+      return fp::InitDataType::kKeyIds;
+    case EmeInitDataType::SINF:
+      return fp::InitDataType::kSinf;
+    case EmeInitDataType::SKD:
+      return fp::InitDataType::kSkd;
+    case EmeInitDataType::WEBM:
+    case EmeInitDataType::UNKNOWN:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
 
 CdmPromise::Exception ToCdmException(fp::Exception exception) {
   switch (exception) {
@@ -142,30 +161,18 @@ void FairPlayCdmAdapter::CreateSessionAndGenerateRequest(
                     "FairPlay supports temporary sessions only");
     return;
   }
-  fp::InitDataType type;
-  switch (init_data_type) {
-    case EmeInitDataType::CENC:
-      type = fp::InitDataType::kCenc;
-      break;
-    case EmeInitDataType::KEYIDS:
-      type = fp::InitDataType::kKeyIds;
-      break;
-    case EmeInitDataType::SINF:
-      type = fp::InitDataType::kSinf;
-      break;
-    case EmeInitDataType::SKD:
-      type = fp::InitDataType::kSkd;
-      break;
-    default:
-      promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
-                      "Init data type not supported by FairPlay");
-      return;
+  const std::optional<fp::InitDataType> type =
+      ToFairPlayInitDataType(init_data_type);
+  if (!type) {
+    promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
+                    "Init data type not supported by FairPlay");
+    return;
   }
   const uint32_t promise_id =
       promises_.SavePromise(std::move(promise), "CreateSession");
   base::WeakPtr<FairPlayCdmAdapter> weak = weak_factory_.GetWeakPtr();
   cdm_->CreateSessionAndGenerateRequest(
-      type, init_data,
+      *type, init_data,
       [weak, promise_id](const fp::Result& result,
                          const std::string& session_id) {
         if (weak) {
@@ -256,6 +263,16 @@ bool FairPlayCdmAdapter::RequiresFairPlayRenderer() {
 parc::fairplay::FairPlayCdm* FairPlayCdmAdapter::GetFairPlayCdm() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return cdm_.get();
+}
+
+void FairPlayCdmAdapter::ParcHasSessionForInitData(
+    EmeInitDataType init_data_type,
+    const std::vector<uint8_t>& init_data,
+    ParcHasSessionForInitDataCB done) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  const std::optional<fp::InitDataType> type =
+      ToFairPlayInitDataType(init_data_type);
+  std::move(done).Run(type && cdm_->HasSessionForInitData(*type, init_data));
 }
 
 void FairPlayCdmAdapter::OnSessionMessage(const std::string& session_id,

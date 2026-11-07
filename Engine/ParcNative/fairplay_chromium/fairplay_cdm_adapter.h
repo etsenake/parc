@@ -73,6 +73,9 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
       EventCB event_cb) override;
   bool RequiresFairPlayRenderer() override;
   parc::fairplay::FairPlayCdm* GetFairPlayCdm() override;
+  void ParcHasSessionForInitData(EmeInitDataType init_data_type,
+                                 const std::vector<uint8_t>& init_data,
+                                 ParcHasSessionForInitDataCB done) override;
 
   // parc::fairplay::FairPlayCdmClient implementation.
   void OnSessionMessage(const std::string& session_id,

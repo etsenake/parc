@@ -602,7 +602,7 @@
  
 --- a/media/base/cdm_context.cc
 +++ b/media/base/cdm_context.cc
-@@ -59,4 +59,14 @@
+@@ -59,4 +59,21 @@
  }
  #endif
  
@@ -614,12 +614,33 @@
 +parc::fairplay::FairPlayCdm* CdmContext::GetFairPlayCdm() {
 +  return nullptr;
 +}
++
++void CdmContext::ParcHasSessionForInitData(
++    EmeInitDataType init_data_type,
++    const std::vector<uint8_t>& init_data,
++    ParcHasSessionForInitDataCB done) {
++  std::move(done).Run(false);
++}
 +#endif
 +
  }  // namespace media
 --- a/media/base/cdm_context.h
 +++ b/media/base/cdm_context.h
-@@ -21,6 +21,12 @@
+@@ -6,11 +6,13 @@
+ #define MEDIA_BASE_CDM_CONTEXT_H_
+ 
+ #include <optional>
++#include <vector>
+ 
+ #include "base/functional/callback_forward.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/unguessable_token.h"
+ #include "build/build_config.h"
++#include "media/base/eme_constants.h"
+ #include "media/base/media_export.h"
+ #include "media/media_buildflags.h"
+ 
+@@ -21,6 +23,12 @@
  #if BUILDFLAG(IS_CHROMEOS)
  namespace chromeos {
  class ChromeOsCdmContext;
@@ -632,7 +653,7 @@
  }
  #endif
  
-@@ -125,6 +131,19 @@
+@@ -125,6 +133,30 @@
    virtual chromeos::ChromeOsCdmContext* GetChromeOsCdmContext();
  #endif
  
@@ -647,6 +668,17 @@
 +  // FairPlay Renderer in the same process joins as a content key recipient.
 +  // Returns nullptr for every other CDM and in the render process.
 +  virtual parc::fairplay::FairPlayCdm* GetFairPlayCdm();
++
++  // Parc: answers whether a session of this CDM already has a key request,
++  // answered or not, for a key ID |init_data| names. Safari's Media Source
++  // fires `encrypted` with "sinf" only when none has
++  // (AudioVideoRendererAVFObjC::setInitData). The FairPlay CDM answers from
++  // the GPU process through MojoCdm; every other CDM answers false. |done|
++  // may run synchronously.
++  using ParcHasSessionForInitDataCB = base::OnceCallback<void(bool)>;
++  virtual void ParcHasSessionForInitData(EmeInitDataType init_data_type,
++                                         const std::vector<uint8_t>& init_data,
++                                         ParcHasSessionForInitDataCB done);
 +#endif
 +
   protected:
@@ -991,7 +1023,15 @@
  }
 --- a/media/mojo/clients/mojo_cdm.cc
 +++ b/media/mojo/clients/mojo_cdm.cc
-@@ -65,6 +65,9 @@
+@@ -25,6 +25,7 @@
+ #include "media/mojo/clients/mojo_decryptor.h"
+ #include "media/mojo/common/media_type_converters.h"
+ #include "media/mojo/mojom/decryptor.mojom.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
+ #include "services/service_manager/public/cpp/connect.h"
+ #include "services/service_manager/public/mojom/interface_provider.mojom.h"
+ 
+@@ -65,6 +66,9 @@
        requires_media_foundation_renderer_(
            cdm_context->requires_media_foundation_renderer),
  #endif  // BUILDFLAG(IS_WIN)
@@ -1001,7 +1041,7 @@
        cdm_config_(cdm_config),
        session_message_cb_(session_message_cb),
        session_closed_cb_(session_closed_cb),
-@@ -319,6 +322,13 @@
+@@ -319,6 +323,27 @@
    return requires_media_foundation_renderer_;
  }
  #endif  // BUILDFLAG(IS_WIN)
@@ -1011,23 +1051,40 @@
 +  base::AutoLock auto_lock(lock_);
 +  return requires_fairplay_renderer_;
 +}
++
++void MojoCdm::ParcHasSessionForInitData(EmeInitDataType init_data_type,
++                                        const std::vector<uint8_t>& init_data,
++                                        ParcHasSessionForInitDataCB done) {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  if (!remote_cdm_) {
++    std::move(done).Run(false);
++    return;
++  }
++  // A CDM that goes away before answering has no sessions.
++  remote_cdm_->ParcHasSessionForInitData(
++      init_data_type, init_data,
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(done), false));
++}
 +#endif  // BUILDFLAG(IS_MAC)
  
  void MojoCdm::OnSessionMessage(const std::string& session_id,
                                 MessageType message_type,
 --- a/media/mojo/clients/mojo_cdm.h
 +++ b/media/mojo/clients/mojo_cdm.h
-@@ -87,6 +87,9 @@
+@@ -87,6 +87,12 @@
  #if BUILDFLAG(IS_WIN)
    bool RequiresMediaFoundationRenderer() final;
  #endif  // BUILDFLAG(IS_WIN)
 +#if BUILDFLAG(IS_MAC)
 +  bool RequiresFairPlayRenderer() final;
++  void ParcHasSessionForInitData(EmeInitDataType init_data_type,
++                                 const std::vector<uint8_t>& init_data,
++                                 ParcHasSessionForInitDataCB done) final;
 +#endif  // BUILDFLAG(IS_MAC)
  
   private:
    ~MojoCdm() final;
-@@ -151,6 +154,9 @@
+@@ -151,6 +157,9 @@
  #if BUILDFLAG(IS_WIN)
    bool requires_media_foundation_renderer_ GUARDED_BY(lock_) = false;
  #endif  // BUILDFLAG(IS_WIN)
@@ -1086,7 +1143,20 @@
        const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
 --- a/media/mojo/mojom/content_decryption_module.mojom
 +++ b/media/mojo/mojom/content_decryption_module.mojom
-@@ -169,6 +169,11 @@
+@@ -99,6 +99,12 @@
+   GetStatusForPolicy(HdcpVersion min_hdcp_version)
+       => (CdmPromiseResult result, CdmKeyStatus key_status);
+ 
++  // Parc: whether a session already has a key request for a key ID
++  // |init_data| names. See media::CdmContext::ParcHasSessionForInitData.
++  [EnableIf=is_mac]
++  ParcHasSessionForInitData(EmeInitDataType init_data_type,
++                            array<uint8> init_data) => (bool has_session);
++
+   // Creates a session with the |init_data_type|, |init_data| and |session_type|
+   // provided. If |result.success| is false, the output |session_id| will be
+   // empty.
+@@ -169,6 +175,11 @@
    // Whether MediaFoundationRenderer is required by the CDM.
    [EnableIf=is_win]
    bool requires_media_foundation_renderer;
@@ -1420,7 +1490,30 @@
    mojo::UniqueReceiverSet<mojom::Renderer> renderer_receivers_;
 --- a/media/mojo/services/mojo_cdm_service.cc
 +++ b/media/mojo/services/mojo_cdm_service.cc
-@@ -184,6 +184,10 @@
+@@ -88,6 +88,22 @@
+       min_hdcp_version,
+       std::make_unique<KeyStatusMojoCdmPromise>(std::move(callback)));
+ }
++
++#if BUILDFLAG(IS_MAC)
++void MojoCdmService::ParcHasSessionForInitData(
++    EmeInitDataType init_data_type,
++    const std::vector<uint8_t>& init_data,
++    ParcHasSessionForInitDataCallback callback) {
++  DVLOG(2) << __func__;
++  CdmContext* cdm_context = cdm_->GetCdmContext();
++  if (!cdm_context) {
++    std::move(callback).Run(false);
++    return;
++  }
++  cdm_context->ParcHasSessionForInitData(init_data_type, init_data,
++                                         std::move(callback));
++}
++#endif  // BUILDFLAG(IS_MAC)
+ 
+ void MojoCdmService::CreateSessionAndGenerateRequest(
+     CdmSessionType session_type,
+@@ -184,6 +200,10 @@
      mojo_cdm_context->requires_media_foundation_renderer =
          cdm_context->RequiresMediaFoundationRenderer();
  #endif  // BUILDFLAG(IS_WIN)
@@ -1431,6 +1524,29 @@
    }
  
    std::move(init_cb).Run(std::move(mojo_cdm_context),
+--- a/media/mojo/services/mojo_cdm_service.h
++++ b/media/mojo/services/mojo_cdm_service.h
+@@ -15,6 +15,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "build/build_config.h"
+ #include "media/base/cdm_factory.h"
+ #include "media/base/content_decryption_module.h"
+ #include "media/base/eme_constants.h"
+@@ -65,6 +66,12 @@
+                             SetServerCertificateCallback callback) final;
+   void GetStatusForPolicy(HdcpVersion min_hdcp_version,
+                           GetStatusForPolicyCallback callback) final;
++#if BUILDFLAG(IS_MAC)
++  void ParcHasSessionForInitData(
++      EmeInitDataType init_data_type,
++      const std::vector<uint8_t>& init_data,
++      ParcHasSessionForInitDataCallback callback) final;
++#endif  // BUILDFLAG(IS_MAC)
+   void CreateSessionAndGenerateRequest(
+       CdmSessionType session_type,
+       EmeInitDataType init_data_type,
 --- a/media/mojo/services/mojo_media_client.cc
 +++ b/media/mojo/services/mojo_media_client.cc
 @@ -94,6 +94,16 @@
@@ -1644,7 +1760,7 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1695,6 +1747,21 @@
+@@ -1695,6 +1747,50 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -1663,10 +1779,39 @@
 +    return;
 +  }
 +
++  // Parc: and only while no session of the element's MediaKeys has a key
++  // request for a key ID it names, as Safari checks
++  // (AudioVideoRendererAVFObjC::setInitData). The FairPlay CDM answers from
++  // the GPU process, so the event waits for that answer.
++  media::CdmContextRef* cdm_context_ref = pending_cdm_context_ref_
++                                              ? pending_cdm_context_ref_.get()
++                                              : cdm_context_ref_.get();
++  if (init_data_type == media::EmeInitDataType::SINF && cdm_context_ref) {
++    cdm_context_ref->GetCdmContext()->ParcHasSessionForInitData(
++        init_data_type, init_data,
++        base::BindOnce(
++            [](base::WeakPtr<WebMediaPlayerImpl> player,
++               media::EmeInitDataType init_data_type,
++               std::vector<uint8_t> init_data, bool has_session) {
++              if (player && !has_session) {
++                player->ParcDeliverEncryptedMediaInitData(init_data_type,
++                                                          init_data);
++              }
++            },
++            weak_this_, init_data_type, init_data));
++    return;
++  }
++  ParcDeliverEncryptedMediaInitData(init_data_type, init_data);
++}
++
++void WebMediaPlayerImpl::ParcDeliverEncryptedMediaInitData(
++    media::EmeInitDataType init_data_type,
++    const std::vector<uint8_t>& init_data) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -3023,6 +3090,15 @@
+@@ -3023,6 +3119,15 @@
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
    }
@@ -1682,7 +1827,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3153,6 +3229,12 @@
+@@ -3153,6 +3258,12 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -1695,7 +1840,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3875,26 @@
+@@ -3793,6 +3904,26 @@
      return false;
    }
  
@@ -1722,3 +1867,15 @@
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
    if (!HasVideo() || !HasAudio()) {
+--- a/third_party/blink/renderer/platform/media/web_media_player_impl.h
++++ b/third_party/blink/renderer/platform/media/web_media_player_impl.h
+@@ -445,6 +445,9 @@
+   void OnProgress() override;
+   void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
+                                 const std::vector<uint8_t>& init_data) override;
++  // Parc: the `encrypted` delivery OnEncryptedMediaInitData decided on.
++  void ParcDeliverEncryptedMediaInitData(media::EmeInitDataType init_data_type,
++                                         const std::vector<uint8_t>& init_data);
+   void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
+   bool CouldPlayIfEnoughData() override;
+   void StopForDemuxerReset() override;

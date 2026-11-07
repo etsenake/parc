@@ -121,6 +121,15 @@ class FairPlayCdm {
   // True if some open session holds a usable key for |key_id|.
   bool HasUsableKey(const std::vector<uint8_t>& key_id) const;
 
+  // True if some open session has a key request, answered or not, for a key
+  // ID |init_data| names (WebKit's CDMInstanceFairPlayStreamingAVFObjC::
+  // sessionForKeyIDs over the requests' key IDs). A removed session keeps its
+  // requests; a closed one has none. False when |init_data| names no key ID.
+  // Safari's Media Source fires `encrypted` only when this is false for its
+  // MediaKeys (AudioVideoRendererAVFObjC::setInitData).
+  bool HasSessionForInitData(InitDataType type,
+                             const std::vector<uint8_t>& init_data) const;
+
   // Called on the owner sequence after any key status change in any session.
   uint64_t AddKeysChangedObserver(KeysChangedCallback callback);
   void RemoveKeysChangedObserver(uint64_t id);

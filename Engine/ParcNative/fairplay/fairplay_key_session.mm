@@ -531,6 +531,19 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     return nil;
   }
 
+  bool HasSessionForKeyIds(const std::vector<std::vector<uint8_t>>& key_ids) const {
+    for (const auto& [id, session] : sessions_) {
+      for (const auto& request : session->requests) {
+        for (const auto& key_id : request->key_ids) {
+          if (std::find(key_ids.begin(), key_ids.end(), key_id) != key_ids.end()) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   // Delegate entry points, on the owner sequence.
 
   void OnRequests(NSArray<AVContentKeyRequest*>* av_requests, bool renewal, bool grouped) {
@@ -1155,6 +1168,19 @@ void FairPlayCdm::SetRequestTimeout(double seconds) {
 
 bool FairPlayCdm::HasUsableKey(const std::vector<uint8_t>& key_id) const {
   return impl_->ContentKeyForKeyId(key_id) != nil;
+}
+
+bool FairPlayCdm::HasSessionForInitData(InitDataType type,
+                                        const std::vector<uint8_t>& init_data) const {
+  InitDataPlan plan = PlanContentKeyRequests(type, init_data);
+  if (!plan.error.empty()) {
+    return false;
+  }
+  std::vector<std::vector<uint8_t>> key_ids;
+  for (const ContentKeyRequestPlan& call : plan.calls) {
+    key_ids.insert(key_ids.end(), call.key_ids.begin(), call.key_ids.end());
+  }
+  return !key_ids.empty() && impl_->HasSessionForKeyIds(key_ids);
 }
 
 uint64_t FairPlayCdm::AddKeysChangedObserver(KeysChangedCallback callback) {

@@ -89,7 +89,9 @@ Init data: `cenc`, `keyids`, and on Safari-identity documents `sinf` and
 `skd` (fairplay-media.patch adds both to `EmeInitDataType`; Blink treats them
 as unregistered elsewhere). `sinf` and `skd` pass to the core unchanged, as
 WebKit passes them. Netflix and Apple TV+ use `cenc` only. Sessions:
-temporary only.
+temporary only. `CdmContext::ParcHasSessionForInitData` (asked by a
+Safari-identity Media Source element through MojoCdm before it fires
+`encrypted` with `sinf`) answers from `FairPlayCdm::HasSessionForInitData`.
 `LoadSession` and `GetStatusForPolicy` reject with NotSupported.
 
 ## Call flow (playback)

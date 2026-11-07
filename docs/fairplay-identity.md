@@ -62,7 +62,13 @@ On a page that presents Safari's identity:
   Safari-identity document (`HTMLMediaElement::PresentsParcSafariIdentity`).
   Such an element hears no other `encrypted` init data: Safari's Media
   Source surfaces only `sinf`, never pssh boxes (`cenc`) or WebM key IDs.
-  Elements playing a URL keep Chromium's events.
+  Elements playing a URL keep Chromium's events. As in Safari
+  (`AudioVideoRendererAVFObjC::setInitData`), the event is skipped while a
+  session of the element's MediaKeys has a key request, answered or not, for
+  a key ID it names; a removed session keeps its requests, a closed one has
+  none. The FairPlay CDM answers that from the GPU process
+  (`CdmContext::ParcHasSessionForInitData` through MojoCdm), so with
+  MediaKeys attached the event follows that answer.
 - Service and shared workers of the site start with the same user agent
   (not those partitioned under another site's page, where the site's frames
   stay Chrome), so their `navigator.userAgent` and their fetches match, and
