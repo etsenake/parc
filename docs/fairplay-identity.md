@@ -380,7 +380,10 @@ has it in windows only. The rows and what is still open are in
   make the event (`parc_webkit_need_key.h`), so no page script can raise or
   intercept it, and it reaches elements outside the document and in shadow
   trees. `encrypted` events raise nothing. `MediaError.MEDIA_ERR_ENCRYPTED` is
-  5.
+  5. As in WebKit's `HTMLElement`, `onwebkitneedkey`, `onwebkitkeyadded`,
+  `onwebkitkeyerror` and `onwebkitkeymessage` are event handler content
+  attributes of every HTML element (no IDL attributes), live only on a
+  Safari-identity document.
 
 What the other services' current scripts do with it (fetched without signing
 in, November 6, 2026):
