@@ -17721,10 +17721,11 @@
  #include <memory>
  #include <utility>
  
-@@ -47,6 +48,19 @@
+@@ -46,6 +47,19 @@
+ // Today, |min_buffered_frames_| can go down (as low as 1) and up in response to
  // SetLatencyHint(), so we needed to peg this with a constant.
  constexpr int kAbsoluteMaxFrames = 24;
- 
++
 +// Parc: bounds on one backward playback window; two are held at once.
 +constexpr size_t kParcMaxWindowFrames = 64;
 +constexpr size_t kParcMaxWindowBytes = 192 * 1024 * 1024;
@@ -17737,10 +17738,9 @@
 +// this for the second window before starting.
 +constexpr base::TimeDelta kParcMaxWindowSpan = base::Seconds(30);
 +constexpr base::TimeDelta kParcMaxStartWait = base::Seconds(2);
-+
+ 
  }  // namespace
  
- VideoRendererImpl::VideoRendererImpl(
 @@ -119,6 +133,19 @@
    }
    received_end_of_stream_ = false;
@@ -17777,10 +17777,12 @@
  
    // To avoid unnecessary work by VDAs, only delete queued frames after
    // resetting |video_decoder_stream_|. If this is done in the opposite order
-@@ -162,6 +192,23 @@
+@@ -160,6 +190,23 @@
+   last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
+   video_decoder_stream_->SkipPrepareUntil(start_timestamp_);
    AttemptRead_Locked();
- }
- 
++}
++
 +void VideoRendererImpl::ParcStartPlayingBackwardFrom(
 +    base::TimeDelta timestamp,
 +    ParcSeekDemuxerCB seek_demuxer_cb) {
@@ -17796,15 +17798,14 @@
 +  parc_seek_demuxer_cb_ = std::move(seek_demuxer_cb);
 +  last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
 +  ParcDecodeWindowEndingAt_Locked(timestamp, /*starting=*/true);
-+}
-+
+ }
+ 
  void VideoRendererImpl::Initialize(
-     DemuxerStream* stream,
-     CdmContext* cdm_context,
-@@ -249,6 +296,21 @@
+@@ -248,6 +295,21 @@
+                                last_frame_ready_time_ >= last_render_time_);
  
    last_render_time_ = tick_clock_->NowTicks();
- 
++
 +  if (parc_backward_) {
 +    if (!background_rendering && deadline_max > deadline_min) {
 +      parc_render_interval_ = deadline_max - deadline_min;
@@ -17819,10 +17820,9 @@
 +    TRACE_EVENT_END("media", "frame", frame->AsHumanReadableString());
 +    return frame;
 +  }
-+
+ 
    size_t frames_dropped = 0;
    scoped_refptr<VideoFrame> result =
-       algorithm_->Render(deadline_min, deadline_max, &frames_dropped);
 @@ -297,6 +359,9 @@
  
  void VideoRendererImpl::OnFrameDropped() {
@@ -17844,45 +17844,44 @@
    client_->OnStatisticsUpdate(stats);
  }
  
-@@ -429,7 +498,15 @@
-   // If only an EOS frame came in after a seek, the renderer may not have
-   // received the ended event yet though we've posted it.
+@@ -431,6 +500,14 @@
    if (rendered_end_of_stream_)
-+    return;
-+
+     return;
+ 
 +  if (parc_backward_) {
 +    // Render() isn't running, so `parc_shown_` is only changed here.
 +    if (!parc_shown_.empty()) {
 +      StartSink();
 +    }
-     return;
-+  }
- 
-   // If we have no frames queued, there is a pending buffering state change in
-   // flight and we should ignore the start attempt.
-@@ -454,6 +531,10 @@
- 
-   StopSink();
- 
-+  if (parc_backward_) {
 +    return;
 +  }
 +
+   // If we have no frames queued, there is a pending buffering state change in
+   // flight and we should ignore the start attempt.
+   if (!algorithm_->frames_queued()) {
+@@ -453,6 +530,10 @@
+     return;
+ 
+   StopSink();
++
++  if (parc_backward_) {
++    return;
++  }
+ 
    // Make sure we expire everything we can if we can't read any more currently,
    // otherwise playback may hang indefinitely.  Note: There are no effective
-   // frames queued at this point, otherwise FrameReady() would have canceled
-@@ -632,6 +713,11 @@
- 
+@@ -633,6 +714,11 @@
    last_frame_ready_time_ = tick_clock_->NowTicks();
    last_decoder_stream_avg_duration_ = video_decoder_stream_->AverageDuration();
-+
+ 
 +  if (parc_backward_) {
 +    ParcFrameReady_Locked(std::move(frame));
 +    return;
 +  }
- 
++
    const bool is_eos = frame->metadata().end_of_stream;
    const bool is_before_start_time = !is_eos && IsBeforeStartTime(*frame);
+   const bool cant_read = !video_decoder_stream_->CanReadWithoutStalling();
 @@ -820,6 +906,11 @@
    if (pending_read_ || received_end_of_stream_)
      return;
@@ -17904,12 +17903,10 @@
    sink_started_ = true;
    was_background_rendering_ = false;
    sink_->Start(this);
-@@ -1119,6 +1210,393 @@
-   CheckForMetadataChanges(first_frame->format(), first_frame->natural_size());
-   painted_first_frame_ = true;
+@@ -1121,4 +1212,399 @@
    paint_first_frame_cb_.Cancel();
-+}
-+
+ }
+ 
 +void VideoRendererImpl::ParcDecodeWindowEndingAt_Locked(base::TimeDelta end,
 +                                                        bool starting) {
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -18053,8 +18050,8 @@
 +  video_decoder_stream_->Reset(
 +      base::BindOnce(&VideoRendererImpl::ParcOnDecoderStreamReset,
 +                     weak_factory_.GetWeakPtr()));
- }
- 
++}
++
 +void VideoRendererImpl::ParcOnDecoderStreamReset() {
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 +  {
@@ -18072,6 +18069,13 @@
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 +  lock_.AssertAcquired();
 +
++  if (!frame->metadata().end_of_stream) {
++    ++stats_.video_frames_decoded;
++    if (frame->metadata().power_efficient) {
++      ++stats_.video_frames_decoded_power_efficient;
++    }
++  }
++
 +  if (frame->metadata().end_of_stream ||
 +      frame->timestamp() > parc_window_end_) {
 +    // A window that ends before the first frame keeps that frame. A
@@ -18081,19 +18085,17 @@
 +      parc_decoded_bytes_ =
 +          VideoFrame::AllocationSize(frame->format(), frame->coded_size());
 +      parc_decoded_.push_back(std::move(frame));
-+    } else if (!frame->metadata().end_of_stream && parc_scan_ &&
-+               parc_decoded_.size() == 1 &&
-+               frame->timestamp() > parc_last_timestamp_) {
-+      parc_last_timestamp_ = frame->timestamp();
-+      parc_last_frame_ticks_ = tick_clock_->NowTicks();
++    } else if (!frame->metadata().end_of_stream) {
++      ++stats_.video_frames_dropped;
++      if (parc_scan_ && parc_decoded_.size() == 1 &&
++          frame->timestamp() > parc_last_timestamp_) {
++        parc_last_timestamp_ = frame->timestamp();
++        parc_last_frame_ticks_ = tick_clock_->NowTicks();
++      }
 +    }
++    UpdateStats_Locked();
 +    ParcFinishWindow_Locked();
 +    return;
-+  }
-+
-+  ++stats_.video_frames_decoded;
-+  if (frame->metadata().power_efficient) {
-+    ++stats_.video_frames_decoded_power_efficient;
 +  }
 +
 +  const base::TimeDelta timestamp = frame->timestamp();
@@ -18150,6 +18152,7 @@
 +  // A keyframe-only window ends at the frame after its keyframe, which
 +  // measures the decode speed.
 +  if (parc_scan_ && !parc_decoded_.empty()) {
++    ++stats_.video_frames_dropped;
 +    UpdateStats_Locked();
 +    ParcFinishWindow_Locked();
 +    return;
@@ -18160,6 +18163,7 @@
 +      timestamp > parc_decoded_.back()->timestamp() &&
 +      timestamp - parc_decoded_.back()->timestamp() <
 +          parc_stride_ - parc_frame_duration_ / 2) {
++    ++stats_.video_frames_dropped;
 +    UpdateStats_Locked();
 +    AttemptRead_Locked();
 +    return;
@@ -18181,6 +18185,7 @@
 +    parc_decoded_bytes_ -=
 +        VideoFrame::AllocationSize(first.format(), first.coded_size());
 +    parc_decoded_.erase(parc_decoded_.begin());
++    ++stats_.video_frames_dropped;
 +  }
 +
 +  UpdateStats_Locked();
@@ -18300,11 +18305,10 @@
  }  // namespace media
 --- a/media/renderers/video_renderer_impl_unittest.cc
 +++ b/media/renderers/video_renderer_impl_unittest.cc
-@@ -363,7 +363,97 @@
-   }
+@@ -364,6 +364,102 @@
  
    MOCK_METHOD0(OnSimulateDecodeDelay, base::TimeDelta(void));
-+
+ 
 +  // Parc: what ParcRewind() saw.
 +  struct ParcRewound {
 +    // The frames shown, in order.
@@ -18314,6 +18318,7 @@
 +    base::TimeDelta started;
 +    // Media time at the end.
 +    base::TimeDelta time;
++    PipelineStatistics statistics;
 +  };
 +
 +  // Parc: rewinds a file with a frame every `frame` and a keyframe every
@@ -18338,7 +18343,7 @@
 +    parc_gop_ = gop;
 +    parc_decode_ = decode;
 +    parc_seek_ = seek;
- 
++
 +    EXPECT_CALL(mock_cb_, OnWaiting(_)).Times(0);
 +    EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_)).Times(AnyNumber());
 +    EXPECT_CALL(mock_cb_, OnVideoNaturalSizeChange(_)).Times(AnyNumber());
@@ -18358,6 +18363,11 @@
 +        .WillByDefault(Invoke(this, &VideoRendererImplTest::ParcResetDecoder));
 +
 +    ParcRewound rewound;
++    EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_))
++        .WillRepeatedly([&](const PipelineStatistics& stats) {
++          rewound.statistics.video_frames_decoded += stats.video_frames_decoded;
++          rewound.statistics.video_frames_dropped += stats.video_frames_dropped;
++        });
 +    const base::TimeTicks began = clock->NowTicks();
 +    bool ticking = false;
 +    EXPECT_CALL(mock_cb_, FrameReceived(_))
@@ -18398,11 +18408,10 @@
   protected:
    base::test::TaskEnvironment task_environment_;
    NullMediaLog media_log_;
-@@ -429,8 +519,75 @@
- 
+@@ -430,6 +526,73 @@
      task_environment_.GetMainThreadTaskRunner()->PostTask(FROM_HERE,
                                                            std::move(callback));
-+  }
+   }
 +
 +  void ParcSeekDemuxer(base::TimeDelta time, base::OnceClosure done) {
 +    task_environment_.GetMainThreadTaskRunner()->PostDelayedTask(
@@ -18459,8 +18468,8 @@
 +    }
 +    task_environment_.GetMainThreadTaskRunner()->PostTask(FROM_HERE,
 +                                                          std::move(done));
-   }
- 
++  }
++
 +  // ParcRewind()'s file and decoder.
 +  gfx::Size parc_size_;
 +  base::TimeDelta parc_frame_;
@@ -18470,11 +18479,10 @@
 +  base::TimeDelta parc_next_;
 +  int parc_generation_ = 0;
 +  VideoDecoder::DecodeCB parc_decode_cb_;
-+
+ 
    // Used to protect |time_|.
    base::Lock lock_;
-   base::TimeDelta time_;
-@@ -2017,4 +2174,236 @@
+@@ -2017,4 +2180,337 @@
    Destroy();
  }
  
@@ -18601,7 +18609,12 @@
 +        seeks.push_back(time);
 +        seek_done = std::move(done);
 +      });
-+  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_)).Times(AnyNumber());
++  PipelineStatistics statistics;
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_))
++      .WillRepeatedly([&](const PipelineStatistics& stats) {
++        statistics.video_frames_decoded += stats.video_frames_decoded;
++        statistics.video_frames_dropped += stats.video_frames_dropped;
++      });
 +  EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
 +
 +  renderer_->ParcStartPlayingBackwardFrom(base::Milliseconds(685),
@@ -18617,6 +18630,9 @@
 +  SatisfyPendingDecode();
 +  base::RunLoop().RunUntilIdle();
 +
++  // 70 decoded frames: 64 retained, five evicted and one past the end.
++  EXPECT_EQ(statistics.video_frames_decoded, 70u);
++  EXPECT_EQ(statistics.video_frames_dropped, 6u);
 +  // 64 frames, 50 to 680.
 +  ASSERT_EQ(seeks.size(), 2u);
 +  EXPECT_EQ(seeks[1], base::Milliseconds(50) - base::Microseconds(1));
@@ -18664,6 +18680,9 @@
 +              base::Milliseconds(400))
 +        << rewound.shown[i];
 +  }
++  EXPECT_GT(rewound.statistics.video_frames_dropped, 100u);
++  EXPECT_GT(rewound.statistics.video_frames_decoded,
++            rewound.statistics.video_frames_dropped);
 +}
 +
 +// Parc: at -4x, frames are dropped rather than time waiting for them.
@@ -18689,6 +18708,9 @@
 +    }
 +  }
 +  EXPECT_GT(strided, rewound.shown.size() / 2);
++  EXPECT_GT(rewound.statistics.video_frames_dropped, 100u);
++  EXPECT_GT(rewound.statistics.video_frames_decoded,
++            rewound.statistics.video_frames_dropped);
 +}
 +
 +// Parc: rewinding from just after a keyframe, before any keyframe interval is
@@ -18708,6 +18730,93 @@
 +    EXPECT_EQ(rewound.shown[i - 1] - rewound.shown[i], base::Milliseconds(40))
 +        << rewound.shown[i];
 +  }
++}
++
++TEST_F(VideoRendererImplTest, ParcBackwardReportsByteBudgetDrops) {
++  Initialize();
++  base::OnceClosure seek_done;
++  auto seek_demuxer = base::BindLambdaForTesting(
++      [&](base::TimeDelta, base::OnceClosure done) {
++        seek_done = std::move(done);
++      });
++  PipelineStatistics statistics;
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_))
++      .WillRepeatedly([&](const PipelineStatistics& stats) {
++        statistics.video_frames_decoded += stats.video_frames_decoded;
++        statistics.video_frames_dropped += stats.video_frames_dropped;
++      });
++  EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++  renderer_->ParcStartPlayingBackwardFrom(base::Milliseconds(175), seek_demuxer);
++  base::RunLoop().RunUntilIdle();
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  const gfx::Size size(3840, 2160);
++  for (int i = 0; i < 19; ++i) {
++    QueueFrame(DecoderStatus::Codes::kOk,
++               VideoFrame::CreateFrame(PIXEL_FORMAT_I420, size, gfx::Rect(size),
++                                       size, base::Milliseconds(i * 10)));
++  }
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++  const size_t retained = (192 * 1024 * 1024) /
++      VideoFrame::AllocationSize(PIXEL_FORMAT_I420, size);
++  EXPECT_EQ(statistics.video_frames_decoded, 19u);
++  EXPECT_EQ(statistics.video_frames_dropped, 19u - retained);
++  Destroy();
++}
++
++TEST_F(VideoRendererImplTest, ParcForwardStatisticsUnchanged) {
++  Initialize();
++  PipelineStatistics statistics;
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_))
++      .WillRepeatedly([&](const PipelineStatistics& stats) {
++        statistics.video_frames_decoded += stats.video_frames_decoded;
++        statistics.video_frames_dropped += stats.video_frames_dropped;
++      });
++  EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++  EXPECT_CALL(mock_cb_, OnVideoNaturalSizeChange(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnVideoOpacityChange(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(0)));
++  QueueFrames("0 10 20 30");
++  StartPlayingFrom(0);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(statistics.video_frames_decoded, 4u);
++  EXPECT_EQ(statistics.video_frames_dropped, 0u);
++  Destroy();
++}
++
++TEST_F(VideoRendererImplTest, ParcBackwardReportsStrideDropsButNotEOS) {
++  Initialize();
++  simulate_decode_delay_ = true;
++  EXPECT_CALL(*this, OnSimulateDecodeDelay())
++      .WillRepeatedly(Return(base::Milliseconds(1)));
++  time_source_.SetPlaybackRate(-4);
++  base::OnceClosure seek_done;
++  auto seek_demuxer = base::BindLambdaForTesting(
++      [&](base::TimeDelta, base::OnceClosure done) {
++        seek_done = std::move(done);
++      });
++  PipelineStatistics statistics;
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_))
++      .WillRepeatedly([&](const PipelineStatistics& stats) {
++        statistics.video_frames_decoded += stats.video_frames_decoded;
++        statistics.video_frames_dropped += stats.video_frames_dropped;
++      });
++  EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++  renderer_->ParcStartPlayingBackwardFrom(base::Milliseconds(175), seek_demuxer);
++  base::RunLoop().RunUntilIdle();
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  QueueFrames("0 10 20 30 40 50 60 70 80 90 100 110 120 130 140 150 160 170");
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++  SatisfyPendingDecodeWithEndOfStream();
++  base::RunLoop().RunUntilIdle();
++  // At sample eight, the 4x display stride is 60 ms. Keep 0..60 and 120;
++  // ten frames are discarded with neither budget reached. EOS adds neither.
++  EXPECT_EQ(statistics.video_frames_decoded, 18u);
++  EXPECT_EQ(statistics.video_frames_dropped, 10u);
++  Destroy();
 +}
 +
  }  // namespace media
