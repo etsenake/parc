@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **65**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **66**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -439,7 +439,7 @@ Safari opens AirPlay, and `webkitWirelessVideoPlaybackDisabled` is missing:
 **queued** (AIRPLAY-2). A ManagedMediaSource element doesn't switch to its HLS
 `<source>` alternative when a target is picked, as Safari does: **queued**
 (AIRPLAY-3, after HME-1c). Clear `src=` files and clear Media Source don't
-AirPlay (Safari plays `src=` files through AVPlayer): **queued** (AIRPLAY-4,
+AirPlay (Safari plays `src=` files through AVPlayer): **in progress** (AIRPLAY-4,
 about 400-700 lines). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
@@ -716,8 +716,11 @@ Ogg-plus-video `decodingInfo` query says no;
 PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected
 PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`) and 20, and
 4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (**in progress**, MS-4d, 200-400
-lines); AMR and H.263 in 3GPP fail (MS-4e, AudioToolbox/VideoToolbox
-decoders, 600+ lines). `text/vtt` in `isTypeSupported` differs but no site
+lines); AMR and H.263 in 3GPP failed: **fixed** 8459d88a (AudioToolbox/VideoToolbox
+decoders). Still: `canPlayType` is silent for 3gpp/3gpp2 and samr/sawb/s263
+where Safari says maybe or probably; MPEG-4 Part 2 video (`mp4v.20.x`) in
+3GPP fails; raw .amr/.awb files don't play: **left**, pending Josh (Safari
+identity applies only to learned streaming sites, which don't serve 3GPP). `text/vtt` in `isTypeSupported` differs but no site
 appends WebVTT, so no user can perceive it: **left** (Josh agreed November 7: no user can perceive it).
 Lowercase `flac`/`opus` in MP4 and Parc's runtime answer for Dolby Vision 8
 and `dav1.10` are **unchecked**. AV1 on Macs without hardware AV1 (M1/M2):
