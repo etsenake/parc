@@ -14719,6 +14719,15 @@
    std::vector<std::string> decrypted_audio_buffers;
 --- a/media/remoting/renderer_controller.h
 +++ b/media/remoting/renderer_controller.h
+@@ -160,7 +160,7 @@
+   void MaybeStartCalculatePixelRateTimer();
+   void DoCalculatePixelRate(int decoded_frame_count_before_delay,
+                             base::TimeTicks delayed_start_time);
+-  PixelRateSupport GetPixelRateSupport() const;
++  PixelRateSupport GetPixelRateSupport(double pixels_per_second) const;
+ 
+   // Callback from RpcMessenger when sending message to remote sink.
+   void SendMessageToSink(std::vector<uint8_t> message);
 @@ -228,6 +228,11 @@
    // local rendering.
    bool is_media_remoting_requested_ = false;
@@ -14765,11 +14774,33 @@
    UpdateAndMaybeSwitch(REQUESTED_BY_BROWSER, UNKNOWN_STOP_TRIGGER);
  }
  
-@@ -386,6 +397,15 @@
+@@ -301,6 +312,11 @@
+     pixel_rate_timer_.Stop();
+     pixels_per_second_ = 0;
+     MaybeStartCalculatePixelRateTimer();
++    // Parc: or, for a requested session, estimates it now
++    // (UpdateAndMaybeSwitch()).
++    if (start_trigger == UNKNOWN_START_TRIGGER) {
++      start_trigger = PIXEL_RATE_READY;
++    }
+   }
+ 
+   UpdateRemotePlaybackAvailabilityMonitoringState();
+@@ -381,12 +397,26 @@
+   // Cancel the timer since pixel rate cannot be calculated when media is
+   // paused.
+   pixel_rate_timer_.Stop();
++  // Parc: a requested session waiting for the pixel rate starts with its
++  // estimate now (UpdateAndMaybeSwitch()).
++  if (is_media_remoting_requested_ && !remote_rendering_started_) {
++    UpdateAndMaybeSwitch(REQUESTED_BY_BROWSER, UNKNOWN_STOP_TRIGGER);
++  }
+ }
+ 
  void RendererController::OnFrozen() {
    DCHECK(thread_checker_.CalledOnValidThread());
    DCHECK(is_paused_);
-+
+ 
 +  // Parc: as WebKit's suspend() leaves a paused player on its AirPlay
 +  // target, a session casting this element (Remote Playback, which ends when
 +  // remoting stops) stays, paused on the receiver, for the user to resume.
@@ -14778,10 +14809,37 @@
 +  if (is_media_remoting_requested_) {
 +    return;
 +  }
- 
++
    // If the element is frozen we want to stop remoting.
    UpdateAndMaybeSwitch(UNKNOWN_START_TRIGGER, MEDIA_ELEMENT_FROZEN);
-@@ -628,8 +648,12 @@
+ }
+@@ -532,13 +562,22 @@
+     return;
+   }
+ 
+-  // Start remoting. First, check pixel rate compatibility.
+-  if (pixels_per_second_ == 0) {
++  // Start remoting. First, check pixel rate compatibility. Parc: a requested
++  // session for a paused element whose pixel rate isn't measured yet (it
++  // played for less than kPixelRateCalInSec before the back/forward cache
++  // paused it) can't measure it until it plays, so its rate is the video's
++  // size at the frame rate kPixelsPerSec2k and kPixelsPerSec4k assume. WebKit's
++  // AirPlay target takes a paused video without measuring it.
++  double pixels_per_second = pixels_per_second_;
++  if (pixels_per_second == 0 && is_media_remoting_requested_ && is_paused_) {
++    pixels_per_second = pipeline_metadata_.natural_size.GetArea() * 30.0;
++  }
++  if (pixels_per_second == 0) {
+     MaybeStartCalculatePixelRateTimer();
+     return;
+   }
+ 
+-  auto pixel_rate_support = GetPixelRateSupport();
++  auto pixel_rate_support = GetPixelRateSupport(pixels_per_second);
+   metrics_recorder_.RecordVideoPixelRateSupport(pixel_rate_support);
+   if (pixel_rate_support == PixelRateSupport::k2kSupported ||
+       pixel_rate_support == PixelRateSupport::k4kSupported) {
+@@ -628,8 +667,12 @@
    // Only switch to remoting when media is playing. Since the renderer is
    // created when video starts loading, the receiver would display a black
    // screen if switching to remoting while paused. Thus, the user experience is
@@ -14796,12 +14854,34 @@
        !SinkSupportsRemoting()) {
      return false;
    }
+@@ -666,13 +709,14 @@
+   UpdateAndMaybeSwitch(PIXEL_RATE_READY, UNKNOWN_STOP_TRIGGER);
+ }
+ 
+-PixelRateSupport RendererController::GetPixelRateSupport() const {
+-  DCHECK(pixels_per_second_ != 0);
++PixelRateSupport RendererController::GetPixelRateSupport(
++    double pixels_per_second) const {
++  DCHECK(pixels_per_second != 0);
+ 
+-  if (pixels_per_second_ <= kPixelsPerSec2k) {
++  if (pixels_per_second <= kPixelsPerSec2k) {
+     return PixelRateSupport::k2kSupported;
+   }
+-  if (pixels_per_second_ <= kPixelsPerSec4k) {
++  if (pixels_per_second <= kPixelsPerSec4k) {
+     if (HasVideoCapability(mojom::RemotingSinkVideoCapability::SUPPORT_4K)) {
+       return PixelRateSupport::k4kSupported;
+     } else {
 --- a/media/remoting/renderer_controller_unittest.cc
 +++ b/media/remoting/renderer_controller_unittest.cc
-@@ -413,8 +413,65 @@
-   controller_->OnFrozen();
-   RunUntilIdle();
-   ExpectInLocalRendering();
+@@ -410,11 +410,121 @@
+   ExpectInRemoting();
+ 
+   // Freezing should kick rendering back to local.
++  controller_->OnFrozen();
++  RunUntilIdle();
++  ExpectInLocalRendering();
 +}
 +
 +TEST_F(RendererControllerTest, ParcOnFrozenKeepsRequestedRemoting) {
@@ -14819,14 +14899,14 @@
 +  controller_->OnPlaying();
 +  RunUntilIdle();
 +  ExpectInRemoting();
- }
- 
++}
++
 +TEST_F(RendererControllerTest, ParcRequestEndsWithItsUnstartedSession) {
 +  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  // Paused before its pixel rate was measured, the element can't start
-+  // remoting: the requested session comes and times out.
-+  controller_->OnPaused();
++  // Playing, the element measures its pixel rate before it starts remoting:
++  // the requested session comes and times out first.
 +  set_pixels_per_second_(0);
++  decoded_frames_ = 0;
 +  controller_->OnMediaRemotingRequested();
 +  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
 +  controller_->OnSinkGone();
@@ -14855,8 +14935,61 @@
 +  controller_->OnMediaRemotingRequested();
 +  // The page is left before the requested session comes.
 +  controller_->OnPaused();
+   controller_->OnFrozen();
++  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
+   RunUntilIdle();
++  ExpectInRemoting();
++}
++
++TEST_F(RendererControllerTest, ParcRequestedSessionStartsBeforePixelRate) {
++  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
++  // The element played for less than the pixel rate's measurement.
++  set_pixels_per_second_(0);
++  controller_->OnMediaRemotingRequested();
++  controller_->OnPaused();
 +  controller_->OnFrozen();
 +  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
++  RunUntilIdle();
++  ExpectInRemoting();
++}
++
++TEST_F(RendererControllerTest, ParcRequestedSessionStartsWhenPausedMeasuring) {
++  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
++  set_pixels_per_second_(0);
++  controller_->OnMediaRemotingRequested();
++  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
++  RunUntilIdle();
+   ExpectInLocalRendering();
++
++  // The page is left before the pixel rate's measurement ends.
++  controller_->OnPaused();
++  controller_->OnFrozen();
++  RunUntilIdle();
++  ExpectInRemoting();
+ }
+ 
++TEST_F(RendererControllerTest, ParcUnmeasuredRequestKeepsSinkPixelRateLimit) {
++  PipelineMetadata metadata = DefaultMetadata(VideoCodec::kVP8);
++  metadata.natural_size = gfx::Size(3840, 2160);
++  InitializeControllerWithSink(metadata, nullptr);
++  set_pixels_per_second_(0);
++  controller_->OnMediaRemotingRequested();
++  controller_->OnPaused();
++  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
++  RunUntilIdle();
++  ExpectInLocalRendering();
++}
++
++TEST_F(RendererControllerTest, ParcUnrequestedRemotingWaitsForPixelRate) {
++  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8),
++                               GetDefaultSinkMetadata(true));
++  set_pixels_per_second_(0);
++  decoded_frames_ = 0;
++  controller_->OnBecameDominantVisibleContent(true);
++  RunUntilIdle();
++  ExpectInLocalRendering();
++
++  PixelRateTimerEnds();
 +  RunUntilIdle();
 +  ExpectInRemoting();
 +}
@@ -17339,3 +17472,357 @@
  TEST_F(MultiBufferDataSourceTest, Range_Supported) {
    InitializeWith206Response();
  
+--- a/third_party/blink/renderer/modules/presentation/presentation_controller.h
++++ b/third_party/blink/renderer/modules/presentation/presentation_controller.h
+@@ -68,6 +68,13 @@
+   // Document is detached.
+   HeapMojoRemote<mojom::blink::PresentationService>& GetPresentationService();
+ 
++  // Parc: a second PresentationService remote, whose replies reach a page in
++  // the back/forward cache, as MessagePort's messages do: Remote Playback
++  // starts its cast without waiting for the page to be shown
++  // (RemotePlayback::HandlePresentationResponse).
++  HeapMojoRemote<mojom::blink::PresentationService>&
++  ParcGetPresentationServiceRunningInBackForwardCache();
++
+   // Returns the PresentationAvailabilityState owned by |this|, creating it if
+   // needed. Always non-null.
+   PresentationAvailabilityState* GetAvailabilityState();
+@@ -106,6 +113,8 @@
+   // Holder of the Mojo connection to the PresentationService remote.
+   blink::HeapMojoRemote<mojom::blink::PresentationService>
+       presentation_service_remote_;
++  blink::HeapMojoRemote<mojom::blink::PresentationService>
++      parc_back_forward_cache_presentation_service_remote_;
+ 
+   // Lazily-initialized binding for mojom::blink::PresentationController. Sent
+   // to |presentation_service_|'s implementation.
+--- a/third_party/blink/renderer/modules/presentation/presentation_controller.cc
++++ b/third_party/blink/renderer/modules/presentation/presentation_controller.cc
+@@ -19,6 +19,7 @@
+ PresentationController::PresentationController(LocalDOMWindow& window)
+     : Supplement<LocalDOMWindow>(window),
+       presentation_service_remote_(&window),
++      parc_back_forward_cache_presentation_service_remote_(&window),
+       presentation_controller_receiver_(this, &window) {}
+ 
+ PresentationController::~PresentationController() = default;
+@@ -52,6 +53,7 @@
+   visitor->Trace(connections_);
+   visitor->Trace(availability_state_);
+   visitor->Trace(presentation_service_remote_);
++  visitor->Trace(parc_back_forward_cache_presentation_service_remote_);
+   Supplement<LocalDOMWindow>::Trace(visitor);
+ }
+ 
+@@ -167,6 +169,18 @@
+   return presentation_service_remote_;
+ }
+ 
++HeapMojoRemote<mojom::blink::PresentationService>&
++PresentationController::ParcGetPresentationServiceRunningInBackForwardCache() {
++  if (!parc_back_forward_cache_presentation_service_remote_ &&
++      GetSupplementable()) {
++    GetSupplementable()->GetBrowserInterfaceBroker().GetInterface(
++        parc_back_forward_cache_presentation_service_remote_
++            .BindNewPipeAndPassReceiver(GetSupplementable()->GetTaskRunner(
++                TaskType::kBackForwardCachePostedMessage)));
++  }
++  return parc_back_forward_cache_presentation_service_remote_;
++}
++
+ ControllerPresentationConnection* PresentationController::FindConnection(
+     const mojom::blink::PresentationInfo& presentation_info) const {
+   for (const auto& connection : connections_) {
+--- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
++++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
+@@ -187,6 +187,9 @@
+   Member<ScriptPromiseResolver<IDLUndefined>> prompt_promise_resolver_;
+   Vector<KURL> availability_urls_;
+   bool is_listening_;
++  // Parc: the player was asked to cast while the page was frozen
++  // (HandlePresentationResponse()).
++  bool remoting_requested_while_frozen_ = false;
+   bool is_background_availability_monitoring_disabled_for_testing_ = false;
+ 
+   String presentation_id_;
+--- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
++++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
+@@ -290,10 +290,11 @@
+   PresentationController* controller =
+       PresentationController::FromContext(GetExecutionContext());
+   if (controller && !availability_urls_.empty()) {
+-    controller->GetPresentationService()->StartPresentation(
+-        availability_urls_,
+-        BindOnce(&RemotePlayback::HandlePresentationResponse,
+-                 WrapPersistent(this)));
++    controller->ParcGetPresentationServiceRunningInBackForwardCache()
++        ->StartPresentation(
++            availability_urls_,
++            BindOnce(&RemotePlayback::HandlePresentationResponse,
++                     WrapPersistent(this)));
+   } else {
+     // TODO(yuryu): Wrapping PromptCancelled with base::OnceClosure as
+     // InspectorInstrumentation requires a globally unique pointer to track
+@@ -613,7 +614,11 @@
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+   media_element_->Play();
+-  media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
++  if (remoting_requested_while_frozen_) {
++    remoting_requested_while_frozen_ = false;
++  } else {
++    media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
++  }
+ #endif
+ 
+   // Note: Messages on |connection_receiver| are ignored.
+@@ -651,6 +656,27 @@
+ void RemotePlayback::HandlePresentationResponse(
+     mojom::blink::PresentationConnectionResultPtr result,
+     mojom::blink::PresentationErrorPtr error) {
++  // Parc: the response reaches a page in the back/forward cache
++  // (PromptInternal()). As WebKit's
++  // HTMLMediaElement::setShouldPlayToPlaybackTarget() moves the player to its
++  // AirPlay target while the element's tasks wait for the page, the player
++  // starts casting now, without page script, and the page gets the response,
++  // with its state and events, when it is shown.
++  ExecutionContext* context = GetExecutionContext();
++  if (context && context->IsContextFrozenOrPaused()) {
++#if !BUILDFLAG(IS_ANDROID)
++    if (result && media_element_->GetWebMediaPlayer()) {
++      media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
++      remoting_requested_while_frozen_ = true;
++    }
++#endif
++    context->GetTaskRunner(TaskType::kPresentation)
++        ->PostTask(FROM_HERE,
++                   BindOnce(&RemotePlayback::HandlePresentationResponse,
++                            WrapPersistent(this), std::move(result),
++                            std::move(error)));
++    return;
++  }
+   if (result) {
+     OnConnectionSuccess(std::move(result));
+   } else {
+--- a/third_party/blink/renderer/modules/remoteplayback/remote_playback_test.cc
++++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback_test.cc
+@@ -4,24 +4,35 @@
+ 
+ #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
+ 
++#include "base/functional/bind.h"
++#include "base/run_loop.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-blink.h"
++#include "third_party/blink/public/mojom/presentation/presentation.mojom-blink.h"
++#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_remote_playback_availability_callback.h"
++#include "third_party/blink/renderer/bindings/modules/v8/v8_remote_playback_state.h"
+ #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
++#include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
+ #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+ #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
+ #include "third_party/blink/renderer/core/testing/mock_function_scope.h"
++#include "third_party/blink/renderer/core/testing/page_test_base.h"
++#include "third_party/blink/renderer/modules/presentation/mock_presentation_service.h"
+ #include "third_party/blink/renderer/modules/presentation/presentation_controller.h"
+ #include "third_party/blink/renderer/modules/remoteplayback/html_media_element_remote_playback.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
++#include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
++#include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
+ #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+ #include "third_party/blink/renderer/platform/testing/task_environment.h"
+ #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+@@ -52,6 +63,11 @@
+   MOCK_METHOD1(RemoveAvailabilityObserver,
+                void(PresentationAvailabilityObserver*));
+ };
++
++class MockWebMediaPlayerForRemotePlayback final : public EmptyWebMediaPlayer {
++ public:
++  MOCK_METHOD0(RequestMediaRemoting, void());
++};
+ }  // namespace
+ 
+ class RemotePlaybackTest : public testing::Test,
+@@ -454,6 +470,170 @@
+       "remote-playback:media-element?source=aHR0cDovL3d3dy5leGFtcGxlLmNvbS8=&"
+       "video_codec=vp9&audio_codec=mp3",
+       remote_playback.Urls()[0]);
++}
++
++// Parc: a cast whose connection comes while its page is in the back/forward
++// cache.
++class RemotePlaybackBackForwardCacheTest
++    : public PageTestBase,
++      private ScopedRemotePlaybackBackendForTest {
++ public:
++  RemotePlaybackBackForwardCacheTest()
++      : ScopedRemotePlaybackBackendForTest(true) {}
++
++  void SetUp() override {
++    auto player = std::make_unique<MockWebMediaPlayerForRemotePlayback>();
++    player_ = player.get();
++    SetupPageWithClients(nullptr,
++                         MakeGarbageCollected<test::MediaStubLocalFrameClient>(
++                             std::move(player)),
++                         nullptr);
++    GetFrame().GetBrowserInterfaceBroker().SetBinderForTesting(
++        mojom::blink::PresentationService::Name_,
++        base::BindRepeating(
++            &RemotePlaybackBackForwardCacheTest::BindPresentationService,
++            base::Unretained(this)));
++    EXPECT_CALL(presentation_service_, StartPresentationInternal)
++        .WillRepeatedly(
++            [this](const Vector<KURL>&,
++                   MockPresentationService::StartPresentationCallback&
++                       callback) { start_callback_ = std::move(callback); });
++
++    video_ = MakeGarbageCollected<HTMLVideoElement>(GetDocument());
++    GetDocument().body()->appendChild(video_);
++    video_->SetSrc(AtomicString("http://example.com/foo.mp4"));
++    test::RunPendingTasks();
++    ASSERT_EQ(player_, video_->GetWebMediaPlayer());
++    video_->DurationChanged(60, false);
++    remote_playback().SourceChanged(KURL("http://example.com/foo.mp4"), true);
++
++    connecting_ = MakeGarbageCollected<
++        testing::StrictMock<MockEventListenerForRemotePlayback>>();
++    remote_playback().addEventListener(event_type_names::kConnecting,
++                                       connecting_);
++  }
++
++  void TearDown() override {
++    GetFrame().GetBrowserInterfaceBroker().SetBinderForTesting(
++        mojom::blink::PresentationService::Name_, {});
++    PageTestBase::TearDown();
++  }
++
++ protected:
++  RemotePlayback& remote_playback() { return RemotePlayback::From(*video_); }
++
++  // The user picks a receiver; the browser then connects to it.
++  ScriptPromise<IDLUndefined> Prompt(V8TestingScope& scope) {
++    LocalFrame::NotifyUserActivation(
++        &GetFrame(), mojom::UserActivationNotificationType::kTest);
++    ScriptPromise<IDLUndefined> promise = remote_playback().prompt(
++        scope.GetScriptState(), scope.GetExceptionState());
++    base::RunLoop().RunUntilIdle();
++    EXPECT_TRUE(start_callback_);
++    return promise;
++  }
++
++  void Connect() {
++    mojo::PendingRemote<mojom::blink::PresentationConnection> connection;
++    receiver_end_ = connection.InitWithNewPipeAndPassReceiver();
++    std::move(start_callback_)
++        .Run(mojom::blink::PresentationConnectionResult::New(
++                 mojom::blink::PresentationInfo::New(
++                     KURL("remote-playback:media-element"), "id"),
++                 std::move(connection),
++                 sender_end_.InitWithNewPipeAndPassReceiver()),
++             nullptr);
++    base::RunLoop().RunUntilIdle();
++  }
++
++  void EnterBackForwardCache() {
++    PageScheduler* scheduler = GetPage().GetPageScheduler();
++    scheduler->SetPageVisible(false);
++    scheduler->SetPageBackForwardCached(true);
++    scheduler->SetPageFrozen(true);
++  }
++
++  void RestoreFromBackForwardCache() {
++    PageScheduler* scheduler = GetPage().GetPageScheduler();
++    scheduler->SetPageFrozen(false);
++    scheduler->SetPageBackForwardCached(false);
++    scheduler->SetPageVisible(true);
++    base::RunLoop().RunUntilIdle();
++  }
++
++  V8RemotePlaybackState::Enum State() {
++    return remote_playback().state().AsEnum();
++  }
++
++  MockWebMediaPlayerForRemotePlayback* player_ = nullptr;
++  testing::NiceMock<MockPresentationService> presentation_service_;
++  MockPresentationService::StartPresentationCallback start_callback_;
++  Persistent<MockEventListenerForRemotePlayback> connecting_;
++
++ private:
++  void BindPresentationService(mojo::ScopedMessagePipeHandle handle) {
++    receivers_.Add(&presentation_service_,
++                   mojo::PendingReceiver<mojom::blink::PresentationService>(
++                       std::move(handle)));
++  }
++
++  mojo::ReceiverSet<mojom::blink::PresentationService> receivers_;
++  mojo::PendingReceiver<mojom::blink::PresentationConnection> receiver_end_;
++  mojo::PendingRemote<mojom::blink::PresentationConnection> sender_end_;
++  Persistent<HTMLVideoElement> video_;
++};
++
++TEST_F(RemotePlaybackBackForwardCacheTest, ConnectionCastsBeforePageIsShown) {
++  V8TestingScope scope;
++  ScriptPromiseTester prompt(scope.GetScriptState(), Prompt(scope));
++
++  EnterBackForwardCache();
++  EXPECT_CALL(*player_, RequestMediaRemoting());
++  Connect();
++  testing::Mock::VerifyAndClearExpectations(player_);
++  scope.PerformMicrotaskCheckpoint();
++  EXPECT_FALSE(prompt.IsFulfilled());
++  EXPECT_EQ(V8RemotePlaybackState::Enum::kDisconnected, State());
++
++  // The page sees the connection, in order, when it is shown.
++  EXPECT_CALL(*player_, RequestMediaRemoting()).Times(0);
++  EXPECT_CALL(*connecting_, Invoke);
++  RestoreFromBackForwardCache();
++  EXPECT_EQ(V8RemotePlaybackState::Enum::kConnecting, State());
++  scope.PerformMicrotaskCheckpoint();
++  EXPECT_TRUE(prompt.IsFulfilled());
+ }
+ 
++TEST_F(RemotePlaybackBackForwardCacheTest, ShownPageConnectsAtOnce) {
++  V8TestingScope scope;
++  ScriptPromiseTester prompt(scope.GetScriptState(), Prompt(scope));
++
++  EXPECT_CALL(*player_, RequestMediaRemoting());
++  EXPECT_CALL(*connecting_, Invoke);
++  Connect();
++  EXPECT_EQ(V8RemotePlaybackState::Enum::kConnecting, State());
++  scope.PerformMicrotaskCheckpoint();
++  EXPECT_TRUE(prompt.IsFulfilled());
++}
++
++// A cached page that isn't casting stays frozen.
++TEST_F(RemotePlaybackBackForwardCacheTest, FailedConnectionWaitsForPage) {
++  V8TestingScope scope;
++  ScriptPromiseTester prompt(scope.GetScriptState(), Prompt(scope));
++
++  EnterBackForwardCache();
++  EXPECT_CALL(*player_, RequestMediaRemoting()).Times(0);
++  std::move(start_callback_)
++      .Run(nullptr,
++           mojom::blink::PresentationError::New(
++               mojom::blink::PresentationErrorType::UNKNOWN, "failed"));
++  base::RunLoop().RunUntilIdle();
++  scope.PerformMicrotaskCheckpoint();
++  EXPECT_FALSE(prompt.IsRejected());
++
++  RestoreFromBackForwardCache();
++  scope.PerformMicrotaskCheckpoint();
++  EXPECT_TRUE(prompt.IsRejected());
++}
++
+ }  // namespace blink
