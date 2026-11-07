@@ -19,7 +19,9 @@ Downloads are cached in `$PARC_FAIRPLAY_CACHE` (default
 samples its stack and exits with status 3 if the main thread stalls for 15 s,
 or with status 4 after `--time-limit` seconds (default 600). The script kills
 it at 660 s. `--only <text>` plays only the clips whose names contain the
-text. Exit status is the number of failed checks clamped to 1.
+text, and `--muted` mutes every audio renderer at volume 0 (decoding and the
+decoder-log checks are unchanged; nothing plays through the speakers). Exit
+status is the number of failed checks clamped to 1.
 
 ## Key
 
@@ -109,6 +111,16 @@ under the same key ID fails visibly.
 | E-AC-3 | `qec3` | 30/30 packets, no decoder errors; wrong key: 60 |
 | E-AC-3 7.1 (DASH-IF, FA01), with the file's `dec3` | `qec3` | 188/188 packets, 6.016 s, no decoder errors |
 | E-AC-3 7.1 as Chromium delivers it (8 channels, no `dec3`) | `qec3` | 188/188 packets, 6.016 s, no decoder errors, with the box the core builds from rate and channels |
+| FLAC (`fLaC`, Chromium's `bear-flac_frag.mp4`) as Chromium delivers it (STREAMINFO only) | `qflc` | clear: 27/27 frames as `flac`, `OnEnded` at 2.740 s, no decoder errors; protected: 27/27, no decoder errors; wrong key: 328 decoder errors (`ACFLACDecoder`) |
+| Opus (`Opus`, Chromium's `bear-opus.mp4`) as Chromium delivers it (an OpusHead) | none | clear: 137/137 packets as `opus`, `OnEnded` at 2.741 s, no decoder errors |
+
+FLAC and Opus were run with `--muted` (2026-11-07): every audio renderer muted
+at volume 0, which still decodes each packet and logs decoder errors, so
+nothing plays through the speakers. One of four muted runs of the three FLAC
+clips stalled the protected one at 1.88 s with 18 of 27 frames enqueued:
+AVFoundation's audio renderer stopped asking for samples and the clock reached
+the end of what it had. The three later runs passed every check; the cause
+isn't established.
 
 Controls through the same path: Axinom's own H.264 segment as served (144/144
 frames), this program's encryption of H.264 (82/82) and HEVC (82/82), and
@@ -151,6 +163,9 @@ Platform behaviour (checked to fail, so a change would show up):
 - AC-3 and E-AC-3 with their syncframe headers clear (a subsample layout)
   fail every packet exactly like a wrong key, including 7.1 (188/188
   packets). Whole-sample protection, the CMAF form, works.
+- Opus has no protected type: CoreAudio's decoders include `qflc` (FLAC) and
+  `qlac` (ALAC) but no protected Opus one, so protected Opus is refused at
+  the first enqueue.
 - AV1 has no cenc protected type (the description stays `encv`, -12167).
   Encrypted AV1 frame headers fail ("fail to parse av1 header"). Video
   protected with every block encrypted (pattern 0:0) fails about half its

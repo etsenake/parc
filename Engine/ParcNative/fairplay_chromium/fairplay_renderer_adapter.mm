@@ -99,6 +99,10 @@ std::optional<fp::AudioCodec> ToAudioCodec(AudioCodec codec) {
       return fp::AudioCodec::kAC3;
     case AudioCodec::kEAC3:
       return fp::AudioCodec::kEAC3;
+    case AudioCodec::kFLAC:
+      return fp::AudioCodec::kFLAC;
+    case AudioCodec::kOpus:
+      return fp::AudioCodec::kOpus;
     default:
       return std::nullopt;
   }

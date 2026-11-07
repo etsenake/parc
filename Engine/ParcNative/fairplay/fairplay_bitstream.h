@@ -124,6 +124,17 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
 std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, int channels);
 std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, int channels);
 
+// 'dfLa' payload (FLACSpecificBox) from Chromium's FLAC extra data, the
+// 34-byte STREAMINFO block: version and flags 0, then STREAMINFO as the last
+// metadata block. nullopt for another size.
+std::optional<std::vector<uint8_t>> FlacSpecificBoxPayload(const std::vector<uint8_t>& stream_info);
+
+// 'dOps' payload (OpusSpecificBox) from Chromium's Opus extra data, the
+// OpusHead it builds from 'dOps' (little-endian fields after the magic):
+// version 0 and the big-endian fields back, with the channel mapping as given.
+// nullopt for a malformed head.
+std::optional<std::vector<uint8_t>> OpusSpecificBoxPayload(const std::vector<uint8_t>& opus_head);
+
 // The Dolby Vision base-layer compatibility ID for a profile when the stream
 // doesn't say (Chromium carries only profile and level): 0 for profiles 4, 5
 // and 7 (no compatible base layer), 2 (SDR) for 9, the only one it allows;

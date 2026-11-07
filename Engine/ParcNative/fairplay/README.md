@@ -214,8 +214,15 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
   sample exists for Dolby Vision, AV1, HE-AAC or xHE-AAC, so only their
   protected format descriptions are checked, not protected decoding. On this M3, VideoToolbox
   hardware-decodes `avc1`, `hvc1`, `dvh1` and `av01`; CoreAudio has protected
-  decoders for AAC, HE-AAC, HE-AACv2, xHE-AAC, AC-3 and E-AC-3. AV1 needs M3 or
-  later.
+  decoders for AAC, HE-AAC, HE-AACv2, xHE-AAC, AC-3, E-AC-3, FLAC (`qflc`) and
+  ALAC (`qlac`), none for Opus. AV1 needs M3 or later.
+- FLAC and Opus come from Chromium's MP4 parser as the STREAMINFO block and
+  the OpusHead it rebuilds from `dOps`. The core turns them back into `fLaC`
+  with `dfLa` and `Opus` with `dOps` (48 kHz in the sample entry, the input
+  rate in `dOps`), which CoreMedia reads; protected FLAC becomes `qflc`.
+  Protected Opus has no decoder, so it fails at the first enqueue, as it would
+  in Safari. ALAC never reaches the renderer: Chromium's MP4 parser has no
+  `alac` sample entry, so Media Source refuses it before any renderer.
 
 ## M1 constraints from key delivery
 

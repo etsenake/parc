@@ -609,6 +609,45 @@ std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, in
   return Dac3(fscod, 8, 0, acmod, lfeon, 0);
 }
 
+std::optional<std::vector<uint8_t>> FlacSpecificBoxPayload(const std::vector<uint8_t>& stream_info) {
+  constexpr size_t kStreamInfoSize = 34;
+  if (stream_info.size() != kStreamInfoSize) {
+    return std::nullopt;
+  }
+  // Version and flags, then the block header: last block, type 0
+  // (STREAMINFO), 24-bit length.
+  std::vector<uint8_t> out = {0, 0, 0, 0, 0x80, 0, 0, uint8_t(kStreamInfoSize)};
+  out.insert(out.end(), stream_info.begin(), stream_info.end());
+  return out;
+}
+
+std::optional<std::vector<uint8_t>> OpusSpecificBoxPayload(const std::vector<uint8_t>& opus_head) {
+  // "OpusHead", version, channel count, pre-skip (LE16), input sample rate
+  // (LE32), output gain (LE16), channel mapping family, then for a family
+  // other than 0 the stream count, coupled count and one byte per channel.
+  static const uint8_t kMagic[8] = {'O', 'p', 'u', 's', 'H', 'e', 'a', 'd'};
+  constexpr size_t kHeadSize = 19;
+  if (opus_head.size() < kHeadSize || !std::equal(kMagic, kMagic + 8, opus_head.begin())) {
+    return std::nullopt;
+  }
+  const uint8_t channels = opus_head[9];
+  const uint8_t family = opus_head[18];
+  if (!channels || (family != 0 && opus_head.size() < kHeadSize + 2 + size_t(channels))) {
+    return std::nullopt;
+  }
+  std::vector<uint8_t> out = {0, channels};
+  out.push_back(opus_head[11]);  // PreSkip, big-endian.
+  out.push_back(opus_head[10]);
+  for (int i = 15; i >= 12; --i) out.push_back(opus_head[i]);  // InputSampleRate.
+  out.push_back(opus_head[17]);  // OutputGain.
+  out.push_back(opus_head[16]);
+  out.push_back(family);
+  if (family != 0) {
+    out.insert(out.end(), opus_head.begin() + kHeadSize, opus_head.begin() + kHeadSize + 2 + channels);
+  }
+  return out;
+}
+
 int DefaultDolbyVisionCompatibilityId(int profile) {
   return profile == 8 ? 1 : profile == 9 ? 2 : 0;
 }

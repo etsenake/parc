@@ -1055,10 +1055,31 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         entry_type = FourCC('e', 'c', '-', '3');
         children.push_back(MakeBox(FourCC('d', 'e', 'c', '3'), config.extra_data));
         break;
+      case AudioCodec::kFLAC: {
+        std::optional<std::vector<uint8_t>> dfla = FlacSpecificBoxPayload(config.extra_data);
+        if (!dfla) {
+          return Result::Error(Exception::kTypeError, "FLAC config needs its 34-byte STREAMINFO");
+        }
+        entry_type = FourCC('f', 'L', 'a', 'C');
+        children.push_back(MakeBox(FourCC('d', 'f', 'L', 'a'), *dfla));
+        break;
+      }
+      case AudioCodec::kOpus: {
+        std::optional<std::vector<uint8_t>> dops = OpusSpecificBoxPayload(config.extra_data);
+        if (!dops) {
+          return Result::Error(Exception::kTypeError, "Opus config needs an OpusHead");
+        }
+        entry_type = FourCC('O', 'p', 'u', 's');
+        children.push_back(MakeBox(FourCC('d', 'O', 'p', 's'), *dops));
+        break;
+      }
     }
+    // Opus in ISO-BMFF states 48 kHz in the sample entry whatever the input
+    // rate ('dOps' carries that).
+    const uint32_t entry_rate =
+        config.codec == AudioCodec::kOpus ? 48000 : static_cast<uint32_t>(config.sample_rate);
     std::vector<uint8_t> entry =
-        AudioSampleEntry(entry_type, static_cast<uint16_t>(config.channels),
-                         static_cast<uint32_t>(config.sample_rate), children);
+        AudioSampleEntry(entry_type, static_cast<uint16_t>(config.channels), entry_rate, children);
     if (encryption) {
       entry = ProtectSampleEntry(entry, false, *encryption);
     }
@@ -1159,7 +1180,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     audio_config_ = config;
     audio_clear_format_.Reset(nullptr);
     audio_protected_formats_.clear();
-    awaiting_audio_config_ = config.extra_data.empty() && config.codec != AudioCodec::kAAC;
+    // Only AC-3/E-AC-3 build their box from the first syncframe.
+    awaiting_audio_config_ = config.extra_data.empty() &&
+                             (config.codec == AudioCodec::kAC3 || config.codec == AudioCodec::kEAC3);
     if (awaiting_audio_config_) {
       return Result::Ok();
     }

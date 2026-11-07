@@ -819,6 +819,9 @@ fp::VideoConfig ChromiumVideoConfig(const ft::TrackInfo& info) {
   return vc;
 }
 
+// --muted: every audio renderer muted at volume 0, nothing out of the speakers.
+bool g_muted = false;
+
 fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
   fp::AudioConfig ac;
   const uint32_t f = info.original_format;
@@ -828,6 +831,26 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
   ac.framing = aac && ft::AacObjectType(info.codec_config, true) <= 4 ? fp::AudioFraming::kADTS : fp::AudioFraming::kRaw;
   ac.sample_rate = int32_t(info.sample_rate);
   ac.channels = aac ? info.channels : DolbyChannels(info);
+  const std::vector<uint8_t>& c = info.codec_config;
+  if (f == fp::FourCC('f', 'L', 'a', 'C')) {
+    // MP4StreamParser: the STREAMINFO block of 'dfLa' (a short box leaves the
+    // config empty, which the renderer refuses).
+    ac.codec = fp::AudioCodec::kFLAC;
+    ac.extra_data.clear();
+    if (c.size() >= 8 + 34) ac.extra_data.assign(c.begin() + 8, c.begin() + 8 + 34);
+    ac.channels = info.channels;
+  } else if (f == fp::FourCC('O', 'p', 'u', 's')) {
+    // OpusSpecificBox::Parse: "OpusHead" and the 'dOps' fields, little-endian.
+    ac.codec = fp::AudioCodec::kOpus;
+    ac.extra_data.clear();
+    if (c.size() >= 11) {
+      ac.extra_data = {'O', 'p', 'u', 's', 'H', 'e', 'a', 'd', c[0], c[1], c[3], c[2], c[7], c[6], c[5], c[4],
+                       c[9], c[8]};
+      ac.extra_data.insert(ac.extra_data.end(), c.begin() + 10, c.end());
+      ac.channels = c[1];
+      ac.sample_rate = int32_t(uint32_t(c[4]) << 24 | uint32_t(c[5]) << 16 | uint32_t(c[6]) << 8 | c[7]);
+    }
+  }
   ac.encryption.scheme = info.encryption.scheme;
   return ac;
 }
@@ -847,6 +870,11 @@ class Player : public fp::FairPlayRendererClient {
     if (!result.ok()) errors.push_back("SetCdm: " + result.message);
     result = renderer_.Initialize(vc, ac);
     if (!result.ok()) errors.push_back("Initialize: " + result.message);
+    if (g_muted && result.ok() && ac) {
+      // Silent runs: AVFoundation still decodes every packet.
+      renderer_.SetMuted(true);
+      renderer_.SetVolume(0);
+    }
     initialized_ = result.ok();
     layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
     if (layer_) {
@@ -1028,7 +1056,7 @@ struct World {
   std::vector<ClipResult> results;
   // Loaded media.
   Media h264, h264_cbcs_ref, hevc, dv5_dvh1, dv5_dvhe, av1_ref, av1, av1_10bit_ref, av1_10bit, xhe_aac, ac3, eac3,
-      eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc;
+      eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus;
   // The Dolby Vision dvhe test file's own cenc layout (dv5_dvhe holds it
   // decrypted).
   std::vector<std::vector<fp::SubsampleEntry>> dv5_dvhe_layout;
@@ -1131,13 +1159,17 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
       fp::RendererStatus s = w->player->renderer().GetStatus();
       const double wall = *ended_wall;
       const size_t count = clip->media.samples.size();
-      const std::string type = ft::FourCCString(video ? s.video_protected_format : s.audio_protected_format);
+      // A clip that is clear as given (a baseline) plays clear: nothing
+      // protected, and the expected type is the clear format's.
+      const bool clear_given = clip->media.info.encryption.scheme == fp::EncryptionScheme::kUnencrypted;
+      const std::string type = ft::FourCCString(clear_given ? (video ? s.video_format : s.audio_format)
+                                                            : (video ? s.video_protected_format : s.audio_protected_format));
       const fp::RenderingStatus status = video ? s.video : s.audio;
       const std::string apple_error = video ? s.video_error : s.audio_error;
       const bool on_time = *ended_at >= 0 && std::fabs(*ended_at - end) < 0.3;
       const bool rendering = status == fp::RenderingStatus::kRendering;
       const bool clean = w->player->errors.empty() && s.decode_failures == 0;
-      const bool all_protected = s.protected_enqueued == count;
+      const bool all_protected = clear_given ? s.protected_enqueued == 0 : s.protected_enqueued == count;
       const bool frames_ok = !video || (m.available && m.total_frames >= int64_t(count * 9 / 10) &&
                                         m.corrupted_frames == 0);
       const bool type_ok = ("|" + clip->expected_types + "|").find("|" + type + "|") != std::string::npos;
@@ -1176,9 +1208,13 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
         Check(*have_enough && on_time, clip->label + ": reached HAVE_ENOUGH and played to OnEnded at the clip's end",
               evidence);
         Check(rendering && clean, clip->label + ": renderer status rendering, no decode or renderer errors", evidence);
-        Check(all_protected, clip->label + ": every sample went to AVFoundation as a protected sample buffer",
+        Check(all_protected,
+              clip->label + (clear_given ? ": every sample went to AVFoundation clear"
+                                         : ": every sample went to AVFoundation as a protected sample buffer"),
               Format("%llu of %zu", s.protected_enqueued, count));
-        Check(type_ok, clip->label + ": protected format description is Apple's '" + clip->expected_types + "'",
+        Check(type_ok,
+              clip->label + (clear_given ? ": format description is Apple's '" : ": protected format description is Apple's '") +
+                  clip->expected_types + "'",
               "'" + type + "'");
         if (video) {
           Check(frames_ok, clip->label + ": AVFoundation decoded at least 90% of the frames, none corrupted",
@@ -1607,6 +1643,14 @@ void RunAll() {
   AddClip("E-AC-3 7.1 cbcs, whole sample, the file's dec3 given to the renderer", w->eac3_71, audio, "qec3",
           Expect::kPlays, 0, true);
   AddClip("E-AC-3 7.1 cbcs, clear syncframe headers", w->eac3_71, syncframes, "qec3", Expect::kFails);
+  // FLAC and Opus as Chromium's MP4 parser gives them (STREAMINFO, OpusHead).
+  add_loaded("FLAC fLaC clear", w->flac, "flac", Expect::kPlays);
+  AddClip("FLAC fLaC cbcs, whole sample", w->flac, audio, "qflc");
+  AddClip("FLAC fLaC cbcs, wrong key (control)", w->flac, audio, "qflc", Expect::kGarbage, 0x5a);
+  add_loaded("Opus clear", w->opus, "opus", Expect::kPlays);
+  // CoreAudio has no protected Opus decoder (its list has qflc and qlac, no
+  // Opus one), so FairPlay can't carry Opus.
+  AddClip("Opus cbcs, whole sample", w->opus, audio, "", Expect::kFails);
 
   std::vector<Step> steps;
   steps.push_back(Section("FairPlay license for Axinom's published key"));
@@ -1658,6 +1702,8 @@ bool LoadAll(World* w, std::string* error) {
       !LoadChromiumFile(@"noise-xhe-aac.mp4", &w->xhe_aac, error) ||
       !LoadChromiumFile(@"bear-ac3-only-frag.mp4", &w->ac3, error) ||
       !LoadChromiumFile(@"bear-eac3-only-frag.mp4", &w->eac3, error) ||
+      !LoadChromiumFile(@"bear-flac_frag.mp4", &w->flac, error) ||
+      !LoadChromiumFile(@"bear-opus.mp4", &w->opus, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC, 3, &w->aac_lc, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC_HE, 3, &w->he_aac, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 3, &w->he_aac_v2, error)) {
@@ -1701,11 +1747,17 @@ int main(int argc, char** argv) {
     g_world = &world;
     StartWatchdog();
     g_cache_dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"parc-fairplay-cache"];
-    for (int i = 1; i + 1 < argc; i += 2) {
+    for (int i = 1; i < argc; ++i) {
       std::string flag = argv[i];
+      if (flag == "--muted") {
+        g_muted = true;
+        continue;
+      }
+      if (i + 1 >= argc) break;
       if (flag == "--cache") g_cache_dir = @(argv[i + 1]);
       else if (flag == "--time-limit") g_time_limit = atof(argv[i + 1]);
       else if (flag == "--only") g_only = argv[i + 1];
+      ++i;
     }
     [[NSFileManager defaultManager] createDirectoryAtPath:g_cache_dir withIntermediateDirectories:YES attributes:nil
                                                     error:nil];

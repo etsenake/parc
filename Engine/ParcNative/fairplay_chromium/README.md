@@ -147,8 +147,9 @@ EME's false, when there are none), other types reject with NotSupported.
    stays allowed for FairPlay players (Netflix switches audio languages, e.g.
    E-AC-3 to AAC, and video codecs the same way), but only among the codecs
    the renderer plays: `WebMediaPlayerImpl` gives the demuxer a filter
-   (`Demuxer::RestrictCanChangeType`) that accepts AAC, AC-3, E-AC-3, H.264,
-   HEVC and Dolby Vision 5 and 8, so any other codec makes `changeType()`
+   (`Demuxer::RestrictCanChangeType`) that accepts AAC, AC-3, E-AC-3, FLAC,
+   Opus, H.264, HEVC and Dolby Vision 5 and 8, so any other codec makes
+   `changeType()`
    throw NotSupportedError instead of failing playback. The core builds the
    new formats from the next samples, protected ones per key ID.
    `tests/FairPlay/sandbox` switches protected AAC → clear E-AC-3 → protected
@@ -289,10 +290,10 @@ two-state buffering:
   (setMediaKeys before or soon after the first append) attaches them in place
   and restarts once anyway, before showing anything.
 - Dolby Vision with a track the FairPlay Renderer can't play fails where
-  Safari plays it: VP9 video before a switch into Dolby Vision, Opus or
-  Vorbis audio alongside it, or a `changeType()` from Dolby Vision to VP9
-  (which throws NotSupportedError once the FairPlay Renderer plays). The core
-  plays H.264, HEVC, Dolby Vision and AV1 video and AAC, AC-3 and E-AC-3
+  Safari plays it: VP9 video before a switch into Dolby Vision, Vorbis audio
+  alongside it, or a `changeType()` from Dolby Vision to VP9 (which throws
+  NotSupportedError once the FairPlay Renderer plays). The core plays H.264,
+  HEVC, Dolby Vision and AV1 video and AAC, AC-3, E-AC-3, FLAC and Opus
   audio; Safari's AVFoundation path decodes everything its Media Source
   offers. Such a switch into Dolby Vision gets no restart, and fails at the
   switch.

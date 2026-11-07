@@ -253,6 +253,8 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
               break;
             case FourCC('d', 'a', 'c', '3'):
             case FourCC('d', 'e', 'c', '3'):
+            case FourCC('d', 'f', 'L', 'a'):
+            case FourCC('d', 'O', 'p', 's'):
               track->codec_config.assign(c, c + child.payload_size);
               break;
             case FourCC('e', 's', 'd', 's'):
