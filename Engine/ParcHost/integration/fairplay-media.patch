@@ -1919,7 +1919,7 @@
  #include "base/task/bind_post_task.h"
  #include "base/trace_event/trace_event.h"
  #include "media/base/audio_decoder_config.h"
-@@ -47,6 +51,11 @@ std::unique_ptr<media::StreamParser> CreateParserForTypeAndCodecs(
+@@ -47,6 +51,11 @@
      media::MediaLog* media_log) {
    std::vector<std::string> parsed_codec_ids;
    media::SplitCodecs(codecs, &parsed_codec_ids);
@@ -1931,7 +1931,7 @@
    return media::StreamParserFactory::Create(content_type, parsed_codec_ids,
                                              media_log);
  }
-@@ -142,6 +151,60 @@ bool ChunkDemuxerStream::Append(const StreamParser::BufferQueue& buffers) {
+@@ -142,6 +151,60 @@
    return true;
  }
  
@@ -1992,7 +1992,7 @@
  void ChunkDemuxerStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -231,6 +294,7 @@ bool ChunkDemuxerStream::UpdateAudioConfig(const AudioDecoderConfig& config,
+@@ -231,6 +294,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -2000,7 +2000,7 @@
      return true;
    }
  
-@@ -247,6 +311,7 @@ bool ChunkDemuxerStream::UpdateVideoConfig(const VideoDecoderConfig& config,
+@@ -247,6 +311,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -2008,7 +2008,7 @@
      return true;
    }
  
-@@ -312,6 +377,17 @@ bool ChunkDemuxerStream::IsEnabled() const {
+@@ -312,6 +377,17 @@
    return is_enabled_;
  }
  
@@ -2026,7 +2026,7 @@
  void ChunkDemuxerStream::SetEnabled(bool enabled, base::TimeDelta timestamp) {
    base::AutoLock auto_lock(lock_);
  
-@@ -529,9 +605,27 @@ void ChunkDemuxer::Seek(base::TimeDelta time, PipelineStatusCallback cb) {
+@@ -529,9 +605,27 @@
      return;
    }
  
@@ -2054,7 +2054,7 @@
    if (IsSeekWaitingForData_Locked()) {
      DVLOG(1) << "Seek() : waiting for more data to arrive.";
      return;
-@@ -634,6 +728,8 @@ void ChunkDemuxer::CancelPendingSeek(base::TimeDelta seek_time) {
+@@ -634,6 +728,8 @@
  
    AbortPendingReads_Locked();
    SeekAllSources(seek_time);
@@ -2063,7 +2063,7 @@
  
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -643,6 +739,43 @@ void ChunkDemuxer::CancelPendingSeek(base::TimeDelta seek_time) {
+@@ -643,6 +739,43 @@
    RunSeekCB_Locked(PIPELINE_OK);
  }
  
@@ -2107,7 +2107,7 @@
  ChunkDemuxer::Status ChunkDemuxer::AddId(
      const std::string& id,
      std::unique_ptr<AudioDecoderConfig> audio_config) {
-@@ -656,12 +789,13 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(
+@@ -656,12 +789,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -2123,7 +2123,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
                         std::nullopt);
  }
-@@ -679,12 +813,13 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(
+@@ -679,12 +813,13 @@
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -2139,7 +2139,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,17 +831,18 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
+@@ -696,17 +831,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
  
@@ -2161,7 +2161,7 @@
    if (!stream_parser) {
      DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
               << " codecs=" << codecs;
-@@ -762,6 +898,11 @@ ChunkDemuxer::Status ChunkDemuxer::AddIdInternal(
+@@ -762,6 +898,11 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
@@ -2173,7 +2173,7 @@
  
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -774,7 +915,17 @@ ChunkDemuxer::Status ChunkDemuxer::AddIdInternal(
+@@ -774,7 +915,17 @@
  
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
                                      base::Unretained(this), id),
@@ -2192,7 +2192,7 @@
  
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
-@@ -802,7 +953,10 @@ void ChunkDemuxer::SetParseWarningCallback(
+@@ -802,7 +953,10 @@
  void ChunkDemuxer::RemoveId(const std::string& id) {
    DVLOG(1) << __func__ << " id=" << id;
    base::AutoLock auto_lock(lock_);
@@ -2203,7 +2203,7 @@
  
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
-@@ -830,6 +984,7 @@ void ChunkDemuxer::RemoveId(const std::string& id) {
+@@ -830,6 +984,7 @@
      CHECK(stream_found);
    }
    id_to_streams_map_.erase(id);
@@ -2211,88 +2211,74 @@
  }
  
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
-@@ -870,9 +1025,66 @@ void ChunkDemuxer::OnTracksChanged(DemuxerStream::Type track_type,
+@@ -870,35 +1025,221 @@
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
  
-+  // Parc: late SourceBuffers' streams joining (ParcJoinOnTrackChange()).
-+  bool parc_joins = false;
-+  if (track_id) {
-+    parc_joins = parc_joining_tracks_.contains(*track_id) ||
-+                 parc_joined_tracks_.erase(*track_id);
-+  }
 +  const bool is_audio = track_type == DemuxerStream::AUDIO;
 +  const OwnedChunkDemuxerStreamVector& streams =
 +      is_audio ? audio_streams_ : video_streams_;
-+  auto live_stream = [&](const MediaTrack::Id& id) -> ChunkDemuxerStream* {
-+    auto found = track_id_to_demux_stream_map_.find(id);
-+    if (found == track_id_to_demux_stream_map_.end()) {
-+      return nullptr;
-+    }
-+    for (const auto& stream : streams) {
-+      if (stream.get() == found->second) {
-+        return stream.get();
-+      }
-+    }
-+    return nullptr;
-+  };
-+  auto of_type = [&](const MediaTrack::Id& id) {
-+    auto found = track_id_to_demux_stream_map_.find(id);
-+    return found != track_id_to_demux_stream_map_.end() &&
-+           found->second->type() == track_type;
-+  };
    ChunkDemuxerStream* enabled_stream = nullptr;
 -  if (track_id.has_value()) {
-+  for (auto it = parc_joining_tracks_.begin();
-+       it != parc_joining_tracks_.end();) {
-+    if (!of_type(*it)) {
-+      ++it;
-+      continue;
-+    }
-+    ChunkDemuxerStream* stream = live_stream(*it);
-+    if (parc_joins && stream) {
-+      if (parc_unstarted_tracks_.erase(*it)) {
-+        stream->ParcStartAt(curr_time);
-+      }
-+      stream->SetEnabled(true, curr_time);
-+      if (*it != *track_id) {
-+        parc_joined_tracks_.insert(*it);
-+      }
-+    }
-+    it = parc_joining_tracks_.erase(it);
-+  }
-+  if (parc_joins) {
-+    enabled_stream = live_stream(*track_id);
-+    // The named one was removed: the renderer keeps what it plays.
+-    auto it = track_id_to_demux_stream_map_.find(*track_id);
+-    if (it != track_id_to_demux_stream_map_.end()) {
+-      DCHECK(it->second);
+-      DCHECK_EQ(track_type, it->second->type());
+-      it->second->SetEnabled(true, curr_time);
+-      enabled_stream = it->second;
+-    } else {
+-      DVLOG(1) << __func__
+-               << ": Failed to find track with track_id: " << track_id.value();
++  // Parc: WebKit plays every enabled audio track; see
++  // ParcSetEnabledAudioTracks().
++  if (is_audio && parc_safari_media_source_) {
 +    for (const auto& stream : streams) {
++      if (parc_audio_tracks_to_enable_) {
++        stream->SetEnabled(
++            parc_audio_tracks_to_enable_->contains(stream->media_track_id()),
++            curr_time);
++      }
 +      if (!enabled_stream && stream->IsEnabled()) {
 +        enabled_stream = stream.get();
 +      }
-+    }
-+  } else {
-+    std::erase_if(parc_joined_tracks_, of_type);
-+  }
-+
-+  if (track_id.has_value() && !parc_joins) {
-     auto it = track_id_to_demux_stream_map_.find(*track_id);
-     if (it != track_id_to_demux_stream_map_.end()) {
-       DCHECK(it->second);
-@@ -885,20 +1097,178 @@ void ChunkDemuxer::OnTracksChanged(DemuxerStream::Type track_type,
      }
++    parc_audio_tracks_to_enable_.reset();
++  } else {
++    if (track_id.has_value()) {
++      auto it = track_id_to_demux_stream_map_.find(*track_id);
++      if (it != track_id_to_demux_stream_map_.end()) {
++        DCHECK(it->second);
++        DCHECK_EQ(track_type, it->second->type());
++        it->second->SetEnabled(true, curr_time);
++        enabled_stream = it->second;
++      } else {
++        DVLOG(1) << __func__ << ": Failed to find track with track_id: "
++                 << track_id.value();
++      }
++    }
++
++    for (const auto& stream : streams) {
++      if (stream && stream.get() != enabled_stream) {
++        stream->SetEnabled(false, curr_time);
++      }
++    }
    }
++  // Parc: a late SourceBuffer's stream starts where playback is, as WebKit's
++  // player enqueues a track added during playback from the current time.
++  for (const auto& stream : streams) {
++    if (stream->IsEnabled() &&
++        parc_unstarted_tracks_.erase(stream->media_track_id())) {
++      stream->ParcStartAt(curr_time);
++    }
++  }
++  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
  
 -  bool is_audio = track_type == DemuxerStream::AUDIO;
 -  for (const auto& stream : is_audio ? audio_streams_ : video_streams_) {
 -    if (stream && stream.get() != enabled_stream) {
-+  for (const auto& stream : streams) {
-+    if (stream && stream.get() != enabled_stream && !parc_joins) {
-       stream->SetEnabled(false, curr_time);
-     }
-   }
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
-+
+-      stream->SetEnabled(false, curr_time);
 +  // Parc: which SourceBuffers are active decides whether one a purge emptied
 +  // counts toward the media source's buffered ranges
 +  // (SourceBufferState::ParcLeftOutOfMediaSource), as activeSourceBuffers
@@ -2301,8 +2287,8 @@
 +    if (entry.second->ParcPurgedWhileInactive()) {
 +      host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
 +      break;
-+    }
-+  }
+     }
+   }
  
    std::move(change_completed_cb).Run(enabled_stream);
  }
@@ -2387,10 +2373,10 @@
 +  parc_streams_added_cb_ = std::move(streams_added_cb);
 +}
 +
-+void ChunkDemuxer::ParcJoinOnTrackChange(
++void ChunkDemuxer::ParcSetEnabledAudioTracks(
 +    const std::vector<MediaTrack::Id>& tracks) {
 +  base::AutoLock auto_lock(lock_);
-+  parc_joining_tracks_.insert(tracks.begin(), tracks.end());
++  parc_audio_tracks_to_enable_.emplace(tracks.begin(), tracks.end());
 +}
 +
 +bool ChunkDemuxer::ParcMayAddStreams() {
@@ -2461,7 +2447,7 @@
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
                                      base::TimeDelta currentMediaTime,
                                      size_t newDataSize) {
-@@ -913,7 +1283,31 @@ bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
+@@ -913,7 +1254,31 @@
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
@@ -2494,7 +2480,7 @@
  }
  
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
-@@ -1013,6 +1407,7 @@ StreamParser::ParseStatus ChunkDemuxer::RunSegmentParserLoop(
+@@ -1013,6 +1378,7 @@
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
@@ -2502,7 +2488,7 @@
  
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1075,6 +1470,7 @@ bool ChunkDemuxer::AppendChunks(
+@@ -1075,6 +1441,7 @@
          DVLOG(1) << "AppendChunks(): called in unexpected state " << state_;
          return false;
      }
@@ -2510,7 +2496,7 @@
  
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1102,6 +1498,7 @@ void ChunkDemuxer::ResetParserState(const std::string& id,
+@@ -1102,6 +1469,7 @@
    source_state_map_[id]->ResetParserState(append_window_start,
                                            append_window_end,
                                            timestamp_offset);
@@ -2518,7 +2504,7 @@
    // ResetParserState can possibly emit some buffers.
    // Need to check whether seeking can be completed.
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
-@@ -1136,8 +1533,111 @@ void ChunkDemuxer::Remove(const std::string& id,
+@@ -1136,10 +1504,113 @@
    if (start == duration_)
      return;
  
@@ -2532,8 +2518,8 @@
 +  if (parc_safari_init_segment_rules_) {
 +    progress_cb_.Run();
 +  }
-+}
-+
+ }
+ 
 +std::optional<ChunkDemuxer::ParcBufferedState>
 +ChunkDemuxer::ParcGetBufferedState() const {
 +  base::AutoLock auto_lock(lock_);
@@ -2627,10 +2613,12 @@
 +  }
 +  *buffered =
 +      SourceBufferState::ComputeRangesIntersection(active_ranges, ended);
- }
- 
++}
++
  bool ChunkDemuxer::CanChangeType(const std::string& id,
-@@ -1162,11 +1662,30 @@ bool ChunkDemuxer::CanChangeType(const std::string& id,
+                                  const std::string& content_type,
+                                  const std::string& codecs) {
+@@ -1162,11 +1633,30 @@
      return false;
    }
  
@@ -2662,7 +2650,7 @@
    return !!stream_parser;
  }
  
-@@ -1182,7 +1701,7 @@ void ChunkDemuxer::ChangeType(const std::string& id,
+@@ -1182,7 +1672,7 @@
    DCHECK(IsValidId_Locked(id));
  
    std::unique_ptr<media::StreamParser> stream_parser(
@@ -2671,7 +2659,7 @@
    // Caller should query CanChangeType() first to protect from failing this.
    DCHECK(stream_parser);
    source_state_map_[id]->ChangeType(std::move(stream_parser),
-@@ -1244,6 +1763,7 @@ void ChunkDemuxer::SetDuration(double duration) {
+@@ -1244,6 +1734,7 @@
    DCHECK(duration_td.is_positive());
  
    user_specified_duration_ = duration;
@@ -2679,7 +2667,7 @@
    duration_ = duration_td;
    host_->SetDuration(duration_);
  
-@@ -1251,6 +1771,7 @@ void ChunkDemuxer::SetDuration(double duration) {
+@@ -1251,6 +1742,7 @@
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
@@ -2687,7 +2675,7 @@
  }
  
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
-@@ -1332,6 +1853,10 @@ void ChunkDemuxer::MarkEndOfStream(PipelineStatus status) {
+@@ -1332,6 +1824,10 @@
  
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
      RunSeekCB_Locked(PIPELINE_OK);
@@ -2698,7 +2686,7 @@
  }
  
  void ChunkDemuxer::UnmarkEndOfStream() {
-@@ -1440,6 +1965,10 @@ void ChunkDemuxer::OnSourceInitDone(
+@@ -1440,6 +1936,10 @@
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
@@ -2709,7 +2697,7 @@
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1488,6 +2017,59 @@ void ChunkDemuxer::OnSourceInitDone(
+@@ -1488,6 +1988,57 @@
    RunInitCB_Locked(PIPELINE_OK);
  }
  
@@ -2747,12 +2735,10 @@
 +    if (!stream->IsEnabled()) {
 +      continue;
 +    }
-+    ParcAddedTrack& track = tracks.emplace_back(
-+        ParcAddedTrack{stream->type(), stream->media_track_id()});
-+    parc_unstarted_tracks_.insert(track.id);
++    tracks.push_back({stream->type(), stream->media_track_id()});
++    parc_unstarted_tracks_.insert(stream->media_track_id());
 +    if (stream->type() == DemuxerStream::AUDIO) {
-+      track.mixes = other_audio;
-+      if (!track.mixes) {
++      if (!other_audio) {
 +        added.has_audio = true;
 +        added.audio_decoder_config = stream->audio_decoder_config();
 +      }
@@ -2769,7 +2755,7 @@
  // static
  MediaTrack::Id ChunkDemuxer::GenerateMediaTrackId() {
    static unsigned g_track_count = 0;
-@@ -1523,8 +2105,19 @@ ChunkDemuxerStream* ChunkDemuxer::CreateDemuxerStream(
+@@ -1523,8 +2074,22 @@
    DCHECK(track_id_to_demux_stream_map_.find(media_track_id) ==
           track_id_to_demux_stream_map_.end());
    track_id_to_demux_stream_map_[media_track_id] = stream.get();
@@ -2783,6 +2769,9 @@
 +          return other->type() == DemuxerStream::AUDIO;
 +        });
 +  }
++  if (enabled && type == DemuxerStream::AUDIO && parc_audio_tracks_to_enable_) {
++    parc_audio_tracks_to_enable_->insert(media_track_id);
++  }
    id_to_streams_map_[source_id].push_back(stream.get());
 -  stream->SetEnabled(owning_vector->empty(), base::TimeDelta());
 +  stream->SetEnabled(enabled, base::TimeDelta());
@@ -2790,7 +2779,7 @@
    owning_vector->push_back(std::move(stream));
    return owning_vector->back().get();
  }
-@@ -1598,6 +2191,13 @@ Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges_Locked() const {
+@@ -1598,6 +2163,13 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -2804,7 +2793,7 @@
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
  
-@@ -1605,6 +2205,7 @@ Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges_Locked() const {
+@@ -1605,6 +2177,7 @@
  }
  
  void ChunkDemuxer::StartReturningData() {
@@ -2812,7 +2801,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->StartReturningData();
-@@ -1612,6 +2213,7 @@ void ChunkDemuxer::StartReturningData() {
+@@ -1612,6 +2185,7 @@
  }
  
  void ChunkDemuxer::AbortPendingReads_Locked() {
@@ -2820,18 +2809,16 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +2221,10 @@ void ChunkDemuxer::AbortPendingReads_Locked() {
+@@ -1619,6 +2193,8 @@
  }
  
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
 +  parc_seek_time_ = seek_time;
 +  parc_unstarted_tracks_.clear();
-+  // A queued change runs before a seek, so these were coalesced away.
-+  parc_joined_tracks_.clear();
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +2256,28 @@ void ChunkDemuxer::RunInitCB_Locked(PipelineStatus status) {
+@@ -1650,6 +2226,28 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -2878,7 +2865,7 @@
  #include "media/base/ranges.h"
  #include "media/base/stream_parser.h"
  #include "media/filters/source_buffer_parse_warnings.h"
-@@ -74,6 +76,27 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
+@@ -74,6 +76,27 @@
    void Remove(base::TimeDelta start, base::TimeDelta end,
                base::TimeDelta duration);
  
@@ -2906,7 +2893,7 @@
    // If the buffer is full, attempts to try to free up space, as specified in
    // the "Coded Frame Eviction Algorithm" in the Media Source Extensions Spec.
    // Returns false iff buffer is still full after running eviction.
-@@ -137,6 +160,10 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
+@@ -137,6 +160,10 @@
    bool SupportsConfigChanges() override;
  
    bool IsEnabled() const;
@@ -2917,7 +2904,7 @@
    void SetEnabled(bool enabled, base::TimeDelta timestamp);
  
    // Sets the memory limit, in bytes, on the SourceBufferStream.
-@@ -198,6 +225,8 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
+@@ -198,6 +225,8 @@
    State state_ GUARDED_BY(lock_);
    ReadCB read_cb_ GUARDED_BY(lock_);
    bool is_enabled_ GUARDED_BY(lock_);
@@ -2926,7 +2913,7 @@
  };
  
  // Demuxer implementation that allows chunks of media data to be passed
-@@ -248,6 +277,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+@@ -248,6 +277,10 @@
    // associated JS method calls.
    void StartWaitingForSeek(base::TimeDelta seek_time) override;
    void CancelPendingSeek(base::TimeDelta seek_time) override;
@@ -2937,18 +2924,19 @@
  
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -293,6 +326,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+@@ -293,7 +326,11 @@
    // Removed an ID & associated resources that were previously added with
    // AddId().
    void RemoveId(const std::string& id);
 +  using ParcSourceKeyCB = base::RepeatingCallback<void(
 +      const std::string&, const std::vector<uint8_t>&)>;
 +  void ParcSetSourceKeyCallback(ParcSourceKeyCB callback);
-+
  
++
    // Gets the currently buffered ranges for the specified ID.
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
-@@ -313,6 +350,53 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+ 
+@@ -313,6 +350,52 @@
    void SetPlaybackRate(double rate) override {}
  
    void DisableCanChangeType() override;
@@ -2977,13 +2965,10 @@
 +  // (StreamParserFactory::ParcCreateWithoutCodecs()), and read types and
 +  // codecs as Safari does (ParcSafariMediaSourceType()).
 +  void ParcSetSafariInitSegmentRules(bool safari);
-+  // Parc: a stream enabled by a SourceBuffer added after initialization;
-+  // |mixes| for audio enabled beside another enabled audio stream, which
-+  // WebKit plays mixed with it.
++  // Parc: a stream enabled by a SourceBuffer added after initialization.
 +  struct ParcAddedTrack {
 +    DemuxerStream::Type type;
 +    MediaTrack::Id id;
-+    bool mixes = false;
 +  };
 +  using ParcStreamsAddedCB =
 +      base::RepeatingCallback<void(const PipelineMetadata& added,
@@ -2991,18 +2976,20 @@
 +  // Parc: lets AddId() succeed after initialization, as WebKit's MediaSource
 +  // adds a SourceBuffer whenever it is open. |streams_added_cb| runs, posted
 +  // by the caller, when such a SourceBuffer's first init segment enables
-+  // streams: |tracks|, and in |added| the metadata of those that don't mix.
++  // streams: |tracks|, and in |added| the metadata of the types that had no
++  // enabled stream. The pipeline's next track change of a type starts that
++  // type's added streams at its time, unless a seek started them since.
 +  void ParcAllowSourceBuffersAfterInit(ParcStreamsAddedCB streams_added_cb);
-+  // Parc: the next track change naming one of |tracks| (reported by
-+  // |streams_added_cb|) joins every one of them of its type beside the
-+  // enabled streams, which stay enabled (they play together), each started at
-+  // that change's time unless a seek started it since. A change naming
-+  // another track of the type drops them.
-+  void ParcJoinOnTrackChange(const std::vector<MediaTrack::Id>& tracks);
++  // Parc: the audio tracks the element has enabled, every one of which
++  // WebKit plays (SourceBufferPrivateAVFObjC::audioTrackDidChangeEnabled).
++  // Under ParcSetSafariMediaSource() the pipeline's next audio track change
++  // enables exactly these, whichever track it names; one with none keeps the
++  // enabled streams. Called on the main thread before that change.
++  void ParcSetEnabledAudioTracks(const std::vector<MediaTrack::Id>& tracks);
  
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -379,6 +463,34 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+@@ -379,6 +462,34 @@
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
  
@@ -3037,7 +3024,7 @@
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
    // |content_type| indicates the ContentType of the MIME type for the data that
-@@ -491,6 +603,15 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+@@ -491,6 +602,15 @@
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -3053,7 +3040,7 @@
  
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -550,6 +671,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+@@ -550,6 +670,7 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
    base::OnceClosure open_cb_;
    const base::RepeatingClosure progress_cb_;
@@ -3061,7 +3048,7 @@
    EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
  
    // MediaLog for reporting messages and properties to debug content and engine.
-@@ -597,6 +719,79 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
+@@ -597,6 +718,77 @@
        track_id_to_demux_stream_map_;
  
    bool supports_change_type_ = true;
@@ -3104,13 +3091,11 @@
 +  ParcStreamsAddedCB parc_streams_added_cb_;
 +  bool parc_returning_data_ = false;
 +  base::TimeDelta parc_seek_time_;
-+  // Parc: see ParcJoinOnTrackChange(); the tracks a change joined beside the
-+  // one it named, whose own queued change is a join too (until the next
-+  // seek, when it can only have been coalesced away); and the tracks
-+  // reported by |parc_streams_added_cb_| that no seek started since.
-+  std::set<MediaTrack::Id> parc_joining_tracks_;
-+  std::set<MediaTrack::Id> parc_joined_tracks_;
++  // Parc: the tracks reported by |parc_streams_added_cb_| that no seek
++  // started since; and see ParcSetEnabledAudioTracks(), which an audio
++  // stream enabled after it joins.
 +  std::set<MediaTrack::Id> parc_unstarted_tracks_;
++  std::optional<std::set<MediaTrack::Id>> parc_audio_tracks_to_enable_;
 +
 +  // Parc: see ParcSetSafariMediaSource(). Guarded by `lock_`.
 +  bool parc_safari_media_source_ = false;
@@ -5509,11 +5494,10 @@
  namespace blink {
  
  namespace {
-@@ -167,6 +182,51 @@
-   sink->SwitchOutputDevice(device_id,
+@@ -168,6 +183,51 @@
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, Dolby Vision profile 8, which it plays
@@ -5558,9 +5542,10 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kDisableBackgroundMediaSuspend)) {
 @@ -356,7 +416,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
@@ -5575,7 +5560,7 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -433,11 +498,142 @@
+@@ -433,12 +498,143 @@
  
  }  // namespace
  
@@ -5632,7 +5617,7 @@
  STATIC_ASSERT_ENUM(WebMediaPlayer::kCorsModeAnonymous, UrlData::CORS_ANONYMOUS);
  STATIC_ASSERT_ENUM(WebMediaPlayer::kCorsModeUseCredentials,
                     UrlData::CORS_USE_CREDENTIALS);
-+
+ 
 +// Parc: runs the pipeline's main-thread tasks in order on the frame's media
 +// task runner, as Chromium does, except that while the player casts they run
 +// on `casting_task_runner_`, which a frozen frame (the back/forward cache)
@@ -5715,9 +5700,10 @@
 +  uint64_t next_id_ GUARDED_BY(lock_) = 0;
 +  bool casting_ GUARDED_BY(lock_) = false;
 +};
- 
++
  WebMediaPlayerImpl::WebMediaPlayerImpl(
      WebLocalFrame* frame,
+     MediaPlayerClient* client,
 @@ -470,7 +666,15 @@
      std::unique_ptr<media::Demuxer> demuxer_override,
      scoped_refptr<ThreadSafeBrowserInterfaceBrokerProxy> remote_interfaces)
@@ -5790,7 +5776,7 @@
      demuxer_manager_->StopPreloading();
    }
  
-@@ -1109,10 +1326,37 @@
+@@ -1109,20 +1326,65 @@
    UpdatePlayState();
  }
  
@@ -5818,17 +5804,18 @@
 +      base::Seconds(seconds),
 +      std::exchange(parc_fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
-+}
-+
+ }
+ 
 +void WebMediaPlayerImpl::ParcFastSeek(double seconds,
 +                                      double tolerance_before) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_fast_seek_tolerance_ = base::Seconds(tolerance_before);
 +  Seek(seconds);
- }
- 
++}
++
  void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-@@ -1121,8 +1365,26 @@
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   TRACE_EVENT2("media", "WebMediaPlayerImpl::DoSeek", "target",
                 time.InSecondsF(), "id", media_player_id_);
  
    ReadyState old_state = ready_state_;
@@ -5884,12 +5871,35 @@
  
    MaybeUpdateBufferSizesForPlayback();
  }
-@@ -1421,6 +1693,24 @@
-     return std::numeric_limits<double>::quiet_NaN();
+@@ -1351,6 +1623,24 @@
+   pipeline_controller_->OnEnabledAudioTracksChanged(media_track_id);
+ }
  
-   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
++// Parc: Safari's Media Source plays every enabled audio track; the
++// pipeline's change enables them all in the demuxer, and the renderer plays
++// each one it enables.
++void WebMediaPlayerImpl::ParcEnabledAudioTracksChanged(
++    const std::vector<WebMediaPlayer::TrackId>& enabled_track_ids) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++#if BUILDFLAG(IS_MAC)
++  if (parc_chunk_demuxer_ && PresentsParcSafariIdentity()) {
++    std::vector<media::MediaTrack::Id> ids;
++    for (const WebMediaPlayer::TrackId& id : enabled_track_ids) {
++      ids.push_back(*ConvertTrackType(id));
++    }
++    parc_chunk_demuxer_->ParcSetEnabledAudioTracks(ids);
++  }
++#endif  // BUILDFLAG(IS_MAC)
++  WebMediaPlayer::ParcEnabledAudioTracksChanged(enabled_track_ids);
 +}
 +
+ void WebMediaPlayerImpl::SelectedVideoTrackChanged(
+     std::optional<WebMediaPlayer::TrackId> selected_track_id) {
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+@@ -1423,6 +1713,24 @@
+   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
+ }
+ 
 +double WebMediaPlayerImpl::ParcStartDate() const {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
@@ -5906,15 +5916,15 @@
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
 +  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
- }
- 
- base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-@@ -1496,6 +1786,21 @@
- 
-   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
-     return WebTimeRanges();
-+  }
++}
 +
+ base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ 
+@@ -1498,6 +1806,21 @@
+     return WebTimeRanges();
+   }
+ 
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -5928,10 +5938,12 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-   }
- 
++  }
++
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1665,6 +1970,35 @@
+     return WebTimeRanges();
+   }
+@@ -1665,6 +1988,35 @@
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
@@ -5967,7 +5979,7 @@
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
    // http://crbug.com/40407494#comment8.
-@@ -1695,6 +2029,116 @@
+@@ -1695,6 +2047,116 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -6084,12 +6096,10 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1726,6 +2170,34 @@
- void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
-                                        media::MediaTrack::State state) {
+@@ -1728,6 +2190,34 @@
    client_->SetTrackState(track, state);
-+}
-+
+ }
+ 
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -6116,10 +6126,12 @@
 +    media::ParcInbandAudioTrackEnabledCB set_enabled) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
- }
- 
++}
++
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -1777,6 +2249,416 @@
+ 
+ UrlData::CacheMode TranslateCacheMode(bool always_disable,
+@@ -1777,6 +2267,416 @@
  }
  #endif
  
@@ -6536,7 +6548,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2702,198 @@
+@@ -1820,11 +2720,191 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -6632,10 +6644,8 @@
 +// for each to the playing ones, every enabled audio track mixed
 +// (AudioVideoRendererAVFObjC::addTrack), and waits for their data at the
 +// current time. The pipeline's track change does that here: the FairPlay
-+// Renderer and RendererImpl (clear streams) take the streams in place.
-+// RendererImpl plays one audio stream, so it keeps the one it has rather than
-+// mix another. Otherwise the pipeline restarts into a renderer made with
-+// every stream. currentTime, paused and
++// Renderer and RendererImpl take the streams in place. Otherwise the pipeline
++// restarts into a renderer made with every stream. currentTime, paused and
 +// playbackRate stay, and the renderer's buffering raises readyState again.
 +void WebMediaPlayerImpl::ParcOnSourceBufferStreamsAdded(
 +    const media::PipelineMetadata& added,
@@ -6664,51 +6674,46 @@
 +    UpdatePlayState();
 +    return;
 +  }
-+  // RendererImpl takes clear streams; an encrypted one restarts into a
-+  // renderer that waits for its CDM (or the FairPlay Renderer it needs).
-+  const bool fairplay = renderer_type_ == media::RendererType::kFairPlay;
++  // RendererImpl takes the CDM it has or waits for one; a stream that needs
++  // the FairPlay Renderer's CDM restarts into that renderer.
++  media::CdmContextRef* cdm = pending_cdm_context_ref_
++                                  ? pending_cdm_context_ref_.get()
++                                  : cdm_context_ref_.get();
++  const bool fairplay_cdm =
++      cdm && cdm->GetCdmContext()->RequiresFairPlayRenderer();
++  const bool encrypted =
++      (added.has_audio && added.audio_decoder_config.is_encrypted()) ||
++      (added.has_video && added.video_decoder_config.is_encrypted());
 +  const bool joins =
-+      fairplay ||
++      renderer_type_ == media::RendererType::kFairPlay ||
 +      (renderer_type_ == media::RendererType::kRendererImpl &&
-+       !(added.has_audio && added.audio_decoder_config.is_encrypted()) &&
-+       !(added.has_video && added.video_decoder_config.is_encrypted()));
-+  std::vector<media::ChunkDemuxer::ParcAddedTrack> joining;
-+  for (const media::ChunkDemuxer::ParcAddedTrack& track : tracks) {
-+    if (fairplay || !track.mixes) {
-+      joining.push_back(track);
-+    }
-+  }
-+  if (!joining.empty()) {
-+    parc_awaits_added_streams_renderer_ = true;
-+    // The renderer has no samples or frame of them yet, as after a seek
-+    // (ParcMonitorSourceBuffers).
-+    parc_renderer_ready_ = false;
-+    parc_renderer_has_enough_ = false;
-+    delegate_->ClearStaleFlag(delegate_id_);
-+  }
++       !(encrypted && fairplay_cdm));
++  parc_awaits_added_streams_renderer_ = true;
++  // The renderer has no samples or frame of them yet, as after a seek
++  // (ParcMonitorSourceBuffers).
++  parc_renderer_ready_ = false;
++  parc_renderer_has_enough_ = false;
++  delegate_->ClearStaleFlag(delegate_id_);
 +  if (ready_state_ > WebMediaPlayer::kReadyStateHaveCurrentData) {
 +    // Warning: This call may be re-entrant.
 +    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
 +  }
-+  if (joining.empty()) {
-+    UpdatePlayState();
-+    return;
-+  }
 +  if (joins) {
 +    // Also while suspended: the renderer it resumes into is made with them.
-+    // The controller keeps one pending change per type, so the demuxer
-+    // joins every requested track of the type the change names.
-+    std::vector<media::MediaTrack::Id> ids;
-+    for (const media::ChunkDemuxer::ParcAddedTrack& track : joining) {
-+      ids.push_back(track.id);
-+    }
-+    parc_chunk_demuxer_->ParcJoinOnTrackChange(ids);
-+    for (const media::ChunkDemuxer::ParcAddedTrack& track : joining) {
-+      if (track.type == media::DemuxerStream::AUDIO) {
-+        pipeline_controller_->OnEnabledAudioTracksChanged(track.id);
-+      } else {
-+        pipeline_controller_->OnSelectedVideoTrackChanged(track.id);
++    // The demuxer starts every added stream of the type a change names.
++    std::optional<media::MediaTrack::Id> audio;
++    std::optional<media::MediaTrack::Id> video;
++    for (const media::ChunkDemuxer::ParcAddedTrack& track : tracks) {
++      auto& first = track.type == media::DemuxerStream::AUDIO ? audio : video;
++      if (!first) {
++        first = track.id;
 +      }
++    }
++    if (audio) {
++      pipeline_controller_->OnEnabledAudioTracksChanged(audio);
++    }
++    if (video) {
++      pipeline_controller_->OnSelectedVideoTrackChanged(video);
 +    }
 +    UpdatePlayState();
 +  } else if (pipeline_controller_->IsPipelineSuspended()) {
@@ -6735,7 +6740,7 @@
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -1835,17 +2904,64 @@
+@@ -1835,17 +2915,64 @@
    // If the CDM is set from the constructor there is no promise
    // (`set_cdm_result_`) to fulfill.
    if (success) {
@@ -6762,10 +6767,6 @@
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
      }
--
--    return;
--  }
--
 +#if BUILDFLAG(IS_MAC)
 +    if (client_->PresentsParcSafariIdentity()) {
 +      parc_cdm_event_registration_ =
@@ -6783,10 +6784,10 @@
 +    }
 +    ParcRestartIntoFairPlayIfNeeded();
 +#endif  // BUILDFLAG(IS_MAC)
-+
-+    return;
-+  }
-+
+ 
+     return;
+   }
+ 
 +#if BUILDFLAG(IS_MAC)
 +  for (auto& [id, key] : parc_source_keys_)
 +    key.check = ++parc_source_key_check_;
@@ -6804,7 +6805,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1900,6 +3016,80 @@
+@@ -1900,8 +3027,82 @@
    }
  
    attempting_suspended_start_ = false;
@@ -6830,8 +6831,8 @@
 +    ParcFinishUrlSeekAtFrame();
 +  }
 +  ParcMonitorSourceBuffers();
-+}
-+
+ }
+ 
 +bool WebMediaPlayerImpl::ParcUrlSeekKeepsReadyState(
 +    base::TimeDelta time) const {
 +  return load_type_ == kLoadTypeURL && client_->PresentsParcSafariIdentity() &&
@@ -6882,10 +6883,12 @@
 +  }
 +  should_notify_time_changed_ = false;
 +  client_->TimeChanged();
- }
- 
++}
++
  void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
-@@ -1911,6 +3101,7 @@
+   media_metrics_provider_->OnStarted(status);
+ }
+@@ -1911,6 +3112,7 @@
    media_log_->AddEvent<MediaLogEvent::kSuspended>();
  
    pending_oneshot_suspend_ = false;
@@ -6893,7 +6896,7 @@
  
    if (attempting_suspended_start_) {
      DCHECK(pipeline_controller_->IsSuspended());
-@@ -1988,6 +3179,27 @@
+@@ -1988,6 +3190,27 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -6921,7 +6924,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2107,8 +3319,20 @@
+@@ -2107,8 +3330,20 @@
    if (!pipeline_controller_->IsStable())
      return;
  
@@ -6943,7 +6946,7 @@
      client_->TimeChanged();
    }
  
-@@ -2135,20 +3359,37 @@
+@@ -2135,20 +3370,37 @@
  
    MaybeSetContainerNameForMetrics();
  
@@ -6988,7 +6991,7 @@
  
      if (overlay_enabled_) {
        // SurfaceView doesn't support rotated video, so transition back if
-@@ -2197,6 +3438,12 @@
+@@ -2197,6 +3449,12 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -7001,7 +7004,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2210,6 +3457,9 @@
+@@ -2210,6 +3468,9 @@
    bridge_ = std::move(create_bridge_callback_)
                  .Run(this, compositor_->GetUpdateSubmissionStateCallback());
    bridge_->CreateSurfaceLayer();
@@ -7011,7 +7014,7 @@
  
    // TODO(tmathmeyer) does this need support for the reflection transformation
    // as well?
-@@ -2238,6 +3488,16 @@
+@@ -2238,6 +3499,16 @@
  void WebMediaPlayerImpl::OnBufferingStateChange(
      media::BufferingState state,
      media::BufferingStateChangeReason reason) {
@@ -7028,7 +7031,7 @@
    OnBufferingStateChangeInternal(state, reason, false);
  }
  
-@@ -2283,7 +3543,7 @@
+@@ -2283,7 +3554,7 @@
        pipeline_metadata_.natural_size, cdm_config_,
        frame_->GetTaskRunner(TaskType::kInternalMedia));
  
@@ -7037,7 +7040,7 @@
      video_decode_stats_reporter_->OnHidden();
    } else {
      video_decode_stats_reporter_->OnShown();
-@@ -2312,9 +3572,11 @@
+@@ -2312,9 +3583,11 @@
      delegate_->ClearStaleFlag(delegate_id_);
      UpdatePlayState();
    } else if (ready_state_ == ReadyState::kReadyStateHaveFutureData &&
@@ -7050,7 +7053,7 @@
  }
  
  bool WebMediaPlayerImpl::CanPlayThrough() {
-@@ -2339,7 +3601,7 @@
+@@ -2339,7 +3612,7 @@
  
    return buffered_data_source_host_->CanPlayThrough(
        base::Seconds(CurrentTime()), base::Seconds(Duration()),
@@ -7059,7 +7062,7 @@
  }
  
  void WebMediaPlayerImpl::OnBufferingStateChangeInternal(
-@@ -2362,9 +3624,41 @@
+@@ -2362,9 +3635,41 @@
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
  
@@ -7101,7 +7104,7 @@
      // The SetReadyState() call below may clear
      // `skip_metrics_due_to_startup_suspend_` so report this first.
      if (!have_reported_time_to_play_ready_ &&
-@@ -2379,8 +3673,11 @@
+@@ -2379,8 +3684,11 @@
      }
  
      // Warning: This call may be re-entrant.
@@ -7115,7 +7118,7 @@
  
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
-@@ -2396,8 +3693,11 @@
+@@ -2396,8 +3704,11 @@
        }
      }
  
@@ -7129,7 +7132,7 @@
        should_notify_time_changed_ = false;
        client_->TimeChanged();
      }
-@@ -2434,8 +3734,11 @@
+@@ -2434,8 +3745,11 @@
  
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
@@ -7143,7 +7146,7 @@
    }
  
    UpdatePlayState();
-@@ -2453,6 +3756,7 @@
+@@ -2453,6 +3767,7 @@
  
    if (watch_time_reporter_)
      watch_time_reporter_->OnDurationChanged(GetPipelineMediaDuration());
@@ -7151,7 +7154,7 @@
  }
  
  void WebMediaPlayerImpl::OnWaiting(media::WaitingReason reason) {
-@@ -2462,6 +3766,23 @@
+@@ -2462,6 +3777,23 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -7175,7 +7178,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -2575,6 +3896,12 @@
+@@ -2575,6 +3907,12 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK_NE(ready_state_, WebMediaPlayer::kReadyStateHaveNothing);
  
@@ -7188,7 +7191,7 @@
    const bool codec_change =
        pipeline_metadata_.video_decoder_config.codec() != config.codec();
    const bool codec_profile_change =
-@@ -2640,7 +3967,105 @@
+@@ -2640,9 +3978,107 @@
    UpdateSecondaryProperties();
  }
  
@@ -7281,7 +7284,7 @@
 +}
 +
  void WebMediaPlayerImpl::OnPageHidden() {
-+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  // Parc: the delegate tells the page of the frame that made the player, which
 +  // a player following its element's page (ParcSetPageHidden()) ignores.
 +  if (parc_page_hidden_.has_value()) {
@@ -7289,16 +7292,17 @@
 +  }
 +  ParcPageHidden();
 +}
-+
-+void WebMediaPlayerImpl::ParcPageHidden() {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
  
++void WebMediaPlayerImpl::ParcPageHidden() {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++
    // Backgrounding a video requires a user gesture to resume playback.
-@@ -2678,6 +4103,14 @@
- }
+   if (IsPageHidden()) {
+     allow_background_video_playback_ = false;
+@@ -2679,6 +4115,14 @@
  
  void WebMediaPlayerImpl::OnPageShown() {
-+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  if (parc_page_hidden_.has_value()) {
 +    return;
 +  }
@@ -7306,10 +7310,11 @@
 +}
 +
 +void WebMediaPlayerImpl::ParcPageShown() {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
    background_pause_timer_.Stop();
  
-@@ -3018,11 +4451,46 @@
+   // Foreground videos don't require user gesture to continue playback.
+@@ -3018,12 +4462,47 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -7335,7 +7340,7 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
-+
+ 
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -7353,10 +7358,11 @@
 +  // The renderer a replacement restarted into has the new CDM.
 +  parc_replaced_cdm_context_ref_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +4506,14 @@
+     client_->DidUseAudioServiceChange(new_uses_audio_service);
+@@ -3038,6 +4517,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -7371,7 +7377,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +4629,27 @@
+@@ -3153,6 +4640,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -7399,7 +7405,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +4667,11 @@
+@@ -3170,6 +4678,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -7411,7 +7417,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3182,6 +4684,11 @@
+@@ -3182,6 +4695,11 @@
  }
  
  void WebMediaPlayerImpl::OnTimeUpdate() {
@@ -7423,7 +7429,7 @@
    // When seeking the current time can go beyond the duration so we should
    // cap the current time at the duration.
    base::TimeDelta duration = GetPipelineMediaDuration();
-@@ -3189,9 +4696,17 @@
+@@ -3189,9 +4707,17 @@
    if (current_time > duration)
      current_time = duration;
  
@@ -7443,7 +7449,7 @@
  
    media_session::MediaPosition new_position(effective_playback_rate, duration,
                                              current_time, ended_);
-@@ -3293,8 +4808,11 @@
+@@ -3293,8 +4819,11 @@
      bool is_in_picture_in_picture) {
    PlayState result;
  
@@ -7457,7 +7463,7 @@
    bool is_stale = delegate_->IsStale(delegate_id_);
  
    if (stale_state_override_for_testing_.has_value() &&
-@@ -3330,8 +4848,22 @@
+@@ -3330,9 +4859,23 @@
    // to kReadyStateHaveMetadata, we require `is_stale` to remain suspended.
    // `is_stale` will be cleared when we receive data which may take us to
    // kReadyStateHaveMetadata.
@@ -7467,7 +7473,7 @@
 -                            paused_ && !seeking_ && !needs_first_frame_;
 +                            paused_ && !seeking_ && !needs_first_frame_ &&
 +                            !is_remote_rendering_;
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: WebKit's readyState rises with a late SourceBuffer's data, paused or
 +  // hidden; here the buffering of the renderer made with its streams raises
@@ -7478,10 +7484,11 @@
 +    can_stay_suspended = false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
-@@ -3530,6 +5062,12 @@
+                         background_suspended || can_stay_suspended;
+@@ -3530,6 +5073,12 @@
      return;
    }
  
@@ -7494,7 +7501,7 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3585,7 +5123,7 @@
+@@ -3585,7 +5134,7 @@
    watch_time_reporter_->OnDominantVisibleContentChanged(
        is_dominant_visible_content_);
  
@@ -7503,7 +7510,7 @@
      watch_time_reporter_->OnHidden();
    } else {
      watch_time_reporter_->OnShown();
-@@ -3635,6 +5173,9 @@
+@@ -3635,6 +5184,9 @@
  
  bool WebMediaPlayerImpl::IsPageHidden() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -7513,7 +7520,7 @@
    return delegate_->IsPageHidden();
  }
  
-@@ -3770,6 +5311,13 @@
+@@ -3770,6 +5322,13 @@
    if (!is_background_video_playback_enabled_)
      return true;
  
@@ -7527,11 +7534,10 @@
    if (is_flinging_)
      return false;
  
-@@ -3792,6 +5340,36 @@
-   if (!is_background_video_track_optimization_supported_) {
+@@ -3793,6 +5352,36 @@
      return false;
    }
-+
+ 
 +  // WebKit's MediaPlayerPrivateAVFoundation::setPageIsVisible and
 +  // MediaPlayerPrivateMediaSourceAVFObjC::updateRendererVisibility change
 +  // presentation without deselecting the video track.
@@ -7561,10 +7567,11 @@
 +    return false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
-@@ -3931,6 +5509,7 @@
+   if (!HasVideo() || !HasAudio()) {
+@@ -3931,6 +5520,7 @@
  
    DCHECK(!is_remote_rendering_);
    is_remote_rendering_ = true;
@@ -7572,7 +7579,7 @@
  
    DCHECK(!disable_pipeline_auto_suspend_);
    disable_pipeline_auto_suspend_ = true;
-@@ -3953,6 +5532,7 @@
+@@ -3953,6 +5543,7 @@
    if (!is_remote_rendering_)
      return;  // Is currently with local renderer.
    is_remote_rendering_ = false;
@@ -7580,7 +7587,7 @@
  
    DCHECK(disable_pipeline_auto_suspend_);
    disable_pipeline_auto_suspend_ = false;
-@@ -4157,6 +5737,10 @@
+@@ -4157,6 +5748,10 @@
      const viz::FrameSinkId& new_parent_frame_sink_id) {
    if (bridge_) {
      bridge_->ReparentFrameSinkHierarchy(new_parent_frame_sink_id);
@@ -7655,7 +7662,16 @@
  
    // paint() the current video frame into |canvas|. This is used to support
    // various APIs and functionalities, including but not limited to: <canvas>,
-@@ -231,6 +246,16 @@
+@@ -218,6 +233,8 @@
+       std::optional<WebMediaPlayer::TrackId> enabled_track_id) override;
+   void SelectedVideoTrackChanged(
+       std::optional<WebMediaPlayer::TrackId> selected_track_id) override;
++  void ParcEnabledAudioTracksChanged(
++      const std::vector<WebMediaPlayer::TrackId>& enabled_track_ids) override;
+ 
+   // Dimensions of the video.
+   gfx::Size NaturalSize() const override;
+@@ -231,6 +248,16 @@
    bool Seeking() const override;
    double Duration() const override;
    virtual double timelineOffset() const;
@@ -7672,7 +7688,7 @@
    bool IsEnded() const override;
  
    // Shared between the WebMediaPlayer and DemuxerManager::Client interfaces.
-@@ -421,6 +446,14 @@
+@@ -421,6 +448,14 @@
    void OnPipelineResumed();
    void OnPipelineSeeked(bool time_updated);
  
@@ -7687,7 +7703,7 @@
    // media::Pipeline::Client overrides.
    void OnError(media::PipelineStatus status) override;
    void OnFallback(media::PipelineStatus status) override;
-@@ -445,6 +478,27 @@
+@@ -445,6 +480,27 @@
    void OnProgress() override;
    void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data) override;
@@ -7715,7 +7731,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +509,51 @@
+@@ -455,6 +511,51 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -7767,11 +7783,10 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -533,6 +632,35 @@
- 
+@@ -534,6 +635,35 @@
    // Called when a CDM has been attached to the |pipeline_|.
    void OnCdmAttached(bool success);
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: whether clear Dolby Vision goes through Media Source (see
 +  // media::Demuxer::ParcSetClearDolbyVisionAllowed()): on a document
@@ -7800,10 +7815,11 @@
 +  static void ParcAddStreams(const media::PipelineMetadata& added,
 +                             media::PipelineMetadata* metadata);
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-@@ -598,6 +726,11 @@
+   //   - toggles the memory usage reporting timer, and
+@@ -598,6 +728,11 @@
    // Returns true if the player's hosting page (WebView) is hidden or closed.
    bool IsPageHidden() const;
  
@@ -7815,7 +7831,7 @@
    // Returns true if the player's host frame is hidden or closed in the host
    // page.
    bool IsFrameHidden() const;
-@@ -758,9 +891,16 @@
+@@ -758,9 +893,16 @@
    // Poster state (for UMA reporting).
    bool has_poster_ = false;
  
@@ -7832,7 +7848,7 @@
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::TaskRunner> worker_task_runner_;
  
-@@ -828,6 +968,12 @@
+@@ -828,6 +970,12 @@
    // changes.
    bool should_notify_time_changed_ = false;
  
@@ -7845,7 +7861,7 @@
    bool overlay_enabled_ = false;
  
    // Cors and Caching flags set during `Load` and used while creating demuxers.
-@@ -885,6 +1031,54 @@
+@@ -885,6 +1033,54 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -7900,7 +7916,7 @@
    scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
  
    // Video rendering members.
-@@ -919,6 +1113,27 @@
+@@ -919,6 +1115,27 @@
    // Whether the EME playback has been blocked waiting for the CDM to be set
    // or waiting for decryption key.
    bool has_waiting_for_key_ = false;
@@ -7928,17 +7944,17 @@
  
    // Tracks if we are currently flinging a video (e.g. in a RemotePlayback
    // session). Used to prevent videos from being paused when hidden.
-@@ -1115,6 +1330,10 @@
+@@ -1114,6 +1331,10 @@
+ 
    // Last rendered status sent to the player from the containing frame.
    bool is_frame_hidden_ = false;
- 
++
 +  // Parc: ParcSetPageHidden()'s state; when set, IsPageHidden() reports it
 +  // instead of the delegate's page.
 +  std::optional<bool> parc_page_hidden_;
-+
+ 
    // Whether we should pause playback when the frame is hidden due to the
    // "media-playback-while-not-visible" permission policy.
-   bool should_pause_when_frame_is_hidden_ = false;
 --- a/third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc
 +++ b/third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc
 @@ -4,14 +4,20 @@
@@ -8233,7 +8249,7 @@
    void OnVideoNaturalSizeChange(const gfx::Size& size) {
      wmpi_->OnVideoNaturalSizeChange(size);
    }
-@@ -573,6 +759,67 @@
+@@ -573,6 +759,68 @@
      wmpi_->OnVideoConfigChange(config);
    }
  
@@ -8247,11 +8263,6 @@
 +    ASSERT_EQ(wmpi_->GetReadyState(),
 +              WebMediaPlayer::kReadyStateHaveEnoughData);
 +    ASSERT_TRUE(wmpi_->Paused());
-+    // The ChunkDemuxer that reports them takes the join.
-+    parc_demuxer_ = std::make_unique<media::ChunkDemuxer>(
-+        base::DoNothing(), base::DoNothing(), base::DoNothing(),
-+        &parc_media_log_);
-+    wmpi_->parc_chunk_demuxer_ = parc_demuxer_.get();
 +    EXPECT_CALL(client_, ReadyStateChanged());
 +    wmpi_->ParcOnSourceBufferStreamsAdded(added, tracks);
 +    EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveMetadata);
@@ -8296,12 +8307,18 @@
 +  bool ParcAwaitsAddedStreamsRenderer() const {
 +    return wmpi_->parc_awaits_added_streams_renderer_;
 +  }
++
++  // Parc: a FairPlay CDM being set, as SetCdmInternal() leaves it.
++  void ParcSetPendingFairPlayCdm() {
++    wmpi_->pending_cdm_context_ref_ =
++        std::make_unique<ParcCdmContextRef>(&parc_fairplay_cdm_context_);
++  }
 +#endif  // BUILDFLAG(IS_MAC)
 +
    WebMediaPlayerImpl::PlayState ComputePlayState() {
      return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
                                                     false);
-@@ -605,8 +852,34 @@
+@@ -605,8 +853,34 @@
  
    bool IsSuspended() { return wmpi_->pipeline_controller_->IsSuspended(); }
  
@@ -8336,7 +8353,7 @@
    int64_t GetDataSourceMemoryUsage() const {
      return wmpi_->demuxer_manager_->GetDataSourceMemoryUsage();
    }
-@@ -730,6 +1003,8 @@
+@@ -730,6 +1004,8 @@
  
    bool IsVideoTrackDisabled() const { return wmpi_->video_track_disabled_; }
  
@@ -8345,7 +8362,7 @@
    bool IsDisableVideoTrackPending() const {
      return !wmpi_->is_background_status_change_cancelled_;
    }
-@@ -910,6 +1185,41 @@
+@@ -910,6 +1186,41 @@
  
    void OnProgress() { wmpi_->OnProgress(); }
  
@@ -8387,7 +8404,7 @@
    void OnCdmCreated(base::RepeatingClosure quit_closure,
                      std::unique_ptr<WebContentDecryptionModule> cdm,
                      media::CreateCdmStatus status) {
-@@ -947,6 +1257,27 @@
+@@ -947,6 +1258,27 @@
      wmpi_->SetCdmInternal(web_cdm_.get());
    }
  
@@ -8415,7 +8432,7 @@
    media::MemoryDumpProviderProxy* GetMainThreadMemDumper() {
      return wmpi_->main_thread_mem_dumper_.get();
    }
-@@ -990,6 +1321,10 @@
+@@ -990,6 +1322,10 @@
    media::MockCdmFactory mock_cdm_factory_{mock_cdm_};
    std::unique_ptr<WebContentDecryptionModule> web_cdm_;
    media::MockCdmContext mock_cdm_context_;
@@ -8426,7 +8443,7 @@
  
    viz::FrameSinkId frame_sink_id_ = viz::FrameSinkId(1, 1);
    viz::LocalSurfaceId local_surface_id_ = viz::LocalSurfaceId(
-@@ -999,6 +1334,12 @@
+@@ -999,6 +1335,12 @@
        viz::SurfaceId(frame_sink_id_, local_surface_id_);
  
    NiceMock<MockWebMediaPlayerDelegate> delegate_;
@@ -8439,7 +8456,7 @@
  
    // Use NiceMock since most tests do not care about this.
    std::unique_ptr<NiceMock<MockSurfaceLayerBridge>> surface_layer_bridge_;
-@@ -1023,12 +1364,42 @@
+@@ -1023,12 +1365,42 @@
    // The WebMediaPlayerImpl's media observer.
    NiceMock<MockMediaObserver> mock_observer_;
  
@@ -8482,7 +8499,7 @@
  TEST_F(WebMediaPlayerImplTest, ConstructAndDestroy) {
    InitializeWebMediaPlayerImpl();
    EXPECT_FALSE(IsSuspended());
-@@ -1796,6 +2167,118 @@
+@@ -1796,6 +2168,118 @@
    wmpi_->SetVolume(1.0);
  }
  
@@ -8601,7 +8618,7 @@
  TEST_F(WebMediaPlayerImplTest, MediaPositionState_Playing) {
    InitializeWebMediaPlayerImpl();
    LoadAndWaitForReadyState(kAudioOnlyTestFile,
-@@ -1809,6 +2292,32 @@
+@@ -1809,6 +2293,32 @@
    wmpi_->OnTimeUpdate();
  }
  
@@ -8634,7 +8651,7 @@
  TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
    InitializeWebMediaPlayerImpl();
    LoadAndWaitForReadyState(kAudioOnlyTestFile,
-@@ -1908,6 +2417,140 @@
+@@ -1908,6 +2418,140 @@
    wmpi_->OnTimeUpdate();
  }
  
@@ -8775,11 +8792,10 @@
  TEST_F(WebMediaPlayerImplTest, NoStreams) {
    InitializeWebMediaPlayerImpl();
    media::PipelineMetadata metadata;
-@@ -1980,21 +2623,335 @@
+@@ -1980,6 +2624,55 @@
    OnWaiting(media::WaitingReason::kNoDecryptionKey);
  }
  
--TEST_F(WebMediaPlayerImplTest, Waiting_SecureSurfaceLost) {
 +#if BUILDFLAG(IS_MAC)
 +// Parc: setMediaKeys(null) on a Safari-identity page detaches its FairPlay
 +// MediaKeys, as WebKit's HTMLMediaElement::setMediaKeys does
@@ -8787,28 +8803,21 @@
 +// the element hears `encrypted` and waits for a key, as WebKit's renderer
 +// without one answers setInitData, until the same MediaKeys come back.
 +TEST_F(WebMediaPlayerImplTest, ParcSafariMediaKeysNullDetachesFairPlayCdm) {
-   InitializeWebMediaPlayerImpl();
++  InitializeWebMediaPlayerImpl();
 +  CreateCdm();
 +  ParcSetFairPlayCdmOnSafariMediaSource();
- 
--  LoadAndWaitForReadyState(kVideoOnlyTestFile,
--                           WebMediaPlayer::kReadyStateHaveFutureData);
--  wmpi_->SetRate(1.0);
--  Play();
++
 +  EXPECT_CALL(encrypted_client_, Encrypted(_, _)).Times(0);
 +  EXPECT_CALL(encrypted_client_, DidBlockPlaybackWaitingForKey()).Times(0);
 +  ParcAppendSinf();
 +  testing::Mock::VerifyAndClearExpectations(&encrypted_client_);
- 
--  EXPECT_FALSE(IsSuspended());
++
 +  Persistent<ParcCdmResult> result = MakeGarbageCollected<ParcCdmResult>();
 +  wmpi_->SetContentDecryptionModule(nullptr, result->Result());
 +  CycleThreads();
 +  EXPECT_TRUE(result->completed);
 +  EXPECT_FALSE(result->failed);
- 
--  OnWaiting(media::WaitingReason::kSecureSurfaceLost);
--  EXPECT_TRUE(IsSuspended());
++
 +  EXPECT_CALL(encrypted_client_,
 +              Encrypted(media::EmeInitDataType::SINF, NonNullNonEmptySpan()));
 +  EXPECT_CALL(encrypted_client_, DidBlockPlaybackWaitingForKey());
@@ -8819,9 +8828,8 @@
 +  EXPECT_CALL(encrypted_client_, Encrypted(_, _)).Times(0);
 +  EXPECT_CALL(encrypted_client_, DidResumePlaybackBlockedForKey());
 +  ParcAppendSinf();
- }
- 
--ACTION(ReportHaveEnough) {
++}
++
 +// Parc: a page without Safari's identity still can't clear its MediaKeys,
 +// FairPlay's included, as Chromium refuses.
 +TEST_F(WebMediaPlayerImplTest, ParcChromeMediaKeysNullStillRefused) {
@@ -8837,20 +8845,13 @@
 +}
 +#endif  // BUILDFLAG(IS_MAC)
 +
-+TEST_F(WebMediaPlayerImplTest, Waiting_SecureSurfaceLost) {
-+  InitializeWebMediaPlayerImpl();
-+
-+  LoadAndWaitForReadyState(kVideoOnlyTestFile,
-+                           WebMediaPlayer::kReadyStateHaveFutureData);
-+  wmpi_->SetRate(1.0);
-+  Play();
-+
-+  EXPECT_FALSE(IsSuspended());
-+
-+  OnWaiting(media::WaitingReason::kSecureSurfaceLost);
-+  EXPECT_TRUE(IsSuspended());
-+}
-+
+ TEST_F(WebMediaPlayerImplTest, Waiting_SecureSurfaceLost) {
+   InitializeWebMediaPlayerImpl();
+ 
+@@ -1994,6 +2687,271 @@
+   EXPECT_TRUE(IsSuspended());
+ }
+ 
 +#if BUILDFLAG(IS_MAC)
 +// WebKit's native HLS player stops waiting only once a session has a request
 +// for the key it waits on, not for another key becoming usable.
@@ -9116,11 +9117,10 @@
 +}
 +#endif  // BUILDFLAG(IS_MAC)
 +
-+ACTION(ReportHaveEnough) {
+ ACTION(ReportHaveEnough) {
    arg0->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
                                 media::BUFFERING_CHANGE_REASON_UNKNOWN);
- }
-@@ -2775,6 +3732,63 @@
+@@ -2775,6 +3733,81 @@
    EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
  }
  
@@ -9148,28 +9148,46 @@
 +  EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
 +}
 +
-+// Parc: a second audio track, which WebKit mixes with the first, doesn't
-+// reach RendererImpl, which plays one audio stream: it keeps the one it has.
-+TEST_F(WebMediaPlayerImplTest, ParcStreamsAddedMixingAudioKeepsRendererImpl) {
++// Parc: a second audio track, which WebKit mixes with the first, joins
++// RendererImpl, which mixes it too (RendererImpl::ParcSyncMixedAudio()).
++TEST_F(WebMediaPlayerImplTest, ParcStreamsAddedMixingAudioJoinsRendererImpl) {
 +  InitializeWebMediaPlayerImpl();
 +  LoadAndWaitForReadyState(kAudioOnlyTestFile,
 +                           WebMediaPlayer::kReadyStateHaveEnoughData);
 +
 +  ParcAddStreamsWithoutRestart(
 +      media::PipelineMetadata(),
-+      {{media::DemuxerStream::AUDIO, media::MediaTrack::Id("2"),
-+        /*mixes=*/true}});
-+  EXPECT_FALSE(ParcAwaitsAddedStreamsRenderer());
++      {{media::DemuxerStream::AUDIO, media::MediaTrack::Id("2")}});
++  EXPECT_TRUE(ParcAwaitsAddedStreamsRenderer());
 +}
 +
-+// Parc: an encrypted stream doesn't join RendererImpl, which would have to
-+// wait for its CDM there: the pipeline restarts into a renderer made with
-+// every stream, as before.
-+TEST_F(WebMediaPlayerImplTest, ParcStreamsAddedEncryptedRestart) {
++// Parc: so does an encrypted stream: RendererImpl's decoders take the CDM
++// when it's set, the clock waiting for it there, as WebKit's renderer waits
++// for samples it can't decrypt yet, instead of a restart (a rebuffer).
++TEST_F(WebMediaPlayerImplTest, ParcStreamsAddedEncryptedJoinsRendererImpl) {
 +  InitializeWebMediaPlayerImpl();
 +  LoadAndWaitForReadyState(kVideoOnlyTestFile,
 +                           WebMediaPlayer::kReadyStateHaveEnoughData);
 +
++  media::PipelineMetadata added;
++  added.has_audio = true;
++  added.audio_decoder_config = TestAudioConfig::NormalEncrypted();
++  ParcAddStreamsWithoutRestart(
++      added, {{media::DemuxerStream::AUDIO, media::MediaTrack::Id("2")}});
++  EXPECT_TRUE(wmpi_->HasAudio());
++  EXPECT_TRUE(ParcAwaitsAddedStreamsRenderer());
++
++  EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
++}
++
++// Parc: one encrypted for the FairPlay CDM, which only the FairPlay Renderer
++// decrypts, restarts into a renderer made with every stream.
++TEST_F(WebMediaPlayerImplTest, ParcStreamsAddedForFairPlayRestart) {
++  InitializeWebMediaPlayerImpl();
++  LoadAndWaitForReadyState(kVideoOnlyTestFile,
++                           WebMediaPlayer::kReadyStateHaveEnoughData);
++
++  ParcSetPendingFairPlayCdm();
 +  media::PipelineMetadata added;
 +  added.has_audio = true;
 +  added.audio_decoder_config = TestAudioConfig::NormalEncrypted();
@@ -9184,7 +9202,7 @@
  TEST_F(WebMediaPlayerImplTest, NaturalSizeChange) {
    InitializeWebMediaPlayerImpl();
    media::PipelineMetadata metadata;
-@@ -3024,6 +4038,66 @@
+@@ -3024,6 +4057,66 @@
    EXPECT_FALSE(IsPausedBecauseFrameHidden());
  }
  
@@ -9251,7 +9269,7 @@
  // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
  // visibility changes should not affect the playback state.
  TEST_F(WebMediaPlayerImplTest, DisabledFlagShouldPauseWhenFrameIsHidden) {
-@@ -3090,6 +4164,109 @@
+@@ -3090,6 +4183,109 @@
    ASSERT_TRUE(IsSuspended());
  }
  
@@ -9361,7 +9379,7 @@
  TEST_F(WebMediaPlayerImplTest, BackgroundIdlePauseTimerDependsOnAudio) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
-@@ -3115,6 +4292,145 @@
+@@ -3115,6 +4311,145 @@
    base::RunLoop().RunUntilIdle();
  }
  
@@ -9507,7 +9525,7 @@
  // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
  TEST_F(WebMediaPlayerImplTest, InfiniteDuration) {
    InitializeWebMediaPlayerImpl();
-@@ -3450,6 +4766,104 @@
+@@ -3450,6 +4785,104 @@
    EXPECT_FALSE(delegate_.ExpireForTesting());
  }
  
@@ -9612,10 +9630,12 @@
  class WebMediaPlayerImplBackgroundBehaviorTest
      : public WebMediaPlayerImplTest,
        public WebAudioSourceProviderClient,
-@@ -3815,6 +5229,84 @@
+@@ -3813,6 +5246,84 @@
+       }
+       break;
    }
- }
- 
++}
++
 +// Exercise both load types: the optimization runs above renderer selection.
 +TEST_P(WebMediaPlayerImplBackgroundBehaviorTest,
 +       SafariIdentity_KeepsBackgroundVideoTrackSelected) {
@@ -9692,11 +9712,9 @@
 +  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(false));
 +  SetVolume(1.);
 +  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
-+}
-+
+ }
+ 
  INSTANTIATE_TEST_SUITE_P(
-     BackgroundBehaviorTestInstances,
-     WebMediaPlayerImplBackgroundBehaviorTest,
 --- a/media/base/media_resource.h
 +++ b/media/base/media_resource.h
 @@ -8,9 +8,16 @@
@@ -9982,22 +10000,22 @@
      # enable the diagnostic by removing this line.
 --- a/third_party/blink/public/platform/web_media_player.h
 +++ b/third_party/blink/public/platform/web_media_player.h
-@@ -31,8 +31,13 @@
+@@ -31,8 +31,14 @@
  #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
  #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
  
 +#include <limits>
  #include <optional>
--
 +#include <string_view>
-+
++#include <vector>
+ 
 +#include "base/containers/span.h"
 +#include "base/functional/callback.h"
 +#include "base/memory/raw_ptr.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/memory/weak_ptr.h"
  #include "base/time/time.h"
-@@ -56,7 +61,9 @@
+@@ -56,7 +62,9 @@
  }  // namespace cc
  
  namespace media {
@@ -10007,7 +10025,7 @@
  class VideoFrameSharedImageCache;
  }
  
-@@ -66,7 +73,10 @@
+@@ -66,7 +74,10 @@
  
  namespace blink {
  
@@ -10018,7 +10036,7 @@
  class WebMediaPlayerSource;
  class WebString;
  class WebURL;
-@@ -257,6 +267,56 @@
+@@ -257,6 +268,56 @@
    // for instant backwards and forwards navigation.
    virtual void OnFrozen() = 0;
  
@@ -10075,7 +10093,7 @@
    // Attempts to switch the audio output device.
    virtual bool SetSinkId(const WebString& sing_id,
                           WebSetSinkIdCompleteCallback) = 0;
-@@ -291,6 +351,42 @@
+@@ -291,6 +352,42 @@
    virtual double CurrentTime() const = 0;
    virtual bool IsEnded() const = 0;
  
@@ -10118,6 +10136,23 @@
    // Internal states of loading and network.
    virtual NetworkState GetNetworkState() const = 0;
    virtual ReadyState GetReadyState() const = 0;
+@@ -415,6 +512,16 @@
+       std::optional<TrackId> enabled_track_id) {}
+   virtual void SelectedVideoTrackChanged(
+       std::optional<TrackId> selected_track_id) {}
++  // Parc: every audio track a Safari-identity element has enabled, for a
++  // player that plays them all, as Safari's Media Source does. Others play
++  // the first.
++  virtual void ParcEnabledAudioTracksChanged(
++      const std::vector<TrackId>& enabled_track_ids) {
++    EnabledAudioTracksChanged(
++        enabled_track_ids.empty()
++            ? std::nullopt
++            : std::make_optional(enabled_track_ids.front()));
++  }
+ 
+   // Callback called whenever the media element may have received or last native
+   // controls. It might be called twice with the same value: the caller has to
 --- a/content/browser/media/media_internals_cdm_helper.cc
 +++ b/content/browser/media/media_internals_cdm_helper.cc
 @@ -51,6 +51,8 @@
@@ -12733,7 +12768,7 @@
  #include "testing/gtest/include/gtest/gtest.h"
  
  using ::testing::AnyNumber;
-@@ -597,6 +601,26 @@ class ChunkDemuxerTest : public ::testing::Test {
+@@ -597,6 +601,26 @@
      ASSERT_TRUE(AppendCluster(source_id, GenerateCluster(blocks, false)));
    }
  
@@ -12760,7 +12795,7 @@
    struct MuxedStreamInfo {
      MuxedStreamInfo()
          : track_number(0),
-@@ -1188,6 +1212,12 @@ class ChunkDemuxerTest : public ::testing::Test {
+@@ -1188,6 +1212,12 @@
      base::RunLoop().RunUntilIdle();
    }
  
@@ -12773,7 +12808,7 @@
    void ExpectConfigChanged(DemuxerStream::Type type) {
      EXPECT_CALL(*this, ReadDone(DemuxerStream::kConfigChanged, _));
      GetStream(type)->Read(
-@@ -2402,6 +2432,318 @@ TEST_F(ChunkDemuxerTest, AddIdFailures) {
+@@ -2402,6 +2432,351 @@
    ASSERT_EQ(AddId(video_id, HAS_VIDEO), ChunkDemuxer::kReachedIdLimit);
  }
  
@@ -12902,9 +12937,7 @@
 +  ASSERT_EQ(reported.size(), 1u);
 +  ASSERT_EQ(reported[0].size(), 1u);
 +  EXPECT_EQ(reported[0][0].type, DemuxerStream::AUDIO);
-+  EXPECT_FALSE(reported[0][0].mixes);
 +
-+  demuxer_->ParcJoinOnTrackChange({reported[0][0].id});
 +  DemuxerStream* enabled = nullptr;
 +  demuxer_->OnTracksChanged(
 +      DemuxerStream::AUDIO, reported[0][0].id, base::Milliseconds(46),
@@ -12944,10 +12977,9 @@
 +  }
 +}
 +
-+// Parc: so is a late SourceBuffer's, beside the audio that plays. It is
-+// reported as mixing; the join's track change keeps the first enabled. A
-+// page's own change afterwards enables one track, as Chromium's player takes
-+// it.
++// Parc: so is a late SourceBuffer's, beside the audio that plays; its
++// metadata isn't reported again, as audio already plays. The join's track
++// change keeps both enabled and starts the new one where playback is.
 +TEST_F(ChunkDemuxerTest, ParcSafariLateSecondAudioMixes) {
 +  std::vector<PipelineMetadata> added;
 +  std::vector<ChunkDemuxer::ParcAddedTrack> tracks;
@@ -12972,7 +13004,6 @@
 +  ASSERT_EQ(added.size(), 1u);
 +  EXPECT_FALSE(added[0].has_audio);
 +  ASSERT_EQ(tracks.size(), 1u);
-+  EXPECT_TRUE(tracks[0].mixes);
 +
 +  std::vector<raw_ptr<DemuxerStream>> streams = demuxer_->GetAllStreams();
 +  ASSERT_EQ(streams.size(), 2u);
@@ -12982,27 +13013,21 @@
 +  EXPECT_TRUE(second->IsEnabled());
 +
 +  DemuxerStream* enabled = nullptr;
-+  auto record = [](DemuxerStream** out, DemuxerStream* stream) {
-+    *out = stream;
-+  };
-+  demuxer_->ParcJoinOnTrackChange({tracks[0].id});
-+  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, tracks[0].id,
-+                            base::Milliseconds(23),
-+                            base::BindOnce(record, &enabled));
-+  EXPECT_EQ(enabled, second);
-+  EXPECT_TRUE(first->IsEnabled());
-+  CheckExpectedBuffers(second, "23K 46K 69K");
-+
-+  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, first->media_track_id(),
-+                            base::TimeDelta(),
-+                            base::BindOnce(record, &enabled));
++  demuxer_->OnTracksChanged(
++      DemuxerStream::AUDIO, tracks[0].id, base::Milliseconds(23),
++      base::BindOnce([](DemuxerStream** out,
++                        DemuxerStream* stream) { *out = stream; },
++                     &enabled));
 +  EXPECT_EQ(enabled, first);
-+  EXPECT_FALSE(second->IsEnabled());
++  EXPECT_TRUE(first->IsEnabled());
++  EXPECT_TRUE(second->IsEnabled());
++  CheckExpectedBuffers(second, "23K 46K 69K");
 +}
 +
-+// Parc: the pipeline keeps one pending change per type, so two joins can
-+// become one change naming the later track; both join, each started then.
-+// The other track's own change, if it still comes, is a join too.
++// Parc: the pipeline keeps one pending change per type, so two late
++// SourceBuffers' joins become one change; it starts both. A later change the
++// page makes enables what the element enabled, nothing left of the joins
++// (WebKit's audioTrackDidChangeEnabled for each track).
 +TEST_F(ChunkDemuxerTest, ParcCoalescedJoinsStartEveryTrack) {
 +  std::vector<MediaTrack::Id> ids;
 +  demuxer_->ParcSetSafariMediaSource(true);
@@ -13025,53 +13050,96 @@
 +  }
 +  ASSERT_EQ(ids.size(), 2u);
 +
-+  demuxer_->ParcJoinOnTrackChange(ids);
-+  DemuxerStream* enabled = nullptr;
-+  demuxer_->OnTracksChanged(
-+      DemuxerStream::AUDIO, ids[1], base::Milliseconds(46),
-+      base::BindOnce([](DemuxerStream** out,
-+                        DemuxerStream* stream) { *out = stream; },
-+                     &enabled));
++  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, ids[1],
++                            base::Milliseconds(46), base::DoNothing());
 +  std::vector<raw_ptr<DemuxerStream>> streams = demuxer_->GetAllStreams();
 +  ASSERT_EQ(streams.size(), 3u);
++  std::vector<ChunkDemuxerStream*> audio;
 +  for (DemuxerStream* stream : streams) {
 +    EXPECT_TRUE(static_cast<ChunkDemuxerStream*>(stream)->IsEnabled());
-+  }
-+  ASSERT_TRUE(enabled);
-+  EXPECT_EQ(static_cast<ChunkDemuxerStream*>(enabled)->media_track_id(),
-+            ids[1]);
-+  for (DemuxerStream* stream : streams) {
 +    if (stream->type() == DemuxerStream::AUDIO) {
++      audio.push_back(static_cast<ChunkDemuxerStream*>(stream));
 +      CheckExpectedBuffers(stream, "46K 69K");
 +    }
 +  }
++  ASSERT_EQ(audio.size(), 2u);
 +
++  demuxer_->ParcSetEnabledAudioTracks({ids[0]});
 +  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, ids[0],
 +                            base::Milliseconds(92), base::DoNothing());
-+  for (DemuxerStream* stream : streams) {
-+    EXPECT_TRUE(static_cast<ChunkDemuxerStream*>(stream)->IsEnabled());
++  for (ChunkDemuxerStream* stream : audio) {
++    EXPECT_EQ(stream->IsEnabled(), stream->media_track_id() == ids[0]);
 +  }
 +}
 +
-+// Parc: a late track the player didn't join (RendererImpl doesn't mix a
-+// second audio track) switches as Chromium's do when the page names it.
-+TEST_F(ChunkDemuxerTest, ParcUnjoinedLateTrackSwitchesAsChromium) {
-+  demuxer_->ParcSetSafariMediaSource(true);
-+  demuxer_->ParcAllowSourceBuffersAfterInit(base::DoNothing());
-+  ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
-+  ASSERT_EQ(AddId("audio2", HAS_AUDIO), ChunkDemuxer::kOk);
-+  ExpectInitMediaLogs(HAS_AUDIO);
-+  EXPECT_CALL(*this, InitSegmentReceivedMock(_));
-+  ASSERT_TRUE(AppendInitSegmentWithSourceId("audio2", HAS_AUDIO));
-+  std::vector<raw_ptr<DemuxerStream>> streams = demuxer_->GetAllStreams();
-+  ASSERT_EQ(streams.size(), 2u);
-+  auto* first = static_cast<ChunkDemuxerStream*>(streams[0].get());
-+  auto* second = static_cast<ChunkDemuxerStream*>(streams[1].get());
++// Parc: WebKit's player plays every audio track the element enables, so a
++// Safari-identity page's change enables exactly those, the latest the
++// element gave before the pipeline's change, which named one of them; a
++// change it didn't give any for keeps them. A Chrome-identity page's change
++// enables the one it names.
++TEST_F(ChunkDemuxerTest, ParcSafariEnablesTheElementsAudioTracks) {
++  for (bool safari : {false, true}) {
++    SCOPED_TRACE(safari ? "Safari's identity" : "Chrome's");
++    if (safari) {
++      ShutdownDemuxer();
++      CreateNewDemuxer();
++    }
++    demuxer_->ParcSetSafariMediaSource(safari);
++    EXPECT_CALL(*this, DemuxerOpened());
++    demuxer_->Initialize(
++        &host_, CreateInitDoneCallback(kDefaultDuration(), PIPELINE_OK));
++    for (const char* id : {"audio1", "audio2"}) {
++      ASSERT_EQ(AddId(id, HAS_AUDIO), ChunkDemuxer::kOk);
++    }
++    for (const char* id : {"audio1", "audio2"}) {
++      ExpectInitMediaLogs(HAS_AUDIO);
++      EXPECT_CALL(*this, InitSegmentReceivedMock(_));
++      ASSERT_TRUE(AppendInitSegmentWithSourceId(id, HAS_AUDIO));
++      AppendSingleStreamCluster(id, kAudioTrackNum, 0, 4);
++    }
++    std::vector<raw_ptr<DemuxerStream>> streams = demuxer_->GetAllStreams();
++    ASSERT_EQ(streams.size(), 2u);
++    auto* first = static_cast<ChunkDemuxerStream*>(streams[0].get());
++    auto* second = static_cast<ChunkDemuxerStream*>(streams[1].get());
++    const MediaTrack::Id first_id = first->media_track_id();
++    const MediaTrack::Id second_id = second->media_track_id();
++    DemuxerStream* enabled = nullptr;
++    auto change = [&](const MediaTrack::Id& named, base::TimeDelta time) {
++      demuxer_->OnTracksChanged(
++          DemuxerStream::AUDIO, named, time,
++          base::BindOnce([](DemuxerStream** out,
++                            DemuxerStream* stream) { *out = stream; },
++                         &enabled));
++    };
 +
-+  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, second->media_track_id(),
-+                            base::TimeDelta(), base::DoNothing());
-+  EXPECT_FALSE(first->IsEnabled());
-+  EXPECT_TRUE(second->IsEnabled());
++    demuxer_->ParcSetEnabledAudioTracks({second_id});
++    demuxer_->ParcSetEnabledAudioTracks({first_id});
++    change(first_id, base::Milliseconds(23));
++    EXPECT_EQ(enabled, first);
++    EXPECT_TRUE(first->IsEnabled());
++    EXPECT_FALSE(second->IsEnabled());
++
++    demuxer_->ParcSetEnabledAudioTracks({second_id});
++    change(second_id, base::Milliseconds(23));
++    EXPECT_EQ(enabled, second);
++    EXPECT_FALSE(first->IsEnabled());
++    EXPECT_TRUE(second->IsEnabled());
++
++    change(first_id, base::Milliseconds(46));
++    EXPECT_EQ(enabled, safari ? second : first);
++    EXPECT_EQ(first->IsEnabled(), !safari);
++    EXPECT_EQ(second->IsEnabled(), safari);
++
++    if (safari) {
++      // A track enabled again starts where playback is.
++      demuxer_->ParcSetEnabledAudioTracks({first_id, second_id});
++      change(second_id, base::Milliseconds(69));
++      EXPECT_EQ(enabled, first);
++      EXPECT_TRUE(first->IsEnabled());
++      EXPECT_TRUE(second->IsEnabled());
++      CheckExpectedBuffers(first, "69K");
++    }
++  }
 +}
 +
 +TEST_F(ChunkDemuxerTest, ParcSourceKeyRemovalRetainsBufferIdentity) {
@@ -13092,7 +13160,7 @@
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
-@@ -3015,6 +3357,226 @@ TEST_F(ChunkDemuxerTest, CodecIDsThatAreNotRFC6381Compliant) {
+@@ -3015,6 +3390,226 @@
    }
  }
  
@@ -13319,7 +13387,7 @@
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
  
-@@ -3311,6 +3873,38 @@ const char* kMp2tMimeType = "video/mp2t";
+@@ -3311,6 +3906,38 @@
  const char* kMp2tCodecs = "mp4a.40.2,avc1.640028";
  }
  
@@ -13358,7 +13426,7 @@
  TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
    EXPECT_CALL(*this, DemuxerOpened());
    EXPECT_FOUND_CODEC_NAME(Audio, "aac");
-@@ -3770,6 +4364,345 @@ TEST_F(ChunkDemuxerTest, SetMemoryLimitType) {
+@@ -3770,6 +4397,345 @@
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
  }
  
@@ -13704,10 +13772,11 @@
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
    demuxer_->SetMemoryLimitsForTest(
-@@ -5073,4 +6006,52 @@ TEST_F(ChunkDemuxerTest, HlsEndOfStreamFlushWithOffset) {
+@@ -5072,5 +6038,53 @@
+ // TODO(servolk): Add a unit test with multiple audio/video tracks using the
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
- 
++
 +// Parc: a Safari-identity page's Media Source
 +// (ChunkDemuxer::ParcSetSafariMediaSource()) fills a gap under
 +// 2002/24000 s in buffered, as WebKit's TrackBuffer does, and plays video
@@ -13755,7 +13824,7 @@
 +  base::RunLoop().RunUntilIdle();
 +  ExpectRead(DemuxerStream::VIDEO, 501);
 +}
-+
+ 
  }  // namespace media
 --- a/media/filters/source_buffer_stream_unittest.cc
 +++ b/media/filters/source_buffer_stream_unittest.cc
@@ -15954,7 +16023,7 @@
  
    // Helper functions for testing purposes. Must be called before Initialize().
    void DisableUnderflowForTesting();
-@@ -206,6 +211,21 @@
+@@ -206,6 +211,47 @@
  
    void OnStreamRestartCompleted();
  
@@ -15967,29 +16036,67 @@
 +  void ParcEndBackward();
 +
 +  // Parc: a stream of a type there was no stream for when it initialized
-+  // joins (MediaResource::ParcMayAddStreams()).
++  // joins (MediaResource::ParcMayAddStreams()); an encrypted one once a CDM
++  // that this renderer's decoders take is set.
 +  void ParcJoin(DemuxerStream* stream, base::OnceClosure join_completed_cb);
 +  void OnParcJoinInitialized(DemuxerStream* stream,
 +                             base::OnceClosure join_completed_cb,
 +                             PipelineStatus status);
++  // Parc: whether |stream| waits for a CDM (none is set yet), or can't play
++  // here (it needs the FairPlay Renderer's).
++  bool ParcAwaitsCdm(DemuxerStream* stream);
++  bool ParcCannotDecrypt(DemuxerStream* stream);
++
++  // Parc: on Safari's Media Source every enabled audio stream plays, as
++  // WebKit's player keeps a renderer per enabled audio track
++  // (AudioVideoRendererAVFObjC::addTrack): the others mixed into
++  // |audio_renderer_| (AudioRenderer::ParcCreateMixedRenderer()), which goes
++  // silent while its own is disabled. Time waits for each to have enough.
++  class ParcMixedAudioClient;
++  struct ParcMixedAudio;
++  void ParcSyncMixedAudio();
++  ParcMixedAudio* ParcFindMixedAudio(int id);
++  void OnParcMixedAudioInitialized(int id, PipelineStatus status);
++  void ParcStartMixedAudio(ParcMixedAudio& mixed, base::TimeDelta time);
++  void ParcFlushMixedAudio(base::OnceClosure flush_done_cb);
++  void OnParcMixedAudioFlushed(int id);
++  void OnParcMixedAudioBufferingStateChange(int id,
++                                            BufferingState state,
++                                            BufferingStateChangeReason reason);
++  void OnParcMixedAudioEnded(int id);
++  // Parc: what an underflow or a preroll does, after what time waits for
++  // changed from |was_waiting|.
++  void ParcUpdateWaiting(bool was_waiting, BufferingStateChangeReason reason);
 +
    State state_;
  
    // Task runner used to execute pipeline tasks.
-@@ -222,6 +242,9 @@
+@@ -222,6 +268,20 @@
    std::unique_ptr<RendererClientInternal> video_renderer_client_;
    std::unique_ptr<AudioRenderer> audio_renderer_;
    std::unique_ptr<VideoRenderer> video_renderer_;
-+  // Parc: the renderers Initialize had no stream for, kept for ParcJoin().
++  // Parc: the renderers Initialize had no stream for, kept for ParcJoin(),
++  // and the streams whose join waits for a CDM.
 +  std::unique_ptr<AudioRenderer> parc_audio_renderer_;
 +  std::unique_ptr<VideoRenderer> parc_video_renderer_;
++  raw_ptr<DemuxerStream> parc_audio_join_awaiting_cdm_ = nullptr;
++  raw_ptr<DemuxerStream> parc_video_join_awaiting_cdm_ = nullptr;
++  bool parc_audio_joining_ = false;
++  bool parc_video_joining_ = false;
++  // Parc: see ParcSyncMixedAudio().
++  std::vector<std::unique_ptr<ParcMixedAudio>> parc_mixed_audio_;
++  int parc_last_mixed_audio_id_ = 0;
++  bool parc_own_audio_muted_ = false;
++  std::optional<base::TimeDelta> parc_latency_hint_;
++  bool parc_preserves_pitch_ = true;
  
    raw_ptr<DemuxerStream> current_audio_stream_;
    raw_ptr<DemuxerStream> current_video_stream_;
-@@ -272,6 +295,18 @@
+@@ -271,6 +331,18 @@
+   base::TimeDelta restarting_audio_time_ = kNoTimestamp;
  
    bool pending_video_track_change_ = false;
- 
++
 +  // Parc: playing backward; audio stays flushed. `parc_backward_clock_`
 +  // replaces `time_source_` while `parc_backward_clock_used_` (guarded by
 +  // `restarting_audio_lock_`, as it's read on other threads).
@@ -16001,31 +16108,129 @@
 +  bool parc_backward_ended_ = false;
 +  WallClockTimeSource parc_backward_clock_;
 +  base::CancelableOnceClosure parc_reach_start_cb_;
-+
+ 
    base::WeakPtr<RendererImpl> weak_this_;
    base::WeakPtrFactory<RendererImpl> weak_factory_{this};
- };
 --- a/media/renderers/renderer_impl.cc
 +++ b/media/renderers/renderer_impl.cc
-@@ -4,6 +4,7 @@
+@@ -4,9 +4,12 @@
  
  #include "media/renderers/renderer_impl.h"
  
 +#include <algorithm>
  #include <memory>
  #include <utility>
++#include <vector>
  
-@@ -132,7 +133,9 @@
++#include "base/barrier_closure.h"
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/functional/bind.h"
+@@ -21,6 +24,7 @@
+ #include "base/trace_event/trace_event.h"
+ #include "media/base/audio_decoder_config.h"
+ #include "media/base/audio_renderer.h"
++#include "media/base/cdm_context.h"
+ #include "media/base/media_client.h"
+ #include "media/base/media_log.h"
+ #include "media/base/media_resource.h"
+@@ -38,8 +42,64 @@
+ perfetto::NamedTrack GetTracingTrack(const RendererImpl* renderer) {
+   return perfetto::NamedTrack::FromPointer("media::RendererImpl", renderer);
+ }
++
++bool ParcIsEncrypted(DemuxerStream* stream) {
++  return stream->type() == DemuxerStream::AUDIO
++             ? stream->audio_decoder_config().is_encrypted()
++             : stream->video_decoder_config().is_encrypted();
++}
+ }  // namespace
+ 
++struct RendererImpl::ParcMixedAudio {
++  int id = 0;
++  raw_ptr<DemuxerStream> stream;
++  std::unique_ptr<ParcMixedAudioClient> client;
++  // Null while it awaits a CDM.
++  std::unique_ptr<AudioRenderer> renderer;
++  bool initialized = false;
++  // Started since its last flush.
++  bool playing = false;
++  bool ticking = false;
++  bool ended = false;
++  BufferingState buffering_state = BUFFERING_HAVE_NOTHING;
++  base::OnceClosure flush_done_cb;
++};
++
++class RendererImpl::ParcMixedAudioClient final : public RendererClient {
++ public:
++  ParcMixedAudioClient(RendererImpl* renderer, int id)
++      : renderer_(renderer), id_(id) {}
++
++  void OnError(PipelineStatus error) override { renderer_->OnError(error); }
++  void OnFallback(PipelineStatus error) override {
++    renderer_->OnFallback(std::move(error).AddHere());
++  }
++  void OnEnded() override { renderer_->OnParcMixedAudioEnded(id_); }
++  void OnStatisticsUpdate(const PipelineStatistics& stats) override {
++    renderer_->OnStatisticsUpdate(stats);
++  }
++  void OnBufferingStateChange(BufferingState state,
++                              BufferingStateChangeReason reason) override {
++    renderer_->OnParcMixedAudioBufferingStateChange(id_, state, reason);
++  }
++  void OnWaiting(WaitingReason reason) override {
++    renderer_->OnWaiting(reason);
++  }
++  // The element's audio configuration is the first stream's.
++  void OnAudioConfigChange(const AudioDecoderConfig& config) override {}
++  void OnVideoConfigChange(const VideoDecoderConfig& config) override {}
++  void OnVideoNaturalSizeChange(const gfx::Size& size) override {}
++  void OnVideoOpacityChange(bool opaque) override {}
++  void OnVideoFrameRateChange(std::optional<int> fps) override {}
++  bool IsVideoStreamAvailable() override {
++    return renderer_->media_resource_->GetFirstStream(DemuxerStream::VIDEO);
++  }
++
++ private:
++  raw_ptr<RendererImpl> renderer_;
++  const int id_;
++};
++
+ class RendererImpl::RendererClientInternal final : public RendererClient {
+  public:
+   RendererClientInternal(DemuxerStream::Type type,
+@@ -132,7 +192,10 @@
  
    // Tear down in opposite order of construction as |video_renderer_| can still
    // need |time_source_| (which can be |audio_renderer_|) to be alive.
 +  parc_video_renderer_.reset();
    video_renderer_.reset();
++  parc_mixed_audio_.clear();
 +  parc_audio_renderer_.reset();
    audio_renderer_.reset();
  
    if (init_cb_)
-@@ -200,6 +203,13 @@
+@@ -182,6 +245,19 @@
+   cdm_context_ = cdm_context;
+   std::move(cdm_attached_cb).Run(true);
+ 
++  // Parc: the streams that waited for a CDM join with this one, or stop
++  // waiting if they can't play here.
++  for (DemuxerStream* stream : {parc_audio_join_awaiting_cdm_.get(),
++                                parc_video_join_awaiting_cdm_.get()}) {
++    if (stream) {
++      ParcJoin(stream, base::DoNothing());
++    }
++  }
++  if (state_ == STATE_PLAYING || state_ == STATE_FLUSHED ||
++      state_ == STATE_FLUSHING) {
++    ParcSyncMixedAudio();
++  }
++
+   if (state_ != STATE_INIT_PENDING_CDM)
+     return;
+ 
+@@ -200,6 +276,19 @@
  
    if (audio_renderer_)
      audio_renderer_->SetLatencyHint(latency_hint);
@@ -16036,30 +16241,42 @@
 +  if (parc_audio_renderer_) {
 +    parc_audio_renderer_->SetLatencyHint(latency_hint);
 +  }
++  parc_latency_hint_ = latency_hint;
++  for (const auto& mixed : parc_mixed_audio_) {
++    if (mixed->renderer) {
++      mixed->renderer->SetLatencyHint(latency_hint);
++    }
++  }
  }
  
  void RendererImpl::SetPreservesPitch(bool preserves_pitch) {
-@@ -208,6 +218,9 @@
+@@ -208,6 +297,15 @@
  
    if (audio_renderer_)
      audio_renderer_->SetPreservesPitch(preserves_pitch);
 +  if (parc_audio_renderer_) {
 +    parc_audio_renderer_->SetPreservesPitch(preserves_pitch);
 +  }
++  parc_preserves_pitch_ = preserves_pitch;
++  for (const auto& mixed : parc_mixed_audio_) {
++    if (mixed->renderer) {
++      mixed->renderer->SetPreservesPitch(preserves_pitch);
++    }
++  }
  }
  
  void RendererImpl::SetRenderMutedAudio(bool render_muted_audio) {
-@@ -216,6 +229,9 @@
- 
+@@ -217,6 +315,9 @@
    if (audio_renderer_) {
      audio_renderer_->SetRenderMutedAudio(render_muted_audio);
-+  }
+   }
 +  if (parc_audio_renderer_) {
 +    parc_audio_renderer_->SetRenderMutedAudio(render_muted_audio);
-   }
++  }
  }
  
-@@ -227,6 +243,10 @@
+ void RendererImpl::SetWasPlayedWithUserActivationAndHighMediaEngagement(
+@@ -227,6 +328,10 @@
    if (audio_renderer_)
      audio_renderer_->SetWasPlayedWithUserActivationAndHighMediaEngagement(
          was_played_with_user_activation_and_high_media_engagement);
@@ -16070,18 +16287,30 @@
  }
  
  void RendererImpl::Flush(base::OnceClosure flush_cb) {
-@@ -249,6 +269,10 @@
- 
+@@ -250,6 +355,10 @@
    flush_cb_ = std::move(flush_cb);
    state_ = STATE_FLUSHING;
-+
+ 
 +  if (parc_backward_) {
 +    ParcEndBackward();
 +  }
- 
++
    // If a stream restart is pending, this Flush() will complete it. Upon flush
    // completion any pending actions will be executed as well.
-@@ -288,6 +312,20 @@
+   FlushInternal();
+@@ -273,6 +382,11 @@
+     audio_playing_ = true;
+     audio_renderer_->StartPlaying();
+   }
++  for (const auto& mixed : parc_mixed_audio_) {
++    if (mixed->initialized) {
++      ParcStartMixedAudio(*mixed, time);
++    }
++  }
+   if (video_renderer_) {
+     video_playing_ = true;
+     video_renderer_->StartPlayingFrom(time);
+@@ -288,7 +402,26 @@
    if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED)
      return;
  
@@ -16100,9 +16329,15 @@
 +  }
 +
    time_source_->SetPlaybackRate(playback_rate);
++  for (const auto& mixed : parc_mixed_audio_) {
++    if (mixed->renderer) {
++      mixed->renderer->GetTimeSource()->SetPlaybackRate(playback_rate);
++    }
++  }
  
    const double old_rate = playback_rate_;
-@@ -307,20 +345,30 @@
+   playback_rate_ = playback_rate;
+@@ -307,20 +440,30 @@
  
    if (audio_renderer_)
      audio_renderer_->SetVolume(volume);
@@ -16121,22 +16356,20 @@
        DCHECK_NE(kNoTimestamp, restarting_audio_time_);
        return restarting_audio_time_;
      }
--  }
--
--  return time_source_->CurrentMediaTime();
 +    if (parc_backward_clock_used_) {
 +      return std::max(base::TimeDelta(),
 +                      parc_backward_clock_.CurrentMediaTime());
 +    }
 +    // Parc: a joining audio renderer replaces it (OnParcJoinInitialized()).
 +    time_source = time_source_;
-+  }
-+
+   }
+ 
+-  return time_source_->CurrentMediaTime();
 +  return time_source->CurrentMediaTime();
  }
  
  void RendererImpl::DisableUnderflowForTesting() {
-@@ -362,7 +410,16 @@
+@@ -362,7 +505,16 @@
      return true;
    }
  
@@ -16154,7 +16387,7 @@
  }
  
  bool RendererImpl::HasEncryptedStream() {
-@@ -408,6 +465,9 @@
+@@ -408,6 +560,9 @@
    MediaClient* media_client = GetMediaClient();
    if (!audio_stream ||
        (media_client && media_client->ShouldSuppressAudioTracks())) {
@@ -16164,7 +16397,7 @@
      audio_renderer_.reset();
      task_runner_->PostTask(
          FROM_HERE, base::BindOnce(&RendererImpl::OnAudioRendererInitializeDone,
-@@ -459,6 +519,9 @@
+@@ -459,6 +614,9 @@
        media_resource_->GetFirstStream(DemuxerStream::VIDEO);
  
    if (!video_stream) {
@@ -16174,11 +16407,57 @@
      video_renderer_.reset();
  
      // Something has disabled all audio and video streams, so fail
-@@ -739,6 +802,27 @@
-   TRACE_EVENT2("media", "RendererImpl::OnBufferingStateChange", "type",
+@@ -512,6 +670,16 @@
+     time_source_ = wall_clock_time_source_.get();
+   }
+ 
++  // Parc: the other enabled audio streams initialize too; the last to finish
++  // completes initialization (OnParcMixedAudioInitialized()).
++  ParcSyncMixedAudio();
++  if (state_ != STATE_INITIALIZING ||
++      std::ranges::any_of(parc_mixed_audio_, [](const auto& mixed) {
++        return mixed->renderer && !mixed->initialized;
++      })) {
++    return;
++  }
++
+   state_ = STATE_FLUSHED;
+   DCHECK(time_source_);
+   DCHECK(audio_renderer_ || video_renderer_);
+@@ -538,11 +706,16 @@
+   DCHECK_EQ(state_, STATE_FLUSHING);
+   DCHECK(flush_cb_);
+ 
++  base::OnceClosure flush_done_cb =
++      base::BindOnce(&RendererImpl::OnAudioRendererFlushDone, weak_this_);
++  if (!parc_mixed_audio_.empty()) {
++    flush_done_cb = base::BindOnce(&RendererImpl::ParcFlushMixedAudio,
++                                   weak_this_, std::move(flush_done_cb));
++  }
+   if (!audio_renderer_ || !audio_playing_) {
+-    OnAudioRendererFlushDone();
++    std::move(flush_done_cb).Run();
+   } else {
+-    audio_renderer_->Flush(
+-        base::BindOnce(&RendererImpl::OnAudioRendererFlushDone, weak_this_));
++    audio_renderer_->Flush(std::move(flush_done_cb));
+   }
+ }
+ 
+@@ -690,6 +863,9 @@
+     audio_playing_ = true;
+     pending_audio_track_change_ = false;
+   }
++  if (media_resource_->ParcMayAddStreams()) {
++    audio_renderer_->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++  }
+   audio_renderer_->StartPlaying();
+   std::move(restart_completed_cb).Run();
+ }
+@@ -740,6 +916,27 @@
                 type_string, "state",
                 BufferingStateToString(new_buffering_state, reason));
-+
+ 
 +  // Parc: playing backward, time waits for the video renderer's earlier
 +  // frames without the page hearing about it.
 +  if (parc_backward_) {
@@ -16199,10 +16478,62 @@
 +    }
 +    return;
 +  }
- 
++
    bool was_waiting_for_enough_data = WaitingForEnoughData();
  
-@@ -947,6 +1031,9 @@
+   if (new_buffering_state == BUFFERING_HAVE_NOTHING) {
+@@ -824,7 +1021,12 @@
+     return true;
+   if (video_renderer_ && video_buffering_state_ != BUFFERING_HAVE_ENOUGH)
+     return true;
+-  return false;
++  if (parc_audio_join_awaiting_cdm_ || parc_video_join_awaiting_cdm_) {
++    return true;
++  }
++  return std::ranges::any_of(parc_mixed_audio_, [](const auto& mixed) {
++    return mixed->buffering_state != BUFFERING_HAVE_ENOUGH;
++  });
+ }
+ 
+ void RendererImpl::PausePlayback() {
+@@ -858,6 +1060,12 @@
+   if (time_ticking_) {
+     time_ticking_ = false;
+     time_source_->StopTicking();
++    for (const auto& mixed : parc_mixed_audio_) {
++      if (mixed->ticking) {
++        mixed->ticking = false;
++        mixed->renderer->GetTimeSource()->StopTicking();
++      }
++    }
+   }
+ 
+   if (playback_rate_ > 0 && video_renderer_)
+@@ -875,6 +1083,12 @@
+     time_ticking_ = true;
+     audio_playing_ = true;
+     time_source_->StartTicking();
++    for (const auto& mixed : parc_mixed_audio_) {
++      if (mixed->playing) {
++        mixed->ticking = true;
++        mixed->renderer->GetTimeSource()->StartTicking();
++      }
++    }
+   }
+   if (playback_rate_ > 0 && video_renderer_) {
+     video_playing_ = true;
+@@ -914,7 +1128,9 @@
+   if (video_renderer_ && !video_ended_)
+     return false;
+ 
+-  return true;
++  return std::ranges::all_of(parc_mixed_audio_, [](const auto& mixed) {
++    return mixed->ended;
++  });
+ }
+ 
+ void RendererImpl::RunEndedCallbackIfNeeded() {
+@@ -947,6 +1163,9 @@
  
    const State old_state = state_;
    state_ = STATE_ERROR;
@@ -16212,21 +16543,58 @@
  
    if (init_cb_) {
      DCHECK(old_state == STATE_INITIALIZING ||
-@@ -1009,6 +1096,13 @@
+@@ -1009,6 +1228,50 @@
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
    TRACE_EVENT1("media", "RendererImpl::OnTracksChanged", "track_type",
                 track_type);
++  // Parc: a join waiting for a CDM ends with its track.
++  raw_ptr<DemuxerStream>& awaiting_cdm =
++      track_type == DemuxerStream::AUDIO ? parc_audio_join_awaiting_cdm_
++                                         : parc_video_join_awaiting_cdm_;
++  if (awaiting_cdm && awaiting_cdm != stream) {
++    const bool was_waiting = WaitingForEnoughData();
++    awaiting_cdm = nullptr;
++    ParcUpdateWaiting(was_waiting, BUFFERING_CHANGE_REASON_UNKNOWN);
++  }
++  if (track_type == DemuxerStream::AUDIO ? parc_audio_joining_
++                                         : parc_video_joining_) {
++    // The join in progress takes the streams enabled by then
++    // (OnParcJoinInitialized()).
++    std::move(change_completed_cb).Run();
++    return;
++  }
 +  if (stream && (track_type == DemuxerStream::AUDIO
 +                     ? !audio_renderer_ && parc_audio_renderer_
 +                     : !video_renderer_ && parc_video_renderer_)) {
 +    ParcJoin(stream, std::move(change_completed_cb));
 +    return;
 +  }
++  if (track_type == DemuxerStream::AUDIO && audio_renderer_ &&
++      media_resource_->ParcMayAddStreams()) {
++    // Parc: WebKit's player adds and removes a renderer per audio track
++    // (SourceBufferPrivateAVFObjC::audioTrackDidChangeEnabled); the first
++    // stays the clock.
++    ParcSyncMixedAudio();
++    const bool own_enabled = current_audio_stream_->ParcIsEnabled();
++    if (own_enabled == !parc_own_audio_muted_) {
++      std::move(change_completed_cb).Run();
++      return;
++    }
++    parc_own_audio_muted_ = !own_enabled;
++    if (parc_own_audio_muted_ || !audio_playing_) {
++      audio_renderer_->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++      std::move(change_completed_cb).Run();
++      return;
++    }
++    // Enabled again: its stream restarts where playback is, ended or not,
++    // heard again once flushed (RestartAudioRenderer()).
++    stream = current_audio_stream_;
++  }
 +
    // 'fixing' the stream -> restarting if its the same stream,
    //                        reinitializing if it is different.
    base::OnceClosure fix_stream_cb;
-@@ -1084,8 +1178,207 @@
+@@ -1084,8 +1347,455 @@
    }
  }
  
@@ -16238,6 +16606,26 @@
 +void RendererImpl::ParcJoin(DemuxerStream* stream,
 +                            base::OnceClosure join_completed_cb) {
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  raw_ptr<DemuxerStream>& awaiting_cdm =
++      stream->type() == DemuxerStream::AUDIO ? parc_audio_join_awaiting_cdm_
++                                             : parc_video_join_awaiting_cdm_;
++  if (ParcAwaitsCdm(stream) || ParcCannotDecrypt(stream)) {
++    // WebKit's renderer waits for the samples it can't decrypt yet.
++    const bool was_waiting = WaitingForEnoughData();
++    awaiting_cdm = ParcAwaitsCdm(stream) ? stream : nullptr;
++    if (awaiting_cdm) {
++      OnWaiting(WaitingReason::kNoCdm);
++    }
++    ParcUpdateWaiting(was_waiting, BUFFERING_CHANGE_REASON_UNKNOWN);
++    std::move(join_completed_cb).Run();
++    return;
++  }
++  // Another stream's join replaces one that waited.
++  if (awaiting_cdm != stream) {
++    awaiting_cdm = nullptr;
++  }
++  (stream->type() == DemuxerStream::AUDIO ? parc_audio_joining_
++                                          : parc_video_joining_) = true;
 +  auto client = std::make_unique<RendererClientInternal>(stream->type(), this,
 +                                                         media_resource_);
 +  auto initialized_cb =
@@ -16262,20 +16650,26 @@
 +                                         base::OnceClosure join_completed_cb,
 +                                         PipelineStatus status) {
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  const bool was_waiting = WaitingForEnoughData();
++  const bool audio = stream->type() == DemuxerStream::AUDIO;
++  (audio ? parc_audio_join_awaiting_cdm_ : parc_video_join_awaiting_cdm_) =
++      nullptr;
++  (audio ? parc_audio_joining_ : parc_video_joining_) = false;
 +  if (status != PIPELINE_OK) {
 +    std::move(join_completed_cb).Run();
 +    OnError(status);
 +    return;
 +  }
-+  if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED) {
++  // A renderer just initialized is as flushed: one joining during a seek
++  // starts with the others.
++  if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED &&
++      state_ != STATE_FLUSHING) {
 +    std::move(join_completed_cb).Run();
 +    return;
 +  }
-+  const bool was_waiting = WaitingForEnoughData();
 +  // An end already reported isn't reported again.
 +  const bool ended = state_ == STATE_PLAYING && PlaybackHasEnded();
 +  const base::TimeDelta now = GetMediaTime();
-+  const bool audio = stream->type() == DemuxerStream::AUDIO;
 +  if (audio) {
 +    audio_renderer_ = std::move(parc_audio_renderer_);
 +    current_audio_stream_ = stream;
@@ -16309,13 +16703,235 @@
 +                                      BUFFERING_CHANGE_REASON_UNKNOWN);
 +    }
 +  }
++  if (audio && media_resource_->ParcMayAddStreams()) {
++    // Turned off while it joined.
++    parc_own_audio_muted_ = !stream->ParcIsEnabled();
++    audio_renderer_->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++    ParcSyncMixedAudio();
++  }
 +  std::move(join_completed_cb).Run();
++}
++
++bool RendererImpl::ParcAwaitsCdm(DemuxerStream* stream) {
++  return !cdm_context_ && ParcIsEncrypted(stream);
++}
++
++bool RendererImpl::ParcCannotDecrypt(DemuxerStream* stream) {
++  return cdm_context_ && cdm_context_->RequiresFairPlayRenderer() &&
++         ParcIsEncrypted(stream);
++}
++
++void RendererImpl::ParcSyncMixedAudio() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  if (!audio_renderer_ || !media_resource_->ParcMayAddStreams() ||
++      (state_ != STATE_INITIALIZING && state_ != STATE_FLUSHED &&
++       state_ != STATE_FLUSHING && state_ != STATE_PLAYING)) {
++    return;
++  }
++  std::vector<DemuxerStream*> enabled;
++  for (DemuxerStream* stream : media_resource_->GetAllStreams()) {
++    if (stream->type() == DemuxerStream::AUDIO &&
++        stream != current_audio_stream_ && stream->ParcIsEnabled() &&
++        !ParcCannotDecrypt(stream)) {
++      enabled.push_back(stream);
++    }
++  }
++  const bool was_waiting = WaitingForEnoughData();
++  // An end already reported isn't reported again.
++  const bool ended = state_ == STATE_PLAYING && PlaybackHasEnded();
++  // AudioVideoRendererAVFObjC::removeTrack for each one turned off; a flush
++  // that waited for it is done with it.
++  std::vector<base::OnceClosure> flush_done_cbs;
++  std::erase_if(parc_mixed_audio_, [&](const std::unique_ptr<ParcMixedAudio>&
++                                           mixed) {
++    if (std::ranges::contains(enabled, mixed->stream.get())) {
++      return false;
++    }
++    if (mixed->flush_done_cb) {
++      flush_done_cbs.push_back(std::move(mixed->flush_done_cb));
++    }
++    return true;
++  });
++  // ...::addTrack for each one turned on; all are added before any
++  // initializes.
++  std::vector<ParcMixedAudio*> initializing;
++  for (DemuxerStream* stream : enabled) {
++    auto it = std::ranges::find(parc_mixed_audio_, stream,
++                                [](const std::unique_ptr<ParcMixedAudio>& m) {
++                                  return m->stream.get();
++                                });
++    if (it != parc_mixed_audio_.end() &&
++        ((*it)->renderer || ParcAwaitsCdm(stream))) {
++      continue;
++    }
++    std::unique_ptr<AudioRenderer> renderer;
++    if (ParcAwaitsCdm(stream)) {
++      OnWaiting(WaitingReason::kNoCdm);
++    } else {
++      renderer = audio_renderer_->ParcCreateMixedRenderer();
++      if (!renderer) {
++        if (it != parc_mixed_audio_.end()) {
++          parc_mixed_audio_.erase(it);
++        }
++        continue;
++      }
++    }
++    ParcMixedAudio* mixed = it != parc_mixed_audio_.end() ? it->get() : nullptr;
++    if (!mixed) {
++      mixed = parc_mixed_audio_.emplace_back(std::make_unique<ParcMixedAudio>())
++                  .get();
++      mixed->id = ++parc_last_mixed_audio_id_;
++      mixed->stream = stream;
++      mixed->client = std::make_unique<ParcMixedAudioClient>(this, mixed->id);
++      mixed->ended = ended;
++    }
++    if (renderer) {
++      mixed->renderer = std::move(renderer);
++      initializing.push_back(mixed);
++    }
++  }
++  for (ParcMixedAudio* mixed : initializing) {
++    mixed->renderer->SetLatencyHint(parc_latency_hint_);
++    mixed->renderer->SetPreservesPitch(parc_preserves_pitch_);
++    mixed->renderer->Initialize(
++        mixed->stream, cdm_context_, mixed->client.get(),
++        base::BindOnce(&RendererImpl::OnParcMixedAudioInitialized, weak_this_,
++                       mixed->id));
++  }
++  ParcUpdateWaiting(was_waiting, BUFFERING_CHANGE_REASON_UNKNOWN);
++  if (!ended && state_ == STATE_PLAYING && PlaybackHasEnded()) {
++    RunEndedCallbackIfNeeded();
++  }
++  for (base::OnceClosure& flush_done_cb : flush_done_cbs) {
++    std::move(flush_done_cb).Run();
++  }
++}
++
++RendererImpl::ParcMixedAudio* RendererImpl::ParcFindMixedAudio(int id) {
++  auto it = std::ranges::find(parc_mixed_audio_, id,
++                              [](const std::unique_ptr<ParcMixedAudio>& m) {
++                                return m->id;
++                              });
++  return it != parc_mixed_audio_.end() ? it->get() : nullptr;
++}
++
++void RendererImpl::OnParcMixedAudioInitialized(int id, PipelineStatus status) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
++  if (!mixed || state_ == STATE_ERROR) {
++    return;
++  }
++  if (status != PIPELINE_OK) {
++    OnError(status);
++    return;
++  }
++  mixed->initialized = true;
++  if (state_ == STATE_INITIALIZING) {
++    if (std::ranges::all_of(parc_mixed_audio_, [](const auto& other) {
++          return !other->renderer || other->initialized;
++        })) {
++      state_ = STATE_FLUSHED;
++      FinishInitialization(PIPELINE_OK);
++    }
++    return;
++  }
++  // It starts where playback waits for it (ParcSyncMixedAudio()).
++  if (state_ == STATE_PLAYING && !parc_backward_) {
++    if (time_ticking_) {
++      PausePlayback();
++    }
++    ParcStartMixedAudio(*mixed, GetMediaTime());
++  }
++}
++
++void RendererImpl::ParcStartMixedAudio(ParcMixedAudio& mixed,
++                                       base::TimeDelta time) {
++  DCHECK(mixed.initialized);
++  TimeSource* time_source = mixed.renderer->GetTimeSource();
++  time_source->SetMediaTime(time);
++  time_source->SetPlaybackRate(std::max(playback_rate_, 0.0));
++  mixed.playing = true;
++  mixed.buffering_state = BUFFERING_HAVE_NOTHING;
++  mixed.renderer->StartPlaying();
++}
++
++void RendererImpl::ParcFlushMixedAudio(base::OnceClosure flush_done_cb) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  std::vector<ParcMixedAudio*> playing;
++  for (const auto& mixed : parc_mixed_audio_) {
++    if (mixed->playing) {
++      playing.push_back(mixed.get());
++    }
++  }
++  base::RepeatingClosure done =
++      base::BarrierClosure(playing.size(), std::move(flush_done_cb));
++  for (ParcMixedAudio* mixed : playing) {
++    mixed->flush_done_cb = done;
++    mixed->renderer->Flush(base::BindOnce(
++        &RendererImpl::OnParcMixedAudioFlushed, weak_this_, mixed->id));
++  }
++}
++
++void RendererImpl::OnParcMixedAudioFlushed(int id) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
++  if (!mixed) {
++    return;
++  }
++  mixed->playing = false;
++  mixed->ended = false;
++  mixed->buffering_state = BUFFERING_HAVE_NOTHING;
++  if (mixed->flush_done_cb) {
++    std::move(mixed->flush_done_cb).Run();
++  }
++}
++
++void RendererImpl::OnParcMixedAudioBufferingStateChange(
++    int id,
++    BufferingState state,
++    BufferingStateChangeReason reason) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
++  if (!mixed || !mixed->playing) {
++    return;
++  }
++  const bool was_waiting = WaitingForEnoughData();
++  mixed->buffering_state = state;
++  ParcUpdateWaiting(was_waiting, reason);
++}
++
++void RendererImpl::OnParcMixedAudioEnded(int id) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
++  if (!mixed || !mixed->playing || state_ != STATE_PLAYING ||
++      PlaybackHasEnded()) {
++    return;
++  }
++  mixed->ended = true;
++  RunEndedCallbackIfNeeded();
++}
++
++void RendererImpl::ParcUpdateWaiting(bool was_waiting,
++                                     BufferingStateChangeReason reason) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  if (state_ != STATE_PLAYING || parc_backward_) {
++    return;
++  }
++  const bool waiting = WaitingForEnoughData();
++  if (!was_waiting && waiting) {
++    PausePlayback();
++    client_->OnBufferingStateChange(BUFFERING_HAVE_NOTHING, reason);
++  } else if (was_waiting && !waiting && !pending_audio_track_change_ &&
++             !pending_video_track_change_) {
++    StartPlayback();
++    client_->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, reason);
++  }
 +}
 +
  RendererType RendererImpl::GetRendererType() {
    return RendererType::kRendererImpl;
- }
- 
++}
++
 +void RendererImpl::ParcStartPlayingBackwardFrom(
 +    base::TimeDelta time,
 +    double playback_rate,
@@ -16431,12 +17047,12 @@
 +      base::TimeDelta(), parc_backward_clock_.CurrentMediaTime()));
 +  base::AutoLock lock(restarting_audio_lock_);
 +  parc_backward_clock_used_ = false;
-+}
-+
+ }
+ 
  }  // namespace media
 --- a/media/renderers/renderer_impl_unittest.cc
 +++ b/media/renderers/renderer_impl_unittest.cc
-@@ -1192,4 +1192,185 @@
+@@ -1192,4 +1192,470 @@
    Mock::VerifyAndClearExpectations(&time_source_);
  }
  
@@ -16542,6 +17158,7 @@
 +    EXPECT_CALL(callbacks_,
 +                OnBufferingStateChange(BUFFERING_HAVE_NOTHING,
 +                                       BUFFERING_CHANGE_REASON_UNKNOWN));
++    EXPECT_CALL(*audio_renderer_, ParcSetOwnAudioMuted(false));
 +    EXPECT_CALL(callbacks_, OnAudioTrackChangeComplete());
 +  }
 +  renderer_impl_->OnTracksChanged(
@@ -16621,6 +17238,290 @@
 +  Destroy();
 +}
 +
++// Parc: a Media Source stream the page can turn off
++// (ChunkDemuxerStream::ParcIsEnabled()).
++class ParcTogglableStream : public MockDemuxerStream {
++ public:
++  explicit ParcTogglableStream(const AudioDecoderConfig& config)
++      : MockDemuxerStream(DemuxerStream::AUDIO) {
++    set_audio_decoder_config(config);
++  }
++  bool ParcIsEnabled() const override { return enabled; }
++
++  bool enabled = true;
++};
++
++// Parc: every enabled audio stream of Safari's Media Source plays, as WebKit
++// keeps a renderer per enabled audio track: the second one mixed into the
++// first's output, its time started with the first's and only once both have
++// enough. Turning tracks off removes the second and silences the first, which
++// stays the clock; turning the first on again restarts it where playback is.
++TEST_F(RendererImplTest, ParcEveryEnabledAudioStreamPlaysMixed) {
++  StrictMock<ParcLateStreamsDemuxer> demuxer;
++  ParcTogglableStream first(TestAudioConfig::Normal());
++  ParcTogglableStream second(TestAudioConfig::Normal());
++  EXPECT_CALL(demuxer, GetAllStreams())
++      .WillRepeatedly(
++          Return(std::vector<raw_ptr<DemuxerStream>>{&first, &second}));
++  EXPECT_CALL(*audio_renderer_, OnInitialize(&first, _, _, _))
++      .WillOnce(DoAll(SaveArg<2>(&audio_renderer_client_),
++                      RunOnceCallback<3>(PIPELINE_OK)));
++  EXPECT_CALL(*audio_renderer_, GetTimeSource())
++      .WillOnce(Return(&time_source_));
++  auto owned_mixed = std::make_unique<StrictMock<MockAudioRenderer>>();
++  StrictMock<MockAudioRenderer>* mixed = owned_mixed.get();
++  RendererClient* mixed_client = nullptr;
++  StrictMock<MockTimeSource> mixed_time_source;
++  EXPECT_CALL(*mixed, GetTimeSource())
++      .WillRepeatedly(Return(&mixed_time_source));
++  EXPECT_CALL(*audio_renderer_, ParcCreateMixedRenderer())
++      .WillOnce(Return(testing::ByMove(std::move(owned_mixed))));
++  EXPECT_CALL(*mixed, SetLatencyHint(_));
++  EXPECT_CALL(*mixed, SetPreservesPitch(true));
++  EXPECT_CALL(*mixed, OnInitialize(&second, _, _, _))
++      .WillOnce(
++          DoAll(SaveArg<2>(&mixed_client), RunOnceCallback<3>(PIPELINE_OK)));
++  EXPECT_CALL(callbacks_, OnInitialize(_));
++  renderer_impl_->Initialize(&demuxer, &callbacks_,
++                             base::BindOnce(&CallbackHelper::OnInitialize,
++                                            base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  ASSERT_TRUE(mixed_client);
++
++  const base::TimeDelta start = base::Milliseconds(kStartPlayingTimeInMs);
++  EXPECT_CALL(time_source_, SetMediaTime(start));
++  EXPECT_CALL(*audio_renderer_, StartPlaying());
++  EXPECT_CALL(mixed_time_source, SetMediaTime(start));
++  EXPECT_CALL(mixed_time_source, SetPlaybackRate(0));
++  EXPECT_CALL(*mixed, StartPlaying());
++  renderer_impl_->StartPlayingFrom(start);
++  audio_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++
++  EXPECT_CALL(time_source_, StartTicking());
++  EXPECT_CALL(mixed_time_source, StartTicking());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  mixed_client->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                       BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++
++  EXPECT_CALL(time_source_, SetPlaybackRate(1.0));
++  EXPECT_CALL(mixed_time_source, SetPlaybackRate(1.0));
++  renderer_impl_->SetPlaybackRate(1.0);
++
++  first.enabled = false;
++  EXPECT_CALL(*audio_renderer_, ParcSetOwnAudioMuted(true));
++  EXPECT_CALL(callbacks_, OnAudioTrackChangeComplete());
++  renderer_impl_->OnTracksChanged(
++      DemuxerStream::AUDIO, &second,
++      base::BindOnce(&CallbackHelper::OnAudioTrackChangeComplete,
++                     base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  Mock::VerifyAndClearExpectations(audio_renderer_);
++  Mock::VerifyAndClearExpectations(mixed);
++
++  second.enabled = false;
++  EXPECT_CALL(callbacks_, OnAudioTrackChangeComplete());
++  renderer_impl_->OnTracksChanged(
++      DemuxerStream::AUDIO, nullptr,
++      base::BindOnce(&CallbackHelper::OnAudioTrackChangeComplete,
++                     base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  Mock::VerifyAndClearExpectations(audio_renderer_);
++
++  first.enabled = true;
++  {
++    InSequence restart;
++    EXPECT_CALL(time_source_, CurrentMediaTime()).Times(2);
++    EXPECT_CALL(time_source_, StopTicking());
++    EXPECT_CALL(*audio_renderer_, Flush(_))
++        .WillOnce(RunOnceClosure<0>());
++    EXPECT_CALL(time_source_, SetMediaTime(_));
++    EXPECT_CALL(*audio_renderer_, ParcSetOwnAudioMuted(false));
++    EXPECT_CALL(*audio_renderer_, StartPlaying());
++    EXPECT_CALL(callbacks_, OnAudioTrackChangeComplete());
++  }
++  renderer_impl_->OnTracksChanged(
++      DemuxerStream::AUDIO, &first,
++      base::BindOnce(&CallbackHelper::OnAudioTrackChangeComplete,
++                     base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  Destroy();
++}
++
++// Parc: Chrome's identity keeps Chromium's one audio stream.
++TEST_F(RendererImplTest, ParcChromePlaysFirstEnabledAudioStreamOnly) {
++  ParcTogglableStream first(TestAudioConfig::Normal());
++  ParcTogglableStream second(TestAudioConfig::Normal());
++  EXPECT_CALL(*demuxer_, GetAllStreams())
++      .WillRepeatedly(
++          Return(std::vector<raw_ptr<DemuxerStream>>{&first, &second}));
++  EXPECT_CALL(*audio_renderer_, OnInitialize(&first, _, _, _))
++      .WillOnce(DoAll(SaveArg<2>(&audio_renderer_client_),
++                      RunOnceCallback<3>(PIPELINE_OK)));
++  EXPECT_CALL(*audio_renderer_, GetTimeSource())
++      .WillOnce(Return(&time_source_));
++  EXPECT_CALL(callbacks_, OnInitialize(_));
++  renderer_impl_->Initialize(demuxer_.get(), &callbacks_,
++                             base::BindOnce(&CallbackHelper::OnInitialize,
++                                            base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++
++  const base::TimeDelta start = base::Milliseconds(kStartPlayingTimeInMs);
++  EXPECT_CALL(time_source_, SetMediaTime(start));
++  EXPECT_CALL(*audio_renderer_, StartPlaying());
++  EXPECT_CALL(time_source_, StartTicking());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  renderer_impl_->StartPlayingFrom(start);
++  audio_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++  Destroy();
++}
++
++// Parc: an encrypted audio stream enabled before any CDM is set waits for
++// one, time held as WebKit's synchronizer holds it for samples it can't
++// decrypt yet; it then joins the playing renderer with that CDM, no restart.
++TEST_F(RendererImplTest, ParcEncryptedAudioJoinsOnceCdmIsSet) {
++  StrictMock<ParcLateStreamsDemuxer> demuxer;
++  ParcTogglableStream first(TestAudioConfig::Normal());
++  ParcTogglableStream second(TestAudioConfig::NormalEncrypted());
++  EXPECT_CALL(demuxer, GetAllStreams())
++      .WillRepeatedly(Return(std::vector<raw_ptr<DemuxerStream>>{&first}));
++  EXPECT_CALL(*audio_renderer_, OnInitialize(&first, _, _, _))
++      .WillOnce(DoAll(SaveArg<2>(&audio_renderer_client_),
++                      RunOnceCallback<3>(PIPELINE_OK)));
++  EXPECT_CALL(*audio_renderer_, GetTimeSource())
++      .WillOnce(Return(&time_source_));
++  EXPECT_CALL(callbacks_, OnInitialize(_));
++  renderer_impl_->Initialize(&demuxer, &callbacks_,
++                             base::BindOnce(&CallbackHelper::OnInitialize,
++                                            base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  const base::TimeDelta start = base::Milliseconds(kStartPlayingTimeInMs);
++  EXPECT_CALL(time_source_, SetMediaTime(start));
++  EXPECT_CALL(*audio_renderer_, StartPlaying());
++  EXPECT_CALL(time_source_, StartTicking());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  renderer_impl_->StartPlayingFrom(start);
++  audio_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++
++  EXPECT_CALL(demuxer, GetAllStreams())
++      .WillRepeatedly(
++          Return(std::vector<raw_ptr<DemuxerStream>>{&first, &second}));
++  EXPECT_CALL(callbacks_, OnWaiting(WaitingReason::kNoCdm));
++  EXPECT_CALL(time_source_, StopTicking());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_NOTHING,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  EXPECT_CALL(callbacks_, OnAudioTrackChangeComplete());
++  renderer_impl_->OnTracksChanged(
++      DemuxerStream::AUDIO, &first,
++      base::BindOnce(&CallbackHelper::OnAudioTrackChangeComplete,
++                     base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  Mock::VerifyAndClearExpectations(&time_source_);
++
++  auto owned_mixed = std::make_unique<StrictMock<MockAudioRenderer>>();
++  StrictMock<MockAudioRenderer>* mixed = owned_mixed.get();
++  RendererClient* mixed_client = nullptr;
++  StrictMock<MockTimeSource> mixed_time_source;
++  const base::TimeDelta now = base::Seconds(1);
++  EXPECT_CALL(*mixed, GetTimeSource())
++      .WillRepeatedly(Return(&mixed_time_source));
++  EXPECT_CALL(*audio_renderer_, ParcCreateMixedRenderer())
++      .WillOnce(Return(testing::ByMove(std::move(owned_mixed))));
++  EXPECT_CALL(*mixed, SetLatencyHint(_));
++  EXPECT_CALL(*mixed, SetPreservesPitch(true));
++  EXPECT_CALL(*mixed, OnInitialize(&second, cdm_context_.get(), _, _))
++      .WillOnce(
++          DoAll(SaveArg<2>(&mixed_client), RunOnceCallback<3>(PIPELINE_OK)));
++  EXPECT_CALL(time_source_, CurrentMediaTime()).WillOnce(Return(now));
++  EXPECT_CALL(mixed_time_source, SetMediaTime(now));
++  EXPECT_CALL(mixed_time_source, SetPlaybackRate(0));
++  EXPECT_CALL(*mixed, StartPlaying());
++  SetCdmAndExpect(true);
++  ASSERT_TRUE(mixed_client);
++
++  EXPECT_CALL(time_source_, StartTicking());
++  EXPECT_CALL(mixed_time_source, StartTicking());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  mixed_client->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                       BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++  Destroy();
++}
++
++// Parc: so does encrypted video joining playing audio.
++TEST_F(RendererImplTest, ParcEncryptedVideoJoinsOnceCdmIsSet) {
++  StrictMock<ParcLateStreamsDemuxer> demuxer;
++  CreateAudioStream();
++  EXPECT_CALL(demuxer, GetAllStreams()).WillRepeatedly(Return(streams_));
++  SetAudioRendererInitializeExpectations(PIPELINE_OK);
++  EXPECT_CALL(*audio_renderer_, GetTimeSource())
++      .WillOnce(Return(&time_source_));
++  EXPECT_CALL(callbacks_, OnInitialize(_));
++  renderer_impl_->Initialize(&demuxer, &callbacks_,
++                             base::BindOnce(&CallbackHelper::OnInitialize,
++                                            base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  ON_CALL(*audio_renderer_, StartPlaying())
++      .WillByDefault(SetBufferingState(&audio_renderer_client_,
++                                       BUFFERING_HAVE_ENOUGH,
++                                       BUFFERING_CHANGE_REASON_UNKNOWN));
++  Play();
++  SetPlaybackRate(1.0);
++
++  std::unique_ptr<StrictMock<MockDemuxerStream>> video =
++      CreateStream(DemuxerStream::VIDEO);
++  video->set_video_decoder_config(TestVideoConfig::NormalEncrypted());
++  EXPECT_CALL(callbacks_, OnWaiting(WaitingReason::kNoCdm));
++  EXPECT_CALL(time_source_, StopTicking());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_NOTHING,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  EXPECT_CALL(callbacks_, OnVideoTrackChangeComplete());
++  renderer_impl_->OnTracksChanged(
++      DemuxerStream::VIDEO, video.get(),
++      base::BindOnce(&CallbackHelper::OnVideoTrackChangeComplete,
++                     base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  Mock::VerifyAndClearExpectations(&time_source_);
++
++  const base::TimeDelta now = base::Seconds(1);
++  {
++    InSequence join;
++    EXPECT_CALL(*video_renderer_,
++                OnInitialize(video.get(), cdm_context_.get(), _, _, _))
++        .WillOnce(DoAll(SaveArg<2>(&video_renderer_client_),
++                        RunOnceCallback<4>(PIPELINE_OK)));
++    EXPECT_CALL(time_source_, CurrentMediaTime()).WillOnce(Return(now));
++    EXPECT_CALL(*video_renderer_, StartPlayingFrom(now));
++  }
++  SetCdmAndExpect(true);
++
++  EXPECT_CALL(time_source_, StartTicking());
++  EXPECT_CALL(*video_renderer_, OnTimeProgressing());
++  EXPECT_CALL(callbacks_,
++              OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                     BUFFERING_CHANGE_REASON_UNKNOWN));
++  video_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++  Destroy();
++}
++
  }  // namespace media
 --- a/media/base/video_renderer.h
 +++ b/media/base/video_renderer.h
@@ -16685,7 +17586,19 @@
  };
  
  class MockAudioRenderer : public AudioRenderer {
-@@ -543,6 +546,10 @@
+@@ -499,6 +502,11 @@
+   MOCK_METHOD1(SetPreservesPitch, void(bool));
+   MOCK_METHOD1(SetWasPlayedWithUserActivationAndHighMediaEngagement,
+                void(bool));
++  MOCK_METHOD(std::unique_ptr<AudioRenderer>,
++              ParcCreateMixedRenderer,
++              (),
++              (override));
++  MOCK_METHOD(void, ParcSetOwnAudioMuted, (bool muted), (override));
+ };
+ 
+ class MockRenderer : public Renderer {
+@@ -543,6 +551,10 @@
    MOCK_METHOD2(OnSelectedAudioTracksChanged,
                 void(std::vector<raw_ptr<DemuxerStream>>, base::OnceClosure));
    RendererType GetRendererType() override { return renderer_type_; }
@@ -18641,3 +19554,200 @@
 +}
 +
  }  // namespace blink
+--- a/media/base/audio_renderer.h
++++ b/media/base/audio_renderer.h
+@@ -5,6 +5,7 @@
+ #ifndef MEDIA_BASE_AUDIO_RENDERER_H_
+ #define MEDIA_BASE_AUDIO_RENDERER_H_
+ 
++#include <memory>
+ #include <optional>
+ 
+ #include "base/functional/callback.h"
+@@ -80,6 +81,18 @@
+   // activation and high media engagement.
+   virtual void SetWasPlayedWithUserActivationAndHighMediaEngagement(
+       bool was_played_with_user_activation_and_high_media_engagement) = 0;
++
++  // Parc: a renderer for another audio stream whose output this one adds into
++  // its own on its timeline, as WebKit's player plays every enabled audio
++  // track on one synchronizer (AudioVideoRendererAVFObjC::addTrack). It plays
++  // through this one's sink at this one's volume. Null if this one can't mix
++  // (not initialized, or bitstream output). Call after Initialize() completed.
++  virtual std::unique_ptr<AudioRenderer> ParcCreateMixedRenderer() {
++    return nullptr;
++  }
++  // Parc: silences this renderer's own stream (its track was disabled) while
++  // its clock and the renderers mixed into it go on.
++  virtual void ParcSetOwnAudioMuted(bool muted) {}
+ };
+ 
+ }  // namespace media
+--- a/media/renderers/audio_renderer_impl.h
++++ b/media/renderers/audio_renderer_impl.h
+@@ -23,6 +23,7 @@
+ 
+ #include <memory>
+ #include <optional>
++#include <vector>
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -111,6 +112,8 @@
+   void SetRenderMutedAudio(bool render_muted_audio) override;
+   void SetWasPlayedWithUserActivationAndHighMediaEngagement(
+       bool was_played_with_user_activation_and_high_media_engagement) override;
++  std::unique_ptr<AudioRenderer> ParcCreateMixedRenderer() override;
++  void ParcSetOwnAudioMuted(bool muted) override;
+ 
+   // base::PowerSuspendObserver implementation.
+   void OnSuspend() override;
+@@ -266,6 +269,24 @@
+   // AudioRendererAlgorithm::FrontTimestamp().
+   base::TimeDelta CalculateClockAndAlgorithmDrift() const;
+ 
++  // Parc: see ParcCreateMixedRenderer(). The sink of a renderer it made.
++  class ParcMixedSink;
++  // Parc: adds the renderers mixed into this one into the first |frames| of
++  // |audio_bus|, which this one's own |own_frames| start, at media time
++  // |start|. Returns how many frames hold audio.
++  int ParcMix_Locked(base::TimeDelta start,
++                     int own_frames,
++                     int frames,
++                     base::TimeDelta delay,
++                     base::TimeTicks delay_timestamp,
++                     AudioBus* audio_bus);
++  // Parc: Render() for the renderer this one is mixed into, whose output it
++  // goes into at media time |start|.
++  int ParcRenderMixed(base::TimeDelta start,
++                      base::TimeDelta delay,
++                      base::TimeTicks delay_timestamp,
++                      AudioBus* audio_bus);
++
+   scoped_refptr<base::SequencedTaskRunner> task_runner_;
+ 
+   std::unique_ptr<AudioBufferConverter> buffer_converter_;
+@@ -290,6 +311,10 @@
+   // unmuted.
+   scoped_refptr<NullAudioSink> null_sink_;
+ 
++  // Parc: |sink_| of a renderer ParcCreateMixedRenderer() made; it renders in
++  // that sink's format, the one of the renderer it's mixed into.
++  scoped_refptr<ParcMixedSink> parc_mixed_sink_;
++
+   // True if |sink_| has not yet been started.
+   bool real_sink_needs_start_;
+ 
+@@ -382,6 +407,14 @@
+   // Keeps track of whether we received and rendered the end of stream buffer.
+   bool received_end_of_stream_;
+   bool rendered_end_of_stream_;
++
++  // Parc: the sinks of the renderers mixed into this one, and the buses they
++  // render into; and whether this one's own stream is silenced (see
++  // ParcSetOwnAudioMuted()).
++  std::vector<scoped_refptr<ParcMixedSink>> parc_mixed_sinks_;
++  std::unique_ptr<AudioBus> parc_mix_bus_;
++  std::unique_ptr<AudioBus> parc_mix_wrapper_;
++  bool parc_own_audio_muted_ = false;
+ 
+   std::unique_ptr<AudioClock> audio_clock_;
+ 
+--- a/media/renderers/audio_renderer_impl_unittest.cc
++++ b/media/renderers/audio_renderer_impl_unittest.cc
+@@ -33,6 +33,7 @@
+ #include "media/base/mock_media_log.h"
+ #include "media/base/speech_recognition_client.h"
+ #include "media/base/test_helpers.h"
++#include "media/filters/audio_clock.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -557,6 +558,26 @@
+         renderer_->buffer_converter_->input_frames_left_for_testing());
+   }
+ 
++  // Parc: a renderer mixed into |renderer_| (ParcCreateMixedRenderer()),
++  // initialized and prerolled through the helpers, which drive |renderer_|
++  // again after.
++  std::unique_ptr<AudioRendererImpl> ParcCreateMixedRenderer() {
++    std::unique_ptr<AudioRendererImpl> leader = std::move(renderer_);
++    renderer_.reset(static_cast<AudioRendererImpl*>(
++        leader->ParcCreateMixedRenderer().release()));
++    CHECK(renderer_);
++    renderer_->tick_clock_ = &tick_clock_;
++    Initialize();
++    Preroll();
++    std::swap(renderer_, leader);
++    return leader;
++  }
++
++  base::TimeDelta ParcWrittenUpTo(AudioRendererImpl* renderer) {
++    base::AutoLock auto_lock(renderer->lock_);
++    return renderer->audio_clock_->back_timestamp();
++  }
++
+   base::TimeDelta CurrentMediaTime() { return renderer_->CurrentMediaTime(); }
+ 
+   std::vector<bool> channel_mask() const {
+@@ -1325,6 +1346,60 @@
+   for (float non_zero_sample : bus->channel(0).subspan(zero_frames)) {
+     ASSERT_NE(0.0f, non_zero_sample);
+   }
++}
++
++// Parc: a renderer for another enabled audio track plays in this one's
++// output, added to its audio, as WebKit's renderers on one synchronizer play
++// together; silencing this one's own track leaves the other's.
++TEST_F(AudioRendererImplTest, ParcMixedRendererPlaysInTheOutput) {
++  Initialize();
++  Preroll();
++  std::unique_ptr<AudioRendererImpl> mixed = ParcCreateMixedRenderer();
++  StartTicking();
++  mixed->StartTicking();
++  mixed->SetPlaybackRate(1.0);
++
++  std::unique_ptr<AudioBus> bus = AudioBus::Create(hardware_params_);
++  int frames_read = 0;
++  // The first buffer holds the resamplers' start.
++  for (int i = 0; i < 2; ++i) {
++    EXPECT_TRUE(sink_->Render(bus.get(), base::TimeDelta(), &frames_read));
++  }
++  EXPECT_EQ(frames_read, bus->frames());
++  for (float sample : bus->channel(0)) {
++    ASSERT_NEAR(2.0f, sample, 0.05f);
++  }
++
++  renderer_->ParcSetOwnAudioMuted(true);
++  EXPECT_TRUE(sink_->Render(bus.get(), base::TimeDelta(), &frames_read));
++  EXPECT_EQ(frames_read, bus->frames());
++  for (float sample : bus->channel(0)) {
++    ASSERT_NEAR(1.0f, sample, 0.05f);
++  }
++}
++
++// Parc: a mixed renderer keeps to this one's timeline: one that starts
++// playing behind it, as a track joining playback does, skips what this one
++// already played.
++TEST_F(AudioRendererImplTest, ParcMixedRendererKeepsToTheTimeline) {
++  Initialize();
++  Preroll();
++  std::unique_ptr<AudioRendererImpl> mixed = ParcCreateMixedRenderer();
++  StartTicking();
++  std::unique_ptr<AudioBus> bus = AudioBus::Create(hardware_params_);
++  int frames_read = 0;
++  for (int i = 0; i < 2; ++i) {
++    EXPECT_TRUE(sink_->Render(bus.get(), base::TimeDelta(), &frames_read));
++  }
++  EXPECT_EQ(ParcWrittenUpTo(mixed.get()), base::TimeDelta());
++
++  mixed->StartTicking();
++  mixed->SetPlaybackRate(1.0);
++  EXPECT_TRUE(sink_->Render(bus.get(), base::TimeDelta(), &frames_read));
++  EXPECT_LE((ParcWrittenUpTo(renderer_.get()) - ParcWrittenUpTo(mixed.get()))
++                .magnitude(),
++            base::Milliseconds(30));
++  EXPECT_GT(ParcWrittenUpTo(mixed.get()), base::Milliseconds(100));
+ }
+ 
+ TEST_F(AudioRendererImplTest, RenderingDelayedForSuspend) {
