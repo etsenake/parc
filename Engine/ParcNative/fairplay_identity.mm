@@ -48,6 +48,7 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/schemeful_site.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -204,7 +205,11 @@ class FairPlayIdentityHelper final
     : public content::WebContentsObserver,
       public content::WebContentsUserData<FairPlayIdentityHelper> {
  public:
-  ~FairPlayIdentityHelper() override { Helpers().erase(this); }
+  ~FairPlayIdentityHelper() override {
+    for (id observer : power_observers_)
+      [NSNotificationCenter.defaultCenter removeObserver:observer];
+    Helpers().erase(this);
+  }
 
   // The lists changed: reload the page when its main document no longer
   // presents the identity its site now has. A page whose main frame is
@@ -280,6 +285,19 @@ class FairPlayIdentityHelper final
       : content::WebContentsObserver(contents),
         content::WebContentsUserData<FairPlayIdentityHelper>(*contents) {
     Helpers().insert(this);
+    auto weak_contents = contents->GetWeakPtr();
+    for (NSNotificationName name in @[
+             NSProcessInfoPowerStateDidChangeNotification,
+             NSProcessInfoThermalStateDidChangeNotification]) {
+      id observer = [NSNotificationCenter.defaultCenter
+          addObserverForName:name object:nil queue:NSOperationQueue.mainQueue
+          usingBlock:^(NSNotification*) {
+            if (weak_contents)
+              UpdateMediaPowerState(weak_contents.get());
+          }];
+      power_observers_.push_back(observer);
+    }
+    UpdateMediaPowerState(contents);
     // Chromium uses the override only for navigations that ask for it, so
     // setting it changes nothing until one does.
     if (!SafariUserAgentString().empty()) {
@@ -288,6 +306,20 @@ class FairPlayIdentityHelper final
           /*override_in_new_tabs=*/false);
     }
   }
+  static void UpdateMediaPowerState(content::WebContents* contents) {
+    if (contents->IsBeingDestroyed())
+      return;
+    // WebKit's LowPowerModeNotifier and ThermalMitigationNotifier.
+    NSProcessInfo* info = NSProcessInfo.processInfo;
+    bool restricted = info.lowPowerModeEnabled ||
+        info.thermalState >= NSProcessInfoThermalStateSerious;
+    auto prefs = contents->GetOrCreateWebPreferences();
+    if (prefs.parc_media_power_restricted == restricted)
+      return;
+    prefs.parc_media_power_restricted = restricted;
+    contents->SetWebPreferences(prefs);
+  }
+  std::vector<id> power_observers_;
   friend content::WebContentsUserData<FairPlayIdentityHelper>;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 
