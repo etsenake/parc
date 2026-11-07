@@ -93,7 +93,7 @@
  #include "v8/include/v8.h"
  
  namespace blink {
-@@ -240,6 +262,171 @@
+@@ -240,6 +262,173 @@
    lifecycle_ = next_status;
  }
  
@@ -107,6 +107,8 @@
 +// ([ContextEnabled=ParcSafariIdentity], such as HTMLMediaElement's
 +// getStartDate) are installed with each interface object made after the
 +// window has these settings; they check the document's user agent then.
++// ContextEnabled=ParcAudioVideoTracks needs them with Chromium's
++// AudioVideoTracks flag too, which [RuntimeEnabled] alone gave.
 +void EnableParcSafariBindings(LocalDOMWindow* window) {
 +  ContextFeatureSettings::From(
 +      window, ContextFeatureSettings::CreationMode::kCreateIfNotExists);
@@ -265,19 +267,20 @@
  void LocalWindowProxy::Initialize() {
    TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
                 GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -299,6 +486,11 @@
+@@ -299,6 +488,12 @@
      SetSecurityToken(origin.get());
    }
  
 +  // Before anything, embedder hooks included, makes an interface object.
-+  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
++  if (PresentsParcSafariIdentity(GetFrame()->DomWindow()) ||
++      RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
 +    EnableParcSafariBindings(GetFrame()->DomWindow());
 +  }
 +
    {
      TRACE_EVENT2("v8", "ContextCreatedNotification", "IsMainFrame",
                   GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +501,12 @@
+@@ -309,6 +504,12 @@
    }
  
    InstallConditionalFeatures();
@@ -290,7 +293,7 @@
  
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +750,26 @@
+@@ -552,6 +753,29 @@
      return;
    }
  
@@ -301,6 +304,9 @@
 +  // the previous document's getters, which must not run during the commit.
 +  // So its main world gets ManagedMediaSource, WebKitMediaKeys, Safari's
 +  // MediaKeys and its video presentation API from a microtask instead.
++  if (RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
++    EnableParcSafariBindings(GetFrame()->DomWindow());
++  }
 +  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
 +    EnableParcSafariBindings(GetFrame()->DomWindow());
 +    ScriptState::Scope scope(script_state_);
@@ -2674,9 +2680,21 @@
      readonly attribute boolean paused;
      attribute double defaultPlaybackRate;
      [RaisesException=Setter] attribute double playbackRate;
+@@ -88,8 +93,9 @@
+     [CEReactions, Reflect=muted] attribute boolean defaultMuted;
+ 
+     // tracks
+-    [SameObject, RuntimeEnabled=AudioVideoTracks] readonly attribute AudioTrackList audioTracks;
+-    [SameObject, RuntimeEnabled=AudioVideoTracks] readonly attribute VideoTrackList videoTracks;
++    // Parc: exposed on Safari-identity pages too, as WebKit always has them.
++    [SameObject, ContextEnabled=ParcAudioVideoTracks] readonly attribute AudioTrackList audioTracks;
++    [SameObject, ContextEnabled=ParcAudioVideoTracks] readonly attribute VideoTrackList videoTracks;
+     [SameObject] readonly attribute TextTrackList textTracks;
+     [RaisesException] TextTrack addTextTrack(TextTrackKind kind, optional DOMString label = "", optional DOMString language = "");
+ 
 --- a/third_party/blink/renderer/core/context_features/context_feature_settings.h
 +++ b/third_party/blink/renderer/core/context_features/context_feature_settings.h
-@@ -72,6 +72,12 @@
+@@ -72,6 +72,18 @@
    }
    bool isUnboundedElementEnabled() const;
  
@@ -2685,6 +2703,12 @@
 +  // agent when the bindings are installed. A window gets these settings when
 +  // its context is created for such a document (local_window_proxy.cc).
 +  bool isParcSafariIdentityEnabled() const;
++
++  // ContextEnabled=ParcAudioVideoTracks: audioTracks, videoTracks and their
++  // interfaces, which Chromium exposes only with its AudioVideoTracks flag
++  // and WebKit always has, so a Safari-identity page sees them too. A window
++  // gets these settings with either (local_window_proxy.cc).
++  bool isParcAudioVideoTracksEnabled() const;
 +
    void Trace(Visitor*) const override;
  
@@ -2699,12 +2723,17 @@
  #include "third_party/blink/renderer/platform/runtime_enabled_feature_checks.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
-@@ -77,6 +78,10 @@
+@@ -77,6 +78,15 @@
               : UnboundedElementAuth::kAllowedOpenWeb;
  }
  
 +bool ContextFeatureSettings::isParcSafariIdentityEnabled() const {
 +  return IsParcSafariIdentityUserAgent(GetSupplementable()->UserAgent());
++}
++
++bool ContextFeatureSettings::isParcAudioVideoTracksEnabled() const {
++  return RuntimeEnabledFeatures::AudioVideoTracksEnabled() ||
++         isParcSafariIdentityEnabled();
 +}
 +
  bool ContextFeatureSettings::isUnboundedElementEnabled() const {
@@ -3587,3 +3616,128 @@
  };
  
  }  // namespace blink
+--- a/third_party/blink/renderer/core/html/track/audio_track.idl
++++ b/third_party/blink/renderer/core/html/track/audio_track.idl
+@@ -4,8 +4,10 @@
+ 
+ // https://html.spec.whatwg.org/C/#audiotrack
+ 
++// Parc: ContextEnabled=ParcAudioVideoTracks is Chromium's AudioVideoTracks
++// flag or a Safari-identity page, as WebKit always has these.
+ [
+-    RuntimeEnabled=AudioVideoTracks,
++    ContextEnabled=ParcAudioVideoTracks,
+     Exposed=Window
+ ] interface AudioTrack {
+   readonly attribute DOMString id;
+--- a/third_party/blink/renderer/core/html/track/video_track.idl
++++ b/third_party/blink/renderer/core/html/track/video_track.idl
+@@ -4,8 +4,10 @@
+ 
+ // https://html.spec.whatwg.org/C/#videotrack
+ 
++// Parc: ContextEnabled=ParcAudioVideoTracks is Chromium's AudioVideoTracks
++// flag or a Safari-identity page, as WebKit always has these.
+ [
+-    RuntimeEnabled=AudioVideoTracks,
++    ContextEnabled=ParcAudioVideoTracks,
+     Exposed=Window
+ ] interface VideoTrack {
+   readonly attribute DOMString id;
+--- a/third_party/blink/renderer/core/html/track/audio_track_list.idl
++++ b/third_party/blink/renderer/core/html/track/audio_track_list.idl
+@@ -4,8 +4,10 @@
+ 
+ // https://html.spec.whatwg.org/C/#audiotracklist
+ 
++// Parc: ContextEnabled=ParcAudioVideoTracks is Chromium's AudioVideoTracks
++// flag or a Safari-identity page, as WebKit always has these.
+ [
+-    RuntimeEnabled=AudioVideoTracks,
++    ContextEnabled=ParcAudioVideoTracks,
+     Exposed=Window
+ ] interface AudioTrackList : EventTarget {
+   readonly attribute unsigned long length;
+--- a/third_party/blink/renderer/core/html/track/video_track_list.idl
++++ b/third_party/blink/renderer/core/html/track/video_track_list.idl
+@@ -4,8 +4,10 @@
+ 
+ // https://html.spec.whatwg.org/C/#videotracklist
+ 
++// Parc: ContextEnabled=ParcAudioVideoTracks is Chromium's AudioVideoTracks
++// flag or a Safari-identity page, as WebKit always has these.
+ [
+-    RuntimeEnabled=AudioVideoTracks,
++    ContextEnabled=ParcAudioVideoTracks,
+     Exposed=Window
+ ] interface VideoTrackList : EventTarget {
+   readonly attribute unsigned long length;
+--- a/third_party/blink/renderer/modules/mediasource/source_buffer.idl
++++ b/third_party/blink/renderer/modules/mediasource/source_buffer.idl
+@@ -55,8 +55,9 @@
+     // Applies an offset to media segment timestamps.
+     [RaisesException=Setter] attribute double timestampOffset;
+ 
+-    [Exposed=Window, RuntimeEnabled=AudioVideoTracks] readonly attribute AudioTrackList audioTracks;
+-    [Exposed=Window, RuntimeEnabled=AudioVideoTracks] readonly attribute VideoTrackList videoTracks;
++    // Parc: exposed on Safari-identity pages too, as WebKit always has them.
++    [Exposed=Window, ContextEnabled=ParcAudioVideoTracks] readonly attribute AudioTrackList audioTracks;
++    [Exposed=Window, ContextEnabled=ParcAudioVideoTracks] readonly attribute VideoTrackList videoTracks;
+ 
+     // Presentation timestamp for the start of append window.
+     [RaisesException=Setter] attribute double appendWindowStart;
+--- a/third_party/blink/renderer/modules/mediasource/audio_track_source_buffer.idl
++++ b/third_party/blink/renderer/modules/mediasource/audio_track_source_buffer.idl
+@@ -3,9 +3,11 @@
+ // found in the LICENSE file.
+ 
+ // https://w3c.github.io/media-source/#audio-track-extensions
++// Parc: ContextEnabled=ParcAudioVideoTracks is Chromium's AudioVideoTracks
++// flag or a Safari-identity page, as WebKit always has these.
+ [
+     ImplementedAs=SourceBufferTrackBaseSupplement,
+-    RuntimeEnabled=AudioVideoTracks
++    ContextEnabled=ParcAudioVideoTracks
+ ] partial interface AudioTrack {
+     readonly attribute SourceBuffer? sourceBuffer;
+ };
+--- a/third_party/blink/renderer/modules/mediasource/video_track_source_buffer.idl
++++ b/third_party/blink/renderer/modules/mediasource/video_track_source_buffer.idl
+@@ -3,9 +3,11 @@
+ // found in the LICENSE file.
+ 
+ // https://w3c.github.io/media-source/#video-track-extensions
++// Parc: ContextEnabled=ParcAudioVideoTracks is Chromium's AudioVideoTracks
++// flag or a Safari-identity page, as WebKit always has these.
+ [
+     ImplementedAs=SourceBufferTrackBaseSupplement,
+-    RuntimeEnabled=AudioVideoTracks
++    ContextEnabled=ParcAudioVideoTracks
+ ] partial interface VideoTrack {
+     readonly attribute SourceBuffer? sourceBuffer;
+ };
+--- a/third_party/blink/renderer/modules/media_controls/media_controls_impl.cc
++++ b/third_party/blink/renderer/modules/media_controls/media_controls_impl.cc
+@@ -46,7 +46,9 @@
+ #include "third_party/blink/renderer/core/events/keyboard_event.h"
+ #include "third_party/blink/renderer/core/events/pointer_event.h"
+ #include "third_party/blink/renderer/core/events/touch_event.h"
++#include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/frame/web_feature.h"
+ #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+@@ -186,7 +188,11 @@
+ 
+ bool ShouldShowTrackSelectionButton(WebMediaPlayer::TrackType track_type,
+                                     HTMLMediaElement& element) {
+-  if (!RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
++  // Parc: Safari's controls offer a page's audio tracks, so a
++  // Safari-identity page gets the track menu as it gets audioTracks.
++  const ExecutionContext* context = element.GetExecutionContext();
++  if (!RuntimeEnabledFeatures::AudioVideoTracksEnabled() &&
++      !(context && IsParcSafariIdentityUserAgent(context->UserAgent()))) {
+     return false;
+   }
+   switch (track_type) {

@@ -184,6 +184,17 @@ WebKit: `MediaPlayerPrivateAVFoundationObjC` (track code, legible output),
 | In-band metadata track (`com.apple.streaming`, `DataCue`, `inBandMetadataTrackDispatchType`) | `InbandMetadataTextTrackPrivateAVF`: one `metadata` track (dispatch type `com.apple.streaming`) made when the item has an enabled metadata track or timed metadata arrives; ID3 and other timed metadata from `AVPlayerItemMetadataOutput` and date ranges from `AVPlayerItemMetadataCollector` become `DataCue`s whose `value` is the item (`type`, attributes, `locale`, `key`, `data`) and whose `type` names the key space; open cues end at the next item, are flushed on a seek, and show the duration meanwhile (`InbandDataTextTrack`); pages construct `DataCue`s with a value or an `ArrayBuffer` | the same on Safari-identity documents: the core reads both sources and sends add, update and remove (`HlsMediaSelection`); the element applies them as `InbandDataTextTrack` does (`ParcInbandTextTrack`) to a Blink `DataCue` (`parc_data_cue.*`, `[ContextEnabled=ParcSafariIdentity]`, as M156 Blink has none); `TextTrack.inBandMetadataTrackDispatchType` is `""` elsewhere | present | fp-native-hls |
 | Chapter tracks | `InbandChapterTrackPrivateAVFObjC` from the asset's chapter metadata: one `chapters` track per `availableChapterLocales` locale (language its identifier), one WebVTT cue per chapter item (number as id, title as text), deduplicated, refreshed on `AVAssetChapterMetadataGroupsDidChangeNotification`; never auto-selected | the same: the core makes the tracks and cues (`HlsMediaSelection`, with the non-deprecated `loadChapterMetadataGroupsWithTitleLocale:`), and they reach the element as in-band text tracks of kind `chapters` with WebVTT cues; a mode change does nothing, as WebKit's private chapter track stays hidden | present | fp-native-hls |
 
+## Formats and routing
+
+What Safari plays on this Mac and how Parc plays it on Safari-identity
+pages. Safari's answers come from WebKit's source and from one probe page
+run in a WKWebView (Safari's stack) and in a disposable Parc with Safari's
+identity, on November 7 (macOS 27.2, Safari 27.2, Parc 1.3.4 plus main).
+
+| Piece | Safari | Parc | Status |
+|---|---|---|---|
+| `audioTracks`, `videoTracks`, `AudioTrack`, `VideoTrack`, their lists, `SourceBuffer.audioTracks`/`videoTracks` and `AudioTrack`/`VideoTrack.sourceBuffer` | always exposed (WebKit has no flag) | Chromium exposes them only with its experimental AudioVideoTracks flag, so Safari-identity pages had none: the native HLS route's audio tracks, an MP4's alternate audio and a Media Source's tracks were invisible and couldn't be switched. Now `[ContextEnabled=ParcAudioVideoTracks]` (the flag or Safari's identity) and the controls' audio track menu follow them | present |
+
 ## Netflix and Apple TV+ paths to keep
 
 Netflix gates on `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_0')` and
