@@ -227,7 +227,7 @@ supervisor first; **decision** ones are documented choices, kept.
 - **Re-delivery after an automatic audio flush** doesn't flush first, so a read landing in between can be enqueued twice. **Open** (WebKit's order not fully visible in the checkout).
 - **Decoder reset** keeps the clock running; WebKit's `flushAndReenqueueVideo` holds it until a frame decodes. **Open**, untested on both.
 - **Frame counts** poll every 250 ms; WebKit refreshes at the page's read interval, checked every 250 ms (`RemoteAudioVideoRendererProxyManager`). The comments cited a site's timeout. **Fixed** 6512c592, 0704b7dd.
-- **Keys or Dolby Vision arriving after playback started** cost one restart (recipient key delivery; WebKit attaches keys per sample with an entitlement Parc can't have). **Decision**, f583a913.
+- **Keys or Dolby Vision arriving after playback started.** WebKit's `setCDMInstance` takes a CDM at any time and `attemptToDecrypt` releases the blocked samples; Parc's renderers must join the key session before their first sample, so a late `setMediaKeys` (or a clear Dolby Vision start) was refused. f583a913 restarts the pipeline into the FairPlay renderer instead: the page sees one `waiting`/`playing` and nothing else (no `error`, no `emptied`, same `currentTime`). The rebuffer itself stays: WebKit attaches keys per sample with an entitlement Parc can't have. **Fixed** f583a913, rebuffer recorded in the Chromium README's known gaps.
 
 ### Native HLS
 
@@ -251,7 +251,7 @@ supervisor first; **decision** ones are documented choices, kept.
 - **Protocol versions** in the key system (`com.apple.fps.3_1,2`) reach AVFoundation as `AVContentKeyRequestProtocolVersionsKey` in WebKit (`parseKeySystem`, `update`); Parc keeps only the major version. **Open.**
 - **Init data across loads (2_N).** WebKit's init data lives on the player and a new load starts clean; Parc keeps an element's init data and renderer session across loads. **Open.**
 - **Unrecognized init data** is refused at `update(cert)`; WebKit passes any bytes to AVFoundation. **Open.**
-- **Insecure origins and frames without `allow="encrypted-media"`.** WebKit's legacy API has no secure-context or permissions-policy gate; Parc's sits on modern EME, so the constructor throws there while `isTypeSupported` says yes. **Supervisor.**
+- **Insecure origins and frames without `allow="encrypted-media"`.** WebKit's legacy API has no secure-context or permissions-policy gate; Parc's sits on modern EME, so the constructor throws there while `isTypeSupported` says yes. **Awaiting Josh's call**, left as it is.
 - **Secure stop per keys object**, not per session. **Decision** (legacy table above).
 
 ### Capability answers
