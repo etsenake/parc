@@ -554,19 +554,23 @@ The core's `HlsMediaSelection` (`fairplay/fairplay_hls_media_selection.h`,
 AVFoundation track code: audioTracks from the audible media selection group
 (WebKit choosing the option, AVFoundation's automatic criteria off), textTracks
 from the legible group, cues from one `AVPlayerItemLegibleOutput` for the one
-track the modes pick. GPU service: it creates the selection with its client
-and `PostTask` and calls `HlsMediaSelectionAttach(selection.impl(),
-HlsPlayerAVPlayer(player.impl()), player.currentItem)` right after `Load`;
-`SetAudioTrackEnabled`/`SetTextTrackMode` and the client's `OnTracksChanged`
-/`OnTextCues` map one to one onto the mojo calls (`HlsTrack`/`HlsCue` →
-`FairPlayHlsTrack`/`FairPlayHlsCue` field for field). Around seeks it calls
-`BeginSeeking()` before each `FairPlayHlsPlayer::Seek` (repeats are harmless)
-and `EndSeeking()` once, when the `done` of the most recently issued seek
-runs, whatever its result (WebKit's `beginSeeking`/`endSeeking` on the current
-text track: the open cue is flushed and cues arriving meanwhile get no end
-from the next one; like WebKit, only the track current at the seek's start
-is flagged). The GPU never picks a text track: it serves whichever one the
-page's modes pick.
+track the modes pick. GPU service: `media::FairPlayHlsTrackBridge`
+(`fairplay_hls_track_bridge.{h,mm}`, the GPU source set) owns the selection
+and does the rest; the service makes one with its client remote and
+`PostTask`, calls `Attach(player.impl())` right after `Load`, puts
+`TakeTracksForInitialize()` in the `Initialize` reply, forwards
+`SetAudioTrackEnabled`/`SetTextTrackMode`, and calls `WillSeek()` before each
+`FairPlayHlsPlayer::Seek` and `DidSeek()` in its `done`, whatever the result.
+The bridge attaches with `HlsMediaSelectionAttach(selection.impl(),
+HlsPlayerAVPlayer(player.impl()), player.currentItem)`, maps
+`HlsTrack`/`HlsCue` onto `FairPlayHlsTrack`/`FairPlayHlsCue` field for field,
+holds lists back until the reply, and brackets seeks as WebKit does: the
+selection's `BeginSeeking()` on every seek and `EndSeeking()` once the last
+one is done (WebKit's `beginSeeking`/`endSeeking` on the current text track:
+the open cue is flushed and cues arriving meanwhile get no end from the next
+one; like WebKit, only the track current at the seek's start is flagged).
+The GPU never picks a text track: it serves whichever one the page's modes
+pick.
 
 Page side, Safari-identity documents only (the route exists only there).
 The demuxer gets `ParcNativeHlsDemuxerParams.track_manager`, a

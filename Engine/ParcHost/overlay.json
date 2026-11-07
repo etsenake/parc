@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 438,
+  "version": 439,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1575,7 +1575,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/BUILD.gn",
       "target": "third_party/parc_fairplay/BUILD.gn",
-      "sha256": "fc5b7c3cbf3a58283130013ce68912ce0755d27ce82167912c783fa551cae1dd"
+      "sha256": "ab5c3f1bfed6fe27e3c7f5ecd03783b99617e346dc9637bf2ba5a6e9d81a1d90"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_key_system.h",
@@ -1656,6 +1656,16 @@
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_adapter.mm",
       "target": "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.mm",
       "sha256": "ef3f5cff2566c8d58aabfe441e9e86b20c14f829e7361918ea9e3bdc5863e533"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/fairplay_hls_track_bridge.h",
+      "target": "third_party/parc_fairplay/chromium/fairplay_hls_track_bridge.h",
+      "sha256": "045feef5775f0e262d4c5338633cbd71a10482d0ac211168f2faf5328b274e4b"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/fairplay_hls_track_bridge.mm",
+      "target": "third_party/parc_fairplay/chromium/fairplay_hls_track_bridge.mm",
+      "sha256": "6b223d7ca3e7490c8f9d8cba1438d46fbbce0c7b04c508c2a9ca7e36432c885b"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client.h",
