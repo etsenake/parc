@@ -71,6 +71,11 @@ struct HlsTrack {
   bool contains_only_forced_subtitles = false;
   bool is_main_program_content = false;
   bool is_easy_to_read = false;
+  // Text only: the one track WebKit's automatic selection shows when none
+  // is showing (HTMLMediaElement::configureTextTrackGroup scored by
+  // CaptionUserPreferencesMediaAF from the system caption settings: display
+  // mode, caption languages, SDH preference) for the enabled audio track.
+  bool automatic = false;
 
   bool operator==(const HlsTrack&) const = default;
 };

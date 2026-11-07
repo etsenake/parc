@@ -29,7 +29,19 @@
  void TextTrack::setMode(const V8TextTrackMode& mode) {
 --- a/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
 +++ b/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
-@@ -172,6 +172,9 @@
+@@ -85,6 +85,11 @@
+ 
+     if (text_track->kind() == PreferredTrackKind())
+       track_score += 1;
++    // Parc: Safari's native HLS tracks (M156's only in-band text tracks)
++    // follow WebKit's choice, which the player makes from the system caption
++    // settings and reports as the track's default, not Chrome's preferences.
++    if (text_track->TrackType() == TextTrack::kInBand)
++      track_score = 0;
+     if (track_score) {
+       // * If the text track kind is subtitles or captions and the user has
+       // indicated an interest in having a track with this text track kind, text
+@@ -172,6 +177,9 @@
      switch (text_track->kind().AsEnum()) {
        case V8TextTrackKind::Enum::kSubtitles:
        case V8TextTrackKind::Enum::kCaptions:
@@ -93,7 +105,7 @@
  
  #include "base/functional/callback.h"
  #include "base/types/strong_alias.h"
-@@ -122,6 +126,117 @@
+@@ -122,6 +126,121 @@
    Language language_;
  };
  
@@ -124,6 +136,10 @@
 +  bool contains_only_forced_subtitles = false;
 +  bool is_main_program_content = false;
 +  bool is_easy_to_read = false;
++  // The one track WebKit's automatic selection shows when none is showing
++  // (the player scores them by the system caption settings): the element's
++  // automatic selection shows it (ParcInbandTextTrack::IsDefault).
++  bool automatic = false;
 +};
 +
 +// Parc: TextTrack.mode, for the native HLS player.
@@ -211,7 +227,7 @@
  // Interface for requiring track manager methods on different implementations
  // that either forward them or handle them directly, like WebMediaPlayerImpl
  // and HTMLMediaElement.
-@@ -131,6 +246,23 @@
+@@ -131,6 +250,23 @@
    virtual void AddTrack(const MediaTrack&) = 0;
    virtual void RemoveTrack(const MediaTrack&) = 0;
    virtual void SetTrackState(const MediaTrack&, MediaTrack::State) = 0;
@@ -235,7 +251,7 @@
  };
  
  class MEDIA_EXPORT ForwardingTrackManager : public TrackManager {
-@@ -146,10 +278,38 @@
+@@ -146,10 +282,38 @@
    void RemoveTrack(const MediaTrack&) override;
    void SetTrackState(const MediaTrack&, MediaTrack::State) override;
  

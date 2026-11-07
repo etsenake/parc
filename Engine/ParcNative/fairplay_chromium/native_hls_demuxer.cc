@@ -601,6 +601,7 @@ void NativeHlsDemuxer::ApplyTracks(
         track->contains_only_forced_subtitles;
     text.is_main_program_content = track->is_main_program_content;
     text.is_easy_to_read = track->is_easy_to_read;
+    text.automatic = track->automatic;
     text_tracks.push_back(std::move(text));
   }
   track_manager_->ParcSetInbandAudioTracks(

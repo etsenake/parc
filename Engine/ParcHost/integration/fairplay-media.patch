@@ -1868,20 +1868,22 @@
      NOTREACHED();
 --- a/media/mojo/mojom/renderer_extensions.mojom
 +++ b/media/mojo/mojom/renderer_extensions.mojom
-@@ -12,6 +12,9 @@
+@@ -11,6 +11,9 @@
+ 
  [EnableIf=is_win]
  import "ui/gfx/mojom/buffer_types.mojom";
- 
++
 +[EnableIf=is_mac]
 +import "url/mojom/url.mojom";
-+
+ 
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
- // This allows the Browser side to call back into the Renderer side.
-@@ -24,6 +27,265 @@
+@@ -22,6 +25,268 @@
+   // play state (e.g. when another phone play/pauses a cast device on the same
+   // network).
    OnRemotePlayStateChange(MediaStatusState state);
- };
- 
++};
++
 +// Parc: extension of the mojo::RendererClient communication layer for the
 +// FairPlay Streaming Renderer, which runs next to the FairPlay CDM in the GPU
 +// process's media service. Implemented by FairPlayRendererClient in the
@@ -1979,6 +1981,9 @@
 +  bool contains_only_forced_subtitles;
 +  bool is_main_program_content;
 +  bool is_easy_to_read;
++  // The one text track WebKit's automatic selection shows when none is
++  // showing (by the system caption settings and the enabled audio track).
++  bool automatic;
 +};
 +
 +// TextTrack.mode.
@@ -2139,11 +2144,9 @@
 +  OnWaiting(WaitingReason reason);
 +  OnEnded();
 +  OnError(PipelineStatus status, string message);
-+};
-+
+ };
+ 
  [EnableIf=is_win]
- struct FrameTextureInfo {
-   gfx.mojom.GpuMemoryBufferHandle texture_handle;
 --- a/media/mojo/services/BUILD.gn
 +++ b/media/mojo/services/BUILD.gn
 @@ -111,6 +111,10 @@

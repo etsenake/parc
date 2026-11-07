@@ -35,6 +35,12 @@
 - (void)stop;
 @end
 
+// Foundation SPI WebKit declares (NSLocaleSPI.h) for its language matching.
+@interface NSLocale (ParcLanguageMatching)
++ (NSArray<NSString*>*)matchedLanguagesFromAvailableLanguages:(NSArray<NSString*>*)availableLanguages
+                                        forPreferredLanguages:(NSArray<NSString*>*)preferredLanguages;
+@end
+
 namespace parc::fairplay {
 namespace {
 
@@ -94,6 +100,235 @@ NSArray<NSString*>* PreferredAudioCharacteristics() {
   NSArray<NSString*>* result = [(__bridge NSArray*)characteristics copy];
   CFRelease(characteristics);
   return result ?: @[];
+}
+
+// WTF::indexOfBestMatchingLanguageInList on Cocoa: Foundation's match of
+// |language| against |list|; |list|'s size when nothing matches.
+size_t IndexOfBestMatchingLanguage(const std::string& language,
+                                   const std::vector<std::string>& list,
+                                   bool* exact_match) {
+  *exact_match = false;
+  NSString* preferred = language.empty() ? nil : @(language.c_str());
+  if (!preferred || list.empty()) {
+    return list.size();
+  }
+  NSMutableArray<NSString*>* available = [NSMutableArray array];
+  std::vector<size_t> positions;
+  for (size_t i = 0; i < list.size(); ++i) {
+    NSString* entry = list[i].empty() ? nil : @(list[i].c_str());
+    if (entry) {
+      [available addObject:entry];
+      positions.push_back(i);
+    }
+  }
+  if (!available.count) {
+    return list.size();
+  }
+  if (![NSLocale respondsToSelector:@selector(matchedLanguagesFromAvailableLanguages:forPreferredLanguages:)]) {
+    // WTF's portable rule where the SPI is missing: an exact match, else the
+    // first entry of the same language.
+    auto primary = [](const std::string& tag) {
+      std::string lower;
+      for (char c : tag.substr(0, tag.find_first_of("-_"))) {
+        lower.push_back(static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c));
+      }
+      return lower;
+    };
+    size_t same_language = list.size();
+    for (size_t i = 0; i < list.size(); ++i) {
+      NSString* entry = list[i].empty() ? nil : @(list[i].c_str());
+      // (A nil receiver would answer NSOrderedSame.)
+      if (entry && [entry caseInsensitiveCompare:preferred] == NSOrderedSame) {
+        *exact_match = true;
+        return i;
+      }
+      if (same_language == list.size() && !list[i].empty() && primary(list[i]) == primary(language)) {
+        same_language = i;
+      }
+    }
+    return same_language;
+  }
+  NSArray<NSString*>* matched = [NSLocale matchedLanguagesFromAvailableLanguages:available
+                                                           forPreferredLanguages:@[ preferred ]];
+  NSString* first = matched.firstObject;
+  if (!first) {
+    return list.size();
+  }
+  *exact_match = [first isEqualToString:preferred];
+  NSUInteger index = [available indexOfObject:first];
+  return index == NSNotFound ? list.size() : positions[index];
+}
+
+// TrackBase's isValidBCP47LanguageTag: what validBCP47Language keeps.
+bool IsValidBcp47LanguageTag(const std::string& tag) {
+  auto alpha = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+  auto alnum = [&](char c) { return alpha(c) || (c >= '0' && c <= '9'); };
+  size_t length = tag.size();
+  if (length < 2 || length > 100 || !alpha(tag[0])) {
+    return false;
+  }
+  if (length == 2) {
+    return alpha(tag[1]);
+  }
+  bool irregular = (tag[0] == 'i' || tag[0] == 'x') && tag[1] == '-';
+  size_t next;
+  if (!irregular) {
+    if (!alpha(tag[1])) {
+      return false;
+    }
+    if (length == 3) {
+      return alpha(tag[2]);
+    }
+    if (alpha(tag[2])) {
+      if (tag[3] != '-') {
+        return false;
+      }
+      next = 4;
+    } else if (tag[2] == '-') {
+      next = 3;
+    } else {
+      return false;
+    }
+  } else {
+    next = 2;
+  }
+  for (; next < length; ++next) {
+    if (!alnum(tag[next]) && tag[next] != '-') {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The system caption settings CaptionUserPreferencesMediaAF reads from
+// MediaAccessibility.
+struct CaptionPreferences {
+  enum class DisplayMode { kForcedOnly, kAutomatic, kAlwaysOn };
+  DisplayMode display_mode = DisplayMode::kForcedOnly;
+  // userPrefersCaptions: an SDH/CC captioning characteristic is preferred.
+  bool prefers_captions = false;
+  // preferredLanguages(): the caption languages, then the user's languages.
+  std::vector<std::string> languages;
+  // defaultLanguage(ShouldMinimizeLanguages::No): the user's first language.
+  std::string default_language;
+};
+
+std::vector<std::string> StringsFromCFArray(CFArrayRef array) {
+  std::vector<std::string> result;
+  CFIndex count = array ? CFArrayGetCount(array) : 0;
+  for (CFIndex i = 0; i < count; ++i) {
+    CFTypeRef value = CFArrayGetValueAtIndex(array, i);
+    if (value && CFGetTypeID(value) == CFStringGetTypeID()) {
+      result.push_back(ToStdString((__bridge NSString*)value));
+    }
+  }
+  return result;
+}
+
+CaptionPreferences ReadCaptionPreferences() {
+  CaptionPreferences preferences;
+  switch (MACaptionAppearanceGetDisplayType(kMACaptionAppearanceDomainUser)) {
+    case kMACaptionAppearanceDisplayTypeAutomatic:
+      preferences.display_mode = CaptionPreferences::DisplayMode::kAutomatic;
+      break;
+    case kMACaptionAppearanceDisplayTypeAlwaysOn:
+      preferences.display_mode = CaptionPreferences::DisplayMode::kAlwaysOn;
+      break;
+    case kMACaptionAppearanceDisplayTypeForcedOnly:
+    default:
+      preferences.display_mode = CaptionPreferences::DisplayMode::kForcedOnly;
+      break;
+  }
+  CFArrayRef characteristics =
+      MACaptionAppearanceCopyPreferredCaptioningMediaCharacteristics(kMACaptionAppearanceDomainUser);
+  preferences.prefers_captions = characteristics && CFArrayGetCount(characteristics) > 0;
+  if (characteristics) {
+    CFRelease(characteristics);
+  }
+  std::vector<std::string> user;
+  for (NSString* language in UserPreferredLanguages()) {
+    user.push_back(ToStdString(language));
+  }
+  preferences.default_language = user.empty() ? std::string() : user.front();
+  CFArrayRef selected = MACaptionAppearanceCopySelectedLanguages(kMACaptionAppearanceDomainUser);
+  preferences.languages = StringsFromCFArray(selected);
+  if (selected) {
+    CFRelease(selected);
+  }
+  preferences.languages.insert(preferences.languages.end(), user.begin(), user.end());
+  return preferences;
+}
+
+// CaptionUserPreferences::textTrackLanguageSelectionScore.
+int TextTrackLanguageSelectionScore(const std::string& language,
+                                    const std::vector<std::string>& preferred) {
+  if (language.empty()) {
+    return 0;
+  }
+  bool exact = false;
+  size_t index = IndexOfBestMatchingLanguage(language, preferred, &exact);
+  if (index >= preferred.size()) {
+    return 0;
+  }
+  return static_cast<int>((preferred.size() + (exact ? 1 : 0) - index) * 10);
+}
+
+// CaptionUserPreferences::textTrackSelectionScore for an in-band track
+// (CaptionUserPreferencesMediaAF's display mode and preferences; WebKit has
+// no Manual mode from MediaAccessibility, and in-band tracks have no
+// descriptions kind). |audio_language| is the first enabled audio track's.
+int TextTrackSelectionScore(const HlsTrack& track,
+                            const CaptionPreferences& preferences,
+                            const std::string& audio_language) {
+  using Mode = CaptionPreferences::DisplayMode;
+  const Mode mode = preferences.display_mode;
+  // AlwaysOn with neither captions nor subtitles preferred can't happen:
+  // userPrefersSubtitles is !userPrefersCaptions.
+  if (track.kind != "captions" && track.kind != "subtitles" && track.kind != "forced") {
+    return 0;
+  }
+  if (!track.is_main_program_content) {
+    return 0;
+  }
+  const bool forced_only = track.contains_only_forced_subtitles;
+  if ((forced_only && mode != Mode::kForcedOnly) || (!forced_only && mode == Mode::kForcedOnly)) {
+    return 0;
+  }
+  std::vector<std::string> languages = preferences.languages;
+  const std::string language = IsValidBcp47LanguageTag(track.language) ? track.language : std::string();
+  if (mode == Mode::kAutomatic || forced_only) {
+    if (language.empty() || audio_language.empty()) {
+      return 0;
+    }
+    std::vector<std::string> list;
+    bool exact = false;
+    if (forced_only) {
+      // Only a forced-only track in the audio's language.
+      list.push_back(audio_language);
+      if (IndexOfBestMatchingLanguage(language, list, &exact) != 0) {
+        return 0;
+      }
+    } else {
+      // Only when the audio isn't in the user's language, and the track is.
+      list.push_back(preferences.default_language);
+      if (IndexOfBestMatchingLanguage(audio_language, list, &exact) == 0) {
+        return 0;
+      }
+      if (IndexOfBestMatchingLanguage(language, list, &exact) != 0) {
+        return 0;
+      }
+    }
+    languages = list;
+  }
+  int score;
+  if (preferences.prefers_captions) {
+    // SDH, then CC, then subtitles.
+    score = track.kind == "subtitles" ? 1 : (track.is_closed_captions ? 2 : 3);
+  } else {
+    // Subtitles, then SDH, then CC.
+    score = track.kind == "subtitles" ? 3 : (!track.is_closed_captions ? 2 : 1);
+  }
+  return score + TextTrackLanguageSelectionScore(language, languages);
 }
 
 // The common metadata title in one of the user's languages
@@ -1498,6 +1733,7 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     for (auto& track : text_tracks_) {
       tracks.push_back(track->info);
     }
+    MarkAutomaticTextTrack(tracks);
     if (tracks == reported_) {
       return;
     }
@@ -1509,6 +1745,70 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
         client->OnTracksChanged(tracks);
       }
     });
+  }
+
+  // HTMLMediaElement::configureTextTrackGroup for the in-band captions and
+  // subtitles group, as on the element's first configuration (no track
+  // showing yet): the track it would show, marked |automatic|. The element
+  // shows that one (ParcInbandTextTrack::IsDefault) and leaves the others.
+  static void MarkAutomaticTextTrack(std::vector<HlsTrack>& tracks) {
+    std::string audio_language;
+    bool any_text = false;
+    for (const HlsTrack& track : tracks) {
+      if (track.type == HlsTrackType::kAudio && track.enabled && audio_language.empty()) {
+        audio_language = track.language;
+      }
+      any_text |= track.type == HlsTrackType::kText;
+    }
+    if (!any_text) {
+      return;
+    }
+    const CaptionPreferences preferences = ReadCaptionPreferences();
+    const bool forced_only_mode =
+        preferences.display_mode == CaptionPreferences::DisplayMode::kForcedOnly;
+    HlsTrack* to_enable = nullptr;
+    HlsTrack* default_track = nullptr;
+    HlsTrack* fallback = nullptr;
+    HlsTrack* forced = nullptr;
+    int highest = 0;
+    int highest_forced = 0;
+    for (HlsTrack& track : tracks) {
+      if (track.type != HlsTrackType::kText) {
+        continue;
+      }
+      track.automatic = false;
+      const int score = TextTrackSelectionScore(track, preferences, audio_language);
+      if (score) {
+        if (score > highest) {
+          highest = score;
+          to_enable = &track;
+        }
+        if (!default_track && track.is_default) {
+          default_track = &track;
+        }
+        if (!default_track && !fallback) {
+          fallback = &track;
+        }
+        if (track.contains_only_forced_subtitles && score > highest_forced) {
+          forced = &track;
+          highest_forced = score;
+        }
+      } else if (!default_track && track.is_default && !forced_only_mode) {
+        default_track = &track;
+      }
+    }
+    if (!to_enable) {
+      to_enable = default_track;
+    }
+    if (!to_enable) {
+      to_enable = forced;
+    }
+    if (!to_enable) {
+      to_enable = fallback;
+    }
+    if (to_enable) {
+      to_enable->automatic = true;
+    }
   }
 
   AudioTrack* FindAudioTrack(const std::string& key) {

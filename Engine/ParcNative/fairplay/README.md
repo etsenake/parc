@@ -479,7 +479,12 @@ compiled into the core but not yet called by the GPU service.
 - textTracks: the legible group's playable options, numbered from 0 in order
   of discovery; kinds `captions` (closed captions, SDH), `forced` or
   `subtitles`. The legible output serves one track, the first showing, else
-  the last hidden; no option is selected until the page shows one.
+  the last hidden; no option is selected until the page shows one. One text
+  track is marked `automatic`: the one WebKit's automatic selection shows
+  when none is showing (`configureTextTrackGroup` scored by
+  `CaptionUserPreferencesMediaAF` from MediaAccessibility's display mode,
+  caption languages and SDH preference, the user's languages, and the
+  enabled audio track's language; languages matched as WTF does on Cocoa).
 - Cues: one `AVPlayerItemLegibleOutput` (2 s advance, player rendering
   suppressed, source and rules styling) with WebVTT as native samples. WebVTT
   arrives as ISO WebVTT cue boxes (`kWebVtt`, plus the `vttC` header once per

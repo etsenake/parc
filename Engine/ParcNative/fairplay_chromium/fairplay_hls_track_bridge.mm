@@ -32,6 +32,7 @@ mojom::FairPlayHlsTrackPtr ToMojo(const fp::HlsTrack& track) {
       track.contains_only_forced_subtitles;
   result->is_main_program_content = track.is_main_program_content;
   result->is_easy_to_read = track.is_easy_to_read;
+  result->automatic = track.automatic;
   return result;
 }
 

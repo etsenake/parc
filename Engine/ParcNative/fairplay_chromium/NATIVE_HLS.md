@@ -644,9 +644,14 @@ element calls it from the main thread on every in-band mode change.
   tracks, so `fp-hls-tracks` adds the minimal path: the player client makes
   Blink `TextTrack`s of type `kInBand` in the element's list (WebKit's kind
   `forced` included) and forwards their mode changes as
-  `SetTextTrackMode(key, mode)`. Which track shows by default is decided only
-  in the render process, by the element's automatic text track selection
-  with WebKit's caption preference rules (the flags above feed them). Cues
+  `SetTextTrackMode(key, mode)`. Which track shows by default is WebKit's
+  choice: the player scores the tracks as `HTMLMediaElement::configureTextTrackGroup`
+  with `CaptionUserPreferencesMediaAF` does, from the system caption
+  settings it reads in the GPU process (MediaAccessibility's display mode,
+  caption languages and SDH preference, the user's languages) and the
+  enabled audio track, and marks that one track `automatic`; the element's
+  automatic selection shows it as its default and gives these tracks no
+  score of Chrome's own. Cues
   become `VTTCue`s as WebKit's `InbandGenericTextTrack` makes them (`kWebVtt`
   parsed like `WebVTTParser::parseCueData`, the header for regions and style
   sheets, generic cues added, updated and removed by `cue_id`, an open cue's

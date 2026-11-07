@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 448,
+  "version": 449,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1495,12 +1495,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_media_selection.h",
       "target": "third_party/parc_fairplay/core/fairplay_hls_media_selection.h",
-      "sha256": "e2536eeee3706a2a5a248698c697d1b3448217ef4fb68620000c2b206ab51dcd"
+      "sha256": "327130968565bee1ae2cb42b69918418750a353242f28791545c5799af7d8b5e"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_media_selection.mm",
       "target": "third_party/parc_fairplay/core/fairplay_hls_media_selection.mm",
-      "sha256": "97e0f2e097ae45efb6df5aecbcd97d547cde3969280f6cd13792a1991bb43cce"
+      "sha256": "5c0cf8410bb97487a93632ec0d03aef3dcabc3ee66535512f6a12bd7019cbc68"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_media_selection_internal.h",
@@ -1640,7 +1640,7 @@
     {
       "source": "Engine/ParcRenderer/parc_inband_text_track.h",
       "target": "third_party/blink/renderer/core/html/media/parc_inband_text_track.h",
-      "sha256": "cc5ddc6e7d1c5b76d4383e0eff394b7bf83390e6442fbdd88297d3e37d10f363"
+      "sha256": "dd2820d4821623f98e5d1addf54e808fa023b80c421ef18affeda73d5bdc6ad0"
     },
     {
       "source": "Engine/ParcHost/integration/parc_worker_identity.h",
@@ -1675,7 +1675,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_hls_track_bridge.mm",
       "target": "third_party/parc_fairplay/chromium/fairplay_hls_track_bridge.mm",
-      "sha256": "6b223d7ca3e7490c8f9d8cba1438d46fbbce0c7b04c508c2a9ca7e36432c885b"
+      "sha256": "240c62f1d67ea3729aa31d7a152050ef6da501c5b0a8d9c372f8027625475d2b"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client.h",
@@ -1735,7 +1735,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.cc",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.cc",
-      "sha256": "664ba6c59466889b279690eae209b6704ea18fd7fc7a546f5aaad3b9ac8fdb64"
+      "sha256": "0e0084d2ea9cc3e236b1a3c0d6888cc20b957c3e1b5b189b57dc8bd2c0d5dbac"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.h",
@@ -4127,7 +4127,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "b992a6a1c4d26f711af12471b3dd7234c03f45d87dab3e8fe782485f987bb22f",
+      "sha256": "d4d704e9120f85845ab938d0f2cb7d01f79b2015fd1eea088447650aa44a5499",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4337,7 +4337,7 @@
         {
           "target": "media/mojo/mojom/renderer_extensions.mojom",
           "before_sha256": "d8c555a7884c5c557a91a62b2c9fc709b9c5356eb33bc6f0b91fcac53af1ed0d",
-          "after_sha256": "92b7e7d18245c10ff1797c83b4d6f0cd57392934d62b7c84d79a8fff6e55c7f5"
+          "after_sha256": "7b67400922880a0e28704343dc6a372afca2c50f0d9ff96edf9afa1d98a5d256"
         },
         {
           "target": "media/mojo/services/BUILD.gn",
@@ -4765,7 +4765,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-tracks.patch",
-      "sha256": "9c99b1bc83d7e30d1e187b61e514ca63d908922a3b626c118cb62b67e43e9544",
+      "sha256": "dbadf8e7dd4499d87a7f14d6869980eb1f5dc679346e0535a2f04625d54807bd",
       "files": [
         {
           "target": "third_party/blink/renderer/core/html/track/text_track.idl",
@@ -4780,7 +4780,7 @@
         {
           "target": "third_party/blink/renderer/core/html/track/automatic_track_selection.cc",
           "before_sha256": "bbe832da9968dcc8a5a37b4b2f8953649afc0af52a1f0da3e46d82ee9092e9f4",
-          "after_sha256": "9afa2c3cf114ee428fff9629f101fba3954f6c3c8273aa3daf6d4504879bf383"
+          "after_sha256": "516a1d896b5d81212055c554a5c2c11184ceba53cefe7f83bedbce7b46f3083f"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/html_track_element.cc",
@@ -4795,7 +4795,7 @@
         {
           "target": "media/base/media_track.h",
           "before_sha256": "f12be7a7cfbd2f0e3df6b19f6d7efa4c9ed9ae4e24b63bb4312d60ceef10a383",
-          "after_sha256": "6d9e6e411d6ed0a6c868d62bb424bf0a5655284e197d706c5ccde94c3b3be11c"
+          "after_sha256": "26760752a5b7469bfdf3e5ae49ec144025a4dd319d52e42bc2303fa6b75100a8"
         },
         {
           "target": "media/base/media_track.cc",

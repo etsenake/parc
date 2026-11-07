@@ -54,9 +54,11 @@ class CORE_EXPORT ParcInbandTextTrack final : public TextTrack,
 
   // TextTrack: a mode change also goes to the player.
   void setMode(const V8TextTrackMode&) override;
-  // The element's automatic selection treats in-band tracks by WebKit's
-  // caption preferences, not by the group's default option.
-  bool IsDefault() const override { return false; }
+  // The element's automatic selection shows the track WebKit's would: the
+  // player scores the tracks by the system caption settings (display mode,
+  // caption languages, SDH) and the enabled audio track, and marks that one
+  // (configureTextTrackGroup). The group's default option weighs in there.
+  bool IsDefault() const override { return info_.automatic; }
 
   // VTTParserClient: the header parse makes no cues.
   void NewCuesParsed() override {}
