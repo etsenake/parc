@@ -41,7 +41,7 @@ Unchecked claims are labelled **unchecked**.
 
 | File | Pristine lines | Read through |
 |---|---:|---:|
-| `third_party/blink/renderer/core/html/media/html_media_element.cc` | 5,504 | 3,000 |
+| `third_party/blink/renderer/core/html/media/html_media_element.cc` | 5,504 | 5,504 |
 | `third_party/blink/renderer/platform/media/web_media_player_impl.cc` | 4,242 | 0 |
 | `media/base/pipeline_impl.cc` | 1,861 | 0 |
 | `media/filters/pipeline_controller.cc` | 478 | 0 |
@@ -190,3 +190,80 @@ asks the player, and Safari's Media Source player doesn't support progress
 monitoring (`MediaPlayerPrivateMediaSourceAVFObjC.mm:1594-1598`), so a Media
 Source element gets no periodic `progress` (or `stalled`). **In progress**
 (fix agent E2).
+
+**HME-19. Default `preload`.** Chromium `html_media_element.cc:3074-3111`
+makes a missing or invalid `preload` metadata (and forces metadata on
+cellular). WebKit `HTMLMediaElement.cpp:1094-1104` and
+`HTMLMediaElement.h:1365` make it auto. A plain `<video src>` reports
+`preload` "auto" in Safari and buffers ahead to `canplaythrough` without
+`play()`; Parc reported "metadata" and stopped after metadata. Native HLS
+already prepares to play as WebKit does (`ParcPreparesToPlay`); the rest
+**in progress** (fix agent E5).
+
+**HME-20. `muted` before script sets it.** WebKit
+`HTMLMediaElement.cpp:5102-5111` returns the content attribute itself until
+`muted` is set by script or latched at connection or load. Part of HME-2,
+**in progress** (fix agent E1).
+
+**HME-21. Non-periodic `timeupdate`.** Chromium
+`html_media_element.cc:3527-3550` fires every non-periodic `timeupdate`
+(pause, waiting, load reset). WebKit `HTMLMediaElement.cpp:5383-5417` fires
+any `timeupdate` only when the time differs from the last one's (seek
+completion and load reset bypass it), so `pause()` at an unchanged time
+fires none. **In progress** (fix agent E5).
+
+**HME-22. Autoplay policy.** Chromium `html_media_element.cc:3161-3196`
+asks `AutoplayPolicy::RequestPlay` (Chromium's document user activation,
+sticky for the frame, plus media engagement). WebKit
+`HTMLMediaElement.cpp:4687-4718` asks `MediaElementSession::playbackStateChangePermitted`
+(`MediaElementSession.cpp:463-568`): with Safari's default policy, audible
+playback needs a user gesture being processed now, or an element a gesture
+already unlocked. **Open** (with Josh: whether Safari-mode pages take Safari's
+stricter rule).
+
+**HME-23. When playback has ended.** Chromium `html_media_element.cc:4223-4245`
+asks the player (`IsEnded()`, after the renderer reports the end). WebKit
+`HTMLMediaElement.cpp:6902-6928`: the current position at or past the
+duration with a positive rate (or at 0 going backwards). A paused element
+seeked to its duration reads `ended` true in Safari, false in Parc until the
+renderer ends.
+
+**HME-24. Potentially playing.** Chromium `html_media_element.cc:4213-4221`
+counts `HAVE_METADATA` and up. WebKit `HTMLMediaElement.cpp:6863-6875`
+requires `HAVE_FUTURE_DATA`, or having reached it and dropped below. An
+element that never reached `HAVE_FUTURE_DATA` gets `waiting` from a drop in
+Parc and none in Safari.
+
+**HME-25. Removed from the document.** Chromium
+`html_media_element.cc:5065-5077` pauses a disconnected element unless it is
+in picture in picture, and with `networkState` `NETWORK_EMPTY` that pause
+starts resource selection (`:3252-3256`). WebKit
+`HTMLMediaElement.cpp:1258-1270, 1323-1334` doesn't pause while seeking, with
+`NETWORK_EMPTY`, or after an invisible-autoplay interruption, and leaves
+standard fullscreen.
+
+HME-23 to HME-25: **in progress** (fix agent E6).
+
+**HME-26. Frozen and back/forward cache.** Chromium
+`html_media_element.cc:4388-4398` pauses on a frozen frame (`pause` event,
+play promise rejected, stays paused when thawed). WebKit
+`HTMLMediaElement.cpp:7401-7452, 7336-7366` stops a page entering the
+back/forward cache without events and resumes it when the page returns
+(`setPausedInternal(false)`), and does nothing for other suspensions. Going
+back to a page with a playing video: Safari carries on, Parc shows it paused
+after a `pause` event. **In progress** (fix agent E7).
+
+**HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
+as `MEDIA_ELEMENT_ERROR: …` (`html_media_element.cc:262-273`) and
+play-promise rejections with its own texts (`:4988-5040, 5301-5310`). WebKit
+uses the player's last error message or "Unsupported source type"
+(`HTMLMediaElement.cpp:3113-3117`), "Media failed to load"/"decode" with the
+player's message (`:3155-3173`), "The operation is not supported." for
+`play()` after `MEDIA_ERR_SRC_NOT_SUPPORTED` (`:4701-4705`) and no message
+otherwise. **In progress** (fix agent E8).
+
+**HME-28. `media-playback-while-not-visible`.** Chromium
+`html_media_element.cc:702-708, 3139-3145, 5253-5299` honours this
+permissions policy (pausing hidden frames, deferring `play()` until
+visibility is known). WebKit has no such policy. **In progress** (fix agent
+E6).
