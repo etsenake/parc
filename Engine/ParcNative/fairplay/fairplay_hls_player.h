@@ -131,13 +131,13 @@ class HlsPlayerClient {
   virtual void OnKeyRequest(const std::string& uri) = 0;
   // AVPlayer's outputObscuredDueToInsufficientExternalProtection changed
   // (WebKit reports it to the CDM, which marks keys output-restricted).
-  virtual void OnOutputObscuredChange(bool obscured) {}
+  virtual void OnOutputObscuredChange(bool /*obscured*/) {}
   // Video frames decoded and dropped since the previous call: deltas for
   // getVideoPlaybackQuality() (PipelineStatistics), from the player layer's
   // counts (fairplay_hls_frame_stats.h). They come every 250 ms while
   // playing and once more on stopping, from when the layer exists
   // (HlsPlayerLayer) on.
-  virtual void OnVideoFrameCounts(uint32_t decoded, uint32_t dropped) {}
+  virtual void OnVideoFrameCounts(uint32_t /*decoded*/, uint32_t /*dropped*/) {}
 
  protected:
   virtual ~HlsPlayerClient() = default;
