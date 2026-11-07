@@ -383,9 +383,17 @@ void VodTs() {
   WaitFor([] { return false; }, 1.5);
   Check(std::fabs(rig.Time() - paused_at) < 0.05, "pause holds the clock");
   int seek_result = -1;
-  OnOwner([&] { rig.player->Seek(300, [&](bool finished) { seek_result = finished; }); });
+  size_t buffering_before_seek = 0;
+  OnOwner([&] {
+    buffering_before_seek = rig.client.buffering.size();
+    rig.player->Seek(300, [&](bool finished) { seek_result = finished; });
+  });
   WaitFor([&] { return seek_result != -1; }, 20);
   Check(seek_result == 1 && std::fabs(rig.Time() - 300) < 0.1, "exact seek to 300 s finishes there");
+  // Chromium finishes a seek only at HAVE_ENOUGH; AVFoundation's dip and
+  // recovery within the seek is too quick to show as a change.
+  Check(WaitFor([&] { return rig.client.buffering.size() > buffering_before_seek && rig.client.buffering.back(); }, 10),
+        "after the seek the client hears enough data again");
   OnOwner([&] { rig.player->SetRate(1); });
   Check(WaitFor([&] { return rig.Time() > 302; }, 20), "plays on after the seek");
   // Ended: seek to two seconds before the end and play through.

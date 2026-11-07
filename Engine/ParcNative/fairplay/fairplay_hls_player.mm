@@ -714,11 +714,26 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
          toleranceAfter:kCMTimeZero
       completionHandler:^(BOOL finished) {
         (*poster)([weak, shared_done, finished] {
-          if (weak.lock()) {
+          if (std::shared_ptr<Impl> impl = weak.lock()) {
+            impl->ReportBufferingAfterSeek();
             (*shared_done)(finished);
           }
         });
       }];
+  }
+
+  // WebKit's seekCompleted runs updateStates, so the element hears the item's
+  // state after every seek, changed or not. Within a seek AVFoundation dips to
+  // unlikely-to-keep-up and back in milliseconds, which OnBuffering's change
+  // filter swallows; nothing then reaches the page after the seek and
+  // Chromium, which finishes a seek only at HAVE_ENOUGH, waits forever (the
+  // page's clock stays at the seek target while the video plays on).
+  void ReportBufferingAfterSeek() {
+    if (shut_down_ || !item_ready_) {
+      return;
+    }
+    last_have_enough_.reset();
+    OnBuffering();
   }
 
   void SetVolume(float volume) {
