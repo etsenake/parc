@@ -316,17 +316,145 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
   Result Start() {
-    if (!asset_ || item_ || shut_down_) {
+    if (!asset_ || started_ || shut_down_) {
       return Result::Error(Exception::kInvalidState, asset_ ? "already started" : "no asset");
     }
+    started_ = true;
+    // WebKit's order (MediaPlayerPrivateAVFoundationObjC::checkPlayability,
+    // then playabilityKnown and beginLoadingMetadata): the asset's playable
+    // and tracks keys, then all of its metadata keys and each track's.
+    // MetadataLoaded reports the metadata (the element's HAVE_METADATA) once
+    // the asset is playable, and only then makes the item, so the page has
+    // loadedmetadata before the item can ask for a key.
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    [asset_ loadValuesAsynchronouslyForKeys:@[ @"playable", @"tracks" ]
+                          completionHandler:^{
+                            (*poster)([weak] {
+                              if (std::shared_ptr<Impl> impl = weak.lock()) {
+                                impl->LoadMetadataKeys();
+                              }
+                            });
+                          }];
+    return Result::Ok();
+  }
+
+  // MediaPlayerPrivateAVFoundationObjC's assetMetadataKeyNames.
+  static NSArray<NSString*>* AssetMetadataKeys() {
+    return @[
+      @"duration", @"naturalSize", @"preferredTransform", @"preferredVolume", @"preferredRate", @"playable",
+      @"resolvedURL", @"tracks", @"availableMediaCharacteristicsWithMediaSelectionOptions",
+      @"availableChapterLocales", @"variants"
+    ];
+  }
+
+  // playabilityKnown, then beginLoadingMetadata: the metadata keys (keys
+  // already loaded answer at once), then each track's.
+  void LoadMetadataKeys() {
+    if (shut_down_ || reported_metadata_) {
+      return;
+    }
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    [asset_ loadValuesAsynchronouslyForKeys:AssetMetadataKeys()
+                          completionHandler:^{
+                            (*poster)([weak] {
+                              if (std::shared_ptr<Impl> impl = weak.lock()) {
+                                impl->LoadTrackMetadataKeys();
+                              }
+                            });
+                          }];
+  }
+
+  void LoadTrackMetadataKeys() {
+    if (shut_down_ || reported_metadata_) {
+      return;
+    }
+    NSArray<AVAssetTrack*>* tracks =
+        [asset_ statusOfValueForKey:@"tracks" error:nil] == AVKeyValueStatusLoaded ? asset_.tracks : @[];
+    if (!tracks.count) {
+      MetadataLoaded();
+      return;
+    }
+    pending_track_loads_ = tracks.count;
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    for (AVAssetTrack* track in tracks) {
+      [track loadValuesAsynchronouslyForKeys:@[
+        @"totalSampleDataLength", @"mediaType", @"enabled", @"preferredTransform", @"naturalSize",
+        @"formatDescriptions"
+      ]
+                           completionHandler:^{
+                             (*poster)([weak] {
+                               std::shared_ptr<Impl> impl = weak.lock();
+                               if (impl && impl->pending_track_loads_ && !--impl->pending_track_loads_) {
+                                 impl->MetadataLoaded();
+                               }
+                             });
+                           }];
+    }
+  }
+
+  // metadataLoaded, then updateStates with the asset's status
+  // (MediaPlayerPrivateAVFoundationObjC::assetStatus).
+  void MetadataLoaded() {
+    if (shut_down_ || reported_metadata_) {
+      return;
+    }
+    for (NSString* key in AssetMetadataKeys()) {
+      NSError* error = nil;
+      AVKeyValueStatus status = [asset_ statusOfValueForKey:key error:&error];
+      if (status == AVKeyValueStatusCancelled) {
+        return;
+      }
+      if (status == AVKeyValueStatusFailed) {
+        // MediaPlayerAVAssetStatusFailed: a network error for a URL error or
+        // a misconfigured server, otherwise the format's.
+        ReportFailure(error);
+        return;
+      }
+      if (status != AVKeyValueStatusLoaded) {
+        ReportFailure([NSError errorWithDomain:AVFoundationErrorDomain
+                                          code:AVErrorUnknown
+                                      userInfo:@{NSLocalizedDescriptionKey : @"the asset's metadata didn't load"}]);
+        return;
+      }
+    }
+    // allTracksArePlayable: an enabled track without a format description
+    // isn't playable. WebKit's asset then stays loading; nothing loads again
+    // here, so it is the format error it would come to.
+    bool contains_disabled_tracks = false;
+    for (AVAssetTrack* track in asset_.tracks) {
+      if (!track.enabled) {
+        contains_disabled_tracks = true;
+      } else if (!track.formatDescriptions.firstObject) {
+        ReportFailure([NSError errorWithDomain:AVFoundationErrorDomain
+                                          code:AVErrorFailedToParse
+                                      userInfo:@{NSLocalizedDescriptionKey : @"a track isn't playable"}]);
+        return;
+      }
+    }
+    if (!asset_.playable && !contains_disabled_tracks) {
+      // MediaPlayerAVAssetStatusLoaded, not playable: a format error.
+      ReportFailure([NSError errorWithDomain:AVFoundationErrorDomain
+                                        code:AVErrorFailedToParse
+                                    userInfo:@{NSLocalizedDescriptionKey : @"the asset is not playable"}]);
+      return;
+    }
+    PrepareToPlay();
+  }
+
+  // updateStates once the asset is playable: HAVE_METADATA, then
+  // prepareToPlay makes the item and the player in the same turn.
+  void PrepareToPlay() {
     std::weak_ptr<Impl> weak = weak_from_this();
     item_ = [AVPlayerItem playerItemWithAsset:asset_];
     // WebKit's setting: the page, not AVFoundation, schedules HLS interstitials.
     item_.automaticallyHandlesInterstitialEvents = NO;
     UpdatePitchAlgorithm();
-    // As WebKit: the player first, then (for an element with a size) its
-    // layer at that size with the player, then the item, all in this turn,
-    // before AVFoundation picks a variant (fairplay_hls_player_layer.h).
+    // As WebKit: the player, then (for an element with a size) its layer at
+    // that size with the player, then the item, before AVFoundation picks a
+    // variant (fairplay_hls_player_layer.h).
     player_ = [[AVPlayer alloc] init];
     // WebKit's settings: the page picks media options, the browser manages
     // display sleep, and there's no AirPlay route from here.
@@ -338,15 +466,92 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     if (layer_width_ > 0 && layer_height_ > 0 && layer_scale_ > 0) {
       [PlayerLayer() parcStageWithSize:CGSizeMake(layer_width_, layer_height_) scale:layer_scale_];
     }
-    [player_ replaceCurrentItemWithPlayerItem:item_];
     observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
     [observer_ observePlayer:player_ item:item_];
+    // The metadata goes first: the client attaches the tracks to the item,
+    // registers the layer and tells the page before the item loads anything.
+    reported_metadata_ = true;
+    client_->OnMetadata(AssetMetadata());
+    // The client may have destroyed the player in OnMetadata.
+    if (shut_down_) {
+      return;
+    }
+    [player_ replaceCurrentItemWithPlayerItem:item_];
     // A rate set before the player existed (play() before the item) applies
     // now, as volume, mute and pitch do.
     if (rate_ > 0) {
       SetRate(rate_);
     }
-    return Result::Ok();
+  }
+
+  // What the element knows at HAVE_METADATA, from the asset alone. An HLS
+  // asset lists no tracks before its item plays, so its variants say what
+  // media it has when every variant names its codecs; video and audio are
+  // assumed otherwise, as Safari's element does until it knows. The natural
+  // size, the item's own duration and seekable ranges, its start date and
+  // the tracks follow through the change calls (OnItemStatus).
+  HlsMetadata AssetMetadata() {
+    HlsMetadata metadata;
+    NSArray<AVAssetVariant*>* variants = asset_.variants;
+    bool variants_known = variants.count > 0;
+    for (AVAssetVariant* variant in variants) {
+      AVAssetVariantVideoAttributes* video = variant.videoAttributes;
+      AVAssetVariantAudioAttributes* audio = variant.audioAttributes;
+      if (!video.codecTypes.count && !audio.formatIDs.count) {
+        variants_known = false;
+      }
+      if (video) {
+        metadata.has_video = true;
+        if (!metadata.video_fourcc && video.codecTypes.count) {
+          metadata.video_fourcc = video.codecTypes.firstObject.unsignedIntValue;
+        }
+      }
+      if (audio) {
+        metadata.has_audio = true;
+        if (!metadata.audio_fourcc && audio.formatIDs.count) {
+          metadata.audio_fourcc = audio.formatIDs.firstObject.unsignedIntValue;
+        }
+      }
+    }
+    bool tracks_known = false;
+    for (AVAssetTrack* track in asset_.tracks) {
+      if (!track.enabled) {
+        continue;
+      }
+      tracks_known = true;
+      id description = track.formatDescriptions.firstObject;
+      uint32_t fourcc =
+          description ? CMFormatDescriptionGetMediaSubType((__bridge CMFormatDescriptionRef)description) : 0;
+      if ([track.mediaType isEqualToString:AVMediaTypeVideo]) {
+        metadata.has_video = true;
+        if (!metadata.video_fourcc) {
+          metadata.video_fourcc = fourcc;
+        }
+        CGSize size = CGSizeApplyAffineTransform(track.naturalSize, track.preferredTransform);
+        if (!metadata.natural_width && size.width && size.height) {
+          metadata.natural_width = static_cast<int32_t>(std::lround(std::fabs(size.width)));
+          metadata.natural_height = static_cast<int32_t>(std::lround(std::fabs(size.height)));
+        }
+      } else if ([track.mediaType isEqualToString:AVMediaTypeAudio]) {
+        metadata.has_audio = true;
+        if (!metadata.audio_fourcc) {
+          metadata.audio_fourcc = fourcc;
+        }
+      }
+    }
+    if ((!variants_known && !tracks_known) || (!metadata.has_video && !metadata.has_audio)) {
+      metadata.has_video = true;
+      metadata.has_audio = true;
+    }
+    natural_width_ = metadata.natural_width;
+    natural_height_ = metadata.natural_height;
+    // platformDuration: the asset's until the item is ready to play.
+    timeline_.Start(TimeOf(asset_.duration), {}, std::nullopt);
+    metadata.duration = timeline_.duration();
+    metadata.is_live = std::isinf(metadata.duration);
+    metadata.start_date_ms = Milliseconds(timeline_.start_date());
+    metadata.seekable = RangesOf(timeline_.SeekableRanges());
+    return metadata;
   }
 
   void SetVideoLayerSize(double width, double height, double scale) {
@@ -371,17 +576,35 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
   void Seek(double seconds, double tolerance_before, std::function<void(bool)> done) {
-    // AVFoundation throws on a seek with a completion handler before the
-    // item is ready to play (or after it failed).
-    if (shut_down_ || !item_ || !reported_metadata_ || item_.status != AVPlayerItemStatusReadyToPlay) {
-      std::weak_ptr<Impl> weak = weak_from_this();
-      (*poster_)([weak, done = std::move(done)] {
-        if (weak.lock()) {
-          done(false);
-        }
-      });
+    if (shut_down_ || !item_ || !reported_metadata_ || item_.status == AVPlayerItemStatusFailed) {
+      FinishSeek(std::move(done), false);
       return;
     }
+    if (!item_ready_) {
+      // Between HAVE_METADATA and the item being ready to play, where
+      // AVFoundation throws on a seek with a completion handler: the seek
+      // waits for the item, and a later one takes its place (the earlier
+      // finishes unfinished, as AVFoundation finishes an interrupted seek,
+      // and as WebKit keeps only the latest pending seek).
+      if (pending_seek_) {
+        FinishSeek(std::move(pending_seek_->done), false);
+      }
+      pending_seek_ = PendingSeek{seconds, tolerance_before, std::move(done)};
+      return;
+    }
+    IssueSeek(seconds, tolerance_before, std::move(done));
+  }
+
+  void FinishSeek(std::function<void(bool)> done, bool finished) {
+    std::weak_ptr<Impl> weak = weak_from_this();
+    (*poster_)([weak, done = std::move(done), finished] {
+      if (weak.lock()) {
+        done(finished);
+      }
+    });
+  }
+
+  void IssueSeek(double seconds, double tolerance_before, std::function<void(bool)> done) {
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
     auto shared_done = std::make_shared<std::function<void(bool)>>(std::move(done));
@@ -751,12 +974,16 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     if (item_.status == AVPlayerItemStatusFailed) {
       ReportFailure(item_.error);
+      if (pending_seek_) {
+        FinishSeek(std::move(pending_seek_->done), false);
+        pending_seek_.reset();
+      }
       return;
     }
-    if (item_.status != AVPlayerItemStatusReadyToPlay || reported_metadata_) {
+    if (item_.status != AVPlayerItemStatusReadyToPlay || item_ready_) {
       return;
     }
-    reported_metadata_ = true;
+    item_ready_ = true;
     {
       std::lock_guard<std::mutex> lock(timebase_lock_);
       timebase_ = item_.timebase;
@@ -764,54 +991,34 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
         CFRetain(timebase_);
       }
     }
-    HlsMetadata metadata;
-    for (AVPlayerItemTrack* track in item_.tracks) {
-      AVAssetTrack* asset_track = track.assetTrack;
-      NSString* type = asset_track.mediaType;
-      id description = asset_track.formatDescriptions.firstObject;
-      uint32_t fourcc =
-          description ? CMFormatDescriptionGetMediaSubType((__bridge CMFormatDescriptionRef)description) : 0;
-      if ([type isEqualToString:AVMediaTypeVideo]) {
-        metadata.has_video = true;
-        if (!metadata.video_fourcc) {
-          metadata.video_fourcc = fourcc;
-        }
-      } else if ([type isEqualToString:AVMediaTypeAudio]) {
-        metadata.has_audio = true;
-        if (!metadata.audio_fourcc) {
-          metadata.audio_fourcc = fourcc;
-        }
-      }
+    // The held seek goes first, so a seek the client makes in one of the
+    // change calls below comes after it and wins.
+    if (pending_seek_) {
+      PendingSeek seek = std::move(*pending_seek_);
+      pending_seek_.reset();
+      IssueSeek(seek.seconds, seek.tolerance_before, std::move(seek.done));
     }
-    CGSize size = item_.presentationSize;
-    if (size.width > 0 && size.height > 0) {
-      metadata.has_video = true;
-      metadata.natural_width = static_cast<int32_t>(std::lround(size.width));
-      metadata.natural_height = static_cast<int32_t>(std::lround(size.height));
+    // The metadata went out from the asset (AssetMetadata). The item's own
+    // values follow as changes: platformDuration reads the item once it is
+    // ready to play, and the seekable window and natural size are its.
+    if (timeline_.DurationChanged(TimeOf(item_.duration))) {
+      client_->OnDurationChange(timeline_.duration());
     }
-    if (!metadata.has_video && !metadata.has_audio) {
-      // An HLS item with no track list yet: AVFoundation fills it in as it
-      // plays. Video is assumed, as Safari's element does until it knows.
-      metadata.has_video = true;
-      metadata.has_audio = true;
+    if (!shut_down_ && timeline_.SeekableChanged(SeekableInputs(item_.seekableTimeRanges))) {
+      client_->OnSeekableRangesChange(RangesOf(timeline_.SeekableRanges()));
     }
-    natural_width_ = metadata.natural_width;
-    natural_height_ = metadata.natural_height;
-    timeline_.Start(TimeOf(item_.duration), SeekableInputs(item_.seekableTimeRanges), StartDate());
-    metadata.duration = timeline_.duration();
-    metadata.is_live = std::isinf(metadata.duration);
-    metadata.start_date_ms = Milliseconds(timeline_.start_date());
-    metadata.seekable = RangesOf(timeline_.SeekableRanges());
-    metadata.loaded = Ranges(item_.loadedTimeRanges);
-    client_->OnMetadata(metadata);
-    // The client may have destroyed the player in OnMetadata.
-    if (!shut_down_) {
-      OnBuffering();
+    if (shut_down_) {
+      return;
     }
+    OnPresentationSize();
+    if (shut_down_) {
+      return;
+    }
+    OnBuffering();
   }
 
   void OnBuffering() {
-    if (shut_down_ || !reported_metadata_ || !item_) {
+    if (shut_down_ || !item_ready_) {
       return;
     }
     bool have_enough = item_.playbackLikelyToKeepUp || item_.playbackBufferFull;
@@ -855,7 +1062,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
   void OnDuration() {
-    if (!shut_down_ && reported_metadata_ && item_ && timeline_.DurationChanged(TimeOf(item_.duration))) {
+    // platformDuration reads the item only once it is ready to play (until
+    // then its duration is indefinite).
+    if (!shut_down_ && item_ready_ && timeline_.DurationChanged(TimeOf(item_.duration))) {
       client_->OnDurationChange(timeline_.duration());
     }
   }
@@ -922,6 +1131,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
 
   AVURLAsset* asset() const { return asset_; }
   AVPlayer* player() const { return player_; }
+  AVPlayerItem* item() const { return item_; }
 
   PCHlsPlayerLayer* PlayerLayer() {
     if (!player_layer_ && player_ && !shut_down_) {
@@ -997,7 +1207,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     reported_error_ = true;
     HlsError kind;
-    if ([error.domain isEqualToString:NSURLErrorDomain]) {
+    if ([error.domain isEqualToString:NSURLErrorDomain] ||
+        (!reported_metadata_ && [error.domain isEqualToString:AVFoundationErrorDomain] &&
+         error.code == AVErrorServerIncorrectlyConfigured)) {
       kind = HlsError::kNetwork;
     } else if (!reported_metadata_) {
       kind = HlsError::kNotSupported;
@@ -1048,7 +1260,19 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   bool muted_ = false;
   bool preserves_pitch_ = true;
   bool output_obscured_ = false;
+  bool started_ = false;
+  // Track key loads still out before MetadataLoaded.
+  size_t pending_track_loads_ = 0;
+  // HAVE_METADATA went out (from the asset); the item exists from then on.
   bool reported_metadata_ = false;
+  // The item is ready to play: its timebase, duration and buffering count.
+  bool item_ready_ = false;
+  struct PendingSeek {
+    double seconds = 0;
+    double tolerance_before = 0;
+    std::function<void(bool)> done;
+  };
+  std::optional<PendingSeek> pending_seek_;
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
   HlsTimeline timeline_;
@@ -1063,6 +1287,10 @@ AVURLAsset* HlsPlayerAsset(FairPlayHlsPlayer::Impl* impl) {
 
 AVPlayer* HlsPlayerAVPlayer(FairPlayHlsPlayer::Impl* impl) {
   return impl ? impl->player() : nil;
+}
+
+AVPlayerItem* HlsPlayerItem(FairPlayHlsPlayer::Impl* impl) {
+  return impl ? impl->item() : nil;
 }
 
 AVPlayerLayer* HlsPlayerLayer(FairPlayHlsPlayer::Impl* impl) {

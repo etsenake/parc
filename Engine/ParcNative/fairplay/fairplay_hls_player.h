@@ -106,7 +106,11 @@ struct HlsMetadata {
 // player.
 class HlsPlayerClient {
  public:
-  // Once, when the item is ready to play.
+  // Once, when the asset's metadata has loaded and it is playable, before
+  // the item exists, as WebKit reports HAVE_METADATA: from the asset alone
+  // (duration, the seekable window up to it, media types). The item's own
+  // duration, seekable window, natural size and start date follow as
+  // changes once it is ready to play. Errors before it are the asset's.
   virtual void OnMetadata(const HlsMetadata& metadata) = 0;
   // Enough is buffered to play on (playbackLikelyToKeepUp or a full buffer),
   // or not (an empty buffer while playing).
@@ -170,8 +174,11 @@ class FairPlayHlsPlayer {
   Result Load(const std::string& url, const std::string& mime_type);
   // The two halves of Load. CreateAsset makes the AVURLAsset and its loaders
   // without loading anything; what must exist before the AVPlayerItem (the
-  // CDM's key loader for the asset) is set up between the two. Start makes
-  // the item and player, and loading begins.
+  // CDM's key loader for the asset) is set up between the two. Start loads
+  // the asset's metadata; once it is playable the player reports OnMetadata,
+  // then makes the item and player and the item starts loading (WebKit's
+  // order, so the page has HAVE_METADATA before any key request). A seek
+  // before the item is ready to play waits for it.
   Result CreateAsset(const std::string& url, const std::string& mime_type);
   Result Start();
 

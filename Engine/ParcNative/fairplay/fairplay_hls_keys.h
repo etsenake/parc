@@ -10,8 +10,16 @@
 // encrypted. WebKit makes the asset a content key recipient only once a key
 // exists; Parc never does, and answers each loading request with a CKC from
 // its own SPC (WebKit's legacy CDMSessionAVFoundationObjC), whatever order the
-// page attaches MediaKeys and licenses keys in. Proven against Axinom's
-// FairPlay HLS vectors (tests/FairPlay/README.md, "HLS assets"):
+// page attaches MediaKeys (setMediaKeys) and licenses keys in. Legacy
+// WebKitMediaKeys sessions are WebKit's: one made before the keys are
+// attached to the element (webkitSetMediaKeys) has no player behind it
+// (CDMPrivateMediaPlayer::createSession returns none) and never answers, even
+// once the keys are attached (parc_webkit_media_keys.h). Legacy pages attach
+// at loadedmetadata and make the session at webkitneedkey, which works
+// because the player reports HAVE_METADATA from the asset before its item
+// exists, so no key request comes first (FairPlayHlsPlayer::Start). Proven
+// against Axinom's FairPlay HLS vectors (tests/FairPlay/README.md, "HLS
+// assets"):
 // - An skd loading request gives one SPC, and only while the asset is no
 //   recipient. Finished for the session before the session holds a usable key
 //   for its URI it never plays, even after the key arrives, and once the asset

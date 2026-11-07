@@ -444,7 +444,6 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
     FinishInitialize(nullptr);
     return;
   }
-  tracks_->Attach(player_->impl());
 }
 
 void FairPlayHlsPlayerService::SetCdm(const base::UnguessableToken& cdm_id,
@@ -585,6 +584,9 @@ void FairPlayHlsPlayerService::OnMetadata(const fp::HlsMetadata& metadata) {
   if (!init_pending_ || errored_) {
     return;
   }
+  // The item exists now and hasn't loaded anything: the tracks attach to it
+  // first (WebKit's createAVPlayerItem adds its outputs then).
+  tracks_->Attach(player_->impl());
   auto out = mojom::FairPlayHlsMetadata::New();
   out->has_audio = metadata.has_audio;
   out->has_video = metadata.has_video;

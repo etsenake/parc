@@ -14,11 +14,13 @@ namespace parc::fairplay {
 // becomes a content key recipient.
 AVURLAsset* HlsPlayerAsset(FairPlayHlsPlayer::Impl* player);
 
-// The AVPlayer, nil before Load.
+// The AVPlayer and its item, nil until the asset's metadata loaded (they are
+// made just before OnMetadata; the item goes on the player just after it).
 AVPlayer* HlsPlayerAVPlayer(FairPlayHlsPlayer::Impl* player);
+AVPlayerItem* HlsPlayerItem(FairPlayHlsPlayer::Impl* player);
 
 // One AVPlayerLayer showing the player, made on first use (in an explicit
-// CATransaction: the owner sequence has no run loop). nil before Load.
+// CATransaction: the owner sequence has no run loop). nil before the player.
 // Shutdown detaches it from the player.
 AVPlayerLayer* HlsPlayerLayer(FairPlayHlsPlayer::Impl* player);
 

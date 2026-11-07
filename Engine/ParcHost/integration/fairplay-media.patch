@@ -2065,7 +2065,7 @@
  
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
-@@ -22,6 +25,314 @@
+@@ -22,6 +25,318 @@
    // play state (e.g. when another phone play/pauses a cast device on the same
    // network).
    OnRemotePlayStateChange(MediaStatusState state);
@@ -2270,7 +2270,11 @@
 +  FairPlayHlsDataCueValue value;
 +};
 +
-+// The item's state when it is ready to play.
++// The element's metadata (HAVE_METADATA) once the asset is playable, before
++// the item exists, as WebKit reports it: the asset's duration and the
++// seekable window up to it, media types from its variants (both assumed when
++// they don't say), no buffered ranges. The item's own values follow as
++// changes.
 +[EnableIf=is_mac]
 +struct FairPlayHlsMetadata {
 +  bool has_audio;
@@ -2338,11 +2342,11 @@
 +  StartLoad(FairPlayHlsRequest request,
 +            pending_receiver<FairPlayHlsLoad> load,
 +            pending_remote<FairPlayHlsLoadClient> client);
-+  // Initialize's result: the item's state when it is ready to play, or null
-+  // when it failed before that (after an OnError naming the item's failure,
-+  // if it had one). Before it come only StartLoad, the key calls
-+  // (OnKeyRequest, OnEncrypted, OnWaiting), OnError, OnLayerRegistered and
-+  // OnTextCues.
++  // Initialize's result: the metadata once the asset is playable, or null
++  // when it failed before that (after an OnError naming the asset's failure,
++  // if it had one). Before it come only StartLoad (the asset's playlists),
++  // OnError and OnLayerRegistered: the item, and so every key call and cue,
++  // comes after it.
 +  OnInitialized(FairPlayHlsMetadata? metadata);
 +  // The media time `time` at `capture_time`, advancing at `rate`.
 +  OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,

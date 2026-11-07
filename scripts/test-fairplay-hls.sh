@@ -7,7 +7,8 @@
 # for the timeline scenario (WebKit's live and DVR timing rules). Optional
 # argument: one scenario (timeline, ts, fmp4, live, missing, http, bad-url,
 # skd, skd-handler, teardown, keys-first, keys-loader, keys-multikey,
-# keys-await, keys-early, keys-close, keys-legacy). The keys
+# keys-await, keys-early, keys-close, keys-legacy, metadata-first,
+# keys-legacy-order). The keys
 # scenarios license Axinom's FairPlay HLS vectors from its public test
 # license service.
 set -euo pipefail

@@ -269,6 +269,9 @@ struct Client : fp::HlsPlayerClient {
   void OnMetadata(const fp::HlsMetadata& m) override {
     metadata = m;
     metadata_count++;
+    if (on_metadata) {
+      on_metadata();
+    }
   }
   void OnBufferingStateChange(bool have_enough) override {
     buffering.push_back(have_enough);
@@ -299,6 +302,8 @@ struct Client : fp::HlsPlayerClient {
   }
 
   std::optional<fp::HlsMetadata> metadata;
+  // The element's loadedmetadata handler, run inside OnMetadata.
+  std::function<void()> on_metadata;
   int64_t frames_decoded = 0;
   int64_t frames_dropped = 0;
   int metadata_count = 0;
@@ -351,12 +356,12 @@ void VodTs() {
   WaitFor([&] { return early_seek != -1; }, 5);
   Check(early_seek == 0, "a seek before metadata reports unfinished instead of throwing");
   bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
-  Check(ready && rig.client.metadata.has_value(), "metadata arrives (readyToPlay)");
+  Check(ready && rig.client.metadata.has_value(), "metadata arrives from the asset (HAVE_METADATA)");
   if (!rig.client.metadata) {
     return;
   }
   const fp::HlsMetadata& m = *rig.client.metadata;
-  Check(m.has_video && m.natural_width > 0 && m.natural_height > 0, "video with a natural size");
+  Check(m.has_video, "video (the variants name their codecs)");
   Check(m.has_audio, "audio");
   Check(!m.is_live && std::fabs(m.duration - 600) < 2, "finite duration about 600 s");
   Check(m.seekable.size() == 1 && m.seekable[0].start == 0 && m.seekable[0].end > 500,
@@ -365,6 +370,7 @@ void VodTs() {
   OnOwner([&] { rig.player->SetRate(1); });
   bool playing = WaitFor([&] { return rig.Time() > 3; }, 20);
   Check(playing, "time advances past 3 s");
+  Check(rig.client.width > 0 && rig.client.height > 0, "the natural size follows from the item");
   Check(!rig.client.buffering.empty() && rig.client.buffering.back(), "buffering reports enough");
   Check(!rig.client.loaded.empty(), "loaded ranges reported");
   OnOwner([&] { rig.player->SetRate(0); });
@@ -793,7 +799,12 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
   void OnSessionClosed(const std::string&) override {}
 
   // Every skd request the loader is handed (legacy pages' webkitneedkey).
-  void OnKeyLoadingRequest(const std::string& url) override { loading_requests.push_back(url); }
+  void OnKeyLoadingRequest(const std::string& url) override {
+    loading_requests.push_back(url);
+    if (on_loading_request) {
+      on_loading_request(url);
+    }
+  }
 
   // The element's encrypted(skd) event.
   void OnKeyNeeded(const std::string& uri) override {
@@ -811,6 +822,7 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
 
   std::unique_ptr<fp::FairPlayCdm> cdm;
   std::function<void(const std::string&)> on_need;  // The encrypted handler.
+  std::function<void(const std::string&)> on_loading_request;  // webkitneedkey.
   std::vector<std::string> needs;
   std::vector<std::string> loading_requests;
   std::vector<std::string> sessions;
@@ -1045,6 +1057,84 @@ void KeysLegacy() {
   Check(plays, "protected HLS plays");
 }
 
+// WebKit's order (MediaPlayerPrivateAVFoundation::updateStates): HAVE_METADATA
+// from the asset before the item is on the player; a seek made then waits for
+// the item and lands; the natural size follows from the item.
+void MetadataFirst() {
+  std::printf("-- metadata from the asset before the item (WebKit's order)\n");
+  Rig rig;
+  Rig* r = &rig;
+  bool item_on_player = true;
+  int seek_result = -1;
+  int* seek = &seek_result;
+  rig.client.on_metadata = [r, &item_on_player, seek] {
+    item_on_player = fp::HlsPlayerAVPlayer(r->player->impl()).currentItem != nil;
+    r->player->Seek(10, [seek](bool finished) { *seek = finished; });
+  };
+  Check(rig.Load(Fake("media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/manifest.m3u8")).ok(), "Load");
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  Check(ready && rig.client.metadata && !item_on_player,
+        "HAVE_METADATA comes from the asset before the item is on the player");
+  Check(rig.client.metadata && rig.client.metadata->duration > 0 && !rig.client.metadata->is_live &&
+            rig.client.metadata->loaded.empty(),
+        "the asset's duration, nothing buffered yet");
+  WaitFor([&] { return seek_result != -1; }, 20);
+  Check(seek_result == 1 && std::fabs(rig.Time() - 10) < 0.1,
+        "a seek made before the item was ready waits for it and lands");
+  Check(WaitFor([&] { return rig.client.width > 0; }, 10), "the natural size follows from the item");
+  Check(rig.client.errors == 0, "no error");
+}
+
+// A legacy page's order (WebKitMediaKeys made before the load, attached only
+// once readyState reaches HAVE_METADATA, a session made at webkitneedkey):
+// Safari reports HAVE_METADATA from the asset before the item exists, so the
+// keys are attached before any key request, and the session made then (with a
+// player behind it) licenses the request. A session made before the keys are
+// attached would have no player and never answer, as in WebKit.
+void KeysLegacyOrder() {
+  std::printf("-- FairPlay HLS keys: legacy page order (attach at loadedmetadata, session at webkitneedkey)\n");
+  KeyPage page(kSingleKeyToken);
+  page.Create();
+  KeyRig kr(&page);
+  KeyRig* krp = &kr;
+  KeyPage* pagep = &page;
+  NSString* content_id = [[NSData dataWithBytes:kSkd.data() length:kSkd.size()] base64EncodedStringWithOptions:0];
+  std::string init_data = std::string("{\"skd\": \"") + kSkd + "\", \"contentId\": \"" + content_id.UTF8String + "\"}";
+  bool item_before_metadata = false;
+  bool request_before_metadata = false;
+  bool request_before_attach = false;
+  bool attached = false;
+  int requests = 0;
+  kr.rig.client.on_metadata = [&, krp, pagep] {
+    item_before_metadata = fp::HlsPlayerAVPlayer(krp->rig.player->impl()).currentItem != nil;
+    // The page's loadedmetadata handler runs later, as a task.
+    bool* attached_flag = &attached;
+    dispatch_async(Owner(), ^{
+      krp->keys->SetCdm(pagep->cdm.get());
+      *attached_flag = true;
+    });
+  };
+  page.on_loading_request = [&, pagep](const std::string&) {
+    request_before_metadata |= krp->rig.client.metadata_count == 0;
+    request_before_attach |= !attached;
+    if (requests++ == 0) {
+      std::string data = init_data;
+      dispatch_async(Owner(), ^{
+        pagep->GenerateOnOwner(data);
+      });
+    }
+  };
+  kr.Load(kSingleKeyMaster, nullptr);
+  kr.Play();
+  bool plays = kr.PlaysTo5s();
+  Check(!item_before_metadata, "HAVE_METADATA comes before the item is on the player");
+  Check(!page.loading_requests.empty() && !request_before_metadata && !request_before_attach,
+        "webkitneedkey comes after loadedmetadata and the keys' attach");
+  Check(page.sessions.size() == 1 && page.updates_ok == 1 && page.Usable(kSkd),
+        "the session made at webkitneedkey licenses the request");
+  Check(plays, "protected HLS plays");
+}
+
 void Teardown() {
   std::printf("-- teardown with loads in flight\n");
   {
@@ -1069,7 +1159,8 @@ int main(int argc, char** argv) {
         {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
         {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
-        {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}};
+        {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},
+        {"keys-legacy-order", KeysLegacyOrder}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

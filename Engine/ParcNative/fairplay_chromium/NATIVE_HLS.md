@@ -302,24 +302,29 @@ render process:
 - `Initialize` creates the core player and the track bridge (Tracks), calls
   `CreateAsset`, creates the CDM's `FairPlayHlsKeyLoader` for the asset (with
   the CDM a `SetCdm` before it named) and installs it with
-  `SetHlsKeyRequestHandler`, calls `Start`, and attaches the bridge to the
-  new item. `SetCdm` afterwards goes to the loader (`false` when it can't
+  `SetHlsKeyRequestHandler`, and calls `Start`. In `OnMetadata` it attaches
+  the bridge to the new item (not yet on the player), registers the layer
+  and sends `OnInitialized`. `SetCdm` afterwards goes to the loader (`false` when it can't
   take the asset; the old CDM stays). The loader's `OnKeyLoadingRequest(url)`
   is `OnKeyRequest(url)`, its `OnKeyNeeded(uri)` is `OnEncrypted("skd", uri)`
   plus `OnWaiting(kNoDecryptionKey)`, and the player's
   `OnOutputObscuredChange` goes to `SetOutputObscured`. `OnInitialized` carries the
-  metadata at `readyToPlay`. A failure before it is `OnInitialized(null)`:
-  after `OnError` with the item's error when the item failed (the demuxer
-  fails with that status), alone for a bad URL or an OS without client URL
-  loading (`DEMUXER_ERROR_COULD_NOT_OPEN`). A second `Initialize` is a bad
-  message.
-- Before `OnInitialized`, the client gets only `StartLoad` and the key calls
-  (`OnKeyRequest`, `OnEncrypted`, `OnWaiting`), which loading needs, the
-  item error above, and any cues the bridge sends (the render process holds
-  those until initialization). Ranges, duration, start date, natural size and
-  tracks reported earlier are in the metadata; buffering changes wait and
-  follow it in order. The layer token (`OnLayerRegistered`, video only) is
-  sent just before it.
+  metadata as WebKit reports `HAVE_METADATA`: once the asset's metadata keys
+  have loaded and it is playable, before the item exists (GPU core player).
+  A failure before it is `OnInitialized(null)`: after `OnError` with the
+  asset's error when its loading failed (the demuxer fails with that
+  status), alone for a bad URL or an OS without client URL loading
+  (`DEMUXER_ERROR_COULD_NOT_OPEN`). A second `Initialize` is a bad message.
+- Before `OnInitialized`, the client gets only `StartLoad` (the asset's
+  playlists) and an asset error. The item is made just after it, so every
+  key call (`OnKeyRequest`, `OnEncrypted`, `OnWaiting`), cue and track list
+  comes after `OnInitialized`, as `webkitneedkey` and `encrypted` come after
+  `loadedmetadata` in Safari. The metadata has the asset's duration and the
+  seekable window up to it, no buffered range, and the media types from the
+  variants (both assumed when a variant doesn't name its codecs); the item's
+  duration, seekable window, natural size, start date and tracks follow as
+  changes once it is ready to play. The layer token (`OnLayerRegistered`,
+  video only) is sent just before it.
 - `OnTimeUpdate` carries the item's timebase time and AVPlayer's actual rate
   (0 while it waits for data), at every play, pause, seek completion,
   buffering change and end, and every 125 ms while the page's rate is above
@@ -352,7 +357,7 @@ player the GPU service owns, on the media service thread with the core's
 | `HlsLoader::StartLoad(request, HlsLoadClient*)` → `HlsLoad` (destroy = cancel) | `FairPlayHlsPlayerClient.StartLoad` → `FairPlayHlsLoad` (reset = `Cancel`) |
 | `HlsLoadClient::OnResponse` / `OnData` / `OnComplete(net_error)` | `FairPlayHlsLoadClient.OnResponse` + data pipe reads / `OnComplete` |
 | `CreateAsset(url, mime)` + `Start()` (or `Load`), `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
-| `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `OnInitialized(metadata)` |
+| `HlsPlayerClient::OnMetadata` (once, the asset playable, before the item) | `OnInitialized(metadata)` |
 | `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnStartDateChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
 | `SetHlsKeyRequestHandler` (between `CreateAsset` and `Start`) → the CDM's key loader takes skd requests | `OnKeyRequest(uri)` for every request it is handed; its `OnKeyNeeded(uri)` → `OnEncrypted("skd", uri)` (Keys) |
 | `OnOutputObscuredChange(bool)` | the key loader's `SetOutputObscured` |
@@ -431,7 +436,8 @@ the pipes) once the loader is gone. The demuxer's
 How the GPU service wires keys: after `FairPlayHlsPlayer::CreateAsset` it
 creates the CDM's key loader for the asset (`FairPlayHlsKeyLoader`, from
 `fp-hls-keys`) with the attached CDM if any, installs it with
-`SetHlsKeyRequestHandler`, then calls `Start`; it forwards the loader's
+`SetHlsKeyRequestHandler`, then calls `Start`, which makes the item only
+after `HAVE_METADATA` (so no key request precedes `loadedmetadata`); it forwards the loader's
 `OnKeyNeeded(uri)` as `OnEncrypted("skd", uri)` plus
 `OnWaiting(kNoDecryptionKey)`, `SetCdm` to the loader, and the player's
 `OnOutputObscuredChange` to its `SetOutputObscured`. The key loader's tests
@@ -474,6 +480,17 @@ What the key loader does (its header and the [core README](../fairplay/README.md
    SPC. Made first, it waits for the asset to ask.
 4. `update(ckc)` delivers the key and playback resumes by itself; nothing
    else crosses the GPU service.
+
+Order, as in Safari: `HAVE_METADATA` comes from the asset before the item
+exists, so `loadedmetadata` reaches the page before any `webkitneedkey` or
+`encrypted`. Legacy pages depend on it: Shaka's WebKitMediaKeys path makes
+the keys before the load, calls `webkitSetMediaKeys` once `readyState` reaches
+`HAVE_METADATA`, and makes its session at `webkitneedkey`. A legacy session
+made before the keys are attached has no player behind it and never answers,
+even after the attach, exactly as WebKit's (`CDMPrivateMediaPlayer::
+createSession` returns none; `parc_webkit_media_keys.h`). Modern MediaKeys
+sessions work in any order (steps above). `tests/FairPlay/hls_player_harness.mm`
+`keys-legacy-order` plays Axinom's vector in the legacy order.
 
 `EmeInitDataType::SKD` and its `"skd"` string are on main (7c317739,
 `fp-safari-eme-surface`).
@@ -599,14 +616,14 @@ behavior, not Parc's hosting.
 
 | Element | Source in the GPU | Render-process path |
 | --- | --- | --- |
-| `HAVE_METADATA` | item `readyToPlay` | `OnInitialized` → demuxer init → pipeline metadata |
+| `HAVE_METADATA` | the asset's metadata keys loaded and the asset playable, before the item exists (WebKit's `updateStates`) | `OnInitialized` → demuxer init → pipeline metadata |
 | `HAVE_ENOUGH` / underflow | `playbackLikelyToKeepUp` / `playbackBufferEmpty` | `OnBufferingStateChange` → facade's `RendererClient` |
-| `currentTime` | `currentTime`, periodic observer | `OnTimeUpdate` → facade's `GetMediaTime` interpolates |
-| `duration` | `duration` (indefinite = live), Live and DVR | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |
-| `buffered` | `loadedTimeRanges` | `DemuxerHost::OnBufferedTimeRangesChanged` |
-| `seekable` | `seekableTimeRanges` as one window, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayerImpl::Seekable()` answers it |
+| `currentTime` | `currentTime`, periodic observer (0 until the item is ready) | `OnTimeUpdate` → facade's `GetMediaTime` interpolates |
+| `duration` | the asset's until the item is ready to play, then the item's (indefinite = live), Live and DVR | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |
+| `buffered` | `loadedTimeRanges` (none before the item loads) | `DemuxerHost::OnBufferedTimeRangesChanged` |
+| `seekable` | `seekableTimeRanges` as one window, up to the duration before the item lists any, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayerImpl::Seekable()` answers it |
 | `getStartDate()` | `round(currentDate − currentTime)`, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayer::ParcStartDate()` |
-| seeking/seeked | `seekToTime:completionHandler:` | `Demuxer::Seek` / facade `StartPlayingFrom` |
+| seeking/seeked | `seekToTime:completionHandler:`; a seek before the item is ready to play waits for it (the latest only) | `Demuxer::Seek` / facade `StartPlayingFrom` |
 | rate, pause | `rate` | facade `SetPlaybackRate` → `Play`/`Pause` |
 | volume, muted | `volume`, `muted` | facade `SetVolume`; tab mute as the MSE route |
 | `ended` | `AVPlayerItemDidPlayToEndTimeNotification` | `OnEnded` |
@@ -626,12 +643,13 @@ from the legible group, cues from one `AVPlayerItemLegibleOutput` for the one
 track the modes pick. GPU service: `media::FairPlayHlsTrackBridge`
 (`fairplay_hls_track_bridge.{h,mm}`, the GPU source set) owns the selection
 and does the rest; the service makes one with its client remote and
-`PostTask`, calls `Attach(player.impl())` right after `Start`, puts
+`PostTask`, calls `Attach(player.impl())` in `OnMetadata` (the item exists
+then and isn't on the player yet), puts
 `TakeTracksForInitialize()` in `OnInitialized`'s metadata, forwards
 `SetAudioTrackEnabled`/`SetTextTrackMode`, and calls `WillSeek()` before each
 `FairPlayHlsPlayer::Seek` and `DidSeek()` in its `done`, whatever the result.
 The bridge attaches with `HlsMediaSelectionAttach(selection.impl(),
-HlsPlayerAVPlayer(player.impl()), player.currentItem)`, maps
+HlsPlayerAVPlayer(player.impl()), HlsPlayerItem(player.impl()))`, maps
 `HlsTrack`/`HlsCue` onto `FairPlayHlsTrack`/`FairPlayHlsCue` field for field,
 holds lists back until `OnInitialized`, and brackets seeks as WebKit does: the
 selection's `BeginSeeking()` on every seek and `EndSeeking()` once the last
@@ -730,8 +748,10 @@ statistics, as for the MSE route.
 WebKit's rules (`MediaPlayerPrivateAVFoundationObjC`), with the cache Safari's
 GPU process (`RemoteMediaPlayerProxy`) keeps for the page:
 
-- `duration`: the item's, +Infinity when indefinite (live), 0 when invalid.
-  `durationchange` fires at `loadedmetadata` and then only when the value
+- `duration`: the asset's at `loadedmetadata` (WebKit's `platformDuration`
+  reads the item only once it is ready to play), then the item's, +Infinity
+  when indefinite (live), 0 when invalid. `durationchange` fires at
+  `loadedmetadata` and then only when the value
   really changes: never while live, once when a live playlist gains
   `EXT-X-ENDLIST`. A live stream's duration never shrinks at its end.
 - `seekable`: one range from the smallest start to the largest end of the
@@ -742,8 +762,8 @@ GPU process (`RemoteMediaPlayerProxy`) keeps for the page:
 - `getStartDate()`: `round(currentDate − currentTime)` whole seconds since
   the epoch, from `EXT-X-PROGRAM-DATE-TIME`, an Invalid Date without one.
   Safari samples it only at ready-state changes, so the player samples it at
-  metadata and at each buffering change and sends `OnStartDateChanged` just
-  before the `OnBufferingStateChange`.
+  each buffering change (there is no item, so no date, at `loadedmetadata`)
+  and sends `OnStartDateChanged` just before the `OnBufferingStateChange`.
 - Seeking: the element clamps to the duration and then to the nearest point
   of the one seekable range, as WebKit's `seekTask` does, so a seek past the
   window's end lands on the live edge and one before its start on the oldest

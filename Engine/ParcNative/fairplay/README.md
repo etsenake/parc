@@ -373,11 +373,22 @@ service runs it for Safari-identity pages
   the client the same way; `FulfillKeyRequests` answers them with the raw key
   (WebKit's `fulfillRequestWithKeyData`), and `HlsClearKeyId` gives WebKit's
   key ID for them (the URL's resource specifier).
-- State comes from the item: metadata at `readyToPlay`, buffering from
-  `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`,
-  loaded ranges, presentation size, end, failure (URL errors are network
-  errors; others before metadata are unsupported sources, after it decode
-  errors). Seeks are exact (zero tolerance).
+- Metadata comes from the asset, as WebKit's HAVE_METADATA does: `Start`
+  loads its `playable` and `tracks` keys, then WebKit's metadata keys and
+  each track's, and once every key is loaded, every enabled track has a
+  format description and the asset is playable, `OnMetadata` reports the
+  asset's duration, the seekable window up to it and the media types (from
+  the variants when they all name codecs, else both assumed); only then are
+  the item and player made and the item put on the player, so no key request
+  comes before it. A key that fails is the asset's error (a network error for
+  a URL error or a misconfigured server, else an unsupported source); an
+  asset that isn't playable is an unsupported source.
+- State then comes from the item: once it is `readyToPlay` its duration,
+  seekable window and presentation size follow as changes, a seek made
+  before that waits for it (only the latest), and buffering follows
+  `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`; loaded
+  ranges, end, failure (URL errors are network errors, others decode errors).
+  Seeks are exact (zero tolerance).
 - Live and DVR timing (`HlsTimeline`, WebKit's
   `MediaPlayerPrivateAVFoundationObjC` with the cache its GPU process keeps
   for the page): the duration is the item's, +infinity when indefinite (live)

@@ -192,7 +192,7 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
       &NativeHlsDemuxer::OnPlayerDisconnected, base::Unretained(this)));
 
   // A CDM the pipeline held before this demuxer started: AVFoundation may
-  // ask for keys before the item is ready to play.
+  // ask for keys as soon as the item exists, right after OnInitialized.
   if (pending_cdm_context_) {
     SendCdm(std::exchange(pending_cdm_context_, nullptr), base::DoNothing());
   }

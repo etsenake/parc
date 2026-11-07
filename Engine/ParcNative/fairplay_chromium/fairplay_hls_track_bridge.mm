@@ -132,8 +132,9 @@ void FairPlayHlsTrackBridge::Attach(
   if (attached_ || !player) {
     return;
   }
+  // The item, before it goes on the player (HlsPlayerClient::OnMetadata).
   AVPlayer* av_player = fp::HlsPlayerAVPlayer(player);
-  AVPlayerItem* item = av_player.currentItem;
+  AVPlayerItem* item = fp::HlsPlayerItem(player);
   if (!av_player || !item) {
     return;
   }
