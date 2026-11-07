@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **58**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **59**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -412,8 +412,18 @@ video played less than 5 seconds before casting never starts on the TV:
 30 and 60 minutes away Parc now restores the casting page and resumes on the
 TV, where Safari reloads the page: Parc is better here: **kept**
 (Josh agreed November 7). FairPlay
-video can't be cast at all (Safari uses AirPlay, which Parc lacks): **queued**
-(AIRPLAY-1, Josh approved November 7: AirPlay, native HLS first). A streaming source's open connection may count against the
+video can't be cast (Safari uses AirPlay). Native HLS video, FairPlay
+included, now AirPlays from the page's button and the Mini Player through the
+system route list: **fixed** c3c53b1d (no device picker of Parc's own: listing
+devices needs Apple-only entitlements; Josh agreed). Still user-felt: no
+"playing on <TV>" placard over the video, no AirPlay button in Parc's in-page
+controls, the standard Remote Playback API opens Chrome's Cast dialog where
+Safari opens AirPlay, and `webkitWirelessVideoPlaybackDisabled` is missing:
+**queued** (AIRPLAY-2). A ManagedMediaSource element doesn't switch to its HLS
+`<source>` alternative when a target is picked, as Safari does: **queued**
+(AIRPLAY-3, after HME-1c). Clear `src=` files and clear Media Source don't
+AirPlay (Safari plays `src=` files through AVPlayer): **queued** (AIRPLAY-4,
+about 400-700 lines). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
