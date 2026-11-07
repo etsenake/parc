@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **50**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **51**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -375,8 +375,9 @@ thaw, and Chromium's freezing policy never freezes an audible page,
 macOS here (`HTMLMediaElement.cpp:7213-7219`). Still different: a page
 restored into a background tab resumes at once, where WebKit waits until the
 page can start media (`MediaElementSession.cpp:717-730`): **fixed** 7fcc63d0
-for background tabs; a restore into a minimised or covered window still
-waits where Safari plays: **in progress** (HME-33b, an "in window" signal).
+for background tabs; a restore into a minimised or covered window waited
+where Safari plays: **fixed** 54fc1006 (an "in window" signal from the
+browser).
 With a Cast session active the player restarted on entering the cache, as
 stock Chromium does: **fixed** c0f53c09 on every page (Josh's decision), and
 Safari-identity pages keep WebKit's 30-minute cache lifetime. A stale session
