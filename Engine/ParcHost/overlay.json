@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 392,
+  "version": 393,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4258,7 +4258,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "be69485b7b58c642529b0df859863933e1c6e80179540544e531a205f160f72b",
+      "sha256": "932e403f65e0f37a87c1cdab6d39312fc1ec4fa38416ec895987b2c3b8f82162",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4308,7 +4308,7 @@
         {
           "target": "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc",
           "before_sha256": "dd4487139ca1f2ada128a574fad9368daa3041aaf157773b598aef1d10434cf5",
-          "after_sha256": "76a7813150d4d0ff005498a4133bd09a0cd2c72786e4c431ab2131c044d882e4"
+          "after_sha256": "651e958f8e132bfc577a7268a8901d8930e32c94e1287522b82b325a88b03572"
         },
         {
           "target": "third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc",

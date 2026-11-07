@@ -39,7 +39,9 @@ On a page that presents Safari's identity:
 - `requestMediaKeySystemAccess` reads its configurations as WebKit's bindings
   do: an `encryptionScheme` other than `cenc` or `cbcs` (`cbcs-1-9` included)
   or a session type WebKit doesn't know is a TypeError for the whole call,
-  where a Chrome page skips that capability or configuration.
+  where a Chrome page skips that capability or configuration. FairPlay takes
+  a capability naming no encryption scheme or `cbcs`, as WebKit's FairPlay
+  CDM does, and skips one naming `cenc`.
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`

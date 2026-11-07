@@ -592,7 +592,7 @@
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-@@ -96,16 +97,41 @@
+@@ -96,21 +97,68 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -600,6 +600,8 @@
 +  // (parc_safari_identity.h).
 +  const bool parc_safari_identity =
 +      context && IsParcSafariIdentityUserAgent(context->UserAgent());
++  const bool parc_safari_fairplay =
++      parc_safari_identity && IsParcFairPlayKeySystem(key_system);
    for (wtf_size_t i = 0; i < supported_configurations.size(); ++i) {
      const MediaKeySystemConfiguration* config = supported_configurations[i];
      WebMediaKeySystemConfiguration web_config;
@@ -634,6 +636,31 @@
  
      DCHECK(config->hasVideoCapabilities());
      web_config.video_capabilities =
+         ConvertCapabilities(config->videoCapabilities());
+ 
++    // Parc: under Safari's identity FairPlay takes the encryption schemes
++    // WebKit's FairPlay CDM takes (CDMInstanceFairPlayStreamingAVFObjC::
++    // supportsMediaCapability): none named, or "cbcs". A capability naming
++    // another is skipped like any unsupported capability.
++    if (parc_safari_fairplay) {
++      for (std::vector<WebMediaKeySystemMediaCapability>* capabilities :
++           {&web_config.audio_capabilities, &web_config.video_capabilities}) {
++        for (WebMediaKeySystemMediaCapability& capability : *capabilities) {
++          if (capability.encryption_scheme !=
++                  WebMediaKeySystemMediaCapability::EncryptionScheme::
++                      kNotSpecified &&
++              capability.encryption_scheme !=
++                  WebMediaKeySystemMediaCapability::EncryptionScheme::kCbcs) {
++            capability.encryption_scheme = WebMediaKeySystemMediaCapability::
++                EncryptionScheme::kUnrecognized;
++          }
++        }
++      }
++    }
++
+     DCHECK(config->hasDistinctiveIdentifier());
+     web_config.distinctive_identifier =
+         EncryptedMediaUtils::ConvertToMediaKeysRequirement(
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc
 @@ -51,6 +51,7 @@
