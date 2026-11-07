@@ -2449,26 +2449,27 @@ std::vector<Step> QueuedUpdateScenario() {
   return steps;
 }
 
-// A request AVFoundation can't serve (a FairPlay pssh with no key entry):
-// generateRequest must settle, through the failure path or the timeout.
+// A request AVFoundation can't serve (a FairPlay pssh with no key entry) gets
+// no delegate call, so generateRequest stays pending, as WebKit's
+// requestLicense does: the key session has no timeout of its own.
 std::vector<Step> NoHangScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
   std::vector<Step> steps;
-  steps.push_back(Section("generateRequest that AVFoundation can't serve settles (3 s timeout)"));
+  steps.push_back(Section("generateRequest that AVFoundation can't serve stays pending, as in Safari"));
   steps.push_back([=](Done done) {
     *keys = MakeKeySystem("no-hang");
     KeySystem* ks = keys->get();
-    ks->cdm->SetRequestTimeout(3);
     std::vector<uint8_t> pssh = FairPlayPssh(std::vector<std::vector<uint8_t>>{}, fp::FourCC('c', 'b', 'c', 's'));
-    double started = Now();
-    auto finish = Once(8, "no-hang: generateRequest settles", [=](bool) { done(); });
+    auto settled = std::make_shared<bool>(false);
     ks->cdm->CreateSessionAndGenerateRequest(fp::InitDataType::kCenc, pssh,
-                                             [=](const fp::Result& r, const std::string&) {
-                                               Check(!r.ok(), Format("no-hang: rejected after %.1f s", Now() - started),
-                                                     r.message);
-                                               finish(true);
+                                             [=](const fp::Result&, const std::string&) {
+                                               *settled = true;
                                              });
+    After(5, [=] {
+      Check(!*settled, "no-hang: generateRequest still pending after 5 s (no timeout)");
+      done();
+    });
   });
   steps.push_back([=](Done done) {
     w->retired.push_back(std::move(*keys));

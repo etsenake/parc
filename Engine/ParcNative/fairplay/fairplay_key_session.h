@@ -169,10 +169,6 @@ class FairPlayCdm {
   // literal "acknowledged" then removes the reports from the storage.
   void RemoveSession(const std::string& session_id, ResultCallback done);
 
-  // generateRequest and update() reject if AVFoundation hasn't answered
-  // within |seconds| (default 15).
-  void SetRequestTimeout(double seconds);
-
   // True if some open session holds a usable key for |key_id|.
   bool HasUsableKey(const std::vector<uint8_t>& key_id) const;
 

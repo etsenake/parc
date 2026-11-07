@@ -314,8 +314,12 @@ so this forces the following on the Chromium integration.
   sequence, never inside a call into `FairPlayCdm`, so a client may re-enter
   it (for example, close the session from `OnSessionKeysChange`).
 - `UpdateSession` calls made while one is in flight run in order after it.
-- `generateRequest` and `update()` reject after `SetRequestTimeout` seconds
-  (default 15) if AVFoundation never answers. A failure for a request
+- `generateRequest` and `update()` have no timeout of their own, as WebKit's
+  `requestLicense` and `updateLicense`: they settle when AVFoundation
+  provides, answers or fails the request, and an skd session waiting on an
+  HLS asset settles whenever the asset asks for its URI. A request
+  AVFoundation drops without a delegate call (a FairPlay pssh naming no key)
+  leaves `generateRequest` pending, as in Safari. A failure for a request
   AVFoundation never provided fails that request's part of the license request.
 - A renewal (`update("renew")`, or one AVFoundation starts) runs beside the
   answered request. The answered key stays usable until the renewal succeeds

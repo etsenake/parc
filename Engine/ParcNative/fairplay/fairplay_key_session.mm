@@ -121,6 +121,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     // A renewal in flight. The answered request and its key stay in use until
     // it succeeds (then it replaces them) or fails (then it is dropped).
     AVContentKeyRequest* renewal = nil;
+    // A renewal whose response AVFoundation was processing when it started
+    // another: its outcome still settles that update(), as WebKit's callback
+    // settles on whichever request reports.
+    AVContentKeyRequest* answered_renewal = nil;
     AVContentKey* key = nil;  // The last key a response produced.
     int call = -1;                               // Plan entry that produced it.
     std::vector<std::vector<uint8_t>> key_ids;  // 16-byte key IDs.
@@ -161,7 +165,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::vector<Batch> batches;
     SessionCallback generate_done;
     ResultCallback update_done;
-    uint64_t update_serial = 0;  // Identifies the update a timeout belongs to.
     // update() calls made while one is in flight run in order after it.
     std::deque<std::pair<std::vector<uint8_t>, ResultCallback>> queued_updates;
     std::set<Request*> update_pending;
@@ -208,8 +211,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       }
     });
   }
-
-  void SetRequestTimeout(double seconds) { request_timeout_ = seconds; }
 
   // Expiring the shared session makes every recipient inoperable, so it
   // happens only when the key system goes away. Loading requests a session
@@ -388,20 +389,11 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                                        initializationData:initialization_data
                                                   options:options];
     }
-    // AVFoundation may drop a request without a delegate call (an NSData
-    // identifier without init data, for one): don't let generateRequest hang.
-    std::string id = raw->id;
-    ScheduleTimeout([id](Impl& impl) {
-      Session* session = impl.Find(id);
-      if (!session || !session->generate_done) {
-        return;
-      }
-      SessionCallback done = std::move(session->generate_done);
-      impl.RevokeKeys(session);
-      impl.ReleaseLoading(session);
-      impl.sessions_.erase(id);
-      done(Result::Error(Exception::kNotSupported, "no license request from AVFoundation in time"), "");
-    });
+    // No timeout, as WebKit's requestLicense: generateRequest settles when
+    // AVFoundation provides or fails the request, or, for a session waiting
+    // on an HLS asset, whenever the asset asks for the URI. A request
+    // AVFoundation drops without a delegate call (a FairPlay pssh naming no
+    // key) stays pending, as in Safari.
   }
 
   // EME lets a page call update() again before the last one settled
@@ -595,17 +587,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       done(Result::Ok());
       return;
     }
+    // Settles when AVFoundation succeeds or fails each answered request, with
+    // no timeout, as WebKit's updateLicense.
     session->update_done = std::move(done);
-    const uint64_t serial = ++session->update_serial;
-    ScheduleTimeout([session_id, serial](Impl& impl) {
-      Session* s = impl.Find(session_id);
-      if (!s || !s->update_done || s->update_serial != serial) {
-        return;
-      }
-      s->update_pending.clear();
-      ResultCallback pending = std::move(s->update_done);
-      pending(Result::Error(Exception::kInvalidState, "license response not processed in time"));
-    });
     std::vector<Request*> answered_loading;
     for (auto& [request, ckc] : responses) {
       if (request->loading) {
@@ -936,6 +920,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
         if (!request->key) {
           request->key = request->request.contentKey;
         }
+        if (request->renewal && session->update_pending.count(request)) {
+          request->answered_renewal = request->renewal;
+        }
         request->renewal = av_request;
         request->spc = nil;
         added.push_back(request);
@@ -1043,7 +1030,11 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   void OnRequestSucceeded(AVContentKeyRequest* av_request) {
     Session* session = SessionFor(av_request);
     if (Request* request = session ? FindRequest(session, av_request) : nullptr) {
-      if (request->renewal == av_request) {
+      if (request->answered_renewal == av_request) {
+        // Its key replaces the answered one; the newer renewal keeps running.
+        request->request = av_request;
+        request->answered_renewal = nil;
+      } else if (request->renewal == av_request) {
         request->request = av_request;
         request->renewal = nil;
       }
@@ -1067,6 +1058,12 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       if (session->generate_done) {
         AddFailedRequest(session, av_request, error);
       }
+      return;
+    }
+    if (request->answered_renewal == av_request) {
+      // The answered key stays in use; the newer renewal keeps running.
+      request->answered_renewal = nil;
+      Settle(session, request, error.code == kSecurityLevelError ? nil : error);
       return;
     }
     if (error.code == kSecurityLevelError) {
@@ -1487,7 +1484,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     // with one identifier.
     for (const auto& [session_id, session] : sessions_) {
       for (const auto& request : session->requests) {
-        if (request->request && (request->request == av_request || request->renewal == av_request)) {
+        if (request->request && (request->request == av_request || request->renewal == av_request ||
+                                 request->answered_renewal == av_request)) {
           return session.get();
         }
       }
@@ -1525,7 +1523,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   static Request* FindRequest(Session* session, AVContentKeyRequest* av_request) {
     for (auto& request : session->requests) {
-      if (request->request == av_request || request->renewal == av_request) {
+      if (request->request == av_request || request->renewal == av_request ||
+          request->answered_renewal == av_request) {
         return request.get();
       }
     }
@@ -1535,19 +1534,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   // The request an SPC and response belong to: the renewal while one runs.
   static AVContentKeyRequest* Active(const Request& request) {
     return request.renewal ?: request.request;
-  }
-
-  void ScheduleTimeout(std::function<void(Impl&)> task) {
-    std::weak_ptr<Impl> weak = weak_from_this();
-    std::shared_ptr<const PostTask> poster = poster_;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(request_timeout_ * NSEC_PER_SEC)),
-                   DelegateQueue(), ^{
-                     (*poster)([weak, task] {
-                       if (auto impl = weak.lock()) {
-                         task(*impl);
-                       }
-                     });
-                   });
   }
 
   // Key IDs and SPC content identifier for a request. Requests made through
@@ -1894,7 +1880,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   // Content key recipients (renderers) attached through AttachRecipient.
   NSMutableArray<id<AVContentKeyRecipient>>* recipients_ = [NSMutableArray array];
   NSData* certificate_ = nil;
-  double request_timeout_ = 15;  // Seconds for generateRequest and update().
   std::map<std::string, std::unique_ptr<Session>> sessions_;
   bool persistent_state_allowed_ = false;
   // <storage directory>/SecureStop.plist, or nil.
@@ -1977,10 +1962,6 @@ void FairPlayCdm::CloseSession(const std::string& session_id, ResultCallback don
 
 void FairPlayCdm::RemoveSession(const std::string& session_id, ResultCallback done) {
   impl_->RemoveSession(session_id, impl_->Posted(std::move(done)));
-}
-
-void FairPlayCdm::SetRequestTimeout(double seconds) {
-  impl_->SetRequestTimeout(seconds);
 }
 
 bool FairPlayCdm::HasUsableKey(const std::vector<uint8_t>& key_id) const {

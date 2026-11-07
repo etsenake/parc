@@ -257,8 +257,9 @@ probed through its runtime interface)
   different content IV, `qavc`, `qhvc` and `qdh1` fail every frame, so the IV
   used is the license's ([codecs/](codecs/README.md)).
 - AVFoundation silently drops a request it can't serve: a FairPlay pssh that
-  names no key gets no delegate call at all, not even a failure. The key
-  session's request timeout is what keeps `generateRequest` from hanging.
+  names no key gets no delegate call at all, not even a failure. WebKit's
+  `generateRequest` then stays pending, and so does the key session's (it
+  has no timeout).
 - A malformed CKC for a renewal fails with `CoreMediaErrorDomain -42681`. The
   answered key keeps working.
 - The ad-hoc signed command-line harness gets SPCs, CKCs and protected playback
