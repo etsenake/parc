@@ -405,6 +405,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       NSError* error = nil;
       AVKeyValueStatus status = [asset_ statusOfValueForKey:key error:&error];
       if (status == AVKeyValueStatusCancelled) {
+        // MediaPlayerAVAssetStatusCancelled: not playable, so a format error.
+        // Only AVFoundation cancels it here: after Shutdown this returned early.
+        ReportFailure([NSError errorWithDomain:AVFoundationErrorDomain
+                                          code:AVErrorUnknown
+                                      userInfo:@{NSLocalizedDescriptionKey : @"loading the asset's metadata was cancelled"}]);
         return;
       }
       if (status == AVKeyValueStatusFailed) {
@@ -421,8 +426,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       }
     }
     // allTracksArePlayable: an enabled track without a format description
-    // isn't playable. WebKit's asset then stays loading; nothing loads again
-    // here, so it is the format error it would come to.
+    // isn't playable. WebKit's asset then stays loading and is checked again
+    // at its next state change; nothing checks again here, so Parc reports a
+    // format error instead (an HLS asset lists no tracks, so it rarely
+    // applies).
     bool contains_disabled_tracks = false;
     for (AVAssetTrack* track in asset_.tracks) {
       if (!track.enabled) {
@@ -1105,8 +1112,6 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
   }
 
-  void OnFailedToPlayToEnd(NSError* error) { ReportFailure(error); }
-
   // WebKit's getStartDate, in seconds.
   std::optional<double> StartDate() const {
     return HlsStartDate(item_.currentDate.timeIntervalSince1970, CMTimeGetSeconds(item_.currentTime));
@@ -1206,20 +1211,19 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     reported_error_ = true;
+    // WebKit's MediaPlayerPrivateAVFoundation::updateStates: a failed item is
+    // a DecodeError; before that, an asset key that failed is a NetworkError
+    // for a URL error or a misconfigured server (assetStatus), else a
+    // FormatError. The error's own domain decides, not an underlying one.
     HlsError kind;
-    if ([error.domain isEqualToString:NSURLErrorDomain] ||
-        (!reported_metadata_ && [error.domain isEqualToString:AVFoundationErrorDomain] &&
-         error.code == AVErrorServerIncorrectlyConfigured)) {
-      kind = HlsError::kNetwork;
-    } else if (!reported_metadata_) {
-      kind = HlsError::kNotSupported;
-    } else {
+    if (reported_metadata_) {
       kind = HlsError::kDecode;
-    }
-    // An underlying URL error behind an AVFoundation error is a network error.
-    NSError* underlying = error.userInfo[NSUnderlyingErrorKey];
-    if ([underlying.domain isEqualToString:NSURLErrorDomain]) {
+    } else if ([error.domain isEqualToString:NSURLErrorDomain] ||
+               ([error.domain isEqualToString:AVFoundationErrorDomain] &&
+                error.code == AVErrorServerIncorrectlyConfigured)) {
       kind = HlsError::kNetwork;
+    } else {
+      kind = HlsError::kNotSupported;
     }
     std::string message = error ? std::string(error.description.UTF8String ?: "") : "playback failed";
     client_->OnError(kind, message);
@@ -1685,10 +1689,6 @@ static void* const kPlayerObscured = (void*)&kPlayerObscured;
              selector:@selector(itemDidPlayToEnd:)
                  name:AVPlayerItemDidPlayToEndTimeNotification
                object:item];
-  [center addObserver:self
-             selector:@selector(itemFailedToPlayToEnd:)
-                 name:AVPlayerItemFailedToPlayToEndTimeNotification
-               object:item];
 }
 
 - (void)stop {
@@ -1749,16 +1749,6 @@ static void* const kPlayerObscured = (void*)&kPlayerObscured;
 
 - (void)itemDidPlayToEnd:(NSNotification*)notification {
   [self post:&FairPlayHlsPlayer::Impl::OnEnded];
-}
-
-- (void)itemFailedToPlayToEnd:(NSNotification*)notification {
-  NSError* error = notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
-  std::weak_ptr<FairPlayHlsPlayer::Impl> weak = _impl;
-  (*_poster)([weak, error] {
-    if (auto impl = weak.lock()) {
-      impl->OnFailedToPlayToEnd(error);
-    }
-  });
 }
 
 @end

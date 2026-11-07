@@ -399,7 +399,10 @@ service runs it for Safari-identity pages
   seekable window and presentation size follow as changes, a seek made
   before that waits for it (only the latest), and buffering follows
   `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`; loaded
-  ranges, end, failure (URL errors are network errors, others decode errors).
+  ranges, end, and a failed item (a decode error, as WebKit's `updateStates`;
+  `AVPlayerItemFailedToPlayToEndTime` isn't one, as WebKit doesn't observe
+  it). A metadata key AVFoundation cancels is a format error, as WebKit's
+  `MediaPlayerAVAssetStatusCancelled`.
   Seeks are exact (zero tolerance).
 - Live and DVR timing (`HlsTimeline`, WebKit's
   `MediaPlayerPrivateAVFoundationObjC` with the cache its GPU process keeps

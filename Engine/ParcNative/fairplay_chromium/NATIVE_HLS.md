@@ -627,7 +627,7 @@ behavior, not Parc's hosting.
 | rate, pause | `rate` | facade `SetPlaybackRate` → `Play`/`Pause` |
 | volume, muted | `volume`, `muted` | facade `SetVolume`; tab mute as the MSE route |
 | `ended` | `AVPlayerItemDidPlayToEndTimeNotification` | `OnEnded` |
-| `error` | item `failed`, `AVPlayerItemFailedToPlayToEndTime`, error log | `OnError` → `MEDIA_ERR_NETWORK` / `DECODE` / `SRC_NOT_SUPPORTED` as Safari maps them |
+| `error` | an asset key that failed before metadata (`MEDIA_ERR_NETWORK` for a URL error or a misconfigured server, else `SRC_NOT_SUPPORTED`), then the item's `failed` status (`MEDIA_ERR_DECODE`), as WebKit's `assetStatus` and `updateStates` map them; `AVPlayerItemFailedToPlayToEndTime` isn't an error (WebKit doesn't observe it) | `OnError` |
 | `audioTracks` / `textTracks` | `HlsMediaSelection` (Tracks) | `OnTracksChanged`, `OnTextCues` (Tracks) |
 | decoded/dropped frames | `-[AVPlayerLayer videoPerformanceMetrics]` (`HlsFrameStats`) | `OnStatisticsUpdate` deltas (as fp-frame-stats) |
 | `webkitneedkey` | every resource loader skd and clearkey request | `OnKeyRequest` → `ParcWebKitKeyRequest` |
