@@ -1844,7 +1844,18 @@
  
    // Sets the hardware-related fields in |prefs| that are slow to compute. The
    // fields are set from cache if available, otherwise recomputed.
-@@ -6948,6 +6953,22 @@
+@@ -4236,6 +4241,10 @@
+ 
+   GetContentClient()->browser()->OverrideWebPreferences(
+       this, *main_frame->GetSiteInstance(), &prefs);
++  // Parc: shell attachment is WebContents state, not a computed preference.
++  // Preserve it through settings recomputation and BFCache restoration.
++  if (web_preferences_)
++    prefs.parc_page_in_window = web_preferences_->parc_page_in_window;
+   return prefs;
+ }
+ 
+@@ -6948,6 +6957,22 @@
    if (delegate_) {
      delegate_->ResizeDueToAutoResize(this, new_size);
    }
@@ -1952,7 +1963,7 @@
    navigation_info->blob_url_token = std::move(blob_url_token);
 --- a/content/browser/web_contents/web_contents_impl_unittest.cc
 +++ b/content/browser/web_contents/web_contents_impl_unittest.cc
-@@ -456,6 +456,18 @@
+@@ -456,6 +456,32 @@
  
  }  // namespace
  
@@ -1966,6 +1977,20 @@
 +  contents()->SetWebPreferences(prefs);
 +  contents()->OnWebPreferencesChanged();
 +  EXPECT_FALSE(contents()->GetOrCreateWebPreferences().parc_media_power_restricted);
++}
++
++TEST_F(WebContentsImplTest, ParcWindowAttachmentSurvivesPreferencesUpdate) {
++  auto prefs = contents()->GetOrCreateWebPreferences();
++  EXPECT_FALSE(prefs.parc_page_in_window);
++  prefs.parc_page_in_window = true;
++  contents()->SetWebPreferences(prefs);
++  contents()->OnWebPreferencesChanged();
++  EXPECT_TRUE(contents()->GetOrCreateWebPreferences().parc_page_in_window);
++  prefs = contents()->GetOrCreateWebPreferences();
++  prefs.parc_page_in_window = false;
++  contents()->SetWebPreferences(prefs);
++  contents()->OnWebPreferencesChanged();
++  EXPECT_FALSE(contents()->GetOrCreateWebPreferences().parc_page_in_window);
 +}
 +
  TEST_F(WebContentsImplTest, SetMainFrameMimeType) {

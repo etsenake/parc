@@ -71,6 +71,7 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 #include "window_security_reservation.h"
+#include "third_party/blink/public/common/web_preferences/web_preferences.h"
 
 namespace parc {
 struct NativeOpenAppToken {
@@ -1199,6 +1200,18 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       if (!attached_here()) {
         continue;
       }
+      // WebKit's WebPage::updateIsInWindow allows media in an active tab
+      // even when its window is minimised or fully covered.
+      const bool in_window = [visible containsObject:page] &&
+                             (window.visible || window.miniaturized);
+      auto prefs = contents->GetOrCreateWebPreferences();
+      if (prefs.parc_page_in_window != in_window) {
+        prefs.parc_page_in_window = in_window;
+        contents->SetWebPreferences(prefs);
+        if (!attached_here()) {
+          return;
+        }
+      }
       const bool shown = [visible containsObject:page] &&
                          page.nativeView.window == window_ &&
                          !page.nativeView.hiddenOrHasHiddenAncestor &&
@@ -1639,6 +1652,12 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     auto weak = weak_factory_.GetWeakPtr();
     auto contents_weak = contents.GetWeakPtr();
+    auto prefs = contents.GetOrCreateWebPreferences();
+    if (prefs.parc_page_in_window) {
+      prefs.parc_page_in_window = false;
+      contents.SetWebPreferences(prefs);
+      if (!weak || !contents_weak) return;
+    }
     CloseNativeIntentPicker(contents);
     if (!weak || !contents_weak) return;
     CancelNativeCapturePicker(contents);
