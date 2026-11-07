@@ -567,8 +567,7 @@ int FscodFor(int sample_rate) {
 
 // acmod/lfeon for a channel count: 1 1/0, 2 2/0, 3 3/0, 4 2/2, 5 3/2, and
 // 6, 7 or 8 as 3/2+LFE (for 6.1 and 7.1 that is the independent substream's
-// 5.1 core; the extra channels ride in a dependent substream the config
-// can't describe).
+// 5.1 core; the extra channels ride in a dependent substream).
 bool LayoutFor(int channels, int* acmod, int* lfeon) {
   static const int kAcmod[9] = {-1, 1, 2, 3, 6, 7, 7, 7, 7};
   if (channels < 1 || channels > 8) return false;
@@ -752,6 +751,14 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, i
   const int fscod = FscodFor(sample_rate);
   if (fscod < 0 || !LayoutFor(channels, &acmod, &lfeon)) {
     return std::nullopt;
+  }
+  // Chromium counts 8 channels for a 5.1 core with one dependent substream
+  // of Lrs/Rrs (chan_loc 0x002, 7.1) or Lc/Rc (0x001, 7.1 wide). Lrs/Rrs is
+  // the layout of Dolby's 7.1 streams, which Apple reads as 8 channels,
+  // EAC3_7_1_A. 7 channels (6.1 or 7.0) stay the 5.1 core.
+  constexpr int kChanLocLrsRrs = 0x002;
+  if (channels == 8) {
+    return Dec3(0, {{fscod, 16, acmod, lfeon, 1, kChanLocLrsRrs}});
   }
   return Dec3(0, {{fscod, 16, acmod, lfeon, 0, 0}});
 }

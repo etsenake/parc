@@ -290,8 +290,9 @@ probed through its runtime interface)
   decoding nor sets `requiresFlushToResumeDecoding`.
 - DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator)
   carries `dec3` `chan_loc` = 0x002 for Lrs/Rrs: bit 0 is the LSB. CoreMedia's
-  format description reads that box (and the 5.1-only one) as 6 channels, and
-  the stream decodes to the end.
+  format description lists that box with a top layer of 8 channels
+  (`EAC3_7_1_A`) over a 6-channel one, and the stream decodes to the end
+  ([codecs/](codecs/README.md#results)).
 
 HLS assets (`AVURLAsset` under `AVPlayer`, the native HLS route; probed with
 Axinom's SingleKey and MultiKey HLS on assets that load by themselves, not

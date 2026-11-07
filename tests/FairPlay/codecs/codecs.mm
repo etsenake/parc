@@ -1554,20 +1554,22 @@ void RunAll() {
   // license doesn't carry fails, in the tenc and in CryptorIV alike.
   AddClip("H.264 avc1 cbcs, constant IV not the license's", w->h264, with_iv(nal, IvMode::kOther), "qavc",
           Expect::kFails);
-  AddClip("H.264 avc1 cenc, 8-byte per-sample IVs", w->h264, nal_cenc, "cavc");
+  // WebKit's FairPlay takes cbcs only, and Parc refuses cenc on Safari pages:
+  // AES-CTR content isn't expected to play.
+  AddClip("H.264 avc1 cenc, 8-byte per-sample IVs", w->h264, nal_cenc, "cavc", Expect::kFails);
   AddClip("H.264 avc1 cenc, every IV the license's", w->h264, with_iv(nal_cenc, IvMode::kLicense), "cavc",
           Expect::kReport);
   AddClip("HEVC hev1 cbcs", w->hevc, nal, "qhvc");
   AddClip("AAC-LC cbcs", w->aac_lc, audio, "qaac");
   AddClip("AAC-LC cenc, 8-byte per-sample IVs", w->aac_lc, Options(cenc, Layout::kWholeSample, IvMode::kPerSample, nullptr),
-          "qaac");
+          "qaac", Expect::kFails);
   AddClip("AAC-LC cbcs, wrong key (control)", w->aac_lc, audio, "qaac", Expect::kGarbage, 0x5a);
 
   // The codecs no public FairPlay content covers.
   AddClip("Dolby Vision profile 5 dvh1 cbcs", w->dv5_dvh1, nal, "qdh1");
   AddClip("Dolby Vision profile 5 dvh1 cbcs, wrong key (control)", w->dv5_dvh1, nal, "qdh1", Expect::kGarbage, 0x5a);
   AddClip("Dolby Vision profile 5 dvhe cbcs", w->dv5_dvhe, nal, "qdh1");
-  AddClip("Dolby Vision profile 5 dvhe cenc, 8-byte per-sample IVs", w->dv5_dvhe, nal_cenc, "cdh1");
+  AddClip("Dolby Vision profile 5 dvhe cenc, 8-byte per-sample IVs", w->dv5_dvhe, nal_cenc, "cdh1", Expect::kFails);
   add_loaded("AV1 8-bit av01 clear (baseline)", w->av1, "", Expect::kReport);
   AddClip("AV1 8-bit av01 cbcs", w->av1, av1, "qav1");
   // Garbage tile data mostly decodes without a word, so the control runs

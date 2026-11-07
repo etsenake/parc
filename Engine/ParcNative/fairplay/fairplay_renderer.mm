@@ -1255,9 +1255,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!payload && subsamples) {
       payload = eac3 ? Eac3SpecificBoxFromConfig(audio_config_->sample_rate, channels)
                      : Ac3SpecificBoxFromConfig(audio_config_->sample_rate, channels);
-      // A 6.1/7.1 config gets the box of its 5.1 core; the sample entry
-      // says 6 channels to match it.
-      if (payload && channels > 6) {
+      // A box of the 5.1 core (AC-3 6.1/7.1, E-AC-3 6.1) gets a sample
+      // entry of 6 channels to match it; E-AC-3 7.1 keeps its 8.
+      if (payload && channels > 6 && (!eac3 || channels != 8)) {
         audio_config_->channels = 6;
       }
     }

@@ -117,9 +117,10 @@ std::optional<std::vector<uint8_t>> Eac3SpecificBoxPayload(const uint8_t* data, 
 
 // The same boxes from the decoder config alone, for streams whose syncframes
 // are encrypted (whole-sample cbcs/cenc audio): sample rate gives fscod,
-// channel count gives acmod and lfeon (6, 7 and 8 = 3/2 + LFE, the 5.1 core
-// of 6.1/7.1). The bit rate is unknown and written as 0. nullopt for an
-// unsupported rate or layout.
+// channel count gives acmod and lfeon (6, 7 and 8 = 3/2 + LFE). E-AC-3 with 8
+// channels adds a dependent substream of Lrs/Rrs (7.1, chan_loc 0x002); AC-3
+// and 7-channel E-AC-3 get the 5.1 core. The bit rate is unknown and written
+// as 0. nullopt for an unsupported rate or layout.
 std::optional<std::vector<uint8_t>> Ac3SpecificBoxFromConfig(int sample_rate, int channels);
 std::optional<std::vector<uint8_t>> Eac3SpecificBoxFromConfig(int sample_rate, int channels);
 

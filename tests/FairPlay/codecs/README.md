@@ -91,9 +91,9 @@ that each signal notices garbage.
 
 ## Results
 
-Recorded 2026-11-06 on this MacBook Air (macOS 27.2): 167 checks, 15
-failed. Every failure is one of the open problems listed below. Run time is
-about six minutes.
+Recorded 2026-11-06 on this MacBook Air (macOS 27.2): 151 checks, 0
+failed. A clip expected to fail counts as one check. Run time is about eight
+minutes.
 
 Proven: each decrypts and decodes with no decoder errors, and a wrong key
 under the same key ID fails visibly.
@@ -108,6 +108,7 @@ under the same key ID fails visibly.
 | AC-3 | `qac3` | 30/30 packets, no decoder errors; wrong key: 60 (`ParseAC3Header failed`) |
 | E-AC-3 | `qec3` | 30/30 packets, no decoder errors; wrong key: 60 |
 | E-AC-3 7.1 (DASH-IF, FA01), with the file's `dec3` | `qec3` | 188/188 packets, 6.016 s, no decoder errors |
+| E-AC-3 7.1 as Chromium delivers it (8 channels, no `dec3`) | `qec3` | 188/188 packets, 6.016 s, no decoder errors, with the box the core builds from rate and channels |
 
 Controls through the same path: Axinom's own H.264 segment as served (144/144
 frames), this program's encryption of H.264 (82/82) and HEVC (82/82), and
@@ -125,31 +126,23 @@ isn't proven.
 7.1 channel layout: CoreMedia's top layer for the file's `dec3` (chan_loc
 `0x002`, Lrs/Rrs) is 8 channels, `EAC3_7_1_A` (L C R Ls Rs LFE Rls Rrs).
 Apple's E-AC-3 decoder decodes all 30 s of the clear stream to 8 channels with
-that layout, each carrying signal (RMS 0.015–0.024).
+that layout, each carrying signal (RMS 0.015–0.024). The core builds the same
+layout both ways: `1800200f0202` from the clear syncframes (the file's own
+box), and `0000200f0202` from rate and 8 channels (the 5.1 core plus a
+dependent substream of Lrs/Rrs, with the bit rate unknown). CoreMedia lists
+both as 8 channels, `EAC3_7_1_A`, over a 6-channel layer. Chromium also counts
+8 channels for 7.1 wide (Lc/Rc); such a stream gets the Lrs/Rrs box, so Apple
+places its extra pair as rear surrounds.
 
-Open problems:
-
-- Core: 7.1 E-AC-3 as Chromium delivers it (8 channels, no `dec3`,
-  whole-sample encryption) is rejected at the first enqueue, because
-  `Eac3SpecificBoxFromConfig(48000, 8)` returns nothing ("AC-3/E-AC-3 config
-  needs a 48, 44.1 or 32 kHz rate and 1-6 channels"). The box above plays,
-  so the core's box building is the only blocker.
-- Core: `Eac3SpecificBoxPayload` builds `dec3` `1800200f0280` from the clear
-  syncframes of that stream. It gives chan_loc `0x080` where the file has
-  `0x002`, with the 9-bit order reversed. Apple reads it as 7 channels,
-  `EAC3_6_1_C` (tag 159), instead of 8.
-- cenc (AES-CTR) doesn't decode:
-  - H.264 fails all 82 frames, and the log says
-    `FigCPECryptorCreateProcessedBlockBufferAndSubsampleAuxiliaryData
-    returned error -12160`;
-  - Dolby Vision `dvhe` fails all 75 frames (AppleAVD error 406);
-  - AAC-LC logs 432 decoder errors (`Error deserializing packet`), though
-    the renderer reports nothing.
-
-  The same happens when every sample's IV is the license's. The cause, core
-  or platform, isn't established.
+Open problems: none in the core.
 
 Platform behaviour (checked to fail, so a change would show up):
+
+- cenc (AES-CTR) is out of scope: WebKit's FairPlay takes cbcs only, and
+  Parc refuses cenc on Safari pages. The clips with 8-byte per-sample IVs
+  fail: H.264 all 82 frames (-12909), Dolby Vision `dvhe` all 75 frames, and AAC-LC
+  logs decoder errors (`Error deserializing packet`) though the renderer
+  reports nothing. Every IV the license's fails the same way.
 
 - `qavc`, `qhvc` and `qdh1` are decrypted with the IV the CKC carries. A
   constant IV the license doesn't carry fails every frame, whether it is in

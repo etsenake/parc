@@ -174,7 +174,9 @@ as they are:
 - AC-3 and E-AC-3 carry no `dac3`/`dec3`. The box is parsed from the first
   syncframe's header when it is in clear bytes (E-AC-3 substreams grouped by
   type and ID). When the whole sample is encrypted, the box comes from the
-  config's sample rate and channel count (6.1 and 7.1 as their 5.1 core), with
+  config's sample rate and channel count, with E-AC-3 7.1 as its 5.1 core
+  plus a dependent substream of Lrs/Rrs (the layout of Dolby's 7.1 streams,
+  which Apple reads as 8 channels) and other 6.1/7.1 as the 5.1 core, and
   the bit rate written as 0 (CoreMedia decodes such boxes; checked with clear
   AC-3 and E-AC-3).
 - Buffers carry no decode timestamp (`mojom::DecoderBuffer` has none). The

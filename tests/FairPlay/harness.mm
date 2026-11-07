@@ -3815,9 +3815,15 @@ void BuilderSelfTests() {
         "builders: parameter set IDs read from H.264 SPS/PPS and HEVC VPS/SPS/PPS",
         ids + Format(", PPS 1: %d %d, H.264 PPS 200: %d, HEVC SPS 3 with a sub-layer: %d", avc1 ? int(*avc1) : -1,
                      hevc1 ? int(*hevc1) : -1, avc200 ? int(*avc200) : -1, hevc_sps3 ? int(*hevc_sps3) : -1));
-  auto core = fp::Eac3SpecificBoxFromConfig(48000, 8);
-  Check(core && core == fp::Eac3SpecificBoxFromConfig(48000, 6),
-        "builders: dec3 from a 7.1 config describes its 5.1 core", core ? ft::Hex(*core) : "none");
+  // 8 channels: the 5.1 core plus a dependent substream of Lrs/Rrs, as in
+  // Dolby's 7.1 streams; 7 channels stay the 5.1 core.
+  auto core71 = fp::Eac3SpecificBoxFromConfig(48000, 8);
+  auto core51 = fp::Eac3SpecificBoxFromConfig(48000, 6);
+  auto core61 = fp::Eac3SpecificBoxFromConfig(48000, 7);
+  Check(core71 && ft::Hex(*core71) == "0000200f0202" && core51 && ft::Hex(*core51) == "0000200f00" && core61 == core51,
+        "builders: dec3 from a 7.1 config adds Lrs/Rrs to the 5.1 core; 6.1 stays the 5.1 core",
+        Format("7.1 %s, 5.1 %s, 6.1 %s", core71 ? ft::Hex(*core71).c_str() : "none",
+               core51 ? ft::Hex(*core51).c_str() : "none", core61 ? ft::Hex(*core61).c_str() : "none"));
 
   // Chromium's whole-sample-encrypted AC-3/E-AC-3: no dac3/dec3 in the config
   // and no clear syncframe, so the renderer builds the box from rate and
