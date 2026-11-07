@@ -320,7 +320,10 @@ sessions name the SPC by the page's bytes instead; Parc's legacy script
 (`Engine/ParcRenderer/parc_webkit_media_keys.h`) sends them as keyids init data
 `{"initDataType": "cenc"|"sinf", "initData": "<base64>", "contentId":
 "<base64>"}`, planned as the inner type (and exchanging its messages) with
-every SPC named by `contentId`.
+every SPC named by `contentId`. Its legacy `com.apple.fps`/`1_0` sessions
+(WebKit's AVFoundation player) name the SPC by the page's content ID: skd init
+data `{"skd": "<URI>", "contentId": "<base64>"}` is the URI's request with
+that content identifier.
 
 ## Apple API behaviour
 

@@ -345,6 +345,51 @@ std::vector<std::vector<uint8_t>> KeyIdsFromPssh(const PsshBox& box) {
 
 namespace {
 
+InitDataPlan PlanForSkdUri(const std::vector<uint8_t>& init_data) {
+  NSString* identifier = [[NSString alloc] initWithData:ToNSData(init_data)
+                                               encoding:NSUTF8StringEncoding];
+  if (!identifier.length) {
+    return Fail("skd init data is not a UTF-8 string");
+  }
+  InitDataPlan plan;
+  ContentKeyRequestPlan call;
+  call.content_identifier = init_data;
+  if (auto key_id = KeyIdFromSkdUri(identifier.UTF8String)) {
+    call.initialization_data = PsshJson(FairPlayPsshForKeyId(*key_id));
+    call.key_ids.push_back(*key_id);
+  } else {
+    call.identifier = identifier.UTF8String;
+  }
+  plan.calls.push_back(std::move(call));
+  return plan;
+}
+
+// Parc extension for WebKit's legacy AVFoundation-player sessions
+// (com.apple.fps, com.apple.fps.1_0; Engine/ParcRenderer/parc_webkit_media_keys.h),
+// whose SPC content identifier is the page's content ID rather than the URI
+// (CDMSessionAVFoundationObjC: contentIdentifier = the content ID as UTF-8):
+//   {"skd": "<skd URI>", "contentId": "<base64>"}
+// plans the request for the URI and names its SPC by contentId. No skd URI
+// starts with '{'.
+InitDataPlan PlanSkdWithContentIdentifier(const std::vector<uint8_t>& init_data) {
+  NSDictionary* root = ParseJSON(init_data);
+  NSString* uri = [root isKindOfClass:[NSDictionary class]] ? root[@"skd"] : nil;
+  NSData* content_id = [root isKindOfClass:[NSDictionary class]]
+                           ? DecodeBase64(root[@"contentId"], false)
+                           : nil;
+  if (![uri isKindOfClass:[NSString class]] || !uri.length || !content_id.length) {
+    return Fail("skd JSON init data is not {\"skd\": URI, \"contentId\": base64}");
+  }
+  const char* utf8 = uri.UTF8String;
+  InitDataPlan plan = PlanForSkdUri(std::vector<uint8_t>(utf8, utf8 + strlen(utf8)));
+  if (plan.error.empty()) {
+    for (ContentKeyRequestPlan& call : plan.calls) {
+      call.content_identifier = ToVector(content_id);
+    }
+  }
+  return plan;
+}
+
 // Parc extension for WebKit's legacy com.apple.fps.2_N sessions
 // (Engine/ParcRenderer/parc_webkit_media_keys.h), whose SPC content
 // identifier is the page's bytes while the request comes from the media's own
@@ -386,22 +431,10 @@ InitDataPlan PlanWithContentIdentifier(NSDictionary* root) {
 InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t>& init_data) {
   switch (type) {
     case InitDataType::kSkd: {
-      NSString* identifier = [[NSString alloc] initWithData:ToNSData(init_data)
-                                                   encoding:NSUTF8StringEncoding];
-      if (!identifier.length) {
-        return Fail("skd init data is not a UTF-8 string");
+      if (!init_data.empty() && init_data[0] == '{') {
+        return PlanSkdWithContentIdentifier(init_data);
       }
-      InitDataPlan plan;
-      ContentKeyRequestPlan call;
-      call.content_identifier = init_data;
-      if (auto key_id = KeyIdFromSkdUri(identifier.UTF8String)) {
-        call.initialization_data = PsshJson(FairPlayPsshForKeyId(*key_id));
-        call.key_ids.push_back(*key_id);
-      } else {
-        call.identifier = identifier.UTF8String;
-      }
-      plan.calls.push_back(std::move(call));
-      return plan;
+      return PlanForSkdUri(init_data);
     }
     case InitDataType::kSinf: {
       NSDictionary* root = ParseJSON(init_data);

@@ -1277,6 +1277,15 @@ void SelfTests(const Media& video, const Media& audio) {
             pssh_json(skd.calls[0].initialization_data) == synthesized,
         "init data: skd -> request through a FairPlay pssh for the URI's key ID, whole URI as "
         "the SPC content identifier");
+  auto legacy_skd = fp::PlanContentKeyRequests(
+      fp::InitDataType::kSkd,
+      Bytes(Format("{\"skd\":\"%s\",\"contentId\":\"YXNzZXQtNw==\"}", kSkd)));
+  Check(legacy_skd.error.empty() && legacy_skd.calls.size() == 1 && legacy_skd.calls[0].key_ids.size() == 1 &&
+            legacy_skd.calls[0].key_ids[0] == g_key_id &&
+            legacy_skd.calls[0].content_identifier == Bytes(std::string("asset-7")) &&
+            !fp::PlanContentKeyRequests(fp::InitDataType::kSkd, Bytes(std::string("{\"skd\":\"skd://a\"}")))
+                 .error.empty(),
+        "init data: legacy skd JSON -> the URI's request, SPC named by contentId (needed)");
   auto opaque = fp::PlanContentKeyRequests(fp::InitDataType::kSkd, Bytes(std::string("skd://asset-42")));
   Check(opaque.error.empty() && opaque.calls.size() == 1 && opaque.calls[0].identifier == "skd://asset-42" &&
             opaque.calls[0].key_ids.empty(),

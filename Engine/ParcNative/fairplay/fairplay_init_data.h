@@ -20,6 +20,9 @@ enum class InitDataType {
   // content identifier (WebKit). When the URI's host is the key ID (a UUID or
   // 32 hex digits), the request goes through a FairPlay pssh for that key ID;
   // otherwise it is named by the URI and its key can't be used by a renderer.
+  // Parc extension for WebKit's legacy AVFoundation-player sessions:
+  // {"skd": "<URI>", "contentId": "<base64>"} is that URI's request with the
+  // SPC named by contentId.
   kSkd,
   // JSON {"sinf": ["<base64 sinf payload>"]}: frma/schm/schi boxes, the form
   // AVStreamDataParser emits. Passed through; the 'tenc' key ID is the SPC
