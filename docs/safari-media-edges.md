@@ -40,8 +40,8 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **37**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
-audio track joining the running player, several TS audio tracks, the rest of
+main: **38**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+audio track joining the running player, protected video readiness on older macOS, the rest of
 Safari's autoplay rules, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -552,9 +552,9 @@ parses every stream. **Fixed** a71dff66 (Safari's TS types and codec answers;
 AC-3 and E-AC-3 in TS now play with sound; MPEG-1 Layer I/II audio decodes
 through Chromium's MP3 decoder; measured against this Mac's
 `AVStreamDataParser`, which ignores HEVC in TS). Still different, all
-user-felt: several audio streams in one TS show as one track, so a language
-or commentary menu does nothing (**in progress**, SBS-2b, with E-AC-3 7.1
-frames split across packets losing their extra channels); FairPlay SAMPLE-AES
+user-felt: several audio streams in one TS showed as one track, so a
+language or commentary menu did nothing, and E-AC-3 7.1 frames split across
+packets lost their extra channels: **fixed** ffa89f7f. Still FairPlay SAMPLE-AES
 H.264, AAC, AC-3 and E-AC-3 in TS fail to play (**queued**, SBS-2c, about
 600-900 lines); MPEG-1/2 video in TS plays black (**queued**, SBS-2d, about
 700-1,000 lines: parser plus a VideoToolbox or AVFoundation decode route).
