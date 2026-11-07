@@ -173,9 +173,11 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
 `mp4a.40.42` (xHE-AAC).
 
 - `FairPlayCdm::IsKeySystemSupported` accepts `com.apple.fps` and
-  `com.apple.fps.<version>`, as WebKit does. The legacy prefixed
-  `WebKitMediaKeys` that Netflix also probes (`com.apple.fps.2_0`) has no
-  Chromium counterpart.
+  `com.apple.fps.<version>`, as WebKit does. Netflix's UI also requires the
+  legacy prefixed `WebKitMediaKeys.isTypeSupported("com.apple.fps.2_0")`
+  before it plays; Safari-identity pages get it as a capability probe
+  (docs/fairplay-identity.md, "WebKitMediaKeys"), and the player itself uses
+  standard EME.
 - A `cenc` FairPlay pssh naming several keys yields one JSON license message
   with an SPC per key, and one JSON response makes them all usable (proven
   with Axinom's three-key vector).

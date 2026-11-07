@@ -507,7 +507,10 @@ this Mac, signed in:
   gets `"status": 0`.
 
 Both services granted keys to an app that is not Safari, so presenting
-Safari's identity is enough; neither checked for Safari itself.
+Safari's identity is enough; neither checked for Safari itself. A WKWebView
+has WebKit's legacy `WebKitMediaKeys`, which Netflix's UI also requires
+before it plays, so Parc adds it to Safari-identity pages (see
+[fairplay-identity.md](fairplay-identity.md#webkitmediakeys)).
 
 **Design.** The page never leaves Chromium. Chromium gains a FairPlay key system
 (`com.apple.fps` and its versioned names), registered the way Windows registers

@@ -11,9 +11,10 @@ any of them.
 The probes in the decision (a WKWebView with Safari's user agent, then the
 same view with every WebKit-only API Chromium lacks removed) showed that
 Netflix and Apple TV+ decide by the user agent string, `navigator.vendor` and
-whether `navigator.userAgentData` exists. Neither checked `window.chrome`,
-legacy `WebKitMediaKeys` or other WebKit-only APIs. Apple TV+ also constructs
-`ManagedMediaSource`, which Chromium doesn't have.
+whether `navigator.userAgentData` exists. Apple TV+ also constructs
+`ManagedMediaSource`, which Chromium doesn't have. Neither checked
+`window.chrome`. That probe missed one: Netflix's UI does check legacy
+`WebKitMediaKeys` (see below), and Parc 1.2.0 showed UI3001 without it.
 
 On a page that presents Safari's identity:
 
@@ -28,6 +29,8 @@ On a page that presents Safari's identity:
 - `navigator.userAgent` and `navigator.appVersion` match the header.
   `navigator.vendor` is `Apple Computer, Inc.`. `navigator.userAgentData`
   doesn't exist, in the page or in its workers.
+- `window.WebKitMediaKeys` exists as Safari's legacy capability probe, which
+  Netflix requires (see "WebKitMediaKeys" below).
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`
@@ -220,6 +223,68 @@ tested. So the main world of every Safari-identity document gets a
 - `scripts/test-fairplay-identity.sh` runs the exact script against a model of
   the media APIs (`tests/FairPlayIdentity/managed_media_source.mjs`).
 
+## WebKitMediaKeys
+
+Netflix's UI (`akiraClient`) decides that Safari can play DRM video with
+exactly `!!(window.WebKitMediaKeys &&
+WebKitMediaKeys.isTypeSupported("com.apple.fps.2_0"))`. Without it, Netflix
+logs `canPlayHTML5WithDRM: false` and shows UI3001 before asking for a
+manifest. Its player then uses standard EME (`com.apple.fps.3_0`, `cenc`) and
+never constructs `WebKitMediaKeys`. So the main world of every Safari-identity
+document gets Safari's legacy prefixed interface as a capability probe,
+installed with `ManagedMediaSource`, from
+`Engine/ParcRenderer/parc_webkit_media_keys.h`. Workers don't get it; Safari
+has it in windows only.
+
+- `WebKitMediaKeys.isTypeSupported(keySystem, type)` answers true for the key
+  systems of WebKit's legacy Media Source CDM, `com.apple.fps.2_N` and
+  `com.apple.fps.3_N` (`LegacyCDMPrivateAVFObjC`, the same pattern). With a
+  type, it answers whether Parc's FairPlay path plays it. That means an
+  `audio/mp4` or `video/mp4` type whose codecs are all ones FairPlay's CDM
+  lists (H.264, HEVC, Dolby Vision profile 5, AAC, AC-3, E-AC-3) and that
+  Chromium's `MediaSource.isTypeSupported` accepts. AV1 answers no, as the CDM
+  leaves it out.
+- `com.apple.fps` and `com.apple.fps.1_0` answer false. WebKit gives them to
+  its AVFoundation player, which plays HLS through `<video src>` with skd key
+  requests and `webkitneedkey`. Parc has none of that: its FairPlay CDM takes
+  `cenc` and `keyids` init data through Media Source only.
+- `new WebKitMediaKeys(keySystem)` always throws: `InvalidAccessError` for an
+  empty key system, otherwise `NotSupportedError`, as WebKit throws for a key
+  system it can't serve. There are no legacy key sessions,
+  `webkitSetMediaKeys` or `webkitneedkey` behind it.
+
+What the other services' current scripts do with it (fetched without signing
+in, November 6, 2026):
+
+- **Apple TV+** keeps its path. Its hls.js never touches `WebKitMediaKeys`
+  and picks its key system from `requestMediaKeySystemAccess`. MusicKit
+  (`mediakit~*.js`) probes only `isTypeSupported("com.apple.fps.1_0", …)`, for
+  `hasWebKitMediaKeysSupport` and in the media extension of its encrypted
+  audio player and the native Safari video player behind a feature flag. A yes
+  there would switch it to skd EME or `new WebKitMediaKeys("com.apple.fps")`.
+  That probe answers false, so it stays on standard EME.
+- **Disney+** keeps its path. Its web player detects DRM with
+  `requestMediaKeySystemAccess` over Widevine, PlayReady, `com.apple.fps.2_0`
+  and ClearKey. Its native media client constructs
+  `new WebKitMediaKeys("com.apple.fps.1_0")` inside a try, but the server's
+  playback schema chooses that client, not this object. The throw ends the way
+  the `ReferenceError` did before.
+- **TELUS TV+** changes path. On a Safari user agent its app calls Shaka's
+  `PatchedMediaKeysApple.install()`, which only acts when `WebKitMediaKeys`
+  exists. It then replaces `requestMediaKeySystemAccess`, `MediaKeys` and
+  `HTMLMediaElement.setMediaKeys` with legacy WebKit EME, and TELUS's
+  FairPlay key system, `com.apple.fps.1_0`, is refused there. Its Safari path
+  (native HLS with skd FairPlay) can't play in Parc with or without the
+  object, because the CDM takes no skd or sinf init data. If TELUS is learned
+  as a Safari site, View > Use Chrome Identity for This Site puts it back on
+  Widevine.
+
+`scripts/test-fairplay-identity.sh` runs the script
+(`tests/FairPlayIdentity/webkit_media_keys.mjs`, with each service's check
+copied exactly). It also checks the renderer's gate with the real
+`IsParcSafariIdentityUserAgent` and the user agent Parc sends
+(`tests/FairPlayIdentity/renderer_gate_main.cc`).
+
 ## How Parc learns a site
 
 Asking for Widevine while in Chrome's identity is the signal. fairplay-media's
@@ -283,8 +348,11 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   Chromium dependency; `scripts/test-fairplay-identity.sh` checks them.
 - `fairplay-identity-blink.patch`: `navigator.vendor`, removal of
   `userAgentData` in windows (`LocalWindowProxy::Initialize`) and workers
-  (`WorkerOrWorkletScriptController::PrepareForEvaluation`), and the Widevine
-  refusal in `requestMediaKeySystemAccess` and `decodingInfo`.
+  (`WorkerOrWorkletScriptController::PrepareForEvaluation`), the
+  `ManagedMediaSource` and `WebKitMediaKeys` scripts
+  (`Engine/ParcRenderer/parc_managed_media_source.h`,
+  `parc_webkit_media_keys.h`), and the Widevine refusal in
+  `requestMediaKeySystemAccess` and `decodingInfo`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
   a hook that service and shared workers call as they start, and that worker
   script requests consult for their `User-Agent` (a dedicated worker's with
@@ -322,7 +390,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   WebKit's engine policy (below). It is visible to a page that inspects it,
   for example through `Function.prototype.toString`. Isolated worlds and
   shared or service workers don't get it (Safari offers it to windows and
-  dedicated workers).
+  dedicated workers). `WebKitMediaKeys` is a script too, visible the same
+  way, and only a capability probe. A player that needs Safari's legacy key
+  sessions (TELUS TV+'s Shaka setup) can't play FairPlay through it.
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used
@@ -350,10 +420,13 @@ while Parc is quit. On a fresh build, signed in to each service:
    ends `Version/27.2 Safari/605.1.15`, `navigator.vendor` is
    `Apple Computer, Inc.`, `'userAgentData' in navigator` is `false`, and
    `navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{}])`
-   rejects with `NotSupportedError`. Requests show no `Sec-CH-UA` headers.
+   rejects with `NotSupportedError`, and
+   `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_0')` is `true`. Requests
+   show no `Sec-CH-UA` headers.
 4. **Chrome everywhere else.** Navigate the same tab to google.com: the user
-   agent is Chrome's again and `navigator.userAgentData` exists. A
-   cross-site iframe on netflix.com reports Chrome's user agent.
+   agent is Chrome's again, `navigator.userAgentData` exists and
+   `'WebKitMediaKeys' in window` is `false`. A cross-site iframe on
+   netflix.com reports Chrome's user agent.
 5. **Undo.** View > Use Chrome Identity for This Site on Netflix reloads it as
    Chrome; the file moves `netflix.com` to `chrome`. The item then reads Use
    Safari Identity for This Site and moves it back.
