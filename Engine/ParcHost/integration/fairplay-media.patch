@@ -1115,20 +1115,42 @@
               base::FEATURE_DISABLED_BY_DEFAULT
 --- a/media/base/pipeline_impl.cc
 +++ b/media/base/pipeline_impl.cc
-@@ -379,6 +379,12 @@
-   demuxer_ = demuxer;
+@@ -380,6 +380,12 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
-+
+ 
 +  // Parc: a CDM set before Start() reaches a native player's demuxer too
 +  // (see SetCdm()).
 +  if (cdm_context_) {
 +    demuxer_->SetCdmForNativePlayer(cdm_context_);
 +  }
- 
++
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
-@@ -704,6 +710,13 @@
+                                   weak_factory_.GetWeakPtr());
+@@ -691,6 +697,21 @@
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
+   DCHECK(cdm_context);
+ 
++  // Parc: a FairPlay CDM replacing the FairPlay CDM a Media Source FairPlay
++  // Renderer has (a page replacing its MediaKeys, as WebKit's setMediaKeys
++  // allows during playback). That renderer can't change key sessions, so the
++  // new CDM waits for the next renderer, which WebMediaPlayerImpl's restart
++  // makes. (A native HLS player switches key sessions itself, through the
++  // renderer's SetCdm below.)
++  if (shared_state_.media().renderer && cdm_context_ &&
++      cdm_context_ != cdm_context && cdm_context_->RequiresFairPlayRenderer() &&
++      cdm_context->RequiresFairPlayRenderer() &&
++      !(demuxer_ && demuxer_->GetParcNativeHlsSource())) {
++    cdm_context_ = cdm_context;
++    std::move(cdm_attached_cb).Run(true);
++    return;
++  }
++
+   // If there's already a renderer, set the CDM on the renderer directly.
+   if (shared_state_.media().renderer) {
+     shared_state_.media().renderer->SetCdm(
+@@ -704,6 +725,13 @@
    // in InitializeRenderer().
    cdm_context_ = cdm_context;
    std::move(cdm_attached_cb).Run(true);
@@ -1142,10 +1164,11 @@
  
    // Continue Renderer creation if it's waiting for the CDM to be set.
    if (create_renderer_done_cb_)
-@@ -734,6 +747,28 @@
+@@ -733,6 +761,28 @@
+     }
    }
  #endif  // BUILDFLAG(IS_WIN)
- 
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a FairPlay CDM's keys reach only the FairPlay Renderer hosted next
 +  // to it in the GPU process.
@@ -1167,11 +1190,10 @@
 +    renderer_type = RendererType::kFairPlayHls;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
-   if (!default_renderer_ ||
-@@ -1146,6 +1181,12 @@
+@@ -1146,6 +1196,12 @@
      return;
    }
  
@@ -3552,7 +3574,28 @@
    }
  
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1695,6 +1799,83 @@
+@@ -1665,6 +1769,20 @@
+   DVLOG(1) << __func__ << ": cdm = " << cdm;
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ 
++#if BUILDFLAG(IS_MAC)
++  // Parc: a Safari-identity page replacing FairPlay MediaKeys, which WebKit's
++  // setMediaKeys allows during playback. Blink clears the old CDM before it
++  // sets the new one; nothing is decrypted on other threads (samples reach the
++  // FairPlay Renderer encrypted), so the clearing is accepted and the old CDM
++  // stays in use until the new one replaces it (OnCdmAttached).
++  if (!cdm && cdm_context_ref_ &&
++      cdm_context_ref_->GetCdmContext()->RequiresFairPlayRenderer() &&
++      client_->PresentsParcSafariIdentity()) {
++    result.Complete();
++    return;
++  }
++#endif  // BUILDFLAG(IS_MAC)
++
+   // Once the CDM is set it can't be cleared as there may be frames being
+   // decrypted on other threads. So fail this request.
+   // http://crbug.com/40407494#comment8.
+@@ -1695,6 +1813,83 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -3636,7 +3679,7 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1726,6 +1907,34 @@
+@@ -1726,6 +1921,34 @@
  void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
                                         media::MediaTrack::State state) {
    client_->SetTrackState(track, state);
@@ -3671,7 +3714,7 @@
  }
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -1777,6 +1986,122 @@
+@@ -1777,6 +2000,122 @@
  }
  #endif
  
@@ -3794,7 +3837,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,10 +2145,87 @@
+@@ -1820,11 +2159,92 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3809,7 +3852,7 @@
        cdm_context,
        blink::BindOnce(&WebMediaPlayerImpl::OnCdmAttached, weak_this_));
  }
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3823,8 +3866,12 @@
 +      cdm_context_ref_->GetCdmContext()->RequiresFairPlayRenderer();
 +  if (renderer_type_ == media::RendererType::kFairPlay) {
 +    // It plays the current streams already; only the keys are missing (its
-+    // adapter accepted the CDM for the renderer this restart makes).
-+    if (!fairplay_cdm || parc_renderer_had_fairplay_cdm_) {
++    // adapter accepted the CDM for the renderer this restart makes), or the
++    // page replaced the FairPlay MediaKeys it was made with (the pipeline
++    // keeps the new CDM for the next renderer).
++    if (!fairplay_cdm ||
++        (parc_renderer_had_fairplay_cdm_ &&
++         cdm_context_ref_->GetCdmContext() == parc_renderer_cdm_context_)) {
 +      return;
 +    }
 +  } else if ((!fairplay_cdm &&
@@ -3879,10 +3926,25 @@
 +  return ref && ref->GetCdmContext()->RequiresFairPlayRenderer();
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-@@ -1841,11 +2243,22 @@
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+@@ -1835,17 +2255,36 @@
+   // If the CDM is set from the constructor there is no promise
+   // (`set_cdm_result_`) to fulfill.
+   if (success) {
++#if BUILDFLAG(IS_MAC)
++    // Parc: a replaced FairPlay CDM stays with the renderer playing until the
++    // restart below makes one with the new CDM.
++    if (cdm_context_ref_ && parc_renderer_created_ &&
++        cdm_context_ref_->GetCdmContext() == parc_renderer_cdm_context_) {
++      parc_replaced_cdm_context_ref_ = std::move(cdm_context_ref_);
++    }
++#endif  // BUILDFLAG(IS_MAC)
+     // This will release the previously attached CDM (if any).
+     cdm_context_ref_ = std::move(pending_cdm_context_ref_);
+     if (set_cdm_result_) {
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
      }
@@ -3905,7 +3967,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1988,6 +2401,15 @@
+@@ -1988,6 +2427,15 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3921,7 +3983,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2197,6 +2619,10 @@
+@@ -2197,6 +2645,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -3932,7 +3994,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2462,6 +2888,14 @@
+@@ -2462,6 +2914,14 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -3947,7 +4009,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,11 +3452,40 @@
+@@ -3018,11 +3478,44 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3978,17 +4040,21 @@
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
 +  parc_renderer_had_fairplay_cdm_ = false;
++  parc_renderer_cdm_context_ = nullptr;
 +  for (media::CdmContextRef* ref :
 +       {cdm_context_ref_.get(), pending_cdm_context_ref_.get()}) {
 +    if (ref && ref->GetCdmContext()->RequiresFairPlayRenderer()) {
 +      parc_renderer_had_fairplay_cdm_ = true;
++      parc_renderer_cdm_context_ = ref->GetCdmContext();
 +    }
 +  }
++  // The renderer a replacement restarted into has the new CDM.
++  parc_replaced_cdm_context_ref_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3501,14 @@
+@@ -3038,6 +3531,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -4003,7 +4069,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3624,27 @@
+@@ -3153,6 +3654,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -4031,7 +4097,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +3662,11 @@
+@@ -3170,6 +3692,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -4043,7 +4109,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3793,6 +4290,29 @@
+@@ -3793,6 +4320,29 @@
      return false;
    }
  
@@ -4167,7 +4233,7 @@
  
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-@@ -885,6 +942,24 @@
+@@ -885,6 +942,30 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -4186,13 +4252,19 @@
 +  // sample.
 +  bool parc_renderer_created_ = false;
 +  bool parc_renderer_had_fairplay_cdm_ = false;
++  // Parc: the FairPlay CDM the current renderer was made with (only
++  // compared, never used), so a page that replaces its FairPlay MediaKeys
++  // restarts into a renderer with the new one, as WebKit's setMediaKeys
++  // switches CDMs during playback. The replaced CDM is kept until then.
++  raw_ptr<media::CdmContext> parc_renderer_cdm_context_ = nullptr;
++  std::unique_ptr<media::CdmContextRef> parc_replaced_cdm_context_ref_;
 +#endif  // BUILDFLAG(IS_MAC)
 +  // Parc: the tolerance ParcFastSeek() hands the Seek() it makes.
 +  base::TimeDelta parc_fast_seek_tolerance_;
    scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
  
    // Video rendering members.
-@@ -919,6 +994,8 @@
+@@ -919,6 +1000,8 @@
    // Whether the EME playback has been blocked waiting for the CDM to be set
    // or waiting for decryption key.
    bool has_waiting_for_key_ = false;
