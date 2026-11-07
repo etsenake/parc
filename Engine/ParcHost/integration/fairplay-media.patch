@@ -1708,7 +1708,7 @@
  
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -474,6 +546,89 @@
+@@ -474,6 +546,99 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -1755,6 +1755,9 @@
 +  params.ready_state_cb = base::BindPostTaskToCurrentDefault(
 +      base::BindRepeating(&DemuxerManager::OnParcNativeHlsReadyState,
 +                          weak_factory_.GetWeakPtr()));
++  params.media_types_cb = base::BindPostTaskToCurrentDefault(
++      base::BindRepeating(&DemuxerManager::OnParcNativeHlsMediaTypes,
++                          weak_factory_.GetWeakPtr()));
 +  return client_->CreateParcNativeHlsDemuxer(std::move(params));
 +}
 +
@@ -1767,6 +1770,13 @@
 +void DemuxerManager::OnParcNativeHlsReadyState(ParcNativeHlsReadyState state) {
 +  if (client_) {
 +    client_->ParcNativeHlsReadyStateChanged(state);
++  }
++}
++
++void DemuxerManager::OnParcNativeHlsMediaTypes(bool has_audio,
++                                               bool has_video) {
++  if (client_) {
++    client_->ParcNativeHlsMediaTypesChanged(has_audio, has_video);
 +  }
 +}
 +
@@ -1808,7 +1818,7 @@
  #include "media/filters/chunk_demuxer.h"
  #include "net/storage_access_api/status.h"
  #include "url/origin.h"
-@@ -81,6 +82,27 @@
+@@ -81,6 +82,31 @@
  
      // Allows a seek triggered by a demuxer (mainly used for live content)
      virtual void DemuxerRequestsSeek(base::TimeDelta seek_time) = 0;
@@ -1832,11 +1842,15 @@
 +    // The native HLS player's readyState (ParcNativeHlsDemuxerParams::
 +    // ready_state_cb).
 +    virtual void ParcNativeHlsReadyStateChanged(ParcNativeHlsReadyState state) {}
++    // The native HLS player's media types (ParcNativeHlsDemuxerParams::
++    // media_types_cb).
++    virtual void ParcNativeHlsMediaTypesChanged(bool has_audio,
++                                                bool has_video) {}
 +#endif  // BUILDFLAG(IS_MAC)
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +133,19 @@
+@@ -111,6 +137,19 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -1856,7 +1870,7 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +175,17 @@
+@@ -140,6 +179,17 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -1874,7 +1888,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +200,22 @@
+@@ -154,6 +204,23 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1884,6 +1898,7 @@
 +  std::unique_ptr<Demuxer> MaybeCreateParcNativeHlsDemuxer();
 +  void OnParcWebKitKeyRequest(const std::string& key_uri);
 +  void OnParcNativeHlsReadyState(ParcNativeHlsReadyState state);
++  void OnParcNativeHlsMediaTypes(bool has_audio, bool has_video);
 +  // Parc: its in-band text tracks and cues, on to the client.
 +  void ParcSetInbandTextTracks(const std::vector<ParcInbandTextTrack>& tracks,
 +                               ParcInbandTextTrackModeCB set_mode);
@@ -1897,7 +1912,7 @@
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -207,6 +269,11 @@
+@@ -207,6 +274,11 @@
    // which becomes the default demuxer to use.
    std::unique_ptr<Demuxer> demuxer_override_;
  
@@ -2308,7 +2323,7 @@
  
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
-@@ -22,6 +25,336 @@
+@@ -22,6 +25,340 @@
    // play state (e.g. when another phone play/pauses a cast device on the same
    // network).
    OnRemotePlayStateChange(MediaStatusState state);
@@ -2613,6 +2628,10 @@
 +  // video frame (or an empty buffer), HAVE_FUTURE_DATA once it is ready to
 +  // play with media ahead, HAVE_ENOUGH_DATA with OnBufferingStateChange.
 +  OnReadyStateChanged(FairPlayHlsReadyState state);
++  // The item's enabled tracks changed the media types the metadata gave
++  // (WebKit's characteristicsChanged); OnLayerRegistered comes first when
++  // video appears.
++  OnMediaTypesChanged(bool has_audio, bool has_video);
 +  OnBufferedRangesChanged(array<FairPlayHlsTimeRange> buffered);
 +  OnSeekableRangesChanged(array<FairPlayHlsTimeRange> seekable);
 +  OnDurationChange(mojo_base.mojom.TimeDelta duration);
@@ -3652,7 +3671,7 @@
  }
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -1777,6 +1986,95 @@
+@@ -1777,6 +1986,122 @@
  }
  #endif
  
@@ -3697,6 +3716,33 @@
 +  // webkitneedkey on a Safari-identity page, queued before any `encrypted`
 +  // the same request raises (both come in the player's order).
 +  encrypted_client_->ParcWebKitKeyRequest(key_uri);
++}
++
++// WebKit's characteristicsChanged: once the item is ready to play its enabled
++// tracks give the element's media types, which may differ from what the
++// metadata assumed (both, when the variants didn't name their codecs). The
++// element hears them as at metadata; a video appearing gets the video surface
++// (the GPU player registered its layer first).
++void WebMediaPlayerImpl::ParcNativeHlsMediaTypesChanged(bool has_audio,
++                                                        bool has_video) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata ||
++      (!has_audio && !has_video) ||
++      (pipeline_metadata_.has_audio == has_audio &&
++       pipeline_metadata_.has_video == has_video)) {
++    return;
++  }
++  pipeline_metadata_.has_audio = has_audio;
++  pipeline_metadata_.has_video = has_video;
++  if (has_video) {
++    ActivateSurfaceLayerForVideo();
++  }
++  if (observer_) {
++    observer_->OnMetadataChanged(pipeline_metadata_);
++  }
++  delegate_has_audio_ = HasUnmutedAudio();
++  DidMediaMetadataChange();
++  UpdatePlayState();
 +}
 +
 +void WebMediaPlayerImpl::ParcNativeHlsReadyStateChanged(
@@ -3748,7 +3794,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,10 +2118,87 @@
+@@ -1820,10 +2145,87 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3836,7 +3882,7 @@
  
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-@@ -1841,11 +2216,22 @@
+@@ -1841,11 +2243,22 @@
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
      }
@@ -3859,7 +3905,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1988,6 +2374,15 @@
+@@ -1988,6 +2401,15 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3875,7 +3921,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2197,6 +2592,10 @@
+@@ -2197,6 +2619,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -3886,7 +3932,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2462,6 +2861,14 @@
+@@ -2462,6 +2888,14 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -3901,7 +3947,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,11 +3425,40 @@
+@@ -3018,11 +3452,40 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3942,7 +3988,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3474,14 @@
+@@ -3038,6 +3501,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -3957,7 +4003,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3597,27 @@
+@@ -3153,6 +3624,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -3985,7 +4031,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +3635,11 @@
+@@ -3170,6 +3662,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -3997,7 +4043,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3793,6 +4263,29 @@
+@@ -3793,6 +4290,29 @@
      return false;
    }
  
@@ -4066,7 +4112,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +471,27 @@
+@@ -455,6 +471,28 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -4078,6 +4124,7 @@
 +  void ParcNativeHlsReadyStateChanged(
 +      media::ParcNativeHlsReadyState state) override;
 +  void ApplyParcNativeHlsReadyState();
++  void ParcNativeHlsMediaTypesChanged(bool has_audio, bool has_video) override;
 +#endif  // BUILDFLAG(IS_MAC)
 +  void ParcSetInbandTextTracks(
 +      const std::vector<media::ParcInbandTextTrack>& tracks,
@@ -4094,7 +4141,7 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -533,6 +570,25 @@
+@@ -533,6 +571,25 @@
  
    // Called when a CDM has been attached to the |pipeline_|.
    void OnCdmAttached(bool success);
@@ -4120,7 +4167,7 @@
  
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-@@ -885,6 +941,24 @@
+@@ -885,6 +942,24 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -4145,7 +4192,7 @@
    scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
  
    // Video rendering members.
-@@ -919,6 +993,8 @@
+@@ -919,6 +994,8 @@
    // Whether the EME playback has been blocked waiting for the CDM to be set
    // or waiting for decryption key.
    bool has_waiting_for_key_ = false;
@@ -4204,7 +4251,7 @@
  }  // namespace media
 --- a/media/base/renderer_factory.h
 +++ b/media/base/renderer_factory.h
-@@ -6,23 +6,112 @@
+@@ -6,23 +6,115 @@
  #define MEDIA_BASE_RENDERER_FACTORY_H_
  
  #include <memory>
@@ -4309,6 +4356,9 @@
 +  // HAVE_CURRENT_DATA and HAVE_FUTURE_DATA with them; HAVE_ENOUGH_DATA and
 +  // underflow come through buffering); posts to the main thread.
 +  base::RepeatingCallback<void(ParcNativeHlsReadyState)> ready_state_cb;
++  // The player's media types changed after the metadata (WebKit's
++  // characteristicsChanged); posts to the main thread.
++  base::RepeatingCallback<void(bool has_audio, bool has_video)> media_types_cb;
 +  // The element prepares to play from the start (WebKit's prepareToPlay): its
 +  // effective preload is auto or the page called load().
 +  bool prepare_to_play = false;
@@ -4317,7 +4367,7 @@
  
  // A factory class for creating media::Renderer to be used by media pipeline.
  class MEDIA_EXPORT RendererFactory {
-@@ -46,6 +135,15 @@
+@@ -46,6 +138,15 @@
        VideoRendererSink* video_renderer_sink,
        RequestOverlayInfoCB request_overlay_info_cb,
        const gfx::ColorSpace& target_color_space) = 0;

@@ -642,6 +642,7 @@ behavior, not Parc's hosting.
 | `HAVE_METADATA` | the asset's metadata keys loaded and the asset playable, before the item exists (WebKit's `updateStates`) | `OnInitialized` → demuxer init → pipeline metadata |
 | `HAVE_CURRENT_DATA` | the layer's first frame (`readyForDisplay`, WebKit's `hasAvailableVideoFrame`) | `OnReadyStateChanged` → demuxer's `ready_state_cb` → `WebMediaPlayerImpl` raises it from `HAVE_METADATA` (not during a seek) |
 | `HAVE_FUTURE_DATA` | item `readyToPlay` with media loaded past `currentTime` (and, with video, its first frame), WebKit's `updateStates` | as `HAVE_CURRENT_DATA` |
+| media types (`hasVideo`, audio) | the variants at metadata (both assumed when they don't name codecs), then the item's `hasEnabledAudio`/`hasEnabledVideo` once it is ready to play and at each change (WebKit's `characteristicsChanged`) | `OnMediaTypesChanged` (after `OnLayerRegistered` when video appears) → demuxer's `media_types_cb` → `WebMediaPlayerImpl` updates the pipeline metadata, `DidMediaMetadataChange`, the video surface |
 | `HAVE_ENOUGH` / underflow | `playbackLikelyToKeepUp` or a full buffer / `playbackBufferEmpty` | `OnBufferingStateChange` → facade's `RendererClient` |
 | `currentTime` | `currentTime`, periodic observer (0 until the item is ready) | `OnTimeUpdate` → facade's `GetMediaTime` interpolates |
 | `duration` | the asset's until the item is ready to play, then the item's (indefinite = live), Live and DVR | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |

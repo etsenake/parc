@@ -124,6 +124,7 @@ class FairPlayHlsPlayerService final
   void OnMetadata(const parc::fairplay::HlsMetadata& metadata) override;
   void OnBufferingStateChange(bool have_enough) override;
   void OnReadyStateChange(parc::fairplay::HlsReadyState state) override;
+  void OnMediaTypesChange(bool has_audio, bool has_video) override;
   void OnLoadedRangesChange(
       const std::vector<parc::fairplay::HlsTimeRange>& loaded) override;
   void OnSeekableRangesChange(

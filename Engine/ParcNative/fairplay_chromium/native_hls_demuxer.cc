@@ -137,6 +137,7 @@ NativeHlsDemuxer::NativeHlsDemuxer(
           std::move(params.encrypted_media_init_data_cb)),
       key_request_cb_(std::move(params.key_request_cb)),
       ready_state_cb_(std::move(params.ready_state_cb)),
+      media_types_cb_(std::move(params.media_types_cb)),
       start_load_cb_(std::move(params.start_load_cb)),
       track_manager_(std::move(params.track_manager)),
       pending_player_(std::move(player)),
@@ -599,6 +600,13 @@ void NativeHlsDemuxer::OnReadyStateChanged(
       break;
   }
   ready_state_cb_.Run(out);
+}
+
+void NativeHlsDemuxer::OnMediaTypesChanged(bool has_audio, bool has_video) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (media_types_cb_ && !stopped_) {
+    media_types_cb_.Run(has_audio, has_video);
+  }
 }
 
 void NativeHlsDemuxer::OnBufferedRangesChanged(

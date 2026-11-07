@@ -135,6 +135,11 @@ class HlsPlayerClient {
   // only with a buffering state change, just before OnBufferingStateChange.
   virtual void OnStartDateChange(std::optional<double> start_date_ms) = 0;
   virtual void OnNaturalSizeChange(int32_t width, int32_t height) = 0;
+  // The item's enabled tracks (hasEnabledAudio, hasEnabledVideo) differ from
+  // the media types last reported (the metadata's, assumed when the variants
+  // didn't say), once it is ready to play and whenever they change after:
+  // WebKit's characteristicsChanged.
+  virtual void OnMediaTypesChange(bool /*has_audio*/, bool /*has_video*/) {}
   virtual void OnEnded() = 0;
   virtual void OnError(HlsError error, const std::string& message) = 0;
   // AVFoundation asks for the key behind a clearkey:// URI, or an skd:// one

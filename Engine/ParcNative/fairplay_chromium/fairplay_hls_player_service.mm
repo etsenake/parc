@@ -666,6 +666,21 @@ void FairPlayHlsPlayerService::FinishInitialize(
   UpdateTimeUpdateTimer();
 }
 
+void FairPlayHlsPlayerService::OnMediaTypesChange(bool has_audio,
+                                                  bool has_video) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!initialized_ || errored_) {
+    return;
+  }
+  // Video the metadata didn't have gets its layer first, so the token names
+  // a registered layer when the render process paints it.
+  if (has_video && !has_video_ && layer_token_.is_empty()) {
+    RegisterLayer();
+  }
+  has_video_ = has_video;
+  client_->OnMediaTypesChanged(has_audio, has_video);
+}
+
 void FairPlayHlsPlayerService::OnReadyStateChange(fp::HlsReadyState state) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!initialized_ || errored_) {

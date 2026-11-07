@@ -35,6 +35,13 @@ using parc::fairplay::HlsTimeline;
 using parc::fairplay::HlsTimeRange;
 using parc::fairplay::PostTask;
 
+// AVPlayerItem's KVO-observable enabled-track flags (private; WebKit's
+// itemKVOProperties observe them). Read only after respondsToSelector:.
+@interface AVPlayerItem (ParcEnabledTracks)
+@property(nonatomic, readonly) BOOL hasEnabledAudio;
+@property(nonatomic, readonly) BOOL hasEnabledVideo;
+@end
+
 // AVFoundation SPI WebKit declares in AVFoundationSPI.h: the resource loader's
 // URL session, and the delegate and queue AVFoundation wants that session to
 // report to.
@@ -622,6 +629,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     natural_width_ = metadata.natural_width;
     natural_height_ = metadata.natural_height;
+    has_audio_ = metadata.has_audio;
+    has_video_ = metadata.has_video;
     // platformDuration: the asset's until the item is ready to play.
     timeline_.Start(TimeOf(asset_.duration), {}, std::nullopt);
     metadata.duration = timeline_.duration();
@@ -1099,7 +1108,30 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     if (shut_down_) {
       return;
     }
+    OnMediaTypes();
+    if (shut_down_) {
+      return;
+    }
     OnBuffering();
+  }
+
+  // hasEnabledAudio/hasEnabledVideo (WebKit's m_cachedHasAudio and
+  // m_cachedHasVideo, then characteristicsChanged), once the item is ready to
+  // play: before that it has no tracks to say.
+  void OnMediaTypes() {
+    if (shut_down_) {
+      return;
+    }
+    if (item_ready_) {
+      const bool audio = HasAudio();
+      const bool video = HasVideo();
+      if ((audio || video) && (audio != has_audio_ || video != has_video_)) {
+        has_audio_ = audio;
+        has_video_ = video;
+        client_->OnMediaTypesChange(audio, video);
+      }
+    }
+    UpdateReadyState();
   }
 
   // MediaPlayerPrivateAVFoundation::updateStates once the metadata is out,
@@ -1141,10 +1173,32 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
   }
 
-  // m_cachedHasVideo: the item has an enabled video track.
+  // MediaPlayerPrivateAVFoundationObjC::tracksChanged: video when an enabled
+  // video track exists, the layer is ready for display, or the item's
+  // hasEnabledVideo says so (an AVAssetTrack sometimes disappears briefly
+  // while hasEnabledVideo stays YES); audio when an enabled audible track
+  // exists or hasEnabledAudio says so.
   bool HasVideo() const {
+    if (player_layer_.readyForDisplay) {
+      return true;
+    }
+    if ([item_ respondsToSelector:@selector(hasEnabledVideo)] && item_.hasEnabledVideo) {
+      return true;
+    }
     for (AVPlayerItemTrack* track in item_.tracks) {
       if (track.enabled && [track.assetTrack.mediaType isEqualToString:AVMediaTypeVideo]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool HasAudio() const {
+    if ([item_ respondsToSelector:@selector(hasEnabledAudio)] && item_.hasEnabledAudio) {
+      return true;
+    }
+    for (AVPlayerItemTrack* track in item_.tracks) {
+      if (track.enabled && [track.assetTrack hasMediaCharacteristic:AVMediaCharacteristicAudible]) {
         return true;
       }
     }
@@ -1162,7 +1216,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     return max;
   }
 
-  void OnLayerReadyForDisplay() { UpdateReadyState(); }
+  void OnLayerReadyForDisplay() { OnMediaTypes(); }
 
   void OnBuffering() {
     UpdateReadyState();
@@ -1441,6 +1495,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
   HlsTimeline timeline_;
+  // The media types last reported (OnMetadata, OnMediaTypesChange).
+  bool has_audio_ = false;
+  bool has_video_ = false;
   int32_t natural_width_ = 0;
   int32_t natural_height_ = 0;
   FairPlayHlsPlayer::Status status_;
@@ -1805,6 +1862,7 @@ static void* const kItemDuration = (void*)&kItemDuration;
 static void* const kItemSize = (void*)&kItemSize;
 static void* const kPlayerObscured = (void*)&kPlayerObscured;
 static void* const kLayerReady = (void*)&kLayerReady;
+static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
 
 @implementation PCHlsObserver {
   std::weak_ptr<FairPlayHlsPlayer::Impl> _impl;
@@ -1812,6 +1870,7 @@ static void* const kLayerReady = (void*)&kLayerReady;
   AVPlayerItem* _item;
   AVPlayer* _player;
   AVPlayerLayer* _layer;
+  BOOL _observesEnabledTracks;
   NSArray<NSString*>* _bufferingKeys;
   BOOL _stopped;
 }
@@ -1842,6 +1901,12 @@ static void* const kLayerReady = (void*)&kLayerReady;
   [item addObserver:self forKeyPath:@"seekableTimeRanges" options:0 context:kItemSeekable];
   [item addObserver:self forKeyPath:@"duration" options:0 context:kItemDuration];
   [item addObserver:self forKeyPath:@"presentationSize" options:0 context:kItemSize];
+  _observesEnabledTracks = [item respondsToSelector:@selector(hasEnabledAudio)] &&
+                           [item respondsToSelector:@selector(hasEnabledVideo)];
+  if (_observesEnabledTracks) {
+    [item addObserver:self forKeyPath:@"hasEnabledAudio" options:0 context:kItemMediaTypes];
+    [item addObserver:self forKeyPath:@"hasEnabledVideo" options:0 context:kItemMediaTypes];
+  }
   NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
   [center addObserver:self
              selector:@selector(itemDidPlayToEnd:)
@@ -1881,6 +1946,10 @@ static void* const kLayerReady = (void*)&kLayerReady;
   [_item removeObserver:self forKeyPath:@"seekableTimeRanges" context:kItemSeekable];
   [_item removeObserver:self forKeyPath:@"duration" context:kItemDuration];
   [_item removeObserver:self forKeyPath:@"presentationSize" context:kItemSize];
+  if (_observesEnabledTracks) {
+    [_item removeObserver:self forKeyPath:@"hasEnabledAudio" context:kItemMediaTypes];
+    [_item removeObserver:self forKeyPath:@"hasEnabledVideo" context:kItemMediaTypes];
+  }
   [_player removeObserver:self
                forKeyPath:@"outputObscuredDueToInsufficientExternalProtection"
                   context:kPlayerObscured];
@@ -1914,6 +1983,8 @@ static void* const kLayerReady = (void*)&kLayerReady;
     [self post:&FairPlayHlsPlayer::Impl::OnDuration];
   } else if (context == kItemSize) {
     [self post:&FairPlayHlsPlayer::Impl::OnPresentationSize];
+  } else if (context == kItemMediaTypes) {
+    [self post:&FairPlayHlsPlayer::Impl::OnMediaTypes];
   } else if (context == kPlayerObscured) {
     [self post:&FairPlayHlsPlayer::Impl::OnOutputObscured];
   } else if (context == kLayerReady) {

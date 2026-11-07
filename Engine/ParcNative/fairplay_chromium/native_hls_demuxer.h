@@ -195,6 +195,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
                     base::TimeTicks capture_time) override;
   void OnBufferingStateChange(media::BufferingState state) override;
   void OnReadyStateChanged(media::mojom::FairPlayHlsReadyState state) override;
+  void OnMediaTypesChanged(bool has_audio, bool has_video) override;
   void OnBufferedRangesChanged(
       std::vector<media::mojom::FairPlayHlsTimeRangePtr> buffered) override;
   void OnSeekableRangesChanged(
@@ -273,6 +274,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   const base::RepeatingCallback<void(const std::string&)> key_request_cb_;
   const base::RepeatingCallback<void(media::ParcNativeHlsReadyState)>
       ready_state_cb_;
+  const base::RepeatingCallback<void(bool, bool)> media_types_cb_;
   const StartLoadCallback start_load_cb_;
   // The element's tracks; posts to the main thread. Null in unit tests.
   const std::unique_ptr<media::TrackManager> track_manager_;
