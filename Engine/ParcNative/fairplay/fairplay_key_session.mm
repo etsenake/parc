@@ -1698,6 +1698,20 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
     NSDictionary* options = key_request_options_;
+    // WebKit's legacy sessions ask for their key system's protocol versions
+    // (CDMSessionAVContentKeySession::update: a zero version is left out).
+    if (session->plan.protocol_versions) {
+      NSMutableArray<NSNumber*>* versions = [NSMutableArray array];
+      for (int version : *session->plan.protocol_versions) {
+        if (version) {
+          [versions addObject:@(version)];
+        }
+      }
+      NSMutableDictionary* with_versions =
+          options ? [options mutableCopy] : [NSMutableDictionary dictionary];
+      with_versions[AVContentKeyRequestProtocolVersionsKey] = versions;
+      options = with_versions;
+    }
     const std::string session_id = session->id;
     @try {
       [av_request makeStreamingContentKeyRequestDataForApp:certificate_

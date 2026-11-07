@@ -671,6 +671,21 @@ for (const sinf of [true, false]) {
           'a request the CDM refuses is a DOMAIN key error');
   }
 }
+// ---- The key system's protocol versions reach the CDM with sinf requests
+// (LegacyCDMPrivateAVFObjC::parseKeySystem, AVContentKeyRequestProtocolVersionsKey).
+for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.apple.fps.3_0', [0]]]) {
+  const world = makeWorld();
+  run(world, script);
+  const keys = new world.WebKitMediaKeys(keySystem);
+  const session = keys.createSession('video/mp4', new Uint8Array(bytesOf('{"sinf":["AAAA"]}')));
+  await settle();
+  session.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  const request = world.log.find((entry) => entry[0] === 'generateRequest');
+  check(request && request[1] === 'sinf' &&
+        JSON.stringify(JSON.parse(request[2]).protocolVersions) === JSON.stringify(expected),
+        keySystem + ': protocol versions ' + expected.join(','));
+}
 // ---- Init data of no form Parc's CDM reads goes to AVFoundation unchanged
 // (CDMSessionAVContentKeySession::update), as sinf JSON's legacyInitData.
 {

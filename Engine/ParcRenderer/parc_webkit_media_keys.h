@@ -388,6 +388,16 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     return match ? +match[1] : 0;
   }
 
+  // LegacyCDMPrivateAVFObjC::parseKeySystem: the protocol versions after
+  // "_" ("com.apple.fps.3_1,2" asks for 1 and 2), which its sessions pass to
+  // AVFoundation (AVContentKeyRequestProtocolVersionsKey).
+  function legacyProtocolVersions(keySystem) {
+    if (!MEDIA_SOURCE_KEY_SYSTEM.test(keySystem)) {
+      return undefined;
+    }
+    return keySystem.substring(16).split(',').map((version) => +version);
+  }
+
   // MediaPlayerPrivateMediaSourceAVFObjC::supportsTypeAndCodecs: what Media
   // Source plays (Chromium's answer, taken before any page script).
   const mediaSourcePlays = (type) => !!mediaSourceSupports &&
@@ -702,12 +712,18 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     // takes as the sinf JSON's "contentId"; Blink passes sinf init data
     // through unchanged.
     const contentId = session.keys.version === 2 ? toBase64(session.identifier) : undefined;
+    // The key system's protocol versions travel as sinf JSON's
+    // "protocolVersions" (cenc and key ID init data, which Blink rebuilds,
+    // can't carry them).
+    const protocolVersions = session.keys.protocolVersions;
     const requestType = raw ? 'sinf' : type;
     const requestData = raw ?
-        ascii(apply(jsonStringify, JSON, [{legacyInitData: toBase64(session.initData), contentId}])) :
-        session.keys.version !== 2 ? copy(session.initData) :
         ascii(apply(jsonStringify, JSON, [{
-          sinf: parseJson(session.initData).sinf, contentId,
+          legacyInitData: toBase64(session.initData), contentId, protocolVersions,
+        }])) :
+        type !== 'sinf' ? copy(session.initData) :
+        ascii(apply(jsonStringify, JSON, [{
+          sinf: parseJson(session.initData).sinf, contentId, protocolVersions,
         }]));
     const failed = (error) => sendError(session, DOMAIN, systemCodeOf(error));
     return then(modernKeysOf(keys), (mediaKeys) => serialized(keys, () => {
@@ -1003,6 +1019,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       }
       keysState.set(this, {
         object: this, keySystem: system, kind, version: legacyVersion(system),
+        protocolVersions: legacyProtocolVersions(system),
         element: null, modern: null, requests: resolved, attaching: resolved, sessions: [],
         requestSessions: new NativeSet(),
       });

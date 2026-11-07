@@ -407,6 +407,27 @@ InitDataPlan PlanSkdWithContentIdentifier(const std::vector<uint8_t>& init_data)
 
 }  // namespace
 
+namespace {
+
+// sinf JSON's "protocolVersions" (Parc extension for WebKit's legacy
+// sessions): an array of non-negative integers, else none.
+std::optional<std::vector<int>> ProtocolVersions(NSDictionary* root) {
+  NSArray* list = [root isKindOfClass:[NSDictionary class]] ? root[@"protocolVersions"] : nil;
+  if (![list isKindOfClass:[NSArray class]]) {
+    return std::nullopt;
+  }
+  std::vector<int> versions;
+  for (id entry in list) {
+    if (![entry isKindOfClass:[NSNumber class]] || [entry intValue] < 0) {
+      return std::nullopt;
+    }
+    versions.push_back([entry intValue]);
+  }
+  return versions;
+}
+
+}  // namespace
+
 InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t>& init_data) {
   switch (type) {
     case InitDataType::kSkd: {
@@ -452,6 +473,7 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
         }
         InitDataPlan plan;
         plan.calls.push_back(std::move(call));
+        plan.protocol_versions = ProtocolVersions(root);
         return plan;
       }
       NSArray* sinfs = [root isKindOfClass:[NSDictionary class]] ? root[@"sinf"] : nil;
@@ -484,10 +506,13 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
       NSData* content_id = DecodeBase64(root[@"contentId"], false);
       if (content_id.length) {
         call.content_identifier = ToVector(content_id);
+      }
+      InitDataPlan plan;
+      plan.protocol_versions = ProtocolVersions(root);
+      if (content_id.length || plan.protocol_versions) {
         call.initialization_data = ToVector(
             [NSJSONSerialization dataWithJSONObject:@{@"sinf" : sinfs} options:0 error:nil]);
       }
-      InitDataPlan plan;
       plan.calls.push_back(std::move(call));
       return plan;
     }

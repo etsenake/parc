@@ -85,6 +85,11 @@ struct InitDataPlan {
   // cenc/keyids sessions exchange JSON arrays of {keyID, payload} entries;
   // skd/sinf/mpts sessions exchange the raw SPC and CKC.
   bool json_messages = false;
+  // WebKit's legacy com.apple.fps.N_<versions> sessions
+  // (LegacyCDMPrivateAVFObjC::parseKeySystem): the protocol versions their
+  // SPCs ask for (AVContentKeyRequestProtocolVersionsKey), from sinf JSON's
+  // "protocolVersions" member. Absent for every other session.
+  std::optional<std::vector<int>> protocol_versions;
   std::string error;  // Non-empty: the init data is malformed or unsupported.
 };
 
