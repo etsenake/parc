@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **42**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **43**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -78,11 +78,14 @@ Parc and carry on in Safari. **Fixed** 47fe80b9 for same-origin moves between
 framed Safari-identity documents (the player stays bound to the frame that
 made it, as Chromium already does for Document Picture-in-Picture; the
 element's event queue moves with it). A video moved into a popup follows the popup's
-visibility: **fixed** 16ff69d8. Still different, all user-felt: the moved
-video's Now Playing, media keys, tab sound icon, picture in picture and Cast
-stay with the opener, and closing or navigating the opener restarts it from 0
-where Safari keeps playing: **in progress** (HME-1c, the player re-homed to
-the frame showing it). A move into a document without a browsing context
+visibility: **fixed** 16ff69d8. The moved video's Now Playing, media keys,
+tab sound icon and picture in picture now belong to the page showing it:
+**fixed** cf6e810a. Still different, all user-felt and **in progress**
+(HME-1c part 2): closing, navigating or removing the opener restarts the
+video from 0 where Safari keeps playing; FairPlay and native HLS tab mute
+still acts from the opener's tab; the page's own cast button and Chrome's
+video remoting still go through the opener; MediaStream (WebRTC) videos
+aren't re-homed. A move into a document without a browsing context
 (`createHTMLDocument`) reloads and fails where Safari keeps the player:
 **queued** (HME-1d; unchecked against WebKit's `dom/` files beyond
 `DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
