@@ -76,23 +76,24 @@ WebKit: `Modules/encryptedmedia/legacy/*`, `LegacyCDMPrivateAVFObjC.mm`
 (MSE, `^com\.apple\.fps\.[23]_\d+(,\d+)*$` ignoring case),
 `CDMSessionAVContentKeySession.mm` (MSE sessions), `LegacyCDMPrivateMediaPlayer`
 (AVFoundation player: `com.apple.fps`, `com.apple.fps.1_0`, clear key on HLS).
-Parc today: only fp-netflix-identity's `isTypeSupported` probe with a throwing
-constructor. This whole section replaces it.
+Parc: `Engine/ParcRenderer/parc_webkit_media_keys.h`, a script in the main
+world of Safari-identity documents built on Parc's modern FairPlay EME
+(`tests/FairPlayIdentity/webkit_media_keys.mjs`).
 
 | Piece | Safari | Status | Owner |
 |---|---|---|---|
-| `new WebKitMediaKeys(keySystem)`, `keySystem` | empty → InvalidAccessError; unsupported → NotSupportedError | missing (throws always) | fp-safari-eme-surface |
-| `createSession(type, initData)` | empty initData → InvalidAccessError; unsupported type → NotSupportedError; `keyrelease` type = secure-stop mode | missing | fp-safari-eme-surface |
-| MSE 3_N protocol | createSession(type, initData = `webkitneedkey` data) → message `"certificate"` → `update(cert)` → SPC message → `update(CKC)` → `webkitkeyadded`; `update("renew")` → new SPC | missing | fp-safari-eme-surface |
-| MSE 2_N protocol | as 3_N but initData is the content identifier and the init data comes from the attached protected SourceBuffer (`update(cert)` before that → InvalidStateError) | missing | fp-safari-eme-surface |
-| Secure stop (`keyrelease`, `update("acknowledged")`, expired-session message on `close()`) | needs AVContentKeySession storage | missing (shares storage with `persistent-usage-record`) | fp-safari-eme-surface |
-| `WebKitMediaKeySession` `sessionId`, `keySystem`, `error`, `update`, `close`, `onwebkitkeyadded/error/message` | per IDL | missing | fp-safari-eme-surface |
-| `WebKitMediaKeyMessageEvent` (`message`, `destinationURL`), `WebKitMediaKeyNeededEvent` (`initData`) constructors | per IDL | missing | fp-safari-eme-surface |
-| `WebKitMediaKeyError` codes 1–6, `systemCode` | per IDL | missing | fp-safari-eme-surface |
-| `HTMLMediaElement.webkitSetMediaKeys`, `webkitKeys` | per IDL | missing | fp-safari-eme-surface |
-| `webkitneedkey` on MSE | fired with the sinf init data for each protected track | missing | fp-safari-eme-surface |
-| `MediaError.MEDIA_ERR_ENCRYPTED` (5) | constant present; error fired only with modern EME off | missing (constant) | fp-safari-eme-surface |
-| HLS (`com.apple.fps`, `1_0`): `webkitneedkey` with skd init data on `<video src=m3u8>`, createSession → SPC/CKC through the AVPlayer's key requests | per `MediaPlayerPrivateAVFoundationObjC` | missing | fp-safari-eme-surface with fp-hls-keys |
+| `new WebKitMediaKeys(keySystem)`, `keySystem` | empty → InvalidAccessError; unsupported → NotSupportedError | present for 2_N/3_N; HLS key systems below | fp-safari-eme-surface |
+| `createSession(type, initData)` | empty type/initData → InvalidAccessError; unsupported type → NotSupportedError | present | fp-safari-eme-surface |
+| MSE 3_N protocol | createSession(type, initData = `webkitneedkey` data) → message `"certificate"` → `update(cert)` → SPC message → `update(CKC)` → `webkitkeyadded`; `update("renew")` → new SPC | present (`cenc` sessions: one message per key; `sinf` sessions raw) | fp-safari-eme-surface |
+| MSE 2_N protocol | as 3_N but initData is the content identifier and the init data comes from the attached protected SourceBuffer (`update(cert)` before that → InvalidPlayerState) | different: the SPC's content identifier is the CDM's (key ID), not the page's | fp-safari-eme-surface |
+| Secure stop (`keyrelease`, `update("acknowledged")`, expired-session message on `close()`) | needs AVContentKeySession storage | different: answers as WebKit does with no stored report (`keyrelease` → CLIENT `'!mor'`, `acknowledged` → InvalidPlayerState); reports come with `persistent-usage-record` | fp-safari-eme-surface |
+| `WebKitMediaKeySession` `sessionId`, `keySystem`, `error`, `update`, `close`, `onwebkitkeyadded/error/message` | per IDL; MSE `sessionId` is empty | present | fp-safari-eme-surface |
+| `WebKitMediaKeyMessageEvent` (`message`, `destinationURL`), `WebKitMediaKeyNeededEvent` (`initData`) constructors | per IDL | present (script-made events have `isTrusted` false) | fp-safari-eme-surface |
+| `WebKitMediaKeyError` codes 1–6, `systemCode` | per IDL | present | fp-safari-eme-surface |
+| `HTMLMediaElement.webkitSetMediaKeys`, `webkitKeys`; `mediaKeys` null under legacy keys | per IDL | present | fp-safari-eme-surface |
+| `webkitneedkey` on MSE | fired with the sinf init data for each protected track | different: carries the `encrypted` event's data (`cenc` pssh boxes; `sinf` once fp-eme-modern fires it for pssh-less content) | fp-safari-eme-surface |
+| `MediaError.MEDIA_ERR_ENCRYPTED` (5) | constant present; error fired only with modern EME off | present | fp-safari-eme-surface |
+| HLS (`com.apple.fps`, `1_0`): `webkitneedkey` with skd init data on `<video src=m3u8>`, createSession → SPC/CKC through the AVPlayer's key requests | per `MediaPlayerPrivateAVFoundationObjC` | missing (`webkitneedkey` already turns an `skd` `encrypted` event into WebKit's legacy layout; sessions wait for native HLS) | fp-safari-eme-surface with fp-hls-keys |
 | Legacy clear key on HLS (`org.w3c.clearkey`) | HLS only | missing | fp-safari-eme-surface with fp-hls-keys |
 
 ## ManagedMediaSource

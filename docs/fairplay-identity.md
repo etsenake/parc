@@ -29,8 +29,9 @@ On a page that presents Safari's identity:
 - `navigator.userAgent` and `navigator.appVersion` match the header.
   `navigator.vendor` is `Apple Computer, Inc.`. `navigator.userAgentData`
   doesn't exist, in the page or in its workers.
-- `window.WebKitMediaKeys` exists as Safari's legacy capability probe, which
-  Netflix requires (see "WebKitMediaKeys" below).
+- Safari's legacy prefixed EME exists (`WebKitMediaKeys`, its sessions,
+  `webkitSetMediaKeys`, `webkitneedkey`); Netflix requires its capability
+  probe (see "WebKitMediaKeys" below).
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`
@@ -235,11 +236,12 @@ exactly `!!(window.WebKitMediaKeys &&
 WebKitMediaKeys.isTypeSupported("com.apple.fps.2_0"))`. Without it, Netflix
 logs `canPlayHTML5WithDRM: false` and shows UI3001 before asking for a
 manifest. Its player then uses standard EME (`com.apple.fps.3_0`, `cenc`) and
-never constructs `WebKitMediaKeys`. So the main world of every Safari-identity
-document gets Safari's legacy prefixed interface as a capability probe,
-installed with `ManagedMediaSource`, from
+never constructs `WebKitMediaKeys`. Other players use the legacy sessions. So
+the main world of every Safari-identity document gets Safari's legacy prefixed
+EME for Media Source, installed with `ManagedMediaSource`, from
 `Engine/ParcRenderer/parc_webkit_media_keys.h`. Workers don't get it; Safari
-has it in windows only.
+has it in windows only. The rows and what is still open are in
+[fairplay-safari-surface.md](fairplay-safari-surface.md).
 
 - `WebKitMediaKeys.isTypeSupported(keySystem, type)` answers true for the key
   systems of WebKit's legacy Media Source CDM, `com.apple.fps.2_N` and
@@ -249,14 +251,43 @@ has it in windows only.
   lists (H.264, HEVC, Dolby Vision profile 5, AAC, AC-3, E-AC-3) and that
   Chromium's `MediaSource.isTypeSupported` accepts. AV1 answers no, as the CDM
   leaves it out.
-- `com.apple.fps` and `com.apple.fps.1_0` answer false. WebKit gives them to
+- `com.apple.fps` and `com.apple.fps.1_0` answer false, and constructing
+  `WebKitMediaKeys` with them throws `NotSupportedError`. WebKit gives them to
   its AVFoundation player, which plays HLS through `<video src>` with skd key
-  requests and `webkitneedkey`. Parc has none of that: its FairPlay CDM
-  serves Media Source only.
-- `new WebKitMediaKeys(keySystem)` always throws: `InvalidAccessError` for an
-  empty key system, otherwise `NotSupportedError`, as WebKit throws for a key
-  system it can't serve. There are no legacy key sessions,
-  `webkitSetMediaKeys` or `webkitneedkey` behind it.
+  requests; Parc's native HLS route
+  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) isn't
+  built yet. They turn on with it.
+- `new WebKitMediaKeys(keySystem)` works for `com.apple.fps.2_N` and `3_N`
+  (`InvalidAccessError` for an empty key system, `NotSupportedError` for one
+  it doesn't serve, as WebKit). Its keys are a modern FairPlay `MediaKeys`
+  made through the EME natives the script took before any page script ran, so
+  a page that replaces `requestMediaKeySystemAccess` or `setMediaKeys` (Shaka's
+  `PatchedMediaKeysApple` does, on top of `WebKitMediaKeys`) doesn't loop back
+  into itself. A media element using them reports `mediaKeys` null, as in
+  Safari, and keys set on a second element move there.
+- `createSession(type, initData)` follows WebKit's
+  `CDMSessionAVContentKeySession`. The first `webkitkeymessage` is the bytes
+  `certificate`; `update(certificate)` sets the certificate and the next
+  message is the SPC; `update(ckc)` answers it and fires `webkitkeyadded`;
+  `update("renew")` sends a renewal SPC; `close()` closes the keys. Version 3
+  takes the init data from `createSession` (the `webkitneedkey` data, `cenc`
+  pssh boxes or `sinf` JSON); version 2 takes a content identifier there and
+  the init data from the media the keys are attached to (InvalidPlayerState
+  until it has some). Parc's CDM sends `cenc` requests as JSON with one SPC per
+  key, so the script sends each SPC as its own message and gives each CKC to
+  the oldest unanswered one. Errors are `webkitkeyerror` with a
+  `WebKitMediaKeyError`: DOMAIN with the CDM's system code when an SPC can't be
+  made. `keyrelease` sessions and `update("acknowledged")` answer as WebKit
+  does when it holds no expired-session report (Parc keeps none).
+- `webkitneedkey` (`WebKitMediaKeyNeededEvent`) fires on a media element for
+  each `encrypted` event, with its init data (an skd URI in WebKit's legacy
+  layout, for native HLS). The window catches every element in its tree before
+  the element's own listeners, and an element with a `webkitneedkey` listener
+  or legacy keys forwards its own (detached elements, shadow trees). Each
+  `encrypted` event raises it once, and only the media pipeline's own
+  (trusted) ones do: a page's script-made `encrypted` event doesn't.
+  `MediaError.MEDIA_ERR_ENCRYPTED` is 5. These events are script-made, so
+  their `isTrusted` is false.
 
 What the other services' current scripts do with it (fetched without signing
 in, November 6, 2026):
@@ -396,8 +427,10 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   for example through `Function.prototype.toString`. Isolated worlds and
   shared or service workers don't get it (Safari offers it to windows and
   dedicated workers). `WebKitMediaKeys` is a script too, visible the same
-  way, and only a capability probe. A player that needs Safari's legacy key
-  sessions (TELUS TV+'s Shaka setup) can't play FairPlay through it.
+  way, and it overrides `addEventListener` and the `mediaKeys` getter on
+  `HTMLMediaElement.prototype`. Its legacy HLS key systems wait for native
+  HLS (TELUS TV+'s Shaka setup and Disney+'s native client use
+  `com.apple.fps.1_0`).
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used
