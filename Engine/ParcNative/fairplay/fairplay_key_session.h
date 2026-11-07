@@ -106,6 +106,14 @@ class FairPlayCdm {
   // the first session.
   void SetPersistentStateAllowed(bool allowed);
 
+  // The MediaKeys' storage directory, as WebKit's
+  // CDMInstanceFairPlayStreamingAVFObjC::setStorageDirectory: created if
+  // missing, and AVFoundation keeps its expired-session reports in
+  // "SecureStop.plist" there. Empty: none (a private window). With persistent
+  // state allowed and a directory, the shared AVContentKeySession is created
+  // with that storage. Set before the first session.
+  void SetStorageDirectory(const std::string& directory);
+
   // Resolves with the session ID once the license request is ready, then
   // sends it through OnSessionMessage (kLicenseRequest). As in WebKit, the ID
   // is the uppercase hex of the session's random 16-byte identifier

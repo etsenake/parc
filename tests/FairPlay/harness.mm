@@ -2475,10 +2475,14 @@ std::vector<Step> NoHangScenario() {
 // Safari's persistent-usage-record sessions (WebKit's
 // CDMInstanceSessionFairPlayStreamingAVFObjC::isLicenseTypeSupported):
 // refused without persistent state, otherwise a license round trip like a
-// temporary session's.
+// temporary session's, with the key session's storage in a directory the CDM
+// creates (WebKit's setStorageDirectory).
 std::vector<Step> PersistentUsageRecordScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  NSString* storage = [NSTemporaryDirectory()
+      stringByAppendingPathComponent:[NSString stringWithFormat:@"parc-fairplay-media-keys-%d/top/origin",
+                                                                getpid()]];
   std::vector<Step> steps;
   steps.push_back(Section("persistent-usage-record sessions"));
   steps.push_back([=](Done done) {
@@ -2494,7 +2498,13 @@ std::vector<Step> PersistentUsageRecordScenario() {
   });
   steps.push_back([=](Done done) {
     KeySystem* ks = keys->get();
+    [NSFileManager.defaultManager removeItemAtPath:storage.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent
+                                             error:nil];
     ks->cdm->SetPersistentStateAllowed(true);
+    ks->cdm->SetStorageDirectory(storage.fileSystemRepresentation);
+    BOOL is_directory = NO;
+    Check([NSFileManager.defaultManager fileExistsAtPath:storage isDirectory:&is_directory] && is_directory,
+          "usage-record: the storage directory is created", storage.UTF8String);
     auto finish = Once(30, "usage-record: license", [=](bool) { done(); });
     ks->client->json = false;
     ks->client->on_update = [=](bool ok, const std::string& detail) {

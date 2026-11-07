@@ -246,6 +246,31 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   void SetPersistentStateAllowed(bool allowed) { persistent_state_allowed_ = allowed; }
 
+  // WebKit's setStorageDirectory, except that it also moves aside a file found
+  // at the directory's path (its older storage layout), which Parc never wrote.
+  void SetStorageDirectory(const std::string& directory) {
+    storage_url_ = nil;
+    if (directory.empty()) {
+      return;
+    }
+    NSString* path = [NSFileManager.defaultManager
+        stringWithFileSystemRepresentation:directory.c_str()
+                                    length:directory.size()];
+    BOOL is_directory = NO;
+    if (![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&is_directory]) {
+      if (![NSFileManager.defaultManager createDirectoryAtPath:path
+                                   withIntermediateDirectories:YES
+                                                    attributes:nil
+                                                         error:nil]) {
+        return;
+      }
+    } else if (!is_directory) {
+      return;
+    }
+    storage_url_ = [NSURL fileURLWithPath:[path stringByAppendingPathComponent:@"SecureStop.plist"]
+                              isDirectory:NO];
+  }
+
   void SetServerCertificate(std::vector<uint8_t> certificate, ResultCallback done) {
     if (certificate.empty()) {
       done(Result::Error(Exception::kTypeError, "empty server certificate"));
@@ -1281,8 +1306,16 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (av_session_) {
       return true;
     }
-    av_session_ =
-        [AVContentKeySession contentKeySessionWithKeySystem:AVContentKeySystemFairPlayStreaming];
+    // As WebKit's contentKeySession(): with storage only when the
+    // configuration allows persistent state and there is a directory.
+    if (persistent_state_allowed_ && storage_url_) {
+      av_session_ =
+          [AVContentKeySession contentKeySessionWithKeySystem:AVContentKeySystemFairPlayStreaming
+                                        storageDirectoryAtURL:storage_url_];
+    } else {
+      av_session_ =
+          [AVContentKeySession contentKeySessionWithKeySystem:AVContentKeySystemFairPlayStreaming];
+    }
     if (!av_session_) {
       return false;
     }
@@ -1717,6 +1750,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   double request_timeout_ = 15;  // Seconds for generateRequest and update().
   std::map<std::string, std::unique_ptr<Session>> sessions_;
   bool persistent_state_allowed_ = false;
+  // <storage directory>/SecureStop.plist, or nil.
+  NSURL* storage_url_ = nil;
   std::map<uint64_t, KeysChangedCallback> observers_;
   uint64_t next_observer_ = 0;
   // HLS assets attached through FairPlayHlsKeyLoader.
@@ -1758,6 +1793,10 @@ void FairPlayCdm::SetServerCertificate(std::vector<uint8_t> certificate, ResultC
 
 void FairPlayCdm::SetPersistentStateAllowed(bool allowed) {
   impl_->SetPersistentStateAllowed(allowed);
+}
+
+void FairPlayCdm::SetStorageDirectory(const std::string& directory) {
+  impl_->SetStorageDirectory(directory);
 }
 
 void FairPlayCdm::CreateSessionAndGenerateRequest(SessionType session_type,

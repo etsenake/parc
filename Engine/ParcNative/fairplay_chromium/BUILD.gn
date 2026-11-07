@@ -74,6 +74,8 @@ source_set("gpu") {
     ":core",
     "//base",
     "//media",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
     "//ui/accelerated_widget_mac",
     "//ui/gfx/geometry",
   ]

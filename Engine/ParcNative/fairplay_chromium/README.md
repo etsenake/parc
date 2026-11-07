@@ -95,7 +95,14 @@ temporary, and Safari's `persistent-usage-record` on Safari-identity documents
 system info offers it only where the render process can persist data, and the
 CDM takes it only with the CdmConfig's `allow_persistent_state`, as WebKit's
 `isLicenseTypeSupported`). Session IDs are WebKit's: the uppercase hex of a
-random 16-byte identifier. `persistent-license` rejects with NotSupported, as
+random 16-byte identifier. A CDM whose configuration allows persistent state
+asks the frame's `FrameInterfaceFactory.GetFairPlayStorageDirectory` (the
+browser's `MediaInterfaceProxy`) for its storage, WebKit's per-origin
+MediaKeys directory: `<Profile engine folder>/Parc FairPlay/MediaKeys/`, then
+the SHA-256 of the top-level origin and of the frame's origin, created by the
+browser, empty off the record or for an opaque origin. The core then creates
+its AVContentKeySession with `SecureStop.plist` there, which the GPU sandbox
+allows (`gpu.sb`). `persistent-license` rejects with NotSupported, as
 on Safari for macOS. `CdmContext::ParcHasSessionForInitData` (asked by a
 Safari-identity Media Source element through MojoCdm before it fires
 `encrypted` with `sinf`) answers from `FairPlayCdm::HasSessionForInitData`.

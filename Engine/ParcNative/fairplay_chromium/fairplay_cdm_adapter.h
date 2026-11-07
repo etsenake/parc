@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
@@ -34,9 +35,12 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
   // sequence the CDM will live on (the media service's).
   // |allow_persistent_state| is the CdmConfig's (the configuration's
   // persistentState is "required"); persistent-usage-record sessions need it.
+  // |storage_directory| is the frame's FairPlay storage from the browser
+  // (empty: none), where AVFoundation keeps expired-session reports.
   static scoped_refptr<FairPlayCdmAdapter> Create(
       const std::string& key_system,
       bool allow_persistent_state,
+      const base::FilePath& storage_directory,
       const SessionMessageCB& session_message_cb,
       const SessionClosedCB& session_closed_cb,
       const SessionKeysChangeCB& session_keys_change_cb,
@@ -44,6 +48,7 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
 
   FairPlayCdmAdapter(
       bool allow_persistent_state,
+      const base::FilePath& storage_directory,
       const SessionMessageCB& session_message_cb,
       const SessionClosedCB& session_closed_cb,
       const SessionKeysChangeCB& session_keys_change_cb,
