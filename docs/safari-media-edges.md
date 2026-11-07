@@ -69,7 +69,8 @@ made it, as Chromium already does for Document Picture-in-Picture; the
 element's event queue moves with it). Still different, **open** (with
 Josh): if the frame that made the player is destroyed, Parc reloads it,
 since a Chromium player can't move between frames; a video moved into a
-popup still takes the opener tab's visibility and freezing; and a move into
+popup still takes the opener tab's visibility and freezing (**in progress**,
+fix agent HME-1b); and a move into
 a document without a browsing context (`createHTMLDocument`) reloads and
 fails, where Safari keeps the player (unchecked against WebKit's `dom/`
 files beyond `DOMImplementation.cpp:144`, `Document.cpp:2740`).
@@ -282,8 +283,8 @@ sticky for the frame, plus media engagement). WebKit
 `HTMLMediaElement.cpp:4687-4718` asks `MediaElementSession::playbackStateChangePermitted`
 (`MediaElementSession.cpp:463-568`): with Safari's default policy, audible
 playback needs a user gesture being processed now, or an element a gesture
-already unlocked. **Open** (with Josh: whether Safari-mode pages take Safari's
-stricter rule).
+already unlocked. **In progress** (fix agent HME-22: Safari's stricter rule,
+Josh's default, not objected to).
 
 **HME-23. When playback has ended.** Chromium `html_media_element.cc:4223-4245`
 asks the player (`IsEnded()`, after the renderer reports the end). WebKit
