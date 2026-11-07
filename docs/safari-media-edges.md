@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **44**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **45**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -632,7 +632,8 @@ dropped from mixed init segments; Dolby Vision 4/7/9 refused in
 `addSourceBuffer` and played as their base layer). Still different, each
 user-felt and **queued**: Ogg (Opus/Vorbis/FLAC) in Media Source, so a site
 falls back or plays silent (MS-4b, an Ogg stream parser, 800-1,200 lines);
-PCM in MP4 fails (MS-4c, 150-250 lines); Dolby Vision 10 (`dav1`) and 20, and
+PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected
+PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`) and 20, and
 4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (MS-4d, 200-400
 lines); AMR and H.263 in 3GPP fail (MS-4e, AudioToolbox/VideoToolbox
 decoders, 600+ lines). `text/vtt` in `isTypeSupported` differs but no site
