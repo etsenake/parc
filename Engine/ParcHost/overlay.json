@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 572,
+  "version": 573,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4222,7 +4222,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "ab48a836f7d63306db5695d33f637d05428318829da1db9e337ee8f024e7dc49",
+      "sha256": "e4b893b659250d5108f51f7f7e290c41ec5ab734a2e6608a12e5481082db11ca",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4327,7 +4327,7 @@
         {
           "target": "media/base/pipeline_impl.cc",
           "before_sha256": "ea503b9ce7daeaa8d952b0621bca7f8d42b7769fab798cd1cb66fdcf8eda146d",
-          "after_sha256": "5e619b95a35d0871049ba07300964f5908c3495d538ab59642e52e19e973ca93"
+          "after_sha256": "742af25bf7f32f7aff97caaa4ab5995edd301f56fb890631d301cf8779416219"
         },
         {
           "target": "media/base/renderer.cc",
@@ -4337,7 +4337,7 @@
         {
           "target": "media/base/renderer.h",
           "before_sha256": "22e0fceeebdbdd863f23618420e3ce629631ec77ef9bcd8fd6b839172df9070d",
-          "after_sha256": "236c6a03942b25a25e9f1bcfa7fc3ed66e9b3a6ca7779ffb9db6c284bdeaea05"
+          "after_sha256": "f47d7cfbb62edc5bf547326eb950a173e09a0cf461d76d784e111c07110d4eec"
         },
         {
           "target": "media/cdm/cdm_type_conversion.cc",
@@ -4497,7 +4497,7 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "f57533c1fca7106fe08d3318c7003b602d20231f54d885155dfe67142da7460b"
+          "after_sha256": "90574e229c1f03bc1da5b161d85479d456a907c431283ae3299bf41186d13b51"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
@@ -4507,7 +4507,7 @@
         {
           "target": "third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc",
           "before_sha256": "9385876e63a8e9de9dd5f01b3f716dbd8471007aaacd3c04b806af609053062a",
-          "after_sha256": "4f6066096c11b256f2a8965e2b5a95fe32a255e1e30caae9c8e701f348a6d049"
+          "after_sha256": "f04ea75ed6971be4022d7e608d343aba64252214638c522604dad6bb448ae353"
         },
         {
           "target": "media/base/media_resource.h",
@@ -4747,7 +4747,7 @@
         {
           "target": "media/base/pipeline_impl.h",
           "before_sha256": "13c6b1059691bd4208daa0e6cda41f14d493efd98b0d059259d50d0c0e6df347",
-          "after_sha256": "f8126f54fa464694b57485143d4a04ffc74aafab532397bebcb2f1b470b9e0e2"
+          "after_sha256": "44502b27a21e721e132b75c2c8c7914a7365851486f2aaffde6169d3d50e611d"
         },
         {
           "target": "media/filters/pipeline_controller.h",
@@ -4757,7 +4757,7 @@
         {
           "target": "media/base/pipeline_impl_unittest.cc",
           "before_sha256": "bf6411956af64b50f0fbd936f8a7db2bc155e3a630459aeadcfb9a5d41e8c13e",
-          "after_sha256": "d0635ee94f1ce1070e0c56d01d57b5364a0feb179e7d024aa2bda3a26871e043"
+          "after_sha256": "5752d6c1354cf416f00b9d5abe021833db31fe09802ef7670f23ae6e313bc0b5"
         },
         {
           "target": "media/formats/BUILD.gn",
@@ -4847,17 +4847,47 @@
         {
           "target": "media/renderers/renderer_impl.h",
           "before_sha256": "3cae65f347f7c8ec7eae2b976734f908ad3fd6b5524643c90d058ca6f67ba54a",
-          "after_sha256": "dd12cbc16b28fad35f773c23278a4bbf8ece32441fa3551cce0b9d59dcb007e2"
+          "after_sha256": "d47e6d8683bd722334e3eb63027c2ff175505b26d7405731797a41a0a9933dfc"
         },
         {
           "target": "media/renderers/renderer_impl.cc",
           "before_sha256": "9253fa0a2c9c32996ec5b3746d052e7b940ef7d8c670cd4365636f7557f055de",
-          "after_sha256": "e4daf03e74e6a0049073baeaeeca67bb2171e905f3f0e5d560670a1fa5348479"
+          "after_sha256": "0e0019123a004ba563a1da861dbd80aff7ba416d602761afda148ab9ca8f04ef"
         },
         {
           "target": "media/renderers/renderer_impl_unittest.cc",
           "before_sha256": "28cb4e845c38ec9ac6afae299d38694ad6e30603a321bc60132cb26a2a3ecb40",
-          "after_sha256": "bb69ef30ae1a37d191b80d62018b970ddeb6e67dd57ba76a077f2db0526307a2"
+          "after_sha256": "08886b006342f574c5f35280cae08eaa455a505bf8391577deb2c724247834d1"
+        },
+        {
+          "target": "media/base/video_renderer.h",
+          "before_sha256": "7e6acba3b5003752bfef0789ce06644b6e5d07745a614008fe1d0c03697ca04b",
+          "after_sha256": "113c97017d2142a943ab4af1d3d406c434d3ec6e0461cee5efdd63d1c0e6b497"
+        },
+        {
+          "target": "media/base/wall_clock_time_source.cc",
+          "before_sha256": "7859af764a57e0acb8c04683895671387e43c00c974248987c589a1d0e5a5b4c",
+          "after_sha256": "472170fca7acd95f27e91d9c9d0c2a121c4dd312c369222e326820653d62998b"
+        },
+        {
+          "target": "media/base/mock_filters.h",
+          "before_sha256": "176cb5b1556b7f6acf46544a8971f8f18f5db028174624a1a9cf4e6a17c09860",
+          "after_sha256": "fa12b4f921d841e1bd47b0be17467a8b403c9279edc3c8ca2bcca458543a9568"
+        },
+        {
+          "target": "media/renderers/video_renderer_impl.h",
+          "before_sha256": "257350867ae8369aae0646a6db429cfb2a5440d4fb8b674514dbe8d02a6e5b85",
+          "after_sha256": "2f03eb22bafadf721db6256b41cb3efeb8f042cf2a70adda4a41efdd8c16a643"
+        },
+        {
+          "target": "media/renderers/video_renderer_impl.cc",
+          "before_sha256": "075c429d49eae6f1d5c79be4a176dbf46571d9c1a03d268ea409a313d47dbb2c",
+          "after_sha256": "13bb9707a5e2ff51fa6ad1841f59f3cb8f8f58a83d9fd34f17b2343f91226d5a"
+        },
+        {
+          "target": "media/renderers/video_renderer_impl_unittest.cc",
+          "before_sha256": "e1e8adf58e6c135c61b64c98ae16fd412efae50be0146761bf23762b7bab0a2a",
+          "after_sha256": "be79bafa9b74eb12df5b3ccad14b79bba8dbea0c19daad5255edc56cd126d2ad"
         }
       ]
     },

@@ -1168,7 +1168,33 @@
               base::FEATURE_DISABLED_BY_DEFAULT
 --- a/media/base/pipeline_impl.cc
 +++ b/media/base/pipeline_impl.cc
-@@ -297,6 +297,9 @@
+@@ -7,6 +7,7 @@
+ #include <algorithm>
+ #include <memory>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/command_line.h"
+ #include "base/dcheck_is_on.h"
+@@ -278,6 +279,17 @@
+   // one by calling back to PipelineImpl. Fires |done_cb| with the result.
+   void CreateRendererInternal(PipelineStatusCallback done_cb);
+ 
++  // Parc: a file renderer plays backward in its own mode (Renderer::
++  // ParcStartPlayingBackwardFrom()); turning between directions flushes it,
++  // which the page doesn't see as a seek.
++  double ParcRendererRate();
++  void ParcTurnIfNeeded();
++  void ParcCompleteTurn(base::TimeDelta time, PipelineStatus status);
++  void ParcSeekDemuxer(base::TimeDelta time, base::OnceClosure done);
++  void ParcOnDemuxerSeeked(base::OnceClosure done, PipelineStatus status);
++  void ParcOnTrackChangeDone(base::OnceClosure change_completed_cb);
++  void ParcRunDeferredTrackChanges();
++
+   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
+   const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
+   const std::unique_ptr<MediaLog> media_log_;
+@@ -297,6 +309,9 @@
    std::optional<base::TimeDelta> latency_hint_;
    bool render_muted_audio_ = false;
    raw_ptr<CdmContext, DanglingUntriaged> cdm_context_ = nullptr;
@@ -1178,16 +1204,30 @@
  
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
-@@ -328,6 +331,8 @@
+@@ -328,6 +343,22 @@
    // Called from non-media threads when an error occurs.
    RepeatingPipelineStatusCallback error_cb_;
  
++  // Parc: the renderer plays backward, or `parc_turn_` is turning it.
++  bool parc_backward_ = false;
++  std::unique_ptr<SerialRunner> parc_turn_;
++  // A seek or suspend waits for the turn; track changes wait for forward
++  // playback (audio is silent backward).
++  base::OnceClosure parc_deferred_op_;
++  std::vector<base::OnceClosure> parc_deferred_track_changes_;
++  int parc_track_changes_ = 0;
++  bool parc_demuxer_seek_pending_ = false;
++  // The buffering state the pipeline last heard; the renderer's first after a
++  // turn repeats it.
++  BufferingState parc_buffering_state_ = BUFFERING_HAVE_NOTHING;
++  bool parc_turned_ = false;
++
 +  // CDM acceptance survives Stop so the next load keeps accepted keys.
 +  base::WeakPtrFactory<RendererWrapper> cdm_weak_factory_{this};
    base::WeakPtrFactory<RendererWrapper> weak_factory_{this};
  };
  
-@@ -380,6 +385,12 @@
+@@ -380,6 +411,12 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
  
@@ -1200,7 +1240,97 @@
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -689,7 +700,46 @@
+@@ -430,6 +467,14 @@
+   // the pipeline is stopped before it had a chance to complete outstanding
+   // tasks.
+   pending_callbacks_.reset();
++  parc_turn_.reset();
++  parc_deferred_op_.Reset();
++  parc_deferred_track_changes_.clear();
++  parc_backward_ = false;
++  parc_track_changes_ = 0;
++  parc_demuxer_seek_pending_ = false;
++  parc_buffering_state_ = BUFFERING_HAVE_NOTHING;
++  parc_turned_ = false;
+   weak_factory_.InvalidateWeakPtrs();
+ 
+   DestroyRenderer();
+@@ -448,6 +493,12 @@
+ 
+ void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++
++  if (parc_turn_) {
++    parc_deferred_op_ = base::BindOnce(&RendererWrapper::Seek,
++                                       weak_factory_.GetWeakPtr(), time);
++    return;
++  }
+ 
+   // Suppress seeking if we're not fully started.
+   if (state_ != State::kPlaying) {
+@@ -461,6 +512,9 @@
+ 
+   SetState(State::kSeeking);
+   renderer_ended_ = false;
++  parc_backward_ = false;
++  parc_buffering_state_ = BUFFERING_HAVE_NOTHING;
++  parc_turned_ = false;
+ 
+   // Queue asynchronous actions required to start.
+   DCHECK(!pending_callbacks_);
+@@ -490,6 +544,12 @@
+ void PipelineImpl::RendererWrapper::Suspend() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
+ 
++  if (parc_turn_) {
++    parc_deferred_op_ = base::BindOnce(&RendererWrapper::Suspend,
++                                       weak_factory_.GetWeakPtr());
++    return;
++  }
++
+   // Suppress suspending if we're not playing.
+   if (state_ != State::kPlaying) {
+     DCHECK(state_ == State::kStopping || state_ == State::kStopped)
+@@ -500,6 +560,11 @@
+   DCHECK(!pending_callbacks_.get());
+ 
+   SetState(State::kSuspending);
++  // Parc: the next Demuxer::Seek() is Resume()'s.
++  if (parc_demuxer_seek_pending_) {
++    demuxer_->AbortPendingReads();
++  }
++  parc_backward_ = false;
+ 
+   // Freeze playback and record the media time before destroying the renderer.
+   shared_state_.media().renderer->SetPlaybackRate(0.0);
+@@ -546,6 +611,8 @@
+ 
+   default_renderer_ = std::move(default_renderer);
+   renderer_ended_ = false;
++  parc_buffering_state_ = BUFFERING_HAVE_NOTHING;
++  parc_turned_ = false;
+   base::TimeDelta start_timestamp =
+       std::max(timestamp, demuxer_->GetStartTime());
+ 
+@@ -576,9 +643,15 @@
+ void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
+ 
++  // Parc: a renderer leaving the start or the end in the other direction
++  // can end again.
++  if ((playback_rate < 0) != (playback_rate_ < 0)) {
++    renderer_ended_ = false;
++  }
+   playback_rate_ = playback_rate;
+-  if (state_ == State::kPlaying) {
+-    shared_state_.media().renderer->SetPlaybackRate(playback_rate_);
++  if (state_ == State::kPlaying && !parc_turn_) {
++    shared_state_.media().renderer->SetPlaybackRate(ParcRendererRate());
++    ParcTurnIfNeeded();
+   }
+ 
+   if (state_ != State::kCreated && state_ != State::kStopping &&
+@@ -689,7 +762,46 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
@@ -1247,7 +1377,7 @@
  
    // If there's already a renderer, set the CDM on the renderer directly.
    if (shared_state_.media().renderer) {
-@@ -700,9 +750,27 @@
+@@ -700,9 +812,27 @@
      return;
    }
  
@@ -1275,7 +1405,7 @@
    std::move(cdm_attached_cb).Run(true);
  
    // Continue Renderer creation if it's waiting for the CDM to be set.
-@@ -733,6 +801,28 @@
+@@ -733,6 +863,28 @@
      }
    }
  #endif  // BUILDFLAG(IS_WIN)
@@ -1304,7 +1434,43 @@
  
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
-@@ -1099,8 +1189,13 @@
+@@ -896,6 +1048,21 @@
+     return;
+   }
+ 
++  // Parc: backward, audio is silent and the video renderer has its own
++  // stream position, so the tracks change once playback goes forward; the
++  // caller doesn't wait for that.
++  if (parc_backward_ || parc_turn_) {
++    parc_deferred_track_changes_.push_back(base::BindOnce(
++        &RendererWrapper::OnTracksChanged, weak_factory_.GetWeakPtr(),
++        track_type, std::move(enabled_track_id), base::DoNothing()));
++    std::move(change_completed_cb).Run();
++    return;
++  }
++  ++parc_track_changes_;
++  change_completed_cb = base::BindOnce(&RendererWrapper::ParcOnTrackChangeDone,
++                                       weak_factory_.GetWeakPtr(),
++                                       std::move(change_completed_cb));
++
+   demuxer_->OnTracksChanged(
+       track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
+       base::BindOnce(&RendererWrapper::OnDemuxerCompletedTrackChange,
+@@ -1008,6 +1175,13 @@
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
+   DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
+ 
++  const bool parc_repeated = parc_turned_ && state == parc_buffering_state_;
++  parc_turned_ = false;
++  parc_buffering_state_ = state;
++  if (parc_repeated) {
++    return;
++  }
++
+   main_task_runner_->PostTask(
+       FROM_HERE, base::BindOnce(&PipelineImpl::OnBufferingStateChange,
+                                 weak_pipeline_, state, reason));
+@@ -1099,8 +1273,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1319,7 +1485,17 @@
    std::move(cdm_attached_cb).Run(success);
  }
  
-@@ -1146,6 +1241,12 @@
+@@ -1116,7 +1295,8 @@
+     return;
+ 
+   main_task_runner_->PostTask(
+-      FROM_HERE, base::BindOnce(&PipelineImpl::OnEnded, weak_pipeline_));
++      FROM_HERE, base::BindOnce(&PipelineImpl::OnEnded, weak_pipeline_,
++                                playback_rate_ < 0));
+ }
+ 
+ void PipelineImpl::RendererWrapper::SetState(State next_state) {
+@@ -1146,6 +1326,12 @@
      return;
    }
  
@@ -1332,7 +1508,141 @@
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1244,7 +1345,7 @@
+@@ -1153,12 +1339,132 @@
+     shared_state_.mutable_media().suspend_timestamp = kNoTimestamp;
+   }
+ 
+-  shared_state_.media().renderer->SetPlaybackRate(playback_rate_);
++  shared_state_.media().renderer->SetPlaybackRate(ParcRendererRate());
+ 
+   SetState(State::kPlaying);
+   main_task_runner_->PostTask(
+       FROM_HERE,
+       base::BindOnce(&PipelineImpl::OnSeekDone, weak_pipeline_, false));
++  ParcTurnIfNeeded();
++  ParcRunDeferredTrackChanges();
++}
++
++double PipelineImpl::RendererWrapper::ParcRendererRate() {
++  Renderer* renderer = shared_state_.media().renderer.get();
++  if (playback_rate_ >= 0 || !renderer) {
++    return playback_rate_;
++  }
++  // A native HLS player rewinds itself; other renderers don't play backward.
++  const RendererType type = renderer->GetRendererType();
++  if (type == RendererType::kFairPlayHls ||
++      (type == RendererType::kRendererImpl && parc_backward_)) {
++    return playback_rate_;
++  }
++  return 0;
++}
++
++void PipelineImpl::RendererWrapper::ParcTurnIfNeeded() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  Renderer* renderer = shared_state_.media().renderer.get();
++  // A pause while playing backward stays backward.
++  const bool backward =
++      renderer && renderer->GetRendererType() == RendererType::kRendererImpl &&
++      (playback_rate_ < 0 || (playback_rate_ == 0 && parc_backward_));
++  if (state_ != State::kPlaying || parc_turn_ || parc_track_changes_ ||
++      backward == parc_backward_) {
++    return;
++  }
++
++  // ParcRendererRate() stopped time where the other direction starts.
++  const base::TimeDelta time =
++      std::max(renderer->GetMediaTime(), demuxer_->GetStartTime());
++  demuxer_->AbortPendingReads();
++  SerialRunner::Queue fns;
++  fns.Push(base::BindOnce(&Renderer::Flush, base::Unretained(renderer)));
++  if (parc_backward_) {
++    fns.Push(base::BindOnce(&Demuxer::Seek, base::Unretained(demuxer_), time));
++  }
++  parc_turn_ = SerialRunner::Run(
++      std::move(fns), base::BindOnce(&RendererWrapper::ParcCompleteTurn,
++                                     weak_factory_.GetWeakPtr(), time));
++}
++
++void PipelineImpl::RendererWrapper::ParcCompleteTurn(base::TimeDelta time,
++                                                     PipelineStatus status) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  DCHECK(parc_turn_);
++  parc_turn_.reset();
++  if (status != PIPELINE_OK) {
++    OnPipelineError(status);
++    return;
++  }
++
++  Renderer* renderer = shared_state_.media().renderer.get();
++  parc_backward_ = !parc_backward_;
++  parc_turned_ = true;
++  if (parc_backward_) {
++    renderer->ParcStartPlayingBackwardFrom(
++        time, std::min(playback_rate_, 0.0),
++        base::BindRepeating(&RendererWrapper::ParcSeekDemuxer,
++                            weak_factory_.GetWeakPtr()));
++  } else {
++    renderer->StartPlayingFrom(time);
++    renderer->SetPlaybackRate(ParcRendererRate());
++  }
++
++  if (parc_deferred_op_) {
++    std::move(parc_deferred_op_).Run();
++    return;
++  }
++  ParcTurnIfNeeded();
++  ParcRunDeferredTrackChanges();
++}
++
++void PipelineImpl::RendererWrapper::ParcSeekDemuxer(base::TimeDelta time,
++                                                    base::OnceClosure done) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  // A seek, turn or suspend flushes the renderer before it needs the demuxer.
++  if (state_ != State::kPlaying || parc_turn_ || !parc_backward_) {
++    return;
++  }
++  DCHECK(!parc_demuxer_seek_pending_);
++  parc_demuxer_seek_pending_ = true;
++  demuxer_->AbortPendingReads();
++  demuxer_->Seek(std::max(time, demuxer_->GetStartTime()),
++                 base::BindOnce(&RendererWrapper::ParcOnDemuxerSeeked,
++                                weak_factory_.GetWeakPtr(), std::move(done)));
++}
++
++void PipelineImpl::RendererWrapper::ParcOnDemuxerSeeked(
++    base::OnceClosure done,
++    PipelineStatus status) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  parc_demuxer_seek_pending_ = false;
++  if (status != PIPELINE_OK) {
++    OnPipelineError(status);
++    return;
++  }
++  std::move(done).Run();
++}
++
++void PipelineImpl::RendererWrapper::ParcOnTrackChangeDone(
++    base::OnceClosure change_completed_cb) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  --parc_track_changes_;
++  std::move(change_completed_cb).Run();
++  ParcTurnIfNeeded();
++}
++
++void PipelineImpl::RendererWrapper::ParcRunDeferredTrackChanges() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  if (parc_backward_ || parc_turn_) {
++    return;
++  }
++  std::vector<base::OnceClosure> changes;
++  changes.swap(parc_deferred_track_changes_);
++  for (auto& change : changes) {
++    std::move(change).Run();
++  }
+ }
+ 
+ void PipelineImpl::RendererWrapper::CompleteSuspend(PipelineStatus status) {
+@@ -1244,7 +1550,7 @@
      return;
    }
  
@@ -1341,7 +1651,7 @@
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
  
    if (latency_hint_)
-@@ -1398,6 +1499,7 @@
+@@ -1398,6 +1704,7 @@
    DCHECK(!client_);
    DCHECK(!seek_cb_);
    client_ = client;
@@ -1349,26 +1659,30 @@
    seek_cb_ = std::move(seek_cb);
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
-@@ -1529,7 +1631,7 @@
+@@ -1529,10 +1836,9 @@
  
    // Not checking IsRunning() so we can set the playback rate before Start().
  
 -  if (playback_rate < 0.0) {
-+  if (playback_rate < 0.0 && !parc_native_hls_) {
-     DVLOG(1) << __func__ << ": Invalid playback rate " << playback_rate;
-     return;
-   }
-@@ -1630,7 +1732,8 @@
+-    DVLOG(1) << __func__ << ": Invalid playback rate " << playback_rate;
+-    return;
+-  }
++  // Parc: only a Safari-identity element passes a negative rate (Blink's
++  // HTMLMediaElement::setPlaybackRate drops it for a Media Source, as WebKit
++  // does); the renderer plays it (RendererWrapper::ParcRendererRate()).
+ 
+   playback_rate_ = playback_rate;
+   media_task_runner_->PostTask(
+@@ -1630,7 +1936,7 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
 -  if (media_time < last_media_time_) {
-+  if (media_time < last_media_time_ &&
-+      !(parc_native_hls_ && playback_rate_ < 0)) {
++  if (media_time < last_media_time_ && playback_rate_ >= 0) {
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1641,6 +1744,11 @@
+@@ -1641,6 +1947,11 @@
    return last_media_time_;
  }
  
@@ -1380,7 +1694,7 @@
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
    DCHECK(thread_checker_.CalledOnValidThread());
    return renderer_wrapper_->GetBufferedTimeRanges();
-@@ -1665,7 +1773,8 @@
+@@ -1665,7 +1976,8 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -1390,6 +1704,23 @@
    DCHECK(cdm_attached_cb);
  
    // Not checking IsRunning() so we can set the CDM before Start().
+@@ -1714,10 +2026,15 @@
+   client_->OnFallback(std::move(status).AddHere());
+ }
+ 
+-void PipelineImpl::OnEnded() {
++void PipelineImpl::OnEnded(bool parc_backward) {
+   DVLOG(2) << __func__;
+   DCHECK(thread_checker_.CalledOnValidThread());
+   DCHECK(IsRunning());
++
++  // Parc: playback already left an end the other direction reached.
++  if (parc_backward != (playback_rate_ < 0)) {
++    return;
++  }
+ 
+   DCHECK(client_);
+   client_->OnEnded();
 --- a/media/base/renderer.cc
 +++ b/media/base/renderer.cc
 @@ -31,6 +31,10 @@
@@ -1405,7 +1736,15 @@
  
 --- a/media/base/renderer.h
 +++ b/media/base/renderer.h
-@@ -37,7 +37,9 @@
+@@ -13,6 +13,7 @@
+ #include "media/base/demuxer_stream.h"
+ #include "media/base/media_export.h"
+ #include "media/base/pipeline_status.h"
++#include "media/base/video_renderer.h"
+ 
+ namespace media {
+ 
+@@ -37,7 +38,9 @@
    kCastStreaming = 9,  // PlaybackCommandForwardingRendererFactory
    kContentEmbedderDefined = 10,  // Defined by the content embedder
    kTest = 11,                    // Renderer implementations used in tests
@@ -1416,6 +1755,21 @@
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
+@@ -131,6 +134,14 @@
+   // enforce RendererType registration for all Renderer implementations.
+   // Note: New implementation should update RendererType.
+   virtual RendererType GetRendererType() = 0;
++
++  // Parc: after Flush(), plays backward from `time` at `playback_rate` < 0, as
++  // Safari's AVPlayer rewinds a file (MediaPlayerPrivateAVFoundationObjC::
++  // setRateDouble). Only RendererImpl does; audio stays silent.
++  virtual void ParcStartPlayingBackwardFrom(base::TimeDelta time,
++                                            double playback_rate,
++                                            ParcSeekDemuxerCB seek_demuxer_cb) {
++  }
+ };
+ 
+ }  // namespace media
 --- a/media/cdm/cdm_type_conversion.cc
 +++ b/media/cdm/cdm_type_conversion.cc
 @@ -105,6 +105,10 @@
@@ -4911,11 +5265,10 @@
  namespace blink {
  
  namespace {
-@@ -166,7 +181,52 @@
-     CrossThreadOnceFunction<void(media::OutputDeviceStatus)> callback) {
+@@ -167,6 +182,51 @@
    sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
-+}
+ }
 +
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
@@ -4959,7 +5312,7 @@
 +    }
 +  }
 +  return true;
- }
++}
 +#endif  // BUILDFLAG(IS_MAC)
  
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
@@ -4978,10 +5331,11 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -439,6 +504,89 @@
+@@ -438,6 +503,89 @@
+ STATIC_ASSERT_ENUM(WebMediaPlayer::kCorsModeAnonymous, UrlData::CORS_ANONYMOUS);
  STATIC_ASSERT_ENUM(WebMediaPlayer::kCorsModeUseCredentials,
                     UrlData::CORS_USE_CREDENTIALS);
- 
++
 +// Parc: runs the pipeline's main-thread tasks in order on the frame's media
 +// task runner, as Chromium does, except that while the player casts they run
 +// on `casting_task_runner_`, which a frozen frame (the back/forward cache)
@@ -5064,10 +5418,9 @@
 +  uint64_t next_id_ GUARDED_BY(lock_) = 0;
 +  bool casting_ GUARDED_BY(lock_) = false;
 +};
-+
+ 
  WebMediaPlayerImpl::WebMediaPlayerImpl(
      WebLocalFrame* frame,
-     MediaPlayerClient* client,
 @@ -538,8 +686,10 @@
    // `this` and the callback will always be made on the main task runner.
    // Not using base::BindPostTaskToCurrentDefault() because CreateRenderer() is
@@ -5090,7 +5443,17 @@
  
    weak_factory_.InvalidateWeakPtrsAndDoom();
  
-@@ -1099,8 +1252,12 @@
+@@ -1015,6 +1168,9 @@
+   // TODO(sandersd): Do we want to reset the idle timer here?
+   delegate_->SetIdle(delegate_id_, false);
+   paused_ = false;
++  if (playback_rate_ < 0) {
++    ended_ = false;
++  }
+   pipeline_controller_->SetPlaybackRate(playback_rate_);
+   background_pause_timer_.Stop();
+ 
+@@ -1099,8 +1255,12 @@
    }
  
    // This may be the last chance `main_task_runner_` gets to execute, so we
@@ -5105,7 +5468,7 @@
      demuxer_manager_->StopPreloading();
    }
  
-@@ -1109,20 +1266,65 @@
+@@ -1109,10 +1269,37 @@
    UpdatePlayState();
  }
  
@@ -5133,18 +5496,17 @@
 +      base::Seconds(seconds),
 +      std::exchange(parc_fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcFastSeek(double seconds,
 +                                      double tolerance_before) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_fast_seek_tolerance_ = base::Seconds(tolerance_before);
 +  Seek(seconds);
-+}
-+
+ }
+ 
  void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
-   TRACE_EVENT2("media", "WebMediaPlayerImpl::DoSeek", "target",
+@@ -1121,8 +1308,26 @@
                 time.InSecondsF(), "id", media_player_id_);
  
    ReadyState old_state = ready_state_;
@@ -5172,7 +5534,7 @@
  
    // For playing zero duration video-only media, if we can elide the seek, use a
    // large delay to avoid an expensive spin loop. Per spec we must still deliver
-@@ -1203,7 +1405,11 @@
+@@ -1203,7 +1408,11 @@
    seek_time_ = time;
    if (paused_)
      paused_time_ = time;
@@ -5184,24 +5546,28 @@
  
    // This needs to be called after Seek() so that if a resume is triggered, it
    // is to the correct time.
-@@ -1221,6 +1427,13 @@
-         << rate;
+@@ -1222,8 +1431,14 @@
    }
  
-+#if BUILDFLAG(IS_MAC)
-+  // AVPlayer accepts reverse rates; Chromium's decoded-frame renderer does
-+  // not. Media Source already drops negative rates at the element boundary.
-+  if (rate < 0 && PresentsParcSafariIdentity() && !ParcPlaysNativeHls()) {
-+    rate = 0;
-+  }
-+#endif
    playback_rate_ = rate;
-   if (!paused_)
+-  if (!paused_)
++  if (!paused_) {
++    // Parc: playing backward from the end leaves it (only Safari-identity
++    // pages play backward), so the time is the player's, not the duration.
++    if (rate < 0) {
++      ended_ = false;
++    }
      pipeline_controller_->SetPlaybackRate(rate);
-@@ -1423,6 +1636,24 @@
-   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
- }
++  }
  
+   MaybeUpdateBufferSizesForPlayback();
+ }
+@@ -1421,6 +1636,24 @@
+     return std::numeric_limits<double>::quiet_NaN();
+ 
+   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
++}
++
 +double WebMediaPlayerImpl::ParcStartDate() const {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
@@ -5218,15 +5584,15 @@
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
 +  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
-+}
-+
+ }
+ 
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
+@@ -1496,6 +1729,21 @@
  
-@@ -1498,6 +1729,21 @@
+   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
      return WebTimeRanges();
-   }
- 
++  }
++
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -5240,12 +5606,10 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-+  }
-+
-   if (demuxer_manager_->IsLiveContent()) {
-     return WebTimeRanges();
    }
-@@ -1665,6 +1911,35 @@
+ 
+   if (demuxer_manager_->IsLiveContent()) {
+@@ -1665,6 +1913,35 @@
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
@@ -5281,7 +5645,7 @@
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
    // http://crbug.com/40407494#comment8.
-@@ -1695,6 +1970,116 @@
+@@ -1695,6 +1972,116 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -5398,10 +5762,12 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +2113,34 @@
+@@ -1726,6 +2113,34 @@
+ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
+                                        media::MediaTrack::State state) {
    client_->SetTrackState(track, state);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -5428,12 +5794,10 @@
 +    media::ParcInbandAudioTrackEnabledCB set_enabled) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
-+}
-+
- #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+ }
  
- UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1777,6 +2190,386 @@
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+@@ -1777,6 +2192,386 @@
  }
  #endif
  
@@ -5820,7 +6184,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2613,198 @@
+@@ -1820,11 +2615,198 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -6019,7 +6383,7 @@
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -1835,17 +2815,64 @@
+@@ -1835,17 +2817,64 @@
    // If the CDM is set from the constructor there is no promise
    // (`set_cdm_result_`) to fulfill.
    if (success) {
@@ -6046,6 +6410,10 @@
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
      }
+-
+-    return;
+-  }
+-
 +#if BUILDFLAG(IS_MAC)
 +    if (client_->PresentsParcSafariIdentity()) {
 +      parc_cdm_event_registration_ =
@@ -6063,10 +6431,10 @@
 +    }
 +    ParcRestartIntoFairPlayIfNeeded();
 +#endif  // BUILDFLAG(IS_MAC)
- 
-     return;
-   }
- 
++
++    return;
++  }
++
 +#if BUILDFLAG(IS_MAC)
 +  for (auto& [id, key] : parc_source_keys_)
 +    key.check = ++parc_source_key_check_;
@@ -6084,7 +6452,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1900,8 +2927,82 @@
+@@ -1900,6 +2929,80 @@
    }
  
    attempting_suspended_start_ = false;
@@ -6110,8 +6478,8 @@
 +    ParcFinishUrlSeekAtFrame();
 +  }
 +  ParcMonitorSourceBuffers();
- }
- 
++}
++
 +bool WebMediaPlayerImpl::ParcUrlSeekKeepsReadyState(
 +    base::TimeDelta time) const {
 +  return load_type_ == kLoadTypeURL && client_->PresentsParcSafariIdentity() &&
@@ -6162,12 +6530,10 @@
 +  }
 +  should_notify_time_changed_ = false;
 +  client_->TimeChanged();
-+}
-+
- void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
-   media_metrics_provider_->OnStarted(status);
  }
-@@ -1911,6 +3012,7 @@
+ 
+ void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
+@@ -1911,6 +3014,7 @@
    media_log_->AddEvent<MediaLogEvent::kSuspended>();
  
    pending_oneshot_suspend_ = false;
@@ -6175,7 +6541,7 @@
  
    if (attempting_suspended_start_) {
      DCHECK(pipeline_controller_->IsSuspended());
-@@ -1988,6 +3090,27 @@
+@@ -1988,6 +3092,27 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -6203,9 +6569,19 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2108,7 +3231,10 @@
+@@ -2107,8 +3232,20 @@
+   if (!pipeline_controller_->IsStable())
      return;
  
++  // Parc: playing backward (only on Safari-identity pages), WebKit's player
++  // ends at the start (MediaPlayerPrivateAVFoundation::didEnd) and its
++  // element pauses there; the time stays at the start, not the duration.
++  if (playback_rate_ < 0) {
++    client_->TimeChanged();
++    UpdatePlayState();
++    return;
++  }
++
    ended_ = true;
 -  if (!paused_) {
 +  // Parc: WebKit's player reports reaching the end while paused too (after a
@@ -6215,7 +6591,7 @@
      client_->TimeChanged();
    }
  
-@@ -2135,20 +3261,37 @@
+@@ -2135,20 +3272,37 @@
  
    MaybeSetContainerNameForMetrics();
  
@@ -6260,7 +6636,7 @@
  
      if (overlay_enabled_) {
        // SurfaceView doesn't support rotated video, so transition back if
-@@ -2197,6 +3340,12 @@
+@@ -2197,6 +3351,12 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -6273,7 +6649,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2238,6 +3387,16 @@
+@@ -2238,6 +3398,16 @@
  void WebMediaPlayerImpl::OnBufferingStateChange(
      media::BufferingState state,
      media::BufferingStateChangeReason reason) {
@@ -6290,7 +6666,7 @@
    OnBufferingStateChangeInternal(state, reason, false);
  }
  
-@@ -2283,7 +3442,7 @@
+@@ -2283,7 +3453,7 @@
        pipeline_metadata_.natural_size, cdm_config_,
        frame_->GetTaskRunner(TaskType::kInternalMedia));
  
@@ -6299,7 +6675,7 @@
      video_decode_stats_reporter_->OnHidden();
    } else {
      video_decode_stats_reporter_->OnShown();
-@@ -2312,9 +3471,11 @@
+@@ -2312,9 +3482,11 @@
      delegate_->ClearStaleFlag(delegate_id_);
      UpdatePlayState();
    } else if (ready_state_ == ReadyState::kReadyStateHaveFutureData &&
@@ -6312,11 +6688,19 @@
  }
  
  bool WebMediaPlayerImpl::CanPlayThrough() {
-@@ -2361,10 +3522,42 @@
+@@ -2339,7 +3511,7 @@
  
+   return buffered_data_source_host_->CanPlayThrough(
+       base::Seconds(CurrentTime()), base::Seconds(Duration()),
+-      playback_rate_ == 0.0 ? 1.0 : playback_rate_);
++      playback_rate_ <= 0.0 ? 1.0 : playback_rate_);
+ }
+ 
+ void WebMediaPlayerImpl::OnBufferingStateChangeInternal(
+@@ -2362,9 +3534,41 @@
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
-+
+ 
 +  // Parc: Safari's native HLS element takes readyState from AVPlayer's, up and
 +  // down (ApplyParcNativeHlsReadyState), not from the two buffering states.
 +  bool parc_native_ready_state = false;
@@ -6341,7 +6725,7 @@
 +    // Warning: This call may be re-entrant.
 +    ParcMonitorSourceBuffers();
 +  }
- 
++
    if (state == media::BUFFERING_HAVE_ENOUGH) {
      TRACE_EVENT1("media", "WebMediaPlayerImpl::BufferingHaveEnough", "id",
                   media_player_id_);
@@ -6355,7 +6739,7 @@
      // The SetReadyState() call below may clear
      // `skip_metrics_due_to_startup_suspend_` so report this first.
      if (!have_reported_time_to_play_ready_ &&
-@@ -2379,8 +3572,11 @@
+@@ -2379,8 +3583,11 @@
      }
  
      // Warning: This call may be re-entrant.
@@ -6369,7 +6753,7 @@
  
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
-@@ -2396,8 +3592,11 @@
+@@ -2396,8 +3603,11 @@
        }
      }
  
@@ -6383,7 +6767,7 @@
        should_notify_time_changed_ = false;
        client_->TimeChanged();
      }
-@@ -2434,8 +3633,11 @@
+@@ -2434,8 +3644,11 @@
  
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
@@ -6397,7 +6781,7 @@
    }
  
    UpdatePlayState();
-@@ -2453,6 +3655,7 @@
+@@ -2453,6 +3666,7 @@
  
    if (watch_time_reporter_)
      watch_time_reporter_->OnDurationChanged(GetPipelineMediaDuration());
@@ -6405,7 +6789,7 @@
  }
  
  void WebMediaPlayerImpl::OnWaiting(media::WaitingReason reason) {
-@@ -2462,6 +3665,23 @@
+@@ -2462,6 +3676,23 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -6429,7 +6813,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -2575,6 +3795,12 @@
+@@ -2575,6 +3806,12 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK_NE(ready_state_, WebMediaPlayer::kReadyStateHaveNothing);
  
@@ -6442,7 +6826,7 @@
    const bool codec_change =
        pipeline_metadata_.video_decoder_config.codec() != config.codec();
    const bool codec_profile_change =
-@@ -2640,7 +3866,63 @@
+@@ -2640,7 +3877,63 @@
    UpdateSecondaryProperties();
  }
  
@@ -6506,7 +6890,7 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
    // Backgrounding a video requires a user gesture to resume playback.
-@@ -2678,6 +3960,14 @@
+@@ -2678,6 +3971,14 @@
  }
  
  void WebMediaPlayerImpl::OnPageShown() {
@@ -6521,7 +6905,7 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    background_pause_timer_.Stop();
  
-@@ -3018,12 +4308,47 @@
+@@ -3018,11 +4319,46 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -6547,7 +6931,7 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
- 
++
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -6565,11 +6949,10 @@
 +  // The renderer a replacement restarted into has the new CDM.
 +  parc_replaced_cdm_context_ref_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-     client_->DidUseAudioServiceChange(new_uses_audio_service);
-@@ -3038,6 +4363,14 @@
+@@ -3038,6 +4374,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -6584,7 +6967,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +4486,27 @@
+@@ -3153,6 +4497,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -6612,7 +6995,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +4524,11 @@
+@@ -3170,6 +4535,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -6624,7 +7007,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3182,6 +4541,11 @@
+@@ -3182,6 +4552,11 @@
  }
  
  void WebMediaPlayerImpl::OnTimeUpdate() {
@@ -6636,7 +7019,7 @@
    // When seeking the current time can go beyond the duration so we should
    // cap the current time at the duration.
    base::TimeDelta duration = GetPipelineMediaDuration();
-@@ -3293,8 +4657,11 @@
+@@ -3293,8 +4668,11 @@
      bool is_in_picture_in_picture) {
    PlayState result;
  
@@ -6650,7 +7033,7 @@
    bool is_stale = delegate_->IsStale(delegate_id_);
  
    if (stale_state_override_for_testing_.has_value() &&
-@@ -3330,9 +4697,23 @@
+@@ -3330,8 +4708,22 @@
    // to kReadyStateHaveMetadata, we require `is_stale` to remain suspended.
    // `is_stale` will be cleared when we receive data which may take us to
    // kReadyStateHaveMetadata.
@@ -6660,7 +7043,7 @@
 -                            paused_ && !seeking_ && !needs_first_frame_;
 +                            paused_ && !seeking_ && !needs_first_frame_ &&
 +                            !is_remote_rendering_;
- 
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: WebKit's readyState rises with a late SourceBuffer's data, paused or
 +  // hidden; here the buffering of the renderer made with its streams raises
@@ -6671,11 +7054,10 @@
 +    can_stay_suspended = false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
-                         background_suspended || can_stay_suspended;
-@@ -3530,6 +4911,12 @@
+@@ -3530,6 +4922,12 @@
      return;
    }
  
@@ -6688,7 +7070,7 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3585,7 +4972,7 @@
+@@ -3585,7 +4983,7 @@
    watch_time_reporter_->OnDominantVisibleContentChanged(
        is_dominant_visible_content_);
  
@@ -6697,7 +7079,7 @@
      watch_time_reporter_->OnHidden();
    } else {
      watch_time_reporter_->OnShown();
-@@ -3635,6 +5022,9 @@
+@@ -3635,6 +5033,9 @@
  
  bool WebMediaPlayerImpl::IsPageHidden() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -6707,24 +7089,25 @@
    return delegate_->IsPageHidden();
  }
  
-@@ -3769,6 +5159,13 @@
-   // This takes precedent over every restriction except PiP.
+@@ -3770,6 +5171,13 @@
    if (!is_background_video_playback_enabled_)
      return true;
-+
+ 
 +  // Parc: a Safari-identity player plays on while its page is hidden, muted
 +  // or not: WebKit gives its media sessions no InvisibleAutoplayNotPermitted
 +  // or RequirePageVisibilityToPlayAudio restriction outside iOS.
 +  if (client_->PresentsParcSafariIdentity()) {
 +    return false;
 +  }
- 
++
    if (is_flinging_)
      return false;
-@@ -3793,6 +5190,36 @@
+ 
+@@ -3792,6 +5200,36 @@
+   if (!is_background_video_track_optimization_supported_) {
      return false;
    }
- 
++
 +  // WebKit's MediaPlayerPrivateAVFoundation::setPageIsVisible and
 +  // MediaPlayerPrivateMediaSourceAVFObjC::updateRendererVisibility change
 +  // presentation without deselecting the video track.
@@ -6754,11 +7137,10 @@
 +    return false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
-   if (!HasVideo() || !HasAudio()) {
-@@ -3931,6 +5358,7 @@
+@@ -3931,6 +5369,7 @@
  
    DCHECK(!is_remote_rendering_);
    is_remote_rendering_ = true;
@@ -6766,7 +7148,7 @@
  
    DCHECK(!disable_pipeline_auto_suspend_);
    disable_pipeline_auto_suspend_ = true;
-@@ -3953,6 +5381,7 @@
+@@ -3953,6 +5392,7 @@
    if (!is_remote_rendering_)
      return;  // Is currently with local renderer.
    is_remote_rendering_ = false;
@@ -7170,11 +7552,10 @@
  };
  
  class MockWebMediaPlayerEncryptedMediaClient
-@@ -243,8 +258,109 @@
-                void(media::EmeInitDataType, base::span<const uint8_t>));
+@@ -244,6 +259,107 @@
    MOCK_METHOD0(DidBlockPlaybackWaitingForKey, void());
    MOCK_METHOD0(DidResumePlaybackBlockedForKey, void());
-+};
+ };
 +
 +#if BUILDFLAG(IS_MAC)
 +// A CDM whose sessions have key requests for `requested_keys` ("skd" init
@@ -7255,8 +7636,8 @@
 +                                 ParcHasSessionForInitDataCB done) override {
 +    std::move(done).Run(true);
 +  }
- };
- 
++};
++
 +class ParcCdmResult final : public ContentDecryptionModuleResult {
 + public:
 +  void Complete() override { completed = true; }
@@ -7276,10 +7657,9 @@
 +  bool failed = false;
 +};
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  class MockWebMediaPlayerDelegate : public WebMediaPlayerDelegate {
   public:
-   MockWebMediaPlayerDelegate() = default;
 @@ -368,12 +484,16 @@
      : public testing::Test,
        private WebTestingSupport::WebScopedMockScrollbars {
@@ -7332,11 +7712,10 @@
    void SetTickClock(const base::TickClock* clock) {
      wmpi_->SetTickClockForTest(clock);
    }
-@@ -564,7 +705,50 @@
-   }
+@@ -565,6 +706,49 @@
  
    void OnWaiting(media::WaitingReason reason) { wmpi_->OnWaiting(reason); }
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
 +                                const std::vector<uint8_t>& init_data) {
@@ -7362,7 +7741,7 @@
 +  void ParcPlayChromiumRenderer() {
 +    wmpi_->renderer_type_ = media::RendererType::kRendererImpl;
 +  }
- 
++
 +  // Parc: setMediaKeys with `parc_cdm_context_` behind `web_cdm_`.
 +  void ParcSetKeyRequestCdm() {
 +    DCHECK(web_cdm_);
@@ -7383,10 +7762,11 @@
    void OnVideoNaturalSizeChange(const gfx::Size& size) {
      wmpi_->OnVideoNaturalSizeChange(size);
    }
-@@ -573,6 +757,67 @@
+@@ -572,6 +756,67 @@
+   void OnVideoConfigChange(const media::VideoDecoderConfig& config) {
      wmpi_->OnVideoConfigChange(config);
    }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: reports a late SourceBuffer's streams to a paused player at
 +  // HAVE_ENOUGH and expects readyState to drop to HAVE_METADATA without the
@@ -7447,11 +7827,10 @@
 +    return wmpi_->parc_awaits_added_streams_renderer_;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    WebMediaPlayerImpl::PlayState ComputePlayState() {
      return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
-                                                    false);
-@@ -605,8 +850,34 @@
+@@ -605,7 +850,33 @@
  
    bool IsSuspended() { return wmpi_->pipeline_controller_->IsSuspended(); }
  
@@ -7475,31 +7854,29 @@
 +  }
 +
    bool IsStreaming() const { return wmpi_->IsStreaming(); }
- 
++
 +  // As SwitchToRemoteRenderer() leaves the player, without restarting the
 +  // test's pipeline.
 +  void SetRemoteRenderingWithoutRestart() {
 +    wmpi_->is_remote_rendering_ = true;
 +    wmpi_->disable_pipeline_auto_suspend_ = true;
 +  }
-+
+ 
    int64_t GetDataSourceMemoryUsage() const {
      return wmpi_->demuxer_manager_->GetDataSourceMemoryUsage();
+@@ -729,6 +1000,8 @@
    }
-@@ -730,6 +1001,8 @@
  
    bool IsVideoTrackDisabled() const { return wmpi_->video_track_disabled_; }
- 
-+  bool IsPageHidden() const { return wmpi_->IsPageHidden(); }
 +
++  bool IsPageHidden() const { return wmpi_->IsPageHidden(); }
+ 
    bool IsDisableVideoTrackPending() const {
      return !wmpi_->is_background_status_change_cancelled_;
-   }
-@@ -909,6 +1182,41 @@
-   }
+@@ -910,6 +1183,41 @@
  
    void OnProgress() { wmpi_->OnProgress(); }
-+
+ 
 +  // Parc: a paused audio Media Source element at HAVE_METADATA over a
 +  // ChunkDemuxer the test appends to.
 +  void StartParcMediaSource(bool safari_identity) {
@@ -7534,9 +7911,10 @@
 +    ASSERT_EQ(status, media::StreamParser::ParseStatus::kSuccess);
 +    wmpi_->OnProgress();
 +  }
- 
++
    void OnCdmCreated(base::RepeatingClosure quit_closure,
                      std::unique_ptr<WebContentDecryptionModule> cdm,
+                     media::CreateCdmStatus status) {
 @@ -947,6 +1255,27 @@
      wmpi_->SetCdmInternal(web_cdm_.get());
    }
@@ -7576,7 +7954,7 @@
  
    viz::FrameSinkId frame_sink_id_ = viz::FrameSinkId(1, 1);
    viz::LocalSurfaceId local_surface_id_ = viz::LocalSurfaceId(
-@@ -1023,12 +1356,42 @@
+@@ -1023,11 +1356,41 @@
    // The WebMediaPlayerImpl's media observer.
    NiceMock<MockMediaObserver> mock_observer_;
  
@@ -7590,7 +7968,7 @@
  
    std::unique_ptr<base::trace_event::MemoryDumpManager> memory_dump_manager_;
  };
- 
++
 +TEST_F(WebMediaPlayerImplTest, ParcSafariRefusesUndeclaredAV1WithoutHardware) {
 +  InitializeWebMediaPlayerImpl();
 +  av1_command_line_.GetProcessCommandLine()->AppendSwitchASCII(
@@ -7615,11 +7993,32 @@
 +  OnMetadata(metadata);
 +  EXPECT_NE(wmpi_->GetNetworkState(), WebMediaPlayer::kNetworkStateFormatError);
 +}
-+
+ 
  TEST_F(WebMediaPlayerImplTest, ConstructAndDestroy) {
    InitializeWebMediaPlayerImpl();
-   EXPECT_FALSE(IsSuspended());
-@@ -1807,8 +2170,34 @@
+@@ -1796,6 +2159,21 @@
+   wmpi_->SetVolume(1.0);
+ }
+ 
++// Parc: playing backward (only Safari-identity pages do), the player ends at
++// the start, as WebKit's MediaPlayerPrivateAVFoundation::didEnd; the element
++// hears it, and the time stays the player's, not the duration.
++TEST_F(WebMediaPlayerImplTest, ParcBackwardEndKeepsTheTime) {
++  InitializeWebMediaPlayerImpl();
++  LoadAndWaitForReadyState(kAudioOnlyTestFile,
++                           WebMediaPlayer::kReadyStateHaveFutureData);
++  wmpi_->SetRate(-1.0);
++
++  EXPECT_CALL(client_, TimeChanged());
++  OnEnded();
++  EXPECT_FALSE(wmpi_->IsEnded());
++  EXPECT_EQ(0, wmpi_->CurrentTime());
++}
++
+ TEST_F(WebMediaPlayerImplTest, MediaPositionState_Playing) {
+   InitializeWebMediaPlayerImpl();
+   LoadAndWaitForReadyState(kAudioOnlyTestFile,
+@@ -1807,6 +2185,32 @@
                             1.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
                             /*end_of_media=*/false));
    wmpi_->OnTimeUpdate();
@@ -7637,8 +8036,8 @@
 +  EXPECT_CALL(client_, TimeChanged());
 +  OnEnded();
 +  EXPECT_TRUE(wmpi_->IsEnded());
- }
- 
++}
++
 +TEST_F(WebMediaPlayerImplTest, EndedWhilePausedDoesNotTellClient) {
 +  InitializeWebMediaPlayerImpl();
 +  LoadAndWaitForReadyState(kAudioOnlyTestFile,
@@ -7649,15 +8048,15 @@
 +  EXPECT_CALL(client_, TimeChanged()).Times(0);
 +  OnEnded();
 +  EXPECT_TRUE(wmpi_->IsEnded());
-+}
-+
- TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
-   InitializeWebMediaPlayerImpl();
-   LoadAndWaitForReadyState(kAudioOnlyTestFile,
-@@ -1908,6 +2297,140 @@
-   wmpi_->OnTimeUpdate();
  }
  
+ TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
+@@ -1906,6 +2310,140 @@
+ 
+   EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(_, _, _, _)).Times(0);
+   wmpi_->OnTimeUpdate();
++}
++
 +// A src= player whose first 10% (1s) is buffered, at HAVE_ENOUGH_DATA.
 +class WebMediaPlayerImplParcUrlSeekTest : public WebMediaPlayerImplTest {
 + protected:
@@ -7790,12 +8189,10 @@
 +  OnPipelineSeeked(/*time_updated=*/true);
 +  PaintFrame();
 +  CycleThreads();
-+}
-+
+ }
+ 
  TEST_F(WebMediaPlayerImplTest, NoStreams) {
-   InitializeWebMediaPlayerImpl();
-   media::PipelineMetadata metadata;
-@@ -1980,6 +2503,55 @@
+@@ -1980,6 +2518,55 @@
    OnWaiting(media::WaitingReason::kNoDecryptionKey);
  }
  
@@ -7851,10 +8248,11 @@
  TEST_F(WebMediaPlayerImplTest, Waiting_SecureSurfaceLost) {
    InitializeWebMediaPlayerImpl();
  
-@@ -1994,6 +2566,271 @@
+@@ -1993,6 +2580,271 @@
+   OnWaiting(media::WaitingReason::kSecureSurfaceLost);
    EXPECT_TRUE(IsSuspended());
  }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// WebKit's native HLS player stops waiting only once a session has a request
 +// for the key it waits on, not for another key becoming usable.
@@ -8119,18 +8517,13 @@
 +  CycleThreads();
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  ACTION(ReportHaveEnough) {
    arg0->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
-                                media::BUFFERING_CHANGE_REASON_UNKNOWN);
-@@ -2771,9 +3608,66 @@
-   OnVideoConfigChange(new_color_config);
-   ASSERT_EQ(last_reporter, GetVideoStatsReporter());
-   ASSERT_EQ(media::VP8PROFILE_MIN, GetVideoStatsReporterCodecProfile());
-+
-+  EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
-+}
-+
+@@ -2775,6 +3627,63 @@
+   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
+ }
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: a SourceBuffer added after the renderer was made enables a stream of a
 +// new type (ChunkDemuxer::ParcAllowSourceBuffersAfterInit()). readyState drops
@@ -8168,7 +8561,7 @@
 +        /*mixes=*/true}});
 +  EXPECT_FALSE(ParcAwaitsAddedStreamsRenderer());
 +}
- 
++
 +// Parc: an encrypted stream doesn't join RendererImpl, which would have to
 +// wait for its CDM there: the pipeline restarts into a renderer made with
 +// every stream, as before.
@@ -8184,16 +8577,18 @@
 +      added, {{media::DemuxerStream::AUDIO, media::MediaTrack::Id("2")}});
 +  EXPECT_TRUE(wmpi_->HasAudio());
 +
-   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
- }
++  EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
++}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  TEST_F(WebMediaPlayerImplTest, NaturalSizeChange) {
    InitializeWebMediaPlayerImpl();
-@@ -3024,6 +3918,66 @@
+   media::PipelineMetadata metadata;
+@@ -3023,6 +3932,66 @@
+   EXPECT_FALSE(IsPausedBecausePageHidden());
    EXPECT_FALSE(IsPausedBecauseFrameHidden());
  }
- 
++
 +class WebMediaPlayerImplHiddenVideoTest
 +    : public WebMediaPlayerImplTest,
 +      public ::testing::WithParamInterface<bool> {
@@ -8253,16 +8648,13 @@
 +INSTANTIATE_TEST_SUITE_P(SafariIdentity,
 +                         WebMediaPlayerImplHiddenVideoTest,
 +                         ::testing::Bool());
-+
+ 
  // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
  // visibility changes should not affect the playback state.
- TEST_F(WebMediaPlayerImplTest, DisabledFlagShouldPauseWhenFrameIsHidden) {
-@@ -3088,8 +4042,111 @@
-   ASSERT_FALSE(IsSuspended());
-   wmpi_->OnFrozen();
+@@ -3090,6 +4059,109 @@
    ASSERT_TRUE(IsSuspended());
-+}
-+
+ }
+ 
 +TEST_F(WebMediaPlayerImplTest, ParcOnFrozenWhileRemotingKeepsPipeline) {
 +  InitializeWebMediaPlayerImpl();
 +  wmpi_->SwitchToRemoteRenderer("TV");
@@ -8307,8 +8699,8 @@
 +  wmpi_->ParcOnFrozenInBackForwardCache();
 +  EXPECT_FALSE(IsSuspended());
 +  EXPECT_TRUE(ShouldCancelUponDefer());
- }
- 
++}
++
 +// A cast whose session starts after the page went into the back/forward cache
 +// restarts the pipeline on the receiver's renderer, paused.
 +TEST_F(WebMediaPlayerImplTest,
@@ -8369,10 +8761,12 @@
  TEST_F(WebMediaPlayerImplTest, BackgroundIdlePauseTimerDependsOnAudio) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
-@@ -3115,6 +4172,102 @@
+@@ -3113,6 +4185,102 @@
+       PausePlayback(WebMediaPlayer::PauseReason::kSuspendedPlayerIdleTimeout));
+   FireIdlePauseTimer();
    base::RunLoop().RunUntilIdle();
- }
- 
++}
++
 +TEST_F(WebMediaPlayerImplTest, SafariIdentityHasNoBackgroundIdlePauseTimer) {
 +  base::test::ScopedFeatureList feature_list;
 +  feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
@@ -8467,15 +8861,15 @@
 +  testing::Mock::VerifyAndClearExpectations(&client_);
 +  testing::Mock::VerifyAndClearExpectations(audio_sink_.get());
 +  EXPECT_TRUE(new_sink->callback());
-+}
-+
- // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
- TEST_F(WebMediaPlayerImplTest, InfiniteDuration) {
-   InitializeWebMediaPlayerImpl();
-@@ -3450,6 +4603,104 @@
-   EXPECT_FALSE(delegate_.ExpireForTesting());
  }
  
+ // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
+@@ -3448,6 +4616,104 @@
+   wmpi_->SetIsEffectivelyFullscreen(
+       WebFullscreenVideoStatus::kFullscreenAndPictureInPictureEnabled);
+   EXPECT_FALSE(delegate_.ExpireForTesting());
++}
++
 +// Parc: Safari's Media Source element takes readyState from the buffered
 +// ranges (WebKit's MediaSource::monitorSourceBuffers): canplay before
 +// canplaythrough, and a seek into buffered data keeps HAVE_ENOUGH_DATA, so
@@ -8572,18 +8966,13 @@
 +  EXPECT_CALL(client_, ReadyStateChanged());
 +  wmpi_->Seek(1.0);
 +  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
-+}
-+
+ }
+ 
  class WebMediaPlayerImplBackgroundBehaviorTest
-     : public WebMediaPlayerImplTest,
-       public WebAudioSourceProviderClient,
-@@ -3812,9 +5063,87 @@
-         EXPECT_FALSE(IsDisableVideoTrackPending());
-       }
-       break;
-+  }
-+}
-+
+@@ -3815,6 +5081,84 @@
+   }
+ }
+ 
 +// Exercise both load types: the optimization runs above renderer selection.
 +TEST_P(WebMediaPlayerImplBackgroundBehaviorTest,
 +       SafariIdentity_KeepsBackgroundVideoTrackSelected) {
@@ -8594,7 +8983,7 @@
 +                         WebMediaPlayer::kLoadTypeMediaSource}) {
 +    SetLoadType(load_type);
 +    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
-   }
++  }
 +}
 +
 +TEST_P(WebMediaPlayerImplBackgroundBehaviorTest,
@@ -8628,8 +9017,8 @@
 +  EXPECT_EQ(IsFrameHiddenAndShouldPauseWhenHidden() ||
 +                !IsBackgroundVideoPlaybackEnabled(),
 +            ShouldPausePlaybackWhenHidden());
- }
- 
++}
++
 +TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_VideoOnly) {
 +  SCOPED_TRACE(testing::Message() << PrintValues());
 +  EXPECT_CALL(client_, PresentsParcSafariIdentity())
@@ -12733,6 +13122,15 @@
    Ranges<base::TimeDelta> GetBufferedTimeRanges() const override;
    base::TimeDelta GetMediaDuration() const override;
    bool DidLoadingProgress() override;
+@@ -147,7 +148,7 @@
+   // Notifications from RendererWrapper.
+   void OnError(PipelineStatus error);
+   void OnFallback(PipelineStatus fallback);
+-  void OnEnded();
++  void OnEnded(bool parc_backward);
+   void OnMetadata(const PipelineMetadata& metadata);
+   void OnBufferingStateChange(BufferingState state,
+                               BufferingStateChangeReason reason);
 @@ -188,6 +189,7 @@
    // SetPlaybackRate() and a task is dispatched on the task runner to notify
    // the filters.
@@ -12754,7 +13152,15 @@
    bool DidLoadingProgress();
 --- a/media/base/pipeline_impl_unittest.cc
 +++ b/media/base/pipeline_impl_unittest.cc
-@@ -82,6 +82,23 @@
+@@ -17,6 +17,7 @@
+ #include "base/run_loop.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/test/gmock_callback_support.h"
++#include "base/test/mock_callback.h"
+ #include "base/test/simple_test_tick_clock.h"
+ #include "base/test/task_environment.h"
+ #include "base/threading/simple_thread.h"
+@@ -82,6 +83,23 @@
  // InitializationComplete(), which keeps the pipeline humming along.  If
  // either filters don't call InitializationComplete() immediately or filter
  // initialization is moved to a separate thread this test will become flaky.
@@ -12778,7 +13184,7 @@
  class PipelineImplTest : public ::testing::Test {
   public:
    // Used for setting expectations on pipeline callbacks.  Using a StrictMock
-@@ -105,7 +122,7 @@
+@@ -105,7 +123,7 @@
    PipelineImplTest()
        : scoped_renderer_(std::make_unique<StrictMock<MockRenderer>>()),
          renderer_(scoped_renderer_->AsWeakPtr()),
@@ -12787,7 +13193,7 @@
      pipeline_ = std::make_unique<PipelineImpl>(
          task_environment_.GetMainThreadTaskRunner(),
          task_environment_.GetMainThreadTaskRunner(),
-@@ -364,7 +381,7 @@
+@@ -364,7 +382,7 @@
    std::unique_ptr<StrictMock<MockDemuxerStream>> audio_stream_;
    std::unique_ptr<StrictMock<MockDemuxerStream>> video_stream_;
    std::vector<raw_ptr<DemuxerStream>> streams_;
@@ -12796,7 +13202,20 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> demuxer_host_ = nullptr;
    raw_ptr<RendererClient, DanglingUntriaged> renderer_client_ = nullptr;
    VideoDecoderConfig video_decoder_config_;
-@@ -528,6 +545,65 @@
+@@ -381,9 +399,10 @@
+ 
+   // Initial value.
+   EXPECT_EQ(0.0f, pipeline_->GetPlaybackRate());
+-  // Invalid values cannot be set.
++  // Parc: a negative rate is kept for the renderer to play backward
++  // (RendererWrapper::ParcRendererRate()); only Safari-identity pages set one.
+   pipeline_->SetPlaybackRate(-1.0);
+-  EXPECT_EQ(0.0f, pipeline_->GetPlaybackRate());
++  EXPECT_EQ(-1.0f, pipeline_->GetPlaybackRate());
+   // Valid settings should work.
+   pipeline_->SetPlaybackRate(1.0);
+   EXPECT_EQ(1.0f, pipeline_->GetPlaybackRate());
+@@ -528,6 +547,65 @@
    StartPipelineAndExpect(PIPELINE_OK);
    EXPECT_TRUE(metadata_.has_audio);
    EXPECT_TRUE(metadata_.has_video);
@@ -12862,7 +13281,7 @@
  }
  
  TEST_F(PipelineImplTest, EncryptedStream_SetCdmBeforeStart) {
-@@ -900,6 +976,50 @@
+@@ -900,6 +978,110 @@
    EXPECT_EQ(kMediaTime, pipeline_->GetMediaTime());
  }
  
@@ -12885,6 +13304,66 @@
 +  EXPECT_CALL(*renderer_, GetMediaTime())
 +      .WillRepeatedly(Return(base::Milliseconds(500)));
 +  EXPECT_EQ(base::Seconds(1), pipeline_->GetMediaTime());
++}
++
++// Parc: a negative rate turns a file's renderer backward through a flush the
++// page doesn't hear as a seek; the demuxer seeks backward playback asks for
++// stay in the pipeline, and a rate of 0 or more turns it forward again from
++// where time stopped.
++TEST_F(PipelineImplTest, ParcFileTurnsBackwardAndForward) {
++  scoped_renderer_ = std::make_unique<StrictMock<MockRenderer>>(
++      RendererType::kRendererImpl);
++  renderer_ = scoped_renderer_->AsWeakPtr();
++  EXPECT_CALL(*renderer_, SetPreservesPitch(true)).Times(AnyNumber());
++  CreateAudioStream();
++  CreateVideoStream();
++  SetDemuxerExpectations();
++  StartPipelineAndExpect(PIPELINE_OK);
++
++  const base::TimeDelta kTime = base::Seconds(5);
++  EXPECT_CALL(*renderer_, GetMediaTime()).WillRepeatedly(Return(kTime));
++  EXPECT_CALL(*demuxer_, SetPlaybackRate(_)).Times(AnyNumber());
++  ParcSeekDemuxerCB seek_demuxer;
++  {
++    testing::InSequence s;
++    EXPECT_CALL(*renderer_, SetPlaybackRate(0.0));
++    EXPECT_CALL(*demuxer_, AbortPendingReads());
++    EXPECT_CALL(*renderer_, OnFlush(_)).WillOnce(RunOnceClosure<0>());
++    EXPECT_CALL(*renderer_, ParcStartPlayingBackwardFrom(kTime, -1.0, _))
++        .WillOnce(DoAll(SaveArg<2>(&seek_demuxer),
++                        SetBufferingState(&renderer_client_,
++                                          BUFFERING_HAVE_ENOUGH,
++                                          BUFFERING_CHANGE_REASON_UNKNOWN)));
++  }
++  pipeline_->SetPlaybackRate(-1);
++  base::RunLoop().RunUntilIdle();
++  ASSERT_TRUE(seek_demuxer);
++
++  base::MockOnceClosure seeked;
++  EXPECT_CALL(*demuxer_, AbortPendingReads());
++  EXPECT_CALL(*demuxer_, OnSeek(base::Seconds(4), _))
++      .WillOnce(RunOnceCallback<1>(PIPELINE_OK));
++  EXPECT_CALL(seeked, Run());
++  seek_demuxer.Run(base::Seconds(4), seeked.Get());
++  base::RunLoop().RunUntilIdle();
++
++  // A pause stays backward.
++  EXPECT_CALL(*renderer_, SetPlaybackRate(0.0));
++  pipeline_->SetPlaybackRate(0);
++  base::RunLoop().RunUntilIdle();
++
++  {
++    testing::InSequence s;
++    EXPECT_CALL(*renderer_, SetPlaybackRate(1.0));
++    EXPECT_CALL(*demuxer_, AbortPendingReads());
++    EXPECT_CALL(*renderer_, OnFlush(_)).WillOnce(RunOnceClosure<0>());
++    EXPECT_CALL(*demuxer_, OnSeek(kTime, _))
++        .WillOnce(RunOnceCallback<1>(PIPELINE_OK));
++    EXPECT_CALL(*renderer_, StartPlayingFrom(kTime));
++    EXPECT_CALL(*renderer_, SetPlaybackRate(1.0));
++  }
++  pipeline_->SetPlaybackRate(1);
++  base::RunLoop().RunUntilIdle();
 +}
 +
 +TEST_F(PipelineImplTest, ParcNativeHlsReverseRateAndClock) {
@@ -14244,10 +14723,36 @@
    virtual ~DemuxerStream();
 --- a/media/renderers/renderer_impl.h
 +++ b/media/renderers/renderer_impl.h
-@@ -205,6 +205,13 @@
-   void OnVideoFrameRateChange(std::optional<int> fps);
+@@ -26,6 +26,8 @@
+ #include "media/base/renderer.h"
+ #include "media/base/tuneable.h"
+ #include "media/base/video_decoder_config.h"
++#include "media/base/video_renderer.h"
++#include "media/base/wall_clock_time_source.h"
+ #include "media/base/waiting.h"
+ #include "ui/gfx/geometry/size.h"
+ 
+@@ -71,6 +73,9 @@
+                        DemuxerStream* enabled_track,
+                        base::OnceClosure change_completed_cb) final;
+   RendererType GetRendererType() final;
++  void ParcStartPlayingBackwardFrom(base::TimeDelta time,
++                                    double playback_rate,
++                                    ParcSeekDemuxerCB seek_demuxer_cb) final;
+ 
+   // Helper functions for testing purposes. Must be called before Initialize().
+   void DisableUnderflowForTesting();
+@@ -206,6 +211,21 @@
  
    void OnStreamRestartCompleted();
+ 
++  // Parc: backward playback's clock, which stops while the video renderer
++  // waits for earlier frames, and its end at the start.
++  void ParcStartBackwardClock();
++  void ParcStopBackwardClock();
++  void ParcScheduleReachStart();
++  void ParcReachStart();
++  void ParcEndBackward();
 +
 +  // Parc: a stream of a type there was no stream for when it initialized
 +  // joins (MediaResource::ParcMayAddStreams()).
@@ -14255,10 +14760,11 @@
 +  void OnParcJoinInitialized(DemuxerStream* stream,
 +                             base::OnceClosure join_completed_cb,
 +                             PipelineStatus status);
- 
++
    State state_;
  
-@@ -222,6 +229,9 @@
+   // Task runner used to execute pipeline tasks.
+@@ -222,6 +242,9 @@
    std::unique_ptr<RendererClientInternal> video_renderer_client_;
    std::unique_ptr<AudioRenderer> audio_renderer_;
    std::unique_ptr<VideoRenderer> video_renderer_;
@@ -14268,9 +14774,36 @@
  
    raw_ptr<DemuxerStream> current_audio_stream_;
    raw_ptr<DemuxerStream> current_video_stream_;
+@@ -272,6 +295,18 @@
+ 
+   bool pending_video_track_change_ = false;
+ 
++  // Parc: playing backward; audio stays flushed. `parc_backward_clock_`
++  // replaces `time_source_` while `parc_backward_clock_used_` (guarded by
++  // `restarting_audio_lock_`, as it's read on other threads).
++  bool parc_backward_ = false;
++  bool parc_backward_clock_used_ = false;
++  bool parc_backward_ticking_ = false;
++  bool parc_backward_reported_ = false;
++  // Time reached the start; it stays there until the rate changes.
++  bool parc_backward_ended_ = false;
++  WallClockTimeSource parc_backward_clock_;
++  base::CancelableOnceClosure parc_reach_start_cb_;
++
+   base::WeakPtr<RendererImpl> weak_this_;
+   base::WeakPtrFactory<RendererImpl> weak_factory_{this};
+ };
 --- a/media/renderers/renderer_impl.cc
 +++ b/media/renderers/renderer_impl.cc
-@@ -132,7 +132,9 @@
+@@ -4,6 +4,7 @@
+ 
+ #include "media/renderers/renderer_impl.h"
+ 
++#include <algorithm>
+ #include <memory>
+ #include <utility>
+ 
+@@ -132,7 +133,9 @@
  
    // Tear down in opposite order of construction as |video_renderer_| can still
    // need |time_source_| (which can be |audio_renderer_|) to be alive.
@@ -14280,7 +14813,7 @@
    audio_renderer_.reset();
  
    if (init_cb_)
-@@ -200,6 +202,13 @@
+@@ -200,6 +203,13 @@
  
    if (audio_renderer_)
      audio_renderer_->SetLatencyHint(latency_hint);
@@ -14294,7 +14827,7 @@
  }
  
  void RendererImpl::SetPreservesPitch(bool preserves_pitch) {
-@@ -208,6 +217,9 @@
+@@ -208,6 +218,9 @@
  
    if (audio_renderer_)
      audio_renderer_->SetPreservesPitch(preserves_pitch);
@@ -14304,29 +14837,60 @@
  }
  
  void RendererImpl::SetRenderMutedAudio(bool render_muted_audio) {
-@@ -217,6 +229,9 @@
+@@ -216,6 +229,9 @@
+ 
    if (audio_renderer_) {
      audio_renderer_->SetRenderMutedAudio(render_muted_audio);
-   }
++  }
 +  if (parc_audio_renderer_) {
 +    parc_audio_renderer_->SetRenderMutedAudio(render_muted_audio);
-+  }
+   }
  }
  
- void RendererImpl::SetWasPlayedWithUserActivationAndHighMediaEngagement(
-@@ -226,7 +241,11 @@
- 
+@@ -227,6 +243,10 @@
    if (audio_renderer_)
      audio_renderer_->SetWasPlayedWithUserActivationAndHighMediaEngagement(
-+        was_played_with_user_activation_and_high_media_engagement);
+         was_played_with_user_activation_and_high_media_engagement);
 +  if (parc_audio_renderer_) {
 +    parc_audio_renderer_->SetWasPlayedWithUserActivationAndHighMediaEngagement(
-         was_played_with_user_activation_and_high_media_engagement);
++        was_played_with_user_activation_and_high_media_engagement);
 +  }
  }
  
  void RendererImpl::Flush(base::OnceClosure flush_cb) {
-@@ -307,20 +326,26 @@
+@@ -249,6 +269,10 @@
+ 
+   flush_cb_ = std::move(flush_cb);
+   state_ = STATE_FLUSHING;
++
++  if (parc_backward_) {
++    ParcEndBackward();
++  }
+ 
+   // If a stream restart is pending, this Flush() will complete it. Upon flush
+   // completion any pending actions will be executed as well.
+@@ -288,6 +312,20 @@
+   if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED)
+     return;
+ 
++  if (parc_backward_) {
++    playback_rate_ = playback_rate;
++    parc_backward_clock_.SetPlaybackRate(playback_rate);
++    if (playback_rate >= 0) {
++      parc_backward_ended_ = false;
++      ParcStopBackwardClock();
++    } else if (!video_renderer_ ||
++               video_buffering_state_ == BUFFERING_HAVE_ENOUGH) {
++      ParcStartBackwardClock();
++    }
++    ParcScheduleReachStart();
++    return;
++  }
++
+   time_source_->SetPlaybackRate(playback_rate);
+ 
+   const double old_rate = playback_rate_;
+@@ -307,20 +345,30 @@
  
    if (audio_renderer_)
      audio_renderer_->SetVolume(volume);
@@ -14345,16 +14909,22 @@
        DCHECK_NE(kNoTimestamp, restarting_audio_time_);
        return restarting_audio_time_;
      }
+-  }
+-
+-  return time_source_->CurrentMediaTime();
++    if (parc_backward_clock_used_) {
++      return std::max(base::TimeDelta(),
++                      parc_backward_clock_.CurrentMediaTime());
++    }
 +    // Parc: a joining audio renderer replaces it (OnParcJoinInitialized()).
 +    time_source = time_source_;
-   }
- 
--  return time_source_->CurrentMediaTime();
++  }
++
 +  return time_source->CurrentMediaTime();
  }
  
  void RendererImpl::DisableUnderflowForTesting() {
-@@ -362,7 +387,12 @@
+@@ -362,7 +410,16 @@
      return true;
    }
  
@@ -14362,13 +14932,17 @@
 +  TimeSource* time_source = nullptr;
 +  {
 +    base::AutoLock lock(restarting_audio_lock_);
++    if (parc_backward_clock_used_) {
++      return parc_backward_clock_.GetWallClockTimes(media_timestamps,
++                                                    wall_clock_times);
++    }
 +    time_source = time_source_;
 +  }
 +  return time_source->GetWallClockTimes(media_timestamps, wall_clock_times);
  }
  
  bool RendererImpl::HasEncryptedStream() {
-@@ -408,6 +438,9 @@
+@@ -408,6 +465,9 @@
    MediaClient* media_client = GetMediaClient();
    if (!audio_stream ||
        (media_client && media_client->ShouldSuppressAudioTracks())) {
@@ -14378,7 +14952,7 @@
      audio_renderer_.reset();
      task_runner_->PostTask(
          FROM_HERE, base::BindOnce(&RendererImpl::OnAudioRendererInitializeDone,
-@@ -459,6 +492,9 @@
+@@ -459,6 +519,9 @@
        media_resource_->GetFirstStream(DemuxerStream::VIDEO);
  
    if (!video_stream) {
@@ -14388,7 +14962,45 @@
      video_renderer_.reset();
  
      // Something has disabled all audio and video streams, so fail
-@@ -1009,6 +1045,13 @@
+@@ -739,6 +802,27 @@
+   TRACE_EVENT2("media", "RendererImpl::OnBufferingStateChange", "type",
+                type_string, "state",
+                BufferingStateToString(new_buffering_state, reason));
++
++  // Parc: playing backward, time waits for the video renderer's earlier
++  // frames without the page hearing about it.
++  if (parc_backward_) {
++    *buffering_state = new_buffering_state;
++    if (type != DemuxerStream::VIDEO || state_ != STATE_PLAYING) {
++      return;
++    }
++    if (new_buffering_state != BUFFERING_HAVE_ENOUGH) {
++      ParcStopBackwardClock();
++      return;
++    }
++    if (playback_rate_ < 0) {
++      ParcStartBackwardClock();
++    }
++    if (!parc_backward_reported_) {
++      parc_backward_reported_ = true;
++      client_->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, reason);
++    }
++    return;
++  }
+ 
+   bool was_waiting_for_enough_data = WaitingForEnoughData();
+ 
+@@ -947,6 +1031,9 @@
+ 
+   const State old_state = state_;
+   state_ = STATE_ERROR;
++  if (parc_backward_) {
++    ParcStopBackwardClock();
++  }
+ 
+   if (init_cb_) {
+     DCHECK(old_state == STATE_INITIALIZING ||
+@@ -1009,6 +1096,13 @@
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
    TRACE_EVENT1("media", "RendererImpl::OnTracksChanged", "track_type",
                 track_type);
@@ -14402,7 +15014,7 @@
    // 'fixing' the stream -> restarting if its the same stream,
    //                        reinitializing if it is different.
    base::OnceClosure fix_stream_cb;
-@@ -1084,6 +1127,88 @@
+@@ -1084,8 +1178,207 @@
    }
  }
  
@@ -14491,12 +15103,182 @@
  RendererType RendererImpl::GetRendererType() {
    return RendererType::kRendererImpl;
  }
+ 
++void RendererImpl::ParcStartPlayingBackwardFrom(
++    base::TimeDelta time,
++    double playback_rate,
++    ParcSeekDemuxerCB seek_demuxer_cb) {
++  DVLOG(1) << __func__ << "(" << time.InMicroseconds() << ", "
++           << playback_rate << ")";
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  DCHECK_LE(playback_rate, 0);
++
++  if (state_ != STATE_FLUSHED) {
++    DCHECK_EQ(state_, STATE_ERROR);
++    return;
++  }
++
++  state_ = STATE_PLAYING;
++  parc_backward_ = true;
++  parc_backward_reported_ = false;
++  parc_backward_ended_ = false;
++  playback_rate_ = playback_rate;
++  parc_backward_clock_.SetMediaTime(time);
++  parc_backward_clock_.SetPlaybackRate(playback_rate);
++  {
++    base::AutoLock lock(restarting_audio_lock_);
++    parc_backward_clock_used_ = true;
++  }
++
++  if (video_renderer_) {
++    video_playing_ = true;
++    video_renderer_->ParcStartPlayingBackwardFrom(time,
++                                                  std::move(seek_demuxer_cb));
++    return;
++  }
++
++  // Audio alone goes back at once, silent.
++  parc_backward_reported_ = true;
++  if (playback_rate < 0) {
++    ParcStartBackwardClock();
++  }
++  task_runner_->PostTask(
++      FROM_HERE, base::BindOnce(
++                     [](base::WeakPtr<RendererImpl> renderer) {
++                       if (renderer && renderer->parc_backward_ &&
++                           renderer->state_ == STATE_PLAYING) {
++                         renderer->client_->OnBufferingStateChange(
++                             BUFFERING_HAVE_ENOUGH,
++                             BUFFERING_CHANGE_REASON_UNKNOWN);
++                       }
++                     },
++                     weak_this_));
++}
++
++void RendererImpl::ParcStartBackwardClock() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  DCHECK(parc_backward_);
++  if (parc_backward_ticking_ || parc_backward_ended_) {
++    return;
++  }
++  parc_backward_ticking_ = true;
++  parc_backward_clock_.StartTicking();
++  if (video_renderer_) {
++    video_renderer_->OnTimeProgressing();
++  }
++  ParcScheduleReachStart();
++}
++
++void RendererImpl::ParcStopBackwardClock() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  parc_reach_start_cb_.Cancel();
++  if (!parc_backward_ticking_) {
++    return;
++  }
++  parc_backward_ticking_ = false;
++  parc_backward_clock_.StopTicking();
++  if (video_renderer_) {
++    video_renderer_->OnTimeStopped();
++  }
++}
++
++void RendererImpl::ParcScheduleReachStart() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  parc_reach_start_cb_.Cancel();
++  if (!parc_backward_ticking_ || playback_rate_ >= 0) {
++    return;
++  }
++  const base::TimeDelta left = parc_backward_clock_.CurrentMediaTime();
++  parc_reach_start_cb_.Reset(
++      base::BindOnce(&RendererImpl::ParcReachStart, weak_this_));
++  task_runner_->PostDelayedTask(
++      FROM_HERE, parc_reach_start_cb_.callback(),
++      std::max(base::TimeDelta(), left / -playback_rate_));
++}
++
++// WebKit hears AVPlayerItemDidPlayToEndTime at the start too, and its element
++// ends there (MediaPlayerPrivateAVFoundation::didEnd).
++void RendererImpl::ParcReachStart() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  if (parc_backward_clock_.CurrentMediaTime().is_positive()) {
++    ParcScheduleReachStart();
++    return;
++  }
++  ParcStopBackwardClock();
++  parc_backward_clock_.SetMediaTime(base::TimeDelta());
++  parc_backward_ended_ = true;
++  client_->OnEnded();
++}
++
++void RendererImpl::ParcEndBackward() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  ParcStopBackwardClock();
++  parc_backward_ = false;
++  // Audio is flushed, so its clock takes over where time stopped.
++  time_source_->SetMediaTime(std::max(
++      base::TimeDelta(), parc_backward_clock_.CurrentMediaTime()));
++  base::AutoLock lock(restarting_audio_lock_);
++  parc_backward_clock_used_ = false;
++}
++
+ }  // namespace media
 --- a/media/renderers/renderer_impl_unittest.cc
 +++ b/media/renderers/renderer_impl_unittest.cc
-@@ -1191,5 +1191,134 @@
-   Play(/*expect_audio=*/false);
+@@ -1192,4 +1192,185 @@
    Mock::VerifyAndClearExpectations(&time_source_);
  }
+ 
++// Parc: playing backward (Safari's AVPlayer rewinding a file), audio stays
++// flushed and silent, time waits for the video renderer's earlier frames
++// without the page hearing it, and the start ends playback, as WebKit hears
++// AVPlayerItemDidPlayToEndTime there (MediaPlayerPrivateAVFoundation::didEnd).
++TEST_F(RendererImplTest, ParcPlaysBackwardSilentlyAndEndsAtTheStart) {
++  InitializeWithAudioAndVideo();
++  Play();
++  Flush(false);
++
++  EXPECT_CALL(*audio_renderer_, StartPlaying()).Times(0);
++  EXPECT_CALL(*video_renderer_, OnTimeProgressing()).Times(3);
++  EXPECT_CALL(*video_renderer_, OnTimeStopped()).Times(3);
++  EXPECT_CALL(callbacks_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _))
++      .Times(2);
++  EXPECT_CALL(*video_renderer_,
++              ParcStartPlayingBackwardFrom(base::Milliseconds(50), _));
++  renderer_impl_->ParcStartPlayingBackwardFrom(base::Milliseconds(50), -1,
++                                               base::DoNothing());
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(base::Milliseconds(50), renderer_impl_->GetMediaTime());
++
++  video_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++  EXPECT_LE(renderer_impl_->GetMediaTime(), base::Milliseconds(50));
++  video_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_NOTHING, BUFFERING_CHANGE_REASON_UNKNOWN);
++  video_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++
++  // A flush gives the audio clock the time backward playback reached.
++  EXPECT_CALL(time_source_, SetMediaTime(testing::Le(base::Milliseconds(50))));
++  EXPECT_CALL(*video_renderer_, Flush(_));
++  EXPECT_CALL(callbacks_, OnFlushed());
++  renderer_impl_->Flush(base::BindOnce(&CallbackHelper::OnFlushed,
++                                       base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++
++  // Time goes back to 0, where playback ends once.
++  EXPECT_CALL(*video_renderer_,
++              ParcStartPlayingBackwardFrom(base::Milliseconds(10), _));
++  renderer_impl_->ParcStartPlayingBackwardFrom(base::Milliseconds(10), -1,
++                                               base::DoNothing());
++  base::RunLoop ended;
++  EXPECT_CALL(callbacks_, OnEnded()).WillOnce(RunClosure(ended.QuitClosure()));
++  video_renderer_client_->OnBufferingStateChange(
++      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
++  ended.Run();
++  EXPECT_EQ(base::TimeDelta(), renderer_impl_->GetMediaTime());
++  renderer_impl_->SetPlaybackRate(-2);
++  base::RunLoop().RunUntilIdle();
++}
 +
 +// Parc: a demuxer whose streams may join a playing renderer (Safari's Media
 +// Source, MediaResource::ParcMayAddStreams()).
@@ -14556,7 +15338,7 @@
 +                     base::Unretained(&callbacks_)));
 +  base::RunLoop().RunUntilIdle();
 +  Mock::VerifyAndClearExpectations(&time_source_);
- 
++
 +  EXPECT_CALL(audio_time_source, StartTicking());
 +  EXPECT_CALL(*video_renderer_, OnTimeProgressing());
 +  EXPECT_CALL(callbacks_,
@@ -14624,6 +15406,631 @@
 +  video_renderer_client_->OnBufferingStateChange(
 +      BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
 +  base::RunLoop().RunUntilIdle();
++  Destroy();
++}
++
+ }  // namespace media
+--- a/media/base/video_renderer.h
++++ b/media/base/video_renderer.h
+@@ -7,7 +7,8 @@
+ 
+ #include <optional>
+ 
+-#include "base/functional/callback_forward.h"
++#include "base/functional/callback.h"
++#include "base/time/time.h"
+ #include "media/base/media_export.h"
+ #include "media/base/pipeline_status.h"
+ #include "media/base/time_source.h"
+@@ -17,6 +18,11 @@
+ class CdmContext;
+ class DemuxerStream;
+ class RendererClient;
++
++// Parc: moves the demuxer to a time for a renderer playing backward, then runs
++// the closure.
++using ParcSeekDemuxerCB =
++    base::RepeatingCallback<void(base::TimeDelta, base::OnceClosure)>;
+ 
+ class MEDIA_EXPORT VideoRenderer {
+  public:
+@@ -71,6 +77,12 @@
+   // |latency_hint| may be nullopt to indicate the hint has been cleared
+   // (restore UA default).
+   virtual void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) = 0;
++
++  // Parc: like StartPlayingFrom(), but shows frames at and before `timestamp`
++  // going backward (Renderer::ParcStartPlayingBackwardFrom()).
++  virtual void ParcStartPlayingBackwardFrom(base::TimeDelta timestamp,
++                                            ParcSeekDemuxerCB seek_demuxer_cb) {
++  }
+ };
+ 
+ }  // namespace media
+--- a/media/base/wall_clock_time_source.cc
++++ b/media/base/wall_clock_time_source.cc
+@@ -62,7 +62,10 @@
+ base::TimeDelta WallClockTimeSource::CurrentMediaTime() {
+   base::AutoLock auto_lock(lock_);
+   const base::TimeDelta current_time = CurrentMediaTime_Locked();
+-  if (base::FeatureList::IsEnabled(kCoarseWallClockTimeSource)) {
++  // Parc: time going backward (RendererImpl's backward playback) would stay at
++  // `seek_time_`.
++  if (base::FeatureList::IsEnabled(kCoarseWallClockTimeSource) &&
++      playback_rate_ >= 0) {
+     return std::max(seek_time_,
+                     current_time.FloorToMultiple(kCoarseResolution));
+   }
+--- a/media/base/mock_filters.h
++++ b/media/base/mock_filters.h
+@@ -467,6 +467,9 @@
+   MOCK_METHOD0(OnTimeStopped, void());
+   MOCK_METHOD1(SetLatencyHint,
+                void(std::optional<base::TimeDelta> latency_hint));
++  MOCK_METHOD2(ParcStartPlayingBackwardFrom,
++               void(base::TimeDelta timestamp,
++                    ParcSeekDemuxerCB seek_demuxer_cb));
+ };
+ 
+ class MockAudioRenderer : public AudioRenderer {
+@@ -543,6 +546,10 @@
+   MOCK_METHOD2(OnSelectedAudioTracksChanged,
+                void(std::vector<raw_ptr<DemuxerStream>>, base::OnceClosure));
+   RendererType GetRendererType() override { return renderer_type_; }
++  MOCK_METHOD3(ParcStartPlayingBackwardFrom,
++               void(base::TimeDelta time,
++                    double playback_rate,
++                    ParcSeekDemuxerCB seek_demuxer_cb));
+ 
+   base::WeakPtr<MockRenderer> AsWeakPtr() {
+     return weak_ptr_factory_.GetWeakPtr();
+--- a/media/renderers/video_renderer_impl.h
++++ b/media/renderers/video_renderer_impl.h
+@@ -9,6 +9,7 @@
+ #include <stdint.h>
+ 
+ #include <memory>
++#include <vector>
+ 
+ #include "base/cancelable_callback.h"
+ #include "base/memory/raw_ptr.h"
+@@ -81,6 +82,8 @@
+   void OnTimeProgressing() override;
+   void OnTimeStopped() override;
+   void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) override;
++  void ParcStartPlayingBackwardFrom(base::TimeDelta timestamp,
++                                    ParcSeekDemuxerCB seek_demuxer_cb) override;
+ 
+   void SetTickClockForTesting(const base::TickClock* tick_clock);
+   size_t frames_queued_for_testing() const {
+@@ -213,6 +216,17 @@
+   // called on |task_runner_|.
+   void AttemptReadAndCheckForMetadataChanges(VideoPixelFormat pixel_format,
+                                              const gfx::Size& natural_size);
++
++  // Parc: backward playback. Each window holds the decoded frames with
++  // timestamps at or before an end, in ascending order: one is shown while the
++  // one before it is decoded from its preceding keyframe after a demuxer seek.
++  void ParcDecodeWindowEndingAt_Locked(base::TimeDelta end);
++  void ParcOnDemuxerSeeked();
++  void ParcOnDecoderStreamReset();
++  void ParcFrameReady_Locked(scoped_refptr<VideoFrame> frame);
++  void ParcFinishWindow_Locked();
++  scoped_refptr<VideoFrame> ParcRender_Locked(base::TimeTicks deadline_min);
++  void ParcStall();
+ 
+   // Paints first frame and sets `painted_first_frame_` to true if
+   // `painted_first_frame_` is false.
+@@ -379,6 +393,22 @@
+   // one MEDIA_LOG.
+   bool is_latency_hint_media_logged_ = false;
+ 
++  // Parc: backward playback state (ParcDecodeWindowEndingAt_Locked()).
++  bool parc_backward_ = false;
++  ParcSeekDemuxerCB parc_seek_demuxer_cb_;
++  std::vector<scoped_refptr<VideoFrame>> parc_shown_;
++  std::vector<scoped_refptr<VideoFrame>> parc_decoded_;
++  size_t parc_decoded_bytes_ = 0;
++  base::TimeDelta parc_window_end_;
++  // A window is being decoded; its demuxer seek or stream reset is pending.
++  bool parc_decoding_ = false;
++  bool parc_seeking_ = false;
++  bool parc_resetting_ = false;
++  // Time went below the shown window's first frame.
++  bool parc_shown_passed_ = false;
++  // No frame comes before the shown window.
++  bool parc_at_start_ = false;
++
+   // NOTE: Weak pointers must be invalidated before all other member variables.
+   base::WeakPtrFactory<VideoRendererImpl> weak_factory_{this};
+ 
+--- a/media/renderers/video_renderer_impl.cc
++++ b/media/renderers/video_renderer_impl.cc
+@@ -46,6 +46,10 @@
+ // Today, |min_buffered_frames_| can go down (as low as 1) and up in response to
+ // SetLatencyHint(), so we needed to peg this with a constant.
+ constexpr int kAbsoluteMaxFrames = 24;
++
++// Parc: bounds on one backward playback window; two are held at once.
++constexpr size_t kParcMaxWindowFrames = 64;
++constexpr size_t kParcMaxWindowBytes = 96 * 1024 * 1024;
+ 
+ }  // namespace
+ 
+@@ -119,6 +123,15 @@
+   }
+   received_end_of_stream_ = false;
+   rendered_end_of_stream_ = false;
++  parc_backward_ = false;
++  parc_seek_demuxer_cb_.Reset();
++  parc_shown_.clear();
++  parc_decoded_.clear();
++  parc_decoded_bytes_ = 0;
++  parc_decoding_ = false;
++  parc_seeking_ = false;
++  parc_shown_passed_ = false;
++  parc_at_start_ = false;
+ 
+   // Reset |video_decoder_stream_| and drop any pending read callbacks from it.
+   pending_read_ = false;
+@@ -127,9 +140,12 @@
+   }
+   cancel_on_flush_weak_factory_.InvalidateWeakPtrs();
+   paint_first_frame_cb_.Cancel();
+-  video_decoder_stream_->Reset(
+-      base::BindOnce(&VideoRendererImpl::OnVideoDecoderStreamResetDone,
+-                     weak_factory_.GetWeakPtr()));
++  // Parc: a reset a backward window started finishes the flush instead.
++  if (!parc_resetting_) {
++    video_decoder_stream_->Reset(
++        base::BindOnce(&VideoRendererImpl::OnVideoDecoderStreamResetDone,
++                       weak_factory_.GetWeakPtr()));
++  }
+ 
+   // To avoid unnecessary work by VDAs, only delete queued frames after
+   // resetting |video_decoder_stream_|. If this is done in the opposite order
+@@ -160,6 +176,23 @@
+   last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
+   video_decoder_stream_->SkipPrepareUntil(start_timestamp_);
+   AttemptRead_Locked();
++}
++
++void VideoRendererImpl::ParcStartPlayingBackwardFrom(
++    base::TimeDelta timestamp,
++    ParcSeekDemuxerCB seek_demuxer_cb) {
++  DVLOG(1) << __func__ << "(" << timestamp.InMicroseconds() << ")";
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  base::AutoLock auto_lock(lock_);
++  DCHECK_EQ(state_, kFlushed);
++  DCHECK(!pending_read_);
++  DCHECK_EQ(buffering_state_, BUFFERING_HAVE_NOTHING);
++
++  state_ = kPlaying;
++  parc_backward_ = true;
++  parc_seek_demuxer_cb_ = std::move(seek_demuxer_cb);
++  last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
++  ParcDecodeWindowEndingAt_Locked(timestamp);
+ }
+ 
+ void VideoRendererImpl::Initialize(
+@@ -248,6 +281,18 @@
+                                last_frame_ready_time_ >= last_render_time_);
+ 
+   last_render_time_ = tick_clock_->NowTicks();
++
++  if (parc_backward_) {
++    scoped_refptr<VideoFrame> frame = ParcRender_Locked(deadline_min);
++    task_runner_->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            &VideoRendererImpl::AttemptReadAndCheckForMetadataChanges,
++            weak_factory_.GetWeakPtr(), frame->format(),
++            frame->natural_size()));
++    TRACE_EVENT_END("media", "frame", frame->AsHumanReadableString());
++    return frame;
++  }
+ 
+   size_t frames_dropped = 0;
+   scoped_refptr<VideoFrame> result =
+@@ -297,6 +342,9 @@
+ 
+ void VideoRendererImpl::OnFrameDropped() {
+   base::AutoLock auto_lock(lock_);
++  if (parc_backward_) {
++    return;
++  }
+   algorithm_->OnLastFrameDropped();
+ }
+ 
+@@ -431,6 +479,14 @@
+   if (rendered_end_of_stream_)
+     return;
+ 
++  if (parc_backward_) {
++    // Render() isn't running, so `parc_shown_` is only changed here.
++    if (!parc_shown_.empty()) {
++      StartSink();
++    }
++    return;
++  }
++
+   // If we have no frames queued, there is a pending buffering state change in
+   // flight and we should ignore the start attempt.
+   if (!algorithm_->frames_queued()) {
+@@ -453,6 +509,10 @@
+     return;
+ 
+   StopSink();
++
++  if (parc_backward_) {
++    return;
++  }
+ 
+   // Make sure we expire everything we can if we can't read any more currently,
+   // otherwise playback may hang indefinitely.  Note: There are no effective
+@@ -633,6 +693,11 @@
+   last_frame_ready_time_ = tick_clock_->NowTicks();
+   last_decoder_stream_avg_duration_ = video_decoder_stream_->AverageDuration();
+ 
++  if (parc_backward_) {
++    ParcFrameReady_Locked(std::move(frame));
++    return;
++  }
++
+   const bool is_eos = frame->metadata().end_of_stream;
+   const bool is_before_start_time = !is_eos && IsBeforeStartTime(*frame);
+   const bool cant_read = !video_decoder_stream_->CanReadWithoutStalling();
+@@ -820,6 +885,11 @@
+   if (pending_read_ || received_end_of_stream_)
+     return;
+ 
++  if (parc_seeking_ || parc_resetting_ ||
++      (parc_backward_ && !parc_decoding_)) {
++    return;
++  }
++
+   if (HaveReachedBufferingCap(max_buffered_frames_))
+     return;
+ 
+@@ -910,7 +980,7 @@
+ 
+ void VideoRendererImpl::StartSink() {
+   DCHECK(task_runner_->RunsTasksInCurrentSequence());
+-  DCHECK_GT(algorithm_->frames_queued(), 0u);
++  DCHECK(parc_backward_ || algorithm_->frames_queued());
+   sink_started_ = true;
+   was_background_rendering_ = false;
+   sink_->Start(this);
+@@ -1121,4 +1191,181 @@
+   paint_first_frame_cb_.Cancel();
+ }
+ 
++void VideoRendererImpl::ParcDecodeWindowEndingAt_Locked(base::TimeDelta end) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  lock_.AssertAcquired();
++  DCHECK(parc_backward_);
++  DCHECK(!parc_decoding_);
++
++  parc_decoded_.clear();
++  parc_decoded_bytes_ = 0;
++  parc_window_end_ = end;
++  if (end.is_negative()) {
++    parc_at_start_ = true;
++    return;
++  }
++
++  // The window is decoded forward from the keyframe at or before its end; no
++  // read starts before the stream is reset after the seek.
++  parc_decoding_ = true;
++  parc_seeking_ = true;
++  pending_read_ = false;
++  if (mappable_shared_image_pool_) {
++    mappable_shared_image_pool_->Abort();
++  }
++  cancel_on_flush_weak_factory_.InvalidateWeakPtrs();
++  base::OnceClosure seeked =
++      base::BindOnce(&VideoRendererImpl::ParcOnDemuxerSeeked,
++                     cancel_on_flush_weak_factory_.GetWeakPtr());
++  task_runner_->PostTask(FROM_HERE, base::BindOnce(parc_seek_demuxer_cb_, end,
++                                                   std::move(seeked)));
++}
++
++void VideoRendererImpl::ParcOnDemuxerSeeked() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  base::AutoLock auto_lock(lock_);
++  DCHECK(parc_decoding_);
++  DCHECK(!parc_resetting_);
++  parc_seeking_ = false;
++  parc_resetting_ = true;
++  video_decoder_stream_->Reset(
++      base::BindOnce(&VideoRendererImpl::ParcOnDecoderStreamReset,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void VideoRendererImpl::ParcOnDecoderStreamReset() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  {
++    base::AutoLock auto_lock(lock_);
++    parc_resetting_ = false;
++    if (state_ != kFlushing) {
++      AttemptRead_Locked();
++      return;
++    }
++  }
++  OnVideoDecoderStreamResetDone();
++}
++
++void VideoRendererImpl::ParcFrameReady_Locked(scoped_refptr<VideoFrame> frame) {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  lock_.AssertAcquired();
++
++  if (frame->metadata().end_of_stream ||
++      frame->timestamp() > parc_window_end_) {
++    ParcFinishWindow_Locked();
++    return;
++  }
++
++  ++stats_.video_frames_decoded;
++  if (frame->metadata().power_efficient) {
++    ++stats_.video_frames_decoded_power_efficient;
++  }
++
++  // Only the frames closest to the end are kept; the next window ends before
++  // the first of them.
++  auto it = std::upper_bound(
++      parc_decoded_.begin(), parc_decoded_.end(), frame->timestamp(),
++      [](base::TimeDelta timestamp, const scoped_refptr<VideoFrame>& other) {
++        return timestamp < other->timestamp();
++      });
++  parc_decoded_bytes_ +=
++      VideoFrame::AllocationSize(frame->format(), frame->coded_size());
++  parc_decoded_.insert(it, std::move(frame));
++  while (parc_decoded_.size() > kParcMaxWindowFrames ||
++         (parc_decoded_.size() > 1 &&
++          parc_decoded_bytes_ > kParcMaxWindowBytes)) {
++    const VideoFrame& first = *parc_decoded_.front();
++    parc_decoded_bytes_ -=
++        VideoFrame::AllocationSize(first.format(), first.coded_size());
++    parc_decoded_.erase(parc_decoded_.begin());
++  }
++
++  UpdateStats_Locked();
++  AttemptRead_Locked();
++}
++
++void VideoRendererImpl::ParcFinishWindow_Locked() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  lock_.AssertAcquired();
++
++  parc_decoding_ = false;
++  if (parc_decoded_.empty()) {
++    parc_at_start_ = true;
++  }
++
++  // The shown window stays until time passes below it (ParcRender_Locked()).
++  if (!parc_shown_.empty() && !parc_shown_passed_) {
++    return;
++  }
++
++  if (!parc_decoded_.empty()) {
++    parc_shown_ = std::move(parc_decoded_);
++    parc_decoded_.clear();
++    parc_decoded_bytes_ = 0;
++    parc_shown_passed_ = false;
++    ParcDecodeWindowEndingAt_Locked(parc_shown_.front()->timestamp() -
++                                    base::Microseconds(1));
++  }
++
++  if (buffering_state_ == BUFFERING_HAVE_NOTHING) {
++    TransitionToHaveEnough_Locked();
++  }
++}
++
++scoped_refptr<VideoFrame> VideoRendererImpl::ParcRender_Locked(
++    base::TimeTicks deadline_min) {
++  lock_.AssertAcquired();
++  DCHECK(!parc_shown_.empty());
++
++  std::vector<base::TimeDelta> timestamps;
++  timestamps.reserve(parc_shown_.size());
++  for (const auto& frame : parc_shown_) {
++    timestamps.push_back(frame->timestamp());
++  }
++  std::vector<base::TimeTicks> wall_clock_times;
++  wall_clock_time_cb_.Run(timestamps, &wall_clock_times);
++
++  // Going backward, time reaches a frame's timestamp after the later frames':
++  // the current frame is the latest one whose timestamp time hasn't passed.
++  size_t current = parc_shown_.size();
++  while (current > 0 && wall_clock_times[current - 1] < deadline_min) {
++    --current;
++  }
++  if (current == 0) {
++    current = 1;
++    if (!parc_shown_passed_) {
++      parc_shown_passed_ = true;
++      task_runner_->PostTask(FROM_HERE,
++                             base::BindOnce(&VideoRendererImpl::ParcStall,
++                                            weak_factory_.GetWeakPtr()));
++    }
++  }
++
++  // The frames after it have been shown.
++  parc_shown_.resize(current);
++  return parc_shown_.back();
++}
++
++void VideoRendererImpl::ParcStall() {
++  DCHECK(task_runner_->RunsTasksInCurrentSequence());
++  base::AutoLock auto_lock(lock_);
++  if (!parc_backward_ || !parc_shown_passed_ || parc_at_start_) {
++    return;
++  }
++
++  if (!parc_decoding_) {
++    ParcFinishWindow_Locked();
++    return;
++  }
++
++  // Time waits for the window before (RendererImpl stops its clock).
++  if (buffering_state_ == BUFFERING_HAVE_ENOUGH) {
++    buffering_state_ = BUFFERING_HAVE_NOTHING;
++    task_runner_->PostTask(
++        FROM_HERE,
++        base::BindOnce(&VideoRendererImpl::OnBufferingStateChange,
++                       weak_factory_.GetWeakPtr(), buffering_state_));
++  }
++}
++
+ }  // namespace media
+--- a/media/renderers/video_renderer_impl_unittest.cc
++++ b/media/renderers/video_renderer_impl_unittest.cc
+@@ -2017,4 +2017,149 @@
+   Destroy();
+ }
+ 
++// Parc: Safari's AVPlayer rewinds a file. Each window is decoded forward from
++// the keyframe at or before its end after a demuxer seek, and shown latest
++// frame first; the window before is decoded meanwhile.
++TEST_F(VideoRendererImplTest, ParcPlaysBackwardWindowByWindow) {
++  Initialize();
++  std::vector<base::TimeDelta> seeks;
++  base::OnceClosure seek_done;
++  auto seek_demuxer = base::BindLambdaForTesting(
++      [&](base::TimeDelta time, base::OnceClosure done) {
++        seeks.push_back(time);
++        seek_done = std::move(done);
++      });
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnVideoNaturalSizeChange(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnVideoOpacityChange(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++
++  renderer_->ParcStartPlayingBackwardFrom(base::Milliseconds(35),
++                                          seek_demuxer);
++  base::RunLoop().RunUntilIdle();
++  ASSERT_EQ(seeks, std::vector<base::TimeDelta>{base::Milliseconds(35)});
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  // The frame after the end closes the window.
++  QueueFrames("20 30 40");
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++
++  ASSERT_EQ(seeks.size(), 2u);
++  EXPECT_EQ(seeks[1], base::Milliseconds(20) - base::Microseconds(1));
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  QueueFrames("0 10 20");
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++
++  {
++    testing::InSequence in_sequence;
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(30)));
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(20)));
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(10)));
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(0)));
++  }
++  time_source_.SetMediaTime(base::Milliseconds(35));
++  time_source_.SetPlaybackRate(-0.25);
++  time_source_.StartTicking();
++  renderer_->OnTimeProgressing();
++  base::RunLoop().RunUntilIdle();
++  for (int i = 0; i < 8; ++i) {
++    AdvanceWallclockTimeInMs(17);
++    task_environment_.FastForwardBy(base::Milliseconds(17));
++  }
++  // Nothing comes before 0.
++  EXPECT_EQ(seeks.size(), 2u);
++  Destroy();
++}
++
++// Parc: when time passes a window before the one before it is decoded, time
++// waits for it (RendererImpl stops its clock on BUFFERING_HAVE_NOTHING).
++TEST_F(VideoRendererImplTest, ParcBackwardWaitsForTheWindowBefore) {
++  Initialize();
++  std::vector<base::TimeDelta> seeks;
++  base::OnceClosure seek_done;
++  auto seek_demuxer = base::BindLambdaForTesting(
++      [&](base::TimeDelta time, base::OnceClosure done) {
++        seeks.push_back(time);
++        seek_done = std::move(done);
++      });
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnVideoNaturalSizeChange(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnVideoOpacityChange(_)).Times(AnyNumber());
++  {
++    testing::InSequence in_sequence;
++    EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(30)));
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(20)));
++    EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_NOTHING, _));
++    EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++    EXPECT_CALL(mock_cb_, FrameReceived(HasTimestampMatcher(10)));
++  }
++
++  renderer_->ParcStartPlayingBackwardFrom(base::Milliseconds(35),
++                                          seek_demuxer);
++  base::RunLoop().RunUntilIdle();
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  QueueFrames("20 30 40");
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++  ASSERT_EQ(seeks.size(), 2u);
++
++  time_source_.SetMediaTime(base::Milliseconds(35));
++  time_source_.SetPlaybackRate(-1);
++  time_source_.StartTicking();
++  renderer_->OnTimeProgressing();
++  base::RunLoop().RunUntilIdle();
++  AdvanceWallclockTimeInMs(17);
++  task_environment_.FastForwardBy(base::Milliseconds(17));
++  time_source_.StopTicking();
++  renderer_->OnTimeStopped();
++
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  QueueFrames("0 10 20");
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++  time_source_.StartTicking();
++  renderer_->OnTimeProgressing();
++  base::RunLoop().RunUntilIdle();
++  Destroy();
++}
++
++// Parc: a window keeps only the frames closest to its end, so a long group
++// of pictures is decoded again from its keyframe for the window before.
++TEST_F(VideoRendererImplTest, ParcBackwardWindowIsBounded) {
++  Initialize();
++  std::vector<base::TimeDelta> seeks;
++  base::OnceClosure seek_done;
++  auto seek_demuxer = base::BindLambdaForTesting(
++      [&](base::TimeDelta time, base::OnceClosure done) {
++        seeks.push_back(time);
++        seek_done = std::move(done);
++      });
++  EXPECT_CALL(mock_cb_, OnStatisticsUpdate(_)).Times(AnyNumber());
++  EXPECT_CALL(mock_cb_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++
++  renderer_->ParcStartPlayingBackwardFrom(base::Milliseconds(685),
++                                          seek_demuxer);
++  base::RunLoop().RunUntilIdle();
++  std::move(seek_done).Run();
++  WaitForPendingDecode();
++  std::string frames;
++  for (int ms = 0; ms <= 690; ms += 10) {
++    frames += base::NumberToString(ms) + " ";
++  }
++  QueueFrames(frames);
++  SatisfyPendingDecode();
++  base::RunLoop().RunUntilIdle();
++
++  // 64 frames, 50 to 680.
++  ASSERT_EQ(seeks.size(), 2u);
++  EXPECT_EQ(seeks[1], base::Milliseconds(50) - base::Microseconds(1));
 +  Destroy();
 +}
 +
