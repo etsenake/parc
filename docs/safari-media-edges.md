@@ -426,7 +426,23 @@ lacks a declared codec's track). WebKit never compares them
 (`SourceBuffer.cpp:780-1090`, `SourceBufferPrivate.cpp:910-990`): it fails
 only an init segment with no tracks, a later one whose track counts differ,
 or unknown ids among several tracks of a type. Sites with loose codec
-strings play in Safari and fail in Parc. **In progress** (fix agent SBS-1).
+strings play in Safari and fail in Parc. **Fixed** 165f1260 (also in the MP4
+parser, which separately refused undeclared audio codecs). Text-track counts,
+which WebKit also compares, never differ: Safari's Media Source reports no
+text tracks either (`TextTracksInMSEEnabled` false). On FairPlay players a
+later init segment may now switch codec without `changeType()`; a switch to
+a codec the FairPlay renderer can't play is a playback error where Safari
+plays it (the renderer's known codec gap).
+
+**SBS-2. MPEG-2 TS in Media Source.** Parc's engine builds Chromium's TS
+parser and answers `video/mp2t` with H.264, AAC or MP3
+(`media_source.cc:66-88, 568-582`), and that parser drops streams the type
+didn't declare. Safari takes TS through `AVStreamDataParser`
+(`SourceBufferParser.cpp:43-58`, `SourceBufferParserAVFObjC.mm:204-214`,
+`AVStreamDataParserMIMETypeCache.mm:55-120`), whose type list on this Mac
+includes `video/mp2t`, `video/x-mp2t`, `video/m2ts` and `video/x-m2ts`
+(checked with `[AVStreamDataParser audiovisualMIMETypes]`, macOS 27.2), and
+parses every stream. **In progress** (fix agent SBS-2).
 
 Clear Dolby Vision in Media Source (`:675-698`) is **handled** on
 Safari-identity pages (`ParcSetClearDolbyVisionAllowed`). In-band text
