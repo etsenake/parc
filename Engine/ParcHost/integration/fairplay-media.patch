@@ -813,7 +813,7 @@
        web_frame, client, encrypted_client, delegate,
        std::move(factory_selector), std::move(submitter), std::move(media_log),
        player_id,
-@@ -497,6 +495,79 @@
+@@ -497,6 +495,95 @@
        blink::Platform::Current()->GetBrowserInterfaceBroker());
  }
  
@@ -833,51 +833,67 @@
 +      render_frame_->GetWebView()->MainFrame()->GetFrameToken(),
 +      media::AudioSinkParameters(/*session_id=*/base::UnguessableToken(),
 +                                 sink_id.Utf8()));
-+  // CreateRendererFactorySelector() made the factories with the other frame's
-+  // decoder and interface factories, which go with that frame. FairPlay
-+  // renderers made here find a CDM another frame of the process made
-+  // (MojoCdmServiceContext::GetCdmContextRef) and get this frame's tab mute,
-+  // which the one playing follows too (CreateMuteStateHandoff).
-+  services.move_factories = base::BindOnce(
-+      [](media::DecoderFactory* decoder_factory,
-+         media::mojom::InterfaceFactory* interface_factory,
-+         scoped_refptr<base::SingleThreadTaskRunner> log_task_runner,
-+         blink::MediaInspectorContext* inspector_context,
-+         media::RendererFactorySelector& selector, media::MediaLog& media_log) {
-+        if (auto* factory =
-+                selector.GetFactory(media::RendererType::kRendererImpl)) {
-+          static_cast<media::RendererImplFactory*>(factory)
-+              ->ParcSetDecoderFactory(decoder_factory);
-+        }
++  // Unretained: the player runs it within ParcMoveToFrame().
++  services.move_factories =
++      base::BindOnce(&MediaFactory::ParcMoveRendererFactories,
++                     base::Unretained(this), inspector_context);
++  return player.ParcMoveToFrame(std::move(services));
++}
++
++// CreateRendererFactorySelector() made the factories with the other frame's
++// decoder, interface and remoter factories, which go with that frame. FairPlay
++// renderers made here find a CDM another frame of the process made
++// (MojoCdmServiceContext::GetCdmContextRef) and get this frame's tab mute,
++// which the one playing follows too (CreateMuteStateHandoff). Remoting goes
++// through this frame's tab.
++void MediaFactory::ParcMoveRendererFactories(
++    blink::MediaInspectorContext* inspector_context,
++    media::RendererFactorySelector& selector,
++    media::MediaLog& media_log) {
++  if (auto* factory = selector.GetFactory(media::RendererType::kRendererImpl)) {
++    static_cast<media::RendererImplFactory*>(factory)->ParcSetDecoderFactory(
++        decoder_factory_.get());
++  }
 +#if BUILDFLAG(IS_MAC)
-+        auto follow_mute_state = [interface_factory](auto* factory) {
-+          if (auto target = factory->ParcMuteStateHandoffTarget()) {
-+            interface_factory->CreateMuteStateHandoff(std::move(target));
-+          }
-+        };
-+        if (auto* factory =
-+                selector.GetFactory(media::RendererType::kFairPlay)) {
-+          auto* fairplay_factory =
-+              static_cast<media::FairPlayRendererClientFactory*>(factory);
-+          fairplay_factory->mojo_renderer_factory()->ParcSetInterfaceFactory(
-+              interface_factory);
-+          follow_mute_state(fairplay_factory);
-+        }
-+        if (auto* factory =
-+                selector.GetFactory(media::RendererType::kFairPlayHls)) {
-+          auto* native_hls_factory =
-+              static_cast<parc::fairplay::NativeHlsRendererFactory*>(factory);
-+          native_hls_factory->ParcSetInterfaceFactory(interface_factory);
-+          follow_mute_state(native_hls_factory);
-+        }
++  media::mojom::InterfaceFactory* interface_factory =
++      GetMediaInterfaceFactory();
++  auto follow_mute_state = [interface_factory](auto* factory) {
++    if (auto target = factory->ParcMuteStateHandoffTarget()) {
++      interface_factory->CreateMuteStateHandoff(std::move(target));
++    }
++  };
++  if (auto* factory = selector.GetFactory(media::RendererType::kFairPlay)) {
++    auto* fairplay_factory =
++        static_cast<media::FairPlayRendererClientFactory*>(factory);
++    fairplay_factory->mojo_renderer_factory()->ParcSetInterfaceFactory(
++        interface_factory);
++    follow_mute_state(fairplay_factory);
++  }
++  if (auto* factory = selector.GetFactory(media::RendererType::kFairPlayHls)) {
++    auto* native_hls_factory =
++        static_cast<parc::fairplay::NativeHlsRendererFactory*>(factory);
++    native_hls_factory->ParcSetInterfaceFactory(interface_factory);
++    follow_mute_state(native_hls_factory);
++  }
 +#endif  // BUILDFLAG(IS_MAC)
-+        static_cast<BatchingMediaLog&>(media_log)
-+            .ParcMoveToFrame(std::move(log_task_runner), inspector_context);
-+      },
-+      decoder_factory_.get(), GetMediaInterfaceFactory(),
++#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
++  if (auto* factory = selector.GetFactory(media::RendererType::kCourier)) {
++    // As CreateRendererFactorySelector() connects it.
++    mojo::PendingRemote<media::mojom::RemotingSource> remoting_source;
++    auto remoting_source_receiver =
++        remoting_source.InitWithNewPipeAndPassReceiver();
++    mojo::PendingRemote<media::mojom::Remoter> remoter;
++    GetRemoterFactory()->Create(std::move(remoting_source),
++                                remoter.InitWithNewPipeAndPassReceiver());
++    static_cast<media::remoting::CourierRendererFactory*>(factory)
++        ->controller()
++        ->ParcMoveToRemoter(std::move(remoting_source_receiver),
++                            std::move(remoter));
++  }
++#endif  // BUILDFLAG(ENABLE_MEDIA_REMOTING)
++  static_cast<BatchingMediaLog&>(media_log).ParcMoveToFrame(
 +      render_frame_->GetTaskRunner(blink::TaskType::kInternalInspector),
 +      inspector_context);
-+  return player.ParcMoveToFrame(std::move(services));
 +}
 +
 +blink::WebMediaPlayerBuilder& MediaFactory::GetMediaPlayerBuilder() {
@@ -893,7 +909,7 @@
  blink::WebEncryptedMediaClient* MediaFactory::EncryptedMediaClient() {
    if (!web_encrypted_media_client_) {
      web_encrypted_media_client_ =
-@@ -658,6 +729,23 @@
+@@ -658,6 +745,23 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -16004,7 +16020,24 @@
    std::vector<std::string> decrypted_audio_buffers;
 --- a/media/remoting/renderer_controller.h
 +++ b/media/remoting/renderer_controller.h
-@@ -160,7 +160,7 @@
+@@ -106,7 +106,16 @@
+   // tab.
+   void OnRendererFatalError(StopTrigger stop_trigger);
+ 
++  // Parc: remotes through the tab of the frame a Safari-identity page moved
++  // the element to from now on, or once a session requested or started
++  // through the old frame's tab, which stays with it, ends.
++  void ParcMoveToRemoter(
++      mojo::PendingReceiver<mojom::RemotingSource> source_receiver,
++      mojo::PendingRemote<mojom::Remoter> remoter);
++
+  private:
++  void ParcMaybeTakeMovedRemoter();
++
+   friend class RendererControllerTest;
+ 
+   bool has_audio() const {
+@@ -160,7 +169,7 @@
    void MaybeStartCalculatePixelRateTimer();
    void DoCalculatePixelRate(int decoded_frame_count_before_delay,
                              base::TimeTicks delayed_start_time);
@@ -16013,7 +16046,21 @@
  
    // Callback from RpcMessenger when sending message to remote sink.
    void SendMessageToSink(std::vector<uint8_t> message);
-@@ -228,6 +228,11 @@
+@@ -176,8 +185,11 @@
+   openscreen::cast::RpcMessenger rpc_messenger_;
+ #endif
+ 
+-  const mojo::Receiver<mojom::RemotingSource> receiver_;
+-  const mojo::Remote<mojom::Remoter> remoter_;
++  mojo::Receiver<mojom::RemotingSource> receiver_;
++  mojo::Remote<mojom::Remoter> remoter_;
++  // Parc: ParcMoveToRemoter()'s, until it takes them.
++  mojo::PendingReceiver<mojom::RemotingSource> parc_moved_source_receiver_;
++  mojo::PendingRemote<mojom::Remoter> parc_moved_remoter_;
+ 
+   // When the sink is available for remoting, this describes its metadata. When
+   // not available, this is empty. Updated by OnSinkAvailable/Gone().
+@@ -228,6 +240,11 @@
    // local rendering.
    bool is_media_remoting_requested_ = false;
  
@@ -16037,7 +16084,7 @@
  
    UpdateAndMaybeSwitch(SINK_AVAILABLE, UNKNOWN_STOP_TRIGGER);
  }
-@@ -136,6 +139,13 @@
+@@ -136,6 +139,19 @@
    // Prevent the clients to start any future remoting sessions. Won't affect the
    // behavior of the currently-running session (if any).
    sink_metadata_ = nullptr;
@@ -16048,10 +16095,24 @@
 +  if (requested_session_available_ && !remote_rendering_started_) {
 +    is_media_remoting_requested_ = false;
 +  }
++  // Parc: so is one through the tab a moved player left, whose sink went (its
++  // connector does so as the tab closes).
++  if (parc_moved_remoter_ && !remote_rendering_started_) {
++    is_media_remoting_requested_ = false;
++  }
++  ParcMaybeTakeMovedRemoter();
  }
  
  void RendererController::OnStarted() {
-@@ -210,6 +220,7 @@
+@@ -158,6 +174,7 @@
+     metrics_recorder_.StartSessionFailed(reason);
+     remote_rendering_started_ = false;
+   }
++  ParcMaybeTakeMovedRemoter();
+ }
+ 
+ void RendererController::OnStopped(mojom::RemotingStopReason reason) {
+@@ -210,6 +227,7 @@
  
  void RendererController::OnMediaRemotingRequested() {
    is_media_remoting_requested_ = true;
@@ -16059,7 +16120,7 @@
    UpdateAndMaybeSwitch(REQUESTED_BY_BROWSER, UNKNOWN_STOP_TRIGGER);
  }
  
-@@ -301,6 +312,11 @@
+@@ -301,6 +319,11 @@
      pixel_rate_timer_.Stop();
      pixels_per_second_ = 0;
      MaybeStartCalculatePixelRateTimer();
@@ -16071,7 +16132,7 @@
    }
  
    UpdateRemotePlaybackAvailabilityMonitoringState();
-@@ -381,12 +397,26 @@
+@@ -381,12 +404,26 @@
    // Cancel the timer since pixel rate cannot be calculated when media is
    // paused.
    pixel_rate_timer_.Stop();
@@ -16098,7 +16159,11 @@
    // If the element is frozen we want to stop remoting.
    UpdateAndMaybeSwitch(UNKNOWN_START_TRIGGER, MEDIA_ELEMENT_FROZEN);
  }
-@@ -532,13 +562,22 @@
+@@ -529,16 +566,26 @@
+       client_->SwitchToLocalRenderer(GetSwitchReason(stop_trigger));
+     VLOG(2) << "Request to stop remoting: stop_trigger=" << stop_trigger;
+     remoter_->Stop(mojom::RemotingStopReason::LOCAL_PLAYBACK);
++    ParcMaybeTakeMovedRemoter();
      return;
    }
  
@@ -16124,7 +16189,37 @@
    metrics_recorder_.RecordVideoPixelRateSupport(pixel_rate_support);
    if (pixel_rate_support == PixelRateSupport::k2kSupported ||
        pixel_rate_support == PixelRateSupport::k4kSupported) {
-@@ -628,8 +667,12 @@
+@@ -574,6 +621,29 @@
+   UpdateAndMaybeSwitch(UNKNOWN_START_TRIGGER, stop_trigger);
+ }
+ 
++void RendererController::ParcMoveToRemoter(
++    mojo::PendingReceiver<mojom::RemotingSource> source_receiver,
++    mojo::PendingRemote<mojom::Remoter> remoter) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  parc_moved_source_receiver_ = std::move(source_receiver);
++  parc_moved_remoter_ = std::move(remoter);
++  ParcMaybeTakeMovedRemoter();
++}
++
++void RendererController::ParcMaybeTakeMovedRemoter() {
++  if (!parc_moved_remoter_ || remote_rendering_started_ ||
++      is_media_remoting_requested_) {
++    return;
++  }
++  receiver_.reset();
++  receiver_.Bind(std::move(parc_moved_source_receiver_));
++  remoter_.reset();
++  remoter_.Bind(std::move(parc_moved_remoter_));
++  // The new tab's bridge tells its sink, if any (OnSinkAvailable()).
++  sink_metadata_ = nullptr;
++  requested_session_available_ = false;
++}
++
+ void RendererController::SetClient(MediaObserverClient* client) {
+   DCHECK(thread_checker_.CalledOnValidThread());
+ 
+@@ -628,8 +698,12 @@
    // Only switch to remoting when media is playing. Since the renderer is
    // created when video starts loading, the receiver would display a black
    // screen if switching to remoting while paused. Thus, the user experience is
@@ -16139,7 +16234,7 @@
        !SinkSupportsRemoting()) {
      return false;
    }
-@@ -666,13 +709,14 @@
+@@ -666,13 +740,14 @@
    UpdateAndMaybeSwitch(PIXEL_RATE_READY, UNKNOWN_STOP_TRIGGER);
  }
  
@@ -16160,15 +16255,19 @@
      } else {
 --- a/media/remoting/renderer_controller_unittest.cc
 +++ b/media/remoting/renderer_controller_unittest.cc
-@@ -410,11 +410,121 @@
-   ExpectInRemoting();
+@@ -18,6 +18,8 @@
+ #include "media/base/test_helpers.h"
+ #include "media/base/video_decoder_config.h"
+ #include "media/remoting/fake_remoter.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/bindings/remote.h"
+ #include "testing/gtest/include/gtest/gtest.h"
  
-   // Freezing should kick rendering back to local.
-+  controller_->OnFrozen();
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+}
-+
+ namespace media {
+@@ -415,6 +417,116 @@
+   ExpectInLocalRendering();
+ }
+ 
 +TEST_F(RendererControllerTest, ParcOnFrozenKeepsRequestedRemoting) {
 +  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8),
 +                               GetDefaultSinkMetadata(false));
@@ -16220,9 +16319,9 @@
 +  controller_->OnMediaRemotingRequested();
 +  // The page is left before the requested session comes.
 +  controller_->OnPaused();
-   controller_->OnFrozen();
++  controller_->OnFrozen();
 +  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-   RunUntilIdle();
++  RunUntilIdle();
 +  ExpectInRemoting();
 +}
 +
@@ -16244,15 +16343,15 @@
 +  controller_->OnMediaRemotingRequested();
 +  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
 +  RunUntilIdle();
-   ExpectInLocalRendering();
++  ExpectInLocalRendering();
 +
 +  // The page is left before the pixel rate's measurement ends.
 +  controller_->OnPaused();
 +  controller_->OnFrozen();
 +  RunUntilIdle();
 +  ExpectInRemoting();
- }
- 
++}
++
 +TEST_F(RendererControllerTest, ParcUnmeasuredRequestKeepsSinkPixelRateLimit) {
 +  PipelineMetadata metadata = DefaultMetadata(VideoCodec::kVP8);
 +  metadata.natural_size = gfx::Size(3840, 2160);
@@ -16282,6 +16381,97 @@
  #if BUILDFLAG(IS_ANDROID)
  TEST_F(RendererControllerTest, RemotePlaybackHlsCompatibility) {
    controller_ = FakeRemoterFactory::CreateController(true);
+@@ -434,5 +546,90 @@
+ }
+ #endif
+ 
++namespace {
++
++// Parc: the remoting bridge of the tab a Safari-identity page moved a player
++// to.
++class ParcNewTabRemoter final : public mojom::Remoter {
++ public:
++  explicit ParcNewTabRemoter(mojo::PendingRemote<mojom::RemotingSource> source)
++      : source_(std::move(source)) {}
++
++  void Start() final {
++    ++starts_;
++    source_->OnStarted();
++  }
++  void StartWithPermissionAlreadyGranted() final { Start(); }
++  void StartDataStreams(mojo::ScopedDataPipeConsumerHandle audio_pipe,
++                        mojo::ScopedDataPipeConsumerHandle video_pipe,
++                        mojo::PendingReceiver<mojom::RemotingDataStreamSender>
++                            audio_sender_receiver,
++                        mojo::PendingReceiver<mojom::RemotingDataStreamSender>
++                            video_sender_receiver) final {}
++  void Stop(mojom::RemotingStopReason reason) final { ++stops_; }
++  void SendMessageToSink(const std::vector<uint8_t>& message) final {}
++
++  mojo::Remote<mojom::RemotingSource> source_;
++  int starts_ = 0;
++  int stops_ = 0;
++};
++
++}  // namespace
++
++// Parc: a moved player's session goes on through the tab that started it, and
++// once it ends the player remotes through its new tab's sink alone.
++TEST_F(RendererControllerTest, ParcMovedPlayerRemotesThroughItsNewTab) {
++  InitializeControllerAndBecomeDominant(DefaultMetadata(VideoCodec::kVP8),
++                                        GetDefaultSinkMetadata(true));
++  ExpectInRemoting();
++
++  mojo::PendingRemote<mojom::RemotingSource> source;
++  auto source_receiver = source.InitWithNewPipeAndPassReceiver();
++  ParcNewTabRemoter new_tab(std::move(source));
++  mojo::Receiver<mojom::Remoter> new_tab_receiver(&new_tab);
++  controller_->ParcMoveToRemoter(std::move(source_receiver),
++                                 new_tab_receiver.BindNewPipeAndPassRemote());
++  RunUntilIdle();
++  ExpectInRemoting();
++
++  controller_->OnBecameDominantVisibleContent(false);
++  RunUntilIdle();
++  ExpectInLocalRendering();
++  controller_->OnBecameDominantVisibleContent(true);
++  RunUntilIdle();
++  ExpectInLocalRendering();
++  EXPECT_EQ(0, new_tab.starts_);
++  EXPECT_EQ(0, new_tab.stops_);
++
++  new_tab.source_->OnSinkAvailable(GetDefaultSinkMetadata(true));
++  RunUntilIdle();
++  ExpectInRemoting();
++  EXPECT_EQ(1, new_tab.starts_);
++}
++
++// Parc: a request through the tab a player moved from goes with that tab's
++// sink, so the player then remotes through its new tab.
++TEST_F(RendererControllerTest, ParcMovedPlayerDropsTheOldTabsRequest) {
++  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
++  controller_->OnMediaRemotingRequested();
++  RunUntilIdle();
++  ExpectInLocalRendering();
++
++  mojo::PendingRemote<mojom::RemotingSource> source;
++  auto source_receiver = source.InitWithNewPipeAndPassReceiver();
++  ParcNewTabRemoter new_tab(std::move(source));
++  mojo::Receiver<mojom::Remoter> new_tab_receiver(&new_tab);
++  controller_->ParcMoveToRemoter(std::move(source_receiver),
++                                 new_tab_receiver.BindNewPipeAndPassRemote());
++  controller_->OnSinkGone();
++  RunUntilIdle();
++
++  controller_->OnBecameDominantVisibleContent(true);
++  new_tab.source_->OnSinkAvailable(GetDefaultSinkMetadata(true));
++  RunUntilIdle();
++  ExpectInRemoting();
++  EXPECT_EQ(1, new_tab.starts_);
++}
++
+ }  // namespace remoting
+ }  // namespace media
 --- a/content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc
 +++ b/content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc
 @@ -7,9 +7,14 @@
@@ -20147,11 +20337,16 @@
    // Provides an EncryptedMediaClient to connect blink's EME layer to media's
    // implementation of requestMediaKeySystemAccess. Will always return the same
    // client whose lifetime is tied to this Factory (same as the RenderFrame).
-@@ -123,6 +130,8 @@
+@@ -123,6 +130,13 @@
    // Initializes `decoder_factory_` if it hasn't been initialized yet.
    void EnsureDecoderFactory();
  
 +  blink::WebMediaPlayerBuilder& GetMediaPlayerBuilder();
++
++  // Parc: ParcAdoptMediaPlayer()'s move_factories.
++  void ParcMoveRendererFactories(blink::MediaInspectorContext* inspector_context,
++                                 media::RendererFactorySelector& selector,
++                                 media::MediaLog& media_log);
 +
    std::unique_ptr<media::RendererFactorySelector> CreateRendererFactorySelector(
        media::MediaPlayerLoggingID player_id,
@@ -20587,16 +20782,67 @@
    for (const auto& connection : connections_) {
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
-@@ -187,6 +187,9 @@
+@@ -130,6 +130,7 @@
+   bool RemotePlaybackAvailable() const override;
+   void SourceChanged(const KURL&, bool is_source_supported) override;
+   String GetPresentationId() override;
++  void ParcDidMoveToDocument() override;
+   void MediaMetadataChanged(
+       std::optional<media::VideoCodec> video_codec,
+       std::optional<media::AudioCodec> audio_codec) override;
+@@ -144,7 +145,7 @@
+   bool HasPendingActivity() const final;
+ 
+   // ExecutionContextLifecycleObserver implementation.
+-  void ContextDestroyed() override {}
++  void ContextDestroyed() override;
+ 
+   // Adjusts the internal state of |this| after a playback state change.
+   void StateChanged(mojom::blink::PresentationConnectionState);
+@@ -180,6 +181,14 @@
+   // Clears bindings after remote playback stops.
+   void CleanupConnections();
+ 
++  // Parc: availability, prompt() and the events go through the frame of the
++  // element's document from now on, unless a prompt or session is in
++  // progress: it stays with the frame that started it until it ends.
++  void ParcMaybeMoveToElementContext();
++  void ParcMoveToElementContext();
++  // The frame that started a session went first, its routes with it.
++  void ParcEndSessionOfGoneFrame();
++
+   mojom::blink::PresentationConnectionState state_;
+   mojom::blink::ScreenAvailability availability_;
+   HeapHashMap<int, Member<AvailabilityCallbackWrapper>> availability_callbacks_;
+@@ -187,6 +196,11 @@
    Member<ScriptPromiseResolver<IDLUndefined>> prompt_promise_resolver_;
    Vector<KURL> availability_urls_;
    bool is_listening_;
 +  // Parc: the player was asked to cast while the page was frozen
 +  // (HandlePresentationResponse()).
 +  bool remoting_requested_while_frozen_ = false;
++  // Parc: ParcDidMoveToDocument() came: this follows the element's document.
++  bool parc_follows_element_ = false;
    bool is_background_availability_monitoring_disabled_for_testing_ = false;
  
    String presentation_id_;
+@@ -196,9 +210,14 @@
+   std::optional<media::VideoCodec> video_codec_ = std::nullopt;
+   std::optional<media::AudioCodec> audio_codec_ = std::nullopt;
+ 
+-  HeapMojoReceiver<mojom::blink::PresentationConnection, RemotePlayback>
++  // Parc: reset when this object's context goes (ContextDestroyed()), which
++  // follows the element's document, rather than with the one that made them.
++  HeapMojoReceiver<mojom::blink::PresentationConnection,
++                   RemotePlayback,
++                   HeapMojoWrapperMode::kForceWithoutContextObserver>
+       presentation_connection_receiver_;
+-  HeapMojoRemote<mojom::blink::PresentationConnection>
++  HeapMojoRemote<mojom::blink::PresentationConnection,
++                 HeapMojoWrapperMode::kForceWithoutContextObserver>
+       target_presentation_connection_;
+ 
+   HeapHashSet<Member<RemotePlaybackObserver>> observers_;
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
 @@ -290,10 +290,11 @@
@@ -20615,7 +20861,91 @@
    } else {
      // TODO(yuryu): Wrapping PromptCancelled with base::OnceClosure as
      // InspectorInstrumentation requires a globally unique pointer to track
-@@ -613,7 +614,11 @@
+@@ -396,8 +397,10 @@
+   }
+   prompt_promise_resolver_ = nullptr;
+ 
+-  if (state_ == state)
++  if (state_ == state) {
++    ParcMaybeMoveToElementContext();
+     return;
++  }
+ 
+   state_ = state;
+   if (state_ == mojom::blink::PresentationConnectionState::CONNECTING) {
+@@ -421,6 +424,7 @@
+ 
+   for (auto observer : observers_)
+     observer->OnRemotePlaybackStateChanged(state_);
++  ParcMaybeMoveToElementContext();
+ }
+ 
+ void RemotePlayback::PromptCancelled() {
+@@ -439,6 +443,7 @@
+       prompt_promise_resolver_->GetScriptState()->GetIsolate(),
+       DOMExceptionCode::kNotAllowedError, "The prompt was dismissed."));
+   prompt_promise_resolver_ = nullptr;
++  ParcMaybeMoveToElementContext();
+ }
+ 
+ void RemotePlayback::SourceChanged(const KURL& source,
+@@ -568,6 +573,55 @@
+   presentation_connection_receiver_.reset();
+ }
+ 
++void RemotePlayback::ContextDestroyed() {
++  CleanupConnections();
++  ExecutionContext* element_context = media_element_->GetExecutionContext();
++  if (!parc_follows_element_ || !element_context ||
++      element_context == GetExecutionContext() ||
++      element_context->IsContextDestroyed()) {
++    return;
++  }
++  element_context->GetTaskRunner(TaskType::kMediaElementEvent)
++      ->PostTask(FROM_HERE,
++                 BindOnce(&RemotePlayback::ParcEndSessionOfGoneFrame,
++                          WrapWeakPersistent(this)));
++}
++
++void RemotePlayback::ParcDidMoveToDocument() {
++  parc_follows_element_ = true;
++  ParcMaybeMoveToElementContext();
++}
++
++// As WebKit's playback target picker follows the element's document
++// (HTMLMediaElement::didMoveToNewDocument).
++void RemotePlayback::ParcMaybeMoveToElementContext() {
++  if (prompt_promise_resolver_ ||
++      state_ == mojom::blink::PresentationConnectionState::CONNECTING ||
++      state_ == mojom::blink::PresentationConnectionState::CONNECTED) {
++    return;
++  }
++  ParcMoveToElementContext();
++}
++
++void RemotePlayback::ParcMoveToElementContext() {
++  ExecutionContext* context = media_element_->GetExecutionContext();
++  if (!parc_follows_element_ || !context || context->IsContextDestroyed() ||
++      context == GetExecutionContext()) {
++    return;
++  }
++  // The old frame's controller may be gone already.
++  StopListeningForAvailability();
++  is_listening_ = false;
++  availability_ = mojom::ScreenAvailability::UNKNOWN;
++  SetExecutionContext(context);
++  MaybeStartListeningForAvailability();
++}
++
++void RemotePlayback::ParcEndSessionOfGoneFrame() {
++  ParcMoveToElementContext();
++  StateChanged(mojom::blink::PresentationConnectionState::CLOSED);
++}
++
+ void RemotePlayback::AvailabilityChanged(
+     mojom::blink::ScreenAvailability availability) {
+   DCHECK(is_listening_ ||
+@@ -613,7 +667,11 @@
  
  #if !BUILDFLAG(IS_ANDROID)
    media_element_->Play();
@@ -20628,7 +20958,7 @@
  #endif
  
    // Note: Messages on |connection_receiver| are ignored.
-@@ -651,6 +656,27 @@
+@@ -651,6 +709,27 @@
  void RemotePlayback::HandlePresentationResponse(
      mojom::blink::PresentationConnectionResultPtr result,
      mojom::blink::PresentationErrorPtr error) {
@@ -20706,12 +21036,117 @@
  }  // namespace
  
  class RemotePlaybackTest : public testing::Test,
-@@ -454,6 +470,224 @@
-       "remote-playback:media-element?source=aHR0cDovL3d3dy5leGFtcGxlLmNvbS8=&"
-       "video_codec=vp9&audio_codec=mp3",
-       remote_playback.Urls()[0]);
+@@ -105,6 +121,14 @@
+ 
+   DummyPageHolder* page_holder() { return page_holder_.get(); }
+ 
++  // Parc: moves the element to |page|'s document, as a Safari-identity page
++  // moves it with its player.
++  void MoveElementTo(DummyPageHolder& page) {
++    page.GetDocument().adoptNode(element_, ASSERT_NO_EXCEPTION);
++    get_remote_playback().ParcDidMoveToDocument();
++  }
++  void DestroyPage() { page_holder_.reset(); }
++
+  private:
+   test::TaskEnvironment task_environment_;
+   std::unique_ptr<DummyPageHolder> page_holder_;
+@@ -426,6 +450,91 @@
+   testing::Mock::VerifyAndClear(mock_controller);
+ }
+ 
++// Parc: a moved element watches availability through its new document's
++// frame, which its prompt and events use too.
++TEST_F(RemotePlaybackTest, ParcMovedElementWatchesThroughItsNewDocument) {
++  V8TestingScope scope;
++  RemotePlayback& remote_playback = get_remote_playback();
++  auto new_page = std::make_unique<DummyPageHolder>();
++  LocalDOMWindow& old_window = *page_holder()->GetFrame().DomWindow();
++  LocalDOMWindow& new_window = *new_page->GetFrame().DomWindow();
++  auto* old_controller =
++      MakeGarbageCollected<MockPresentationController>(old_window);
++  Supplement<LocalDOMWindow>::ProvideTo(
++      old_window, static_cast<PresentationController*>(old_controller));
++  auto* new_controller =
++      MakeGarbageCollected<MockPresentationController>(new_window);
++  Supplement<LocalDOMWindow>::ProvideTo(
++      new_window, static_cast<PresentationController*>(new_controller));
++  EXPECT_CALL(*old_controller,
++              AddAvailabilityObserver(testing::Eq(&remote_playback)));
++  EXPECT_CALL(*old_controller,
++              RemoveAvailabilityObserver(testing::Eq(&remote_playback)));
++  EXPECT_CALL(*new_controller,
++              AddAvailabilityObserver(testing::Eq(&remote_playback)));
++
++  MockFunction* callback_function = MakeGarbageCollected<MockFunction>();
++  EXPECT_CALL(*callback_function, Call(testing::_, testing::_))
++      .Times(testing::AnyNumber());
++  remote_playback.watchAvailability(
++      scope.GetScriptState(),
++      V8RemotePlaybackAvailabilityCallback::Create(
++          callback_function->ToV8Function(scope.GetScriptState())),
++      scope.GetExceptionState());
++  remote_playback.SourceChanged(WebURL(KURL("http://www.example.com")), true);
++  ASSERT_TRUE(IsListening(remote_playback));
++
++  MoveElementTo(*new_page);
++  EXPECT_EQ(&new_window, remote_playback.GetExecutionContext());
++  EXPECT_TRUE(IsListening(remote_playback));
++
++  testing::Mock::VerifyAndClear(callback_function);
++  testing::Mock::VerifyAndClear(old_controller);
++  testing::Mock::VerifyAndClear(new_controller);
 +}
 +
++// Parc: a session in progress stays with the frame that started it, and the
++// element's document takes over once it ends.
++TEST_F(RemotePlaybackTest, ParcSessionStaysWithTheFrameThatStartedIt) {
++  RemotePlayback& remote_playback = get_remote_playback();
++  auto new_page = std::make_unique<DummyPageHolder>();
++  SetState(remote_playback,
++           mojom::blink::PresentationConnectionState::CONNECTED);
++
++  MoveElementTo(*new_page);
++  EXPECT_EQ(page_holder()->GetFrame().DomWindow(),
++            remote_playback.GetExecutionContext());
++
++  SetState(remote_playback, mojom::blink::PresentationConnectionState::CLOSED);
++  EXPECT_EQ(new_page->GetFrame().DomWindow(),
++            remote_playback.GetExecutionContext());
++}
++
++// Parc: when the frame that started the session goes first, the session ends
++// with it and the element's new document hears so.
++TEST_F(RemotePlaybackTest, ParcSessionEndsInTheNewDocumentWhenItsFrameGoes) {
++  RemotePlayback& remote_playback = get_remote_playback();
++  auto new_page = std::make_unique<DummyPageHolder>();
++  auto* disconnect_handler = MakeGarbageCollected<
++      testing::StrictMock<MockEventListenerForRemotePlayback>>();
++  remote_playback.addEventListener(event_type_names::kDisconnect,
++                                   disconnect_handler);
++  SetState(remote_playback,
++           mojom::blink::PresentationConnectionState::CONNECTED);
++  MoveElementTo(*new_page);
++
++  EXPECT_CALL(*disconnect_handler, Invoke(testing::_, testing::_)).Times(0);
++  DestroyPage();
++  testing::Mock::VerifyAndClear(disconnect_handler);
++  EXPECT_CALL(*disconnect_handler, Invoke(testing::_, testing::_)).Times(1);
++  test::RunPendingTasks();
++  EXPECT_EQ(mojom::blink::PresentationConnectionState::CLOSED,
++            remote_playback.GetState());
++  EXPECT_EQ(new_page->GetFrame().DomWindow(),
++            remote_playback.GetExecutionContext());
++  testing::Mock::VerifyAndClear(disconnect_handler);
++}
++
+ TEST_F(RemotePlaybackTest, NullContextDoesntCrash) {
+   RemotePlayback& remote_playback = get_remote_playback();
+ 
+@@ -456,4 +565,222 @@
+       remote_playback.Urls()[0]);
+ }
+ 
 +// Parc: a cast whose connection comes while its page is in the back/forward
 +// cache.
 +class RemotePlaybackBackForwardCacheTest
@@ -20855,8 +21290,8 @@
 +  EXPECT_EQ(V8RemotePlaybackState::Enum::kConnecting, State());
 +  scope.PerformMicrotaskCheckpoint();
 +  EXPECT_TRUE(prompt.IsFulfilled());
- }
- 
++}
++
 +TEST_F(RemotePlaybackBackForwardCacheTest,
 +       ConnectionCastsBeforeFrozenPageResumes) {
 +  V8TestingScope scope;
@@ -22138,3 +22573,28 @@
  #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
  
  TEST_F(FFmpegDemuxerTest, Read_Webm_Multiple_Tracks) {
+--- a/media/remoting/courier_renderer_factory.h
++++ b/media/remoting/courier_renderer_factory.h
+@@ -36,6 +36,9 @@
+   // CourierRenderer.
+   bool IsRemotingActive();
+ 
++  // Parc: for a player a Safari-identity page moved to another frame.
++  RendererController* controller() { return controller_.get(); }
++
+  private:
+   const std::unique_ptr<RendererController> controller_;
+ };
+--- a/third_party/blink/renderer/platform/media/remote_playback_client.h
++++ b/third_party/blink/renderer/platform/media/remote_playback_client.h
+@@ -38,6 +38,10 @@
+   // Gets the presentation ID associated with the client. The presentation ID
+   // may be null, empty or stale.
+   virtual String GetPresentationId() = 0;
++
++  // Parc: the element's player now belongs to the frame of the document a
++  // Safari-identity page moved the element to.
++  virtual void ParcDidMoveToDocument() {}
+ };
+ 
+ }  // namespace blink
