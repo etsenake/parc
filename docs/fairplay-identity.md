@@ -264,12 +264,16 @@ has it in windows only. The rows and what is still open are in
   lists (H.264, HEVC, Dolby Vision profile 5, AAC, AC-3, E-AC-3) and that
   Chromium's `MediaSource.isTypeSupported` accepts. AV1 answers no, as the CDM
   leaves it out.
-- `com.apple.fps` and `com.apple.fps.1_0` answer false, and constructing
-  `WebKitMediaKeys` with them throws `NotSupportedError`. WebKit gives them to
-  its AVFoundation player, which plays HLS through `<video src>` with skd key
-  requests; Parc's native HLS route
-  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) isn't
-  built yet. They turn on with it.
+- `com.apple.fps` and `com.apple.fps.1_0` belong to WebKit's AVFoundation
+  player, which plays HLS through `<video src>` with skd key requests. They
+  answer false, and constructing `WebKitMediaKeys` with them throws
+  `NotSupportedError`, until Parc's native HLS route
+  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) is
+  on: the script's `/*PARC_NATIVE_HLS*/false` token is what the installer
+  turns into true under `media::kParcNativeHls`. Then they follow WebKit's
+  `CDMSessionAVFoundationObjC`: types by what AVFoundation decodes, sessions
+  bound to the attached player's held key requests, the SPC as the first
+  message, `webkitkeyadded` after every update.
 - `new WebKitMediaKeys(keySystem)` works for `com.apple.fps.2_N` and `3_N`
   (`InvalidAccessError` for an empty key system, `NotSupportedError` for one
   it doesn't serve, as WebKit). Its keys are a modern FairPlay `MediaKeys`

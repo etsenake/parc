@@ -38,7 +38,7 @@ const MSE_CODECS = [
 const text = (data) => Buffer.from(ArrayBuffer.isView(data) ?
     new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data)).toString('latin1');
 const bytesOf = (value) => new Uint8Array(Buffer.from(value, 'latin1'));
-function makeWorld({sinf = false, failSpc = 0} = {}) {
+function makeWorld({sinf = true, failSpc = 0} = {}) {
   const calls = [];
   const log = [];
   class MediaSource {
@@ -88,6 +88,15 @@ function makeWorld({sinf = false, failSpc = 0} = {}) {
       }
       let innerType = type;
       let inner = text(data);
+      if (type === 'skd') {
+        // Parc's skd extension for the legacy AVFoundation player: the key
+        // URI and the SPC's content ID.
+        const json = JSON.parse(inner);
+        this.#json = false;
+        this.#lastKey = 'skd:' + json.skd + ':' + Buffer.from(json.contentId, 'base64').toString();
+        this.send('license-request', [[this.#lastKey, spc(this.#keys, this.#lastKey)]]);
+        return Promise.resolve();
+      }
       if (type === 'keyids') {
         // Parc's keyids extension for com.apple.fps.2_N: the media's init
         // data plus the SPC's content identifier.
@@ -146,6 +155,7 @@ function makeWorld({sinf = false, failSpc = 0} = {}) {
   class MediaError {}
   const context = {
     MediaSource, DOMException, Event, EventTarget, atob, btoa, setTimeout, TextDecoder,
+    TextEncoder, crypto,
     MediaKeyMessageEvent, MediaEncryptedEvent, MediaKeySession, MediaKeys,
     MediaKeySystemAccess, Navigator, navigator: new Navigator(), HTMLMediaElement, MediaError,
     calls, log,
@@ -661,6 +671,86 @@ for (const sinf of [true, false]) {
   check(needs.length === 1, "a page's own encrypted events raise no webkitneedkey (no loop)");
   video.dispatchEvent(event);
   check(needs.length === 1, 'an event raises webkitneedkey once');
+}
+
+// ---- WebKit's AVFoundation player key systems (native HLS), with the
+// installer's switch on.
+{
+  const hlsScript = script.replace('/*PARC_NATIVE_HLS*/false', 'true');
+  check(hlsScript !== script, 'the installer has a native HLS switch to turn on');
+  const world = makeWorld();
+  run(world, hlsScript);
+  const supports = (...args) => world.WebKitMediaKeys.isTypeSupported(...args);
+  check(supports('com.apple.fps') && supports('com.apple.fps.1_0') && supports('COM.APPLE.FPS.1_0'),
+        'com.apple.fps and 1_0 (ignoring case)');
+  check(supports('com.apple.fps.1_0', 'application/vnd.apple.mpegurl') &&
+        supports('com.apple.fps', 'application/x-mpegURL') &&
+        supports('com.apple.fps.1_0', 'video/mp4; codecs="avc1.640028,mp4a.40.2"') &&
+        supports('com.apple.fps.1_0', 'video/mp2t') &&
+        supports('com.apple.fps.1_0', 'audio/mp4; codecs="ec-3"'),
+        'types AVFoundation decodes');
+  check(!supports('com.apple.fps.1_0', 'video/webm') &&
+        !supports('com.apple.fps.1_0', 'video/mp4; codecs="hev1.1.6.L93.B0"') &&
+        !supports('com.apple.fps.1_0', 'video/mp4; codecs="vp09.00.10.08"') &&
+        !supports('com.apple.fps.1_1') && !supports('com.apple.fps.2_0', 'application/vnd.apple.mpegurl'),
+        'types and key systems it does not');
+
+  const keys = new world.WebKitMediaKeys('com.apple.fps.1_0');
+  const hlsInitData = (uri, contentId, certificate) => {
+    const length = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
+    const u = Buffer.from(uri, 'utf16le');
+    const c = Buffer.from(contentId, 'utf16le');
+    const k = Buffer.from(certificate, 'latin1');
+    return new Uint8Array(Buffer.concat([length(u.length), u, length(c.length), c, length(k.length), k]));
+  };
+  const loose = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://a', 'asset', 'CERT'));
+  let looseEvents = 0;
+  loose.addEventListener('webkitkeymessage', () => ++looseEvents);
+  loose.addEventListener('webkitkeyerror', () => ++looseEvents);
+  await settle();
+  loose.update(new Uint8Array(bytesOf('CKC')));
+  await settle();
+  check(looseEvents === 0 && loose.sessionId === '', 'without an attached player the session does nothing');
+  check(thrown(() => keys.createSession('video/webm', hlsInitData('skd://a', 'a', 'C')))?.name === 'NotSupportedError',
+        'createSession checks the type against AVFoundation');
+
+  const video = new world.HTMLMediaElement();
+  video.webkitSetMediaKeys(keys);
+  let needed = null;
+  video.addEventListener('webkitneedkey', (event) => { needed = event.initData; });
+  encrypted(world, video, 'skd', Buffer.from('skd://key1', 'utf8'));
+  check(needed && Buffer.from(needed.slice(4)).toString('utf16le') === 'skd://key1', 'webkitneedkey for the key URI');
+  const session = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://key1', 'asset-9', 'CERT'));
+  check(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(session.sessionId),
+        'an AVFoundation player session has a UUID');
+  const events = [];
+  session.addEventListener('webkitkeymessage', (event) => events.push(text(event.message)));
+  session.addEventListener('webkitkeyadded', () => events.push('added'));
+  session.addEventListener('webkitkeyerror', () => events.push('error:' + session.error.code));
+  await settle();
+  const request = world.log.find((entry) => entry[0] === 'generateRequest');
+  const json = request && JSON.parse(request[2]);
+  check(request && request[1] === 'skd' && json.skd === 'skd://key1' &&
+        Buffer.from(json.contentId, 'base64').toString() === 'asset-9',
+        'the skd request names the URI and the content ID');
+  check(world.log.some((entry) => entry[0] === 'setServerCertificate' && entry[1] === 'CERT'),
+        'with the certificate from the init data');
+  check(events.join() === 'SPC(CERT,skd:skd://key1:asset-9)', 'the SPC is the first message');
+  session.update(new Uint8Array(bytesOf('CKC')));
+  await settle();
+  check(world.log.filter((entry) => entry[0] === 'update').pop()[1] === 'CKC' && events.pop() === 'added',
+        'the raw CKC answers the request and the key is added');
+  session.update(new Uint8Array(bytesOf('renew')));
+  await settle();
+  check(world.log.filter((entry) => entry[0] === 'update').pop()[1] === 'renew' && events.pop() === 'added',
+        'every update is an answer for the AVFoundation player');
+
+  const taken = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://key1', 'asset-9', 'CERT'));
+  const unknown = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://other', 'x', 'CERT'));
+  const broken = keys.createSession('application/vnd.apple.mpegurl', new Uint8Array([1, 2, 3]));
+  await settle();
+  check(taken.error?.code === 1 && unknown.error?.code === 1 && broken.error?.code === 1,
+        'a key URI no request holds (or already taken), or unreadable init data: UNKNOWN');
 }
 
 // ---- An ordinary addEventListener still works on media elements.
