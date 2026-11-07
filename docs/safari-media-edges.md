@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **59**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **60**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -269,8 +269,14 @@ Rates outside 1/16 to 16 and native HLS reverse playback: **fixed**
 bac07f94. A plain `src=` file stood still at a negative rate: **fixed** 4bc9fab8
 (reverse playback in Chromium's pipeline, inline, picture in picture and
 background; silent; pauses at 0). Still different: rewinding 4K or
-long-keyframe files briefly holds between decoded chunks (**queued**,
-WMPI-RATE-d, smoother reverse); while casting, Now Playing showed a backward
+long-keyframe files held between decoded chunks: **fixed** ed3848c9 (time
+never stops; frames drop evenly when decoding can't keep up). Still: 4K with
+5-10 s keyframe gaps rewinds at an estimated 5-10 frames a second; closing it
+needs FFmpeg's disposable-frame skipping, about a day (**left**, default
+until Josh decides: negative rates on plain 4K files are rare); a rewind can
+take up to 2 s longer to start; rewinding holds up to 384 MB (was 192 MB);
+dropped rewind frames aren't counted in `getVideoPlaybackQuality` (Safari's
+count **unchecked**); while casting, Now Playing showed a backward
 scrubber over a frozen TV (**fixed** e4ca73cd); whether Safari's
 reverse playback is audible is **unchecked** (AVPlayer decides).
 
