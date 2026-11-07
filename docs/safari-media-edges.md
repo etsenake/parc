@@ -49,7 +49,7 @@ Unchecked claims are labelled **unchecked**.
 | `media/filters/source_buffer_state.cc` | 931 | 931 |
 | `media/filters/source_buffer_stream.cc` | 2,029 | 2,029 |
 | `third_party/blink/renderer/modules/mediasource/media_source.cc` | 1,652 | 1,652 |
-| `third_party/blink/renderer/modules/mediasource/source_buffer.cc` | 2,237 | 0 |
+| `third_party/blink/renderer/modules/mediasource/source_buffer.cc` | 2,237 | 2,237 |
 
 ## Edges
 
@@ -432,3 +432,23 @@ AC-3/E-AC-3 and Dolby Vision profile 5 answers are **handled**
 `seekable` for an infinite duration (`:830-885`), the closed-state and
 updating checks and active SourceBuffer ordering follow the MSE spec as
 WebKit does. **Same.**
+
+### `source_buffer.cc`
+
+**SB-8. Appending after an element error.** Chromium `source_buffer.cc:1840-1887`
+throws `InvalidStateError` from `appendBuffer()` once the element has an
+error. WebKit `SourceBuffer.cpp` (`appendBufferInternal`) has no such check:
+it reopens an ended source and appends. **In progress** (fix agent SB-8).
+
+The init segment checks (`:1472-1763`) are the ones WebKit applies
+(`SourceBuffer.cpp:780-1090`) except the codec comparison, which is SBS-1.
+`changeType` codecs are MS-1, and Parc's FairPlay codec filter for it is
+**handled** (`IsFairPlayChangeTypeSupported`). `abort()`, `remove()`, `mode`,
+`timestampOffset` and the append window setters (`:263-585, 761-926`), the
+append and remove event sequences (`:2081-2190`) and the append error
+algorithm (`:2192-2224`) are WebKit's (`SourceBuffer.cpp` `abort`, `remove`,
+`appendError`). **Same.** `appendEncodedChunks`, the `SourceBufferConfig`
+`changeType` and `trackDefaults` are behind Chromium flags that are off
+(`source_buffer.idl:80-105`), as Safari has none of them. **Same.**
+ManagedMediaSource's memory-pressure purge is **handled**
+(`fairplay-identity-blink.patch`).
