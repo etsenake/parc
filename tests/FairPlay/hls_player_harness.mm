@@ -402,7 +402,10 @@ void VodFmp4() {
   Check(rig.loader.foreign_ == 0 && rig.client.errors == 0, "only the loader's host, no error");
   AVPlayerLayer* layer = nil;
   OnOwner([&] { layer = fp::HlsPlayerLayer(rig.player->impl()); });
-  Check(layer && layer.player == fp::HlsPlayerAVPlayer(rig.player->impl()), "player layer shows the player");
+  // The layer takes its player once it has a size (fairplay_hls_player_layer.h),
+  // here the size the compositor gives it when it first draws the layer.
+  OnOwner([&] { layer.bounds = CGRectMake(0, 0, 640, 360); });
+  Check(layer && layer.player == fp::HlsPlayerAVPlayer(rig.player->impl()), "player layer shows the player once sized");
   NSString* algorithm = nil;
   BOOL interstitials = YES;
   auto read_item = [&] {
