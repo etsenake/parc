@@ -1624,11 +1624,6 @@ void SetHlsKeyRequestHandler(FairPlayHlsPlayer::Impl* impl, HlsKeyRequestHandler
   return YES;
 }
 
-- (BOOL)resourceLoader:(AVAssetResourceLoader*)resourceLoader
-    shouldWaitForRenewalOfRequestedResource:(AVAssetResourceRenewalRequest*)request {
-  return [self resourceLoader:resourceLoader shouldWaitForLoadingOfRequestedResource:request];
-}
-
 - (void)resourceLoader:(AVAssetResourceLoader*)resourceLoader
     didCancelLoadingRequest:(AVAssetResourceLoadingRequest*)request {
   std::weak_ptr<FairPlayHlsPlayer::Impl> weak = _impl;
