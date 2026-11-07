@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 586,
+  "version": 587,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1830,7 +1830,7 @@
     {
       "source": "Engine/ParcRenderer/parc_media_source_test.cc",
       "target": "third_party/blink/renderer/modules/mediasource/parc_media_source_test.cc",
-      "sha256": "d65a3b5cc2d1c95ca836c09a02aa13615c0ad443bffcd555932cd072445ad900"
+      "sha256": "a4d8c1cf0f8a82887e450f5383f15e2106787673d114cde7d94d3b456117594b"
     },
     {
       "source": "Engine/ParcRenderer/parc_media_source_error_test.cc",
@@ -1866,6 +1866,26 @@
       "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-two-audio.ts",
       "target": "media/test/data/parc-two-audio.ts",
       "sha256": "85f24d72f49a6cd997316666d58114f861db983e2fa1890ab9110c53d7202187"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_h263_decoder.h",
+      "target": "media/gpu/mac/parc_video_toolbox_h263_decoder.h",
+      "sha256": "1d5d7a28a11613dd8f2567d667fad44ceefab3e106bbd3466268a4183bdcd275"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_h263_decoder.cc",
+      "target": "media/gpu/mac/parc_video_toolbox_h263_decoder.cc",
+      "sha256": "ce7e0647f62295ef52ec592d90cdb5ad8613382c78f8e9cfa3397c05606f9267"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_h263_decoder_unittest.cc",
+      "target": "media/gpu/mac/parc_video_toolbox_h263_decoder_unittest.cc",
+      "sha256": "01040aaad8e467c1e4899b46ba14a08969df4193d36a3cc3f470014d107f5ae2"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-h263-amr.3gp",
+      "target": "media/test/data/parc-h263-amr.3gp",
+      "sha256": "9fe245efe4eaab91f1cd9ff053fb57152240afbad97a80bd9faf92dc7f6ceae2"
     },
     {
       "source": "Engine/ParcRenderer/parc_av1_support.h",
@@ -3820,7 +3840,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/platform-codecs.patch",
-      "sha256": "9fa0403a7a138fe1dda7f2b76a92f3eaa505ea9efbcfdb6f30d06ec40d5a5aeb",
+      "sha256": "224c52be866fdcd56898503b39ffcc3d9c377b8c153a1df5b0c83d44a5180a90",
       "files": [
         {
           "target": "media/BUILD.gn",
@@ -3830,7 +3850,7 @@
         {
           "target": "media/ffmpeg/ffmpeg_common.cc",
           "before_sha256": "549bb4dfd04bfbc09b1e29b00d9dccf6d86d41a37267ab3a97372722ec2cbb45",
-          "after_sha256": "181fd4cddc0880580e827f651ab314396e2946a40b3514fadfab1c45d1c74625"
+          "after_sha256": "bd5565e4afb5419587a62e285edf7b19a38f7a6d782e62d00439068407ce5b31"
         },
         {
           "target": "media/filters/mac/audio_toolbox_audio_decoder.h",
@@ -3840,7 +3860,7 @@
         {
           "target": "media/filters/mac/audio_toolbox_audio_decoder.cc",
           "before_sha256": "af1a96e77017bdb95ee236ea99b567810c7d47af9525b8d3e8ffa0cd7270cadc",
-          "after_sha256": "b9398e8b73994a3f6775e1312028a9acaf15f239fd412a583f9a84597fba0e26"
+          "after_sha256": "7d516c1990fd7496ca3490c00de8bd2d241d745827e6ef72a6e868ed4eb07138"
         },
         {
           "target": "media/renderers/audio_renderer_impl.cc",
@@ -3900,12 +3920,47 @@
         {
           "target": "media/base/supported_types.cc",
           "before_sha256": "5977e7a088795b5fc1040c8fa65d88ddfe6f7395e5ebcdfa384a3446113fc4c1",
-          "after_sha256": "6248a6144268a5c90a43937e3b0c0c519c46a6552b59aaca7edcc5dfe7213101"
+          "after_sha256": "7829d2be8fff7d0e4e519fe19aafcc41d8895de1c2d2df46f8bd4ef41a021ab4"
         },
         {
           "target": "media/base/mime_util_unittest.cc",
           "before_sha256": "a7d7a2faf8f10622cae8ddee1f17e8b2eb396d7943b31cd8d56f76029e16b5d0",
           "after_sha256": "dd193abd9747a58f7c97374b37f44a1eb544925a40734c735d591650d799aa7b"
+        },
+        {
+          "target": "media/base/video_codecs.h",
+          "before_sha256": "2242bd62507b7cfc1d9640bf7bdf0ebf850fc23048d8588d01c14afe082693a4",
+          "after_sha256": "3f72e861fc7891be4b1f0d915d04be9ef91d7f266c82fe8af9b73c38eb67f984"
+        },
+        {
+          "target": "media/base/video_codecs.cc",
+          "before_sha256": "6cf09a3984ad8fef8aa4e65432ce8f06826b4d7699a2319db2129636333e154b",
+          "after_sha256": "71ff2a43cee39adb4ea4bf3e1bf7861943790b001809f6707a95786bdc5ca112"
+        },
+        {
+          "target": "media/base/media_types.cc",
+          "before_sha256": "eba23afb17f82ff76319c199dd4ba15ecd2f8cc19208406130b436236daaf83b",
+          "after_sha256": "6f1992a4e09ae3ed48b7fc09acc3d64badd1e4a904607a1e964428cc9a0b4a96"
+        },
+        {
+          "target": "media/base/test_helpers.cc",
+          "before_sha256": "947126c02d8fb15f94159855c417f24aaad0fea02636f0a4c3bf6dbd88175446",
+          "after_sha256": "53f2671e6329d4b3340f5d4fafec9d3eba50409c00422fc199dd203871ec2e2c"
+        },
+        {
+          "target": "media/gpu/mac/video_toolbox_video_decoder.cc",
+          "before_sha256": "e97dbc0e6018bcc604a09a04ffa790b662561e8f8c9dbac8c3a41a59332b23ca",
+          "after_sha256": "b3fece7437a33b5847f5413a546697ef641bd0f2720f0fe55f810f7aca3dc156"
+        },
+        {
+          "target": "media/gpu/mac/BUILD.gn",
+          "before_sha256": "b9bc510664ce2b42ae6f1dbe24a5f88d0258bc1a5023a0f0a3865fa32c6e2e7f",
+          "after_sha256": "8ecb54b94f39821198fd119a41f77743a72acf6dc57a63be34f1ace51d8208bd"
+        },
+        {
+          "target": "media/filters/audio_decoder_unittest.cc",
+          "before_sha256": "cdbbcfd0f06a70e0d20b6221e13b9e2284ccdf52a39e4e032bda89d6eb71af22",
+          "after_sha256": "bb03000390fba07ec04a4091243d8d304f8183386ddbd248ad3702f8f85a3e24"
         }
       ]
     },
@@ -4257,7 +4312,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "e491c381153d1a898627900fa9e4324a6cde3262ffb21090cd83065c09392657",
+      "sha256": "98851445594df28adc14b7bc9223fa6c1ca24c052dc0ba5d3e812d10bd679322",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4392,7 +4447,7 @@
         {
           "target": "media/filters/demuxer_manager.cc",
           "before_sha256": "01afd177b93b47f3cfa4ef41cbf58783cd4693a68b16f6c5ed89db21338c6ccd",
-          "after_sha256": "5c28619b197175f757f869465f65726f143be55d4eb149a324940c7384807de5"
+          "after_sha256": "9fced21d68dfdaf8db5169a70338f19a62be01f7b2f29d1f39e61350e103e89c"
         },
         {
           "target": "media/filters/demuxer_manager.h",
@@ -4402,17 +4457,17 @@
         {
           "target": "media/formats/mp4/box_definitions.cc",
           "before_sha256": "db38967b6d887c038da0c50241180a7beb4d50e3ad6c8b3420b3edf273fbcf94",
-          "after_sha256": "3d93729f189338c48a7c3e6a661f7aa597fc6cf289cdaa950548969986e559ae"
+          "after_sha256": "5bc2a7676f46c840651e7350ca695d1e9e0f5727750116a8460495ddf14aae21"
         },
         {
           "target": "media/formats/mp4/box_definitions.h",
           "before_sha256": "dd0ded066984afcd7aa3a75fb764d44a035af87bccf3ef2c1809101f125e65ce",
-          "after_sha256": "459a1352a625a9f9c703df7a303568c349d782008f42ab8e6f2134264b42e883"
+          "after_sha256": "90afa5b19af60deaeb331885600c469890bb3d528162b9bdc96e9bd2bdd4b499"
         },
         {
           "target": "media/formats/mp4/mp4_stream_parser.cc",
           "before_sha256": "35b11330ae2b15b92660c9ee4d82fc86a1cdc2f30ab5315d663b439dac2a4ec6",
-          "after_sha256": "7203993d9251fe4b2ee03f1a9a153fc5e887f83684f465f9d2af8edaa96f4595"
+          "after_sha256": "7ec5e475f4d7a8dac01acedfd2645f21ed9d8f62f6d034f45c8b1a59946a9018"
         },
         {
           "target": "media/cdm/supported_audio_codecs.cc",
@@ -4727,7 +4782,7 @@
         {
           "target": "media/formats/mp4/fourccs.h",
           "before_sha256": "a54b67c2e688c6c537b378cd68e4f7ce77503e9fc4e3e7f83dd1f7c6432d100a",
-          "after_sha256": "332fa4657d5c522b9a88391190ba6f5b1da26715f97bd285c182314e59c75577"
+          "after_sha256": "a77a0a61607b08c9dc80f69d63240927afa6f47c329b30e6684dc8ca92f6d45d"
         },
         {
           "target": "media/formats/mp4/mp4_stream_parser.h",
@@ -4737,7 +4792,7 @@
         {
           "target": "media/filters/stream_parser_factory.cc",
           "before_sha256": "b4321918bc2b4b57d7737b2080b7577b80a6a275ec81f130cd107eab33c78eb8",
-          "after_sha256": "117dfe2dd8cd7c392883108033ccb6a4004a2f4ba386f6b1bdd016c28da2ddc7"
+          "after_sha256": "b2df2273e710ddbe8d905495da3e5baea5ffc0cd22aeebcb3a48566c8fae108c"
         },
         {
           "target": "media/base/stream_parser.h",
@@ -4747,12 +4802,12 @@
         {
           "target": "media/formats/mp4/mp4_stream_parser_unittest.cc",
           "before_sha256": "8e620049a220c5cd98e9b1ad791a44ef96098e9a8c811f3299ffa533be0b7660",
-          "after_sha256": "7fbdb346e43484e98a665b274ae31565a2065e1744ef56148a1592dfa5102ade"
+          "after_sha256": "6dfa9d1ea57c20d4c86c322483474e68da7aaec39ee3c43caa1625371ba4f864"
         },
         {
           "target": "media/filters/chunk_demuxer_unittest.cc",
           "before_sha256": "d840d132e021395d7d52bf836a6bac56acf9f2a2b2688e44f0cbfcde0ebae570",
-          "after_sha256": "3c973a2a24887f75c96d0706be7966942b66fe7a17b8c59e28388383bb313de9"
+          "after_sha256": "bdcc9b664ac666142ea39e6dd6d2e6731674360e0a711e34be9e713e669f2383"
         },
         {
           "target": "media/filters/source_buffer_stream_unittest.cc",
@@ -5153,6 +5208,21 @@
           "target": "third_party/blink/renderer/platform/media/testing/mock_web_associated_url_loader.h",
           "before_sha256": "9499e01c6f6a067b3138107b2854dae1224523fb8064fb31b7e94522bad8ed13",
           "after_sha256": "bda87803af615b673bb4e1c6b05ff83f3682dbd4a0e2171766af40351bb9c471"
+        },
+        {
+          "target": "media/filters/ffmpeg_demuxer.h",
+          "before_sha256": "3643a41637758c07422bbcffe14b50cb3ba130642b583a769099d5fa5397b857",
+          "after_sha256": "303fae23061897f2e846baa70ba0a803f8028fe38ff68ee8ed53f2ee748a64e7"
+        },
+        {
+          "target": "media/filters/ffmpeg_demuxer.cc",
+          "before_sha256": "87c970c5752addfba4441272b1dabcaf639d71a9d62953207d2cb285308eaa4d",
+          "after_sha256": "881df152ea8791ed2bc527d73c4ef3d58b199316ca51f78378dba6c1ab318224"
+        },
+        {
+          "target": "media/filters/ffmpeg_demuxer_unittest.cc",
+          "before_sha256": "04115501dc53137bef8a391c2481165a347201ce5514080ebe1e4860a71f5175",
+          "after_sha256": "c89e2c4314b09126fcc2d0e4b9ab5f56f046e7fdf7686fd03209877dd6ff455a"
         }
       ]
     },

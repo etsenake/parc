@@ -372,6 +372,17 @@ for each message, which the check can't measure without a browser.
   `ffmpeg_common.cc` gives `src=` files planar float as for AAC. Pages see it
   only under Safari's identity (`IsParcSafariOnlyAudioCodecs`), and never in
   WebCodecs, which Safari's lacks.
+- AMR and AMR-WB audio (`samr`, `sawb`) and H.263 video (`s263`) in 3GPP and
+  MP4, which Safari plays: `AudioToolboxAudioDecoder` decodes AMR, one packet
+  per frame of each sample, and `ParcVideoToolboxH263Decoder`
+  (`media/gpu/mac`) hands H.263 to VideoToolbox's software decoder through
+  `VideoToolboxVideoDecoder`, both in the GPU process. `VideoCodec::kH263` is
+  Parc's and has no profile. Only Safari-identity pages produce these configs:
+  `MP4StreamParser` under Safari's init segment rules (which also require the
+  `damr` and `d263` boxes, as `AVStreamDataParser` does) and `FFmpegDemuxer`
+  for `src=` (`ParcSetSafariCodecs`). Media Source on those pages takes the
+  codec strings `samr`, `sawb` and `s263` (and `name.*`) in every MP4 family
+  type, but not `s263` in QuickTime.
 
 ## Widevine
 

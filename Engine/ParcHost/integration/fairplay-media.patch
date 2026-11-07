@@ -3330,7 +3330,25 @@
  
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -474,6 +568,117 @@
+@@ -408,7 +502,7 @@
+ 
+ std::unique_ptr<Demuxer> DemuxerManager::CreateFFmpegDemuxer() {
+   DCHECK(data_source_);
+-  return std::make_unique<FFmpegDemuxer>(
++  auto demuxer = std::make_unique<FFmpegDemuxer>(
+       media_task_runner_, data_source_.get(),
+       base::BindPostTaskToCurrentDefault(
+           base::BindRepeating(&DemuxerManager::OnEncryptedMediaInitData,
+@@ -417,6 +511,8 @@
+           base::BindRepeating(&DemuxerManager::OnFFmpegMediaTracksUpdated,
+                               weak_factory_.GetWeakPtr())),
+       media_log_.get(), IsLocalFile(loaded_url_));
++  demuxer->ParcSetSafariCodecs(client_->PresentsParcSafariIdentity());
++  return demuxer;
+ }
+ 
+ void DemuxerManager::OnFFmpegMediaTracksUpdated(
+@@ -474,6 +570,117 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -3601,7 +3619,38 @@
    RCHECK(reader->ScanChildren() &&
           reader->ReadChild(&format) &&
           reader->ReadChild(&type));
-@@ -1592,6 +1600,54 @@
+@@ -1407,6 +1415,19 @@
+       break;
+     }
+ #endif  // BUILDFLAG(ENABLE_AV1_DECODER)
++#if BUILDFLAG(USE_PROPRIETARY_CODECS)
++    case FOURCC_S263: {
++      // Parc: MP4StreamParser takes it only under Safari's init segment
++      // rules.
++      H263SpecificBox d263;
++      RCHECK_MEDIA_LOGGED(reader->ReadChild(&d263), reader->media_log(),
++                          "Failure parsing H263SpecificBox (d263)");
++      video_info.codec = VideoCodec::kH263;
++      video_info.level = d263.level;
++      frame_bitstream_converter = nullptr;
++      break;
++    }
++#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+     default:
+       // Unknown/unsupported format
+       MEDIA_LOG(ERROR, reader->media_log())
+@@ -1454,7 +1475,9 @@
+     video_spatial_format.projection_type = sv3d.projection.type;
+   }
+ 
+-  if (video_info.profile == VIDEO_CODEC_PROFILE_UNKNOWN) {
++  // H.263 has no VideoCodecProfile.
++  if (video_info.profile == VIDEO_CODEC_PROFILE_UNKNOWN &&
++      video_info.codec != VideoCodec::kH263) {
+     MEDIA_LOG(ERROR, reader->media_log()) << "Unrecognized video codec profile";
+     return false;
+   }
+@@ -1592,6 +1615,75 @@
    return true;
  }
  
@@ -3653,10 +3702,31 @@
 +  return true;
 +}
 +
++AMRSpecificBox::AMRSpecificBox() = default;
++AMRSpecificBox::AMRSpecificBox(const AMRSpecificBox& other) = default;
++AMRSpecificBox::~AMRSpecificBox() = default;
++FourCC AMRSpecificBox::BoxType() const {
++  return FOURCC_DAMR;
++}
++bool AMRSpecificBox::Parse(BoxReader* reader) {
++  return reader->SkipBytes(9);
++}
++
++H263SpecificBox::H263SpecificBox() = default;
++H263SpecificBox::H263SpecificBox(const H263SpecificBox& other) = default;
++H263SpecificBox::~H263SpecificBox() = default;
++FourCC H263SpecificBox::BoxType() const {
++  return FOURCC_D263;
++}
++bool H263SpecificBox::Parse(BoxReader* reader) {
++  return reader->SkipBytes(5) && reader->Read1(&level) &&
++         reader->SkipBytes(1);
++}
++
  OpusSpecificBox::OpusSpecificBox()
      : seek_preroll(base::Milliseconds(80)), codec_delay_in_frames(0) {}
  
-@@ -1923,6 +1979,24 @@
+@@ -1923,6 +2015,30 @@
      }
    }
  
@@ -3669,6 +3739,12 @@
 +               ? (pcm.sample_size == 16 || pcm.sample_size == 24 ||
 +                  pcm.sample_size == 32)
 +               : (pcm.sample_size == 32 || pcm.sample_size == 64));
++  }
++
++  if (original_format == FOURCC_SAMR || original_format == FOURCC_SAWB) {
++    AMRSpecificBox damr;
++    RCHECK_MEDIA_LOGGED(reader->ReadChild(&damr), reader->media_log(),
++                        "Failure parsing AMRSpecificBox (damr)");
 +  }
 +
 +  // Parc: Apple Lossless keeps its config in an ALACSpecificBox.
@@ -3705,7 +3781,7 @@
  };
  
  struct MEDIA_EXPORT Stereoscopic3DVideo : Box {
-@@ -437,6 +445,24 @@
+@@ -437,6 +445,41 @@
    uint32_t sample_rate;
    uint8_t channel_count;
    uint8_t bits_per_sample;
@@ -3727,10 +3803,27 @@
 +  uint8_t bit_depth = 0;
 +  uint8_t channel_count = 0;
 +  uint32_t sample_rate = 0;
++};
++
++// Parc: 3GPP's AMRSpecificBox (TS 26.244, 6.7), which AVStreamDataParser
++// requires in an AMR sample entry. Its fields (vendor, decoder version, mode
++// set, mode change period, frames per sample) aren't needed: each AMR frame
++// names its own mode.
++struct MEDIA_EXPORT AMRSpecificBox : Box {
++  DECLARE_BOX_METHODS(AMRSpecificBox);
++};
++
++// Parc: 3GPP's H263SpecificBox (TS 26.244, 6.8), without which
++// AVStreamDataParser leaves an H.263 track undecodable: vendor, decoder
++// version, then the H.263 level and profile.
++struct MEDIA_EXPORT H263SpecificBox : Box {
++  DECLARE_BOX_METHODS(H263SpecificBox);
++
++  uint8_t level = 0;
  };
  
  struct MEDIA_EXPORT OpusSpecificBox : Box {
-@@ -509,6 +535,8 @@
+@@ -509,6 +552,8 @@
    ElementaryStreamDescriptor esds;
    FlacSpecificBox dfla;
    OpusSpecificBox dops;
@@ -3790,7 +3883,7 @@
  
    for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
         track != moov_->tracks.end(); ++track) {
-@@ -497,8 +518,22 @@
+@@ -497,8 +518,28 @@
        FourCC audio_format = (entry.format == FOURCC_ENCA)
                                  ? entry.sinf.format.format
                                  : entry.format;
@@ -3807,13 +3900,20 @@
 +        AddSinfInitData(entry.sinf, &sinf_init_data);
 +      }
  
-       if (audio_format != FOURCC_OPUS && audio_format != FOURCC_FLAC &&
+-      if (audio_format != FOURCC_OPUS && audio_format != FOURCC_FLAC &&
++      // Parc: 3GPP's AMR only under Safari's init segment rules, as
++      // AVStreamDataParser takes it.
++      const bool parc_amr =
++          parc_ignore_declared_codecs_ &&
++          (audio_format == FOURCC_SAMR || audio_format == FOURCC_SAWB);
++      if (!parc_amr && audio_format != FOURCC_OPUS &&
++          audio_format != FOURCC_FLAC &&
 +          audio_format != FOURCC_ALAC && audio_format != FOURCC_IPCM &&
 +          audio_format != FOURCC_FPCM &&
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
            audio_format != FOURCC_AC3 && audio_format != FOURCC_EAC3 &&
  #endif
-@@ -545,7 +580,7 @@
+@@ -545,7 +586,7 @@
        } else if (audio_format == FOURCC_FLAC) {
          // FLAC-in-ISOBMFF does not use object type indication. |audio_format|
          // is sufficient for identifying FLAC codec.
@@ -3822,7 +3922,7 @@
            MEDIA_LOG(ERROR, media_log_) << "FLAC audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -556,11 +591,36 @@
+@@ -556,11 +597,43 @@
          channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
          sample_per_second = entry.samplerate;
          extra_data = entry.dfla.stream_info;
@@ -3835,6 +3935,13 @@
 +        codec = AudioCodec::kPCM;
 +        channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
 +        sample_per_second = entry.samplerate;
++      } else if (parc_amr) {
++        // The entry's rate and channel count are reserved (TS 26.244, 6.5):
++        // AMR is mono at 8 kHz, AMR-WB at 16 kHz.
++        codec = audio_format == FOURCC_SAMR ? AudioCodec::kAMR_NB
++                                            : AudioCodec::kAMR_WB;
++        channel_layout_config = ChannelLayoutConfig::Mono();
++        sample_per_second = audio_format == FOURCC_SAMR ? 8000 : 16000;
 +      } else if (audio_format == FOURCC_ALAC) {
 +        // Parc: Apple Lossless, as Safari's Media Source plays it. Channels
 +        // and rate come from the ALACSpecificConfig (the sample entry's rate
@@ -3860,7 +3967,7 @@
            MEDIA_LOG(ERROR, media_log_) << "IAMF audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -618,7 +678,8 @@
+@@ -618,7 +691,8 @@
          }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
          DVLOG(1) << "audio_type 0x" << std::hex << static_cast<int>(audio_type);
@@ -3870,7 +3977,7 @@
            if (!strict_audio_object_types_->contains(audio_type)) {
              MEDIA_LOG(ERROR, media_log_)
                  << "audio object type 0x" << std::hex
-@@ -703,7 +764,19 @@
+@@ -703,7 +777,22 @@
        }
  
        SampleFormat sample_format;
@@ -3881,6 +3988,9 @@
 +        sample_format = entry.pcm.sample_size == 16 ? kSampleFormatS16
 +                        : entry.pcm.sample_size == 24 ? kSampleFormatS24
 +                                                     : kSampleFormatS32;
++      } else if (parc_amr) {
++        // The entry's sample size is reserved too.
++        sample_format = kSampleFormatS16;
 +      } else if (codec == AudioCodec::kALAC) {
 +        // Parc: the ALACSpecificConfig's bit depth (16, 20, 24 or 32); a
 +        // sample entry may state 20, which the sizes below don't take.
@@ -3891,7 +4001,18 @@
          sample_format = kSampleFormatU8;
        } else if (entry.samplesize == 16) {
          sample_format = kSampleFormatS16;
-@@ -774,6 +847,9 @@
+@@ -768,12 +857,19 @@
+         desc_idx = 0;
+       const VideoSampleEntry& entry = samp_descr.video_entries[desc_idx];
+ 
+-      if (!entry.IsFormatValid()) {
++      // Parc: 3GPP's H.263 only under Safari's init segment rules, as
++      // AVStreamDataParser takes it.
++      const bool parc_h263 = parc_ignore_declared_codecs_ &&
++                             entry.video_info.codec == VideoCodec::kH263;
++      if (!parc_h263 && !entry.IsFormatValid()) {
+         MEDIA_LOG(ERROR, media_log_) << "Unsupported video format 0x"
+                                      << std::hex << entry.format
                                       << " in stsd box.";
          return false;
        }
@@ -3901,7 +4022,7 @@
  
        // TODO(strobe): Recover correct crop box
        gfx::Size coded_size(entry.width, entry.height);
-@@ -803,7 +879,31 @@
+@@ -803,7 +899,31 @@
        VideoCodec video_codec = entry.video_info.codec;
        VideoCodecProfile video_codec_profile = entry.video_info.profile;
        VideoCodecLevel video_codec_level = entry.video_info.level;
@@ -3934,7 +4055,7 @@
          DCHECK_EQ(entry.dv_info->codec_info.codec, VideoCodec::kDolbyVision);
          if (has_dv_) {
            video_codec = entry.dv_info->codec_info.codec;
-@@ -835,7 +935,7 @@
+@@ -835,7 +955,7 @@
        if (entry.video_color_space.IsSpecified())
          video_config.set_color_space_info(entry.video_color_space);
  
@@ -3943,7 +4064,7 @@
            entry.dv_info->color_space.IsSpecified()) {
          video_config.set_color_space_info(entry.dv_info->color_space);
        }
-@@ -888,6 +988,10 @@
+@@ -888,6 +1008,10 @@
  
    if (!moov_->pssh.empty())
      OnEncryptedMediaInitData(moov_->pssh);
@@ -3954,7 +4075,7 @@
  
    RCHECK(config_cb_.Run(std::move(media_tracks)));
  
-@@ -1096,6 +1200,37 @@
+@@ -1096,6 +1220,37 @@
    // being put in a StreamParserBuffer. Prefer `heap_frame_buf` where possible.
    std::vector<uint8_t> frame_buf;
    base::HeapArray<uint8_t> heap_frame_buf;
@@ -12636,7 +12757,7 @@
    if (is_posix) {
 --- a/media/formats/mp4/fourccs.h
 +++ b/media/formats/mp4/fourccs.h
-@@ -24,6 +24,11 @@
+@@ -24,6 +24,18 @@
    FOURCC_AC4 = 0x61632d34,   // "ac-4"
    FOURCC_DAC4 = 0x64616334,  // "dac4"
  #endif
@@ -12645,6 +12766,13 @@
 +  FOURCC_FPCM = 0x6670636d,
 +  FOURCC_PCMC = 0x70636d43,
 +  FOURCC_ALAC = 0x616c6163,  // "alac"
++  // Parc: 3GPP's AMR and H.263 (Safari-only, decoded by AudioToolbox and
++  // VideoToolbox).
++  FOURCC_SAMR = 0x73616d72,  // "samr"
++  FOURCC_SAWB = 0x73617762,  // "sawb"
++  FOURCC_DAMR = 0x64616d72,  // "damr"
++  FOURCC_S263 = 0x73323633,  // "s263"
++  FOURCC_D263 = 0x64323633,  // "d263"
    FOURCC_AV01 = 0x61763031,  // "av01"
    FOURCC_AV1C = 0x61763143,  // "av1C"
    FOURCC_AVC1 = 0x61766331,
@@ -12764,7 +12892,7 @@
  }
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
-@@ -782,6 +815,111 @@
+@@ -782,6 +815,129 @@
  }
  
  // static
@@ -12825,6 +12953,24 @@
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
 +  if (std::ranges::find(kIsoBmffTypes, type) != kIsoBmffTypes.end()) {
 +    result.type = "video/mp4";
++    // AVStreamDataParser takes 3GPP's AMR and H.263, though not H.263 in
++    // QuickTime; MP4StreamParser takes them under Safari's init segment rules,
++    // whatever the codecs name, so they leave the list.
++    const auto names = [](const std::string& codec_id, std::string_view name) {
++      return codec_id == name || (codec_id.starts_with(name) &&
++                                  codec_id[name.size()] == '.');
++    };
++    if (type == "video/quicktime" || type == "audio/x-quicktime") {
++      for (const std::string& codec_id : result.codecs) {
++        if (names(codec_id, "s263")) {
++          return std::nullopt;
++        }
++      }
++    }
++    std::erase_if(result.codecs, [&names](const std::string& codec_id) {
++      return names(codec_id, "samr") || names(codec_id, "sawb") ||
++             names(codec_id, "s263");
++    });
 +  } else if (std::ranges::find(kMp3Types, type) != kMp3Types.end()) {
 +    result.type = "audio/mpeg";
 +    std::erase(result.codecs, "mp3");
@@ -12923,7 +13069,7 @@
          if (track_id == video_track_id_ && capture_video_buffers_) {
            video_buffers_.push_back(buf);
          }
-@@ -495,6 +502,92 @@
+@@ -495,6 +502,227 @@
    ParseMP4File("bear-320x240-v-2fragments-open-gop_frag-cenc.mp4", 512);
  }
  
@@ -13013,10 +13159,145 @@
 +  }
 +}
 +
++// Parc: `file`'s init segment with its `entry` sample entry renamed
++// `new_entry`, and the entry's `config` box replaced by `box` (none if empty)
++// and a 'free' box filling the rest of it.
++std::vector<uint8_t> ParcRewriteSampleEntry(const std::string& file,
++                                            const std::string& entry,
++                                            const std::string& new_entry,
++                                            const std::string& config,
++                                            const std::vector<uint8_t>& box) {
++  scoped_refptr<DecoderBuffer> original = ReadTestDataFile(file);
++  std::vector<uint8_t> data(original->begin(), original->end());
++  auto find = [&data](const std::string& name, size_t start) {
++    return static_cast<size_t>(
++        std::search(data.begin() + start, data.end(), name.begin(),
++                    name.end()) -
++        data.begin());
++  };
++  const size_t entry_type = find(entry, find("stsd", 0));
++  CHECK_LT(entry_type, data.size());
++  std::ranges::copy(new_entry, data.begin() + entry_type);
++  const size_t at = find(config, entry_type) - 4;
++  CHECK_LT(at, data.size());
++  const size_t size = uint32_t{data[at]} << 24 | uint32_t{data[at + 1]} << 16 |
++                      uint32_t{data[at + 2]} << 8 | data[at + 3];
++  CHECK_GE(size, box.size() + 8);
++  std::ranges::copy(box, data.begin() + at);
++  const size_t free_size = size - box.size();
++  for (size_t i = 0; i < 4; ++i) {
++    data[at + box.size() + i] =
++        static_cast<uint8_t>(free_size >> (24 - 8 * i));
++  }
++  std::ranges::copy(std::string("free"), data.begin() + at + box.size() + 4);
++  data.resize(find("moof", 0) - 4);
++  return data;
++}
++
++// Parc: AVStreamDataParser takes 3GPP's AMR, and refuses an AMR sample entry
++// without its AMRSpecificBox, as Safari's Media Source does.
++TEST_F(MP4StreamParserTest, ParcAmrNeedsSafariRulesAndDamr) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(testing::_))
++      .Times(testing::AnyNumber());
++  // vendor, decoder version, mode set, mode change period, frames per sample.
++  const std::vector<uint8_t> kDamr = {0,   0,   0,    17,   'd', 'a',
++                                      'm', 'r', 'F',  'F',  'M', 'P',
++                                      0,   0x81, 0xff, 0x00, 1};
++  for (const bool wideband : {false, true}) {
++    for (const bool safari : {false, true}) {
++      for (const bool damr : {false, true}) {
++        SCOPED_TRACE(testing::Message() << "wideband " << wideband
++                                        << " safari " << safari << " damr "
++                                        << damr);
++        const std::vector<uint8_t> init = ParcRewriteSampleEntry(
++            "bear-mpeg2-aac-only_frag.mp4", "mp4a", wideband ? "sawb" : "samr",
++            "esds", damr ? kDamr : std::vector<uint8_t>());
++        parser_ = std::make_unique<MP4StreamParser>(std::nullopt, false, false,
++                                                    false, false);
++        if (safari) {
++          parser_->ParcIgnoreDeclaredCodecs();
++        }
++        auto params = GetDefaultInitParametersExpectations();
++        params.detected_video_track_count = 0;
++        lower_bound_ = kNoDecodeTimestamp;
++        InitializeParserWithInitParametersExpectations(params);
++        ASSERT_EQ(AppendAllDataThenParseInPieces(init, init.size()),
++                  safari && damr);
++        if (!safari || !damr) {
++          continue;
++        }
++        // The entry's rate and channel fields don't count.
++        EXPECT_EQ(audio_decoder_config_.codec(),
++                  wideband ? AudioCodec::kAMR_WB : AudioCodec::kAMR_NB);
++        EXPECT_EQ(audio_decoder_config_.samples_per_second(),
++                  wideband ? 16000 : 8000);
++        EXPECT_EQ(audio_decoder_config_.channel_layout(), CHANNEL_LAYOUT_MONO);
++
++        // One sample of two frames, a 12.2 kbit/s (AMR-WB 23.85) frame and a
++        // NO_DATA one, passes as it is.
++        std::vector<uint8_t> sample(wideband ? 61 : 32, 0x5a);
++        sample[0] = wideband ? 0x44 : 0x3c;
++        sample.push_back(0x7c);
++        const auto sample_size = static_cast<uint8_t>(sample.size());
++        std::vector<uint8_t> fragment = {
++            0, 0, 0, 92, 'm', 'o', 'o', 'f', 0, 0, 0, 16, 'm', 'f', 'h', 'd',
++            0, 0, 0, 0, 0, 0, 0, 1,
++            0, 0, 0, 68, 't', 'r', 'a', 'f', 0, 0, 0, 16, 't', 'f', 'h', 'd',
++            0, 2, 0, 0, 0, 0, 0, 1,
++            0, 0, 0, 16, 't', 'f', 'd', 't', 0, 0, 0, 0, 0, 0, 0, 0,
++            0, 0, 0, 28, 't', 'r', 'u', 'n', 0, 0, 3, 1, 0, 0, 0, 1,
++            0, 0, 0, 100, 0, 0, 0, 1, 0, 0, 0, sample_size,
++            0, 0, 0, static_cast<uint8_t>(8 + sample_size), 'm', 'd', 'a', 't'};
++        fragment.insert(fragment.end(), sample.begin(), sample.end());
++        pcm_buffers_.clear();
++        capture_pcm_buffers_ = true;
++        ASSERT_TRUE(AppendAllDataThenParseInPieces(fragment, fragment.size()));
++        ASSERT_EQ(pcm_buffers_.size(), 1u);
++        EXPECT_TRUE(std::ranges::equal(base::span(*pcm_buffers_[0]), sample));
++      }
++    }
++  }
++}
++
++// Parc: AVStreamDataParser takes 3GPP's H.263; without its H263SpecificBox the
++// track can't be decoded, which fails the init segment here.
++TEST_F(MP4StreamParserTest, ParcH263NeedsSafariRulesAndD263) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(testing::_))
++      .Times(testing::AnyNumber());
++  // vendor, decoder version, level 45, profile 0.
++  const std::vector<uint8_t> kD263 = {0,   0,   0,   15,  'd', '2', '6', '3',
++                                      'F', 'F', 'M', 'P', 0,   45,  0};
++  for (const bool safari : {false, true}) {
++    for (const bool d263 : {false, true}) {
++      SCOPED_TRACE(testing::Message() << "safari " << safari << " d263 "
++                                      << d263);
++      const std::vector<uint8_t> init = ParcRewriteSampleEntry(
++          "bear-1280x720-av_frag.mp4", "avc1", "s263", "avcC",
++          d263 ? kD263 : std::vector<uint8_t>());
++      parser_ = std::make_unique<MP4StreamParser>(std::nullopt, false, false,
++                                                  false, false);
++      if (safari) {
++        parser_->ParcIgnoreDeclaredCodecs();
++      }
++      lower_bound_ = kNoDecodeTimestamp;
++      InitializeParser();
++      ASSERT_EQ(AppendAllDataThenParseInPieces(init, init.size()),
++                safari && d263);
++      if (safari && d263) {
++        EXPECT_EQ(video_decoder_config_.codec(), VideoCodec::kH263);
++        EXPECT_EQ(video_decoder_config_.profile(), VIDEO_CODEC_PROFILE_UNKNOWN);
++        EXPECT_EQ(video_decoder_config_.level(), 45u);
++        EXPECT_EQ(video_decoder_config_.coded_size(), gfx::Size(1280, 720));
++        EXPECT_EQ(audio_decoder_config_.codec(), AudioCodec::kAAC);
++      }
++    }
++  }
++}
++
  TEST_F(MP4StreamParserTest, MPEG2_AAC_LC) {
    InSequence s;
    base::flat_set<int> audio_object_types;
-@@ -516,6 +609,31 @@
+@@ -516,6 +744,31 @@
    InitializeParserWithInitParametersExpectations(params);
    ParseMP4File("bear-mpeg2-aac-only_frag.mp4", 512);
    EXPECT_EQ(audio_decoder_config_.profile(), AudioCodecProfile::kUnknown);
@@ -13048,7 +13329,7 @@
  }
  
  TEST_F(MP4StreamParserTest, MPEG4_XHE_AAC) {
-@@ -851,6 +969,93 @@
+@@ -851,6 +1104,93 @@
    EXPECT_EQ(HEVCPROFILE_MAIN10, video_decoder_config_.profile());
  #endif
  }
@@ -13210,11 +13491,10 @@
    }
  
    void ExpectConfigChanged(DemuxerStream::Type type) {
-@@ -2400,8 +2430,353 @@
- 
+@@ -2401,7 +2431,352 @@
    // Adding an id after append should fail.
    ASSERT_EQ(AddId(video_id, HAS_VIDEO), ChunkDemuxer::kReachedIdLimit);
-+}
+ }
 +
 +// Parc: on Safari's identity a SourceBuffer can be added after the first ones
 +// initialized the demuxer, as WebKit's MediaSource adds one whenever it is
@@ -13231,7 +13511,7 @@
 +  ASSERT_TRUE(InitDemuxer(HAS_VIDEO));
 +  AppendSingleStreamCluster(kSourceId, kVideoTrackNum, 0, 4);
 +  CheckExpectedRangesForMediaSource("{ [0,132) }");
-+
+ 
 +  ASSERT_EQ(AddId("audio", HAS_AUDIO), ChunkDemuxer::kOk);
 +  CheckExpectedRangesForMediaSource("{ [0,132) }");
 +  EXPECT_EQ(demuxer_->GetAllStreams().size(), 1u);
@@ -13350,8 +13630,8 @@
 +                     &enabled));
 +  ASSERT_EQ(enabled, GetStream(DemuxerStream::AUDIO));
 +  CheckExpectedBuffers(enabled, "46K 69K");
- }
- 
++}
++
 +// Parc: on Safari's identity each SourceBuffer's first audio track is
 +// enabled, as WebKit's SourceBuffer enables it, and its player mixes them.
 +TEST_F(ChunkDemuxerTest, ParcSafariEachSourceBufferEnablesItsAudio) {
@@ -13564,7 +13844,7 @@
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
-@@ -3012,8 +3387,272 @@
+@@ -3012,9 +3387,285 @@
  
      if (result == ChunkDemuxer::kOk)
        demuxer_->RemoveId("source_id");
@@ -13672,6 +13952,8 @@
 +  EXPECT_EQ(AddId(kSourceId, "audio/mp4", "vp09.00.10.08"),
 +            ChunkDemuxer::kNotSupported);
 +  EXPECT_EQ(AddId(kSourceId, "audio/x-mpeg", ""), ChunkDemuxer::kNotSupported);
++  EXPECT_EQ(AddId(kSourceId, "video/mp4", "samr"), ChunkDemuxer::kNotSupported);
++  EXPECT_EQ(AddId(kSourceId, "video/mp4", "s263"), ChunkDemuxer::kNotSupported);
 +  EXPECT_EQ(AddId(kSourceId, "audio/ogg", "opus"),
 +            ChunkDemuxer::kNotSupported);
 +  ASSERT_EQ(AddId(kSourceId, "audio/webm", "opus"), ChunkDemuxer::kOk);
@@ -13703,6 +13985,13 @@
 +      {"audio/x-mpeg", "mp3", ChunkDemuxer::kOk},
 +      {"audio/mpeg", "mp3", ChunkDemuxer::kOk},
 +      {"audio/mpeg", "mp4a.6B", ChunkDemuxer::kNotSupported},
++      {"video/3gpp", "s263,samr", ChunkDemuxer::kOk},
++      {"audio/3gpp", "sawb", ChunkDemuxer::kOk},
++      {"video/quicktime", "samr", ChunkDemuxer::kOk},
++      {"video/quicktime", "s263", ChunkDemuxer::kNotSupported},
++      {"audio/x-quicktime", "s263.1", ChunkDemuxer::kNotSupported},
++      {"video/3gpp", "SAMR", ChunkDemuxer::kNotSupported},
++      {"audio/mpeg", "samr", ChunkDemuxer::kNotSupported},
 +      {"audio/ogg", "", ChunkDemuxer::kOk},
 +      {"audio/ogg", "opus", ChunkDemuxer::kOk},
 +      {"audio/ogg", "vorbis,flac", ChunkDemuxer::kOk},
@@ -13721,6 +14010,9 @@
 +      {"audio/mp4", "iamf.001.001.Opus", ChunkDemuxer::kNotSupported},
 +      {"video/mp4", "avc1.640028,iamf", ChunkDemuxer::kNotSupported},
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
++#if BUILDFLAG(USE_PROPRIETARY_CODECS)
++      {"video/mp4", "s263.1,mp4a.40.2", ChunkDemuxer::kOk},
++#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 +  };
 +  for (const auto& test_case : kCases) {
 +    ChunkDemuxer::Status result =
@@ -13730,9 +14022,9 @@
 +    if (result == ChunkDemuxer::kOk) {
 +      demuxer_->RemoveId(kSourceId);
 +    }
-+  }
-+}
-+
+   }
+ }
+ 
 +TEST_F(ChunkDemuxerTest, ParcSafariAudioContainerTypeTakesMp4Video) {
 +  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
 +  EXPECT_CALL(host_, SetDuration(_)).Times(AnyNumber());
@@ -13820,7 +14112,7 @@
 +    EXPECT_CALL(*this, InitSegmentReceivedMock(_));
 +    EXPECT_TRUE(AppendData(kSourceId, base::span(*mp4)));
 +    EXPECT_TRUE(GetStream(DemuxerStream::VIDEO));
-   }
++  }
 +};
 +
 +TEST_F(ChunkDemuxerParcIamfTest, IamfTrackPlaysOutsideSafariRules) {
@@ -13832,17 +14124,16 @@
 +TEST_F(ChunkDemuxerParcIamfTest, SafariRulesLeaveOutIamfTrack) {
 +  ASSERT_NO_FATAL_FAILURE(AppendIamfAndH264(/*safari=*/true, ""));
 +  EXPECT_FALSE(GetStream(DemuxerStream::AUDIO));
- }
++}
 +#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
- 
++
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
-@@ -3309,6 +3948,38 @@
- namespace {
- const char* kMp2tMimeType = "video/mp2t";
+ 
+@@ -3311,6 +3962,38 @@
  const char* kMp2tCodecs = "mp4a.40.2,avc1.640028";
-+}
-+
+ }
+ 
 +TEST_F(ChunkDemuxerTest, ParcSafariTsAudioTrackSwitchAndDisable) {
 +  EXPECT_FOUND_CODEC_NAME(Audio, "mp3").Times(2);
 +  demuxer_->ParcSetSafariMediaSource(true);
@@ -13873,10 +14164,12 @@
 +      base::Seconds(1), base::DoNothing());
 +  EXPECT_FALSE(first->IsEnabled());
 +  EXPECT_FALSE(second->IsEnabled());
- }
- 
++}
++
  TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
-@@ -3768,8 +4439,347 @@
+   EXPECT_CALL(*this, DemuxerOpened());
+   EXPECT_FOUND_CODEC_NAME(Audio, "aac");
+@@ -3768,6 +4451,345 @@
    // Verify that the old data, and nothing more, has been garbage collected.
    CheckExpectedRanges(DemuxerStream::AUDIO, "{ [1000,1230) }");
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
@@ -14008,8 +14301,8 @@
 +
 +  EXPECT_TRUE(demuxer_->EvictCodedFrames(kSourceId, current_time, 2000000));
 +  CheckExpectedRanges("{ [25000,75000) }");
- }
- 
++}
++
 +TEST_F(ChunkDemuxerTest, ParcSafariEviction_DataAfterThePlayableSegment) {
 +  ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
 +  demuxer_->ParcSetSafariEviction(true);
@@ -14219,12 +14512,10 @@
 +  EXPECT_TRUE(
 +      demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 1000000));
 +  CheckExpectedRanges("{ [0,55000) }");
-+}
-+
+ }
+ 
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
-   ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
-   demuxer_->SetMemoryLimitsForTest(
-@@ -5073,4 +6083,52 @@
+@@ -5073,4 +6095,52 @@
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
  
@@ -21458,3 +21749,95 @@
  };
  
  }  // namespace blink
+--- a/media/filters/ffmpeg_demuxer.h
++++ b/media/filters/ffmpeg_demuxer.h
+@@ -243,6 +243,12 @@
+   // about capacity and what buffered data is available.
+   void NotifyCapacityAvailable();
+   void NotifyBufferingChanged();
++
++  // Parc: a Safari-identity page plays AMR and H.263 streams, which
++  // AudioToolbox and VideoToolbox decode in the GPU process, as Safari plays
++  // them. Set before Initialize().
++  void ParcSetSafariCodecs(bool safari) { parc_safari_codecs_ = safari; }
++  bool ParcPlaysSafariCodecs() const { return parc_safari_codecs_; }
+ 
+   // Attaches to `buffer` the metadata that applies to it from every timed
+   // metadata track that references it. Returns false if any of that metadata
+@@ -431,6 +437,8 @@
+ 
+   const bool is_local_file_;
+ 
++  bool parc_safari_codecs_ = false;
++
+   // NOTE: Weak pointers must be invalidated before all other member variables.
+   base::WeakPtr<FFmpegDemuxer> weak_this_;
+   base::WeakPtrFactory<FFmpegDemuxer> cancel_pending_seek_factory_{this};
+--- a/media/filters/ffmpeg_demuxer.cc
++++ b/media/filters/ffmpeg_demuxer.cc
+@@ -221,8 +221,11 @@
+     // IsValidConfig internally and return a null scoped_ptr if not valid.
+     if (!AVStreamToAudioDecoderConfig(stream, audio_config.get()) ||
+         !audio_config->IsValidConfig() ||
+-        !IsDecoderSupportedAudioType(
+-            AudioType::FromDecoderConfig(*audio_config))) {
++        !(IsDecoderSupportedAudioType(
++              AudioType::FromDecoderConfig(*audio_config)) ||
++          (demuxer->ParcPlaysSafariCodecs() &&
++           (audio_config->codec() == AudioCodec::kAMR_NB ||
++            audio_config->codec() == AudioCodec::kAMR_WB)))) {
+       MEDIA_LOG(DEBUG, media_log) << "Warning, FFmpegDemuxer failed to create "
+                                      "a valid/supported audio decoder "
+                                      "configuration from muxed stream, config:"
+@@ -239,8 +242,10 @@
+     // IsValidConfig internally and return a null scoped_ptr if not valid.
+     if (!AVStreamToVideoDecoderConfig(stream, video_config.get()) ||
+         !video_config->IsValidConfig() ||
+-        !IsDecoderSupportedVideoType(
+-            VideoType::FromDecoderConfig(*video_config))) {
++        !(IsDecoderSupportedVideoType(
++              VideoType::FromDecoderConfig(*video_config)) ||
++          (demuxer->ParcPlaysSafariCodecs() &&
++           video_config->codec() == VideoCodec::kH263))) {
+       MEDIA_LOG(DEBUG, media_log) << "Warning, FFmpegDemuxer failed to create "
+                                      "a valid/supported video decoder "
+                                      "configuration from muxed stream, config:"
+--- a/media/filters/ffmpeg_demuxer_unittest.cc
++++ b/media/filters/ffmpeg_demuxer_unittest.cc
+@@ -1625,7 +1625,36 @@
+   // just fine.
+   Read(audio, FROM_HERE, 1796, 0, true);
+ }
++
++// Parc: 3GPP's H.263 video and AMR audio (parc-h263-amr.3gp, two seconds
++// written by FFmpeg's 3gp muxer) play only on Safari-identity pages, where
++// VideoToolbox and AudioToolbox decode them.
++TEST_F(FFmpegDemuxerTest, ParcSafariCodecsIn3gpp) {
++  CreateDemuxer("parc-h263-amr.3gp");
++  InitializeDemuxerAndExpectPipelineStatus(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
++  Shutdown();
+ 
++  CreateDemuxer("parc-h263-amr.3gp");
++  demuxer_->ParcSetSafariCodecs(true);
++  InitializeDemuxer();
++
++  DemuxerStream* video = GetStream(DemuxerStream::VIDEO);
++  ASSERT_TRUE(video);
++  EXPECT_EQ(video->video_decoder_config().codec(), VideoCodec::kH263);
++  EXPECT_EQ(video->video_decoder_config().coded_size(), gfx::Size(176, 144));
++  DemuxerStream* audio = GetStream(DemuxerStream::AUDIO);
++  ASSERT_TRUE(audio);
++  EXPECT_EQ(audio->audio_decoder_config().codec(), AudioCodec::kAMR_NB);
++  EXPECT_EQ(audio->audio_decoder_config().samples_per_second(), 8000);
++  EXPECT_EQ(audio->audio_decoder_config().channel_layout(),
++            CHANNEL_LAYOUT_MONO);
++  EXPECT_EQ(audio->audio_decoder_config().sample_format(),
++            kSampleFormatPlanarF32);
++
++  Read(audio, FROM_HERE, 32, 0, true);
++  Read(video, FROM_HERE, 2296, 0, true);
++}
++
+ #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+ 
+ TEST_F(FFmpegDemuxerTest, Read_Webm_Multiple_Tracks) {

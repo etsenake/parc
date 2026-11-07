@@ -4,7 +4,8 @@
 // (blink_unittests). Tests what a MediaSource tells a page and its media
 // engine under Safari's identity (parc_safari_identity.h) and under Chrome's:
 // types named without codecs, MPEG-2 TS types, Safari's other types and
-// codecs, Ogg, and a duration set below the buffered end.
+// codecs (3GPP's AMR and H.263 among them), Ogg, and a duration set below
+// the buffered end.
 
 #include "base/test/scoped_command_line.h"
 #include "media/base/parc_av1_support.h"
@@ -394,6 +395,72 @@ TEST_F(ParcMediaSourceTest, PCMOnlyOnSafariMP4Pages) {
                              "audio/webm; codecs=\"fpcm\""})
       EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
+}
+
+// AVStreamDataParser's answers for 3GPP's AMR and H.263: yes in every MP4
+// family type, but not H.263 in QuickTime.
+TEST_F(ParcMediaSourceTest, AmrAndH263OnlyOnSafariPages) {
+  for (const char* agent : {kChromeUserAgent, kSafariUserAgent}) {
+    SetUserAgent(agent);
+    const bool safari = agent == kSafariUserAgent;
+    for (const char* type : {"video/3gpp; codecs=\"s263\"",
+                             "audio/3gpp; codecs=\"samr\"",
+                             "audio/3gpp2; codecs=\"sawb\"",
+                             "video/mp4; codecs=\"s263,samr\"",
+                             "audio/mp4; codecs=\"s263\"",
+                             "audio/x-m4a; codecs=\"samr.abc\"",
+                             "video/quicktime; codecs=\"sawb\""})
+      EXPECT_EQ(MediaSource::isTypeSupported(Context(), type), safari) << type;
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+    EXPECT_EQ(MediaSource::isTypeSupported(
+                  Context(), "video/3gpp; codecs=\"s263.1,mp4a.40.2\""),
+              safari);
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+    for (const char* type : {"video/3gpp; codecs=\"SAMR\"",
+                             "video/3gpp; codecs=\"s263x\"",
+                             "video/quicktime; codecs=\"s263\"",
+                             "audio/x-quicktime; codecs=\"s263.1\"",
+                             "video/3gpp; codecs=\"s263,bogus\"",
+                             "audio/mpeg; codecs=\"samr\"",
+                             "audio/aac; codecs=\"sawb\"",
+                             "video/webm; codecs=\"s263\""})
+      EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+}
+
+TEST_F(ParcMediaSourceTest, SafariAmrAndH263SourceBuffer) {
+  SetUserAgent(kSafariUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  SourceBuffer* source_buffer = media_source->addSourceBuffer(
+      "video/3gpp; codecs=\"s263, samr\"", add_exception);
+  EXPECT_FALSE(add_exception.HadException());
+  ASSERT_TRUE(source_buffer);
+  EXPECT_EQ(engine_->data.added_type, "video/3gpp");
+
+  DummyExceptionStateForTesting change_exception;
+  source_buffer->changeType("audio/3gpp; codecs=\"sawb\"", change_exception);
+  EXPECT_FALSE(change_exception.HadException());
+  EXPECT_EQ(engine_->data.changed_type, "audio/3gpp");
+
+  DummyExceptionStateForTesting quicktime_exception;
+  source_buffer->changeType("video/quicktime; codecs=\"s263\"",
+                            quicktime_exception);
+  EXPECT_EQ(quicktime_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+}
+
+TEST_F(ParcMediaSourceTest, ChromeSourceBufferRefusesAmrAndH263) {
+  SetUserAgent(kChromeUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  EXPECT_FALSE(media_source->addSourceBuffer("video/mp4; codecs=\"s263\"",
+                                             add_exception));
+  EXPECT_EQ(add_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+  EXPECT_EQ(engine_->data.add_source_buffer_calls, 0);
 }
 
 TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedSafariContainers) {
