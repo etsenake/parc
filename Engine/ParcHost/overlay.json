@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 490,
+  "version": 491,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1795,12 +1795,12 @@
     {
       "source": "Engine/ParcRenderer/parc_webkit_media_keys.h",
       "target": "third_party/blink/renderer/bindings/core/v8/parc_webkit_media_keys.h",
-      "sha256": "df60293fa22528689a6568209f9e457db47437aae1cb11d583f6ff3c7b2230c4"
+      "sha256": "cff6075e568d2c500fdabb10a9008cef19df3a7f810b07d30e41d8d1a52da93c"
     },
     {
       "source": "Engine/ParcRenderer/parc_webkit_need_key.h",
       "target": "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h",
-      "sha256": "8d9183f28c9d7568830101cc7fb9bf46361f2f6ca2097c2d67ed7712fd4e1525"
+      "sha256": "016c56807867eeed079cfaaa4d79f5506ecae04d50975cbfdc8c1ce414654402"
     },
     {
       "source": "Engine/ParcRenderer/parc_webkit_skd_init_data.h",
@@ -1820,12 +1820,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_decoding.h",
       "target": "content/browser/media/parc_video_toolbox_decoding.h",
-      "sha256": "3d28921a17ff0389ec2b644f39e0f7bdb1626e866faf65ef61b857d9f9af6d7c"
+      "sha256": "68c899f09ca6d0700ebb8259875bc69e854139ace895390847081808c30e2636"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_decoding.mm",
       "target": "content/browser/media/parc_video_toolbox_decoding.mm",
-      "sha256": "6ed73d135b6dcc3de7727390130435ef90c5346c45d8327ab058ea6fb9cac9ed"
+      "sha256": "7a1373c81f7a86f7eab27549d48c446fe872f4bae0aa5bec460cd10b3dbac9ad"
     }
   ],
   "patches": [
@@ -4152,7 +4152,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "dbee43af078cbace6404246aa6497a093926857f440e18e56993967be863e4ae",
+      "sha256": "969165dae21fc396425ec0901e5f6c1dbaed02a1c87d5d98c01e2395e622875d",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4587,7 +4587,7 @@
         {
           "target": "media/mojo/mojom/video_decode_perf_history.mojom",
           "before_sha256": "a95b2185fd55e319b8b8ed76a23c0e06a7c423dc7402b12334a2accf2af000d8",
-          "after_sha256": "2c737d2939430721ddbc4cd8bbfd73367a5581eabc3c5abf6980466b5eb60f04"
+          "after_sha256": "9f9368635c93d6a12a11587750747db40d5d7d2438aaaade4fb25b6c5b685fc9"
         },
         {
           "target": "content/browser/browser_interface_binders.cc",

@@ -144,30 +144,6 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // for HLS only.
   const CLEAR_KEY_SYSTEM = /^org\.w3c\.clearkey$/i;
   const CLEAR_KEY_TYPE = 'application/x-mpegurl';
-  // AVURLAsset.audiovisualMIMETypes on macOS 27.2, the container list of
-  // WebKit's AVAssetMIMETypeCache.
-  const AVFOUNDATION_TYPES = new Set((
-      'application/mp4 application/ogg application/ttml+xml ' +
-      'application/vnd.apple.mpegurl application/x-mpegurl audio/3gpp audio/3gpp2 ' +
-      'audio/amr audio/amr-wb audio/aac audio/aacp audio/aiff audio/basic audio/flac ' +
-      'audio/mp3 audio/mp4 audio/mpa audio/mpeg audio/mpeg3 audio/mpegurl audio/mpg ' +
-      'audio/ogg audio/scpls audio/usac audio/vnd.wave audio/wav audio/wave audio/x-aac ' +
-      'audio/x-aiff audio/x-caf audio/x-m4a audio/x-m4b audio/x-m4p audio/x-m4r ' +
-      'audio/x-mp3 audio/x-mpeg audio/x-mpeg3 audio/x-mpegurl audio/x-mpg ' +
-      'audio/x-quicktime audio/x-scpls audio/x-wav text/scc text/vtt video/3gpp ' +
-      'video/3gpp2 video/avi video/dv video/m2ts video/mp1s video/mp2p video/mp2t ' +
-      'video/mp4 video/mpeg video/mpeg2 video/mpg video/msvideo video/quicktime ' +
-      'video/vnd.avi video/x-dv video/x-m2ts video/x-m4v video/x-mp1s video/x-mp2p ' +
-      'video/x-mp2t video/x-mpeg video/x-mpeg2 video/x-mpg video/x-msvideo').split(' '));
-  // Codecs AVFoundation plays there: what its isPlayableExtendedMIMEType,
-  // which WebKit asks for a type with codecs, answered on macOS 27.2
-  // (case-sensitive; avc3, hev1 and dvhe answer no).
-  const AVFOUNDATION_CODECS = [
-    /^avc1(?:\.|$)/, /^hvc1(?:\.|$)/, /^dvh1(?:\.|$)/, /^av01(?:\.|$)/, /^mp4v(?:\.|$)/,
-    /^mp4a\.(?:40(?:\.\d+)?|67)$/,
-    /^(?:ac-3|ec-3|alac|fLaC|Opus|ulaw|alaw|wvtt)$/,
-  ];
-  const CODECS_PARAMETER = /;\s*codecs\s*=\s*(?:"([^"]*)"|([^;]*))/i;
   // The modern access the legacy keys are built on: every FairPlay codec, so
   // whatever the page plays is covered. WebKit's legacy Media Source sessions
   // keep expired-session reports in the document's MediaKeys storage
@@ -331,20 +307,12 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     return offset && offset === bytes.length ? 'cenc' : null;
   }
 
-  // MIMETypeCache::canDecodeType for WebKit's AVFoundation player: a listed
-  // container, and with codecs, ones AVFoundation plays.
+  // MIMETypeCache::canDecodeType for WebKit's AVFoundation player, answered
+  // by AVFoundation itself through the browser: Blink gives the hook below
+  // canPlayAVFoundationType (parc_webkit_need_key.h) after this script runs.
   function avFoundationDecodes(type) {
-    const container = type.split(';')[0].trim().toLowerCase();
-    if (!AVFOUNDATION_TYPES.has(container)) {
-      return false;
-    }
-    const parameter = CODECS_PARAMETER.exec(type);
-    if (!parameter) {
-      return true;
-    }
-    const list = parameter[1] !== undefined ? parameter[1] : parameter[2];
-    const codecs = list.split(',').map((codec) => codec.trim()).filter((codec) => codec);
-    return codecs.every((codec) => AVFOUNDATION_CODECS.some((pattern) => pattern.test(codec)));
+    const ask = keyNeeded.canPlayAVFoundationType;
+    return typeof ask === 'function' && apply(ask, undefined, [type]) === true;
   }
 
   function utf16(bytes, offset, length) {

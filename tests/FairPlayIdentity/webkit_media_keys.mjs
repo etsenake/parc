@@ -234,7 +234,47 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
 }
 // Lets the script's tasks and promise chains run.
 const settle = async () => { for (let i = 0; i < 20; ++i) await new Promise((r) => setTimeout(r, 0)); };
-const run = (context, source) => vm.runInContext(source, context);
+// The browser's AVAssetMIMETypeCache::canDecodeType answer as AVFoundation
+// gave it on macOS 27.2 (AVURLAsset.audiovisualMIMETypes, then
+// isPlayableExtendedMIMEType for the codecs; case-sensitive, avc3, hev1 and
+// dvhe answer no). Blink gives it to the script's hook
+// (parc_webkit_need_key.h); run() does the same here.
+const AVFOUNDATION_TYPES = new Set((
+    'application/mp4 application/ogg application/ttml+xml ' +
+    'application/vnd.apple.mpegurl application/x-mpegurl audio/3gpp audio/3gpp2 ' +
+    'audio/amr audio/amr-wb audio/aac audio/aacp audio/aiff audio/basic audio/flac ' +
+    'audio/mp3 audio/mp4 audio/mpa audio/mpeg audio/mpeg3 audio/mpegurl audio/mpg ' +
+    'audio/ogg audio/scpls audio/usac audio/vnd.wave audio/wav audio/wave audio/x-aac ' +
+    'audio/x-aiff audio/x-caf audio/x-m4a audio/x-m4b audio/x-m4p audio/x-m4r ' +
+    'audio/x-mp3 audio/x-mpeg audio/x-mpeg3 audio/x-mpegurl audio/x-mpg ' +
+    'audio/x-quicktime audio/x-scpls audio/x-wav text/scc text/vtt video/3gpp ' +
+    'video/3gpp2 video/avi video/dv video/m2ts video/mp1s video/mp2p video/mp2t ' +
+    'video/mp4 video/mpeg video/mpeg2 video/mpg video/msvideo video/quicktime ' +
+    'video/vnd.avi video/x-dv video/x-m2ts video/x-m4v video/x-mp1s video/x-mp2p ' +
+    'video/x-mp2t video/x-mpeg video/x-mpeg2 video/x-mpg video/x-msvideo').split(' '));
+const AVFOUNDATION_CODECS = [
+  /^avc1(?:\.|$)/, /^hvc1(?:\.|$)/, /^dvh1(?:\.|$)/, /^av01(?:\.|$)/, /^mp4v(?:\.|$)/,
+  /^mp4a\.(?:40(?:\.\d+)?|67)$/,
+  /^(?:ac-3|ec-3|alac|fLaC|Opus|ulaw|alaw|wvtt)$/,
+];
+const avFoundationAsked = [];
+function canPlayAVFoundationType(type) {
+  avFoundationAsked.push(type);
+  const container = String(type).split(';')[0].trim().toLowerCase();
+  if (!AVFOUNDATION_TYPES.has(container)) return false;
+  const parameter = /;\s*codecs\s*=\s*(?:"([^"]*)"|([^;]*))/i.exec(type);
+  if (!parameter) return true;
+  const list = parameter[1] !== undefined ? parameter[1] : parameter[2];
+  const codecs = list.split(',').map((codec) => codec.trim()).filter((codec) => codec);
+  return codecs.every((codec) => AVFOUNDATION_CODECS.some((pattern) => pattern.test(codec)));
+}
+const run = (context, source) => {
+  const value = vm.runInContext(source, context);
+  if (source === script && typeof value === 'function') {
+    value.canPlayAVFoundationType = canPlayAVFoundationType;
+  }
+  return value;
+};
 // Errors the script throws come from the context's realm (DOMException is
 // shared), so TypeErrors are compared by name.
 const thrown = (fn) => {
@@ -918,6 +958,9 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         !supports('com.apple.fps.1_0', 'video/mp4; codecs="vp09.00.10.08"') &&
         !supports('com.apple.fps.1_1') && !supports('com.apple.fps.2_0', 'application/vnd.apple.mpegurl'),
         'types and key systems it does not');
+  check(avFoundationAsked.includes('video/mp2t') &&
+        avFoundationAsked.includes('video/mp4; codecs="hev1.1.6.L93.B0"'),
+        "each type is the browser's AVFoundation answer");
 
   const keys = new world.WebKitMediaKeys('com.apple.fps.1_0');
   const hlsInitData = (uri, contentId, certificate) => {

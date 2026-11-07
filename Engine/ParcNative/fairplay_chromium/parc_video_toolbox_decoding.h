@@ -9,7 +9,9 @@
 // and hands them to frames and dedicated workers through
 // media.mojom.ParcVideoToolboxDecoding, which also reads AudioToolbox's spatial
 // audio preferences for the output device at each call (WebKit's
-// SpatialAudioPlaybackHelperMac, for spatialRendering).
+// SpatialAudioPlaybackHelperMac, for spatialRendering), and answers WebKit's
+// AVAssetMIMETypeCache::canDecodeType from AVFoundation (synchronously, for
+// the legacy WebKitMediaKeys.isTypeSupported).
 #ifndef CONTENT_BROWSER_MEDIA_PARC_VIDEO_TOOLBOX_DECODING_H_
 #define CONTENT_BROWSER_MEDIA_PARC_VIDEO_TOOLBOX_DECODING_H_
 

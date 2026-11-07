@@ -2,8 +2,10 @@
 // //content/browser/media/parc_video_toolbox_decoding.mm.
 #include "content/browser/media/parc_video_toolbox_decoding.h"
 
+#include <AudioToolbox/AudioFormat.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMedia/CoreMedia.h>
+#import <Foundation/Foundation.h>
 #include <dlfcn.h>
 
 #include <algorithm>
@@ -21,6 +23,16 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+
+// AVURLAsset's class methods WebKit's AVAssetMIMETypeCache uses, called on
+// the class AVFoundation registers (looked up, as content/browser doesn't
+// link AVFoundation).
+@protocol ParcAVURLAssetTypes
++ (NSArray<NSString*>*)audiovisualMIMETypes;
++ (BOOL)isPlayableExtendedMIMEType:(NSString*)extendedMIMEType;
++ (BOOL)isPlayableExtendedMIMEType:(NSString*)extendedMIMEType
+                           options:(NSDictionary*)options;
+@end
 
 namespace content {
 
@@ -267,6 +279,235 @@ std::vector<uint32_t> ReadSpatialAudioSources(bool audiovisual) {
   return sources;
 }
 
+Class<ParcAVURLAssetTypes> AVURLAssetClass() {
+  static Class<ParcAVURLAssetTypes> asset_class = [] {
+    // Kept open for the browser's lifetime.
+    dlopen("/System/Library/Frameworks/AVFoundation.framework/AVFoundation",
+           RTLD_LAZY | RTLD_LOCAL);
+    return (Class<ParcAVURLAssetTypes>)NSClassFromString(@"AVURLAsset");
+  }();
+  return asset_class;
+}
+
+std::string AsciiLower(std::string text) {
+  for (char& c : text) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return text;
+}
+
+std::string Trimmed(const std::string& text) {
+  const size_t begin = text.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) {
+    return std::string();
+  }
+  const size_t end = text.find_last_not_of(" \t\r\n");
+  return text.substr(begin, end - begin + 1);
+}
+
+// WebKit's ContentType: the container before the first ';', and the codecs
+// parameter's comma-separated values (quoted or not).
+struct ParcContentType {
+  std::string container;
+  std::vector<std::string> codecs;
+};
+
+ParcContentType ParseContentType(const std::string& type) {
+  ParcContentType result;
+  const size_t semicolon = type.find(';');
+  result.container = Trimmed(type.substr(0, semicolon));
+  if (semicolon == std::string::npos) {
+    return result;
+  }
+  const std::string lower = AsciiLower(type);
+  size_t at = lower.find("codecs", semicolon);
+  while (at != std::string::npos) {
+    size_t equals = lower.find_first_not_of(" \t", at + 6);
+    if (equals != std::string::npos && lower[equals] == '=') {
+      size_t start = type.find_first_not_of(" \t", equals + 1);
+      if (start == std::string::npos) {
+        break;
+      }
+      size_t end;
+      if (type[start] == '"') {
+        ++start;
+        end = type.find('"', start);
+      } else {
+        end = type.find(';', start);
+      }
+      const std::string value =
+          type.substr(start, end == std::string::npos ? std::string::npos
+                                                      : end - start);
+      size_t from = 0;
+      while (from <= value.size()) {
+        const size_t comma = value.find(',', from);
+        const std::string codec = Trimmed(value.substr(
+            from, comma == std::string::npos ? std::string::npos
+                                             : comma - from));
+        if (!codec.empty()) {
+          result.codecs.push_back(codec);
+        }
+        if (comma == std::string::npos) {
+          break;
+        }
+        from = comma + 1;
+      }
+      break;
+    }
+    at = lower.find("codecs", at + 6);
+  }
+  return result;
+}
+
+// AVAssetMIMETypeCache::isUnsupportedContainerType, isStaticContainerType,
+// then AVURLAsset.audiovisualMIMETypes (MIMETypeCache::supportsContainerType).
+bool SupportsContainerType(const std::string& type) {
+  const std::string container = AsciiLower(type);
+  if (container.empty()) {
+    return false;
+  }
+  if (container.rfind("video/", 0) != 0 && container.rfind("audio/", 0) != 0 &&
+      container.rfind("application/", 0) != 0) {
+    return false;
+  }
+  if (container == "video/h264" || container == "video/x-flv") {
+    return false;
+  }
+  static const char* const kStatic[] = {
+      "application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/3gpp",
+      "audio/aac", "audio/aacp", "audio/aiff", "audio/basic", "audio/mp3",
+      "audio/mp4", "audio/mpeg", "audio/mpeg3", "audio/mpegurl", "audio/mpg",
+      "audio/vnd.wave", "audio/wav", "audio/wave", "audio/x-aac",
+      "audio/x-aiff", "audio/x-m4a", "audio/x-mpegurl", "audio/x-wav",
+      "video/3gpp", "video/3gpp2", "video/mp4", "video/mpeg", "video/mpeg2",
+      "video/mpg", "video/quicktime", "video/x-m4v", "video/x-mpeg",
+      "video/x-mpg"};
+  for (const char* known : kStatic) {
+    if (container == known) {
+      return true;
+    }
+  }
+  Class<ParcAVURLAssetTypes> asset = AVURLAssetClass();
+  if (!asset || ![asset respondsToSelector:@selector(audiovisualMIMETypes)]) {
+    return false;
+  }
+  for (NSString* known in [asset audiovisualMIMETypes]) {
+    if (AsciiLower(base::SysNSStringToUTF8(known)) == container) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// AVAssetMIMETypeCache's isMultichannelOpusAvailable: an Opus decoder with a
+// channel layout of more than two channels.
+bool IsMultichannelOpusAvailable() {
+  static const bool available = [] {
+    void* const audio_toolbox = dlopen(
+        "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox",
+        RTLD_LAZY | RTLD_LOCAL);
+    if (!audio_toolbox) {
+      return false;
+    }
+    using GetPropertyInfo =
+        OSStatus (*)(AudioFormatPropertyID, UInt32, const void*, UInt32*);
+    using GetProperty = OSStatus (*)(AudioFormatPropertyID, UInt32,
+                                     const void*, UInt32*, void*);
+    auto get_info = reinterpret_cast<GetPropertyInfo>(
+        dlsym(audio_toolbox, "AudioFormatGetPropertyInfo"));
+    auto get = reinterpret_cast<GetProperty>(
+        dlsym(audio_toolbox, "AudioFormatGetProperty"));
+    if (!get_info || !get) {
+      return false;
+    }
+    AudioStreamBasicDescription description = {};
+    description.mFormatID = kAudioFormatOpus;
+    UInt32 size = 0;
+    if (get_info(kAudioFormatProperty_AvailableDecodeChannelLayoutTags,
+                 sizeof(description), &description, &size) != noErr ||
+        size < sizeof(AudioChannelLayoutTag)) {
+      return false;
+    }
+    std::vector<AudioChannelLayoutTag> tags(size / sizeof(AudioChannelLayoutTag));
+    if (get(kAudioFormatProperty_AvailableDecodeChannelLayoutTags,
+            sizeof(description), &description, &size, tags.data()) != noErr) {
+      return false;
+    }
+    size_t channels = 0;
+    for (AudioChannelLayoutTag tag : tags) {
+      const UInt32 indicator = tag & 0xFFFF0000;
+      if (indicator == kAudioChannelLayoutTag_Unknown ||
+          indicator == kAudioChannelLayoutTag_DiscreteInOrder) {
+        continue;
+      }
+      channels = std::max<size_t>(channels, tag & 0x0000FFFF);
+    }
+    return channels > 2;
+  }();
+  return available;
+}
+
+// AVAssetMIMETypeCache::canDecodeExtendedType.
+bool CanDecodeExtendedType(const std::string& raw,
+                           const ParcContentType& type) {
+  const std::string container = AsciiLower(type.container);
+  const bool mp4 = container == "video/mp4" || container == "audio/mp4";
+  std::string query = raw;
+  if (mp4 && std::find(type.codecs.begin(), type.codecs.end(), "opus") !=
+                 type.codecs.end() &&
+      !IsMultichannelOpusAvailable()) {
+    return false;
+  }
+  if (mp4 && std::find(type.codecs.begin(), type.codecs.end(), "flac") !=
+                 type.codecs.end()) {
+    for (size_t at = query.find("flac"); at != std::string::npos;
+         at = query.find("flac", at + 4)) {
+      query.replace(at, 4, "fLaC");
+    }
+  }
+  Class<ParcAVURLAssetTypes> asset = AVURLAssetClass();
+  if (!asset) {
+    return false;
+  }
+  NSString* type_string = base::SysUTF8ToNSString(query);
+  static NSString* treat_playlists_as_isobmff = [] () -> NSString* {
+    void* symbol = dlsym(
+        RTLD_DEFAULT,
+        "AVURLAssetExtendedMIMETypePlayabilityTreatPlaylistMIMETypesAsISOBMFFMediaDataContainersKey");
+    return symbol ? *static_cast<NSString* __unsafe_unretained*>(symbol) : nil;
+  }();
+  if (treat_playlists_as_isobmff &&
+      [asset respondsToSelector:@selector(isPlayableExtendedMIMEType:options:)]) {
+    return [asset isPlayableExtendedMIMEType:type_string
+                                     options:@{treat_playlists_as_isobmff : @YES}];
+  }
+  return [asset respondsToSelector:@selector(isPlayableExtendedMIMEType:)] &&
+         [asset isPlayableExtendedMIMEType:type_string];
+}
+
+// MIMETypeCache::canDecodeType, as AVAssetMIMETypeCache specializes it: not
+// IsNotSupported.
+bool CanPlayAVFoundationType(const std::string& mime_type) {
+  if (mime_type.empty()) {
+    return false;
+  }
+  const ParcContentType type = ParseContentType(mime_type);
+  if (!SupportsContainerType(type.container)) {
+    return false;
+  }
+  if (type.codecs.empty()) {
+    return true;  // MayBeSupported.
+  }
+  // MIMETypeCache::shouldOverrideExtendedType.
+  if (AsciiLower(type.container) == "audio/mpeg" && type.codecs.size() == 1 &&
+      type.codecs[0] == "mp3") {
+    return true;
+  }
+  return CanDecodeExtendedType(mime_type, type);
+}
+
 class ParcVideoToolboxDecodingImpl
     : public media::mojom::ParcVideoToolboxDecoding {
  public:
@@ -282,6 +523,15 @@ class ParcVideoToolboxDecodingImpl
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
         base::BindOnce(&ReadSpatialAudioSources, audiovisual),
+        std::move(callback));
+  }
+
+  void CanPlayAVFoundationType(
+      const std::string& mime_type,
+      CanPlayAVFoundationTypeCallback callback) override {
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(&content::CanPlayAVFoundationType, mime_type),
         std::move(callback));
   }
 };

@@ -35,6 +35,9 @@
 #include <vector>
 
 #include "base/containers/span.h"
+#include "media/mojo/mojom/video_decode_perf_history.mojom-blink.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/parc_webkit_skd_init_data.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
@@ -43,12 +46,15 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_html_media_element.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_typed_array.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
+#include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "v8/include/v8.h"
 
@@ -62,7 +68,46 @@ inline v8::Local<v8::Private> ParcWebKitNeedKeyHookKey(v8::Isolate* isolate) {
                              V8AtomicString(isolate, "Parc::WebKitNeedKey"));
 }
 
-// Keeps kParcWebKitMediaKeysScript's completion value when it is the hook.
+// canPlayAVFoundationType(type), which Blink gives the script's hook: the
+// browser's answer to WebKit's AVAssetMIMETypeCache::canDecodeType
+// (media.mojom.ParcVideoToolboxDecoding.CanPlayAVFoundationType), which
+// WebKit's AVFoundation player key systems ask
+// (MediaPlayerPrivateAVFoundationObjC::supportsKeySystem). Synchronous, as
+// the script's isTypeSupported is; each answer is kept for the render
+// process, as WebKit's MIMETypeCache keeps its results.
+inline void ParcCanPlayAVFoundationType(
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  v8::Isolate* isolate = info.GetIsolate();
+  if (!info.Length() || !info[0]->IsString()) {
+    info.GetReturnValue().Set(false);
+    return;
+  }
+  const String type = ToCoreString(isolate, info[0].As<v8::String>());
+  DEFINE_STATIC_LOCAL(HashMap<String, bool>, answers, ());
+  auto it = answers.find(type);
+  if (it != answers.end()) {
+    info.GetReturnValue().Set(it->value);
+    return;
+  }
+  ExecutionContext* execution_context = CurrentExecutionContext(isolate);
+  if (!execution_context || execution_context->IsContextDestroyed()) {
+    info.GetReturnValue().Set(false);
+    return;
+  }
+  mojo::Remote<media::mojom::blink::ParcVideoToolboxDecoding> remote;
+  execution_context->GetBrowserInterfaceBroker().GetInterface(
+      remote.BindNewPipeAndPassReceiver());
+  bool supported = false;
+  if (!remote->CanPlayAVFoundationType(type, &supported)) {
+    info.GetReturnValue().Set(false);
+    return;
+  }
+  answers.Set(type, supported);
+  info.GetReturnValue().Set(supported);
+}
+
+// Keeps kParcWebKitMediaKeysScript's completion value when it is the hook,
+// and gives the hook its helpers as own properties no page script can reach.
 // The script returns nothing when the context already has WebKitMediaKeys (a
 // document taking over its window's context keeps the first hook).
 inline void SetParcWebKitNeedKeyHook(ScriptState* script_state,
@@ -70,9 +115,18 @@ inline void SetParcWebKitNeedKeyHook(ScriptState* script_state,
   if (hook.IsEmpty() || !hook->IsFunction()) {
     return;
   }
+  v8::Isolate* isolate = script_state->GetIsolate();
   v8::Local<v8::Context> context = script_state->GetContext();
+  v8::Local<v8::Function> can_play;
+  if (v8::Function::New(context, ParcCanPlayAVFoundationType,
+                        v8::Local<v8::Value>(), 1,
+                        v8::ConstructorBehavior::kThrow)
+          .ToLocal(&can_play)) {
+    std::ignore = hook.As<v8::Object>()->CreateDataProperty(
+        context, V8AtomicString(isolate, "canPlayAVFoundationType"), can_play);
+  }
   std::ignore = context->Global()->SetPrivate(
-      context, ParcWebKitNeedKeyHookKey(script_state->GetIsolate()), hook);
+      context, ParcWebKitNeedKeyHookKey(isolate), hook);
 }
 
 // The provideKey(keyId, key) the hook gets with a clearkey:// request, bound
