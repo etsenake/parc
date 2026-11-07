@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 436,
+  "version": 437,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1631,6 +1631,16 @@
       "source": "Engine/ParcRenderer/parc_safari_identity.h",
       "target": "third_party/blink/renderer/core/frame/parc_safari_identity.h",
       "sha256": "4bb77aa57af167a3dbc0903d497ec708ace2680f286f5030dccc038755016b8f"
+    },
+    {
+      "source": "Engine/ParcRenderer/parc_inband_text_track.cc",
+      "target": "third_party/blink/renderer/core/html/media/parc_inband_text_track.cc",
+      "sha256": "3f9e42a9fc5ed492fc0d8d5b264955648887644ca7d8bf39765dcb6563090d91"
+    },
+    {
+      "source": "Engine/ParcRenderer/parc_inband_text_track.h",
+      "target": "third_party/blink/renderer/core/html/media/parc_inband_text_track.h",
+      "sha256": "cc5ddc6e7d1c5b76d4383e0eff394b7bf83390e6442fbdd88297d3e37d10f363"
     },
     {
       "source": "Engine/ParcHost/integration/parc_worker_identity.h",
@@ -4548,7 +4558,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "dc72737ecd0087c51aaeee0abd96e449722443ac14125e146f3506782ad307ef",
+      "sha256": "12d6b64abc6674ca524d34610161a65743bf53b8cd8e26072a017e7ce8839e0c",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4583,12 +4593,12 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.cc",
           "before_sha256": "cbe10ab50ec054bd72cd04df8dfcdb84d11ae88a6ffcc073c0555c3010429bc0",
-          "after_sha256": "7a19f52718e3487288a8aafca458b200bdd11998aa4b38432768e9e2f971730d"
+          "after_sha256": "2fb78b66171f06206f1d96b9a181021019d3d77470851ab405ced86466e1abc4"
         },
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.h",
           "before_sha256": "6c6fe284d5cb150545f9d649227d86c96b201138c226e3bcdb0173a2c07c0a34",
-          "after_sha256": "221ecbe6bce3e6d907246270e4b8068107febe7fb6a023f6d05e06aa076fbede"
+          "after_sha256": "12ec94a60f75e20be1e4169284e630cdef2689ecd6a0db38e39936ede6fb844c"
         },
         {
           "target": "third_party/blink/renderer/platform/media/media_player_client.h",
@@ -4735,7 +4745,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-tracks.patch",
-      "sha256": "40cf44863a41f0af8d6d070fdc81a119bb2c07a48a0c863e2713242c9cfaed16",
+      "sha256": "a4099552bddb6ace90bd5e3e0d012ca6b5a10b1a67107c044c428a1c149455d3",
       "files": [
         {
           "target": "third_party/blink/renderer/core/html/track/text_track.idl",
@@ -4771,6 +4781,26 @@
           "target": "media/base/media_track.cc",
           "before_sha256": "a660d49108a39c36cf34e1ba76dc30a626d58015effd8c8e5fd46ddaeb96580c",
           "after_sha256": "9a1689a6ca56111f777a1bcac108ae2b1abb4fa82c0dd2f3b5ae7053fafbb331"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/track/text_track_list.h",
+          "before_sha256": "93449b5012e8a1cca947e6032100aa73603a93f50147d5b6ef8d764e7ba6a824",
+          "after_sha256": "0714822c2a931177c56bde3e1aee9351968886e5a07221c94c85696fd454103b"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/track/text_track_list.cc",
+          "before_sha256": "fdf2891f4c382dfcf1f1a33a505868e5148599dd79f179188aa15864e418ac9b",
+          "after_sha256": "0a9314beca2940246d96ec86eafa123b3e5a3143ab610304e2d86bb7c50d656e"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/track/vtt/vtt_parser.h",
+          "before_sha256": "70bc94fe941b144f5447ce46359585417256f9899bdfd2fc95beb53f12a190f1",
+          "after_sha256": "05c24f092f5ac62cad8ea057d869162ed566cb61084014b9104955db7c03d0fc"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/build.gni",
+          "before_sha256": "17f1829b88eb284a036a1f8c9b10880331fbc1583da7a08cc64d006592236550",
+          "after_sha256": "5320494f0a425f85c22fb6b2eb8fa6e9fac8308695e3a9786db4153044a8f763"
         }
       ]
     }

@@ -283,3 +283,150 @@
 +}
 +
  }  // namespace media
+--- a/third_party/blink/renderer/core/html/track/text_track_list.h
++++ b/third_party/blink/renderer/core/html/track/text_track_list.h
+@@ -69,6 +69,11 @@
+ 
+   bool HasShowingTracks();
+ 
++  // Parc: the in-band tracks (Safari's native HLS route), in order.
++  const HeapVector<Member<TextTrack>>& InbandTracks() const {
++    return inband_tracks_;
++  }
++
+   void Trace(Visitor*) const override;
+ 
+  private:
+@@ -83,6 +88,7 @@
+ 
+   HeapVector<Member<TextTrack>> add_track_tracks_;
+   HeapVector<Member<TextTrack>> element_tracks_;
++  HeapVector<Member<TextTrack>> inband_tracks_;
+ };
+ 
+ }  // namespace blink
+--- a/third_party/blink/renderer/core/html/track/text_track_list.cc
++++ b/third_party/blink/renderer/core/html/track/text_track_list.cc
+@@ -39,7 +39,8 @@
+ TextTrackList::~TextTrackList() = default;
+ 
+ unsigned TextTrackList::length() const {
+-  return add_track_tracks_.size() + element_tracks_.size();
++  return add_track_tracks_.size() + element_tracks_.size() +
++         inband_tracks_.size();
+ }
+ 
+ int TextTrackList::GetTrackIndex(TextTrack* text_track) {
+@@ -48,6 +49,11 @@
+ 
+   if (text_track->TrackType() == TextTrack::kAddTrack)
+     return element_tracks_.size() + add_track_tracks_.Find(text_track);
++
++  if (text_track->TrackType() == TextTrack::kInBand) {
++    return element_tracks_.size() + add_track_tracks_.size() +
++           inband_tracks_.Find(text_track);
++  }
+ 
+   NOTREACHED();
+ }
+@@ -69,6 +75,15 @@
+   }
+ 
+   for (const auto& track : add_track_tracks_) {
++    if (!track->IsRendered())
++      continue;
++
++    if (track == text_track)
++      return track_index;
++    ++track_index;
++  }
++
++  for (const auto& track : inband_tracks_) {
+     if (!track->IsRendered())
+       continue;
+ 
+@@ -98,6 +113,10 @@
+   if (index < add_track_tracks_.size())
+     return add_track_tracks_[index].Get();
+ 
++  index -= add_track_tracks_.size();
++  if (index < inband_tracks_.size())
++    return inband_tracks_[index].Get();
++
+   return nullptr;
+ }
+ 
+@@ -123,8 +142,14 @@
+     tracks = &element_tracks_;
+     for (const auto& add_track : add_track_tracks_)
+       add_track->InvalidateTrackIndex();
++    for (const auto& inband_track : inband_tracks_)
++      inband_track->InvalidateTrackIndex();
+   } else if (track->TrackType() == TextTrack::kAddTrack) {
+     tracks = &add_track_tracks_;
++    for (const auto& inband_track : inband_tracks_)
++      inband_track->InvalidateTrackIndex();
++  } else if (track->TrackType() == TextTrack::kInBand) {
++    tracks = &inband_tracks_;
+   } else {
+     NOTREACHED();
+   }
+@@ -144,6 +169,9 @@
+     // Insert tracks added for <track> element in tree order.
+     wtf_size_t index = loadable_text_track->TrackElementIndex();
+     element_tracks_.insert(index, track);
++  } else if (track->TrackType() == TextTrack::kInBand) {
++    // The player lists in-band tracks in media order, new ones last.
++    inband_tracks_.push_back(track);
+   } else {
+     NOTREACHED();
+   }
+@@ -163,6 +191,8 @@
+     tracks = &element_tracks_;
+   } else if (track->TrackType() == TextTrack::kAddTrack) {
+     tracks = &add_track_tracks_;
++  } else if (track->TrackType() == TextTrack::kInBand) {
++    tracks = &inband_tracks_;
+   } else {
+     NOTREACHED();
+   }
+@@ -188,6 +218,8 @@
+     tracks = &element_tracks_;
+   } else if (track->TrackType() == TextTrack::kAddTrack) {
+     tracks = &add_track_tracks_;
++  } else if (track->TrackType() == TextTrack::kInBand) {
++    tracks = &inband_tracks_;
+   } else {
+     NOTREACHED();
+   }
+@@ -260,6 +292,7 @@
+   visitor->Trace(owner_);
+   visitor->Trace(add_track_tracks_);
+   visitor->Trace(element_tracks_);
++  visitor->Trace(inband_tracks_);
+   EventTarget::Trace(visitor);
+ }
+ 
+--- a/third_party/blink/renderer/core/html/track/vtt/vtt_parser.h
++++ b/third_party/blink/renderer/core/html/track/vtt/vtt_parser.h
+@@ -113,6 +113,9 @@
+   // Transfers ownership of last parsed style sheets to caller.
+   void GetNewStyleSheets(HeapVector<Member<CSSStyleSheet>>&);
+ 
++  // Parc: the regions parsed so far (a native HLS track's WebVTT header).
++  const VTTRegionMap& RegionMap() const { return region_map_; }
++
+   void Trace(Visitor*) const;
+ 
+  private:
+--- a/third_party/blink/renderer/core/html/build.gni
++++ b/third_party/blink/renderer/core/html/build.gni
+@@ -506,6 +506,8 @@
+   "media/html_media_element.h",
+   "media/html_media_element_controls_list.cc",
+   "media/html_media_element_controls_list.h",
++  "media/parc_inband_text_track.cc",
++  "media/parc_inband_text_track.h",
+   "media/html_video_element.cc",
+   "media/html_video_element.h",
+   "media/lazy_load_media_observer.cc",
