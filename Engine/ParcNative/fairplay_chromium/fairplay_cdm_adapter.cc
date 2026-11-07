@@ -344,6 +344,7 @@ void FairPlayCdmAdapter::OnSessionKeysChange(
   }
   session_keys_change_cb_.Run(session_id, has_additional_usable_key,
                               std::move(keys_info));
+  event_callbacks_.Notify(Event::kParcKeyStatusesChanged);
   if (has_additional_usable_key) {
     event_callbacks_.Notify(Event::kHasAdditionalUsableKey);
   }

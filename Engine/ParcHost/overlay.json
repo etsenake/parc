@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 549,
+  "version": 550,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1605,7 +1605,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_adapter.cc",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.cc",
-      "sha256": "730ebf1aba4a93e11cdfe408d378f48365f9cf375bfe2dc88f21c8353ca085bd"
+      "sha256": "3ab52929207837fdac0929cdb51217f0fce84a06fe0bf1aac9278382fecca0bd"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_factory.h",
@@ -4182,7 +4182,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "af3f6d1feb9f192a91cc889cdd55308c3ad65b8a75509e9c6b0531fb46e48749",
+      "sha256": "f67a739944e84364afa2d6a097b7b130a11946633015718cece939a6c6038111",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4257,7 +4257,7 @@
         {
           "target": "media/base/cdm_context.h",
           "before_sha256": "1733bcece0ff40e32b76d5a973aa2f4043a6e5f779217eda069d93aacee8a79c",
-          "after_sha256": "e6f24c0a7a240e5f55c6c9e73e82738e393763bbd7c946e8961f943943054095"
+          "after_sha256": "74766fb836dc80037e253d335027815548f8f17740c7a88da08be65367a238ea"
         },
         {
           "target": "media/base/demuxer.cc",
@@ -4307,12 +4307,12 @@
         {
           "target": "media/filters/chunk_demuxer.cc",
           "before_sha256": "bfe9309a25c772e3362e2da90ccf528e21ad98abb3621566484e585d6ca4c3ee",
-          "after_sha256": "50b15d625702be732a934e6243274afe6ad63a05b9e922e7fe559abb79a2e2a2"
+          "after_sha256": "b81b0580ba6c7106cacb123002d83491a0676c0ce38df54ed10d1c86bc714d25"
         },
         {
           "target": "media/filters/chunk_demuxer.h",
           "before_sha256": "7882b1b7d0ec10bc36f06ca11b835bd474163070b8b0d032e719c8ecbd5250d9",
-          "after_sha256": "323b80f624601607cf5a46331bf206eb0aa2e47279ae602f82b0fc2f3f215bc4"
+          "after_sha256": "f7c91d1c4f02679c3c7ca51b9212eb0e2ea82ecccd07970975c6c97f32771813"
         },
         {
           "target": "media/filters/demuxer_manager.cc",
@@ -4347,7 +4347,7 @@
         {
           "target": "media/mojo/clients/mojo_cdm.cc",
           "before_sha256": "9e631d1142bd34ed052a8c1893334ff17ed62574fd8d8d36a567059fed0e4611",
-          "after_sha256": "fcea6e0a4a519812ad0c454a0aee6e41163ef85752cb49f79b1d9827d7639b99"
+          "after_sha256": "7830158ef734690fde3ef92fc10b6659c92d109bdefe8b3339c69c6afdc2a5c9"
         },
         {
           "target": "media/mojo/clients/mojo_cdm.h",
@@ -4457,17 +4457,17 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "baa4f8f31eb19b45ef95b26f5f3b3751e635ad3c0ce501e464e01b34742c6e17"
+          "after_sha256": "119e6206f7c9d924d6bf83940c04291ab2d3a437d2a3bd21f63584261ca385ff"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
           "before_sha256": "2afbe1b25d00714f9c8c7a8f381ac23bceb5b05d63e86a5fecb0ad55e133e584",
-          "after_sha256": "611820fe1f4b04a62b18d15c812ab01d7de0bb0fac86ddfa05dd0285de045459"
+          "after_sha256": "10e526e1c63a1d80de4b6d61e9ed5885a0087854129fc58cd52b6fac7a90874e"
         },
         {
           "target": "third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc",
           "before_sha256": "9385876e63a8e9de9dd5f01b3f716dbd8471007aaacd3c04b806af609053062a",
-          "after_sha256": "1600f5a4cc9e5bf517d964ea1276bef1ee07a0ef14480b855453005cad0619ff"
+          "after_sha256": "6dc304426704c460e4693540f1c3567dcdb804609ef29bb52ca3ad8089ceaa0c"
         },
         {
           "target": "media/base/media_resource.h",
@@ -4677,7 +4677,7 @@
         {
           "target": "media/filters/chunk_demuxer_unittest.cc",
           "before_sha256": "d840d132e021395d7d52bf836a6bac56acf9f2a2b2688e44f0cbfcde0ebae570",
-          "after_sha256": "d0f858b2fbf05dd8adbf874c220b22d395912d88599036e6ed8092e0b46e9b3e"
+          "after_sha256": "22da45299294c4a3ab1ad26d76463143aab2a9d71f48ecb07e7ab3adbdf14031"
         },
         {
           "target": "media/filters/source_buffer_stream_unittest.cc",
