@@ -596,7 +596,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // rejection (no storage, no report).
   function secureStopRequest(session, operation, found, failed) {
     const keys = session.keys;
-    return then(modernKeysOf(keys), (mediaKeys) => serialized(keys, () => {
+    return then(mediaKeysFor(session), (mediaKeys) => serialized(keys, () => {
       const setCertificate = operation === 'first' ?
           apply(setServerCertificate, mediaKeys, [copy(session.certificate)]) : resolved;
       return then(setCertificate, () => {
@@ -614,16 +614,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     }), failed);
   }
 
-  // CDMSessionAVContentKeySession::releaseKeys, on close(): once the keys'
-  // last Media Source session with a key request closes, their key session
-  // expires and the report AVFoundation kept for it arrives as a message on
-  // the closed session, as WebKit queues it. (WebKit gives each legacy session
-  // its own key session; here a keys object's sessions share one, so the
-  // report waits for the last of them.)
+  // CDMSessionAVContentKeySession::releaseKeys, on close(): a Media Source
+  // session that made a key request has its own key session (its own modern
+  // MediaKeys, sessionMediaKeys), which expires, and the report AVFoundation
+  // kept for it arrives as a message on the closed session, as WebKit queues
+  // it.
   function releaseKeys(session, closing) {
     const keys = session.keys;
-    keys.requestSessions.delete(session);
-    if (keys.requestSessions.size || keys.sessionType !== PERSISTENT_USAGE_RECORD) {
+    if (!keys.requestSessions.delete(session) || keys.sessionType !== PERSISTENT_USAGE_RECORD) {
       return;
     }
     then(closing, () => secureStopRequest(session, 'session', (bytes) => {
@@ -640,29 +638,49 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     return match ? +match[1] : 0;
   }
 
-  // The modern MediaKeys of one WebKitMediaKeys, made once.
+  // A modern MediaKeys for |keys|' legacy key system.
+  function makeModernKeys(keys) {
+    const configurations = keys.kind === 'mse' ?
+        [STORAGE_CONFIGURATION, TEMPORARY_CONFIGURATION] : [TEMPORARY_CONFIGURATION];
+    return then(
+        apply(requestAccess, navigatorObject, ['com.apple.fps', configurations]),
+        (access) => {
+          let types = [];
+          try {
+            types = apply(getConfiguration, access, []).sessionTypes || [];
+          } catch (error) {
+          }
+          keys.sessionType = Array.prototype.includes.call(types, PERSISTENT_USAGE_RECORD) ?
+              PERSISTENT_USAGE_RECORD : 'temporary';
+          const modern = apply(createMediaKeys, access, []);
+          return then(modern, (mediaKeys) => {
+            legacyModernKeys.add(mediaKeys);
+            return mediaKeys;
+          });
+        });
+  }
+
+  // The modern MediaKeys of one WebKitMediaKeys of the AVFoundation player,
+  // made once: its sessions use the player's key session.
   function modernKeysOf(keys) {
     if (!keys.modern) {
-      const configurations = keys.kind === 'mse' ?
-          [STORAGE_CONFIGURATION, TEMPORARY_CONFIGURATION] : [TEMPORARY_CONFIGURATION];
-      keys.modern = then(
-          apply(requestAccess, navigatorObject, ['com.apple.fps', configurations]),
-          (access) => {
-            let types = [];
-            try {
-              types = apply(getConfiguration, access, []).sessionTypes || [];
-            } catch (error) {
-            }
-            keys.sessionType = Array.prototype.includes.call(types, PERSISTENT_USAGE_RECORD) ?
-                PERSISTENT_USAGE_RECORD : 'temporary';
-            const modern = apply(createMediaKeys, access, []);
-            return then(modern, (mediaKeys) => {
-              legacyModernKeys.add(mediaKeys);
-              return mediaKeys;
-            });
-          });
+      keys.modern = makeModernKeys(keys);
     }
     return keys.modern;
+  }
+
+  // A Media Source session's own modern MediaKeys, made once: WebKit gives
+  // each CDMSessionAVContentKeySession its own AVContentKeySession, with the
+  // document's storage, so close() expires and reports that session alone.
+  function sessionMediaKeys(session) {
+    if (!session.media) {
+      session.media = makeModernKeys(session.keys);
+    }
+    return session.media;
+  }
+
+  function mediaKeysFor(session) {
+    return session.keys.kind === 'mse' ? sessionMediaKeys(session) : modernKeysOf(session.keys);
   }
 
   // Runs |task| after the keys' earlier certificate and request, so each
@@ -726,7 +744,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
           sinf: parseJson(session.initData).sinf, contentId, protocolVersions,
         }]));
     const failed = (error) => sendError(session, DOMAIN, systemCodeOf(error));
-    return then(modernKeysOf(keys), (mediaKeys) => serialized(keys, () => {
+    return then(mediaKeysFor(session), (mediaKeys) => serialized(keys, () => {
       if (!session.open) {
         return undefined;
       }
@@ -1021,7 +1039,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         object: this, keySystem: system, kind, version: legacyVersion(system),
         protocolVersions: legacyProtocolVersions(system),
         element: null, modern: null, requests: resolved, attaching: resolved, sessions: [],
-        requestSessions: new NativeSet(),
+        requestSessions: new NativeSet(), attachedMedia: null,
       });
     }
     get keySystem() { return stateOf(keysState, this).keySystem; }
@@ -1055,13 +1073,18 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         object, keys, element, inert, open: true, error: null,
         sessionId: keys.kind !== 'mse' && !inert ? uuid() : '', chain: resolved,
         certificate: null, keyRelease: false, initData: null, identifier: null,
-        modern: null, json: false, pending: [], lastKeyId: null, sourceInitData: null,
+        modern: null, media: null, json: false, pending: [], lastKeyId: null, sourceInitData: null,
         cache: keys.kind === 'clearkey' ? new NativeMap() : null,
       };
       sessionState.set(object, session);
       keys.lastSession = session;
       if (keys.kind === 'mse') {
         setRendererSession(keys.element, session);
+        // LegacyCDM::createSession makes it the player's CDM session: the
+        // element's FairPlay keys become this session's own.
+        if (keys.element) {
+          follow(keys);
+        }
       }
       if (session.cache) {
         keys.sessions.push(session);
@@ -1213,30 +1236,51 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     if (keys.kind === 'clearkey') {
       return;
     }
+    follow(keys);
+  }
+  function follow(keys) {
     attachChain = then(then(attachChain, () => followElement(keys)), undefined, () => {});
     keys.attaching = attachChain;
   }
+  // The FairPlay keys the element of |keys| plays with: a Media Source
+  // element's are its renderer session's own (WebKit's player decrypts with
+  // its CDM session's key session; none before the first session), an
+  // AVFoundation player's the keys' one MediaKeys.
+  function rendererMediaKeysOf(keys) {
+    if (keys.kind === 'mse') {
+      return keys.lastSession ? sessionMediaKeys(keys.lastSession) : then(resolved, () => null);
+    }
+    return modernKeysOf(keys);
+  }
   function followElement(keys) {
     const target = keys.element;
+    const rendererSession = keys.lastSession;
     const previous = apply(weakMapGet, attachedTo, [keys]) || null;
-    if (previous === target) {
-      return undefined;
-    }
-    return then(modernKeysOf(keys), (mediaKeys) => {
+    return then(rendererMediaKeysOf(keys), (mediaKeys) => {
+      const previousMedia = keys.attachedMedia;
+      if (previous === target && previousMedia === mediaKeys) {
+        return undefined;
+      }
       let detached = resolved;
-      if (previous) {
+      if (previous && previous !== target) {
         apply(weakMapSet, attachedTo, [keys, null]);
-        if (!mediaKeysOf || apply(mediaKeysOf, previous, []) === mediaKeys) {
+        keys.attachedMedia = null;
+        if (!mediaKeysOf || apply(mediaKeysOf, previous, []) === previousMedia) {
           detached = then(apply(setMediaKeys, previous, [null]), undefined, () => {});
         }
       }
       return then(detached, () => {
-        // A later setMediaElement's own step moves them on.
-        if (!target || keys.element !== target) {
+        // A later step moves them on.
+        if (!target || keys.element !== target || !mediaKeys ||
+            (keys.kind === 'mse' && keys.lastSession !== rendererSession)) {
           return undefined;
         }
+        // On an element already holding the keys' earlier session's, this
+        // replaces them, which Parc allows a playing Safari-identity element
+        // (WebMediaPlayerImpl restarts into a renderer with the new CDM).
         return then(apply(setMediaKeys, target, [mediaKeys]), () => {
           apply(weakMapSet, attachedTo, [keys, target]);
+          keys.attachedMedia = mediaKeys;
         });
       });
     });

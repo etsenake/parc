@@ -588,9 +588,10 @@ const skdInitData = (uri) => {
         'their sessions are persistent-usage-record ones');
   const attached = world.log.find((entry) => entry[0] === 'setMediaKeys');
   check(attached && attached[1] === 'video' && attached[2] instanceof world.MediaKeys,
-        'webkitSetMediaKeys attaches the modern keys');
+        "the element plays with its renderer session's own modern keys");
   check(video.mediaKeys === null, 'legacy keys stay out of mediaKeys');
-  check(world.log.filter((entry) => entry[0] === 'createMediaKeys').length === 1, 'one MediaKeys per WebKitMediaKeys');
+  check(world.log.filter((entry) => entry[0] === 'createMediaKeys').length === 1,
+        'one MediaKeys per legacy session (WebKit: one key session each)');
 
   session.update(new Uint8Array(bytesOf('CERT')));
   await settle();
@@ -857,7 +858,8 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(!world.log.some((entry) => entry[0] === 'acknowledge'),
         'a closed session ignores updates, as WebKit drops them');
 
-  // Sessions sharing keys: only the last one's close asks.
+  // Each session has its own key session, so each close asks for its own
+  // report (CDMSessionAVContentKeySession::releaseKeys).
   const two = makeWorld({sessionReport: 'R'});
   run(two, script);
   const shared = new two.WebKitMediaKeys('com.apple.fps.3_0');
@@ -867,14 +869,16 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   a.update(new Uint8Array(bytesOf('CERT')));
   b.update(new Uint8Array(bytesOf('CERT')));
   await settle();
+  check(two.log.filter((entry) => entry[0] === 'createMediaKeys').length === 2,
+        'two sessions, two modern MediaKeys');
   a.close();
   await settle();
   const asked = () => two.log.filter((entry) => entry[0] === 'generateRequest' &&
                                                 entry[2].includes('legacySecureStop')).length;
-  check(asked() === 0, 'another open session keeps the key session');
+  check(asked() === 1, "a session's close asks for its own report while another stays open");
   b.close();
   await settle();
-  check(asked() === 1, 'the last close asks');
+  check(asked() === 2, 'and the other close asks for its own');
 }
 {
   // A private window has no storage: temporary sessions, nothing on close.
@@ -957,6 +961,8 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
   first.webkitSetMediaKeys(keys);
   second.webkitSetMediaKeys(keys);
+  // The element plays with the renderer session's own keys (none before).
+  keys.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   const attaches = world.log.filter((entry) => entry[0] === 'setMediaKeys')
       .map((entry) => entry[1] + ':' + (entry[2] ? 'keys' : 'null'));
@@ -1185,6 +1191,8 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
     return sets.length ? sets[sets.length - 1][2] : null;
   };
   a.webkitSetMediaKeys(keys);
+  // The renderer session's own modern keys are what moves.
+  keys.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   b.webkitSetMediaKeys(keys);
   await settle();
@@ -1233,6 +1241,7 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   const k1 = new world.WebKitMediaKeys('com.apple.fps.3_0');
   const k2 = new world.WebKitMediaKeys('com.apple.fps.3_0');
   video.webkitSetMediaKeys(k1);
+  k1.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   // k2's modern MediaKeys exist before it is set (a session made them).
   const early = k2.createSession('video/mp4', new Uint8Array(pssh('A')));
@@ -1246,6 +1255,25 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(sets.length === 3 && sets[1][2] === null && sets[2][2] instanceof world.MediaKeys &&
         sets[2][2] !== sets[0][2] && video.mediaKeys === null,
         "k1's keys leave, then k2's arrive");
+}
+
+// ---- A new session on keys an element plays with becomes the renderer's
+// (LegacyCDM::createSession): the element's MediaKeys are replaced by that
+// session's own, with no detach in between.
+{
+  const world = makeWorld();
+  run(world, script);
+  const video = new world.HTMLMediaElement('v');
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  video.webkitSetMediaKeys(keys);
+  keys.createSession('video/mp4', new Uint8Array(pssh('A')));
+  await settle();
+  keys.createSession('video/mp4', new Uint8Array(pssh('B')));
+  await settle();
+  const sets = world.log.filter((entry) => entry[0].startsWith('setMediaKeys') && entry[1] === 'v');
+  check(sets.length === 2 && sets[0][2] instanceof world.MediaKeys &&
+        sets[1][2] instanceof world.MediaKeys && sets[1][2] !== sets[0][2],
+        "the second session's MediaKeys replace the first's on the element");
 }
 
 // ---- The hook reaches no page code: a page that patches WeakMap, Set or
