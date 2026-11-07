@@ -583,8 +583,12 @@ RendererImpl, no restart; a second audio SourceBuffer plays mixed on
 FairPlay). Clear Media Source played only the first of two audio SourceBuffers,
 `audioTracks` toggles played only one track (`html_media_element.cc:4486`),
 and an encrypted late track on RendererImpl restarted (a rebuffer): **fixed**
-83554da3 (every enabled track mixed, as Safari); whether the rare race with
-two merged late audio SourceBuffers is closed awaits the CD-1c report. Video track switches on FairPlay
+83554da3 (every enabled track mixed, as Safari); the merged-SourceBuffer race
+is closed too. Still: a late track needing the FairPlay renderer while
+RendererImpl plays restarts (a rebuffer): **in progress** with the seamless
+handoff (FP-RESTART); a turned-off first track keeps decoding silently (a
+little CPU, no audible effect: **left**); sync at rates other than 1 is
+within 30 ms by reasoning only (**unchecked**). Video track switches on FairPlay
 freeze the picture: **in progress** with the late-key handoff (FP-RESTART).
 `readyState` returned straight to
 `HAVE_ENOUGH_DATA` after the new track's data arrived: **fixed** f50e1aab.
