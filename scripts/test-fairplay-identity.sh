@@ -14,6 +14,10 @@ xcrun clang++ -std=c++20 -Wall -Wextra -Werror -I "$repo_root/Engine/ParcNative"
   -I "$repo_root/Engine/ParcRenderer" -I "$repo_root/tests/FairPlayIdentity/blink_stub" \
   "$repo_root/tests/FairPlayIdentity/renderer_gate_main.cc" -o "$output/gate"
 "$output/gate"
+# WebKit's legacy skd init data that webkitneedkey carries for native HLS.
+xcrun clang++ -std=c++20 -Wall -Wextra -Werror -I "$repo_root/Engine/ParcRenderer" \
+  "$repo_root/tests/FairPlayIdentity/webkit_need_key_main.cc" -o "$output/need-key"
+"$output/need-key"
 # The shell's per-Profile site lists, private overlays and file format.
 xcrun swiftc -parse-as-library -warnings-as-errors \
   "$repo_root/Sources/ParcCore/FairPlayIdentity.swift" \

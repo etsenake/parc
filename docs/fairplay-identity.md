@@ -368,15 +368,19 @@ has it in windows only. The rows and what is still open are in
   `WebKitMediaKeyError`: DOMAIN with the CDM's system code when an SPC can't be
   made. `keyrelease` sessions and `update("acknowledged")` answer as WebKit
   does when it holds no expired-session report (Parc keeps none).
-- `webkitneedkey` (`WebKitMediaKeyNeededEvent`) fires on a media element for
-  each `encrypted` event, with its init data (an skd URI in WebKit's legacy
-  layout, for native HLS). The window catches every element in its tree before
-  the element's own listeners, and an element with a `webkitneedkey` listener
-  or legacy keys forwards its own (detached elements, shadow trees). Each
-  `encrypted` event raises it once, and only the media pipeline's own
-  (trusted) ones do: a page's script-made `encrypted` event doesn't.
-  `MediaError.MEDIA_ERR_ENCRYPTED` is 5. These events are script-made, so
-  their `isTrusted` is false.
+- `webkitneedkey` (`WebKitMediaKeyNeededEvent`) is raised as WebKit's
+  `HTMLMediaElement::mediaPlayerKeyNeeded` raises it: a trusted task queued at
+  the media element, whether or not anything listens, before the `encrypted`
+  event of the same init data. `WebMediaPlayerImpl` reports each protected
+  track's sinf of a Safari-identity Media Source before it decides whether
+  `encrypted` follows, and the native HLS route reports every `skd://` and
+  `clearkey://` key request (WebKit's legacy layouts). The script's
+  completion value is its key-needed hook, which `LocalWindowProxy` keeps in a
+  private property of the main world's global and the media element calls to
+  make the event (`parc_webkit_need_key.h`), so no page script can raise or
+  intercept it, and it reaches elements outside the document and in shadow
+  trees. `encrypted` events raise nothing. `MediaError.MEDIA_ERR_ENCRYPTED` is
+  5.
 
 What the other services' current scripts do with it (fetched without signing
 in, November 6, 2026):

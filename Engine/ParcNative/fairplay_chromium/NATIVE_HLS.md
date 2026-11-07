@@ -228,7 +228,8 @@ interface FairPlayHlsPlayerClient {  // render process implements
                     gfx.mojom.Size natural_size);
   OnStatisticsUpdate(PipelineStatistics delta);
   OnEncrypted(string init_data_type, array<uint8> init_data);
-  OnClearKeyNeeded(string key_id);    // legacy clear key (Keys)
+  OnKeyRequest(string key_uri);       // every skd:// and clearkey://
+                                     // loading request, first (Keys)
   OnWaiting(WaitingReason reason);    // kNoDecryptionKey
   OnEnded();
   OnError(PipelineStatus status, string message);
@@ -278,9 +279,9 @@ player the GPU service owns, on the media service thread with the core's
 | `CreateAsset(url, mime)` + `Start()` (or `Load`), `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
 | `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `Initialize` reply |
 | `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnStartDateChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
-| `SetHlsKeyRequestHandler` (between `CreateAsset` and `Start`) → the CDM's key loader takes skd requests | its `OnKeyNeeded(uri)` → `OnEncrypted("skd", uri)` (Keys) |
+| `SetHlsKeyRequestHandler` (between `CreateAsset` and `Start`) → the CDM's key loader takes skd requests | `OnKeyRequest(uri)` for every request it is handed; its `OnKeyNeeded(uri)` → `OnEncrypted("skd", uri)` (Keys) |
 | `OnOutputObscuredChange(bool)` | the key loader's `SetOutputObscured` |
-| `OnKeyRequest(clearkey uri)`, `FulfillKeyRequests(uri, key)`, `HlsClearKeyId` | `OnClearKeyNeeded(key_id)` / `ProvideClearKey(key_id, key)` |
+| `OnKeyRequest(clearkey uri)`, `FulfillKeyRequests(uri, key)`, `HlsClearKeyId` | `OnKeyRequest(uri)` / `ProvideClearKey(key_id, key)` |
 | `CurrentTime()` (any thread), `Rate()` | `OnTimeUpdate` |
 | `HlsPlayerAsset` / `HlsPlayerLayer` (`fairplay_hls_player_internal.h`) | `addContentKeyRecipient:` (Keys) / `ProtectedLayerRegistry` (Display) |
 
@@ -323,6 +324,18 @@ whether the asset is a content key recipient and answers held requests with
 their own SPC/CKC otherwise; where the steps below differ, the key loader's
 header is right.
 
+`webkitneedkey`: every `skd://` request the key loader is handed and every
+`clearkey://` request the core reports, whether or not a CDM is set and
+including repeats of a URI, first sends `OnKeyRequest(<the request URL's
+absoluteString, UTF-8, unchanged>)`. The render process passes it to
+`WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest()`, which on a
+Safari-identity page queues `webkitneedkey` at the element before anything
+else the request raises: for `skd://` with WebKit's legacy layout (4-byte
+little-endian UTF-16 byte length, then the URI as UTF-16), for `clearkey://`
+with the key ID (the URL after `clearkey:`, as `HlsClearKeyId`) as UTF-8
+(WebKit's `keyNeeded` in `shouldWaitForLoadingOfResource`;
+`parc_webkit_need_key.h`, `fp-legacy-element`).
+
 The player's `AVAssetResourceLoader` delegate sees `skd://` key requests
 (AVFoundation can't load that scheme). It follows WebKit
 (`MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource`,
@@ -331,9 +344,7 @@ The player's `AVAssetResourceLoader` delegate sees `skd://` key requests
 1. No CDM yet: keep the loading request, send
    `OnEncrypted("skd", <URI as UTF-8>)` and `OnWaiting(kNoDecryptionKey)`.
    The render process raises `encrypted` (initDataType `"skd"`) and
-   `waitingforkey`; `fp-safari-eme-surface` turns the same call into
-   `webkitneedkey` with WebKit's legacy layout (4-byte little-endian length,
-   then the URI as UTF-16).
+   `waitingforkey`, after the request's `webkitneedkey`.
 2. `SetCdm(cdm_id)` resolves the frame's `FairPlayCdm` through
    `CdmContext::GetFairPlayCdm()`. The player registers with the core:
    `FairPlayCdm::AttachAsset(AVURLAsset*, AssetKeyClient*)` /
@@ -367,10 +378,9 @@ WebKit's player also answers `clearkey://` key requests, for the legacy
 `encrypted` event for them, only `webkitneedkey`:
 
 1. The core reports the request (`HlsPlayerClient::OnKeyRequest(uri)`, scheme
-   `clearkey`). The GPU service sends
-   `FairPlayHlsPlayerClient.OnClearKeyNeeded(key_id)` with
-   `HlsClearKeyId(uri)` (WebKit's key ID: the URL's resource specifier),
-   keeping key ID → URI.
+   `clearkey`). The GPU service sends `FairPlayHlsPlayerClient.OnKeyRequest(uri)`,
+   keeping `HlsClearKeyId(uri)` (WebKit's key ID: the URL's resource
+   specifier) → URI.
 2. The render process raises `webkitneedkey` on the element with the key ID
    as UTF-8 (WebKit's `keyNeeded(initData)`), never an `encrypted` event.
 3. When the page's legacy session takes a JWK set (`keysAdded` in the
@@ -383,7 +393,7 @@ WebKit's player also answers `clearkey://` key requests, for the legacy
 The bridge between the page-world script and the element (raising
 `webkitneedkey` from the player's call; the script's `keysAdded` reaching
 `WebMediaPlayer`) belongs to the legacy element side
-(`fp-safari-eme-surface`) with `fp-hls-render`; the mojo calls to
+(`fp-legacy-element`) with `fp-hls-render`; the mojo calls to
 `fp-hls-mojo`.
 
 ## Display
@@ -467,6 +477,7 @@ behavior, not Parc's hosting.
 | `error` | item `failed`, `AVPlayerItemFailedToPlayToEndTime`, error log | `OnError` → `MEDIA_ERR_NETWORK` / `DECODE` / `SRC_NOT_SUPPORTED` as Safari maps them |
 | `audioTracks` / `textTracks` | `HlsMediaSelection` (Tracks) | `OnTracksChanged`, `OnTextCues` (Tracks) |
 | decoded/dropped frames | `-[AVPlayerLayer videoPerformanceMetrics]` (`HlsFrameStats`) | `OnStatisticsUpdate` deltas (as fp-frame-stats) |
+| `webkitneedkey` | every resource loader skd and clearkey request | `OnKeyRequest` → `ParcWebKitKeyRequest` |
 | `encrypted`, `waitingforkey` | resource loader skd requests | `OnEncrypted`, `OnWaiting` |
 
 ## Tracks

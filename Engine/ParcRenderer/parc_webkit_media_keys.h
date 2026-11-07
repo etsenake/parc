@@ -31,10 +31,14 @@
 //   route is on: the init data names the key URI of a request the attached
 //   player holds, the content ID and the certificate; the SPC is the first
 //   message; every update answers the request and fires `webkitkeyadded`.
-// - `HTMLMediaElement.webkitSetMediaKeys`/`webkitKeys`, `webkitneedkey`
-//   (`WebKitMediaKeyNeededEvent`) raised from each `encrypted` event with its
-//   init data (an skd URI in WebKit's legacy layout), the event and error
-//   interfaces, and `MediaError.MEDIA_ERR_ENCRYPTED`.
+// - `HTMLMediaElement.webkitSetMediaKeys`/`webkitKeys` (keys follow the last
+//   element they were set on; clearing them on any element that holds them
+//   detaches them, as WebKitMediaKeys::setMediaElement does), the event and
+//   error interfaces, and `MediaError.MEDIA_ERR_ENCRYPTED`.
+// - `webkitneedkey` (`WebKitMediaKeyNeededEvent`): the script's completion
+//   value is its key-needed hook. Blink keeps it privately, calls it for each
+//   key a media element's media needs and queues the event it returns,
+//   trusted and before `encrypted` (parc_webkit_need_key.h).
 // A media element using legacy keys reports `mediaKeys` null, as in Safari.
 // tests/FairPlayIdentity/webkit_media_keys.mjs runs this exact script.
 // Installed at third_party/blink/renderer/bindings/core/v8/parc_webkit_media_keys.h.
@@ -67,10 +71,15 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const NativeEvent = g.Event;
   const NativeEventTarget = g.EventTarget;
   const NativeUint8Array = g.Uint8Array;
-  const NativeArrayBuffer = g.ArrayBuffer;
   const NativeDataView = g.DataView;
   const NativeWeakMap = g.WeakMap;
   const NativeWeakSet = g.WeakSet;
+  const NativeSet = g.Set;
+  // The key-needed hook runs inside a media pipeline callback, so nothing it
+  // calls may reach page code: it uses these instead of the prototypes.
+  const weakMapGet = NativeWeakMap.prototype.get;
+  const weakMapSet = NativeWeakMap.prototype.set;
+  const setAdd = NativeSet.prototype.add;
   const typedArrayTag = getter(Object.getPrototypeOf(NativeUint8Array.prototype), Symbol.toStringTag);
   const promiseThen = Promise.prototype.then;
   const resolved = Promise.resolve();
@@ -87,7 +96,6 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const eventTargetPrototype = NativeEventTarget && NativeEventTarget.prototype;
   const addListener = eventTargetPrototype && eventTargetPrototype.addEventListener;
   const dispatch = eventTargetPrototype && eventTargetPrototype.dispatchEvent;
-  const eventTarget = getter(NativeEvent && NativeEvent.prototype, 'target');
   const navigatorObject = g.navigator;
   const requestAccess = g.Navigator && g.Navigator.prototype.requestMediaKeySystemAccess;
   const createMediaKeys = g.MediaKeySystemAccess &&
@@ -102,13 +110,11 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const messageEventPrototype = g.MediaKeyMessageEvent && g.MediaKeyMessageEvent.prototype;
   const messageOf = getter(messageEventPrototype, 'message');
   const messageTypeOf = getter(messageEventPrototype, 'messageType');
-  const encryptedEventPrototype = g.MediaEncryptedEvent && g.MediaEncryptedEvent.prototype;
-  const initDataTypeOf = getter(encryptedEventPrototype, 'initDataType');
-  const initDataOf = getter(encryptedEventPrototype, 'initData');
   const NativeMediaElement = g.HTMLMediaElement;
   const mediaPrototype = NativeMediaElement && NativeMediaElement.prototype;
   const setMediaKeys = mediaPrototype && mediaPrototype.setMediaKeys;
   const mediaKeysDescriptor = mediaPrototype && describe(mediaPrototype, 'mediaKeys');
+  const mediaKeysOf = mediaKeysDescriptor && mediaKeysDescriptor.get;
   const pausedOf = getter(mediaPrototype, 'paused');
   const canUseKeys = !!(navigatorObject && requestAccess && createMediaKeys &&
       createModernSession && setServerCertificate && generateRequest &&
@@ -182,8 +188,6 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const handlers = new NativeWeakMap();
   const elementKeys = new NativeWeakMap();
   const elementInitData = new NativeWeakMap();
-  const forwarding = new NativeWeakSet();
-  const raisedFrom = new NativeWeakSet();
   const elementKeyRequests = new NativeWeakMap();
   const legacyModernKeys = new NativeWeakSet();
   let constructing = false;
@@ -303,19 +307,6 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       offset += size;
     }
     return offset && offset === bytes.length ? 'cenc' : null;
-  }
-
-  // WebKit's legacy skd init data: a 4-byte little-endian length, then the
-  // URI as UTF-16 (MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource).
-  function legacySkdInitData(utf8) {
-    const uri = NativeTextDecoder ? new NativeTextDecoder().decode(utf8) : latin1(utf8);
-    const buffer = new NativeArrayBuffer(4 + uri.length * 2);
-    const view = new NativeDataView(buffer);
-    view.setUint32(0, uri.length * 2, true);
-    for (let i = 0; i < uri.length; ++i) {
-      view.setUint16(4 + i * 2, uri.charCodeAt(i), true);
-    }
-    return new NativeUint8Array(buffer);
   }
 
   // MIMETypeCache::canDecodeType for WebKit's AVFoundation player: a listed
@@ -514,11 +505,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   class WebKitMediaKeyNeededEvent extends EventBase {
     constructor(type, eventInitDict = undefined) {
       required(1, arguments.length, "construct 'WebKitMediaKeyNeededEvent'");
-      const init = readDictionary(eventInitDict, 'WebKitMediaKeyNeededEvent');
-      super(type, init);
-      eventState.set(this, {
-        initData: nullableUint8Array(init.initData, 'WebKitMediaKeyNeededEvent', 'initData'),
-      });
+      // An undefined or null dictionary is the default one, read from nothing.
+      const init = eventInitDict === undefined || eventInitDict === null ? null :
+          readDictionary(eventInitDict, 'WebKitMediaKeyNeededEvent');
+      super(type, init === null ? undefined : init);
+      apply(weakMapSet, eventState, [this, {
+        initData: init === null ? null :
+            nullableUint8Array(init.initData, 'WebKitMediaKeyNeededEvent', 'initData'),
+      }]);
     }
     get initData() { return stateOf(eventState, this).initData; }
   }
@@ -992,79 +986,52 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   function keysAdded(keys) {
   }
 
-  // Attaching legacy keys gives the element their modern MediaKeys. Keys
-  // follow the last element they were set on (WebKitMediaKeys::setMediaElement).
-  // Clear key keys have no FairPlay keys to attach.
-  function attachKeys(keys, element) {
-    const previous = keys.element;
+  // WebKitMediaKeys::setMediaElement: the keys follow |element| (or none) and
+  // leave the element they followed, whichever that was. Their modern
+  // MediaKeys follow step by step: each step moves them from the element that
+  // has them (`attachedTo`) to the one the keys follow then, so quick changes
+  // end on the last element and never leave the keys on two. Every keys'
+  // steps share one chain, as Blink refuses a setMediaKeys while another on
+  // the same element is pending and two keys can move on one element
+  // (webkitSetMediaKeys(K2) on an element holding K1). An element whose
+  // MediaKeys the page has since replaced keeps the page's. Clear key keys
+  // have no FairPlay keys to move.
+  const attachedTo = new NativeWeakMap();
+  let attachChain = resolved;
+  function setMediaElement(keys, element) {
     keys.element = element;
     if (keys.kind === 'clearkey') {
       return;
     }
-    const step = () => then(modernKeysOf(keys), (mediaKeys) => {
-      if (keys.element !== element) {
-        return undefined;
-      }
-      const detached = previous && previous !== element ?
-          then(apply(setMediaKeys, previous, [null]), undefined, () => {}) : resolved;
-      return then(detached, () => keys.element === element ?
-          apply(setMediaKeys, element, [mediaKeys]) : undefined);
-    });
-    keys.attaching = then(then(keys.attaching, step), undefined, () => {});
+    attachChain = then(then(attachChain, () => followElement(keys)), undefined, () => {});
+    keys.attaching = attachChain;
   }
-  function detachKeys(keys, element) {
-    if (keys.element !== element) {
-      return;
+  function followElement(keys) {
+    const target = keys.element;
+    const previous = apply(weakMapGet, attachedTo, [keys]) || null;
+    if (previous === target) {
+      return undefined;
     }
-    keys.element = null;
-    if (keys.kind === 'clearkey') {
-      return;
-    }
-    keys.attaching = then(keys.attaching, () => keys.element === null ?
-        then(apply(setMediaKeys, element, [null]), undefined, () => {}) : undefined);
+    return then(modernKeysOf(keys), (mediaKeys) => {
+      let detached = resolved;
+      if (previous) {
+        apply(weakMapSet, attachedTo, [keys, null]);
+        if (!mediaKeysOf || apply(mediaKeysOf, previous, []) === mediaKeys) {
+          detached = then(apply(setMediaKeys, previous, [null]), undefined, () => {});
+        }
+      }
+      return then(detached, () => {
+        // A later setMediaElement's own step moves them on.
+        if (!target || keys.element !== target) {
+          return undefined;
+        }
+        return then(apply(setMediaKeys, target, [mediaKeys]), () => {
+          apply(weakMapSet, attachedTo, [keys, target]);
+        });
+      });
+    });
   }
 
-  // webkitneedkey: raised from each encrypted event of a media element, with
-  // its init data (skd in WebKit's legacy layout).
-  // Once per event: the window's capture listener and a forwarder the page
-  // adds on the element during that dispatch both see it. Only the media
-  // pipeline's own (trusted) events count; a page's script-made `encrypted`
-  // event (Shaka's legacy shim dispatches one from webkitneedkey) is left
-  // alone.
-  function raiseNeedKey(element, event) {
-    if (raisedFrom.has(event)) {
-      return;
-    }
-    raisedFrom.add(event);
-    if (event.isTrusted !== true) {
-      return;
-    }
-    let type;
-    let buffer;
-    try {
-      type = apply(initDataTypeOf, event, []);
-      buffer = apply(initDataOf, event, []);
-    } catch (error) {
-      return;
-    }
-    if (!buffer || (type !== 'cenc' && type !== 'sinf' && type !== 'skd')) {
-      return;
-    }
-    const bytes = new NativeUint8Array(buffer);
-    const initData = type === 'skd' ? legacySkdInitData(bytes) : copy(bytes);
-    elementInitData.set(element, initData);
-    if (type === 'skd') {
-      // The request the player holds for this key URI, for a legacy session
-      // to take (MediaPlayerPrivateAVFoundationObjC::m_keyURIToRequestMap).
-      let requests = elementKeyRequests.get(element);
-      if (!requests) {
-        requests = new Set();
-        elementKeyRequests.set(element, requests);
-      }
-      requests.add(utf16(initData, 4, initData.length - 4));
-    }
-    fire(element, new WebKitMediaKeyNeededEvent('webkitneedkey', {initData: copy(initData)}));
-  }
   function isMediaElement(value) {
     if (!value || typeof value !== 'object') {
       return false;
@@ -1076,12 +1043,33 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       return false;
     }
   }
-  function forwardFrom(element) {
-    if (forwarding.has(element)) {
-      return;
+  // HTMLMediaElement::mediaPlayerKeyNeeded. Blink calls it, privately, for
+  // each key a media element's media needs, and queues the event it returns
+  // (parc_webkit_need_key.h). |kind| says where the init data comes from:
+  // - 'media-source': a protected track's sinf ({"sinf":[base64]}), kept for
+  //   the element's com.apple.fps.2_N keys (CDMSessionAVContentKeySession's
+  //   source buffer init data);
+  // - 'skd': an HLS key request the player now holds (4-byte little-endian
+  //   length, then the URI as UTF-16), for a legacy session to take
+  //   (MediaPlayerPrivateAVFoundationObjC::m_keyURIToRequestMap);
+  // - 'clearkey': a clearkey:// request's key ID (UTF-8).
+  function keyNeeded(element, initData, kind) {
+    if (!isMediaElement(element) || !isUint8Array(initData)) {
+      return null;
     }
-    forwarding.add(element);
-    apply(addListener, element, ['encrypted', (event) => raiseNeedKey(element, event)]);
+    if (kind === 'media-source') {
+      apply(weakMapSet, elementInitData, [element, copy(initData)]);
+    } else if (kind === 'skd') {
+      let requests = apply(weakMapGet, elementKeyRequests, [element]);
+      if (!requests) {
+        requests = new NativeSet();
+        apply(weakMapSet, elementKeyRequests, [element, requests]);
+      }
+      apply(setAdd, requests, [utf16(initData, 4, initData.length - 4)]);
+    }
+    const event = new WebKitMediaKeyNeededEvent('webkitneedkey');
+    apply(weakMapGet, eventState, [event]).initData = initData;
+    return event;
   }
 
   const interfaces = [['WebKitMediaKeys', WebKitMediaKeys], ['WebKitMediaKeyError', WebKitMediaKeyError]];
@@ -1117,9 +1105,11 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     define(g.MediaError.prototype, 'MEDIA_ERR_ENCRYPTED', constant);
   }
 
-  if (!mediaPrototype || !pausedOf || !canUseKeys) {
-    return;
+  if (!mediaPrototype || !pausedOf) {
+    return undefined;
   }
+  // Without modern EME (an insecure context) only clear key keys can be
+  // made; the members exist regardless, as in Safari.
   const members = {
     webkitSetMediaKeys(mediaKeys) {
       brandMedia(this);
@@ -1135,12 +1125,11 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         return;
       }
       if (current) {
-        detachKeys(keysState.get(current), this);
+        setMediaElement(keysState.get(current), null);
       }
       if (next) {
         elementKeys.set(this, next);
-        forwardFrom(this);
-        attachKeys(keysState.get(next), this);
+        setMediaElement(keysState.get(next), this);
       } else {
         elementKeys.delete(this);
       }
@@ -1149,15 +1138,6 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       brandMedia(this);
       return elementKeys.get(this) || null;
     },
-    // A webkitneedkey listener on a media element anywhere (detached, or in a
-    // shadow tree the window doesn't see) gets the element's events.
-    addEventListener(type, listener, options = undefined) {
-      if (arguments.length >= 1 && toDOMString(type) === 'webkitneedkey' &&
-          isMediaElement(this)) {
-        forwardFrom(this);
-      }
-      return apply(Object.getPrototypeOf(mediaPrototype).addEventListener, this, arguments);
-    },
   };
   define(mediaPrototype, 'webkitSetMediaKeys', {
     value: members.webkitSetMediaKeys, writable: true, enumerable: true, configurable: true,
@@ -1165,16 +1145,12 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   define(mediaPrototype, 'webkitKeys', {
     get: describe(members, 'webkitKeys').get, enumerable: true, configurable: true,
   });
-  define(mediaPrototype, 'addEventListener', {
-    value: members.addEventListener, writable: true, enumerable: true, configurable: true,
-  });
   // Safari keeps legacy keys out of mediaKeys.
-  if (mediaKeysDescriptor && mediaKeysDescriptor.get) {
-    const nativeMediaKeys = mediaKeysDescriptor.get;
+  if (mediaKeysOf) {
     define(mediaPrototype, 'mediaKeys', {
       get: describe({
         get mediaKeys() {
-          const value = apply(nativeMediaKeys, this, []);
+          const value = apply(mediaKeysOf, this, []);
           return value && legacyModernKeys.has(value) ? null : value;
         },
       }, 'mediaKeys').get,
@@ -1182,17 +1158,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       configurable: true,
     });
   }
-  // Every encrypted event of a media element in this window's tree, before
-  // its own listeners run.
-  try {
-    apply(addListener, g, ['encrypted', (event) => {
-      const element = apply(eventTarget, event, []);
-      if (isMediaElement(element) && !forwarding.has(element)) {
-        raiseNeedKey(element, event);
-      }
-    }, true]);
-  } catch (error) {
-  }
+  return NativeEvent ? keyNeeded : undefined;
 })();
 )PARC_WKMK_JS";
 

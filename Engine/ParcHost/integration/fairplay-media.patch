@@ -1587,7 +1587,7 @@
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
  // This allows the Browser side to call back into the Renderer side.
-@@ -24,6 +27,176 @@
+@@ -24,6 +27,178 @@
    OnRemotePlayStateChange(MediaStatusState state);
  };
  
@@ -1753,9 +1753,11 @@
 +  OnStatisticsUpdate(PipelineStatistics delta);
 +  // `init_data_type` "skd": the key URI as UTF-8.
 +  OnEncrypted(string init_data_type, array<uint8> init_data);
-+  // Legacy clear key: AVFoundation asks for a clearkey:// key; `key_id` is
-+  // WebKit's (the URL's resource specifier). The element raises webkitneedkey.
-+  OnClearKeyNeeded(string key_id);
++  // Every skd:// and clearkey:// key request AVFoundation makes, CDM or not,
++  // repeats included, before anything else it raises: the request URL's
++  // absoluteString, unchanged. The element raises webkitneedkey
++  // (WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest).
++  OnKeyRequest(string key_uri);
 +  OnWaiting(WaitingReason reason);
 +  OnEnded();
 +  OnError(PipelineStatus status, string message);
@@ -2435,7 +2437,7 @@
    }
  
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1695,6 +1781,50 @@
+@@ -1695,6 +1781,58 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -2452,6 +2454,14 @@
 +  if ((init_data_type == media::EmeInitDataType::SINF) !=
 +      parc_safari_media_source) {
 +    return;
++  }
++
++  // Parc: Safari raises webkitneedkey for each protected track's sinf first,
++  // whatever then happens to `encrypted` (SourceBufferPrivateAVFObjC::
++  // didProvideContentKeyRequestInitializationDataForTrackID calls keyNeeded
++  // before the renderer's setInitData).
++  if (parc_safari_media_source) {
++    encrypted_client_->ParcWebKitMediaSourceKeyNeeded(init_data);
 +  }
 +
 +  // Parc: and only while no session of the element's MediaKeys has a key
@@ -2486,7 +2496,7 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1776,6 +1906,26 @@
+@@ -1776,6 +1914,26 @@
            tick_clock_, main_task_runner_));
  }
  #endif
@@ -2513,7 +2523,7 @@
  
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -3018,11 +3168,29 @@
+@@ -3018,11 +3176,29 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -2543,7 +2553,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3206,14 @@
+@@ -3038,6 +3214,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -2558,7 +2568,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3329,14 @@
+@@ -3153,6 +3337,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -2573,7 +2583,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3977,29 @@
+@@ -3793,6 +3985,29 @@
      return false;
    }
  

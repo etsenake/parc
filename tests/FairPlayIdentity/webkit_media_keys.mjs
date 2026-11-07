@@ -150,7 +150,19 @@ function makeWorld({sinf = true, failSpc = 0} = {}) {
     constructor(name = 'video') { super(); this.name = name; }
     get paused() { return this.#paused; }  // brand-checks like Blink's getter
     get mediaKeys() { return this.#keys; }
-    setMediaKeys(keys) { log.push(['setMediaKeys', this.name, keys]); this.#keys = keys; return Promise.resolve(); }
+    // Blink refuses a setMediaKeys while another on the element is pending.
+    #attaching = false;
+    setMediaKeys(keys) {
+      if (this.#attaching) {
+        log.push(['setMediaKeys refused', this.name, keys]);
+        return Promise.reject(new DOMException('Another request is in progress.', 'InvalidStateError'));
+      }
+      this.#attaching = true;
+      log.push(['setMediaKeys', this.name, keys]);
+      return new Promise((resolve) => setTimeout(() => {
+        this.#keys = keys; this.#attaching = false; resolve();
+      }));
+    }
   }
   class MediaError {}
   const context = {
@@ -384,8 +396,9 @@ const thrown = (fn) => {
   check(thrown(() => video.webkitSetMediaKeys({}))?.name === 'TypeError',
         'webkitSetMediaKeys takes WebKitMediaKeys or null');
   check(thrown(() => video.webkitSetMediaKeys())?.name === 'TypeError', 'webkitSetMediaKeys needs an argument');
-  check(world.HTMLMediaElement.prototype.webkitSetMediaKeys.length === 1 &&
-        world.HTMLMediaElement.prototype.addEventListener.length === 2, 'operation lengths');
+  check(world.HTMLMediaElement.prototype.webkitSetMediaKeys.length === 1, 'operation length');
+  check(!Object.prototype.hasOwnProperty.call(world.HTMLMediaElement.prototype, 'addEventListener'),
+        'media elements keep EventTarget\'s own addEventListener, as in Safari');
 }
 
 // ---- Argument checks of createSession and update.
@@ -423,22 +436,36 @@ const pssh = (id) => {
 const encrypted = (world, element, initDataType, bytes) =>
     element.dispatchEvent(new world.MediaEncryptedEvent('encrypted',
         {initDataType, initData: new Uint8Array(bytes).buffer}, true));
+// Blink's side of webkitneedkey (parc_webkit_need_key.h): the script's
+// completion value is its hook; Blink calls it with the element, the init
+// data and where it comes from, and queues the event it returns at the
+// element (trusted, before `encrypted`). Here the event is dispatched at once.
+const needKey = (hook, element, bytes, kind) => {
+  const event = hook(element, new Uint8Array(bytes), kind);
+  if (event) element.dispatchEvent(event);
+  return event;
+};
+// WebKit's legacy skd init data, as Blink builds it (ParcWebKitSkdInitData).
+const skdInitData = (uri) => {
+  const data = Buffer.alloc(4 + uri.length * 2);
+  data.writeUInt32LE(uri.length * 2, 0);
+  data.write(uri, 4, 'utf16le');
+  return data;
+};
 
 // ---- com.apple.fps.3_0 over cenc init data: the whole protocol.
 {
   const world = makeWorld();
-  run(world, script);
+  const hook = run(world, script);
   const video = new world.HTMLMediaElement();
   const needs = [];
   video.addEventListener('webkitneedkey', (event) => needs.push(event));
   const initData = Buffer.concat([pssh('A'), pssh('B')]);
-  encrypted(world, video, 'cenc', initData);
+  needKey(hook, video, initData, 'media-source');
   check(needs.length === 1 && needs[0] instanceof world.WebKitMediaKeyNeededEvent &&
         text(needs[0].initData) === initData.toString('latin1'),
-        'webkitneedkey carries the encrypted event\'s init data');
+        'webkitneedkey carries the init data Blink gives');
   check(!needs[0].bubbles && !needs[0].cancelable, 'webkitneedkey neither bubbles nor cancels');
-  encrypted(world, video, 'webm', Buffer.from('x'));
-  check(needs.length === 1, 'no webkitneedkey for init data FairPlay never uses');
 
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
   video.webkitSetMediaKeys(keys);
@@ -549,7 +576,7 @@ for (const sinf of [true, false]) {
 // ---- com.apple.fps.2_0: the init data comes from the attached media.
 {
   const world = makeWorld();
-  run(world, script);
+  const hook = run(world, script);
   const video = new world.HTMLMediaElement();
   const keys = new world.WebKitMediaKeys('com.apple.fps.2_0');
   video.webkitSetMediaKeys(keys);
@@ -563,7 +590,7 @@ for (const sinf of [true, false]) {
   check(events.join() === 'certificate,error:1', 'no protected media yet: InvalidPlayerState');
   // The window sees encrypted events of elements in its tree; here the
   // element forwards once keys are set on it.
-  encrypted(world, video, 'cenc', pssh('C'));
+  needKey(hook, video, pssh('C'), 'media-source');
   const second = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
   second.addEventListener('webkitkeymessage', (event) => events.push(text(event.message)));
   await settle();
@@ -602,19 +629,53 @@ for (const sinf of [true, false]) {
   check(messages.length === 0, 'a session closed at once sends nothing');
 }
 
-// ---- skd init data (native HLS) in WebKit's legacy layout.
+// ---- The key-needed hook: what Blink calls for each key a media element
+// needs (HTMLMediaElement::mediaPlayerKeyNeeded).
 {
   const world = makeWorld();
-  run(world, script);
+  const hook = run(world, script);
+  check(typeof hook === 'function', "the script's completion value is the hook");
+  check(!Object.getOwnPropertyNames(world).some((name) => world[name] === hook), 'no global holds the hook');
   const audio = new world.HTMLMediaElement('audio');
-  let initData = null;
-  audio.addEventListener('webkitneedkey', (event) => { initData = event.initData; });
-  encrypted(world, audio, 'skd', Buffer.from('skd://key-é', 'utf8'));
-  const view = new DataView(initData.buffer, initData.byteOffset, initData.byteLength);
-  const uri = 'skd://key-é';
-  check(view.getUint32(0, true) === uri.length * 2 &&
-        Buffer.from(initData.slice(4)).toString('utf16le') === uri,
-        'webkitneedkey gets the skd URI as length + UTF-16');
+  const seen = [];
+  audio.addEventListener('webkitneedkey', (event) => seen.push(event));
+  const layout = skdInitData('skd://key-\u00e9\u{1F511}');
+  const event = hook(audio, new Uint8Array(layout), 'skd');
+  check(seen.length === 0, 'the hook makes the event; Blink queues it');
+  check(event instanceof world.WebKitMediaKeyNeededEvent && event.type === 'webkitneedkey' &&
+        !event.bubbles && !event.cancelable && !event.composed, 'a WebKitMediaKeyNeededEvent');
+  check(Buffer.from(event.initData).equals(layout) && event.initData === event.initData,
+        'initData is the bytes Blink passed, the same array each read');
+  audio.dispatchEvent(event);
+  check(seen.length === 1 && seen[0] === event, 'dispatched at the element');
+  check(hook({}, new Uint8Array(1), 'skd') === null && hook(audio, [1], 'skd') === null &&
+        hook(audio) === null, 'only a media element and a Uint8Array');
+  // Changing the event's initData doesn't change what 2_N keys use, and
+  // only Media Source init data reaches them.
+  const video = new world.HTMLMediaElement();
+  const keys = new world.WebKitMediaKeys('com.apple.fps.2_0');
+  video.webkitSetMediaKeys(keys);
+  needKey(hook, video, pssh('K'), 'media-source').initData.fill(0);
+  needKey(hook, video, skdInitData('skd://x'), 'skd');
+  needKey(hook, video, bytesOf('kid'), 'clearkey');
+  const session = keys.createSession('video/mp4', new Uint8Array(bytesOf('id')));
+  await settle();
+  session.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  const request = world.log.find((entry) => entry[0] === 'generateRequest');
+  check(request && Buffer.from(JSON.parse(request[2]).initData, 'base64').equals(pssh('K')),
+        'the keys keep their own copy of the Media Source init data');
+  // The constructor's dictionary, as WebIDL converts it.
+  run(world, 'Object.defineProperty(Object.prototype, "initData", {get() { throw new Error("read"); }, configurable: true});');
+  check(thrown(() => new world.WebKitMediaKeyNeededEvent('webkitneedkey')) === null &&
+        thrown(() => new world.WebKitMediaKeyNeededEvent('webkitneedkey', null)) === null &&
+        thrown(() => hook(audio, new Uint8Array(1), 'media-source')) === null,
+        'an absent dictionary is read from nothing');
+  check(thrown(() => run(world, 'new WebKitMediaKeyNeededEvent("webkitneedkey", {})'))?.message === 'read',
+        'a given dictionary is read');
+  run(world, 'delete Object.prototype.initData;');
+  check(thrown(() => new world.WebKitMediaKeyNeededEvent('x', 5))?.name === 'TypeError',
+        'a dictionary must be an object');
 }
 
 // ---- Keys follow the last element; a page replacing the modern API after
@@ -645,25 +706,21 @@ for (const sinf of [true, false]) {
   check(world.log.some((entry) => entry[0] === 'generateRequest'), 'the native modern EME is used');
 }
 
-// ---- Only the pipeline's own encrypted events raise webkitneedkey, once each.
+// ---- `encrypted` events raise no webkitneedkey in script: Blink raises it,
+// before `encrypted`, for every element in or out of the tree. A page's own
+// encrypted event (Shaka's PatchedMediaKeysApple dispatches one from
+// webkitneedkey) can't loop.
 {
   const world = makeWorld();
   run(world, script);
   const video = new world.HTMLMediaElement();
   const needs = [];
-  video.addEventListener('webkitneedkey', (event) => {
-    needs.push(event);
-    // Shaka's PatchedMediaKeysApple answers with a script-made encrypted event.
-    video.dispatchEvent(new Event('encrypted'));
-    video.dispatchEvent(new world.MediaEncryptedEvent('encrypted',
-        {initDataType: 'cenc', initData: new Uint8Array(pssh('Z')).buffer}));
-  });
-  const event = new world.MediaEncryptedEvent('encrypted',
-      {initDataType: 'cenc', initData: new Uint8Array(pssh('A')).buffer}, true);
-  check(thrown(() => video.dispatchEvent(event)) === null, 'a script-made encrypted event throws nothing');
-  check(needs.length === 1, "a page's own encrypted events raise no webkitneedkey (no loop)");
-  video.dispatchEvent(event);
-  check(needs.length === 1, 'an event raises webkitneedkey once');
+  video.addEventListener('webkitneedkey', (event) => needs.push(event));
+  encrypted(world, video, 'sinf', bytesOf('{"sinf":["AAAA"]}'));
+  encrypted(world, video, 'skd', bytesOf('skd://a'));
+  video.dispatchEvent(new world.MediaEncryptedEvent('encrypted',
+      {initDataType: 'cenc', initData: new Uint8Array(pssh('Z')).buffer}));
+  check(needs.length === 0, 'no webkitneedkey from encrypted events');
 }
 
 // ---- WebKit's AVFoundation player key systems (native HLS), with the
@@ -672,7 +729,7 @@ for (const sinf of [true, false]) {
   const hlsScript = script.replace('/*PARC_NATIVE_HLS*/false', 'true');
   check(hlsScript !== script, 'the installer has a native HLS switch to turn on');
   const world = makeWorld();
-  run(world, hlsScript);
+  const hook = run(world, hlsScript);
   const supports = (...args) => world.WebKitMediaKeys.isTypeSupported(...args);
   check(supports('com.apple.fps') && supports('com.apple.fps.1_0') && supports('COM.APPLE.FPS.1_0'),
         'com.apple.fps and 1_0 (ignoring case)');
@@ -711,7 +768,7 @@ for (const sinf of [true, false]) {
   video.webkitSetMediaKeys(keys);
   let needed = null;
   video.addEventListener('webkitneedkey', (event) => { needed = event.initData; });
-  encrypted(world, video, 'skd', Buffer.from('skd://key1', 'utf8'));
+  needKey(hook, video, skdInitData('skd://key1'), 'skd');
   check(needed && Buffer.from(needed.slice(4)).toString('utf16le') === 'skd://key1', 'webkitneedkey for the key URI');
   const session = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://key1', 'asset-9', 'CERT'));
   check(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(session.sessionId),
@@ -792,16 +849,125 @@ for (const sinf of [true, false]) {
   check(events.length === 6, 'nothing after close()');
 }
 
-// ---- An ordinary addEventListener still works on media elements.
+// ---- WebKitMediaKeys::setMediaElement: keys follow the last element they
+// were set on, and clearing them on an element that still holds them
+// detaches them from wherever they are.
+{
+  const world = makeWorld();
+  const hook = run(world, script);
+  const a = new world.HTMLMediaElement('a');
+  const b = new world.HTMLMediaElement('b');
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  const attached = (element) => {
+    const sets = world.log.filter((entry) => entry[0] === 'setMediaKeys' && entry[1] === element.name);
+    return sets.length ? sets[sets.length - 1][2] : null;
+  };
+  a.webkitSetMediaKeys(keys);
+  await settle();
+  b.webkitSetMediaKeys(keys);
+  await settle();
+  const modern = world.log.find((entry) => entry[0] === 'setMediaKeys' && entry[2])[2];
+  check(b.mediaKeys === null && a.webkitKeys === keys && b.webkitKeys === keys,
+        'both elements report the keys; mediaKeys hides them');
+  check(attached(a) === null && attached(b) === modern, 'the modern keys moved from a to b');
+  a.webkitSetMediaKeys(keys);
+  await settle();
+  check(attached(b) === modern && attached(a) === null,
+        'setting the keys a still holds again changes nothing');
+  a.webkitSetMediaKeys(null);
+  await settle();
+  check(attached(b) === null && a.webkitKeys === null && b.webkitKeys === keys,
+        "clearing a's keys detaches them from b, which still reports them (WebKit)");
+  b.webkitSetMediaKeys(null);
+  b.webkitSetMediaKeys(keys);
+  await settle();
+  check(attached(b) === modern, 'b takes them again');
+  // A page that has since given b its own MediaKeys keeps them.
+  const own = new world.MediaKeys();
+  world.HTMLMediaElement.prototype.setMediaKeys.call(b, own);
+  const c = new world.HTMLMediaElement('c');
+  c.webkitSetMediaKeys(keys);
+  await settle();
+  check(attached(b) === own && attached(c) === modern, "the page's MediaKeys stay on b");
+  // Quick moves end on the last element alone.
+  const d = new world.HTMLMediaElement('d');
+  const e = new world.HTMLMediaElement('e');
+  d.webkitSetMediaKeys(keys);
+  e.webkitSetMediaKeys(keys);
+  await settle();
+  check(attached(c) === null && attached(d) === null && attached(e) === modern,
+        'the keys end on the last element only');
+  check(hook(e, new Uint8Array(1), 'media-source') instanceof world.WebKitMediaKeyNeededEvent,
+        'the hook still answers');
+}
+
+// ---- Two keys on one element: the new keys attach after the old ones
+// leave, whatever their modern MediaKeys' state (Blink refuses overlapping
+// setMediaKeys calls).
 {
   const world = makeWorld();
   run(world, script);
-  const video = new world.HTMLMediaElement();
-  let seen = 0;
-  video.addEventListener('play', () => ++seen, {once: true});
-  video.dispatchEvent(new Event('play'));
-  video.dispatchEvent(new Event('play'));
-  check(seen === 1, 'listener options pass through');
+  const video = new world.HTMLMediaElement('v');
+  const k1 = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  const k2 = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  video.webkitSetMediaKeys(k1);
+  await settle();
+  // k2's modern MediaKeys exist before it is set (a session made them).
+  const early = k2.createSession('video/mp4', new Uint8Array(pssh('A')));
+  await settle();
+  early.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  video.webkitSetMediaKeys(k2);
+  await settle();
+  const sets = world.log.filter((entry) => entry[0].startsWith('setMediaKeys') && entry[1] === 'v');
+  check(!sets.some((entry) => entry[0] === 'setMediaKeys refused'), 'no overlapping setMediaKeys');
+  check(sets.length === 3 && sets[1][2] === null && sets[2][2] instanceof world.MediaKeys &&
+        sets[2][2] !== sets[0][2] && video.mediaKeys === null,
+        "k1's keys leave, then k2's arrive");
+}
+
+// ---- The hook reaches no page code: a page that patches WeakMap, Set or
+// Object.prototype changes nothing it does.
+{
+  const world = makeWorld();
+  const hook = run(world, script);
+  const audio = new world.HTMLMediaElement('audio');
+  run(world, `
+    globalThis.reached = 0;
+    WeakMap.prototype.get = function() { ++reached; return undefined; };
+    WeakMap.prototype.set = function() { ++reached; return this; };
+    Set.prototype.add = function() { ++reached; return this; };
+    globalThis.Set = function() { ++reached; };
+    Object.defineProperty(Object.prototype, 'initData', {set() { ++reached; }, configurable: true});`);
+  const event = hook(audio, new Uint8Array(skdInitData('skd://a')), 'skd');
+  const source = hook(audio, new Uint8Array(pssh('A')), 'media-source');
+  run(world, 'delete Object.prototype.initData;');
+  check(world.reached === 0 && event instanceof world.WebKitMediaKeyNeededEvent &&
+        source instanceof world.WebKitMediaKeyNeededEvent, 'no page code runs inside the hook');
+}
+
+// ---- Without modern EME (an insecure context) media elements still have
+// webkitSetMediaKeys and webkitKeys, and webkitneedkey still comes.
+{
+  const base = makeWorld();
+  const context = { MediaSource: base.MediaSource, DOMException, Event, EventTarget,
+                    HTMLMediaElement: base.HTMLMediaElement, MediaError: base.MediaError };
+  vm.createContext(context);
+  const hook = run(context, script);
+  const video = new context.HTMLMediaElement();
+  check(typeof context.HTMLMediaElement.prototype.webkitSetMediaKeys === 'function' &&
+        video.webkitKeys === null, 'the members exist');
+  check(thrown(() => video.webkitSetMediaKeys(null)) === null && video.webkitKeys === null,
+        'null can be set');
+  check(typeof hook === 'function' && hook(video, new Uint8Array(1), 'media-source').type === 'webkitneedkey',
+        'the hook is there');
+}
+
+// ---- An existing WebKitMediaKeys: nothing installed, no hook.
+{
+  const world = makeWorld();
+  run(world, 'globalThis.WebKitMediaKeys = function Existing() {};');
+  check(run(world, script) === undefined, 'no hook when WebKitMediaKeys exists');
 }
 
 console.log(`webkit media keys: ${checks} checks passed`);

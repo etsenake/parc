@@ -21,18 +21,20 @@
  
 --- a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
 +++ b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
-@@ -38,6 +38,10 @@
+@@ -38,6 +38,12 @@
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/single_sample_metrics.h"
  #include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_managed_media_source.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_safari_media_keys.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_media_keys.h"
++#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h"
++#include "third_party/blink/renderer/bindings/core/v8/script_evaluation_result.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_presentation.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_state_impl.h"
  #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
-@@ -45,13 +49,16 @@
+@@ -45,13 +51,16 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_html_document.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
@@ -49,7 +51,7 @@
  #include "third_party/blink/renderer/core/html/document_name_collection.h"
  #include "third_party/blink/renderer/core/html/html_document.h"
  #include "third_party/blink/renderer/core/html/html_iframe_element.h"
-@@ -61,6 +68,7 @@
+@@ -61,6 +70,7 @@
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -57,7 +59,7 @@
  #include "third_party/blink/renderer/core/script/modulator.h"
  #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
  #include "third_party/blink/renderer/platform/bindings/extensions_registry.h"
-@@ -72,12 +80,16 @@
+@@ -72,12 +82,16 @@
  #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
  #include "third_party/blink/renderer/platform/bindings/v8_set_return_value.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -74,7 +76,7 @@
  #include "v8/include/v8.h"
  
  namespace blink {
-@@ -240,6 +252,79 @@
+@@ -240,6 +254,86 @@
    lifecycle_ = next_status;
  }
  
@@ -116,7 +118,8 @@
 +// page runs, unless the document can't run scripts. Errors from them are
 +// reported unmuted, like the page's. The legacy EME offers WebKit's
 +// AVFoundation-player key systems only once native HLS is built in
-+// (parc::fairplay::kNativeHlsEnabled).
++// (parc::fairplay::kNativeHlsEnabled). The legacy EME script's value is its
++// webkitneedkey hook, which only Blink reaches (parc_webkit_need_key.h).
 +void InstallParcSafariScripts(ScriptState* script_state,
 +                              LocalDOMWindow* window) {
 +  if (window->CanExecuteScripts(kNotAboutToExecuteScript)) {
@@ -128,10 +131,16 @@
 +          source == kParcWebKitMediaKeysScript) {
 +        script.Replace("/*PARC_NATIVE_HLS*/false", "true");
 +      }
-+      ClassicScript::CreateUnspecifiedScript(
-+          script, ScriptSourceLocationType::kInternal,
-+          SanitizeScriptErrors::kDoNotSanitize)
-+          ->RunScriptOnScriptState(script_state);
++      v8::HandleScope handle_scope(script_state->GetIsolate());
++      ScriptEvaluationResult result =
++          ClassicScript::CreateUnspecifiedScript(
++              script, ScriptSourceLocationType::kInternal,
++              SanitizeScriptErrors::kDoNotSanitize)
++              ->RunScriptOnScriptStateAndReturnValue(script_state);
++      if (source == kParcWebKitMediaKeysScript) {
++        SetParcWebKitNeedKeyHook(script_state,
++                                 result.GetSuccessValueOrEmpty());
++      }
 +    }
 +  }
 +}
@@ -154,7 +163,7 @@
  void LocalWindowProxy::Initialize() {
    TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
                 GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -299,6 +384,11 @@
+@@ -299,6 +393,11 @@
      SetSecurityToken(origin.get());
    }
  
@@ -166,7 +175,7 @@
    {
      TRACE_EVENT2("v8", "ContextCreatedNotification", "IsMainFrame",
                   GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +399,12 @@
+@@ -309,6 +408,12 @@
    }
  
    InstallConditionalFeatures();
@@ -179,7 +188,7 @@
  
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +648,26 @@
+@@ -552,6 +657,26 @@
      return;
    }
  
@@ -1097,3 +1106,76 @@
    // If the context for MediaKeys has been destroyed, fail.
    if (!GetExecutionContext()) {
      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidAccessError,
+--- a/third_party/blink/public/platform/web_media_player_encrypted_media_client.h
++++ b/third_party/blink/public/platform/web_media_player_encrypted_media_client.h
+@@ -31,6 +31,8 @@
+ #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_ENCRYPTED_MEDIA_CLIENT_H_
+ #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_ENCRYPTED_MEDIA_CLIENT_H_
+ 
++#include <string_view>
++
+ #include "base/containers/span.h"
+ #include "media/base/eme_constants.h"
+ #include "third_party/blink/public/platform/web_common.h"
+@@ -44,6 +46,23 @@
+   virtual void DidBlockPlaybackWaitingForKey() = 0;
+   virtual void DidResumePlaybackBlockedForKey() = 0;
+ 
++  // Parc: WebKit's legacy key-needed signal, HTMLMediaElement::
++  // mediaPlayerKeyNeeded. On a Safari-identity page the media element queues
++  // webkitneedkey; elsewhere these do nothing.
++  // A Safari-identity Media Source's sinf ({"sinf":[base64]}) for a protected
++  // track, raised for every one before `encrypted` is decided on, whether or
++  // not it follows (SourceBufferPrivateAVFObjC::
++  // didProvideContentKeyRequestInitializationDataForTrackID calls keyNeeded
++  // before the renderer's setInitData).
++  virtual void ParcWebKitMediaSourceKeyNeeded(base::span<const uint8_t> sinf) {}
++  // A key request of the native HLS player's resource loader: every skd://
++  // and clearkey:// loading request it sees, whether or not a CDM is attached,
++  // before any Encrypted() for it, with the request URL's absolute string
++  // unchanged, as UTF-8 (MediaPlayerPrivateAVFoundationObjC::
++  // shouldWaitForLoadingOfResource; Engine/ParcNative/fairplay_chromium/
++  // NATIVE_HLS.md, "Keys").
++  virtual void ParcWebKitKeyRequest(std::string_view key_uri) {}
++
+  protected:
+   ~WebMediaPlayerEncryptedMediaClient() = default;
+ };
+--- a/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.h
++++ b/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.h
+@@ -45,6 +45,8 @@
+   // WebMediaPlayerEncryptedMediaClient methods
+   void Encrypted(media::EmeInitDataType init_data_type,
+                  base::span<const uint8_t> init_data) final;
++  void ParcWebKitMediaSourceKeyNeeded(base::span<const uint8_t> sinf) final;
++  void ParcWebKitKeyRequest(std::string_view key_uri) final;
+   void DidBlockPlaybackWaitingForKey() final;
+   void DidResumePlaybackBlockedForKey() final;
+   WebContentDecryptionModule* ContentDecryptionModule();
+--- a/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.cc
+@@ -9,6 +9,7 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "media/base/eme_constants.h"
+ #include "third_party/blink/public/platform/task_type.h"
++#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
+@@ -446,6 +447,16 @@
+   GetSupplementable()->ScheduleEvent(event);
+ }
+ 
++void HTMLMediaElementEncryptedMedia::ParcWebKitMediaSourceKeyNeeded(
++    base::span<const uint8_t> sinf) {
++  ScheduleParcWebKitNeedKey(*GetSupplementable(), sinf, "media-source");
++}
++
++void HTMLMediaElementEncryptedMedia::ParcWebKitKeyRequest(
++    std::string_view key_uri) {
++  ScheduleParcWebKitKeyRequest(*GetSupplementable(), key_uri);
++}
++
+ void HTMLMediaElementEncryptedMedia::DidBlockPlaybackWaitingForKey() {
+   DVLOG(EME_LOG_LEVEL) << __func__;
+ 
