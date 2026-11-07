@@ -2471,7 +2471,64 @@
        return true;
      case blink::WebEncryptedMediaSessionType::kUnknown:
        break;
-@@ -541,6 +544,14 @@
+@@ -376,9 +379,11 @@
+   SimpleResultPromise(ScriptPromiseResolver<IDLUndefined>* resolver,
+                       const MediaKeysConfig& config,
+                       MediaKeySession* session,
+-                      EmeApiType type)
++                      EmeApiType type,
++                      bool parc_update = false)
+       : ContentDecryptionModuleResultPromise(resolver, config, type),
+-        session_(session) {}
++        session_(session),
++        parc_update_(parc_update) {}
+ 
+   ~SimpleResultPromise() override = default;
+ 
+@@ -386,10 +391,18 @@
+   void Complete() override {
+     DVLOG(MEDIA_KEY_SESSION_LOG_LEVEL) << "SimpleResultPromise::" << __func__;
+ 
+-    if (!IsValidToFulfillPromise())
+-      return;
+-
+-    Resolve<IDLUndefined>();
++    if (IsValidToFulfillPromise()) {
++      Resolve<IDLUndefined>();
++    }
++    ParcSettled();
++  }
++
++  void CompleteWithError(WebContentDecryptionModuleException exception_code,
++                         uint32_t system_code,
++                         const WebString& error_message) override {
++    ContentDecryptionModuleResultPromise::CompleteWithError(
++        exception_code, system_code, error_message);
++    ParcSettled();
+   }
+ 
+   void Trace(Visitor* visitor) const override {
+@@ -398,9 +411,19 @@
+   }
+ 
+  private:
++  // Parc: an update() under Safari's identity tells its session once it
++  // settled, after the promise's resolution is queued.
++  void ParcSettled() {
++    if (parc_update_ && session_) {
++      parc_update_ = false;
++      session_->ParcUpdateSettled();
++    }
++  }
++
+   // Keep track of the MediaKeySession that created this promise so that it
+   // remains reachable as long as this promise is reachable.
+   Member<MediaKeySession> session_;
++  bool parc_update_;
+ };
+ 
+ MediaKeySession::MediaKeySession(ScriptState* script_state,
+@@ -541,6 +564,14 @@
    //     |initDataType| is one of the registered values.)
    media::EmeInitDataType init_data_type =
        EncryptedMediaUtils::ConvertToInitDataType(init_data_type_string);
@@ -2486,6 +2543,52 @@
    if (init_data_type == media::EmeInitDataType::UNKNOWN) {
      exception_state.ThrowDOMException(
          DOMExceptionCode::kNotSupportedError,
+@@ -800,8 +831,13 @@
+   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(
+       script_state, exception_state.GetContext());
+   auto promise = resolver->Promise();
++  const bool parc_safari =
++      IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent());
+   SimpleResultPromise* result = MakeGarbageCollected<SimpleResultPromise>(
+-      resolver, config_, this, EmeApiType::kUpdate);
++      resolver, config_, this, EmeApiType::kUpdate, parc_safari);
++  if (parc_safari) {
++    ++parc_pending_updates_;
++  }
+ 
+   // 6. Run the following steps asynchronously (done in updateTask())
+   pending_actions_.push_back(
+@@ -1117,7 +1153,12 @@
+   }
+ 
+   // 5. Queue a task to fire a simple event named keystatuseschange
+-  //    at the session.
++  //    at the session. (Parc: under Safari's identity, after the update()
++  //    outstanding now settles.)
++  if (parc_pending_updates_ > 0) {
++    parc_deferred_keys_change_ = true;
++    return;
++  }
+   Event* event = Event::Create(event_type_names::kKeystatuseschange);
+   event->SetTarget(this);
+   async_event_queue_->EnqueueEvent(FROM_HERE, *event);
+@@ -1128,6 +1169,16 @@
+   //    may choose to skip this step if it knows resuming will fail.
+   // FIXME: Attempt to resume playback if |hasAdditionalUsableKey| is true.
+   // http://crbug.com/413413
++}
++
++void MediaKeySession::ParcUpdateSettled() {
++  if (parc_pending_updates_ > 0 && --parc_pending_updates_ == 0 &&
++      parc_deferred_keys_change_) {
++    parc_deferred_keys_change_ = false;
++    Event* event = Event::Create(event_type_names::kKeystatuseschange);
++    event->SetTarget(this);
++    async_event_queue_->EnqueueEvent(FROM_HERE, *event);
++  }
+ }
+ 
+ const AtomicString& MediaKeySession::InterfaceName() const {
 --- a/third_party/blink/renderer/modules/webcodecs/audio_decoder.cc
 +++ b/third_party/blink/renderer/modules/webcodecs/audio_decoder.cc
 @@ -25,6 +25,8 @@
@@ -3438,3 +3541,30 @@
      attribute EventHandler onencrypted;
      attribute EventHandler onwaitingforkey;
  };
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.h
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.h
+@@ -115,6 +115,10 @@
+   // ScriptWrappable
+   bool HasPendingActivity() const final;
+ 
++  // Parc: an update() this session sent under Safari's identity settled
++  // (resolved or rejected); a keystatuseschange held for it is queued now.
++  void ParcUpdateSettled();
++
+   // ExecutionContextLifecycleObserver
+   void ContextDestroyed() override;
+ 
+@@ -178,6 +182,13 @@
+ 
+   HeapDeque<Member<PendingAction>> pending_actions_;
+   HeapTaskRunnerTimer<MediaKeySession> action_timer_;
++
++  // Parc: under Safari's identity, key statuses that arrive while an
++  // update() is outstanding change keyStatuses at once, but their
++  // keystatuseschange is queued once that update settles, as WebKit resolves
++  // update() before the event it queued fires (MediaKeySession::update).
++  int parc_pending_updates_ = 0;
++  bool parc_deferred_keys_change_ = false;
+ };
+ 
+ }  // namespace blink
