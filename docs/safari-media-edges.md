@@ -37,6 +37,18 @@ Which Parc path a decision reaches matters. On Safari-identity pages:
 
 Unchecked claims are labelled **unchecked**.
 
+## Scoreboard (13:45, November 7)
+
+Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
+main: **32**. Being fixed now: **7** (casting, moved-video ownership, late
+audio track joining the running player, MPEG-2 TS, Media Source types and
+codecs, preload after a source change, rewind and extreme rates). Queued:
+**about 14**. Waiting on Josh: four differences no user can perceive (proposed
+leave), two where matching Safari is worse (range-less servers: keep Chrome's;
+AV1 without hardware: match Safari). Done when the queue is empty, every
+entry here shows its commit, and each fix's follow-ups are fixed. The live
+slot list and queue are in `work/safari-media-audit-src/RUNNING_LOG.md`.
+
 ## Reading log
 
 | File | Pristine lines | Read through |
@@ -66,14 +78,17 @@ adopts a playing video into an iframe or popup sees it restart from 0 in
 Parc and carry on in Safari. **Fixed** 47fe80b9 for same-origin moves between
 framed Safari-identity documents (the player stays bound to the frame that
 made it, as Chromium already does for Document Picture-in-Picture; the
-element's event queue moves with it). Still different, **open** (with
-Josh): if the frame that made the player is destroyed, Parc reloads it,
-since a Chromium player can't move between frames; a video moved into a
-popup still takes the opener tab's visibility and freezing (**in progress**,
-fix agent HME-1b); and a move into
-a document without a browsing context (`createHTMLDocument`) reloads and
-fails, where Safari keeps the player (unchecked against WebKit's `dom/`
-files beyond `DOMImplementation.cpp:144`, `Document.cpp:2740`).
+element's event queue moves with it). A video moved into a popup follows the popup's
+visibility: **fixed** 16ff69d8. Still different, all user-felt: the moved
+video's Now Playing, media keys, tab sound icon, picture in picture and Cast
+stay with the opener, and closing or navigating the opener restarts it from 0
+where Safari keeps playing: **in progress** (HME-1c, the player re-homed to
+the frame showing it). A move into a document without a browsing context
+(`createHTMLDocument`) reloads and fails where Safari keeps the player:
+**queued** (HME-1d; unchecked against WebKit's `dom/` files beyond
+`DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
+video moved from a Chrome-identity document keeps Chrome's muted handling:
+**queued** (HME-1e).
 
 **HME-2. `muted` content attribute set by script.** Chromium
 `html_media_element.cc:852-856, 878-886`: the attribute sets `muted` only when
@@ -116,8 +131,7 @@ none until the page plays (`MediaPlayerPrivateAVFoundation.cpp:191-205`,
 
 HME-3 to HME-6 and HME-17: **fixed** 7000e39a. A resumed lazy load still
 restarts resource selection in a microtask where WebKit queues a task, so
-`networkState` turns `NETWORK_LOADING` one task early: **in progress** (fix
-agent E2b).
+`networkState` turned `NETWORK_LOADING` one task early: **fixed** 7d9146e7.
 
 **HME-7. Media Source readyState and seeks.** Chromium
 `web_media_player_impl.cc:1123-1125` drops `readyState` to `HAVE_METADATA` at
@@ -133,7 +147,12 @@ completes (`HTMLMediaElement.cpp:4180-4360`,
 data while playing fires `waiting`, `canplay`, `playing` and
 `canplaythrough` in Parc, nothing beyond `seeking`/`timeupdate`/`seeked` in
 Safari; `canplay` and `canplaythrough` never come apart in Parc. Native HLS
-**handled** (a13b5579). Media Source **in progress** (fix agent MSE-RS).
+**handled** (a13b5579). Media Source **fixed** f50e1aab (readyState from the
+buffered ranges around the playhead; a seek into buffered data fires only
+`seeking`/`timeupdate`/`seeked`). On macOS before 14.4 the FairPlay
+renderer can't tell when a frame has decoded, so protected Media Source says
+`canplay` before keys and `seeked` before the picture: **queued** (FP-OLD,
+another readiness signal on older macOS).
 
 **HME-8. Seek steps run synchronously.** Chromium
 `html_media_element.cc:2656-2735` clamps to the duration, the earliest
@@ -177,8 +196,9 @@ applies only to macOS Now Playing scrubbing: HME-34.
 **HME-34. Now Playing scrubbing.** WebKit pauses an element when a Now
 Playing scrub starts and resumes it 500 ms after the last step
 (`HTMLMediaElement.cpp:6507-6537, 4357-4359`). Chromium's system-control
-seeks (`html_media_element.cc:5365-5379`) don't pause. **In progress** (fix
-agent HME-34).
+seeks (`html_media_element.cc:5365-5379`) don't pause. **Fixed** e425c4db. Picture in picture and toolbar
+scrubs use WebKit's playback-controls rule instead (internal pause, no
+events): **fixed** b4914f3e.
 
 **HME-35. A new load rejects waiting `play()` promises.** Chromium
 `html_media_element.cc:1182-1212` rejects pending play promises only when
@@ -186,8 +206,11 @@ agent HME-34).
 `HTMLMediaElement.cpp:1766, 3194-3211` rejects them with `AbortError` on
 every load, explicit or not, unless an in-flight play admission will settle
 them. A page that calls `play()` before any source and then sets `src` sees
-its promise rejected in Safari and fulfilled in Parc. **In progress** (fix
-agent HME-35).
+its promise rejected in Safari and fulfilled in Parc. **Fixed** b1924e73.
+Two timing-only differences remain, which no user can perceive: a promise
+sure to resolve settles at load start rather than a task later, and a load in
+a document with no browsing context still rejects. **With Josh** (proposed:
+leave).
 
 **HME-13. `currentTime` while playing.** Chromium
 `html_media_element.cc:2818-2841` holds the official playback position
@@ -215,7 +238,7 @@ differ: a negative rate leaves the time standing still where Safari's
 `src=` player plays backwards (Chromium's pipeline has no reverse playback;
 Safari's Media Source player also drops negative rates), and rates outside
 1/16 to 16 play at the nearest limit while the page reads its own rate.
-**Open** (with Josh).
+User-felt (a site's rewind or 32x control): **in progress** (WMPI-RATE).
 
 **HME-29. Ended at rate 0 inside the element.** Chromium's internal check
 (`html_media_element.cc:4223-4245`, used at `:3220-3221, 4041-4087,
@@ -238,9 +261,11 @@ asks the player, and Safari's Media Source player doesn't support progress
 monitoring (`MediaPlayerPrivateMediaSourceAVFObjC.mm:1594-1598`), so a Media
 Source element gets no periodic `progress` (or `stalled`). **Fixed** 7000e39a:
 a successful `endOfStream()` makes the element idle with `progress` and
-`suspend`, as Safari's player reports Loaded only then. Parc sets that idle
+`suspend`, as Safari's player reports Loaded only then. Parc set that idle
 state synchronously where Safari's arrives from the player a task later:
-**in progress** (fix agent E2b).
+**fixed** 7d9146e7. The exact arrival time of Safari's report isn't fixed
+(it comes from the GPU process); no user can perceive it. **With Josh**
+(proposed: leave).
 
 **HME-19. Default `preload`.** Chromium `html_media_element.cc:3074-3111`
 makes a missing or invalid `preload` metadata (and forces metadata on
@@ -267,15 +292,19 @@ fires none. **Fixed** f0178670.
 **HME-30. Preload once prepared to play.** WebKit's effective preload stays
 auto for every later load once the element was prepared to play
 (`HTMLMediaElement.cpp:2084-2101, 4021-4032`; `m_hasEverPreparedToPlay` is
-never reset). Parc's falls back to the attribute on the next `src`.
-**In progress** (fix agent HME-30).
+never reset). Parc's falls back to the attribute on the next `src`, so the next video
+starts slower. **In progress** (HME-30).
 
 **HME-31. `timeupdate` on time jumps and cue boundaries.** WebKit fires one
 when the player reports a time change outside a seek
 (`HTMLMediaElement.cpp:6381-6398`) and from cue updates while playing
 (`:2423-2432, 2455-2476`). Chromium reports time changes only after seeks and
 at the end (`web_media_player_impl.cc:2100-2122, 2399-2403`) and its cue
-timer fires no `timeupdate`. **In progress** (fix agent HME-31).
+timer fired no `timeupdate`. **Fixed** da2f002b (cue boundaries, the end
+before looping, and native HLS backward jumps, including while paused).
+Up to 250 ms difference in an extra `timeupdate` after a seek on caption
+pages, and a race-only extra one: no user can perceive either. **With Josh**
+(proposed: leave).
 
 **HME-22. Autoplay policy.** Chromium `html_media_element.cc:3161-3196`
 asks `AutoplayPolicy::RequestPlay` (Chromium's document user activation,
@@ -283,8 +312,13 @@ sticky for the frame, plus media engagement). WebKit
 `HTMLMediaElement.cpp:4687-4718` asks `MediaElementSession::playbackStateChangePermitted`
 (`MediaElementSession.cpp:463-568`): with Safari's default policy, audible
 playback needs a user gesture being processed now, or an element a gesture
-already unlocked. **In progress** (fix agent HME-22: Safari's stricter rule,
-Josh's default, not objected to).
+already unlocked. **Fixed** 8d00107a (Josh's default: Safari's rule).
+Still different: Low Power Mode and thermal throttling require a gesture
+even for muted video in Safari; a hidden page needs a gesture to start
+sound; a camera stream allowed because the page already plays audio is
+refused; an audio track appearing mid-playback isn't re-checked: **queued**
+(AUTO-2). Safari's per-site autoplay setting has no Parc equivalent, and site
+quirks are excluded (they key on site names).
 
 **HME-23. When playback has ended.** Chromium `html_media_element.cc:4223-4245`
 asks the player (`IsEnded()`, after the renderer reports the end). WebKit
@@ -307,7 +341,11 @@ starts resource selection (`:3252-3256`). WebKit
 `NETWORK_EMPTY`, or after an invisible-autoplay interruption, and leaves
 standard fullscreen.
 
-HME-23 to HME-25: **in progress** (fix agent E6).
+HME-23 to HME-25: **fixed** c63e6291. A seek to the current time at the end
+re-arms the once-only `ended` latch, so a second `ended` can fire where
+WebKit skips the seek: **queued** (E6b). Fullscreen is left at removal in
+Parc and a moment later in WebKit's pause task: no user can perceive it.
+**With Josh** (proposed: leave).
 
 **HME-26. Frozen and back/forward cache.** Chromium
 `html_media_element.cc:4388-4398` pauses on a frozen frame (`pause` event,
@@ -323,10 +361,13 @@ thaw, and Chromium's freezing policy never freezes an audible page,
 `freezing_policy.cc:613-617`). WebKit's `userCancelledLoad` changes nothing on
 macOS here (`HTMLMediaElement.cpp:7213-7219`). Still different: a page
 restored into a background tab resumes at once, where WebKit waits until the
-page can start media (`MediaElementSession.cpp:717-730`), **in progress** (fix
-agent HME-33); with a Cast session active the player still restarts on
-entering the cache, as stock Chromium does; and a streaming source's open
-connection may count against the cache's limits (**unchecked**).
+page can start media (`MediaElementSession.cpp:717-730`): **fixed** 7fcc63d0
+for background tabs; a restore into a minimised or covered window still
+waits where Safari plays: **queued** (HME-33b, needs an "in window" signal).
+With a Cast session active the player restarted on entering the cache, as
+stock Chromium does: **in progress** (CAST-1, on Chrome-identity pages too,
+Josh's decision). A streaming source's open connection may count against the
+cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
 as `MEDIA_ELEMENT_ERROR: …` (`html_media_element.cc:262-273`) and
@@ -344,15 +385,14 @@ after `play()` started stay `AbortError` (part of HME-22).
 **HME-32. `MEDIA_ERR_ABORTED`.** Safari on macOS reports it when a worker's
 MediaSource is destroyed: `abort`, error 1 "Load was aborted", `emptied`
 (`MediaSource.cpp:225-245`, `HTMLMediaElement.cpp:2317-2322, 7208-7262`).
-Chromium reports nothing (`media_source.cc:1433-1573`). **In progress** (fix
-agent HME-32). `MEDIA_ERR_ENCRYPTED` is never fired in Safari either (modern
+Chromium reports nothing (`media_source.cc:1433-1573`), so the video just
+freezes. **Queued** (HME-32, paused with its findings saved). `MEDIA_ERR_ENCRYPTED` is never fired in Safari either (modern
 EME is on). **Same.**
 
 **HME-28. `media-playback-while-not-visible`.** Chromium
 `html_media_element.cc:702-708, 3139-3145, 5253-5299` honours this
 permissions policy (pausing hidden frames, deferring `play()` until
-visibility is known). WebKit has no such policy. **In progress** (fix agent
-E6).
+visibility is known). WebKit has no such policy. **Fixed** c63e6291.
 
 ### `web_media_player_impl.cc`
 
@@ -364,7 +404,8 @@ every seek. WebKit's AVFoundation player keeps `readyState` from the item's
 status (`MediaPlayerPrivateAVFoundation.cpp`, `updateStates`) and the element
 finishes the seek when the player's seek resolves
 (`HTMLMediaElement.cpp:4180-4360`). Media Source is HME-7; native HLS
-**handled** (a13b5579). **In progress** (fix agent WMPI-1).
+**handled** (a13b5579). **Fixed** a2d41ba1 (plain files keep readyState
+through a seek into buffered data).
 
 **WMPI-2. Waiting for a key.** Chromium `web_media_player_impl.cc:2457-2494`
 reports block and resume together for every wait and Blink's element never
@@ -377,13 +418,14 @@ key request with no CDM attached
 key timing **handled** (35589317); the `readyState` drop and the native HLS
 rule **fixed** 88efb22f. Still differing: any newly usable key ends the wait
 rather than the one playback asked for, and a key event racing the stall
-report can leave `readyState` lowered while playing: **in progress** (fix
-agent WMPI-2b). Native HLS decides "no CDM attached" when the GPU player
-accepts the CDM rather than at the key request, and a CDM offered twice
-answers "attached" early: **in progress** (fix agent WMPI-2c). Encrypted
-`src=` media through Chromium's pipeline waits while a CDM is attached, where
-WebKit's player doesn't, and Media Source tracks waiting per player rather
-than per SourceBuffer: **in progress** (fix agent WMPI-2d).
+report can leave `readyState` lowered while playing: **fixed** d751d783.
+Encrypted `src=` media through Chromium's pipeline waited while a CDM was
+attached, Media Source tracked waiting per player rather than per
+SourceBuffer, non-usable key status changes weren't rechecked, and a key
+check in flight across `setMediaKeys(null)` could end a wait: **fixed**
+915d4ee6. Native HLS decides "no CDM attached" when the GPU player accepts the
+CDM rather than at the key request, and a CDM offered twice answers
+"attached" early: **queued** (WMPI-2c, paused with its work saved).
 
 **WMPI-3. Hidden pages pause video.** Chromium
 `web_media_player_impl.cc:3744-3787, 3825-3870, 3528-3551, 2643-2714` pauses
@@ -398,13 +440,17 @@ audio-and-video player's video track off after 10 s
 (`web_media_player_impl.cc:3789-3823`): no event and `currentTime` runs on,
 but decoded frame counts stop rising, dropped counts can jump on show
 (`video_renderer_impl.cc:1062-1065`), and canvas captures show the last
-frame until the stream catches up. **Open** (with Josh).
+frame until the stream catches up; returning to the tab can show a frozen
+picture for up to half a second (`:3840-3843`). Picture in picture, capture
+and casting were already exempt (`:3808-3811`). **Fixed** 5ed9a2e8.
 
 **WMPI-4. Servers without range requests.** Chromium
 `web_media_player_impl.cc:1494-1515` plays a file from a server that ignores
 range requests and makes it unseekable (seekable `[0, 0]`), and gives live
 content no seekable range. Safari loads files through AVFoundation, which
-needs range requests for such files. **Open** (with Josh).
+needs range requests for such files, so Safari often won't play them at all.
+Matching Safari would stop videos that play today. **With Josh** (proposed:
+keep Chrome's).
 
 **WMPI-5. `setMediaKeys(null)`.** Chromium
 `web_media_player_impl.cc:1662-1687` refuses to clear a CDM; Parc accepts it
@@ -412,7 +458,7 @@ on Safari-identity FairPlay players but keeps decrypting with the old CDM
 (14ce748a). WebKit detaches it (`HTMLMediaElement.cpp` `setMediaKeys`,
 `MediaPlayerPrivateMediaSourceAVFObjC.mm:1162-1166`,
 `MediaPlayerPrivateAVFoundationObjC.mm:3060-3080`), so samples after that
-wait for a key. **In progress** (fix agent WMPI-5).
+wait for a key. **Fixed** 4f5fe602.
 
 ### `pipeline_impl.cc`
 
@@ -422,7 +468,7 @@ Media Source element stays at `HAVE_METADATA` until keys are set. WebKit's
 Media Source `readyState` comes from buffered ranges whatever the keys
 (`MediaSource.cpp:424-498`), held below `HAVE_CURRENT_DATA` only for video
 without a decodable frame (`MediaPlayerPrivateMediaSourceAVFObjC.mm:1229-1235`).
-Part of HME-7, **in progress** (fix agent MSE-RS).
+Part of HME-7, **fixed** f50e1aab.
 
 Otherwise the pipeline makes no page-visible decision of its own: it clamps
 seeks to the demuxer's start time (`:460, 1150`), never lets media time go
@@ -457,9 +503,8 @@ b294d1e7. Still differing: Parc restarts the renderer for the new track (an
 extra rebuffer, and a blank picture with the FairPlay renderer) where WebKit
 adds it to the live renderer, and a late second audio-language SourceBuffer
 plays only the original audio where Safari mixes both enabled tracks:
-**in progress** (fix agent CD-1b). `readyState` returns straight to
-`HAVE_ENOUGH_DATA` after the new track's data arrives, and doesn't wait for a
-late second audio track: part of HME-7 (fix agent MSE-RS).
+**in progress** (CD-1b). `readyState` returned straight to
+`HAVE_ENOUGH_DATA` after the new track's data arrived: **fixed** f50e1aab.
 
 Seeks wait for data at the target (`:512-541, 1017-1022`), end of stream
 before any init segment is a format error (`:1305-1312`), buffered ranges
@@ -495,7 +540,11 @@ didn't declare. Safari takes TS through `AVStreamDataParser`
 `AVStreamDataParserMIMETypeCache.mm:55-120`), whose type list on this Mac
 includes `video/mp2t`, `video/x-mp2t`, `video/m2ts` and `video/x-m2ts`
 (checked with `[AVStreamDataParser audiovisualMIMETypes]`, macOS 27.2), and
-parses every stream. **In progress** (fix agent SBS-2).
+parses every stream. **In progress** (SBS-2; measured against this Mac's
+`AVStreamDataParser`: Safari plays H.264, AAC, MP3, MPEG-1 Layer II, AC-3 and
+E-AC-3 in TS and ignores HEVC in TS). MPEG-1 Layer II audio, MPEG-1/2 video,
+SAMPLE-AES AC-3/E-AC-3 and several audio streams in one TS still won't play in
+Parc: SBS-2 fixes or names each.
 
 Clear Dolby Vision in Media Source (`:675-698`) is **handled** on
 Safari-identity pages (`ParcSetClearDolbyVisionAllowed`). In-band text
@@ -518,16 +567,15 @@ points and different ranges disappear. **Fixed** e9a50704. Still differing:
 back eviction drops a longer track's tail that WebKit keeps; Parc removes
 whole GOPs where WebKit cuts frame by frame; Parc keeps the last appended GOP
 as its own range where WebKit removes it; and WebKit's cached evictable-size
-shortcut that skips the exception isn't modelled. **In progress** (fix agent
-SBST-1b).
+shortcut that skips the exception isn't modelled. **Queued** (SBST-1b,
+paused with its design saved).
 
 **SBST-2. Small gaps in `buffered`.** Chromium keeps separate ranges unless
 the gap is within twice the largest inter-buffer distance
 (`:50-63, 694-725, 1672-1678`). WebKit merges gaps under 2002/24000 s
 (`TrackBuffer.cpp:84-87, 197`, `PlatformTimeRanges.cpp:62-66, 205-221`) and
 bridges gaps within its gap tolerance during playback. A 70 ms gap in 30 fps
-video is one range in Safari, two in Parc. **In progress** (fix agent
-SBST-2).
+video was one range in Safari, two in Parc. **Fixed** 2d35f28b.
 
 Removal extends to the next keyframe (`:418-455`), a seek near 0 starts at
 the first buffered keyframe within 1 s (`:637-644, 1428-1433`; WebKit's
@@ -548,7 +596,12 @@ type only when it is fully supported (`:658-661`), so
 `video/quicktime`, `audio/x-m4a`, `video/x-m4v`, `audio/3gpp` and
 `audio/ogg`, which Parc refuses; init segments on Safari pages accept IAMF,
 which Safari doesn't play; and Dolby Vision outside profiles 5 and 8 fails
-where Safari's handling is unchecked: **in progress** (fix agent MS-4). A
+where Safari plays the HEVC base layer (profiles 4, 7, 9; measured
+against `AVStreamDataParser`): **in progress** (MS-4). After it: Ogg and
+WebVTT in Media Source, PCM in MP4, AMR, H.263 and Dolby Vision 10/20 need
+parsers or player paths Parc lacks (MS-4 names each). AV1 on Macs without
+hardware AV1: Safari refuses it, so sites pick a hardware codec; Parc decodes
+in software. **With Josh** (proposed: match Safari). A
 codec-less TS stream carrying HEVC or AC-3 now gets a SourceBuffer and fails
 on append: part of SBS-2.
 
@@ -584,8 +637,8 @@ sets `video.error` after a media-thread round trip
 (`html_media_element.cc:2115-2140`, which never closes the source;
 `pipeline_impl.cc:804-808, 1068-1094`). In its own `error` handler a Safari
 page sees `video.error` set and the source closed; a Parc page sees neither,
-its next append fails again, and `sourceclose` never fires. **In progress**
-(fix agent MS-3).
+its next append fails again, and `sourceclose` never fires. **Fixed**
+71120cd4.
 
 The init segment checks (`:1472-1763`) are the ones WebKit applies
 (`SourceBuffer.cpp:780-1090`) except the codec comparison, which is SBS-1.
