@@ -1600,18 +1600,20 @@
    // Mime util doesn't include the mp2t container in order to prevent codec
    // support leaking into HtmlMediaElement.canPlayType. If the stream parser
    // is enabled, we should check that the codecs are valid using the mp4
-@@ -595,10 +663,24 @@
+@@ -595,10 +663,26 @@
    // from the codecs in the `filtered_content_type`.
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
    // specified, allow DV regardless of `enforce_codec_specificity`.
 +  // Parc: a document presenting Safari's identity is told yes by
 +  // isTypeSupported too for Dolby Vision profile 5, which FairPlay plays
-+  // encrypted (its CDM capability in fairplay-media.patch), as Safari tells
-+  // it; other profiles stay in the query and answer as before
-+  // (parc_safari_identity.h). addSourceBuffer and changeType drop only
-+  // profiles 5 and 8, which the FairPlay Renderer plays clear there too;
-+  // others stay in the query and are refused where the platform doesn't
-+  // play them, as Safari's addSourceBuffer refuses profiles 4, 7 and 9.
++  // encrypted (its CDM capability in fairplay-media.patch), and for 10 and
++  // 20, as AVStreamDataParser tells Safari (canParseExtendedMIMEType); the
++  // FairPlay Renderer plays 10, and 20's base view plays as HEVC as in
++  // Safari. Other profiles stay in the query and answer as before
++  // (parc_safari_identity.h). addSourceBuffer and changeType also drop
++  // profile 8, which the FairPlay Renderer plays clear there too; others stay
++  // in the query and are refused where the platform doesn't play them, as
++  // Safari's addSourceBuffer refuses profiles 4, 7 and 9.
 +  const bool parc_safari_profiles_only =
 +      !base::FeatureList::IsEnabled(
 +          media::kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled) &&
@@ -1626,7 +1628,7 @@
      // Remove any detected DolbyVision codec from the query to GetSupportsType.
      std::string filtered_codecs;
      std::vector<std::string> parsed_codec_ids;
-@@ -608,7 +690,11 @@
+@@ -608,7 +692,13 @@
        if (auto result =
                media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
                                             /*allow_ambiguous_matches=*/false)) {
@@ -1634,15 +1636,18 @@
 +        if (result->codec == media::VideoCodec::kDolbyVision &&
 +            (!parc_safari_profiles_only ||
 +             result->profile == media::DOLBYVISION_PROFILE5 ||
++             result->profile == media::DOLBYVISION_PROFILE10 ||
++             result->profile == media::DOLBYVISION_PROFILE20 ||
 +             (!enforce_codec_specificity &&
 +              result->profile == media::DOLBYVISION_PROFILE8))) {
            continue;
          }
        }
-@@ -626,6 +712,31 @@
+@@ -625,6 +715,31 @@
+     filtered_content_type = ContentType(String::FromUtf8(filtered_type));
    }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
- 
++
 +  // AVStreamDataParser accepts PCM in MP4; mime_util has no PCM-in-MP4
 +  // codec IDs. Remove just these from its query, after the FairPlay filter.
 +  if (IsParcSafariIdentityUserAgent(context->UserAgent()) &&
@@ -1667,15 +1672,13 @@
 +        filtered.empty() ? mime_type
 +                         : StrCat({mime_type, "; codecs=\"", filtered, "\""}));
 +  }
-+
+ 
    // Note: MediaSource.isTypeSupported() returning true implies that
    // HTMLMediaElement.canPlayType() will return "maybe" or "probably" since it
-   // does not make sense for a MediaSource to support a type the
-@@ -659,6 +770,15 @@
-       MIMETypeRegistry::SupportsMediaSourceMIMEType(mime_type, codecs);
+@@ -660,6 +775,15 @@
  
    bool result = supported == MIMETypeRegistry::kSupported;
-+
+ 
 +  // Parc: Safari takes a type without codecs that it may play, for
 +  // isTypeSupported, addSourceBuffer and changeType alike (WebKit's
 +  // MediaSource::isTypeSupported); its parser then takes the stream's codecs,
@@ -1684,10 +1687,11 @@
 +      IsParcSafariIdentityUserAgent(context->UserAgent())) {
 +    result = true;
 +  }
- 
++
    DVLOG(2) << __func__ << "(" << type << ", "
             << base::ToString(enforce_codec_specificity) << ") -> "
-@@ -1015,6 +1135,23 @@
+            << base::ToString(result);
+@@ -1015,6 +1139,23 @@
    DCHECK_LE(highest_buffered_presentation_timestamp,
              std::isnan(old_duration) ? 0 : old_duration);
  
@@ -1711,21 +1715,21 @@
    // 3. Set old duration to the current value of duration.
    // Done for step 1 above, already.
    // 4. Update duration to new duration.
-@@ -1051,6 +1188,13 @@
+@@ -1050,6 +1191,13 @@
+     return;
  
    ready_state_ = state;
- 
++
 +  // Parc: for the media element's end of media (ParcMediaSourceEnded()).
 +  scoped_refptr<MediaSourceAttachmentSupplement> attachment;
 +  std::tie(attachment, std::ignore) = AttachmentAndTracer();
 +  if (attachment) {
 +    attachment->ParcSetMediaSourceEnded(state == ReadyState::kEnded);
 +  }
-+
+ 
    OnReadyStateChange(old_state, state);
  }
- 
-@@ -1326,11 +1470,21 @@
+@@ -1326,11 +1474,21 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);

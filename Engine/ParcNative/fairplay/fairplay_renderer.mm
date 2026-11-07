@@ -162,7 +162,7 @@ bool SampleEntryMatches(VideoCodec codec, uint32_t entry) {
     case VideoCodec::kDolbyVision:
       return entry == FourCC('d', 'v', 'h', '1') || entry == FourCC('d', 'v', 'h', 'e');
     case VideoCodec::kAV1:
-      return entry == FourCC('a', 'v', '0', '1');
+      return entry == FourCC('a', 'v', '0', '1') || entry == FourCC('d', 'a', 'v', '1');
   }
   return false;
 }
@@ -1289,7 +1289,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return Result::Error(Exception::kTypeError, "AV1 samples are never Annex B");
     }
     std::vector<std::vector<uint8_t>> children{MakeBox(ConfigBox(config.codec), config.extra_data)};
-    if (config.codec == VideoCodec::kDolbyVision && config.dolby_vision_config.size() >= 3) {
+    if (config.dolby_vision_config.size() >= 3) {
       const uint8_t profile = config.dolby_vision_config[2] >> 1;
       children.push_back(MakeBox(profile > 7 ? FourCC('d', 'v', 'v', 'C') : FourCC('d', 'v', 'c', 'C'),
                                  config.dolby_vision_config));
@@ -1434,8 +1434,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return Result::Error(Exception::kTypeError, "video config needs a coded size");
     }
     video_config_ = config;
-    if (config.codec == VideoCodec::kDolbyVision && config.dolby_vision_config.empty() &&
-        config.dolby_vision_profile >= 0) {
+    if (config.dolby_vision_config.empty() && config.dolby_vision_profile >= 0) {
       const int compatibility_id = config.dolby_vision_compatibility_id >= 0
                                        ? config.dolby_vision_compatibility_id
                                        : DefaultDolbyVisionCompatibilityId(config.dolby_vision_profile);

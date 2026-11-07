@@ -713,7 +713,7 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool 
     vc.codec = fp::VideoCodec::kHEVC;
   } else if (f == fp::FourCC('d', 'v', 'h', '1') || f == fp::FourCC('d', 'v', 'h', 'e')) {
     vc.codec = fp::VideoCodec::kDolbyVision;
-  } else if (f == fp::FourCC('a', 'v', '0', '1')) {
+  } else if (f == fp::FourCC('a', 'v', '0', '1') || f == fp::FourCC('d', 'a', 'v', '1')) {
     vc.codec = fp::VideoCodec::kAV1;
   } else {
     vc.codec = fp::VideoCodec::kH264;
@@ -1498,7 +1498,7 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
 struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
   Media eac3_71;  // First 5 s of kDdp71.
-  Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
+  Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, dolby_vision_10, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
       he_aac_after_clear, avc_bframes;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
@@ -4941,6 +4941,8 @@ void RunAll() {
   add("CodecScenario(E-AC-3 7.1)", CodecScenario("E-AC-3 7.1 (DASH-IF channel ID, dec3 built from syncframes)",
                                                  nullptr, &w->eac3_71, "qec3"));
   add("CodecScenario(AV1 10-bit)", CodecScenario("AV1 10-bit (av01)", &w->av1_10bit, nullptr, "qav1"));
+  add("CodecScenario(Dolby Vision profile 10 (dav1))",
+      CodecScenario("Dolby Vision profile 10 (dav1)", &w->dolby_vision_10, nullptr, ""));
   add("CodecScenario(hev1 VPS once)",
       CodecScenario("hev1 with the VPS on the first keyframe only", &w->hev1_vps_once, nullptr, ""));
   {
@@ -5064,6 +5066,12 @@ int main(int argc, char** argv) {
                           samples.end());
           }
           world.hev1_vps_once = VpsOnFirstKeyframeOnly(world.hev1_in_band);
+          // Profile 10.1 over the 10-bit AV1 stream, as AVStreamDataParser
+          // describes a dav1 entry with av1C and dvvC.
+          world.dolby_vision_10 = world.av1_10bit;
+          world.dolby_vision_10.info.sample_entry = fp::FourCC('d', 'a', 'v', '1');
+          world.dolby_vision_10.info.original_format = fp::FourCC('d', 'a', 'v', '1');
+          world.dolby_vision_10.info.dolby_vision_config = fp::DolbyVisionConfigurationRecord(10, 5, 1);
           // HE-AAC continuing the clear AAC-LC segment, for an audio Reconfigure.
           world.he_aac_after_clear = world.he_aac;
           int64_t shift = int64_t(EndSeconds(world.clear_audio) * world.he_aac.info.timescale + 0.5);

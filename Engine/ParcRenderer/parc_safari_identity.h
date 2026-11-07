@@ -37,11 +37,12 @@ inline bool IsParcSafariIdentityUserAgent(const String& user_agent) {
          !user_agent.contains("EdgiOS/");
 }
 
-// WebKit's SourceBufferParserWebM requires an AV1 hardware decoder.
+// WebKit's SourceBufferParserWebM requires an AV1 hardware decoder. Dolby
+// Vision profile 10 (dav1) decodes on the same hardware.
 inline bool ParcSafariAV1Unavailable(const String& codecs) {
   for (const String& codec : codecs.Split(',')) {
     const String id = codec.StripWhiteSpace();
-    if ((id == "av01" || id.starts_with("av01.")) &&
+    if ((id == "av01" || id.starts_with("av01.") || id.starts_with("dav1.")) &&
         !media::ParcAV1HardwareDecoderAvailable()) {
       return true;
     }

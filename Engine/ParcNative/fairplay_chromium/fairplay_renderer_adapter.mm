@@ -107,18 +107,34 @@ std::optional<fp::AudioCodec> ToAudioCodec(AudioCodec codec) {
   }
 }
 
-// The single-layer HEVC-based profiles the core plays (dvh1/dvhe with an
-// hvcC base layer); -1 for the rest (AVC-based 0 and 9, dual-layer 7, AV1-based
-// 10).
+// The single-layer profiles the core plays: HEVC-based 5 and 8 (dvh1 with an
+// hvcC base layer) and AV1-based 10 (dav1 with av1C); -1 for the rest
+// (AVC-based 0 and 9, dual-layer 7).
 int DolbyVisionProfileNumber(VideoCodecProfile profile) {
   switch (profile) {
     case DOLBYVISION_PROFILE5:
       return 5;
     case DOLBYVISION_PROFILE8:
       return 8;
+    case DOLBYVISION_PROFILE10:
+      return 10;
     default:
       return -1;
   }
+}
+
+// MP4StreamParser keeps a Dolby Vision track's
+// dv_bl_signal_compatibility_id only as its color space
+// (mp4::ParseDolbyVisionColorSpace), so only HLG (4) is told apart: it makes
+// AVFoundation tag frames HLG, where the core's defaults (1 for profile 8, 0
+// for 10) tag them PQ.
+int DolbyVisionCompatibilityId(const VideoDecoderConfig& config) {
+  if (config.profile() != DOLBYVISION_PROFILE5 &&
+      config.color_space_info().transfer() ==
+          VideoColorSpace::TransferID::ARIB_STD_B67) {
+    return 4;
+  }
+  return -1;
 }
 
 // Chromium's configs as they are. MP4StreamParser leaves video extra_data
@@ -134,6 +150,11 @@ fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
   if (video.codec == fp::VideoCodec::kDolbyVision) {
     video.dolby_vision_profile = DolbyVisionProfileNumber(config.profile());
     video.dolby_vision_level = static_cast<int>(config.level());
+    video.dolby_vision_compatibility_id = DolbyVisionCompatibilityId(config);
+    if (config.profile() == DOLBYVISION_PROFILE10) {
+      video.codec = fp::VideoCodec::kAV1;
+      video.sample_entry = 0x64617631;  // 'dav1'
+    }
   }
   video.format = video.codec == fp::VideoCodec::kAV1
                      ? fp::BitstreamFormat::kLengthPrefixed

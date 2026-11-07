@@ -120,7 +120,8 @@ struct VideoConfig {
   // header OBU), and rebuilds it whenever a keyframe brings different ones.
   std::vector<uint8_t> extra_data;
   // Dolby Vision: DOVIDecoderConfigurationRecord, carried as 'dvcC' for
-  // profiles up to 7 and 'dvvC' from 8. When empty and dolby_vision_profile
+  // profiles up to 7 and 'dvvC' from 8. Profile 10 is kAV1 with sample entry
+  // 'dav1'. When empty and dolby_vision_profile
   // is set (Chromium carries only profile and level), it is built from
   // profile, level and compatibility ID; -1 means unknown and takes
   // DefaultDolbyVisionCompatibilityId (0 for profile 5).

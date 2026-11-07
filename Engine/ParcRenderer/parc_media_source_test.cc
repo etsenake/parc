@@ -683,6 +683,40 @@ TEST_F(ParcMediaSourceTest, SafariSourceBufferDolbyVisionProfiles) {
   EXPECT_FALSE(profile8_exception.HadException());
 }
 
+// AVStreamDataParser's canParseExtendedMIMEType takes profiles 10 (dav1, on
+// AV1 hardware) and 20, and refuses 4 and 7.
+TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedDolbyVisionProfiles10And20) {
+  for (bool hardware : {false, true}) {
+    base::test::ScopedCommandLine command_line;
+    command_line.GetProcessCommandLine()->AppendSwitchASCII(
+        media::kParcAV1HardwareDecoder, hardware ? "1" : "0");
+    for (const char* agent : {kSafariUserAgent, kChromeUserAgent}) {
+      SetUserAgent(agent);
+      const bool safari = agent == kSafariUserAgent;
+      EXPECT_EQ(MediaSource::isTypeSupported(
+                    Context(), "video/mp4; codecs=\"dav1.10.06\""),
+                safari && hardware);
+      EXPECT_EQ(MediaSource::isTypeSupported(
+                    Context(), "video/mp4; codecs=\"dvh1.20.06\""),
+                safari);
+      EXPECT_EQ(MediaSource::isTypeSupported(
+                    Context(), "video/mp4; codecs=\"dvhe.20.06,mp4a.40.2\""),
+                safari);
+      EXPECT_FALSE(MediaSource::isTypeSupported(
+          Context(), "video/mp4; codecs=\"dvh1.07.06\""));
+      EXPECT_FALSE(MediaSource::isTypeSupported(
+          Context(), "video/mp4; codecs=\"dvh1.04.06\""));
+      if (safari) {
+        auto* source = OpenMediaSource();
+        DummyExceptionStateForTesting exception_state;
+        EXPECT_EQ(source->addSourceBuffer("video/mp4; codecs=\"dav1.10.06\"",
+                                          exception_state) != nullptr,
+                  hardware);
+      }
+    }
+  }
+}
+
 TEST_F(ParcMediaSourceTest, ChromeSourceBufferTakesDolbyVisionProfile7) {
   SetUserAgent(kChromeUserAgent);
   MediaSource* media_source = OpenMediaSource();

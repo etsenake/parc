@@ -148,7 +148,8 @@ EME's false, when there are none), other types reject with NotSupported.
    E-AC-3 to AAC, and video codecs the same way), but only among the codecs
    the renderer plays: `WebMediaPlayerImpl` gives the demuxer a filter
    (`Demuxer::RestrictCanChangeType`) that accepts AAC, AC-3, E-AC-3, FLAC,
-   Opus, ALAC, H.264, HEVC and Dolby Vision 5 and 8, so any other codec makes
+   Opus, ALAC, H.264, HEVC and Dolby Vision 5 and 8 (and 10 on Safari-identity
+   pages, played as a 'dav1' entry with av1C and dvvC), so any other codec makes
    `changeType()`
    throw NotSupportedError instead of failing playback. The core builds the
    new formats from the next samples, protected ones per key ID.
