@@ -219,8 +219,8 @@ them. A page that calls `play()` before any source and then sets `src` sees
 its promise rejected in Safari and fulfilled in Parc. **Fixed** b1924e73.
 Two timing-only differences remain, which no user can perceive: a promise
 sure to resolve settles at load start rather than a task later, and a load in
-a document with no browsing context still rejects. **With Josh** (proposed:
-leave).
+a document with no browsing context still rejects. **Left** (Josh agreed November 7:
+no user can perceive it).
 
 **HME-13. `currentTime` while playing.** Chromium
 `html_media_element.cc:2818-2841` holds the official playback position
@@ -277,8 +277,8 @@ a successful `endOfStream()` makes the element idle with `progress` and
 `suspend`, as Safari's player reports Loaded only then. Parc set that idle
 state synchronously where Safari's arrives from the player a task later:
 **fixed** 7d9146e7. The exact arrival time of Safari's report isn't fixed
-(it comes from the GPU process); no user can perceive it. **With Josh**
-(proposed: leave).
+(it comes from the GPU process); no user can perceive it. **Left**
+(Josh agreed November 7: no user can perceive it).
 
 **HME-19. Default `preload`.** Chromium `html_media_element.cc:3074-3111`
 makes a missing or invalid `preload` metadata (and forces metadata on
@@ -316,8 +316,8 @@ at the end (`web_media_player_impl.cc:2100-2122, 2399-2403`) and its cue
 timer fired no `timeupdate`. **Fixed** da2f002b (cue boundaries, the end
 before looping, and native HLS backward jumps, including while paused).
 Up to 250 ms difference in an extra `timeupdate` after a seek on caption
-pages, and a race-only extra one: no user can perceive either. **With Josh**
-(proposed: leave).
+pages, and a race-only extra one: no user can perceive either. **Left**
+(Josh agreed November 7: no user can perceive it).
 
 **HME-22. Autoplay policy.** Chromium `html_media_element.cc:3161-3196`
 asks `AutoplayPolicy::RequestPlay` (Chromium's document user activation,
@@ -358,7 +358,7 @@ thought to re-arm the once-only `ended` latch; checked against WebKit
 `HTMLMediaElement.cpp:4244-4262`, Parc already matches (0beefdec skips such
 seeks before the latch); regression tests added in bd07fa38. **Same.** Fullscreen is left at removal in
 Parc and a moment later in WebKit's pause task: no user can perceive it.
-**With Josh** (proposed: leave).
+**Left** (Josh agreed November 7: no user can perceive it).
 
 **HME-26. Frozen and back/forward cache.** Chromium
 `html_media_element.cc:4388-4398` pauses on a frozen frame (`pause` event,
@@ -387,8 +387,8 @@ progress** (CAST-3, an unfreezable queue for casting players only). Between
 30 and 60 minutes away Parc now restores the casting page and resumes on the
 TV, where Safari reloads the page: Parc is better here, **with Josh**
 (proposed: keep). FairPlay
-video can't be cast at all (Safari uses AirPlay, which Parc lacks): **with
-Josh** (proposed: build AirPlay, native HLS first). A streaming source's open connection may count against the
+video can't be cast at all (Safari uses AirPlay, which Parc lacks): **queued**
+(AIRPLAY-1, Josh approved November 7: AirPlay, native HLS first). A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
@@ -471,8 +471,8 @@ and casting were already exempt (`:3808-3811`). **Fixed** 5ed9a2e8.
 range requests and makes it unseekable (seekable `[0, 0]`), and gives live
 content no seekable range. Safari loads files through AVFoundation, which
 needs range requests for such files, so Safari often won't play them at all.
-Matching Safari would stop videos that play today. **With Josh** (proposed:
-keep Chrome's).
+Matching Safari would stop videos that play today. **Kept** (Safari won't play these at all;
+Chrome's plays them).
 
 **WMPI-5. `setMediaKeys(null)`.** Chromium
 `web_media_player_impl.cc:1662-1687` refuses to clear a CDM; Parc accepts it
@@ -633,13 +633,13 @@ PCM in MP4 fails (MS-4c, 150-250 lines); Dolby Vision 10 (`dav1`) and 20, and
 4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (MS-4d, 200-400
 lines); AMR and H.263 in 3GPP fail (MS-4e, AudioToolbox/VideoToolbox
 decoders, 600+ lines). `text/vtt` in `isTypeSupported` differs but no site
-appends WebVTT, so no user can perceive it: **with Josh** (proposed: leave).
+appends WebVTT, so no user can perceive it: **left** (Josh agreed November 7: no user can perceive it).
 Lowercase `flac`/`opus` in MP4 and Parc's runtime answer for Dolby Vision 8
 and `dav1.10` are **unchecked**. AV1 on Macs without hardware AV1 (M1/M2):
 Safari refuses it so sites send VP9 or H.264, decoded in hardware; Parc
 accepts it and decodes in software: more CPU, battery drain, heat, fan noise
 and possibly dropped frames at 1440p60 or 4K, in background tabs and picture
-in picture too. **With Josh** (proposed: match Safari). A
+in picture too. **Queued** (AV1, Josh approved November 7: match Safari). A
 codec-less TS stream carrying HEVC or AC-3 now gets a SourceBuffer and fails
 on append: part of SBS-2.
 
