@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 440,
+  "version": 441,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1660,7 +1660,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_hls_track_bridge.h",
       "target": "third_party/parc_fairplay/chromium/fairplay_hls_track_bridge.h",
-      "sha256": "045feef5775f0e262d4c5338633cbd71a10482d0ac211168f2faf5328b274e4b"
+      "sha256": "8d8d71494b571120d93329f2821a5023a39bab7d5422fcbbe552ab19ce2cf4f5"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_hls_track_bridge.mm",

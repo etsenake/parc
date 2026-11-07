@@ -4,7 +4,9 @@
 //
 // Service wiring:
 //   bridge_ = std::make_unique<FairPlayHlsTrackBridge>(client, PostTaskTo(..));
-//   after FairPlayHlsPlayer::Load succeeds: bridge_->Attach(player.impl());
+//   after FairPlayHlsPlayer::Start (or Load) succeeds, when the player has
+//   its AVPlayer and item: bridge_->Attach(player.impl()); earlier (after
+//   CreateAsset only) it does nothing and never attaches;
 //   Initialize reply: metadata->tracks = bridge_->TakeTracksForInitialize();
 //   SetAudioTrackEnabled / SetTextTrackMode: forward to the bridge;
 //   around each FairPlayHlsPlayer::Seek: WillSeek() before, DidSeek() in its
@@ -38,7 +40,8 @@ class FairPlayHlsTrackBridge final
   FairPlayHlsTrackBridge(const FairPlayHlsTrackBridge&) = delete;
   FairPlayHlsTrackBridge& operator=(const FairPlayHlsTrackBridge&) = delete;
 
-  // Starts following `player`'s item, right after its Load succeeded.
+  // Starts following `player`'s item, right after its Start (or Load)
+  // succeeded. Before that the player has no item and this does nothing.
   void Attach(parc::fairplay::FairPlayHlsPlayer::Impl* player);
 
   // The list for the Initialize reply; from now on changes are sent.
