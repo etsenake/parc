@@ -14,6 +14,7 @@
 #include <mutex>
 #include <set>
 
+#include "fairplay_hls_frame_stats.h"
 #include "fairplay_hls_player_internal.h"
 #include "fairplay_hls_timeline.h"
 
@@ -243,6 +244,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     shut_down_ = true;
+    frame_stats_.reset();
     key_handler_ = nullptr;
     [observer_ stop];
     observer_ = nil;
@@ -341,6 +343,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
 
   void SetRate(double rate) {
     rate_ = rate;
+    UpdateFrameStats();
     if (!player_) {
       return;
     }
@@ -857,6 +860,22 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
   }
 
+  // Counted while the rate is above 0 (WebKit reads the same counts, from its
+  // AVPlayerLayer, whenever the page asks); stopping counts once more. At the
+  // end AVFoundation pauses by itself, and readings that add nothing are
+  // never reported, until the element pauses too.
+  void UpdateFrameStats() {
+    if (frame_stats_) {
+      frame_stats_->SetPlaying(!shut_down_ && rate_ > 0);
+    }
+  }
+
+  void OnFrameCounts(const FrameCountDelta& delta) {
+    if (!shut_down_) {
+      client_->OnVideoFrameCounts(delta.decoded, delta.dropped);
+    }
+  }
+
   void OnFailedToPlayToEnd(NSError* error) { ReportFailure(error); }
 
   // WebKit's getStartDate, in seconds.
@@ -885,12 +904,23 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   AVPlayer* player() const { return player_; }
 
   AVPlayerLayer* PlayerLayer() {
-    if (!player_layer_ && player_) {
+    if (!player_layer_ && player_ && !shut_down_) {
       [CATransaction begin];
       [CATransaction setDisableActions:YES];
       player_layer_ = [AVPlayerLayer playerLayerWithPlayer:player_];
       player_layer_.videoGravity = AVLayerVideoGravityResize;
       [CATransaction commit];
+      // Frame counts come from the layer (WebKit's source for an AVPlayer).
+      std::weak_ptr<Impl> weak = weak_from_this();
+      std::shared_ptr<const PostTask> poster = poster_;
+      frame_stats_ = std::make_unique<HlsFrameStats>(
+          player_layer_, [poster](std::function<void()> task) { (*poster)(std::move(task)); },
+          [weak](const FrameCountDelta& delta) {
+            if (std::shared_ptr<Impl> impl = weak.lock()) {
+              impl->OnFrameCounts(delta);
+            }
+          });
+      UpdateFrameStats();
     }
     return player_layer_;
   }
@@ -969,6 +999,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   AVPlayerItem* item_ = nil;
   AVPlayer* player_ = nil;
   AVPlayerLayer* player_layer_ = nil;
+  // With the layer; destroyed first in Shutdown.
+  std::unique_ptr<HlsFrameStats> frame_stats_;
   PCHlsURLSession* session_ = nil;
   PCHlsResourceLoaderDelegate* loader_delegate_ = nil;
   PCHlsObserver* observer_ = nil;

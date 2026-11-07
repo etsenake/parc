@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 407,
+  "version": 408,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1535,12 +1535,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_player.h",
       "target": "third_party/parc_fairplay/core/fairplay_hls_player.h",
-      "sha256": "7f1ad539410342770dcad369e4c8218d4186ef09a012a084de6555f42cf9d517"
+      "sha256": "cc72d09345cf9b314fa482a31c2aefe4f330524fdef8c6c29c0ebc360bc1ccfe"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_player.mm",
       "target": "third_party/parc_fairplay/core/fairplay_hls_player.mm",
-      "sha256": "dc87d76109b1e3c6cd80900ea65af4b6a884eaacc45be54267026d3f956700eb"
+      "sha256": "a01d6213d8cce18d08e3a5e1aa012dda2f3ed7d5bc20c3cda19b44afe1d5d0dd"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_player_internal.h",

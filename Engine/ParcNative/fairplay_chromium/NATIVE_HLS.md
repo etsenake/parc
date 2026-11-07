@@ -519,14 +519,17 @@ Page side, Safari-identity documents only (the route exists only there):
 `-[AVPlayerLayer videoPerformanceMetrics]` (SPI; the object answers WebKit's
 `totalNumberOfVideoFrames`/`numberOfDroppedVideoFrames` and, from macOS 14.4,
 the public `totalNumberOfFrames`/`numberOfDroppedFrames`). The core's
-`HlsFrameStats` (`fairplay/fairplay_hls_frame_stats.h`) owns the polling: the
-player creates it with its `AVPlayerLayer` and its `PostTask`, calls
-`SetPlaying(started && rate > 0)` on every play, pause, rate change, seek and
-end, and forwards each `FrameCountDelta` as `OnStatisticsUpdate`
+`HlsFrameStats` (`fairplay/fairplay_hls_frame_stats.h`) owns the polling, and
+`FairPlayHlsPlayer` owns one from the moment its `AVPlayerLayer` exists
+(`HlsPlayerLayer`). The player counts while its rate is above 0, drops the
+counter first when it shuts down, and reports each delta as
+`HlsPlayerClient::OnVideoFrameCounts(decoded, dropped)`.
+`FairPlayHlsPlayerService` is to forward that as `OnStatisticsUpdate`
 (`video_frames_decoded`, `video_frames_dropped`), which `PipelineImpl` adds
-up as for the MSE route. It reads on its own serial queue every 250 ms while
-playing, because the call can block (WebKit reads it on a background queue),
-counts once more on stopping, and never reports after it is destroyed.
+up as for the MSE route. `HlsFrameStats` reads on its own serial queue every
+250 ms while playing, because the call can block (WebKit reads it on a
+background queue), counts once more on stopping, and never reports after it
+is destroyed.
 
 Unlike an `AVSampleBufferDisplayLayer`'s, this count restarts when
 AVFoundation rebuilds its decoder (seen once on a variant switch, 178 → 75):

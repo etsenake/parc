@@ -291,8 +291,14 @@ struct Client : fp::HlsPlayerClient {
     errors++;
   }
   void OnKeyRequest(const std::string& uri) override { key_uris.push_back(uri); }
+  void OnVideoFrameCounts(uint32_t decoded, uint32_t dropped) override {
+    frames_decoded += decoded;
+    frames_dropped += dropped;
+  }
 
   std::optional<fp::HlsMetadata> metadata;
+  int64_t frames_decoded = 0;
+  int64_t frames_dropped = 0;
   int metadata_count = 0;
   std::vector<bool> buffering;
   std::vector<fp::HlsTimeRange> loaded, seekable;
@@ -417,6 +423,11 @@ void VodFmp4() {
   Check([algorithm isEqualToString:AVAudioTimePitchAlgorithmVarispeed], "preservesPitch false: Varispeed");
   double before = rig.Time();
   Check(WaitFor([&] { return rig.Time() > before + 2; }, 10), "plays on at 1.5x");
+  // The layer is in no window here, so AVFoundation may count nothing; the
+  // presentation harness checks the counts on a layer on screen.
+  std::printf("       video frame counts reported: %lld decoded, %lld dropped\n",
+              static_cast<long long>(rig.client.frames_decoded),
+              static_cast<long long>(rig.client.frames_dropped));
 }
 
 // WebKit's rules (fairplay_hls_timeline.h), no network.

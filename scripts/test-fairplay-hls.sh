@@ -15,6 +15,7 @@ tests="$repo_root/tests/FairPlay"
 cxx_flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -I "$core")
 flags=("${cxx_flags[@]}" -fobjc-arc)
 xcrun clang++ "${cxx_flags[@]}" -c "$core/fairplay_hls_timeline.cc" -o "$output/fairplay_hls_timeline.o"
+xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_frame_stats.mm" -o "$output/fairplay_hls_frame_stats.o"
 xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_player.mm" -o "$output/fairplay_hls_player.o"
 xcrun clang++ "${flags[@]}" -c "$tests/hls_player_harness.mm" -o "$output/hls_player_harness.o"
 xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreMedia -framework Foundation \
