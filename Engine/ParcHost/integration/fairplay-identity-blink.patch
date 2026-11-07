@@ -1718,7 +1718,7 @@
  static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
      const Vector<String>& session_types) {
    std::vector<WebEncryptedMediaSessionType> result(session_types.size());
-@@ -96,20 +199,86 @@
+@@ -96,21 +199,88 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -1734,8 +1734,9 @@
  
      DCHECK(config->hasInitDataTypes());
      web_config.init_data_types = ConvertInitDataTypes(config->initDataTypes());
-+    // Parc: "sinf" and "skd", FairPlay's init data types, only under Safari's
-+    // identity; elsewhere they stay unregistered, so no key system takes them.
++    // Parc: "sinf", "skd" and "mpts", FairPlay's init data types, only under
++    // Safari's identity; elsewhere they stay unregistered, so no key system
++    // takes them.
 +    if (!parc_safari_identity) {
 +      for (wtf_size_t j = 0; j < config->initDataTypes().size(); ++j) {
 +        if (IsParcSafariOnlyInitDataType(config->initDataTypes()[j])) {
@@ -1771,7 +1772,7 @@
      DCHECK(config->hasVideoCapabilities());
      web_config.video_capabilities =
          ConvertCapabilities(config->videoCapabilities());
-+
+ 
 +    if (parc_safari_fairplay && !is_from_media_capabilities) {
 +      for (WebMediaKeySystemMediaCapability& capability :
 +           web_config.audio_capabilities) {
@@ -1802,10 +1803,11 @@
 +        }
 +      }
 +    }
- 
++
      DCHECK(config->hasDistinctiveIdentifier());
      web_config.distinctive_identifier =
-@@ -123,6 +292,17 @@
+         EncryptedMediaUtils::ConvertToMediaKeysRequirement(
+@@ -123,6 +293,17 @@
  
      if (config->hasSessionTypes()) {
        web_config.session_types = ConvertSessionTypes(config->sessionTypes());
@@ -1823,7 +1825,7 @@
      } else {
        // From the spec
        // (http://w3c.github.io/encrypted-media/#idl-def-mediakeysystemconfiguration):
-@@ -137,6 +317,9 @@
+@@ -137,6 +318,9 @@
  
      // If |label| is not present, it will be a null string.
      web_config.label = config->label();
@@ -1852,12 +1854,13 @@
        return true;
      case blink::WebEncryptedMediaSessionType::kUnknown:
        break;
-@@ -541,6 +544,13 @@
+@@ -541,6 +544,14 @@
    //     |initDataType| is one of the registered values.)
    media::EmeInitDataType init_data_type =
        EncryptedMediaUtils::ConvertToInitDataType(init_data_type_string);
-+  // Parc: "sinf" and "skd" are FairPlay's and exist only under Safari's
-+  // identity (parc_safari_identity.h); elsewhere they stay unregistered.
++  // Parc: "sinf", "skd" and "mpts" are FairPlay's and exist only under
++  // Safari's identity (parc_safari_identity.h); elsewhere they stay
++  // unregistered.
 +  if (IsParcSafariOnlyInitDataType(init_data_type_string) &&
 +      !(GetExecutionContext() &&
 +        IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent()))) {
