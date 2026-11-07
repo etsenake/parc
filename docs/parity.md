@@ -78,13 +78,18 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   engine/build/packaging operations directly on main, without agents or worktrees.
   Start with a minor release from current main; monitor build failures and
   origin/main continuously. Finish each frozen release before consuming later
-  commits, then publish them as a patch release. Stop only after the latest
-  release covers main and no new main commit has been observed for ten minutes.
+  commits, then publish them as a patch release. After the final release finishes,
+  watch for ten full minutes without a new commit from another contributor.
+  Any such commit requires another patch and a fresh post-release watch; root's
+  own commits do not reset that quiet period.
   All output appends to `build/master-release-development/nightly-release.log`.
   The release-only installation/runtime exclusions remain in effect.
   Recovery overlay 447 refreshes CEF's Picture-in-Picture patch context for the
   Safari-identity include; the original generation failed its already-applied
   reverse check. The patch remains present and its behavior is unchanged.
+  The first compilation also exposed an incomplete `VTTRegion` type in the
+  in-band subtitle implementation; its source now includes the defining header
+  explicitly, preserving subtitle behavior and the existing build objects.
 
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in

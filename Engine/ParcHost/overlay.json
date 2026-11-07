@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 454,
+  "version": 455,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1635,7 +1635,7 @@
     {
       "source": "Engine/ParcRenderer/parc_inband_text_track.cc",
       "target": "third_party/blink/renderer/core/html/media/parc_inband_text_track.cc",
-      "sha256": "37d8ee7ee2085bc6dd2d4db7fd7548a641c3e261f77d75e778ae31a6fedb0fa9"
+      "sha256": "0f87a9a52e5bdf6f93d067ff36c0ed21e8a97fe92ee640f7d3bd66c1be951a8c"
     },
     {
       "source": "Engine/ParcRenderer/parc_inband_text_track.h",
