@@ -1583,10 +1583,20 @@
    if (name == html_names::kSrcAttr) {
      DVLOG(2) << "parseAttribute(" << *this
               << ", kSrcAttr, old=" << params.old_value
-@@ -1069,10 +1080,133 @@
-   return network_state_;
- }
+@@ -932,6 +943,7 @@
+       ignore_preload_none_ = false;
+       InvokeLoadAlgorithm();
+     }
++    ParcLatchMutedAttribute();
+   }
  
+   return kInsertionShouldCallDidNotifySubtreeInsertions;
+@@ -1067,12 +1079,153 @@
+ 
+ HTMLMediaElement::NetworkState HTMLMediaElement::getNetworkState() const {
+   return network_state_;
++}
++
 +namespace {
 +
 +// Parc: what a document is told about a type under its identity
@@ -1650,14 +1660,32 @@
 +  }
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 +  return HTMLMediaElement::GetSupportsType(content_type);
-+}
-+
+ }
+ 
 +}  // namespace
 +
 +// Document::processingUserGestureForMedia is transient activation.
 +void HTMLMediaElement::ParcNoteMediaUserGesture() {
 +  if (LocalFrame::HasTransientUserActivation(GetDocument().GetFrame())) {
 +    parc_had_media_user_gesture_ = true;
++  }
++}
++
++// WebKit (HTMLMediaElement::postConnectionSteps and loadResource): the first
++// of these sets m_explicitlyMuted and m_muted from the attribute, without a
++// volumechange; from then on the attribute no longer changes muted. Without
++// MediaElementMutedDefaultState other pages never read muted_is_default_
++// while it is false, so clearing it there only spares muted() the identity
++// check.
++void HTMLMediaElement::ParcLatchMutedAttribute() {
++  if (!muted_is_default_) {
++    return;
++  }
++  if (PresentsParcSafariIdentity()) {
++    muted_is_default_ = false;
++    muted_ = FastHasAttribute(html_names::kMutedAttr);
++  } else if (!RuntimeEnabledFeatures::MediaElementMutedDefaultStateEnabled()) {
++    muted_is_default_ = false;
 +  }
 +}
 +
@@ -1718,7 +1746,7 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -1112,6 +1246,7 @@
+@@ -1112,6 +1265,7 @@
  // in resource selection algorithm.
  void HTMLMediaElement::InvokeLoadAlgorithm() {
    DVLOG(3) << "invokeLoadAlgorithm(" << *this << ")";
@@ -1726,20 +1754,29 @@
  
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -1760,6 +1895,12 @@
+@@ -1512,6 +1666,8 @@
+                            "Resource load failure: document has no frame"));
+     return;
+   }
++
++  ParcLatchMutedAttribute();
+ 
+   // The resource fetch algorithm
+   SetNetworkState(kNetworkLoading);
+@@ -1759,6 +1915,12 @@
+     KURL kurl(request_url);
      source = WebMediaPlayerSource(WebURL(kurl));
    }
- 
++
 +  // Parc: each load makes a new player in WebKit, whose renderer has no
 +  // legacy key session or init data until the new media gives some
 +  // (HTMLMediaElement::mediaEngineWasUpdated only sets the CDM); the legacy
 +  // EME script forgets what the previous load gave this element.
 +  ParcWebKitMediaKeysNewLoad(*this);
-+
+ 
    web_media_player_ =
        frame->Client()->CreateWebMediaPlayer(*this, source, this);
- 
-@@ -2727,7 +2868,11 @@
+@@ -2727,7 +2889,11 @@
    ScheduleNamedEvent(event_type_names::kSeeking);
  
    // 11 - Set the current playback position to the given new playback position.
@@ -1752,10 +1789,12 @@
    web_media_player_->OnTimeUpdate();
  
    // 14-17 are handled, if necessary, when the engine signals a readystate
-@@ -2898,6 +3043,52 @@
-   ReportCurrentTimeToMediaSource();
- }
+@@ -2896,8 +3062,54 @@
+   }
  
+   ReportCurrentTimeToMediaSource();
++}
++
 +void HTMLMediaElement::setCurrentTimeForBindings(
 +    double time,
 +    ExceptionState& exception_state) {
@@ -1773,8 +1812,8 @@
 +    return;
 +  }
 +  setCurrentTime(time);
-+}
-+
+ }
+ 
 +// WebKit's HTMLMediaElement::fastSeek: a seek that may land early, at a
 +// keyframe the player can start from promptly. Forward it lands no earlier
 +// than the current position, backward anywhere before the target, never
@@ -1805,7 +1844,7 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -3160,6 +3351,7 @@
+@@ -3160,6 +3372,7 @@
  
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
    DVLOG(2) << "play(" << *this << ")";
@@ -1813,7 +1852,7 @@
  
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3400,6 +3592,9 @@
+@@ -3400,6 +3613,9 @@
      return;
    }
  
@@ -1823,15 +1862,57 @@
    volume_ = vol;
  
    ScheduleNamedEvent(event_type_names::kVolumechange);
-@@ -3438,6 +3633,7 @@
+@@ -3428,8 +3644,11 @@
+   // ever do support it.
+   static_assert(kMinPlaybackRate >= 0);
+ 
+-  if (RuntimeEnabledFeatures::MediaElementMutedDefaultStateEnabled() &&
+-      muted_is_default_) {
++  // WebKit (HTMLMediaElement::muted): until the attribute is latched or script
++  // sets muted, Safari reads the content attribute.
++  if (muted_is_default_ &&
++      (RuntimeEnabledFeatures::MediaElementMutedDefaultStateEnabled() ||
++       PresentsParcSafariIdentity())) {
+     return FastHasAttribute(html_names::kMutedAttr);
+   }
+ 
+@@ -3438,21 +3657,29 @@
  
  void HTMLMediaElement::setMuted(bool muted) {
    DVLOG(2) << "setMuted(" << *this << ", " << base::ToString(muted) << ")";
 +  ParcNoteMediaUserGesture();
  
    bool was_muted = this->muted();
++  // WebKit (setMutedInternal) fires volumechange when m_muted changes, and
++  // m_muted is false until the muted attribute is latched.
++  const bool fires_volumechange =
++      muted_is_default_ && PresentsParcSafariIdentity() ? muted
++                                                        : was_muted != muted;
  
-@@ -3562,10 +3758,23 @@
+-  if (RuntimeEnabledFeatures::MediaElementMutedDefaultStateEnabled()) {
+-    muted_is_default_ = false;
+-  }
++  muted_is_default_ = false;
+   muted_ = muted;
+ 
+-  if (was_muted == this->muted()) {
++  if (was_muted == this->muted() && !fires_volumechange) {
+     return;
+   }
+ 
+-  PseudoStateChanged(CSSSelector::kPseudoMuted);
++  if (was_muted != this->muted()) {
++    PseudoStateChanged(CSSSelector::kPseudoMuted);
++  }
+ 
+-  ScheduleNamedEvent(event_type_names::kVolumechange);
++  if (fires_volumechange) {
++    ScheduleNamedEvent(event_type_names::kVolumechange);
++  }
+ 
+   // If it is unmute and AutoplayPolicy doesn't want the playback to continue,
+   // pause the playback.
+@@ -3562,10 +3789,23 @@
  
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
                                           TrackBase::ChangeSource source) {
@@ -1855,10 +1936,14 @@
  
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3679,9 +3888,163 @@
-   }
- }
- 
+@@ -3675,13 +3915,167 @@
+         impl->setEnabled(active, TrackBase::ChangeSource::kDemuxer);
+       }
+       break;
++    }
++  }
++}
++
 +void HTMLMediaElement::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -1987,11 +2072,11 @@
 +    auto* inband = To<ParcInbandTextTrack>(track.Get());
 +    if (inband->Key() == key) {
 +      return inband;
-+    }
-+  }
+     }
+   }
 +  return nullptr;
-+}
-+
+ }
+ 
 +void HTMLMediaElement::RemoveParcInbandTextTrack(ParcInbandTextTrack* track) {
 +  // As DidRemoveTrackElement; the track's cues leave the timeline with it.
 +  GetDocument().GetStyleEngine().RemoveTextTrack(track);
@@ -2019,7 +2104,7 @@
  
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +4053,16 @@
+@@ -3690,6 +4084,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -2036,7 +2121,7 @@
    // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
  
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4271,8 @@
+@@ -3898,7 +4302,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -2046,7 +2131,7 @@
          goto checkAgain;
      }
  
-@@ -4845,6 +5219,7 @@
+@@ -4845,6 +5250,7 @@
    visitor->Trace(deferred_load_timer_);
    visitor->Trace(media_source_tracer_);
    visitor->Trace(audio_tracks_);
@@ -2054,7 +2139,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4873,7 +5248,8 @@
+@@ -4873,7 +5279,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -2146,20 +2231,23 @@
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -968,6 +1004,12 @@
+@@ -968,6 +1004,15 @@
    bool is_remote_rendering_ = false;
    // Whether the media content is encrypted.
    bool is_encrypted_media_ = false;
 +  // Parc: see ParcHadMediaUserGesture().
 +  void ParcNoteMediaUserGesture();
 +  bool parc_had_media_user_gesture_ = false;
++  // Parc: under Safari's identity, fixes muted from the muted attribute at
++  // the first connection or resource load unless script set muted first.
++  void ParcLatchMutedAttribute();
 +  // Parc: while fastSeek() runs Seek(), how far before its target the seek
 +  // may land.
 +  std::optional<double> parc_fast_seek_tolerance_;
  
    // Whether the frame containing the media element is hidden. This is nullopt
    // if the visibility state of the frame is not yet known - e.g. during frame
-@@ -985,6 +1027,12 @@
+@@ -985,6 +1030,12 @@
    std::optional<media::VideoCodec> video_codec_;
  
    Member<AudioTrackList> audio_tracks_;
@@ -3741,3 +3829,155 @@
      return false;
    }
    switch (track_type) {
+--- a/third_party/blink/renderer/core/html/media/html_media_element_test.cc
++++ b/third_party/blink/renderer/core/html/media/html_media_element_test.cc
+@@ -163,6 +163,7 @@
+ 
+   MOCK_CONST_METHOD0(HasAvailableVideoFrame, bool());
+   MOCK_CONST_METHOD0(HasReadableVideoFrame, bool());
++  MOCK_METHOD1(SetVolume, void(double));
+ };
+ 
+ class WebMediaStubLocalFrameClient : public EmptyLocalFrameClient {
+@@ -178,8 +179,12 @@
+     return std::move(player_);
+   }
+ 
++  String UserAgent() override { return user_agent_; }
++  void set_user_agent(const String& user_agent) { user_agent_ = user_agent; }
++
+  private:
+   std::unique_ptr<WebMediaPlayer> player_;
++  String user_agent_;
+ };
+ 
+ class FullscreenMockChromeClient : public EmptyChromeClient {
+@@ -456,6 +461,11 @@
+   }
+ 
+   HTMLMediaElement* Media() const { return media_.Get(); }
++  void SetUserAgent(const char* user_agent) {
++    static_cast<WebMediaStubLocalFrameClient*>(
++        dummy_page_holder_->GetFrame().Client())
++        ->set_user_agent(String(user_agent));
++  }
+   void SetCurrentSrc(const AtomicString& src) {
+     KURL url(src);
+     Media()->current_src_.SetSource(
+@@ -3592,6 +3602,116 @@
+   test::RunPendingTasks();
+ 
+   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
++}
++
++constexpr char kParcSafariUserAgent[] =
++    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
++    "(KHTML, like Gecko) Version/27.2 Safari/605.1.15";
++constexpr char kParcChromeUserAgent[] =
++    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
++    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
++
++TEST_P(HTMLMediaElementTest, ParcSafariMutedAttributeLatchesOnInsertion) {
++  ScopedMediaElementMutedDefaultStateForTest scoped_muted_default(false);
++  SetUserAgent(kParcSafariUserAgent);
++  auto* volumechange = MakeGarbageCollected<EventCountingListener>();
++  Media()->addEventListener(event_type_names::kVolumechange, volumechange);
++
++  Media()->setAttribute(html_names::kMutedAttr, g_empty_atom);
++  EXPECT_TRUE(Media()->muted());
++  Media()->removeAttribute(html_names::kMutedAttr);
++  EXPECT_FALSE(Media()->muted());
++  Media()->setAttribute(html_names::kMutedAttr, g_empty_atom);
++  EXPECT_TRUE(Media()->muted());
++  Media()->GetDocument().body()->AppendChild(Media());
++  Media()->removeAttribute(html_names::kMutedAttr);
++  EXPECT_TRUE(Media()->muted());
++
++  EXPECT_CALL(*MockMediaPlayer(), SetVolume(testing::Ne(0.0))).Times(0);
++  Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
++  test::RunPendingTasks();
++  ASSERT_TRUE(Media()->GetWebMediaPlayer());
++  EXPECT_TRUE(Media()->muted());
++  EXPECT_EQ(volumechange->count(), 0);
++}
++
++TEST_P(HTMLMediaElementTest, ParcSafariMutedAttributeLatchesOnLoad) {
++  ScopedMediaElementMutedDefaultStateForTest scoped_muted_default(false);
++  SetUserAgent(kParcSafariUserAgent);
++  Media()->setAttribute(html_names::kMutedAttr, g_empty_atom);
++
++  EXPECT_CALL(*MockMediaPlayer(), SetVolume(testing::Ne(0.0))).Times(0);
++  EXPECT_CALL(*MockMediaPlayer(), SetVolume(0.0)).Times(testing::AtLeast(1));
++  Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
++  test::RunPendingTasks();
++  ASSERT_TRUE(Media()->GetWebMediaPlayer());
++  testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
++
++  Media()->removeAttribute(html_names::kMutedAttr);
++  Media()->GetDocument().body()->AppendChild(Media());
++  EXPECT_TRUE(Media()->muted());
++}
++
++TEST_P(HTMLMediaElementTest, ParcSafariScriptMutedBeforeAttributeIsKept) {
++  ScopedMediaElementMutedDefaultStateForTest scoped_muted_default(false);
++  SetUserAgent(kParcSafariUserAgent);
++  auto* volumechange = MakeGarbageCollected<EventCountingListener>();
++  Media()->addEventListener(event_type_names::kVolumechange, volumechange);
++
++  Media()->setMuted(false);
++  Media()->setAttribute(html_names::kMutedAttr, g_empty_atom);
++  Media()->GetDocument().body()->AppendChild(Media());
++  EXPECT_FALSE(Media()->muted());
++  Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
++  test::RunPendingTasks();
++  EXPECT_FALSE(Media()->muted());
++  EXPECT_EQ(volumechange->count(), 0);
+ }
+ 
++// WebKit (setMutedInternal) compares with m_muted, which stays false until
++// the attribute is latched.
++TEST_P(HTMLMediaElementTest, ParcSafariVolumechangeBeforeMutedIsLatched) {
++  ScopedMediaElementMutedDefaultStateForTest scoped_muted_default(false);
++  SetUserAgent(kParcSafariUserAgent);
++  auto* volumechange = MakeGarbageCollected<EventCountingListener>();
++  Media()->addEventListener(event_type_names::kVolumechange, volumechange);
++  Media()->setAttribute(html_names::kMutedAttr, g_empty_atom);
++  Media()->setMuted(true);
++  test::RunPendingTasks();
++  EXPECT_TRUE(Media()->muted());
++  EXPECT_EQ(volumechange->count(), 1);
++
++  auto* other =
++      MakeGarbageCollected<HTMLAudioElement>(Media()->GetDocument());
++  auto* other_volumechange = MakeGarbageCollected<EventCountingListener>();
++  other->addEventListener(event_type_names::kVolumechange, other_volumechange);
++  other->setAttribute(html_names::kMutedAttr, g_empty_atom);
++  other->setMuted(false);
++  test::RunPendingTasks();
++  EXPECT_FALSE(other->muted());
++  EXPECT_EQ(other_volumechange->count(), 0);
++  other->GetDocument().body()->AppendChild(other);
++  EXPECT_FALSE(other->muted());
++}
++
++TEST_P(HTMLMediaElementTest, ParcChromeMutedAttributeOnlyFromParser) {
++  ScopedMediaElementMutedDefaultStateForTest scoped_muted_default(false);
++  SetUserAgent(kParcChromeUserAgent);
++  auto* volumechange = MakeGarbageCollected<EventCountingListener>();
++  Media()->addEventListener(event_type_names::kVolumechange, volumechange);
++  Media()->setAttribute(html_names::kMutedAttr, g_empty_atom);
++  EXPECT_FALSE(Media()->muted());
++  Media()->GetDocument().body()->AppendChild(Media());
++  EXPECT_FALSE(Media()->muted());
++  Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
++  test::RunPendingTasks();
++  EXPECT_FALSE(Media()->muted());
++
++  Media()->setMuted(true);
++  Media()->setMuted(true);
++  test::RunPendingTasks();
++  EXPECT_TRUE(Media()->muted());
++  EXPECT_EQ(volumechange->count(), 1);
++}
++
+ }  // namespace blink
