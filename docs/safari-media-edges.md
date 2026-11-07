@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **63**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **64**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -94,12 +94,14 @@ visibility: **fixed** 16ff69d8. The moved video's Now Playing, media keys,
 tab sound icon and picture in picture now belong to the page showing it:
 **fixed** cf6e810a. Closing, navigating or removing the opener no longer restarts
 it for clear Media Source, plain files and native HLS: **fixed** 2e206083.
-Still different, all user-felt and **in progress** (HME-1c parts 2b/2c): a
-moved video with MediaKeys attached still reloads when its CDM's frame goes;
-a mid-segment native HLS load or a non-range plain file can fail if the old
-frame dies during it; a video moved while in picture in picture stays bound
-to its old frame; FairPlay and native HLS tab mute
-still acts from the opener's tab; the page's own cast button and Chrome's
+A moved video with MediaKeys attached reloaded when its CDM's frame went,
+and FairPlay and native HLS tab mute acted from the opener's tab: **fixed**
+00634ec8 (CDM ids resolve across frames of the creating renderer process
+only; mute follows the new frame with no gap). Still different, all
+user-felt and **in progress** (HME-1c parts 2b-ii/2c): a mid-segment native
+HLS load or a non-range plain file can fail if the old frame dies during it;
+a video moved while in picture in picture stays bound to its old frame; the
+page's own cast button and Chrome's
 video remoting still go through the opener; MediaStream (WebRTC) videos
 aren't re-homed. A move into a document without a browsing context
 (`createHTMLDocument`) reloads and fails where Safari keeps the player:
