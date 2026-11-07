@@ -21,8 +21,8 @@
 //   the FairPlay certificate and sends the SPC; `update(ckc)` answers it and
 //   fires `webkitkeyadded`; `update("renew")` sends a renewal SPC;
 //   `webkitkeyerror` carries a `WebKitMediaKeyError`. Version 3 takes the init
-//   data from `createSession`; version 2 takes a content identifier there and
-//   the init data from the protected media the keys are attached to.
+//   data from `createSession`; version 2 takes the SPC's content identifier
+//   there and the init data from the protected media the keys are attached to.
 //   `keyrelease` sessions find no expired-session reports (Parc keeps none) and
 //   answer as WebKit does then.
 // - `HTMLMediaElement.webkitSetMediaKeys`/`webkitKeys`, `webkitneedkey`
@@ -534,6 +534,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       return undefined;
     }
     session.json = type !== 'sinf';
+    // Version 2 names the SPC by the page's identifier: Parc's CDM takes it
+    // with the media's init data as a keyids extension (fairplay_init_data.mm).
+    const requestType = session.keys.version === 2 ? 'keyids' : type;
+    const contentId = session.keys.version === 2 ? toBase64(session.identifier) : '';
+    const requestData = !contentId ? copy(session.initData) :
+        ascii(apply(jsonStringify, JSON, [type === 'keyids' ?
+            {kids: parseJson(session.initData).kids, contentId} :
+            {initDataType: type, initData: toBase64(session.initData), contentId}]));
     const failed = (error) => sendError(session, DOMAIN, systemCodeOf(error));
     return then(modernKeysOf(keys), (mediaKeys) => serialized(keys, () => {
       if (!session.open) {
@@ -550,7 +558,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
           then(apply(closeModern, modern, []), undefined, () => {});
           return undefined;
         }
-        return then(apply(generateRequest, modern, [type, copy(session.initData)]),
+        return then(apply(generateRequest, modern, [requestType, requestData]),
                     undefined, failed);
       }, failed);
     }), failed);

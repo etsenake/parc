@@ -275,9 +275,10 @@ has it in windows only. The rows and what is still open are in
   message is the SPC; `update(ckc)` answers it and fires `webkitkeyadded`;
   `update("renew")` sends a renewal SPC; `close()` closes the keys. Version 3
   takes the init data from `createSession` (the `webkitneedkey` data, `cenc`
-  pssh boxes or `sinf` JSON); version 2 takes a content identifier there and
-  the init data from the media the keys are attached to (InvalidPlayerState
-  until it has some). Parc's CDM sends `cenc` requests as JSON with one SPC per
+  pssh boxes or `sinf` JSON); version 2 takes the SPC's content identifier
+  there and the init data from the media the keys are attached to
+  (InvalidPlayerState until it has some), which Parc's CDM takes as a `keyids`
+  extension (`{"initDataType", "initData", "contentId"}`). Parc's CDM sends `cenc` requests as JSON with one SPC per
   key, so the script sends each SPC as its own message and gives each CKC to
   the oldest unanswered one. Errors are `webkitkeyerror` with a
   `WebKitMediaKeyError`: DOMAIN with the CDM's system code when an SPC can't be

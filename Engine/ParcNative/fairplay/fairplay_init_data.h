@@ -32,6 +32,10 @@ enum class InitDataType {
   // JSON {"kids": ["<base64url key ID>", ...]} (W3C). Parc extension, not in
   // WebKit: one request per key ID through a FairPlay pssh naming it, with the
   // raw key ID as the SPC content identifier, as WebKit names sinf requests.
+  // Parc extension for WebKit's legacy com.apple.fps.2_N sessions:
+  // {"initDataType": "cenc"|"sinf", "initData": "<base64>", "contentId":
+  // "<base64>"} plans the inner init data and names every SPC by contentId;
+  // {"kids": [...], "contentId": "<base64>"} does the same for key IDs.
   kKeyIds,
 };
 

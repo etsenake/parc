@@ -86,9 +86,24 @@ function makeWorld({sinf = false, failSpc = 0} = {}) {
       if (failSpc) {
         return Promise.reject(new DOMException('Rejected with system code (' + failSpc + ')', 'NotSupportedError'));
       }
-      this.#json = type !== 'sinf';
+      let innerType = type;
+      let inner = text(data);
+      if (type === 'keyids') {
+        // Parc's keyids extension for com.apple.fps.2_N: the media's init
+        // data plus the SPC's content identifier.
+        const json = JSON.parse(inner);
+        if (!json.contentId || !['cenc', 'sinf'].includes(json.initDataType)) {
+          return Promise.reject(new DOMException('bad keyids', 'TypeError'));
+        }
+        innerType = json.initDataType;
+        inner = Buffer.from(json.initData, 'base64').toString('latin1');
+      }
+      if (innerType === 'sinf' && !sinf) {
+        return Promise.reject(new DOMException('Unsupported initDataType', 'NotSupportedError'));
+      }
+      this.#json = innerType !== 'sinf';
       // Each pssh box in the model names one key; sinf names one.
-      const keyIds = type === 'cenc' ? text(data).match(/pssh(\w+)/g).map((m) => m.slice(4)) : ['sinf-key'];
+      const keyIds = innerType === 'cenc' ? inner.match(/pssh(\w+)/g).map((m) => m.slice(4)) : ['sinf-key'];
       this.#lastKey = keyIds[keyIds.length - 1];
       this.send('license-request', keyIds.map((id) => [id, spc(this.#keys, id)]));
       return Promise.resolve();
@@ -551,8 +566,12 @@ for (const sinf of [true, false]) {
   await settle();
   second.update(new Uint8Array(bytesOf('CERT')));
   await settle();
-  check(world.log.find((entry) => entry[0] === 'generateRequest')?.[2] === pssh('C').toString('latin1'),
-        "the request uses the media's init data");
+  const request = world.log.find((entry) => entry[0] === 'generateRequest');
+  const envelope = request && request[1] === 'keyids' && JSON.parse(request[2]);
+  check(envelope && envelope.initDataType === 'cenc' &&
+        Buffer.from(envelope.initData, 'base64').equals(pssh('C')) &&
+        Buffer.from(envelope.contentId, 'base64').toString() === 'content-id',
+        "the request uses the media's init data and names the SPC by the page's identifier");
   check(events.slice(-2).join() === 'certificate,SPC(CERT,C)', 'then the SPC');
 }
 

@@ -343,6 +343,46 @@ std::vector<std::vector<uint8_t>> KeyIdsFromPssh(const PsshBox& box) {
   return key_ids;
 }
 
+namespace {
+
+// Parc extension for WebKit's legacy com.apple.fps.2_N sessions
+// (Engine/ParcRenderer/parc_webkit_media_keys.h), whose SPC content
+// identifier is the page's bytes while the request comes from the media's own
+// init data (CDMSessionAVContentKeySession: processContentKeyRequestWithIdentifier
+// with the source buffer's init data, then contentIdentifier = the identifier):
+//   {"initDataType": "cenc" | "sinf", "initData": "<base64>",
+//    "contentId": "<base64>"}
+// plans the inner init data as that type and names every request's SPC by
+// contentId. Sessions exchange messages in the inner type's format. Key IDs
+// take {"kids": [...], "contentId": "<base64>"} instead (below).
+InitDataPlan PlanWithContentIdentifier(NSDictionary* root) {
+  NSData* content_id = DecodeBase64(root[@"contentId"], false);
+  if (!content_id.length) {
+    return Fail("keyids contentId is not non-empty base64");
+  }
+  NSString* inner_name = root[@"initDataType"];
+  std::optional<InitDataType> inner;
+  if ([inner_name isKindOfClass:[NSString class]]) {
+    inner = InitDataTypeFromName(inner_name.UTF8String);
+  }
+  if (inner != InitDataType::kCenc && inner != InitDataType::kSinf) {
+    return Fail("keyids with a contentId names no cenc or sinf init data");
+  }
+  NSData* inner_data = DecodeBase64(root[@"initData"], false);
+  if (!inner_data.length) {
+    return Fail("keyids initData is not non-empty base64");
+  }
+  InitDataPlan plan = PlanContentKeyRequests(*inner, ToVector(inner_data));
+  if (plan.error.empty()) {
+    for (ContentKeyRequestPlan& call : plan.calls) {
+      call.content_identifier = ToVector(content_id);
+    }
+  }
+  return plan;
+}
+
+}  // namespace
+
 InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t>& init_data) {
   switch (type) {
     case InitDataType::kSkd: {
@@ -416,6 +456,9 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
     }
     case InitDataType::kKeyIds: {
       NSDictionary* root = ParseJSON(init_data);
+      if ([root isKindOfClass:[NSDictionary class]] && root[@"initDataType"]) {
+        return PlanWithContentIdentifier(root);
+      }
       NSArray* kids = [root isKindOfClass:[NSDictionary class]] ? root[@"kids"] : nil;
       if (![kids isKindOfClass:[NSArray class]] || !kids.count) {
         return Fail("keyids init data is not {\"kids\": [base64url]}");
@@ -428,7 +471,16 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
         }
         AddUnique(&key_ids, ToVector(key_id));
       }
-      return PlanForKeyIds(key_ids);
+      InitDataPlan plan = PlanForKeyIds(key_ids);
+      // The same extension for legacy key IDs: a non-empty base64 contentId
+      // names every SPC (anything else there is ignored, as before).
+      NSData* content_id = DecodeBase64(root[@"contentId"], false);
+      if (content_id.length) {
+        for (ContentKeyRequestPlan& call : plan.calls) {
+          call.content_identifier = ToVector(content_id);
+        }
+      }
+      return plan;
     }
   }
   return Fail("unknown init data type");

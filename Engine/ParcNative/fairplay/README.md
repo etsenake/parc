@@ -308,7 +308,12 @@ a response entry may carry `"error"` instead). `UpdateSession` with the literal
 The SPC's content identifier follows WebKit: the whole skd URI as UTF-8 for skd,
 the raw 16-byte key ID for sinf and FairPlay pssh requests (and, as a Parc
 extension, for keyids and for cenc without a FairPlay pssh, which requests the
-key IDs the other pssh boxes name).
+key IDs the other pssh boxes name). WebKit's legacy `com.apple.fps.2_N`
+sessions name the SPC by the page's bytes instead; Parc's legacy script
+(`Engine/ParcRenderer/parc_webkit_media_keys.h`) sends them as keyids init data
+`{"initDataType": "cenc"|"sinf", "initData": "<base64>", "contentId":
+"<base64>"}`, planned as the inner type (and exchanging its messages) with
+every SPC named by `contentId`.
 
 ## Apple API behaviour
 
