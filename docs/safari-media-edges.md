@@ -40,9 +40,9 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **39**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
-audio track joining the running player, the FairPlay late-key rebuffer, the rest of
-Safari's autoplay rules, a worker's Media Source dying, rewinding plain files). Queued:
+main: **40**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+audio track joining the running player, a second `ended` at the end, native HLS key
+requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
@@ -324,11 +324,10 @@ sticky for the frame, plus media engagement). WebKit
 (`MediaElementSession.cpp:463-568`): with Safari's default policy, audible
 playback needs a user gesture being processed now, or an element a gesture
 already unlocked. **Fixed** 8d00107a (Josh's default: Safari's rule).
-Still different: Low Power Mode and thermal throttling require a gesture
-even for muted video in Safari; a hidden page needs a gesture to start
-sound; a camera stream allowed because the page already plays audio is
-refused; an audio track appearing mid-playback isn't re-checked: **queued**
-(AUTO-2). Safari's per-site autoplay setting has no Parc equivalent, and site
+Low Power Mode and thermal throttling requiring a gesture even for muted
+video, a hidden page needing a gesture to start sound, a camera stream
+allowed because the page already plays audio, and an audio track appearing
+mid-playback being re-checked: **fixed** acee1d60. Safari's per-site autoplay setting has no Parc equivalent, and site
 quirks are excluded (they key on site names).
 
 **HME-23. When playback has ended.** Chromium `html_media_element.cc:4223-4245`
