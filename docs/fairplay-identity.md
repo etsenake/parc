@@ -57,6 +57,11 @@ On a page that presents Safari's identity:
   Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's
   picture-in-picture panel and fullscreen window present the video and the
   standard API's state always agrees with it.
+- Fullscreen events follow WebKit whatever the request's prefix:
+  `fullscreenchange`, then `webkitfullscreenchange` unless the target or its
+  document listens for both, and both `fullscreenerror` and
+  `webkitfullscreenerror` (Blink's fullscreen rendering steps,
+  `FireParcSafariEvents`). Chrome pages keep one event by request type.
 - `HTMLMediaElement.getStartDate()` exists, as in WebKit's IDL. It answers
   what Safari's GPU process last sampled: the native HLS route's
   `EXT-X-PROGRAM-DATE-TIME` date in whole seconds, an Invalid Date for other
@@ -527,7 +532,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   `parc_webkit_media_keys.h`), the `getStatusForPolicy` removal
   (`parc_safari_media_keys.h`), the video presentation API
   (`parc_webkit_presentation.h`) with its private helpers and
-  `HTMLMediaElement`'s record of a gesture-started media change, FairPlay's `sinf`, `skd` and `mpts` init
+  `HTMLMediaElement`'s record of a gesture-started media change, WebKit's
+  fullscreen events (`core/fullscreen/fullscreen.cc`), FairPlay's `sinf`, `skd` and `mpts` init
   data gate,
   the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`, and the memory-pressure

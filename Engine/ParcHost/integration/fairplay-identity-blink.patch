@@ -2462,3 +2462,72 @@
      HdrMetadataType hdrMetadataType;
      ColorGamut colorGamut;
      TransferFunction transferFunction;
+--- a/third_party/blink/renderer/core/fullscreen/fullscreen.cc
++++ b/third_party/blink/renderer/core/fullscreen/fullscreen.cc
+@@ -47,6 +47,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/frame/visual_viewport.h"
+ #include "third_party/blink/renderer/core/fullscreen/fullscreen_request_type.h"
+@@ -553,10 +554,58 @@
+              : event_type_names::kWebkitfullscreenerror;
+ }
+ 
++// Parc: a document presenting Safari's identity hears WebKit's fullscreen
++// events whatever the request's prefix (DocumentFullscreen's fullscreen
++// rendering steps): the unprefixed event, then `webkitfullscreenchange`
++// unless the target or its document has JavaScript listeners for both
++// change events, and `webkitfullscreenerror` always.
++void FireParcSafariEvents(const AtomicString& type,
++                          Element* element,
++                          Document* document) {
++  if (!document || !element) {
++    return;
++  }
++  EventTarget* target =
++      element->isConnected() && &element->GetDocument() == document
++          ? static_cast<EventTarget*>(element)
++          : static_cast<EventTarget*>(document);
++  const auto fire = [target](const AtomicString& event_type) {
++    Event* event = Event::CreateBubble(event_type);
++    event->SetComposed(true);
++    target->DispatchEvent(*event);
++  };
++  fire(type);
++  if (type == event_type_names::kFullscreenerror) {
++    fire(event_type_names::kWebkitfullscreenerror);
++    return;
++  }
++  const auto handles_both = [](const EventTarget& listening) {
++    return listening.HasJSBasedEventListeners(
++               event_type_names::kWebkitfullscreenchange) &&
++           listening.HasJSBasedEventListeners(
++               event_type_names::kFullscreenchange);
++  };
++  if (handles_both(*target) || handles_both(target->ToNode()->GetDocument())) {
++    return;
++  }
++  fire(event_type_names::kWebkitfullscreenchange);
++}
++
++bool PresentsParcSafariIdentity(const Document& document) {
++  const ExecutionContext* context = document.GetExecutionContext();
++  return context && IsParcSafariIdentityUserAgent(context->UserAgent());
++}
++
+ void EnqueueEvent(const AtomicString& type,
+                   Element& element,
+                   Document& document,
+                   FullscreenRequestType request_type) {
++  if (PresentsParcSafariIdentity(document)) {
++    document.EnqueueAnimationFrameTask(
++        BindOnce(FireParcSafariEvents, type, WrapWeakPersistent(&element),
++                 WrapWeakPersistent(&document)));
++    return;
++  }
+   const AtomicString& adjusted_type = AdjustEventType(type, request_type);
+   document.EnqueueAnimationFrameTask(BindOnce(FireEvent, adjusted_type,
+                                               WrapWeakPersistent(&element),

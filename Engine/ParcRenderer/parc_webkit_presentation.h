@@ -80,6 +80,8 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const NativeEvent = g.Event;
   const NativeDOMException = g.DOMException;
   const NativeWeakMap = g.WeakMap;
+  const NativeWeakRef = g.WeakRef;
+  const deref = NativeWeakRef && NativeWeakRef.prototype.deref;
   const weakGet = NativeWeakMap.prototype.get;
   const weakSet = NativeWeakMap.prototype.set;
   const promiseThen = Promise.prototype.then;
@@ -126,9 +128,14 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const INLINE = 'inline';
   const FULLSCREEN = 'fullscreen';
   const PICTURE_IN_PICTURE = 'picture-in-picture';
-  // The events that report a presentation change of a video.
-  const CHANGES = ['fullscreenchange', 'webkitfullscreenchange',
-                   'enterpictureinpicture', 'leavepictureinpicture'];
+  // The events that report a presentation change of a video. Fullscreen
+  // changes are composed and always reach the window; picture-in-picture
+  // changes aren't, so watched videos hear those themselves. (A listener of
+  // the script's for fullscreenchange on a video would count as the page's
+  // when Blink decides whether to add webkitfullscreenchange, as WebKit's
+  // DocumentFullscreen does.)
+  const FULLSCREEN_CHANGES = ['fullscreenchange', 'webkitfullscreenchange'];
+  const PICTURE_IN_PICTURE_CHANGES = ['enterpictureinpicture', 'leavepictureinpicture'];
   // Listening for these on a video makes the script watch it.
   const ANNOUNCED = ['webkitpresentationmodechanged', 'webkitbeginfullscreen',
                      'webkitendfullscreen'];
@@ -272,6 +279,9 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   // Videos not inline or changing; held so a document's fullscreenchange
   // (a video that left the tree) still reaches them.
   const active = [];
+  // Every watched video, weakly, for fullscreen changes the window sees
+  // with a shadow host as their target.
+  const watched = [];
   const peek = (element) => apply(weakGet, states, [element]);
   function stateOf(element, reported) {
     let state = peek(element);
@@ -490,6 +500,21 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
       announce(snapshot[i], peek(snapshot[i]));
     }
   }
+  function revisitWatched() {
+    const alive = [];
+    let kept = 0;
+    for (let i = 0; i < watched.length; ++i) {
+      const element = apply(deref, watched[i], []);
+      if (element) {
+        watched[kept++] = watched[i];
+        alive[alive.length] = element;
+      }
+    }
+    watched.length = kept;
+    for (let i = 0; i < alive.length; ++i) {
+      announce(alive[i], peek(alive[i]));
+    }
+  }
   // A watched video hears its own change events, so one in a shadow tree
   // (picture-in-picture events aren't composed) or out of the document
   // still reports.
@@ -498,8 +523,11 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
       return;
     }
     state.watched = true;
-    for (let i = 0; i < CHANGES.length; ++i) {
-      const type = CHANGES[i];
+    if (deref) {
+      watched[watched.length] = new NativeWeakRef(element);
+    }
+    for (let i = 0; i < PICTURE_IN_PICTURE_CHANGES.length; ++i) {
+      const type = PICTURE_IN_PICTURE_CHANGES[i];
       apply(addListener, element, [type, () => observe(element, type), true]);
     }
   }
@@ -601,8 +629,9 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
 
   // Every change event of a video in this window's tree, before the page's
   // listeners; a document's fullscreenchange (its fullscreen video left the
-  // tree) revisits the videos that aren't inline.
-  for (const type of CHANGES) {
+  // tree) revisits the videos that aren't inline, and one whose target is a
+  // shadow host the watched videos.
+  for (const type of [...FULLSCREEN_CHANGES, ...PICTURE_IN_PICTURE_CHANGES]) {
     try {
       apply(addListener, g, [type, (event) => {
         let target = null;
@@ -610,10 +639,14 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
           target = composedPath ? apply(composedPath, event, [])[0] : null;
         } catch (error) {
         }
+        const eventType = apply(typeOf, event, []);
         if (isVideo(target)) {
-          observe(target, apply(typeOf, event, []));
+          observe(target, eventType);
         }
         revisitActive();
+        if (eventType === 'fullscreenchange' || eventType === 'webkitfullscreenchange') {
+          revisitWatched();
+        }
       }, true]);
     } catch (error) {
     }

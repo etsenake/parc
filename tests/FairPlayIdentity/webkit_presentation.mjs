@@ -213,7 +213,11 @@ function makeWindow() {
   }
   class HTMLAudioElement extends HTMLMediaElement {}
   const document = new Document();
+  // The listener types registered on a target (for what Blink's
+  // HasJSBasedEventListeners would see).
+  const listenerTypes = (target) => (listeners.get(target) || []).map((entry) => entry.type);
   const window = {
+    listenerTypes, WeakRef,
     Event, EventTarget, Node, Element, Document, ShadowRoot, HTMLMediaElement,
     HTMLVideoElement, HTMLAudioElement, UserActivation, WeakMap, setTimeout, DOMException,
     navigator: {userActivation: activation}, document, activation, log, failFullscreen: false,
@@ -686,6 +690,33 @@ function record(window, video, target = window.document) {
   await settle();
   check(seen.join() === 'false' && video.webkitPresentationMode === 'picture-in-picture',
         'script-made events without the helpers: ' + seen);
+}
+
+// The script never listens for fullscreen changes on a video itself: Blink
+// adds webkitfullscreenchange on Safari-identity pages unless the page
+// listens for both change events there (WebKit's DocumentFullscreen rule),
+// and the script's listener would count as the page's. A video in a shadow
+// tree still reports fullscreen, from the window.
+{
+  const window = makeWindow();
+  install(window);
+  const host = window.div();
+  const video = window.video(host.attachShadow());
+  video.load();
+  const seen = [];
+  video.addEventListener('webkitpresentationmodechanged', () => seen.push(video.webkitPresentationMode));
+  check(!window.listenerTypes(video).some((type) => type.includes('fullscreen')),
+        'no fullscreen listener of the script on a watched video: ' + window.listenerTypes(video));
+  window.activation.active = true;
+  video.webkitEnterFullscreen();
+  await settle();
+  check(!window.listenerTypes(video).some((type) => type.includes('fullscreen')),
+        'none after entering fullscreen either');
+  check(seen.join() === 'fullscreen' && window.document.fullscreenElement === host,
+        'a shadow-tree video reports fullscreen: ' + seen);
+  video.webkitExitFullscreen();
+  await settle();
+  check(seen.join() === 'fullscreen,inline', 'and leaving it: ' + seen);
 }
 
 console.log(`webkit_presentation: ${checks} checks passed`);
