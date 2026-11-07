@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **43**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **44**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -407,8 +407,11 @@ after `play()` started stay `AbortError` (part of HME-22).
 **HME-32. `MEDIA_ERR_ABORTED`.** Safari on macOS reports it when a worker's
 MediaSource is destroyed: `abort`, error 1 "Load was aborted", `emptied`
 (`MediaSource.cpp:225-245`, `HTMLMediaElement.cpp:2317-2322, 7208-7262`).
-Chromium reports nothing (`media_source.cc:1433-1573`), so the video just
-freezes. **Queued** (HME-32, paused with its findings saved). `MEDIA_ERR_ENCRYPTED` is never fired in Safari either (modern
+Chromium reported nothing (`media_source.cc:1433-1573`), so the video just
+froze. **Fixed** 5f98fd24 (WebKit's `userCancelledLoad` steps; on macOS its
+only other caller returns early, `HTMLMediaElement.cpp:7218, 7359`). If it
+happens in picture in picture the window stays open, as in WebKit; Parc's
+window contents then are **unchecked**. `MEDIA_ERR_ENCRYPTED` is never fired in Safari either (modern
 EME is on). **Same.**
 
 **HME-28. `media-playback-while-not-visible`.** Chromium
