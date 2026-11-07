@@ -43,8 +43,8 @@ Unchecked claims are labelled **unchecked**.
 |---|---:|---:|
 | `third_party/blink/renderer/core/html/media/html_media_element.cc` | 5,504 | 5,504 |
 | `third_party/blink/renderer/platform/media/web_media_player_impl.cc` | 4,242 | 4,242 |
-| `media/base/pipeline_impl.cc` | 1,861 | 0 |
-| `media/filters/pipeline_controller.cc` | 478 | 0 |
+| `media/base/pipeline_impl.cc` | 1,861 | 1,861 |
+| `media/filters/pipeline_controller.cc` | 478 | 478 |
 | `media/filters/chunk_demuxer.cc` | 1,658 | 0 |
 | `media/filters/source_buffer_state.cc` | 931 | 0 |
 | `media/filters/source_buffer_stream.cc` | 2,029 | 0 |
@@ -316,3 +316,31 @@ on Safari-identity FairPlay players but keeps decrypting with the old CDM
 `MediaPlayerPrivateMediaSourceAVFObjC.mm:1162-1166`,
 `MediaPlayerPrivateAVFoundationObjC.mm:3060-3080`), so samples after that
 wait for a key. **In progress** (fix agent WMPI-5).
+
+### `pipeline_impl.cc`
+
+**PIPE-1. Encrypted media before MediaKeys.** Chromium `pipeline_impl.cc:1200-1214`
+creates no renderer while an encrypted stream has no CDM (`kNoCdm`), so a
+Media Source element stays at `HAVE_METADATA` until keys are set. WebKit's
+Media Source `readyState` comes from buffered ranges whatever the keys
+(`MediaSource.cpp:424-498`), held below `HAVE_CURRENT_DATA` only for video
+without a decodable frame (`MediaPlayerPrivateMediaSourceAVFObjC.mm:1229-1235`).
+Part of HME-7, **in progress** (fix agent MSE-RS).
+
+Otherwise the pipeline makes no page-visible decision of its own: it clamps
+seeks to the demuxer's start time (`:460, 1150`), never lets media time go
+backwards (`:1615-1642`), ignores negative rates (`:1532-1535`, part of
+HME-15) and relays the renderer's and demuxer's states. **Same.**
+
+### `pipeline_controller.cc`
+
+**PC-1. Resuming a streaming source.** Chromium `pipeline_controller.cc:249-257`
+resumes a suspended pipeline whose source can't seek (a server without
+range requests) at time 0 with a time update. Chromium suspends such
+players only at the start or when their frame is frozen
+(`web_media_player_impl.cc:3160-3166, 3296-3297`), so the page sees
+`currentTime` jump to 0 after coming back from the back/forward cache;
+WebKit keeps the position. Part of HME-26, **in progress** (fix agent E7).
+
+Seeks during seeks are coalesced (`:65-86, 273-288`), as WebKit queues the
+latest (`HTMLMediaElement.cpp:4136-4145`). **Same.**
