@@ -232,8 +232,8 @@ supervisor first; **decision** ones are documented choices, kept.
 ### Native HLS
 
 - **Error codes.** WebKit: `MediaPlayerPrivateAVFoundation::updateStates` makes a failed item a DecodeError; before that `assetStatus` gives NetworkError for a URL error or a misconfigured server and FormatError otherwise, by the error's own domain; `AVPlayerItemFailedToPlayToEndTime` isn't observed; a cancelled metadata key is a FormatError. Parc reported network errors for underlying URL errors after metadata, failed on the notification and stalled on a cancelled key. **Fixed** 2c4becd5.
-- **`preload="metadata"`.** WebKit makes the item only for preload auto or live (`updateStates`, `setPreload`); Parc always makes it, so VOD buffers and requests licences before play. **Supervisor.**
-- **Ready states.** WebKit reaches HAVE_CURRENT_DATA at the first frame and HAVE_FUTURE_DATA at ready-to-play with data ahead; Parc reports only enough data or underflow, so `loadeddata` and `canplay` come with `canplaythrough`. **Supervisor.**
+- **`preload="metadata"`.** WebKit makes the item only for preload auto or live (`updateStates`, `setPreload`); Parc always made it, so VOD buffered and requested licences before play. **Fixed** b2f0a8ef (a missing preload is auto, c6e7baee).
+- **Ready states.** WebKit reaches HAVE_CURRENT_DATA at the first frame and HAVE_FUTURE_DATA at ready-to-play with data ahead; Parc reported only enough data or underflow, so `loadeddata` and `canplay` came with `canplaythrough`. **Fixed** 0759648c.
 - **Closing a session failed the held key request** and AVFoundation asked again; WebKit leaves it pending. **Fixed** 8c7b03d3.
 - **Renewal requests** (`shouldWaitForRenewalOfRequestedResource`) aren't in WebKit's loader delegate. **Fixed** 85290ed7.
 - **A key AVFoundation asks for again** went to the session that answered it as a renewal; WebKit treats it as an unexpected request (new `encrypted`, new session). **Fixed** 8c7b03d3.
