@@ -288,7 +288,17 @@ play promise rejected, stays paused when thawed). WebKit
 back/forward cache without events and resumes it when the page returns
 (`setPausedInternal(false)`), and does nothing for other suspensions. Going
 back to a page with a playing video: Safari carries on, Parc shows it paused
-after a `pause` event. **In progress** (fix agent E7).
+after a `pause` event. **Fixed** 8eaa50de: a back/forward-cache freeze holds
+playback without events and resumes on return with the same player and
+position; other freezes leave media alone (the element's events wait for the
+thaw, and Chromium's freezing policy never freezes an audible page,
+`freezing_policy.cc:613-617`). WebKit's `userCancelledLoad` changes nothing on
+macOS here (`HTMLMediaElement.cpp:7213-7219`). Still different: a page
+restored into a background tab resumes at once, where WebKit waits until the
+page can start media (`MediaElementSession.cpp:717-730`), **in progress** (fix
+agent HME-33); with a Cast session active the player still restarts on
+entering the cache, as stock Chromium does; and a streaming source's open
+connection may count against the cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
 as `MEDIA_ELEMENT_ERROR: …` (`html_media_element.cc:262-273`) and
@@ -391,7 +401,8 @@ range requests) at time 0 with a time update. Chromium suspends such
 players only at the start or when their frame is frozen
 (`web_media_player_impl.cc:3160-3166, 3296-3297`), so the page sees
 `currentTime` jump to 0 after coming back from the back/forward cache;
-WebKit keeps the position. Part of HME-26, **in progress** (fix agent E7).
+WebKit keeps the position. **Fixed** 8eaa50de (the cache freeze no longer
+suspends the pipeline).
 
 Seeks during seeks are coalesced (`:65-86, 273-288`), as WebKit queues the
 latest (`HTMLMediaElement.cpp:4136-4145`). **Same.**
