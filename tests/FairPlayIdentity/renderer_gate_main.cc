@@ -104,6 +104,18 @@ bool Installs(const std::vector<std::string>& scripts, const char* global) {
 }  // namespace
 
 int main() {
+  // Exercise the added stand-ins through the real header's codec helpers.
+  const auto parser_codecs = blink::ParcSafariMp2tParserCodecs(
+      " , avc1.42E01E,\tmp4a.40.5, ac-3 ");
+  Check(parser_codecs && *parser_codecs == "avc1.42E01E,mp4a.40.5",
+        "codec splitting, numeric conversion and building use the real helpers");
+  const auto empty_codecs = blink::ParcSafariMp2tParserCodecs(" \t\r\n");
+  Check(empty_codecs && empty_codecs->empty(),
+        "whitespace-only codecs produce an empty parser list");
+  Check(!blink::ParcSafariMp2tParserCodecs(", ,"),
+        "separators alone are not an empty codecs parameter");
+  Check(!blink::ParcSafariMp2tParserCodecs("avc1.42E01E,invalid"),
+        "an invalid codec rejects the parser list");
   // What Parc's browser sends for a Safari site (fairplay_identity.mm builds
   // it with SafariUserAgent from the installed Safari's version).
   for (const char* version : {"27.2", "26.0.1"}) {
