@@ -129,8 +129,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     NSData* spc = nil;
     NSError* error = nil;
     bool awaiting_response = false;
-    // Resource loader route (an HLS asset that isn't a content key recipient):
-    // the skd loading request this entry answers; |request| is nil then.
+    // An HLS asset's skd loading request this entry answers (its own SPC and
+    // CKC, fairplay_hls_keys.h); |request| is nil then.
     AVAssetResourceLoadingRequest* loading = nil;
     AssetKeyClient* loading_owner = nullptr;
     std::string loading_uri;
@@ -142,7 +142,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   struct Asset {
     AssetKeyClient* client = nullptr;
     AVURLAsset* asset = nil;
-    bool recipient = false;
     bool output_obscured = false;
   };
 
@@ -221,7 +220,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     sessions_.clear();
     assets_.clear();
-    parked_.clear();
     waiting_for_loading_.clear();
     [av_session_ expire];
     av_session_ = nil;
@@ -315,17 +313,13 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     // An HLS asset asks for its key by the skd URI itself, so with an asset
-    // attached the request is named by the URI with the URI as content
-    // identifier (WebKit), not through the key ID the MSE route's renderers
-    // match on. In order: the asset's own request the session parked, the
-    // asset's held resource loader request, a request named by the URI (a
-    // recipient asset takes the key from the session when it gets there), or,
-    // for assets served through the resource loader only, waiting for the
-    // asset to ask.
-    enum class Route { kPlan, kParked, kLoading, kAwaitLoading };
+    // attached the request is named by the URI with the URI (or a legacy
+    // session's contentId) as content identifier (WebKit), not through the
+    // key ID the MSE route's renderers match on. It takes the asset's held
+    // loading request, or waits for the asset to ask.
+    enum class Route { kPlan, kLoading, kAwaitLoading };
     Route route = Route::kPlan;
     std::string uri;
-    AVContentKeyRequest* parked = nil;
     AVAssetResourceLoadingRequest* loading = nil;
     AssetKeyClient* loading_owner = nullptr;
     if (type == InitDataType::kSkd && !assets_.empty() && !plan.skd_uri.empty() &&
@@ -333,30 +327,15 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       uri = plan.skd_uri;
       ContentKeyRequestPlan call;
       call.identifier = uri;
-      // The URI, or a legacy session's content ID ({"skd", "contentId"}).
       call.content_identifier = plan.calls.front().content_identifier;
       plan.calls.assign(1, call);
-      NSString* identifier = @(uri.c_str());
-      for (auto it = parked_.begin(); it != parked_.end(); ++it) {
-        if ([(*it).identifier isEqual:identifier]) {
-          parked = *it;
-          parked_.erase(it);
-          route = Route::kParked;
+      route = Route::kAwaitLoading;
+      for (const Asset& asset : assets_) {
+        if ((loading = asset.client->TakeLoadingRequest(uri))) {
+          loading_owner = asset.client;
+          route = Route::kLoading;
           break;
         }
-      }
-      bool any_recipient = false;
-      for (const Asset& asset : assets_) {
-        any_recipient |= asset.recipient;
-        if (route == Route::kPlan && !asset.recipient) {
-          if ((loading = asset.client->TakeLoadingRequest(uri))) {
-            loading_owner = asset.client;
-            route = Route::kLoading;
-          }
-        }
-      }
-      if (route == Route::kPlan && !any_recipient && !assets_.empty()) {
-        route = Route::kAwaitLoading;
       }
     }
     auto session = std::make_unique<Session>();
@@ -379,17 +358,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     switch (route) {
       case Route::kPlan:
         break;
-      case Route::kParked: {
-        raw->requests.push_back(std::make_unique<Request>());
-        Request* request = raw->requests.back().get();
-        request->request = parked;
-        request->call = 0;
-        DeriveIdentity(raw, request);
-        raw->batches.front().requests.push_back(request);
-        ++raw->batches.front().pending_spcs;
-        MakeSpc(raw, request);
-        break;
-      }
       case Route::kLoading:
         AdoptLoading(raw, loading_owner, uri, loading, MessageType::kLicenseRequest);
         break;
@@ -818,11 +786,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     Session* session = SessionFor(av_requests.firstObject);
     if (!session) {
-      // No session asked for it: a recipient asset needs a key.
-      if (!renewal) {
-        Park(av_requests);
-      }
-      return;
+      return;  // Not ours (no session option and no matching request).
     }
     std::vector<Request*> added;
     for (AVContentKeyRequest* av_request in av_requests) {
@@ -856,7 +820,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
         request->call = call.intValue;
       }
       DeriveIdentity(session, request);
-      KeepSkdContentIdentifier(session, request);
       added.push_back(request);
     }
 
@@ -962,11 +925,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   }
 
   void OnRequestFailed(AVContentKeyRequest* av_request, NSError* error) {
-    auto parked = std::find(parked_.begin(), parked_.end(), av_request);
-    if (parked != parked_.end()) {
-      parked_.erase(parked);  // An asset's own request no session took.
-      return;
-    }
     Session* session = SessionFor(av_request);
     if (!session) {
       return;
@@ -1028,20 +986,14 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   // HLS assets (FairPlayHlsKeyLoader through fairplay_key_session_internal.h).
 
-  Result AttachAsset(AssetKeyClient* client, AVURLAsset* asset, bool recipient) {
+  Result AttachAsset(AssetKeyClient* client, AVURLAsset* asset) {
     if (FindAsset(client)) {
       return Result::Error(Exception::kInvalidState, "asset already attached");
     }
     if (!EnsureSession()) {
       return Result::Error(Exception::kNotSupported, "AVContentKeySession unavailable");
     }
-    if (recipient) {
-      Result result = AttachRecipient(asset);
-      if (!result.ok()) {
-        return result;
-      }
-    }
-    assets_.push_back({client, asset, recipient, false});
+    assets_.push_back({client, asset, false});
     return Result::Ok();
   }
 
@@ -1051,7 +1003,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (it == assets_.end()) {
       return;
     }
-    Asset asset = *it;
     // Requests a session took and hasn't answered fail (AVFoundation asks
     // again, and the asset reports them anew); answered keys keep their
     // status.
@@ -1065,13 +1016,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     assets_.erase(std::find_if(assets_.begin(), assets_.end(),
                                [client](const Asset& entry) { return entry.client == client; }));
-    if (asset.recipient) {
-      DetachRecipient(asset.asset);
-    }
-    if (std::none_of(assets_.begin(), assets_.end(),
-                     [](const Asset& entry) { return entry.recipient; })) {
-      parked_.clear();
-    }
     UpdateOutputObscured();
     OnProtectionStatusChanged();
   }
@@ -1213,56 +1157,14 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     return changed;
   }
 
-  // Keeps an asset's own requests (skd URIs no session asked for) until a
-  // session generates a request with that URI, and tells the recipient assets.
-  void Park(NSArray<AVContentKeyRequest*>* av_requests) {
-    std::vector<AssetKeyClient*> recipients;
-    for (const Asset& asset : assets_) {
-      if (asset.recipient) {
-        recipients.push_back(asset.client);
-      }
-    }
-    if (recipients.empty()) {
-      return;  // Not ours (no session option, no matching request, no asset).
-    }
-    for (AVContentKeyRequest* av_request in av_requests) {
-      id identifier = av_request.identifier;
-      if (![identifier isKindOfClass:[NSString class]] || ![identifier hasPrefix:@"skd://"] ||
-          std::find(parked_.begin(), parked_.end(), av_request) != parked_.end()) {
-        continue;
-      }
-      std::string uri = [identifier UTF8String];
-      // As for loading requests: a session made for this URI before the
-      // asset was attached takes it as a further license request.
-      if (Session* session = SkdSessionWithoutAssetRequest(uri)) {
-        session->requests.push_back(std::make_unique<Request>());
-        Request* request = session->requests.back().get();
-        request->request = av_request;
-        DeriveIdentity(session, request);  // No plan entry: named by the URI.
-        KeepSkdContentIdentifier(session, request);
-        session->batches.push_back({{request}, 1, 1, MessageType::kLicenseRequest});
-        MakeSpc(session, request);
-        continue;
-      }
-      parked_.push_back(av_request);
-      for (AssetKeyClient* client : recipients) {
-        client->OnUnrequestedKey(uri);
-      }
-    }
-  }
-
   // An open skd session for |uri| holding no request an asset made.
   Session* SkdSessionWithoutAssetRequest(const std::string& uri) {
     for (auto& [id, session] : sessions_) {
       if (session->keys_removed || session->skd_uri != uri || session->generate_done) {
         continue;
       }
-      bool has_asset_request = std::any_of(
-          session->requests.begin(), session->requests.end(), [&](const auto& request) {
-            return request->loading ||
-                   ([request->request.identifier isKindOfClass:[NSString class]] &&
-                    request->request.options[kSessionOption] == nil);
-          });
+      bool has_asset_request = std::any_of(session->requests.begin(), session->requests.end(),
+                                           [](const auto& request) { return request->loading != nil; });
       if (!has_asset_request) {
         return session.get();
       }
@@ -1304,7 +1206,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   // The SPC comes from the loading request itself (WebKit's legacy
   // CDMSessionAVFoundationObjC), which AVFoundation allows only while the
-  // asset isn't a content key recipient. Posted like the content key path.
+  // asset isn't a content key recipient (it never is). Posted like the
+  // content key path.
   void MakeLoadingSpc(Session* session, Request* request) {
     NSData* spc = nil;
     NSError* error = nil;
@@ -1441,7 +1344,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return Find(id.UTF8String);
     }
     // The request object itself first: several sessions may hold requests
-    // with one identifier (an asset's parked requests carry no options).
+    // with one identifier.
     for (const auto& [session_id, session] : sessions_) {
       for (const auto& request : session->requests) {
         if (request->request && (request->request == av_request || request->renewal == av_request)) {
@@ -1544,19 +1447,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     request->reported_key_id =
         request->key_ids.empty() ? request->content_identifier : request->key_ids.front();
-  }
-
-  // An asset's own request (no plan entry) for an skd session's URI gets the
-  // session's content identifier: the URI, or a legacy session's contentId.
-  static void KeepSkdContentIdentifier(Session* session, Request* request) {
-    id identifier = request->request.identifier;
-    if (request->call >= 0 || session->plan.calls.empty() ||
-        ![identifier isKindOfClass:[NSString class]] ||
-        session->skd_uri != std::string([identifier UTF8String])) {
-      return;
-    }
-    request->content_identifier = session->plan.calls.front().content_identifier;
-    request->reported_key_id = request->content_identifier;
   }
 
   void MakeSpc(Session* session, Request* request) {
@@ -1871,8 +1761,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   uint64_t next_observer_ = 0;
   // HLS assets attached through FairPlayHlsKeyLoader.
   std::vector<Asset> assets_;
-  // Recipient assets' own key requests no session has taken yet.
-  std::vector<AVContentKeyRequest*> parked_;
   // skd sessions waiting for a resource loader asset to ask for their URI.
   std::map<std::string, std::deque<std::string>> waiting_for_loading_;
   bool output_obscured_ = false;
@@ -1980,8 +1868,8 @@ void DetachContentKeyRecipient(FairPlayCdm::Impl* cdm, id<AVContentKeyRecipient>
   cdm->DetachRecipient(recipient);
 }
 
-Result AttachAsset(FairPlayCdm::Impl* cdm, AssetKeyClient* client, AVURLAsset* asset, bool recipient) {
-  return cdm->AttachAsset(client, asset, recipient);
+Result AttachAsset(FairPlayCdm::Impl* cdm, AssetKeyClient* client, AVURLAsset* asset) {
+  return cdm->AttachAsset(client, asset);
 }
 
 void DetachAsset(FairPlayCdm::Impl* cdm, AssetKeyClient* client) {

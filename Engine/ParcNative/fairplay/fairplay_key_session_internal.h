@@ -21,39 +21,33 @@ Result AttachContentKeyRecipient(FairPlayCdm::Impl* cdm, id<AVContentKeyRecipien
 // After this the recipient is inoperable (AVContentKeySession semantics).
 void DetachContentKeyRecipient(FairPlayCdm::Impl* cdm, id<AVContentKeyRecipient> recipient);
 
-// An HLS asset's key source (FairPlayHlsKeyLoader), as the key session sees it.
-// Everything runs on the owner sequence; the key session calls these directly,
-// never from inside a call the asset made into it.
+// An HLS asset's key source (FairPlayHlsKeyLoader), as the key session sees it:
+// the asset's skd resource loader requests, each answered with a CKC from its
+// own SPC. Everything runs on the owner sequence; the key session calls it
+// directly, never from inside a call the asset made into it.
 class AssetKeyClient {
  public:
   virtual ~AssetKeyClient() = default;
-  // Resource loader route: hands over the oldest skd loading request held for
-  // |uri| (nil if none). The session then answers it, or fails it if it
-  // can't (AVFoundation then asks for the key again): a loading request gives
-  // one SPC only, so it can't pass to another session.
+  // Hands over the oldest skd loading request held for |uri| (nil if none).
+  // The session then answers it, or fails it if it can't (AVFoundation then
+  // asks for the key again): a loading request gives one SPC only, so it
+  // can't pass to another session.
   virtual AVAssetResourceLoadingRequest* TakeLoadingRequest(const std::string& uri) = 0;
-  // Content key session route: AVFoundation asked the session for the key
-  // named |uri| and no EME session has asked for it; the request is parked
-  // until a session generates a request with that URI.
-  virtual void OnUnrequestedKey(const std::string& uri) = 0;
 };
 
-// Registers an asset with the key system. With |recipient|, the asset becomes
-// a content key recipient of the session: AVFoundation asks the session for
-// its keys, which must happen before its AVPlayerItem loads (an skd request
-// already routed to the resource loader can't be satisfied once the asset is a
-// recipient). Without, its keys are served from its resource loader requests.
-Result AttachAsset(FairPlayCdm::Impl* cdm, AssetKeyClient* client, AVURLAsset* asset, bool recipient);
+// Registers an asset with the key system. skd sessions are then named by
+// their URI and take the asset's loading requests.
+Result AttachAsset(FairPlayCdm::Impl* cdm, AssetKeyClient* client, AVURLAsset* asset);
 
 // Loading requests a session took from |client| and hasn't answered fail.
-// A recipient asset is removed from the session and is inoperable afterwards.
 void DetachAsset(FairPlayCdm::Impl* cdm, AssetKeyClient* client);
 
-// Resource loader route: a new skd loading request. True if a session took it:
-// one waiting for that URI (generateRequest came first), one whose key for it
-// was already answered (AVFoundation asking again: a renewal), or one made for
-// that URI before the asset was attached. False: the client holds it and
-// reports the key as needed.
+// A new skd loading request. True if a session took it: one waiting for that
+// URI (generateRequest came first), one whose key for it was already answered
+// (AVFoundation asking again: a renewal), one whose earlier request
+// AVFoundation cancelled (a new license request), or one made for that URI
+// before the asset was attached. False: the client holds it and reports the
+// key as needed.
 bool OfferLoadingRequest(FairPlayCdm::Impl* cdm,
                          AssetKeyClient* client,
                          const std::string& uri,
@@ -66,7 +60,7 @@ void CancelLoadingRequest(FairPlayCdm::Impl* cdm,
 
 // AVPlayer's outputObscuredDueToInsufficientExternalProtection. While any
 // attached client reports it, keys without their own protection status (those
-// served through the resource loader, and every key before macOS 14.4) report
+// served through loading requests, and every key before macOS 14.4) report
 // output-restricted, as WebKit's CDMInstanceFairPlayStreamingAVFObjC does.
 void SetAssetOutputObscured(FairPlayCdm::Impl* cdm, AssetKeyClient* client, bool obscured);
 

@@ -122,12 +122,10 @@ class FairPlayCdm {
   //
   // skd with an HLS asset attached (FairPlayHlsKeyLoader): the request
   // is named by the URI, with the URI (or a legacy session's contentId) as the
-  // SPC content identifier (WebKit). It takes the asset's own request for that
-  // URI if AVFoundation already made one (the asset reported the key as
-  // needed), else asks the session for the key by URI; an asset served
-  // through its resource loader is waited for until it asks for the URI.
-  // Without an asset, skd plans as PlanContentKeyRequests says (the MSE
-  // route).
+  // SPC content identifier (WebKit). It takes the asset's held loading request
+  // for that URI (the asset reported the key as needed), or waits for the
+  // asset to ask. Without an asset, skd plans as PlanContentKeyRequests says
+  // (the MSE route).
   void CreateSessionAndGenerateRequest(SessionType session_type,
                                        InitDataType type,
                                        std::vector<uint8_t> init_data,

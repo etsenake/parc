@@ -330,5 +330,8 @@ through the player's client URL loading)
   asset, sessions made before the asset was attached, a legacy content ID,
   obscured output); the two failures were a closed session handing its used
   loading request to another session, which the core now fails instead so
-  AVFoundation asks again. The `keys-*` scenarios of
-  `scripts/test-fairplay-hls.sh` cover the same through `FairPlayHlsPlayer`.
+  AVFoundation asks again. Parc then dropped the recipient route: a recipient
+  asset raises no `webkitneedkey` (its requests never reach the resource
+  loader), and the resource loader route plays in every order. The `keys-*`
+  scenarios of `scripts/test-fairplay-hls.sh` cover it through
+  `FairPlayHlsPlayer` and `FairPlayHlsKeyLoader`.

@@ -32,7 +32,7 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
 
   void Start(FairPlayCdm* cdm) {
     std::shared_ptr<FairPlayCdm::Impl> core = cdm ? cdm->weak_impl().lock() : nullptr;
-    if (core && AttachAsset(core.get(), this, asset_, /*recipient=*/false).ok()) {
+    if (core && AttachAsset(core.get(), this, asset_).ok()) {
       cdm_ = core;
     }
   }
@@ -101,7 +101,7 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
     // The new CDM first: if it can't take the asset, the old one stays
     // attached, as EME keeps the old MediaKeys when setMediaKeys rejects.
     if (next) {
-      Result result = AttachAsset(next.get(), this, asset_, /*recipient=*/false);
+      Result result = AttachAsset(next.get(), this, asset_);
       if (!result.ok()) {
         return result;
       }
@@ -167,9 +167,6 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
     }
     return request;
   }
-
-  // Only for content key recipients, which this asset never is.
-  void OnUnrequestedKey(const std::string&) override {}
 
  private:
   struct Held {
