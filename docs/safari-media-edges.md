@@ -447,10 +447,26 @@ WebKit does. **Same.**
 
 ### `source_buffer.cc`
 
-**SB-8. Appending after an element error.** Chromium `source_buffer.cc:1840-1887`
-throws `InvalidStateError` from `appendBuffer()` once the element has an
-error. WebKit `SourceBuffer.cpp` (`appendBufferInternal`) has no such check:
-it reopens an ended source and appends. **In progress** (fix agent SB-8).
+**SB-8. Appending after an element error.** Chromium
+`source_buffer.cc:1840-1887` throws `InvalidStateError` from `appendBuffer()`
+once the element has an error. WebKit has no such check in
+`appendBufferInternal`, but its failed append has already detached the
+source, so the next append throws the same error from `isRemoved()`
+(`SourceBuffer.cpp:578-581, 600-601, 1092-1113`). **Same** at this point;
+the timing difference is MS-3.
+
+**MS-3. A Media Source error closes the source at once.** WebKit's append
+error and `endOfStream('decode'|'network')` run the element's failure steps
+in the same task (`MediaSource.cpp:609-693, 1338-1344`), which detach the
+source: `closed`, `sourceclose`, duration NaN, SourceBuffers removed
+(`HTMLMediaElement.cpp:3133-3135, 3177-3179`, `MediaSource.cpp:1052-1106`).
+Chromium leaves it `ended` and attached (`media_source.cc:1294-1335`) and
+sets `video.error` after a media-thread round trip
+(`html_media_element.cc:2115-2140`, which never closes the source;
+`pipeline_impl.cc:804-808, 1068-1094`). In its own `error` handler a Safari
+page sees `video.error` set and the source closed; a Parc page sees neither,
+its next append fails again, and `sourceclose` never fires. **In progress**
+(fix agent MS-3).
 
 The init segment checks (`:1472-1763`) are the ones WebKit applies
 (`SourceBuffer.cpp:780-1090`) except the codec comparison, which is SBS-1.
