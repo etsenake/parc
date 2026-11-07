@@ -297,7 +297,18 @@ uses the player's last error message or "Unsupported source type"
 (`HTMLMediaElement.cpp:3113-3117`), "Media failed to load"/"decode" with the
 player's message (`:3155-3173`), "The operation is not supported." for
 `play()` after `MEDIA_ERR_SRC_NOT_SUPPORTED` (`:4701-4705`) and no message
-otherwise. **In progress** (fix agent E8).
+otherwise. **Fixed** 7e747354. Safari's macOS players report no message of
+their own (`MediaPlayerPrivate::errorMessage()` is empty for them), so the
+native HLS route's AVFoundation error text no longer reaches the page.
+Rejections that WebKit makes `NotAllowedError` when playback is refused
+after `play()` started stay `AbortError` (part of HME-22).
+
+**HME-32. `MEDIA_ERR_ABORTED`.** Safari on macOS reports it when a worker's
+MediaSource is destroyed: `abort`, error 1 "Load was aborted", `emptied`
+(`MediaSource.cpp:225-245`, `HTMLMediaElement.cpp:2317-2322, 7208-7262`).
+Chromium reports nothing (`media_source.cc:1433-1573`). **In progress** (fix
+agent HME-32). `MEDIA_ERR_ENCRYPTED` is never fired in Safari either (modern
+EME is on). **Same.**
 
 **HME-28. `media-playback-while-not-visible`.** Chromium
 `html_media_element.cc:702-708, 3139-3145, 5253-5299` honours this
