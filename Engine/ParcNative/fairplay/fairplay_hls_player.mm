@@ -7,6 +7,7 @@
 
 #include <dlfcn.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <map>
@@ -650,6 +651,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       FinishForContentKeySession(request);
       return;
     }
+    if (auto key = fulfilled_keys_.find(uri); key != fulfilled_keys_.end()) {
+      FulfillWithKey(request, key->second);
+      return;
+    }
     NSMutableArray<AVAssetResourceLoadingRequest*>* pending = key_requests_[uri];
     bool first = !pending;
     if (!pending) {
@@ -678,7 +683,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       completed_key_uris_.insert(uri);
     }
     for (auto it = key_requests_.begin(); it != key_requests_.end();) {
-      if (uri.empty() || it->first == uri) {
+      if (uri.empty() ? IsSkd(it->first) : it->first == uri) {
         for (AVAssetResourceLoadingRequest* request in it->second) {
           FinishForContentKeySession(request);
         }
@@ -689,6 +694,22 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       } else {
         ++it;
       }
+    }
+  }
+
+  void FulfillKeyRequests(const std::string& uri, const std::vector<uint8_t>& key) {
+    if (uri.empty() || key.empty()) {
+      return;
+    }
+    fulfilled_keys_[uri] = key;
+    auto it = key_requests_.find(uri);
+    if (it == key_requests_.end()) {
+      return;
+    }
+    NSArray<AVAssetResourceLoadingRequest*>* requests = it->second;
+    key_requests_.erase(it);
+    for (AVAssetResourceLoadingRequest* request in requests) {
+      FulfillWithKey(request, key);
     }
   }
 
@@ -881,6 +902,32 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
  private:
+  static bool IsSkd(const std::string& uri) {
+    return uri.size() >= 4 && (uri[0] == 's' || uri[0] == 'S') && (uri[1] == 'k' || uri[1] == 'K') &&
+           (uri[2] == 'd' || uri[2] == 'D') && uri[3] == ':';
+  }
+
+  // WebKit's fulfillRequestWithKeyData: the requested range of the key.
+  static void FulfillWithKey(AVAssetResourceLoadingRequest* request, const std::vector<uint8_t>& key) {
+    long long length = static_cast<long long>(key.size());
+    if (AVAssetResourceLoadingContentInformationRequest* info = request.contentInformationRequest) {
+      info.contentLength = length;
+      info.byteRangeAccessSupported = YES;
+    }
+    if (AVAssetResourceLoadingDataRequest* data = request.dataRequest) {
+      long long start = data.currentOffset;
+      long long end = std::min<long long>(length, start + data.requestedLength);
+      if (start < 0 || end <= start || start >= length) {
+        [request finishLoadingWithError:[NSError errorWithDomain:NSURLErrorDomain
+                                                            code:NSURLErrorDataLengthExceedsMaximum
+                                                        userInfo:nil]];
+        return;
+      }
+      [data respondWithData:[NSData dataWithBytes:key.data() + start length:static_cast<NSUInteger>(end - start)]];
+    }
+    [request finishLoading];
+  }
+
   void FinishForContentKeySession(AVAssetResourceLoadingRequest* request) {
     if (AVAssetResourceLoadingContentInformationRequest* info = request.contentInformationRequest) {
       info.contentType = AVStreamingKeyDeliveryContentKeyType;
@@ -929,6 +976,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   std::vector<std::unique_ptr<TaskLoad>> finished_loads_;
   std::map<std::string, NSMutableArray<AVAssetResourceLoadingRequest*>*> key_requests_;
   std::set<std::string> completed_key_uris_;
+  std::map<std::string, std::vector<uint8_t>> fulfilled_keys_;
 
   mutable std::mutex timebase_lock_;
   CMTimebaseRef timebase_ = nullptr;
@@ -1257,7 +1305,7 @@ AVPlayerLayer* HlsPlayerLayer(FairPlayHlsPlayer::Impl* impl) {
 - (BOOL)resourceLoader:(AVAssetResourceLoader*)resourceLoader
     shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest*)request {
   NSString* scheme = request.request.URL.scheme.lowercaseString;
-  if (![scheme isEqualToString:@"skd"]) {
+  if (![scheme isEqualToString:@"skd"] && ![scheme isEqualToString:@"clearkey"]) {
     // Everything else goes through the URL session; a request that ends up
     // here (an unknown scheme) can't be loaded.
     return NO;
@@ -1455,8 +1503,19 @@ void FairPlayHlsPlayer::CompleteKeyRequests(const std::string& skd_uri) {
   impl_->CompleteKeyRequests(skd_uri);
 }
 
-void FairPlayHlsPlayer::FailKeyRequests(const std::string& skd_uri, const std::string& message) {
-  impl_->FailKeyRequests(skd_uri, message);
+void FairPlayHlsPlayer::FulfillKeyRequests(const std::string& clearkey_uri, const std::vector<uint8_t>& key) {
+  impl_->FulfillKeyRequests(clearkey_uri, key);
+}
+
+void FairPlayHlsPlayer::FailKeyRequests(const std::string& uri, const std::string& message) {
+  impl_->FailKeyRequests(uri, message);
+}
+
+std::string HlsClearKeyId(const std::string& clearkey_uri) {
+  NSString* string = NSStringOrNil(clearkey_uri);
+  NSURL* url = string ? [NSURL URLWithString:string] : nil;
+  NSString* specifier = url.resourceSpecifier;
+  return specifier ? std::string(specifier.UTF8String ?: "") : std::string();
 }
 
 FairPlayHlsPlayer::Status FairPlayHlsPlayer::GetStatus() const {

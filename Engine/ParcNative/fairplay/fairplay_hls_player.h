@@ -6,7 +6,8 @@
 // client URL loading only, and every load it makes (playlists, segments,
 // certificates) goes to the embedder's HlsLoader, which in Parc fetches
 // through the page's loader in the render process. skd:// key requests go to
-// the client instead (OnKeyRequest), for the CDM to answer.
+// the client instead (OnKeyRequest), for the CDM to answer, and clearkey://
+// requests for the page's legacy clear key (WebKit's CDMSessionClearKey).
 #pragma once
 
 #include <cstddef>
@@ -121,13 +122,20 @@ class HlsPlayerClient {
   virtual void OnNaturalSizeChange(int32_t width, int32_t height) = 0;
   virtual void OnEnded() = 0;
   virtual void OnError(HlsError error, const std::string& message) = 0;
-  // AVFoundation asks for the key behind an skd:// URI. The request stays
-  // pending until CompleteKeyRequests or FailKeyRequests names the URI.
-  virtual void OnKeyRequest(const std::string& skd_uri) = 0;
+  // AVFoundation asks for the key behind an skd:// or clearkey:// URI, once
+  // per pending URI. The requests stay pending until CompleteKeyRequests
+  // (skd), FulfillKeyRequests (clearkey) or FailKeyRequests names the URI.
+  virtual void OnKeyRequest(const std::string& uri) = 0;
 
  protected:
   virtual ~HlsPlayerClient() = default;
 };
+
+// The key ID WebKit's player names a clearkey:// request by
+// (MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource): the
+// URL's resource specifier, what follows "clearkey:". The legacy clear key
+// session matches it against JWK "kid"s, and webkitneedkey carries it as UTF-8.
+std::string HlsClearKeyId(const std::string& clearkey_uri);
 
 class FairPlayHlsPlayer {
  public:
@@ -167,12 +175,17 @@ class FairPlayHlsPlayer {
   // Finishes the pending skd:// requests for |skd_uri| so AVFoundation takes
   // the key from the AVContentKeySession the asset is a recipient of
   // (AVStreamingKeyDeliveryContentKeyType, as WebKit does). Empty finishes
-  // every pending request. Later requests for a completed URI finish at once.
+  // every pending skd:// request. Later requests for a completed URI finish
+  // at once.
   void CompleteKeyRequests(const std::string& skd_uri);
-  // Fails the pending requests for |skd_uri|. AVFoundation asks for the key
+  // Answers the pending clearkey:// requests for |clearkey_uri| with the raw
+  // key, as WebKit's fulfillRequestWithKeyData (the requested byte range of
+  // it). Later requests for the URI are answered with the same key.
+  void FulfillKeyRequests(const std::string& clearkey_uri, const std::vector<uint8_t>& key);
+  // Fails the pending requests for |uri|. AVFoundation asks for the key
   // again (OnKeyRequest fires anew) rather than failing the item, so the
   // element keeps waiting for a key, as in Safari.
-  void FailKeyRequests(const std::string& skd_uri, const std::string& message);
+  void FailKeyRequests(const std::string& uri, const std::string& message);
 
   struct Status {
     int loads_started = 0;

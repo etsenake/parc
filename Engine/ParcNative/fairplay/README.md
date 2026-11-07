@@ -355,6 +355,10 @@ plan and the switch that keeps it off).
   the `AVContentKeySession` the asset was added to (WebKit's
   `attemptToDecryptWithInstance`). A failed key request is asked for again
   rather than failing the item.
+- `clearkey://` key requests (the legacy `org.w3c.clearkey` key system) go to
+  the client the same way; `FulfillKeyRequests` answers them with the raw key
+  (WebKit's `fulfillRequestWithKeyData`), and `HlsClearKeyId` gives WebKit's
+  key ID for them (the URL's resource specifier).
 - State comes from the item: metadata at `readyToPlay`, buffering from
   `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`,
   loaded ranges, presentation size, end, failure (URL errors are network
