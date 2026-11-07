@@ -21,11 +21,11 @@ takes it and fails fetching `skd://` as a URL.
 ## Switch
 
 Until every piece below is on main, the route is off: `DemuxerManager` keeps
-choosing Chromium's `ManifestDemuxer`, exactly as today. One feature,
-`media::kParcNativeHls` (`media_switches`, disabled by default), turns it on;
-the last piece flips its default. Every piece lands compiled but unreachable
-unless the feature is enabled (`--enable-features=ParcNativeHls` lets Josh try
-a build before then).
+choosing Chromium's `ManifestDemuxer`, exactly as today. One build-time
+constant, `parc::fairplay::kNativeHlsEnabled` (`fairplay_key_system.h`,
+false), gates it; the last piece flips it to true. It is never a runtime,
+command-line or Finch switch (Josh's rule for FairPlay). Every piece lands
+compiled but unreachable.
 
 ## Process: the GPU process
 
