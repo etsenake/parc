@@ -40,10 +40,10 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **32**. Being fixed now: **7** (casting, moved-video ownership, late
-audio track joining the running player, MPEG-2 TS, Media Source types and
-codecs, preload after a source change, rewind and extreme rates). Queued:
-**about 14**. Waiting on Josh: four differences no user can perceive (proposed
+main: **33**. Being fixed now: **7** (casting, moved-video ownership, late
+audio track joining the running player, several TS audio tracks, Media Source
+types and codecs, preload after a source change, rewind and extreme rates). Queued:
+**about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
 entry here shows its commit, and each fix's follow-ups are fixed. The live
@@ -540,11 +540,16 @@ didn't declare. Safari takes TS through `AVStreamDataParser`
 `AVStreamDataParserMIMETypeCache.mm:55-120`), whose type list on this Mac
 includes `video/mp2t`, `video/x-mp2t`, `video/m2ts` and `video/x-m2ts`
 (checked with `[AVStreamDataParser audiovisualMIMETypes]`, macOS 27.2), and
-parses every stream. **In progress** (SBS-2; measured against this Mac's
-`AVStreamDataParser`: Safari plays H.264, AAC, MP3, MPEG-1 Layer II, AC-3 and
-E-AC-3 in TS and ignores HEVC in TS). MPEG-1 Layer II audio, MPEG-1/2 video,
-SAMPLE-AES AC-3/E-AC-3 and several audio streams in one TS still won't play in
-Parc: SBS-2 fixes or names each.
+parses every stream. **Fixed** a71dff66 (Safari's TS types and codec answers;
+AC-3 and E-AC-3 in TS now play with sound; MPEG-1 Layer I/II audio decodes
+through Chromium's MP3 decoder; measured against this Mac's
+`AVStreamDataParser`, which ignores HEVC in TS). Still different, all
+user-felt: several audio streams in one TS show as one track, so a language
+or commentary menu does nothing (**in progress**, SBS-2b, with E-AC-3 7.1
+frames split across packets losing their extra channels); FairPlay SAMPLE-AES
+H.264, AAC, AC-3 and E-AC-3 in TS fail to play (**queued**, SBS-2c, about
+600-900 lines); MPEG-1/2 video in TS plays black (**queued**, SBS-2d, about
+700-1,000 lines: parser plus a VideoToolbox or AVFoundation decode route).
 
 Clear Dolby Vision in Media Source (`:675-698`) is **handled** on
 Safari-identity pages (`ParcSetClearDolbyVisionAllowed`). In-band text
