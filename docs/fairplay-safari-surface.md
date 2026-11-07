@@ -17,6 +17,8 @@ choice, with the default followed). Owner is the session driving the row:
 
 - `fp-safari-eme-surface`: the legacy prefixed API (this document's author).
 - `fp-eme-modern`: modern EME.
+- `fp-eme-pur`: Safari's `persistent-usage-record` sessions (session types,
+  release, load).
 - `fp-eme-caps`: capability answers and `requestMediaKeySystemAccess`
   configuration handling (taken over from fp-eme-modern).
 - `fp-mms-presentation`: ManagedMediaSource.
@@ -48,12 +50,12 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | initDataType `mpts` | macOS (`HAVE(FAIRPLAYSTREAMING_MTPS_INITDATA)`): MPEG-2 TS JSON `{"codc": n, "mtyp": n, "cont": "mpts"}`, passed to AVContentKeySession unchanged, key ID `TransportStreamIdentifier` | absent | missing | fp-eme-caps |
 | initDataType `keyids` | not offered | accepted (Parc extension) | present (superset) | fp-eme-modern |
 | `encrypted` event for MSE | fires `sinf` for every protected track (`SourceBufferPrivateAVFObjC::didProvideContentKeyRequestInitializationDataForTrackID`), with or without pssh, unless the attached MediaKeys already has a session for its key IDs (`AudioVideoRendererAVFObjC::setInitData`); never `cenc` | fires `sinf` for every protected track on Safari-identity Media Source elements (`mp4_stream_parser.cc` `AddSinfInitData`, `WebMediaPlayerImpl` gate), no `cenc` or `webm` there, skipped while a session of the attached MediaKeys has a request for its key ID (`FairPlayCdm::HasSessionForInitData` via `CdmContext::ParcHasSessionForInitData`) | present | fp-eme-modern |
-| Session types | `temporary`; `persistent-usage-record` when persistent state allowed (macOS: `pendingExpiredSessionReports…` exists); `persistent-license` iOS only | `temporary` only; Chromium's enum has no `persistent-usage-record` | missing (`persistent-usage-record`) | fp-eme-modern |
+| Session types | `temporary`; `persistent-usage-record` when persistent state allowed (macOS: `pendingExpiredSessionReports…` exists), refused in private windows; a temporary session once persistentState is `required` refused; `persistent-license` iOS only | `persistent-usage-record` added to Blink's enum and Chromium's session types for Safari-identity pages only (elsewhere unknown, createSession's TypeError); rMKSA applies WebKit's FairPlay rules (temporary after `required`, none in private windows); CDM sessions pending | pending (CDM side) | fp-eme-pur |
 | `setServerCertificate` | resolves true | resolves true; required before `generateRequest` | present | fp-eme-modern |
 | Key statuses | usable, status-pending, released, internal-error, output-restricted (request status, SecurityLevelError, external protection status); never expired/output-downscaled | same mapping (`StatusOf` in `fairplay_key_session.mm`) | present | fp-eme-modern |
 | Renewal | `update("renew")` → `license-renewal` message | same | present | fp-eme-modern |
-| Release | `remove()` on `persistent-usage-record` → `license-release` with the expired-session report; temporary → keys released | temporary → keys released; no `license-release` (no usage records) | missing (with session type) | fp-eme-modern |
-| `load()` | persistent sessions | rejects NotSupportedError | missing (with session type) | fp-eme-modern |
+| Release | `remove()` on `persistent-usage-record` → `license-release` with the expired-session report; temporary → keys released | temporary → keys released; no `license-release` (no usage records) | missing (with session type) | fp-eme-pur |
+| `load()` | persistent sessions | rejects NotSupportedError | missing (with session type) | fp-eme-pur |
 | `closed` | `Promise<undefined>` | `Promise<MediaKeySessionClosedReason>` | present (superset) | fp-eme-modern |
 | `expiration` | NaN | NaN | present | fp-eme-modern |
 | `MediaKeys.getStatusForPolicy` | absent (not in WebKit's IDL) | absent on Safari-identity pages: a main-world script deletes it from `MediaKeys.prototype` (`parc_safari_media_keys.h`); isolated worlds keep Chromium's | present | fp-eme-modern |

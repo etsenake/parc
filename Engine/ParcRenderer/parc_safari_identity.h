@@ -91,6 +91,17 @@ inline bool IsParcFairPlayKeySystem(const String& key_system) {
          key_system.starts_with("com.apple.fps.");
 }
 
+// Safari's "persistent-usage-record" MediaKeySessionType, which
+// fairplay-media.patch adds to MediaKeys.idl and Chromium's session types.
+// Anywhere but under Safari's identity, requestMediaKeySystemAccess treats it
+// as the unknown session type it was before and createSession() throws the
+// enum's TypeError for it. Under Safari's identity the key system selector
+// applies WebKit's FairPlay session type and persistent state rules to
+// IsParcFairPlayKeySystem names.
+inline bool IsParcSafariOnlySessionType(const String& session_type) {
+  return session_type == "persistent-usage-record";
+}
+
 }  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_

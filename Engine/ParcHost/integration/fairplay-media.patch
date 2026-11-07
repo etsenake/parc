@@ -46,15 +46,18 @@
  
  #if BUILDFLAG(ENABLE_WIDEVINE)
  
-@@ -500,6 +505,29 @@
+@@ -500,6 +505,35 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
 +#if BUILDFLAG(IS_MAC)
 +// Parc: Apple FairPlay Streaming, registered by the browser's CdmRegistry with
 +// a software-secure capability only. Temporary sessions persist nothing, so
-+// it is offered in incognito too.
++// it is offered in incognito too; persistent-usage-record sessions (Safari's,
++// whose expired-session reports AVFoundation stores) only where the process
++// can persist data, as Safari keeps none in a private window.
 +void AddFairPlay(const media::KeySystemCapability& capability,
++                 bool can_persist_data,
 +                 KeySystemInfos* key_systems) {
 +  if (!capability.sw_cdm_capability_or_status.has_value()) {
 +    DVLOG(2) << __func__ << ": FairPlay NOT supported";
@@ -69,20 +72,23 @@
 +  }
 +  key_systems->push_back(std::make_unique<FairPlayKeySystemInfo>(
 +      GetSupportedCodecs(sw_secure_capability),
-+      sw_secure_capability.encryption_schemes));
++      sw_secure_capability.encryption_schemes,
++      /*persistent_usage_record=*/can_persist_data &&
++          sw_secure_capability.session_types.contains(
++              CdmSessionType::kPersistentUsageRecord)));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
 +
  #if BUILDFLAG(IS_ANDROID)
  void AddAndroidPlatformKeySystem(const std::string& key_system,
                                   const media::KeySystemCapability& capability,
-@@ -575,6 +603,13 @@
+@@ -575,6 +609,13 @@
      }
  #endif  // BUILDFLAG(IS_WIN)
  
 +#if BUILDFLAG(IS_MAC)
 +    if (key_system == parc::fairplay::kFairPlayKeySystem) {
-+      AddFairPlay(capability, &key_systems);
++      AddFairPlay(capability, can_persist_data, &key_systems);
 +      continue;
 +    }
 +#endif  // BUILDFLAG(IS_MAC)
@@ -132,7 +138,7 @@
  #endif
  
  namespace content {
-@@ -232,6 +241,46 @@
+@@ -232,6 +241,49 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -164,7 +170,10 @@
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
 +  capability.encryption_schemes = {media::EncryptionScheme::kCenc,
 +                                   media::EncryptionScheme::kCbcs};
-+  capability.session_types = {media::CdmSessionType::kTemporary};
++  // persistent-usage-record is Safari's; the renderer offers it only to
++  // Safari-identity pages in a process that can persist data.
++  capability.session_types = {media::CdmSessionType::kTemporary,
++                              media::CdmSessionType::kPersistentUsageRecord};
 +  // Fixed, so FairPlay never shares per-CDM-type isolation with another CDM.
 +  constexpr media::CdmType kFairPlayCdmType{0x9c5f2a7d3e1b4f60ull,
 +                                            0x8a3d6e0f1c2b7a95ull};
@@ -179,7 +188,7 @@
  }  // namespace
  
  // static
-@@ -263,6 +312,11 @@
+@@ -263,6 +315,11 @@
  
    // Let embedders register CDMs.
    GetContentClient()->AddContentDecryptionModules(&cdms_, nullptr);
@@ -990,7 +999,18 @@
  // Get the name of the Renderer for `renderer_type`. The returned name could be
 --- a/media/cdm/cdm_type_conversion.cc
 +++ b/media/cdm/cdm_type_conversion.cc
-@@ -129,6 +129,9 @@
+@@ -105,6 +105,10 @@
+       return cdm::kTemporary;
+     case CdmSessionType::kPersistentLicense:
+       return cdm::kPersistentLicense;
++    case CdmSessionType::kPersistentUsageRecord:
++      // Parc: FairPlay's alone (Safari identity); no library CDM offers it,
++      // so the key system selector never lets one reach here.
++      break;
+   }
+ 
+   NOTREACHED() << "Unexpected session type " << static_cast<int>(session_type);
+@@ -129,6 +133,9 @@
        return cdm::kKeyIds;
      case EmeInitDataType::WEBM:
        return cdm::kWebM;
@@ -2256,10 +2276,20 @@
          return init_data_type_webm_supported_;
 --- a/third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc
-@@ -107,6 +107,14 @@
+@@ -51,6 +51,8 @@
+       return media::CdmSessionType::kTemporary;
+     case WebEncryptedMediaSessionType::kPersistentLicense:
+       return media::CdmSessionType::kPersistentLicense;
++    case WebEncryptedMediaSessionType::kPersistentUsageRecord:
++      return media::CdmSessionType::kPersistentUsageRecord;
+     case WebEncryptedMediaSessionType::kUnknown:
+       break;
+   }
+@@ -106,6 +108,14 @@
+       media::CreateKeyIdsInitData(key_ids, sanitized_init_data);
        return true;
      }
- 
++
 +    // Parc: FairPlay's types, passed through as WebKit passes them
 +    // (CDMPrivateFairPlayStreaming::sanitizeSinf, sanitizeSkd). The FairPlay
 +    // CDM parses both and rejects malformed ones.
@@ -2267,10 +2297,19 @@
 +    case media::EmeInitDataType::SKD:
 +      sanitized_init_data->assign(init_data.begin(), init_data.end());
 +      return true;
-+
+ 
      case media::EmeInitDataType::UNKNOWN:
        break;
-   }
+@@ -376,7 +386,8 @@
+   DCHECK(!session_id.IsEmpty());
+   DCHECK(session_id_.empty());
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+-  DCHECK(session_type_ == media::CdmSessionType::kPersistentLicense);
++  DCHECK(session_type_ == media::CdmSessionType::kPersistentLicense ||
++         session_type_ == media::CdmSessionType::kPersistentUsageRecord);
+ 
+   // From https://w3c.github.io/encrypted-media/#load.
+   // 8.1 Let sanitized session ID be a validated and/or sanitized version of
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.cc
 @@ -121,6 +121,13 @@
@@ -2830,3 +2869,274 @@
    // Internal states of loading and network.
    virtual NetworkState GetNetworkState() const = 0;
    virtual ReadyState GetReadyState() const = 0;
+--- a/content/browser/media/media_internals_cdm_helper.cc
++++ b/content/browser/media/media_internals_cdm_helper.cc
+@@ -51,6 +51,8 @@
+       return "temporary";
+     case media::CdmSessionType::kPersistentLicense:
+       return "persistent-license";
++    case media::CdmSessionType::kPersistentUsageRecord:
++      return "persistent-usage-record";
+   }
+ }
+ 
+--- a/media/base/content_decryption_module.h
++++ b/media/base/content_decryption_module.h
+@@ -42,7 +42,10 @@
+ enum class CdmSessionType {
+   kTemporary,
+   kPersistentLicense,
+-  kMaxValue = kPersistentLicense
++  // Parc: Safari's "persistent-usage-record", offered by FairPlay on
++  // Safari-identity pages only (WebKit's CDMInstanceFairPlayStreamingAVFObjC).
++  kPersistentUsageRecord,
++  kMaxValue = kPersistentUsageRecord
+ };
+ 
+ // Type of message being sent to the application.
+--- a/media/base/key_system_info.cc
++++ b/media/base/key_system_info.cc
+@@ -24,4 +24,8 @@
+   return false;
+ }
+ 
++EmeConfig::Rule KeySystemInfo::GetPersistentUsageRecordSessionSupport() const {
++  return EmeConfig::UnsupportedRule();
++}
++
+ }  // namespace media
+--- a/media/base/key_system_info.h
++++ b/media/base/key_system_info.h
+@@ -74,6 +74,12 @@
+   // express combinations of requirements.
+   virtual EmeConfig::Rule GetPersistentLicenseSessionSupport() const = 0;
+ 
++  // Parc: returns the support this key system provides for Safari's
++  // persistent-usage-record sessions, which only FairPlay offers (and only to
++  // Safari-identity pages). Like GetPersistentLicenseSessionSupport(), the
++  // returned rule assumes the persistence requirement.
++  virtual EmeConfig::Rule GetPersistentUsageRecordSessionSupport() const;
++
+   // Returns the support this key system provides for persistent state.
+   virtual EmeFeatureSupport GetPersistentStateSupport() const = 0;
+ 
+--- a/media/base/key_systems.cc
++++ b/media/base/key_systems.cc
+@@ -32,6 +32,11 @@
+   kPlayReadyKeySystemForUkm,
+ };
+ }  // namespace
++
++EmeConfig::Rule KeySystems::GetPersistentUsageRecordSessionSupport(
++    const std::string& key_system) const {
++  return EmeConfig::UnsupportedRule();
++}
+ 
+ // Returns a name for `key_system` for UMA logging. When `use_hw_secure_codecs`
+ // is specified (non-nullopt), names with robustness will be returned for
+--- a/media/base/key_systems.h
++++ b/media/base/key_systems.h
+@@ -80,6 +80,12 @@
+   virtual EmeConfig::Rule GetPersistentLicenseSessionSupport(
+       const std::string& key_system) const = 0;
+ 
++  // Parc: returns the support |key_system| provides for Safari's
++  // persistent-usage-record sessions (FairPlay only). Not pure, so test
++  // KeySystems need no change.
++  virtual EmeConfig::Rule GetPersistentUsageRecordSessionSupport(
++      const std::string& key_system) const;
++
+   // Returns the support |key_system| provides for persistent state.
+   virtual EmeFeatureSupport GetPersistentStateSupport(
+       const std::string& key_system) const = 0;
+--- a/media/base/key_systems_impl.cc
++++ b/media/base/key_systems_impl.cc
+@@ -627,6 +627,16 @@
+   return key_system_info->GetPersistentLicenseSessionSupport();
+ }
+ 
++EmeConfig::Rule KeySystemsImpl::GetPersistentUsageRecordSessionSupport(
++    const std::string& key_system) const {
++  DCHECK(thread_checker_.CalledOnValidThread());
++
++  const auto* key_system_info = GetKeySystemInfo(key_system);
++  CHECK(key_system_info);
++
++  return key_system_info->GetPersistentUsageRecordSessionSupport();
++}
++
+ EmeFeatureSupport KeySystemsImpl::GetPersistentStateSupport(
+     const std::string& key_system) const {
+   DCHECK(thread_checker_.CalledOnValidThread());
+--- a/media/base/key_systems_impl.h
++++ b/media/base/key_systems_impl.h
+@@ -64,6 +64,8 @@
+       const std::string& requested_robustness,
+       const bool* hw_secure_requirement) const override;
+   EmeConfig::Rule GetPersistentLicenseSessionSupport(
++      const std::string& key_system) const override;
++  EmeConfig::Rule GetPersistentUsageRecordSessionSupport(
+       const std::string& key_system) const override;
+   EmeFeatureSupport GetPersistentStateSupport(
+       const std::string& key_system) const override;
+--- a/media/cdm/json_web_key.cc
++++ b/media/cdm/json_web_key.cc
+@@ -34,6 +34,7 @@
+ const char kTypeTag[] = "type";
+ const char kTemporarySession[] = "temporary";
+ const char kPersistentLicenseSession[] = "persistent-license";
++const char kPersistentUsageRecordSession[] = "persistent-usage-record";
+ 
+ static std::string ShortenTo64Characters(const std::string& input) {
+   // Convert |input| into a string with escaped characters replacing any
+@@ -94,6 +95,9 @@
+       break;
+     case CdmSessionType::kPersistentLicense:
+       jwk_set.Set(kTypeTag, kPersistentLicenseSession);
++      break;
++    case CdmSessionType::kPersistentUsageRecord:
++      jwk_set.Set(kTypeTag, kPersistentUsageRecordSession);
+       break;
+   }
+ 
+@@ -306,6 +310,9 @@
+     case CdmSessionType::kPersistentLicense:
+       request.Set(kTypeTag, kPersistentLicenseSession);
+       break;
++    case CdmSessionType::kPersistentUsageRecord:
++      request.Set(kTypeTag, kPersistentUsageRecordSession);
++      break;
+   }
+ 
+   // Serialize the license request as a string.
+--- a/third_party/blink/public/platform/web_encrypted_media_types.h
++++ b/third_party/blink/public/platform/web_encrypted_media_types.h
+@@ -13,7 +13,10 @@
+   kUnknown = 0,
+   kTemporary = 1,
+   kPersistentLicense = 2,
+-  kMaxValue = kPersistentLicense,
++  // Parc: Safari's "persistent-usage-record" (FairPlay on Safari-identity
++  // pages only).
++  kPersistentUsageRecord = 3,
++  kMaxValue = kPersistentUsageRecord,
+ };
+ 
+ }  // namespace blink
+--- a/third_party/blink/public/platform/web_media_key_system_configuration.h
++++ b/third_party/blink/public/platform/web_media_key_system_configuration.h
+@@ -27,6 +27,10 @@
+   Requirement distinctive_identifier = Requirement::kOptional;
+   Requirement persistent_state = Requirement::kOptional;
+   std::vector<WebEncryptedMediaSessionType> session_types;
++  // Parc: set by Blink for a FairPlay key system ("com.apple.fps*") requested
++  // by a document presenting Safari's identity, so the selector applies
++  // WebKit's FairPlay session type and persistent state rules.
++  bool parc_safari_fairplay = false;
+ };
+ 
+ }  // namespace blink
+--- a/third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc
+@@ -20,6 +20,9 @@
+ 
+ const char kTemporary[] = "temporary";
+ const char kPersistentLicense[] = "persistent-license";
++// Parc: Safari's; the rMKSA initializer and MediaKeys::createSession() keep it
++// to Safari-identity pages.
++const char kPersistentUsageRecord[] = "persistent-usage-record";
+ 
+ }  // namespace
+ 
+@@ -49,6 +52,8 @@
+     return WebEncryptedMediaSessionType::kTemporary;
+   if (session_type == kPersistentLicense)
+     return WebEncryptedMediaSessionType::kPersistentLicense;
++  if (session_type == kPersistentUsageRecord)
++    return WebEncryptedMediaSessionType::kPersistentUsageRecord;
+ 
+   // |sessionType| is not restricted in the idl, so anything is possible.
+   return WebEncryptedMediaSessionType::kUnknown;
+@@ -62,6 +67,8 @@
+       return kTemporary;
+     case WebEncryptedMediaSessionType::kPersistentLicense:
+       return kPersistentLicense;
++    case WebEncryptedMediaSessionType::kPersistentUsageRecord:
++      return kPersistentUsageRecord;
+     case WebEncryptedMediaSessionType::kUnknown:
+       // Unexpected session type from Chromium.
+       NOTREACHED();
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_keys.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_keys.idl
+@@ -25,9 +25,13 @@
+ 
+ // https://w3c.github.io/encrypted-media/#mediakeys-interface
+ 
++// Parc: "persistent-usage-record" is Safari's, accepted on Safari-identity
++// pages only; MediaKeys::createSession() throws this enum's TypeError for it
++// everywhere else.
+ enum MediaKeySessionType {
+     "temporary",
+     "persistent-license",
++    "persistent-usage-record",
+ };
+ 
+ [
+--- a/third_party/blink/renderer/platform/media/key_system_config_selector.cc
++++ b/third_party/blink/renderer/platform/media/key_system_config_selector.cc
+@@ -131,6 +131,7 @@
+     case WebEncryptedMediaSessionType::kTemporary:
+       return false;
+     case WebEncryptedMediaSessionType::kPersistentLicense:
++    case WebEncryptedMediaSessionType::kPersistentUsageRecord:
+       return true;
+     case WebEncryptedMediaSessionType::kUnknown:
+       break;
+@@ -731,8 +732,20 @@
+   // TODO(crbug.com/40275947): Simplify the
+   // WebContentSettingsClient::StorageType to remove unnecessary distinctions
+   // between storage types.
++  //
++  // Parc: on a Safari-identity page FairPlay keeps no persistent state in a
++  // process that can't persist data (a private window): Safari refuses a
++  // "required" persistentState for an ephemeral session
++  // (CDMPrivate::getSupportedConfiguration with LocalStorageAccess::
++  // NotAllowed). FairPlay offers persistent-usage-record sessions exactly
++  // when its process can persist data.
++  const bool parc_safari_no_persistent_state =
++      candidate.parc_safari_fairplay &&
++      !key_systems_->GetPersistentUsageRecordSessionSupport(key_system)
++           .has_value();
+   if (!web_frame_delegate_->AllowStorageAccessSync(
+-          WebContentSettingsClient::StorageType::kIndexedDB)) {
++          WebContentSettingsClient::StorageType::kIndexedDB) ||
++      parc_safari_no_persistent_state) {
+     if (persistent_state_support == EmeFeatureSupport::ALWAYS_ENABLED)
+       return CONFIGURATION_NOT_SUPPORTED;
+     persistent_state_support = EmeFeatureSupport::NOT_SUPPORTED;
+@@ -789,10 +802,25 @@
+         NOTREACHED();
+       case WebEncryptedMediaSessionType::kTemporary:
+         session_type_rule = EmeConfig::SupportedRule();
++        // Parc: Safari's FairPlay refuses a temporary session once the
++        // accumulated persistentState is "required", so the order of session
++        // types matters (CDMPrivateFairPlayStreaming::
++        // supportsSessionTypeWithConfiguration).
++        if (candidate.parc_safari_fairplay &&
++            accumulated_configuration->persistent_state ==
++                EmeFeatureRequirement::kRequired) {
++          session_type_rule = EmeConfig::UnsupportedRule();
++        }
+         break;
+       case WebEncryptedMediaSessionType::kPersistentLicense:
+         session_type_rule =
+             key_systems_->GetPersistentLicenseSessionSupport(key_system);
++        break;
++      case WebEncryptedMediaSessionType::kPersistentUsageRecord:
++        // Parc: only FairPlay offers it, and Blink passes it only for
++        // Safari-identity pages.
++        session_type_rule =
++            key_systems_->GetPersistentUsageRecordSessionSupport(key_system);
+         break;
+     }
+ 

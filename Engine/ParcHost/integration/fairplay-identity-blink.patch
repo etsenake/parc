@@ -819,7 +819,7 @@
  static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
      const Vector<String>& session_types) {
    std::vector<WebEncryptedMediaSessionType> result(session_types.size());
-@@ -96,21 +199,87 @@
+@@ -96,20 +199,86 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -872,7 +872,7 @@
      DCHECK(config->hasVideoCapabilities());
      web_config.video_capabilities =
          ConvertCapabilities(config->videoCapabilities());
- 
++
 +    if (parc_safari_fairplay && !is_from_media_capabilities) {
 +      for (WebMediaKeySystemMediaCapability& capability :
 +           web_config.audio_capabilities) {
@@ -903,10 +903,37 @@
 +        }
 +      }
 +    }
-+
+ 
      DCHECK(config->hasDistinctiveIdentifier());
      web_config.distinctive_identifier =
-         EncryptedMediaUtils::ConvertToMediaKeysRequirement(
+@@ -123,6 +292,17 @@
+ 
+     if (config->hasSessionTypes()) {
+       web_config.session_types = ConvertSessionTypes(config->sessionTypes());
++      // Parc: "persistent-usage-record" only under Safari's identity;
++      // elsewhere it stays an unknown session type, so no configuration
++      // naming it is supported.
++      if (!parc_safari_identity) {
++        for (wtf_size_t j = 0; j < config->sessionTypes().size(); ++j) {
++          if (IsParcSafariOnlySessionType(config->sessionTypes()[j])) {
++            web_config.session_types[j] =
++                WebEncryptedMediaSessionType::kUnknown;
++          }
++        }
++      }
+     } else {
+       // From the spec
+       // (http://w3c.github.io/encrypted-media/#idl-def-mediakeysystemconfiguration):
+@@ -137,6 +317,9 @@
+ 
+     // If |label| is not present, it will be a null string.
+     web_config.label = config->label();
++    // Parc: WebKit's FairPlay session type and persistent state rules for a
++    // Safari-identity document (KeySystemConfigSelector).
++    web_config.parc_safari_fairplay = parc_safari_fairplay;
+     supported_configurations_[i] = web_config;
+   }
+ 
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc
 @@ -51,6 +51,7 @@
@@ -917,7 +944,16 @@
  #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/content_decryption_module_result_promise.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
-@@ -541,6 +542,13 @@
+@@ -108,6 +109,8 @@
+     case WebEncryptedMediaSessionType::kTemporary:
+       return false;
+     case WebEncryptedMediaSessionType::kPersistentLicense:
++    // Parc: Safari's persistent-usage-record (Safari-identity pages only).
++    case WebEncryptedMediaSessionType::kPersistentUsageRecord:
+       return true;
+     case blink::WebEncryptedMediaSessionType::kUnknown:
+       break;
+@@ -541,6 +544,13 @@
    //     |initDataType| is one of the registered values.)
    media::EmeInitDataType init_data_type =
        EncryptedMediaUtils::ConvertToInitDataType(init_data_type_string);
@@ -1031,3 +1067,33 @@
  bool ContextFeatureSettings::isUnboundedElementEnabled() const {
    return GetUnboundedElementAuth(GetSupplementable()) !=
           UnboundedElementAuth::kDenied;
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_keys.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_keys.cc
+@@ -43,6 +43,7 @@
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/content_decryption_module_result_promise.h"
+@@ -272,6 +273,19 @@
+   DVLOG(MEDIA_KEYS_LOG_LEVEL)
+       << __func__ << "(" << this << ") " << v8_session_type.AsCStr();
+ 
++  // Parc: "persistent-usage-record" is Safari's (fairplay-media.patch adds it
++  // to MediaKeySessionType). Anywhere but under Safari's identity it throws
++  // the TypeError the bindings threw for it before.
++  if (v8_session_type.AsEnum() ==
++          V8MediaKeySessionType::Enum::kPersistentUsageRecord &&
++      !(GetExecutionContext() &&
++        IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent()))) {
++    exception_state.ThrowTypeError(
++        "The provided value 'persistent-usage-record' is not a valid enum "
++        "value of type MediaKeySessionType.");
++    return nullptr;
++  }
++
+   // If the context for MediaKeys has been destroyed, fail.
+   if (!GetExecutionContext()) {
+     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidAccessError,

@@ -16,8 +16,11 @@ namespace cdm {
 
 FairPlayKeySystemInfo::FairPlayKeySystemInfo(
     SupportedCodecs codecs,
-    base::flat_set<media::EncryptionScheme> encryption_schemes)
-    : codecs_(codecs), encryption_schemes_(std::move(encryption_schemes)) {}
+    base::flat_set<media::EncryptionScheme> encryption_schemes,
+    bool persistent_usage_record)
+    : codecs_(codecs),
+      encryption_schemes_(std::move(encryption_schemes)),
+      persistent_usage_record_(persistent_usage_record) {}
 
 FairPlayKeySystemInfo::~FairPlayKeySystemInfo() = default;
 
@@ -88,9 +91,24 @@ EmeConfig::Rule FairPlayKeySystemInfo::GetPersistentLicenseSessionSupport()
   return EmeConfig::UnsupportedRule();
 }
 
+EmeConfig::Rule FairPlayKeySystemInfo::GetPersistentUsageRecordSessionSupport()
+    const {
+  // Safari's (CDMInstanceFairPlayStreamingAVFObjC::isLicenseTypeSupported):
+  // AVFoundation keeps the session's expired-session reports in the
+  // AVContentKeySession's storage, so it needs persistent state. Blink passes
+  // the type only for Safari-identity documents.
+  if (!persistent_usage_record_) {
+    return EmeConfig::UnsupportedRule();
+  }
+  return EmeConfig{.persistence = media::EmeConfigRuleState::kRequired};
+}
+
 EmeFeatureSupport FairPlayKeySystemInfo::GetPersistentStateSupport() const {
-  // Nothing is persisted (temporary sessions, no AVContentKeySession storage),
-  // so allowing it costs nothing and keeps pages that ask for it working.
+  // As WebKit's persistentStateRequirement(): optional. Temporary sessions
+  // persist nothing; with persistent state allowed the key session keeps
+  // expired-session reports for persistent-usage-record sessions. On
+  // Safari-identity pages the key system selector also refuses it where
+  // persistent-usage-record isn't offered (a private window), as Safari does.
   return EmeFeatureSupport::REQUESTABLE;
 }
 

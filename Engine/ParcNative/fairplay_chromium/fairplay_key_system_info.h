@@ -17,9 +17,12 @@ namespace cdm {
 
 class FairPlayKeySystemInfo : public media::KeySystemInfo {
  public:
+  // |persistent_usage_record|: whether Safari's persistent-usage-record
+  // sessions are offered (only where the render process can persist data).
   FairPlayKeySystemInfo(
       media::SupportedCodecs codecs,
-      base::flat_set<media::EncryptionScheme> encryption_schemes);
+      base::flat_set<media::EncryptionScheme> encryption_schemes,
+      bool persistent_usage_record);
   FairPlayKeySystemInfo(const FairPlayKeySystemInfo&) = delete;
   FairPlayKeySystemInfo& operator=(const FairPlayKeySystemInfo&) = delete;
   ~FairPlayKeySystemInfo() override;
@@ -39,12 +42,15 @@ class FairPlayKeySystemInfo : public media::KeySystemInfo {
       const std::string& requested_robustness,
       const bool* hw_secure_requirement) const override;
   media::EmeConfig::Rule GetPersistentLicenseSessionSupport() const override;
+  media::EmeConfig::Rule GetPersistentUsageRecordSessionSupport()
+      const override;
   media::EmeFeatureSupport GetPersistentStateSupport() const override;
   media::EmeFeatureSupport GetDistinctiveIdentifierSupport() const override;
 
  private:
   const media::SupportedCodecs codecs_;
   const base::flat_set<media::EncryptionScheme> encryption_schemes_;
+  const bool persistent_usage_record_;
 };
 
 }  // namespace cdm

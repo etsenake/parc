@@ -11,8 +11,9 @@
 // "sinf" and "skd" only under Safari's identity, and that a Media Source
 // element there hears `encrypted` with "sinf" init data only, as in Safari;
 // which encryptionScheme and sessionTypes values requestMediaKeySystemAccess
-// takes there without a TypeError (WebKit's IDL enums); and FairPlay's key
-// system names.
+// takes there without a TypeError (WebKit's IDL enums); FairPlay's key
+// system names; and that "persistent-usage-record" is a session type only
+// under Safari's identity.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -176,6 +177,16 @@ int main() {
        {"com.apple.fpsx", "COM.APPLE.FPS", "com.apple", "org.w3c.clearkey", ""}) {
     Check(!blink::IsParcFairPlayKeySystem(key_system),
           "FairPlay's names compare case-sensitively");
+  }
+  // Safari's persistent-usage-record session type exists only under Safari's
+  // identity, compared exactly as EME compares MediaKeySessionType values.
+  Check(blink::IsParcSafariOnlySessionType("persistent-usage-record"),
+        "persistent-usage-record is Safari-only");
+  for (const char* type : {"temporary", "persistent-license",
+                           "Persistent-Usage-Record", "persistent-usage-record ",
+                           ""}) {
+    Check(!blink::IsParcSafariOnlySessionType(type),
+          "other session types are not Safari-only");
   }
 
   const char* const not_safari[] = {
