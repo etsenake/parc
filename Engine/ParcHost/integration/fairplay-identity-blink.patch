@@ -642,7 +642,24 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -3898,7 +4008,8 @@
+@@ -3690,6 +3800,16 @@
+                                           const AtomicString& label,
+                                           const AtomicString& language,
+                                           ExceptionState& exception_state) {
++  // Parc: "forced" (WebKit's kind) is a TextTrackKind only under Safari's
++  // identity; elsewhere the call fails as Chromium's enum conversion does.
++  if (kind == V8TextTrackKind::Enum::kForced &&
++      !PresentsParcSafariIdentity()) {
++    exception_state.ThrowTypeError(
++        "The provided value 'forced' is not a valid enum value of type "
++        "TextTrackKind.");
++    return nullptr;
++  }
++
+   // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
+ 
+   // The addTextTrack(kind, label, language) method of media elements, when
+@@ -3898,7 +4018,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }

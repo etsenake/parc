@@ -1,0 +1,81 @@
+--- a/third_party/blink/renderer/core/html/track/text_track.idl
++++ b/third_party/blink/renderer/core/html/track/text_track.idl
+@@ -26,7 +26,10 @@
+ // https://html.spec.whatwg.org/C/#texttrack
+ 
+ enum TextTrackMode { "disabled",  "hidden",  "showing" };
+-enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "metadata" };
++// Parc: "forced" is WebKit's kind for forced-only subtitles (native HLS
++// FORCED=YES renditions). Documents without Safari's identity refuse it where
++// Chromium's enum would (HTMLMediaElement::addTextTrack, HTMLTrackElement).
++enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "metadata", "forced" };
+ 
+ [Exposed=Window]
+ interface TextTrack : EventTarget {
+--- a/third_party/blink/renderer/core/html/track/text_track.cc
++++ b/third_party/blink/renderer/core/html/track/text_track.cc
+@@ -111,8 +111,11 @@
+ }
+ 
+ bool TextTrack::IsVisualKind() const {
++  // Parc: WebKit renders forced subtitles like subtitles
++  // (TextTrack::isRendered).
+   return kind() == V8TextTrackKind::Enum::kSubtitles ||
+-         kind() == V8TextTrackKind::Enum::kCaptions;
++         kind() == V8TextTrackKind::Enum::kCaptions ||
++         kind() == V8TextTrackKind::Enum::kForced;
+ }
+ 
+ void TextTrack::setMode(const V8TextTrackMode& mode) {
+--- a/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
++++ b/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
+@@ -172,6 +172,9 @@
+     switch (text_track->kind().AsEnum()) {
+       case V8TextTrackKind::Enum::kSubtitles:
+       case V8TextTrackKind::Enum::kCaptions:
++      // Parc: WebKit groups forced subtitles with captions and subtitles
++      // (HTMLMediaElement::configureTextTracks).
++      case V8TextTrackKind::Enum::kForced:
+         current_group = &caption_and_subtitle_tracks;
+         break;
+       case V8TextTrackKind::Enum::kDescriptions:
+--- a/third_party/blink/renderer/core/html/track/html_track_element.cc
++++ b/third_party/blink/renderer/core/html/track/html_track_element.cc
+@@ -31,6 +31,7 @@
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/html/cross_origin_attribute.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/html/track/loadable_text_track.h"
+@@ -102,6 +103,16 @@
+       kind = V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles);
+     } else {
+       kind = V8TextTrackKind::Create(lower_case_value);
++      // Parc: "forced" is a kind only under Safari's identity, as in WebKit
++      // (TextTrack::setKindKeywordIgnoringASCIICase); elsewhere it stays an
++      // invalid value.
++      if (kind.has_value() &&
++          kind->AsEnum() == V8TextTrackKind::Enum::kForced) {
++        ExecutionContext* context = GetExecutionContext();
++        if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent())) {
++          kind.reset();
++        }
++      }
+       if (!kind.has_value()) {
+         kind = V8TextTrackKind(V8TextTrackKind::Enum::kMetadata);
+       }
+--- a/third_party/blink/renderer/modules/media_controls/elements/media_control_text_track_list_element.cc
++++ b/third_party/blink/renderer/modules/media_controls/elements/media_control_text_track_list_element.cc
+@@ -271,6 +271,10 @@
+     TextTrack* track = track_list->AnonymousIndexedGetter(i);
+     if (!track->CanBeRendered())
+       continue;
++    // Parc: forced subtitles (Safari's identity) aren't offered, as in
++    // WebKit's caption menu (CaptionUserPreferences::sortedTrackListForMenu).
++    if (track->kind() == V8TextTrackKind::Enum::kForced)
++      continue;
+     auto* track_item = CreateTextTrackListItem(track);
+     track_item->setAttribute(html_names::kAriaSetsizeAttr,
+                              AtomicString::Number(track_list->length() + 1));

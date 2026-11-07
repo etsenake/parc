@@ -160,6 +160,25 @@ Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's panel
 | `webkitDecodedFrameCount`/`webkitDroppedFrameCount`, `getVideoPlaybackQuality` | decoder counts | FairPlay renderer reports | pending | fp-frame-stats |
 | AirPlay (`webkitShowPlaybackTargetPicker`, `webkitCurrentPlaybackTargetIsWireless`, `webkitWirelessVideoPlaybackDisabled`, `WebKitPlaybackTargetAvailabilityEvent`) | AVFoundation routes | absent; players feature-detect it and hide AirPlay | decision: casting, not playback; default left absent | fp-mms-presentation |
 
+## Native HLS audio and text tracks
+
+WebKit: `MediaPlayerPrivateAVFoundationObjC` (track code, legible output),
+`MediaSelectionGroupAVFObjC`, `AVTrackPrivateAVFObjCImpl`,
+`InbandTextTrackPrivateAVF(ObjC)`, `InbandGenericTextTrack`, `TextTrack`. Parc:
+`fairplay/fairplay_hls_media_selection.*` (core), the native HLS mojo route
+([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#tracks)),
+`fairplay-tracks.patch`.
+
+| Piece | Safari | Parc | Status | Owner |
+|---|---|---|---|---|
+| `audioTracks` of an HLS `<video src>` | the audible group's options (or the item's audio tracks), WebKit choosing by the user's languages and audio-description preference until the page enables one; ids, kinds (`main`, `alternative`, `description`), labels and languages as `AVTrackPrivateAVFObjCImpl` derives them | core reports them (`HlsMediaSelection`); mojo, GPU service and the element side pending | pending | fp-hls-tracks |
+| `textTracks` of an HLS `<video src>` | the legible group's options as in-band tracks (`captions` for closed captions and SDH, `forced`, `subtitles`), numbered from 0; none selected until a mode picks one | core reports them; Blink in-band text tracks pending (M156 creates none) | pending | fp-hls-tracks |
+| Cues | one legible output: WebVTT as ISO WebVTT cues (`WebVTTParser::parseCueData`, header for regions and style), CEA-608/708 and other formats as generic `VTTCue`s added open-ended and completed by the next one | core delivers them; the element side pending | pending | fp-hls-tracks |
+| `TextTrack.kind` `"forced"` | in `TextTrackKind` (`addTextTrack`, `<track kind>`, in-band forced subtitles); grouped and rendered with subtitles, left out of the caption menu | the same on Safari-identity documents (`fairplay-tracks.patch`); others refuse it as before (one trace: `addTextTrack("forced", label)` converts the label before throwing, where Chromium throws first) | present | fp-hls-tracks |
+| Automatic text track selection | `CaptionUserPreferencesMediaAF`: the system caption display mode (forced only by default), languages, audio language | Blink's (user preference, default attribute) | missing | fp-hls-tracks |
+| In-band metadata track (`com.apple.streaming`, `DataCue`, `inBandMetadataTrackDispatchType`) | a `metadata` text track for timed metadata, `DataCue` with `value`/`type` | absent | missing | fp-hls-tracks |
+| Chapter tracks | `InbandChapterTrackPrivateAVFObjC` from the asset's chapter metadata | absent | missing | fp-hls-tracks |
+
 ## Netflix and Apple TV+ paths to keep
 
 Netflix gates on `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_0')` and
