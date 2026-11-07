@@ -1,0 +1,25 @@
+---
+description: The status update format Josh approved
+alwaysApply: true
+---
+
+# Status update format
+
+This is a **must-do** rule. Josh approved this format on November 2 ("This
+is the right format let's not lose this") and asked for it again on
+November 7 after it was lost.
+
+Every status update to Josh uses it:
+
+- Open with one line: "Here is the recheck from [last update time] to now,
+  [current time]."
+- Then bold lead-in sections, each followed by plain paragraphs (no bullet
+  points, no lists, no tables):
+  - **What the agents have done since [time].** What finished, what landed on
+    main (commit), what was found, what a user now experiences.
+  - **What they're doing now.** Each running agent's actual current step, in
+    plain sentences.
+  - **What's waiting on you.** Only if something is; say the default being
+    followed.
+- Use clock times, specific numbers and plain words a person would say out
+  loud. No codenames without saying what they are.
