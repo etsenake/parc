@@ -773,11 +773,13 @@
  };
 --- a/media/base/demuxer.cc
 +++ b/media/base/demuxer.cc
-@@ -16,4 +16,6 @@
+@@ -16,4 +16,8 @@
  // Do nothing by default.
  void Demuxer::DisableCanChangeType() {}
  
 +void Demuxer::RestrictCanChangeType(ChangeTypeFilter filter) {}
++
++void Demuxer::SetCdmForNativePlayer(CdmContext* cdm_context) {}
 +
  }  // namespace media
 --- a/media/base/demuxer.h
@@ -793,7 +795,15 @@
  #include "base/time/time.h"
  #include "media/base/container_names.h"
  #include "media/base/demuxer_stream.h"
-@@ -181,6 +183,14 @@
+@@ -23,6 +25,7 @@
+ 
+ namespace media {
+ 
++class CdmContext;
+ class MediaTracks;
+ 
+ // WARNING: These values are reported to metrics. Entries should not be
+@@ -181,6 +184,21 @@
  
    // Allow canChangeType to be disabled.
    virtual void DisableCanChangeType();
@@ -805,6 +815,13 @@
 +      base::RepeatingCallback<bool(const std::string& content_type,
 +                                   const std::string& codecs)>;
 +  virtual void RestrictCanChangeType(ChangeTypeFilter filter);
++
++  // Parc: hands the pipeline's CDM to a demuxer whose own player takes keys
++  // (Safari's native HLS route, see MediaResource::GetParcNativeHlsSource()),
++  // so a CDM set before the renderer exists reaches the player at once.
++  // Called on the media thread; `cdm_context` stays valid while the pipeline
++  // holds it, as for Renderer::SetCdm().
++  virtual void SetCdmForNativePlayer(CdmContext* cdm_context);
  };
  
  }  // namespace media
@@ -868,7 +885,34 @@
               base::FEATURE_DISABLED_BY_DEFAULT
 --- a/media/base/pipeline_impl.cc
 +++ b/media/base/pipeline_impl.cc
-@@ -734,6 +734,14 @@
+@@ -380,6 +380,12 @@
+   default_renderer_ = std::move(default_renderer);
+   weak_pipeline_ = weak_pipeline;
+ 
++  // Parc: a CDM set before Start() reaches a native player's demuxer too
++  // (see SetCdm()).
++  if (cdm_context_) {
++    demuxer_->SetCdmForNativePlayer(cdm_context_);
++  }
++
+   // Setup |error_cb_| on the media thread.
+   error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
+                                   weak_factory_.GetWeakPtr());
+@@ -705,6 +711,13 @@
+   cdm_context_ = cdm_context;
+   std::move(cdm_attached_cb).Run(true);
+ 
++  // Parc: a demuxer whose own player takes keys (Safari's native HLS route)
++  // gets the CDM now: its key requests may be waiting for it before any
++  // renderer exists.
++  if (demuxer_) {
++    demuxer_->SetCdmForNativePlayer(cdm_context);
++  }
++
+   // Continue Renderer creation if it's waiting for the CDM to be set.
+   if (create_renderer_done_cb_)
+     CreateRendererInternal(std::move(create_renderer_done_cb_));
+@@ -734,6 +747,20 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -878,6 +922,12 @@
 +  if (cdm_context_ && cdm_context_->RequiresFairPlayRenderer()) {
 +    renderer_type = RendererType::kFairPlay;
 +  }
++
++  // Parc: Safari's native HLS route plays through the demuxer's own player,
++  // driven by the renderer its factory makes, whatever the CDM.
++  if (demuxer_->GetParcNativeHlsSource()) {
++    renderer_type = RendererType::kFairPlayHls;
++  }
 +#endif  // BUILDFLAG(IS_MAC)
 +
    // During Resume(), the |default_renderer_| might already match the
@@ -885,24 +935,27 @@
    if (!default_renderer_ ||
 --- a/media/base/renderer.cc
 +++ b/media/base/renderer.cc
-@@ -31,6 +31,8 @@
+@@ -31,6 +31,10 @@
        return "EmbedderDefined";
      case RendererType::kTest:
        return "Media Renderer Implementation For Testing";
 +    case RendererType::kFairPlay:
 +      return "FairPlayRenderer";
++    case RendererType::kFairPlayHls:
++      return "NativeHlsRenderer";
    }
  }
  
 --- a/media/base/renderer.h
 +++ b/media/base/renderer.h
-@@ -37,7 +37,8 @@
+@@ -37,7 +37,9 @@
    kCastStreaming = 9,  // PlaybackCommandForwardingRendererFactory
    kContentEmbedderDefined = 10,  // Defined by the content embedder
    kTest = 11,                    // Renderer implementations used in tests
 -  kMaxValue = kTest,
 +  kFairPlay = 12,  // Parc: FairPlayRendererClientFactory (macOS)
-+  kMaxValue = kFairPlay,
++  kFairPlayHls = 13,  // Parc: NativeHlsRendererFactory (macOS)
++  kMaxValue = kFairPlayHls,
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
@@ -976,9 +1029,92 @@
  PipelineStatus DemuxerManager::CreateDemuxer(
      bool load_media_source,
      DataSource::Preload preload,
+@@ -251,7 +256,17 @@
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+   if (hls_fallback_ || IsManifestDemuxerURL()) {
+     std::unique_ptr<Demuxer> demuxer;
+-    std::tie(data_source_info_, demuxer) = CreateHlsDemuxer();
++#if BUILDFLAG(IS_MAC)
++    // Parc: Safari plays HLS through AVPlayer, which loads everything itself
++    // (NATIVE_HLS.md); there is no data source.
++    demuxer = MaybeCreateParcNativeHlsDemuxer();
++    if (demuxer) {
++      data_source_info_ = nullptr;
++    }
++#endif  // BUILDFLAG(IS_MAC)
++    if (!demuxer) {
++      std::tie(data_source_info_, demuxer) = CreateHlsDemuxer();
++    }
+     SetDemuxer(std::move(demuxer));
+     return std::move(on_demuxer_created)
+         .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
+@@ -474,6 +489,26 @@
+           std::move(engine), media_log_.get()));
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++std::unique_ptr<Demuxer> DemuxerManager::MaybeCreateParcNativeHlsDemuxer() {
++  if (!parc_native_hls_enabled_ || !client_->PresentsParcSafariIdentity()) {
++    return nullptr;
++  }
++  ParcNativeHlsDemuxerParams params;
++  params.url = loaded_url_;
++  if (hls_fallback_) {
++    params.mime_type = "application/vnd.apple.mpegurl";
++  }
++  params.media_task_runner = media_task_runner_;
++  params.media_log = media_log_.get();
++  params.encrypted_media_init_data_cb =
++      base::BindPostTaskToCurrentDefault(base::BindRepeating(
++          &DemuxerManager::OnEncryptedMediaInitData,
++          weak_factory_.GetWeakPtr()));
++  return client_->CreateParcNativeHlsDemuxer(std::move(params));
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ void DemuxerManager::AddTrack(const MediaTrack& track) {
+   client_->AddTrack(track);
+ }
 --- a/media/filters/demuxer_manager.h
 +++ b/media/filters/demuxer_manager.h
-@@ -111,6 +111,8 @@
+@@ -19,10 +19,15 @@
+ #include "media/base/media_log.h"
+ #include "media/base/pipeline.h"
+ #include "media/base/pipeline_status.h"
++#include "media/base/renderer_factory.h"
+ #include "media/filters/chunk_demuxer.h"
+ #include "net/storage_access_api/status.h"
+ #include "url/origin.h"
+ 
++#if BUILDFLAG(IS_MAC)
++#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+ #include "base/threading/sequence_bound.h"
+ #include "media/filters/hls_data_source_provider.h"
+@@ -81,6 +86,20 @@
+ 
+     // Allows a seek triggered by a demuxer (mainly used for live content)
+     virtual void DemuxerRequestsSeek(base::TimeDelta seek_time) = 0;
++
++#if BUILDFLAG(IS_MAC)
++    // Parc: whether the element's document presents Safari's identity
++    // (MediaPlayerClient::PresentsParcSafariIdentity()).
++    virtual bool PresentsParcSafariIdentity() { return false; }
++
++    // Parc: the demuxer of Safari's native HLS route for `params`, or null
++    // to keep Chromium's ManifestDemuxer. Asked only with the route on
++    // (parc::fairplay::kNativeHlsEnabled) and Safari's identity presented.
++    virtual std::unique_ptr<Demuxer> CreateParcNativeHlsDemuxer(
++        ParcNativeHlsDemuxerParams params) {
++      return nullptr;
++    }
++#endif  // BUILDFLAG(IS_MAC)
+   };
+ 
+   // Demuxer, StartType, IsStreaming, IsStatic
+@@ -111,6 +130,8 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -987,6 +1123,32 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
+@@ -154,6 +175,11 @@
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+   std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
+   CreateHlsDemuxer();
++#if BUILDFLAG(IS_MAC)
++  // Parc: Safari's native HLS demuxer from the client, when the route is on
++  // and the element presents Safari's identity; null otherwise.
++  std::unique_ptr<Demuxer> MaybeCreateParcNativeHlsDemuxer();
++#endif  // BUILDFLAG(IS_MAC)
+ 
+   void AddTrack(const MediaTrack&);
+   void RemoveTrack(const MediaTrack&);
+@@ -209,6 +235,13 @@
+ 
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+   bool hls_fallback_ = false;
++
++#if BUILDFLAG(IS_MAC)
++  // Parc: Safari's native HLS route, on when its build-time switch is. Only
++  // ParcNativeHlsRoutingTest sets it otherwise.
++  bool parc_native_hls_enabled_ = parc::fairplay::kNativeHlsEnabled;
++  friend class ParcNativeHlsRoutingTest;
++#endif  // BUILDFLAG(IS_MAC)
+ #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
+ 
+   // Are we allowed to switch demuxer mid-stream when fallback error codes
 --- a/media/formats/mp4/box_definitions.cc
 +++ b/media/formats/mp4/box_definitions.cc
 @@ -459,6 +459,11 @@
@@ -1307,31 +1469,36 @@
    // The |presentation_id| is used to find an already set-up RemotePlayback
 --- a/media/mojo/mojom/media_types.mojom
 +++ b/media/mojo/mojom/media_types.mojom
-@@ -680,6 +680,7 @@
+@@ -680,6 +680,8 @@
    kCastStreaming = 9,    // CastStreamingRendererFactory
    kContentEmbedderDefined = 10,  // Defined by the content embedder
    kTest= 11,             // Renderer implementations used in tests
 +  kFairPlay = 12,        // Parc: FairPlayRendererClientFactory (macOS)
++  kFairPlayHls = 13,     // Parc: NativeHlsRendererFactory (macOS)
  };
  
  // See media/base/demuxer.h for description.
 --- a/media/mojo/mojom/media_types_enum_mojom_traits.h
 +++ b/media/mojo/mojom/media_types_enum_mojom_traits.h
-@@ -465,6 +465,8 @@
+@@ -465,6 +465,10 @@
          return media::mojom::RendererType::kContentEmbedderDefined;
        case ::media::RendererType::kTest:
          return media::mojom::RendererType::kTest;
 +      case ::media::RendererType::kFairPlay:
 +        return media::mojom::RendererType::kFairPlay;
++      case ::media::RendererType::kFairPlayHls:
++        return media::mojom::RendererType::kFairPlayHls;
      }
  
      NOTREACHED();
-@@ -494,6 +496,8 @@
+@@ -494,6 +498,10 @@
          return ::media::RendererType::kContentEmbedderDefined;
        case media::mojom::RendererType::kTest:
          return ::media::RendererType::kTest;
 +      case media::mojom::RendererType::kFairPlay:
 +        return ::media::RendererType::kFairPlay;
++      case media::mojom::RendererType::kFairPlayHls:
++        return ::media::RendererType::kFairPlayHls;
      }
  
      NOTREACHED();
@@ -2067,11 +2234,10 @@
  namespace blink {
  
  namespace {
-@@ -167,6 +174,47 @@
-   sink->SwitchOutputDevice(device_id,
+@@ -168,6 +175,47 @@
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, and Dolby Vision profile 8, which it plays
@@ -2112,10 +2278,11 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-@@ -356,7 +404,11 @@
+           switches::kDisableBackgroundMediaSuspend)) {
+@@ -356,7 +404,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
  bool UsesAudioService(media::RendererType renderer_type) {
@@ -2124,11 +2291,12 @@
 +  // in the GPU process; the browser authorizes its audibility like
 +  // MediaFoundation's (AudibilityBypassTracker).
 +  return renderer_type != media::RendererType::kMediaFoundation &&
-+         renderer_type != media::RendererType::kFairPlay;
++         renderer_type != media::RendererType::kFairPlay &&
++         renderer_type != media::RendererType::kFairPlayHls;
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1695,6 +1747,50 @@
+@@ -1695,6 +1748,50 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -2179,7 +2347,48 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -3023,6 +3119,15 @@
+@@ -1777,6 +1874,26 @@
+ }
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  return client_->PresentsParcSafariIdentity();
++}
++
++std::unique_ptr<media::Demuxer> WebMediaPlayerImpl::CreateParcNativeHlsDemuxer(
++    media::ParcNativeHlsDemuxerParams params) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  // The factory registered for the route makes its demuxer, so the renderers
++  // it makes later find their player there.
++  media::RendererFactory* factory =
++      renderer_factory_selector_->GetFactory(media::RendererType::kFairPlayHls);
++  if (!factory) {
++    return nullptr;
++  }
++  return factory->CreateParcNativeHlsDemuxer(std::move(params));
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+   DCHECK(cdm);
+@@ -3018,11 +3135,29 @@
+   bool old_uses_audio_service = UsesAudioService(renderer_type_);
+   const auto old_renderer_type = renderer_type_;
+   renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
++#if BUILDFLAG(IS_MAC)
++  // Parc: Safari's native HLS route plays through the demuxer's own player;
++  // no conditional factory's renderer can play its placeholder streams.
++  media::RendererFactory* factory = nullptr;
++  if (renderer_type == media::RendererType::kFairPlayHls) {
++    renderer_type_ = media::RendererType::kFairPlayHls;
++    factory = renderer_factory_selector_->GetFactory(renderer_type_);
++  }
++#endif  // BUILDFLAG(IS_MAC)
+ 
+   // TODO(crbug.com/40261162): Support codec changing for Media Foundation.
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
    }
@@ -2195,26 +2404,46 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3153,6 +3258,12 @@
+@@ -3038,6 +3173,14 @@
+     CreateWatchTimeReporter();
+   }
+ 
++#if BUILDFLAG(IS_MAC)
++  if (factory) {
++    return factory->CreateRenderer(
++        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
++        compositor_.get(), std::move(request_overlay_info_cb),
++        client_->TargetColorSpace());
++  }
++#endif  // BUILDFLAG(IS_MAC)
+   return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
+       media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
+       compositor_.get(), std::move(request_overlay_info_cb),
+@@ -3153,6 +3296,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
 +  // Parc: suspending a FairPlay Renderer takes its display layer with it, and
 +  // the hole frame still painted would name nothing (blank video until play),
-+  // so FairPlay players stay resident.
-+  if (renderer_type_ == media::RendererType::kFairPlay) {
++  // so FairPlay players stay resident. Safari's native HLS player (whose
++  // layer lives with its demuxer) stays resident like Safari's.
++  if (renderer_type_ == media::RendererType::kFairPlay ||
++      renderer_type_ == media::RendererType::kFairPlayHls) {
 +    can_auto_suspend = false;
 +  }
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3904,26 @@
+@@ -3793,6 +3944,29 @@
      return false;
    }
  
 +  // Parc: the FairPlay Renderer can't drop its video stream and rejoin it
 +  // later (a disabled ChunkDemuxerStream ends it), so keep the track enabled.
-+  if (renderer_type_ == media::RendererType::kFairPlay) {
++  // Safari's native HLS player has no stream to disable: AVPlayer keeps its
++  // own video.
++  if (renderer_type_ == media::RendererType::kFairPlay ||
++      renderer_type_ == media::RendererType::kFairPlayHls) {
 +    return false;
 +  }
 +#if BUILDFLAG(IS_MAC)
@@ -2247,3 +2476,225 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
+@@ -455,6 +458,11 @@
+   void RemoveTrack(const media::MediaTrack&) override;
+   void SetTrackState(const media::MediaTrack&,
+                      media::MediaTrack::State) override;
++#if BUILDFLAG(IS_MAC)
++  bool PresentsParcSafariIdentity() override;
++  std::unique_ptr<media::Demuxer> CreateParcNativeHlsDemuxer(
++      media::ParcNativeHlsDemuxerParams params) override;
++#endif  // BUILDFLAG(IS_MAC)
+ 
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+   void GetUrlData(const GURL& gurl,
+--- a/media/base/media_resource.h
++++ b/media/base/media_resource.h
+@@ -8,9 +8,16 @@
+ #include <vector>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "build/build_config.h"
+ #include "media/base/demuxer_stream.h"
+ #include "media/base/media_export.h"
+ 
++#if BUILDFLAG(IS_MAC)
++namespace parc::fairplay {
++class NativeHlsSource;
++}
++#endif
++
+ namespace media {
+ 
+ // Abstract class that defines how to retrieve "media resources" in
+@@ -40,6 +47,15 @@
+   // A helper function that return the first stream of the given `type` if one
+   // exists or a null pointer if there is no streams of that type.
+   DemuxerStream* GetFirstStream(DemuxerStream::Type type);
++
++#if BUILDFLAG(IS_MAC)
++  // Parc: a resource played by Safari's native HLS player (NativeHlsDemuxer,
++  // content/renderer/media/fairplay) returns that player here; its streams
++  // are placeholders that never deliver buffers. The pipeline then asks for
++  // RendererType::kFairPlayHls, whose renderer drives this source. Null for
++  // every other resource.
++  virtual parc::fairplay::NativeHlsSource* GetParcNativeHlsSource();
++#endif
+ };
+ 
+ }  // namespace media
+--- a/media/base/media_resource.cc
++++ b/media/base/media_resource.cc
+@@ -25,4 +25,10 @@
+   return nullptr;
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++parc::fairplay::NativeHlsSource* MediaResource::GetParcNativeHlsSource() {
++  return nullptr;
++}
++#endif
++
+ }  // namespace media
+--- a/media/base/renderer_factory.h
++++ b/media/base/renderer_factory.h
+@@ -6,13 +6,18 @@
+ #define MEDIA_BASE_RENDERER_FACTORY_H_
+ 
+ #include <memory>
++#include <string>
+ 
++#include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
++#include "build/build_config.h"
++#include "media/base/demuxer.h"
+ #include "media/base/media_export.h"
+ #include "media/base/media_resource.h"
+ #include "media/base/overlay_info.h"
+ #include "media/base/renderer.h"
+ #include "ui/gfx/color_space.h"
++#include "url/gurl.h"
+ 
+ namespace base {
+ class SequencedTaskRunner;
+@@ -22,8 +27,34 @@
+ namespace media {
+ 
+ class AudioRendererSink;
++class MediaLog;
+ class VideoRendererSink;
+ 
++#if BUILDFLAG(IS_MAC)
++// Parc: what the demuxer of Safari's native HLS route is made from
++// (third_party/parc_fairplay NATIVE_HLS.md). DemuxerManager's HLS branch fills
++// it; WebMediaPlayerImpl hands it to the factory registered for
++// RendererType::kFairPlayHls.
++struct MEDIA_EXPORT ParcNativeHlsDemuxerParams {
++  ParcNativeHlsDemuxerParams();
++  ParcNativeHlsDemuxerParams(ParcNativeHlsDemuxerParams&&);
++  ParcNativeHlsDemuxerParams& operator=(ParcNativeHlsDemuxerParams&&);
++  ~ParcNativeHlsDemuxerParams();
++
++  // The playlist URL, after the redirects a sniffed load followed.
++  GURL url;
++  // The type AVFoundation is told (AVURLAssetOutOfBandMIMETypeKey). As in
++  // WebKit, only a type not inferred from the URL's extension is passed:
++  // HLS's when FFmpeg's sniffing found a playlist, empty for a ".m3u8" path.
++  std::string mime_type;
++  scoped_refptr<base::SequencedTaskRunner> media_task_runner;
++  // Valid while the demuxer is made; the demuxer keeps its own clone.
++  raw_ptr<MediaLog> media_log = nullptr;
++  // Raises `encrypted` on the element; posts to the main thread.
++  Demuxer::EncryptedMediaInitDataCB encrypted_media_init_data_cb;
++};
++#endif  // BUILDFLAG(IS_MAC)
++
+ // A factory class for creating media::Renderer to be used by media pipeline.
+ class MEDIA_EXPORT RendererFactory {
+  public:
+@@ -46,6 +77,15 @@
+       VideoRendererSink* video_renderer_sink,
+       RequestOverlayInfoCB request_overlay_info_cb,
+       const gfx::ColorSpace& target_color_space) = 0;
++
++#if BUILDFLAG(IS_MAC)
++  // Parc: makes the demuxer of Safari's native HLS route, whose player this
++  // factory's renderers drive. Only the factory registered for
++  // RendererType::kFairPlayHls makes one; every other returns null, and
++  // DemuxerManager keeps Chromium's ManifestDemuxer.
++  virtual std::unique_ptr<Demuxer> CreateParcNativeHlsDemuxer(
++      ParcNativeHlsDemuxerParams params);
++#endif  // BUILDFLAG(IS_MAC)
+ };
+ 
+ }  // namespace media
+--- a/media/base/renderer_factory.cc
++++ b/media/base/renderer_factory.cc
+@@ -4,10 +4,28 @@
+ 
+ #include "media/base/renderer_factory.h"
+ 
++#include "base/task/sequenced_task_runner.h"
++
+ namespace media {
+ 
++#if BUILDFLAG(IS_MAC)
++ParcNativeHlsDemuxerParams::ParcNativeHlsDemuxerParams() = default;
++ParcNativeHlsDemuxerParams::ParcNativeHlsDemuxerParams(
++    ParcNativeHlsDemuxerParams&&) = default;
++ParcNativeHlsDemuxerParams& ParcNativeHlsDemuxerParams::operator=(
++    ParcNativeHlsDemuxerParams&&) = default;
++ParcNativeHlsDemuxerParams::~ParcNativeHlsDemuxerParams() = default;
++#endif  // BUILDFLAG(IS_MAC)
++
+ RendererFactory::RendererFactory() = default;
+ 
+ RendererFactory::~RendererFactory() = default;
+ 
++#if BUILDFLAG(IS_MAC)
++std::unique_ptr<Demuxer> RendererFactory::CreateParcNativeHlsDemuxer(
++    ParcNativeHlsDemuxerParams params) {
++  return nullptr;
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ }  // namespace media
+--- a/media/base/renderer_factory_selector.h
++++ b/media/base/renderer_factory_selector.h
+@@ -67,6 +67,15 @@
+   // NOTE: SetBaseRendererType() must be called before calling this method.
+   virtual RendererFactory* GetCurrentFactory();
+ 
++#if BUILDFLAG(IS_MAC)
++  // Parc: the factory added for `type`, or null. Safari's native HLS route
++  // asks the RendererType::kFairPlayHls factory for its demuxer
++  // (RendererFactory::CreateParcNativeHlsDemuxer()) and its renderers
++  // regardless of the conditional factories, whose renderers can't play its
++  // placeholder streams.
++  RendererFactory* GetFactory(RendererType type);
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(IS_ANDROID)
+   // Starts a request to receive a RemotePlayStateChangeCB, to be fulfilled
+   // later by passing a request via SetRemotePlayStateChangeCB().
+--- a/media/base/renderer_factory_selector.cc
++++ b/media/base/renderer_factory_selector.cc
+@@ -70,6 +70,13 @@
+   return current_factory;
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++RendererFactory* RendererFactorySelector::GetFactory(RendererType type) {
++  auto it = factories_.find(type);
++  return it == factories_.end() ? nullptr : it->second.get();
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(IS_ANDROID)
+ void RendererFactorySelector::StartRequestRemotePlayStateCB(
+     RequestRemotePlayStateChangeCB callback_request) {
+--- a/media/filters/BUILD.gn
++++ b/media/filters/BUILD.gn
+@@ -124,6 +124,11 @@
+     "//ui/gfx/geometry",
+   ]
+ 
++  if (is_mac) {
++    # Parc: Safari's native HLS switch, read by demuxer_manager.h.
++    public_deps = [ "//third_party/parc_fairplay:key_system" ]
++  }
++
+   libs = []
+ 
+   if (proprietary_codecs) {
+@@ -462,6 +467,10 @@
+       "manifest_demuxer_unittest.cc",
+       "stream_parser_factory_unittest.cc",
+     ]
++    if (is_mac) {
++      # Parc: Safari's native HLS route chooses its demuxer.
++      sources += [ "parc_native_hls_routing_unittest.cc" ]
++    }
+ 
+     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+     # enable the diagnostic by removing this line.

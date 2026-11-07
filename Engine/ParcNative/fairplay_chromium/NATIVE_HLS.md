@@ -69,20 +69,30 @@ DevTools attribution right.
 
 ## Routing (render process)
 
-- `HTMLMediaElement` tells its player whether the document presents Safari's
-  identity (`IsParcSafariIdentityUserAgent`, as the rest of
-  fairplay-identity): a new `WebMediaPlayerClient::ParcPresentsSafariIdentity()`.
+- `HTMLMediaElement` already tells its player whether the document presents
+  Safari's identity (`MediaPlayerClient::PresentsParcSafariIdentity()`, as the
+  rest of fairplay-identity); `WebMediaPlayerImpl` passes it on as
+  `DemuxerManager::Client::PresentsParcSafariIdentity()`.
 - `DemuxerManager::CreateDemuxer` takes its HLS branch as today (path ends in
   `.m3u8`, or `DEMUXER_ERROR_DETECTED_HLS` from FFmpeg's sniffing). With the
   switch on and Safari's identity, it asks its client
   (`DemuxerManager::Client::CreateParcNativeHlsDemuxer`, default null) and
-  uses that demuxer instead of `ManifestDemuxer`. `canPlayType` keeps
-  answering "maybe".
+  uses that demuxer instead of `ManifestDemuxer`, with no data source.
+  `canPlayType` keeps answering "maybe". The request is a
+  `media::ParcNativeHlsDemuxerParams` (`renderer_factory.h`): the playlist URL
+  (after a sniffed load's redirects), the MIME type AVFoundation is told (as
+  WebKit, only one not inferred from the extension: HLS's for a sniffed
+  playlist, empty for a `.m3u8` path), the media task runner, the media log
+  (the demuxer clones it) and the callback that raises `encrypted`.
+  `fp-hls-mojo` adds the loader to it. The demuxer reports
+  `DemuxerType::kManifestDemuxer`, so it is deleted on the media thread and
+  counted as HLS.
 - `WebMediaPlayerImpl` gets the demuxer from the factory registered for
-  `RendererType::kFairPlayHls` (`RendererFactorySelector::GetFactory`, a new
-  `RendererFactory::CreateParcNativeHlsDemuxer` hook), which `MediaFactory`
+  `RendererType::kFairPlayHls` (13; `RendererFactorySelector::GetFactory`, a
+  new `RendererFactory::CreateParcNativeHlsDemuxer` hook), which `MediaFactory`
   adds next to the FairPlay renderer factory and which holds the frame's
-  `InterfaceFactory`. The demuxer and facade live in
+  `InterfaceFactory`. With no such factory the HLS branch keeps
+  `ManifestDemuxer`. The demuxer and facade live in
   `//content/renderer/media/fairplay` beside `FairPlayRendererClient`.
 - M156 has no `MediaUrlDemuxer` and `mojom::Renderer.Initialize` takes streams
   only, and `PipelineImpl` creates the renderer after the demuxer has reported
@@ -97,11 +107,17 @@ DevTools attribution right.
   `RendererType::kFairPlayHls` when the demuxer is a native HLS demuxer (a
   `MediaResource::GetParcNativeHlsSource()` hook, default null), so the facade
   comes from the same factory with the element's `VideoRendererSink` for the
-  hole frame. Its `Initialize` binds to the demuxer's player through that
-  hook. Suspend/resume destroy and recreate only the facade.
+  hole frame. `WebMediaPlayerImpl::CreateRenderer` takes that factory directly,
+  past the conditional (remoting) factories, whose renderers can't play the
+  placeholder streams. Its `Initialize` binds to the demuxer's player through
+  that hook. Suspend/resume destroy and recreate only the facade.
 - `PipelineImpl::RendererWrapper::SetCdm` also hands the `CdmContext` to the
   demuxer (`Demuxer::SetCdmForNativePlayer`, default no-op) so a CDM set before
-  the renderer exists reaches the player at once.
+  the renderer exists reaches the player at once; `Start` hands it one set
+  before the pipeline started.
+- `WebMediaPlayerImpl` treats `kFairPlayHls` as `kFairPlay`: audio isn't the
+  audio service's, the player is never auto-suspended, and its video is never
+  disabled while hidden.
 
 ## Mojo
 
