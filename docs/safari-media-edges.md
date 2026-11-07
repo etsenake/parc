@@ -41,8 +41,7 @@ Unchecked claims are labelled **unchecked**.
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
 main: **40**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
-audio track joining the running player, a second `ended` at the end, native HLS key
-requests, a worker's Media Source dying, rewinding plain files). Queued:
+audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
@@ -351,9 +350,10 @@ starts resource selection (`:3252-3256`). WebKit
 `NETWORK_EMPTY`, or after an invisible-autoplay interruption, and leaves
 standard fullscreen.
 
-HME-23 to HME-25: **fixed** c63e6291. A seek to the current time at the end
-re-arms the once-only `ended` latch, so a second `ended` can fire where
-WebKit skips the seek: **queued** (E6b). Fullscreen is left at removal in
+HME-23 to HME-25: **fixed** c63e6291. A seek to the current time at the end was
+thought to re-arm the once-only `ended` latch; checked against WebKit
+`HTMLMediaElement.cpp:4244-4262`, Parc already matches (0beefdec skips such
+seeks before the latch); regression tests added in bd07fa38. **Same.** Fullscreen is left at removal in
 Parc and a moment later in WebKit's pause task: no user can perceive it.
 **With Josh** (proposed: leave).
 
