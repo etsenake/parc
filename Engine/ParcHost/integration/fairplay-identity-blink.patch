@@ -378,7 +378,7 @@
  #include "third_party/blink/renderer/platform/wtf/vector.h"
  #include "ui/accessibility/accessibility_features.h"
  #include "ui/display/screen_info.h"
-@@ -1069,10 +1073,78 @@
+@@ -1069,10 +1073,85 @@
    return network_state_;
  }
  
@@ -449,6 +449,13 @@
 +
 +}  // namespace
 +
++bool HTMLMediaElement::PresentsParcSafariIdentity() const {
++  // As for ParcSupportsType: a document without a window of its own answers
++  // for the window that created it.
++  ExecutionContext* context = GetDocument().GetExecutionContext();
++  return context && IsParcSafariIdentityUserAgent(context->UserAgent());
++}
++
  V8CanPlayTypeResult HTMLMediaElement::canPlayType(
      const String& mime_type) const {
    MIMETypeRegistry::SupportsType support =
@@ -458,7 +465,7 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -3898,7 +3970,8 @@
+@@ -3898,7 +3977,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -467,6 +474,30 @@
 +                            /*fairplay_dolby_vision=*/false))
          goto checkAgain;
      }
+ 
+--- a/third_party/blink/renderer/core/html/media/html_media_element.h
++++ b/third_party/blink/renderer/core/html/media/html_media_element.h
+@@ -634,6 +634,7 @@
+   gfx::ColorSpace TargetColorSpace() override;
+   bool WasAutoplayInitiated() override;
+   bool IsInAutoPIP() const override { return false; }
++  bool PresentsParcSafariIdentity() const override;
+   void ResumePlayback() final;
+   void PausePlayback(WebMediaPlayer::PauseReason) final;
+   void DidPlayerStartPlaying() override;
+--- a/third_party/blink/renderer/platform/media/media_player_client.h
++++ b/third_party/blink/renderer/platform/media/media_player_client.h
+@@ -143,6 +143,11 @@
+   // behavior as regular Picture-in-Picture.
+   virtual bool IsInAutoPIP() const = 0;
+ 
++  // Parc: whether the element's document presents Safari's identity
++  // (third_party/blink/renderer/core/frame/parc_safari_identity.h), for what
++  // the player offers only there.
++  virtual bool PresentsParcSafariIdentity() const { return false; }
++
+   // Requests the player to resume playback.
+   virtual void ResumePlayback() = 0;
  
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc

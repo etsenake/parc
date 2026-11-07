@@ -868,6 +868,103 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
+--- a/media/formats/mp4/box_definitions.cc
++++ b/media/formats/mp4/box_definitions.cc
+@@ -459,6 +459,11 @@
+ FourCC ProtectionSchemeInfo::BoxType() const { return FOURCC_SINF; }
+ 
+ bool ProtectionSchemeInfo::Parse(BoxReader* reader) {
++  // Parc: keep the payload; the reader's buffer is this box, its position
++  // just past the header.
++  const base::span<const uint8_t> payload =
++      reader->buffer().subspan(reader->pos());
++  raw_payload.assign(payload.begin(), payload.end());
+   RCHECK(reader->ScanChildren() &&
+          reader->ReadChild(&format) &&
+          reader->ReadChild(&type));
+--- a/media/formats/mp4/box_definitions.h
++++ b/media/formats/mp4/box_definitions.h
+@@ -164,6 +164,9 @@
+   OriginalFormat format;
+   SchemeType type;
+   SchemeInfo info;
++  // Parc: the box's payload (its frma, schm and schi boxes) as stored, which
++  // Safari's Media Source reports as FairPlay's "sinf" init data.
++  std::vector<uint8_t> raw_payload;
+ 
+   bool HasSupportedScheme() const;
+   bool IsCbcsEncryptionScheme() const;
+--- a/media/formats/mp4/mp4_stream_parser.cc
++++ b/media/formats/mp4/mp4_stream_parser.cc
+@@ -12,6 +12,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/base64.h"
+ #include "base/containers/to_vector.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
+@@ -52,6 +53,21 @@
+ 
+ // Caller should be prepared to handle return of EncryptionScheme::kUnencrypted
+ // in case of unsupported scheme.
++// Parc: FairPlay's "sinf" init data for a protected track, as Safari's Media
++// Source reports it (AVStreamDataParser, SourceBufferPrivateAVFObjC): JSON
++// {"sinf": ["<base64 sinf payload>"]}, the payload being the track's frma,
++// schm and schi boxes. WebMediaPlayerImpl forwards it only to Media Source
++// elements of documents presenting Safari's identity.
++void AddSinfInitData(const ProtectionSchemeInfo& sinf,
++                     std::vector<std::vector<uint8_t>>* init_data) {
++  if (sinf.raw_payload.empty()) {
++    return;
++  }
++  const std::string json =
++      "{\"sinf\":[\"" + base::Base64Encode(sinf.raw_payload) + "\"]}";
++  init_data->emplace_back(json.begin(), json.end());
++}
++
+ EncryptionScheme GetEncryptionScheme(const ProtectionSchemeInfo& sinf) {
+   if (!sinf.HasSupportedScheme())
+     return EncryptionScheme::kUnencrypted;
+@@ -455,6 +471,7 @@
+   int detected_audio_track_count = 0;
+   int detected_video_track_count = 0;
+   int detected_metadata_track_count = 0;
++  std::vector<std::vector<uint8_t>> sinf_init_data;
+ 
+   for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
+        track != moov_->tracks.end(); ++track) {
+@@ -497,6 +514,9 @@
+       FourCC audio_format = (entry.format == FOURCC_ENCA)
+                                 ? entry.sinf.format.format
+                                 : entry.format;
++      if (entry.format == FOURCC_ENCA) {
++        AddSinfInitData(entry.sinf, &sinf_init_data);
++      }
+ 
+       if (audio_format != FOURCC_OPUS && audio_format != FOURCC_FLAC &&
+ #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+@@ -774,6 +794,9 @@
+                                      << " in stsd box.";
+         return false;
+       }
++      if (entry.format == FOURCC_ENCV) {
++        AddSinfInitData(entry.sinf, &sinf_init_data);
++      }
+ 
+       // TODO(strobe): Recover correct crop box
+       gfx::Size coded_size(entry.width, entry.height);
+@@ -888,6 +911,10 @@
+ 
+   if (!moov_->pssh.empty())
+     OnEncryptedMediaInitData(moov_->pssh);
++  // Parc: one "sinf" init data per protected track, after any pssh boxes.
++  for (const std::vector<uint8_t>& init_data : sinf_init_data) {
++    encrypted_media_init_data_cb_.Run(EmeInitDataType::SINF, init_data);
++  }
+ 
+   RCHECK(config_cb_.Run(std::move(media_tracks)));
+ 
 --- a/media/cdm/supported_audio_codecs.cc
 +++ b/media/cdm/supported_audio_codecs.cc
 @@ -4,6 +4,7 @@
@@ -1547,7 +1644,24 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -3023,6 +3075,15 @@
+@@ -1695,6 +1747,16 @@
+     const std::vector<uint8_t>& init_data) {
+   DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
+ 
++  // Parc: the MP4 parser reports FairPlay's "sinf" init data for every
++  // protected track, as Safari's Media Source does. Only a Media Source
++  // element of a document presenting Safari's identity hears it; every other
++  // element hears what it heard before.
++  if (init_data_type == media::EmeInitDataType::SINF &&
++      (load_type_ != kLoadTypeMediaSource ||
++       !client_->PresentsParcSafariIdentity())) {
++    return;
++  }
++
+   RecordEncryptedEvent(true);
+ 
+   // Recreate the watch time reporter if necessary.
+@@ -3023,6 +3085,15 @@
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
    }
@@ -1563,7 +1677,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3153,6 +3214,12 @@
+@@ -3153,6 +3224,12 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -1576,7 +1690,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3860,26 @@
+@@ -3793,6 +3870,26 @@
      return false;
    }
  

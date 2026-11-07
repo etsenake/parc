@@ -47,6 +47,12 @@ On a page that presents Safari's identity:
   `generateRequest` accepts them. Every other page treats them as the
   unregistered names they were before. Netflix and Apple TV+ ask for `cenc`
   only.
+- A Media Source element fires `encrypted` with `sinf` init data,
+  `{"sinf":["<base64 sinf payload>"]}`, for each protected track of an
+  initialization segment, as Safari's Media Source does. The MP4 parser
+  reports it for every page (fairplay-media.patch, `mp4_stream_parser.cc`);
+  `WebMediaPlayerImpl` passes it on only for Media Source on a
+  Safari-identity document (`HTMLMediaElement::PresentsParcSafariIdentity`).
 - Service and shared workers of the site start with the same user agent
   (not those partitioned under another site's page, where the site's frames
   stay Chrome), so their `navigator.userAgent` and their fetches match, and

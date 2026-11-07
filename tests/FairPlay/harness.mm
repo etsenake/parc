@@ -1306,6 +1306,21 @@ void SelfTests(const Media& video, const Media& audio) {
   auto sinf = fp::PlanContentKeyRequests(fp::InitDataType::kSinf, Bytes(sinf_json));
   Check(sinf.error.empty() && sinf.calls.size() == 1 && sinf.calls[0].key_ids[0] == g_key_id,
         "init data: sinf JSON -> tenc key ID");
+  // What Safari's Media Source fires `encrypted` with, and Parc's MP4 parser
+  // reports for every protected track on Safari-identity pages
+  // (fairplay-media.patch, mp4_stream_parser.cc AddSinfInitData): compact JSON
+  // naming the track's sinf payload as stored, audio as well as video.
+  for (const auto* track : {&v, &a}) {
+    auto plan = fp::PlanContentKeyRequests(
+        fp::InitDataType::kSinf,
+        Bytes("{\"sinf\":[\"" +
+              std::string([Data(track->sinf_payload) base64EncodedStringWithOptions:0].UTF8String) +
+              "\"]}"));
+    Check(plan.error.empty() && !plan.json_messages && plan.calls.size() == 1 &&
+              plan.calls[0].key_ids == std::vector<std::vector<uint8_t>>{g_key_id},
+          "init data: Media Source's sinf init data for each protected track -> one request "
+          "for its tenc key ID, the raw SPC/CKC exchange WebKit uses");
+  }
   // WebKit's legacy com.apple.fps.2_N: the media's init data, the page's
   // content identifier (parc_webkit_media_keys.h's keyids extension).
   auto legacy = [&](const char* type, const std::vector<uint8_t>& data) {
