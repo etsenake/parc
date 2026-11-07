@@ -11,6 +11,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_
 
+#include <cstdint>
+
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -101,6 +103,28 @@ inline bool IsParcFairPlayKeySystem(const String& key_system) {
 // IsParcFairPlayKeySystem names.
 inline bool IsParcSafariOnlySessionType(const String& session_type) {
   return session_type == "persistent-usage-record";
+}
+
+// WebKit's SpatialAudioPlaybackHelper::supportsSpatialAudioPlaybackForConfiguration
+// on macOS, which MediaCapabilities.decodingInfo asks for an audio
+// configuration with spatialRendering: the default output device's spatial
+// audio sources (AudioGetDeviceSpatialPreferencesForContentType, read by the
+// browser) against the configuration's channel count. Multichannel sources
+// spatialize more than two channels; mono or stereo sources spatialize at
+// least one.
+inline bool IsParcSafariSpatialAudioSupported(const auto& sources,
+                                              double channels) {
+  constexpr uint32_t kSpatialAudioSourceMultichannel = 0x6d6c7469;  // 'mlti'
+  constexpr uint32_t kSpatialAudioSourceMonoOrStereo = 0x6d6f7374;  // 'most'
+  for (const uint32_t source : sources) {
+    if (source == kSpatialAudioSourceMultichannel && channels > 2) {
+      return true;
+    }
+    if (source == kSpatialAudioSourceMonoOrStereo && channels >= 1) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace blink

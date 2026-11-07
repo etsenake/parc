@@ -534,7 +534,20 @@
    return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state, info);
  }
  
-@@ -733,6 +751,411 @@
+@@ -652,7 +670,11 @@
+                                    /*allow_ambiguous_matches=*/false);
+   DCHECK(audio_type);
+ 
+-  if (audio_config->hasSpatialRendering())
++  // Parc: the IDL reads spatialRendering on every page now (Safari-identity
++  // documents answer it as WebKit does); Chromium keeps using it only with its
++  // flag, as before.
++  if (RuntimeEnabledFeatures::MediaCapabilitiesSpatialAudioEnabled() &&
++      audio_config->hasSpatialRendering())
+     audio_type->spatial_rendering = audio_config->spatialRendering();
+ 
+   return media::IsDecoderSupportedAudioType(*audio_type);
+@@ -733,6 +755,414 @@
    return true;
  }
  
@@ -580,6 +593,9 @@
 +    }
 +    if (audio->hasSamplerate()) {
 +      copy->setSamplerate(audio->samplerate());
++    }
++    if (audio->hasSpatialRendering()) {
++      copy->setSpatialRendering(audio->spatialRendering());
 +    }
 +    echo->setAudio(copy);
 +  }
@@ -946,7 +962,7 @@
  #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
  bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
    return video_codec_str.starts_with("dvh1.") ||
-@@ -782,11 +1205,13 @@
+@@ -782,11 +1212,13 @@
  MediaCapabilities::MediaCapabilities(NavigatorBase& navigator)
      : Supplement<NavigatorBase>(navigator),
        decode_history_service_(navigator.GetExecutionContext()),
@@ -961,7 +977,7 @@
    visitor->Trace(pending_cb_map_);
    ScriptWrappable::Trace(visitor);
    Supplement<NavigatorBase>::Trace(visitor);
-@@ -805,6 +1230,7 @@
+@@ -805,6 +1237,7 @@
  void MediaCapabilities::PendingCallbackState::Trace(
      blink::Visitor* visitor) const {
    visitor->Trace(key_system_access);
@@ -969,7 +985,7 @@
    visitor->Trace(resolver);
  }
  
-@@ -820,6 +1246,24 @@
+@@ -820,6 +1253,24 @@
          WebFeature::kMediaCapabilitiesDecodingInfoWithKeySystemConfig);
    }
  
@@ -994,7 +1010,7 @@
    const bool is_webrtc = config->type() == V8MediaDecodingType::Enum::kWebrtc;
    String message;
    if (!IsValidMediaDecodingConfiguration(config, is_webrtc, &message)) {
-@@ -847,6 +1291,7 @@
+@@ -847,6 +1298,7 @@
                              : WebrtcDecodingInfoHandler::Instance()) {
        const int callback_id = InsertCallbackAndScheduleTimeout(
            resolver, nullptr, request_time, QueryType::kWebrtcDecoding);
@@ -1002,7 +1018,7 @@
  
        std::optional<webrtc::SdpAudioFormat> sdp_audio_format =
            config->hasAudio()
-@@ -898,11 +1343,27 @@
+@@ -898,11 +1350,27 @@
      // happens.
      DCHECK(false);
      DVLOG(2) << __func__ << " Could not get DecodingInfoHandler.";
@@ -1031,7 +1047,7 @@
    String audio_mime_str;
    String audio_codec_str;
    if (config->hasAudio()) {
-@@ -921,6 +1382,17 @@
+@@ -921,6 +1389,17 @@
      DCHECK(valid_content_type);
    }
  
@@ -1049,7 +1065,7 @@
    // MSE support is cheap to check (regex matching). Do it first. Also, note
    // that MSE support is not implied by EME support, so do it irrespective of
    // whether we have a KeySystem configuration.
-@@ -931,10 +1403,9 @@
+@@ -931,10 +1410,9 @@
           !CheckMseSupport(video_mime_str, video_codec_str))) {
        // Unsupported EME queries should resolve with a null
        // MediaKeySystemAccess.
@@ -1063,7 +1079,7 @@
      }
    }
  
-@@ -1163,6 +1634,56 @@
+@@ -1163,6 +1641,107 @@
    return promise;
  }
  
@@ -1081,12 +1097,7 @@
 +                            parc_video_toolbox_facts_.Clone());
 +    return promise;
 +  }
-+  ExecutionContext* execution_context = ExecutionContext::From(script_state);
-+  if (!parc_video_toolbox_.is_bound()) {
-+    execution_context->GetBrowserInterfaceBroker().GetInterface(
-+        parc_video_toolbox_.BindNewPipeAndPassReceiver(
-+            execution_context->GetTaskRunner(TaskType::kMediaElementEvent)));
-+  }
++  ParcBindVideoToolbox(ExecutionContext::From(script_state));
 +  // Answered without the facts if the browser can't give them.
 +  parc_video_toolbox_->GetFacts(mojo::WrapCallbackWithDefaultInvokeIfNotRun(
 +      BindOnce(&MediaCapabilities::OnParcVideoToolboxFacts,
@@ -1109,6 +1120,22 @@
 +  }
 +  const std::optional<ParcDecodingAnswer> answer =
 +      ParcSafariAnswer(config, facts.get());
++  // WebKit: with spatialRendering, `supported` then follows
++  // SpatialAudioPlaybackHelper, judged against the audio output device.
++  if (answer && config->hasAudio() &&
++      config->audio()->hasSpatialRendering() &&
++      config->audio()->spatialRendering()) {
++    ParcBindVideoToolbox(execution_context);
++    parc_video_toolbox_->GetSpatialAudioSources(
++        config->hasVideo(),
++        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++            BindOnce(&MediaCapabilities::OnParcSpatialAudioSources,
++                     WrapPersistent(this), WrapPersistent(resolver),
++                     WrapPersistent(config), answer->smooth,
++                     answer->power_efficient),
++            Vector<uint32_t>()));
++    return;
++  }
 +  auto* info = MediaCapabilitiesDecodingInfo::Create();
 +  info->setSupported(answer && answer->supported);
 +  info->setSmooth(answer && answer->smooth);
@@ -1117,10 +1144,50 @@
 +      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
 +}
 +
++void MediaCapabilities::OnParcSpatialAudioSources(
++    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
++    const MediaDecodingConfiguration* config,
++    bool smooth,
++    bool power_efficient,
++    const Vector<uint32_t>& sources) {
++  ExecutionContext* execution_context = resolver->GetExecutionContext();
++  if (!execution_context || execution_context->IsContextDestroyed()) {
++    return;
++  }
++  // WebKit's AudioConfiguration channels, read with String::toDouble: leading
++  // spaces skipped, the number before any trailing junk, 0 without one.
++  const String channels =
++      config->audio()->hasChannels() ? config->audio()->channels() : String();
++  size_t parsed_length = 0;
++  const double channel_count =
++      channels.empty()
++          ? 0
++          : (channels.Is8Bit()
++                 ? CharactersToDouble(channels.Span8(), parsed_length)
++                 : CharactersToDouble(channels.Span16(), parsed_length));
++  auto* info = MediaCapabilitiesDecodingInfo::Create();
++  info->setSupported(IsParcSafariSpatialAudioSupported(
++      sources, channel_count));
++  info->setSmooth(smooth);
++  info->setPowerEfficient(power_efficient);
++  resolver->Resolve(
++      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
++}
++
++void MediaCapabilities::ParcBindVideoToolbox(
++    ExecutionContext* execution_context) {
++  if (parc_video_toolbox_.is_bound()) {
++    return;
++  }
++  execution_context->GetBrowserInterfaceBroker().GetInterface(
++      parc_video_toolbox_.BindNewPipeAndPassReceiver(
++          execution_context->GetTaskRunner(TaskType::kMediaElementEvent)));
++}
++
  bool MediaCapabilities::EnsurePerfHistoryService(
      ExecutionContext* execution_context) {
    if (decode_history_service_.is_bound())
-@@ -1353,6 +1874,15 @@
+@@ -1353,6 +1932,15 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
  
@@ -1136,7 +1203,7 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
-@@ -1374,8 +1904,9 @@
+@@ -1374,8 +1962,9 @@
  
    if (!decoding_config->hasVideo()) {
      // Audio-only is always smooth and power efficient.
@@ -1148,7 +1215,7 @@
      resolver->Resolve(info);
      return;
    }
-@@ -1393,13 +1924,16 @@
+@@ -1393,13 +1982,16 @@
    }
  
    if (!EnsurePerfHistoryService(execution_context)) {
@@ -1166,7 +1233,7 @@
  
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1520,7 +2054,8 @@
+@@ -1520,7 +2112,8 @@
  
    auto* info = MediaCapabilitiesDecodingInfo::Create();
    info->setSupported(true);
@@ -1176,7 +1243,7 @@
  
    if (UseGpuFactoriesForPowerEfficient(execution_context,
                                         pending_cb->key_system_access)) {
-@@ -1675,7 +2210,10 @@
+@@ -1675,7 +2268,10 @@
      pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(info);
    } else {
      CHECK_EQ(pending_cb->query_type, QueryType::kWebrtcDecoding);
@@ -1188,7 +1255,7 @@
      info->setSupported(is_supported);
      info->setPowerEfficient(is_power_efficient);
      info->setSmooth(is_smooth);
-@@ -1716,8 +2254,9 @@
+@@ -1716,8 +2312,9 @@
    }
  
    CHECK_EQ(pending_cb->query_type, QueryType::kDecoding);
@@ -2676,7 +2743,7 @@
      std::optional<bool> is_supported;
      std::optional<bool> is_bad_window_prediction_smooth;
      std::optional<bool> is_nnr_prediction_smooth;
-@@ -183,6 +186,19 @@
+@@ -183,6 +186,26 @@
    // successful. Returns true if it was already bound.
    bool EnsureWebrtcPerfHistoryService(ExecutionContext* execution_context);
  
@@ -2692,11 +2759,18 @@
 +      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>*,
 +      const MediaDecodingConfiguration*,
 +      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr);
++  void OnParcSpatialAudioSources(
++      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>*,
++      const MediaDecodingConfiguration*,
++      bool smooth,
++      bool power_efficient,
++      const Vector<uint32_t>& sources);
++  void ParcBindVideoToolbox(ExecutionContext*);
 +
    ScriptPromise<MediaCapabilitiesDecodingInfo> GetEmeSupport(
        ScriptState*,
        media::VideoCodec,
-@@ -265,6 +281,13 @@
+@@ -265,6 +288,13 @@
    HeapMojoRemote<media::mojom::blink::WebrtcVideoPerfHistory>
        webrtc_history_service_;
  
@@ -2939,3 +3013,15 @@
    // 2. Asynchronously create and initialize the MediaKeys object.
    // 2.1 Let cdm be the CDM corresponding to this object.
    // 2.2 Load and initialize the cdm if necessary.
+--- a/third_party/blink/renderer/modules/media_capabilities/audio_configuration.idl
++++ b/third_party/blink/renderer/modules/media_capabilities/audio_configuration.idl
+@@ -10,5 +10,8 @@
+     DOMString channels;
+     unsigned long bitrate;
+     unsigned long samplerate;
+-    [RuntimeEnabled=MediaCapabilitiesSpatialAudio] boolean spatialRendering;
++    // Parc: always read, since WebKit's AudioConfiguration has it; Chromium
++    // still uses it only with MediaCapabilitiesSpatialAudio, and documents
++    // presenting Safari's identity get WebKit's answer.
++    boolean spatialRendering;
+ };

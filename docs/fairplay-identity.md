@@ -107,11 +107,17 @@ On a page that presents Safari's identity:
   VideoToolbox as WebKit reads it (H.264 hardware decode; HEVC per-profile
   hardware and playback level, a level over the decode level refused; Dolby
   Vision profiles, levels and hardware), and audio alone is supported but
-  neither smooth nor power efficient. The browser reads VideoToolbox once and
-  serves it to windows and dedicated workers
+  neither smooth nor power efficient. With `spatialRendering`, `supported`
+  then follows the audio output device as on macOS Safari: the device's
+  spatial audio sources for audiovisual or audio-only content (AudioToolbox's
+  `AudioGetDeviceSpatialPreferencesForContentType`) against the
+  configuration's `channels` (multichannel sources for more than two,
+  mono-or-stereo sources for at least one). The browser reads VideoToolbox
+  once, and the spatial audio sources at each query, and serves them to
+  windows and dedicated workers
   (`content/browser/media/parc_video_toolbox_decoding.mm`), since a renderer
   can't ask from its sandbox. Other video codecs keep Chromium's answers in
-  WebKit's result shape.
+  WebKit's result shape, without the spatial audio check.
 - FairPlay takes WebKit's init data types `sinf`, `skd` and `mpts` (MPEG-2
   TS, macOS) besides `cenc`: `requestMediaKeySystemAccess` keeps them in a
   FairPlay configuration and `generateRequest` accepts them. Every other page

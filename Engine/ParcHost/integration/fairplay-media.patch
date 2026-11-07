@@ -4505,7 +4505,7 @@
    demuxer_ = nullptr;
 --- a/media/mojo/mojom/video_decode_perf_history.mojom
 +++ b/media/mojo/mojom/video_decode_perf_history.mojom
-@@ -15,3 +15,44 @@
+@@ -15,3 +15,50 @@
    // conversion to bool higher in the stack.
    GetPerfInfo(PredictionFeatures features) => (bool is_smooth, bool is_power_efficient);
  };
@@ -4549,6 +4549,12 @@
 +// Bound for frames and dedicated workers on macOS.
 +interface ParcVideoToolboxDecoding {
 +  GetFacts() => (ParcVideoToolboxDecodingFacts facts);
++  // AudioToolbox's spatial audio sources ('mlti', 'most', 'binh') for the
++  // default output device and content type ('moov' with video, 'soun'
++  // without), as WebKit's SpatialAudioPlaybackHelperMac asks them; empty when
++  // the call fails or names none. Read at each call, since they follow the
++  // output device.
++  GetSpatialAudioSources(bool audiovisual) => (array<uint32> sources);
 +};
 --- a/content/browser/browser_interface_binders.cc
 +++ b/content/browser/browser_interface_binders.cc

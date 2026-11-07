@@ -12,8 +12,9 @@
 // element there hears `encrypted` with "sinf" init data only, as in Safari;
 // which encryptionScheme and sessionTypes values requestMediaKeySystemAccess
 // takes there without a TypeError (WebKit's IDL enums); FairPlay's key
-// system names; and that "persistent-usage-record" is a session type only
-// under Safari's identity.
+// system names; that "persistent-usage-record" is a session type only
+// under Safari's identity; and WebKit's macOS spatial audio rule for
+// decodingInfo's spatialRendering.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -229,6 +230,23 @@ int main() {
               EncryptedEventDelivered(user_agent, Load::kMediaSource, "webm"),
           "other documents hear cenc and webm init data as before and never sinf");
   }
+
+  // WebKit's macOS spatial audio rule for decodingInfo's spatialRendering:
+  // the output device's sources against the configuration's channels.
+  const std::vector<uint32_t> mono_or_stereo = {0x6d6f7374};  // 'most'
+  const std::vector<uint32_t> multichannel = {0x6d6c7469};    // 'mlti'
+  const std::vector<uint32_t> binaural = {0x62696e68};        // 'binh'
+  Check(blink::IsParcSafariSpatialAudioSupported(mono_or_stereo, 2) &&
+            blink::IsParcSafariSpatialAudioSupported(mono_or_stereo, 1),
+        "mono or stereo sources spatialize one or two channels");
+  Check(!blink::IsParcSafariSpatialAudioSupported(mono_or_stereo, 0),
+        "no channel count, no spatial audio");
+  Check(blink::IsParcSafariSpatialAudioSupported(multichannel, 5.1) &&
+            !blink::IsParcSafariSpatialAudioSupported(multichannel, 2),
+        "multichannel sources spatialize more than two channels");
+  Check(!blink::IsParcSafariSpatialAudioSupported(binaural, 6) &&
+            !blink::IsParcSafariSpatialAudioSupported(std::vector<uint32_t>(), 2),
+        "binaural sources or none spatialize nothing");
 
   std::printf("renderer gate: %u checks passed\n", checks);
   return 0;

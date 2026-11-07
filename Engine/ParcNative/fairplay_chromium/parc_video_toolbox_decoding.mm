@@ -6,6 +6,7 @@
 #include <CoreMedia/CoreMedia.h>
 #include <dlfcn.h>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -222,6 +223,50 @@ media::mojom::ParcVideoToolboxDecodingFactsPtr CachedFacts() {
   return (*facts)->Clone();
 }
 
+// AudioToolbox's SpatialAudioPreferences, laid out as WebKit declares it
+// (pal/spi/cocoa/AudioToolboxSPI.h).
+struct SpatialAudioPreferences {
+  Boolean prefers_head_tracked_spatialization;
+  Boolean prefers_lossy_audio_sources;
+  Boolean always_spatialize;
+  Boolean pad[5];
+  UInt32 max_spatializable_channels;
+  UInt32 spatial_audio_source_count;
+  UInt32 spatial_audio_sources[3];
+};
+
+// WebKit's SpatialAudioPlaybackHelperMac: the default output device's spatial
+// audio preferences for audiovisual ('moov') or audio-only ('soun') content,
+// through AudioGetDeviceSpatialPreferencesForContentType (SPI, soft-linked
+// there, so looked up here). Empty when it is missing, fails or names none.
+std::vector<uint32_t> ReadSpatialAudioSources(bool audiovisual) {
+  constexpr UInt32 kAudiovisual = 0x6d6f6f76;  // 'moov'
+  constexpr UInt32 kAudioOnly = 0x736f756e;    // 'soun'
+  std::vector<uint32_t> sources;
+  void* const audio_toolbox = dlopen(
+      "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox",
+      RTLD_LAZY | RTLD_LOCAL);
+  if (!audio_toolbox) {
+    return sources;
+  }
+  using GetPreferences =
+      OSStatus (*)(CFStringRef, UInt32, SpatialAudioPreferences*);
+  auto get_preferences = reinterpret_cast<GetPreferences>(
+      dlsym(audio_toolbox, "AudioGetDeviceSpatialPreferencesForContentType"));
+  SpatialAudioPreferences preferences = {};
+  if (get_preferences &&
+      get_preferences(nullptr, audiovisual ? kAudiovisual : kAudioOnly,
+                      &preferences) == noErr) {
+    const UInt32 count =
+        std::min<UInt32>(preferences.spatial_audio_source_count, 3);
+    for (UInt32 i = 0; i < count; ++i) {
+      sources.push_back(preferences.spatial_audio_sources[i]);
+    }
+  }
+  dlclose(audio_toolbox);
+  return sources;
+}
+
 class ParcVideoToolboxDecodingImpl
     : public media::mojom::ParcVideoToolboxDecoding {
  public:
@@ -229,6 +274,15 @@ class ParcVideoToolboxDecodingImpl
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
         base::BindOnce(&CachedFacts), std::move(callback));
+  }
+
+  // Read at every call: the preferences follow the output device.
+  void GetSpatialAudioSources(bool audiovisual,
+                              GetSpatialAudioSourcesCallback callback) override {
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ReadSpatialAudioSources, audiovisual),
+        std::move(callback));
   }
 };
 
