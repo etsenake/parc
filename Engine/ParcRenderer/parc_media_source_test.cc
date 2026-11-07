@@ -4,12 +4,13 @@
 // (blink_unittests). Tests what a MediaSource tells a page and its media
 // engine under Safari's identity (parc_safari_identity.h) and under Chrome's:
 // types named without codecs, MPEG-2 TS types, Safari's other types and
-// codecs, and a duration set below the buffered end.
+// codecs, Ogg, and a duration set below the buffered end.
 
 #include "base/test/scoped_command_line.h"
 #include "media/base/parc_av1_support.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_decoding_configuration.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_audio_configuration.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_video_configuration.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_capabilities_decoding_info.h"
 #include "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h"
@@ -406,7 +407,7 @@ TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedSafariContainers) {
     EXPECT_TRUE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
   for (const char* type :
-       {"audio/mpeg; codecs=\"mp4a.6B\"", "audio/ogg", "text/vtt",
+       {"audio/mpeg; codecs=\"mp4a.6B\"", "text/vtt",
         "audio/x-m4a; codecs=\"bogus\""}) {
     EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
@@ -432,6 +433,117 @@ TEST_F(ParcMediaSourceTest, ChromeIsTypeSupportedChromeContainers) {
     EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
   EXPECT_TRUE(MediaSource::isTypeSupported(Context(), "audio/mpeg"));
+}
+
+// AVStreamDataParser's answers for Ogg (canParseExtendedMIMEType), which
+// WebKit's MediaSource::isTypeSupported takes; without codecs, any type it
+// lists.
+TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedOgg) {
+  SetUserAgent(kSafariUserAgent);
+  for (const char* type :
+       {"audio/ogg", "application/ogg", "audio/ogg; codecs=\"opus\"",
+        "audio/ogg; codecs=\"vorbis\"", "audio/ogg; codecs=\"flac\"",
+        "audio/ogg; codecs=\"opus,vorbis\""}) {
+    EXPECT_TRUE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+  for (const char* type :
+       {"audio/ogg; codecs=\"Opus\"", "audio/ogg; codecs=\"fLaC\"",
+        "audio/ogg; codecs=\"speex\"", "application/ogg; codecs=\"opus\"",
+        "video/ogg", "video/ogg; codecs=\"theora\""}) {
+    EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+}
+
+TEST_F(ParcMediaSourceTest, ChromeIsTypeSupportedRefusesOgg) {
+  SetUserAgent(kChromeUserAgent);
+  for (const char* type : {"audio/ogg", "audio/ogg; codecs=\"opus\"",
+                           "application/ogg"}) {
+    EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+}
+
+TEST_F(ParcMediaSourceTest, SafariOggSourceBufferAndChangeType) {
+  SetUserAgent(kSafariUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  SourceBuffer* source_buffer =
+      media_source->addSourceBuffer("audio/ogg; codecs=\"opus\"", add_exception);
+  EXPECT_FALSE(add_exception.HadException());
+  ASSERT_TRUE(source_buffer);
+  EXPECT_EQ(engine_->data.added_type, "audio/ogg");
+  EXPECT_EQ(engine_->data.added_codecs, "opus");
+
+  DummyExceptionStateForTesting change_exception;
+  source_buffer->changeType("audio/ogg; codecs=\"flac\"", change_exception);
+  EXPECT_FALSE(change_exception.HadException());
+  EXPECT_EQ(engine_->data.changed_type, "audio/ogg");
+  EXPECT_EQ(engine_->data.changed_codecs, "flac");
+
+  DummyExceptionStateForTesting refused_exception;
+  source_buffer->changeType("video/ogg", refused_exception);
+  EXPECT_EQ(refused_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+}
+
+TEST_F(ParcMediaSourceTest, ChromeSourceBufferRefusesOgg) {
+  SetUserAgent(kChromeUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  EXPECT_FALSE(media_source->addSourceBuffer("audio/ogg; codecs=\"opus\"",
+                                             add_exception));
+  EXPECT_EQ(add_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+  EXPECT_EQ(engine_->data.add_source_buffer_calls, 0);
+
+  DummyExceptionStateForTesting webm_exception;
+  SourceBuffer* source_buffer = media_source->addSourceBuffer(
+      "audio/webm; codecs=\"opus\"", webm_exception);
+  ASSERT_TRUE(source_buffer);
+  DummyExceptionStateForTesting change_exception;
+  source_buffer->changeType("audio/ogg; codecs=\"opus\"", change_exception);
+  EXPECT_EQ(change_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+  EXPECT_TRUE(engine_->data.changed_type.empty());
+}
+
+// WebKit's decodingInfo for a media-source audio configuration:
+// MediaPlayer::supportsType() == IsSupported, so Ogg naming its codec.
+TEST_F(ParcMediaSourceTest, OggDecodingInfoAcrossIdentities) {
+  auto* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ScriptState::Scope scope(script_state);
+  struct {
+    const char* agent;
+    const char* type;
+    bool supported;
+  } kCases[] = {
+      {kSafariUserAgent, "audio/ogg; codecs=\"opus\"", true},
+      {kSafariUserAgent, "audio/ogg; codecs=\"vorbis\"", true},
+      {kSafariUserAgent, "audio/ogg", false},
+      {kChromeUserAgent, "audio/ogg; codecs=\"opus\"", false},
+  };
+  for (const auto& test_case : kCases) {
+    SetUserAgent(test_case.agent);
+    auto* config = MediaDecodingConfiguration::Create();
+    config->setType(V8MediaDecodingType::Enum::kMediaSource);
+    auto* audio = AudioConfiguration::Create();
+    audio->setContentType(test_case.type);
+    config->setAudio(audio);
+    DummyExceptionStateForTesting exception;
+    auto* capabilities = MediaCapabilities::mediaCapabilities(
+        *GetFrame().DomWindow()->navigator());
+    ScriptPromiseTester tester(
+        script_state,
+        capabilities->decodingInfo(script_state, config, exception));
+    tester.WaitUntilSettled();
+    ASSERT_TRUE(tester.IsFulfilled()) << test_case.type;
+    auto* info = NativeValueTraits<MediaCapabilitiesDecodingInfo>::NativeValue(
+        script_state->GetIsolate(), tester.Value().V8Value(), exception);
+    ASSERT_TRUE(info);
+    EXPECT_EQ(info->supported(), test_case.supported)
+        << test_case.agent << " " << test_case.type;
+  }
 }
 
 TEST_F(ParcMediaSourceTest, SafariPCMSourceBufferAndChangeType) {

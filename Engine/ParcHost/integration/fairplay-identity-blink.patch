@@ -713,16 +713,17 @@
  #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
-@@ -147,12 +156,20 @@
+@@ -146,13 +155,21 @@
+   info->setPowerEfficient(value);
    return info;
  }
- 
++
 +MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
 +    MediaCapabilitiesDecodingInfo* info,
 +    ExecutionContext* context,
 +    const MediaDecodingConfiguration* config,
 +    MediaKeySystemAccess* access);
-+
+ 
  ScriptPromise<MediaCapabilitiesDecodingInfo>
  CreateResolvedPromiseToDecodingInfoWith(
      bool value,
@@ -748,7 +749,7 @@
      audio_type->spatial_rendering = audio_config->spatialRendering();
  
    return media::IsDecoderSupportedAudioType(*audio_type);
-@@ -731,8 +752,419 @@
+@@ -731,8 +752,428 @@
    *mime_type = parsed_content_type.MimeType().ToAsciiLower();
    *codec = parsed_content_type.ParameterValueForName(kCodecsMimeTypeParam);
    return true;
@@ -891,8 +892,8 @@
 +    start = end + 1;
 +  }
 +  return pieces;
- }
- 
++}
++
 +struct ParcHevcParameters {
 +  uint8_t profile_space = 0;
 +  uint8_t profile_idc = 0;
@@ -1048,12 +1049,21 @@
 +    }
 +  }
 +  if (config->type() == V8MediaDecodingType::Enum::kMediaSource) {
++    // Ogg naming its codec, as Safari's Media Source takes it
++    // (media::StreamParserFactory::ParcSafariTakesOgg()).
++    const std::string mime_ascii = mime_type.Ascii();
++    if (media::StreamParserFactory::ParcIsOggType(mime_ascii)) {
++      const std::string codec_ascii = codec.Ascii();
++      return !codec_ascii.empty() &&
++             media::StreamParserFactory::ParcSafariTakesOgg(
++                 mime_ascii, base::span_from_ref(codec_ascii));
++    }
 +    return CheckMseSupport(mime_type, codec);
 +  }
 +  return HTMLMediaElement::GetSupportsType(ContentType(content_type)) ==
 +         MIMETypeRegistry::kSupported;
-+}
-+
+ }
+ 
 +// Parc: computeMediaCapabilitiesInfo (WebKit's
 +// PlatformMediaEngineConfigurationFactoryCocoa.cpp) for the codecs FairPlay
 +// plays, with VideoToolbox's facts read by the browser
@@ -1168,7 +1178,7 @@
  #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
  bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
    return video_codec_str.starts_with("dvh1.") ||
-@@ -782,11 +1214,13 @@
+@@ -782,11 +1223,13 @@
  MediaCapabilities::MediaCapabilities(NavigatorBase& navigator)
      : Supplement<NavigatorBase>(navigator),
        decode_history_service_(navigator.GetExecutionContext()),
@@ -1183,7 +1193,7 @@
    visitor->Trace(pending_cb_map_);
    ScriptWrappable::Trace(visitor);
    Supplement<NavigatorBase>::Trace(visitor);
-@@ -805,6 +1239,7 @@
+@@ -805,6 +1248,7 @@
  void MediaCapabilities::PendingCallbackState::Trace(
      blink::Visitor* visitor) const {
    visitor->Trace(key_system_access);
@@ -1191,7 +1201,7 @@
    visitor->Trace(resolver);
  }
  
-@@ -820,6 +1255,24 @@
+@@ -820,6 +1264,24 @@
          WebFeature::kMediaCapabilitiesDecodingInfoWithKeySystemConfig);
    }
  
@@ -1216,7 +1226,7 @@
    const bool is_webrtc = config->type() == V8MediaDecodingType::Enum::kWebrtc;
    String message;
    if (!IsValidMediaDecodingConfiguration(config, is_webrtc, &message)) {
-@@ -847,6 +1300,7 @@
+@@ -847,6 +1309,7 @@
                              : WebrtcDecodingInfoHandler::Instance()) {
        const int callback_id = InsertCallbackAndScheduleTimeout(
            resolver, nullptr, request_time, QueryType::kWebrtcDecoding);
@@ -1224,7 +1234,7 @@
  
        std::optional<webrtc::SdpAudioFormat> sdp_audio_format =
            config->hasAudio()
-@@ -898,9 +1352,25 @@
+@@ -898,9 +1361,25 @@
      // happens.
      DCHECK(false);
      DVLOG(2) << __func__ << " Could not get DecodingInfoHandler.";
@@ -1251,7 +1261,7 @@
    }
  
    String audio_mime_str;
-@@ -921,6 +1391,21 @@
+@@ -921,6 +1400,21 @@
      DCHECK(valid_content_type);
    }
  
@@ -1273,7 +1283,7 @@
    // MSE support is cheap to check (regex matching). Do it first. Also, note
    // that MSE support is not implied by EME support, so do it irrespective of
    // whether we have a KeySystem configuration.
-@@ -931,10 +1416,9 @@
+@@ -931,10 +1425,9 @@
           !CheckMseSupport(video_mime_str, video_codec_str))) {
        // Unsupported EME queries should resolve with a null
        // MediaKeySystemAccess.
@@ -1287,13 +1297,10 @@
      }
    }
  
-@@ -1160,9 +1644,110 @@
-   DVLOG(2) << __func__ << " Could not get MediaRecorderHandler.";
-   MediaCapabilitiesInfo* info = CreateEncodingInfoWith(false);
-   resolver->Resolve(info);
-+  return promise;
-+}
-+
+@@ -1163,6 +1656,107 @@
+   return promise;
+ }
+ 
 +ScriptPromise<MediaCapabilitiesDecodingInfo>
 +MediaCapabilities::ParcSafariDecodingInfo(
 +    ScriptState* script_state,
@@ -1315,9 +1322,9 @@
 +               WrapPersistent(this), WrapPersistent(resolver),
 +               WrapPersistent(config)),
 +      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr()));
-   return promise;
- }
- 
++  return promise;
++}
++
 +void MediaCapabilities::OnParcVideoToolboxFacts(
 +    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
 +    const MediaDecodingConfiguration* config,
@@ -1398,7 +1405,7 @@
  bool MediaCapabilities::EnsurePerfHistoryService(
      ExecutionContext* execution_context) {
    if (decode_history_service_.is_bound())
-@@ -1353,6 +1938,15 @@
+@@ -1353,6 +1947,15 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
  
@@ -1414,7 +1421,7 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
-@@ -1374,8 +1968,9 @@
+@@ -1374,8 +1977,9 @@
  
    if (!decoding_config->hasVideo()) {
      // Audio-only is always smooth and power efficient.
@@ -1426,7 +1433,7 @@
      resolver->Resolve(info);
      return;
    }
-@@ -1393,13 +1988,16 @@
+@@ -1393,13 +1997,16 @@
    }
  
    if (!EnsurePerfHistoryService(execution_context)) {
@@ -1444,7 +1451,7 @@
  
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1520,7 +2118,8 @@
+@@ -1520,7 +2127,8 @@
  
    auto* info = MediaCapabilitiesDecodingInfo::Create();
    info->setSupported(true);
@@ -1454,7 +1461,7 @@
  
    if (UseGpuFactoriesForPowerEfficient(execution_context,
                                         pending_cb->key_system_access)) {
-@@ -1675,7 +2274,10 @@
+@@ -1675,7 +2283,10 @@
      pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(info);
    } else {
      CHECK_EQ(pending_cb->query_type, QueryType::kWebrtcDecoding);
@@ -1466,7 +1473,7 @@
      info->setSupported(is_supported);
      info->setPowerEfficient(is_power_efficient);
      info->setSmooth(is_smooth);
-@@ -1716,8 +2318,9 @@
+@@ -1716,8 +2327,9 @@
    }
  
    CHECK_EQ(pending_cb->query_type, QueryType::kDecoding);
@@ -1525,7 +1532,7 @@
  
    if (!web_source_buffer) {
      // 2. If type contains a MIME type that is not supported ..., then throw a
-@@ -562,9 +572,63 @@
+@@ -562,9 +572,67 @@
    }
  
    String codecs = content_type.Parameter("codecs");
@@ -1542,6 +1549,10 @@
 +    const std::string lower_mime_type = mime_type.ToAsciiLower().Ascii();
 +    std::vector<std::string> parsed_codec_ids;
 +    media::SplitCodecs(codecs.Ascii(), &parsed_codec_ids);
++    if (media::StreamParserFactory::ParcIsOggType(lower_mime_type)) {
++      return media::StreamParserFactory::ParcSafariTakesOgg(lower_mime_type,
++                                                            parsed_codec_ids);
++    }
 +    std::optional<media::StreamParserFactory::ParcSafariType> safari_type =
 +        media::StreamParserFactory::ParcSafariMediaSourceType(lower_mime_type,
 +                                                              parsed_codec_ids);
@@ -1589,7 +1600,7 @@
    // Mime util doesn't include the mp2t container in order to prevent codec
    // support leaking into HtmlMediaElement.canPlayType. If the stream parser
    // is enabled, we should check that the codecs are valid using the mp4
-@@ -595,10 +659,24 @@
+@@ -595,10 +663,24 @@
    // from the codecs in the `filtered_content_type`.
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
    // specified, allow DV regardless of `enforce_codec_specificity`.
@@ -1615,7 +1626,7 @@
      // Remove any detected DolbyVision codec from the query to GetSupportsType.
      std::string filtered_codecs;
      std::vector<std::string> parsed_codec_ids;
-@@ -608,7 +686,11 @@
+@@ -608,7 +690,11 @@
        if (auto result =
                media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
                                             /*allow_ambiguous_matches=*/false)) {
@@ -1628,7 +1639,7 @@
            continue;
          }
        }
-@@ -626,6 +708,31 @@
+@@ -626,6 +712,31 @@
    }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
  
@@ -1660,7 +1671,7 @@
    // Note: MediaSource.isTypeSupported() returning true implies that
    // HTMLMediaElement.canPlayType() will return "maybe" or "probably" since it
    // does not make sense for a MediaSource to support a type the
-@@ -659,6 +766,15 @@
+@@ -659,6 +770,15 @@
        MIMETypeRegistry::SupportsMediaSourceMIMEType(mime_type, codecs);
  
    bool result = supported == MIMETypeRegistry::kSupported;
@@ -1676,11 +1687,10 @@
  
    DVLOG(2) << __func__ << "(" << type << ", "
             << base::ToString(enforce_codec_specificity) << ") -> "
-@@ -1014,6 +1130,23 @@
- 
+@@ -1015,6 +1135,23 @@
    DCHECK_LE(highest_buffered_presentation_timestamp,
              std::isnan(old_duration) ? 0 : old_duration);
-+
+ 
 +  // Parc: Safari's step 4.1 (WebKit's MediaSource::setDurationInternal): a
 +  // new duration below the highest end time of any SourceBuffer's buffered
 +  // ranges becomes that end time, for the demuxer and the element alike.
@@ -1697,10 +1707,11 @@
 +      return;
 +    }
 +  }
- 
++
    // 3. Set old duration to the current value of duration.
    // Done for step 1 above, already.
-@@ -1051,6 +1184,13 @@
+   // 4. Update duration to new duration.
+@@ -1051,6 +1188,13 @@
  
    ready_state_ = state;
  
@@ -1714,7 +1725,7 @@
    OnReadyStateChange(old_state, state);
  }
  
-@@ -1326,11 +1466,21 @@
+@@ -1326,11 +1470,21 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);
