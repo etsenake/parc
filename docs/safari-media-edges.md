@@ -164,7 +164,17 @@ before the seek.
 `HTMLMediaElement.cpp:4126-4128` prepares to play (preload auto) when
 `preload` is below auto and `readyState` is below `HAVE_FUTURE_DATA`.
 
-HME-8 to HME-12: **in progress** (fix agent E3, seek algorithm).
+HME-8 to HME-12: **fixed** 0beefdec (with WebKit's once-only `ended` latch and
+a `playing` that arrives during a seek held until `seeked`). Chromium's
+built-in controls and a `#t=` fragment still seek at once where WebKit's go
+through the queued seek; pages can't tell. WebKit's resume after a seek
+applies only to macOS Now Playing scrubbing: HME-34.
+
+**HME-34. Now Playing scrubbing.** WebKit pauses an element when a Now
+Playing scrub starts and resumes it 500 ms after the last step
+(`HTMLMediaElement.cpp:6507-6537, 4357-4359`). Chromium's system-control
+seeks (`html_media_element.cc:5365-5379`) don't pause. **In progress** (fix
+agent HME-34).
 
 **HME-13. `currentTime` while playing.** Chromium
 `html_media_element.cc:2818-2841` holds the official playback position
