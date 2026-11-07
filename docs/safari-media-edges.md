@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **45**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **46**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -448,9 +448,12 @@ Encrypted `src=` media through Chromium's pipeline waited while a CDM was
 attached, Media Source tracked waiting per player rather than per
 SourceBuffer, non-usable key status changes weren't rechecked, and a key
 check in flight across `setMediaKeys(null)` could end a wait: **fixed**
-915d4ee6. Native HLS decides "no CDM attached" when the GPU player accepts the
-CDM rather than at the key request, and a CDM offered twice answers
-"attached" early: **queued** (WMPI-2c, paused with its work saved).
+915d4ee6. Native HLS decided "no CDM attached" when the GPU player accepted the
+CDM rather than at the key request, and a CDM offered twice answered
+"attached" early: **fixed** bfd29ee0. `setMediaKeys` before the native HLS
+player exists resolves before the GPU player takes the keys, so a player that
+can't take them leaves a video that never plays with no error: **in
+progress** (WMPI-2e).
 
 **WMPI-3. Hidden pages pause video.** Chromium
 `web_media_player_impl.cc:3744-3787, 3825-3870, 3528-3551, 2643-2714` pauses
