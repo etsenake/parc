@@ -450,12 +450,15 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
                                     userInfo:@{NSLocalizedDescriptionKey : @"the asset is not playable"}]);
       return;
     }
-    PrepareToPlay();
+    ReportMetadata();
   }
 
-  // updateStates once the asset is playable: HAVE_METADATA, then
-  // prepareToPlay makes the item and the player in the same turn.
-  void PrepareToPlay() {
+  // updateStates once the asset is playable: HAVE_METADATA. The item and the
+  // player are made now (the tracks and the layer need them) and the item
+  // goes on the player at once when the element prepares to play or the
+  // stream is live, as WebKit's updateStates calls prepareToPlay then;
+  // otherwise it waits off the player, loading nothing (PrepareToPlay).
+  void ReportMetadata() {
     std::weak_ptr<Impl> weak = weak_from_this();
     item_ = [AVPlayerItem playerItemWithAsset:asset_];
     // WebKit's setting: the page, not AVFoundation, schedules HLS interstitials.
@@ -487,9 +490,30 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     if (shut_down_) {
       return;
     }
+    if (prepare_to_play_ || std::isinf(timeline_.duration())) {
+      AttachItem();
+    }
+  }
+
+  // HTMLMediaElement::prepareToPlay, as MediaPlayerPrivateAVFoundation takes
+  // it (setPreload(Auto)): the element's preload is auto, or the page called
+  // load() or play(), or seeked. The item goes on the player, and loading
+  // (and asking for keys) begins.
+  void PrepareToPlay() {
+    prepare_to_play_ = true;
+    if (reported_metadata_ && !shut_down_) {
+      AttachItem();
+    }
+  }
+
+  void AttachItem() {
+    if (item_attached_ || !player_ || !item_) {
+      return;
+    }
+    item_attached_ = true;
     [player_ replaceCurrentItemWithPlayerItem:item_];
-    // A rate set before the player existed (play() before the item) applies
-    // now, as volume, mute and pitch do.
+    // A rate set before the item went on the player (play() before it)
+    // applies now, as volume, mute and pitch do.
     if (rate_ > 0) {
       SetRate(rate_);
     }
@@ -573,6 +597,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
 
   void SetRate(double rate) {
     rate_ = rate;
+    // updatePlayState: an element that could play prepares to play.
+    if (rate > 0) {
+      PrepareToPlay();
+    }
     UpdateFrameStats();
     if (!player_) {
       return;
@@ -592,6 +620,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     if (!item_ready_) {
+      // seekTask: an element that hasn't prepared to play does now.
+      PrepareToPlay();
       // Between HAVE_METADATA and the item being ready to play, where
       // AVFoundation throws on a seek with a completion handler: the seek
       // waits for the item, and a later one takes its place (the earlier
@@ -1332,6 +1362,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   bool preserves_pitch_ = true;
   bool output_obscured_ = false;
   bool started_ = false;
+  // PrepareToPlay was called; the item went on the player.
+  bool prepare_to_play_ = false;
+  bool item_attached_ = false;
   // Track key loads still out before MetadataLoaded.
   size_t pending_track_loads_ = 0;
   // HAVE_METADATA went out (from the asset); the item exists from then on.
@@ -1859,6 +1892,10 @@ Result FairPlayHlsPlayer::CreateAsset(const std::string& url, const std::string&
 
 Result FairPlayHlsPlayer::Start() {
   return impl_->Start();
+}
+
+void FairPlayHlsPlayer::PrepareToPlay() {
+  impl_->PrepareToPlay();
 }
 
 void FairPlayHlsPlayer::SetVideoLayerSize(double width, double height, double scale) {

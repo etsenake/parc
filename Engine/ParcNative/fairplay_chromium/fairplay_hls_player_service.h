@@ -97,6 +97,7 @@ class FairPlayHlsPlayerService final
                   const std::string& mime_type,
                   const gfx::SizeF& video_layer_size,
                   float video_layer_scale) override;
+  void PrepareToPlay() override;
   void SetCdm(const base::UnguessableToken& cdm_id,
               SetCdmCallback callback) override;
   void Play(double rate) override;

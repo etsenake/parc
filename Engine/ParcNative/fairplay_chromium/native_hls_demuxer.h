@@ -152,6 +152,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void ParcSetFastSeek(base::TimeDelta target,
                        base::TimeDelta tolerance_before) override;
   std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
+  // Main thread: posts the player's PrepareToPlay to the media thread.
+  void ParcPrepareToPlay() override;
   bool IsSeekable() const override;
   void Stop() override;
   base::TimeDelta GetStartTime() const override;
@@ -262,6 +264,9 @@ class NativeHlsDemuxer final : public media::Demuxer,
   // was made, for the player's layer (WebKit's initial video layer size).
   const gfx::SizeF video_layer_size_;
   const float video_layer_scale_;
+  // The element prepares to play (WebKit's prepareToPlay): sent with
+  // Initialize, or as PrepareToPlay once the player is bound.
+  bool prepare_to_play_;
   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   const std::unique_ptr<media::MediaLog> media_log_;
   const EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
@@ -329,6 +334,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<NativeHlsDemuxer> weak_factory_{this};
+  // Made at construction, for tasks other threads post to the media thread.
+  base::WeakPtr<NativeHlsDemuxer> weak_this_ = weak_factory_.GetWeakPtr();
 };
 
 }  // namespace parc::fairplay

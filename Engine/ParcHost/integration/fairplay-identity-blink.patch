@@ -1912,16 +1912,17 @@
  
    void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
    void RemotePlaybackCompatibilityChanged(const KURL&,
-@@ -634,6 +667,8 @@
+@@ -634,6 +667,9 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
 +  bool PresentsParcSafariIdentity() const override;
 +  void ParcVideoLayerSize(gfx::SizeF* size, float* scale) const override;
++  bool ParcLoadWasExplicit() const override { return ignore_preload_none_; }
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -968,6 +1003,12 @@
+@@ -968,6 +1004,12 @@
    bool is_remote_rendering_ = false;
    // Whether the media content is encrypted.
    bool is_encrypted_media_ = false;
@@ -1934,7 +1935,7 @@
  
    // Whether the frame containing the media element is hidden. This is nullopt
    // if the visibility state of the frame is not yet known - e.g. during frame
-@@ -985,6 +1026,12 @@
+@@ -985,6 +1027,12 @@
    std::optional<media::VideoCodec> video_codec_;
  
    Member<AudioTrackList> audio_tracks_;
@@ -1957,7 +1958,7 @@
  
  namespace cc {
  class Layer;
-@@ -143,6 +144,17 @@
+@@ -143,6 +144,21 @@
    // behavior as regular Picture-in-Picture.
    virtual bool IsInAutoPIP() const = 0;
  
@@ -1971,6 +1972,10 @@
 +  // both alone when there's none (an audio element, no layout box yet).
 +  virtual void ParcVideoLayerSize(gfx::SizeF* /*size*/,
 +                                  float* /*scale*/) const {}
++
++  // Parc: whether the page called load() for this load (WebKit's load()
++  // prepares the player to play whatever the preload).
++  virtual bool ParcLoadWasExplicit() const { return false; }
 +
    // Requests the player to resume playback.
    virtual void ResumePlayback() = 0;

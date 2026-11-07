@@ -398,8 +398,10 @@ service runs it for Safari-identity pages
   format description and the asset is playable, `OnMetadata` reports the
   asset's duration, the seekable window up to it and the media types (from
   the variants when they all name codecs, else both assumed); only then are
-  the item and player made and the item put on the player, so no key request
-  comes before it. A key that fails is the asset's error (a network error for
+  the item and player made, so no key request comes before it. The item goes
+  on the player once the element prepares to play (`PrepareToPlay`: preload
+  auto or `load()`; `SetRate` above 0; `Seek`) or at once for a live stream,
+  as WebKit's `updateStates` and `prepareToPlay` make the item. A key that fails is the asset's error (a network error for
   a URL error or a misconfigured server, else an unsupported source); an
   asset that isn't playable is an unsupported source.
 - State then comes from the item: once it is `readyToPlay` its duration,

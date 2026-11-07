@@ -59,6 +59,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
     video_layer_scale_ = video_layer_scale;
     initialized_ = true;
   }
+  void PrepareToPlay() override { prepared_ = true; }
   void SetCdm(const base::UnguessableToken& cdm_id,
               SetCdmCallback callback) override {
     cdm_ids_.push_back(cdm_id);
@@ -93,6 +94,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   gfx::SizeF video_layer_size_;
   float video_layer_scale_ = 0;
   bool initialized_ = false;
+  bool prepared_ = false;
   SeekCallback seek_cb_;
   std::optional<base::TimeDelta> seek_time_;
   base::TimeDelta seek_tolerance_;

@@ -186,12 +186,22 @@ class FairPlayHlsPlayer {
   // The two halves of Load. CreateAsset makes the AVURLAsset and its loaders
   // without loading anything; what must exist before the AVPlayerItem (the
   // CDM's key loader for the asset) is set up between the two. Start loads
-  // the asset's metadata; once it is playable the player reports OnMetadata,
-  // then makes the item and player and the item starts loading (WebKit's
-  // order, so the page has HAVE_METADATA before any key request). A seek
-  // before the item is ready to play waits for it.
+  // the asset's metadata; once it is playable the player makes the item and
+  // player and reports OnMetadata, and the item goes on the player and starts
+  // loading once the element prepares to play (PrepareToPlay, SetRate, Seek)
+  // or at once for a live stream (WebKit's order, so the page has
+  // HAVE_METADATA before any key request). A seek before the item is ready to
+  // play waits for it.
   Result CreateAsset(const std::string& url, const std::string& mime_type);
   Result Start();
+
+  // HTMLMediaElement::prepareToPlay: the element's preload is auto or the
+  // page called load(). WebKit makes the item only then (or at HAVE_METADATA
+  // for a live stream, or on play or seek, which SetRate and Seek do here);
+  // until then the item made at OnMetadata stays off the player, so nothing
+  // past the playlists loads and no key is asked for. Any time, also before
+  // Start.
+  void PrepareToPlay();
 
   // WebKit's initial video layer size: the element's size in points and the
   // display's scale, from the render process, before Start. The player's

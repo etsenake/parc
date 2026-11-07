@@ -446,6 +446,13 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
   }
 }
 
+void FairPlayHlsPlayerService::PrepareToPlay() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (player_) {
+    player_->PrepareToPlay();
+  }
+}
+
 void FairPlayHlsPlayerService::SetCdm(const base::UnguessableToken& cdm_id,
                                       SetCdmCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
