@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 385,
+  "version": 386,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1635,7 +1635,7 @@
     {
       "source": "Engine/ParcRenderer/parc_managed_media_source.h",
       "target": "third_party/blink/renderer/bindings/core/v8/parc_managed_media_source.h",
-      "sha256": "8cfbbec89f3bd30f25cc5241ab4b81df7721d825a7114bd8cc7b2b367e9a6d71"
+      "sha256": "fbf7c8f11d102abfb49618eadb20e539d0a6c42d8457b0443c58c47a7679147b"
     },
     {
       "source": "Engine/ParcRenderer/parc_webkit_media_keys.h",

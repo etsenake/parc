@@ -106,7 +106,7 @@ WebKit: `Modules/mediasource/ManagedMediaSource.*`, `ManagedSourceBuffer.*`,
 | Constructor, extends MediaSource, `isTypeSupported` | present | fp-mms-presentation |
 | `streaming`, `startstreaming`/`endstreaming`, handlers | present (WebKit's policy, gap tolerances and timing: attribute at once, events as tasks; never stops without a known element) | fp-mms-presentation |
 | `quality` (`"high"`) and `onqualitychange` (WebKit IDL, unconditional) | missing | fp-mms-presentation |
-| `ManagedSourceBuffer` `bufferedchange`, `onbufferedchange`, `BufferedChangeEvent` | present (changes outside appends/removes up to 1 s late) | fp-mms-presentation |
+| `ManagedSourceBuffer` `bufferedchange`, `onbufferedchange`, `BufferedChangeEvent` | present (WebKit's timing: inside the operation, before `update`/`updateend`, with `updating` true and its guards; other changes as tasks) | fp-mms-presentation |
 | Dedicated workers, `handle`, `canConstructInDedicatedWorker` | present | fp-mms-presentation |
 | `src`/`<source>`/`srcObject` attachment | present | fp-mms-presentation |
 

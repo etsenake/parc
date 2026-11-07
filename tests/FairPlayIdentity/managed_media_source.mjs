@@ -34,20 +34,50 @@ function makeWorld(options = {}) {
     value.end = (i) => list[i][1];
     return value;
   }
+  const busy = () => new DOMException('busy', 'InvalidStateError');
   class SourceBuffer extends EventTarget {
     constructor(token) {
       if (token !== SourceBuffer.token) throw new TypeError('Illegal constructor');
       super();
       this._ranges = [];
+      this._updating = false;
+      this._settings = { timestampOffset: 0, appendWindowStart: 0, appendWindowEnd: Infinity, mode: 'segments' };
+      this.calls = [];
     }
     get buffered() { return nativeRanges(this._ranges); }
-    changeType(type) { this.type = type; }
+    get updating() { return this._updating; }
+    appendBuffer(data) { if (this._updating) throw busy(); this._updating = true; this.calls.push('appendBuffer'); }
+    remove(start, end) { if (this._updating) throw busy(); this._updating = true; this.calls.push('remove'); }
+    abort() {
+      this.calls.push('abort');
+      if (this._updating) {
+        this._updating = false;
+        this.dispatchEvent(new Event('abort'));
+        this.dispatchEvent(new Event('updateend'));
+      }
+    }
+    changeType(type) { if (this._updating) throw busy(); this.type = type; }
     // Test helper: an append or eviction finished with these ranges.
     _finish(list) {
       this._ranges = list;
+      this._updating = false;
       this.dispatchEvent(new Event('update'));
       this.dispatchEvent(new Event('updateend'));
     }
+    // Test helper: an append failed after parsing changed the ranges.
+    _fail(list) {
+      this._ranges = list;
+      this._updating = false;
+      this.dispatchEvent(new Event('error'));
+      this.dispatchEvent(new Event('updateend'));
+    }
+  }
+  for (const name of ['timestampOffset', 'appendWindowStart', 'appendWindowEnd', 'mode']) {
+    Object.defineProperty(SourceBuffer.prototype, name, {
+      get() { return this._settings[name]; },
+      set(value) { if (this._updating) throw busy(); this._settings[name] = value; },
+      enumerable: true, configurable: true,
+    });
   }
   SourceBuffer.token = Symbol('sb');
   class SourceBufferList extends Array {}
@@ -55,7 +85,7 @@ function makeWorld(options = {}) {
     constructor() {
       super();
       this.readyState = 'closed';
-      this.duration = NaN;
+      this._duration = NaN;
       this.sourceBuffers = new SourceBufferList();
       this.activeSourceBuffers = new SourceBufferList();
     }
@@ -65,6 +95,14 @@ function makeWorld(options = {}) {
       this.sourceBuffers.push(sb);
       this.activeSourceBuffers.push(sb);
       return sb;
+    }
+    get duration() { return this._duration; }
+    set duration(value) { this._duration = value; }
+    endOfStream() { this._end(); }
+    removeSourceBuffer(sb) {
+      for (const list of [this.sourceBuffers, this.activeSourceBuffers]) {
+        if (list.includes(sb)) list.splice(list.indexOf(sb), 1);
+      }
     }
     static isTypeSupported(type) { return /^video\/mp4|^audio\/mp4/.test(type); }
     static get canConstructInDedicatedWorker() { return true; }
@@ -203,9 +241,7 @@ function makeWorld(options = {}) {
   sb.onbufferedchange = () => ++attributeChanges;
 
   sb._finish([[0, 12]]);
-  check(changes.length === 0, 'bufferedchange is queued as a task, not fired inside updateend');
-  world.run();
-  check(changes.length === 1 && attributeChanges === 1, 'bufferedchange after an append');
+  check(changes.length === 1 && attributeChanges === 1, 'bufferedchange as the append completes');
   check(changes[0].addedRanges.length === 1 && changes[0].addedRanges.start(0) === 0 &&
         changes[0].addedRanges.end(0) === 12 && changes[0].removedRanges.length === 0, 'added range');
   check(changes[0].addedRanges instanceof context.TimeRanges, 'ranges are TimeRanges');
@@ -361,6 +397,191 @@ function makeWorld(options = {}) {
   check(source.streaming === false, 'a first range starting within 1 s covers the start');
   sb._finish([[1.5, 40]]);
   check(source.streaming === true, 'a first range starting after 1 s leaves the start unbuffered');
+}
+
+// ---- bufferedchange inside the operation, as WebKit queues it: before update
+// and updateend, with the SourceBuffer still updating.
+{
+  const world = makeWorld();
+  const { context } = world;
+  const source = new context.ManagedMediaSource();
+  const video = new context.HTMLVideoElement();
+  video.srcObject = source;
+  source._open();
+  world.run();
+  const sb = source.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+  const order = [];
+  let updatingThen = null, updatingAtUpdate = null;
+  let onChange = () => {};
+  sb.addEventListener('bufferedchange', (e) => { order.push('bufferedchange'); updatingThen = sb.updating; onChange(e); });
+  sb.addEventListener('update', () => { order.push('update'); updatingAtUpdate = sb.updating; }, true);
+  sb.addEventListener('updateend', () => order.push('updateend'));
+  sb.addEventListener('abort', () => order.push('abort'));
+  sb.appendBuffer(new Uint8Array(1));
+  sb._finish([[0, 10]]);
+  check(order.join() === 'bufferedchange,update,updateend',
+        'bufferedchange reaches the page before update and updateend, even a capturing update listener');
+  check(updatingThen === true && updatingAtUpdate === false && sb.updating === false,
+        'updating reads true during bufferedchange only');
+
+  // While it is dispatched, the SourceBuffer and its source refuse what
+  // WebKit refuses while updating.
+  const refused = [];
+  const attempt = (name, fn) => {
+    try { fn(); } catch (e) { if (e.name === 'InvalidStateError') refused.push(name); }
+  };
+  onChange = () => {
+    attempt('appendBuffer', () => sb.appendBuffer(new Uint8Array(1)));
+    attempt('remove', () => sb.remove(0, 1));
+    attempt('changeType', () => sb.changeType('video/mp4; codecs="hvc1.1.6.L93.B0"'));
+    attempt('timestampOffset', () => { sb.timestampOffset = 5; });
+    attempt('appendWindowStart', () => { sb.appendWindowStart = 1; });
+    attempt('appendWindowEnd', () => { sb.appendWindowEnd = 50; });
+    attempt('mode', () => { sb.mode = 'sequence'; });
+    attempt('endOfStream', () => source.endOfStream());
+    attempt('duration', () => { source.duration = 100; });
+  };
+  sb.appendBuffer(new Uint8Array(1));
+  sb._finish([[0, 20]]);
+  check(refused.join() === 'appendBuffer,remove,changeType,timestampOffset,appendWindowStart,appendWindowEnd,mode,endOfStream,duration',
+        'every mutation WebKit refuses while updating throws InvalidStateError: ' + refused.join());
+  check(sb.timestampOffset === 0 && sb.mode === 'segments' && source.readyState === 'open',
+        'and none of them took effect');
+  onChange = () => {};
+  sb.appendBuffer(new Uint8Array(1));
+  check(sb.updating === true, 'after the event, appends work again');
+
+  // abort() during it ends the append with abort and updateend, not update.
+  order.length = 0;
+  onChange = () => { sb.abort(); };
+  sb._finish([[0, 30]]);
+  check(order.join() === 'bufferedchange,abort,updateend', 'abort() turns update/updateend into abort/updateend: ' + order.join());
+  check(sb.calls.filter((c) => c === 'abort').length === 1, 'the native abort ran once (parser and append window reset)');
+
+  // After abort() the SourceBuffer is no longer updating, as in WebKit.
+  let afterAbort = null;
+  onChange = () => { sb.abort(); afterAbort = sb.updating; sb.timestampOffset = 4; };
+  sb.appendBuffer(new Uint8Array(1));
+  sb._finish([[0, 35]]);
+  check(afterAbort === false && sb.timestampOffset === 4, 'abort() ends updating at once; setters work again');
+  sb.timestampOffset = 0;
+
+  // A removal can't be aborted.
+  order.length = 0;
+  let abortError = null;
+  onChange = () => { try { sb.abort(); } catch (e) { abortError = e.name; } };
+  sb.remove(0, 5);
+  sb._finish([[5, 30]]);
+  check(abortError === 'InvalidStateError' && order.join() === 'bufferedchange,update,updateend',
+        'abort() during a removal\'s bufferedchange throws, the removal completes');
+
+  // removeSourceBuffer during it aborts the append too.
+  order.length = 0;
+  onChange = () => { source.removeSourceBuffer(sb); };
+  sb.appendBuffer(new Uint8Array(1));
+  sb._finish([[5, 40]]);
+  check(order.join() === 'bufferedchange,abort,updateend', 'removeSourceBuffer aborts the operation still running');
+  check(!source.sourceBuffers.includes(sb), 'and removes the SourceBuffer');
+}
+
+// ---- Changes outside an operation are queued as tasks; a failed append
+// reports what its parsing changed before updateend.
+{
+  const world = makeWorld();
+  const { context } = world;
+  const source = new context.ManagedMediaSource();
+  const video = new context.HTMLVideoElement();
+  video.srcObject = source;
+  source._open();
+  world.run();
+  const sb = source.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+  const changes = [];
+  let updatingThen = null;
+  sb.addEventListener('bufferedchange', (e) => { changes.push(e); updatingThen = sb.updating; });
+  sb._finish([[0, 30]]);
+
+  // endOfStream extends the last range; the change is a task, not updating.
+  sb._ranges = [[0, 32]];
+  source.endOfStream();
+  check(changes.length === 1, 'nothing synchronous at endOfStream');
+  world.run();
+  check(changes.length === 2 && changes[1].addedRanges.start(0) === 30 && changes[1].addedRanges.end(0) === 32 &&
+        updatingThen === false, 'endOfStream\'s change is queued as a task');
+
+  // Setting timestampOffset reopens the ended source, dropping the extension.
+  sb._ranges = [[0, 30]];
+  sb.timestampOffset = 10;
+  source.readyState = 'open';
+  world.run();
+  check(changes.length === 3 && changes[2].removedRanges.start(0) === 30, 'a setter that reopens the source reports the change');
+
+  // A setter on another SourceBuffer leaves this one's pending change alone,
+  // and only timestampOffset and mode on an ended source report changes.
+  const second = source.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
+  sb.appendBuffer(new Uint8Array(1));
+  sb._ranges = [[0, 31]];
+  source.readyState = 'ended';
+  second.timestampOffset = 1;
+  second.appendWindowEnd = 100;
+  world.run();
+  check(changes.length === 3, 'an updating SourceBuffer\'s change waits for its update');
+  sb._finish([[0, 31]]);
+  check(changes.length === 4 && changes[3].addedRanges.start(0) === 30 && changes[3].addedRanges.end(0) === 31,
+        'and is reported as the operation completes');
+  source.readyState = 'open';
+  sb._ranges = [[0, 30]];
+  sb.appendWindowStart = 0;
+  world.run();
+  check(changes.length === 4, 'append window setters report nothing');
+  sb._finish([[0, 30]]);
+  changes.splice(3);
+
+  // A shorter duration.
+  sb._ranges = [[0, 25]];
+  source.duration = 25;
+  world.run();
+  check(changes.length === 4 && changes[3].removedRanges.start(0) === 25 && changes[3].removedRanges.end(0) === 30,
+        'a shorter duration\'s change is queued');
+
+  // The poll leaves a SourceBuffer that is updating to report at completion.
+  sb.appendBuffer(new Uint8Array(1));
+  sb._ranges = [[0, 25], [26, 28]];
+  world.poll();
+  world.run();
+  check(changes.length === 4, 'the poll skips a SourceBuffer still updating');
+  const order = [];
+  sb.addEventListener('updateend', () => order.push('updateend'));
+  sb.addEventListener('bufferedchange', () => order.push('bufferedchange'));
+  sb._fail([[0, 25], [26, 29]]);
+  check(changes.length === 5 && changes[4].addedRanges.start(0) === 26 && order.join() === 'bufferedchange,updateend',
+        'a failed append reports its parsed ranges before updateend');
+}
+
+// ---- Other SourceBuffers and MediaSources keep the native behaviour.
+{
+  const world = makeWorld();
+  const { context } = world;
+  const plain = new context.MediaSource();
+  plain.readyState = 'open';
+  const sb = plain.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+  sb.appendBuffer(new Uint8Array(1));
+  check(sb.updating === true, 'native updating');
+  let threw = false;
+  try { sb.appendBuffer(new Uint8Array(1)); } catch (e) { threw = e.message === 'busy'; }
+  check(threw, 'the native InvalidStateError');
+  sb._finish([[0, 5]]);
+  sb.timestampOffset = 3;
+  plain.duration = 9;
+  check(sb.timestampOffset === 3 && plain.duration === 9, 'native setters');
+  check(Object.getOwnPropertyNames(context.ManagedSourceBuffer.prototype).sort().join() === 'constructor,onbufferedchange',
+        'ManagedSourceBuffer.prototype has only WebKit\'s members');
+  let constructed = true;
+  try { new (sb.appendBuffer)(); } catch (e) { constructed = e.name !== 'TypeError'; }
+  check(!constructed, 'replaced methods are not constructors');
+  check(Object.getOwnPropertyDescriptor(context.SourceBuffer.prototype, 'updating').get.name === 'get updating',
+        'the updating getter keeps its name');
+  check(context.MediaSource.prototype.endOfStream.length === 0 && context.SourceBuffer.prototype.remove.length === 2,
+        'replaced methods keep their arity');
 }
 
 // ---- Attachment through src with an object URL, setAttribute, and <source>.

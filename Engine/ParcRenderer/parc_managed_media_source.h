@@ -37,6 +37,7 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
   // prototype is then taken from the first buffered ranges seen.
   let timeRangesPrototype = typeof g.TimeRanges === 'function' ? g.TimeRanges.prototype : null;
   const NativeEvent = g.Event;
+  const NativeDOMException = g.DOMException;
   const NativeWeakRef = g.WeakRef;
   const define = Object.defineProperty;
   const describe = Object.getOwnPropertyDescriptor;
@@ -175,18 +176,64 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
             value.slice(value.indexOf(';') + 1));
   }
 
-  // Replaces a SourceBuffer member in place, keeping its attributes, so
-  // ManagedSourceBuffer.prototype keeps only the members WebKit gives it.
-  function wrapMember(name, wrap) {
-    const descriptor = describe(NativeSourceBuffer.prototype, name);
-    if (!descriptor) {
-      return;
-    }
-    define(NativeSourceBuffer.prototype, name, wrap(descriptor));
+  // WebKit queues a ManagedSourceBuffer's bufferedchange while the append or
+  // removal that caused it is still running, so the page hears it before
+  // `update` and `updateend`, with `updating` true. Chromium has finished the
+  // operation by then; while the event is dispatched, `reporting` makes the
+  // SourceBuffer behave as WebKit's does while updating. Members are replaced
+  // in place, keeping their attributes, so ManagedSourceBuffer's and
+  // ManagedMediaSource's prototypes keep only the members WebKit gives them;
+  // other SourceBuffers and MediaSources get the native behaviour. The
+  // replacements are method definitions and accessors, so, like the native
+  // members, they aren't constructors.
+  function reporting(sourceBuffer) {
+    const state = buffers.get(sourceBuffer);
+    return !!(state && state.reporting);
   }
-  wrapMember('changeType', (descriptor) => ({
-    // A method definition, so not constructible, like the native one.
+  function stillUpdating() {
+    return new NativeDOMException(
+        'This SourceBuffer is still processing an \'appendBuffer\' or \'remove\' operation.',
+        'InvalidStateError');
+  }
+  function wrapMember(prototype, name, wrap) {
+    const descriptor = describe(prototype, name);
+    if (descriptor) {
+      define(prototype, name, Object.assign({}, descriptor, wrap(descriptor)));
+    }
+  }
+  const sourceBufferPrototype = NativeSourceBuffer.prototype;
+  const nativeUpdating = describe(sourceBufferPrototype, 'updating');
+  wrapMember(sourceBufferPrototype, 'appendBuffer', (descriptor) => ({
+    value: {appendBuffer(data) {
+      if (reporting(this)) {
+        throw stillUpdating();
+      }
+      const result = descriptor.value.apply(this, arguments);
+      const state = buffers.get(this);
+      if (state) {
+        state.operation = 'append';
+      }
+      return result;
+    }}.appendBuffer,
+  }));
+  wrapMember(sourceBufferPrototype, 'remove', (descriptor) => ({
+    value: {remove(start, end) {
+      if (reporting(this)) {
+        throw stillUpdating();
+      }
+      const result = descriptor.value.apply(this, arguments);
+      const state = buffers.get(this);
+      if (state) {
+        state.operation = 'remove';
+      }
+      return result;
+    }}.remove,
+  }));
+  wrapMember(sourceBufferPrototype, 'changeType', (descriptor) => ({
     value: {changeType(type) {
+      if (reporting(this)) {
+        throw stillUpdating();
+      }
       const result = descriptor.value.apply(this, arguments);
       const state = buffers.get(this);
       if (state) {
@@ -194,9 +241,147 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       }
       return result;
     }}.changeType,
-    writable: descriptor.writable, enumerable: descriptor.enumerable,
-    configurable: descriptor.configurable,
   }));
+  // WebKit's abort() while the operation is still running: a removal can't
+  // be aborted, and an append ends with `abort` and `updateend` instead of
+  // `update` and `updateend`. The native call still resets the parser and
+  // the append window, or throws when the source isn't open.
+  wrapMember(sourceBufferPrototype, 'abort', (descriptor) => ({
+    value: {abort() {
+      const state = buffers.get(this);
+      if (!state || !state.reporting) {
+        return descriptor.value.apply(this, arguments);
+      }
+      if (state.operation === 'remove') {
+        throw stillUpdating();
+      }
+      descriptor.value.apply(this, arguments);
+      state.aborted = true;
+      state.reporting = false;
+    }}.abort,
+  }));
+  wrapMember(sourceBufferPrototype, 'updating', (descriptor) => ({
+    get: describe({
+      get updating() { return reporting(this) || descriptor.get.call(this); },
+    }, 'updating').get,
+  }));
+  // Setting these throws while updating; setting timestampOffset or mode
+  // reopens an ended source, which changes the buffered ranges.
+  for (const name of ['timestampOffset', 'appendWindowStart', 'appendWindowEnd', 'mode']) {
+    const reopens = name === 'timestampOffset' || name === 'mode';
+    wrapMember(sourceBufferPrototype, name, (descriptor) => ({
+      set: describe({
+        set [name](value) {
+          if (reporting(this)) {
+            throw stillUpdating();
+          }
+          const state = buffers.get(this);
+          const source = reopens && state && state.source.deref();
+          const ended = !!source && source.readyState === 'ended';
+          descriptor.set.call(this, value);
+          if (ended) {
+            queueChanges(source);
+          }
+        },
+      }, name).set,
+    }));
+  }
+
+  const mediaSourcePrototype = NativeMediaSource.prototype;
+  function anyReporting(source) {
+    for (let i = 0; i < source.sourceBuffers.length; ++i) {
+      if (reporting(source.sourceBuffers[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+  wrapMember(mediaSourcePrototype, 'endOfStream', (descriptor) => ({
+    value: {endOfStream() {
+      if (!sources.has(this)) {
+        return descriptor.value.apply(this, arguments);
+      }
+      if (anyReporting(this)) {
+        throw stillUpdating();
+      }
+      const result = descriptor.value.apply(this, arguments);
+      queueChanges(this);
+      return result;
+    }}.endOfStream,
+  }));
+  wrapMember(mediaSourcePrototype, 'duration', (descriptor) => ({
+    set: describe({
+      set duration(value) {
+        if (sources.has(this) && anyReporting(this)) {
+          throw stillUpdating();
+        }
+        descriptor.set.call(this, value);
+        if (sources.has(this)) {
+          queueChanges(this);
+        }
+      },
+    }, 'duration').set,
+  }));
+  // WebKit's removeSourceBuffer aborts an operation still running, which
+  // then ends with `abort` and `updateend`.
+  wrapMember(mediaSourcePrototype, 'removeSourceBuffer', (descriptor) => ({
+    value: {removeSourceBuffer(sourceBuffer) {
+      const state = sources.has(this) && buffers.get(sourceBuffer);
+      const aborting = !!(state && state.reporting);
+      const result = descriptor.value.apply(this, arguments);
+      if (aborting) {
+        state.aborted = true;
+        state.reporting = false;
+      }
+      return result;
+    }}.removeSourceBuffer,
+  }));
+
+  // Events the script dispatches in place of Chromium's.
+  const ownEvents = new WeakSet();
+
+  // Runs as `update` reaches the SourceBuffer, before the page's listeners.
+  function operationCompleted(source, sourceBuffer, state, event) {
+    if (source) {
+      evaluate(source);
+    }
+    const change = takeChange(sourceBuffer);
+    if (change) {
+      state.reporting = true;
+      try {
+        sourceBuffer.dispatchEvent(changeEvent(change));
+      } finally {
+        state.reporting = false;
+      }
+    }
+    if (state.aborted) {
+      state.aborted = false;
+      event.stopImmediatePropagation();
+      state.swallowUpdateend = true;
+      for (const type of ['abort', 'updateend']) {
+        const replacement = new NativeEvent(type);
+        ownEvents.add(replacement);
+        sourceBuffer.dispatchEvent(replacement);
+      }
+    }
+  }
+
+  // Runs as `updateend` reaches the SourceBuffer. An append that was aborted
+  // or failed has no `update`; what its parsing changed is reported here.
+  function operationEnded(source, sourceBuffer, state, event) {
+    if (!ownEvents.has(event) && state.swallowUpdateend) {
+      state.swallowUpdateend = false;
+      event.stopImmediatePropagation();
+      return;
+    }
+    const change = takeChange(sourceBuffer);
+    if (change) {
+      sourceBuffer.dispatchEvent(changeEvent(change));
+    }
+    if (source) {
+      evaluate(source);
+    }
+  }
 
   class ManagedSourceBuffer extends NativeSourceBuffer {
     constructor() { illegal(); }
@@ -204,14 +389,12 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     set onbufferedchange(value) { setHandler(this, 'bufferedchange', value); }
   }
 
-  // Compares a SourceBuffer's ranges with the last ones reported and queues a
-  // bufferedchange task for the difference, as WebKit does. Called after
-  // every append or removal and on each poll, which catches changes made
-  // without one (end of stream, garbage collection under memory pressure).
-  function bufferedChanged(sourceBuffer) {
+  // A SourceBuffer's buffered ranges against the last ones reported:
+  // {added, removed}, or null when they haven't changed.
+  function takeChange(sourceBuffer) {
     const state = buffers.get(sourceBuffer);
     if (!state) {
-      return;
+      return null;
     }
     let now;
     try {
@@ -221,18 +404,40 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       }
       now = snapshot(buffered);
     } catch (e) {
-      return;
+      return null;
     }
     const added = subtract(now, state.ranges);
     const removed = subtract(state.ranges, now);
     state.ranges = now;
-    if (added.length || removed.length) {
-      g.setTimeout(() => {
-        sourceBuffer.dispatchEvent(new BufferedChangeEvent('bufferedchange', {
-          addedRanges: ranges(added),
-          removedRanges: ranges(removed),
-        }));
-      }, 0);
+    return added.length || removed.length ? {added, removed} : null;
+  }
+
+  function changeEvent(change) {
+    return new BufferedChangeEvent('bufferedchange', {
+      addedRanges: ranges(change.added),
+      removedRanges: ranges(change.removed),
+    });
+  }
+
+  // A change made outside an append or removal (end of stream, a shorter
+  // duration, a source reopened by a setter) is queued as a task, as WebKit
+  // queues it.
+  function queueChange(sourceBuffer) {
+    const change = takeChange(sourceBuffer);
+    if (change) {
+      const event = changeEvent(change);
+      g.setTimeout(() => sourceBuffer.dispatchEvent(event), 0);
+    }
+  }
+
+  // A SourceBuffer still updating reports its change as the operation
+  // completes instead.
+  function queueChanges(source) {
+    for (let i = 0; i < source.sourceBuffers.length; ++i) {
+      const sourceBuffer = source.sourceBuffers[i];
+      if (!readNative(nativeUpdating, sourceBuffer)) {
+        queueChange(sourceBuffer);
+      }
     }
   }
 
@@ -466,9 +671,7 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
           g.clearInterval(timer);
           return;
         }
-        for (let i = 0; i < live.sourceBuffers.length; ++i) {
-          bufferedChanged(live.sourceBuffers[i]);
-        }
+        queueChanges(live);
         evaluate(live);
       }, POLL_MS);
       state.timer = timer;
@@ -520,20 +723,19 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     addSourceBuffer(type) {
       const sourceBuffer = super.addSourceBuffer(type);
       setPrototype(sourceBuffer, ManagedSourceBuffer.prototype);
-      buffers.set(sourceBuffer, {ranges: [], audio: carriesAudio(type)});
       const ref = new NativeWeakRef(this);
-      const update = () => {
-        const live = ref.deref();
-        if (live) {
-          evaluate(live);
-        }
+      const state = {
+        ranges: [], audio: carriesAudio(type), source: ref, operation: '',
+        reporting: false, aborted: false, swallowUpdateend: false,
       };
-      // WebKit re-evaluates as an append or removal completes, before
-      // `update` and `updateend` reach the page.
-      sourceBuffer.addEventListener('update', update, true);
-      sourceBuffer.addEventListener('updateend', () => {
-        bufferedChanged(sourceBuffer);
-        update();
+      buffers.set(sourceBuffer, state);
+      // Capturing listeners added first, so these run before the page's.
+      // WebKit re-evaluates `streaming` as an append or removal completes.
+      sourceBuffer.addEventListener('update', (event) => {
+        operationCompleted(ref.deref(), sourceBuffer, state, event);
+      }, true);
+      sourceBuffer.addEventListener('updateend', (event) => {
+        operationEnded(ref.deref(), sourceBuffer, state, event);
       }, true);
       return sourceBuffer;
     }

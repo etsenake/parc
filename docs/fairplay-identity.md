@@ -203,10 +203,24 @@ tested. So the main world of every Safari-identity document gets a
   and a static `isTypeSupported` that answers like `MediaSource`'s.
 - Its SourceBuffers are `ManagedSourceBuffer`s that fire `bufferedchange`, a
   `BufferedChangeEvent` with `addedRanges` and `removedRanges` as
-  `TimeRanges`, queued as a task after every append or removal that changes
-  the buffered ranges, including eviction during an append. Changes made
-  without one (end of stream, garbage collection under memory pressure) are
-  reported by the once-a-second check, up to a second late.
+  `TimeRanges`, whenever their buffered ranges change. WebKit queues it while
+  the append or removal that caused it (eviction during an append included)
+  is still running, so the page hears it before `update` and `updateend`,
+  with `updating` true. Chromium has finished the operation by then, so the
+  event is dispatched as `update` arrives, ahead of the page's listeners,
+  and while it is, the SourceBuffer acts as WebKit's does while updating:
+  `updating` reads true; `appendBuffer`, `remove`, `changeType`, setting
+  `timestampOffset`, `appendWindowStart`, `appendWindowEnd` or `mode`, and the
+  source's `endOfStream()` and `duration` throw `InvalidStateError`;
+  `abort()` (or `removeSourceBuffer`) ends an append with `abort` and
+  `updateend` instead of `update` and `updateend`, and throws during a
+  removal. An append that fails or is aborted reports what its parsing
+  changed before `updateend`. Changes made outside an operation (end of
+  stream, a shorter duration, an ended source reopened by setting
+  `timestampOffset` or `mode`) are queued as tasks. Anything else Chromium
+  changes is caught by the once-a-second check. The replaced members sit
+  where Chromium has them, on `SourceBuffer.prototype` and
+  `MediaSource.prototype`, and act only for managed ones.
 - `streaming` follows WebKit's `ManagedMediaSource::monitorSourceBuffers`.
   With no active SourceBuffer it's true. Otherwise it turns true while the
   next 10 s after the playback position aren't buffered, and false once the
