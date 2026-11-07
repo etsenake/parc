@@ -70,7 +70,10 @@ struct ContentKeyRequestPlan {
 // through unchanged and rebuilds keyids): an expired-session report
 // instead of a key. "session" is the report of this key system's own key
 // session, which it expires (releaseKeys); "first" is the first pending one
-// for the server certificate (generateKeyReleaseMessage).
+// for the server certificate (generateKeyReleaseMessage). The same script
+// sends init data of no form above as sinf {"legacyInitData": "<base64>"}
+// (plus a version 2 "contentId"), which AVFoundation gets unchanged, as
+// WebKit's legacy session passes it.
 enum class LegacySecureStop { kNone, kSession, kFirst };
 
 struct InitDataPlan {

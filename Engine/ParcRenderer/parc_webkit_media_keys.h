@@ -693,23 +693,21 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   function startRequest(session) {
     const keys = session.keys;
     const type = initDataTypeOfBytes(session.initData);
-    if (!type) {
-      sendError(session, DOMAIN, 0);
-      return undefined;
-    }
-    session.json = type !== 'sinf';
-    // Version 2 names the SPC by the page's identifier. Its init data is the
-    // source buffer's sinf, and Parc's CDM takes the identifier as the sinf
-    // JSON's "contentId" (fairplay_init_data.mm); Blink passes sinf init data
+    // CDMSessionAVContentKeySession::update hands AVFoundation the init data
+    // as it is: bytes of no form Parc's CDM reads go to it unchanged as sinf
+    // JSON's "legacyInitData" (fairplay_init_data.mm).
+    const raw = !type || (session.keys.version === 2 && type !== 'sinf');
+    session.json = !raw && type !== 'sinf';
+    // Version 2 names the SPC by the page's identifier, which Parc's CDM
+    // takes as the sinf JSON's "contentId"; Blink passes sinf init data
     // through unchanged.
-    if (session.keys.version === 2 && type !== 'sinf') {
-      sendError(session, DOMAIN, 0);
-      return undefined;
-    }
-    const requestType = type;
-    const requestData = session.keys.version !== 2 ? copy(session.initData) :
+    const contentId = session.keys.version === 2 ? toBase64(session.identifier) : undefined;
+    const requestType = raw ? 'sinf' : type;
+    const requestData = raw ?
+        ascii(apply(jsonStringify, JSON, [{legacyInitData: toBase64(session.initData), contentId}])) :
+        session.keys.version !== 2 ? copy(session.initData) :
         ascii(apply(jsonStringify, JSON, [{
-          sinf: parseJson(session.initData).sinf, contentId: toBase64(session.identifier),
+          sinf: parseJson(session.initData).sinf, contentId,
         }]));
     const failed = (error) => sendError(session, DOMAIN, systemCodeOf(error));
     return then(modernKeysOf(keys), (mediaKeys) => serialized(keys, () => {

@@ -432,6 +432,28 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
         }
         return plan;
       }
+      // Parc extension for WebKit's legacy sessions, whose
+      // CDMSessionAVContentKeySession::update hands AVFoundation the
+      // session's init data as it is: {"legacyInitData": "<base64>"}, with a
+      // version 2 session's "contentId" naming the SPC, passes those bytes
+      // unchanged when they are none of the forms above (Blink passes sinf
+      // init data through unchanged).
+      if ([root isKindOfClass:[NSDictionary class]] && root[@"legacyInitData"] &&
+          !root[@"sinf"]) {
+        NSData* raw = DecodeBase64(root[@"legacyInitData"], false);
+        if (!raw.length) {
+          return Fail("sinf legacyInitData is not base64");
+        }
+        ContentKeyRequestPlan call;
+        call.initialization_data = ToVector(raw);
+        NSData* content_id = DecodeBase64(root[@"contentId"], false);
+        if (content_id.length) {
+          call.content_identifier = ToVector(content_id);
+        }
+        InitDataPlan plan;
+        plan.calls.push_back(std::move(call));
+        return plan;
+      }
       NSArray* sinfs = [root isKindOfClass:[NSDictionary class]] ? root[@"sinf"] : nil;
       if (![sinfs isKindOfClass:[NSArray class]] || !sinfs.count) {
         return Fail("sinf init data is not {\"sinf\": [base64]}");

@@ -671,6 +671,25 @@ for (const sinf of [true, false]) {
           'a request the CDM refuses is a DOMAIN key error');
   }
 }
+// ---- Init data of no form Parc's CDM reads goes to AVFoundation unchanged
+// (CDMSessionAVContentKeySession::update), as sinf JSON's legacyInitData.
+{
+  const world = makeWorld();
+  run(world, script);
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  const session = keys.createSession('video/mp4', new Uint8Array(bytesOf('opaque init data')));
+  const events = [];
+  session.addEventListener('webkitkeymessage', (event) => events.push(text(event.message)));
+  session.addEventListener('webkitkeyerror', () => events.push('error:' + session.error.code));
+  await settle();
+  session.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  const request = world.log.find((entry) => entry[0] === 'generateRequest');
+  check(request && request[1] === 'sinf' &&
+        Buffer.from(JSON.parse(request[2]).legacyInitData, 'base64').toString() === 'opaque init data' &&
+        !events.some((event) => event.startsWith('error')),
+        'unrecognized init data reaches the CDM as it is, with no key error');
+}
 {
   const world = makeWorld({failSpc: 42});
   run(world, script);

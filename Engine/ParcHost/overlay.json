@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 503,
+  "version": 504,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1520,12 +1520,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_init_data.h",
       "target": "third_party/parc_fairplay/core/fairplay_init_data.h",
-      "sha256": "fc96b391e2255ef4921641e460b83cb64c4a0e019c57808d86eb79df281d5bb1"
+      "sha256": "2e283ab332c52875614336df4e0e80b3560de743bc9ab7bafc100edfe45ad443"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_init_data.mm",
       "target": "third_party/parc_fairplay/core/fairplay_init_data.mm",
-      "sha256": "3d99d8cb629cd58a476dafd2635fe3dbb372ba54b39a80c4ad7c8de85aedb0b1"
+      "sha256": "d609072917015103f0277d70fa28dd7c803ccd1b68524f019e28e0932f26542c"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.h",
@@ -1795,7 +1795,7 @@
     {
       "source": "Engine/ParcRenderer/parc_webkit_media_keys.h",
       "target": "third_party/blink/renderer/bindings/core/v8/parc_webkit_media_keys.h",
-      "sha256": "cff6075e568d2c500fdabb10a9008cef19df3a7f810b07d30e41d8d1a52da93c"
+      "sha256": "bbfb8ccfa9382dfdc4dcb536cfc1508d0a3e8b4789585d659c65496fc09b28a9"
     },
     {
       "source": "Engine/ParcRenderer/parc_webkit_need_key.h",
