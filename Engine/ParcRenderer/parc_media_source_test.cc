@@ -6,6 +6,21 @@
 // types named without codecs, MPEG-2 TS types, Safari's other types and
 // codecs, and a duration set below the buffered end.
 
+#include "base/test/scoped_command_line.h"
+#include "media/base/parc_av1_support.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_media_decoding_configuration.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_video_configuration.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_media_capabilities_decoding_info.h"
+#include "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h"
+
+#include "third_party/blink/renderer/core/frame/navigator.h"
+
+#include "third_party/blink/renderer/bindings/core/v8/v8_can_play_type_result.h"
+
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+
 #include <limits>
 #include <memory>
 #include <optional>
@@ -220,6 +235,93 @@ class ParcMediaSourceTest : public PageTestBase {
   Persistent<MediaSourceTracer> tracer_;
   scoped_refptr<MediaSourceAttachment> attachment_;
 };
+
+TEST_F(ParcMediaSourceTest, AV1HardwareGateAcrossIdentitiesAndAPIs) {
+  for (bool hardware : {false, true}) {
+    base::test::ScopedCommandLine command_line;
+    command_line.GetProcessCommandLine()->AppendSwitchASCII(
+        media::kParcAV1HardwareDecoder, hardware ? "1" : "0");
+    for (const char* agent : {kSafariUserAgent, kChromeUserAgent}) {
+      SetUserAgent(agent);
+      const bool supported = hardware || agent == kChromeUserAgent;
+      for (const char* type : {"video/mp4; codecs=\"av01.0.08M.08\"",
+                               "video/webm; codecs=\"av01.0.08M.08\""}) {
+        EXPECT_EQ(MediaSource::isTypeSupported(Context(), type), supported);
+        EXPECT_EQ(video_->canPlayType(type).AsString().empty(), !supported);
+        auto* source = OpenMediaSource();
+        DummyExceptionStateForTesting add_exception;
+        auto* added = source->addSourceBuffer(type, add_exception);
+        EXPECT_EQ(added != nullptr, supported);
+        EXPECT_EQ(add_exception.HadException(), !supported);
+        DummyExceptionStateForTesting vp9_exception;
+        auto* buffer = source->addSourceBuffer(
+            "video/webm; codecs=\"vp09.00.10.08\"", vp9_exception);
+        ASSERT_TRUE(buffer);
+        DummyExceptionStateForTesting change_exception;
+        buffer->changeType(type, change_exception);
+        EXPECT_EQ(change_exception.HadException(), !supported);
+      }
+    }
+  }
+}
+
+class AV1PerfHistory final : public media::mojom::blink::VideoDecodePerfHistory {
+ public:
+  void GetPerfInfo(media::mojom::blink::PredictionFeaturesPtr,
+                   GetPerfInfoCallback callback) override {
+    std::move(callback).Run(true, true);
+  }
+};
+
+TEST_F(ParcMediaSourceTest, AV1DecodingInfoHardwareAndIdentity) {
+  auto* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ScriptState::Scope scope(script_state);
+  ASSERT_TRUE(Context()->GetBrowserInterfaceBroker().SetBinderForTesting(
+      media::mojom::blink::VideoDecodePerfHistory::Name_,
+      base::BindRepeating([](mojo::ScopedMessagePipeHandle pipe) {
+        mojo::MakeSelfOwnedReceiver(std::make_unique<AV1PerfHistory>(),
+            mojo::PendingReceiver<media::mojom::blink::VideoDecodePerfHistory>(
+                std::move(pipe)));
+      })));
+  for (bool hardware : {false, true}) {
+    base::test::ScopedCommandLine command_line;
+    command_line.GetProcessCommandLine()->AppendSwitchASCII(
+        media::kParcAV1HardwareDecoder, hardware ? "1" : "0");
+    for (const char* agent : {kSafariUserAgent, kChromeUserAgent}) {
+      SetUserAgent(agent);
+      const bool supported = hardware || agent == kChromeUserAgent;
+      for (auto type : {V8MediaDecodingType::Enum::kFile,
+                        V8MediaDecodingType::Enum::kMediaSource}) {
+        auto* config = MediaDecodingConfiguration::Create();
+        config->setType(type);
+        auto* video = VideoConfiguration::Create();
+        video->setContentType("video/mp4; codecs=\"av01.0.08M.08\"");
+        video->setWidth(1920);
+        video->setHeight(1080);
+        video->setBitrate(4000000);
+        video->setFramerate(60);
+        config->setVideo(video);
+        DummyExceptionStateForTesting exception;
+        auto* capabilities = MediaCapabilities::mediaCapabilities(
+            *GetFrame().DomWindow()->navigator());
+        ScriptPromiseTester tester(script_state,
+            capabilities->decodingInfo(script_state, config, exception));
+        tester.WaitUntilSettled();
+        ASSERT_TRUE(tester.IsFulfilled());
+        auto* info = NativeValueTraits<MediaCapabilitiesDecodingInfo>::NativeValue(
+            script_state->GetIsolate(), tester.Value().V8Value(), exception);
+        ASSERT_TRUE(info);
+        EXPECT_EQ(info->supported(), supported);
+        if (!supported) {
+          EXPECT_FALSE(info->smooth());
+          EXPECT_FALSE(info->powerEfficient());
+        }
+      }
+    }
+  }
+  Context()->GetBrowserInterfaceBroker().SetBinderForTesting(
+      media::mojom::blink::VideoDecodePerfHistory::Name_, {});
+}
 
 TEST_F(ParcMediaSourceTest, SafariTsSourceBufferExposesEveryAudioTrack) {
   SetUserAgent(kSafariUserAgent);

@@ -20,6 +20,8 @@
 
 namespace content {
 
+bool ParcAV1HardwareDecoderAvailable();
+
 void BindParcVideoToolboxDecoding(
     mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding> receiver);
 

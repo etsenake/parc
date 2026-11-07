@@ -11,6 +11,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_
 
+#include "media/base/parc_av1_support.h"
+
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -33,6 +35,18 @@ inline bool IsParcSafariIdentityUserAgent(const String& user_agent) {
          !user_agent.contains("Chrome/") && !user_agent.contains("Chromium/") &&
          !user_agent.contains("CriOS/") && !user_agent.contains("FxiOS/") &&
          !user_agent.contains("EdgiOS/");
+}
+
+// WebKit's SourceBufferParserWebM requires an AV1 hardware decoder.
+inline bool ParcSafariAV1Unavailable(const String& codecs) {
+  for (const String& codec : codecs.Split(',')) {
+    const String id = codec.StripWhiteSpace();
+    if ((id == "av01" || id.starts_with("av01.")) &&
+        !media::ParcAV1HardwareDecoderAvailable()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Key systems Safari never offers. Sites probe Widevine before FairPlay and

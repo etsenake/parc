@@ -561,6 +561,17 @@ class ParcVideoToolboxDecodingImpl
 
 }  // namespace
 
+bool ParcAV1HardwareDecoderAvailable() {
+  static const bool available = [] {
+    VideoToolbox vt;
+    using HardwareDecodeSupported = Boolean (*)(CMVideoCodecType);
+    auto query = reinterpret_cast<HardwareDecodeSupported>(
+        vt.Symbol("VTIsHardwareDecodeSupported"));
+    return query && query(kCMVideoCodecType_AV1);
+  }();
+  return available;
+}
+
 void BindParcVideoToolboxDecoding(
     mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding> receiver) {
   mojo::MakeSelfOwnedReceiver(std::make_unique<ParcVideoToolboxDecodingImpl>(),
