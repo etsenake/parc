@@ -11,6 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "media/base/buffering_state.h"
 #include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
@@ -33,6 +34,24 @@ namespace fp = parc::fairplay;
 
 constexpr fp::StreamType kStreamTypes[] = {fp::StreamType::kVideo,
                                            fp::StreamType::kAudio};
+
+// RendererImpl reports with every frame; pages sample the counts, and Netflix
+// gives up after 10 s without a new frame.
+constexpr base::TimeDelta kStatisticsInterval = base::Milliseconds(250);
+// A metrics request AVFoundation hasn't answered by then is given up, so a
+// lost answer can't stop the counts.
+constexpr base::TimeDelta kVideoMetricsTimeout = base::Seconds(1);
+
+// How far |total| moved past |*reported|, which follows it. Totals never go
+// back, and a smaller one (the other source, or a late answer) adds nothing.
+uint32_t AdvanceTotal(int64_t total, int64_t* reported) {
+  if (total <= *reported) {
+    return 0;
+  }
+  const int64_t delta = total - *reported;
+  *reported = total;
+  return base::saturated_cast<uint32_t>(delta);
+}
 
 fp::MediaTime ToMediaTime(base::TimeDelta time) {
   return fp::MediaTime::FromMicroseconds(time.InMicroseconds());
@@ -277,6 +296,7 @@ void FairPlayRendererAdapter::Flush(base::OnceClosure flush_cb) {
   DCHECK(!flush_cb_);
   ++generation_;
   playing_ = false;
+  UpdateStatisticsTimer();
   flush_cb_ = std::move(flush_cb);
   video_.end_of_stream = false;
   audio_.end_of_stream = false;
@@ -310,6 +330,7 @@ void FairPlayRendererAdapter::StartPlayingFrom(base::TimeDelta time) {
     client_->OnVideoNaturalSizeChange(natural_size_);
   }
   core_->StartPlayingFrom(ToMediaTime(time));
+  UpdateStatisticsTimer();
   for (fp::StreamType type : kStreamTypes) {
     OnNeedData(type);
   }
@@ -317,9 +338,11 @@ void FairPlayRendererAdapter::StartPlayingFrom(base::TimeDelta time) {
 
 void FairPlayRendererAdapter::SetPlaybackRate(double playback_rate) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  playback_rate_ = playback_rate;
   if (core_initialized_) {
     core_->SetPlaybackRate(playback_rate);
   }
+  UpdateStatisticsTimer();
 }
 
 void FairPlayRendererAdapter::SetVolume(float volume) {
@@ -557,7 +580,11 @@ void FairPlayRendererAdapter::EnqueueToCore(fp::StreamType type,
   if (core_->Enqueue(type, sample) == fp::EnqueueResult::kRejected) {
     LOG(ERROR) << "FairPlay renderer rejected a sample";
     ReportError(PIPELINE_ERROR_DECODE);
+    return;
   }
+  // A sample held for its key is decoded once the key arrives.
+  (type == fp::StreamType::kVideo ? unreported_video_bytes_
+                                  : unreported_audio_bytes_) += data.size();
 }
 
 void FairPlayRendererAdapter::MaybeFinishFlush() {
@@ -573,7 +600,89 @@ void FairPlayRendererAdapter::ReportError(PipelineStatus status) {
     return;
   }
   errored_ = true;
+  statistics_timer_.Stop();
   client_->OnError(std::move(status));
+}
+
+void FairPlayRendererAdapter::UpdateStatisticsTimer() {
+  // Polled while the clock may run. Stopping (pause, seek) counts once more,
+  // so the frames decoded until then don't wait for playback to resume.
+  const bool run =
+      playing_ && playback_rate_ > 0 && core_initialized_ && !errored_;
+  if (run == statistics_timer_.IsRunning()) {
+    return;
+  }
+  if (run) {
+    statistics_timer_.Start(
+        FROM_HERE, kStatisticsInterval,
+        base::BindRepeating(&FairPlayRendererAdapter::PollStatistics,
+                            base::Unretained(this)));
+    return;
+  }
+  statistics_timer_.Stop();
+  // Even with an answer outstanding: before macOS 14.4 that answer carries
+  // the core's count from when it was asked.
+  RequestVideoMetrics();
+}
+
+void FairPlayRendererAdapter::PollStatistics() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!video_metrics_requested_.is_null() &&
+      base::TimeTicks::Now() - video_metrics_requested_ <
+          kVideoMetricsTimeout) {
+    return;
+  }
+  RequestVideoMetrics();
+}
+
+void FairPlayRendererAdapter::RequestVideoMetrics() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!core_initialized_ || errored_) {
+    return;
+  }
+  video_metrics_requested_ = base::TimeTicks::Now();
+  base::WeakPtr<FairPlayRendererAdapter> weak = weak_factory_.GetWeakPtr();
+  // Answers on this sequence.
+  core_->LoadVideoMetrics([weak](const fp::VideoMetrics& metrics) {
+    if (weak) {
+      weak->OnVideoMetrics(metrics);
+    }
+  });
+}
+
+void FairPlayRendererAdapter::OnVideoMetrics(const fp::VideoMetrics& metrics) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Clears the wait even when a newer request is outstanding; a second
+  // answer adds only what it counts beyond the first.
+  video_metrics_requested_ = base::TimeTicks();
+  if (errored_) {
+    return;
+  }
+  // AVFoundation's own counts (macOS 14.4+) are the decoder's: frames decoded
+  // ahead of the clock, like RendererImpl's, and real drops. Before them, the
+  // core's count of samples the clock has reached, with no drops known.
+  if (metrics.available) {
+    ReportStatistics(metrics.total_frames, metrics.dropped_frames);
+  } else {
+    ReportStatistics(metrics.frames_passed, reported_frames_dropped_);
+  }
+}
+
+void FairPlayRendererAdapter::ReportStatistics(int64_t frames_decoded,
+                                               int64_t frames_dropped) {
+  // PipelineImpl adds up deltas.
+  PipelineStatistics stats;
+  stats.video_frames_decoded =
+      AdvanceTotal(frames_decoded, &reported_frames_decoded_);
+  stats.video_frames_dropped =
+      AdvanceTotal(frames_dropped, &reported_frames_dropped_);
+  stats.video_bytes_decoded = std::exchange(unreported_video_bytes_, 0);
+  stats.audio_bytes_decoded = std::exchange(unreported_audio_bytes_, 0);
+  if (!stats.video_frames_decoded && !stats.video_frames_dropped &&
+      !stats.video_bytes_decoded && !stats.audio_bytes_decoded) {
+    return;
+  }
+  client_->OnStatisticsUpdate(stats);
 }
 
 }  // namespace media

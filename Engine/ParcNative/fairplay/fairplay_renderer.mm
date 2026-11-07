@@ -10,6 +10,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <queue>
 
 #include "fairplay_bitstream.h"
 #include "fairplay_key_session.h"
@@ -663,6 +664,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   void Flush(std::function<void()> done) {
+    // Samples already due stay counted; the rest never will be.
+    CountPassedVideo();
+    video_due_ = {};
     synchronizer_.rate = 0;
     status_.rate = 0;
     RemoveEndObserver();
@@ -736,13 +740,15 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return status;
   }
 
-  void LoadVideoMetrics(std::function<void(const VideoMetrics&)> done) const {
+  void LoadVideoMetrics(std::function<void(const VideoMetrics&)> done) {
+    const int64_t frames_passed = static_cast<int64_t>(CountPassedVideo());
     if (@available(macOS 14.4, *)) {
       if (layer_) {
         std::shared_ptr<const PostTask> poster = poster_;
         [layer_.sampleBufferRenderer
             loadVideoPerformanceMetricsWithCompletionHandler:^(AVVideoPerformanceMetrics* metrics) {
               VideoMetrics result;
+              result.frames_passed = frames_passed;
               if (metrics) {
                 result.available = true;
                 result.total_frames = metrics.totalNumberOfFrames;
@@ -757,7 +763,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         return;
       }
     }
-    (*poster_)([done] { done(VideoMetrics()); });
+    VideoMetrics result;
+    result.frames_passed = frames_passed;
+    (*poster_)([done, result] { done(result); });
   }
 
  private:
@@ -1475,12 +1483,26 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     [RendererFor(stream) enqueueSampleBuffer:held.buffer];
     ++(stream == StreamType::kVideo ? status_.video_enqueued : status_.audio_enqueued);
+    if (stream == StreamType::kVideo) {
+      video_due_.push(held.start);
+    }
     Stream& state = StreamFor(stream);
     state.enqueued_end = std::max(state.enqueued_end, held.end);
     CFRetain(held.buffer);
     state.submitted.emplace_back(held.buffer, held.start, held.end, held.keyframe);
     TrimSubmitted(stream);
     return true;
+  }
+
+  // Moves the video samples the clock has reached from video_due_ into
+  // video_frames_passed_ (VideoMetrics::frames_passed).
+  uint64_t CountPassedVideo() {
+    const double now = GetMediaTime().InSeconds();
+    while (!video_due_.empty() && video_due_.top() <= now) {
+      video_due_.pop();
+      ++video_frames_passed_;
+    }
+    return video_frames_passed_;
   }
 
   void TrimSubmitted(StreamType stream) {
@@ -1826,6 +1848,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool video_failure_reported_ = false;
   bool audio_failure_reported_ = false;
   RendererStatus status_;
+  // Presentation starts of the video samples given to AVFoundation (once
+  // each; re-deliveries aren't counted again) that the clock hasn't reached,
+  // earliest first; Flush drops them.
+  std::priority_queue<double, std::vector<double>, std::greater<double>> video_due_;
+  uint64_t video_frames_passed_ = 0;
 };
 
 FairPlayRenderer::FairPlayRenderer(FairPlayRendererClient* client, PostTask post_task)
@@ -1900,7 +1927,7 @@ RendererStatus FairPlayRenderer::GetStatus() const {
   return impl_->GetStatus();
 }
 
-void FairPlayRenderer::LoadVideoMetrics(std::function<void(const VideoMetrics&)> done) const {
+void FairPlayRenderer::LoadVideoMetrics(std::function<void(const VideoMetrics&)> done) {
   impl_->LoadVideoMetrics(std::move(done));
 }
 

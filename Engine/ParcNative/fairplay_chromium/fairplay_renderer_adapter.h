@@ -6,7 +6,9 @@
 // DecryptConfig, and joins the FairPlay CDM of the same media service as a
 // content key recipient. The display layer is registered in
 // ui::ProtectedLayerRegistry; the compositor places it where the render
-// process's video hole frame is.
+// process's video hole frame is. While the clock runs it reports the frames
+// AVFoundation decoded and dropped (getVideoPlaybackQuality) and the bytes it
+// was given, as the deltas RendererClient::OnStatisticsUpdate takes.
 #ifndef THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_RENDERER_ADAPTER_H_
 #define THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_RENDERER_ADAPTER_H_
 
@@ -24,6 +26,7 @@
 #include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/unguessable_token.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/demuxer_stream.h"
@@ -108,6 +111,11 @@ class FairPlayRendererAdapter final
   void MaybeFinishFlush();
   void ReportError(PipelineStatus status);
   void SetMuted(bool muted);
+  void UpdateStatisticsTimer();
+  void PollStatistics();
+  void RequestVideoMetrics();
+  void OnVideoMetrics(const parc::fairplay::VideoMetrics& metrics);
+  void ReportStatistics(int64_t frames_decoded, int64_t frames_dropped);
 
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
   const LayerRegisteredCB layer_registered_cb_;
@@ -122,6 +130,7 @@ class FairPlayRendererAdapter final
   bool core_initialized_ = false;
   bool cdm_attached_ = false;
   bool playing_ = false;
+  double playback_rate_ = 0;
   bool errored_ = false;
   bool natural_size_reported_ = false;
   base::TimeDelta start_time_;
@@ -137,6 +146,15 @@ class FairPlayRendererAdapter final
   base::UnguessableToken layer_token_;
   gfx::Size natural_size_;
   base::ScopedClosureRunner mute_state_observer_closer_;
+
+  // Statistics. Frame totals already reported (cumulative, like the
+  // sources); bytes enqueued since the last report.
+  base::RepeatingTimer statistics_timer_;
+  base::TimeTicks video_metrics_requested_;  // Null when none is outstanding.
+  int64_t reported_frames_decoded_ = 0;
+  int64_t reported_frames_dropped_ = 0;
+  uint64_t unreported_video_bytes_ = 0;
+  uint64_t unreported_audio_bytes_ = 0;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<FairPlayRendererAdapter> weak_factory_{this};

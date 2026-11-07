@@ -52,7 +52,11 @@ arrive in decode order with presentation times only).
    trips through the core's reframing, init-data planning.
 2. License exchange through `FairPlayCdm` with skd init data.
 3. Chromium-framed playback: play 8 s, pause, resume, rate 1.5, volume/mute,
-   seek to 40 s (mid-segment), and end of stream with `OnEnded`.
+   seek to 40 s (mid-segment), and end of stream with `OnEnded`. The frame
+   counts the Chromium adapter reports as playback statistics move with the
+   clock: the core's `frames_passed` matches the frames due after 8 s (also
+   ISO-framed), and both it and AVFoundation's counts stand still while
+   paused, then advance again after resuming.
 4. ISO-framed playback: play and seek.
 5. Clear lead: a clear segment, then protected segments, in one track.
 6. Underflow: 6 s of data, HAVE_NOTHING with the clock stopped, then more data
@@ -103,6 +107,17 @@ Recorded 2026-11-06 on this MacBook Air (macOS 27.2, build 26B123): 186 checks,
     frames, 0 dropped or corrupted;
   - end of stream: `OnEnded` at t=78.019 for a 78.000 s end;
   - no HAVE_NOTHING during steady playback; output never obscured.
+- Frame counts (2026-11-06, with the adapter's statistics): after 8 s the
+  core counted 190 of 190 frames due (AVFoundation 247); paused 1.5 s apart,
+  core 190 → 190 and AVFoundation 247 → 247, dropped 0 → 0; 2 s after
+  resuming, core +49 (24 fps) and AVFoundation +32. AVFoundation's count
+  includes the frames decoded ahead of the clock, so right after a pause it
+  follows the decoder's queue rather than the clock. ISO-framed: 191 of 191
+  due. The full run reached 571 checks, 0 failed, before its 290 s time cap;
+  the two sections past the cap passed on their own (HEVC B-frames 82/82
+  frames; close and remove). The sandbox probe's h264 and hevc scenarios
+  passed under the GPU profile with the FairPlay rules (163 and 164 frames,
+  0 dropped).
 - ISO framing: +7.951 s over 8.031 s (231 frames); seek, then +3.949 s.
 - Clear lead: 4.951 s clear, then 6.000 s over 6.000 s into protected samples,
   303 frames, 0 dropped or corrupted.

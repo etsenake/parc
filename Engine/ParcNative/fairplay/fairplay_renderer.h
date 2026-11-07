@@ -91,12 +91,20 @@ struct RendererStatus {
 };
 
 struct VideoMetrics {
-  bool available = false;  // macOS 14.4+.
+  // AVFoundation's counts, cumulative for the renderer's lifetime (Flush
+  // doesn't reset them); total includes frames decoded ahead of the clock and
+  // the ones decoded without display before a start time. macOS 14.4+.
+  bool available = false;
   int64_t total_frames = 0;
   int64_t dropped_frames = 0;
   int64_t corrupted_frames = 0;
   int64_t optimized_composited_frames = 0;
   double accumulated_frame_delay = 0;
+  // The core's own count on every macOS version: video samples given to
+  // AVFoundation whose presentation time the clock has reached, since
+  // Initialize. It stops with the clock (pause, underflow) and leaves out
+  // samples a Flush dropped before they came due.
+  int64_t frames_passed = 0;
 };
 
 class FairPlayRenderer {
@@ -166,7 +174,9 @@ class FairPlayRenderer {
   // sequence); everything else runs on the owner sequence.
   MediaTime GetMediaTime() const;
   RendererStatus GetStatus() const;
-  void LoadVideoMetrics(std::function<void(const VideoMetrics&)> done) const;
+  // Not const: it brings frames_passed up to the clock. |done| runs on the
+  // owner sequence.
+  void LoadVideoMetrics(std::function<void(const VideoMetrics&)> done);
 
   class Impl;
 

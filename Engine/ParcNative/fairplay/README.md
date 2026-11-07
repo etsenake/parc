@@ -43,6 +43,7 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `RendererClient::OnWaiting(kNoDecryptionKey)` | `OnWaitingForKey` |
 | `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names |
 | compositing (`ca_renderer_layer_tree.mm`) | `display_layer()` (`AVSampleBufferDisplayLayer*`) |
+| `RendererClient::OnStatisticsUpdate` (frames decoded/dropped) | `LoadVideoMetrics`: AVFoundation's cumulative counts (macOS 14.4+) and `frames_passed`, the core's count of video samples the clock reached |
 
 Threading: every public method runs on one owner sequence, and every client
 callback is posted to it through the `PostTask` given at construction (a

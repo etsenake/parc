@@ -128,7 +128,31 @@ or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
    subsamples, pattern). The core holds samples until their key is usable and
    reports `OnWaiting(kNoDecryptionKey)` meanwhile. Buffering state, ended,
    natural size and errors go back through `RendererClient`.
-7. `Flush` drops what is queued and waits for reads already in flight (the
+7. While the clock runs (started, rate above 0) the adapter polls the core's
+   `LoadVideoMetrics` every 250 ms and reports `OnStatisticsUpdate`, which
+   `PipelineImpl` adds up as deltas into what `getVideoPlaybackQuality()`,
+   `webkitDecodedFrameCount`/`webkitDroppedFrameCount` and the decoded byte
+   counts read. Netflix fails with S7353-5101 (decoder timeout) when
+   `totalVideoFrames` stays put for 10 s. On macOS 14.4+ the frames come from
+   `AVSampleBufferVideoRenderer`'s `AVVideoPerformanceMetrics`: the decoder's
+   own count, cumulative for the layer's lifetime, including frames decoded
+   ahead of the clock (as `RendererImpl` counts them) and real drops. Before
+   14.4 there is no such API, so the core counts the video samples whose
+   presentation time the clock reached, with no drops. A total only adds
+   what goes past the last one reported, so a late answer or a switch
+   between the two adds nothing twice. Bytes are those of the samples handed
+   to the core. Pausing or seeking stops the poll after one last count. The
+   memory, keyframe-distance, frame-duration, power-efficient and
+   decoder-name fields stay unset, as upstream's `MediaFoundationRenderer`
+   on Windows leaves them (it reports decoded and dropped deltas from a
+   500 ms poll while playing). Pages don't read those fields. Blink's
+   `VideoDecodeStatsReporter` does: with no frame duration it files FairPlay
+   sessions under the 5 fps bucket in the MediaCapabilities
+   history, where no 24, 30 or 60 fps `decodingInfo` query looks, just as it
+   does for MediaFoundation. Reporting a frame duration would need the
+   power-efficient count as well, or `decodingInfo` would start answering
+   `powerEfficient: false` for FairPlay configs.
+8. `Flush` drops what is queued and waits for reads already in flight (the
    demuxer aborts them before a seek). Teardown flushes the layer with
    removal of the displayed image, unregisters it, then destroys the core,
    which leaves the CDM's key session. `MojoRendererService` destroys the
@@ -366,6 +390,12 @@ Nothing here builds the engine. For each increment:
   and `cdm_registry_impl.cc`. Those hunks follow the existing
   MediaFoundation code next to them line for line, and were re-read for exact
   signatures.
+- Playback statistics (2026-11-06): `fairplay_renderer_adapter.mm` passes
+  `-fsyntax-only` (debug and `NDEBUG`) against the pinned headers with
+  fairplay-media's patched `renderer.h`/`cdm_context.h` (exact applier,
+  every before/after digest matching) and stub buildflag headers; a copy
+  with a misspelled member fails, so the check reads the code. The counts it
+  reports are covered by `tests/FairPlay` (see its README's results).
 - Each increment had an independent read-only review before main, and its
   findings were fixed.
 

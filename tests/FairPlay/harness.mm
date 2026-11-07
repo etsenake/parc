@@ -1085,9 +1085,9 @@ Step Metrics(std::shared_ptr<Player> player, const std::string& label, int64_t m
       *previous = m.total_frames;
       Check(m.available && added >= min_frames && m.corrupted_frames == 0,
             label + Format(": AVFoundation video metrics total=%lld (+%lld) dropped=%lld "
-                           "corrupted=%lld optimized=%lld delay=%.3fs",
+                           "corrupted=%lld optimized=%lld delay=%.3fs, core frames passed %lld",
                            m.total_frames, added, m.dropped_frames, m.corrupted_frames,
-                           m.optimized_composited_frames, m.accumulated_frame_delay));
+                           m.optimized_composited_frames, m.accumulated_frame_delay, m.frames_passed));
       done();
     });
   };
@@ -1390,6 +1390,25 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   });
   steps.push_back([=](Done done) { Run(player(), 8, 1, name + " play 8s")(done); });
   steps.push_back([=](Done done) { Metrics(player(), name + " after 8s", 150, frames)(done); });
+  // The frame counts Chromium's statistics report (the adapter takes
+  // AVFoundation's on macOS 14.4+, the core's own before) move with the clock.
+  steps.push_back([=](Done done) {
+    player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      // Read after the count, so no fewer frames are due than were counted.
+      const double now = player()->Time();
+      int64_t due = 0;
+      for (const auto& segment : w->video.segments) {
+        for (const ft::Sample& sample : segment) {
+          if (double(sample.pts) / w->video.info.timescale <= now) ++due;
+        }
+      }
+      Check(m.frames_passed >= 150 && m.frames_passed * 10 >= due * 9 && m.frames_passed <= due,
+            name + ": the core counts the frames the clock passed in 8s",
+            Format("%lld passed of %lld due at t=%.3f, AVFoundation total %lld", m.frames_passed, due, now,
+                   m.total_frames));
+      done();
+    });
+  });
   steps.push_back([=](Done done) {
     Check(player()->underflows == 0, name + ": no HAVE_NOTHING during steady playback",
           Format("%d", player()->underflows));
@@ -1401,13 +1420,42 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
     done();
   });
   if (full) {
+    auto paused = std::make_shared<fp::VideoMetrics>();
     steps.push_back([=](Done done) {
       player()->renderer().SetPlaybackRate(0);
       Run(player(), 2, 0, name + " paused 2s")(done);
     });
     steps.push_back([=](Done done) {
+      player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& first) {
+        After(1.5, [=] {
+          player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+            *paused = m;
+            Check(m.frames_passed == first.frames_passed && m.total_frames == first.total_frames &&
+                      m.dropped_frames == first.dropped_frames,
+                  name + ": frame counts stand still while paused (1.5s apart)",
+                  Format("core passed %lld -> %lld, AVFoundation total %lld -> %lld, dropped %lld -> %lld",
+                         first.frames_passed, m.frames_passed, first.total_frames, m.total_frames,
+                         first.dropped_frames, m.dropped_frames));
+            done();
+          });
+        });
+      });
+    });
+    steps.push_back([=](Done done) {
       player()->renderer().SetPlaybackRate(1);
       Run(player(), 2, 1, name + " resumed 2s")(done);
+    });
+    steps.push_back([=](Done done) {
+      player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+        const int64_t passed = m.frames_passed - paused->frames_passed;
+        const int64_t total = m.total_frames - paused->total_frames;
+        // AVFoundation's total counts the frames decoded ahead of the clock,
+        // so after a pause it moves with the decoder's queue, not the clock.
+        Check(passed >= 40 && (!m.available || total > 0),
+              name + ": frame counts advance again in 2s after resuming",
+              Format("core passed +%lld, AVFoundation total +%lld", passed, total));
+        done();
+      });
     });
     steps.push_back([=](Done done) {
       player()->renderer().SetPlaybackRate(1.5);
@@ -1435,6 +1483,13 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   }
   // Seek into the middle of a segment: preceding video decodes without
   // display, preceding audio is dropped.
+  auto passed_before_seek = std::make_shared<int64_t>(0);
+  steps.push_back([=](Done done) {
+    player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      *passed_before_seek = m.frames_passed;
+      done();
+    });
+  });
   steps.push_back([=](Done done) {
     StartAt(player(), &w->video, &w->audio, 6, w->segments, 40, 1, false)(done);
   });
@@ -1445,6 +1500,26 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   });
   steps.push_back([=](Done done) { Run(player(), 4, 1, name + " after seek 4s")(done); });
   steps.push_back([=](Done done) { Metrics(player(), name + " after seek", 60, frames)(done); });
+  // The flush drops the samples queued ahead of the old position: from the
+  // seek on, the core counts only the new segments' samples the clock passed
+  // (those before 40 s decode without display). A few more may come due
+  // between the count before the seek and the flush.
+  steps.push_back([=](Done done) {
+    player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      const double now = player()->Time();
+      int64_t due = 0;
+      for (size_t i = 6; i < w->video.segments.size() && i < size_t(w->segments); ++i) {
+        for (const ft::Sample& sample : w->video.segments[i]) {
+          if (double(sample.pts) / w->video.info.timescale <= now) ++due;
+        }
+      }
+      const int64_t added = m.frames_passed - *passed_before_seek;
+      Check(added * 10 >= due * 9 && added <= due + 4,
+            name + ": after the seek the core counts only the new position's frames",
+            Format("+%lld passed, %lld due from the seek's segment at t=%.3f", added, due, now));
+      done();
+    });
+  });
   if (full) {
     double end = 6.0 * w->segments;
     steps.push_back([=](Done done) {
