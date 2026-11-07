@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 457,
+  "version": 458,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4142,7 +4142,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "e29bf48ceef215ae7175c49151542f269f0e12bbfa9edc331150695fd613752a",
+      "sha256": "1944a6dabbd3921230fa8835835591bd0293ed69fbc7f14304072be7bc6d447a",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4407,7 +4407,7 @@
         {
           "target": "third_party/blink/renderer/platform/media/key_system_config_selector_unittest.cc",
           "before_sha256": "3527010a096f54fb1239d818dfcbd95c67a7555bb670a9b9445e77d8c3b59748",
-          "after_sha256": "7cdee69c4f74ec4e8765eb088358d7d77dc8c64026d72add07042f5ea2c44e4b"
+          "after_sha256": "867cc4531c8755ec9054bcf2b3116b4177c4201a885080bb288cfa7c0be69aa5"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc",
@@ -4532,7 +4532,7 @@
         {
           "target": "third_party/blink/renderer/platform/media/key_system_config_selector.cc",
           "before_sha256": "bb81dfb2b57b5075cb48034766241562964f4174e0639f34eb2e6f4d09f2a615",
-          "after_sha256": "f50f6dba64e8bb674637d8e0d8c39afdb173913bbf12a93ff62a39ab2a2eaa17"
+          "after_sha256": "e8fd21f121cf809479060b2bf6cf405878f219a94c802c9a665e482c55bf7634"
         },
         {
           "target": "media/filters/source_buffer_stream.h",
@@ -4593,7 +4593,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "1377104fce5938ff576f6a6c6f529c71e8ebac39dfae946e201b296357d01bea",
+      "sha256": "8f8904db36a255f20d20f0a7bf574d42266a9c5f5b7547a29d95128eecd5cbec",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4749,6 +4749,11 @@
           "target": "base/memory/memory_pressure_listener.h",
           "before_sha256": "25c5e697a2c9a51ac4571fbad13a575ad8b57d6baf0ed2e27f60d9b89224fe8c",
           "after_sha256": "595a83d2ee6f6784a33e6d6258c3749dc91be835b84d23a0ccfe52cbd86e72fd"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc",
+          "before_sha256": "031438ed06527358f3750aa6e0179b9267160fc59532675e1995ae8dd3e09345",
+          "after_sha256": "972ba1c0a1cb8623263d8101c8b48073892028b818f44a2bc57bee49b798f79d"
         }
       ]
     },

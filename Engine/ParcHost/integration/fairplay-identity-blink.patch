@@ -2871,3 +2871,71 @@
  };
  
  // base::MemoryPressureListener is deprecated. Use base::MemoryConsumer instead.
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc
+@@ -4,14 +4,17 @@
+ 
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
+ 
++#include <algorithm>
+ #include <memory>
+ #include <utility>
+ 
++#include "base/location.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/numerics/safe_conversions.h"
+ #include "media/base/eme_constants.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_recorder.h"
++#include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/public/platform/web_content_decryption_module.h"
+ #include "third_party/blink/public/platform/web_encrypted_media_types.h"
+ #include "third_party/blink/public/platform/web_media_key_system_configuration.h"
+@@ -21,13 +24,16 @@
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/content_decryption_module_result_promise.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_session.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_keys.h"
+ #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
++#include "third_party/blink/renderer/platform/heap/persistent.h"
+ #include "third_party/blink/renderer/platform/timer.h"
++#include "third_party/blink/renderer/platform/wtf/functional.h"
+ 
+ namespace blink {
+ 
+@@ -222,6 +228,30 @@
+       resolver, config, configuration.session_types);
+   auto promise = resolver->Promise();
+ 
++  // Parc: Safari's FairPlay on macOS keeps no persistent licenses, so its
++  // MediaKeys for a configuration listing "persistent-license" (granted
++  // beside "temporary") fail with NotAllowedError in a media element task
++  // (MediaKeySystemAccess::createMediaKeys, CDMInstanceFairPlayStreamingAVFObjC
++  // ::initializeWithConfiguration).
++  ExecutionContext* parc_context = ExecutionContext::From(script_state);
++  if (parc_context &&
++      IsParcSafariIdentityUserAgent(parc_context->UserAgent()) &&
++      IsParcFairPlayKeySystem(keySystem()) &&
++      std::find(configuration.session_types.begin(),
++                configuration.session_types.end(),
++                WebEncryptedMediaSessionType::kPersistentLicense) !=
++          configuration.session_types.end()) {
++    parc_context->GetTaskRunner(TaskType::kMediaElementEvent)
++        ->PostTask(FROM_HERE,
++                   BindOnce(
++                       [](ScriptPromiseResolver<MediaKeys>* resolver) {
++                         resolver->Reject(MakeGarbageCollected<DOMException>(
++                             DOMExceptionCode::kNotAllowedError));
++                       },
++                       WrapPersistent(resolver)));
++    return promise;
++  }
++
+   // 2. Asynchronously create and initialize the MediaKeys object.
+   // 2.1 Let cdm be the CDM corresponding to this object.
+   // 2.2 Load and initialize the cdm if necessary.

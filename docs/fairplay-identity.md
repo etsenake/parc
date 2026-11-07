@@ -47,7 +47,11 @@ On a page that presents Safari's identity:
   supported, a type may also list the other kind's FairPlay codecs, and an
   unparsable type skips only that capability. The HLS types
   (`application/vnd.apple.mpegurl`, `application/x-mpegurl`) are taken as
-  MP4, since Parc's native HLS route plays them.
+  MP4, since Parc's native HLS route plays them. As on macOS Safari,
+  `persistent-license` listed beside `temporary` is granted (persistent state
+  becomes required) and `createMediaKeys` then rejects with NotAllowedError,
+  since FairPlay keeps no persistent licenses outside iOS; listed alone it is
+  refused.
 - Videos have Safari's presentation and fullscreen API
   (`webkitSupportsPresentationMode`, `webkitSetPresentationMode`,
   `webkitPresentationMode`, `webkitpresentationmodechanged`,
