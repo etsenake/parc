@@ -7019,7 +7019,27 @@
    // When seeking the current time can go beyond the duration so we should
    // cap the current time at the duration.
    base::TimeDelta duration = GetPipelineMediaDuration();
-@@ -3293,8 +4668,11 @@
+@@ -3189,9 +4564,17 @@
+   if (current_time > duration)
+     current_time = duration;
+ 
++  // WebKit's MediaPlayerPrivateAVFoundationObjC::effectiveRate reports the
++  // player's rate, not the requested rate. Match RendererWrapper::ParcRendererRate:
++  // remoting/flinging and FairPlay src= hold the picture instead of reversing.
++  const bool parc_cannot_reverse =
++      playback_rate_ < 0 && client_->PresentsParcSafariIdentity() &&
++      renderer_type_ != media::RendererType::kRendererImpl &&
++      renderer_type_ != media::RendererType::kFairPlayHls;
+   const double effective_playback_rate =
+-      paused_ || ready_state_ < kReadyStateHaveFutureData ? 0.0
+-                                                          : playback_rate_;
++      paused_ || ready_state_ < kReadyStateHaveFutureData || parc_cannot_reverse
++          ? 0.0
++          : playback_rate_;
+ 
+   media_session::MediaPosition new_position(effective_playback_rate, duration,
+                                             current_time, ended_);
+@@ -3293,8 +4676,11 @@
      bool is_in_picture_in_picture) {
    PlayState result;
  
@@ -7033,7 +7053,7 @@
    bool is_stale = delegate_->IsStale(delegate_id_);
  
    if (stale_state_override_for_testing_.has_value() &&
-@@ -3330,8 +4708,22 @@
+@@ -3330,8 +4716,22 @@
    // to kReadyStateHaveMetadata, we require `is_stale` to remain suspended.
    // `is_stale` will be cleared when we receive data which may take us to
    // kReadyStateHaveMetadata.
@@ -7057,7 +7077,7 @@
  
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
-@@ -3530,6 +4922,12 @@
+@@ -3530,6 +4930,12 @@
      return;
    }
  
@@ -7070,7 +7090,7 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3585,7 +4983,7 @@
+@@ -3585,7 +4991,7 @@
    watch_time_reporter_->OnDominantVisibleContentChanged(
        is_dominant_visible_content_);
  
@@ -7079,7 +7099,7 @@
      watch_time_reporter_->OnHidden();
    } else {
      watch_time_reporter_->OnShown();
-@@ -3635,6 +5033,9 @@
+@@ -3635,6 +5041,9 @@
  
  bool WebMediaPlayerImpl::IsPageHidden() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -7089,7 +7109,7 @@
    return delegate_->IsPageHidden();
  }
  
-@@ -3770,6 +5171,13 @@
+@@ -3770,6 +5179,13 @@
    if (!is_background_video_playback_enabled_)
      return true;
  
@@ -7103,7 +7123,7 @@
    if (is_flinging_)
      return false;
  
-@@ -3792,6 +5200,36 @@
+@@ -3792,6 +5208,36 @@
    if (!is_background_video_track_optimization_supported_) {
      return false;
    }
@@ -7140,7 +7160,7 @@
  
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
-@@ -3931,6 +5369,7 @@
+@@ -3931,6 +5377,7 @@
  
    DCHECK(!is_remote_rendering_);
    is_remote_rendering_ = true;
@@ -7148,7 +7168,7 @@
  
    DCHECK(!disable_pipeline_auto_suspend_);
    disable_pipeline_auto_suspend_ = true;
-@@ -3953,6 +5392,7 @@
+@@ -3953,6 +5400,7 @@
    if (!is_remote_rendering_)
      return;  // Is currently with local renderer.
    is_remote_rendering_ = false;
@@ -7479,7 +7499,7 @@
    bool should_pause_when_frame_is_hidden_ = false;
 --- a/third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc
 +++ b/third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc
-@@ -4,14 +4,19 @@
+@@ -4,14 +4,20 @@
  
  #include "third_party/blink/renderer/platform/media/web_media_player_impl.h"
  
@@ -7489,6 +7509,7 @@
  #include <stdint.h>
  
  #include <algorithm>
++#include <atomic>
  #include <memory>
  #include <string>
 +#include <string_view>
@@ -7499,7 +7520,7 @@
  #include "base/functional/callback_helpers.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory/ref_counted.h"
-@@ -25,6 +30,7 @@
+@@ -25,6 +31,7 @@
  #include "base/test/gmock_callback_support.h"
  #include "base/test/metrics/histogram_tester.h"
  #include "base/test/mock_callback.h"
@@ -7507,7 +7528,7 @@
  #include "base/test/scoped_feature_list.h"
  #include "base/test/simple_test_tick_clock.h"
  #include "base/threading/thread.h"
-@@ -45,7 +51,9 @@
+@@ -45,7 +52,9 @@
  #include "media/base/mock_media_log.h"
  #include "media/base/test_data_util.h"
  #include "media/base/test_helpers.h"
@@ -7517,7 +7538,7 @@
  #include "media/filters/pipeline_controller.h"
  #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
  #include "media/mojo/services/media_metrics_provider.h"
-@@ -76,6 +84,9 @@
+@@ -76,6 +85,9 @@
  #include "third_party/blink/public/web/web_view.h"
  #include "third_party/blink/public/web/web_widget.h"
  #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
@@ -7527,7 +7548,7 @@
  #include "third_party/blink/renderer/platform/media/buffered_data_source_host_impl.h"
  #include "third_party/blink/renderer/platform/media/media_player_client.h"
  #include "third_party/blink/renderer/platform/media/power_status_helper.h"
-@@ -86,6 +97,7 @@
+@@ -86,6 +98,7 @@
  #include "third_party/blink/renderer/platform/media/video_frame_compositor.h"
  #include "third_party/blink/renderer/platform/media/web_audio_source_provider_client.h"
  #include "third_party/blink/renderer/platform/media/web_content_decryption_module_impl.h"
@@ -7535,7 +7556,7 @@
  #include "third_party/blink/renderer/platform/testing/task_environment.h"
  #include "third_party/blink/renderer/platform/weborigin/kurl.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
-@@ -219,6 +231,8 @@
+@@ -219,6 +232,8 @@
    MOCK_METHOD0(DidDisableAudioOutputSinkChanges, void());
    MOCK_METHOD1(DidUseAudioServiceChange, void(bool uses_audio_service));
    MOCK_METHOD1(DidPlayerSizeChange, void(const gfx::Size&));
@@ -7544,7 +7565,7 @@
    MOCK_METHOD1(OnRemotePlaybackDisabled, void(bool));
    MOCK_METHOD0(OnFrameHidden, void());
    MOCK_METHOD0(OnFrameShown, void());
-@@ -227,6 +241,7 @@
+@@ -227,6 +242,7 @@
    MOCK_METHOD2(OnFirstFrame, void(base::TimeTicks, size_t));
    MOCK_METHOD0(OnRequestVideoFrameCallback, void());
    MOCK_METHOD0(GetElementId, int());
@@ -7552,7 +7573,7 @@
  };
  
  class MockWebMediaPlayerEncryptedMediaClient
-@@ -244,6 +259,107 @@
+@@ -244,6 +260,107 @@
    MOCK_METHOD0(DidBlockPlaybackWaitingForKey, void());
    MOCK_METHOD0(DidResumePlaybackBlockedForKey, void());
  };
@@ -7660,7 +7681,7 @@
  
  class MockWebMediaPlayerDelegate : public WebMediaPlayerDelegate {
   public:
-@@ -368,12 +484,16 @@
+@@ -368,12 +485,16 @@
      : public testing::Test,
        private WebTestingSupport::WebScopedMockScrollbars {
   public:
@@ -7677,7 +7698,7 @@
      web_view_helper_.Initialize();
      media_thread_.StartAndWaitForTesting();
    }
-@@ -404,6 +524,9 @@
+@@ -404,6 +525,9 @@
      // destructed since WMPI may reference them during destruction.
      wmpi_->Shutdown();
      wmpi_.reset();
@@ -7687,7 +7708,7 @@
  
      CycleThreads();
    }
-@@ -524,6 +647,24 @@
+@@ -524,6 +648,24 @@
    void SetPaused(bool is_paused) { wmpi_->paused_ = is_paused; }
    void SetSeeking(bool is_seeking) { wmpi_->seeking_ = is_seeking; }
    void SetEnded(bool is_ended) { wmpi_->ended_ = is_ended; }
@@ -7712,7 +7733,7 @@
    void SetTickClock(const base::TickClock* clock) {
      wmpi_->SetTickClockForTest(clock);
    }
-@@ -565,6 +706,49 @@
+@@ -565,6 +707,49 @@
  
    void OnWaiting(media::WaitingReason reason) { wmpi_->OnWaiting(reason); }
  
@@ -7762,7 +7783,7 @@
    void OnVideoNaturalSizeChange(const gfx::Size& size) {
      wmpi_->OnVideoNaturalSizeChange(size);
    }
-@@ -572,6 +756,67 @@
+@@ -572,6 +757,67 @@
    void OnVideoConfigChange(const media::VideoDecoderConfig& config) {
      wmpi_->OnVideoConfigChange(config);
    }
@@ -7830,7 +7851,7 @@
  
    WebMediaPlayerImpl::PlayState ComputePlayState() {
      return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
-@@ -605,7 +850,33 @@
+@@ -605,7 +851,33 @@
  
    bool IsSuspended() { return wmpi_->pipeline_controller_->IsSuspended(); }
  
@@ -7864,7 +7885,7 @@
  
    int64_t GetDataSourceMemoryUsage() const {
      return wmpi_->demuxer_manager_->GetDataSourceMemoryUsage();
-@@ -729,6 +1000,8 @@
+@@ -729,6 +1001,8 @@
    }
  
    bool IsVideoTrackDisabled() const { return wmpi_->video_track_disabled_; }
@@ -7873,7 +7894,7 @@
  
    bool IsDisableVideoTrackPending() const {
      return !wmpi_->is_background_status_change_cancelled_;
-@@ -910,6 +1183,41 @@
+@@ -910,6 +1184,41 @@
  
    void OnProgress() { wmpi_->OnProgress(); }
  
@@ -7915,7 +7936,7 @@
    void OnCdmCreated(base::RepeatingClosure quit_closure,
                      std::unique_ptr<WebContentDecryptionModule> cdm,
                      media::CreateCdmStatus status) {
-@@ -947,6 +1255,27 @@
+@@ -947,6 +1256,27 @@
      wmpi_->SetCdmInternal(web_cdm_.get());
    }
  
@@ -7943,7 +7964,7 @@
    media::MemoryDumpProviderProxy* GetMainThreadMemDumper() {
      return wmpi_->main_thread_mem_dumper_.get();
    }
-@@ -990,6 +1319,10 @@
+@@ -990,6 +1320,10 @@
    media::MockCdmFactory mock_cdm_factory_{mock_cdm_};
    std::unique_ptr<WebContentDecryptionModule> web_cdm_;
    media::MockCdmContext mock_cdm_context_;
@@ -7954,7 +7975,7 @@
  
    viz::FrameSinkId frame_sink_id_ = viz::FrameSinkId(1, 1);
    viz::LocalSurfaceId local_surface_id_ = viz::LocalSurfaceId(
-@@ -1023,11 +1356,41 @@
+@@ -1023,11 +1357,41 @@
    // The WebMediaPlayerImpl's media observer.
    NiceMock<MockMediaObserver> mock_observer_;
  
@@ -7996,7 +8017,7 @@
  
  TEST_F(WebMediaPlayerImplTest, ConstructAndDestroy) {
    InitializeWebMediaPlayerImpl();
-@@ -1796,6 +2159,21 @@
+@@ -1796,6 +2160,118 @@
    wmpi_->SetVolume(1.0);
  }
  
@@ -8015,10 +8036,107 @@
 +  EXPECT_EQ(0, wmpi_->CurrentTime());
 +}
 +
++// The element reads CurrentTime() for currentTime and timeupdate; Now Playing
++// must use the same renderer clock, including when a receiver cannot reverse.
++class WebMediaPlayerImplParcReverseRouteTest
++    : public WebMediaPlayerImplTest,
++      public testing::WithParamInterface<media::RendererType> {};
++
++TEST_P(WebMediaPlayerImplParcReverseRouteTest, FrozenRouteReportsItsActualRate) {
++  InitializeWebMediaPlayerImpl();
++  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
++  wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
++  auto factory = std::make_unique<media::MockRendererFactory>();
++  auto time = std::make_shared<std::atomic<int64_t>>(1000000);
++  media::MockRenderer* renderer = nullptr;
++  EXPECT_CALL(*factory, CreateRenderer(_, _, _, _, _, _))
++      .WillOnce(testing::WithoutArgs([&]() {
++        auto mock = std::make_unique<NiceMock<media::MockRenderer>>(GetParam());
++        renderer = mock.get();
++        ON_CALL(*mock, GetMediaTime()).WillByDefault([time]() {
++          return base::Microseconds(time->load());
++        });
++        EXPECT_CALL(*mock, OnInitialize(_, _, _))
++            .WillOnce(RunOnceCallback<2>(media::PIPELINE_OK));
++        return mock;
++      }));
++  renderer_factory_selector_->AddFactory(GetParam(), std::move(factory));
++  renderer_factory_selector_->SetBaseRendererType(GetParam());
++  Load(kAudioOnlyTestFile);
++  CycleThreads();
++  ASSERT_TRUE(renderer);
++  SetReadyState(WebMediaPlayer::kReadyStateHaveFutureData);
++  wmpi_->SetRate(-1.0);
++  EXPECT_CALL(*renderer, SetPlaybackRate(0.0)).Times(testing::AtLeast(1));
++  EXPECT_CALL(*renderer, SetPlaybackRate(testing::Lt(0.0))).Times(0);
++  Play();
++  CycleThreads();
++
++  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
++                           0.0, kAudioOnlyTestFileDuration, base::Seconds(1),
++                           /*end_of_media=*/false));
++  wmpi_->OnTimeUpdate();
++  EXPECT_EQ(1.0, wmpi_->CurrentTime());
++  testing::Mock::VerifyAndClearExpectations(&client_);
++  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(_, _, _, _)).Times(0);
++  CycleThreads();
++  wmpi_->OnTimeUpdate();
++  EXPECT_EQ(1.0, wmpi_->CurrentTime());
++  testing::Mock::VerifyAndClearExpectations(&client_);
++
++  // A new receiver position (including a backward seek) reaches both clocks.
++  time->store(500000);
++  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
++                           0.0, kAudioOnlyTestFileDuration, base::Seconds(0.5),
++                           /*end_of_media=*/false));
++  wmpi_->OnTimeUpdate();
++  EXPECT_EQ(0.5, wmpi_->CurrentTime());
++  testing::Mock::VerifyAndClearExpectations(&client_);
++
++  // Forward playback resumes on the same route.
++  EXPECT_CALL(*renderer, SetPlaybackRate(1.0));
++  wmpi_->SetRate(1.0);
++  CycleThreads();
++  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
++                           1.0, kAudioOnlyTestFileDuration, base::Seconds(0.5),
++                           /*end_of_media=*/false));
++  wmpi_->OnTimeUpdate();
++}
++
++INSTANTIATE_TEST_SUITE_P(
++    Parc, WebMediaPlayerImplParcReverseRouteTest,
++    testing::Values(media::RendererType::kFlinging,
++                    media::RendererType::kCourier,
++                    media::RendererType::kFairPlay));
++
++#if BUILDFLAG(IS_MAC)
++TEST_F(WebMediaPlayerImplTest, ParcReversingRoutesKeepNegativePositionRate) {
++  InitializeWebMediaPlayerImpl();
++  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
++  LoadAndWaitForReadyState(kAudioOnlyTestFile,
++                           WebMediaPlayer::kReadyStateHaveFutureData);
++  wmpi_->SetRate(-1.0);
++  Play();
++  ParcPlayChromiumRenderer();
++  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
++                           -1.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
++                           /*end_of_media=*/false));
++  wmpi_->OnTimeUpdate();
++  testing::Mock::VerifyAndClearExpectations(&client_);
++  ParcPlayNativeHls();
++  // A rate change must still be reported by native HLS.
++  wmpi_->SetRate(-2.0);
++  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
++                           -2.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
++                           /*end_of_media=*/false));
++  wmpi_->OnTimeUpdate();
++}
++#endif
++
  TEST_F(WebMediaPlayerImplTest, MediaPositionState_Playing) {
    InitializeWebMediaPlayerImpl();
    LoadAndWaitForReadyState(kAudioOnlyTestFile,
-@@ -1807,6 +2185,32 @@
+@@ -1807,6 +2283,32 @@
                             1.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
                             /*end_of_media=*/false));
    wmpi_->OnTimeUpdate();
@@ -8051,7 +8169,7 @@
  }
  
  TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
-@@ -1906,6 +2310,140 @@
+@@ -1906,6 +2408,140 @@
  
    EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(_, _, _, _)).Times(0);
    wmpi_->OnTimeUpdate();
@@ -8192,7 +8310,7 @@
  }
  
  TEST_F(WebMediaPlayerImplTest, NoStreams) {
-@@ -1980,6 +2518,55 @@
+@@ -1980,6 +2616,55 @@
    OnWaiting(media::WaitingReason::kNoDecryptionKey);
  }
  
@@ -8248,7 +8366,7 @@
  TEST_F(WebMediaPlayerImplTest, Waiting_SecureSurfaceLost) {
    InitializeWebMediaPlayerImpl();
  
-@@ -1993,6 +2580,271 @@
+@@ -1993,6 +2678,271 @@
    OnWaiting(media::WaitingReason::kSecureSurfaceLost);
    EXPECT_TRUE(IsSuspended());
  }
@@ -8520,7 +8638,7 @@
  
  ACTION(ReportHaveEnough) {
    arg0->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
-@@ -2775,6 +3627,63 @@
+@@ -2775,6 +3725,63 @@
    EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
  }
  
@@ -8584,7 +8702,7 @@
  TEST_F(WebMediaPlayerImplTest, NaturalSizeChange) {
    InitializeWebMediaPlayerImpl();
    media::PipelineMetadata metadata;
-@@ -3023,6 +3932,66 @@
+@@ -3023,6 +4030,66 @@
    EXPECT_FALSE(IsPausedBecausePageHidden());
    EXPECT_FALSE(IsPausedBecauseFrameHidden());
  }
@@ -8651,7 +8769,7 @@
  
  // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
  // visibility changes should not affect the playback state.
-@@ -3090,6 +4059,109 @@
+@@ -3090,6 +4157,109 @@
    ASSERT_TRUE(IsSuspended());
  }
  
@@ -8761,7 +8879,7 @@
  TEST_F(WebMediaPlayerImplTest, BackgroundIdlePauseTimerDependsOnAudio) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
-@@ -3113,6 +4185,102 @@
+@@ -3113,6 +4283,102 @@
        PausePlayback(WebMediaPlayer::PauseReason::kSuspendedPlayerIdleTimeout));
    FireIdlePauseTimer();
    base::RunLoop().RunUntilIdle();
@@ -8864,7 +8982,7 @@
  }
  
  // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
-@@ -3448,6 +4616,104 @@
+@@ -3448,6 +4714,104 @@
    wmpi_->SetIsEffectivelyFullscreen(
        WebFullscreenVideoStatus::kFullscreenAndPictureInPictureEnabled);
    EXPECT_FALSE(delegate_.ExpireForTesting());
@@ -8969,7 +9087,7 @@
  }
  
  class WebMediaPlayerImplBackgroundBehaviorTest
-@@ -3815,6 +5081,84 @@
+@@ -3815,6 +5179,84 @@
    }
  }
  
