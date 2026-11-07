@@ -20,6 +20,8 @@ typedef NS_ENUM(NSInteger, PCVideoPiPAction) {
   PCVideoPiPMute,
   PCVideoPiPSeek,
   PCVideoPiPSystemClose,
+  PCVideoPiPBeginScrubbing,
+  PCVideoPiPEndScrubbing,
 };
 
 // App-owned visible video PiP presentation. The engine supplies the actual

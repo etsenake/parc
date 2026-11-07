@@ -8,6 +8,21 @@
 //
 // 1024×563 @2x). Chromium places bottom-right with a 2% buffer. Corner radius
 //
+@interface PCVideoPiPSlider : NSSlider
+@property(nonatomic, copy) void (^scrubbingChanged)(BOOL);
+@end
+@implementation PCVideoPiPSlider
+- (void)mouseDown:(NSEvent*)event {
+  void (^changed)(BOOL) = self.scrubbingChanged;
+  if (changed) changed(YES);
+  @try {
+    [super mouseDown:event];
+  } @finally {
+    if (changed) changed(NO);
+  }
+}
+@end
+
 static const CGFloat kPCVideoPiPCornerRadius = 16;
 static const CGFloat kPCVideoPiPNormalWidth = 512;
 static const CGFloat kPCVideoPiPMinWidth = 284;
@@ -330,11 +345,19 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _favicon.layer.cornerRadius = 4;
   _favicon.layer.masksToBounds = YES;
 
-  _position = [NSSlider sliderWithValue:0
+  _position = [PCVideoPiPSlider sliderWithValue:0
                                minValue:0
                                maxValue:0
                                  target:self
                                  action:@selector(seek:)];
+  __weak PCVideoPiPPresenter* weakPresenter = self;
+  ((PCVideoPiPSlider*)_position).scrubbingChanged = ^(BOOL scrubbing) {
+    PCVideoPiPPresenter* presenter = weakPresenter;
+    if (!presenter || presenter->_invalidated) return;
+    void (^callback)(PCVideoPiPAction, double) = [presenter->_action copy];
+    if (callback)
+      callback(scrubbing ? PCVideoPiPBeginScrubbing : PCVideoPiPEndScrubbing, 0);
+  };
   _position.translatesAutoresizingMaskIntoConstraints = NO;
   _position.controlSize = NSControlSizeMini;
   _position.accessibilityLabel = @"Playback position";

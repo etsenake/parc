@@ -327,6 +327,7 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   }
   void Close() override { Hide(); }
   void Hide() override {
+    if (controller_) controller_->SetScrubbing(false);
     compositor_->Suspend();
     compositor_->widget()->SetSuspended(true);
     // Stop drawing, as NativeWidgetMacNSWindowHost does for a hidden window.
@@ -484,7 +485,7 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
     // reset controller.window_ and synchronously delete this implementation.
     using Behavior = PictureInPictureWindowManager::UiBehavior;
     auto* manager = PictureInPictureWindowManager::GetInstance();
-    if (action != PCVideoPiPSystemClose &&
+    if (action != PCVideoPiPSystemClose && action != PCVideoPiPEndScrubbing &&
         (!IsVisible() || manager->GetWebContents() != web_contents())) {
       return;
     }
@@ -533,6 +534,12 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
         return;
       case PCVideoPiPMute:
         controller_->RequestMute(!muted_);
+        return;
+      case PCVideoPiPBeginScrubbing:
+        controller_->SetScrubbing(true);
+        return;
+      case PCVideoPiPEndScrubbing:
+        controller_->SetScrubbing(false);
         return;
       case PCVideoPiPSeek:
         controller_->SeekTo(base::Seconds(value));

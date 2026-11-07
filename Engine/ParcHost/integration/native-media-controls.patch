@@ -1,14 +1,17 @@
 --- a/content/browser/media/session/media_session_impl.cc
 +++ b/content/browser/media/session/media_session_impl.cc
-@@ -5,6 +5,7 @@
+@@ -4,7 +4,10 @@
+ 
  #include "content/browser/media/session/media_session_impl.h"
  
++#include "content/browser/media/parc_fairplay_hooks.h"
++
  #include <algorithm>
 +#include <cmath>
  #include <memory>
  #include <utility>
  
-@@ -831,6 +832,14 @@
+@@ -831,6 +834,14 @@
    return desired_audio_focus_type_ == AudioFocusType::kGain;
  }
  
@@ -23,7 +26,7 @@
  void MediaSessionImpl::SetDuckingVolumeMultiplier(double multiplier) {
    ducking_volume_multiplier_ = std::clamp(multiplier, 0.0, 1.0);
  }
-@@ -897,7 +906,8 @@
+@@ -897,7 +908,8 @@
  }
  
  double MediaSessionImpl::GetVolumeMultiplier() const {
@@ -33,6 +36,63 @@
  }
  
  bool MediaSessionImpl::IsActive() const {
+@@ -1110,6 +1122,9 @@
+ MediaSessionImpl::GetMediaSessionInfoSync() {
+   media_session::mojom::MediaSessionInfoPtr info(
+       media_session::mojom::MediaSessionInfo::New());
++  info->parc_safari_playback_controls =
++      !parc_playback_controls_players_.empty() ||
++      parc::fairplay::FramePresentsSafariIdentity(GetRoutedFrame());
+ 
+   switch (audio_focus_state_) {
+     case State::ACTIVE:
+@@ -1291,6 +1306,46 @@
+ 
+ void MediaSessionImpl::NextSlide() {
+   DidReceiveAction(media_session::mojom::MediaSessionAction::kNextSlide);
++}
++
++void MediaSessionImpl::HandlePlaybackControlsAction(
++    media_session::mojom::PlaybackControlsAction action,
++    base::TimeDelta seek_time) {
++  using Action = media_session::mojom::PlaybackControlsAction;
++  std::erase_if(parc_playback_controls_players_,
++                [](const auto& player) { return !player.first; });
++  if (parc_playback_controls_players_.empty() &&
++      !parc::fairplay::FramePresentsSafariIdentity(GetRoutedFrame())) {
++    switch (action) {
++      case Action::kSeekTo: SeekTo(seek_time); break;
++      case Action::kPauseForDragging: Suspend(SuspendType::kUI); break;
++      case Action::kResumeForDragging: Resume(SuspendType::kUI); break;
++      case Action::kBeginScrubbing:
++      case Action::kEndScrubbing: break;
++    }
++    return;
++  }
++  if (parc_playback_controls_players_.empty() &&
++      (action == Action::kBeginScrubbing || action == Action::kPauseForDragging)) {
++    for (const auto& it : normal_players_) {
++      auto player = it.first.observer->GetPlaybackControlsWeakPtr();
++      if (player)
++        parc_playback_controls_players_.emplace_back(player, it.first.player_id);
++    }
++  }
++  if (!parc_playback_controls_players_.empty()) {
++    auto players = parc_playback_controls_players_;
++    if (action == Action::kEndScrubbing || action == Action::kResumeForDragging)
++      parc_playback_controls_players_.clear();
++    for (const auto& [player, id] : players) {
++      if (player)
++        player->OnHandlePlaybackControlsAction(id, action, seek_time);
++    }
++    return;
++  }
++  for (const auto& it : normal_players_)
++    it.first.observer->OnHandlePlaybackControlsAction(it.first.player_id, action,
++                                                    seek_time);
+ }
+ 
+ void MediaSessionImpl::SeekTo(base::TimeDelta seek_time) {
 --- a/content/browser/media/session/media_session_impl.h
 +++ b/content/browser/media/session/media_session_impl.h
 @@ -202,6 +202,12 @@
@@ -48,7 +108,28 @@
    // Set the volume multiplier applied during ducking.
    CONTENT_EXPORT void SetDuckingVolumeMultiplier(double multiplier) override;
  
-@@ -660,6 +666,7 @@
+@@ -279,6 +285,8 @@
+   CONTENT_EXPORT void NextSlide() override;
+ 
+   // Seek the media session to a specific time.
++  void HandlePlaybackControlsAction(media_session::mojom::PlaybackControlsAction action,
++      base::TimeDelta seek_time) override;
+   void SeekTo(base::TimeDelta seek_time) override;
+ 
+   // Scrub ("fast seek") the media session to a specific time.
+@@ -613,6 +621,11 @@
+ 
+   std::unique_ptr<AudioFocusDelegate> delegate_;
+ 
++  // Internal player pauses can remove a player from normal_players_. Keep
++  // scrubbing addressed to the players that received its beginning.
++  std::vector<std::pair<base::WeakPtr<MediaSessionPlayerObserver>, int>>
++      parc_playback_controls_players_;
++
+   // Standard video playback (e.g. WebMediaPlayerImpl players).
+   std::map<PlayerIdentifier, media_session::mojom::AudioFocusType>
+       normal_players_;
+@@ -660,6 +673,7 @@
    base::UnguessableToken audio_focus_group_id_ = base::UnguessableToken::Null();
  
    double ducking_volume_multiplier_;

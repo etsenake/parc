@@ -1866,10 +1866,17 @@
    EXPECT_CALL(*observer, OnMediaUIUpdated);
 --- a/components/global_media_controls/public/views/media_item_ui_updated_view.cc
 +++ b/components/global_media_controls/public/views/media_item_ui_updated_view.cc
-@@ -375,12 +375,16 @@
+@@ -340,6 +340,7 @@
+ 
+ MediaItemUIUpdatedView::~MediaItemUIUpdatedView() {
+   if (item_) {
++    item_->SetPlaybackControlsScrubbing(false);
+     item_->SetView(nullptr);
+   }
+   for (auto& observer : observers_) {
+@@ -375,12 +376,16 @@
  }
--
-+
+ 
  bool MediaItemUIUpdatedView::OnKeyPressed(const ui::KeyEvent& event) {
 +  if (!MayInteract())
 +    return false;
@@ -1877,27 +1884,42 @@
    // events that can change the progress.
    return progress_view_->OnKeyPressed(event);
  }
--
-+
+ 
  bool MediaItemUIUpdatedView::OnMousePressed(const ui::MouseEvent& event) {
 +  if (!MayInteract())
 +    return false;
    // Activate the original source page if it exists when any part of the media
    // background view is pressed.
    for (auto& observer : observers_) {
-@@ -603,6 +607,8 @@
+@@ -405,6 +410,8 @@
+ 
+ void MediaItemUIUpdatedView::UpdateWithMediaSessionInfo(
+     const media_session::mojom::MediaSessionInfoPtr& session_info) {
++  progress_view_->SetParcSafariPlaybackControls(
++      session_info && session_info->parc_safari_playback_controls);
+   bool playing =
+       session_info && session_info->playback_state ==
+                           media_session::mojom::MediaPlaybackState::kPlaying;
+@@ -603,6 +610,8 @@
  }
--
-+
+ 
  void MediaItemUIUpdatedView::MediaActionButtonPressed(views::Button* button) {
 +  if (!MayInteract())
 +    return;
    switch (static_cast<MediaSessionAction>(button->GetID())) {
      case MediaSessionAction::kPlay:
      case MediaSessionAction::kPause:
-@@ -729,6 +735,8 @@
--
-+
+@@ -705,6 +714,8 @@
+ }
+ 
+ void MediaItemUIUpdatedView::OnProgressDragStateChange(DragState drag_state) {
++  if (item_ && (drag_state == DragState::kDragEnded || MayInteract()))
++    item_->SetPlaybackControlsScrubbing(drag_state == DragState::kDragStarted);
+   drag_state_ = drag_state;
+   UpdateMediaActionButtonsVisibility();
+   UpdateTimestampLabelsVisibility();
+@@ -729,14 +740,18 @@
+ 
  void MediaItemUIUpdatedView::OnPlaybackStateChangeForProgressDrag(
      PlaybackStateChangeForDragging change) {
 +  if (!MayInteract())
@@ -1905,21 +1927,20 @@
    const auto action =
        (change == PlaybackStateChangeForDragging::kPauseForDraggingStarted
             ? MediaSessionAction::kPause
-@@ -737,6 +745,8 @@
+            : MediaSessionAction::kPlay);
+-  item_->OnMediaSessionActionButtonPressed(action);
++  item_->SetScrubbing(action == MediaSessionAction::kPause);
  }
--
-+
+ 
  void MediaItemUIUpdatedView::SeekTo(double seek_progress) {
 +  if (!MayInteract())
 +    return;
    item_->SeekTo(seek_progress * position_.duration());
  }
--
-+
-@@ -746,6 +756,8 @@
+ 
+@@ -746,6 +761,8 @@
  }
--
-+
+ 
  void MediaItemUIUpdatedView::StartCastingButtonPressed() {
 +  if (!MayInteract())
 +    return;

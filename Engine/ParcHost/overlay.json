@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 551,
+  "version": 552,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -395,7 +395,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "a2adf9a2e32a4594e6cd5563e650dc432b1cba0da98d24070be39acc309ae76a"
+      "sha256": "698bca25961cc5ea86b1173aaf634f243f5c7bad473baba16818a79e4cdabec9"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -835,7 +835,7 @@
     {
       "source": "Engine/ParcNative/video_overlay_window.mm",
       "target": "cef/libcef/browser/parc_native/video_overlay_window.mm",
-      "sha256": "d5afc4e8027241a4adb643ba857ca1cf69966caa843d56eb3659668b0e46105d"
+      "sha256": "b09fcd51fec99b22a0afb157da74c15b84c0a410bca3e74f417121b28ed88175"
     },
     {
       "source": "Sources/ParcEngine/VideoPiPWindow.h",
@@ -845,7 +845,7 @@
     {
       "source": "Sources/ParcEngine/VideoPiPWindow.m",
       "target": "cef/tests/parc_native_video_pip/VideoPiPWindow.m",
-      "sha256": "db1406949cfbd47935c786d6c7ba85afb279a3b60574698873e1a2b9554b4d6e"
+      "sha256": "4c1ca23dae83a53965aab6ea2a921ff407690d4ada5a59d5a25a6e7fdd6791c1"
     },
     {
       "source": "tests/NativeVideoPiP/BUILD.gn",
@@ -1620,7 +1620,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_fairplay_hooks.h",
       "target": "content/browser/media/parc_fairplay_hooks.h",
-      "sha256": "9f37d920209ab113e70e1b1ede91f31d9ac23f9d5ed2168cc183ab0911914c8a"
+      "sha256": "24d9e406319fa109ba903bc55dd1c4534b1b973d1cc87963b4a4a4b5ac176a7e"
     },
     {
       "source": "Engine/ParcNative/fairplay_identity_policy.h",
@@ -3245,17 +3245,17 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-media-controls.patch",
-      "sha256": "ffcc35418f9d98f9db52f2ca62ab976018a6903c8870b7fd20d928a6ef1abc41",
+      "sha256": "91ab46c80c05c748831c5b775b2d05fb248cb5918969d07256f5e8122bee63d0",
       "files": [
         {
           "target": "content/browser/media/session/media_session_impl.cc",
           "before_sha256": "75cf754cd56de9dceea712415e74ae8a262e7e1b9a4a0782ff5b12d93dc28e33",
-          "after_sha256": "6ced9d6c1e093423687361bc5487bcede01dff1408ce7a091bd82cde45845270"
+          "after_sha256": "c318b551788ce10021ef878fe140913350d0278ec6333c4c214d22ca2187e921"
         },
         {
           "target": "content/browser/media/session/media_session_impl.h",
           "before_sha256": "134148f2fe0f2c38074d83bb984b3bcf710164b4f7cbd04cfa714d7cfd68a929",
-          "after_sha256": "a60962996e40adfda7aa295b345e81c35ee70df4f69f1b2b1c247dd83235091f"
+          "after_sha256": "f3ebe600aba5afc6a8a5ea14b09582b5ac23f93de757fc81d6006a9569b2f98e"
         }
       ]
     },
@@ -3587,7 +3587,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "274d22b2a4a971bc85146613a6d0e95e2b9c5cdf6b1200294a363d2d4fb9dc8b",
+      "sha256": "e051f9eafd23793c5f3a1e881b564323233eb63509ac5e959c1242929149cf9e",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3692,7 +3692,7 @@
         {
           "target": "components/global_media_controls/public/views/media_item_ui_updated_view.cc",
           "before_sha256": "1cb3886d4d32af5a6aa0fd49c5737b54f36fde36bbbdb36e354e887d071a2c43",
-          "after_sha256": "213d64a29473cf291981a0a4b007e9e295732935598f9d03efb31a246a410505"
+          "after_sha256": "032eeceab17816be818ffa120708b62f925c61cc9f1036e216d563ad668a9f33"
         },
         {
           "target": "components/global_media_controls/public/views/media_item_ui_updated_view.h",
@@ -4182,7 +4182,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "a1466a9a10ca62adfbc4873e5cd646040ad734084598a7c50a952894e4c4ec04",
+      "sha256": "49e951eee624c35ef6329de70b05fe9bf74b2b4fbc44bf3312283ebf49707a85",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4222,7 +4222,7 @@
         {
           "target": "content/browser/media/media_interface_proxy.cc",
           "before_sha256": "151fd2acf0b00762c9debb229b6ab62cebc2fbc91cb6a5d9d0afd5bd48c89b67",
-          "after_sha256": "2b0397c2dae2d3ab074c19ed6a4af96cff317872cce8d85728c553ffc7c2706e"
+          "after_sha256": "1fb51e5c7e45ac5d8616997e4eac086fb5b414062891729e8f79864eb8835226"
         },
         {
           "target": "content/browser/media/media_interface_proxy.h",
@@ -4723,7 +4723,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "02e995f44d70ceb296a12659270e64d0c611fd61f61ac49f2a6b470004bf31b2",
+      "sha256": "77d5296d88b71bc0ea413e5843da0df0fe24f494cfd556de1f7da0d70f2c3808",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4758,7 +4758,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.cc",
           "before_sha256": "cbe10ab50ec054bd72cd04df8dfcdb84d11ae88a6ffcc073c0555c3010429bc0",
-          "after_sha256": "e6a3d6a502cb76e40f4ad4c6325cef45700feebddea7177746fe1f99ebbaa473"
+          "after_sha256": "0472cff7fcbcad0a3d4172b51647ced229d09dcd4b0837b33dd27ac8c9f591a6"
         },
         {
           "target": "third_party/blink/renderer/core/dom/events/event_queue.h",
@@ -4773,7 +4773,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.h",
           "before_sha256": "6c6fe284d5cb150545f9d649227d86c96b201138c226e3bcdb0173a2c07c0a34",
-          "after_sha256": "d352700edfdb1007dab005452d487a69720087e412e4a086fa0d17e1ab776815"
+          "after_sha256": "46370a9026bf8a2ccc937aa32469e3cf807b225c466b2f8453af5b96fc2a2654"
         },
         {
           "target": "third_party/blink/renderer/platform/media/media_player_client.h",
@@ -4998,7 +4998,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element_test.cc",
           "before_sha256": "10bf01e97e98cc4ad176a4ec1f3fccc307960f79a9231fe361cf1b8ca272b88f",
-          "after_sha256": "e5e58dc40a12df73049bbd0512f8803da1f94fb1b9e0502b6d2a0d9db2fd3ce1"
+          "after_sha256": "faf06ba12e346ae93ae4a47c93ac4119d44c19cf60376ce21ca4f1b6173d36fc"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/cue_timeline.cc",
@@ -5198,6 +5198,147 @@
           "target": "third_party/blink/renderer/bindings/scripts/validator/rules/supported_extended_attributes.py",
           "before_sha256": "5544c6844731699217ad6e5e498ce3e522a09aaafdcf04f5ec4634adb83d709f",
           "after_sha256": "c33708b8ff03634325873f342167192f9ec1e7dfda0af8722afbeaf74709a324"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/fairplay-playback-controls.patch",
+      "sha256": "93b9c3b3d904fa4aa854bb61bea95f94c019d7397f6f8df7c46f044906091237",
+      "files": [
+        {
+          "target": "media/mojo/mojom/media_player.mojom",
+          "before_sha256": "31627f3cbc7dec555e55298ef9d505a7238437277f590cee8262c4fd3fe0cc57",
+          "after_sha256": "9e8c385052d1b81bdeb7b58f39ccc8620092ae62481cbe1a988fb7a421d1a0c9"
+        },
+        {
+          "target": "services/media_session/public/mojom/media_session.mojom",
+          "before_sha256": "c37e9720a41873ffafc09f1a1db363db45714b83bd097912fdc4cdf5ae226940",
+          "after_sha256": "a5d8cd67970da16824f4be09a01cebbbdb4752eaea2f8aa907fe2f6346480c71"
+        },
+        {
+          "target": "services/media_session/public/mojom/media_controller.mojom",
+          "before_sha256": "1aa88195e9d0d038139070aa1be3be613bad58089cc498d76e25d82ef394a52a",
+          "after_sha256": "a7e0890ef23b6ffdb1cd5b1e1635ab709d11d02ae7e41b37670d06f5d8a36de6"
+        },
+        {
+          "target": "services/media_session/media_controller.cc",
+          "before_sha256": "031f418967d530229cd3eb8af51b6b5482f5c2278e6169d12363081587434732",
+          "after_sha256": "7bd04f1cbfbf975baeeb87993d4f04047bf6f8614c451bf943db3fdc46e0484d"
+        },
+        {
+          "target": "services/media_session/media_controller.h",
+          "before_sha256": "d0f89ff8b2a879abf33c807e7468dbf1e9c1c8e76a38ba2dfae487f699bf3876",
+          "after_sha256": "5fbc1c6f901e5213c14253f67fd3d69e218fb7fbc553bcde4cb04d0857dd2198"
+        },
+        {
+          "target": "services/media_session/public/cpp/test/mock_media_session.h",
+          "before_sha256": "01fa1c3021571406ecd304e6142fda32d9734ceb7754956f8dd2e9c9f6f5524f",
+          "after_sha256": "c1b2b9cb1f4abb960eb3ec3f10f86c7437f474bbbff52a0e8fad6121f3a59089"
+        },
+        {
+          "target": "services/media_session/public/cpp/test/test_media_controller.h",
+          "before_sha256": "78bc3870f9f541f8beccce21b8e5b311123df5259d24ed3d2e2e1583a930741e",
+          "after_sha256": "32de02c490483fa296f920523a4e2add26d0409496904a23016b5bfe9ff29d01"
+        },
+        {
+          "target": "content/public/browser/media_session.h",
+          "before_sha256": "c39c96539bff355f30b48f46be73e2d941903422891a0b28016fb8a8218b243f",
+          "after_sha256": "05d2676417a0dd1b0770c145db3d692012ee3f11b5a0d8a57bd0baeec0fd24b6"
+        },
+        {
+          "target": "content/public/browser/media_session_player_observer.h",
+          "before_sha256": "e13b562c1804679be7f28ded3e59835c2dde33a28b6fb6c9852da0dc1a13a2c7",
+          "after_sha256": "b754b056f3e6d6f66fce6e2576f14c47e8b92c6d44620656579291904c92ebaa"
+        },
+        {
+          "target": "content/browser/media/session/media_session_controller.cc",
+          "before_sha256": "967faa3af9bd4a6f0f48c6383ac88704e409ab1646ba2fb33f2800c03bb20d2a",
+          "after_sha256": "e1df7b72e8e5b5e0c37e3e0bdb02037c6f0e83b59998ace771c46826f9f33574"
+        },
+        {
+          "target": "content/browser/media/session/media_session_controller.h",
+          "before_sha256": "9bc77a68841545d45386be983a5c8a5aa5653e743f5df5dd13411fe276441755",
+          "after_sha256": "11e1b5ab8d5d7f37ab6fe505953568e9973292cdf02c61f95355fc401bd543a6"
+        },
+        {
+          "target": "content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc",
+          "before_sha256": "91d99adf50979b9b0ff840b9d97b470867d9bf3c16d791719c26b0e2c5f8ac85",
+          "after_sha256": "1c4e3ebbe1942078eb9ab356d93a1824e65b7a6ce1f0311df46bdde1d1f20c36"
+        },
+        {
+          "target": "content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h",
+          "before_sha256": "d17766d1dcc09d6ef6fc9ce51a83598d41386f334097de8a3b31df83baa1c253",
+          "after_sha256": "013b526252376a87f4e43b6a048170112d2ea86d551f0cf251e1d7f68f848a0d"
+        },
+        {
+          "target": "content/public/browser/video_picture_in_picture_window_controller.h",
+          "before_sha256": "413b259a9199e766cadacb3b4eb82ce154ebc9b6c96c3300b8d50c7eb0d5de47",
+          "after_sha256": "019acb313915c9fdfc28e7f5dc6fe75f9bb99b2a949672d64745bf526f2fa4fc"
+        },
+        {
+          "target": "components/media_message_center/media_notification_item.h",
+          "before_sha256": "6799346dd1602520e2c39fdd762c6a16042e73a7de32c6513d2a7e795a03ff50",
+          "after_sha256": "d2b4a30f576f14d8cbac5b257ad2a9335e17e8043d1e9e1270c2cf4533ff56c1"
+        },
+        {
+          "target": "components/global_media_controls/public/media_session_notification_item.cc",
+          "before_sha256": "565ab9bdd700df9b9c62602516328835d5a1b2b88c40d92068e3bc43c7eeaf48",
+          "after_sha256": "1ca1a257d048ecff2759de59b64dadb8641f342583ce3bfcae511c5d46ec3e4f"
+        },
+        {
+          "target": "components/global_media_controls/public/media_session_notification_item.h",
+          "before_sha256": "cb577f7f8cd1d0ceddca7469347d70cd48647e1d62c9af7cd1efe7cb2e00ab68",
+          "after_sha256": "c40b84245eb02060ebf09ef45cedc69145d498a856142a70d44aa5cb68c1cca2"
+        },
+        {
+          "target": "components/global_media_controls/public/views/media_item_ui_detailed_view.cc",
+          "before_sha256": "d6a54c3eb9988dc046973413d4bb7b56324eba20046151d58efbd4fe18fc85e0",
+          "after_sha256": "8c9b3f4b2a5763cf880112a3fffbbc270155fbce2dece8fbe863125848692666"
+        },
+        {
+          "target": "content/browser/media/session/media_session_controller_unittest.cc",
+          "before_sha256": "0f6b4d6ad40c24f6037f5ad69304288c729e4285cfc359696770993f879fa78e",
+          "after_sha256": "7b58812fd6585c806bb6edad3cadf082a714e8b9009d996ccb44831a516be54b"
+        },
+        {
+          "target": "content/browser/media/media_web_contents_observer_unittest.cc",
+          "before_sha256": "73b55a0ff672ae769270b3047ac1d00634fdcd629260ab09cf38ec1030a83ef1",
+          "after_sha256": "856659a4166a9ed1752108545e65237b0afc05b1ff4d777e59fb5a1d5d0e28fd"
+        },
+        {
+          "target": "content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc",
+          "before_sha256": "c1f1c0b4ea02553285d38c6746576c4d0901df1eb7b0105b5a13a03f9f99c4f8",
+          "after_sha256": "8c4c7671de525a1d8f8b30f720d706da7d3694c49362da5a3b0d825555645bd8"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/webaudio/audio_context.h",
+          "before_sha256": "479cb55d41e1c12f3ed41fa2cbeaadead9d28e90f2ad213f9d3404f20090a044",
+          "after_sha256": "a970fc94207d68cafb2cf6b92f61526d925c290a0dfd314a66b833c61047d8d6"
+        },
+        {
+          "target": "components/global_media_controls/public/views/media_progress_view.cc",
+          "before_sha256": "aa1bef972ecad7e582af99a6b520f5f5b7de85d397e499d2628a8c8a8577f517",
+          "after_sha256": "24955fb0d00770c6c3e6b6113ab5db10a3eda824fd95f5eb44f9079a476e7788"
+        },
+        {
+          "target": "components/global_media_controls/public/views/media_progress_view.h",
+          "before_sha256": "1987cbae16e1275af2f1e489837c5a0318373c9dc7108a89e80b6e2d9a5ed3eb",
+          "after_sha256": "452b18854d2bb1c5a2b7c85b0bdab1ac304e30fa90b3169621da2d43ac53c867"
+        },
+        {
+          "target": "components/global_media_controls/public/views/media_progress_view_unittest.cc",
+          "before_sha256": "f14710c42572f8f5ded91943190abe963795f6a6fa4b4dc1650bf0e118b84857",
+          "after_sha256": "a0d706e061334be8990f0f51134e8f5f8d0af4a62e42b04ef56b8550bca1708c"
+        },
+        {
+          "target": "content/public/test/mock_media_session.h",
+          "before_sha256": "3d808497d4269b61590ad250c49de852ba31f8261219964c42f0dcfa4c7dc3b2",
+          "after_sha256": "984ff2ea8d69948e9d27bea7f2996dfc56b4a6cdf636d514c81241d4b155d3d3"
+        },
+        {
+          "target": "content/browser/media/session/media_session_impl_service_routing_unittest.cc",
+          "before_sha256": "a6510a0d676bff61605371291263a978ae29c96652629bc248907c1c87a1acec",
+          "after_sha256": "f86e2ced95499658d4698e3bbb5337567745c79602b4cacd5581d64b78cc3fe6"
         }
       ]
     }

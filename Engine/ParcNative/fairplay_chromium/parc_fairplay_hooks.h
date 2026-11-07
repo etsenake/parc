@@ -44,6 +44,7 @@ using SafariIdentityQuery =
 // Installs |query|, replacing any earlier one; a null callback removes it.
 // Call on the UI thread, or before the browser threads start.
 CONTENT_EXPORT void SetSafariIdentityQuery(SafariIdentityQuery query);
+CONTENT_EXPORT bool FramePresentsSafariIdentity(content::RenderFrameHost* frame);
 
 }  // namespace parc::fairplay
 
