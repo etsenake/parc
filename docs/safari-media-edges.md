@@ -105,8 +105,9 @@ aren't re-homed. A move into a document without a browsing context
 (`createHTMLDocument`) reloads and fails where Safari keeps the player:
 **queued** (HME-1d; unchecked against WebKit's `dom/` files beyond
 `DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
-video moved from a Chrome-identity document keeps Chrome's muted handling:
-**in progress** (HME-1e).
+video moved from a Chrome-identity document already latches Safari's muted
+rule at connection (muted state follows the current document, not the
+creating one): no difference; guarded by tests in 2d774d1a.
 
 **HME-2. `muted` content attribute set by script.** Chromium
 `html_media_element.cc:852-856, 878-886`: the attribute sets `muted` only when
@@ -678,7 +679,7 @@ user-felt and **queued**: Ogg (Opus/Vorbis/FLAC) in Media Source, so a site
 falls back or plays silent (MS-4b, an Ogg stream parser, 800-1,200 lines);
 PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected
 PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`) and 20, and
-4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (MS-4d, 200-400
+4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (**in progress**, MS-4d, 200-400
 lines); AMR and H.263 in 3GPP fail (MS-4e, AudioToolbox/VideoToolbox
 decoders, 600+ lines). `text/vtt` in `isTypeSupported` differs but no site
 appends WebVTT, so no user can perceive it: **left** (Josh agreed November 7: no user can perceive it).
