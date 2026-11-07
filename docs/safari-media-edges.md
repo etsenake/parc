@@ -275,8 +275,11 @@ never stops; frames drop evenly when decoding can't keep up). Still: 4K with
 needs FFmpeg's disposable-frame skipping, about a day (**left**, Josh agreed
 November 7: negative rates on plain 4K files are rare); a rewind can
 take up to 2 s longer to start; rewinding holds up to 384 MB (was 192 MB);
-dropped rewind frames aren't counted in `getVideoPlaybackQuality` (Safari's
-count **unchecked**); while casting, Now Playing showed a backward
+dropped rewind frames aren't counted in `getVideoPlaybackQuality`: **queued**
+(RATE-STATS, count them as the spec's decoded-but-not-presented frames;
+Safari reports AVPlayerLayer's `videoPerformanceMetrics`,
+`MediaPlayerPrivateAVFoundationObjC.mm:4039-4059`, so AVFoundation decides
+and whether it counts reverse drops is **unchecked**); while casting, Now Playing showed a backward
 scrubber over a frozen TV (**fixed** e4ca73cd); whether Safari's
 reverse playback is audible is **unchecked** (AVPlayer decides).
 
