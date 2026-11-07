@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **68**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **69**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -65,6 +65,18 @@ TV until the page runs: **left**. An unmeasured paused cast is sized
 at 30 fps, so a paused 1080p60 video can start on a TV without 4K support
 where Chromium's measurement would refuse it: **left** (no frame rate exists
 in the config; the TV's own limit still applies).
+
+### Spotify on Safari identity (AUDIO-ID)
+
+Parc has no Widevine license, so Spotify is learned as Safari and its
+player takes its Safari path: legacy `WebKitMediaKeys` with
+`com.apple.fps.1_0`, and a page-built HLS playlist (`data:`, or `blob:`)
+naming byte ranges of one audio file plus an `skd://` key, played through
+native HLS. Parc's native HLS route accepted only http(s) playlists, so no
+song played: **fixed** 7419cea8. Spotify's Safari path excludes FLAC in MP4
+(lossless): **kept** (Josh, November 7: no Widevine, so Safari identity is
+the only way it plays). Apple Music and Apple Podcasts (MusicKit, https
+HLS) need no change. Not run against the signed-in service.
 
 ## Reading log
 
