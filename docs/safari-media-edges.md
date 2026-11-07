@@ -368,8 +368,13 @@ page can start media (`MediaElementSession.cpp:717-730`): **fixed** 7fcc63d0
 for background tabs; a restore into a minimised or covered window still
 waits where Safari plays: **queued** (HME-33b, needs an "in window" signal).
 With a Cast session active the player restarted on entering the cache, as
-stock Chromium does: **in progress** (CAST-1, on Chrome-identity pages too,
-Josh's decision). A streaming source's open connection may count against the
+stock Chromium does: **fixed** c0f53c09 on every page (Josh's decision), and
+Safari-identity pages keep WebKit's 30-minute cache lifetime. Still felt: a
+cast started a second before leaving shows a blank TV, a stale session can
+leave the TV on a paused video, and after 30 minutes Parc's cast ends where
+Safari's TV keeps the frame up to an hour: **in progress** (CAST-2). FairPlay
+video can't be cast at all (Safari uses AirPlay, which Parc lacks): **with
+Josh** (proposed: build AirPlay, native HLS first). A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
