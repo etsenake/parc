@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 568,
+  "version": 569,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1755,12 +1755,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.h",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.h",
-      "sha256": "5707ff4cd293c92cef6b01cf625d89b8ffcdf9ae6b94473c3e9158d79941ca67"
+      "sha256": "18553a1377b76771aebac6a670df1610fdf67baebf31a4d9f64fff426174affb"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.cc",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.cc",
-      "sha256": "4fd3bdb0db011bb86b8e37201dd75f84865215d367c5d3e2a9a6626cb008687f"
+      "sha256": "0259679bcf052701e2f67be6c5f4fdcabefd94b24fa58faec519cffca6d6ce71"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.h",
@@ -1785,7 +1785,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_unittest.cc",
       "target": "content/renderer/media/fairplay/native_hls_unittest.cc",
-      "sha256": "36ae0d5c505ff4409e79a51e66bd23e91b8cc8dbcbd1dc6a5e415fdfbf7b50c1"
+      "sha256": "39291f6f18b17f50e101fff8581b922715b6584ffc65241d922d502eb7edf2f2"
     },
     {
       "source": "Engine/ParcRenderer/parc_managed_media_source.h",
@@ -4222,7 +4222,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "685eae47f3c53b34d57e16f65042cd5f4be412e357571012291920cfc5920253",
+      "sha256": "0ef9f0e19f766eee70996d8ac01b5e73e6ac958b0e11948150bb65ab33a7828e",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4302,12 +4302,12 @@
         {
           "target": "media/base/demuxer.cc",
           "before_sha256": "0921018413b5862b1dca96425cf57a4dfd13f4de43befc3d9184ab0e450e1395",
-          "after_sha256": "bcad31d1548eba590299f390a3eb1ee5297ca7899ba5f458730b7683815cf887"
+          "after_sha256": "eac29385ace29ceeb665533daca3a939bbf0aa4eb8d3bd56a3a8779f1795dc78"
         },
         {
           "target": "media/base/demuxer.h",
           "before_sha256": "c1d509071e28586fdca660554f95b6da3c3adad1c2fdfbe5a5481ce36af5a356",
-          "after_sha256": "2f8a5e2502a68e599286ce9422b0cc160367c7b068da88508e241012943714f5"
+          "after_sha256": "0504ea8c469b7a2faae15c3a3aaa748228c27363456154d8dbcc7a4fbab64c30"
         },
         {
           "target": "media/base/eme_constants.cc",
@@ -4327,7 +4327,7 @@
         {
           "target": "media/base/pipeline_impl.cc",
           "before_sha256": "ea503b9ce7daeaa8d952b0621bca7f8d42b7769fab798cd1cb66fdcf8eda146d",
-          "after_sha256": "e20d6eebacb4275bb1f14edf693bdca4fb39dc67723604315948649663972eb4"
+          "after_sha256": "5e619b95a35d0871049ba07300964f5908c3495d538ab59642e52e19e973ca93"
         },
         {
           "target": "media/base/renderer.cc",
@@ -4757,7 +4757,7 @@
         {
           "target": "media/base/pipeline_impl_unittest.cc",
           "before_sha256": "bf6411956af64b50f0fbd936f8a7db2bc155e3a630459aeadcfb9a5d41e8c13e",
-          "after_sha256": "2d53d98db553bd95fb0d4cedc885b76a72b37642a278cda6d39409acb8fc495d"
+          "after_sha256": "d0635ee94f1ce1070e0c56d01d57b5364a0feb179e7d024aa2bda3a26871e043"
         },
         {
           "target": "media/formats/BUILD.gn",

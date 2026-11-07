@@ -167,7 +167,9 @@ class NativeHlsDemuxer final : public media::Demuxer,
                        base::TimeDelta curr_time,
                        TrackChangeCB change_completed_cb) override;
   void SetPlaybackRate(double rate) override;
-  void SetCdmForNativePlayer(media::CdmContext* cdm_context) override;
+  void SetCdmForNativePlayer(
+      media::CdmContext* cdm_context,
+      base::OnceCallback<void(bool)> attached_cb = {}) override;
   std::optional<ParcNativeTimeline> GetParcNativeTimeline() const override;
   void ParcProvideClearKey(const std::string& key_id,
                            const std::vector<uint8_t>& key) override;
@@ -322,8 +324,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
   gfx::Size natural_size_;
   // The CDM the player was given, by ID, and a CDM handed over before the
   // player was bound.
+  bool player_disconnected_ = false;
   std::optional<base::UnguessableToken> cdm_id_;
-  raw_ptr<media::CdmContext> pending_cdm_context_ = nullptr;
+  std::vector<std::pair<raw_ptr<media::CdmContext>,
+                        NativeHlsSource::CdmAttachedCB>> pending_cdm_offers_;
   // SetCdm calls sent so far, detaches included (`cdm_id_` went with the
   // last unless it was one), and the offers of each one the player hasn't
   // answered.

@@ -855,6 +855,68 @@ TEST_F(NativeHlsTest, NullCdmDetachesAfterARefusedReplacement) {
                 cdm_id, other_cdm_id, std::nullopt}));
 }
 
+TEST_F(NativeHlsTest, EarlyCdmOfferWaitsForThePlayersAcceptanceOrRefusal) {
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  player_.holds_cdm_answers_ = true;
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(testing::_)).Times(0);
+  demuxer_->SetCdmForNativePlayer(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  ASSERT_EQ(1u, player_.cdm_answers_.size());
+  testing::Mock::VerifyAndClearExpectations(&attached_cb);
+  EXPECT_CALL(attached_cb, Run(false));
+  std::move(player_.cdm_answers_[0]).Run(false);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&attached_cb);
+  EXPECT_CALL(attached_cb, Run(testing::_)).Times(0);
+  demuxer_->SetCdmForNativePlayer(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(2u, player_.cdm_answers_.size());
+  testing::Mock::VerifyAndClearExpectations(&attached_cb);
+  EXPECT_CALL(attached_cb, Run(true));
+  std::move(player_.cdm_answers_[1]).Run(true);
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, LoadStoppedWithoutAPlayerResolvesEarlyCdmOffer) {
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(testing::_)).Times(0);
+  demuxer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&attached_cb);
+  EXPECT_CALL(attached_cb, Run(true));
+  demuxer_->Stop();
+}
+
+TEST_F(NativeHlsTest, StoppingAStartedPlayerRefusesEarlyCdmOffer) {
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  player_.holds_cdm_answers_ = true;
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(testing::_)).Times(0);
+  demuxer_->SetCdm(&cdm_context, attached_cb.Get());
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  testing::Mock::VerifyAndClearExpectations(&attached_cb);
+  EXPECT_CALL(attached_cb, Run(false));
+  demuxer_->Stop();
+}
+
+TEST_F(NativeHlsTest, ANewCdmOfferAfterPlayerLossIsRefused) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  player_receiver_.reset();
+  task_environment_.RunUntilIdle();
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(false));
+  demuxer_->SetCdmForNativePlayer(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+}
+
 TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   NiceMock<media::MockCdmContext> cdm_context;

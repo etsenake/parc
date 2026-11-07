@@ -934,7 +934,7 @@
  };
 --- a/media/base/demuxer.cc
 +++ b/media/base/demuxer.cc
-@@ -16,4 +16,38 @@
+@@ -16,4 +16,42 @@
  // Do nothing by default.
  void Demuxer::DisableCanChangeType() {}
  
@@ -958,7 +958,11 @@
 +  return std::nullopt;
 +}
 +
-+void Demuxer::SetCdmForNativePlayer(CdmContext* cdm_context) {}
++void Demuxer::SetCdmForNativePlayer(
++    CdmContext* cdm_context, base::OnceCallback<void(bool)> attached_cb) {
++  if (attached_cb)
++    std::move(attached_cb).Run(true);
++}
 +
 +void Demuxer::ParcProvideClearKey(const std::string& key_id,
 +                                  const std::vector<uint8_t>& key) {}
@@ -994,7 +998,7 @@
  class MediaTracks;
  
  // WARNING: These values are reported to metrics. Entries should not be
-@@ -181,6 +184,76 @@
+@@ -181,6 +184,77 @@
  
    // Allow canChangeType to be disabled.
    virtual void DisableCanChangeType();
@@ -1026,7 +1030,8 @@
 +  // so a CDM set before the renderer exists reaches the player at once.
 +  // Called on the media thread; `cdm_context` stays valid while the pipeline
 +  // holds it, as for Renderer::SetCdm().
-+  virtual void SetCdmForNativePlayer(CdmContext* cdm_context);
++  virtual void SetCdmForNativePlayer(
++      CdmContext* cdm_context, base::OnceCallback<void(bool)> attached_cb = {});
 +
 +  // Parc: what a native HLS demuxer's AVPlayer last reported for the media
 +  // element (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md, Live and DVR):
@@ -1167,7 +1172,16 @@
  
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
-@@ -380,6 +383,12 @@
+@@ -328,6 +331,8 @@
+   // Called from non-media threads when an error occurs.
+   RepeatingPipelineStatusCallback error_cb_;
+ 
++  // CDM acceptance survives Stop so the next load keeps accepted keys.
++  base::WeakPtrFactory<RendererWrapper> cdm_weak_factory_{this};
+   base::WeakPtrFactory<RendererWrapper> weak_factory_{this};
+ };
+ 
+@@ -380,6 +385,12 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
  
@@ -1180,7 +1194,7 @@
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -689,7 +698,45 @@
+@@ -689,7 +700,46 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
@@ -1200,7 +1214,8 @@
 +      return;
 +    }
 +    if (!renderer && demuxer_) {
-+      demuxer_->SetCdmForNativePlayer(nullptr);
++      demuxer_->SetCdmForNativePlayer(nullptr, std::move(cdm_attached_cb));
++      return;
 +    }
 +    std::move(cdm_attached_cb).Run(true);
 +    return;
@@ -1226,23 +1241,35 @@
  
    // If there's already a renderer, set the CDM on the renderer directly.
    if (shared_state_.media().renderer) {
-@@ -703,7 +750,15 @@
+@@ -700,9 +750,27 @@
+     return;
+   }
+ 
++  // A native HLS player can take or refuse keys before a renderer exists.
++  // Store the CDM only after it accepts, while WMPI still retains the offer.
++  if (demuxer_ && demuxer_->GetParcNativeHlsSource()) {
++    demuxer_->SetCdmForNativePlayer(
++        cdm_context, base::BindOnce(
++            [](base::WeakPtr<RendererWrapper> wrapper, CdmAttachedCB callback,
++               CdmContext* context, bool success) {
++              if (wrapper) {
++                wrapper->OnCdmAttached(std::move(callback), context, success);
++              } else {
++                std::move(callback).Run(success);
++              }
++            },
++            cdm_weak_factory_.GetWeakPtr(), std::move(cdm_attached_cb), cdm_context));
++    return;
++  }
++
    // Otherwise, wait for the Renderer to be created and the CDM will be set
    // in InitializeRenderer().
    cdm_context_ = cdm_context;
 +  parc_cdm_detached_ = false;
    std::move(cdm_attached_cb).Run(true);
-+
-+  // Parc: a demuxer whose own player takes keys (Safari's native HLS route)
-+  // gets the CDM now: its key requests may be waiting for it before any
-+  // renderer exists.
-+  if (demuxer_) {
-+    demuxer_->SetCdmForNativePlayer(cdm_context);
-+  }
  
    // Continue Renderer creation if it's waiting for the CDM to be set.
-   if (create_renderer_done_cb_)
-@@ -733,6 +788,28 @@
+@@ -733,6 +801,28 @@
      }
    }
  #endif  // BUILDFLAG(IS_WIN)
@@ -1271,7 +1298,7 @@
  
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
-@@ -1099,8 +1176,10 @@
+@@ -1099,8 +1189,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1279,11 +1306,14 @@
 +  if (success) {
      cdm_context_ = cdm_context;
 +    parc_cdm_detached_ = false;
++    if (create_renderer_done_cb_ &&
++        (state_ == State::kStarting || state_ == State::kResuming))
++      CreateRendererInternal(std::move(create_renderer_done_cb_));
 +  }
    std::move(cdm_attached_cb).Run(success);
  }
  
-@@ -1146,6 +1225,12 @@
+@@ -1146,6 +1241,12 @@
      return;
    }
  
@@ -1296,7 +1326,7 @@
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1244,7 +1329,7 @@
+@@ -1244,7 +1345,7 @@
      return;
    }
  
@@ -1305,7 +1335,7 @@
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
  
    if (latency_hint_)
-@@ -1398,6 +1483,7 @@
+@@ -1398,6 +1499,7 @@
    DCHECK(!client_);
    DCHECK(!seek_cb_);
    client_ = client;
@@ -1313,7 +1343,7 @@
    seek_cb_ = std::move(seek_cb);
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
-@@ -1529,7 +1615,7 @@
+@@ -1529,7 +1631,7 @@
  
    // Not checking IsRunning() so we can set the playback rate before Start().
  
@@ -1322,7 +1352,7 @@
      DVLOG(1) << __func__ << ": Invalid playback rate " << playback_rate;
      return;
    }
-@@ -1630,7 +1716,8 @@
+@@ -1630,7 +1732,8 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
@@ -1332,7 +1362,7 @@
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1641,6 +1728,11 @@
+@@ -1641,6 +1744,11 @@
    return last_media_time_;
  }
  
@@ -1344,7 +1374,7 @@
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
    DCHECK(thread_checker_.CalledOnValidThread());
    return renderer_wrapper_->GetBufferedTimeRanges();
-@@ -1665,7 +1757,8 @@
+@@ -1665,7 +1773,8 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -12142,7 +12172,7 @@
    bool DidLoadingProgress();
 --- a/media/base/pipeline_impl_unittest.cc
 +++ b/media/base/pipeline_impl_unittest.cc
-@@ -82,6 +82,17 @@
+@@ -82,6 +82,23 @@
  // InitializationComplete(), which keeps the pipeline humming along.  If
  // either filters don't call InitializationComplete() immediately or filter
  // initialization is moved to a separate thread this test will become flaky.
@@ -12154,13 +12184,19 @@
 +    return native_hls ? reinterpret_cast<parc::fairplay::NativeHlsSource*>(this)
 +                      : nullptr;
 +  }
++  void SetCdmForNativePlayer(
++      CdmContext* context, base::OnceCallback<void(bool)> callback = {}) override {
++    if (callback)
++      cdm_offer = std::move(callback);
++  }
++  base::OnceCallback<void(bool)> cdm_offer;
 +  bool native_hls = false;
 +};
 +
  class PipelineImplTest : public ::testing::Test {
   public:
    // Used for setting expectations on pipeline callbacks.  Using a StrictMock
-@@ -105,7 +116,7 @@
+@@ -105,7 +122,7 @@
    PipelineImplTest()
        : scoped_renderer_(std::make_unique<StrictMock<MockRenderer>>()),
          renderer_(scoped_renderer_->AsWeakPtr()),
@@ -12169,7 +12205,7 @@
      pipeline_ = std::make_unique<PipelineImpl>(
          task_environment_.GetMainThreadTaskRunner(),
          task_environment_.GetMainThreadTaskRunner(),
-@@ -364,7 +375,7 @@
+@@ -364,7 +381,7 @@
    std::unique_ptr<StrictMock<MockDemuxerStream>> audio_stream_;
    std::unique_ptr<StrictMock<MockDemuxerStream>> video_stream_;
    std::vector<raw_ptr<DemuxerStream>> streams_;
@@ -12178,7 +12214,73 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> demuxer_host_ = nullptr;
    raw_ptr<RendererClient, DanglingUntriaged> renderer_client_ = nullptr;
    VideoDecoderConfig video_decoder_config_;
-@@ -900,6 +911,50 @@
+@@ -528,6 +545,65 @@
+   StartPipelineAndExpect(PIPELINE_OK);
+   EXPECT_TRUE(metadata_.has_audio);
+   EXPECT_TRUE(metadata_.has_video);
++}
++
++TEST_F(PipelineImplTest, ParcEarlyCdmCompletesOnStopAndSurvivesTheNextStart) {
++  demuxer_->native_hls = true;
++  EXPECT_CALL(*demuxer_, OnInitialize(_, _));
++  StartPipeline();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(callbacks_, OnCdmAttached(_)).Times(0);
++  pipeline_->SetCdm(&cdm_context_, base::BindOnce(
++      &CallbackHelper::OnCdmAttached, base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  ASSERT_TRUE(demuxer_->cdm_offer);
++  Mock::VerifyAndClearExpectations(&callbacks_);
++  EXPECT_CALL(callbacks_, OnCdmAttached(true));
++  EXPECT_CALL(*demuxer_, Stop()).WillOnce([&] {
++    std::move(demuxer_->cdm_offer).Run(true);
++  });
++  pipeline_->Stop();
++  base::RunLoop().RunUntilIdle();
++  scoped_renderer_ = std::make_unique<StrictMock<MockRenderer>>(
++      RendererType::kFairPlayHls);
++  renderer_ = scoped_renderer_->AsWeakPtr();
++  EXPECT_CALL(*renderer_, GetMediaTime())
++      .WillRepeatedly(Return(base::TimeDelta()));
++  EXPECT_CALL(*renderer_, SetPreservesPitch(true)).Times(AnyNumber());
++  EXPECT_CALL(*renderer_, OnSetCdm(&cdm_context_, _))
++      .WillOnce(RunOnceCallback<1>(true));
++  CreateAudioStream();
++  SetDemuxerExpectations();
++  StartPipelineAndExpect(PIPELINE_OK);
++}
++
++TEST_F(PipelineImplTest, ParcRefusedEarlyCdmIsNotUsedOnTheNextStart) {
++  demuxer_->native_hls = true;
++  EXPECT_CALL(*demuxer_, OnInitialize(_, _));
++  StartPipeline();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(callbacks_, OnCdmAttached(_)).Times(0);
++  pipeline_->SetCdm(&cdm_context_, base::BindOnce(
++      &CallbackHelper::OnCdmAttached, base::Unretained(&callbacks_)));
++  base::RunLoop().RunUntilIdle();
++  ASSERT_TRUE(demuxer_->cdm_offer);
++  Mock::VerifyAndClearExpectations(&callbacks_);
++  EXPECT_CALL(callbacks_, OnCdmAttached(false));
++  std::move(demuxer_->cdm_offer).Run(false);
++  base::RunLoop().RunUntilIdle();
++  ExpectDemuxerStop();
++  pipeline_->Stop();
++  base::RunLoop().RunUntilIdle();
++  scoped_renderer_ = std::make_unique<StrictMock<MockRenderer>>(
++      RendererType::kFairPlayHls);
++  renderer_ = scoped_renderer_->AsWeakPtr();
++  EXPECT_CALL(*renderer_, GetMediaTime())
++      .WillRepeatedly(Return(base::TimeDelta()));
++  EXPECT_CALL(*renderer_, SetPreservesPitch(true)).Times(AnyNumber());
++  EXPECT_CALL(*renderer_, OnSetCdm(_, _)).Times(0);
++  CreateAudioStream();
++  SetDemuxerExpectations();
++  StartPipelineAndExpect(PIPELINE_OK);
+ }
+ 
+ TEST_F(PipelineImplTest, EncryptedStream_SetCdmBeforeStart) {
+@@ -900,6 +976,50 @@
    EXPECT_EQ(kMediaTime, pipeline_->GetMediaTime());
  }
  

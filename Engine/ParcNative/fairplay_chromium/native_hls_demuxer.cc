@@ -183,6 +183,7 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
 
   if (!pending_player_ || !pending_client_receiver_) {
     std::move(init_cb_).Run(media::DEMUXER_ERROR_COULD_NOT_OPEN);
+    Stop();
     return;
   }
   player_.Bind(std::move(pending_player_), media_task_runner_);
@@ -195,10 +196,8 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
   client_receiver_.set_disconnect_handler(base::BindOnce(
       &NativeHlsDemuxer::OnPlayerDisconnected, base::Unretained(this)));
 
-  // A CDM the pipeline held before this demuxer started: AVFoundation may
-  // ask for keys as soon as the item exists, right after OnInitialized.
-  if (pending_cdm_context_) {
-    SendCdm(std::exchange(pending_cdm_context_, nullptr), base::DoNothing());
+  for (auto& [context, offer] : std::exchange(pending_cdm_offers_, {})) {
+    SendCdm(context, std::move(offer));
   }
 
   // The answer is OnInitialized, on the client's pipe, after any OnError
@@ -375,6 +374,15 @@ bool NativeHlsDemuxer::IsSeekable() const {
 void NativeHlsDemuxer::Stop() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   stopped_ = true;
+  // No player was started: keep setMediaKeys usable before a load, as
+  // WebKit's HTMLMediaElement::setMediaKeys does without m_player.
+  for (auto& [context, offer] : std::exchange(pending_cdm_offers_, {})) {
+    std::move(offer).Run(true);
+  }
+  for (auto& [id, offers] : std::exchange(unanswered_cdm_offers_, {})) {
+    for (auto& offer : offers)
+      std::move(offer).Run(false);
+  }
   // Closing the pipes ends the GPU player, which unregisters its layer.
   client_receiver_.reset();
   player_.reset();
@@ -449,13 +457,10 @@ NativeHlsDemuxer::GetParcNativeTimeline() const {
   return timeline;
 }
 
-void NativeHlsDemuxer::SetCdmForNativePlayer(media::CdmContext* cdm_context) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!player_.is_bound()) {
-    pending_cdm_context_ = cdm_context;
-    return;
-  }
-  SendCdm(cdm_context, base::DoNothing());
+void NativeHlsDemuxer::SetCdmForNativePlayer(
+    media::CdmContext* cdm_context,
+    base::OnceCallback<void(bool)> attached_cb) {
+  SetCdm(cdm_context, attached_cb ? std::move(attached_cb) : base::DoNothing());
 }
 
 void NativeHlsDemuxer::SetClient(NativeHlsSource::Client* client) {
@@ -503,9 +508,16 @@ void NativeHlsDemuxer::SetPreservesPitch(bool preserves_pitch) {
 void NativeHlsDemuxer::SetCdm(media::CdmContext* cdm_context,
                               NativeHlsSource::CdmAttachedCB cdm_attached_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (player_disconnected_) {
+    std::move(cdm_attached_cb).Run(false);
+    return;
+  }
   if (!player_.is_bound()) {
-    pending_cdm_context_ = cdm_context;
-    std::move(cdm_attached_cb).Run(true);
+    if (stopped_) {
+      std::move(cdm_attached_cb).Run(true);
+      return;
+    }
+    pending_cdm_offers_.emplace_back(cdm_context, std::move(cdm_attached_cb));
     return;
   }
   SendCdm(cdm_context, std::move(cdm_attached_cb));
@@ -1026,6 +1038,7 @@ void NativeHlsDemuxer::OnError(const media::PipelineStatus& status,
 
 void NativeHlsDemuxer::OnPlayerDisconnected() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  player_disconnected_ = true;
   client_receiver_.reset();
   player_.reset();
   // Their SetCdm answers went with the player (MojoRenderer refuses them).
