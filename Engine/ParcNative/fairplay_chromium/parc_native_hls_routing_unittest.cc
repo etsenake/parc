@@ -74,7 +74,9 @@ class FakeClient : public DemuxerManager::Client {
 class ParcNativeHlsRoutingTest : public testing::Test {
  protected:
   // Runs the HLS branch for `kPlaylist` and returns the demuxer it chose.
-  Demuxer* CreateDemuxer(FakeClient& client) {
+  Demuxer* CreateDemuxer(FakeClient& client,
+                         DataSource::Preload preload = DataSource::AUTO,
+                         bool needs_first_frame = true) {
     manager_ = std::make_unique<DemuxerManager>(
         &client, url::Origin::Create(GURL(kPlaylist)),
         task_environment_.GetMainThreadTaskRunner(), &media_log_,
@@ -82,15 +84,16 @@ class ParcNativeHlsRoutingTest : public testing::Test {
     manager_->SetLoadedUrl(GURL(kPlaylist));
     Demuxer* chosen = nullptr;
     PipelineStatus status = manager_->CreateDemuxer(
-        /*load_media_source=*/false, DataSource::AUTO,
-        /*needs_first_frame=*/true,
+        /*load_media_source=*/false, preload, needs_first_frame,
         base::BindOnce(
-            [](Demuxer** out, Demuxer* demuxer, Pipeline::StartType,
-               bool /*is_streaming*/, bool /*is_static*/) -> PipelineStatus {
+            [](Demuxer** out, Pipeline::StartType* type_out, Demuxer* demuxer,
+               Pipeline::StartType start_type, bool /*is_streaming*/,
+               bool /*is_static*/) -> PipelineStatus {
               *out = demuxer;
+              *type_out = start_type;
               return OkStatus();
             },
-            &chosen));
+            &chosen, &start_type_));
     EXPECT_TRUE(status.is_ok());
     return chosen;
   }
@@ -106,6 +109,8 @@ class ParcNativeHlsRoutingTest : public testing::Test {
   base::test::TaskEnvironment task_environment_;
   NullMediaLog media_log_;
   std::unique_ptr<DemuxerManager> manager_;
+  // The start type CreateDemuxer chose last.
+  Pipeline::StartType start_type_ = Pipeline::StartType::kNormal;
 };
 
 namespace {
@@ -141,6 +146,38 @@ TEST_F(ParcNativeHlsRoutingTest, SafariIdentityTakesNativeDemuxer) {
   EXPECT_FALSE(manager_->WouldTaintOrigin());
 }
 
+// A preload="metadata" element without a poster would take Chromium's
+// suspended start (suspend after metadata). Safari's native HLS player never
+// does: WebKit's preload rules live in the GPU player, and a seek issued then
+// (the page's start position) must complete instead of being lost across the
+// suspend and resume. WebMediaPlayerImpl keeps it from every later suspend by
+// HasParcNativeHlsDemuxer(), before the renderer type is known.
+TEST_F(ParcNativeHlsRoutingTest, NativeDemuxerNeverTakesSuspendedStart) {
+  FakeClient client(task_environment_.GetMainThreadTaskRunner());
+  client.safari_identity = true;
+  auto native = std::make_unique<testing::NiceMock<MockDemuxer>>();
+  Demuxer* native_ptr = native.get();
+  client.native_demuxer = std::move(native);
+
+  EXPECT_EQ(CreateDemuxer(client, DataSource::METADATA,
+                          /*needs_first_frame=*/false),
+            native_ptr);
+  EXPECT_EQ(start_type_, Pipeline::StartType::kNormal);
+  EXPECT_TRUE(manager_->HasParcNativeHlsDemuxer());
+}
+
+// Chromium's own HLS demuxer keeps Chromium's suspended start.
+TEST_F(ParcNativeHlsRoutingTest, ManifestDemuxerKeepsSuspendedStart) {
+  FakeClient client(task_environment_.GetMainThreadTaskRunner());
+
+  Demuxer* chosen = CreateDemuxer(client, DataSource::METADATA,
+                                  /*needs_first_frame=*/false);
+  ASSERT_TRUE(chosen);
+  EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);
+  EXPECT_EQ(start_type_, Pipeline::StartType::kSuspendAfterMetadata);
+  EXPECT_FALSE(manager_->HasParcNativeHlsDemuxer());
+}
+
 TEST_F(ParcNativeHlsRoutingTest, NoNativeDemuxerFallsBackToManifestDemuxer) {
   FakeClient client(task_environment_.GetMainThreadTaskRunner());
   client.safari_identity = true;
@@ -149,6 +186,7 @@ TEST_F(ParcNativeHlsRoutingTest, NoNativeDemuxerFallsBackToManifestDemuxer) {
   ASSERT_TRUE(chosen);
   EXPECT_TRUE(client.asked);
   EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);
+  EXPECT_FALSE(manager_->HasParcNativeHlsDemuxer());
 }
 
 }  // namespace

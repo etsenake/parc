@@ -117,6 +117,19 @@ DevTools attribution right.
 - `WebMediaPlayerImpl` treats `kFairPlayHls` as `kFairPlay`: audio isn't the
   audio service's, the player is never auto-suspended, and its video is never
   disabled while hidden.
+- Chromium never suspends the native HLS player, from the moment its demuxer
+  exists: `DemuxerManager::CreateDemuxer` starts it with
+  `Pipeline::StartType::kNormal` (Chromium's own HLS branch takes a suspended
+  start, suspend after metadata, which a `preload="metadata"` element would
+  take before the renderer type is known), and `UpdatePlayState` keys on
+  `DemuxerManager::HasParcNativeHlsDemuxer()` as well as the renderer type:
+  no idle, background, frame-frozen or stay-suspended suspend. WebKit's
+  preload rules live in the GPU player (it loads nothing past the playlists
+  until the element prepares to play), and a suspend and resume would destroy
+  the facade a pending seek completes through, leaving the element seeking
+  for ever (TELUS's start-position seek on a `preload="metadata"` element).
+  Explicit restart cycles (`ScheduleRestart`) still run. Tested in
+  `parc_native_hls_routing_unittest.cc`.
 - `NativeHlsRendererFactory`, `NativeHlsDemuxer` and `NativeHlsRenderer`
   (`content/renderer/media/fairplay`, tested by `native_hls_unittest.cc`)
   implement it. The factory connects the player when it makes the demuxer

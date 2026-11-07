@@ -1610,17 +1610,33 @@
  PipelineStatus DemuxerManager::CreateDemuxer(
      bool load_media_source,
      DataSource::Preload preload,
-@@ -251,7 +266,17 @@
+@@ -241,6 +256,9 @@
+   if (!client_) {
+     return DEMUXER_ERROR_COULD_NOT_OPEN;
+   }
++#if BUILDFLAG(IS_MAC)
++  parc_native_hls_demuxer_ = false;
++#endif  // BUILDFLAG(IS_MAC)
+ 
+   // We can only do a universal suspend for posters, unless the flag is enabled.
+   auto suspended_mode = Pipeline::StartType::kSuspendAfterMetadataForAudioOnly;
+@@ -251,10 +269,26 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    if (hls_fallback_ || IsManifestDemuxerURL()) {
      std::unique_ptr<Demuxer> demuxer;
 -    std::tie(data_source_info_, demuxer) = CreateHlsDemuxer();
++    Pipeline::StartType start_type = suspended_mode;
 +#if BUILDFLAG(IS_MAC)
 +    // Parc: Safari plays HLS through AVPlayer, which loads everything itself
-+    // (NATIVE_HLS.md); there is no data source.
++    // (NATIVE_HLS.md); there is no data source. It never takes Chromium's
++    // suspended start: WebKit's preload rules live in the GPU player, which
++    // loads nothing past the playlists until the element prepares to play,
++    // and a suspend would take down the facade a seek completes through.
 +    demuxer = MaybeCreateParcNativeHlsDemuxer();
 +    if (demuxer) {
 +      data_source_info_ = nullptr;
++      parc_native_hls_demuxer_ = true;
++      start_type = Pipeline::StartType::kNormal;
 +    }
 +#endif  // BUILDFLAG(IS_MAC)
 +    if (!demuxer) {
@@ -1628,8 +1644,12 @@
 +    }
      SetDemuxer(std::move(demuxer));
      return std::move(on_demuxer_created)
-         .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
-@@ -315,6 +340,13 @@
+-        .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
++        .Run(demuxer_.get(), start_type, /*is_streaming=*/false,
+              /*is_static=*/false);
+   }
+ #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
+@@ -315,6 +349,13 @@
    if (data_source_) {
      data_source_->SetPreload(preload);
    }
@@ -1643,7 +1663,7 @@
  }
  
  void DemuxerManager::StopAndResetClient() {
-@@ -383,6 +415,37 @@
+@@ -383,6 +424,37 @@
    }
    return false;
  }
@@ -1681,7 +1701,7 @@
  
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -474,6 +537,89 @@
+@@ -474,6 +546,89 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -1809,7 +1829,7 @@
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +133,14 @@
+@@ -111,6 +133,19 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -1821,10 +1841,15 @@
 +  // Parc: see Demuxer::ParcPrefersFairPlayRenderer(). False before the
 +  // demuxer exists.
 +  bool ParcDemuxerPrefersFairPlayRenderer();
++#if BUILDFLAG(IS_MAC)
++  // Parc: whether the demuxer is Safari's native HLS player's. Known from
++  // CreateDemuxer on, before the pipeline makes a renderer.
++  bool HasParcNativeHlsDemuxer() const { return parc_native_hls_demuxer_; }
++#endif  // BUILDFLAG(IS_MAC)
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +170,17 @@
+@@ -140,6 +175,17 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -1842,7 +1867,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +195,22 @@
+@@ -154,6 +200,22 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1865,6 +1890,18 @@
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
+@@ -207,6 +269,11 @@
+   // which becomes the default demuxer to use.
+   std::unique_ptr<Demuxer> demuxer_override_;
+ 
++#if BUILDFLAG(IS_MAC)
++  // Parc: CreateDemuxer chose Safari's native HLS demuxer.
++  bool parc_native_hls_demuxer_ = false;
++#endif  // BUILDFLAG(IS_MAC)
++
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+   bool hls_fallback_ = false;
+ #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 --- a/media/formats/mp4/box_definitions.cc
 +++ b/media/formats/mp4/box_definitions.cc
 @@ -459,6 +459,11 @@
@@ -3341,10 +3378,11 @@
  namespace blink {
  
  namespace {
-@@ -168,6 +178,50 @@
+@@ -167,6 +177,50 @@
+   sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, Dolby Vision profile 8, which it plays
@@ -3388,10 +3426,9 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kDisableBackgroundMediaSuspend)) {
 @@ -356,7 +410,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
@@ -3406,7 +3443,7 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1112,9 +1171,21 @@
+@@ -1112,7 +1171,19 @@
  void WebMediaPlayerImpl::Seek(double seconds) {
    DVLOG(1) << __func__ << "(" << seconds << "s)";
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3416,18 +3453,16 @@
 +      base::Seconds(seconds),
 +      std::exchange(parc_fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcFastSeek(double seconds,
 +                                      double tolerance_before) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_fast_seek_tolerance_ = base::Seconds(tolerance_before);
 +  Seek(seconds);
-+}
-+
+ }
+ 
  void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
-   TRACE_EVENT2("media", "WebMediaPlayerImpl::DoSeek", "target",
 @@ -1423,6 +1494,24 @@
    return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
  }
@@ -3453,10 +3488,12 @@
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
-@@ -1498,6 +1587,21 @@
-     return WebTimeRanges();
-   }
+@@ -1496,6 +1585,21 @@
  
+   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
+     return WebTimeRanges();
++  }
++
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -3470,16 +3507,13 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-+  }
-+
-   if (demuxer_manager_->IsLiveContent()) {
-     return WebTimeRanges();
    }
-@@ -1694,7 +1798,59 @@
-     media::EmeInitDataType init_data_type,
+ 
+   if (demuxer_manager_->IsLiveContent()) {
+@@ -1695,6 +1799,58 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
-+
+ 
 +  // Parc: the MP4 parser reports FairPlay's "sinf" init data for every
 +  // protected track, as Safari's Media Source does. A Media Source element of
 +  // a document presenting Safari's identity hears only that, as Safari's
@@ -3494,7 +3528,7 @@
 +      parc_safari_media_source) {
 +    return;
 +  }
- 
++
 +  // Parc: Safari raises webkitneedkey for each protected track's sinf first,
 +  // whatever then happens to `encrypted` (SourceBufferPrivateAVFObjC::
 +  // didProvideContentKeyRequestInitializationDataForTrackID calls keyNeeded
@@ -3535,10 +3569,12 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +1884,34 @@
+@@ -1726,6 +1882,34 @@
+ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
+                                        media::MediaTrack::State state) {
    client_->SetTrackState(track, state);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -3565,16 +3601,13 @@
 +    media::ParcInbandAudioTrackEnabledCB set_enabled) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
-+}
-+
- #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+ }
  
- UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1776,7 +1960,96 @@
-           tick_clock_, main_task_runner_));
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+@@ -1777,6 +1961,95 @@
  }
  #endif
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3617,7 +3650,7 @@
 +  // the same request raises (both come in the player's order).
 +  encrypted_client_->ParcWebKitKeyRequest(key_uri);
 +}
- 
++
 +void WebMediaPlayerImpl::ParcNativeHlsReadyStateChanged(
 +    media::ParcNativeHlsReadyState state) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3667,7 +3700,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2093,88 @@
+@@ -1820,10 +2093,87 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3682,7 +3715,7 @@
        cdm_context,
        blink::BindOnce(&WebMediaPlayerImpl::OnCdmAttached, weak_this_));
  }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3752,10 +3785,9 @@
 +  return ref && ref->GetCdmContext()->RequiresFairPlayRenderer();
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
 @@ -1841,11 +2191,22 @@
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
@@ -3806,7 +3838,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -3018,12 +3392,41 @@
+@@ -3018,11 +3392,40 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3823,7 +3855,7 @@
    // TODO(crbug.com/40261162): Support codec changing for Media Foundation.
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
-+  }
+   }
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: the FairPlay Renderer switches codecs (an audio language change
 +  // from E-AC-3 to AAC), but only among those it plays; others throw
@@ -3831,8 +3863,8 @@
 +  if (renderer_type_ == media::RendererType::kFairPlay) {
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
-   }
- 
++  }
++
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -3844,10 +3876,9 @@
 +    }
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-     client_->DidUseAudioServiceChange(new_uses_audio_service);
 @@ -3038,6 +3441,14 @@
      CreateWatchTimeReporter();
    }
@@ -3863,7 +3894,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3564,14 @@
+@@ -3153,6 +3564,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -3875,16 +3906,38 @@
 +      renderer_type_ == media::RendererType::kFairPlayHls) {
 +    can_auto_suspend = false;
 +  }
++#if BUILDFLAG(IS_MAC)
++  // Parc: Chromium never suspends Safari's native HLS player, from the moment
++  // its demuxer exists (before the pipeline makes its renderer): no idle,
++  // background, frame-frozen or stay-suspended suspend. WebKit's preload
++  // rules live in the GPU player, and a suspend and resume would take down
++  // the facade a pending seek completes through, leaving seeking for ever.
++  const bool parc_native_hls =
++      renderer_type_ == media::RendererType::kFairPlayHls ||
++      demuxer_manager_->HasParcNativeHlsDemuxer();
++  if (parc_native_hls) {
++    can_auto_suspend = false;
++  }
++#endif  // BUILDFLAG(IS_MAC)
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3790,8 +4209,31 @@
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
- 
-   if (!is_background_video_track_optimization_supported_) {
-+    return false;
+@@ -3170,6 +3602,11 @@
+   PlayState state = UpdatePlayState_ComputePlayState(
+       is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
+       IsInVideoPictureInPicture());
++#if BUILDFLAG(IS_MAC)
++  if (parc_native_hls) {
++    state.is_suspended = false;
 +  }
-+
++#endif  // BUILDFLAG(IS_MAC)
+   SetDelegateState(state.delegate_state, state.is_idle);
+   SetMemoryReportingState(state.is_memory_reporting_enabled);
+   SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
+@@ -3793,6 +4230,29 @@
+     return false;
+   }
+ 
 +  // Parc: the FairPlay Renderer can't drop its video stream and rejoin it
 +  // later (a disabled ChunkDemuxerStream ends it), so keep the track enabled.
 +  // Safari's native HLS player has no stream to disable: AVPlayer keeps its
@@ -3904,12 +3957,13 @@
 +    }
 +  }
 +  if (is_encrypted_ && !cdm_context_ref_) {
-     return false;
-   }
++    return false;
++  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
+   if (!HasVideo() || !HasAudio()) {
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.h
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.h
 @@ -89,6 +89,9 @@
