@@ -167,6 +167,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::vector<Batch> batches;
     SessionCallback generate_done;
     ResultCallback update_done;
+    // update("renew"), settled when the renewal message goes out (WebKit's
+    // didProvideRenewingRequest) or the renewal fails.
+    ResultCallback renew_done;
     uint64_t messages_sent = 0;  // License messages sent so far.
     // update() calls made while one is in flight run in order after it.
     std::deque<std::pair<std::vector<uint8_t>, ResultCallback>> queued_updates;
@@ -408,7 +411,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                      std::vector<uint8_t> response,
                      ResultCallback done) {
     Session* session = Find(session_id);
-    if (session && (session->update_done || !session->queued_updates.empty())) {
+    if (session && (session->update_done || session->renew_done ||
+                    !session->queued_updates.empty())) {
       session->queued_updates.push_back({std::move(response), std::move(done)});
       return;
     }
@@ -420,7 +424,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     (*poster_)([weak, session_id] {
       auto impl = weak.lock();
       Session* session = impl ? impl->Find(session_id) : nullptr;
-      if (!session || session->update_done || session->queued_updates.empty()) {
+      if (!session || session->update_done || session->renew_done ||
+          session->queued_updates.empty()) {
         return;
       }
       auto [response, done] = std::move(session->queued_updates.front());
@@ -477,8 +482,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (std::string(response.begin(), response.end()) == kRenew) {
       for (auto it = session->requests.rbegin(); it != session->requests.rend(); ++it) {
         if (HasReceivedResponse((*it)->request) && !(*it)->renewal) {
+          session->renew_done = std::move(done);
           [av_session_ renewExpiringResponseDataForContentKeyRequest:(*it)->request];
-          done(Result::Ok());
           return;
         }
       }
@@ -1086,6 +1091,12 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     if (error.code == kSecurityLevelError) {
+      // WebKit's requestDidSucceed: the request (a renewal too, which
+      // replaced the answered one) reports output-restricted.
+      if (request->renewal == av_request) {
+        request->request = av_request;
+        request->renewal = nil;
+      }
       Settle(session, request, nil);
       return;
     }
@@ -1691,6 +1702,14 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
           done(Failure(Exception::kNotSupported, "license request failed", first_error), "");
           return;
         }
+        if (ready.type == MessageType::kLicenseRenewal && session->renew_done) {
+          ResultCallback renewed = std::move(session->renew_done);
+          renewed(Failure(Exception::kTypeError, "license renewal failed", first_error));
+          session = Find(session_id);
+          if (!session) {
+            return;
+          }
+        }
         NotifyKeyStatuses(session);
         continue;
       }
@@ -1727,6 +1746,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       Deliver([session_id, type, bytes](FairPlayCdmClient* client) {
         client->OnSessionMessage(session_id, type, bytes);
       });
+      if (type == MessageType::kLicenseRenewal && session->renew_done) {
+        ResultCallback renewed = std::move(session->renew_done);
+        renewed(Result::Ok());
+      }
       session = Find(session_id);
       if (!session) {
         return;
@@ -1773,6 +1796,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (session->update_done) {
       session->update_pending.clear();
       ResultCallback done = std::move(session->update_done);
+      done(Result::Error(Exception::kTypeError, reason));
+    }
+    if (session->renew_done) {
+      ResultCallback done = std::move(session->renew_done);
       done(Result::Error(Exception::kTypeError, reason));
     }
     while (!session->queued_updates.empty()) {

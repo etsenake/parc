@@ -330,6 +330,9 @@ so this forces the following on the Chromium integration.
   session's `update()` resolves once every entry settled, even when
   AVFoundation rejected some (WebKit's `UpdateResponseCollector` counts errors
   as responses); their keys then show `internal-error`.
+- `update("renew")` settles when the renewal message goes out (WebKit's
+  `didProvideRenewingRequest`), or with TypeError if the renewal fails; later
+  updates wait for it.
 - A renewal (`update("renew")`, or one AVFoundation starts) runs beside the
   answered request. The answered key stays usable until the renewal succeeds
   (it then replaces the key) or fails (it is dropped).
