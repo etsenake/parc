@@ -255,8 +255,8 @@ after `MediaSource::monitorSourceBuffers`,
 - With video, HAVE_CURRENT or more waits for a video frame, as WebKit's
   player waits for `hasAvailableVideoFrame`: the renderer's first HAVE_ENOUGH
   after the start or a seek, which the FairPlay Renderer reports only once a
-  frame decoded there (`readyForDisplay`; before macOS 14.4, which reports
-  no decoded frame, it doesn't wait: see Known gaps). So protected video
+  frame decoded there (`readyForDisplay` on macOS 14.4+, successful
+  `prerollDecodeWithCompletionHandler:` on macOS 13.0–14.3). So protected video
   stays at HAVE_METADATA until its keys arrive and a frame decodes, with or
   without a CDM (before one, Chromium creates no renderer at all); a page
   that waits for `canplay` before licensing waits for ever, as in Safari.
@@ -305,11 +305,58 @@ after `MediaSource::monitorSourceBuffers`,
   `waiting`, then `canplay`/`playing` as soon as any data is ahead, as in
   Safari; the picture resumes once the renderer has enough again.
 
+### Frame readiness before macOS 14.4
+
+Parc's minimum is macOS 13.0 (`scripts/build.py`, `LSMinimumSystemVersion`
+and compiler deployment targets). On 13.0–14.3 the FairPlay renderer uses
+WebKit's older `prerollDecodeWithCompletionHandler:` signal after a displayable
+sample is enqueued. Only success releases video readiness and the clock.
+Flush, start/seek and decoder reset invalidate earlier completions; end of
+stream with queued video still waits for its frame. Chrome-identity playback
+never enters this renderer.
+
+Reference: WebKit main `db2d79f4`,
+`Source/WebCore/platform/graphics/avfoundation/AudioVideoRendererAVFObjC.mm:1682–1684`
+connects `notifyFirstFrameAvailable` to `setHasAvailableVideoFrame`;
+`graphics/cocoa/VideoMediaSampleRenderer.mm:1426–1433` forwards the display
+notification, and `graphics/avfoundation/WebAVSampleBufferListener.mm:124,243–257`
+observes it. This main checkout targets newer systems; it has no older-system
+KVO fallback. Its decompression path supplies decoded samples instead
+(`VideoMediaSampleRenderer.mm:790–837`), but protected samples can bypass that
+path (`:462–468`). Queue capacity and renderer status do not prove a frame.
+
+The matching older reference is [WebKit webkitgtk-2.44.0
+SourceBufferPrivateAVFObjC.mm](https://github.com/WebKit/WebKit/blob/webkitgtk-2.44.0/Source/WebCore/platform/graphics/avfoundation/objc/SourceBufferPrivateAVFObjC.mm#L1074-L1107):
+`:1080–1085` uses the newer display signal if available, otherwise
+`:1093–1105` waits for successful preroll before reporting the frame. The older
+[webkitgtk-2.42.0 source](https://github.com/WebKit/WebKit/blob/webkitgtk-2.42.0/Source/WebCore/platform/graphics/avfoundation/objc/SourceBufferPrivateAVFObjC.mm#L1295-L1325)
+checks for preroll and, on still older systems without it, asks CoreMedia for
+`PostNotificationWhenConsumed` / `BufferConsumed` instead (`:335–336,1300–1305`).
+It does not document the OS cutover for that historical fallback; no supported
+13.0–14.3 range has been identified as lacking preroll. The current macOS SDK
+explicitly declares `readyForDisplay` from 14.4 and says it is **not** KVO
+observable; observing it from 14.0 would not be a valid substitute.
+
+`PARC_FAIRPLAY_FORCE_LEGACY_PREROLL=1 bash scripts/test-fairplay-core.sh --only
+WaitingForKeyScenario --muted` exercises the older callback on a current Mac;
+`--only SeekOrderScenario` checks the target picture before releasing a seek.
+This verifies the fallback on the development OS, not an execution on macOS 13.
+The signal applies equally to ordinary composition, PiP and background tabs;
+it adds no casting route or change to Now Playing. Protected display continues
+to use AVFoundation and its output protection.
+
+The legacy seek check exposed a producer capacity race: capacity can turn false
+between enqueue and the caller's next capacity read. That read now arms the
+existing request callback, so audio resumes instead of stalling after a seek.
+Focused legacy late-key, seek (including an audio-only tail), short-final-chunk
+and EOS-before-key checks pass apart from the pre-existing key-system-names
+assertion. Restoring the old readiness bypass makes the new pre-key assertion
+fail. The harness compiles native core and tests with a macOS 13.0 deployment
+target; these are component checks, not protected-video acceptance on an older
+OS or PiP/casting/background-tab runtime acceptance.
+
 ## Known gaps
 
-- Before macOS 14.4 the FairPlay Renderer can't tell when a video frame
-  decoded (no `readyForDisplay`), so protected video reaches `canplay`
-  before its keys and a seek finishes before its frame, unlike Safari.
 - FairPlay keys that arrive after playback started, and a switch into Dolby
   Vision while Chromium's renderer plays, cost one rebuffer that Safari
   doesn't have. Safari attaches each sample's key itself

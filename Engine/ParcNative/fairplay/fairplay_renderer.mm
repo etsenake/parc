@@ -26,6 +26,12 @@
 using parc::fairplay::FairPlayRenderer;
 using parc::fairplay::PostTask;
 
+// WebKit's SourceBufferPrivateAVFObjC::enqueueSampleBuffer, before the
+// readyForDisplay notification became public in macOS 14.4.
+@interface AVSampleBufferDisplayLayer (ParcPrerollDecode)
+- (void)prerollDecodeWithCompletionHandler:(void (^)(BOOL success))handler;
+@end
+
 // Sample attachment keys. CoreMedia exports these strings without naming
 // them in its headers; they are what AVStreamDataParser attaches to protected
 // samples (and what WebKit writes when it rebuilds protected samples in its GPU
@@ -407,9 +413,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         impl.CheckRendererStatus();
       });
       // readyForDisplay isn't key-value observable (VideoFrameAvailable).
-      if (@available(macOS 14.4, *)) {
-        AddNotification(center, AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification, layer_,
-                        [](Impl& impl, NSNotification*) { impl.UpdateBuffering(); });
+      if (UsesDisplayReadinessNotification()) {
+        if (@available(macOS 14.4, *)) {
+          AddNotification(center, AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification, layer_,
+                          [](Impl& impl, NSNotification*) { impl.UpdateBuffering(); });
+        }
       }
     }
     if (audio) {
@@ -588,7 +596,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void* display_layer() const { return (__bridge void*)layer_; }
 
-  bool IsReadyForMoreData(StreamType stream) const {
+  bool IsReadyForMoreData(StreamType stream) {
     const Stream& state = StreamFor(stream);
     id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
     if (!renderer || state.end_of_stream) {
@@ -600,7 +608,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!state.held.empty()) {
       return state.given_end - GetMediaTime().InSeconds() < kHeldAheadSeconds;
     }
-    return renderer.readyForMoreMediaData;
+    const bool ready = renderer.readyForMoreMediaData;
+    if (!ready) {
+      // Capacity can turn false between Enqueue's check and the caller's
+      // next read. Register at the check that actually stops the producer.
+      ArmRequest(stream);
+    }
+    return ready;
   }
 
   EnqueueResult Enqueue(StreamType stream, const EncodedSample& sample) {
@@ -682,10 +696,14 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // (updateAllRenderersHaveAvailableSamples). Releasing it on enqueued data
     // alone starts the clock while decoding still runs from the keyframe
     // before |time|, so the first frames arrive late and are dropped.
+    ResetVideoFrameAvailability();
     video_reset_pending_ = video_renderer_ != nil;
     clock_held_ = true;
     RemoveStallObserver();
     [synchronizer_ setRate:0 time:ToCMTime(time)];
+    for (const Submitted& sample : video_.submitted) {
+      RequestVideoFrameAvailability(sample.buffer);
+    }
     NotifyNeedData(StreamType::kVideo);
     NotifyNeedData(StreamType::kAudio);
     UpdateBuffering();
@@ -769,6 +787,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
     renderers_have_samples_ = false;
+    ResetVideoFrameAvailability();
     video_reset_pending_ = false;
     clock_held_ = true;
     RemoveStallObserver();
@@ -811,8 +830,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         status.video_requires_flush = layer_.requiresFlushToResumeDecoding;
 #pragma clang diagnostic pop
       }
-      if (@available(macOS 14.4, *)) {
-        status.video_ready_for_display = layer_.readyForDisplay;
+      status.video_ready_for_display = legacy_video_frame_available_;
+      if (UsesDisplayReadinessNotification()) {
+        if (@available(macOS 14.4, *)) {
+          status.video_ready_for_display = layer_.readyForDisplay;
+        }
       }
       status.output_obscured = layer_.outputObscuredDueToInsufficientExternalProtection;
       status.video_has_enough = video_renderer_.hasSufficientMediaDataForReliablePlaybackStart;
@@ -1690,6 +1712,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
     }
     [RendererFor(stream) enqueueSampleBuffer:held.buffer];
+    if (stream == StreamType::kVideo) {
+      RequestVideoFrameAvailability(held.buffer);
+    }
     // A sample given again is counted, and its video due, from the first time.
     if (held.redelivered) {
       ++status_.redelivered;
@@ -1833,6 +1858,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     StopRequest(StreamType::kVideo);
     video_.armed = false;
     [video_renderer_ flush];
+    ResetVideoFrameAvailability();
     ++status_.video_decoder_resets;
     const double now = GetMediaTime().InSeconds();
     bool from_keyframe = false;
@@ -1853,6 +1879,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         }
       }
       [video_renderer_ enqueueSampleBuffer:entry.buffer];
+      RequestVideoFrameAvailability(entry.buffer);
       ++status_.redelivered;
     }
     // WebKit's flushVideo: no frame is available until one decodes again, and
@@ -1863,19 +1890,68 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     NotifyNeedData(StreamType::kVideo);
   }
 
-  // After a start, seek or decoder reset, whether a frame decoded: readyForDisplay on
-  // macOS 14.4+ (AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification
-  // runs UpdateBuffering). Earlier macOS posts nothing when a frame decodes,
-  // and a full queue under a stopped clock enqueues nothing more to look
-  // again, so there neither the clock nor HAVE_ENOUGH waits.
-  bool VideoFrameAvailable() const {
-    if (!video_reset_pending_ || Complete(video_)) {
+  static bool UsesDisplayReadinessNotification() {
+#if defined(PARC_FAIRPLAY_FORCE_LEGACY_PREROLL)
+    return false;
+#else
+    if (@available(macOS 14.4, *)) {
       return true;
     }
-    if (@available(macOS 14.4, *)) {
-      return layer_.readyForDisplay;
+    return false;
+#endif
+  }
+
+  void ResetVideoFrameAvailability() {
+    ++video_frame_epoch_;
+    legacy_video_frame_available_ = false;
+  }
+
+  static bool IsDisplayableVideoSample(CMSampleBufferRef buffer) {
+    CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(buffer, false);
+    if (!attachments || !CFArrayGetCount(attachments)) {
+      return true;
     }
-    return true;
+    CFTypeRef hidden = CFDictionaryGetValue((CFDictionaryRef)CFArrayGetValueAtIndex(attachments, 0),
+                                          kCMSampleAttachmentKey_DoNotDisplay);
+    return !hidden || !CFEqual(hidden, kCFBooleanTrue);
+  }
+
+  void RequestVideoFrameAvailability(CMSampleBufferRef buffer) {
+    if (UsesDisplayReadinessNotification() || legacy_video_frame_available_) {
+      return;
+    }
+    if (!IsDisplayableVideoSample(buffer)) {
+      return;
+    }
+    // As WebKit's pre-14.4 enqueueSampleBuffer: only successful preroll of a
+    // displayable sample supplies the first frame. Queue capacity is not it.
+    std::weak_ptr<Impl> weak = weak_from_this();
+    auto poster = poster_;
+    const uint64_t epoch = video_frame_epoch_;
+    [layer_ prerollDecodeWithCompletionHandler:^(BOOL success) {
+      (*poster)([weak, epoch, success] {
+        if (auto impl = weak.lock(); impl && impl->video_frame_epoch_ == epoch && success) {
+          impl->legacy_video_frame_available_ = true;
+          impl->UpdateBuffering();
+        }
+      });
+    }];
+  }
+
+  bool VideoFrameAvailable() const {
+    const bool ended_without_picture = Complete(video_) &&
+        std::none_of(video_.submitted.begin(), video_.submitted.end(), [](const Submitted& sample) {
+          return IsDisplayableVideoSample(sample.buffer);
+        });
+    if (!video_reset_pending_ || ended_without_picture) {
+      return true;
+    }
+    if (UsesDisplayReadinessNotification()) {
+      if (@available(macOS 14.4, *)) {
+        return layer_.readyForDisplay;
+      }
+    }
+    return legacy_video_frame_available_;
   }
 
   void OnKeysChanged() {
@@ -2304,6 +2380,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // A start, seek or decoder reset waits for a decoded frame
   // (VideoFrameAvailable).
   bool video_reset_pending_ = false;
+  bool legacy_video_frame_available_ = false;
+  uint64_t video_frame_epoch_ = 0;
   // The clock waits for HAVE_ENOUGH and renderers with samples (start, seek
   // or stall).
   bool clock_held_ = true;

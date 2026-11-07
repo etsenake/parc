@@ -320,7 +320,8 @@ so this forces the following on the Chromium integration.
   `DoNotDisplay`. The clock then waits until a frame decodes again
   (`readyForDisplay`, posted by
   `AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification` on macOS
-  14.4+; earlier macOS has no signal and runs on), as WebKit's `flushVideo`
+  14.4+; successful `prerollDecodeWithCompletionHandler:` on macOS
+  13.0–14.3), as WebKit's `flushVideo`
   and `updateAllRenderersHaveAvailableSamples`; audio's availability is
   untouched. The Failed status that comes with `requiresFlushToResumeDecoding`
   isn't reported as a decode error. No public trigger exists on macOS, so this

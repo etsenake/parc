@@ -54,7 +54,8 @@ class FairPlayRendererClient {
   // from the data given whether or not keys are usable: every configured
   // stream reached end of stream, was given samples (enqueued or held for a
   // key) 3 s past the clock, or has a renderer with enough for a reliable
-  // start. The clock runs from then once both renderers also have samples to
+  // start. After start/seek/reset video also waits for a decoded frame.
+  // The clock runs from then once both renderers also have samples to
   // play (so it waits for keys at the start, but samples held for a key later
   // don't stop it: the picture freezes and time runs on, as in Safari).
   // BUFFERING_HAVE_NOTHING only when the clock reaches the end of what a
@@ -71,7 +72,7 @@ struct RendererStatus {
   std::string audio_error;
   bool video_requires_flush = false;
   bool output_obscured = false;  // Insufficient external protection.
-  bool video_ready_for_display = false;  // macOS 14.4+.
+  bool video_ready_for_display = false;  // Display notification or legacy preroll.
   bool video_has_enough = false;
   bool audio_has_enough = false;
   float audio_volume = 1;

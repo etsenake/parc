@@ -10,6 +10,10 @@ trap 'rm -rf "$output"' EXIT
 core="$repo_root/Engine/ParcNative/fairplay"
 tests="$repo_root/tests/FairPlay"
 flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -I "$core" -I "$tests")
+# Exercise the pre-14.4 preroll callback on a newer development Mac too.
+if [ "${PARC_FAIRPLAY_FORCE_LEGACY_PREROLL:-0}" = 1 ]; then
+  flags+=(-DPARC_FAIRPLAY_FORCE_LEGACY_PREROLL)
+fi
 xcrun clang++ "${flags[@]}" -c "$core/fairplay_bitstream.cc" -o "$output/fairplay_bitstream.o"
 for name in fairplay_init_data fairplay_key_session fairplay_renderer; do
   xcrun clang++ "${flags[@]}" -fobjc-arc -c "$core/$name.mm" -o "$output/$name.o"

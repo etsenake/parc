@@ -2129,6 +2129,8 @@ std::vector<Step> SeekOrderScenario() {
         done();
       });
       w->player->on_have_enough = [=] {
+        Check(w->player->renderer().GetStatus().video_ready_for_display,
+              "seek-order: HAVE_ENOUGH waits for the target picture");
         probe->at_enough = w->player->Time();
         finish(true);
       };
@@ -2156,6 +2158,23 @@ std::vector<Step> SeekOrderScenario() {
   steps.push_back([=](Done done) {
     Check(w->player->underflows == 0, "seek-order: no underflow after the start",
           Format("%d", w->player->underflows));
+    done();
+  });
+  steps.push_back([=](Done done) {
+    w->player->renderer().Flush([=] {
+      // Video ends before the seek target; only audio has a picture-free tail.
+      w->player->SetFeeds(Segments(w->video, 0, 1), Segments(w->audio, 6, 10), true);
+      w->player->batch_reads = true;
+      auto finish = Once(10, "seek-order: audio tail readiness", [=](bool ok) {
+        Check(ok, "seek-order: audio tail with only non-displaying video does not wait for a picture");
+        done();
+      });
+      w->player->on_have_enough = [=] { finish(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(40000000));
+      w->player->renderer().SetPlaybackRate(1);
+    });
+  });
+  steps.push_back([=](Done done) {
     w->player.reset();
     done();
   });
@@ -2843,6 +2862,8 @@ std::vector<Step> WaitingForKeyScenario() {
   steps.push_back([=](Done done) {
     *keys = MakeKeySystem("late-keys");
     w->player = std::make_shared<Player>("late", Framing::kChromium, &w->video, &w->audio, (*keys)->cdm.get(), w->host);
+    // Fill the held queue rather than stopping at the first missing key.
+    w->player->batch_reads = true;
     w->player->renderer().Flush([=] {
       w->player->SetFeeds(Segments(w->video, 0, 3), Segments(w->audio, 0, 3), false);
       w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
@@ -2858,15 +2879,8 @@ std::vector<Step> WaitingForKeyScenario() {
                  w->player->waiting_results, s.video_enqueued, s.audio_enqueued));
     Check(!w->player->renderer().IsReadyForMoreData(fp::StreamType::kVideo),
           "late keys: backpressure once 4 s are held past the clock");
-    // WebKit's player has no video frame before the key, so the element
-    // stays at HAVE_METADATA; the clock waits too. Before macOS 14.4 nothing
-    // reports a decoded frame, so held data alone counts.
-    bool frame_waits = false;
-    if (@available(macOS 14.4, *)) {
-      frame_waits = true;
-    }
-    Check(w->player->have_enough != frame_waits && std::fabs(w->player->Time()) < 0.001,
-          "late keys: no HAVE_ENOUGH before the key decodes a frame (macOS 14.4+), clock held at the start",
+    Check(!w->player->have_enough && std::fabs(w->player->Time()) < 0.001,
+          "late keys: no HAVE_ENOUGH before the key decodes a frame, clock held at the start",
           Format("have_enough %d, t=%.3f", int(w->player->have_enough), w->player->Time()));
     AcquireLicense(keys->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "late keys", [=](bool) {
       done();
@@ -2874,6 +2888,8 @@ std::vector<Step> WaitingForKeyScenario() {
   });
   steps.push_back([=](Done done) {
     auto go = Once(10, "late keys: HAVE_ENOUGH after keys", [=](bool) {
+      Check(w->player->renderer().GetStatus().video_ready_for_display,
+            "late keys: HAVE_ENOUGH follows a decoded displayable frame");
       w->player->renderer().SetPlaybackRate(1);
       done();
     });
@@ -3017,14 +3033,9 @@ std::vector<Step> EndBeforeKeyScenario() {
           "eos-before-key: every sample held for the key, end of stream on both streams",
           Format("ends %d, waiting events %d, held results %d, enqueued v/a %llu/%llu", w->player->ends_sent,
                  w->player->waiting_events, w->player->waiting_results, s.video_enqueued, s.audio_enqueued));
-    bool frame_waits = false;
-    if (@available(macOS 14.4, *)) {
-      frame_waits = true;
-    }
-    Check(line->enough_before_key != frame_waits && !w->player->ended,
-          Format("eos-before-key: no HAVE_ENOUGH (no video frame decodes; macOS 14.4+) and no OnEnded during the "
-                 "%.1f s without the key",
-                 hold));
+    Check(!line->enough_before_key && !w->player->ended,
+          Format("eos-before-key: no HAVE_ENOUGH (no video frame decodes) and no OnEnded during the "
+                 "%.1f s without the key", hold));
     Check(probe->samples > 0 && std::fabs(probe->max_time - clip->start) < 0.001,
           Format("eos-before-key: clock held at %.3f at rate 1 without the key (max %.3f over %d samples)",
                  clip->start, probe->max_time, probe->samples));
