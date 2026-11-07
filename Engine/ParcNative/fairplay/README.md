@@ -51,7 +51,8 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | Chromium | Core |
 | --- | --- |
 | `ContentDecryptionModule::SetServerCertificate` | `FairPlayCdm::SetServerCertificate` |
-| `CreateSessionAndGenerateRequest` | `CreateSessionAndGenerateRequest(InitDataType, init_data)` |
+| `CdmConfig::allow_persistent_state` | `SetPersistentStateAllowed(bool)` |
+| `CreateSessionAndGenerateRequest` | `CreateSessionAndGenerateRequest(SessionType, InitDataType, init_data)` (temporary or Safari's persistent-usage-record) |
 | `UpdateSession` / `CloseSession` / `RemoveSession` | same names |
 | `ContentDecryptionModuleClient` (`OnSessionMessage`, `OnSessionKeysChange`, `OnSessionClosed`) | `FairPlayCdmClient` |
 | `Renderer::Initialize` (decoder configs) | `FairPlayRenderer::Initialize(VideoConfig, AudioConfig)` |

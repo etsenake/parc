@@ -646,6 +646,14 @@ std::unique_ptr<KeySystem> MakeKeySystem(const std::string& name, NSString* toke
   return ks;
 }
 
+// WebKit's session IDs: the uppercase hex of a random 16-byte identifier
+// (CDMInstanceSessionFairPlayStreamingAVFObjC::sessionIdentifierChanged).
+bool IsWebKitSessionId(const std::string& id) {
+  return id.size() == 32 && std::all_of(id.begin(), id.end(), [](char c) {
+           return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F');
+         });
+}
+
 // Session from |init_data|, the page-side license round trip, then a check
 // that the renderer can find a key for the content's key ID.
 void AcquireLicense(KeySystem* ks, fp::InitDataType type, std::vector<uint8_t> init_data,
@@ -668,7 +676,8 @@ void AcquireLicense(KeySystem* ks, fp::InitDataType type, std::vector<uint8_t> i
   ks->cdm->CreateSessionAndGenerateRequest(
       type, std::move(init_data), [ks, label, finish](const fp::Result& r, const std::string& id) {
         ks->session = id;
-        Check(r.ok(), label + ": generateRequest resolves with a session ID",
+        Check(r.ok() && IsWebKitSessionId(id),
+              label + ": generateRequest resolves with a WebKit session ID",
               r.ok() ? id : r.message);
         if (!r.ok()) finish(false);
       });
@@ -2436,6 +2445,53 @@ std::vector<Step> NoHangScenario() {
                                                      r.message);
                                                finish(true);
                                              });
+  });
+  steps.push_back([=](Done done) {
+    w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
+// Safari's persistent-usage-record sessions (WebKit's
+// CDMInstanceSessionFairPlayStreamingAVFObjC::isLicenseTypeSupported):
+// refused without persistent state, otherwise a license round trip like a
+// temporary session's.
+std::vector<Step> PersistentUsageRecordScenario() {
+  World* w = g_world;
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("persistent-usage-record sessions"));
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("usage-record");
+    auto finish = Once(5, "usage-record: refused without persistent state", [=](bool) { done(); });
+    (*keys)->cdm->CreateSessionAndGenerateRequest(
+        fp::SessionType::kPersistentUsageRecord, fp::InitDataType::kSkd, Bytes(std::string(kSkd)),
+        [=](const fp::Result& r, const std::string& id) {
+          Check(!r.ok() && r.exception == fp::Exception::kNotSupported && id.empty(),
+                "usage-record: refused (NotSupported) without persistent state", r.message);
+          finish(true);
+        });
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->cdm->SetPersistentStateAllowed(true);
+    auto finish = Once(30, "usage-record: license", [=](bool) { done(); });
+    ks->client->json = false;
+    ks->client->on_update = [=](bool ok, const std::string& detail) {
+      Check(ok && ks->cdm->HasUsableKey(g_key_id),
+            "usage-record: update resolves after the license round trip, key usable", detail);
+      finish(ok);
+    };
+    ks->cdm->CreateSessionAndGenerateRequest(
+        fp::SessionType::kPersistentUsageRecord, fp::InitDataType::kSkd, Bytes(std::string(kSkd)),
+        [=](const fp::Result& r, const std::string& id) {
+          ks->session = id;
+          Check(r.ok() && IsWebKitSessionId(id),
+                "usage-record: generateRequest resolves with a WebKit session ID",
+                r.ok() ? id : r.message);
+          if (!r.ok()) finish(false);
+        });
   });
   steps.push_back([=](Done done) {
     w->retired.push_back(std::move(*keys));
@@ -4279,6 +4335,7 @@ void RunAll() {
   add("ReentrancyScenario()", ReentrancyScenario());
   add("QueuedUpdateScenario()", QueuedUpdateScenario());
   add("NoHangScenario()", NoHangScenario());
+  add("PersistentUsageRecordScenario()", PersistentUsageRecordScenario());
   add("RenewalScenario()", RenewalScenario());
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
   add("EndBeforeKeyScenario()", EndBeforeKeyScenario());

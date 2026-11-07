@@ -135,6 +135,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   struct Session {
     std::string id;
+    SessionType type = SessionType::kTemporary;
     InitDataPlan plan;
     std::vector<std::unique_ptr<Request>> requests;
     std::vector<Batch> batches;
@@ -214,6 +215,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
   }
 
+  void SetPersistentStateAllowed(bool allowed) { persistent_state_allowed_ = allowed; }
+
   void SetServerCertificate(std::vector<uint8_t> certificate, ResultCallback done) {
     if (certificate.empty()) {
       done(Result::Error(Exception::kTypeError, "empty server certificate"));
@@ -223,7 +226,20 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     done(Result::Ok());
   }
 
-  void CreateSession(InitDataType type, std::vector<uint8_t> init_data, SessionCallback done) {
+  void CreateSession(SessionType session_type,
+                     InitDataType type,
+                     std::vector<uint8_t> init_data,
+                     SessionCallback done) {
+    // WebKit checks the license type first (requestLicense,
+    // isLicenseTypeSupported): persistent-usage-record needs persistent state
+    // and AVFoundation's expired-session reports.
+    if (session_type == SessionType::kPersistentUsageRecord &&
+        !(persistent_state_allowed_ && SupportsPersistableState())) {
+      done(Result::Error(Exception::kNotSupported,
+                         "persistent-usage-record needs persistent state"),
+           "");
+      return;
+    }
     if (!certificate_) {
       done(Result::Error(Exception::kInvalidState, "server certificate not set"), "");
       return;
@@ -238,7 +254,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     auto session = std::make_unique<Session>();
-    session->id = "fps-" + std::to_string(++next_session_number_);
+    session->id = NewSessionId();
+    session->type = session_type;
     session->plan = std::move(plan);
     session->generate_done = std::move(done);
     // Raw sessions send one SPC per message; JSON sessions batch every key the
@@ -721,6 +738,33 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   }
 
  private:
+  // WebKit's CDMInstanceFairPlayStreamingAVFObjC::supportsPersistableState.
+  static bool SupportsPersistableState() {
+    SEL selector = @selector(pendingExpiredSessionReportsWithAppIdentifier:storageDirectoryAtURL:);
+    return [AVContentKeySession respondsToSelector:selector];
+  }
+
+  // WebKit names a session after its key group's identifier, a random UUID,
+  // as uppercase hex (WebAVContentKeyGroup.contentProtectionSessionIdentifier
+  // through CDMInstanceSessionFairPlayStreamingAVFObjC::
+  // sessionIdentifierChanged).
+  std::string NewSessionId() const {
+    static constexpr char kHexDigits[] = "0123456789ABCDEF";
+    while (true) {
+      uuid_t bytes;
+      [[NSUUID UUID] getUUIDBytes:bytes];
+      std::string id;
+      id.reserve(sizeof(bytes) * 2);
+      for (unsigned char byte : bytes) {
+        id += kHexDigits[byte >> 4];
+        id += kHexDigits[byte & 0xF];
+      }
+      if (!Find(id)) {
+        return id;
+      }
+    }
+  }
+
   static dispatch_queue_t DelegateQueue() {
     static dispatch_queue_t queue =
         dispatch_queue_create("parc.fairplay.content-key-session", DISPATCH_QUEUE_SERIAL);
@@ -1109,7 +1153,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   NSData* certificate_ = nil;
   double request_timeout_ = 15;  // Seconds for generateRequest and update().
   std::map<std::string, std::unique_ptr<Session>> sessions_;
-  uint64_t next_session_number_ = 0;
+  bool persistent_state_allowed_ = false;
   std::map<uint64_t, KeysChangedCallback> observers_;
   uint64_t next_observer_ = 0;
 };
@@ -1142,10 +1186,23 @@ void FairPlayCdm::SetServerCertificate(std::vector<uint8_t> certificate, ResultC
   impl_->SetServerCertificate(std::move(certificate), impl_->Posted(std::move(done)));
 }
 
+void FairPlayCdm::SetPersistentStateAllowed(bool allowed) {
+  impl_->SetPersistentStateAllowed(allowed);
+}
+
+void FairPlayCdm::CreateSessionAndGenerateRequest(SessionType session_type,
+                                                  InitDataType type,
+                                                  std::vector<uint8_t> init_data,
+                                                  SessionCallback done) {
+  impl_->CreateSession(session_type, type, std::move(init_data),
+                       impl_->Posted(std::move(done)));
+}
+
 void FairPlayCdm::CreateSessionAndGenerateRequest(InitDataType type,
                                                   std::vector<uint8_t> init_data,
                                                   SessionCallback done) {
-  impl_->CreateSession(type, std::move(init_data), impl_->Posted(std::move(done)));
+  CreateSessionAndGenerateRequest(SessionType::kTemporary, type, std::move(init_data),
+                                  std::move(done));
 }
 
 void FairPlayCdm::UpdateSession(const std::string& session_id,

@@ -31,8 +31,9 @@ void FairPlayCdmFactory::Create(
     status = CreateCdmStatus::kUnsupportedKeySystem;
   } else {
     cdm = FairPlayCdmAdapter::Create(
-        cdm_config.key_system, session_message_cb, session_closed_cb,
-        session_keys_change_cb, session_expiration_update_cb);
+        cdm_config.key_system, cdm_config.allow_persistent_state,
+        session_message_cb, session_closed_cb, session_keys_change_cb,
+        session_expiration_update_cb);
     if (!cdm) {
       status = CreateCdmStatus::kCdmNotSupported;
     }

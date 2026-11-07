@@ -32,14 +32,18 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
   // Returns null if |key_system| isn't a FairPlay key system or this macOS
   // lacks the AVFoundation support the core needs. Must be called on the
   // sequence the CDM will live on (the media service's).
+  // |allow_persistent_state| is the CdmConfig's (the configuration's
+  // persistentState is "required"); persistent-usage-record sessions need it.
   static scoped_refptr<FairPlayCdmAdapter> Create(
       const std::string& key_system,
+      bool allow_persistent_state,
       const SessionMessageCB& session_message_cb,
       const SessionClosedCB& session_closed_cb,
       const SessionKeysChangeCB& session_keys_change_cb,
       const SessionExpirationUpdateCB& session_expiration_update_cb);
 
   FairPlayCdmAdapter(
+      bool allow_persistent_state,
       const SessionMessageCB& session_message_cb,
       const SessionClosedCB& session_closed_cb,
       const SessionKeysChangeCB& session_keys_change_cb,

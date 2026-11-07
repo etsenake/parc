@@ -64,6 +64,21 @@ CdmMessageType ToCdmMessageType(fp::MessageType type) {
   return CdmMessageType::LICENSE_REQUEST;
 }
 
+// The session types WebKit's FairPlay CDM serves on macOS; persistent-license
+// is iOS-only there.
+std::optional<fp::SessionType> ToFairPlaySessionType(
+    CdmSessionType session_type) {
+  switch (session_type) {
+    case CdmSessionType::kTemporary:
+      return fp::SessionType::kTemporary;
+    case CdmSessionType::kPersistentUsageRecord:
+      return fp::SessionType::kPersistentUsageRecord;
+    case CdmSessionType::kPersistentLicense:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
 CdmKeyInformation::KeyStatus ToCdmKeyStatus(fp::KeyStatus status) {
   switch (status) {
     case fp::KeyStatus::kUsable:
@@ -89,6 +104,7 @@ CdmKeyInformation::KeyStatus ToCdmKeyStatus(fp::KeyStatus status) {
 // static
 scoped_refptr<FairPlayCdmAdapter> FairPlayCdmAdapter::Create(
     const std::string& key_system,
+    bool allow_persistent_state,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const SessionKeysChangeCB& session_keys_change_cb,
@@ -103,11 +119,12 @@ scoped_refptr<FairPlayCdmAdapter> FairPlayCdmAdapter::Create(
     return nullptr;
   }
   return base::MakeRefCounted<FairPlayCdmAdapter>(
-      session_message_cb, session_closed_cb, session_keys_change_cb,
-      session_expiration_update_cb);
+      allow_persistent_state, session_message_cb, session_closed_cb,
+      session_keys_change_cb, session_expiration_update_cb);
 }
 
 FairPlayCdmAdapter::FairPlayCdmAdapter(
+    bool allow_persistent_state,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const SessionKeysChangeCB& session_keys_change_cb,
@@ -123,6 +140,7 @@ FairPlayCdmAdapter::FairPlayCdmAdapter(
   DCHECK(session_closed_cb_);
   DCHECK(session_keys_change_cb_);
   DCHECK(session_expiration_update_cb_);
+  cdm_->SetPersistentStateAllowed(allow_persistent_state);
 }
 
 FairPlayCdmAdapter::~FairPlayCdmAdapter() {
@@ -156,9 +174,11 @@ void FairPlayCdmAdapter::CreateSessionAndGenerateRequest(
     const std::vector<uint8_t>& init_data,
     std::unique_ptr<NewSessionCdmPromise> promise) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (session_type != CdmSessionType::kTemporary) {
+  const std::optional<fp::SessionType> fairplay_session_type =
+      ToFairPlaySessionType(session_type);
+  if (!fairplay_session_type) {
     promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
-                    "FairPlay supports temporary sessions only");
+                    "FairPlay has no persistent-license sessions on macOS");
     return;
   }
   const std::optional<fp::InitDataType> type =
@@ -172,7 +192,7 @@ void FairPlayCdmAdapter::CreateSessionAndGenerateRequest(
       promises_.SavePromise(std::move(promise), "CreateSession");
   base::WeakPtr<FairPlayCdmAdapter> weak = weak_factory_.GetWeakPtr();
   cdm_->CreateSessionAndGenerateRequest(
-      *type, init_data,
+      *fairplay_session_type, *type, init_data,
       [weak, promise_id](const fp::Result& result,
                          const std::string& session_id) {
         if (weak) {

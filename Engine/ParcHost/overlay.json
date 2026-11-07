@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 409,
+  "version": 410,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1510,12 +1510,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.h",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.h",
-      "sha256": "e1fa71b5accfbc10b391a6eaa60fc954a7e63ac44e8c2a3e487b4bfb1756d566"
+      "sha256": "1872395c76ebd2268c6d460f16b3c4d9a886b17e05f7bf91458f6e1fbfd228bf"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.mm",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.mm",
-      "sha256": "c0bac3c62b8169623af5ba31abfc863907a08a18ead1c980ee022a814e5cf774"
+      "sha256": "3873e8c0d154bb2daaabc9de2fb4b51b1d1d51c30048666de548da2ecc089669"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session_internal.h",
@@ -1580,12 +1580,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_adapter.h",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.h",
-      "sha256": "262188359d9fded1bfe466b6d55d48692b31a1036f50b000de6c17fcbeb8e21d"
+      "sha256": "02e145b48733b212b27a82546945e184ecbf593fca5952256d27fc10b2a7129c"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_adapter.cc",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.cc",
-      "sha256": "ac3d7b180bab717fc96ac046011e19bbc96013fa08980edf0e4c8320b8534f16"
+      "sha256": "1fba6b91ddc04431ca419162a91bf03d100bbf34c8b791f8c09a78cac00e9272"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_factory.h",
@@ -1595,7 +1595,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_factory.cc",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_factory.cc",
-      "sha256": "5473128640980d9db35e53cb37190ea4f022d3a14fda2175a26d618d9db06f05"
+      "sha256": "d87a29fe0779474ce234d3ac2d3b304af61316044b028484784d0e978c7ef849"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_fairplay_hooks.h",

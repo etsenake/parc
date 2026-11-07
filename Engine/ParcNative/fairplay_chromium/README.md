@@ -89,7 +89,13 @@ Init data: `cenc`, `keyids`, and on Safari-identity documents `sinf` and
 `skd` (fairplay-media.patch adds both to `EmeInitDataType`; Blink treats them
 as unregistered elsewhere). `sinf` and `skd` pass to the core unchanged, as
 WebKit passes them. Netflix and Apple TV+ use `cenc` only. Sessions:
-temporary only. `CdmContext::ParcHasSessionForInitData` (asked by a
+temporary, and Safari's `persistent-usage-record` on Safari-identity documents
+(fairplay-media.patch adds it to Blink's and Chromium's session types; the key
+system info offers it only where the render process can persist data, and the
+CDM takes it only with the CdmConfig's `allow_persistent_state`, as WebKit's
+`isLicenseTypeSupported`). Session IDs are WebKit's: the uppercase hex of a
+random 16-byte identifier. `persistent-license` rejects with NotSupported, as
+on Safari for macOS. `CdmContext::ParcHasSessionForInitData` (asked by a
 Safari-identity Media Source element through MojoCdm before it fires
 `encrypted` with `sinf`) answers from `FairPlayCdm::HasSessionForInitData`.
 `LoadSession` and `GetStatusForPolicy` reject with NotSupported.

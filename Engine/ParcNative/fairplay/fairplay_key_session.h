@@ -17,6 +17,12 @@ namespace parc::fairplay {
 // media::CdmMessageType.
 enum class MessageType { kLicenseRequest, kLicenseRenewal, kLicenseRelease };
 
+// The EME session types WebKit's FairPlay CDM serves on macOS
+// (CDMInstanceSessionFairPlayStreamingAVFObjC::isLicenseTypeSupported):
+// "temporary" and Safari's "persistent-usage-record". "persistent-license" is
+// iOS-only there.
+enum class SessionType { kTemporary, kPersistentUsageRecord };
+
 // media::CdmKeyInformation::KeyStatus.
 enum class KeyStatus {
   kUsable,
@@ -93,8 +99,23 @@ class FairPlayCdm {
   // identifier of every SPC.
   void SetServerCertificate(std::vector<uint8_t> certificate, ResultCallback done);
 
+  // Whether the MediaKeys' configuration allows persistent state (its
+  // persistentState is "required"), as WebKit's
+  // CDMInstanceFairPlayStreamingAVFObjC::initializeWithConfiguration records
+  // it. persistent-usage-record sessions need it. Off by default; set before
+  // the first session.
+  void SetPersistentStateAllowed(bool allowed);
+
   // Resolves with the session ID once the license request is ready, then
-  // sends it through OnSessionMessage (kLicenseRequest).
+  // sends it through OnSessionMessage (kLicenseRequest). As in WebKit, the ID
+  // is the uppercase hex of the session's random 16-byte identifier
+  // (WebAVContentKeyGroup's UUID). A persistent-usage-record session is
+  // refused (kNotSupported) unless persistent state is allowed.
+  void CreateSessionAndGenerateRequest(SessionType session_type,
+                                       InitDataType type,
+                                       std::vector<uint8_t> init_data,
+                                       SessionCallback done);
+  // A temporary session.
   void CreateSessionAndGenerateRequest(InitDataType type,
                                        std::vector<uint8_t> init_data,
                                        SessionCallback done);
