@@ -313,7 +313,12 @@ macOS pauses nothing for being hidden (`InvisibleAutoplayNotPermitted` and
 `RequiresPageVisibilityToPlayAudio` are iOS-only:
 `UnifiedWebPreferences.yaml:3348-3365, 5281-5303`;
 `HTMLMediaElement.cpp:733-741`). A muted video in a background tab keeps
-playing in Safari. **In progress** (fix agent WMPI-3).
+playing in Safari. **Fixed** dec04e58. Chromium still turns a hidden
+audio-and-video player's video track off after 10 s
+(`web_media_player_impl.cc:3789-3823`): no event and `currentTime` runs on,
+but decoded frame counts stop rising, dropped counts can jump on show
+(`video_renderer_impl.cc:1062-1065`), and canvas captures show the last
+frame until the stream catches up. **Open** (with Josh).
 
 **WMPI-4. Servers without range requests.** Chromium
 `web_media_player_impl.cc:1494-1515` plays a file from a server that ignores
