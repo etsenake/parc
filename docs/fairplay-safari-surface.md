@@ -78,8 +78,8 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `MediaSource.isTypeSupported`, `canPlayType` (MP4) | Safari's answers incl. Dolby | identity patch answers Dolby audio and DV profile 5 like Safari | present | fp-eme-caps |
 | `canPlayType('application/vnd.apple.mpegurl')` and HLS `<video src>` | "maybe" | Chromium's | missing | fp-native-hls |
 | `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_N'/'3_N', type)` | legacy MSE CDM: `keyrelease` (ignoring case), else MSE support | the same (`parc_webkit_media_keys.h`) | present | fp-safari-eme-surface |
-| `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | false until native HLS exists | missing (flip when fp-native-hls lands) | fp-safari-eme-surface |
-| `WebKitMediaKeys.isTypeSupported('org.w3c.clearkey', 'application/x-mpegurl')` | true (HLS only) | false | missing (with HLS) | fp-safari-eme-surface |
+| `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | false until native HLS exists | present behind native HLS: AVFoundation's type answers, true once `parc::fairplay::kNativeHlsEnabled` turns the script's `/*PARC_NATIVE_HLS*/` token on | fp-safari-eme-surface |
+| `WebKitMediaKeys.isTypeSupported('org.w3c.clearkey', 'application/x-mpegurl')` | true (HLS only) | false | present behind native HLS (same switch): true for no type or `application/x-mpegurl` | fp-safari-eme-surface |
 
 ## Media element timing (native HLS live and DVR)
 
