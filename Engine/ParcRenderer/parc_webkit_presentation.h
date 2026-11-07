@@ -37,6 +37,12 @@
 //   change, whoever made it, before the standard event of that change
 //   (`fullscreenchange`, `enterpictureinpicture`, `leavepictureinpicture`)
 //   reaches the page's listeners.
+// - `requestPictureInPicture()` stays Chromium's, every check and the work
+//   included, but as WebKit routes it through webkitSetPresentationMode
+//   (HTMLVideoElementPictureInPicture::requestPictureInPicture), a page's
+//   own request changes the mode as one of this API's does: picture in
+//   picture from the task after the call, ahead of Chromium's exit from
+//   fullscreen, with webkitendfullscreen when it leaves fullscreen.
 // - `webkitSupportsFullscreen`: as `webkitSupportsPresentationMode("fullscreen")`.
 // - `webkitDisplayingFullscreen`: true while the video is its document's
 //   fullscreen element or in any mode but inline (picture in picture too).
@@ -84,6 +90,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const deref = NativeWeakRef && NativeWeakRef.prototype.deref;
   const weakGet = NativeWeakMap.prototype.get;
   const weakSet = NativeWeakMap.prototype.set;
+  const NativePromise = Promise;
   const promiseThen = Promise.prototype.then;
   const nativeSetTimeout = g.setTimeout;
   const eventTargetPrototype = g.EventTarget && g.EventTarget.prototype;
@@ -599,6 +606,23 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
       brand(this);
       webkitExit(this);
     },
+    // HTMLVideoElementPictureInPicture::requestPictureInPicture: Chromium's
+    // request, as WebKit's presentation-mode change to picture in picture
+    // (not while a change is in progress or when already there).
+    requestPictureInPicture() {
+      const promise = apply(requestPictureInPicture, this, arguments);
+      if (isVideo(this)) {
+        const state = known(this);
+        if (!changing(state) && effectiveMode(this, state) !== PICTURE_IN_PICTURE) {
+          begin(this, state, PICTURE_IN_PICTURE, true, true, promise);
+          // The script's reaction counts as a handler of Chromium's promise;
+          // the page gets its own for the same outcome, so a refusal it
+          // leaves unhandled still reports as unhandled.
+          return new NativePromise((resolve, reject) => then(promise, resolve, reject));
+        }
+      }
+      return promise;
+    },
     // A listener for the webkit presentation events on a video anywhere
     // (detached, or in a shadow tree the window doesn't see) gets them.
     addEventListener(type, listener, options = undefined) {
@@ -615,10 +639,14 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
       get: describe(members, name).get, enumerable: true, configurable: true,
     });
   }
-  for (const name of ['webkitEnterFullscreen', 'webkitExitFullscreen',
+  const operations = ['webkitEnterFullscreen', 'webkitExitFullscreen',
                       'webkitEnterFullScreen', 'webkitExitFullScreen',
                       'webkitSupportsPresentationMode', 'webkitSetPresentationMode',
-                      'addEventListener']) {
+                      'addEventListener'];
+  if (requestPictureInPicture) {
+    operations.push('requestPictureInPicture');
+  }
+  for (const name of operations) {
     define(videoPrototype, name, {
       value: members[name], writable: true, enumerable: true, configurable: true,
     });

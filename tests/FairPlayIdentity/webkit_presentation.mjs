@@ -189,6 +189,10 @@ function makeWindow() {
     get videoWidth() { return this.#brand && this.readyState ? this.width : 0; }
     get videoHeight() { return this.#brand && this.readyState ? this.height : 0; }
     requestPictureInPicture() {
+      window.lastPictureInPictureRequest = this.#requestPictureInPicture();
+      return window.lastPictureInPictureRequest;
+    }
+    #requestPictureInPicture() {
       log.push('requestPictureInPicture');
       const document = this.ownerDocument;
       if (this.readyState === 0 || !this.videoWidth) return Promise.reject(new Error('InvalidStateError'));
@@ -717,6 +721,55 @@ function record(window, video, target = window.document) {
   video.webkitExitFullscreen();
   await settle();
   check(seen.join() === 'fullscreen,inline', 'and leaving it: ' + seen);
+}
+
+// A page's own requestPictureInPicture changes the mode as WebKit's does
+// (it goes through webkitSetPresentationMode there): from fullscreen,
+// picture in picture first and webkitendfullscreen, before Chromium's exit
+// from fullscreen and enterpictureinpicture reach the page. Chromium still
+// makes the request and every check; a refused one changes nothing.
+{
+  const window = makeWindow();
+  install(window);
+  const proto = window.HTMLVideoElement.prototype;
+  const d = Object.getOwnPropertyDescriptor(proto, 'requestPictureInPicture');
+  check(d && typeof d.value === 'function' && d.writable && d.enumerable && d.configurable &&
+        d.value.name === 'requestPictureInPicture' && d.value.length === 0,
+        'requestPictureInPicture stays a WebIDL operation');
+  const video = window.video();
+  video.load();
+  window.activation.active = true;
+  video.webkitEnterFullscreen();
+  await settle();
+  const seen = record(window, video);
+  video.addEventListener('webkitendfullscreen', () => seen.push('webkitendfullscreen'));
+  window.activation.active = true;
+  const promise = video.requestPictureInPicture();
+  check(typeof promise.then === 'function' && promise !== window.lastPictureInPictureRequest &&
+        window.log.filter((entry) => entry === 'requestPictureInPicture').length === 1,
+        'Chromium makes the request; the page gets its own promise for it, so its refusals ' +
+        'still report as unhandled when the page leaves them so');
+  check(video.webkitPresentationMode === 'fullscreen', 'still fullscreen during the call');
+  await new Promise((r) => setTimeout(r, 0));
+  check(video.webkitPresentationMode === 'picture-in-picture',
+        'picture in picture from the task after the call');
+  await settle();
+  check(seen.join() === 'mode:picture-in-picture,webkitendfullscreen,fullscreenchange,enterpictureinpicture',
+        'WebKit\'s order: ' + seen);
+  let resolvedWith = null;
+  await promise.then((value) => { resolvedWith = value; });
+  check(resolvedWith !== null && typeof resolvedWith === 'object', 'it resolves with Chromium\'s window');
+  check(window.document.pictureInPictureElement === video && window.document.fullscreenElement === null,
+        'the standard API agrees');
+
+  video.webkitSetPresentationMode('inline');
+  await settle();
+  seen.length = 0;
+  let refused = false;
+  video.requestPictureInPicture().catch(() => { refused = true; });
+  await settle();
+  check(refused && seen.length === 0 && video.webkitPresentationMode === 'inline',
+        'a refused request (no gesture) changes nothing: ' + seen);
 }
 
 console.log(`webkit_presentation: ${checks} checks passed`);
