@@ -96,6 +96,11 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   Those checks also corrected DataCue's object-builder conversion to the pinned
   Chromium `ToScriptObject()` API. The 28 production media files are checked
   with their actual shipping compiler commands and generated headers.
+  Recovery overlay 465 replaces the removed `base::Contains` helper/header in
+  media-capabilities checks with C++23 `std::ranges::contains` from the existing
+  algorithm header. All 82 FairPlay-patched upstream compilation units pass
+  their actual shipping compiler commands; these are compile checks, not runtime
+  acceptance. Earlier objects and archives remain available for the full resume.
 
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in

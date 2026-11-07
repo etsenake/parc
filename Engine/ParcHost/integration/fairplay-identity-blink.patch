@@ -476,7 +476,7 @@
      window->document()->AddPostPrerenderingActivationStep(
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
-@@ -4,11 +4,16 @@
+@@ -4,11 +4,15 @@
  
  #include "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h"
  
@@ -489,11 +489,10 @@
  #include <utility>
 +#include <vector>
  
-+#include "base/containers/contains.h"
  #include "base/feature_list.h"
  #include "base/metrics/field_trial_params.h"
  #include "base/metrics/histogram_functions.h"
-@@ -25,6 +30,7 @@
+@@ -25,6 +29,7 @@
  #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
  #include "media/mojo/mojom/media_types.mojom-blink.h"
  #include "media/video/gpu_video_accelerator_factories.h"
@@ -501,7 +500,7 @@
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
  #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
  #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
-@@ -50,6 +56,10 @@
+@@ -50,6 +55,10 @@
  #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -512,7 +511,7 @@
  #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
-@@ -147,12 +157,20 @@
+@@ -147,12 +156,20 @@
    return info;
  }
  
@@ -534,7 +533,7 @@
    return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state, info);
  }
  
-@@ -652,7 +670,11 @@
+@@ -652,7 +669,11 @@
                                     /*allow_ambiguous_matches=*/false);
    DCHECK(audio_type);
  
@@ -547,7 +546,7 @@
      audio_type->spatial_rendering = audio_config->spatialRendering();
  
    return media::IsDecoderSupportedAudioType(*audio_type);
-@@ -733,6 +755,414 @@
+@@ -733,6 +754,414 @@
    return true;
  }
  
@@ -927,9 +926,9 @@
 +        return std::nullopt;
 +      }
 +      // Profile 5 is HEVC Main10, so HDR fields don't refuse it.
-+      if (!base::Contains(*facts->dolby_vision_profiles,
++      if (!std::ranges::contains(*facts->dolby_vision_profiles,
 +                          parameters->profile) ||
-+          !base::Contains(*facts->dolby_vision_levels, parameters->level)) {
++          !std::ranges::contains(*facts->dolby_vision_levels, parameters->level)) {
 +        return std::nullopt;
 +      }
 +      answer.smooth = true;
@@ -962,7 +961,7 @@
  #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
  bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
    return video_codec_str.starts_with("dvh1.") ||
-@@ -782,11 +1212,13 @@
+@@ -782,11 +1211,13 @@
  MediaCapabilities::MediaCapabilities(NavigatorBase& navigator)
      : Supplement<NavigatorBase>(navigator),
        decode_history_service_(navigator.GetExecutionContext()),
@@ -977,7 +976,7 @@
    visitor->Trace(pending_cb_map_);
    ScriptWrappable::Trace(visitor);
    Supplement<NavigatorBase>::Trace(visitor);
-@@ -805,6 +1237,7 @@
+@@ -805,6 +1236,7 @@
  void MediaCapabilities::PendingCallbackState::Trace(
      blink::Visitor* visitor) const {
    visitor->Trace(key_system_access);
@@ -985,7 +984,7 @@
    visitor->Trace(resolver);
  }
  
-@@ -820,6 +1253,24 @@
+@@ -820,6 +1252,24 @@
          WebFeature::kMediaCapabilitiesDecodingInfoWithKeySystemConfig);
    }
  
@@ -1010,7 +1009,7 @@
    const bool is_webrtc = config->type() == V8MediaDecodingType::Enum::kWebrtc;
    String message;
    if (!IsValidMediaDecodingConfiguration(config, is_webrtc, &message)) {
-@@ -847,6 +1298,7 @@
+@@ -847,6 +1297,7 @@
                              : WebrtcDecodingInfoHandler::Instance()) {
        const int callback_id = InsertCallbackAndScheduleTimeout(
            resolver, nullptr, request_time, QueryType::kWebrtcDecoding);
@@ -1018,7 +1017,7 @@
  
        std::optional<webrtc::SdpAudioFormat> sdp_audio_format =
            config->hasAudio()
-@@ -898,11 +1350,27 @@
+@@ -898,11 +1349,27 @@
      // happens.
      DCHECK(false);
      DVLOG(2) << __func__ << " Could not get DecodingInfoHandler.";
@@ -1047,7 +1046,7 @@
    String audio_mime_str;
    String audio_codec_str;
    if (config->hasAudio()) {
-@@ -921,6 +1389,17 @@
+@@ -921,6 +1388,17 @@
      DCHECK(valid_content_type);
    }
  
@@ -1065,7 +1064,7 @@
    // MSE support is cheap to check (regex matching). Do it first. Also, note
    // that MSE support is not implied by EME support, so do it irrespective of
    // whether we have a KeySystem configuration.
-@@ -931,10 +1410,9 @@
+@@ -931,10 +1409,9 @@
           !CheckMseSupport(video_mime_str, video_codec_str))) {
        // Unsupported EME queries should resolve with a null
        // MediaKeySystemAccess.
@@ -1079,7 +1078,7 @@
      }
    }
  
-@@ -1163,6 +1641,107 @@
+@@ -1163,6 +1640,107 @@
    return promise;
  }
  
@@ -1187,7 +1186,7 @@
  bool MediaCapabilities::EnsurePerfHistoryService(
      ExecutionContext* execution_context) {
    if (decode_history_service_.is_bound())
-@@ -1353,6 +1932,15 @@
+@@ -1353,6 +1931,15 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
  
@@ -1203,7 +1202,7 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
-@@ -1374,8 +1962,9 @@
+@@ -1374,8 +1961,9 @@
  
    if (!decoding_config->hasVideo()) {
      // Audio-only is always smooth and power efficient.
@@ -1215,7 +1214,7 @@
      resolver->Resolve(info);
      return;
    }
-@@ -1393,13 +1982,16 @@
+@@ -1393,13 +1981,16 @@
    }
  
    if (!EnsurePerfHistoryService(execution_context)) {
@@ -1233,7 +1232,7 @@
  
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1520,7 +2112,8 @@
+@@ -1520,7 +2111,8 @@
  
    auto* info = MediaCapabilitiesDecodingInfo::Create();
    info->setSupported(true);
@@ -1243,7 +1242,7 @@
  
    if (UseGpuFactoriesForPowerEfficient(execution_context,
                                         pending_cb->key_system_access)) {
-@@ -1675,7 +2268,10 @@
+@@ -1675,7 +2267,10 @@
      pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(info);
    } else {
      CHECK_EQ(pending_cb->query_type, QueryType::kWebrtcDecoding);
@@ -1255,7 +1254,7 @@
      info->setSupported(is_supported);
      info->setPowerEfficient(is_power_efficient);
      info->setSmooth(is_smooth);
-@@ -1716,8 +2312,9 @@
+@@ -1716,8 +2311,9 @@
    }
  
    CHECK_EQ(pending_cb->query_type, QueryType::kDecoding);
