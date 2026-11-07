@@ -40,9 +40,9 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **35**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **36**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, several TS audio tracks, Media Source
-types and codecs, preload after a source change, rewinding plain files). Queued:
+types and codecs, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
@@ -295,8 +295,8 @@ fires none. **Fixed** f0178670.
 **HME-30. Preload once prepared to play.** WebKit's effective preload stays
 auto for every later load once the element was prepared to play
 (`HTMLMediaElement.cpp:2084-2101, 4021-4032`; `m_hasEverPreparedToPlay` is
-never reset). Parc's falls back to the attribute on the next `src`, so the next video
-starts slower. **In progress** (HME-30).
+never reset). Parc's fell back to the attribute on the next `src`, so the next video
+started slower. **Fixed** c301fd01.
 
 **HME-31. `timeupdate` on time jumps and cue boundaries.** WebKit fires one
 when the player reports a time change outside a seek
