@@ -45,9 +45,13 @@ On a page that presents Safari's identity:
   names no init data type, as that CDM does. Its capabilities read
   `contentType` as WebKit does: `video/mp4` or `audio/mp4` without codecs is
   supported, a type may also list the other kind's FairPlay codecs, and an
-  unparsable type skips only that capability. The HLS types
-  (`application/vnd.apple.mpegurl`, `application/x-mpegurl`) are taken as
-  MP4, since Parc's native HLS route plays them. As on macOS Safari,
+  unparsable type skips only that capability. AVFoundation judges each
+  capability's `contentType` first, as WebKit's FairPlay CDM asks
+  `isPlayableExtendedMIMEType` (the browser answers): for the HLS types
+  (`application/vnd.apple.mpegurl`, `application/x-mpegurl`) its answer
+  alone decides, since Parc's native HLS route plays what AVFoundation plays;
+  an MP4 type must also name codecs the FairPlay Renderer plays, so Media
+  Source is never offered what it can't play. As on macOS Safari,
   `persistent-license` listed beside `temporary` is granted (persistent state
   becomes required) and `createMediaKeys` then rejects with NotAllowedError,
   since FairPlay keeps no persistent licenses outside iOS; listed alone it is

@@ -79,7 +79,7 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `MediaSource.isTypeSupported`, `canPlayType` (MP4) | Safari's answers incl. Dolby | identity patch answers Dolby audio and DV profile 5 like Safari | present | fp-eme-caps |
 | `canPlayType('application/vnd.apple.mpegurl')` and HLS `<video src>` | "maybe"; AVPlayer plays it | "maybe"; Safari-identity pages play it through AVPlayer in the GPU process (NATIVE_HLS.md) | present | fp-native-hls |
 | `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_N'/'3_N', type)` | legacy MSE CDM: `keyrelease` (ignoring case), else MSE support | the same (`parc_webkit_media_keys.h`) | present | fp-safari-eme-surface |
-| `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | AVFoundation's type answers (`parc_webkit_media_keys.h`) | present | fp-safari-eme-surface |
+| `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | AVFoundation's answer, asked synchronously of the browser (`AVAssetMIMETypeCache::canDecodeType`: `parc_webkit_need_key.h`, `parc_video_toolbox_decoding.mm`) | present | fp-safari-eme-surface |
 | `WebKitMediaKeys.isTypeSupported('org.w3c.clearkey', 'application/x-mpegurl')` | true (HLS only) | true for no type or `application/x-mpegurl` | present | fp-safari-eme-surface |
 
 ## Media element timing (native HLS live and DVR)
@@ -256,7 +256,8 @@ supervisor first; **decision** ones are documented choices, kept.
 
 ### Capability answers
 
-- **Fixed lists where WebKit asks AVFoundation.** WebKit answers `requestMediaKeySystemAccess` through `isPlayableExtendedMIMEType` and the HLS key systems through `AVAssetMIMETypeCache`; Parc uses fixed lists: ALAC, FLAC, Opus and `video/mp2t` or `quicktime` containers are refused for FairPlay, and the legacy HLS list is one Mac's snapshot (`av01` yes even without AV1 hardware, `flac` no, `text/vtt` yes). **Supervisor** (AV1 for FairPlay is a decision).
+- **Fixed lists where WebKit asks AVFoundation.** WebKit answers `requestMediaKeySystemAccess` through `isPlayableExtendedMIMEType` and the HLS key systems through `AVAssetMIMETypeCache`; Parc used fixed lists, and the legacy HLS list was one Mac's snapshot (`av01` yes even without AV1 hardware). Now the browser answers from AVFoundation: the legacy `isTypeSupported('com.apple.fps'/'1_0', type)` asks it synchronously, as WebKit's is synchronous (eb9e67d9), and `requestMediaKeySystemAccess` asks it for each FairPlay capability before choosing: AVFoundation alone for the HLS types, AVFoundation and the FairPlay Renderer's codecs for MP4 (148d1a6a). Josh's November 6 rules stay (Dolby Vision offered as profile 5 only, AC-3/E-AC-3 policy). **Fixed.**
+- **FLAC, ALAC and Opus FairPlay audio in Media Source.** WebKit offers them where AVFoundation plays them; Parc's MP4 answer also needs the FairPlay Renderer, which doesn't play them yet, so they're refused for Media Source (native HLS takes them). **Open** (the renderer is being taught them; the answer follows).
 
 ### Claims
 
