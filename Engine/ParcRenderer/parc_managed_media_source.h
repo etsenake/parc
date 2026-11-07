@@ -3,7 +3,8 @@
 // (docs/fairplay-identity.md). Apple TV+ plays through Safari's
 // ManagedMediaSource, which Chromium doesn't have. This script, run in the main
 // world before the page's own scripts, adds it on top of Chromium's
-// MediaSource: a MediaSource subclass with `streaming`, `startstreaming` /
+// MediaSource: a MediaSource subclass with `quality` (always "high", as in
+// WebKit) and `onqualitychange`, `streaming`, `startstreaming` /
 // `endstreaming` and their handler attributes; SourceBuffers it creates are
 // ManagedSourceBuffers that fire `bufferedchange` (a BufferedChangeEvent with
 // addedRanges and removedRanges) whenever their buffered ranges change; static
@@ -709,6 +710,16 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       this.addEventListener('sourceended', () => evaluate(this), true);
       this.addEventListener('sourceclose', () => closed(this), true);
     }
+    // WebKit's ManagedMediaSource::quality answers "high" whatever the
+    // conditions, so it never changes and qualitychange never fires.
+    get quality() {
+      if (!sources.has(this)) {
+        throw new TypeError('Illegal invocation');
+      }
+      return 'high';
+    }
+    get onqualitychange() { return handlerOf(this, 'qualitychange'); }
+    set onqualitychange(value) { setHandler(this, 'qualitychange', value); }
     get streaming() {
       const state = sources.get(this);
       if (!state) {

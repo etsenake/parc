@@ -198,9 +198,11 @@ tested. So the main world of every Safari-identity document gets a
 `LocalWindowProxy::Initialize` next to the `userAgentData` removal.
 
 - `ManagedMediaSource` extends Chromium's `MediaSource`, so appends, MSE
-  parsing and FairPlay decryption are Chromium's. It adds `streaming`,
-  `startstreaming`/`endstreaming` with `onstartstreaming`/`onendstreaming`,
-  and a static `isTypeSupported` that answers like `MediaSource`'s.
+  parsing and FairPlay decryption are Chromium's. It adds `quality`, which
+  answers `"high"` as WebKit's always does (so `qualitychange` never fires),
+  and `onqualitychange`; `streaming`, `startstreaming`/`endstreaming` with
+  `onstartstreaming`/`onendstreaming`; and a static `isTypeSupported` that
+  answers like `MediaSource`'s, as WebKit's does.
 - Its SourceBuffers are `ManagedSourceBuffer`s that fire `bufferedchange`, a
   `BufferedChangeEvent` with `addedRanges` and `removedRanges` as
   `TimeRanges`, whenever their buffered ranges change. WebKit queues it while

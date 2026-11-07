@@ -192,6 +192,23 @@ function makeWorld(options = {}) {
   check(ManagedMediaSource.isTypeSupported('video/mp4; codecs="dvh1.05.01"'), 'isTypeSupported delegates');
   check(!ManagedMediaSource.isTypeSupported('video/x-unknown'), 'unsupported type');
   check(ManagedMediaSource.canConstructInDedicatedWorker === true, 'offered to workers, which get it too');
+  const managed = new ManagedMediaSource();
+  check(managed.quality === 'high', 'quality is "high", as WebKit answers');
+  let illegal = false;
+  try { Object.getOwnPropertyDescriptor(ManagedMediaSource.prototype, 'quality').get.call({}); }
+  catch (e) { illegal = e.name === 'TypeError'; }
+  check(illegal, 'quality on another object is an illegal invocation');
+  check(managed.onqualitychange === null, 'onqualitychange starts null');
+  let qualityEvents = 0;
+  managed.onqualitychange = () => ++qualityEvents;
+  managed.dispatchEvent(new context.Event('qualitychange'));
+  check(typeof managed.onqualitychange === 'function' && qualityEvents === 1, 'onqualitychange is an event handler');
+  check(Object.getOwnPropertyNames(ManagedMediaSource.prototype).slice(0, 6).join() ===
+        'constructor,quality,onqualitychange,streaming,onstartstreaming,onendstreaming',
+        'members in the order of WebKit\'s ManagedMediaSource.idl');
+  check(Object.getOwnPropertyDescriptor(ManagedMediaSource.prototype, 'quality').enumerable &&
+        Object.getOwnPropertyDescriptor(ManagedMediaSource.prototype, 'onqualitychange').enumerable,
+        'quality and onqualitychange are enumerable');
   let threw = false;
   try { new ManagedSourceBuffer(); } catch (e) { threw = e.name === 'TypeError'; }
   check(threw, 'ManagedSourceBuffer has no public constructor');
