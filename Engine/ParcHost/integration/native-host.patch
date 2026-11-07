@@ -38,7 +38,7 @@
      "//components/plugins/renderer",
      "//components/pref_registry",
      "//components/printing/browser",
-@@ -1097,6 +1107,84 @@
+@@ -1097,6 +1107,86 @@
  
    if (is_mac) {
      sources += includes_mac + [
@@ -99,6 +99,8 @@
 +      "libcef/browser/parc_native/native_media_controls.mm",
 +      "libcef/browser/parc_native/native_cast.h",
 +      "libcef/browser/parc_native/native_cast.mm",
++      "libcef/browser/parc_native/native_airplay.h",
++      "libcef/browser/parc_native/native_airplay.mm",
 +      "libcef/browser/parc_native/native_gmc_presentation.h",
 +      "libcef/browser/parc_native/native_gmc_presentation.mm",
 +      "libcef/browser/parc_native/native_tab_sharing.h",
@@ -123,7 +125,7 @@
        "libcef/browser/chrome/chrome_content_browser_client_cef_mac.mm",
        "libcef/browser/chrome/chrome_web_contents_view_delegate_cef_mac.mm",
        "libcef/browser/native/browser_platform_delegate_native_mac.h",
-@@ -1121,7 +1209,104 @@
+@@ -1121,7 +1211,109 @@
        "//chrome/app/chrome_main_mac.mm",
      ]
  
@@ -138,7 +140,12 @@
 +      "libcef/browser/parc_native:native_download_dialog_api",
 +    ]
 +
-+    frameworks = [ "AppKit.framework", "QuartzCore.framework" ]
++    frameworks = [
++      "AppKit.framework",
++      "AVFoundation.framework",
++      "AVKit.framework",
++      "QuartzCore.framework",
++    ]
 +
 +    deps += [
 +      "//chrome/browser/media/router:media_router_feature",
@@ -229,7 +236,7 @@
    } else {
      sources += [
        "libcef/browser/chrome/chrome_web_contents_view_delegate_cef.cc",
-@@ -2312,6 +2497,21 @@
+@@ -2312,6 +2504,21 @@
      output_path = "{{bundle_resources_dir}}/English.lproj"
    }
  

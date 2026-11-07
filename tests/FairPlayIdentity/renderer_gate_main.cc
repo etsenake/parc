@@ -4,9 +4,10 @@
 // (over a stand-in WTF::String in blink_stub/), the real script constants, and
 // the user agent Parc sends for Safari's identity. A Safari-identity document
 // gets ManagedMediaSource, WebKitMediaKeys, Safari's MediaKeys (no
-// getStatusForPolicy) and Safari's video presentation API; Chrome's identity
-// and other browsers' user agents get none of them. webkit_media_keys.mjs,
-// safari_media_keys.mjs and webkit_presentation.mjs run the scripts.
+// getStatusForPolicy), Safari's video presentation API and its AirPlay
+// availability event; Chrome's identity and other browsers' user agents get
+// none of them. webkit_media_keys.mjs, safari_media_keys.mjs,
+// webkit_presentation.mjs and webkit_playback_target.mjs run the scripts.
 // It also checks which EME init data types a document may name: FairPlay's
 // "sinf", "skd" and "mpts" only under Safari's identity, and that a Media Source
 // element there hears `encrypted` with "sinf" init data only, as in Safari;
@@ -20,6 +21,7 @@
 #include "parc_safari_identity.h"
 #include "parc_safari_media_keys.h"
 #include "parc_webkit_media_keys.h"
+#include "parc_webkit_playback_target.h"
 #include "parc_webkit_presentation.h"
 
 #include <algorithm>
@@ -49,7 +51,8 @@ std::vector<std::string> ScriptsFor(const std::string& user_agent) {
     for (const char* source :
          {blink::kParcManagedMediaSourceScript, blink::kParcWebKitMediaKeysScript,
           blink::kParcSafariMediaKeysScript,
-          blink::kParcWebKitPresentationScript}) {
+          blink::kParcWebKitPresentationScript,
+          blink::kParcWebKitPlaybackTargetScript}) {
       scripts.emplace_back(source);
     }
   }
@@ -106,7 +109,9 @@ int main() {
   for (const char* version : {"27.2", "26.0.1"}) {
     const std::vector<std::string> safari =
         ScriptsFor(parc::fairplay_identity::SafariUserAgent(version));
-    Check(safari.size() == 4, "a Safari-identity document gets all four scripts");
+    Check(safari.size() == 5, "a Safari-identity document gets all five scripts");
+    Check(Installs(safari, "WebKitPlaybackTargetAvailabilityEvent"),
+          "a Safari-identity document gets the AirPlay availability event");
     Check(Installs(safari, "WebKitMediaKeys"),
           "a Safari-identity document gets WebKitMediaKeys");
     Check(Installs(safari, "ManagedMediaSource"),

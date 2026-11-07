@@ -12,6 +12,19 @@ Snapshots carry the original WebContents, primary document, actual Profile (incl
 
 MediaSessionObserver notifications trigger the existing native-page update path. Each snapshot reads synchronous current MediaSession information; stale queued observer payloads are not replayed as current state. Commands call native Resume/Suspend, PreviousTrack/NextTrack, ToggleMicrophone/ToggleCamera, and WebContents tab mute. Native Hide only removes the control episode. The source renderer and its media objects stay intact.
 
+## AirPlay
+
+On Safari-identity pages whose video plays through the native HLS route
+(FairPlay HLS included), the row's transport ends with an AirPlay button
+(`airplayvideo`) once AirPlay devices are nearby
+([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#airplay)).
+Pressing it opens the system's AirPlay route list at the button: the same list
+Safari shows, since only Apple's AVKit services may list or choose AirPlay
+symbol, `PlaybackControlForeground`) with `HoverableButtonStyle` (radius 5,
+GrayA4 hover, GrayA5 pressed, `alwaysSelected` while the list is open, as the
+Connected tint it with the Space's contrasting hue (`maxContrastColor` on light
+button; the tooltip and label read "Playing on <device>". All row buttons now
+
 ## Volume adaptation
 
 

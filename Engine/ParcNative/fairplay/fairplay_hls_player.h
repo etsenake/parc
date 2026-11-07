@@ -161,6 +161,10 @@ class HlsPlayerClient {
   // playing and once more on stopping, from when the layer exists
   // (HlsPlayerLayer) on.
   virtual void OnVideoFrameCounts(uint32_t /*decoded*/, uint32_t /*dropped*/) {}
+  // Whether the player plays to the AirPlay device now: AVPlayer's
+  // externalPlaybackActive while it has the target's output context (WebKit's
+  // isCurrentPlaybackTargetWireless), reported on every change.
+  virtual void OnPlaybackTargetIsWirelessChange(bool /*wireless*/) {}
 
  protected:
   virtual ~HlsPlayerClient() = default;
@@ -244,6 +248,17 @@ class FairPlayHlsPlayer {
   // 1, true keeps pitch (Spectral), false lets it follow the rate
   // (Varispeed), WebKit's choice of audioTimePitchAlgorithm.
   void SetPreservesPitch(bool preserves_pitch);
+
+  // AirPlay, as WebKit's setWirelessPlaybackTarget and
+  // setShouldPlayToPlaybackTarget: |output_context_id| names the
+  // AVOutputContext of the browser's route picker (empty for none), and
+  // AVPlayer plays to it (its outputContext) only while |should_play|. Any
+  // time; a target set before the player exists applies when it is made.
+  void SetPlaybackTarget(const std::string& output_context_id, bool should_play);
+  // The element's x-webkit-airplay="deny" or disableRemotePlayback
+  // (setWirelessVideoPlaybackDisabled): AVPlayer's allowsExternalPlayback is
+  // the opposite. Any time.
+  void SetWirelessVideoPlaybackDisabled(bool disabled);
 
   // The media time of the item's timebase. Callable from any thread.
   double CurrentTime() const;

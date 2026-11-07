@@ -50,6 +50,14 @@ final class ActionButton: NSButton {
     var actionBlock: (() -> Void)?
     var onHover: ((Bool) -> Void)?
     var showsHoverFill = false
+    /// HoverableButtonStyle's `alwaysSelected` status: the hover fill stays on.
+    var showsSelectedFill = false {
+        didSet { if showsSelectedFill != oldValue { needsDisplay = true } }
+    }
+    /// The cell's image and title only; the hover fill and focus ring keep full strength.
+    var contentAlpha: CGFloat = 1 {
+        didSet { if contentAlpha != oldValue { needsDisplay = true } }
+    }
     private var hoverTracking: NSTrackingArea?
     private(set) var hovered = false {
         didSet {
@@ -176,12 +184,21 @@ final class ActionButton: NSButton {
             }
             return
         }
-        if showsHoverFill, hovered, isEnabled {
-            NSColor.labelColor.withAlphaComponent(0.08).setFill()
-            let mark = bounds.insetBy(dx: 2, dy: 2)
-            NSBezierPath(roundedRect: mark, xRadius: mark.height / 2, yRadius: mark.height / 2).fill()
+        if showsHoverFill, isEnabled, showsSelectedFill || hovered || isHighlighted {
+            //
+            //
+            // always-selected, GrayA5 pressed unless always-selected.
+            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let pressed = isHighlighted && !showsSelectedFill
+            NSColor(white: dark ? 1 : 0, alpha: dark ? (pressed ? 0.103 : 0.077) : (pressed ? 0.09 : 0.071)).setFill()
+            let side = min(24, bounds.width, bounds.height)
+            let plate = NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
+            NSBezierPath(roundedRect: plate, xRadius: 5, yRadius: 5).fill()
         }
+        guard contentAlpha < 1, let context = NSGraphicsContext.current?.cgContext else { super.draw(dirtyRect); return }
+        context.saveGState(); context.setAlpha(contentAlpha)
         super.draw(dirtyRect)
+        context.restoreGState()
     }
 }
 

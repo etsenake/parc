@@ -299,6 +299,7 @@ struct Client : fp::HlsPlayerClient {
     errors++;
   }
   void OnKeyRequest(const std::string& uri) override { key_uris.push_back(uri); }
+  void OnPlaybackTargetIsWirelessChange(bool wireless) override { wireless_changes.push_back(wireless); }
   void OnVideoFrameCounts(uint32_t decoded, uint32_t dropped) override {
     frames_decoded += decoded;
     frames_dropped += dropped;
@@ -323,6 +324,7 @@ struct Client : fp::HlsPlayerClient {
   int errors = 0;
   std::string error_message;
   std::vector<std::string> key_uris;
+  std::vector<bool> wireless_changes;
 };
 
 struct Rig {
@@ -1263,6 +1265,65 @@ void KeysLegacyOrder() {
   Check(plays, "protected HLS plays");
 }
 
+// AirPlay (WebKit's setWirelessPlaybackTarget / setShouldPlayToPlaybackTarget
+// / setWirelessVideoPlaybackDisabled). The browser names its route picker's
+// AVOutputContext by ID; the media server knows it, so the player finds it
+// from any process (the harness uses its own iTunes audio context, the one
+// WebKit's AVRoutePickerViewTargetPicker uses). With no device picked in it,
+// AVPlayer stays local and nothing reports wireless; that it becomes wireless
+// once a device is picked needs an AirPlay receiver.
+void AirPlay() {
+  std::printf("-- AirPlay target and disabled flag\n");
+  id context = [NSClassFromString(@"AVOutputContext") valueForKey:@"iTunesAudioContext"];
+  NSString* context_id = [context valueForKey:@"contextID"];
+  Check(context_id.length > 0, "this macOS has the AVOutputContext SPI (iTunes audio context)");
+  if (!context_id.length) {
+    return;
+  }
+  const std::string id_string = context_id.UTF8String;
+  Rig rig;
+  // Set before the player exists: applied when it is made.
+  OnOwner([&] { rig.player->SetPlaybackTarget(id_string, true); });
+  Check(rig.Load(Fake("media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/manifest.m3u8")).ok(), "Load");
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  Check(ready && rig.client.metadata, "metadata");
+  auto output_context_id = [&] {
+    NSString* result = nil;
+    OnOwner([&] { result = [[fp::HlsPlayerAVPlayer(rig.player->impl()) valueForKey:@"outputContext"] valueForKey:@"contextID"]; });
+    return result;
+  };
+  auto allows_external = [&] {
+    BOOL result = NO;
+    OnOwner([&] { result = fp::HlsPlayerAVPlayer(rig.player->impl()).allowsExternalPlayback; });
+    return result;
+  };
+  Check([output_context_id() isEqualToString:context_id], "a target set before the player is on it once made");
+  Check(allows_external(), "external playback allowed by default (WebKit's m_allowsWirelessVideoPlayback)");
+  OnOwner([&] { rig.player->SetRate(1); });
+  Check(WaitFor([&] { return rig.Time() > 2; }, 20), "plays locally while the context has no device");
+  Check(rig.client.wireless_changes.empty(), "not wireless without a device: nothing reported");
+  OnOwner([&] { rig.player->SetPlaybackTarget(id_string, false); });
+  // Once ours is off, AVPlayer answers a default context of its own.
+  auto ours = [&] { return [output_context_id() isEqualToString:context_id]; };
+  Check(!ours(), "should-play off takes the context off the player");
+  OnOwner([&] { rig.player->SetPlaybackTarget(id_string, true); });
+  Check([output_context_id() isEqualToString:context_id], "and on again");
+  OnOwner([&] { rig.player->SetPlaybackTarget("00000000-0000-0000-0000-000000000000", true); });
+  // Not the context-less object outputContextForID answers for it.
+  Check(!ours() && output_context_id().length > 0, "an ID the media server doesn't know plays locally");
+  OnOwner([&] { rig.player->SetPlaybackTarget("", true); });
+  OnOwner([&] { rig.player->SetPlaybackTarget(id_string, true); });
+  OnOwner([&] { rig.player->SetPlaybackTarget("", true); });
+  Check(!ours(), "no target: the context comes off");
+  OnOwner([&] { rig.player->SetWirelessVideoPlaybackDisabled(true); });
+  Check(!allows_external(), "disabled (x-webkit-airplay=deny): allowsExternalPlayback NO");
+  OnOwner([&] { rig.player->SetWirelessVideoPlaybackDisabled(false); });
+  Check(allows_external(), "enabled again");
+  double before = rig.Time();
+  Check(WaitFor([&] { return rig.Time() > before + 1; }, 10), "still playing after the target changes");
+  Check(rig.client.errors == 0 && rig.client.wireless_changes.empty(), "no error, never wireless");
+}
+
 void Teardown() {
   std::printf("-- teardown with loads in flight\n");
   {
@@ -1289,7 +1350,7 @@ int main(int argc, char** argv) {
         {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
         {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},
-        {"keys-legacy-order", KeysLegacyOrder}};
+        {"keys-legacy-order", KeysLegacyOrder}, {"airplay", AirPlay}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

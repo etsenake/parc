@@ -139,6 +139,11 @@ NativeHlsDemuxer::NativeHlsDemuxer(
       ready_state_cb_(std::move(params.ready_state_cb)),
       media_types_cb_(std::move(params.media_types_cb)),
       time_jumped_cb_(std::move(params.time_jumped_cb)),
+      wireless_cb_(std::move(params.wireless_cb)),
+      playback_target_id_(std::move(params.playback_target_id)),
+      should_play_to_playback_target_(params.should_play_to_playback_target),
+      wireless_video_playback_disabled_(
+          params.wireless_video_playback_disabled),
       start_load_cb_(std::move(params.start_load_cb)),
       track_manager_(std::move(params.track_manager)),
       pending_player_(std::move(player)),
@@ -200,6 +205,12 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
     SendCdm(context, std::move(offer));
   }
 
+  // Before Initialize, so the player AVFoundation makes has them.
+  player_->SetPlaybackTarget(playback_target_id_,
+                             should_play_to_playback_target_);
+  if (wireless_video_playback_disabled_) {
+    player_->SetWirelessVideoPlaybackDisabled(true);
+  }
   // The answer is OnInitialized, on the client's pipe, after any OnError
   // about the item.
   player_->Initialize(url_, mime_type_, video_layer_size_, video_layer_scale_);
@@ -316,6 +327,25 @@ void NativeHlsDemuxer::ParcPrepareToPlay() {
                        }
                      },
                      weak_this_));
+}
+
+void NativeHlsDemuxer::ParcSetPlaybackTarget(
+    const std::string& output_context_id,
+    bool should_play) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  playback_target_id_ = output_context_id;
+  should_play_to_playback_target_ = should_play;
+  if (player_.is_bound()) {
+    player_->SetPlaybackTarget(output_context_id, should_play);
+  }
+}
+
+void NativeHlsDemuxer::ParcSetWirelessVideoPlaybackDisabled(bool disabled) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  wireless_video_playback_disabled_ = disabled;
+  if (player_.is_bound()) {
+    player_->SetWirelessVideoPlaybackDisabled(disabled);
+  }
 }
 
 void NativeHlsDemuxer::ParcSetFastSeek(base::TimeDelta target,
@@ -1006,6 +1036,13 @@ void NativeHlsDemuxer::OnWaiting(media::WaitingReason reason) {
   // made later hears it when it attaches.
   if (client_) {
     client_->OnSourceWaiting(reason);
+  }
+}
+
+void NativeHlsDemuxer::OnPlaybackTargetIsWirelessChanged(bool wireless) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (wireless_cb_ && !stopped_) {
+    wireless_cb_.Run(wireless);
   }
 }
 

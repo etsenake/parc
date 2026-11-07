@@ -917,6 +917,14 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(seen.length === 1 && seen[0] === event, 'dispatched at the element');
   check(hook({}, new Uint8Array(1), 'skd') === null && hook(audio, [1], 'skd') === null &&
         hook(audio) === null, 'only a media element and a Uint8Array');
+  // A page giving the class another parent can't choose the trusted event.
+  const NeededEvent = world.WebKitMediaKeyNeededEvent;
+  const parent = Object.getPrototypeOf(NeededEvent);
+  Object.setPrototypeOf(NeededEvent, function() { return new world.Event('click', {bubbles: true}); });
+  const guarded = hook(audio, new Uint8Array(layout), 'skd');
+  check(guarded instanceof NeededEvent && guarded.type === 'webkitneedkey' && !guarded.bubbles &&
+        Buffer.from(guarded.initData).equals(layout), "the hook's event ignores a replaced parent class");
+  Object.setPrototypeOf(NeededEvent, parent);
   // Changing the event's initData doesn't change what 2_N keys use, and
   // only Media Source init data reaches them.
   const video = new world.HTMLMediaElement();

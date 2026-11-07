@@ -139,7 +139,7 @@ WebKit: `Modules/mediasource/ManagedMediaSource.*`, `ManagedSourceBuffer.*`,
 | `ManagedSourceBuffer` `bufferedchange`, `onbufferedchange`, `BufferedChangeEvent` | present (WebKit's timing: inside the operation, before `update`/`updateend`, with `updating` true and its guards; other changes as tasks) | fp-mms-presentation |
 | Dedicated workers, `handle`, `canConstructInDedicatedWorker` | present | fp-mms-presentation |
 | `src`/`<source>`/`srcObject` attachment | present | fp-mms-presentation |
-| Opening without `disableRemotePlayback` or an AirPlay source (`ManagedMediaSourceNeedsAirPlay`, on in Safari for macOS) | present: Parc opens at once, as WebKit built without wireless playback targets does (`deferredMediaSourceOpenCanProgress`); AirPlay is cut | fp-mms-presentation |
+| Opening without `disableRemotePlayback` or an AirPlay source (`ManagedMediaSourceNeedsAirPlay`, on in Safari for macOS) | present: Parc opens at once, as WebKit built without wireless playback targets does (`deferredMediaSourceOpenCanProgress`); Parc's Media Source plays to no AirPlay device, so nothing waits for one | fp-mms-presentation |
 | Memory-pressure purge (`SourceBuffer::memoryPressure`: active SourceBuffers keep the playback window, inactive ones empty; `bufferedchange` and `startstreaming` follow) | present (engine purge with WebKit's windows, gap tolerances and ended-source behaviour; for a multi-track SourceBuffer WebKit's keyframe choice depends on its hash-map order, Parc takes the earliest) | fp-mms-presentation |
 
 ## Presentation and fullscreen
@@ -163,7 +163,7 @@ Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's panel
 | `disablePictureInPicture` | reflected only; never checked, so PiP (standard or webkit) still enters and setting it leaves PiP alone | same (Chromium's PiP controller and video element skip it on Safari-identity documents) | present | fp-presentation |
 | Protected picture in PiP/fullscreen | AVSampleBufferDisplayLayer moves | the compositor places the protected layer at any render-pass depth, in the PiP window and fullscreen as inline | present | fp-compositor-groups |
 | `webkitDecodedFrameCount`/`webkitDroppedFrameCount`, `getVideoPlaybackQuality` | decoder counts | the FairPlay renderer and the native HLS player report decoded and dropped frames | present | fp-frame-stats |
-| AirPlay (`webkitShowPlaybackTargetPicker`, `webkitCurrentPlaybackTargetIsWireless`, `webkitWirelessVideoPlaybackDisabled`, `WebKitPlaybackTargetAvailabilityEvent`) | AVFoundation routes | absent; players feature-detect it and hide AirPlay | decision: casting, not playback; default left absent | fp-mms-presentation |
+| AirPlay (`webkitShowPlaybackTargetPicker`, `webkitCurrentPlaybackTargetIsWireless`, `webkitplaybacktargetavailabilitychanged` with `WebKitPlaybackTargetAvailabilityEvent`, `webkitcurrentplaybacktargetiswirelesschanged`, `x-webkit-airplay="deny"`, `disableRemotePlayback`) | AVFoundation routes: the system route list, then AVPlayer plays to the chosen AVOutputContext (FairPlay HLS included); Media Source plays to none | present for native HLS (AVPlayer `outputContext`, the system route list from the page or the Mini Player; [NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#airplay)); `webkitWirelessVideoPlaybackDisabled`, `RemotePlayback` as AirPlay and the in-page controls' AirPlay button absent; playback on a real Apple TV unchecked | AIRPLAY-1 (Josh approved November 7) |
 
 ## Native HLS audio and text tracks
 

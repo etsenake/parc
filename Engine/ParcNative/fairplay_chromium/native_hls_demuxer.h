@@ -173,6 +173,11 @@ class NativeHlsDemuxer final : public media::Demuxer,
   std::optional<ParcNativeTimeline> GetParcNativeTimeline() const override;
   void ParcProvideClearKey(const std::string& key_id,
                            const std::vector<uint8_t>& key) override;
+  // AirPlay: kept for the player and sent before Initialize, or at once
+  // when it is bound.
+  void ParcSetPlaybackTarget(const std::string& output_context_id,
+                             bool should_play) override;
+  void ParcSetWirelessVideoPlaybackDisabled(bool disabled) override;
 
   // NativeHlsSource.
   void SetClient(NativeHlsSource::Client* client) override;
@@ -220,6 +225,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
                    const std::vector<uint8_t>& init_data) override;
   void OnKeyRequest(const std::string& key_uri) override;
   void OnWaiting(media::WaitingReason reason) override;
+  void OnPlaybackTargetIsWirelessChanged(bool wireless) override;
   void OnEnded() override;
   void OnError(const media::PipelineStatus& status,
                const std::string& message) override;
@@ -286,6 +292,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
       ready_state_cb_;
   const base::RepeatingCallback<void(bool, bool)> media_types_cb_;
   const base::RepeatingClosure time_jumped_cb_;
+  const base::RepeatingCallback<void(bool)> wireless_cb_;
+  std::string playback_target_id_;
+  bool should_play_to_playback_target_;
+  bool wireless_video_playback_disabled_;
   const StartLoadCallback start_load_cb_;
   // The element's tracks; posts to the main thread. Null in unit tests.
   const std::unique_ptr<media::TrackManager> track_manager_;

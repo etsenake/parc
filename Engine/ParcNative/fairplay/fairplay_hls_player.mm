@@ -45,6 +45,18 @@ using parc::fairplay::PostTask;
 // AVFoundation SPI WebKit declares in AVFoundationSPI.h: the resource loader's
 // URL session, and the delegate and queue AVFoundation wants that session to
 // report to.
+// AirPlay SPI WebKit declares in AVFoundationSPI.h: the AVOutputContext a
+// player plays to, found here by the ID the browser's context has (the
+// context lives in the media server, so any process can name it).
+@interface AVPlayer (ParcOutputContext)
+@property(nonatomic, retain) id outputContext;
+@end
+
+@interface NSObject (ParcOutputContext)
++ (id)outputContextForID:(NSString*)contextID;
+@property(nonatomic, readonly) NSString* contextID;
+@end
+
 @interface AVAssetResourceLoader (ParcClientURLLoading)
 @property(nonatomic, readonly) id<NSURLSessionDataDelegate> URLSessionDataDelegate;
 @property(nonatomic, readonly) NSOperationQueue* URLSessionDataDelegateQueue;
@@ -299,6 +311,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     key_requests_.clear();
     [player_ pause];
     [player_ replaceCurrentItemWithPlayerItem:nil];
+    if ([player_ respondsToSelector:@selector(setOutputContext:)]) {
+      player_.outputContext = nil;
+    }
     [asset_.resourceLoader setDelegate:nil queue:nil];
     [asset_ cancelLoading];
     [player_layer_ parcDetachPlayer];
@@ -514,17 +529,19 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     // that size with the player, then the item, before AVFoundation picks a
     // variant (fairplay_hls_player_layer.h).
     player_ = [[AVPlayer alloc] init];
-    // WebKit's settings: the page picks media options, and there's no AirPlay
-    // route from here. Display sleep is Chromium's wake lock for playing
-    // video (WebKit on macOS leaves AVPlayer's default and holds its own
-    // sleep disabler, HTMLMediaElement::updateSleepDisabling).
+    // WebKit's settings: the page picks media options. Display sleep is
+    // Chromium's wake lock for playing video (WebKit on macOS leaves
+    // AVPlayer's default and holds its own sleep disabler,
+    // HTMLMediaElement::updateSleepDisabling).
     player_.appliesMediaSelectionCriteriaAutomatically = NO;
     player_.preventsDisplaySleepDuringVideoPlayback = NO;
-    player_.allowsExternalPlayback = NO;
+    player_.allowsExternalPlayback = !wireless_video_disabled_;
     player_.volume = volume_;
     player_.muted = muted_;
     observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
     [observer_ observePlayer:player_ item:item_];
+    // createAVPlayer's pending setShouldPlayToPlaybackTarget(true).
+    ApplyOutputContext();
     if (layer_width_ > 0 && layer_height_ > 0 && layer_scale_ > 0) {
       [PlayerLayer() parcStageWithSize:CGSizeMake(layer_width_, layer_height_) scale:layer_scale_];
     }
@@ -750,6 +767,62 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   void SetPreservesPitch(bool preserves_pitch) {
     preserves_pitch_ = preserves_pitch;
     UpdatePitchAlgorithm();
+  }
+
+  void SetPlaybackTarget(const std::string& output_context_id, bool should_play) {
+    if (shut_down_) {
+      return;
+    }
+    if (output_context_id != target_id_) {
+      target_id_ = output_context_id;
+      target_context_ = nil;
+      Class context_class = NSClassFromString(@"AVOutputContext");
+      NSString* ns_id = NSStringOrNil(output_context_id);
+      if (ns_id.length && [context_class respondsToSelector:@selector(outputContextForID:)]) {
+        id context = [context_class outputContextForID:ns_id];
+        // An ID the media server doesn't know gives a context without one.
+        if ([context respondsToSelector:@selector(contextID)] && [[context contextID] isEqualToString:ns_id]) {
+          target_context_ = context;
+        }
+      }
+    }
+    should_play_to_target_ = should_play;
+    ApplyOutputContext();
+    OnExternalPlayback();
+  }
+
+  void SetWirelessVideoPlaybackDisabled(bool disabled) {
+    wireless_video_disabled_ = disabled;
+    if (!shut_down_ && player_) {
+      player_.allowsExternalPlayback = !disabled;
+    }
+  }
+
+  // setShouldPlayToPlaybackTarget for an AVOutputContext target.
+  void ApplyOutputContext() {
+    if (shut_down_ || !player_ || ![player_ respondsToSelector:@selector(setOutputContext:)]) {
+      return;
+    }
+    id context = should_play_to_target_ ? target_context_ : nil;
+    id current = player_.outputContext;
+    if ((!context && !current) || [current isEqual:context]) {
+      return;
+    }
+    player_.outputContext = context;
+  }
+
+  // isCurrentPlaybackTargetWireless: AVPlayer's externalPlaybackActive while
+  // the element has a target, resolved or not. KVO of externalPlaybackActive and allowsExternalPlayback
+  // brings it here, as WebKit's playbackTargetIsWirelessDidChange.
+  void OnExternalPlayback() {
+    if (shut_down_) {
+      return;
+    }
+    bool wireless = !target_id_.empty() && player_ && player_.externalPlaybackActive;
+    if (wireless != wireless_) {
+      wireless_ = wireless;
+      client_->OnPlaybackTargetIsWirelessChange(wireless);
+    }
   }
 
   // MediaSessionManagerCocoa::audioTimePitchAlgorithmForMediaPlayerPitchCorrectionAlgorithm.
@@ -1528,6 +1601,14 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   double rate_ = 0;
   float volume_ = 1;
   bool muted_ = false;
+  // SetPlaybackTarget: the browser's context ID, the context it names (nil
+  // when none or unknown), and whether to play to it.
+  std::string target_id_;
+  id target_context_ = nil;
+  bool should_play_to_target_ = false;
+  bool wireless_video_disabled_ = false;
+  // Last reported to OnPlaybackTargetIsWirelessChange.
+  bool wireless_ = false;
   bool preserves_pitch_ = true;
   bool output_obscured_ = false;
   bool started_ = false;
@@ -1940,6 +2021,7 @@ static void* const kItemSeekable = (void*)&kItemSeekable;
 static void* const kItemDuration = (void*)&kItemDuration;
 static void* const kItemSize = (void*)&kItemSize;
 static void* const kPlayerObscured = (void*)&kPlayerObscured;
+static void* const kPlayerExternal = (void*)&kPlayerExternal;
 static void* const kLayerReady = (void*)&kLayerReady;
 static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
 
@@ -1971,6 +2053,9 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
            forKeyPath:@"outputObscuredDueToInsufficientExternalProtection"
               options:0
               context:kPlayerObscured];
+  for (NSString* key in @[ @"externalPlaybackActive", @"allowsExternalPlayback" ]) {
+    [player addObserver:self forKeyPath:key options:0 context:kPlayerExternal];
+  }
   // The values each notification carries, as WebKit observes them: the
   // buffering keys with their prior notifications too.
   [item addObserver:self
@@ -2043,6 +2128,9 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
   [_player removeObserver:self
                forKeyPath:@"outputObscuredDueToInsufficientExternalProtection"
                   context:kPlayerObscured];
+  for (NSString* key in @[ @"externalPlaybackActive", @"allowsExternalPlayback" ]) {
+    [_player removeObserver:self forKeyPath:key context:kPlayerExternal];
+  }
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   _item = nil;
   _player = nil;
@@ -2105,6 +2193,8 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
     [self post:&FairPlayHlsPlayer::Impl::OnMediaTypes];
   } else if (context == kPlayerObscured) {
     [self post:&FairPlayHlsPlayer::Impl::OnOutputObscured];
+  } else if (context == kPlayerExternal) {
+    [self post:&FairPlayHlsPlayer::Impl::OnExternalPlayback];
   } else if (context == kLayerReady) {
     bool ready = newValue ? [newValue boolValue] : static_cast<AVPlayerLayer*>(object).readyForDisplay;
     (*_poster)([weak, ready] {
@@ -2217,6 +2307,14 @@ void FairPlayHlsPlayer::SetVolume(float volume) {
 
 void FairPlayHlsPlayer::SetMuted(bool muted) {
   impl_->SetMuted(muted);
+}
+
+void FairPlayHlsPlayer::SetPlaybackTarget(const std::string& output_context_id, bool should_play) {
+  impl_->SetPlaybackTarget(output_context_id, should_play);
+}
+
+void FairPlayHlsPlayer::SetWirelessVideoPlaybackDisabled(bool disabled) {
+  impl_->SetWirelessVideoPlaybackDisabled(disabled);
 }
 
 void FairPlayHlsPlayer::SetPreservesPitch(bool preserves_pitch) {

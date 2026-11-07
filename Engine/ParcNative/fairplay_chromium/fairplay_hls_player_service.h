@@ -121,6 +121,9 @@ class FairPlayHlsPlayerService final
                         mojom::FairPlayHlsTextTrackMode mode) override;
   void Suspend() override;
   void Resume() override;
+  void SetPlaybackTarget(const std::string& output_context_id,
+                         bool should_play) override;
+  void SetWirelessVideoPlaybackDisabled(bool disabled) override;
 
   // parc::fairplay::HlsPlayerClient:
   void OnMetadata(const parc::fairplay::HlsMetadata& metadata) override;
@@ -140,6 +143,7 @@ class FairPlayHlsPlayerService final
                const std::string& message) override;
   void OnKeyRequest(const std::string& uri) override;
   void OnOutputObscuredChange(bool obscured) override;
+  void OnPlaybackTargetIsWirelessChange(bool wireless) override;
   void OnVideoFrameCounts(uint32_t decoded, uint32_t dropped) override;
 
   // parc::fairplay::HlsLoader:
@@ -205,6 +209,11 @@ class FairPlayHlsPlayerService final
 
   float volume_ = 1;
   bool preserves_pitch_ = true;
+  // SetPlaybackTarget and SetWirelessVideoPlaybackDisabled, for the player
+  // Initialize makes.
+  std::string playback_target_id_;
+  bool should_play_to_target_ = false;
+  bool wireless_video_disabled_ = false;
   bool page_muted_ = false;
   bool tab_muted_ = false;
   bool awaiting_mute_state_ = false;

@@ -616,7 +616,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   reports an unsupported source rather than letting AVFoundation fetch. The
   sandbox denies the caption-preferences service (`mediaaccessibilityd`), so
   whether caption styling follows the system settings is unchecked. AirPlay
-  is cut, as for the MSE route.
+  plays it to the device the system's route list picks
+  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#airplay));
+  the MSE route plays to none, as Safari's Media Source player.
 - A Safari site embedded by a page on another site keeps Chrome's identity
   (see the subframe rule above).
 - The lists are a preference, not site data: clearing a site's data leaves
@@ -643,7 +645,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - A managed source opens without `disableRemotePlayback` or an AirPlay
   source. Safari for macOS defers `sourceopen` until one is present
   (`ManagedMediaSourceNeedsAirPlay`); WebKit built without wireless playback
-  targets opens at once, as Parc does with AirPlay cut.
+  targets opens at once, as Parc does: its Media Source plays to no AirPlay
+  device.
 - `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
   WebKit's engine policy (below). It is visible to a page that inspects it,
   for example through `Function.prototype.toString`. Isolated worlds and

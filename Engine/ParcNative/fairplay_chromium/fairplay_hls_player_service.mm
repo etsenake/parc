@@ -14,6 +14,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/uuid.h"
 #include "media/base/audio_codecs.h"
 #include "media/base/buffering_state.h"
 #include "media/base/cdm_context.h"
@@ -438,6 +439,8 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
   player_ = std::make_unique<fp::FairPlayHlsPlayer>(this, this, post_task);
   player_->SetVolume(volume_);
   player_->SetPreservesPitch(preserves_pitch_);
+  player_->SetPlaybackTarget(playback_target_id_, should_play_to_target_);
+  player_->SetWirelessVideoPlaybackDisabled(wireless_video_disabled_);
   if (rate_ != 0) {
     player_->SetRate(rate_);
   }
@@ -641,6 +644,31 @@ void FairPlayHlsPlayerService::SetTextTrackMode(
   }
 }
 
+void FairPlayHlsPlayerService::SetPlaybackTarget(
+    const std::string& output_context_id,
+    bool should_play) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // The browser names its context by its UUID; nothing else reaches
+  // AVFoundation.
+  playback_target_id_ =
+      base::Uuid::ParseCaseInsensitive(output_context_id).is_valid()
+          ? output_context_id
+          : std::string();
+  should_play_to_target_ = should_play;
+  if (player_) {
+    player_->SetPlaybackTarget(playback_target_id_, should_play);
+  }
+}
+
+void FairPlayHlsPlayerService::SetWirelessVideoPlaybackDisabled(
+    bool disabled) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  wireless_video_disabled_ = disabled;
+  if (player_) {
+    player_->SetWirelessVideoPlaybackDisabled(disabled);
+  }
+}
+
 // WebKit's AVFoundation player has no suspended-loading state: AVPlayer
 // keeps managing its own buffer, as in Safari.
 void FairPlayHlsPlayerService::Suspend() {}
@@ -838,6 +866,22 @@ void FairPlayHlsPlayerService::OnKeyRequest(const std::string& uri) {
     return;
   }
   player_->FailKeyRequests(uri, "no key source for this scheme");
+}
+
+void FairPlayHlsPlayerService::OnPlaybackTargetIsWirelessChange(
+    bool wireless) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!initialized_) {
+    pending_client_calls_.push_back(base::BindOnce(
+        [](base::WeakPtr<FairPlayHlsPlayerService> service, bool wireless) {
+          if (service) {
+            service->client_->OnPlaybackTargetIsWirelessChanged(wireless);
+          }
+        },
+        weak_factory_.GetWeakPtr(), wireless));
+    return;
+  }
+  client_->OnPlaybackTargetIsWirelessChanged(wireless);
 }
 
 void FairPlayHlsPlayerService::OnOutputObscuredChange(bool obscured) {

@@ -81,8 +81,9 @@ final class MiniPlayerDeck: NSView {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-                self.motion.settle()
+                guard let self else { return }
+                if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { self.motion.settle() }
+                self.rows.values.forEach { $0.updateAirPlayMotion() }
             }
         }
     }
@@ -314,6 +315,10 @@ private final class MiniPlayerRow: NSView {
     private let mute = ActionButton("Mute Tab", symbol: "speaker.slash")
     private let microphone = ActionButton("Microphone", symbol: "mic.fill")
     private let camera = ActionButton("Camera", symbol: "video.fill")
+    private let airPlay = ActionButton("AirPlay", symbol: "airplayvideo")
+    private var airPlayListOpen = false
+    private let airPlayPulse = ViewDisplayFrameDriver()
+    private var airPlayPulseStart: CFTimeInterval = 0
     private let volume = MiniPlayerVolumeSlider(value: 1, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let volumeValue = NSTextField(labelWithString: "100%")
     private let unavailable = NSTextField(labelWithString: "")
@@ -356,6 +361,7 @@ private final class MiniPlayerRow: NSView {
         next.actionBlock = { [weak self] in self?.perform(.nextTrack) }
         microphone.actionBlock = { [weak self] in self?.perform(.toggleMicrophone) }
         camera.actionBlock = { [weak self] in self?.perform(.toggleCamera) }
+        airPlay.actionBlock = { [weak self] in self?.showAirPlayPicker() }
         mute.actionBlock = { [weak self] in self?.perform(.toggleMuted) }
         volumeButton.actionBlock = { [weak self] in
             guard let self, self.isCurrent, let item = self.item else { return }
@@ -377,8 +383,8 @@ private final class MiniPlayerRow: NSView {
         volumeValue.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
         volumeValue.isHidden = true
         unavailable.font = .systemFont(ofSize: 10); unavailable.lineBreakMode = .byTruncatingTail
-        for view in [title, titleArtwork, marquee, pip, close, play, previous, next, volumeButton, mute, microphone, camera, volume, volumeValue, unavailable] { addSubview(view) }
-        for button in [pip, close, play, previous, next, volumeButton, mute, microphone, camera] {
+        for view in [title, titleArtwork, marquee, pip, close, play, previous, next, volumeButton, airPlay, mute, microphone, camera, volume, volumeValue, unavailable] { addSubview(view) }
+        for button in [pip, close, play, previous, next, volumeButton, airPlay, mute, microphone, camera] {
             LiveShortcutToolTip.set(button, button.title)
             SidebarAccessibility.label(button, button.title)
             button.title = ""; button.imagePosition = .imageOnly
@@ -395,7 +401,8 @@ private final class MiniPlayerRow: NSView {
     private var keyCapabilities: [Bool] {
         guard let state = item?.state else { return [] }
         return [state.canPlayPause, state.hasPreviousTrack, state.hasNextTrack,
-                state.canToggleCamera, state.canToggleMicrophone, state.canSetVolume]
+                state.canToggleCamera, state.canToggleMicrophone, state.canSetVolume,
+                state.airPlayState != .unavailable]
     }
     func update(_ item: MiniPlayerItem) {
         let previousCapabilities = keyCapabilities
@@ -428,6 +435,7 @@ private final class MiniPlayerRow: NSView {
         }
         updateVolumeAccessibility()
         updatePresentationVisibility()
+        updateAirPlay()
         needsLayout = true
         if previousCapabilities != keyCapabilities { onKeyViewsChanged?() }
     }
@@ -440,6 +448,61 @@ private final class MiniPlayerRow: NSView {
     private func updateVolumeAccessibility() {
         volumeButton.setAccessibilityExpanded(showsVolumeDrawer)
         volumeButton.cell?.setAccessibilityExpanded(showsVolumeDrawer)
+        // MiniPlayerView gives the volume button HoverableButtonStyle's
+        //
+        volumeButton.showsSelectedFill = showsVolumeDrawer
+    }
+    private func updateAirPlay() {
+        guard let state = item?.state else { return }
+        let device = state.airPlayDeviceName.flatMap { $0.isEmpty ? nil : $0 }
+        let connected = state.airPlayState == .connected, connecting = state.airPlayState == .connecting
+        if connected { name(airPlay, device.map { "Playing on \($0)" } ?? "AirPlay") }
+        else if connecting { name(airPlay, device.map { "Connecting to \($0)" } ?? "AirPlay") }
+        else { name(airPlay, "AirPlay") }
+        let value: String? = connected ? "Connected" : connecting ? "Connecting" : nil
+        airPlay.setAccessibilityValue(value); airPlay.cell?.setAccessibilityValue(value)
+        airPlay.setAccessibilitySelected(connected); airPlay.cell?.setAccessibilitySelected(connected)
+        airPlay.showsSelectedFill = airPlayListOpen
+        airPlay.contentTintColor = connected || connecting ? airPlayActiveColor : (palette?.title ?? .labelColor)
+        updateAirPlayMotion()
+    }
+    /// The theme's own hue in the luminance band farthest from the card:
+    /// maxContrastColor (0 to 0.1) on light themes and foregroundSecondary
+    /// (0.3 to 0.5) on dark ones. Either stays legible on backgroundExtra
+    /// and distinct from the title-coloured neighbours.
+    private var airPlayActiveColor: NSColor {
+        guard let palette else { return .controlAccentColor }
+        return palette.isDark ? palette.foregroundSecondary : palette.maxContrastColor
+    }
+    /// Connecting pulses the glyph alone, drawn by the button's own cell, so
+    /// its fill and focus ring stay put. Reduce Motion leaves it at 1, as
+    ///
+    func updateAirPlayMotion() {
+        let pulses = item?.state.airPlayState == .connecting && window != nil && !airPlay.isHidden
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard pulses else { airPlayPulse.stop(); airPlay.contentAlpha = 1; return }
+        guard !airPlayPulse.isRunning else { return }
+        airPlayPulseStart = CACurrentMediaTime()
+        airPlayPulse.start(in: airPlay) { [weak self] in
+            guard let self else { return false }
+            self.airPlay.contentAlpha = MiniPlayerMotion.connectingOpacity(at: CACurrentMediaTime() - self.airPlayPulseStart)
+            return true
+        }
+    }
+    private func showAirPlayPicker() {
+        guard !airPlayListOpen else { return }
+        guard isCurrent, let item, let host = item.host.window, host === window else { failure(); return }
+        airPlayListOpen = true
+        updateAirPlay()
+        let shown = item.page.showAirPlayPicker(for: item.state, relativeTo: airPlay.bounds, of: airPlay, in: host) { [weak self] in
+            self?.airPlayListOpen = false
+            self?.updateAirPlay()
+        }
+        if !shown {
+            airPlayListOpen = false
+            updateAirPlay()
+            failure()
+        }
     }
     private func setVolumeHover(_ hovering: Bool) {
         volumeHoverOff?.cancel(); volumeHoverOff = nil
@@ -516,6 +579,7 @@ private final class MiniPlayerRow: NSView {
         }
     }
     override func mouseDown(with event: NSEvent) { reveal() }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateAirPlayMotion() }
     override func becomeFirstResponder() -> Bool { if !restoringVolumeFocus { onFocus?() }; return super.becomeFirstResponder() }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 9, yRadius: 9).fill() }
@@ -551,7 +615,9 @@ private final class MiniPlayerRow: NSView {
         camera.isHidden = !frontCard || !state.canToggleCamera
         mute.isHidden = true
         volumeButton.isHidden = !frontCard || !state.canSetVolume
+        airPlay.isHidden = !frontCard || state.airPlayState == .unavailable
         marquee.scrollingEnabled = frontCard && deckExpanded
+        updateAirPlayMotion()
     }
     override func layout() {
         super.layout()
@@ -561,7 +627,7 @@ private final class MiniPlayerRow: NSView {
         pip.frame = NSRect(x: bounds.width - 54, y: 4, width: 23, height: 24)
         close.frame = NSRect(x: bounds.width - 29, y: 4, width: 23, height: 24)
         let transportY = chrome
-        let controls = [previous, play, next, microphone, camera, volumeButton].filter { !$0.isHidden }
+        let controls = [previous, play, next, microphone, camera, volumeButton, airPlay].filter { !$0.isHidden }
         let slots = CGFloat(controls.count + (titleArtwork.isHidden ? 0 : 1))
         let available = max(0, bounds.width - 8)
         let slot = slots > 0 ? available / slots : 0
@@ -596,9 +662,10 @@ private final class MiniPlayerRow: NSView {
     private func applyPalette() {
         layer?.backgroundColor = (palette?.backgroundExtra ?? NSColor.white.withAlphaComponent(0.35)).cgColor
         layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-        for button in [title, pip, close, play, previous, next, volumeButton, mute, microphone, camera] {
+        for button in [title, pip, close, play, previous, next, volumeButton, airPlay, mute, microphone, camera] {
             button.contentTintColor = palette?.title ?? .labelColor
         }
+        updateAirPlay()
         marquee.textColor = palette?.title ?? .labelColor
         volumeValue.textColor = palette?.title ?? .labelColor
         unavailable.textColor = palette?.title ?? .secondaryLabelColor

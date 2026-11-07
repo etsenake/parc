@@ -93,7 +93,21 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   }
   void Suspend() override {}
   void Resume() override {}
+  void SetPlaybackTarget(const std::string& output_context_id,
+                         bool should_play) override {
+    targets_.push_back({output_context_id, should_play, initialized_});
+  }
+  void SetWirelessVideoPlaybackDisabled(bool disabled) override {
+    wireless_disabled_.push_back(disabled);
+  }
 
+  struct Target {
+    std::string id;
+    bool should_play;
+    bool after_initialize;
+  };
+  std::vector<Target> targets_;
+  std::vector<bool> wireless_disabled_;
   GURL url_;
   gfx::SizeF video_layer_size_;
   float video_layer_scale_ = 0;
@@ -143,8 +157,12 @@ class NativeHlsTest : public testing::Test {
     params.key_request_cb = key_request_cb_.Get();
     params.start_load_cb = start_load_cb_.Get();
     params.time_jumped_cb = time_jumped_cb_.Get();
+    params.wireless_cb = wireless_cb_.Get();
     params.video_layer_size = gfx::SizeF(640, 360);
     params.video_layer_scale = 2;
+    params.playback_target_id = initial_target_id_;
+    params.should_play_to_playback_target = initial_should_play_;
+    params.wireless_video_playback_disabled = initial_wireless_disabled_;
     demuxer_ = std::make_unique<NativeHlsDemuxer>(
         std::move(params), std::move(player), std::move(client_receiver));
   }
@@ -195,6 +213,11 @@ class NativeHlsTest : public testing::Test {
       key_request_cb_;
   base::MockCallback<NativeHlsDemuxer::StartLoadCallback> start_load_cb_;
   base::MockCallback<base::RepeatingClosure> time_jumped_cb_;
+  base::MockCallback<base::RepeatingCallback<void(bool)>> wireless_cb_;
+  // The element's AirPlay state when the demuxer is made.
+  std::string initial_target_id_;
+  bool initial_should_play_ = false;
+  bool initial_wireless_disabled_ = false;
   NiceMock<media::MockDemuxerHost> host_;
   NiceMock<media::MockRendererClient> renderer_client_;
   NiceMock<media::MockVideoRendererSink> sink_;
@@ -402,6 +425,56 @@ TEST_F(NativeHlsTest, ClearKeyReachesThePlayer) {
   ASSERT_EQ(player_.clear_keys_.size(), 1u);
   EXPECT_EQ(player_.clear_keys_[0].first, "key-1");
   EXPECT_EQ(player_.clear_keys_[0].second, key);
+}
+
+// WebKit's mediaEngineUpdated: a new player gets the element's target and
+// disabled flag, before AVFoundation makes its AVPlayer.
+class NativeHlsAirPlayTest : public NativeHlsTest {
+ protected:
+  void SetUp() override {
+    initial_target_id_ = "6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11";
+    initial_should_play_ = true;
+    initial_wireless_disabled_ = true;
+    NativeHlsTest::SetUp();
+  }
+};
+
+TEST_F(NativeHlsAirPlayTest, TargetReachesThePlayerBeforeInitialize) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  ASSERT_EQ(player_.targets_.size(), 1u);
+  EXPECT_EQ(player_.targets_[0].id, initial_target_id_);
+  EXPECT_TRUE(player_.targets_[0].should_play);
+  EXPECT_FALSE(player_.targets_[0].after_initialize);
+  EXPECT_EQ(player_.wireless_disabled_, std::vector<bool>{true});
+}
+
+TEST_F(NativeHlsTest, AirPlayTargetChangesReachThePlayer) {
+  demuxer_->ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
+                                  true);
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  demuxer_->ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
+                                  false);
+  demuxer_->ParcSetWirelessVideoPlaybackDisabled(true);
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(player_.targets_.size(), 2u);
+  // Set before the pipe was bound: sent with the load, before Initialize.
+  EXPECT_TRUE(player_.targets_[0].should_play);
+  EXPECT_FALSE(player_.targets_[0].after_initialize);
+  EXPECT_FALSE(player_.targets_[1].should_play);
+  EXPECT_TRUE(player_.targets_[1].after_initialize);
+  EXPECT_EQ(player_.wireless_disabled_, std::vector<bool>{true});
+}
+
+TEST_F(NativeHlsTest, WirelessStateReachesTheElement) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  {
+    InSequence sequence;
+    EXPECT_CALL(wireless_cb_, Run(true));
+    EXPECT_CALL(wireless_cb_, Run(false));
+  }
+  client_->OnPlaybackTargetIsWirelessChanged(true);
+  client_->OnPlaybackTargetIsWirelessChanged(false);
+  task_environment_.RunUntilIdle();
 }
 
 TEST_F(NativeHlsTest, KeyRequestComesBeforeEncrypted) {

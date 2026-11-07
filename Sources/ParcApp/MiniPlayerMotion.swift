@@ -6,6 +6,25 @@ import AppKit
 @MainActor
 final class MiniPlayerMotion {
     static let hoverOffDelay: TimeInterval = 2
+
+    ///
+    /// over 0.75 s, ease-in-out, autoreversing, from 0.4.
+    static func connectingOpacity(at elapsed: TimeInterval) -> CGFloat {
+        let phase = max(0, elapsed).truncatingRemainder(dividingBy: 1.5) / 0.75
+        return 0.4 + 0.6 * easeInEaseOut(phase < 1 ? phase : 2 - phase)
+    }
+    /// CAMediaTimingFunction(name: .easeInEaseOut): the cubic (0.42, 0, 0.58, 1).
+    private static func easeInEaseOut(_ x: Double) -> Double {
+        func curve(_ s: Double, _ a: Double, _ b: Double) -> Double {
+            3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s
+        }
+        var low = 0.0, high = 1.0
+        for _ in 0..<24 {
+            let mid = (low + high) / 2
+            if curve(mid, 0.42, 0.58) < x { low = mid } else { high = mid }
+        }
+        return curve((low + high) / 2, 0, 1)
+    }
     private static let keys = ["parc.media.position", "parc.media.bounds", "parc.media.opacity"]
     private let animatedLayers = NSHashTable<CALayer>.weakObjects()
 

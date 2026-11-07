@@ -37,6 +37,7 @@
 #include "url/gurl.h"
 #include "url/url_constants.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "native_airplay.h"
 #include "native_appkit_host.h"
 #include "native_background_picture_in_picture.h"
 #include "native_background_picture_in_picture_api.h"
@@ -295,6 +296,12 @@ class MediaState final : public content::WebContentsObserver,
     if (!Validate(state, host)) return false;
     Registry().Remove(this); dismissed_ = true; suppression_fence_.Suppress(); Changed(); return true;
   }
+  bool ShowAirPlayPicker(PCNativeMediaState* state, NSView* view, NSRect rect, NSWindow* host,
+                         void (^dismissed)(void)) {
+    if (!host || view.window != host || !Validate(state, host)) return false;
+    return ShowNativeAirPlayPicker(web_contents(), view, rect, dismissed);
+  }
+  void AirPlayChanged() { Changed(); }
   void Withdraw() {
     if (!active_ || dismissed_) return;
     Registry().Remove(this);
@@ -629,6 +636,9 @@ class MediaState final : public content::WebContentsObserver,
         info->microphone_state == media_session::mojom::MicrophoneState::kUnmuted;
     state.camera_on =
         info->camera_state == media_session::mojom::CameraState::kTurnedOn;
+    const NativeAirPlayState airplay = NativeAirPlayStateForContents(contents);
+    state.airplay_state = airplay.state;
+    state.airplay_device_name = airplay.device_name;
     return state;
   }
   void Changed() {
@@ -701,6 +711,12 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
                                     BackgroundPipVisibility shell_visibility) {
   SyncBackgroundPictureInPictureContents(contents, shell_visibility);
 }
+
+void NativeMediaAirPlayChanged(content::WebContents* contents) {
+  if (auto* state = contents ? MediaState::FromWebContents(contents) : nullptr) {
+    state->AirPlayChanged();
+  }
+}
 }  // namespace parc
 
 @implementation PCNativeTabAudioState
@@ -729,6 +745,7 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
 @synthesize muted = _muted, volume = _volume, canSetVolume = _canSetVolume;
 @synthesize canToggleMicrophone = _canToggleMicrophone, canToggleCamera = _canToggleCamera;
 @synthesize microphoneOn = _microphoneOn, cameraOn = _cameraOn;
+@synthesize airPlayState = _airPlayState, airPlayDeviceName = _airPlayDeviceName;
 - (instancetype)initWithContents:(content::WebContents*)contents
                         browser:(BrowserWindowInterface*)browser identity:(NSString*)identity
               admissionSequence:(uint64_t)sequence {
@@ -759,6 +776,9 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
     _canToggleCamera = parc::Has(session, parc::Action::kToggleCamera);
     _microphoneOn = info->microphone_state == media_session::mojom::MicrophoneState::kUnmuted;
     _cameraOn = info->camera_state == media_session::mojom::CameraState::kTurnedOn;
+    const parc::NativeAirPlayState airplay = parc::NativeAirPlayStateForContents(contents);
+    _airPlayState = static_cast<PCNativeAirPlayState>(airplay.state);
+    _airPlayDeviceName = airplay.device_name.empty() ? nil : base::SysUTF8ToNSString(airplay.device_name);
   }
   return self;
 }
@@ -868,6 +888,15 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
 - (BOOL)setMediaVolume:(double)volume state:(PCNativeMediaState*)snapshot inWindow:(NSWindow*)window {
   CHECK(NSThread.isMainThread);
   auto* state = parc::State(self); return window && state && state->Volume(volume, snapshot, window);
+}
+- (BOOL)showAirPlayPickerForMediaState:(PCNativeMediaState*)snapshot
+                        relativeToRect:(NSRect)rect
+                                ofView:(NSView*)view
+                              inWindow:(NSWindow*)window
+                             dismissed:(void (^)(void))dismissed {
+  CHECK(NSThread.isMainThread);
+  auto* state = parc::State(self);
+  return state && state->ShowAirPlayPicker(snapshot, view, rect, window, dismissed);
 }
 @end
 

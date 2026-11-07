@@ -9,15 +9,46 @@
    // Requests the media player to start or resume media playback.
    RequestPlay(bool triggered_by_user);
  
-@@ -73,6 +75,8 @@
+@@ -73,6 +75,19 @@
  
    // Request the media player to save the current video frame.
    RequestSaveVideoFrame();
 +  RequestHandlePlaybackControlsAction(media_session.mojom.PlaybackControlsAction action,
 +      mojo_base.mojom.TimeDelta seek_time);
++
++  // Parc: AirPlay for a media element of a Safari-identity page (WebKit's
++  // MediaPlaybackTargetClient). Whether the browser's route detector sees an
++  // AirPlay device (externalOutputDeviceAvailableDidChange).
++  ParcSetPlaybackTargetAvailability(bool available);
++  // The browser's route picker AVOutputContext, by its UUID (empty for
++  // none), the name of the device it routes to, and whether this element's
++  // player plays to it (setWirelessPlaybackTarget and
++  // setShouldPlayToPlaybackTarget).
++  ParcSetPlaybackTarget(string output_context_id, string device_name,
++                        bool should_play);
  };
  
  // Implemented by the MediaWebContentsObserver. The remote lives in the renderer
+@@ -135,6 +150,19 @@
+ 
+   // Notifies the browser process of save video frame's availability.
+   OnVideoFrameAvailabilityChanged(bool available);
++
++  // Parc: a Safari-identity page's media element's AirPlay state: whether
++  // it needs AirPlay devices watched (availability listeners, or a player
++  // that can play to one), whether its player can, whether it plays to the
++  // browser's target or should, and whether it plays to the device now.
++  OnParcPlaybackTargetStateChanged(bool requires_monitoring,
++                                   bool supports_target,
++                                   bool plays_to_target,
++                                   bool wireless);
++  // webkitShowPlaybackTargetPicker(): the AirPlay route list at `position`,
++  // the last mouse position in the frame's widget, in DIPs (WebKit's
++  // Document::showPlaybackTargetPicker).
++  OnParcShowPlaybackTargetPicker(gfx.mojom.Point position);
+ };
+ 
+ // Implemented by MediaWebContentsObserver::MediaPlayerHostImpl in the browser
 --- a/services/media_session/public/mojom/media_session.mojom
 +++ b/services/media_session/public/mojom/media_session.mojom
 @@ -9,7 +9,7 @@
@@ -443,7 +474,18 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {
      received_seek_to_time_ = seek_time;
      run_loop_->Quit();
-@@ -451,6 +460,19 @@
+@@ -166,6 +175,10 @@
+ 
+   void RequestMediaRemoting() override {}
+   void RequestSaveVideoFrame() override {}
++  void ParcSetPlaybackTargetAvailability(bool available) override {}
++  void ParcSetPlaybackTarget(const std::string& output_context_id,
++                             const std::string& device_name,
++                             bool should_play) override {}
+ 
+   void RequestVisibility(
+       RequestVisibilityCallback request_visibility_callback) override {
+@@ -451,6 +464,19 @@
    controller_.reset();
    EXPECT_FALSE(media_session()->IsActive());
    EXPECT_FALSE(media_session()->IsControllable());
@@ -475,7 +517,18 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -519,5 +522,111 @@
+@@ -48,6 +51,10 @@
+       const media::PictureInPictureEventsInfo::AutoPipInfo&
+           auto_picture_in_picture_info) override {}
+   void RequestSaveVideoFrame() override {}
++  void ParcSetPlaybackTargetAvailability(bool available) override {}
++  void ParcSetPlaybackTarget(const std::string& output_context_id,
++                             const std::string& device_name,
++                             bool should_play) override {}
+ 
+  private:
+   mojo::AssociatedReceiver<media::mojom::MediaPlayer> receiver_{this};
+@@ -519,5 +526,111 @@
    EXPECT_FALSE(AudibilityBypassTracker::ClaimGrant(player_id));
  }
  
@@ -599,6 +652,17 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
+@@ -191,6 +194,10 @@
+   void SuspendForFrameClosed() override {}
+   void RequestMediaRemoting() override {}
+   void RequestSaveVideoFrame() override {}
++  void ParcSetPlaybackTargetAvailability(bool available) override {}
++  void ParcSetPlaybackTarget(const std::string& output_context_id,
++                             const std::string& device_name,
++                             bool should_play) override {}
+   void RequestVisibility(
+       RequestVisibilityCallback request_visibility_callback) override {}
+   void RecordAutoPictureInPictureInfo(
 --- a/third_party/blink/renderer/modules/webaudio/audio_context.h
 +++ b/third_party/blink/renderer/modules/webaudio/audio_context.h
 @@ -188,6 +188,9 @@
@@ -611,6 +675,17 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
+@@ -204,6 +207,10 @@
+       const media::PictureInPictureEventsInfo::AutoPipInfo&
+           auto_picture_in_picture_info) override {}
+   void RequestSaveVideoFrame() override {}
++  void ParcSetPlaybackTargetAvailability(bool available) override {}
++  void ParcSetPlaybackTarget(const String& output_context_id,
++                             const String& device_name,
++                             bool should_play) override {}
+ 
+   // BaseAudioContext override to enable UseCounter.
+   // https://webaudio.github.io/web-audio-api/#BaseAudioContext
 --- a/components/global_media_controls/public/views/media_progress_view.cc
 +++ b/components/global_media_controls/public/views/media_progress_view.cc
 @@ -365,6 +365,21 @@

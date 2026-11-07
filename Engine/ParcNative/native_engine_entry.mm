@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "components/os_crypt/common/keychain_password_mac.h"
 #include "fairplay_identity.h"
+#include "native_airplay.h"
 #include "native_appkit_host.h"
 #include "native_host_route.h"
 #include "native_keychain_namespace.h"
@@ -267,6 +268,7 @@ parc_engine_initialize(int argc,
   CHECK(Application());
   // Before any page or worker exists: Safari's identity for FairPlay sites.
   parc::InstallFairPlayIdentity();
+  parc::InstallNativeAirPlay();
   bool initialized = CefInitialize(args, settings, Application(), nullptr);
   *exit_code = CefGetExitCode();
   if (initialized) {

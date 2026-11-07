@@ -57,6 +57,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const define = Object.defineProperty;
   const describe = Object.getOwnPropertyDescriptor;
   const apply = Reflect.apply;
+  const construct = Reflect.construct;
   const getter = (proto, name) => {
     const descriptor = proto && describe(proto, name);
     return descriptor && descriptor.get;
@@ -1338,8 +1339,10 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       }
       apply(setAdd, requests, [utf16(initData, 4, initData.length - 4)]);
     }
-    const event = new WebKitMediaKeyNeededEvent('webkitneedkey');
-    apply(weakMapGet, eventState, [event]).initData = initData;
+    // Blink dispatches it as trusted: made from the captured Event, so a page
+    // that gave the class another parent can't choose the event.
+    const event = construct(EventBase, ['webkitneedkey'], WebKitMediaKeyNeededEvent);
+    apply(weakMapSet, eventState, [event, {initData}]);
     return event;
   }
 

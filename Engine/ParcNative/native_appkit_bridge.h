@@ -452,6 +452,14 @@ typedef NS_ENUM(NSInteger, PCNativeMediaAction) {
   PCNativeMediaActionToggleMuted, PCNativeMediaActionToggleMicrophone,
   PCNativeMediaActionToggleCamera, PCNativeMediaActionEnterPictureInPicture
 };
+// AirPlay for the session's player (native_airplay.h): Connecting once a
+// device was picked and until playback moves to it.
+typedef NS_ENUM(NSInteger, PCNativeAirPlayState) {
+  PCNativeAirPlayStateUnavailable = 0,
+  PCNativeAirPlayStateAvailable,
+  PCNativeAirPlayStateConnecting,
+  PCNativeAirPlayStateConnected,
+};
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeMediaState : NSObject
@@ -473,6 +481,8 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly) BOOL canToggleCamera;
 @property(nonatomic, readonly) BOOL microphoneOn;
 @property(nonatomic, readonly) BOOL cameraOn;
+@property(nonatomic, readonly) PCNativeAirPlayState airPlayState;
+@property(nonatomic, readonly, copy, nullable) NSString* airPlayDeviceName;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end
@@ -1910,6 +1920,14 @@ NS_SWIFT_UI_ACTOR
                   inWindow:(NSWindow*)window NS_SWIFT_NAME(performMediaAction(_:state:in:));
 - (BOOL)setMediaVolume:(double)volume state:(PCNativeMediaState*)state
                inWindow:(NSWindow*)window NS_SWIFT_NAME(setMediaVolume(_:state:in:));
+// Opens the system's AirPlay route list at |rect| in |view| (in |window|)
+// for the session's AirPlay player; |dismissed| runs once when it closes. NO
+// when the state is stale, the host can't act or nothing can AirPlay.
+- (BOOL)showAirPlayPickerForMediaState:(PCNativeMediaState*)state
+                        relativeToRect:(NSRect)rect
+                                ofView:(NSView*)view
+                              inWindow:(NSWindow*)window
+                             dismissed:(void (^)(void))dismissed;
 @end
 
 NS_SWIFT_UI_ACTOR

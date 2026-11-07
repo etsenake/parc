@@ -660,6 +660,90 @@ PiP size AVFoundation doesn't go above its earlier best variant when the layer
 grows again. Plain windows behave the same, so this is AVFoundation's
 behavior, not Parc's hosting.
 
+## AirPlay
+
+Safari sends FairPlay HLS to an Apple TV with AirPlay: WebKit's AVPlayer
+plays to the AVOutputContext its route picker chose
+(`MediaPlayerPrivateAVFoundationObjC::setWirelessPlaybackTarget`,
+`setShouldPlayToPlaybackTarget`), which AVFoundation streams to the device
+itself, FairPlay included. Chrome's casting refuses encrypted media and
+mirroring shows the video black, so this is the only way FairPlay video
+reaches a TV from Parc. Parc follows WebKit's split:
+
+- Browser (`Engine/ParcNative/native_airplay.mm`, WebKit's
+  `WebMediaSessionManager` with `AVRoutePickerViewTargetPicker`): one
+  `AVRouteDetector`, on while an element needs it, for availability; the iTunes
+  audio `AVOutputContext` WebKit's picker uses; and the system's AirPlay route
+  list for that context (`-[AVRoutePickerView
+  showRoutePickingControlsForOutputContext:relativeToRect:ofView:]`, AVKit
+  SPI). An app can't list or choose AirPlay devices itself: that needs
+  `com.apple.avfoundation.allows-access-to-device-list` and
+  `allows-set-output-device`, which only AVKit's `RoutePickerViewService` and
+  `OutputDeviceMenuService` hold (checked on macOS 27.2: detailed discovery
+  in-process lists no devices while route presence is detected), so the list
+  is the one Safari shows. When a route becomes active, the element that
+  opened the list (else the one already playing) gets the context's ID with
+  should-play, and only that one, as `configurePlaybackTargetClients` does; a
+  route ended (the user chose this Mac) takes it back. It implements
+  `content::ParcPlaybackTargetHandler` (`content/public/browser/parc_playback_target.h`).
+- Element and browser talk over the element's `media.mojom.MediaPlayer`
+  (`ParcSetPlaybackTargetAvailability`, `ParcSetPlaybackTarget(id, device
+  name, should_play)`) and `MediaPlayerObserver`
+  (`OnParcPlaybackTargetStateChanged(requires_monitoring, supports_target,
+  plays_to_target, wireless)`, `OnParcShowPlaybackTargetPicker(position)`),
+  which `MediaWebContentsObserver` hands to the handler.
+- Element (Safari-identity pages only, `fairplay-identity-blink.patch`):
+  `webkitShowPlaybackTargetPicker()` (nothing before `HAVE_METADATA`; the list
+  opens at the last mouse position, as `Document::showPlaybackTargetPicker`
+  places it, and only for the visible page of the key window),
+  `webkitCurrentPlaybackTargetIsWireless`,
+  `webkitcurrentplaybacktargetiswirelesschanged` (in a media element task,
+  `setIsPlayingToWirelessTarget`), `webkitplaybacktargetavailabilitychanged`
+  as a `WebKitPlaybackTargetAvailabilityEvent` (`availability` "available"
+  or "not-available"; the interface comes from
+  `Engine/ParcRenderer/parc_webkit_playback_target.h`, whose hook Blink calls)
+  at the first listener, a new player, HAVE_METADATA, a route change and the
+  player's clearing, as WebKit queues it; `x-webkit-airplay="deny"`,
+  `webkitwirelessvideoplaybackdisabled` and `disableremoteplayback` disable it
+  (`isWirelessPlaybackTargetDisabledChanged`). The element keeps its target
+  across loads (`mediaEngineUpdated`).
+- Player: `WebMediaPlayer::ParcSetPlaybackTarget` and
+  `ParcSetWirelessVideoPlaybackDisabled` reach the native HLS demuxer
+  (`ParcNativeHlsDemuxerParams` for the one a load makes, then
+  `Demuxer::ParcSetPlaybackTarget` on the media thread) and
+  `FairPlayHlsPlayer.SetPlaybackTarget` / `SetWirelessVideoPlaybackDisabled`
+  before `Initialize`. Only this route plays to a target, as only WebKit's
+  AVFoundation player does (its Media Source and WebM players refuse one).
+- GPU core: `FairPlayHlsPlayer::SetPlaybackTarget(id, should_play)` finds the
+  context with `+[AVOutputContext outputContextForID:]` (an ID the media
+  server doesn't know finds none) and sets `AVPlayer.outputContext` only
+  while should-play; `allowsExternalPlayback` is `!disabled`; KVO of
+  `externalPlaybackActive` and `allowsExternalPlayback` reports
+  `OnPlaybackTargetIsWirelessChange`, which the service sends as
+  `OnPlaybackTargetIsWirelessChanged`. Teardown sets the context back to none.
+  The GPU sandbox allows the coremedia endpoint, route and volume services
+  and timesync that WebKit's GPU process profile allows for AirPlay.
+- Mini Player: `PCNativeMediaState.airPlayState` (Available, Connecting once a
+  device is picked until AVPlayer is external, Connected) and
+  `airPlayDeviceName`; `-[PCNativePage
+  showAirPlayPickerForMediaState:relativeToRect:ofView:inWindow:dismissed:]`
+  opens the same list at the row's AirPlay button.
+
+Playback state, seeking, rate and volume need nothing new: AVPlayer drives the
+device, and the element, Now Playing and the media keys keep driving AVPlayer.
+A background tab keeps playing (native HLS is never suspended); a page entering
+the back/forward cache pauses without events and resumes on return, as WebKit's
+`stopWithoutDestroyingMediaPlayer`; navigating away destroys the player, which
+ends playback on the device.
+
+Checked on this Mac: `tests/FairPlay/hls_player_harness.mm` `airplay` (the
+context reaches AVPlayer before and after it is made, comes off with
+should-play off or an unknown ID, the disabled flag, local playback goes on
+with no device in the context); `tests/FairPlay/sandbox` plays native HLS and
+FairPlay under the new rules. Needs an AirPlay receiver, unchecked: playback
+moving to the TV, `externalPlaybackActive`, the device name, FairPlay keys on
+the device, and the AirPlay services the GPU sandbox needs.
+
 ## Media element state and events
 
 `AVPlayerItem` is the authority, as in Safari; the render process mirrors it.
