@@ -1,10 +1,14 @@
 # Native HLS (Safari's second FairPlay route)
 
-Status: design, nothing built. Owners: `fp-native-hls` (routing, the AVPlayer
-host, network, media element state and events), `fp-hls-keys` (skd in the
-CDM, the asset's content keys, modern EME), `fp-hls-display` (display, PiP and
-fullscreen, frame counts, audio and text tracks, live/DVR ranges). Interface
-changes go into this file first.
+Status: design; pieces landing. Owners: `fp-native-hls` (the GPU core player,
+`Engine/ParcNative/fairplay/fairplay_hls_player.*`), `fp-hls-render` (the
+render-process route: Blink, `DemuxerManager`, `NativeHlsDemuxer`, the
+`NativeHlsRenderer` facade, pipeline hooks, element state), `fp-hls-mojo`
+(mojo interfaces, `InterfaceFactory`, the GPU service wrapping the core, the
+render-process loader), `fp-hls-keys` (skd in the CDM, the asset's content
+keys, modern EME), `fp-hls-display` (display, PiP and fullscreen, frame
+counts, audio and text tracks, live/DVR ranges). Interface changes go into
+this file first.
 
 Safari plays `<video src="….m3u8">` through `AVPlayer` (WebKit's
 `MediaPlayerPrivateAVFoundationObjC`) and FairPlay HLS keys through
@@ -17,9 +21,11 @@ takes it and fails fetching `skd://` as a URL.
 ## Switch
 
 Until every piece below is on main, the route is off: `DemuxerManager` keeps
-choosing Chromium's `ManifestDemuxer`, exactly as today. One constant,
-`parc::fairplay::kNativeHlsEnabled` (`fairplay_key_system.h`), turns it on;
-the last piece flips it. Every piece lands compiled but unreachable.
+choosing Chromium's `ManifestDemuxer`, exactly as today. One feature,
+`media::kParcNativeHls` (`media_switches`, disabled by default), turns it on;
+the last piece flips its default. Every piece lands compiled but unreachable
+unless the feature is enabled (`--enable-features=ParcNativeHls` lets Josh try
+a build before then).
 
 ## Process: the GPU process
 
@@ -63,8 +69,16 @@ DevTools attribution right.
   fairplay-identity): a new `WebMediaPlayerClient::ParcPresentsSafariIdentity()`.
 - `DemuxerManager::CreateDemuxer` takes its HLS branch as today (path ends in
   `.m3u8`, or `DEMUXER_ERROR_DETECTED_HLS` from FFmpeg's sniffing). With the
-  switch on and Safari's identity, it creates `parc::fairplay::NativeHlsDemuxer`
-  instead of `ManifestDemuxer`. `canPlayType` keeps answering "maybe".
+  switch on and Safari's identity, it asks its client
+  (`DemuxerManager::Client::CreateParcNativeHlsDemuxer`, default null) and
+  uses that demuxer instead of `ManifestDemuxer`. `canPlayType` keeps
+  answering "maybe".
+- `WebMediaPlayerImpl` gets the demuxer from the factory registered for
+  `RendererType::kFairPlayHls` (`RendererFactorySelector::GetFactory`, a new
+  `RendererFactory::CreateParcNativeHlsDemuxer` hook), which `MediaFactory`
+  adds next to the FairPlay renderer factory and which holds the frame's
+  `InterfaceFactory`. The demuxer and facade live in
+  `//content/renderer/media/fairplay` beside `FairPlayRendererClient`.
 - M156 has no `MediaUrlDemuxer` and `mojom::Renderer.Initialize` takes streams
   only, and `PipelineImpl` creates the renderer after the demuxer has reported
   metadata. So the demuxer owns the player connection:
@@ -73,10 +87,13 @@ DevTools attribution right.
   config carries the codec and natural size AVFoundation reports. They never
   deliver buffers.
 - The renderer is a render-process facade, `NativeHlsRenderer`
-  (`media::Renderer`, media thread), that drives the demuxer's player. The
-  pipeline gets it from the demuxer: a new `Demuxer::CreateNativeRenderer()`
-  (default null) checked first in `PipelineImpl::RendererWrapper::CreateRenderer`.
-  Suspend/resume destroy and recreate only the facade.
+  (`media::Renderer`, media thread), that drives the demuxer's player.
+  `PipelineImpl::RendererWrapper::CreateRenderer` asks for
+  `RendererType::kFairPlayHls` when the demuxer is a native HLS demuxer (a
+  `MediaResource::GetParcNativeHlsSource()` hook, default null), so the facade
+  comes from the same factory with the element's `VideoRendererSink` for the
+  hole frame. Its `Initialize` binds to the demuxer's player through that
+  hook. Suspend/resume destroy and recreate only the facade.
 - `PipelineImpl::RendererWrapper::SetCdm` also hands the `CdmContext` to the
   demuxer (`Demuxer::SetCdmForNativePlayer`, default no-op) so a CDM set before
   the renderer exists reaches the player at once.
@@ -158,18 +175,45 @@ interface FairPlayHlsPlayerClient {  // render process implements
 
 `fp-hls-display` defines `FairPlayHlsCue` here when it gets there.
 
+## GPU core player
+
+`parc::fairplay::FairPlayHlsPlayer` (`Engine/ParcNative/fairplay/fairplay_hls_player.h`,
+[core README](../fairplay/README.md#native-hls-player)) is the engine-free
+player the GPU service owns, on the media service thread with the core's
+`PostTask`:
+
+| Core | Mojo (GPU service) |
+| --- | --- |
+| `HlsLoader::StartLoad(request, HlsLoadClient*)` → `HlsLoad` (destroy = cancel) | `FairPlayHlsPlayerClient.StartLoad` → `FairPlayHlsLoad` (reset = `Cancel`) |
+| `HlsLoadClient::OnResponse` / `OnData` / `OnComplete(net_error)` | `FairPlayHlsLoadClient.OnResponse` + data pipe reads / `OnComplete` |
+| `Load(url, mime)`, `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted` |
+| `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `Initialize` reply |
+| `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
+| `OnKeyRequest(uri)`, `CompleteKeyRequests(uri)`, `FailKeyRequests` | `OnEncrypted("skd", uri)`; the CDM side (Keys) |
+| `CurrentTime()` (any thread), `Rate()` | `OnTimeUpdate` |
+| `HlsPlayerAsset` / `HlsPlayerLayer` (`fairplay_hls_player_internal.h`) | `addContentKeyRecipient:` (Keys) / `ProtectedLayerRegistry` (Display) |
+
+The core never blocks on the embedder and never calls the client inside a call
+into it. Facts the harness established: every load AVFoundation makes goes to
+`HlsLoader` (a host only the loader can reach still plays); AVFoundation asks
+again for a key whose request failed instead of failing the item; a live
+variant that 404s makes it retry silently, with no item error.
+
 ## Network (render process)
 
-`NativeHlsDemuxer` serves `StartLoad` through the built-in HLS player's own
-fetch layer, `WebMediaPlayerImpl::GetHlsDataSourceProvider()`
-(`MultiBufferDataSource` on the frame's `UrlIndex`, with the element's CORS
-mode). So AVFoundation's loads carry the page's cookies, referrer and
-credentials mode, pass CORS, use the profile's proxy and appear in DevTools as
-the element's media requests. `Range` headers map to the provider's byte
-ranges; the response's MIME type is the server's `Content-Type`. Redirects are
-followed in the render process; `final_url` tells AVFoundation the URL that
-relative playlist URIs resolve against. `skd://` URIs never reach
-`StartLoad` (Keys).
+`StartLoad` runs one `blink::WebAssociatedURLLoader` per load on the main
+thread, made by the element's `ResourceFetchContext` (the factory
+`ResourceMultiBufferDataProvider` uses for every `<video src>` load), with the
+element's CORS mode and credentials. So AVFoundation's loads carry the page's
+cookies and referrer, pass CORS, use the profile's proxy and appear in DevTools
+as the element's media requests. The real status, headers and MIME type go
+back to AVFoundation. Of AVFoundation's request headers only `Range` is
+forwarded: its own `User-Agent` (AppleCoreMedia) and `X-Playback-Session-Id`
+would make cross-origin CORS loads preflight, and the page's identity UA is
+sent instead. Redirects are followed in the render process (cross-origin ones
+only in CORS mode, as for any media load); `final_url` tells AVFoundation the
+URL that relative playlist URIs resolve against. Bodies stream back over the
+load's data pipe. `skd://` URIs never reach `StartLoad` (Keys).
 
 ## Keys
 
@@ -206,9 +250,8 @@ The player's `AVAssetResourceLoader` delegate sees `skd://` key requests
    `generateRequest` with that URI takes the parked request (WebKit's
    `takeUnexpectedKeyRequestForInitializationData`).
 
-Chromium's `EmeInitDataType` has no `skd`: `fp-hls-keys` adds
-`EmeInitDataType::SKD` and its `"skd"` string, unless
-`fp-safari-eme-surface` lands it first.
+`EmeInitDataType::SKD` and its `"skd"` string are on main (7c317739,
+`fp-safari-eme-surface`).
 
 ## Display
 
