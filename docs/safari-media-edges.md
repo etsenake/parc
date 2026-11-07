@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **46**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **47**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -376,7 +376,7 @@ macOS here (`HTMLMediaElement.cpp:7213-7219`). Still different: a page
 restored into a background tab resumes at once, where WebKit waits until the
 page can start media (`MediaElementSession.cpp:717-730`): **fixed** 7fcc63d0
 for background tabs; a restore into a minimised or covered window still
-waits where Safari plays: **queued** (HME-33b, needs an "in window" signal).
+waits where Safari plays: **in progress** (HME-33b, an "in window" signal).
 With a Cast session active the player restarted on entering the cache, as
 stock Chromium does: **fixed** c0f53c09 on every page (Josh's decision), and
 Safari-identity pages keep WebKit's 30-minute cache lifetime. A stale session
@@ -646,7 +646,8 @@ and `dav1.10` are **unchecked**. AV1 on Macs without hardware AV1 (M1/M2):
 Safari refuses it so sites send VP9 or H.264, decoded in hardware; Parc
 accepts it and decodes in software: more CPU, battery drain, heat, fan noise
 and possibly dropped frames at 1440p60 or 4K, in background tabs and picture
-in picture too. **Queued** (AV1, Josh approved November 7: match Safari). A
+in picture too. **Fixed** 7cd74527 (Josh approved November 7: match Safari; M3 and later
+unchanged). A
 codec-less TS stream carrying HEVC or AC-3 now gets a SourceBuffer and fails
 on append: part of SBS-2.
 
