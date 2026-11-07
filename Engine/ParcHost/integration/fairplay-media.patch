@@ -15189,10 +15189,16 @@
      "webcodecs/webcodecs_encoded_chunk_stream_parser.cc",
      "webcodecs/webcodecs_encoded_chunk_stream_parser.h",
      "webm/webm_audio_client.cc",
-@@ -229,6 +231,12 @@
+@@ -229,6 +231,18 @@
        "mp2t/ts_section_psi.cc",
        "mp2t/ts_section_psi.h",
      ]
++
++    # Parc: MPEG-1 and MPEG-2 video under Safari's identity.
++    sources += [
++      "mp2t/parc_es_parser_mpeg_video.cc",
++      "mp2t/parc_es_parser_mpeg_video.h",
++    ]
 +    if (enable_platform_ac3_eac3_audio) {
 +      sources += [
 +        "mp2t/parc_es_parser_ac3.cc",
@@ -15202,7 +15208,7 @@
    }
  
    # TODO(crbug.com/40057824): These should be gated behind `enable_hls_demuxer`,
-@@ -327,6 +335,7 @@
+@@ -327,6 +341,7 @@
      "ac3/ac3_util_unittest.cc",
      "common/offset_byte_queue_unittest.cc",
      "mpeg/mpeg1_audio_stream_parser_unittest.cc",
@@ -15210,8 +15216,11 @@
      "webm/webm_cluster_parser_unittest.cc",
      "webm/webm_content_encodings_client_unittest.cc",
      "webm/webm_crypto_helpers_unittest.cc",
-@@ -393,6 +402,9 @@
+@@ -391,8 +406,12 @@
+         "mp2t/es_parser_h264_unittest.cc",
+         "mp2t/es_parser_mpeg1audio_unittest.cc",
          "mp2t/mp2t_stream_parser_unittest.cc",
++        "mp2t/parc_es_parser_mpeg_video_unittest.cc",
          "mp2t/timestamp_unroller_unittest.cc",
        ]
 +      if (enable_platform_ac3_eac3_audio) {
@@ -15222,12 +15231,13 @@
      if (enable_platform_hevc) {
 --- a/media/formats/mp2t/mp2t_stream_parser.h
 +++ b/media/formats/mp2t/mp2t_stream_parser.h
-@@ -62,17 +62,21 @@
+@@ -62,17 +62,22 @@
        base::span<const uint8_t> buf) override;
    [[nodiscard]] ParseStatus Parse(int max_pending_bytes_to_inspect) override;
  
 +  // Parc: keeps every elementary stream it parses, whatever |allowed_codecs|
-+  // named, and parses AC-3 and E-AC-3 too, as Safari's Media Source does.
++  // named, and parses AC-3, E-AC-3 and MPEG-1 and MPEG-2 video too, as
++  // Safari's Media Source does.
 +  void ParcIgnoreDeclaredCodecs() override;
 +
   private:
@@ -15247,30 +15257,39 @@
      VideoDecoderConfig video_config;
      StreamParser::BufferQueue video_queue;
    };
-@@ -118,6 +122,9 @@
+@@ -118,6 +123,10 @@
    std::unique_ptr<EsParser> CreateH264Parser(int pes_pid);
    std::unique_ptr<EsParser> CreateAacParser(int pes_pid);
    std::unique_ptr<EsParser> CreateMpeg1AudioParser(int pes_pid);
++  std::unique_ptr<EsParser> CreateParcMpegVideoParser(int pes_pid);
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 +  std::unique_ptr<EsParser> CreateParcAc3Parser(int pes_pid, bool eac3);
 +#endif
  
    bool ShouldForceEncryptedParser();
    std::unique_ptr<EsParser> CreateEncryptedH264Parser(int pes_pid,
-@@ -162,6 +169,10 @@
-   // True when AAC SBR extension is signalled in the mimetype
+@@ -163,6 +172,10 @@
    // (mp4a.40.5 in the codecs parameter).
    bool sbr_in_mimetype_;
-+
+ 
 +  // Parc: whether ParcIgnoreDeclaredCodecs() asked for the streams Safari's
 +  // Media Source parses beyond Chromium's.
 +  bool parc_safari_streams_ = false;
- 
++
    // Bytes of the TS stream.
    // `uninspected_pending_bytes_` tracks how much data has not yet been
+   // attempted to be parsed from `ts_byte_queue_` between calls to Parse().
 --- a/media/formats/mp2t/mp2t_stream_parser.cc
 +++ b/media/formats/mp2t/mp2t_stream_parser.cc
-@@ -33,6 +33,10 @@
+@@ -24,6 +24,7 @@
+ #include "media/formats/mp2t/es_parser_h264.h"
+ #include "media/formats/mp2t/es_parser_mpeg1audio.h"
+ #include "media/formats/mp2t/mp2t_common.h"
++#include "media/formats/mp2t/parc_es_parser_mpeg_video.h"
+ #include "media/formats/mp2t/ts_packet.h"
+ #include "media/formats/mp2t/ts_section.h"
+ #include "media/formats/mp2t/ts_section_cat.h"
+@@ -33,6 +34,10 @@
  #include "media/formats/mp2t/ts_section_pes.h"
  #include "media/formats/mp2t/ts_section_pmt.h"
  
@@ -15281,7 +15300,15 @@
  namespace media {
  namespace mp2t {
  
-@@ -45,6 +49,9 @@
+@@ -40,11 +45,17 @@
+ 
+ enum StreamType {
+   // ISO-13818.1 / ITU H.222 Table 2.34 "Stream type assignments"
++  // Parc: MPEG-1 and MPEG-2 video, as AVStreamDataParser reads them.
++  kStreamTypeParcMpeg1Video = 0x1,
++  kStreamTypeParcMpeg2Video = 0x2,
+   kStreamTypeMpeg1Audio = 0x3,
+   // ISO/IEC 13818-3 Audio (MPEG-2)
    kStreamTypeMpeg2Audio = 0x4,
    kStreamTypeAAC = 0xf,
    kStreamTypeAVC = 0x1b,
@@ -15291,7 +15318,7 @@
    kStreamTypeAACWithSampleAES = 0xcf,
    kStreamTypeAVCWithSampleAES = 0xdb,
    // TODO(dougsteed). Consider adding support for the following:
-@@ -214,10 +221,10 @@
+@@ -214,10 +225,10 @@
  
  Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
      bool is_cfg_sent,
@@ -15304,25 +15331,35 @@
      video_config(video_cfg) {
  }
  
-@@ -325,6 +332,14 @@
- 
-   // Deliver the remaining buffers to the SourceBufferState
+@@ -327,6 +338,14 @@
    EmitRemainingBuffers();
-+}
-+
+ }
+ 
 +// Parc: Safari's Media Source parses MPEG-2 TS with AVStreamDataParser
 +// (SourceBufferParserAVFObjC), which takes every elementary stream it
 +// recognizes without consulting the SourceBuffer's type.
 +void Mp2tStreamParser::ParcIgnoreDeclaredCodecs() {
 +  allowed_stream_types_.reset();
 +  parc_safari_streams_ = true;
- }
- 
++}
++
  bool Mp2tStreamParser::GetGenerateTimestampsFlag() const {
-@@ -519,6 +534,19 @@
+   return false;
+ }
+@@ -519,6 +538,29 @@
                                                media_log_.get());
  }
  
++std::unique_ptr<EsParser> Mp2tStreamParser::CreateParcMpegVideoParser(
++    int pes_pid) {
++  auto on_video_config_changed = base::BindRepeating(
++      &Mp2tStreamParser::OnVideoConfigChanged, base::Unretained(this), pes_pid);
++  auto on_emit_video_buffer = base::BindRepeating(
++      &Mp2tStreamParser::OnEmitVideoBuffer, base::Unretained(this), pes_pid);
++  return std::make_unique<ParcEsParserMpegVideo>(
++      std::move(on_video_config_changed), std::move(on_emit_video_buffer));
++}
++
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 +std::unique_ptr<EsParser> Mp2tStreamParser::CreateParcAc3Parser(int pes_pid,
 +                                                                bool eac3) {
@@ -15339,10 +15376,17 @@
  bool Mp2tStreamParser::ShouldForceEncryptedParser() {
    // If we expect to handle encrypted data later in the stream, then force the
    // use of the encrypted parser variant so that the initial configuration
-@@ -611,6 +639,16 @@
-     case kStreamTypeMpeg2Audio:
+@@ -612,6 +654,24 @@
        es_parser = CreateMpeg1AudioParser(pes_pid);
        break;
+ 
++    case kStreamTypeParcMpeg1Video:
++    case kStreamTypeParcMpeg2Video:
++      if (parc_safari_streams_) {
++        is_audio = false;
++        es_parser = CreateParcMpegVideoParser(pes_pid);
++      }
++      break;
 +
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 +    case kStreamTypeParcAC3:
@@ -15353,10 +15397,11 @@
 +      }
 +      break;
 +#endif
- 
++
      case kStreamTypeAVCWithSampleAES:
        if (descriptors.HasPrivateDataIndicator(
-@@ -692,6 +730,11 @@
+               kSampleAESPrivateDataIndicatorAVC)) {
+@@ -692,6 +752,11 @@
    // Disable all the other audio and video PIDs.
    for (auto it = pids_.begin(); it != pids_.end(); ++it) {
      PidState* pid_state = it->second.get();
@@ -15368,7 +15413,7 @@
      if (it != lowest_audio_pid && it != lowest_video_pid &&
          (pid_state->pid_type() == PidState::kPidAudioPes ||
           pid_state->pid_type() == PidState::kPidVideoPes))
-@@ -716,7 +759,8 @@
+@@ -716,7 +781,8 @@
      BufferQueueWithConfig buffer_queue_with_config(
          false,
          buffer_queue_chain_.empty()
@@ -15378,7 +15423,7 @@
          video_decoder_config);
      buffer_queue_chain_.push_back(buffer_queue_with_config);
    }
-@@ -735,42 +779,38 @@
+@@ -735,42 +801,38 @@
      int pes_pid,
      const AudioDecoderConfig& audio_decoder_config) {
    DVLOG(1) << "OnAudioConfigChanged for pid=" << pes_pid;
@@ -15399,7 +15444,12 @@
 -        buffer_queue_chain_.empty()
 -        ? VideoDecoderConfig() : buffer_queue_chain_.back().video_config);
 -    buffer_queue_chain_.push_back(buffer_queue_with_config);
--  }
++  // Offset PIDs past the fixed video track ID; Chrome keeps its original ID.
++  const int track_id = parc_safari_streams_ ? pes_pid + 2 : kMp2tAudioTrackId;
++  if (buffer_queue_chain_.empty()) {
++    buffer_queue_chain_.emplace_back(
++        false, std::map<int, AudioDecoderConfig>(), VideoDecoderConfig());
+   }
 -
 -  // Replace any non valid config with the 1st valid entry.
 -  // This might happen if there was no available config before.
@@ -15408,12 +15458,6 @@
 -    if (it->audio_config.IsValidConfig())
 -      break;
 -    it->audio_config = audio_decoder_config;
-+  // Offset PIDs past the fixed video track ID; Chrome keeps its original ID.
-+  const int track_id = parc_safari_streams_ ? pes_pid + 2 : kMp2tAudioTrackId;
-+  if (buffer_queue_chain_.empty()) {
-+    buffer_queue_chain_.emplace_back(
-+        false, std::map<int, AudioDecoderConfig>(), VideoDecoderConfig());
-+  }
 +  if (buffer_queue_chain_.back().audio_configs.contains(track_id) ||
 +      buffer_queue_chain_.back().is_config_sent) {
 +    BufferQueueWithConfig next(false,
@@ -15421,13 +15465,13 @@
 +        buffer_queue_chain_.back().video_config);
 +    next.audio_configs[track_id] = audio_decoder_config;
 +    buffer_queue_chain_.push_back(next);
-+  }
+   }
 +  // Backfill the first config for this PID into queues waiting for it.
 +  for (auto& queue : buffer_queue_chain_) {
 +    if (!queue.is_config_sent) {
 +      queue.audio_configs.try_emplace(track_id, audio_decoder_config);
 +    }
-   }
++  }
  }
  
  std::unique_ptr<MediaTracks> GenerateMediaTrackInfo(
@@ -15444,7 +15488,7 @@
                                  MediaTrack::Kind("main"), MediaTrack::Label(""),
                                  MediaTrack::Language(""));
    }
-@@ -794,15 +834,24 @@
+@@ -794,15 +856,24 @@
    // Wait for more data to come if one of the config is not available.
    BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
    if (selected_audio_pid_ > 0 &&
@@ -15454,7 +15498,7 @@
    if (selected_video_pid_ > 0 &&
        !queue_with_config.video_config.IsValidConfig())
      return true;
- 
++
 +  if (parc_safari_streams_) {
 +    for (const auto& [pid, state] : pids_) {
 +      if (state->pid_type() == PidState::kPidAudioPes &&
@@ -15463,7 +15507,7 @@
 +      }
 +    }
 +  }
-+
+ 
    // Pass the config before invoking the initialization callback.
    std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
 -      queue_with_config.audio_config, queue_with_config.video_config);
@@ -15471,7 +15515,7 @@
    RCHECK(config_cb_.Run(std::move(media_tracks)));
    queue_with_config.is_config_sent = true;
  
-@@ -813,7 +862,7 @@
+@@ -813,7 +884,7 @@
    // accurately here. Currently, capped at max 1 each for audio and video.
    InitParameters params(kInfiniteDuration);
    params.detected_audio_track_count =
@@ -15480,7 +15524,7 @@
    params.detected_video_track_count =
        queue_with_config.video_config.IsValidConfig() ? 1 : 0;
    std::move(init_cb_).Run(params);
-@@ -825,7 +874,7 @@
+@@ -825,7 +896,7 @@
  void Mp2tStreamParser::OnEmitAudioBuffer(
      int pes_pid,
      scoped_refptr<StreamParserBuffer> stream_parser_buffer) {
@@ -15489,7 +15533,7 @@
  
    DVLOG(LOG_LEVEL_ES)
        << "OnEmitAudioBuffer: " << " size=" << stream_parser_buffer->size()
-@@ -839,7 +888,9 @@
+@@ -839,7 +910,9 @@
      return;
    }
  
@@ -15500,7 +15544,7 @@
  }
  
  void Mp2tStreamParser::OnEmitVideoBuffer(
-@@ -873,16 +924,24 @@
+@@ -873,17 +946,25 @@
      return true;
  
    // Keep track of the last audio and video config sent.
@@ -15516,7 +15560,7 @@
      return true;
    if (selected_video_pid_ >= 0 && !last_video_config.IsValidConfig())
      return true;
-+
+ 
 +  if (parc_safari_streams_) {
 +    for (const auto& [pid, state] : pids_) {
 +      if (state->pid_type() == PidState::kPidAudioPes &&
@@ -15525,10 +15569,11 @@
 +      }
 +    }
 +  }
- 
++
    // Buffer emission.
    while (!buffer_queue_chain_.empty()) {
-@@ -897,7 +956,7 @@
+     // Start a segment if needed.
+@@ -897,7 +978,7 @@
      BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
      if (!queue_with_config.is_config_sent) {
        std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
@@ -15537,7 +15582,7 @@
        if (!config_cb_.Run(std::move(media_tracks))) {
          return false;
        }
-@@ -905,10 +964,7 @@
+@@ -905,10 +986,7 @@
      }
  
      // Add buffers.
@@ -15549,7 +15594,7 @@
      if (!queue_with_config.video_queue.empty())
        buffer_queue_map.insert(
            std::make_pair(kMp2tVideoTrackId, queue_with_config.video_queue));
-@@ -922,7 +978,7 @@
+@@ -922,7 +1000,7 @@
    // Push an empty queue with the last audio/video config
    // so that buffers with the same config can be added later on.
    BufferQueueWithConfig queue_with_config(
@@ -15568,10 +15613,11 @@
  #include "crypto/openssl_util.h"
  #include "media/base/audio_decoder_config.h"
  #include "media/base/decoder_buffer.h"
-@@ -408,6 +409,57 @@
+@@ -407,6 +408,57 @@
+     return true;
    }
  };
- 
++
 +TEST(Mp2tSafariTracksTest, SafariKeepsBothAudioPidsChromeKeepsLowest) {
 +  for (bool safari : {false, true}) {
 +    Mp2tStreamParser parser(std::nullopt, false);
@@ -15622,11 +15668,10 @@
 +    }
 +  }
 +}
-+
+ 
  TEST_F(Mp2tStreamParserTest, NonStrictCodecChecking) {
    CreateNonStrictParser();
-   InitializeParser();
-@@ -528,6 +580,78 @@
+@@ -528,6 +580,135 @@
    EXPECT_EQ(config_count_, 1);
  }
  
@@ -15657,6 +15702,63 @@
 +  EXPECT_EQ(audio_frame_count_, 119);
 +  EXPECT_EQ(video_frame_count_, 82);
 +  EXPECT_EQ(config_count_, 1);
++}
++
++// Parc: MPEG-2 video (stream type 0x02), which AVStreamDataParser reads,
++// under ParcIgnoreDeclaredCodecs() only. The file holds twelve 64x48 16:9
++// pictures in three GOPs, the first closed, at 25 frames per second, one per
++// PES packet; the second file is the same pictures two per PES packet, so
++// every other one has no timestamp of its own. AVStreamDataParser gives both
++// the same timestamps, a 4:3 pixel aspect ratio, and one sync sample.
++TEST_F(Mp2tStreamParserTest, ParcMpeg2VideoStreamUnderSafariRules) {
++  for (const char* file :
++       {"parc-mpeg2-video.ts", "parc-mpeg2-video-shared-pes.ts"}) {
++    SCOPED_TRACE(file);
++    CreateNonStrictParser();
++    parser_->ParcIgnoreDeclaredCodecs();
++    has_audio_ = false;
++    capture_buffers = true;
++    video_buffer_capture_.clear();
++    ResetStats();
++
++    InitializeParser();
++    ParseMpeg2TsFile(file, 512);
++    parser_->Flush();
++    EXPECT_EQ(config_count_, 1);
++    EXPECT_EQ(current_video_config_.codec(), VideoCodec::kMPEG2);
++    EXPECT_EQ(current_video_config_.coded_size(), gfx::Size(64, 48));
++    EXPECT_EQ(current_video_config_.natural_size(), gfx::Size(85, 48));
++    EXPECT_EQ(current_video_config_.aspect_ratio(),
++              VideoAspectRatio::PAR(768, 576));
++    ASSERT_EQ(current_video_config_.extra_data().size(), 22u);
++    EXPECT_EQ(current_video_config_.extra_data()[3], 0xB3);
++
++    // Presentation/decode milliseconds, K for a key frame.
++    std::vector<std::string> frames;
++    for (const auto& buffer : video_buffer_capture_) {
++      frames.push_back(
++          base::NumberToString(buffer->timestamp().InMilliseconds()) + "/" +
++          base::NumberToString(
++              buffer->GetDecodeTimestamp().InMilliseconds()) +
++          (buffer->is_key_frame() ? "K" : ""));
++    }
++    const std::vector<std::string> expected_frames = {
++        "1440/1400K", "1560/1440", "1480/1480", "1520/1520",
++        "1680/1560",  "1600/1600", "1640/1640", "1800/1680",
++        "1720/1720",  "1760/1760", "1880/1800", "1840/1840"};
++    EXPECT_EQ(frames, expected_frames);
++    EXPECT_EQ(video_buffer_capture_.front()->size(), 2034u);
++  }
++}
++
++TEST_F(Mp2tStreamParserTest, ParcMpeg2VideoStreamIgnoredOtherwise) {
++  CreateNonStrictParser();
++
++  InitializeParser();
++  ParseMpeg2TsFile("parc-mpeg2-video.ts", 512);
++  parser_->Flush();
++  EXPECT_EQ(config_count_, 0);
++  EXPECT_EQ(video_frame_count_, 0);
 +}
 +
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)

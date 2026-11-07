@@ -1829,28 +1829,32 @@
        return H264PROFILE_MIN;
 --- a/media/gpu/mac/video_toolbox_video_decoder.cc
 +++ b/media/gpu/mac/video_toolbox_video_decoder.cc
-@@ -25,6 +25,7 @@
+@@ -25,6 +25,8 @@
  #include "media/gpu/accelerated_video_decoder.h"
  #include "media/gpu/av1_decoder.h"
  #include "media/gpu/h264_decoder.h"
 +#include "media/gpu/mac/parc_video_toolbox_h263_decoder.h"
++#include "media/gpu/mac/parc_video_toolbox_mpeg_video_decoder.h"
  #include "media/gpu/mac/video_toolbox_av1_accelerator.h"
  #include "media/gpu/mac/video_toolbox_decompression_metadata.h"
  #include "media/gpu/mac/video_toolbox_h264_accelerator.h"
-@@ -176,7 +177,11 @@
+@@ -176,7 +178,14 @@
    auto accelerator_output_cb = base::BindRepeating(
        &VideoToolboxVideoDecoder::OnAcceleratorOutput, base::Unretained(this));
  
 -  switch (VideoCodecProfileToVideoCodec(config.profile())) {
-+  // Parc: H.263 has no VideoCodecProfile, so its config names only the codec.
-+  const VideoCodec codec = config.codec() == VideoCodec::kH263
-+                               ? VideoCodec::kH263
-+                               : VideoCodecProfileToVideoCodec(config.profile());
++  // Parc: H.263 and MPEG-1/2 video have no VideoCodecProfile, so their
++  // configs name only the codec. MPEG-1/2 video comes only from a
++  // Safari-identity page's Media Source (ParcVideoToolboxMpegVideoDecoder).
++  const VideoCodec codec =
++      config.codec() == VideoCodec::kH263 || config.codec() == VideoCodec::kMPEG2
++          ? config.codec()
++          : VideoCodecProfileToVideoCodec(config.profile());
 +  switch (codec) {
      case VideoCodec::kH264:
        accelerator_ = std::make_unique<H264Decoder>(
            std::make_unique<VideoToolboxH264Accelerator>(
-@@ -211,6 +216,12 @@
+@@ -211,6 +220,18 @@
        break;
  #endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
  
@@ -1860,25 +1864,34 @@
 +          std::move(accelerator_output_cb), config.coded_size());
 +      break;
 +
++    case VideoCodec::kMPEG2:
++      accelerator_ = std::make_unique<ParcVideoToolboxMpegVideoDecoder>(
++          media_log_->Clone(), std::move(accelerator_decode_cb),
++          std::move(accelerator_output_cb), config.extra_data());
++      break;
++
      default:
        task_runner_->PostTask(
            FROM_HERE, base::BindOnce(std::move(init_cb),
 --- a/media/gpu/mac/BUILD.gn
 +++ b/media/gpu/mac/BUILD.gn
-@@ -18,6 +18,8 @@
+@@ -18,6 +18,10 @@
    visibility = [ "//media/gpu" ]
  
    sources = [
 +    "parc_video_toolbox_h263_decoder.cc",
 +    "parc_video_toolbox_h263_decoder.h",
++    "parc_video_toolbox_mpeg_video_decoder.cc",
++    "parc_video_toolbox_mpeg_video_decoder.h",
      "video_toolbox_av1_accelerator.cc",
      "video_toolbox_av1_accelerator.h",
      "video_toolbox_decompression_metadata.cc",
-@@ -95,6 +97,7 @@
+@@ -95,6 +99,8 @@
    }
  
    sources = [
 +    "parc_video_toolbox_h263_decoder_unittest.cc",
++    "parc_video_toolbox_mpeg_video_decoder_unittest.cc",
      "video_toolbox_av1_accelerator_unittest.cc",
      "video_toolbox_decompression_session_manager_unittest.cc",
      "video_toolbox_h264_accelerator_unittest.cc",

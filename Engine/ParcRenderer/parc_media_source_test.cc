@@ -807,6 +807,19 @@ TEST_F(ParcMediaSourceTest, SafariMp2tTypesAsSafari) {
            "video/x-mp2t; codecs=\"avc1.64001F\"",
            "video/m2ts; codecs=\"mp4a.40.2\"",
            "video/x-m2ts; codecs=\"avc1.4D401F,ec-3\"",
+           "video/mp2t; codecs=\"mp2v\"",
+           "video/mp2t; codecs=\"mp2v.60\"",
+           "video/mp2t; codecs=\"mp2v.61\"",
+           "video/mp2t; codecs=\"mp2v.65\"",
+           "video/mp2t; codecs=\"mp2v.0x61\"",
+           "video/mp2t; codecs=\"mp2v.061\"",
+           "video/mp2t; codecs=\"mp2v.+61\"",
+           "video/mp2t; codecs=\"mp2v,mp4a.40.2\"",
+           "video/mp2t; codecs=\"mp2v ac-3\"",
+           "video/mp2t; codecs=\"mp1v\"",
+           "video/mp2t; codecs=\"mp1v.\"",
+           "video/mp2t; codecs=\"mp1v.x.y\"",
+           "video/mp2t; codecs=\"mp1v,mp4a.40.33\"",
        }) {
     EXPECT_TRUE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
@@ -839,9 +852,19 @@ TEST_F(ParcMediaSourceTest, SafariMp2tTypesAsSafari) {
            "video/mp2t; codecs=\", ,\"",
            "VIDEO/MP2T",
            "audio/mp2t; codecs=\"mp4a.40.2\"",
-           // Safari takes these; Chromium doesn't decode them.
-           "video/mp2t; codecs=\"mp2v\"",
-           "video/mp2t; codecs=\"mp1v\"",
+           "video/mp2t; codecs=\"mp2v.\"",
+           "video/mp2t; codecs=\"mp2v.62\"",
+           "video/mp2t; codecs=\"mp2v.63\"",
+           "video/mp2t; codecs=\"mp2v.64\"",
+           "video/mp2t; codecs=\"mp2v.6A\"",
+           "video/mp2t; codecs=\"mp2v.-61\"",
+           "video/mp2t; codecs=\"mp2v.61x\"",
+           "video/mp2t; codecs=\"mp2v.61.0\"",
+           "video/mp2t; codecs=\"mp2vx\"",
+           "video/mp2t; codecs=\"MP2V\"",
+           "video/mp2t; codecs=\"mp1vx\"",
+           "video/mp2t; codecs=\"MP1V\"",
+           "video/mp2t; codecs=\"mp2v,mp4a.40.34\"",
        }) {
     EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
@@ -859,6 +882,8 @@ TEST_F(ParcMediaSourceTest, ChromeMp2tTypesUnchanged) {
            "video/mp2t; codecs=\"avc1\"",
            "video/mp2t; codecs=\"ac-3\"",
            "video/mp2t; codecs=\"ec-3\"",
+           "video/mp2t; codecs=\"mp2v\"",
+           "video/mp2t; codecs=\"mp1v\"",
            "video/x-mp2t; codecs=\"avc1.64001F\"",
            "video/m2ts; codecs=\"avc1.64001F\"",
        }) {
@@ -921,6 +946,8 @@ TEST_F(ParcMediaSourceTest, SafariMp2tParserCodecs) {
   EXPECT_EQ(ParcSafariMp2tParserCodecs("avc1.64001F,,"), "avc1.42E01E");
   EXPECT_EQ(ParcSafariMp2tParserCodecs("ac-3,mp4a.40.2"), "mp4a.40.2");
   EXPECT_EQ(ParcSafariMp2tParserCodecs("ac-3 ec-3.20"), "");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("mp2v.61,mp4a.40.2"), "mp4a.40.2");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("mp1v mp2v"), "");
   EXPECT_EQ(ParcSafariMp2tParserCodecs("mp4a.40.32,mp4a.40.033"),
             "mp4a.69,mp4a.69");
   EXPECT_EQ(ParcSafariMp2tParserCodecs("  "), "");

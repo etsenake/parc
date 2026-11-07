@@ -207,12 +207,12 @@ inline std::optional<uint64_t> ParcSafariCodecNumber(const String& text,
 
 // The codec ids of MPEG-2 TS media that both Safari's Media Source and Parc
 // play: +[AVStreamDataParser canParseExtendedMIMEType:] on macOS 27.2 for
-// H.264, AAC, MPEG-1 Layer I and II, AC-3 and E-AC-3, which Chromium's TS
-// parser reads (AC-3 and E-AC-3 under Safari's identity only, through
-// media::mp2t::ParcEsParserAc3) and its MP3 decoder plays Layers I and II
-// through. AVFoundation refuses every MP3 id and HEVC there; it also takes
-// "mp2v" and "mp1v", which Chromium can't decode. Matched as AVFoundation
-// matches them:
+// H.264, AAC, MPEG-1 Layer I and II, AC-3, E-AC-3 and MPEG-1 and MPEG-2
+// video, which Chromium's TS parser reads (AC-3, E-AC-3 and MPEG video under
+// Safari's identity only, through media::mp2t::ParcEsParserAc3 and
+// ParcEsParserMpegVideo), its MP3 decoder plays Layers I and II through and
+// VideoToolbox decodes MPEG video in the GPU process. AVFoundation refuses
+// every MP3 id and HEVC there. Matched as AVFoundation matches them:
 // - H.264: "avc1" or "avc3", alone or followed by "." and anything, except
 //   that six characters reading wholly as one hex number must give a
 //   profile_idc of 66, 77, 88, 100, 110, 122 or 244 and a level_idc below 100.
@@ -220,9 +220,23 @@ inline std::optional<uint64_t> ParcSafariCodecNumber(const String& text,
 //   object type 2, 5, 29, 42, 32 (Layer I) or 33 (Layer II) and nothing more,
 //   or object type 0x67 (MPEG-2 AAC LC) not followed by ".".
 // - AC-3 and E-AC-3: "ac-3" or "ec-3", alone or followed by "." and anything.
+// - MPEG-1 video: "mp1v", alone or followed by "." and anything.
+// - MPEG-2 video: "mp2v", alone or followed by "." and object type 0x60
+//   (simple profile), 0x61 (main) or 0x65 (4:2:2) and nothing more.
 inline bool IsParcSafariMp2tCodec(const String& codec) {
-  if (codec.starts_with("ac-3") || codec.starts_with("ec-3")) {
+  if (codec.starts_with("ac-3") || codec.starts_with("ec-3") ||
+      codec.starts_with("mp1v")) {
     return codec.length() == 4 || codec[4] == '.';
+  }
+  if (codec.starts_with("mp2v")) {
+    if (codec.length() == 4) {
+      return true;
+    }
+    wtf_size_t pos = 5;
+    const std::optional<uint64_t> object_type =
+        codec[4] == '.' ? ParcSafariCodecNumber(codec, pos, 16) : std::nullopt;
+    return pos == codec.length() &&
+           (object_type == 0x60 || object_type == 0x61 || object_type == 0x65);
   }
   if (codec.starts_with("avc1") || codec.starts_with("avc3")) {
     if (codec.length() == 4) {
@@ -275,8 +289,8 @@ inline bool IsParcSafariMp2tCodec(const String& codec) {
 // whitespace and every codec must pass IsParcSafariMp2tCodec. The parser keeps
 // every stream regardless (Mp2tStreamParser::ParcIgnoreDeclaredCodecs()), so
 // the ids returned only name the H.264, AAC and MPEG audio its factory
-// accepts, keeping HE-AAC's SBR signal; without one (as for AC-3 and E-AC-3
-// alone), empty codecs leave the parser to
+// accepts, keeping HE-AAC's SBR signal; without one (as for AC-3, E-AC-3 and
+// MPEG video alone), empty codecs leave the parser to
 // media::StreamParserFactory::ParcCreateWithoutCodecs().
 inline std::optional<String> ParcSafariMp2tParserCodecs(const String& codecs) {
   const Vector<String> ids = codecs.SplitSkippingEmpty(
@@ -298,7 +312,8 @@ inline std::optional<String> ParcSafariMp2tParserCodecs(const String& codecs) {
     if (!IsParcSafariMp2tCodec(id)) {
       return std::nullopt;
     }
-    if (id.starts_with("ac-3") || id.starts_with("ec-3")) {
+    if (id.starts_with("ac-3") || id.starts_with("ec-3") ||
+        id.starts_with("mp1v") || id.starts_with("mp2v")) {
       continue;
     }
     String parser_codec;
