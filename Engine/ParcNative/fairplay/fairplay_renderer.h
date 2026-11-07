@@ -1,8 +1,8 @@
 // FairPlay-capable sample-buffer playback, shaped like media::Renderer: a
-// video AVSampleBufferDisplayLayer and an AVSampleBufferAudioRenderer under an
-// AVSampleBufferRenderSynchronizer. Encrypted samples are enqueued still
+// video AVSampleBufferDisplayLayer and an AVSampleBufferAudioRenderer per audio
+// track under an AVSampleBufferRenderSynchronizer. Encrypted samples are enqueued still
 // encrypted, as protected CMSampleBuffers (FairPlay sample entry type, 'tenc'
-// and 'sinf' in the format description, subsample and IV attachments); both
+// and 'sinf' in the format description, subsample and IV attachments); the
 // renderers are content key recipients of the CDM's AVContentKeySession and
 // decrypt with its keys, matched by the format description's key ID.
 // Decryption and decode happen inside AVFoundation's protected path.
@@ -21,6 +21,19 @@ namespace parc::fairplay {
 class FairPlayCdm;
 
 enum class StreamType { kAudio, kVideo };
+
+// One of the renderer's streams: its video, or one of its audio tracks. Each
+// audio track has its own AVSampleBufferAudioRenderer, and they play mixed, as
+// WebKit's AudioVideoRendererAVFObjC keeps one per enabled track. Initialize's
+// audio is track 0, so StreamType::kAudio names it.
+struct StreamId {
+  StreamId(StreamType type, uint32_t audio_track = 0) : type(type), audio_track(audio_track) {}
+  bool operator==(const StreamId& other) const {
+    return type == other.type && (type == StreamType::kVideo || audio_track == other.audio_track);
+  }
+  StreamType type;
+  uint32_t audio_track;  // Audio only.
+};
 
 enum class RenderingStatus { kUnknown, kRendering, kFailed };
 
@@ -43,7 +56,7 @@ class FairPlayRendererClient {
  public:
   virtual ~FairPlayRendererClient() = default;
   // |stream| can take more data: enqueue until IsReadyForMoreData() is false.
-  virtual void OnNeedData(StreamType stream) = 0;
+  virtual void OnNeedData(StreamId stream) = 0;
   // media::WaitingReason::kNoDecryptionKey. Held samples go out by themselves
   // once the key arrives.
   virtual void OnWaitingForKey() = 0;
@@ -55,19 +68,22 @@ class FairPlayRendererClient {
   // stream reached end of stream, was given samples (enqueued or held for a
   // key) 3 s past the clock, or has a renderer with enough for a reliable
   // start. After start/seek/reset video also waits for a decoded frame.
-  // The clock runs from then once both renderers also have samples to
+  // The clock runs from then once every renderer also has samples to
   // play (so it waits for keys at the start, but samples held for a key later
   // don't stop it: the picture freezes and time runs on, as in Safari).
   // BUFFERING_HAVE_NOTHING only when the clock reaches the end of what a
   // stream without end of stream was given (a stall at the buffered end); the
-  // clock stops there and restarts at HAVE_ENOUGH. Flush resets to
-  // HAVE_NOTHING silently.
+  // clock stops there and restarts at HAVE_ENOUGH. A stream added during
+  // playback (AddVideo, AddAudio) reports HAVE_NOTHING too, until it has
+  // enough. Flush resets to HAVE_NOTHING silently.
   virtual void OnBufferingStateChange(bool have_enough) = 0;
 };
 
+// The audio fields describe the first audio track; the counts cover them all.
 struct RendererStatus {
   RenderingStatus video = RenderingStatus::kUnknown;
   RenderingStatus audio = RenderingStatus::kUnknown;
+  size_t audio_renderers = 0;
   std::string video_error;
   std::string audio_error;
   bool video_requires_flush = false;
@@ -136,11 +152,24 @@ class FairPlayRenderer {
   // sequence header; audio changes the bitstream can't signal (a new
   // AudioSpecificConfig) need this call.
   Result Reconfigure(const VideoConfig& config);
-  Result Reconfigure(const AudioConfig& config);
+  Result Reconfigure(const AudioConfig& config, uint32_t audio_track = 0);
+
+  // A stream that joins after Initialize, as WebKit's AudioVideoRendererAVFObjC
+  // adds a display layer or audio renderer to its synchronizer for a track
+  // enabled during playback (addTrack). The other renderers, the layer and
+  // the clock's time stay; the clock waits until the new stream has samples
+  // (and video a decoded frame), samples before the current time aren't
+  // shown, and it joins the CDM's key session if one is set. AddVideo fails
+  // when there is video already; AddAudio names the new track in |track|.
+  Result AddVideo(const VideoConfig& config);
+  Result AddAudio(const AudioConfig& config, uint32_t* track);
+  // Takes an audio track's renderer off the synchronizer, dropping what it
+  // holds (AudioVideoRendererAVFObjC::removeAudioRenderer).
+  void RemoveAudio(uint32_t track);
 
   // Joins the renderers to |cdm|'s AVContentKeySession as content key
-  // recipients (borrowed; call SetCdm(nullptr) before destroying it). May come
-  // before Initialize (Chromium's order when MediaKeys were set first; the
+  // recipients (borrowed; call SetCdm(nullptr) before destroying it); streams
+  // added later join it as they are created. May come before Initialize (Chromium's order when MediaKeys were set first; the
   // CDM is attached when the renderers exist) or after it, but before the
   // first Enqueue, and can't move to another CDM afterwards: AVFoundation
   // allows recipients to join one session, before they process media, and
@@ -159,18 +188,18 @@ class FairPlayRenderer {
   void DetachCdm();
 
   // The AVSampleBufferDisplayLayer to composite, borrowed. Nonnull once
-  // Initialize succeeded with a video config.
+  // Initialize or AddVideo succeeded with a video config.
   void* display_layer() const;
 
-  bool IsReadyForMoreData(StreamType stream) const;
+  bool IsReadyForMoreData(StreamId stream) const;
 
   // Copies the sample into a CMSampleBuffer. Annex B video and ADTS audio are
   // reframed (with subsamples adjusted) as the config declares.
-  EnqueueResult Enqueue(StreamType stream, const EncodedSample& sample);
+  EnqueueResult Enqueue(StreamId stream, const EncodedSample& sample);
 
   // No more samples for |stream| until Flush. OnEnded fires when the
   // synchronizer reaches the end of every configured stream.
-  void SetEndOfStream(StreamType stream);
+  void SetEndOfStream(StreamId stream);
 
   // Sets the media time (rate stays 0 until SetPlaybackRate). Video samples
   // before |time| are decoded but not displayed.

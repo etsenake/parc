@@ -32,9 +32,6 @@ namespace {
 
 namespace fp = parc::fairplay;
 
-constexpr fp::StreamType kStreamTypes[] = {fp::StreamType::kVideo,
-                                           fp::StreamType::kAudio};
-
 // Safari's GPU process refreshes the counts a page reads at the interval the
 // page reads them, checked every 250 ms while playing
 // (RemoteAudioVideoRendererProxyManager::setVideoPlaybackMetricsUpdateInterval,
@@ -149,6 +146,18 @@ fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
   return video;
 }
 
+// The core's config for what it plays: H.264, HEVC, AV1 and the Dolby Vision
+// profiles above.
+std::optional<fp::VideoConfig> CoreConfigIfPlayable(
+    const VideoDecoderConfig& config) {
+  if (!ToVideoCodec(config.codec()) ||
+      (config.codec() == VideoCodec::kDolbyVision &&
+       DolbyVisionProfileNumber(config.profile()) < 0)) {
+    return std::nullopt;
+  }
+  return ToCoreConfig(config);
+}
+
 fp::AudioConfig ToCoreConfig(const AudioDecoderConfig& config) {
   fp::AudioConfig audio;
   audio.codec = *ToAudioCodec(config.codec());
@@ -160,6 +169,14 @@ fp::AudioConfig ToCoreConfig(const AudioDecoderConfig& config) {
   audio.channels = config.channels();
   audio.encryption.scheme = ToScheme(config.encryption_scheme());
   return audio;
+}
+
+std::optional<fp::AudioConfig> CoreConfigIfPlayable(
+    const AudioDecoderConfig& config) {
+  if (!ToAudioCodec(config.codec())) {
+    return std::nullopt;
+  }
+  return ToCoreConfig(config);
 }
 
 }  // namespace
@@ -205,34 +222,38 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(client);
   client_ = client;
-  video_.demuxer_stream = media_resource->GetFirstStream(DemuxerStream::VIDEO);
-  audio_.demuxer_stream = media_resource->GetFirstStream(DemuxerStream::AUDIO);
 
+  // FairPlayRendererClient gives the streams to play.
+  const std::vector<raw_ptr<DemuxerStream>> given =
+      media_resource->GetAllStreams();
   PipelineStatus status = PIPELINE_OK;
   std::optional<fp::VideoConfig> video;
-  std::optional<fp::AudioConfig> audio;
-  if (!video_.demuxer_stream && !audio_.demuxer_stream) {
+  std::vector<std::pair<uint32_t, fp::AudioConfig>> audio;
+  std::string unplayable;
+  for (uint32_t id = 0; id < given.size(); ++id) {
+    DemuxerStream* stream = given[id];
+    if (stream->type() == DemuxerStream::VIDEO && !video) {
+      video = CoreConfigIfPlayable(stream->video_decoder_config());
+      if (!video) {
+        unplayable += " " + stream->video_decoder_config().AsHumanReadableString();
+        status = DECODER_ERROR_NOT_SUPPORTED;
+        continue;
+      }
+      streams_[id].demuxer_stream = stream;
+    } else if (stream->type() == DemuxerStream::AUDIO) {
+      std::optional<fp::AudioConfig> config =
+          CoreConfigIfPlayable(stream->audio_decoder_config());
+      if (!config) {
+        unplayable += " " + stream->audio_decoder_config().AsHumanReadableString();
+        status = DECODER_ERROR_NOT_SUPPORTED;
+        continue;
+      }
+      audio.emplace_back(id, *config);
+      streams_[id].demuxer_stream = stream;
+    }
+  }
+  if (streams_.empty() && status.is_ok()) {
     status = PIPELINE_ERROR_COULD_NOT_RENDER;
-  }
-  if (video_.demuxer_stream) {
-    video_config_ = video_.demuxer_stream->video_decoder_config();
-    // Dolby Vision only in the profiles the core plays.
-    const bool dolby_vision_ok =
-        video_config_.codec() != VideoCodec::kDolbyVision ||
-        DolbyVisionProfileNumber(video_config_.profile()) >= 0;
-    if (ToVideoCodec(video_config_.codec()) && dolby_vision_ok) {
-      video = ToCoreConfig(video_config_);
-    } else {
-      status = DECODER_ERROR_NOT_SUPPORTED;
-    }
-  }
-  if (audio_.demuxer_stream) {
-    audio_config_ = audio_.demuxer_stream->audio_decoder_config();
-    if (ToAudioCodec(audio_config_.codec())) {
-      audio = ToCoreConfig(audio_config_);
-    } else {
-      status = DECODER_ERROR_NOT_SUPPORTED;
-    }
   }
 
   if (status.is_ok()) {
@@ -240,20 +261,25 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
     // commit its creation explicitly.
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    fp::Result result = core_->Initialize(video, audio);
+    fp::Result result = core_->Initialize(
+        video, audio.empty() ? std::nullopt
+                             : std::make_optional(audio.front().second));
+    if (result.ok() && !audio.empty()) {
+      streams_[audio.front().first].core = {fp::StreamType::kAudio, 0};
+    }
+    for (size_t i = 1; result.ok() && i < audio.size(); ++i) {
+      uint32_t track = 0;
+      result = core_->AddAudio(audio[i].second, &track);
+      streams_[audio[i].first].core = {fp::StreamType::kAudio, track};
+    }
     [CATransaction commit];
     if (!result.ok()) {
       LOG(ERROR) << "FairPlay renderer initialization failed: "
                  << result.message;
       status = PIPELINE_ERROR_INITIALIZATION_FAILED;
     }
-  } else {
-    LOG(ERROR) << "FairPlay renderer can't play this media: video "
-               << (video_.demuxer_stream ? video_config_.AsHumanReadableString()
-                                         : "none")
-               << ", audio "
-               << (audio_.demuxer_stream ? audio_config_.AsHumanReadableString()
-                                         : "none");
+  } else if (!unplayable.empty()) {
+    LOG(ERROR) << "FairPlay renderer can't play" << unplayable;
   }
 
   if (status.is_ok()) {
@@ -261,14 +287,9 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
     core_->SetVolume(volume_);
     core_->SetMuted(muted_ || awaiting_mute_state_);
     if (video) {
-      CALayer* layer = (__bridge CALayer*)core_->display_layer();
-      layer_token_ = base::UnguessableToken::Create();
-      if (ui::ProtectedLayerRegistry::Register(layer_token_, layer)) {
-        natural_size_ = video_config_.natural_size();
-        layer_registered_cb_.Run(layer_token_, natural_size_);
-      } else {
-        layer_token_ = base::UnguessableToken();
-        LOG(ERROR) << "FairPlay display layer registration failed";
+      natural_size_ =
+          gfx::Size(video->natural_width, video->natural_height);
+      if (!RegisterLayer()) {
         status = PIPELINE_ERROR_INITIALIZATION_FAILED;
       }
     }
@@ -276,6 +297,101 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
   // |init_cb| must not run before this method returns.
   task_runner_->PostTask(FROM_HERE,
                          base::BindOnce(std::move(init_cb), std::move(status)));
+}
+
+bool FairPlayRendererAdapter::RegisterLayer() {
+  CALayer* layer = (__bridge CALayer*)core_->display_layer();
+  layer_token_ = base::UnguessableToken::Create();
+  if (!ui::ProtectedLayerRegistry::Register(layer_token_, layer)) {
+    layer_token_ = base::UnguessableToken();
+    LOG(ERROR) << "FairPlay display layer registration failed";
+    return false;
+  }
+  layer_registered_cb_.Run(layer_token_, natural_size_);
+  return true;
+}
+
+void FairPlayRendererAdapter::SetExtension(
+    std::unique_ptr<mojom::FairPlayRendererExtension> extension) {
+  extension_ = std::move(extension);
+}
+
+void FairPlayRendererAdapter::AddStream(uint32_t id, DemuxerStream* stream) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (errored_ || !core_initialized_ || streams_.contains(id) ||
+      (stream->type() != DemuxerStream::AUDIO &&
+       stream->type() != DemuxerStream::VIDEO)) {
+    return;
+  }
+  fp::Result result;
+  fp::StreamId core{fp::StreamType::kVideo};
+  if (stream->type() == DemuxerStream::VIDEO) {
+    if (HasVideo()) {
+      // The pipeline enables one video stream at a time.
+      return;
+    }
+    std::optional<fp::VideoConfig> config =
+        CoreConfigIfPlayable(stream->video_decoder_config());
+    if (!config) {
+      LOG(ERROR) << "FairPlay renderer can't play "
+                 << stream->video_decoder_config().AsHumanReadableString();
+      ReportError(DECODER_ERROR_NOT_SUPPORTED);
+      return;
+    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    result = core_->AddVideo(*config);
+    [CATransaction commit];
+    if (result.ok()) {
+      natural_size_ = gfx::Size(config->natural_width, config->natural_height);
+      if (!RegisterLayer()) {
+        ReportError(PIPELINE_ERROR_DECODE);
+        return;
+      }
+      // The pipeline reported its metadata long ago.
+      if (!natural_size_.IsEmpty()) {
+        natural_size_reported_ = true;
+        client_->OnVideoNaturalSizeChange(natural_size_);
+      }
+    }
+  } else {
+    std::optional<fp::AudioConfig> config =
+        CoreConfigIfPlayable(stream->audio_decoder_config());
+    if (!config) {
+      LOG(ERROR) << "FairPlay renderer can't play "
+                 << stream->audio_decoder_config().AsHumanReadableString();
+      ReportError(DECODER_ERROR_NOT_SUPPORTED);
+      return;
+    }
+    uint32_t track = 0;
+    result = core_->AddAudio(*config, &track);
+    core = {fp::StreamType::kAudio, track};
+  }
+  if (!result.ok()) {
+    LOG(ERROR) << "FairPlay renderer couldn't add a stream: "
+               << result.message;
+    ReportError(PIPELINE_ERROR_DECODE);
+    return;
+  }
+  // The core asks for its data (OnNeedData) once it's playing.
+  Stream& added = streams_[id];
+  added.demuxer_stream = stream;
+  added.core = core;
+}
+
+bool FairPlayRendererAdapter::RemoveStream(uint32_t id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  auto it = streams_.find(id);
+  if (it == streams_.end()) {
+    return true;
+  }
+  if (it->second.core.type != fp::StreamType::kAudio) {
+    return false;
+  }
+  core_->RemoveAudio(it->second.core.audio_track);
+  streams_.erase(it);
+  MaybeFinishFlush();
+  return true;
 }
 
 void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
@@ -330,8 +446,9 @@ void FairPlayRendererAdapter::Flush(base::OnceClosure flush_cb) {
   playing_ = false;
   UpdateStatisticsTimer();
   flush_cb_ = std::move(flush_cb);
-  video_.end_of_stream = false;
-  audio_.end_of_stream = false;
+  for (auto& [id, stream] : streams_) {
+    stream.end_of_stream = false;
+  }
   if (core_initialized_) {
     core_flush_pending_ = true;
     base::WeakPtr<FairPlayRendererAdapter> weak = weak_factory_.GetWeakPtr();
@@ -363,8 +480,8 @@ void FairPlayRendererAdapter::StartPlayingFrom(base::TimeDelta time) {
   }
   core_->StartPlayingFrom(ToMediaTime(time));
   UpdateStatisticsTimer();
-  for (fp::StreamType type : kStreamTypes) {
-    OnNeedData(type);
+  for (auto& [id, stream] : streams_) {
+    OnNeedData(stream.core);
   }
 }
 
@@ -425,17 +542,20 @@ void FairPlayRendererAdapter::SetMuted(bool muted) {
   }
 }
 
-void FairPlayRendererAdapter::OnNeedData(fp::StreamType type) {
+void FairPlayRendererAdapter::OnNeedData(fp::StreamId core) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!playing_ || errored_ || !core_initialized_) {
     return;
   }
-  Stream& stream = StreamFor(type);
-  if (!stream.demuxer_stream || stream.read_pending || stream.end_of_stream ||
-      !core_->IsReadyForMoreData(type)) {
-    return;
+  for (auto& [id, stream] : streams_) {
+    if (stream.core == core) {
+      if (!stream.read_pending && !stream.end_of_stream &&
+          core_->IsReadyForMoreData(core)) {
+        ReadFromStream(id);
+      }
+      return;
+    }
   }
-  ReadFromStream(type);
 }
 
 void FairPlayRendererAdapter::OnWaitingForKey() {
@@ -476,34 +596,41 @@ void FairPlayRendererAdapter::OnBufferingStateChange(bool have_enough) {
       have_enough ? BUFFERING_CHANGE_REASON_UNKNOWN : DEMUXER_UNDERFLOW);
 }
 
-FairPlayRendererAdapter::Stream& FairPlayRendererAdapter::StreamFor(
-    fp::StreamType type) {
-  return type == fp::StreamType::kVideo ? video_ : audio_;
+bool FairPlayRendererAdapter::HasVideo() const {
+  for (const auto& [id, stream] : streams_) {
+    if (stream.core.type == fp::StreamType::kVideo) {
+      return true;
+    }
+  }
+  return false;
 }
 
-void FairPlayRendererAdapter::ReadFromStream(fp::StreamType type) {
-  Stream& stream = StreamFor(type);
-  DCHECK(stream.demuxer_stream);
+void FairPlayRendererAdapter::ReadFromStream(uint32_t id) {
+  Stream& stream = streams_[id];
   DCHECK(!stream.read_pending);
   stream.read_pending = true;
   stream.demuxer_stream->Read(
       1, base::BindOnce(&FairPlayRendererAdapter::OnBuffersRead,
-                        weak_factory_.GetWeakPtr(), type, generation_));
+                        weak_factory_.GetWeakPtr(), id, generation_));
 }
 
 void FairPlayRendererAdapter::OnBuffersRead(
-    fp::StreamType type,
+    uint32_t id,
     uint64_t generation,
     DemuxerStream::Status status,
     DemuxerStream::DecoderBufferVector buffers) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  Stream& stream = StreamFor(type);
+  auto it = streams_.find(id);
+  if (it == streams_.end()) {
+    return;  // Removed.
+  }
+  Stream& stream = it->second;
   stream.read_pending = false;
   if (generation != generation_ || flush_cb_) {
     // The stream reports a config change once; apply it even to a read the
     // Flush made stale, or later buffers would run on the old config.
     if (status == DemuxerStream::kConfigChanged && !errored_) {
-      HandleConfigChange(type);
+      HandleConfigChange(stream);
     }
     MaybeFinishFlush();
     return;
@@ -519,56 +646,53 @@ void FairPlayRendererAdapter::OnBuffersRead(
       ReportError(PIPELINE_ERROR_READ);
       return;
     case DemuxerStream::kConfigChanged:
-      HandleConfigChange(type);
-      OnNeedData(type);
+      HandleConfigChange(stream);
+      OnNeedData(stream.core);
       return;
     case DemuxerStream::kOk:
       break;
   }
+  const fp::StreamId core = stream.core;
   for (const scoped_refptr<DecoderBuffer>& buffer : buffers) {
     if (buffer->end_of_stream()) {
       stream.end_of_stream = true;
-      core_->SetEndOfStream(type);
+      core_->SetEndOfStream(core);
       return;
     }
-    EnqueueToCore(type, *buffer);
+    EnqueueToCore(core, *buffer);
     if (errored_) {
       return;
     }
   }
-  OnNeedData(type);
+  OnNeedData(core);
 }
 
-void FairPlayRendererAdapter::HandleConfigChange(fp::StreamType type) {
-  Stream& stream = StreamFor(type);
+void FairPlayRendererAdapter::HandleConfigChange(Stream& stream) {
   fp::Result result;
   // A new config, possibly a new codec (MSE changeType, e.g. an audio
   // language switch from E-AC-3 to AAC): the core builds formats for the
   // samples that follow, protected ones per key ID as they arrive.
-  if (type == fp::StreamType::kVideo) {
+  if (stream.core.type == fp::StreamType::kVideo) {
     VideoDecoderConfig config = stream.demuxer_stream->video_decoder_config();
-    const bool dolby_vision_ok =
-        config.codec() != VideoCodec::kDolbyVision ||
-        DolbyVisionProfileNumber(config.profile()) >= 0;
-    if (!ToVideoCodec(config.codec()) || !dolby_vision_ok) {
+    std::optional<fp::VideoConfig> core_config = CoreConfigIfPlayable(config);
+    if (!core_config) {
       LOG(ERROR) << "FairPlay renderer can't play "
                  << config.AsHumanReadableString();
       ReportError(DECODER_ERROR_NOT_SUPPORTED);
       return;
     }
-    result = core_->Reconfigure(ToCoreConfig(config));
-    video_config_ = config;
+    result = core_->Reconfigure(*core_config);
     client_->OnVideoConfigChange(config);
   } else {
     AudioDecoderConfig config = stream.demuxer_stream->audio_decoder_config();
-    if (!ToAudioCodec(config.codec())) {
+    std::optional<fp::AudioConfig> core_config = CoreConfigIfPlayable(config);
+    if (!core_config) {
       LOG(ERROR) << "FairPlay renderer can't play "
                  << config.AsHumanReadableString();
       ReportError(DECODER_ERROR_NOT_SUPPORTED);
       return;
     }
-    result = core_->Reconfigure(ToCoreConfig(config));
-    audio_config_ = config;
+    result = core_->Reconfigure(*core_config, stream.core.audio_track);
     client_->OnAudioConfigChange(config);
   }
   if (!result.ok()) {
@@ -577,7 +701,7 @@ void FairPlayRendererAdapter::HandleConfigChange(fp::StreamType type) {
   }
 }
 
-void FairPlayRendererAdapter::EnqueueToCore(fp::StreamType type,
+void FairPlayRendererAdapter::EnqueueToCore(fp::StreamId stream,
                                             const DecoderBuffer& buffer) {
   const base::span<const uint8_t> data(buffer);
   fp::EncodedSample sample;
@@ -609,20 +733,25 @@ void FairPlayRendererAdapter::EnqueueToCore(fp::StreamType type,
     }
     sample.decrypt = std::move(decrypt);
   }
-  if (core_->Enqueue(type, sample) == fp::EnqueueResult::kRejected) {
+  if (core_->Enqueue(stream, sample) == fp::EnqueueResult::kRejected) {
     LOG(ERROR) << "FairPlay renderer rejected a sample";
     ReportError(PIPELINE_ERROR_DECODE);
     return;
   }
   // A sample held for its key is decoded once the key arrives.
-  (type == fp::StreamType::kVideo ? unreported_video_bytes_
-                                  : unreported_audio_bytes_) += data.size();
+  (stream.type == fp::StreamType::kVideo ? unreported_video_bytes_
+                                         : unreported_audio_bytes_) +=
+      data.size();
 }
 
 void FairPlayRendererAdapter::MaybeFinishFlush() {
-  if (!flush_cb_ || core_flush_pending_ || video_.read_pending ||
-      audio_.read_pending) {
+  if (!flush_cb_ || core_flush_pending_) {
     return;
+  }
+  for (const auto& [id, stream] : streams_) {
+    if (stream.read_pending) {
+      return;
+    }
   }
   task_runner_->PostTask(FROM_HERE, std::move(flush_cb_));
 }

@@ -20,8 +20,11 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 - `fairplay_init_data.{h,mm}`: skd, sinf, cenc, mpts and keyids init data,
   mirroring WebKit's FairPlay CDM.
 - `fairplay_renderer.{h,mm}`: `FairPlayRenderer`, an
-  `AVSampleBufferDisplayLayer` and an `AVSampleBufferAudioRenderer` under an
-  `AVSampleBufferRenderSynchronizer`.
+  `AVSampleBufferDisplayLayer` and an `AVSampleBufferAudioRenderer` per audio
+  track (played mixed, as WebKit's `AudioVideoRendererAVFObjC` keeps one per
+  enabled track) under an `AVSampleBufferRenderSynchronizer`. Streams added
+  during playback (`AddVideo`, `AddAudio`) join the synchronizer; the clock
+  waits for their samples.
 - `fairplay_bitstream.{h,cc}`: Annex B and ADTS reframing, subsample
   bookkeeping, and the `tenc`/`sinf`/`esds` bytes.
 - `fairplay_key_session_internal.h`: content key recipient attachment for the
@@ -95,8 +98,9 @@ with the entitlement is killed at launch (SIGKILL, exit 137).
 The core uses the public path WebKit used before adopting that API:
 
 - `FairPlayCdm` owns one `AVContentKeySession` shared by all its EME sessions.
-  The renderer's `AVSampleBufferDisplayLayer` and `AVSampleBufferAudioRenderer`
-  join it with `addContentKeyRecipient:` in `SetCdm`. Both conform to
+  The renderer's `AVSampleBufferDisplayLayer` and `AVSampleBufferAudioRenderer`s
+  join it with `addContentKeyRecipient:` in `SetCdm`, and a renderer added
+  later joins it when it is created, before it processes media. Both conform to
   `AVContentKeyRecipient` at runtime, though only `AVURLAsset` is declared so
   in the macOS headers; `AVSampleBufferVideoRenderer` doesn't conform, so the
   layer is the recipient even when samples go through `sampleBufferRenderer`.

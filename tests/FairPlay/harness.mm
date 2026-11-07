@@ -17,6 +17,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -806,13 +807,7 @@ class Player : public fp::FairPlayRendererClient {
           result.message);
     layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
     if (has_video_) Check(layer_ != nil, name_ + ": display layer exists");
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    layer_.frame = host_.layer.bounds;
-    layer_.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
-    layer_.backgroundColor = NSColor.blackColor.CGColor;
-    [host_.layer addSublayer:layer_];
-    [CATransaction commit];
+    AttachLayer();
     monitor_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
     dispatch_source_set_timer(monitor_, DISPATCH_TIME_NOW, NSEC_PER_SEC, NSEC_PER_SEC / 10);
     Player* self = this;
@@ -898,8 +893,36 @@ class Player : public fp::FairPlayRendererClient {
         s.decode_failures, s.video_error.c_str(), s.audio_error.c_str());
   }
 
+  // A stream that joins during playback (FairPlayRenderer::AddVideo,
+  // AddAudio), fed |segments| from where they start; the core drops or hides
+  // what comes before the clock. Video goes on the host like the first.
+  fp::Result JoinVideo(const Media& video, SegmentList segments) {
+    fp::Result result = renderer_.AddVideo(VideoConfigFor(video.info, framing_, chromium_inputs_));
+    if (!result.ok()) return result;
+    has_video_ = true;
+    video_info_ = video.info;
+    video_feed_ = Feed{std::move(segments), 0, 0, false, false, {}, nullptr};
+    layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
+    AttachLayer();
+    return result;
+  }
+  fp::Result JoinAudio(const Media& audio, SegmentList segments, uint32_t* track) {
+    fp::Result result = renderer_.AddAudio(AudioConfigFor(audio.info, framing_, chromium_inputs_), track);
+    if (!result.ok()) return result;
+    if (g_muted) {
+      renderer_.SetMuted(true);
+      renderer_.SetVolume(0);
+    }
+    joined_audio_.insert_or_assign(*track, JoinedAudio{audio.info, Feed{std::move(segments), 0, 0, false, false, {}, nullptr}});
+    return result;
+  }
+  void RemoveAudio(uint32_t track) {
+    joined_audio_.erase(track);
+    renderer_.RemoveAudio(track);
+  }
+
   // media::RendererClient side.
-  void OnNeedData(fp::StreamType stream) override {
+  void OnNeedData(fp::StreamId stream) override {
     ++need_data_calls;
     Pump(stream);
   }
@@ -954,10 +977,34 @@ class Player : public fp::FairPlayRendererClient {
     const ft::TrackInfo* current = nullptr;
   };
 
-  void Pump(fp::StreamType stream) {
-    if (!(stream == fp::StreamType::kVideo ? has_video_ : has_audio_)) return;
-    Feed& feed = stream == fp::StreamType::kVideo ? video_feed_ : audio_feed_;
-    const ft::TrackInfo& default_info = stream == fp::StreamType::kVideo ? video_info_ : audio_info_;
+  struct JoinedAudio {
+    ft::TrackInfo info;
+    Feed feed;
+  };
+
+  void AttachLayer() {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    layer_.frame = host_.layer.bounds;
+    layer_.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+    layer_.backgroundColor = NSColor.blackColor.CGColor;
+    [host_.layer addSublayer:layer_];
+    [CATransaction commit];
+  }
+
+  void Pump(fp::StreamId stream) {
+    auto joined = stream.type == fp::StreamType::kAudio ? joined_audio_.find(stream.audio_track)
+                                                         : joined_audio_.end();
+    if (joined == joined_audio_.end() &&
+        !(stream.type == fp::StreamType::kVideo ? has_video_ : has_audio_ && stream.audio_track == 0)) {
+      return;
+    }
+    Feed& feed = joined != joined_audio_.end()          ? joined->second.feed
+                 : stream.type == fp::StreamType::kVideo ? video_feed_
+                                                         : audio_feed_;
+    const ft::TrackInfo& default_info = joined != joined_audio_.end()          ? joined->second.info
+                                        : stream.type == fp::StreamType::kVideo ? video_info_
+                                                                                : audio_info_;
     while (batch_reads || renderer_.IsReadyForMoreData(stream)) {
       while (feed.segment < feed.segments.size() && feed.index >= feed.segments[feed.segment]->size()) {
         ++feed.segment;
@@ -980,8 +1027,9 @@ class Player : public fp::FairPlayRendererClient {
       if (!feed.tracks.empty() && feed.current && feed.current != &info) {
         // A different track: audio needs Reconfigure; video signals itself
         // in-band (and gets Reconfigure too when full configs are in use).
-        fp::Result result = stream == fp::StreamType::kAudio
-                                ? renderer_.Reconfigure(AudioConfigFor(info, framing_, chromium_inputs_))
+        fp::Result result = stream.type == fp::StreamType::kAudio
+                                ? renderer_.Reconfigure(AudioConfigFor(info, framing_, chromium_inputs_),
+                                                        stream.audio_track)
                                 : (chromium_inputs_ ? fp::Result::Ok()
                                                     : renderer_.Reconfigure(VideoConfigFor(info, framing_, false)));
         ++reconfigures;
@@ -1022,6 +1070,7 @@ class Player : public fp::FairPlayRendererClient {
   dispatch_source_t monitor_ = nil;
   Feed video_feed_;
   Feed audio_feed_;
+  std::map<uint32_t, JoinedAudio> joined_audio_;
   std::vector<uint8_t> storage_;
   fp::DecryptInfo decrypt_storage_;
 };
@@ -1033,12 +1082,13 @@ SegmentList Segments(const Media& media, size_t first, size_t end) {
 }
 
 // Flush, feed from |first| segment, start at |time|, wait for HAVE_ENOUGH,
-// then play at |rate|.
+// then play at |rate|. Either media may be null for a player without it.
 Step StartAt(std::shared_ptr<Player> player, const Media* video, const Media* audio, size_t first,
              size_t end, double time, double rate, bool end_of_stream) {
   return [=](Done done) {
     player->renderer().Flush([=] {
-      player->SetFeeds(Segments(*video, first, end), Segments(*audio, first, end), end_of_stream);
+      player->SetFeeds(video ? Segments(*video, first, end) : SegmentList(),
+                       audio ? Segments(*audio, first, end) : SegmentList(), end_of_stream);
       player->have_enough = false;
       auto go = Once(10, player->name() + Format(": HAVE_ENOUGH after start at %.1fs", time),
                      [=](bool) {
@@ -1778,7 +1828,7 @@ std::vector<Step> InitializeRetryScenario() {
   steps.push_back(Section("Initialize retried after a config failure: natural size reported once, for the retry"));
   struct CountingClient : fp::FairPlayRendererClient {
     std::vector<std::pair<int32_t, int32_t>> sizes;
-    void OnNeedData(fp::StreamType) override {}
+    void OnNeedData(fp::StreamId) override {}
     void OnWaitingForKey() override {}
     void OnEnded() override {}
     void OnError(fp::RendererError, const std::string&) override {}
@@ -1836,7 +1886,7 @@ std::vector<Step> AudioUnavailableScenario() {
   steps.push_back(Section("Core Audio unavailable (sandboxed): Initialize fails instead of throwing"));
   steps.push_back([=](Done done) {
     struct NullClient : fp::FairPlayRendererClient {
-      void OnNeedData(fp::StreamType) override {}
+      void OnNeedData(fp::StreamId) override {}
       void OnWaitingForKey() override {}
       void OnEnded() override {}
       void OnError(fp::RendererError, const std::string&) override {}
@@ -1873,7 +1923,7 @@ std::vector<Step> AudioUnavailableScenario() {
   steps.push_back([=](Done done) {
     struct CountingClient : fp::FairPlayRendererClient {
       int sizes = 0;
-      void OnNeedData(fp::StreamType) override {}
+      void OnNeedData(fp::StreamId) override {}
       void OnWaitingForKey() override {}
       void OnEnded() override {}
       void OnError(fp::RendererError, const std::string&) override {}
@@ -1975,6 +2025,154 @@ std::vector<Step> AudioDeviceSwitchScenario() {
     });
   }
   steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// Streams joining a playing renderer, as a SourceBuffer added after the
+// others does in Safari (AudioVideoRendererAVFObjC::addTrack): the display
+// layer and the other renderers stay, the clock waits for the new stream's
+// samples (and video for a decoded frame) and runs on from where it was, and
+// a second audio track plays mixed with the first until it is removed.
+std::vector<Step> LateStreamsScenario() {
+  World* w = g_world;
+  auto layer = std::make_shared<void*>(nullptr);
+  auto joined_at = std::make_shared<double>(0);
+  auto before = std::make_shared<fp::RendererStatus>();
+  auto one_track_growth = std::make_shared<uint64_t>(0);
+  auto underflows = std::make_shared<int>(0);
+  auto track = std::make_shared<uint32_t>(0);
+  std::vector<Step> steps;
+  // Joins with |join| and waits for HAVE_NOTHING, then HAVE_ENOUGH.
+  auto join = [=](const std::string& label, std::function<fp::Result()> join) -> Step {
+    return [=](Done done) {
+      *before = w->player->renderer().GetStatus();
+      *joined_at = w->player->Time();
+      *underflows = w->player->underflows;
+      auto nothing = std::make_shared<bool>(false);
+      auto picture = std::make_shared<bool>(true);
+      const bool had_picture = w->player->renderer().GetStatus().video_ready_for_display;
+      w->player->on_have_nothing = [=] {
+        *nothing = true;
+        *picture &= w->player->renderer().GetStatus().video_ready_for_display;
+      };
+      auto finish = Once(10, label + ": HAVE_NOTHING, then HAVE_ENOUGH once the new stream has data", [=](bool ok) {
+        double t = w->player->Time();
+        if (ok) {
+          Check(*nothing, label + ": the join reports HAVE_NOTHING before HAVE_ENOUGH");
+          if (had_picture) {
+            Check(*picture && w->player->renderer().GetStatus().video_ready_for_display,
+                  label + ": the picture stays through the join (no blank frame)");
+          }
+          Check(t >= *joined_at - 0.05 && t < *joined_at + 0.5,
+                label + Format(": the clock waits at the join (%.3f -> %.3f), it doesn't restart", *joined_at, t));
+        }
+        done();
+      });
+      w->player->on_have_enough = [finish] { finish(true); };
+      fp::Result result = join();
+      Check(result.ok(), label + ": added to the playing renderer", result.message);
+      if (had_picture) {
+        *picture &= w->player->renderer().GetStatus().video_ready_for_display;
+      }
+    };
+  };
+
+  steps.push_back(Section("late streams: audio joins playing video, a second audio track mixes, video joins audio"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("late-audio", Framing::kChromium, &w->video, nullptr,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, &w->video, nullptr, 0, 6, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "late-audio video alone")(done); });
+  steps.push_back([=](Done done) {
+    *layer = w->player->renderer().display_layer();
+    join("late-audio", [=] { return w->player->JoinAudio(w->audio, Segments(w->audio, 0, 6), track.get()); })(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(w->player->renderer().display_layer() == *layer && s.video_ready_for_display,
+          "late-audio: the display layer stays and keeps its picture (no blank frame)");
+    Check(s.video_decoder_resets == before->video_decoder_resets && s.redelivered == before->redelivered,
+          "late-audio: video isn't flushed or decoded again from a keyframe");
+    Check(s.audio_renderers == 1 && s.audio == fp::RenderingStatus::kRendering && s.audio_enqueued > 0,
+          "late-audio: the audio renderer joined the synchronizer and renders",
+          Format("%zu renderers, %s, %llu enqueued", s.audio_renderers, StatusName(s.audio),
+                 (unsigned long long)s.audio_enqueued));
+    done();
+  });
+  steps.push_back([=](Done done) {
+    *before = w->player->renderer().GetStatus();
+    Run(w->player, 3, 1, "late-audio after the join")(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    *one_track_growth = s.audio_enqueued - before->audio_enqueued;
+    Check(s.audio == fp::RenderingStatus::kRendering && s.audio_double_enqueues == 0 && *one_track_growth > 0,
+          "late-audio: audio plays along", Format("%llu audio samples in 3s", (unsigned long long)*one_track_growth));
+    done();
+  });
+  steps.push_back([=](Done done) {
+    join("second-audio",
+         [=] { return w->player->JoinAudio(w->audio, Segments(w->audio, 0, 6), track.get()); })(done);
+  });
+  steps.push_back([=](Done done) {
+    *before = w->player->renderer().GetStatus();
+    Check(before->audio_renderers == 2 && *track != 0, "second-audio: a renderer per audio track",
+          Format("%zu", before->audio_renderers));
+    Run(w->player, 3, 1, "second-audio both tracks")(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    const uint64_t growth = s.audio_enqueued - before->audio_enqueued;
+    Check(growth * 2 > *one_track_growth * 3 && s.audio_double_enqueues == 0 && w->player->errors.empty(),
+          "second-audio: both tracks are fed and play mixed",
+          Format("%llu audio samples in 3s, %llu with one track", (unsigned long long)growth,
+                 (unsigned long long)*one_track_growth));
+    *underflows = w->player->underflows;
+    w->player->RemoveAudio(*track);
+    s = w->player->renderer().GetStatus();
+    Check(s.audio_renderers == 1, "second-audio: RemoveAudio takes its renderer off the synchronizer");
+    // Checked right after: playback here (as on main) can blip HAVE_NOTHING
+    // for a moment at a segment's end, unrelated to the removal.
+    After(0.3, [=] {
+      Check(w->player->underflows == *underflows, "second-audio: removing a track doesn't stall the others");
+      Run(w->player, 2, 1, "second-audio after removing it")(done);
+    });
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("late-video", Framing::kChromium, nullptr, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, nullptr, &w->audio, 0, 6, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "late-video audio alone")(done); });
+  steps.push_back([=](Done done) {
+    w->player->natural_sizes.clear();
+    join("late-video", [=] { return w->player->JoinVideo(w->video, Segments(w->video, 0, 6)); })(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(w->player->renderer().display_layer() != nullptr && s.video_ready_for_display &&
+              s.video == fp::RenderingStatus::kRendering,
+          "late-video: a display layer joined the synchronizer with a frame at the current time");
+    Check(!w->player->natural_sizes.empty() &&
+              w->player->natural_sizes.back() ==
+                  std::make_pair(int32_t(w->video.info.width), int32_t(w->video.info.height)),
+          "late-video: the video's natural size is reported",
+          Format("%zu reports", w->player->natural_sizes.size()));
+    Run(w->player, 3, 1, "late-video after the join")(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.video_enqueued > 0 && s.audio == fp::RenderingStatus::kRendering && w->player->errors.empty(),
+          "late-video: video and audio play together");
     w->player.reset();
     done();
   });
@@ -3683,7 +3881,7 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
     tenc.default_key_id = g_key_id;
     tenc.default_constant_iv = std::vector<uint8_t>(16, 0x5a);
     struct NullClient : fp::FairPlayRendererClient {
-      void OnNeedData(fp::StreamType) override {}
+      void OnNeedData(fp::StreamId) override {}
       void OnWaitingForKey() override {}
       void OnEnded() override {}
       void OnError(fp::RendererError, const std::string&) override {}
@@ -3963,7 +4161,7 @@ void BuilderSelfTests() {
     const Media* media = fallback.media;
     const char* type = fallback.type;
     struct NullClient : fp::FairPlayRendererClient {
-      void OnNeedData(fp::StreamType) override {}
+      void OnNeedData(fp::StreamId) override {}
       void OnWaitingForKey() override {}
       void OnEnded() override {}
       void OnError(fp::RendererError, const std::string&) override {}
@@ -4689,6 +4887,7 @@ void RunAll() {
   add("ProtectedInBandScenario()", ProtectedInBandScenario());
   add("QualitySwitchScenario()", QualitySwitchScenario());
   add("UnderflowScenario()", UnderflowScenario());
+  add("LateStreamsScenario()", LateStreamsScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
   add("LayerDetachScenario()", LayerDetachScenario());
   add("InitializeRetryScenario()", InitializeRetryScenario());

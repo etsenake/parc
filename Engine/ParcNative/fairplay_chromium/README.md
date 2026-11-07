@@ -264,9 +264,19 @@ after `MediaSource::monitorSourceBuffers`,
   `canplaythrough` from buffered data before any CDM or key.
 - A SourceBuffer added after the others initialized joins the buffered
   ranges with its first init segment, so readyState drops to HAVE_METADATA
-  and rises through HAVE_FUTURE as its data comes. One that brings a new kind
-  of track restarts the renderer, and with video waits for the new
-  renderer's frame, as after a seek.
+  and rises through HAVE_FUTURE as its data comes. Its tracks join the
+  playing renderer, as WebKit's `AudioVideoRendererAVFObjC::addTrack` adds a
+  display layer or audio renderer to its synchronizer: the picture and the
+  other tracks stay, nothing decodes again, and the clock waits at the
+  current time until the new track has samples (video: a decoded frame).
+  The pipeline's track change carries it (`ChunkDemuxer::OnTracksChanged`
+  starts the stream at that time), and the render process hands its
+  DemuxerStream to the GPU process through `FairPlayRendererExtension`.
+  Each SourceBuffer's first audio track is enabled, so a second audio
+  SourceBuffer plays mixed with the first, one `AVSampleBufferAudioRenderer`
+  each, as in Safari; an audio track the page turns off leaves its renderer.
+  Chromium's renderer (`RendererImpl`) takes a new kind of track the same
+  way, but plays one audio stream, so it keeps the first.
 - A seek keeps readyState: into buffered data it fires only `seeking`,
   `timeupdate` and `seeked`; into unbuffered data `waiting`, then `canplay`
   and `canplaythrough` as data comes, and `playing` after `seeked`. It

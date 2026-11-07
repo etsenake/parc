@@ -1,8 +1,9 @@
 // media::Renderer over the FairPlay core's FairPlayRenderer
-// (AVSampleBufferDisplayLayer + AVSampleBufferAudioRenderer under an
-// AVSampleBufferRenderSynchronizer), served by the GPU process's media service
-// through MojoRendererService. It pulls DecoderBuffers from the page's
-// DemuxerStreams (still encrypted), hands them to the core with their
+// (AVSampleBufferDisplayLayer + an AVSampleBufferAudioRenderer per audio stream
+// under an AVSampleBufferRenderSynchronizer), served by the GPU process's media
+// service through MojoRendererService. It plays every stream it is given (the
+// first video, every audio stream, mixed) and pulls DecoderBuffers from the
+// page's DemuxerStreams (still encrypted), hands them to the core with their
 // DecryptConfig, and joins the FairPlay CDM of the same media service as a
 // content key recipient. The display layer is registered in
 // ui::ProtectedLayerRegistry; the compositor places it where the render
@@ -14,6 +15,7 @@
 
 #include <stdint.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,6 +35,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/renderer.h"
 #include "media/base/video_decoder_config.h"
+#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "third_party/parc_fairplay/core/fairplay_renderer.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -77,6 +80,18 @@ class FairPlayRendererAdapter final
   // service, so the browser's MuteStateObserver feeds this; it is bound to a
   // weak pointer and may outlive the adapter.
   base::RepeatingCallback<void(bool)> GetMuteStateCallback();
+  // The render process's FairPlayRendererExtension, kept for the adapter's
+  // lifetime; it owns the streams it adds.
+  void SetExtension(std::unique_ptr<mojom::FairPlayRendererExtension> extension);
+  // A stream the render process adds during playback (a SourceBuffer added
+  // after the others), which joins the playing renderers without replacing
+  // them (FairPlayRenderer::AddVideo, AddAudio). Streams given to Initialize
+  // are named by their index there; |id| names this one, for RemoveStream.
+  void AddStream(uint32_t id, DemuxerStream* stream);
+  // An audio stream the page turned off: its renderer leaves. False when it
+  // isn't one the adapter can drop (no such audio stream), which then stays.
+  bool RemoveStream(uint32_t id);
+
   // Called once the browser was asked for the mute state. Audio stays muted
   // until its first answer, so a muted tab never plays a moment of sound
   // while the answer is on its way. |closer| closes the observer when the
@@ -84,7 +99,7 @@ class FairPlayRendererAdapter final
   void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
 
   // parc::fairplay::FairPlayRendererClient implementation.
-  void OnNeedData(parc::fairplay::StreamType stream) override;
+  void OnNeedData(parc::fairplay::StreamId stream) override;
   void OnWaitingForKey() override;
   void OnEnded() override;
   void OnError(parc::fairplay::RendererError error,
@@ -95,18 +110,20 @@ class FairPlayRendererAdapter final
  private:
   struct Stream {
     raw_ptr<DemuxerStream> demuxer_stream = nullptr;
+    parc::fairplay::StreamId core{parc::fairplay::StreamType::kVideo};
     bool read_pending = false;
     bool end_of_stream = false;
   };
 
-  Stream& StreamFor(parc::fairplay::StreamType type);
-  void ReadFromStream(parc::fairplay::StreamType type);
-  void OnBuffersRead(parc::fairplay::StreamType type,
+  bool HasVideo() const;
+  bool RegisterLayer();
+  void ReadFromStream(uint32_t id);
+  void OnBuffersRead(uint32_t id,
                      uint64_t generation,
                      DemuxerStream::Status status,
                      DemuxerStream::DecoderBufferVector buffers);
-  void HandleConfigChange(parc::fairplay::StreamType type);
-  void EnqueueToCore(parc::fairplay::StreamType type,
+  void HandleConfigChange(Stream& stream);
+  void EnqueueToCore(parc::fairplay::StreamId stream,
                      const DecoderBuffer& buffer);
   void MaybeFinishFlush();
   void ReportError(PipelineStatus status);
@@ -121,10 +138,10 @@ class FairPlayRendererAdapter final
   const LayerRegisteredCB layer_registered_cb_;
 
   raw_ptr<RendererClient> client_ = nullptr;
-  Stream video_;
-  Stream audio_;
-  VideoDecoderConfig video_config_;
-  AudioDecoderConfig audio_config_;
+  // Owns the streams it added, so it outlives |streams_|, which points at
+  // them.
+  std::unique_ptr<mojom::FairPlayRendererExtension> extension_;
+  std::map<uint32_t, Stream> streams_;
 
   std::unique_ptr<parc::fairplay::FairPlayRenderer> core_;
   bool core_initialized_ = false;

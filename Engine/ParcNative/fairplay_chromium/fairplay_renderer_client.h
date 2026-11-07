@@ -3,10 +3,13 @@
 // MojoRenderer connected to FairPlayRendererAdapter in the GPU process and
 // paints the video as a hole frame naming the adapter's display layer: no
 // VideoFrame ever carries the decrypted pixels, the compositor places the
-// layer itself.
+// layer itself. The GPU process plays the enabled streams, every enabled audio
+// stream mixed, as WebKit's AudioVideoRendererAVFObjC does; streams enabled
+// later join it, and audio streams turned off leave.
 #ifndef CONTENT_RENDERER_MEDIA_FAIRPLAY_FAIRPLAY_RENDERER_CLIENT_H_
 #define CONTENT_RENDERER_MEDIA_FAIRPLAY_FAIRPLAY_RENDERER_CLIENT_H_
 
+#include <map>
 #include <memory>
 #include <optional>
 
@@ -22,10 +25,13 @@
 #include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace media {
 
+class MediaResource;
+class MojoDemuxerStreamImpl;
 class MojoRenderer;
 class VideoRendererSink;
 
@@ -57,6 +63,14 @@ class FairPlayRendererClient final
   void SetPlaybackRate(double playback_rate) override;
   void SetVolume(float volume) override;
   base::TimeDelta GetMediaTime() override;
+  // On Safari's Media Source (MediaResource::ParcMayAddStreams()) the
+  // pipeline enabled |stream| (a SourceBuffer's track added during playback,
+  // or one the page turned on): it joins the GPU process's renderers, with
+  // every other enabled audio stream they don't play. Audio streams now
+  // disabled leave.
+  void OnTracksChanged(DemuxerStream::Type track_type,
+                       DemuxerStream* stream,
+                       base::OnceClosure change_completed_cb) override;
   RendererType GetRendererType() override;
 
   // RendererClient implementation, forwarded to the pipeline's client.
@@ -76,11 +90,27 @@ class FairPlayRendererClient final
   // mojom::FairPlayRendererClientExtension implementation.
   void OnLayerRegistered(const base::UnguessableToken& layer_token,
                          const gfx::Size& natural_size) override;
+  void OnRendererExtension(
+      mojo::PendingRemote<mojom::FairPlayRendererExtension> extension) override;
 
  private:
+  class PlayedStreams;
+  // A stream the GPU process plays, with the proxy that gave it there after
+  // Initialize.
+  struct Played {
+    Played();
+    Played(Played&&);
+    Played& operator=(Played&&);
+    ~Played();
+    raw_ptr<DemuxerStream> stream;
+    std::unique_ptr<MojoDemuxerStreamImpl> proxy;
+  };
+
   void PaintHoleFrame();
 
   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
+  // Outlives |mojo_renderer_|, which points at it.
+  std::unique_ptr<PlayedStreams> initial_streams_;
   std::unique_ptr<MojoRenderer> mojo_renderer_;
   // Bound on |media_task_runner_| in Initialize().
   mojo::PendingReceiver<mojom::FairPlayRendererClientExtension>
@@ -90,6 +120,15 @@ class FairPlayRendererClient final
   const raw_ptr<VideoRendererSink> sink_;
 
   raw_ptr<RendererClient> client_ = nullptr;
+  raw_ptr<MediaResource> media_resource_ = nullptr;
+  // By the ID the GPU process names them with: their index among Initialize's
+  // streams, then FairPlayRendererExtension::AddStream's.
+  std::map<uint32_t, Played> played_;
+  uint32_t next_stream_id_ = 0;
+  mojo::Remote<mojom::FairPlayRendererExtension> renderer_extension_;
+  // A track change from before |renderer_extension_| came (the pipeline
+  // waits for one at a time).
+  base::OnceClosure pending_track_change_;
   std::optional<base::UnguessableToken> layer_token_;
   gfx::Size natural_size_;
 
