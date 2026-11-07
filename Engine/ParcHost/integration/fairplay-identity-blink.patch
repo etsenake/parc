@@ -1471,10 +1471,29 @@
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
  #include "third_party/blink/renderer/core/html/track/video_track_list.h"
-@@ -564,6 +565,16 @@
+@@ -380,10 +381,15 @@
+   // can be buffered, with appropriate invocations of the
+   // InitializationSegmentReceived and AppendError methods.
+   ContentType content_type(type);
++  String mime_type = content_type.GetType();
+   String codecs = content_type.Parameter("codecs");
++  // Parc: see IsTypeSupportedInternal().
++  if (ExecutionContext* context = GetExecutionContext()) {
++    ParcUseSafariMp2tParser(context->UserAgent(), mime_type, codecs);
++  }
+   std::unique_ptr<WebSourceBuffer> web_source_buffer = CreateWebSourceBuffer(
+-      content_type.GetType(), codecs, std::move(audio_config),
+-      std::move(video_config), *exception_state);
++      mime_type, codecs, std::move(audio_config), std::move(video_config),
++      *exception_state);
+ 
+   if (!web_source_buffer) {
+     // 2. If type contains a MIME type that is not supported ..., then throw a
+@@ -563,8 +569,27 @@
+ 
    String codecs = content_type.Parameter("codecs");
    ContentType filtered_content_type = content_type;
- 
++
 +  // Parc: AC-3 and E-AC-3 only under Safari's identity, for isTypeSupported,
 +  // addSourceBuffer and changeType alike (parc_safari_identity.h).
 +  if (IsParcSafariOnlyAudioCodecs(codecs) &&
@@ -1484,11 +1503,21 @@
 +             << ") -> false (Dolby audio outside Safari's identity)";
 +    return false;
 +  }
-+
+ 
  #if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
++  // Parc: under Safari's identity the TS names and codecs Safari's Media
++  // Source takes and Parc plays, for isTypeSupported, addSourceBuffer and
++  // changeType alike (WebKit's MediaSource::isTypeSupported over
++  // SourceBufferParserAVFObjC::isContentTypeSupported).
++  if (IsParcSafariMediaSourceMp2tType(mime_type) &&
++      IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    return ParcSafariMp2tParserCodecs(codecs).has_value();
++  }
++
    // Mime util doesn't include the mp2t container in order to prevent codec
    // support leaking into HtmlMediaElement.canPlayType. If the stream parser
-@@ -595,10 +606,20 @@
+   // is enabled, we should check that the codecs are valid using the mp4
+@@ -595,10 +620,20 @@
    // from the codecs in the `filtered_content_type`.
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
    // specified, allow DV regardless of `enforce_codec_specificity`.
@@ -1510,7 +1539,7 @@
      // Remove any detected DolbyVision codec from the query to GetSupportsType.
      std::string filtered_codecs;
      std::vector<std::string> parsed_codec_ids;
-@@ -608,7 +629,9 @@
+@@ -608,7 +643,9 @@
        if (auto result =
                media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
                                             /*allow_ambiguous_matches=*/false)) {
@@ -1521,10 +1550,11 @@
            continue;
          }
        }
-@@ -660,6 +683,15 @@
+@@ -659,6 +696,15 @@
+       MIMETypeRegistry::SupportsMediaSourceMIMEType(mime_type, codecs);
  
    bool result = supported == MIMETypeRegistry::kSupported;
- 
++
 +  // Parc: Safari takes a type without codecs that it may play, for
 +  // isTypeSupported, addSourceBuffer and changeType alike (WebKit's
 +  // MediaSource::isTypeSupported); its parser then takes the stream's codecs,
@@ -1533,11 +1563,10 @@
 +      IsParcSafariIdentityUserAgent(context->UserAgent())) {
 +    result = true;
 +  }
-+
+ 
    DVLOG(2) << __func__ << "(" << type << ", "
             << base::ToString(enforce_codec_specificity) << ") -> "
-            << base::ToString(result);
-@@ -1015,6 +1047,23 @@
+@@ -1015,6 +1061,23 @@
    DCHECK_LE(highest_buffered_presentation_timestamp,
              std::isnan(old_duration) ? 0 : old_duration);
  
@@ -1561,7 +1590,7 @@
    // 3. Set old duration to the current value of duration.
    // Done for step 1 above, already.
    // 4. Update duration to new duration.
-@@ -1051,6 +1100,13 @@
+@@ -1051,6 +1114,13 @@
  
    ready_state_ = state;
  
@@ -1575,7 +1604,7 @@
    OnReadyStateChange(old_state, state);
  }
  
-@@ -1326,11 +1382,21 @@
+@@ -1326,11 +1396,21 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);
@@ -5332,8 +5361,8 @@
    // so that content/ doesn't access it in a lazy sweeping phase.
    web_source_buffer_.reset();
 +  ParcStopMemoryPressure();
-+}
-+
+ }
+ 
 +// Parc: WebKit purges a ManagedMediaSource's SourceBuffers as memory pressure
 +// rises (MemoryRelease::releaseNoncriticalMemory, then
 +// HTMLMediaElement::purgeBufferedDataIfPossible and MediaSource::
@@ -5395,8 +5424,8 @@
 +  // A worker's source tells the media element's thread its new ranges.
 +  source_->SendUpdatedInfoToMainThreadCache();
 +  ScheduleEvent(AtomicString(kParcPurgedEvent));
- }
- 
++}
++
 +void SourceBuffer::ParcStopMemoryPressure() {
 +  parc_memory_pressure_listener_.reset();
 +  parc_purge_pending_ = false;
@@ -5405,7 +5434,38 @@
  void SourceBuffer::setMode(const V8AppendMode& new_mode,
                             ExceptionState& exception_state) {
    DVLOG(3) << __func__ << " this=" << this << " new_mode=" << new_mode.AsCStr();
-@@ -1173,6 +1287,7 @@
+@@ -1015,7 +1129,12 @@
+   //    the parent media source, then throw a NotSupportedError exception and
+   //    abort these steps.
+   ContentType content_type(type);
++  String mime_type = content_type.GetType();
+   String codecs = content_type.Parameter("codecs");
++  // Parc: see MediaSource::IsTypeSupportedInternal().
++  if (ExecutionContext* context = GetExecutionContext()) {
++    ParcUseSafariMp2tParser(context->UserAgent(), mime_type, codecs);
++  }
+   // TODO(wolenetz): Refactor and use a less-strict version of isTypeSupported
+   // here. As part of that, CanChangeType in Chromium should inherit relaxation
+   // of impl's StreamParserFactory (since it returns true iff a stream parser
+@@ -1023,7 +1142,7 @@
+   if (!MediaSource::IsTypeSupportedInternal(
+           GetExecutionContext(), type,
+           false /* allow underspecified codecs in |type| */) ||
+-      !web_source_buffer_->CanChangeType(content_type.GetType(), codecs)) {
++      !web_source_buffer_->CanChangeType(mime_type, codecs)) {
+     MediaSource::LogAndThrowDOMException(
+         *exception_state, DOMExceptionCode::kNotSupportedError,
+         StrCat({"Changing to the type provided ('", type,
+@@ -1045,7 +1164,7 @@
+   //    value in the "Generate Timestamps Flag" column of the byte stream format
+   //    registry entry that is associated with type.
+   // This call also updates the pipeline to switch bytestream parser and codecs.
+-  web_source_buffer_->ChangeType(content_type.GetType(), codecs);
++  web_source_buffer_->ChangeType(mime_type, codecs);
+ 
+   // 8. If the generate timestamps flag equals true: Set the mode attribute on
+   //    this SourceBuffer object to "sequence", including running the associated
+@@ -1173,6 +1292,7 @@
    web_source_buffer_.reset();
    source_ = nullptr;
    async_event_queue_ = nullptr;
@@ -5413,7 +5473,7 @@
  }
  
  double SourceBuffer::HighestPresentationTimestamp() {
-@@ -1814,6 +1929,7 @@
+@@ -1814,6 +1934,7 @@
    pending_remove_end_ = -1;
  
    updating_ = false;
@@ -5421,7 +5481,7 @@
  }
  
  ExecutionContext* SourceBuffer::GetExecutionContext() const {
-@@ -1891,8 +2007,13 @@
+@@ -1891,8 +2012,13 @@
    source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
  
    // Nothing to do if this SourceBuffer does not yet have frames to evict.
@@ -5436,19 +5496,19 @@
  
    bool result = web_source_buffer_->EvictCodedFrames(media_time, new_data_size);
    if (!result) {
-@@ -2072,6 +2193,11 @@
-   TRACE_EVENT_END("media", /* appending */ trace_track_);
+@@ -2073,6 +2199,11 @@
    TRACE_EVENT_END("media", /* SourceBuffer::appendEncodedChunks */
                    trace_track_);
-+
+ 
 +  // Parc: as in AppendBufferAsyncPart_Locked().
 +  if (IsRemoved()) {
 +    return;
 +  }
- 
++
    DVLOG(3) << __func__ << " done. this=" << this
             << " media_time=" << GetMediaTime() << " buffered="
-@@ -2130,12 +2256,21 @@
+            << WebTimeRangesToString(web_source_buffer_->Buffered());
+@@ -2130,12 +2261,21 @@
        // 5. Queue a task to fire a simple event named updateend at this
        //    SourceBuffer object.
        ScheduleEvent(event_type_names::kUpdateend);
@@ -5470,7 +5530,7 @@
    double media_time = GetMediaTime();
    DVLOG(3) << __func__ << " done. this=" << this << " media_time=" << media_time
             << " buffered="
-@@ -2187,6 +2322,9 @@
+@@ -2187,6 +2327,9 @@
    // 12. Queue a task to fire a simple event named updateend at this
    //     SourceBuffer object.
    ScheduleEvent(event_type_names::kUpdateend);

@@ -3,16 +3,19 @@
 // //third_party/blink/renderer/modules/mediasource/parc_media_source_test.cc
 // (blink_unittests). Tests what a MediaSource tells a page and its media
 // engine under Safari's identity (parc_safari_identity.h) and under Chrome's:
-// types named without codecs, and a duration set below the buffered end.
+// types named without codecs, MPEG-2 TS types, and a duration set below the
+// buffered end.
 
 #include <limits>
 #include <memory>
+#include <optional>
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/video_decoder_config.h"
+#include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_media_source.h"
 #include "third_party/blink/public/platform/web_source_buffer.h"
@@ -21,6 +24,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
@@ -303,6 +307,185 @@ TEST_F(ParcMediaSourceTest, ChromeDurationBelowBufferedEndStaysAsSet) {
   EXPECT_EQ(engine_->data.duration, 10.02);
   EXPECT_EQ(media_source->duration(), 10.02);
   EXPECT_EQ(video_->duration(), 10.02);
+}
+
+#if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
+// +[AVStreamDataParser canParseExtendedMIMEType:] on macOS 27.2, for codecs
+// Chromium's TS parser reads and Parc plays.
+TEST_F(ParcMediaSourceTest, SafariMp2tTypesAsSafari) {
+  SetUserAgent(kSafariUserAgent);
+  for (const char* type : {
+           "video/mp2t",
+           "video/mp2t; codecs=\"\"",
+           "video/mp2t; codecs=\"avc1.64001F,mp4a.40.2\"",
+           "video/mp2t; codecs=\"avc1\"",
+           "video/mp2t; codecs=\"avc3\"",
+           "video/mp2t; codecs=\"avc1.\"",
+           "video/mp2t; codecs=\"avc1.42E0\"",
+           "video/mp2t; codecs=\"avc3.ZZZZZZ\"",
+           "video/mp2t; codecs=\"avc1.F4003E\"",
+           "video/mp2t; codecs=\"avc1.420063\"",
+           "video/mp2t; codecs=\"avc1.42e01e\"",
+           "video/mp2t; codecs=\"avc1.000000.foo\"",
+           "video/mp2t; codecs=\"mp4a.40.02\"",
+           "video/mp2t; codecs=\"mp4a.40.5\"",
+           "video/mp2t; codecs=\"mp4a.40.29\"",
+           "video/mp2t; codecs=\"mp4a.40.42\"",
+           "video/mp2t; codecs=\"mp4a.40.32\"",
+           "video/mp2t; codecs=\"mp4a.40.033\"",
+           "video/mp2t; codecs=\"mp4a.0040.002\"",
+           "video/mp2t; codecs=\"mp4a.0x40.+2\"",
+           "video/mp2t; codecs=\"mp4a.67\"",
+           "video/mp2t; codecs=\"mp4a.67x\"",
+           "video/mp2t; codecs=\"ac-3\"",
+           "video/mp2t; codecs=\"ac-3.a.b\"",
+           "video/mp2t; codecs=\"ec-3\"",
+           "video/mp2t; codecs=\"ec-3.20\"",
+           "video/mp2t; codecs=\"avc1.64001F mp4a.40.5\"",
+           "video/mp2t; codecs=\",avc1.64001F,,ac-3,\"",
+           "video/x-mp2t; codecs=\"avc1.64001F\"",
+           "video/m2ts; codecs=\"mp4a.40.2\"",
+           "video/x-m2ts; codecs=\"avc1.4D401F,ec-3\"",
+       }) {
+    EXPECT_TRUE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+  for (const char* type : {
+           // Safari refuses these.
+           "video/mp2t; codecs=\"mp3\"",
+           "video/mp2t; codecs=\"mp4a.69\"",
+           "video/mp2t; codecs=\"mp4a.6B\"",
+           "video/mp2t; codecs=\"mp4a.66\"",
+           "video/mp2t; codecs=\"mp4a.68\"",
+           "video/mp2t; codecs=\"mp4a.40.1\"",
+           "video/mp2t; codecs=\"mp4a.40.34\"",
+           "video/mp2t; codecs=\"mp4a.40\"",
+           "video/mp2t; codecs=\"mp4a.40.2x\"",
+           "video/mp2t; codecs=\"mp4a.67.2\"",
+           "video/mp2t; codecs=\"MP4A.40.2\"",
+           "video/mp2t; codecs=\"AVC1.42E01E\"",
+           "video/mp2t; codecs=\"avc1x\"",
+           "video/mp2t; codecs=\"avc1.000000\"",
+           "video/mp2t; codecs=\"avc1.10001E\"",
+           "video/mp2t; codecs=\"avc1.420064\"",
+           "video/mp2t; codecs=\"avc1.0x6400\"",
+           "video/mp2t; codecs=\"avc1.6400 1F\"",
+           "video/mp2t; codecs=\"avc1.64001F,mp3\"",
+           "video/mp2t; codecs=\"AC-3\"",
+           "video/mp2t; codecs=\"ac3\"",
+           "video/mp2t; codecs=\"ac-3x\"",
+           "video/mp2t; codecs=\"hvc1.1.6.L93.B0\"",
+           "video/mp2t; codecs=\",\"",
+           "video/mp2t; codecs=\", ,\"",
+           "VIDEO/MP2T",
+           "audio/mp2t; codecs=\"mp4a.40.2\"",
+           // Safari takes these; Chromium doesn't decode them.
+           "video/mp2t; codecs=\"mp2v\"",
+           "video/mp2t; codecs=\"mp1v\"",
+       }) {
+    EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+}
+
+TEST_F(ParcMediaSourceTest, ChromeMp2tTypesUnchanged) {
+  SetUserAgent(kChromeUserAgent);
+  EXPECT_TRUE(MediaSource::isTypeSupported(
+      Context(), "video/mp2t; codecs=\"avc1.64001F,mp4a.40.2\""));
+  EXPECT_TRUE(
+      MediaSource::isTypeSupported(Context(), "video/mp2t; codecs=\"mp3\""));
+  EXPECT_TRUE(MediaSource::isTypeSupported(Context(),
+                                           "video/mp2t; codecs=\"mp4a.69\""));
+  for (const char* type : {
+           "video/mp2t; codecs=\"avc1\"",
+           "video/mp2t; codecs=\"ac-3\"",
+           "video/mp2t; codecs=\"ec-3\"",
+           "video/x-mp2t; codecs=\"avc1.64001F\"",
+           "video/m2ts; codecs=\"avc1.64001F\"",
+       }) {
+    EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+}
+
+// addSourceBuffer and changeType hand Chromium's TS parser video/mp2t with
+// codecs its factory takes; it parses every stream whatever they name.
+TEST_F(ParcMediaSourceTest, SafariMp2tSourceBuffer) {
+  SetUserAgent(kSafariUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  SourceBuffer* source_buffer = media_source->addSourceBuffer(
+      "video/x-m2ts; codecs=\"avc1.64001F, ac-3\"", add_exception);
+  EXPECT_FALSE(add_exception.HadException());
+  ASSERT_TRUE(source_buffer);
+  EXPECT_EQ(engine_->data.added_type, "video/mp2t");
+  EXPECT_EQ(engine_->data.added_codecs, "avc1.42E01E");
+
+  DummyExceptionStateForTesting change_exception;
+  source_buffer->changeType("video/mp2t; codecs=\"ec-3,mp4a.40.33\"",
+                            change_exception);
+  EXPECT_FALSE(change_exception.HadException());
+  EXPECT_EQ(engine_->data.changed_type, "video/mp2t");
+  EXPECT_EQ(engine_->data.changed_codecs, "mp4a.69");
+
+  DummyExceptionStateForTesting change_to_ac3_exception;
+  source_buffer->changeType("video/mp2t; codecs=\"ac-3\"",
+                            change_to_ac3_exception);
+  EXPECT_FALSE(change_to_ac3_exception.HadException());
+  EXPECT_TRUE(engine_->data.changed_codecs.empty());
+}
+
+TEST_F(ParcMediaSourceTest, ChromeMp2tSourceBufferUnchanged) {
+  SetUserAgent(kChromeUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  EXPECT_FALSE(media_source->addSourceBuffer(
+      "video/x-m2ts; codecs=\"avc1.64001F\"", add_exception));
+  EXPECT_EQ(add_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+
+  DummyExceptionStateForTesting add_mp2t_exception;
+  ASSERT_TRUE(media_source->addSourceBuffer(
+      "video/mp2t; codecs=\"avc1.64001F,mp4a.40.2\"", add_mp2t_exception));
+  EXPECT_EQ(engine_->data.added_type, "video/mp2t");
+  EXPECT_EQ(engine_->data.added_codecs, "avc1.64001F,mp4a.40.2");
+}
+#endif  // BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
+
+TEST_F(ParcMediaSourceTest, SafariMp2tParserCodecs) {
+  EXPECT_EQ(ParcSafariMp2tParserCodecs(""), "");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("avc3.ZZ, mp4a.40.05"),
+            "avc1.42E01E,mp4a.40.5");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("mp4a.40.029 mp4a.067"),
+            "mp4a.40.29,mp4a.67");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("avc1.64001F,,"), "avc1.42E01E");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("ac-3,mp4a.40.2"), "mp4a.40.2");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("ac-3 ec-3.20"), "");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("mp4a.40.32,mp4a.40.033"),
+            "mp4a.69,mp4a.69");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("  "), "");
+  EXPECT_EQ(ParcSafariMp2tParserCodecs(", ,"), std::nullopt);
+  EXPECT_EQ(ParcSafariMp2tParserCodecs(","), std::nullopt);
+  EXPECT_EQ(ParcSafariMp2tParserCodecs("avc1.64001F,mp3"), std::nullopt);
+}
+
+TEST_F(ParcMediaSourceTest, SafariMp2tParserType) {
+  String mime_type = "video/x-m2ts";
+  String codecs = "avc1";
+  ParcUseSafariMp2tParser(kSafariUserAgent, mime_type, codecs);
+  EXPECT_EQ(mime_type, "video/mp2t");
+  EXPECT_EQ(codecs, "avc1.42E01E");
+
+  mime_type = "video/x-m2ts";
+  codecs = "avc1";
+  ParcUseSafariMp2tParser(kChromeUserAgent, mime_type, codecs);
+  EXPECT_EQ(mime_type, "video/x-m2ts");
+  EXPECT_EQ(codecs, "avc1");
+
+  mime_type = "video/mp4";
+  codecs = "avc1.64001F";
+  ParcUseSafariMp2tParser(kSafariUserAgent, mime_type, codecs);
+  EXPECT_EQ(mime_type, "video/mp4");
+  EXPECT_EQ(codecs, "avc1.64001F");
 }
 
 }  // namespace
