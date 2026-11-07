@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 544,
+  "version": 545,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4182,7 +4182,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "39e6eebdd1caad567eb7e6fdb02d9733bc7b42aecfa0a0f400f087e9943a3fd9",
+      "sha256": "c7c8b3717a3c91b9ccf72cd6a9f5c392ace7e118b5fa4f2730fee71c706c705b",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4307,12 +4307,12 @@
         {
           "target": "media/filters/chunk_demuxer.cc",
           "before_sha256": "bfe9309a25c772e3362e2da90ccf528e21ad98abb3621566484e585d6ca4c3ee",
-          "after_sha256": "5a83649dcd46437629fc4a1752b56d46014f9a5eabb831b17c1329dfbe2ed490"
+          "after_sha256": "50b15d625702be732a934e6243274afe6ad63a05b9e922e7fe559abb79a2e2a2"
         },
         {
           "target": "media/filters/chunk_demuxer.h",
           "before_sha256": "7882b1b7d0ec10bc36f06ca11b835bd474163070b8b0d032e719c8ecbd5250d9",
-          "after_sha256": "ebe15244c1877e48ab29248ffd5d92dc8b21ea593427e48a003662914b8c6b37"
+          "after_sha256": "323b80f624601607cf5a46331bf206eb0aa2e47279ae602f82b0fc2f3f215bc4"
         },
         {
           "target": "media/filters/demuxer_manager.cc",
@@ -4457,7 +4457,7 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "6c17d6459e91d3b01b68f9b7b2bc5619a643e31a1ef98061d0a7db7c30e96673"
+          "after_sha256": "7f15cc1099b261be5f0ae30d06cc82eac5e0f966c4e333344b6ded5f410de545"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
@@ -4582,12 +4582,22 @@
         {
           "target": "media/filters/source_buffer_stream.h",
           "before_sha256": "bfc63514119e39b516ab20c64c124deed1efed80c2e565c5e1ad10a70042417f",
-          "after_sha256": "f537a583be8cc55f2a9862a339f98d6fad562df21420df1848ef4f2ef6fe530d"
+          "after_sha256": "313200ad51965426ec285b83b5fb955650b76d36e0f6035ea0a311ad612c174f"
         },
         {
           "target": "media/filters/source_buffer_stream.cc",
           "before_sha256": "6d6f996179c344e2ceace3bdd41766548826959bded29a98c9b98c37967dedd0",
-          "after_sha256": "9db6b8e9e6643b86f130421acdafdfd291b56f2aa3da8335df4887e761b21c3c"
+          "after_sha256": "0ca2bef0f6cf16fb7469f413bf84acabdf06966cae8813301655c073edb00b8d"
+        },
+        {
+          "target": "media/filters/source_buffer_range.h",
+          "before_sha256": "63ce773a51438859f1409f3792002da14114f6c6d4a2a02dc267c4be72e3080b",
+          "after_sha256": "b7e7380ff21234605549646ee75b9817e1159e197c5b0eb7f9fa59e280f359f7"
+        },
+        {
+          "target": "media/filters/source_buffer_range.cc",
+          "before_sha256": "effd51952dabeb92ec398532ea83b5094d78e72541fba45b12a8d4f02f022d35",
+          "after_sha256": "687a1a62bb03b0175e663cc4b810656865b2598c9c61c7e571679984cfa7cb00"
         },
         {
           "target": "media/filters/source_buffer_state.h",
@@ -4667,12 +4677,12 @@
         {
           "target": "media/filters/chunk_demuxer_unittest.cc",
           "before_sha256": "d840d132e021395d7d52bf836a6bac56acf9f2a2b2688e44f0cbfcde0ebae570",
-          "after_sha256": "596dc4a3eea4fad37cc175ef393c4ed960fce21f38d2da799eb0b8a7d4fb9d41"
+          "after_sha256": "d0f858b2fbf05dd8adbf874c220b22d395912d88599036e6ed8092e0b46e9b3e"
         },
         {
           "target": "media/filters/source_buffer_stream_unittest.cc",
           "before_sha256": "345aecb9677bdb0bd877532ae9f4e5702d9c9528fcd09fead9f5dd96e483e71d",
-          "after_sha256": "79859a3bddd353f69c9191f3df9a53882f19b336cfe97966bc9c841f4f5e1584"
+          "after_sha256": "8256ee6336f1b175dd805c59edcb29a5f2799d354a83b90fd83e2751197500a8"
         },
         {
           "target": "media/filters/stream_parser_factory.h",
