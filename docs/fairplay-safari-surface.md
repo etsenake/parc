@@ -238,10 +238,10 @@ supervisor first; **decision** ones are documented choices, kept.
 - **Renewal requests** (`shouldWaitForRenewalOfRequestedResource`) aren't in WebKit's loader delegate. **Fixed** 85290ed7.
 - **A key AVFoundation asks for again** went to the session that answered it as a renewal; WebKit treats it as an unexpected request (new `encrypted`, new session). **Fixed** 8c7b03d3.
 - **Seeks during a seek**: WebKit queues the latest (`seekToTarget`, `seekCompleted`); Chromium's `PipelineController` does the same before a seek reaches the player. Not a departure.
-- **`x-itunes-inherit-uri-query-component`.** WebKit sets `AVURLAssetInheritURIQueryComponentFromReferencingURIKey` when the element has the attribute; Parc doesn't read it. **Open.**
+- **`x-itunes-inherit-uri-query-component`.** WebKit sets `AVURLAssetInheritURIQueryComponentFromReferencingURIKey` only when `HTMLMediaElement::doesHaveAttribute` finds the attribute, and that answers false unless the embedder preference `EnableInheritURIQueryComponent` is on (`UnifiedWebPreferences.yaml`: status embedder, default false; set only through `WKPreferencesSetEnableInheritURIQueryComponent` or WebKitLegacy's `setEnableInheritURIQueryComponent:`, neither in `WKPreferences`). Safari's binaries import neither setter, so in Safari the attribute never reaches AVFoundation, and Parc ignoring it matches. Not a departure.
 - **Asset options** WebKit sets that pages can't see (sandboxed parsing, no persistent cache), and `hasEnabledAudio`/`hasEnabledVideo` changes not revisiting the media types. **Open.**
 - **Display sleep** comment claimed WebKit's setting; WebKit on macOS leaves AVPlayer's default and holds its own sleep disabler. Comment **fixed** 342f579b.
-- **An unplayable enabled track** is a format error at once; WebKit's asset stays loading and is checked again. Comment corrected, behaviour kept (HLS assets list no tracks). **Open.**
+- **An unplayable enabled track** was a format error at once; WebKit's asset stays loading (no error, no metadata) and is checked again at a later state change. The player now stays loading too and checks again whenever the element prepares to play (play, a seek, `load()`, preload auto). **Fixed.**
 
 ### Legacy `WebKitMediaKeys`
 

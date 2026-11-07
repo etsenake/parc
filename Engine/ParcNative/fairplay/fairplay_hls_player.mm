@@ -428,18 +428,17 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       }
     }
     // allTracksArePlayable: an enabled track without a format description
-    // isn't playable. WebKit's asset then stays loading and is checked again
-    // at its next state change; nothing checks again here, so Parc reports a
-    // format error instead (an HLS asset lists no tracks, so it rarely
-    // applies).
+    // isn't playable, and WebKit's asset stays loading (no error, no
+    // metadata) until a later state change finds it playable. This checks
+    // again whenever the element prepares to play (play, a seek, load() or
+    // preload auto), where WebKit's updateStates runs.
+    tracks_unplayable_ = false;
     bool contains_disabled_tracks = false;
     for (AVAssetTrack* track in asset_.tracks) {
       if (!track.enabled) {
         contains_disabled_tracks = true;
       } else if (!track.formatDescriptions.firstObject) {
-        ReportFailure([NSError errorWithDomain:AVFoundationErrorDomain
-                                          code:AVErrorFailedToParse
-                                      userInfo:@{NSLocalizedDescriptionKey : @"a track isn't playable"}]);
+        tracks_unplayable_ = true;
         return;
       }
     }
@@ -501,8 +500,13 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   // (and asking for keys) begins.
   void PrepareToPlay() {
     prepare_to_play_ = true;
-    if (reported_metadata_ && !shut_down_) {
+    if (shut_down_) {
+      return;
+    }
+    if (reported_metadata_) {
       AttachItem();
+    } else if (tracks_unplayable_) {
+      MetadataLoaded();
     }
   }
 
@@ -1375,6 +1379,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   bool item_attached_ = false;
   // Track key loads still out before MetadataLoaded.
   size_t pending_track_loads_ = 0;
+  // MetadataLoaded found an enabled track that isn't playable: the asset
+  // stays loading, as WebKit's, and PrepareToPlay checks again.
+  bool tracks_unplayable_ = false;
   // HAVE_METADATA went out (from the asset); the item exists from then on.
   bool reported_metadata_ = false;
   // The item is ready to play: its timebase, duration and buffering count.
