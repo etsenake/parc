@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **47**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **48**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -382,8 +382,11 @@ stock Chromium does: **fixed** c0f53c09 on every page (Josh's decision), and
 Safari-identity pages keep WebKit's 30-minute cache lifetime. A stale session
 leaving the TV on a paused video, and the cast ending after 30 minutes where
 Safari's TV keeps the frame up to an hour: **fixed** 31735c02. A cast started
-a second before leaving shows a blank TV until the user returns: **in
-progress** (CAST-3, an unfreezable queue for casting players only). Between
+a second before leaving showed a blank TV until the user returned: **fixed**
+b0a863a1 (casting players only; other cached pages stay frozen). Leaving
+before the TV has connected still ends the cast after about 5 seconds, and a
+video played less than 5 seconds before casting never starts on the TV:
+**in progress** (CAST-4). Between
 30 and 60 minutes away Parc now restores the casting page and resumes on the
 TV, where Safari reloads the page: Parc is better here: **kept**
 (Josh agreed November 7). FairPlay
