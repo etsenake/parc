@@ -272,8 +272,8 @@ background; silent; pauses at 0). Still different: rewinding 4K or
 long-keyframe files held between decoded chunks: **fixed** ed3848c9 (time
 never stops; frames drop evenly when decoding can't keep up). Still: 4K with
 5-10 s keyframe gaps rewinds at an estimated 5-10 frames a second; closing it
-needs FFmpeg's disposable-frame skipping, about a day (**left**, default
-until Josh decides: negative rates on plain 4K files are rare); a rewind can
+needs FFmpeg's disposable-frame skipping, about a day (**left**, Josh agreed
+November 7: negative rates on plain 4K files are rare); a rewind can
 take up to 2 s longer to start; rewinding holds up to 384 MB (was 192 MB);
 dropped rewind frames aren't counted in `getVideoPlaybackQuality` (Safari's
 count **unchecked**); while casting, Now Playing showed a backward
