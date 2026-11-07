@@ -40,8 +40,8 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **38**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
-audio track joining the running player, protected video readiness on older macOS, the rest of
+main: **39**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+audio track joining the running player, the FairPlay late-key rebuffer, the rest of
 Safari's autoplay rules, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -149,10 +149,18 @@ data while playing fires `waiting`, `canplay`, `playing` and
 Safari; `canplay` and `canplaythrough` never come apart in Parc. Native HLS
 **handled** (a13b5579). Media Source **fixed** f50e1aab (readyState from the
 buffered ranges around the playhead; a seek into buffered data fires only
-`seeking`/`timeupdate`/`seeked`). On macOS before 14.4 the FairPlay
-renderer can't tell when a frame has decoded, so protected Media Source says
-`canplay` before keys and `seeked` before the picture: **queued** (FP-OLD,
-another readiness signal on older macOS).
+`seeking`/`timeupdate`/`seeked`). On macOS 13.0-14.3 the FairPlay
+renderer couldn't tell when a frame had decoded, so protected Media Source
+said `canplay` before keys and `seeked` before the picture: **fixed** 7597d287
+(WebKit's preroll signal, `SourceBufferPrivateAVFObjC.mm:1074-1107`; Parc's
+minimum is 13.0). Pre-existing FairPlay renderer gaps a user feels
+(`fairplay_chromium/README.md` Known gaps): keys arriving after playback
+started, or a switch into Dolby Vision, cost one rebuffer Safari doesn't have
+(**in progress**, FP-RESTART); Dolby Vision alongside a track the FairPlay
+renderer can't play (VP9 before the switch, Vorbis) fails (**queued**, FP-DV);
+a page turning its own video track off ends video until the next seek
+(**queued**, FP-TRACK); `setSinkId` audio output selection isn't wired
+(**queued**, FP-SINK).
 
 **HME-8. Seek steps run synchronously.** Chromium
 `html_media_element.cc:2656-2735` clamps to the duration, the earliest
