@@ -593,7 +593,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       session->update_pending.insert(request);
     }
     if (session->update_pending.empty()) {
-      NotifyKeyStatuses(session);
+      NotifyKeyStatuses(session, /*always=*/true);
       done(Result::Ok());
       return;
     }
@@ -1709,7 +1709,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       }
     }
     std::string session_id = session->id;
-    NotifyKeyStatuses(session);
+    const bool update_resolves = was_pending && session->update_pending.empty() &&
+                                 session->update_done &&
+                                 (session->update_succeeded || session->plan.json_messages);
+    NotifyKeyStatuses(session, update_resolves);
     session = Find(session_id);
     if (!session || !was_pending || !session->update_pending.empty() || !session->update_done) {
       return;
@@ -1813,7 +1816,11 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     return status;
   }
 
-  void NotifyKeyStatuses(Session* session) {
+  // |always|: a successful update() reports the statuses even when none
+  // changed, as WebKit's MediaKeySession::update runs Update Key Statuses with
+  // every success (requestDidSucceed's copyKeyStatuses, the cenc collector's
+  // keyStatuses), so keystatuseschange fires each time.
+  void NotifyKeyStatuses(Session* session, bool always = false) {
     if (session->keys_removed || session->loaded) {
       // remove() or load() reported the statuses, which stay: WebKit replaces
       // them with removeSessionData's or loadSession's keys.
@@ -1859,7 +1866,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
                 keys[i].status != session->last_keys[i].status ||
                 keys[i].system_code != session->last_keys[i].system_code;
     }
-    if (changed || additional) {
+    if (changed || additional || always) {
       session->last_keys = keys;
       std::string session_id = session->id;
       Deliver([session_id, additional, keys](FairPlayCdmClient* client) {

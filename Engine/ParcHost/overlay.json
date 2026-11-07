@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 479,
+  "version": 480,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1535,7 +1535,7 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.mm",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.mm",
-      "sha256": "f8636a478858cbcc25566cd42847c4b70e96a0236775fd4873dfd28d63961e37"
+      "sha256": "8934d4f10a232800ddcedc299640ce546ecec55cad0eae4472981f7ab8f7b087"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session_internal.h",
