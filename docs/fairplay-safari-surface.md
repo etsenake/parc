@@ -193,3 +193,71 @@ EME for video; mediakit switches its encrypted audio to legacy or skd when
 is, as in Safari, since native HLS serves `1_0`. Every change re-checks these
 paths: the `cenc` `encrypted` event when pssh is present, Safari's `1_0`
 answer, and no change to modern EME answers they use.
+
+## Departures from WebKit
+
+An audit of Safari mode against WebKit main (50738f45, November 6) for
+behaviour that differs from WebKit's or follows one site's habits, on
+November 7. Each entry gives WebKit's behaviour and source, Parc's, what a
+user notices and the general fix. **Fixed** entries name the commit;
+**open** ones are general fixes not made yet; **supervisor** ones need an
+architectural change or touch one of Josh's decisions and went to the
+supervisor first; **decision** ones are documented choices, kept.
+
+### Modern EME (key session core)
+
+- **License requests timed out after 15 s.** WebKit: `CDMInstanceSessionFairPlayStreamingAVFObjC::requestLicense` and `updateLicense` keep the callback until AVFoundation answers; no timer. Parc rejected `generateRequest` (NotSupportedError) and `update()` (InvalidStateError) after 15 s, also for an skd session waiting for the native HLS asset to ask for its URI. User: on a busy Mac, or an HLS page that licenses a key before the stream reaches it, the licence failed where Safari starts late. Fix: no timer; a renewal AVFoundation starts while the previous one's answer is in flight no longer orphans that update. **Fixed** 8635b6a2.
+- **Error names.** WebKit: `MediaKeySession::update` rejects every CDM failure with TypeError; `generateRequest` rejects every `requestLicense` failure (no certificate, a closed session) with NotSupportedError; init data `supportsInitData` refuses is NotSupportedError (sinf, skd and mpts pass `sanitizeInitData` unchanged); a cenc session's `update()` resolves once every entry settled, failed or not (`UpdateResponseCollector`). Parc used InvalidStateError and TypeError there and rejected a cenc update whose CKCs AVFoundation refused. User: players that branch on `error.name` took a different path. **Fixed** 9bb709b1.
+- **`keystatuseschange` only on change.** WebKit runs Update Key Statuses with every successful update, so the event fires even when nothing changed (a renewal). Parc fired only on a change. **Fixed** 7f25afe1.
+- **Key system `com.apple.fps.`** WebKit's `CDMFactoryFairPlayStreaming::supportsKeySystem` takes anything starting with `com.apple.fps.`; Parc wanted a non-empty version. **Fixed** 567e54f5.
+- **Device identifier.** WebKit passes `AVContentKeyRequestShouldRandomizeDeviceIdentifierKey` with a seed from the MediaKeys hash salt to every `makeStreamingContentKeyRequestData` (`optionsForKeyRequestWithHashSalt`); Parc passes no options. User: licence servers see one stable FairPlay device ID for the Mac across sites, which clearing site data doesn't reset. Fix: a per-origin salt from the browser. **Supervisor.**
+- **Raw sessions with several requests out.** WebKit queues a session's requests and answers `m_currentRequest` (`nextRequest`); Parc sends every SPC at once and a raw CKC answers the oldest request created, not the oldest message sent. User: a renewal and a new key in flight together can get each other's CKC. Fix: answer in message order. **Open.**
+- **`update("renew")` timing.** WebKit resolves `update()` with the renewal message (`didProvideRenewingRequest`) and renews the last request whatever its state; Parc resolves at once and renews the last answered key; a SecurityLevelError on a renewal keeps the old status. **Open.**
+- **`keystatuseschange` before `update()` resolves.** WebKit resolves first and queues the event; Blink fires the event Parc reports before the promise's result arrives. Needs a Blink change. **Open.**
+- **Output protection before macOS 14.4.** WebKit falls back to `willOutputBeObscuredDueToInsufficientExternalProtectionForDisplays:` and the request-level delegate (`protectionStatusForRequest`); Parc reads `externalContentProtectionStatus` only on 14.4+, so Media Source keys stay `usable` on an HDCP-less display on macOS 13 to 14.3. **Open.**
+- **cenc without a FairPlay pssh, `keyids`, sinf `contentId`, `legacySecureStop`, queued updates, revoke on close.** Parc extensions (core README). **Decision.**
+
+### Media Source playback (FairPlay renderer)
+
+- **Pitch at rates other than 1x.** WebKit: `AudioVideoRendererAVFObjC::setRate` and `setPreservesPitchAndCorrectionAlgorithm` pick Spectral off 1x with pitch preserved, else Varispeed; Parc left the SDK default (TimeDomain). User: warbly audio at 1.25x to 2x. **Fixed** 1137acfc for the default `preservesPitch`; `preservesPitch = false` still needs a render-to-GPU call (`media::mojom::Renderer` carries none). **Open** for that part.
+- **Readiness waits for keys.** WebKit: `MediaSource::monitorSourceBuffers` sets `readyState` from buffered ranges alone and the clock starts once a frame and an audio sample are there (`updateAllRenderersHaveAvailableSamples`). Parc reports enough data only when both AVFoundation renderers say so, and held protected samples never reach them, so `canplay` waits for keys. User: a page that licenses after `canplay` hangs. **Supervisor.**
+- **Stalls.** WebKit stalls only at the buffered end (`resetStallForTime`) and a sample held for a key doesn't stop the clock; Parc stops on a held key and polls every 100 ms with a 50 ms margin. **Supervisor.**
+- **`waitingforkey`.** WebKit fires it once, after `encrypted`, when the init segment's key has no session (`setInitData`, `setWaitingForKey`); Parc fires it whenever a protected sample is held, also while a licence is pending. **Open.**
+- **Natural size changes** are reported when samples are queued; WebKit reports at the first new-format sample's presentation time (`sizeWillChangeAtTime`). **Open.**
+- **Re-delivery after an automatic audio flush** doesn't flush first, so a read landing in between can be enqueued twice. **Open** (WebKit's order not fully visible in the checkout).
+- **Decoder reset** keeps the clock running; WebKit's `flushAndReenqueueVideo` holds it until a frame decodes. **Open**, untested on both.
+- **Frame counts** poll every 250 ms; WebKit refreshes at the page's read interval, checked every 250 ms (`RemoteAudioVideoRendererProxyManager`). The comments cited a site's timeout. **Fixed** 6512c592, 0704b7dd.
+- **Keys or Dolby Vision arriving after playback started** cost one restart (recipient key delivery; WebKit attaches keys per sample with an entitlement Parc can't have). **Decision**, f583a913.
+
+### Native HLS
+
+- **Error codes.** WebKit: `MediaPlayerPrivateAVFoundation::updateStates` makes a failed item a DecodeError; before that `assetStatus` gives NetworkError for a URL error or a misconfigured server and FormatError otherwise, by the error's own domain; `AVPlayerItemFailedToPlayToEndTime` isn't observed; a cancelled metadata key is a FormatError. Parc reported network errors for underlying URL errors after metadata, failed on the notification and stalled on a cancelled key. **Fixed** 2c4becd5.
+- **`preload="metadata"`.** WebKit makes the item only for preload auto or live (`updateStates`, `setPreload`); Parc always makes it, so VOD buffers and requests licences before play. **Supervisor.**
+- **Ready states.** WebKit reaches HAVE_CURRENT_DATA at the first frame and HAVE_FUTURE_DATA at ready-to-play with data ahead; Parc reports only enough data or underflow, so `loadeddata` and `canplay` come with `canplaythrough`. **Supervisor.**
+- **Closing a session fails the held key request** and AVFoundation asks again; WebKit leaves it pending. **Supervisor** (documented in the core README, "HLS assets").
+- **Renewal requests** (`shouldWaitForRenewalOfRequestedResource`) aren't in WebKit's loader delegate. **Fixed** 85290ed7.
+- **A key AVFoundation asks for again** goes to the session that answered it as a renewal; WebKit treats it as an unexpected request (new `encrypted`, new session). **Supervisor.**
+- **Seeks during a seek** go straight to AVFoundation; WebKit queues the latest (`seekToTarget`, `seekCompleted`). **Open**, low impact.
+- **`x-itunes-inherit-uri-query-component`.** WebKit sets `AVURLAssetInheritURIQueryComponentFromReferencingURIKey` when the element has the attribute; Parc doesn't read it. **Open.**
+- **Asset options** WebKit sets that pages can't see (sandboxed parsing, no persistent cache), and `hasEnabledAudio`/`hasEnabledVideo` changes not revisiting the media types. **Open.**
+- **Display sleep** comment claimed WebKit's setting; WebKit on macOS leaves AVPlayer's default and holds its own sleep disabler. Comment **fixed** 342f579b.
+- **An unplayable enabled track** is a format error at once; WebKit's asset stays loading and is checked again. Comment corrected, behaviour kept (HLS assets list no tracks). **Open.**
+
+### Legacy `WebKitMediaKeys`
+
+- **`webkitkeyadded` timing.** WebKit: `CDMSessionAVContentKeySession::update` and `CDMSessionAVFoundationObjC::update` hand the CKC over and report the key stored at once (`addKeyTimerFired`); there's no failure callback, so a rejected CKC raises no `webkitkeyerror`. Parc waited for the modern update and raised an error on rejection. **Fixed** 4b8bcb76.
+- **HDCP on HLS sessions.** WebKit: an obscured output gives the player's legacy session `webkitkeyerror` with systemCode `'HDCP'` (`outputObscuredDueToInsufficientExternalProtectionChanged`, `playerDidReceiveError`). Parc raised nothing. **Fixed** 4b8bcb76.
+- **`keyrelease` without a report** reported the CDM's code; WebKit always gives `'!mor'` (`generateKeyReleaseMessage`). **Fixed** 342f579b.
+- **Protocol versions** in the key system (`com.apple.fps.3_1,2`) reach AVFoundation as `AVContentKeyRequestProtocolVersionsKey` in WebKit (`parseKeySystem`, `update`); Parc keeps only the major version. **Open.**
+- **Init data across loads (2_N).** WebKit's init data lives on the player and a new load starts clean; Parc keeps an element's init data and renderer session across loads. **Open.**
+- **Unrecognized init data** is refused at `update(cert)`; WebKit passes any bytes to AVFoundation. **Open.**
+- **Insecure origins and frames without `allow="encrypted-media"`.** WebKit's legacy API has no secure-context or permissions-policy gate; Parc's sits on modern EME, so the constructor throws there while `isTypeSupported` says yes. **Supervisor.**
+- **Secure stop per keys object**, not per session. **Decision** (legacy table above).
+
+### Capability answers
+
+- **Fixed lists where WebKit asks AVFoundation.** WebKit answers `requestMediaKeySystemAccess` through `isPlayableExtendedMIMEType` and the HLS key systems through `AVAssetMIMETypeCache`; Parc uses fixed lists: ALAC, FLAC, Opus and `video/mp2t` or `quicktime` containers are refused for FairPlay, and the legacy HLS list is one Mac's snapshot (`av01` yes even without AV1 hardware, `flac` no, `text/vtt` yes). **Supervisor** (AV1 for FairPlay is a decision).
+
+### Claims
+
+- Site habits used as reasons (frame-count polling) are gone from the code; site names left in comments name no behaviour. The Chromium README's "cached capabilities picked Dolby Vision" line went with 5093e9e1.
