@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **40**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **42**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -376,10 +376,14 @@ for background tabs; a restore into a minimised or covered window still
 waits where Safari plays: **queued** (HME-33b, needs an "in window" signal).
 With a Cast session active the player restarted on entering the cache, as
 stock Chromium does: **fixed** c0f53c09 on every page (Josh's decision), and
-Safari-identity pages keep WebKit's 30-minute cache lifetime. Still felt: a
-cast started a second before leaving shows a blank TV, a stale session can
-leave the TV on a paused video, and after 30 minutes Parc's cast ends where
-Safari's TV keeps the frame up to an hour: **in progress** (CAST-2). FairPlay
+Safari-identity pages keep WebKit's 30-minute cache lifetime. A stale session
+leaving the TV on a paused video, and the cast ending after 30 minutes where
+Safari's TV keeps the frame up to an hour: **fixed** 31735c02. A cast started
+a second before leaving shows a blank TV until the user returns: **in
+progress** (CAST-3, an unfreezable queue for casting players only). Between
+30 and 60 minutes away Parc now restores the casting page and resumes on the
+TV, where Safari reloads the page: Parc is better here, **with Josh**
+(proposed: keep). FairPlay
 video can't be cast at all (Safari uses AirPlay, which Parc lacks): **with
 Josh** (proposed: build AirPlay, native HLS first). A streaming source's open connection may count against the
 cache's limits (**unchecked**).
