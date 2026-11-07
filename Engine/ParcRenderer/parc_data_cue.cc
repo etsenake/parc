@@ -57,7 +57,7 @@ ScriptValue PlatformValueToScript(ScriptState* script_state,
     case media::ParcDataCueValue::Kind::kNone:
       break;
   }
-  return builder.GetScriptValue();
+  return builder.ToScriptObject();
 }
 
 }  // namespace

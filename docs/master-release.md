@@ -91,6 +91,10 @@ release type). This explicitly freezes a new published source archive for the
 same version and retains the failed archive, source history and compiled objects.
 It is restricted to a stopped engine stage before sealing or packaging; existing
 version tags remain immutable. Ordinary resumes keep their original frozen inputs.
+Use `--source-commit <full-published-SHA>` with `--refresh-source` to pin the
+checked correction when other contributors publish during its checks. The SHA
+must be on main, descend from the failed release source and keep its saved
+version. Later commits remain available for the next release.
 
 The command cannot repair arbitrary source bugs, revoke/reissue certificates,
 bypass protected authorization, resolve someone else's local edits, or invent

@@ -93,6 +93,9 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   The VideoToolbox decoding-info source also now names Chromium's actual
   `string_number_conversions.h` header; the earlier include named a nonexistent
   file. Focused real-target compilation checks precede the next full resume.
+  Those checks also corrected DataCue's object-builder conversion to the pinned
+  Chromium `ToScriptObject()` API. The 28 production media files are checked
+  with their actual shipping compiler commands and generated headers.
 
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in

@@ -64,10 +64,11 @@ def module(source, name):
 
 
 class Release:
-    def __init__(self, root=ROOT, kind="patch", refresh_source=False):
+    def __init__(self, root=ROOT, kind="patch", refresh_source=False, source_commit=None):
         self.root = Path(root).resolve()
         self.kind = kind
         self.refresh_source = refresh_source
+        self.source_commit = source_commit
         self.base = self.root / "build/releases"
         self.base.mkdir(parents=True, exist_ok=True)
         self.log = self.root / "build/master-release-development/nightly-release.log"
@@ -189,13 +190,15 @@ class Release:
             raise Failure('Source refresh requires main')
         self.git('fetch', 'origin', 'main', retries=2)
         self.git('merge', '--ff-only', 'origin/main')
-        if app_version.read(self.root) != self.state['version']:
+        commit = self.source_commit or self.git('rev-parse', 'HEAD')
+        if not re.fullmatch(r'[0-9a-f]{40}', commit):
+            raise Failure('Refreshed source requires a full Git commit SHA')
+        if json.loads(self.git('show', commit + ':app-version.json')) != self.state['version']:
             raise Failure('Source refresh cannot change the saved release version')
         if self.git('ls-remote', 'origin', 'refs/tags/' + self.state['tag']):
             raise Failure('A published release tag is immutable; source refresh refused')
         if (Path(self.state['run']) / 'package').exists() or Path(self.state['engine_seal_path']).exists():
             raise Failure('Source refresh refused after sealing or packaging; existing artifacts were preserved')
-        commit = self.git('rev-parse', 'HEAD')
         if not self.published(commit):
             raise Failure('Refreshed source must be published on origin/main')
         self.git('merge-base', '--is-ancestor', self.state['commit'], commit)
@@ -502,8 +505,11 @@ def main():
     parser.add_argument("--type", required=True, choices=("major", "minor", "patch"))
     parser.add_argument("--refresh-source", action="store_true",
                         help="Use published fixes for a stopped, unsealed engine build without bumping again")
+    parser.add_argument("--source-commit", help="Full published commit SHA to freeze for an explicit source refresh")
     args = parser.parse_args()
-    return Release(kind=args.type, refresh_source=args.refresh_source).run()
+    if args.source_commit and not args.refresh_source:
+        parser.error('--source-commit requires --refresh-source')
+    return Release(kind=args.type, refresh_source=args.refresh_source, source_commit=args.source_commit).run()
 
 
 if __name__ == "__main__":
