@@ -353,6 +353,29 @@ TEST_F(NativeHlsTest, SkdKeyRequestRaisesEncrypted) {
   task_environment_.RunUntilIdle();
 }
 
+// Key-session creation fails in generateRequest, on the CDM pipe. The
+// native player stays usable and reports encrypted without a MediaError.
+TEST_F(NativeHlsTest, AttachedKeySessionFailureKeepsNativePlayerUsable) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(true));
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(renderer_client_, OnError(_)).Times(0);
+  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  const std::string uri = "skd://key-1";
+  EXPECT_CALL(encrypted_cb_, Run(media::EmeInitDataType::SKD,
+                               std::vector<uint8_t>(uri.begin(), uri.end())));
+  client_->OnEncrypted("skd", std::vector<uint8_t>(uri.begin(), uri.end()));
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(attached_cb, Run(true));
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+}
+
 TEST_F(NativeHlsTest, LoadsGoToTheElementsLoader) {
   EXPECT_CALL(start_load_cb_, Run(_, _, _))
       .WillOnce([](media::mojom::FairPlayHlsRequestPtr request,

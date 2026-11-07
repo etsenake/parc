@@ -8,6 +8,7 @@
 // every load went through HlsLoader.
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 
 #include <atomic>
 #include <cmath>
@@ -793,6 +794,7 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
             sessions.push_back(id);
           } else {
             generate_failures++;
+            generate_error = result.exception;
           }
         });
   }
@@ -883,6 +885,7 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
   bool hold_messages = false;
   int messages = 0;
   int generate_failures = 0;
+  fp::Exception generate_error = fp::Exception::kNotSupported;
   int license_failures = 0;
   int updates_ok = 0;
   int updates_failed = 0;
@@ -933,6 +936,48 @@ struct KeyRig {
   std::unique_ptr<fp::FairPlayHlsKeyLoader> keys;
   fp::FairPlayHlsKeyLoaderClient* client;
 };
+
+// Force the system factory to fail, without adding a production test hook.
+IMP g_session_factory = nullptr;
+bool g_fail_session = false;
+int g_session_attempts = 0;
+id SessionFactory(id cls, SEL selector, NSString* key_system) {
+  ++g_session_attempts;
+  if (g_fail_session)
+    return nil;
+  return reinterpret_cast<id (*)(id, SEL, NSString*)>(g_session_factory)(cls, selector, key_system);
+}
+
+void KeysSessionFailure() {
+  KeyPage page(kSingleKeyToken);
+  page.Create();
+  Method factory = class_getClassMethod([AVContentKeySession class], @selector(contentKeySessionWithKeySystem:));
+  OnOwner([&] {
+    g_session_attempts = 0;
+    g_fail_session = true;
+    g_session_factory = method_setImplementation(factory, reinterpret_cast<IMP>(SessionFactory));
+  });
+  {
+    KeyRig kr(&page);
+    page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
+    kr.Load(kSingleKeyMaster, page.cdm.get());
+    OnOwner([&] { Check(g_session_attempts == 0, "attachment does not create a key session"); });
+    kr.Play();
+    Check(WaitFor([&] { return page.generate_failures > 0; }, 25), "failed key session completes generateRequest");
+    OnOwner([&] {
+      Check(page.generate_failures == 1 && page.generate_error == fp::Exception::kNotSupported,
+            "generateRequest rejects with NotSupportedError");
+      Check(page.sessions.empty() && page.messages == 0, "failed generation leaves no session or license message");
+      Check(page.need_cdm_attached == std::vector<bool>{true}, "CDM stays attached: encrypted without waitingforkey");
+      Check(kr.rig.client.errors == 0, "no MediaError for a key-session creation failure");
+      g_fail_session = false;
+      page.GenerateOnOwner(kSkd);
+    });
+    Check(kr.PlaysTo5s(), "a fresh generateRequest retries the held key and plays");
+    OnOwner([&] { Check(page.sessions.size() == 1 && page.updates_ok == 1, "retry has one licensed session"); });
+  }
+  OnOwner([&] { method_setImplementation(factory, g_session_factory); });
+}
 
 // MediaKeys before the load (Shaka): the request still comes through the
 // resource loader, raising webkitneedkey and encrypted as in Safari, and the
@@ -1240,7 +1285,7 @@ int main(int argc, char** argv) {
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
         {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
-        {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute},
+        {"keys-session-failure", KeysSessionFailure}, {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute},
         {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
         {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},

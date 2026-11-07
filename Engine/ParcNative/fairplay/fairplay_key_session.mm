@@ -1192,9 +1192,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (FindAsset(client)) {
       return Result::Error(Exception::kInvalidState, "asset already attached");
     }
-    if (!EnsureSession()) {
-      return Result::Error(Exception::kNotSupported, "AVContentKeySession unavailable");
-    }
+    // WebKit attaches the CDM without creating its AVContentKeySession.
+    // requestLicense creates it later and rejects generateRequest on failure.
     assets_.push_back({client, asset, false});
     return Result::Ok();
   }

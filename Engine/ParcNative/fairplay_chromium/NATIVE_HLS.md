@@ -477,6 +477,14 @@ session afterwards (it never plays), so the loader answers held requests with
 their own SPC/CKC and never makes the asset a content key recipient; where
 the steps below differ, the key loader's header is right.
 
+Attaching the HLS asset records its CDM without creating an AVContentKeySession,
+as WebKit's `MediaPlayerPrivateAVFoundationObjC::cdmInstanceAttached` does.
+Session creation is deferred to `generateRequest`: failure rejects that request
+with `NotSupportedError`, without a player MediaError, leaving the asset and its
+held loading request available for a fresh session to retry. The native
+`keys-session-failure` harness forces the system factory to return nil and then
+restores it, checking rejection followed by licensed playback.
+
 `webkitneedkey`: every `skd://` request the key loader is handed (its
 client's `OnKeyLoadingRequest(url)`) and every `clearkey://` request the core
 reports, whether or not a CDM is set and including repeats of a URI, first
