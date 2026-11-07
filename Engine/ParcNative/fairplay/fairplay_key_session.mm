@@ -1,6 +1,7 @@
 #include "fairplay_key_session.h"
 
 #import <AVFoundation/AVFoundation.h>
+#include <dlfcn.h>
 
 #include <algorithm>
 #include <deque>
@@ -27,6 +28,44 @@ NSString* const kSessionOption = @"ParcFairPlaySession";
 NSString* const kCallOption = @"ParcFairPlayCall";
 // WebKit's key for the init data type in the same dictionary.
 NSString* const kInitDataTypeOption = @"InitializationDataType";
+
+// AVFoundation SPI WebKit passes with every content key request
+// (CDMInstanceSessionFairPlayStreamingAVFObjC::optionsForKeyRequestWithHashSalt).
+NSString* SpiKey(const char* name) {
+  void* symbol = dlsym(RTLD_DEFAULT, name);
+  return symbol ? *static_cast<NSString* __unsafe_unretained*>(symbol) : nil;
+}
+
+// WebKit's options for a MediaKeys hash salt: a randomized device identifier
+// seeded by the salt's hex digits, each as its value, in a 20-byte seed
+// (kMaximumDeviceIdentifierSeedSize), cut or zero-filled. Nil without a salt
+// or when this AVFoundation lacks the keys, as WebKit then passes none.
+NSDictionary* DeviceIdentifierOptions(const std::string& salt) {
+  static NSString* randomize = SpiKey("AVContentKeyRequestShouldRandomizeDeviceIdentifierKey");
+  static NSString* seed_key = SpiKey("AVContentKeyRequestRandomDeviceIdentifierSeedKey");
+  if (salt.empty() || !randomize || !seed_key) {
+    return nil;
+  }
+  constexpr size_t kSeedSize = 20;
+  std::vector<uint8_t> seed;
+  for (char c : salt) {
+    if (seed.size() == kSeedSize) {
+      break;
+    }
+    if (c >= '0' && c <= '9') {
+      seed.push_back(static_cast<uint8_t>(c - '0'));
+    } else if (c >= 'a' && c <= 'f') {
+      seed.push_back(static_cast<uint8_t>(c - 'a' + 10));
+    } else if (c >= 'A' && c <= 'F') {
+      seed.push_back(static_cast<uint8_t>(c - 'A' + 10));
+    }
+  }
+  seed.resize(kSeedSize, 0);
+  return @{
+    randomize : @YES,
+    seed_key : [NSData dataWithBytes:seed.data() length:seed.size()],
+  };
+}
 }  // namespace
 
 @interface PCFairPlayContentKeyDelegate : NSObject <AVContentKeySessionDelegate>
@@ -265,6 +304,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
 
   // WebKit's setStorageDirectory, except that it also moves aside a file found
   // at the directory's path (its older storage layout), which Parc never wrote.
+  void SetDeviceIdentifierSalt(const std::string& salt) {
+    key_request_options_ = DeviceIdentifierOptions(salt);
+  }
+
   void SetStorageDirectory(const std::string& directory) {
     storage_url_ = nil;
     if (directory.empty()) {
@@ -1654,20 +1697,48 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
+    NSDictionary* options = key_request_options_;
+    const std::string session_id = session->id;
     @try {
       [av_request makeStreamingContentKeyRequestDataForApp:certificate_
                                          contentIdentifier:ToNSData(request->content_identifier)
-                                                   options:nil
+                                                   options:options
                                          completionHandler:^(NSData* spc, NSError* error) {
-                                           (*poster)([weak, av_request, spc, error] {
-                                             if (auto impl = weak.lock()) {
-                                               impl->OnSpc(av_request, spc, error);
+                                           (*poster)([weak, av_request, spc, error, options,
+                                                      session_id] {
+                                             auto impl = weak.lock();
+                                             if (!impl) {
+                                               return;
                                              }
+                                             if (!spc && options &&
+                                                 impl->RetryWithoutDeviceIdentifierOptions(
+                                                     session_id, av_request)) {
+                                               return;
+                                             }
+                                             impl->OnSpc(av_request, spc, error);
                                            });
                                          }];
     } @catch (NSException* exception) {
       fail(-3, exception.reason);
     }
+  }
+
+  // Safari's process has the device identifier options honoured; should
+  // AVFoundation refuse an SPC with them in Parc's, this CDM makes its SPCs
+  // without them (the stable identifier) rather than failing every licence.
+  bool RetryWithoutDeviceIdentifierOptions(const std::string& session_id,
+                                           AVContentKeyRequest* av_request) {
+    if (!key_request_options_) {
+      return false;
+    }
+    key_request_options_ = nil;
+    Session* session = Find(session_id);
+    Request* request = session ? FindRequest(session, av_request) : nullptr;
+    if (!request || Active(*request) != av_request) {
+      return false;
+    }
+    MakeSpc(session, request);
+    return true;
   }
 
   void SendReadyBatches(Session* session) {
@@ -1964,6 +2035,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   // Content key recipients (renderers) attached through AttachRecipient.
   NSMutableArray<id<AVContentKeyRecipient>>* recipients_ = [NSMutableArray array];
   NSData* certificate_ = nil;
+  // WebKit's per-origin randomized device identifier for every SPC
+  // (SetDeviceIdentifierSalt), or nil.
+  NSDictionary* key_request_options_ = nil;
   std::map<std::string, std::unique_ptr<Session>> sessions_;
   bool persistent_state_allowed_ = false;
   // <storage directory>/SecureStop.plist, or nil.
@@ -2007,6 +2081,10 @@ void FairPlayCdm::SetServerCertificate(std::vector<uint8_t> certificate, ResultC
 
 void FairPlayCdm::SetPersistentStateAllowed(bool allowed) {
   impl_->SetPersistentStateAllowed(allowed);
+}
+
+void FairPlayCdm::SetDeviceIdentifierSalt(const std::string& salt) {
+  impl_->SetDeviceIdentifierSalt(salt);
 }
 
 void FairPlayCdm::SetStorageDirectory(const std::string& directory) {

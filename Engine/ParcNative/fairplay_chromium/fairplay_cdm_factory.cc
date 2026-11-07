@@ -28,6 +28,38 @@ void FairPlayCdmFactory::Create(
     const SessionKeysChangeCB& session_keys_change_cb,
     const SessionExpirationUpdateCB& session_expiration_update_cb,
     CdmCreatedCB cdm_created_cb) {
+  // WebKit gives every MediaKeys its document's hash salt
+  // (MediaKeySystemRequest::allow, from DeviceIdHashSaltStorage per document
+  // origin and top-level origin), which randomizes the device identifier in
+  // its SPCs. The browser answers with the frame's media device ID salt, the
+  // same per-site salt, replaced when site data is cleared. If it doesn't
+  // answer, the CDM goes without, as WebKit's options do without the SPI.
+  if (frame_interfaces_ &&
+      parc::fairplay::IsFairPlayKeySystem(cdm_config.key_system)) {
+    frame_interfaces_->GetFairPlayDeviceIdSalt(
+        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+            base::BindOnce(&FairPlayCdmFactory::CreateWithSalt,
+                           weak_factory_.GetWeakPtr(), cdm_config,
+                           session_message_cb, session_closed_cb,
+                           session_keys_change_cb,
+                           session_expiration_update_cb,
+                           std::move(cdm_created_cb)),
+            std::string()));
+    return;
+  }
+  CreateWithSalt(cdm_config, session_message_cb, session_closed_cb,
+                 session_keys_change_cb, session_expiration_update_cb,
+                 std::move(cdm_created_cb), std::string());
+}
+
+void FairPlayCdmFactory::CreateWithSalt(
+    const CdmConfig& cdm_config,
+    const SessionMessageCB& session_message_cb,
+    const SessionClosedCB& session_closed_cb,
+    const SessionKeysChangeCB& session_keys_change_cb,
+    const SessionExpirationUpdateCB& session_expiration_update_cb,
+    CdmCreatedCB cdm_created_cb,
+    const std::string& device_id_salt) {
   // WebKit gives every CDM instance its document's MediaKeys storage
   // directory (CDM::createInstance); only a configuration that allows
   // persistent state uses it. The browser names (and creates) the frame's.
@@ -42,13 +74,14 @@ void FairPlayCdmFactory::Create(
                            session_message_cb, session_closed_cb,
                            session_keys_change_cb,
                            session_expiration_update_cb,
-                           std::move(cdm_created_cb)),
+                           std::move(cdm_created_cb), device_id_salt),
             base::FilePath()));
     return;
   }
   CreateWithStorage(cdm_config, session_message_cb, session_closed_cb,
                     session_keys_change_cb, session_expiration_update_cb,
-                    std::move(cdm_created_cb), base::FilePath());
+                    std::move(cdm_created_cb), device_id_salt,
+                    base::FilePath());
 }
 
 void FairPlayCdmFactory::CreateWithStorage(
@@ -58,6 +91,7 @@ void FairPlayCdmFactory::CreateWithStorage(
     const SessionKeysChangeCB& session_keys_change_cb,
     const SessionExpirationUpdateCB& session_expiration_update_cb,
     CdmCreatedCB cdm_created_cb,
+    const std::string& device_id_salt,
     const base::FilePath& storage_directory) {
   scoped_refptr<ContentDecryptionModule> cdm;
   CreateCdmStatus status = CreateCdmStatus::kSuccess;
@@ -67,7 +101,8 @@ void FairPlayCdmFactory::CreateWithStorage(
   } else {
     cdm = FairPlayCdmAdapter::Create(
         cdm_config.key_system, cdm_config.allow_persistent_state,
-        storage_directory, session_message_cb, session_closed_cb,
+        storage_directory, device_id_salt, session_message_cb,
+        session_closed_cb,
         session_keys_change_cb, session_expiration_update_cb);
     if (!cdm) {
       status = CreateCdmStatus::kCdmNotSupported;

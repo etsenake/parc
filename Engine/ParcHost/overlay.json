@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 489,
+  "version": 490,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1530,12 +1530,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.h",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.h",
-      "sha256": "95f010d1787af8aef13d94112f6d81c7102b6ba9885de506c145ae31e61233b9"
+      "sha256": "1fa0c60b57b1010eef3605ccec24d3a3ed2bb82cd35d584f5e7a129a0670b84e"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.mm",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.mm",
-      "sha256": "fc96701e07c3810253daaf01600856404d6ebbd913c03fedb343f4929dc24003"
+      "sha256": "50c6adc37792b8166b55ea33c899316fafe9a2607426a0bbd5e38a205e741441"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session_internal.h",
@@ -1600,22 +1600,22 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_adapter.h",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.h",
-      "sha256": "09acf4eac340b8b5c604a94fdfe8eb270b350b9ece50fd0bb73c5352261bbf30"
+      "sha256": "dffdb83e059297172213ea49a2fc4ba2197135ee782b8b3ff8c4020291f8d282"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_adapter.cc",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.cc",
-      "sha256": "c7168eead8560659af73dd1cb1d590d396c4778068ab36705e89d47367392650"
+      "sha256": "730ebf1aba4a93e11cdfe408d378f48365f9cf375bfe2dc88f21c8353ca085bd"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_factory.h",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_factory.h",
-      "sha256": "b79705b246657531aa167e86cbcad356036849949af7ede1634bbdb090509667"
+      "sha256": "2d19917059eb4c97d72634c43d563a659572ef19be6b19ec840e73bb226d67ad"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_factory.cc",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_factory.cc",
-      "sha256": "ddfa1835c15da071ea7965c7dda8b428111e65c197616204a1b8b8529b7e028d"
+      "sha256": "7b2ff95d1bb939fda80a6ba2dd8d81e21fcb8878da5eca30dc64992885149225"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_fairplay_hooks.h",
@@ -4152,7 +4152,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "c149407f7161849948cf341c9289a08008a873214aacdcbd5a5498bc5db122ee",
+      "sha256": "dbee43af078cbace6404246aa6497a093926857f440e18e56993967be863e4ae",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4192,7 +4192,7 @@
         {
           "target": "content/browser/media/media_interface_proxy.cc",
           "before_sha256": "151fd2acf0b00762c9debb229b6ab62cebc2fbc91cb6a5d9d0afd5bd48c89b67",
-          "after_sha256": "5345a886164a7ee1e212de0f1e5f23bf44b8afc28394a33156cad2c43a001a60"
+          "after_sha256": "1c8d5b08bffbd45280ff3928c58f56386627712cbb33fcf7e739ab079c5b25db"
         },
         {
           "target": "content/browser/media/media_interface_proxy.h",
@@ -4342,7 +4342,7 @@
         {
           "target": "media/mojo/mojom/frame_interface_factory.mojom",
           "before_sha256": "1c58a4930d9f87d03b82a637963268193fd5fe63f8c5f85e9aad175615f43e7d",
-          "after_sha256": "b1dbde2e17a50294300915f44a76df7741806ce4d915e1b6e1b370fd65f8faa2"
+          "after_sha256": "29fcb90f6b0fcdf1c3dbd2690833c5d3d3717adc625b11e297285242a232825f"
         },
         {
           "target": "media/mojo/mojom/interface_factory.mojom",
@@ -4402,7 +4402,7 @@
         {
           "target": "media/mojo/services/mojo_cdm_helper_unittest.cc",
           "before_sha256": "be22c1e67026f413ea8f8fad20faa9625186850b09d23db87335b9a7edbebc2d",
-          "after_sha256": "7b7fd310b754530d5620adab7b35222230be3e743f98be5cdf8c232e5f8a94da"
+          "after_sha256": "8de2a2f9d45781c3b3216fdeb426170f658b32c643aaa33a7bae6f99c0ce0e86"
         },
         {
           "target": "media/mojo/services/mojo_media_client.h",

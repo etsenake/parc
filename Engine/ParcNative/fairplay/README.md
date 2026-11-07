@@ -341,6 +341,21 @@ so this forces the following on the Chromium integration.
   (it then replaces the key) or fails (it is dropped).
 - A JSON license response is validated entirely before any of it is applied.
 
+## Device identifier
+
+As WebKit's `optionsForKeyRequestWithHashSalt`, every SPC an
+`AVContentKeyRequest` makes asks AVFoundation for a device identifier
+randomized from the document's salt (`SetDeviceIdentifierSalt`;
+`AVContentKeyRequestShouldRandomizeDeviceIdentifierKey` and a 20-byte seed of
+the salt's hex digit values under `AVContentKeyRequestRandomDeviceIdentifierSeedKey`,
+SPI looked up at run time, none when absent). The engine's salt is the
+frame's media device ID salt: per top-level site and origin, replaced when
+site data is cleared, in memory off the record, as WebKit's
+`DeviceIdHashSaltStorage`. Should AVFoundation refuse an SPC with these
+options in Parc's process, that CDM makes its SPCs without them from then on.
+SPCs made from an HLS asset's loading request carry none, as WebKit's
+loading-request path (`CDMSessionAVFoundationObjC`) passes none.
+
 ## Messages
 
 skd, sinf and mpts sessions exchange the raw SPC and CKC. cenc and keyids sessions

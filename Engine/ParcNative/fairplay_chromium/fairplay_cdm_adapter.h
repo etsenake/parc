@@ -37,10 +37,14 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
   // persistentState is "required"); persistent-usage-record sessions need it.
   // |storage_directory| is the frame's FairPlay storage from the browser
   // (empty: none), where AVFoundation keeps expired-session reports.
+  // |device_id_salt| is the frame's media device ID salt from the browser
+  // (WebKit's MediaKeys hash salt; empty: none), which randomizes the device
+  // identifier in every SPC.
   static scoped_refptr<FairPlayCdmAdapter> Create(
       const std::string& key_system,
       bool allow_persistent_state,
       const base::FilePath& storage_directory,
+      const std::string& device_id_salt,
       const SessionMessageCB& session_message_cb,
       const SessionClosedCB& session_closed_cb,
       const SessionKeysChangeCB& session_keys_change_cb,
@@ -49,6 +53,7 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
   FairPlayCdmAdapter(
       bool allow_persistent_state,
       const base::FilePath& storage_directory,
+      const std::string& device_id_salt,
       const SessionMessageCB& session_message_cb,
       const SessionClosedCB& session_closed_cb,
       const SessionKeysChangeCB& session_keys_change_cb,

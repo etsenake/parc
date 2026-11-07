@@ -108,6 +108,7 @@ scoped_refptr<FairPlayCdmAdapter> FairPlayCdmAdapter::Create(
     const std::string& key_system,
     bool allow_persistent_state,
     const base::FilePath& storage_directory,
+    const std::string& device_id_salt,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const SessionKeysChangeCB& session_keys_change_cb,
@@ -122,13 +123,15 @@ scoped_refptr<FairPlayCdmAdapter> FairPlayCdmAdapter::Create(
     return nullptr;
   }
   return base::MakeRefCounted<FairPlayCdmAdapter>(
-      allow_persistent_state, storage_directory, session_message_cb,
-      session_closed_cb, session_keys_change_cb, session_expiration_update_cb);
+      allow_persistent_state, storage_directory, device_id_salt,
+      session_message_cb, session_closed_cb, session_keys_change_cb,
+      session_expiration_update_cb);
 }
 
 FairPlayCdmAdapter::FairPlayCdmAdapter(
     bool allow_persistent_state,
     const base::FilePath& storage_directory,
+    const std::string& device_id_salt,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const SessionKeysChangeCB& session_keys_change_cb,
@@ -145,6 +148,7 @@ FairPlayCdmAdapter::FairPlayCdmAdapter(
   DCHECK(session_keys_change_cb_);
   DCHECK(session_expiration_update_cb_);
   cdm_->SetPersistentStateAllowed(allow_persistent_state);
+  cdm_->SetDeviceIdentifierSalt(device_id_salt);
   cdm_->SetStorageDirectory(storage_directory.value());
 }
 

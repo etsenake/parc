@@ -111,6 +111,10 @@ key status change; `update("acknowledged")` removes reports found. `persistent-l
 on Safari for macOS. `CdmContext::ParcHasSessionForInitData` (asked by a
 Safari-identity Media Source element through MojoCdm before it fires
 `encrypted` with `sinf`) answers from `FairPlayCdm::HasSessionForInitData`.
+Every FairPlay CDM also asks `FrameInterfaceFactory.GetFairPlayDeviceIdSalt`
+for the frame's media device ID salt (`GetMediaDeviceSaltAndOrigin`), WebKit's
+MediaKeys hash salt, which randomizes the device identifier in its SPCs (core
+README, "Device identifier").
 `LoadSession` is WebKit's `loadSession`: a persistent-usage-record session
 loads the expired-session reports under its ID (resolving with an empty ID,
 EME's false, when there are none), other types reject with NotSupported.

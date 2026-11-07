@@ -114,6 +114,13 @@ class FairPlayCdm {
   // with that storage. Set before the first session.
   void SetStorageDirectory(const std::string& directory);
 
+  // The document's MediaKeys hash salt (WebKit's per document origin and
+  // top-level origin salt, which clearing site data replaces): every SPC an
+  // AVContentKeyRequest makes then carries a device identifier randomized
+  // from it, as WebKit's optionsForKeyRequestWithHashSalt. Empty: AVFoundation's
+  // own identifier. Set before the first session.
+  void SetDeviceIdentifierSalt(const std::string& salt);
+
   // Resolves with the session ID once the license request is ready, then
   // sends it through OnSessionMessage (kLicenseRequest). As in WebKit, the ID
   // is the uppercase hex of the session's random 16-byte identifier

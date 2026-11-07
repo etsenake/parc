@@ -4,6 +4,8 @@
 #ifndef THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_CDM_FACTORY_H_
 #define THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_CDM_FACTORY_H_
 
+#include <string>
+
 #include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -14,9 +16,10 @@ namespace media {
 
 class FairPlayCdmFactory final : public CdmFactory {
  public:
-  // |frame_interfaces| (the frame's browser services, may be null) names the
-  // storage of a CDM whose configuration allows persistent state. It outlives
-  // this factory (both belong to the media service's InterfaceFactoryImpl).
+  // |frame_interfaces| (the frame's browser services, may be null) gives every
+  // FairPlay CDM the frame's device ID salt and names the storage of one whose
+  // configuration allows persistent state. It outlives this factory (both
+  // belong to the media service's InterfaceFactoryImpl).
   explicit FairPlayCdmFactory(mojom::FrameInterfaceFactory* frame_interfaces);
   FairPlayCdmFactory(const FairPlayCdmFactory&) = delete;
   FairPlayCdmFactory& operator=(const FairPlayCdmFactory&) = delete;
@@ -31,6 +34,14 @@ class FairPlayCdmFactory final : public CdmFactory {
               CdmCreatedCB cdm_created_cb) override;
 
  private:
+  void CreateWithSalt(
+      const CdmConfig& cdm_config,
+      const SessionMessageCB& session_message_cb,
+      const SessionClosedCB& session_closed_cb,
+      const SessionKeysChangeCB& session_keys_change_cb,
+      const SessionExpirationUpdateCB& session_expiration_update_cb,
+      CdmCreatedCB cdm_created_cb,
+      const std::string& device_id_salt);
   void CreateWithStorage(
       const CdmConfig& cdm_config,
       const SessionMessageCB& session_message_cb,
@@ -38,6 +49,7 @@ class FairPlayCdmFactory final : public CdmFactory {
       const SessionKeysChangeCB& session_keys_change_cb,
       const SessionExpirationUpdateCB& session_expiration_update_cb,
       CdmCreatedCB cdm_created_cb,
+      const std::string& device_id_salt,
       const base::FilePath& storage_directory);
 
   const raw_ptr<mojom::FrameInterfaceFactory> frame_interfaces_;
