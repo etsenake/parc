@@ -629,6 +629,29 @@ void FairPlayHlsPlayerService::FinishInitialize(
   UpdateTimeUpdateTimer();
 }
 
+void FairPlayHlsPlayerService::OnReadyStateChange(fp::HlsReadyState state) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!initialized_ || errored_) {
+    return;
+  }
+  mojom::FairPlayHlsReadyState out = mojom::FairPlayHlsReadyState::kHaveMetadata;
+  switch (state) {
+    case fp::HlsReadyState::kHaveMetadata:
+      out = mojom::FairPlayHlsReadyState::kHaveMetadata;
+      break;
+    case fp::HlsReadyState::kHaveCurrentData:
+      out = mojom::FairPlayHlsReadyState::kHaveCurrentData;
+      break;
+    case fp::HlsReadyState::kHaveFutureData:
+      out = mojom::FairPlayHlsReadyState::kHaveFutureData;
+      break;
+    case fp::HlsReadyState::kHaveEnoughData:
+      out = mojom::FairPlayHlsReadyState::kHaveEnoughData;
+      break;
+  }
+  client_->OnReadyStateChanged(out);
+}
+
 void FairPlayHlsPlayerService::OnBufferingStateChange(bool have_enough) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   BufferingState state =

@@ -80,6 +80,10 @@ enum class HlsError {
   kNotSupported,  // MEDIA_ERR_SRC_NOT_SUPPORTED (before metadata)
 };
 
+// The element's readyState as WebKit's AVFoundation player reports it
+// (MediaPlayerPrivateAVFoundation::updateStates).
+enum class HlsReadyState { kHaveMetadata, kHaveCurrentData, kHaveFutureData, kHaveEnoughData };
+
 struct HlsMetadata {
   bool has_audio = false;
   bool has_video = false;
@@ -115,6 +119,13 @@ class HlsPlayerClient {
   // Enough is buffered to play on (playbackLikelyToKeepUp or a full buffer),
   // or not (an empty buffer while playing).
   virtual void OnBufferingStateChange(bool have_enough) = 0;
+  // WebKit's readyState for the item changed (it is kHaveMetadata at
+  // OnMetadata): kHaveCurrentData once the layer has the first video frame
+  // (readyForDisplay) or the buffer is empty, kHaveFutureData once the item is
+  // ready to play with media loaded past the current time (and, with video,
+  // its first frame), kHaveEnoughData when playbackLikelyToKeepUp or the
+  // buffer is full.
+  virtual void OnReadyStateChange(HlsReadyState /*state*/) {}
   virtual void OnLoadedRangesChange(const std::vector<HlsTimeRange>& loaded) = 0;
   // The element's seekable attribute changed (one range or none).
   virtual void OnSeekableRangesChange(const std::vector<HlsTimeRange>& seekable) = 0;

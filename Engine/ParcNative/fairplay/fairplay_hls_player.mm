@@ -226,6 +226,8 @@ class HlsTaskBridge;
 - (instancetype)initWithImpl:(std::weak_ptr<FairPlayHlsPlayer::Impl>)impl
                       poster:(std::shared_ptr<const PostTask>)poster;
 - (void)observePlayer:(AVPlayer*)player item:(AVPlayerItem*)item;
+// readyForDisplay: the first video frame (WebKit's hasAvailableVideoFrame).
+- (void)observeLayer:(AVPlayerLayer*)layer;
 - (void)stop;
 @end
 
@@ -472,11 +474,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     player_.allowsExternalPlayback = NO;
     player_.volume = volume_;
     player_.muted = muted_;
+    observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
+    [observer_ observePlayer:player_ item:item_];
     if (layer_width_ > 0 && layer_height_ > 0 && layer_scale_ > 0) {
       [PlayerLayer() parcStageWithSize:CGSizeMake(layer_width_, layer_height_) scale:layer_scale_];
     }
-    observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
-    [observer_ observePlayer:player_ item:item_];
     // The metadata goes first: the client attaches the tracks to the item,
     // registers the layer and tells the page before the item loads anything.
     reported_metadata_ = true;
@@ -1026,7 +1028,67 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     OnBuffering();
   }
 
+  // MediaPlayerPrivateAVFoundation::updateStates once the metadata is out,
+  // run as WebKit runs it, on every change of the item or the layer.
+  void UpdateReadyState() {
+    if (shut_down_ || !reported_metadata_ || !item_) {
+      return;
+    }
+    const bool has_video = HasVideo();
+    bool first_frame_available = false;
+    if (!player_layer_.readyForDisplay) {
+      reported_first_frame_ = false;
+    } else if (!reported_first_frame_ && has_video) {
+      reported_first_frame_ = true;
+      first_frame_available = true;
+    }
+    HlsReadyState state = ready_state_;
+    // playerItemStatus: likely to keep up, then a full buffer, then an empty
+    // one, else ready to play; nothing while its status is unknown or failed.
+    if (item_ready_ && item_.status == AVPlayerItemStatusReadyToPlay) {
+      if (item_.playbackLikelyToKeepUp || item_.playbackBufferFull) {
+        state = HlsReadyState::kHaveEnoughData;
+      } else if (item_.playbackBufferEmpty) {
+        state = HlsReadyState::kHaveCurrentData;
+      } else if (ready_state_ != HlsReadyState::kHaveEnoughData && (!has_video || reported_first_frame_) &&
+                 MaxTimeLoaded() > CurrentTime()) {
+        state = HlsReadyState::kHaveFutureData;
+      }
+    }
+    if (first_frame_available && ready_state_ < HlsReadyState::kHaveCurrentData) {
+      state = HlsReadyState::kHaveCurrentData;
+    }
+    if (state != ready_state_) {
+      ready_state_ = state;
+      client_->OnReadyStateChange(state);
+    }
+  }
+
+  // m_cachedHasVideo: the item has an enabled video track.
+  bool HasVideo() const {
+    for (AVPlayerItemTrack* track in item_.tracks) {
+      if (track.enabled && [track.assetTrack.mediaType isEqualToString:AVMediaTypeVideo]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  double MaxTimeLoaded() const {
+    double max = 0;
+    for (NSValue* value in item_.loadedTimeRanges) {
+      CMTimeRange range = value.CMTimeRangeValue;
+      if (CMTIMERANGE_IS_VALID(range) && !CMTIMERANGE_IS_EMPTY(range)) {
+        max = std::max(max, CMTimeGetSeconds(CMTimeRangeGetEnd(range)));
+      }
+    }
+    return max;
+  }
+
+  void OnLayerReadyForDisplay() { UpdateReadyState(); }
+
   void OnBuffering() {
+    UpdateReadyState();
     if (shut_down_ || !item_ready_) {
       return;
     }
@@ -1060,6 +1122,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   void OnLoadedRanges() {
     if (!shut_down_ && reported_metadata_ && item_) {
       client_->OnLoadedRangesChange(Ranges(item_.loadedTimeRanges));
+      UpdateReadyState();
     }
   }
 
@@ -1090,6 +1153,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       natural_height_ = height;
       client_->OnNaturalSizeChange(width, height);
     }
+    UpdateReadyState();
   }
 
   void OnEnded() {
@@ -1150,6 +1214,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       player_layer_.videoGravity = AVLayerVideoGravityResize;
       [CATransaction commit];
       [player_layer_ parcAttachPlayerWhenSized:player_];
+      [observer_ observeLayer:player_layer_];
       // Frame counts come from the layer (WebKit's source for an AVPlayer).
       std::weak_ptr<Impl> weak = weak_from_this();
       std::shared_ptr<const PostTask> poster = poster_;
@@ -1279,6 +1344,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     std::function<void(bool)> done;
   };
   std::optional<PendingSeek> pending_seek_;
+  // UpdateReadyState: what the client last heard, and WebKit's
+  // m_haveReportedFirstVideoFrame.
+  HlsReadyState ready_state_ = HlsReadyState::kHaveMetadata;
+  bool reported_first_frame_ = false;
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
   HlsTimeline timeline_;
@@ -1645,12 +1714,14 @@ static void* const kItemSeekable = (void*)&kItemSeekable;
 static void* const kItemDuration = (void*)&kItemDuration;
 static void* const kItemSize = (void*)&kItemSize;
 static void* const kPlayerObscured = (void*)&kPlayerObscured;
+static void* const kLayerReady = (void*)&kLayerReady;
 
 @implementation PCHlsObserver {
   std::weak_ptr<FairPlayHlsPlayer::Impl> _impl;
   std::shared_ptr<const PostTask> _poster;
   AVPlayerItem* _item;
   AVPlayer* _player;
+  AVPlayerLayer* _layer;
   NSArray<NSString*>* _bufferingKeys;
   BOOL _stopped;
 }
@@ -1688,7 +1759,23 @@ static void* const kPlayerObscured = (void*)&kPlayerObscured;
                object:item];
 }
 
+- (void)observeLayer:(AVPlayerLayer*)layer {
+  @synchronized(self) {
+    if (_stopped || _layer || !layer) {
+      return;
+    }
+    _layer = layer;
+  }
+  [layer addObserver:self forKeyPath:@"readyForDisplay" options:0 context:kLayerReady];
+}
+
 - (void)stop {
+  AVPlayerLayer* layer = nil;
+  @synchronized(self) {
+    layer = _layer;
+    _layer = nil;
+  }
+  [layer removeObserver:self forKeyPath:@"readyForDisplay" context:kLayerReady];
   @synchronized(self) {
     if (_stopped || !_item) {
       _stopped = YES;
@@ -1739,6 +1826,8 @@ static void* const kPlayerObscured = (void*)&kPlayerObscured;
     [self post:&FairPlayHlsPlayer::Impl::OnPresentationSize];
   } else if (context == kPlayerObscured) {
     [self post:&FairPlayHlsPlayer::Impl::OnOutputObscured];
+  } else if (context == kLayerReady) {
+    [self post:&FairPlayHlsPlayer::Impl::OnLayerReadyForDisplay];
   } else {
     [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
   }

@@ -276,6 +276,7 @@ struct Client : fp::HlsPlayerClient {
   void OnBufferingStateChange(bool have_enough) override {
     buffering.push_back(have_enough);
   }
+  void OnReadyStateChange(fp::HlsReadyState state) override { ready_states.push_back(state); }
   void OnLoadedRangesChange(const std::vector<fp::HlsTimeRange>& r) override { loaded = r; }
   void OnSeekableRangesChange(const std::vector<fp::HlsTimeRange>& r) override {
     seekable = r;
@@ -308,6 +309,7 @@ struct Client : fp::HlsPlayerClient {
   int64_t frames_dropped = 0;
   int metadata_count = 0;
   std::vector<bool> buffering;
+  std::vector<fp::HlsReadyState> ready_states;
   std::vector<fp::HlsTimeRange> loaded, seekable;
   int seekable_changes = 0;
   std::vector<double> duration_changes;
@@ -372,6 +374,8 @@ void VodTs() {
   Check(playing, "time advances past 3 s");
   Check(rig.client.width > 0 && rig.client.height > 0, "the natural size follows from the item");
   Check(!rig.client.buffering.empty() && rig.client.buffering.back(), "buffering reports enough");
+  Check(!rig.client.ready_states.empty() && rig.client.ready_states.back() == fp::HlsReadyState::kHaveEnoughData,
+        "WebKit's readyState reaches HAVE_ENOUGH_DATA");
   Check(!rig.client.loaded.empty(), "loaded ranges reported");
   OnOwner([&] { rig.player->SetRate(0); });
   WaitFor([] { return false; }, 0.5);

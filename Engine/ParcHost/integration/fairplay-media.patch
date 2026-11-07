@@ -1547,12 +1547,10 @@
  }  // namespace media
 --- a/media/filters/demuxer_manager.cc
 +++ b/media/filters/demuxer_manager.cc
-@@ -230,8 +230,23 @@
- 
- void DemuxerManager::DisableDemuxerCanChangeType() {
+@@ -232,6 +232,21 @@
    demuxer_->DisableCanChangeType();
-+}
-+
+ }
+ 
 +void DemuxerManager::RestrictDemuxerCanChangeType(
 +    Demuxer::ChangeTypeFilter filter) {
 +  demuxer_->RestrictCanChangeType(std::move(filter));
@@ -1562,8 +1560,8 @@
 +  if (demuxer_) {
 +    demuxer_->ParcSetClearDolbyVisionAllowed(allowed);
 +  }
- }
- 
++}
++
 +bool DemuxerManager::ParcDemuxerPrefersFairPlayRenderer() {
 +  return demuxer_ && demuxer_->ParcPrefersFairPlayRenderer();
 +}
@@ -1590,11 +1588,10 @@
      SetDemuxer(std::move(demuxer));
      return std::move(on_demuxer_created)
          .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
-@@ -382,8 +407,39 @@
-     return !demuxer_->IsSeekable();
+@@ -383,6 +408,37 @@
    }
    return false;
-+}
+ }
 +
 +std::optional<Demuxer::ParcNativeTimeline>
 +DemuxerManager::GetParcNativeTimeline() const {
@@ -1602,8 +1599,8 @@
 +    return std::nullopt;
 +  }
 +  return demuxer_->GetParcNativeTimeline();
- }
- 
++}
++
 +void DemuxerManager::ParcSetFastSeek(base::TimeDelta target,
 +                                     base::TimeDelta tolerance_before) {
 +  if (demuxer_) {
@@ -1626,16 +1623,13 @@
 +                     std::move(key)));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-   return loaded_url_.path().ends_with(".m3u8");
-@@ -472,8 +528,82 @@
-               base::BindRepeating(&DemuxerManager::DemuxerRequestsSeek,
-                                   weak_factory_.GetWeakPtr())),
+@@ -474,6 +530,89 @@
            std::move(engine), media_log_.get()));
-+}
-+
+ }
+ 
 +#if BUILDFLAG(IS_MAC)
 +std::unique_ptr<Demuxer> DemuxerManager::MaybeCreateParcNativeHlsDemuxer() {
 +  if (!client_->PresentsParcSafariIdentity()) {
@@ -1676,12 +1670,21 @@
 +  params.key_request_cb = base::BindPostTaskToCurrentDefault(
 +      base::BindRepeating(&DemuxerManager::OnParcWebKitKeyRequest,
 +                          weak_factory_.GetWeakPtr()));
++  params.ready_state_cb = base::BindPostTaskToCurrentDefault(
++      base::BindRepeating(&DemuxerManager::OnParcNativeHlsReadyState,
++                          weak_factory_.GetWeakPtr()));
 +  return client_->CreateParcNativeHlsDemuxer(std::move(params));
- }
- 
++}
++
 +void DemuxerManager::OnParcWebKitKeyRequest(const std::string& key_uri) {
 +  if (client_) {
 +    client_->ParcWebKitKeyRequest(key_uri);
++  }
++}
++
++void DemuxerManager::OnParcNativeHlsReadyState(ParcNativeHlsReadyState state) {
++  if (client_) {
++    client_->ParcNativeHlsReadyStateChanged(state);
 +  }
 +}
 +
@@ -1723,7 +1726,7 @@
  #include "media/filters/chunk_demuxer.h"
  #include "net/storage_access_api/status.h"
  #include "url/origin.h"
-@@ -81,6 +82,24 @@
+@@ -81,6 +82,27 @@
  
      // Allows a seek triggered by a demuxer (mainly used for live content)
      virtual void DemuxerRequestsSeek(base::TimeDelta seek_time) = 0;
@@ -1744,11 +1747,14 @@
 +    // Parc: a key request of that route's player (webkitneedkey, see
 +    // ParcNativeHlsDemuxerParams::key_request_cb).
 +    virtual void ParcWebKitKeyRequest(const std::string& key_uri) {}
++    // The native HLS player's readyState (ParcNativeHlsDemuxerParams::
++    // ready_state_cb).
++    virtual void ParcNativeHlsReadyStateChanged(ParcNativeHlsReadyState state) {}
 +#endif  // BUILDFLAG(IS_MAC)
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +130,14 @@
+@@ -111,6 +133,14 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -1763,7 +1769,7 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +167,17 @@
+@@ -140,6 +170,17 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -1781,7 +1787,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +192,21 @@
+@@ -154,6 +195,22 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1790,6 +1796,7 @@
 +  // and the element presents Safari's identity; null otherwise.
 +  std::unique_ptr<Demuxer> MaybeCreateParcNativeHlsDemuxer();
 +  void OnParcWebKitKeyRequest(const std::string& key_uri);
++  void OnParcNativeHlsReadyState(ParcNativeHlsReadyState state);
 +  // Parc: its in-band text tracks and cues, on to the client.
 +  void ParcSetInbandTextTracks(const std::vector<ParcInbandTextTrack>& tracks,
 +                               ParcInbandTextTrackModeCB set_mode);
@@ -2188,10 +2195,20 @@
  
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
-@@ -22,6 +25,318 @@
+@@ -22,6 +25,332 @@
    // play state (e.g. when another phone play/pauses a cast device on the same
    // network).
    OnRemotePlayStateChange(MediaStatusState state);
++};
++
++// The element's readyState as WebKit's AVFoundation player reports it
++// (MediaPlayerPrivateAVFoundation::updateStates).
++[EnableIf=is_mac]
++enum FairPlayHlsReadyState {
++  kHaveMetadata,
++  kHaveCurrentData,
++  kHaveFutureData,
++  kHaveEnoughData,
 +};
 +
 +// Parc: extension of the mojo::RendererClient communication layer for the
@@ -2475,6 +2492,10 @@
 +  OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
 +               mojo_base.mojom.TimeTicks capture_time);
 +  OnBufferingStateChange(BufferingState state);
++  // WebKit's readyState for the item changed: HAVE_CURRENT_DATA at the first
++  // video frame (or an empty buffer), HAVE_FUTURE_DATA once it is ready to
++  // play with media ahead, HAVE_ENOUGH_DATA with OnBufferingStateChange.
++  OnReadyStateChanged(FairPlayHlsReadyState state);
 +  OnBufferedRangesChanged(array<FairPlayHlsTimeRange> buffered);
 +  OnSeekableRangesChanged(array<FairPlayHlsTimeRange> seekable);
 +  OnDurationChange(mojo_base.mojom.TimeDelta duration);
@@ -3250,11 +3271,10 @@
  namespace blink {
  
  namespace {
-@@ -166,7 +176,48 @@
-     CrossThreadOnceFunction<void(media::OutputDeviceStatus)> callback) {
+@@ -167,6 +177,47 @@
    sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
-+}
+ }
 +
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
@@ -3294,7 +3314,7 @@
 +    }
 +  }
 +  return true;
- }
++}
 +#endif  // BUILDFLAG(IS_MAC)
  
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
@@ -3313,7 +3333,7 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1112,9 +1168,21 @@
+@@ -1112,7 +1168,19 @@
  void WebMediaPlayerImpl::Seek(double seconds) {
    DVLOG(1) << __func__ << "(" << seconds << "s)";
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3323,24 +3343,20 @@
 +      base::Seconds(seconds),
 +      std::exchange(parc_fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcFastSeek(double seconds,
 +                                      double tolerance_before) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_fast_seek_tolerance_ = base::Seconds(tolerance_before);
 +  Seek(seconds);
-+}
-+
- void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
-   TRACE_EVENT2("media", "WebMediaPlayerImpl::DoSeek", "target",
-@@ -1421,6 +1489,24 @@
-     return std::numeric_limits<double>::quiet_NaN();
+ }
  
+ void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
+@@ -1423,6 +1491,24 @@
    return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
-+}
-+
+ }
+ 
 +double WebMediaPlayerImpl::ParcStartDate() const {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
@@ -3357,9 +3373,11 @@
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
 +  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
- }
- 
++}
++
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ 
 @@ -1496,6 +1582,21 @@
  
    if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
@@ -3441,10 +3459,12 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +1881,34 @@
+@@ -1726,6 +1879,34 @@
+ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
+                                        media::MediaTrack::State state) {
    client_->SetTrackState(track, state);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -3471,12 +3491,10 @@
 +    media::ParcInbandAudioTrackEnabledCB set_enabled) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
-+}
-+
- #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+ }
  
- UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1777,6 +1958,53 @@
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+@@ -1777,6 +1958,88 @@
  }
  #endif
  
@@ -3517,6 +3535,41 @@
 +  encrypted_client_->ParcWebKitKeyRequest(key_uri);
 +}
 +
++void WebMediaPlayerImpl::ParcNativeHlsReadyStateChanged(
++    media::ParcNativeHlsReadyState state) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  parc_native_hls_ready_state_ = state;
++  ApplyParcNativeHlsReadyState();
++}
++
++// WebKit reports HAVE_CURRENT_DATA at the first video frame and
++// HAVE_FUTURE_DATA once the item can play with media ahead, before
++// HAVE_ENOUGH_DATA, so loadeddata and canplay come at its moments rather than
++// with canplaythrough. HAVE_ENOUGH_DATA and underflow keep coming through
++// OnBufferingStateChange: this only raises the ready state from
++// HAVE_METADATA, and never during a seek (which returns to HAVE_METADATA and
++// completes at HAVE_ENOUGH_DATA).
++void WebMediaPlayerImpl::ApplyParcNativeHlsReadyState() {
++  ReadyState target;
++  switch (parc_native_hls_ready_state_) {
++    case media::ParcNativeHlsReadyState::kHaveCurrentData:
++      target = WebMediaPlayer::kReadyStateHaveCurrentData;
++      break;
++    case media::ParcNativeHlsReadyState::kHaveFutureData:
++      target = WebMediaPlayer::kReadyStateHaveFutureData;
++      break;
++    case media::ParcNativeHlsReadyState::kHaveMetadata:
++    case media::ParcNativeHlsReadyState::kHaveEnoughData:
++      return;
++  }
++  if (seeking_ || ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata ||
++      ready_state_ >= target) {
++    return;
++  }
++  SetReadyState(target);
++  UpdatePlayState();
++}
++
 +void WebMediaPlayerImpl::ParcProvideClearKey(std::string_view key_id,
 +                                             base::span<const uint8_t> key) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3530,7 +3583,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,10 +2048,85 @@
+@@ -1820,10 +2083,85 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3544,7 +3597,7 @@
    pipeline_controller_->SetCdm(
        cdm_context,
        blink::BindOnce(&WebMediaPlayerImpl::OnCdmAttached, weak_this_));
-+}
+ }
 +
 +#if BUILDFLAG(IS_MAC)
 +void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
@@ -3611,12 +3664,12 @@
 +                                  ? pending_cdm_context_ref_.get()
 +                                  : cdm_context_ref_.get();
 +  return ref && ref->GetCdmContext()->RequiresFairPlayRenderer();
- }
++}
 +#endif  // BUILDFLAG(IS_MAC)
  
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-@@ -1841,11 +2144,22 @@
+@@ -1841,11 +2179,22 @@
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
      }
@@ -3639,7 +3692,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1988,6 +2302,15 @@
+@@ -1988,6 +2337,15 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3655,7 +3708,18 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -3018,12 +3341,41 @@
+@@ -2197,6 +2555,10 @@
+   // needs to use the new ReadyState in its calculations.
+   SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
+   UpdatePlayState();
++#if BUILDFLAG(IS_MAC)
++  // A native HLS readyState that arrived before the metadata.
++  ApplyParcNativeHlsReadyState();
++#endif  // BUILDFLAG(IS_MAC)
+ }
+ 
+ void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
+@@ -3018,11 +3380,40 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3681,7 +3745,7 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
- 
++
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -3693,11 +3757,10 @@
 +    }
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-     client_->DidUseAudioServiceChange(new_uses_audio_service);
-@@ -3038,6 +3390,14 @@
+@@ -3038,6 +3429,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -3712,7 +3775,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3513,14 @@
+@@ -3153,6 +3552,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -3727,7 +3790,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +4161,29 @@
+@@ -3793,6 +4200,29 @@
      return false;
    }
  
@@ -3792,7 +3855,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +467,24 @@
+@@ -455,6 +467,27 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -3801,6 +3864,9 @@
 +  std::unique_ptr<media::Demuxer> CreateParcNativeHlsDemuxer(
 +      media::ParcNativeHlsDemuxerParams params) override;
 +  void ParcWebKitKeyRequest(const std::string& key_uri) override;
++  void ParcNativeHlsReadyStateChanged(
++      media::ParcNativeHlsReadyState state) override;
++  void ApplyParcNativeHlsReadyState();
 +#endif  // BUILDFLAG(IS_MAC)
 +  void ParcSetInbandTextTracks(
 +      const std::vector<media::ParcInbandTextTrack>& tracks,
@@ -3817,7 +3883,7 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -533,7 +563,26 @@
+@@ -533,6 +566,25 @@
  
    // Called when a CDM has been attached to the |pipeline_|.
    void OnCdmAttached(bool success);
@@ -3828,7 +3894,7 @@
 +  // presenting Safari's identity, or while the CDM being attached, else the
 +  // attached one, is FairPlay.
 +  bool ParcClearDolbyVisionAllowed();
- 
++
 +  // Parc: restarts the pipeline into the FairPlay Renderer (a suspend/resume
 +  // cycle, as Windows does for a hardware context reset) when the current
 +  // renderer can't play what follows: FairPlay keys attached to Chromium's
@@ -3840,11 +3906,10 @@
 +  void ParcRestartIntoFairPlayIfNeeded();
 +  bool ParcFairPlayPlaysCurrentStreams() const;
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-   //   - toggles the memory usage reporting timer, and
-@@ -885,6 +934,21 @@
+@@ -885,6 +937,24 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -3853,6 +3918,9 @@
 +  // FairPlayHlsPlayerClient.StartLoad) through `url_index_`'s fetch context;
 +  // destroying it cancels them.
 +  std::unique_ptr<FairPlayHlsLoader> parc_hls_loader_;
++  // Parc: the native HLS player's last readyState (WebKit's).
++  media::ParcNativeHlsReadyState parc_native_hls_ready_state_ =
++      media::ParcNativeHlsReadyState::kHaveMetadata;
 +#endif  // BUILDFLAG(IS_MAC)
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: see ParcRestartIntoFairPlayIfNeeded(). Whether a renderer was
@@ -3916,7 +3984,7 @@
  }  // namespace media
 --- a/media/base/renderer_factory.h
 +++ b/media/base/renderer_factory.h
-@@ -6,23 +6,96 @@
+@@ -6,23 +6,109 @@
  #define MEDIA_BASE_RENDERER_FACTORY_H_
  
  #include <memory>
@@ -3966,6 +4034,15 @@
  class VideoRendererSink;
 +
 +#if BUILDFLAG(IS_MAC)
++// Parc: the element's readyState as Safari's native HLS player reports it
++// (WebKit's MediaPlayerPrivateAVFoundation::updateStates).
++enum class ParcNativeHlsReadyState {
++  kHaveMetadata,
++  kHaveCurrentData,
++  kHaveFutureData,
++  kHaveEnoughData,
++};
++
 +// Parc: what the demuxer of Safari's native HLS route is made from
 +// (third_party/parc_fairplay NATIVE_HLS.md). DemuxerManager's HLS branch fills
 +// it; WebMediaPlayerImpl hands it to the factory registered for
@@ -4008,12 +4085,16 @@
 +  // it has a layout box, and for an audio element.
 +  gfx::SizeF video_layer_size;
 +  float video_layer_scale = 0;
++  // The player's readyState changes (WebMediaPlayerImpl raises the element to
++  // HAVE_CURRENT_DATA and HAVE_FUTURE_DATA with them; HAVE_ENOUGH_DATA and
++  // underflow come through buffering); posts to the main thread.
++  base::RepeatingCallback<void(ParcNativeHlsReadyState)> ready_state_cb;
 +};
 +#endif  // BUILDFLAG(IS_MAC)
  
  // A factory class for creating media::Renderer to be used by media pipeline.
  class MEDIA_EXPORT RendererFactory {
-@@ -46,6 +119,15 @@
+@@ -46,6 +132,15 @@
        VideoRendererSink* video_renderer_sink,
        RequestOverlayInfoCB request_overlay_info_cb,
        const gfx::ColorSpace& target_color_space) = 0;

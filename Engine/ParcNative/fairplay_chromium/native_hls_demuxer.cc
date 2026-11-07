@@ -135,6 +135,7 @@ NativeHlsDemuxer::NativeHlsDemuxer(
       encrypted_media_init_data_cb_(
           std::move(params.encrypted_media_init_data_cb)),
       key_request_cb_(std::move(params.key_request_cb)),
+      ready_state_cb_(std::move(params.ready_state_cb)),
       start_load_cb_(std::move(params.start_load_cb)),
       track_manager_(std::move(params.track_manager)),
       pending_player_(std::move(player)),
@@ -554,6 +555,31 @@ void NativeHlsDemuxer::OnBufferingStateChange(media::BufferingState state) {
   if (client_) {
     client_->OnSourceBufferingStateChange(state);
   }
+}
+
+void NativeHlsDemuxer::OnReadyStateChanged(
+    media::mojom::FairPlayHlsReadyState state) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!ready_state_cb_ || stopped_) {
+    return;
+  }
+  media::ParcNativeHlsReadyState out =
+      media::ParcNativeHlsReadyState::kHaveMetadata;
+  switch (state) {
+    case media::mojom::FairPlayHlsReadyState::kHaveMetadata:
+      out = media::ParcNativeHlsReadyState::kHaveMetadata;
+      break;
+    case media::mojom::FairPlayHlsReadyState::kHaveCurrentData:
+      out = media::ParcNativeHlsReadyState::kHaveCurrentData;
+      break;
+    case media::mojom::FairPlayHlsReadyState::kHaveFutureData:
+      out = media::ParcNativeHlsReadyState::kHaveFutureData;
+      break;
+    case media::mojom::FairPlayHlsReadyState::kHaveEnoughData:
+      out = media::ParcNativeHlsReadyState::kHaveEnoughData;
+      break;
+  }
+  ready_state_cb_.Run(out);
 }
 
 void NativeHlsDemuxer::OnBufferedRangesChanged(
