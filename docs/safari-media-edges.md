@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **53**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **54**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -253,8 +253,8 @@ bac07f94. A plain `src=` file stood still at a negative rate: **fixed** 4bc9fab8
 (reverse playback in Chromium's pipeline, inline, picture in picture and
 background; silent; pauses at 0). Still different: rewinding 4K or
 long-keyframe files briefly holds between decoded chunks (**queued**,
-WMPI-RATE-d, smoother reverse); while casting, Now Playing shows a backward
-scrubber over a frozen TV (**in progress**, WMPI-RATE-c); whether Safari's
+WMPI-RATE-d, smoother reverse); while casting, Now Playing showed a backward
+scrubber over a frozen TV (**fixed** e4ca73cd); whether Safari's
 reverse playback is audible is **unchecked** (AVPlayer decides).
 
 **HME-29. Ended at rate 0 inside the element.** Chromium's internal check
@@ -544,7 +544,7 @@ adds it to the live renderer, and a late second audio-language SourceBuffer
 plays only the original audio where Safari mixes both enabled tracks:
 **fixed** 00671621 (late tracks join the playing renderer, FairPlay and
 RendererImpl, no restart; a second audio SourceBuffer plays mixed on
-FairPlay). Still different, user-felt, **queued** (CD-1c): clear Media
+FairPlay). Still different, user-felt, **in progress** (CD-1c): clear Media
 Source plays only the first of two audio SourceBuffers (RendererImpl has one
 audio renderer); after the page toggles `audioTracks` only one track plays
 (Blink sends only the first enabled id, `html_media_element.cc:4486`); an
