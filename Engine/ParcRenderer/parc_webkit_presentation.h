@@ -1,9 +1,10 @@
 // Copyright 2026 Parc contributors.
-// Safari's video presentation API for documents presenting Safari's identity
+// Safari's video presentation and fullscreen API for documents presenting
+// Safari's identity
 // (docs/fairplay-identity.md, docs/fairplay-safari-surface.md). Run in the
 // main world before the page's own scripts. It adds what WebKit's
 // HTMLVideoElement offers on macOS (Source/WebCore/html/HTMLVideoElement.idl,
-// VIDEO_PRESENTATION_MODE), built on Chromium's standard Picture-in-Picture
+// VIDEO_PRESENTATION_MODE, VIDEO_USES_ELEMENT_FULLSCREEN), built on Chromium's standard Picture-in-Picture
 // and Fullscreen APIs, which it captures before any page script can replace
 // them. So Parc's picture-in-picture panel and fullscreen window present the
 // video, and the standard APIs (`document.pictureInPictureElement`,
@@ -26,6 +27,19 @@
 //   change, whoever made it, before the standard event of that change
 //   (`fullscreenchange`, `enterpictureinpicture`, `leavepictureinpicture`)
 //   reaches the page's listeners.
+// - `webkitSupportsFullscreen`: as `webkitSupportsPresentationMode("fullscreen")`.
+// - `webkitDisplayingFullscreen`: true while the video is its document's
+//   fullscreen element or in any mode but inline (picture in picture too).
+// - `webkitEnterFullscreen()` (and `webkitEnterFullScreen()`): nothing while
+//   displaying fullscreen; InvalidStateError without a user gesture, without
+//   fullscreen support or while a change is in progress; otherwise element
+//   fullscreen of the video.
+// - `webkitExitFullscreen()` (and `webkitExitFullScreen()`): unless a change
+//   is in progress, fully exits fullscreen or leaves picture in picture.
+// - `webkitendfullscreen` (not bubbling, cancelable) after the
+//   webkitpresentationmodechanged of a change from fullscreen to picture in
+//   picture. On macOS video fullscreen is element fullscreen, so WebKit fires
+//   `webkitbeginfullscreen` never and `webkitendfullscreen` only then.
 // tests/FairPlayIdentity/webkit_presentation.mjs runs this exact script.
 // Installed at third_party/blink/renderer/bindings/core/v8/parc_webkit_presentation.h.
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_PARC_WEBKIT_PRESENTATION_H_
@@ -54,6 +68,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
     return typeof value === 'function' ? value : null;
   };
   const NativeEvent = g.Event;
+  const NativeDOMException = g.DOMException;
   const NativeWeakMap = g.WeakMap;
   const weakGet = NativeWeakMap.prototype.get;
   const weakSet = NativeWeakMap.prototype.set;
@@ -86,7 +101,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const pictureInPictureEnabledOf = getter(documentPrototype, 'pictureInPictureEnabled');
   const activation = g.navigator && g.navigator.userActivation;
   const isActiveOf = getter(g.UserActivation && g.UserActivation.prototype, 'isActive');
-  if (!NativeEvent || !addListener || !dispatch || !typeOf || !getRootNode ||
+  if (!NativeEvent || !NativeDOMException || !addListener || !dispatch || !typeOf || !getRootNode ||
       !ownerDocumentOf || !networkStateOf || !readyStateOf || !videoWidthOf ||
       !videoHeightOf || !nativeSetTimeout) {
     return;
@@ -99,7 +114,8 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const CHANGES = ['fullscreenchange', 'webkitfullscreenchange',
                    'enterpictureinpicture', 'leavepictureinpicture'];
   // Listening for these on a video makes the script watch it.
-  const ANNOUNCED = ['webkitpresentationmodechanged'];
+  const ANNOUNCED = ['webkitpresentationmodechanged', 'webkitbeginfullscreen',
+                     'webkitendfullscreen'];
 
   const then = (promise, fulfilled, rejected) =>
       apply(promiseThen, promise, [fulfilled, rejected]);
@@ -292,6 +308,11 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   }
   function changed(element, previous, mode) {
     fire(element, 'webkitpresentationmodechanged');
+    // HTMLMediaElement::enterFullscreen(PictureInPicture) from standard
+    // fullscreen.
+    if (previous === FULLSCREEN && mode === PICTURE_IN_PICTURE) {
+      fire(element, 'webkitendfullscreen');
+    }
   }
 
   // A change this API starts. `eager` changes (entering picture in picture,
@@ -304,7 +325,8 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   // fullscreen first), so fullscreen to picture in picture is one change.
   function begin(element, state, mode, eager, afterTask, promise) {
     const hold = eager && afterTask ? effectiveMode(element, state) : null;
-    const intent = {mode, shown: false, hold};
+    // Picture in picture outlasts a fullscreen Chromium hasn't left yet.
+    const intent = {mode, shown: false, hold, masksFullscreen: mode === PICTURE_IN_PICTURE};
     state.intent = intent;
     retain(element, state);
     const show = () => {
@@ -327,9 +349,9 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
       }
     };
     // Picture in picture can be up before Chromium's exit from fullscreen
-    // lands; the video keeps reporting picture in picture until it does.
+    // lands; the video keeps reporting the new mode until it does.
     const entered = () => {
-      if (state.intent === intent && mode === PICTURE_IN_PICTURE &&
+      if (state.intent === intent && intent.masksFullscreen &&
           isFullscreenElement(element)) {
         intent.shown = true;
         intent.lingering = true;
@@ -344,6 +366,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
       // No promise: the call failed at once.
       settle();
     }
+    return intent;
   }
   // The standard call's promise, or null if it threw.
   function start(call, target) {
@@ -358,8 +381,11 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   function leave(element, state, current) {
     const ownerDocument = apply(ownerDocumentOf, element, []);
     if (current === PICTURE_IN_PICTURE) {
+      // Leaving picture in picture before Chromium's late exit from
+      // fullscreen lands keeps that fullscreen hidden too.
+      const lingering = !!(state.intent && state.intent.lingering);
       begin(element, state, INLINE, true, false,
-            start(exitPictureInPicture, ownerDocument));
+            start(exitPictureInPicture, ownerDocument)).masksFullscreen = lingering;
       return;
     }
     // Chromium's exitFullscreen leaves one level of nested fullscreen.
@@ -451,6 +477,29 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   }
   const known = (element) => peek(element) || stateOf(element, effectiveMode(element, null));
 
+  // HTMLMediaElement::isFullscreen: the document's fullscreen element, or any
+  // mode but inline.
+  const displaysFullscreen = (element, state) =>
+      isFullscreenElement(element) || effectiveMode(element, state) !== INLINE;
+  // HTMLVideoElement::webkitEnterFullscreen.
+  function webkitEnter(element) {
+    const state = peek(element);
+    if (displaysFullscreen(element, state)) {
+      return;
+    }
+    if (!userGesture() || !supportsMode(element, FULLSCREEN) || changing(state)) {
+      throw new NativeDOMException('The object is in an invalid state.', 'InvalidStateError');
+    }
+    enter(element, known(element), FULLSCREEN);
+  }
+  // HTMLVideoElement::webkitExitFullscreen.
+  function webkitExit(element) {
+    const state = known(element);
+    if (!changing(state) && displaysFullscreen(element, state)) {
+      leave(element, state, effectiveMode(element, state));
+    }
+  }
+
   const members = {
     webkitSupportsPresentationMode(mode) {
       brand(this);
@@ -472,6 +521,31 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
         setPresentationMode(this, state, target);
       }
     },
+    get webkitSupportsFullscreen() {
+      brand(this);
+      return supportsMode(this, FULLSCREEN);
+    },
+    get webkitDisplayingFullscreen() {
+      brand(this);
+      return displaysFullscreen(this, peek(this));
+    },
+    webkitEnterFullscreen() {
+      brand(this);
+      webkitEnter(this);
+    },
+    webkitExitFullscreen() {
+      brand(this);
+      webkitExit(this);
+    },
+    // WebKit keeps the "FullScreen" spellings (ImplementedAs the above).
+    webkitEnterFullScreen() {
+      brand(this);
+      webkitEnter(this);
+    },
+    webkitExitFullScreen() {
+      brand(this);
+      webkitExit(this);
+    },
     // A listener for the webkit presentation events on a video anywhere
     // (detached, or in a shadow tree the window doesn't see) gets them.
     addEventListener(type, listener, options = undefined) {
@@ -482,16 +556,20 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
     },
   };
   // WebIDL members are enumerable and configurable; operations writable.
-  for (const name of ['webkitSupportsPresentationMode', 'webkitSetPresentationMode',
+  for (const name of ['webkitSupportsFullscreen', 'webkitDisplayingFullscreen',
+                      'webkitPresentationMode']) {
+    define(videoPrototype, name, {
+      get: describe(members, name).get, enumerable: true, configurable: true,
+    });
+  }
+  for (const name of ['webkitEnterFullscreen', 'webkitExitFullscreen',
+                      'webkitEnterFullScreen', 'webkitExitFullScreen',
+                      'webkitSupportsPresentationMode', 'webkitSetPresentationMode',
                       'addEventListener']) {
     define(videoPrototype, name, {
       value: members[name], writable: true, enumerable: true, configurable: true,
     });
   }
-  define(videoPrototype, 'webkitPresentationMode', {
-    get: describe(members, 'webkitPresentationMode').get,
-    enumerable: true, configurable: true,
-  });
 
   // Every change event of a video in this window's tree, before the page's
   // listeners; a document's fullscreenchange (its fullscreen video left the

@@ -47,9 +47,12 @@ On a page that presents Safari's identity:
   supported, a type may also list the other kind's FairPlay codecs, and an
   unparsable type skips only that capability. The HLS types join once
   Parc's native HLS route is on.
-- Videos have Safari's presentation API (`webkitSupportsPresentationMode`,
-  `webkitSetPresentationMode`, `webkitPresentationMode`,
-  `webkitpresentationmodechanged`), as WebKit has it on macOS. A main-world
+- Videos have Safari's presentation and fullscreen API
+  (`webkitSupportsPresentationMode`, `webkitSetPresentationMode`,
+  `webkitPresentationMode`, `webkitpresentationmodechanged`,
+  `webkitSupportsFullscreen`, `webkitDisplayingFullscreen`,
+  `webkitEnterFullscreen`/`webkitExitFullscreen` and their `FullScreen`
+  spellings, `webkitendfullscreen`), as WebKit has it on macOS. A main-world
   script (`Engine/ParcRenderer/parc_webkit_presentation.h`) maps it onto
   Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's
   picture-in-picture panel and fullscreen window present the video and the
@@ -537,8 +540,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   HLS (TELUS TV+'s Shaka setup and Disney+'s native client use
   `com.apple.fps.1_0`). `getStatusForPolicy` is removed by a main-world
   script too, so isolated worlds (extensions) still see it. The video
-  presentation API is a script as well and overrides `addEventListener` on
-  `HTMLVideoElement.prototype`; its events are script-made (`isTrusted`
+  presentation and fullscreen API is a script as well and overrides
+  `addEventListener` on `HTMLVideoElement.prototype`; its events are script-made (`isTrusted`
   false), and changes the page or the browser starts through the standard
   APIs report their new mode when Chromium's own event for them arrives
   rather than as the change begins.

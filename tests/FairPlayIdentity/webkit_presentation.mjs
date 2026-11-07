@@ -1,4 +1,4 @@
-// Runs the video presentation script from
+// Runs the video presentation and fullscreen script from
 // Engine/ParcRenderer/parc_webkit_presentation.h against a model of
 // Chromium's DOM events, Picture-in-Picture and Fullscreen APIs as a
 // Safari-identity page sees them, and asserts WebKit's behaviour
@@ -211,7 +211,7 @@ function makeWindow() {
   const document = new Document();
   const window = {
     Event, EventTarget, Node, Element, Document, ShadowRoot, HTMLMediaElement,
-    HTMLVideoElement, HTMLAudioElement, UserActivation, WeakMap, setTimeout,
+    HTMLVideoElement, HTMLAudioElement, UserActivation, WeakMap, setTimeout, DOMException,
     navigator: {userActivation: activation}, document, activation, log, failFullscreen: false,
     slowFullscreenExit: false,
   };
@@ -502,6 +502,117 @@ function record(window, video, target = window.document) {
   plain.remove();
   await settle();
   check(plainSeen.join() === 'inline', 'a fullscreen video removed from the document reports inline: ' + plainSeen);
+}
+
+// The fullscreen members, as WebIDL defines them on HTMLVideoElement.
+{
+  const window = makeWindow();
+  vm.runInContext(script, window);
+  const proto = window.HTMLVideoElement.prototype;
+  for (const name of ['webkitEnterFullscreen', 'webkitExitFullscreen',
+                      'webkitEnterFullScreen', 'webkitExitFullScreen']) {
+    const d = Object.getOwnPropertyDescriptor(proto, name);
+    check(d && typeof d.value === 'function' && d.writable && d.enumerable && d.configurable &&
+          d.value.length === 0 && d.value.name === name,
+          name + ' is a WebIDL operation of HTMLVideoElement.prototype');
+  }
+  check(proto.webkitEnterFullScreen !== proto.webkitEnterFullscreen,
+        'the FullScreen spellings are operations of their own');
+  for (const name of ['webkitSupportsFullscreen', 'webkitDisplayingFullscreen']) {
+    const d = Object.getOwnPropertyDescriptor(proto, name);
+    check(d && d.get && !d.set && d.enumerable && d.configurable && d.get.name === 'get ' + name,
+          name + ' is a read-only attribute');
+    check(throwsType(() => d.get.call(window.document)), name + ' brand-checks');
+  }
+  check(throwsType(() => proto.webkitEnterFullscreen.call({})), 'webkitEnterFullscreen brand-checks');
+  check(!('webkitEnterFullscreen' in window.HTMLAudioElement.prototype), 'audio elements have none');
+}
+
+// webkitEnterFullscreen throws InvalidStateError without a gesture, without
+// a player or while changing; does nothing while displaying fullscreen; and
+// webkitExitFullscreen fully exits. macOS fires neither webkitbeginfullscreen
+// nor webkitendfullscreen around element fullscreen.
+{
+  const window = makeWindow();
+  vm.runInContext(script, window);
+  const video = window.video();
+  const seen = record(window, video);
+  for (const type of ['webkitbeginfullscreen', 'webkitendfullscreen']) {
+    video.addEventListener(type, (event) => seen.push(type + (event.bubbles ? ':bubbles' : '')));
+  }
+  const errorName = (fn) => { try { fn(); return 'none'; } catch (error) { return error.name; } };
+  window.activation.active = true;
+  check(!video.webkitSupportsFullscreen && errorName(() => video.webkitEnterFullscreen()) === 'InvalidStateError',
+        'a video that never loaded can\'t enter fullscreen');
+  video.load();
+  check(video.webkitSupportsFullscreen, 'a loaded video supports fullscreen');
+  window.activation.active = false;
+  check(errorName(() => video.webkitEnterFullScreen()) === 'InvalidStateError' &&
+        !window.log.includes('requestFullscreen'),
+        'without a user gesture webkitEnterFullScreen throws InvalidStateError');
+  window.activation.active = true;
+  check(errorName(() => video.webkitEnterFullscreen()) === 'none' && window.log.includes('requestFullscreen'),
+        'with one it asks for element fullscreen');
+  window.activation.active = true;
+  check(errorName(() => video.webkitEnterFullscreen()) === 'InvalidStateError',
+        'a second call while the change is in progress throws');
+  check(!video.webkitDisplayingFullscreen, 'not displaying fullscreen until it is');
+  await settle();
+  check(video.webkitDisplayingFullscreen && video.webkitPresentationMode === 'fullscreen',
+        'displaying fullscreen once the document is');
+  window.activation.active = false;
+  check(errorName(() => video.webkitEnterFullscreen()) === 'none', 'entering again does nothing');
+  check(seen.join() === 'mode:fullscreen,fullscreenchange', 'no webkitbeginfullscreen on macOS: ' + seen);
+  seen.length = 0;
+  video.webkitExitFullScreen();
+  check(window.log.includes('exitFullscreen'), 'webkitExitFullScreen exits fullscreen');
+  video.webkitExitFullscreen();
+  await settle();
+  check(window.log.filter((entry) => entry === 'exitFullscreen').length === 1,
+        'a second exit while changing is ignored');
+  check(seen.join() === 'mode:inline,fullscreenchange' && !video.webkitDisplayingFullscreen,
+        'no webkitendfullscreen on leaving element fullscreen: ' + seen);
+  video.webkitExitFullscreen();
+  await settle();
+  check(window.log.filter((entry) => entry === 'exitFullscreen').length === 1,
+        'exiting an inline video does nothing');
+}
+
+// In picture in picture the video displays fullscreen: webkitEnterFullscreen
+// does nothing and webkitExitFullscreen leaves picture in picture. From
+// fullscreen to picture in picture, webkitendfullscreen follows the mode
+// change.
+{
+  const window = makeWindow();
+  vm.runInContext(script, window);
+  const video = window.video();
+  video.load();
+  const seen = record(window, video);
+  for (const type of ['webkitbeginfullscreen', 'webkitendfullscreen']) {
+    video.addEventListener(type, (event) => seen.push(type + (event.bubbles ? ':bubbles' : '')));
+  }
+  window.activation.active = true;
+  video.webkitEnterFullscreen();
+  await settle();
+  seen.length = 0;
+  window.activation.active = true;
+  video.webkitSetPresentationMode('picture-in-picture');
+  await settle();
+  check(seen.join() === 'mode:picture-in-picture,webkitendfullscreen,fullscreenchange,enterpictureinpicture',
+        'fullscreen to picture in picture: ' + seen);
+  check(video.webkitDisplayingFullscreen, 'picture in picture displays fullscreen');
+  window.activation.active = true;
+  video.webkitEnterFullscreen();
+  await settle();
+  check(window.log.filter((entry) => entry === 'requestFullscreen').length === 1,
+        'webkitEnterFullscreen in picture in picture does nothing');
+  seen.length = 0;
+  video.webkitExitFullscreen();
+  check(window.log.includes('exitPictureInPicture') && !video.webkitDisplayingFullscreen,
+        'webkitExitFullscreen leaves picture in picture, reporting inline at once');
+  await settle();
+  check(seen.join() === 'mode:inline,leavepictureinpicture', 'leaving picture in picture: ' + seen);
+  check(!seen.some((entry) => entry.startsWith('webkitbeginfullscreen')), 'never webkitbeginfullscreen');
 }
 
 console.log(`webkit_presentation: ${checks} checks passed`);
