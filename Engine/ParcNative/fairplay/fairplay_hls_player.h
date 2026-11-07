@@ -146,6 +146,10 @@ class FairPlayHlsPlayer {
   void Seek(double seconds, std::function<void(bool finished)> done);
   void SetVolume(float volume);
   void SetMuted(bool muted);
+  // HTMLMediaElement.preservesPitch (default true): at rates other than 0 and
+  // 1, true keeps pitch (Spectral), false lets it follow the rate
+  // (Varispeed), WebKit's choice of audioTimePitchAlgorithm.
+  void SetPreservesPitch(bool preserves_pitch);
 
   // The media time of the item's timebase. Callable from any thread.
   double CurrentTime() const;

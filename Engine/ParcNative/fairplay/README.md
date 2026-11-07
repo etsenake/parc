@@ -361,7 +361,9 @@ every load went through `HlsLoader`. On macOS 27.2 (M3): Apple's TS VOD
 (79 loads, exact seek to 300 s, pause holds the clock, ended), Axinom's clear
 CMAF fMP4 with alternate audio and subtitle groups, Unified Streaming's live
 stream (infinite duration, a ~595 s DVR window, a program date time), a 404
-playlist (network error before metadata), Axinom's FairPlay HLS (the skd URI
+playlist (network error before metadata), an `http://` playlist (App
+Transport Security doesn't apply: AVFoundation fetches nothing itself),
+`preservesPitch` and rate picking the pitch algorithm, Axinom's FairPlay HLS (the skd URI
 reaches the client and never the loader; no key, no playback) and teardown
 with loads in flight.
 

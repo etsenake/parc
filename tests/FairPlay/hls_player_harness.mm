@@ -149,12 +149,14 @@ constexpr const char* kFakeHost = "parc-hls.invalid";
 namespace {
 
 std::string ToReal(const std::string& url) {
-  // https://parc-hls.invalid/<host>/<path> -> https://<host>/<path>
-  std::string prefix = std::string("https://") + kFakeHost + "/";
-  if (url.rfind(prefix, 0) != 0) {
-    return "";
+  // http(s)://parc-hls.invalid/<host>/<path> -> https://<host>/<path>
+  for (const char* scheme : {"https://", "http://"}) {
+    std::string prefix = std::string(scheme) + kFakeHost + "/";
+    if (url.rfind(prefix, 0) == 0) {
+      return "https://" + url.substr(prefix.size());
+    }
   }
-  return "https://" + url.substr(prefix.size());
+  return "";
 }
 
 std::string ToFake(const std::string& url) {
@@ -386,6 +388,28 @@ void VodFmp4() {
   AVPlayerLayer* layer = nil;
   OnOwner([&] { layer = fp::HlsPlayerLayer(rig.player->impl()); });
   Check(layer && layer.player == fp::HlsPlayerAVPlayer(rig.player->impl()), "player layer shows the player");
+  NSString* algorithm = nil;
+  BOOL interstitials = YES;
+  auto read_item = [&] {
+    AVPlayerItem* item = fp::HlsPlayerAVPlayer(rig.player->impl()).currentItem;
+    algorithm = item.audioTimePitchAlgorithm;
+    interstitials = item.automaticallyHandlesInterstitialEvents;
+  };
+  OnOwner(read_item);
+  Check([algorithm isEqualToString:AVAudioTimePitchAlgorithmVarispeed] && !interstitials,
+        "rate 1: Varispeed; AVFoundation doesn't run interstitials");
+  OnOwner([&] {
+    rig.player->SetRate(1.5);
+    read_item();
+  });
+  Check([algorithm isEqualToString:AVAudioTimePitchAlgorithmSpectral], "rate 1.5 keeps pitch (Spectral)");
+  OnOwner([&] {
+    rig.player->SetPreservesPitch(false);
+    read_item();
+  });
+  Check([algorithm isEqualToString:AVAudioTimePitchAlgorithmVarispeed], "preservesPitch false: Varispeed");
+  double before = rig.Time();
+  Check(WaitFor([&] { return rig.Time() > before + 2; }, 10), "plays on at 1.5x");
 }
 
 void Live() {
@@ -421,6 +445,19 @@ void BadUrl() {
   Check(!rig.Load("file:///etc/hosts").ok(), "a file URL is refused");
   Rig rig2;
   Check(!rig2.Load(std::string("https://") + kFakeHost + "/\xff\xfe.m3u8").ok(), "a URL that isn't UTF-8 is refused");
+}
+
+void PlainHttp() {
+  std::printf("-- an http:// playlist (App Transport Security)\n");
+  Rig rig;
+  Check(rig.Load(std::string("http://") + kFakeHost +
+                 "/devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8")
+            .ok(),
+        "Load");
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  std::printf("   loads %d, first %s, error %s\n", rig.loader.starts_,
+              rig.loader.urls_.empty() ? "none" : rig.loader.urls_[0].c_str(), rig.client.error_message.substr(0, 160).c_str());
+  Check(ready && rig.client.metadata_count == 1, "http:// plays through the loader (ATS doesn't apply to client loads)");
 }
 
 void Missing() {
@@ -479,7 +516,7 @@ int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
-        {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"bad-url", BadUrl}, {"skd", Skd}, {"teardown", Teardown}};
+        {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"teardown", Teardown}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

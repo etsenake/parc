@@ -280,6 +280,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     [resource_loader setDelegate:loader_delegate_ queue:DelegateQueue()];
 
     item_ = [AVPlayerItem playerItemWithAsset:asset_];
+    // WebKit's setting: the page, not AVFoundation, schedules HLS interstitials.
+    item_.automaticallyHandlesInterstitialEvents = NO;
+    UpdatePitchAlgorithm();
     player_ = [AVPlayer playerWithPlayerItem:item_];
     // WebKit's settings: the page picks media options, the browser manages
     // display sleep, and there's no AirPlay route from here.
@@ -298,6 +301,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     if (!player_) {
       return;
     }
+    UpdatePitchAlgorithm();
     if (rate > 0) {
       player_.defaultRate = static_cast<float>(rate);
       player_.rate = static_cast<float>(rate);
@@ -341,6 +345,21 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   void SetMuted(bool muted) {
     muted_ = muted;
     player_.muted = muted;
+  }
+
+  void SetPreservesPitch(bool preserves_pitch) {
+    preserves_pitch_ = preserves_pitch;
+    UpdatePitchAlgorithm();
+  }
+
+  // MediaSessionManagerCocoa::audioTimePitchAlgorithmForMediaPlayerPitchCorrectionAlgorithm.
+  void UpdatePitchAlgorithm() {
+    if (!item_) {
+      return;
+    }
+    item_.audioTimePitchAlgorithm = (!preserves_pitch_ || rate_ == 0 || rate_ == 1)
+                                        ? AVAudioTimePitchAlgorithmVarispeed
+                                        : AVAudioTimePitchAlgorithmSpectral;
   }
 
   double CurrentTime() const {
@@ -877,6 +896,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   double rate_ = 0;
   float volume_ = 1;
   bool muted_ = false;
+  bool preserves_pitch_ = true;
   bool reported_metadata_ = false;
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
@@ -1377,6 +1397,10 @@ void FairPlayHlsPlayer::SetVolume(float volume) {
 
 void FairPlayHlsPlayer::SetMuted(bool muted) {
   impl_->SetMuted(muted);
+}
+
+void FairPlayHlsPlayer::SetPreservesPitch(bool preserves_pitch) {
+  impl_->SetPreservesPitch(preserves_pitch);
 }
 
 double FairPlayHlsPlayer::CurrentTime() const {
