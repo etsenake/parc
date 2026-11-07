@@ -181,6 +181,13 @@ class FairPlayHlsPlayer {
   // Seeks exactly (zero tolerance). |done| runs on the owner sequence with
   // whether the seek finished (false when a later seek interrupted it).
   void Seek(double seconds, std::function<void(bool finished)> done);
+  // As Seek(), landing up to |tolerance_before| seconds earlier (infinity:
+  // anywhere earlier), never later, as WebKit's fastSeek asks AVFoundation
+  // (MediaPlayerPrivateAVFoundationObjC::seekToTargetInternal). CurrentTime()
+  // says where it landed.
+  void Seek(double seconds,
+            double tolerance_before,
+            std::function<void(bool finished)> done);
   void SetVolume(float volume);
   void SetMuted(bool muted);
   // HTMLMediaElement.preservesPitch (default true): at rates other than 0 and

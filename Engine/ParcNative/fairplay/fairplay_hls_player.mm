@@ -361,7 +361,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
   }
 
-  void Seek(double seconds, std::function<void(bool)> done) {
+  void Seek(double seconds, double tolerance_before, std::function<void(bool)> done) {
     // AVFoundation throws on a seek with a completion handler before the
     // item is ready to play (or after it failed).
     if (shut_down_ || !item_ || !reported_metadata_ || item_.status != AVPlayerItemStatusReadyToPlay) {
@@ -376,8 +376,15 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     std::weak_ptr<Impl> weak = weak_from_this();
     std::shared_ptr<const PostTask> poster = poster_;
     auto shared_done = std::make_shared<std::function<void(bool)>>(std::move(done));
+    // AVFoundation throws on a negative tolerance.
+    CMTime before = kCMTimeZero;
+    if (std::isinf(tolerance_before) && tolerance_before > 0) {
+      before = kCMTimePositiveInfinity;
+    } else if (tolerance_before > 0) {
+      before = CMTimeMakeWithSeconds(tolerance_before, 90000);
+    }
     [item_ seekToTime:CMTimeMakeWithSeconds(seconds, 90000)
-        toleranceBefore:kCMTimeZero
+        toleranceBefore:before
          toleranceAfter:kCMTimeZero
       completionHandler:^(BOOL finished) {
         (*poster)([weak, shared_done, finished] {
@@ -1544,7 +1551,13 @@ void FairPlayHlsPlayer::SetRate(double rate) {
 }
 
 void FairPlayHlsPlayer::Seek(double seconds, std::function<void(bool)> done) {
-  impl_->Seek(seconds, std::move(done));
+  impl_->Seek(seconds, 0, std::move(done));
+}
+
+void FairPlayHlsPlayer::Seek(double seconds,
+                             double tolerance_before,
+                             std::function<void(bool)> done) {
+  impl_->Seek(seconds, tolerance_before, std::move(done));
 }
 
 void FairPlayHlsPlayer::SetVolume(float volume) {

@@ -2054,7 +2054,7 @@
  
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
-@@ -22,6 +25,268 @@
+@@ -22,6 +25,272 @@
    // play state (e.g. when another phone play/pauses a cast device on the same
    // network).
    OnRemotePlayStateChange(MediaStatusState state);
@@ -2259,8 +2259,12 @@
 +  // `rate` > 0. AVPlayer waits to minimize stalling, as in Safari.
 +  Play(double rate);
 +  Pause();
-+  // Exact (zero tolerance). False when a later seek interrupted it.
-+  Seek(mojo_base.mojom.TimeDelta time) => (bool success);
++  // May land up to `tolerance_before` before `time` (HTMLMediaElement
++  // fastSeek), never after; zero is exact. False when a later seek
++  // interrupted it. `current_time` is where the player then sits.
++  Seek(mojo_base.mojom.TimeDelta time,
++       mojo_base.mojom.TimeDelta tolerance_before)
++      => (bool success, mojo_base.mojom.TimeDelta current_time);
 +  SetVolume(float volume);
 +  SetMuted(bool muted);
 +  SetPreservesPitch(bool preserves_pitch);

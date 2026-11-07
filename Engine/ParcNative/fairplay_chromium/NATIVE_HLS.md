@@ -225,7 +225,8 @@ interface FairPlayHlsPlayer {        // GPU implements
   Initialize(url.mojom.Url url, string mime_type);  // → OnInitialized
   SetCdm(mojo_base.mojom.UnguessableToken cdm_id) => (bool success);
   Play(double rate); Pause();
-  Seek(mojo_base.mojom.TimeDelta time) => (bool success);
+  Seek(mojo_base.mojom.TimeDelta time, mojo_base.mojom.TimeDelta tolerance_before)
+      => (bool success, mojo_base.mojom.TimeDelta current_time);
   SetVolume(float volume); SetMuted(bool muted);
   SetPreservesPitch(bool preserves_pitch);   // Renderer::SetPreservesPitch
   ProvideClearKey(string key_id, array<uint8> key);  // legacy clear key
@@ -713,7 +714,10 @@ GPU process (`RemoteMediaPlayerProxy`) keeps for the page:
 - Seeking: the element clamps to the duration and then to the nearest point
   of the one seekable range, as WebKit's `seekTask` does, so a seek past the
   window's end lands on the live edge and one before its start on the oldest
-  DVR point. The player seeks exactly. On Safari-identity pages `currentTime`
+  DVR point. The player seeks exactly, except for `fastSeek()`: its
+  tolerance (`Demuxer::ParcSetFastSeek`) reaches AVPlayer's
+  `toleranceBefore`, and the clock and the pipeline take the time AVPlayer
+  landed on, which `Seek` answers. On Safari-identity pages `currentTime`
   takes WebKit's `unrestricted double`: +Infinity (`currentTime = duration` on
   a live stream) seeks to the live edge, −Infinity and NaN to 0, where
   Chromium throws a TypeError.

@@ -489,16 +489,19 @@ void FairPlayHlsPlayerService::Pause() {
 }
 
 void FairPlayHlsPlayerService::Seek(base::TimeDelta time,
+                                    base::TimeDelta tolerance_before,
                                     SeekCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!player_ || errored_) {
-    std::move(callback).Run(false);
+    std::move(callback).Run(false, time);
     return;
   }
   tracks_->WillSeek();
   auto shared_callback = std::make_shared<SeekCallback>(std::move(callback));
   base::WeakPtr<FairPlayHlsPlayerService> weak = weak_factory_.GetWeakPtr();
-  player_->Seek(time.InSecondsF(), [weak, shared_callback](bool finished) {
+  // TimeDelta::Max() (a fast seek backward) reads as infinity.
+  player_->Seek(time.InSecondsF(), tolerance_before.InSecondsF(),
+                [weak, shared_callback](bool finished) {
     if (weak) {
       weak->OnSeekDone(std::move(*shared_callback), finished);
     }
@@ -510,7 +513,8 @@ void FairPlayHlsPlayerService::OnSeekDone(SeekCallback callback,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   tracks_->DidSeek();
   SendTimeUpdate();
-  std::move(callback).Run(finished);
+  std::move(callback).Run(
+      finished, player_ ? ToTimeDelta(player_->CurrentTime()) : base::TimeDelta());
 }
 
 void FairPlayHlsPlayerService::SetVolume(float volume) {

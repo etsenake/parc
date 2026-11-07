@@ -97,7 +97,9 @@ class FairPlayHlsPlayerService final
               SetCdmCallback callback) override;
   void Play(double rate) override;
   void Pause() override;
-  void Seek(base::TimeDelta time, SeekCallback callback) override;
+  void Seek(base::TimeDelta time,
+            base::TimeDelta tolerance_before,
+            SeekCallback callback) override;
   void SetVolume(float volume) override;
   void SetMuted(bool muted) override;
   void SetPreservesPitch(bool preserves_pitch) override;

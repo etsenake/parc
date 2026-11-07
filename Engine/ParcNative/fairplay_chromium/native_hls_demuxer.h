@@ -147,6 +147,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void CancelPendingSeek(base::TimeDelta seek_time) override;
   void Seek(base::TimeDelta time,
             media::PipelineStatusCallback status_cb) override;
+  // HTMLMediaElement.fastSeek: AVPlayer lands within the tolerance.
+  void ParcSetFastSeek(base::TimeDelta target,
+                       base::TimeDelta tolerance_before) override;
+  std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
   bool IsSeekable() const override;
   void Stop() override;
   base::TimeDelta GetStartTime() const override;
@@ -221,8 +225,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void OnPlayerInitialized(bool success,
                            media::mojom::FairPlayHlsMetadataPtr metadata);
   void OnPlayerSeeked(base::TimeDelta time,
+                      bool fast,
                       media::PipelineStatusCallback status_cb,
-                      bool success);
+                      bool success,
+                      base::TimeDelta current_time);
   void OnPlayerDisconnected();
   // The player's track list to the element: its audio tracks and its text
   // tracks as in-band text tracks (NATIVE_HLS.md Tracks).
@@ -293,6 +299,12 @@ class NativeHlsDemuxer final : public media::Demuxer,
   base::TimeTicks capture_time_ GUARDED_BY(time_lock_);
   base::TimeDelta duration_ GUARDED_BY(time_lock_) = media::kInfiniteDuration;
   std::optional<base::TimeDelta> seek_time_ GUARDED_BY(time_lock_);
+  // A fast seek (target, tolerance) set for the next Seek() to its target,
+  // and where the last fast seek landed (ParcSetFastSeek and
+  // ParcTakeFastSeekLanding).
+  std::optional<std::pair<base::TimeDelta, base::TimeDelta>>
+      requested_fast_seek_ GUARDED_BY(time_lock_);
+  std::optional<base::TimeDelta> fast_seek_landing_ GUARDED_BY(time_lock_);
   // The element's seekable window and getStartDate() as the player computed
   // them (one range or none; GetParcNativeTimeline()).
   media::Ranges<base::TimeDelta> seekable_ GUARDED_BY(time_lock_);

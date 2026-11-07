@@ -60,8 +60,11 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   }
   void Play(double rate) override { commands_.push_back(rate); }
   void Pause() override { commands_.push_back(0); }
-  void Seek(base::TimeDelta time, SeekCallback callback) override {
+  void Seek(base::TimeDelta time,
+            base::TimeDelta tolerance_before,
+            SeekCallback callback) override {
     seek_time_ = time;
+    seek_tolerance_ = tolerance_before;
     seek_cb_ = std::move(callback);
   }
   void SetVolume(float volume) override { volume_ = volume; }
@@ -84,6 +87,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   bool initialized_ = false;
   SeekCallback seek_cb_;
   std::optional<base::TimeDelta> seek_time_;
+  base::TimeDelta seek_tolerance_;
   std::vector<double> commands_;  // Play(rate) or 0 for Pause().
   std::vector<base::UnguessableToken> cdm_ids_;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
@@ -435,10 +439,38 @@ TEST_F(NativeHlsTest, TimeComesFromThePlayersClock) {
   demuxer_->Seek(base::Seconds(40), seek_cb.Get());
   task_environment_.RunUntilIdle();
   EXPECT_EQ(player_.seek_time_, base::Seconds(40));
+  EXPECT_EQ(player_.seek_tolerance_, base::TimeDelta());
   EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(40));
-  std::move(player_.seek_cb_).Run(true);
+  std::move(player_.seek_cb_).Run(true, base::Seconds(40));
   task_environment_.RunUntilIdle();
   EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(40));
+  EXPECT_EQ(demuxer_->ParcTakeFastSeekLanding(), std::nullopt);
+}
+
+// HTMLMediaElement.fastSeek: the tolerance reaches AVPlayer for the seek to
+// its target only, and the clock and the pipeline take where it landed.
+TEST_F(NativeHlsTest, FastSeekLandsWhereThePlayerDid) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  base::MockCallback<media::PipelineStatusCallback> seek_cb;
+  EXPECT_CALL(seek_cb, Run(media::HasStatusCode(media::PIPELINE_OK))).Times(2);
+
+  demuxer_->ParcSetFastSeek(base::Seconds(30), base::Seconds(12));
+  demuxer_->Seek(base::Seconds(20), seek_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.seek_tolerance_, base::TimeDelta());
+  std::move(player_.seek_cb_).Run(true, base::Seconds(20));
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(demuxer_->ParcTakeFastSeekLanding(), std::nullopt);
+
+  demuxer_->Seek(base::Seconds(30), seek_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.seek_tolerance_, base::Seconds(12));
+  std::move(player_.seek_cb_).Run(true, base::Seconds(24));
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(24));
+  EXPECT_EQ(demuxer_->ParcTakeFastSeekLanding(), base::Seconds(24));
+  EXPECT_EQ(demuxer_->ParcTakeFastSeekLanding(), std::nullopt);
 }
 
 TEST_F(NativeHlsTest, EndedOncePerRun) {

@@ -273,25 +273,55 @@ void NativeHlsDemuxer::Seek(base::TimeDelta time,
     std::move(status_cb).Run(media::PIPELINE_ERROR_INVALID_STATE);
     return;
   }
+  base::TimeDelta tolerance_before;
   {
     base::AutoLock lock(time_lock_);
     seek_time_ = time;
+    // A fast seek set for this target applies to this seek.
+    if (requested_fast_seek_ && requested_fast_seek_->first == time) {
+      tolerance_before = requested_fast_seek_->second;
+      requested_fast_seek_.reset();
+    }
   }
-  player_->Seek(time, base::BindOnce(&NativeHlsDemuxer::OnPlayerSeeked,
-                                     weak_factory_.GetWeakPtr(), time,
-                                     std::move(status_cb)));
+  const bool fast = tolerance_before.is_positive();
+  player_->Seek(time, tolerance_before,
+                base::BindOnce(&NativeHlsDemuxer::OnPlayerSeeked,
+                               weak_factory_.GetWeakPtr(), time, fast,
+                               std::move(status_cb)));
+}
+
+void NativeHlsDemuxer::ParcSetFastSeek(base::TimeDelta target,
+                                       base::TimeDelta tolerance_before) {
+  base::AutoLock lock(time_lock_);
+  if (tolerance_before.is_positive()) {
+    requested_fast_seek_ = std::make_pair(target, tolerance_before);
+  } else {
+    requested_fast_seek_.reset();
+  }
+}
+
+std::optional<base::TimeDelta> NativeHlsDemuxer::ParcTakeFastSeekLanding() {
+  base::AutoLock lock(time_lock_);
+  return std::exchange(fast_seek_landing_, std::nullopt);
 }
 
 void NativeHlsDemuxer::OnPlayerSeeked(base::TimeDelta time,
+                                      bool fast,
                                       media::PipelineStatusCallback status_cb,
-                                      bool success) {
+                                      bool success,
+                                      base::TimeDelta current_time) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   {
     base::AutoLock lock(time_lock_);
-    // The player's clock restarts at the target; its next time update
-    // follows.
+    // The player's clock restarts at the target, or where a fast seek
+    // landed (the pipeline starts the renderer there); its next time update
+    // follows. A fast seek that didn't finish says nothing of a landing.
     seek_time_.reset();
-    time_ = time;
+    const bool landed = fast && success;
+    time_ = landed ? current_time : time;
+    if (landed) {
+      fast_seek_landing_ = current_time;
+    }
     rate_ = 0;
     capture_time_ = base::TimeTicks::Now();
   }
