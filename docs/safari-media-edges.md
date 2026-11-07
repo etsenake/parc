@@ -452,8 +452,14 @@ which Blink turns into `QuotaExceededError`. WebKit's AVFoundation Media
 Source adds a SourceBuffer whenever the source is open
 (`MediaSource.cpp` `addSourceBuffer`, `MediaSourcePrivateAVFObjC.mm:117-141`).
 A player that adds an audio SourceBuffer after the video one started
-fails in Parc (`QuotaExceededError`, `media_source.cc:1626-1637`). **In progress**
-(fix agent CD-1).
+fails in Parc (`QuotaExceededError`, `media_source.cc:1626-1637`). **Fixed**
+b294d1e7. Still differing: Parc restarts the renderer for the new track (an
+extra rebuffer, and a blank picture with the FairPlay renderer) where WebKit
+adds it to the live renderer, and a late second audio-language SourceBuffer
+plays only the original audio where Safari mixes both enabled tracks:
+**in progress** (fix agent CD-1b). `readyState` returns straight to
+`HAVE_ENOUGH_DATA` after the new track's data arrives, and doesn't wait for a
+late second audio track: part of HME-7 (fix agent MSE-RS).
 
 Seeks wait for data at the target (`:512-541, 1017-1022`), end of stream
 before any init segment is a format error (`:1305-1312`), buffered ranges
@@ -538,13 +544,19 @@ type only when it is fully supported (`:658-661`), so
 `isTypeSupported('video/mp4')`, `addSourceBuffer('video/mp4')` and
 `changeType('audio/mp4')` are refused. WebKit `MediaSource.cpp`
 (`isTypeSupported`) accepts a codec-less type the player may support.
-**In progress** (fix agent MS-1/2).
+**Fixed** 590230f6. Still differing: Safari's type list also has
+`video/quicktime`, `audio/x-m4a`, `video/x-m4v`, `audio/3gpp` and
+`audio/ogg`, which Parc refuses; init segments on Safari pages accept IAMF,
+which Safari doesn't play; and Dolby Vision outside profiles 5 and 8 fails
+where Safari's handling is unchecked: **in progress** (fix agent MS-4). A
+codec-less TS stream carrying HEVC or AC-3 now gets a SourceBuffer and fails
+on append: part of SBS-2.
 
 **MS-2. Duration inside the last frame.** Chromium
 `media_source.cc:980-1034` keeps a new duration between the highest
 presentation timestamp and the highest buffered end. WebKit
 (`setDurationInternal`, step 4.1) raises it to the highest buffered end.
-**In progress** (fix agent MS-1/2).
+**Fixed** 590230f6.
 
 AC-3/E-AC-3 and Dolby Vision profile 5 answers are **handled**
 (`fairplay-identity-blink.patch`). `endOfStream`, `setLiveSeekableRange`,
