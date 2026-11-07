@@ -391,6 +391,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     if (audio) {
       audio_ = [[AVSampleBufferAudioRenderer alloc] init];
+      UpdatePitchAlgorithm();
       if (Result result = AddToSynchronizer(audio_, "audio"); !result.ok()) {
         return result;
       }
@@ -636,8 +637,32 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void SetPlaybackRate(double rate) {
     status_.rate = static_cast<float>(rate);
+    UpdatePitchAlgorithm();
     if (!clock_held_) {
       synchronizer_.rate = static_cast<float>(rate);
+    }
+  }
+
+  void SetPreservesPitch(bool preserves_pitch) {
+    preserves_pitch_ = preserves_pitch;
+    UpdatePitchAlgorithm();
+  }
+
+  // WebKit's AudioVideoRendererAVFObjC (setRate, addAudioRenderer,
+  // setPreservesPitchAndCorrectionAlgorithm) with MediaSessionManagerCocoa::
+  // audioTimePitchAlgorithmForMediaPlayerPitchCorrectionAlgorithm: Varispeed
+  // at the requested rate 0 or 1 or without pitch preservation, else
+  // Spectral. The SDK's default (TimeDomain) would apply otherwise.
+  void UpdatePitchAlgorithm() {
+    if (!audio_) {
+      return;
+    }
+    const float rate = status_.rate;
+    NSString* algorithm = (!preserves_pitch_ || rate == 0 || rate == 1)
+                              ? AVAudioTimePitchAlgorithmVarispeed
+                              : AVAudioTimePitchAlgorithmSpectral;
+    if (![audio_.audioTimePitchAlgorithm isEqualToString:algorithm]) {
+      audio_.audioTimePitchAlgorithm = algorithm;
     }
   }
 
@@ -1820,6 +1845,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   AVSampleBufferDisplayLayer* layer_ = nil;
   id<AVQueuedSampleBufferRendering> video_renderer_ = nil;
   AVSampleBufferAudioRenderer* audio_ = nil;
+  // HTMLMediaElement.preservesPitch, true by default.
+  bool preserves_pitch_ = true;
   PCFairPlayRendererObserver* observer_ = nil;
   std::vector<std::pair<NSObject*, NSString*>> observed_;
   std::vector<id> notification_tokens_;
@@ -1901,6 +1928,10 @@ void FairPlayRenderer::StartPlayingFrom(MediaTime time) {
 
 void FairPlayRenderer::SetPlaybackRate(double rate) {
   impl_->SetPlaybackRate(rate);
+}
+
+void FairPlayRenderer::SetPreservesPitch(bool preserves_pitch) {
+  impl_->SetPreservesPitch(preserves_pitch);
 }
 
 void FairPlayRenderer::SetVolume(float volume) {

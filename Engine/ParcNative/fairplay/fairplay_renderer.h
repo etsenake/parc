@@ -157,6 +157,9 @@ class FairPlayRenderer {
   // before |time| are decoded but not displayed.
   void StartPlayingFrom(MediaTime time);
   void SetPlaybackRate(double rate);
+  // HTMLMediaElement.preservesPitch (true until set): with the rate, picks
+  // the audio renderer's pitch algorithm as WebKit does.
+  void SetPreservesPitch(bool preserves_pitch);
   void SetVolume(float volume);
   void SetMuted(bool muted);
   // Core Audio device UID for the audio output (HTMLMediaElement.setSinkId).
