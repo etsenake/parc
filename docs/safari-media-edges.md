@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **62**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **63**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -698,7 +698,13 @@ where Safari plays its HEVC base layer: **fixed** 0095776c (QuickTime,
 dropped from mixed init segments; Dolby Vision 4/7/9 refused in
 `addSourceBuffer` and played as their base layer). Still different, each
 user-felt and **queued**: Ogg (Opus/Vorbis/FLAC) in Media Source, so a site
-falls back or plays silent (MS-4b, an Ogg stream parser, 800-1,200 lines);
+fell back or played silent: **fixed** c1371b0e (Safari's accepted types and
+0-based packet timing, matched to Safari's parser within 2 µs). Left as
+Parc-better or imperceptible (Josh agreed November 7): ambisonic Opus plays
+where Safari is silent; headers re-sent after `abort()` aren't decoded as
+garbage; a mid-page `abort()` drops the partial page; checksum-failed pages
+are skipped; the final FLAC frame's duration follows its header; a mixed
+Ogg-plus-video `decodingInfo` query says no;
 PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected
 PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`) and 20, and
 4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (**in progress**, MS-4d, 200-400
