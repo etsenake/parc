@@ -32,7 +32,7 @@ constexpr double kStartTimeVariance = 0.25;
 
 V8TextTrackKind KindFor(const std::string& kind) {
   std::optional<V8TextTrackKind> parsed =
-      V8TextTrackKind::Create(String::FromUTF8(kind));
+      V8TextTrackKind::Create(String::FromUtf8(kind));
   return parsed ? *parsed : V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles);
 }
 
@@ -84,10 +84,10 @@ ParcInbandTextTrack::ParcInbandTextTrack(
     HTMLMediaElement& element,
     media::ParcInbandTextTrackModeCB set_mode)
     : TextTrack(KindFor(info.kind),
-                AtomicString(String::FromUTF8(info.label)),
-                AtomicString(String::FromUTF8(info.language)),
+                AtomicString(String::FromUtf8(info.label)),
+                AtomicString(String::FromUtf8(info.language)),
                 element,
-                AtomicString(String::FromUTF8(info.id)),
+                AtomicString(String::FromUtf8(info.id)),
                 TextTrack::kInBand),
       info_(info),
       set_mode_(std::move(set_mode)),
@@ -100,16 +100,16 @@ ParcInbandTextTrack::~ParcInbandTextTrack() = default;
 
 void ParcInbandTextTrack::Update(const media::ParcInbandTextTrack& info) {
   if (info.id != info_.id) {
-    SetId(String::FromUTF8(info.id));
+    SetId(String::FromUtf8(info.id));
   }
   if (info.kind != info_.kind) {
     SetKind(KindFor(info.kind));
   }
   if (info.label != info_.label) {
-    SetLabel(AtomicString(String::FromUTF8(info.label)));
+    SetLabel(AtomicString(String::FromUtf8(info.label)));
   }
   if (info.language != info_.language) {
-    SetLanguage(AtomicString(String::FromUTF8(info.language)));
+    SetLanguage(AtomicString(String::FromUtf8(info.language)));
   }
   info_ = info;
 }
@@ -180,9 +180,9 @@ void ParcInbandTextTrack::AddWebVttCue(const media::ParcInbandTextCue& data) {
                          ? std::numeric_limits<double>::infinity()
                          : data.end;
   CueContents contents;
-  contents.id = String::FromUTF8(data.identifier);
-  contents.text = String::FromUTF8(data.text);
-  contents.settings = String::FromUTF8(data.settings);
+  contents.id = String::FromUtf8(data.identifier);
+  contents.text = String::FromUtf8(data.text);
+  contents.settings = String::FromUtf8(data.settings);
 
   TextTrackCue* existing = CueToExtend(data.start, end, contents);
   if (!existing) {
@@ -211,7 +211,7 @@ void ParcInbandTextTrack::AddGenericCue(const media::ParcInbandTextCue& data) {
   }
   VTTCue* cue = VTTCue::Create(element_->GetDocument(), data.start,
                                GenericCueEnd(data.end),
-                               String::FromUTF8(data.text));
+                               String::FromUtf8(data.text));
   UpdateCueFromCueData(*cue, data);
   CueContents contents = GenericContents(data);
   if (MatchCue(cue->startTime(), cue->endTime(), contents)) {
@@ -271,7 +271,7 @@ void ParcInbandTextTrack::UpdateCueFromCueData(
     const media::ParcInbandTextCue& data) {
   cue.setStartTime(data.start);
   cue.setEndTime(GenericCueEnd(data.end), IGNORE_EXCEPTION);
-  cue.setText(String::FromUTF8(data.text));
+  cue.setText(String::FromUtf8(data.text));
   // TextTrackCueGeneric's font size, font name and colours have no VTTCue
   // counterpart in Blink.
   if (data.position > 0 && IsPercentage(std::round(data.position))) {
@@ -322,14 +322,14 @@ ParcInbandTextTrack::CueContents ParcInbandTextTrack::GenericContents(
     const media::ParcInbandTextCue& data) {
   CueContents contents;
   contents.generic = true;
-  contents.text = String::FromUTF8(data.text);
+  contents.text = String::FromUtf8(data.text);
   contents.line = data.line;
   contents.position = data.position;
   contents.size = data.size;
   contents.align = data.align;
   contents.base_font_size = data.base_font_size;
   contents.relative_font_size = data.relative_font_size;
-  contents.font_name = String::FromUTF8(data.font_name);
+  contents.font_name = String::FromUtf8(data.font_name);
   contents.foreground_color = data.foreground_color;
   contents.background_color = data.background_color;
   contents.prevent_line_wrapping = data.prevent_line_wrapping;
