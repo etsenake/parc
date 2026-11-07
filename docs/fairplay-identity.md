@@ -53,6 +53,9 @@ On a page that presents Safari's identity:
   reports it for every page (fairplay-media.patch, `mp4_stream_parser.cc`);
   `WebMediaPlayerImpl` passes it on only for Media Source on a
   Safari-identity document (`HTMLMediaElement::PresentsParcSafariIdentity`).
+  Such an element hears no other `encrypted` init data: Safari's Media
+  Source surfaces only `sinf`, never pssh boxes (`cenc`) or WebM key IDs.
+  Elements playing a URL keep Chromium's events.
 - Service and shared workers of the site start with the same user agent
   (not those partitioned under another site's page, where the site's frames
   stay Chrome), so their `navigator.userAgent` and their fetches match, and

@@ -8,8 +8,8 @@
 // none of them. webkit_media_keys.mjs and safari_media_keys.mjs run the
 // scripts.
 // It also checks which EME init data types a document may name: FairPlay's
-// "sinf" and "skd" only under Safari's identity, and that only a Media Source
-// element there hears `encrypted` with "sinf" init data.
+// "sinf" and "skd" only under Safari's identity, and that a Media Source
+// element there hears `encrypted` with "sinf" init data only, as in Safari.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -65,17 +65,18 @@ bool InitDataTypeRegistered(const std::string& user_agent,
 // WebMediaPlayerImpl::OnEncryptedMediaInitData's gate (fairplay-media.patch)
 // with HTMLMediaElement::PresentsParcSafariIdentity
 // (fairplay-identity-blink.patch): the MP4 parser's "sinf" init data reaches
-// a page only from a Media Source element of a Safari-identity document, as
-// Safari's Media Source reports it; "cenc" reaches every page as before.
+// a page only from a Media Source element of a Safari-identity document, and
+// that element hears nothing else, as Safari's Media Source surfaces only
+// sinf (SourceBufferPrivateAVFObjC, AudioVideoRendererAVFObjC::setInitData).
+// Every other element hears "cenc" and "webm" as before, never "sinf".
 enum class Load { kUrl, kMediaSource };
 bool EncryptedEventDelivered(const std::string& user_agent,
                              Load load,
                              const std::string& type) {
-  if (type == "sinf") {
-    return load == Load::kMediaSource &&
-           blink::IsParcSafariIdentityUserAgent(blink::String(user_agent));
-  }
-  return true;
+  const bool safari_media_source =
+      load == Load::kMediaSource &&
+      blink::IsParcSafariIdentityUserAgent(blink::String(user_agent));
+  return (type == "sinf") == safari_media_source;
 }
 
 // Each script installs its global unless the page already has one.
@@ -121,6 +122,11 @@ int main() {
           "a Safari-identity Media Source element hears sinf init data");
     Check(!EncryptedEventDelivered(safari, Load::kUrl, "sinf"),
           "a Safari-identity element playing a URL doesn't");
+    Check(!EncryptedEventDelivered(safari, Load::kMediaSource, "cenc") &&
+              !EncryptedEventDelivered(safari, Load::kMediaSource, "webm"),
+          "a Safari-identity Media Source element hears no cenc or webm");
+    Check(EncryptedEventDelivered(safari, Load::kUrl, "cenc"),
+          "a Safari-identity element playing a URL keeps Chromium's events");
     // EME compares init data types case-sensitively, as WebKit does.
     for (const char* type : {"SINF", "Skd", "sinf ", ""}) {
       Check(!InitDataTypeRegistered(safari, type),
@@ -162,8 +168,9 @@ int main() {
               InitDataTypeRegistered(user_agent, "keyids"),
           "every document keeps cenc and keyids");
     Check(!EncryptedEventDelivered(user_agent, Load::kMediaSource, "sinf") &&
-              EncryptedEventDelivered(user_agent, Load::kMediaSource, "cenc"),
-          "other documents hear cenc init data as before and never sinf");
+              EncryptedEventDelivered(user_agent, Load::kMediaSource, "cenc") &&
+              EncryptedEventDelivered(user_agent, Load::kMediaSource, "webm"),
+          "other documents hear cenc and webm init data as before and never sinf");
   }
 
   std::printf("renderer gate: %u checks passed\n", checks);

@@ -1644,24 +1644,29 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1695,6 +1747,16 @@
+@@ -1695,6 +1747,21 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
 +  // Parc: the MP4 parser reports FairPlay's "sinf" init data for every
-+  // protected track, as Safari's Media Source does. Only a Media Source
-+  // element of a document presenting Safari's identity hears it; every other
-+  // element hears what it heard before.
-+  if (init_data_type == media::EmeInitDataType::SINF &&
-+      (load_type_ != kLoadTypeMediaSource ||
-+       !client_->PresentsParcSafariIdentity())) {
++  // protected track, as Safari's Media Source does. A Media Source element of
++  // a document presenting Safari's identity hears only that, as Safari's
++  // Media Source surfaces nothing else (SourceBufferPrivateAVFObjC and
++  // AudioVideoRendererAVFObjC::setInitData drop init data that isn't sinf:
++  // pssh boxes, WebM key IDs). Every other element hears what it heard
++  // before, never sinf.
++  const bool parc_safari_media_source =
++      load_type_ == kLoadTypeMediaSource &&
++      client_->PresentsParcSafariIdentity();
++  if ((init_data_type == media::EmeInitDataType::SINF) !=
++      parc_safari_media_source) {
 +    return;
 +  }
 +
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -3023,6 +3085,15 @@
+@@ -3023,6 +3090,15 @@
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
    }
@@ -1677,7 +1682,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3153,6 +3224,12 @@
+@@ -3153,6 +3229,12 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -1690,7 +1695,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3870,26 @@
+@@ -3793,6 +3875,26 @@
      return false;
    }
  
