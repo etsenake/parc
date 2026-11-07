@@ -47,7 +47,7 @@ Unchecked claims are labelled **unchecked**.
 | `media/filters/pipeline_controller.cc` | 478 | 478 |
 | `media/filters/chunk_demuxer.cc` | 1,658 | 1,658 |
 | `media/filters/source_buffer_state.cc` | 931 | 931 |
-| `media/filters/source_buffer_stream.cc` | 2,029 | 0 |
+| `media/filters/source_buffer_stream.cc` | 2,029 | 2,029 |
 | `third_party/blink/renderer/modules/mediasource/media_source.cc` | 1,652 | 0 |
 | `third_party/blink/renderer/modules/mediasource/source_buffer.cc` | 2,237 | 0 |
 
@@ -380,3 +380,33 @@ Clear Dolby Vision in Media Source (`:675-698`) is **handled** on
 Safari-identity pages (`ParcSetClearDolbyVisionAllowed`). In-band text
 tracks in Media Source are off in Safari too (`TextTracksInMSEEnabled`
 defaults false, `UnifiedWebPreferences.yaml:6413-6420`). **Same.**
+
+### `source_buffer_stream.cc`
+
+**SBST-1. Buffer budget and eviction.** Chromium limits each stream
+separately (`source_buffer_stream.cc:145-176`, `demuxer_memory_limit*.cc`:
+about 12 MB of audio, video by resolution) and garbage-collects GOP by GOP
+after the last append, then before the playhead, then from the back
+(`:735-1058`). WebKit gives each SourceBuffer one budget, 5% of
+`maximumSourceBufferSize` (318,767,104 bytes) plus 95% with video
+(`SourceBuffer.cpp:702-731`, `SettingsBase.cpp:104-109`), and evicts 30 s
+chunks (halving to 3 s) from the start up to before the playhead, then from
+the end back to the playable segment (`SourceBufferPrivate.cpp:703-776,
+1747-1830`). `appendBuffer()` throws `QuotaExceededError` at different
+points and different ranges disappear. **In progress** (fix agent SBST-1).
+
+**SBST-2. Small gaps in `buffered`.** Chromium keeps separate ranges unless
+the gap is within twice the largest inter-buffer distance
+(`:50-63, 694-725, 1672-1678`). WebKit merges gaps under 2002/24000 s
+(`TrackBuffer.cpp:84-87, 197`, `PlatformTimeRanges.cpp:62-66, 205-221`) and
+bridges gaps within its gap tolerance during playback. A 70 ms gap in 30 fps
+video is one range in Safari, two in Parc. **In progress** (fix agent
+SBST-2).
+
+Removal extends to the next keyframe (`:418-455`), a seek near 0 starts at
+the first buffered keyframe within 1 s (`:637-644, 1428-1433`; WebKit's
+start-gap allowance, `MediaSourcePrivate.cpp:100-111`) and new appends
+replace what they overlap (`:1193-1301`), as WebKit's coded frame processing
+does. **Same** (the audio splice trim at `:1060-1191` shortens an overlapped
+frame where WebKit drops it; the difference stays below the 83 ms gap that
+`buffered` merges, so pages don't see it).
