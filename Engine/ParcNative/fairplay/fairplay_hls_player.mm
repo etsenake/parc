@@ -565,7 +565,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     [player_ replaceCurrentItemWithPlayerItem:item_];
     // A rate set before the item went on the player (play() before it)
     // applies now, as volume, mute and pitch do.
-    if (rate_ > 0) {
+    if (rate_ != 0) {
       SetRate(rate_);
     }
   }
@@ -653,7 +653,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   void SetRate(double rate) {
     rate_ = rate;
     // updatePlayState: an element that could play prepares to play.
-    if (rate > 0) {
+    if (rate != 0) {
       PrepareToPlay();
     }
     UpdateFrameStats();
@@ -661,8 +661,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     UpdatePitchAlgorithm();
-    if (rate > 0) {
-      player_.defaultRate = static_cast<float>(rate);
+    if (rate != 0) {
       player_.rate = static_cast<float>(rate);
     } else {
       [player_ pause];
@@ -1365,7 +1364,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   // never reported, until the element pauses too.
   void UpdateFrameStats() {
     if (frame_stats_) {
-      frame_stats_->SetPlaying(!shut_down_ && rate_ > 0);
+      frame_stats_->SetPlaying(!shut_down_ && rate_ != 0);
     }
   }
 

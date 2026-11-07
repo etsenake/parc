@@ -438,7 +438,7 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
   player_ = std::make_unique<fp::FairPlayHlsPlayer>(this, this, post_task);
   player_->SetVolume(volume_);
   player_->SetPreservesPitch(preserves_pitch_);
-  if (rate_ > 0) {
+  if (rate_ != 0) {
     player_->SetRate(rate_);
   }
   ApplyMuted();
@@ -536,7 +536,7 @@ void FairPlayHlsPlayerService::SetCdm(
 
 void FairPlayHlsPlayerService::Play(double rate) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!(rate > 0)) {
+  if (rate == 0) {
     Pause();
     return;
   }
@@ -932,7 +932,7 @@ void FairPlayHlsPlayerService::SendTimeUpdate() {
 }
 
 void FairPlayHlsPlayerService::UpdateTimeUpdateTimer() {
-  if (initialized_ && !errored_ && rate_ > 0) {
+  if (initialized_ && !errored_ && rate_ != 0) {
     if (!time_update_timer_.IsRunning()) {
       // Unretained: |this| owns the timer.
       time_update_timer_.Start(

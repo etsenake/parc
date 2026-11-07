@@ -80,7 +80,7 @@ base::TimeDelta InterpolateNativeHlsTime(base::TimeDelta time,
                                          base::TimeTicks now,
                                          base::TimeDelta duration) {
   base::TimeDelta result = time;
-  if (rate > 0 && !capture_time.is_null() && now > capture_time) {
+  if (rate != 0 && !capture_time.is_null() && now > capture_time) {
     result += (now - capture_time) * rate;
   }
   if (result < base::TimeDelta()) {
@@ -474,7 +474,7 @@ void NativeHlsDemuxer::SetClient(NativeHlsSource::Client* client) {
 
 void NativeHlsDemuxer::Play(double rate) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (player_.is_bound() && rate > 0) {
+  if (player_.is_bound() && rate != 0) {
     player_->Play(rate);
   }
 }

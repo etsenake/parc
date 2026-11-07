@@ -226,6 +226,16 @@ TEST(NativeHlsTimeTest, Interpolates) {
             base::TimeDelta());
 }
 
+TEST(NativeHlsTimeTest, ReverseClockAndStartBoundary) {
+  const auto capture = base::TimeTicks::Now();
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), -2, capture,
+                                   capture + base::Seconds(1), base::Seconds(60)),
+            base::Seconds(3));
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(1), -2, capture,
+                                   capture + base::Seconds(1), base::Seconds(60)),
+            base::TimeDelta());
+}
+
 TEST(NativeHlsErrorTest, InitializeFailureStatus) {
   // The item's own error (Safari's MEDIA_ERR_NETWORK, for example) wins.
   EXPECT_EQ(NativeHlsDemuxer::InitializeFailureStatus(
@@ -534,10 +544,13 @@ TEST_F(NativeHlsTest, RateAndVolumeDriveThePlayer) {
   CreateRenderer();
   renderer_->StartPlayingFrom(base::TimeDelta());
   renderer_->SetPlaybackRate(1.5);
+  renderer_->SetPlaybackRate(-1);
+  renderer_->SetPlaybackRate(32);
+  renderer_->SetPlaybackRate(0.01);
   renderer_->SetPlaybackRate(0);
   renderer_->SetVolume(0.25f);
   task_environment_.RunUntilIdle();
-  EXPECT_EQ(player_.commands_, (std::vector<double>{1.5, 0}));
+  EXPECT_EQ(player_.commands_, (std::vector<double>{1.5, -1, 32, 0.01, 0}));
   EXPECT_FLOAT_EQ(player_.volume_, 0.25f);
   EXPECT_EQ(renderer_->GetRendererType(), media::RendererType::kFairPlayHls);
 }

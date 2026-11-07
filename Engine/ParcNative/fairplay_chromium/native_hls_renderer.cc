@@ -138,7 +138,7 @@ void NativeHlsRenderer::SetPlaybackRate(double playback_rate) {
   if (!source_) {
     return;
   }
-  if (playback_rate > 0) {
+  if (playback_rate != 0) {
     source_->Play(playback_rate);
   } else {
     source_->Pause();
