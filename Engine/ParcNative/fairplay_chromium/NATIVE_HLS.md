@@ -415,19 +415,24 @@ WebKit's player also answers `clearkey://` key requests, for the legacy
    keeping `HlsClearKeyId(uri)` (WebKit's key ID: the URL's resource
    specifier) → URI.
 2. The render process raises `webkitneedkey` on the element with the key ID
-   as UTF-8 (WebKit's `keyNeeded(initData)`), never an `encrypted` event.
+   as UTF-8 (WebKit's `keyNeeded(initData)`), never an `encrypted` event,
+   unless the element's own keys already hold that key: then the key goes
+   straight back as in step 3 and nothing is raised (WebKit checks
+   `cachedKeyForKeyId` first).
 3. When the page's legacy session takes a JWK set (`keysAdded` in the
    script), the element side gives every held key ID the script has a key
-   for back to the player: `FairPlayHlsPlayer.ProvideClearKey(key_id, key)` →
+   for back to the player: the script calls the `provideKey` Blink handed its
+   key-needed hook with the request (`ParcProvideClearKey` in
+   `parc_webkit_need_key.h`), which calls
+   `WebMediaPlayer::ParcProvideClearKey(key_id, key)`; `WebMediaPlayerImpl`
+   forwards it to `FairPlayHlsPlayer.ProvideClearKey(key_id, key)` →
    `FairPlayHlsPlayer::FulfillKeyRequests(uri, key)`, which answers the
    requested byte range of the raw key (WebKit's `fulfillRequestWithKeyData`)
    and answers later requests for that URI the same way.
 
-The bridge between the page-world script and the element (raising
-`webkitneedkey` from the player's call; the script's `keysAdded` reaching
-`WebMediaPlayer`) belongs to the legacy element side
-(`fp-legacy-element`) with `fp-hls-render`; the mojo calls to
-`fp-hls-mojo`.
+The bridge between the page-world script and `WebMediaPlayer` is on main
+(`fp-legacy-element`); `WebMediaPlayerImpl::ParcProvideClearKey` reaching the
+native HLS player is `fp-hls-render`'s, the mojo calls `fp-hls-mojo`'s.
 
 ## Display
 

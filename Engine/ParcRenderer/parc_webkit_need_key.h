@@ -35,10 +35,12 @@
 #include <vector>
 
 #include "base/containers/span.h"
+#include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/parc_webkit_skd_init_data.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_event.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_html_media_element.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -73,12 +75,49 @@ inline void SetParcWebKitNeedKeyHook(ScriptState* script_state,
       context, ParcWebKitNeedKeyHookKey(script_state->GetIsolate()), hook);
 }
 
+// The provideKey(keyId, key) the hook gets with a clearkey:// request, bound
+// to the element and the player that made the request: the script calls it
+// with a key its WebKitMediaKeys hold for the request
+// (MediaPlayerPrivateAVFoundationObjC::keyAdded, fulfillRequestWithKeyData),
+// and that player takes it. A request lives as long as its player (WebKit's
+// m_keyURIToRequestMap), so a key for an element that has loaded another
+// player since goes nowhere. The player is only compared, never used.
+inline void ParcProvideClearKey(
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  v8::Isolate* isolate = info.GetIsolate();
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+  v8::Local<v8::Value> wrapper;
+  v8::Local<v8::Value> requester;
+  if (!info.Data()->IsArray() ||
+      !info.Data().As<v8::Array>()->Get(context, 0).ToLocal(&wrapper) ||
+      !info.Data().As<v8::Array>()->Get(context, 1).ToLocal(&requester) ||
+      !requester->IsExternal() || info.Length() < 2 || !info[0]->IsString() ||
+      !info[1]->IsUint8Array()) {
+    return;
+  }
+  HTMLMediaElement* element = V8HTMLMediaElement::ToWrappable(isolate, wrapper);
+  WebMediaPlayer* player = element ? element->GetWebMediaPlayer() : nullptr;
+  if (!player ||
+      player != requester.As<v8::External>()->Value(
+                    v8::kExternalPointerTypeTagDefault)) {
+    return;
+  }
+  const std::string key_id =
+      ToCoreString(isolate, info[0].As<v8::String>()).Utf8();
+  v8::Local<v8::Uint8Array> array = info[1].As<v8::Uint8Array>();
+  std::vector<uint8_t> key(array->ByteLength());
+  array->CopyContents(key.data(), key.size());
+  player->ParcProvideClearKey(key_id, key);
+}
+
 // HTMLMediaElement::mediaPlayerKeyNeeded: queues webkitneedkey at |element|
 // with |init_data| when its document presents Safari's identity. Callers
 // queue it before the `encrypted` event of the same init data, as WebKit
 // does; the media element's event queue keeps that order, one task per event.
 // |kind| tells the hook where the init data comes from: "media-source",
-// "skd" or "clearkey".
+// "skd" or "clearkey". A clearkey:// request also hands the hook
+// ParcProvideClearKey bound to the element; the hook may answer it from keys
+// the page already gave and raise nothing, as WebKit does.
 inline void ScheduleParcWebKitNeedKey(HTMLMediaElement& element,
                                       base::span<const uint8_t> init_data,
                                       const char* kind) {
@@ -101,11 +140,29 @@ inline void ScheduleParcWebKitNeedKey(HTMLMediaElement& element,
       !hook->IsFunction()) {
     return;
   }
+  v8::Local<v8::Value> element_wrapper =
+      ToV8Traits<HTMLMediaElement>::ToV8(script_state, &element);
+  v8::Local<v8::Value> provide_key = v8::Undefined(isolate);
+  if (std::string_view(kind) == "clearkey" && element.GetWebMediaPlayer()) {
+    v8::Local<v8::Value> data[] = {
+        element_wrapper,
+        v8::External::New(isolate, element.GetWebMediaPlayer(),
+                          v8::kExternalPointerTypeTagDefault),
+    };
+    v8::Local<v8::Function> function;
+    if (v8::Function::New(context, &ParcProvideClearKey,
+                          v8::Array::New(isolate, data, std::size(data)), 2,
+                          v8::ConstructorBehavior::kThrow)
+            .ToLocal(&function)) {
+      provide_key = function;
+    }
+  }
   v8::Local<v8::Value> argv[] = {
-      ToV8Traits<HTMLMediaElement>::ToV8(script_state, &element),
+      element_wrapper,
       ToV8Traits<DOMUint8Array>::ToV8(script_state,
                                       DOMUint8Array::Create(init_data)),
       V8AtomicString(isolate, kind),
+      provide_key,
   };
   // The hook is Parc's own script; nothing it could throw reaches the page.
   v8::TryCatch try_catch(isolate);

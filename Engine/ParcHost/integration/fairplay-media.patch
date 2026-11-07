@@ -3111,15 +3111,17 @@
      # enable the diagnostic by removing this line.
 --- a/third_party/blink/public/platform/web_media_player.h
 +++ b/third_party/blink/public/platform/web_media_player.h
-@@ -31,6 +31,7 @@
+@@ -31,6 +31,9 @@
  #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
  #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
  
 +#include <limits>
  #include <optional>
++#include <string_view>
  
++#include "base/containers/span.h"
  #include "base/memory/scoped_refptr.h"
-@@ -291,6 +292,13 @@
+@@ -291,6 +294,21 @@
    virtual double CurrentTime() const = 0;
    virtual bool IsEnded() const = 0;
  
@@ -3129,6 +3131,14 @@
 +  virtual double ParcStartDate() const {
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
++
++  // Parc: a legacy clear key (org.w3c.clearkey) the page's WebKitMediaKeys
++  // hold for one of the player's clearkey:// key requests: |key_id| is
++  // WebKit's key ID (the URL after "clearkey:"), |key| the raw key
++  // (MediaPlayerPrivateAVFoundationObjC::keyAdded, fulfillRequestWithKeyData).
++  // Only the native HLS player takes it.
++  virtual void ParcProvideClearKey(std::string_view key_id,
++                                   base::span<const uint8_t> key) {}
 +
    // Internal states of loading and network.
    virtual NetworkState GetNetworkState() const = 0;

@@ -873,6 +873,56 @@ for (const sinf of [true, false]) {
   check(events.length === 6, 'nothing after close()');
 }
 
+// ---- Legacy clear key on the player side: the player's clearkey://
+// requests get the page's keys (MediaPlayerPrivateAVFoundationObjC::
+// shouldWaitForLoadingOfResource checks the element's keys first, keyAdded
+// answers the held ones).
+{
+  const world = makeWorld();
+  const hook = run(world, script.replace('/*PARC_NATIVE_HLS*/false', 'true'));
+  const video = new world.HTMLMediaElement('v');
+  const provided = [];
+  const provide = (keyId, key) => provided.push(keyId + '=' + Buffer.from(key).toString('hex'));
+  const needs = [];
+  video.addEventListener('webkitneedkey', (event) => needs.push(text(event.initData)));
+  const request = (keyId) => {
+    const event = hook(video, new Uint8Array(Buffer.from(keyId, 'utf8')), 'clearkey', provide);
+    if (event) video.dispatchEvent(event);
+    return event;
+  };
+  check(request('key-1') instanceof world.WebKitMediaKeyNeededEvent && needs.join() === 'key-1',
+        'a request no keys can answer raises webkitneedkey with the key ID');
+  const keys = new world.WebKitMediaKeys('org.w3c.clearkey');
+  video.webkitSetMediaKeys(keys);
+  const session = keys.createSession('application/x-mpegurl', new Uint8Array(bytesOf('key-1')));
+  await settle();
+  const jwk = (kid) => new Uint8Array(Buffer.from(JSON.stringify(
+      {keys: [{kty: 'oct', alg: 'A128KW', kid, k: 'AAECAwQFBgcICQoLDA0ODw'}]})));
+  session.update(jwk('key-1'));
+  await settle();
+  const key = '000102030405060708090a0b0c0d0e0f';
+  check(provided.join() === 'key-1=' + key, 'the held request gets the key once the session has it');
+  check(request('key-1') === null && provided.length === 2 && needs.length === 1,
+        'a request for a key the keys have is answered at once, with no webkitneedkey');
+  check(request('k\u00e9y-2') instanceof world.WebKitMediaKeyNeededEvent, 'another key ID is held');
+  session.update(jwk('key-3'));
+  await settle();
+  check(provided.length === 2, 'keys for other IDs leave it held');
+  session.update(jwk('k\u00e9y-2'));
+  await settle();
+  check(provided.length === 3 && provided[2] === 'k\u00e9y-2=' + key, 'then its key comes (UTF-8 key IDs)');
+  session.update(jwk('k\u00e9y-2'));
+  await settle();
+  check(provided.length === 3, 'an answered request is no longer held');
+  // Another element's requests wait for that element's own keys.
+  const other = new world.HTMLMediaElement('o');
+  const otherProvided = [];
+  const event = hook(other, new Uint8Array(bytesOf('key-1')), 'clearkey',
+                     (keyId) => otherProvided.push(keyId));
+  check(event instanceof world.WebKitMediaKeyNeededEvent && otherProvided.length === 0,
+        "an element without keys doesn't take another element's");
+}
+
 // ---- WebKitMediaKeys::setMediaElement: keys follow the last element they
 // were set on, and clearing them on an element that still holds them
 // detaches them from wherever they are.
@@ -956,18 +1006,28 @@ for (const sinf of [true, false]) {
   const world = makeWorld();
   const hook = run(world, script);
   const audio = new world.HTMLMediaElement('audio');
+  // The model shares Node's TextDecoder; put its decode back afterwards.
+  const decode = TextDecoder.prototype.decode;
   run(world, `
     globalThis.reached = 0;
     WeakMap.prototype.get = function() { ++reached; return undefined; };
     WeakMap.prototype.set = function() { ++reached; return this; };
     Set.prototype.add = function() { ++reached; return this; };
     globalThis.Set = function() { ++reached; };
+    Map.prototype.set = function() { ++reached; return this; };
+    Map.prototype.get = function() { ++reached; };
+    globalThis.Map = function() { ++reached; };
+    TextDecoder.prototype.decode = function() { ++reached; return ''; };
+    Object.defineProperty(Array.prototype, '0', {set() { ++reached; }, configurable: true});
     Object.defineProperty(Object.prototype, 'initData', {set() { ++reached; }, configurable: true});`);
   const event = hook(audio, new Uint8Array(skdInitData('skd://a')), 'skd');
   const source = hook(audio, new Uint8Array(pssh('A')), 'media-source');
-  run(world, 'delete Object.prototype.initData;');
+  const clear = hook(audio, new Uint8Array(bytesOf('kid')), 'clearkey', () => {});
+  run(world, 'delete Object.prototype.initData; delete Array.prototype[0];');
+  TextDecoder.prototype.decode = decode;
   check(world.reached === 0 && event instanceof world.WebKitMediaKeyNeededEvent &&
-        source instanceof world.WebKitMediaKeyNeededEvent, 'no page code runs inside the hook');
+        source instanceof world.WebKitMediaKeyNeededEvent &&
+        clear instanceof world.WebKitMediaKeyNeededEvent, 'no page code runs inside the hook');
 }
 
 // ---- Without modern EME (an insecure context) media elements still have

@@ -81,6 +81,11 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const weakMapSet = NativeWeakMap.prototype.set;
   const weakMapDelete = NativeWeakMap.prototype.delete;
   const setAdd = NativeSet.prototype.add;
+  const NativeMap = g.Map;
+  const mapGet = NativeMap.prototype.get;
+  const mapSet = NativeMap.prototype.set;
+  const mapDelete = NativeMap.prototype.delete;
+  const mapForEach = NativeMap.prototype.forEach;
   const typedArrayTag = getter(Object.getPrototypeOf(NativeUint8Array.prototype), Symbol.toStringTag);
   const promiseThen = Promise.prototype.then;
   const resolved = Promise.resolve();
@@ -91,6 +96,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const nativeBtoa = g.btoa;
   const fromCharCode = String.fromCharCode;
   const NativeTextDecoder = g.TextDecoder;
+  const textDecode = NativeTextDecoder && NativeTextDecoder.prototype.decode;
   const NativeTextEncoder = g.TextEncoder;
   const cryptoObject = g.crypto;
   const randomUUID = cryptoObject && cryptoObject.randomUUID;
@@ -947,7 +953,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         sessionId: keys.kind !== 'mse' && !inert ? uuid() : '', chain: resolved,
         certificate: null, keyRelease: false, initData: null, identifier: null,
         modern: null, json: false, pending: [], lastKeyId: null, sourceInitData: null,
-        cache: keys.kind === 'clearkey' ? new Map() : null,
+        cache: keys.kind === 'clearkey' ? new NativeMap() : null,
       };
       sessionState.set(object, session);
       keys.lastSession = session;
@@ -1019,11 +1025,71 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     }
   }
 
-  // Element side: WebKitMediaKeys::keyAdded reaches the attached player
-  // (MediaPlayerPrivateAVFoundationObjC::keyAdded), which fulfils each held
-  // clearkey:// request whose key ID cachedKeyFor(keys, keyId) now has.
-  // fp-legacy-element and native HLS provide the player side.
+  // Legacy clear key on the player side. A clearkey:// request reaches the
+  // key-needed hook with provideKey(keyId, key), which hands the player that
+  // made it a key (Blink: WebMediaPlayer::ParcProvideClearKey). The requests
+  // an element's player holds wait in elementClearKeyRequests (key ID ->
+  // that request's provideKey) until the element's keys have their key. Read
+  // with natives only: the hook runs inside a media callback.
+  const elementClearKeyRequests = new NativeWeakMap();
+  // HTMLMediaElement::mediaPlayerCachedKeyForKeyId: the element's own keys'
+  // WebKitMediaKeys::cachedKeyForKeyId (its first session holding the key).
+  function elementCachedKey(element, keyId) {
+    const own = apply(weakMapGet, elementKeys, [element]);
+    const keys = own && apply(weakMapGet, keysState, [own]);
+    const sessions = keys && keys.sessions;
+    if (!sessions) {
+      return null;
+    }
+    for (let i = 0; i < sessions.length; ++i) {
+      const session = sessions[i];
+      const bytes = session.open && session.cache && apply(mapGet, session.cache, [keyId]);
+      if (bytes) {
+        return copy(bytes);
+      }
+    }
+    return null;
+  }
+  function provideClearKey(provide, keyId, bytes) {
+    if (typeof provide === 'function') {
+      apply(provide, undefined, [keyId, bytes]);
+    }
+  }
+  // MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource for
+  // clearkey://: a key the element's keys already have answers the request
+  // at once, with no webkitneedkey; otherwise the player holds it, the latest
+  // request for a key ID in place of an earlier one (m_keyURIToRequestMap).
+  // Returns whether webkitneedkey is raised.
+  function clearKeyRequested(element, keyId, provide) {
+    const cached = elementCachedKey(element, keyId);
+    if (cached) {
+      provideClearKey(provide, keyId, cached);
+      return false;
+    }
+    let held = apply(weakMapGet, elementClearKeyRequests, [element]);
+    if (!held) {
+      held = new NativeMap();
+      apply(weakMapSet, elementClearKeyRequests, [element, held]);
+    }
+    apply(mapSet, held, [keyId, provide]);
+    return true;
+  }
+  // WebKitMediaKeys::keyAdded reaches the player of the element the keys
+  // follow (MediaPlayerPrivateAVFoundationObjC::keyAdded): each held request
+  // whose key ID that element's keys now have gets its key.
   function keysAdded(keys) {
+    const element = keys.element;
+    const held = element && apply(weakMapGet, elementClearKeyRequests, [element]);
+    if (!held) {
+      return;
+    }
+    apply(mapForEach, held, [(provide, keyId) => {
+      const bytes = elementCachedKey(element, keyId);
+      if (bytes) {
+        apply(mapDelete, held, [keyId]);
+        provideClearKey(provide, keyId, bytes);
+      }
+    }]);
   }
 
   // WebKitMediaKeys::setMediaElement: the keys follow |element| (or none) and
@@ -1093,9 +1159,15 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // - 'skd': an HLS key request the player now holds (4-byte little-endian
   //   length, then the URI as UTF-16), for a legacy session to take
   //   (MediaPlayerPrivateAVFoundationObjC::m_keyURIToRequestMap);
-  // - 'clearkey': a clearkey:// request's key ID (UTF-8).
-  function keyNeeded(element, initData, kind) {
+  // - 'clearkey': a clearkey:// request's key ID (UTF-8); |provideKey| hands
+  //   the player its key (clearKeyRequested).
+  function keyNeeded(element, initData, kind, provideKey) {
     if (!isMediaElement(element) || !isUint8Array(initData)) {
+      return null;
+    }
+    if (kind === 'clearkey' && textDecode &&
+        !clearKeyRequested(element, apply(textDecode, new NativeTextDecoder(), [initData]),
+                           provideKey)) {
       return null;
     }
     if (kind === 'media-source') {
