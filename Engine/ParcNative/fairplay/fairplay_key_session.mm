@@ -133,6 +133,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     NSData* spc = nil;
     NSError* error = nil;
     bool awaiting_response = false;
+    // Order of the message awaiting a response among the session's messages.
+    uint64_t message_order = 0;
     // An HLS asset's skd loading request this entry answers (its own SPC and
     // CKC, fairplay_hls_keys.h); |request| is nil then.
     AVAssetResourceLoadingRequest* loading = nil;
@@ -165,6 +167,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::vector<Batch> batches;
     SessionCallback generate_done;
     ResultCallback update_done;
+    uint64_t messages_sent = 0;  // License messages sent so far.
     // update() calls made while one is in flight run in order after it.
     std::deque<std::pair<std::vector<uint8_t>, ResultCallback>> queued_updates;
     std::set<Request*> update_pending;
@@ -482,12 +485,18 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       done(Result::Error(Exception::kTypeError, "no key to renew"));
       return;
     }
+    // Oldest message first: a raw response answers the message that went out
+    // first, as WebKit answers its current request and sends the next only
+    // after it (CDMInstanceSessionFairPlayStreamingAVFObjC::nextRequest).
     std::vector<Request*> awaiting;
     for (auto& request : session->requests) {
       if (request->awaiting_response) {
         awaiting.push_back(request.get());
       }
     }
+    std::stable_sort(awaiting.begin(), awaiting.end(), [](const Request* a, const Request* b) {
+      return a->message_order < b->message_order;
+    });
     if (awaiting.empty()) {
       done(Result::Error(Exception::kTypeError, "no license request awaits a response"));
       return;
@@ -1674,8 +1683,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       } else {
         message = produced.front()->spc;
       }
+      ++session->messages_sent;
       for (Request* request : produced) {
         request->awaiting_response = true;
+        request->message_order = session->messages_sent;
         request->spc = nil;
       }
       if (session->generate_done) {
