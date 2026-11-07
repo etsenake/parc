@@ -316,9 +316,11 @@ render process:
   status), alone for a bad URL or an OS without client URL loading
   (`DEMUXER_ERROR_COULD_NOT_OPEN`). A second `Initialize` is a bad message.
 - `preload`: as WebKit (`updateStates`, `setPreload`), the item goes on the
-  player only once the element prepares to play: its effective preload is
-  auto (autoplay included) or the page called `load()` (the demuxer sends
-  `PrepareToPlay` after `Initialize`), its preload becomes auto later
+  player only once the element prepares to play: by WebKit's rules its
+  preload is auto (any `preload` but `none` or `metadata`, a missing one
+  included, where Chromium's default is metadata), it has `autoplay`, or the
+  page called `load()` (`HTMLMediaElement::ParcPreparesToPlay`; the demuxer
+  sends `PrepareToPlay` after `Initialize`), its preload becomes auto later
   (`Demuxer::ParcPrepareToPlay` from `DemuxerManager::SetPreload`), or it plays
   or seeks (the core's `SetRate` and `Seek`); a live stream's goes on at once.
   Until then a `preload="metadata"` VOD loads its playlists only and asks for

@@ -1387,7 +1387,7 @@
    if (name == html_names::kSrcAttr) {
      DVLOG(2) << "parseAttribute(" << *this
               << ", kSrcAttr, old=" << params.old_value
-@@ -1069,10 +1079,118 @@
+@@ -1069,10 +1079,133 @@
    return network_state_;
  }
  
@@ -1472,6 +1472,21 @@
 +  return context && IsParcSafariIdentityUserAgent(context->UserAgent());
 +}
 +
++bool HTMLMediaElement::ParcPreparesToPlay() const {
++  // WebKit: load() prepares to play (HTMLMediaElement::load), autoplay sets
++  // the player's preload to auto (maybeUpdatePlayerPreload), and the preload
++  // attribute is auto unless it is "none" or "metadata", missing included
++  // (parseAttribute; macOS lets media data load automatically, so no
++  // AutoPreloadingNotPermitted restriction lowers it). Chromium's own
++  // default, metadata, and its cellular override don't apply.
++  if (ignore_preload_none_ || Autoplay()) {
++    return true;
++  }
++  const AtomicString& preload = FastGetAttribute(html_names::kPreloadAttr);
++  return !EqualIgnoringAsciiCase(preload, keywords::kNone) &&
++         !EqualIgnoringAsciiCase(preload, "metadata");
++}
++
 +void HTMLMediaElement::ParcVideoLayerSize(gfx::SizeF* size,
 +                                          float* scale) const {
 +  // WebKit's initial video layer size is the element's content box
@@ -1507,7 +1522,7 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -1112,6 +1230,7 @@
+@@ -1112,6 +1245,7 @@
  // in resource selection algorithm.
  void HTMLMediaElement::InvokeLoadAlgorithm() {
    DVLOG(3) << "invokeLoadAlgorithm(" << *this << ")";
@@ -1515,7 +1530,7 @@
  
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -2727,7 +2846,11 @@
+@@ -2727,7 +2861,11 @@
    ScheduleNamedEvent(event_type_names::kSeeking);
  
    // 11 - Set the current playback position to the given new playback position.
@@ -1528,7 +1543,7 @@
    web_media_player_->OnTimeUpdate();
  
    // 14-17 are handled, if necessary, when the engine signals a readystate
-@@ -2898,6 +3021,52 @@
+@@ -2898,6 +3036,52 @@
    ReportCurrentTimeToMediaSource();
  }
  
@@ -1581,7 +1596,7 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -3160,6 +3329,7 @@
+@@ -3160,6 +3344,7 @@
  
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
    DVLOG(2) << "play(" << *this << ")";
@@ -1589,7 +1604,7 @@
  
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3400,6 +3570,9 @@
+@@ -3400,6 +3585,9 @@
      return;
    }
  
@@ -1599,7 +1614,7 @@
    volume_ = vol;
  
    ScheduleNamedEvent(event_type_names::kVolumechange);
-@@ -3438,6 +3611,7 @@
+@@ -3438,6 +3626,7 @@
  
  void HTMLMediaElement::setMuted(bool muted) {
    DVLOG(2) << "setMuted(" << *this << ", " << base::ToString(muted) << ")";
@@ -1607,7 +1622,7 @@
  
    bool was_muted = this->muted();
  
-@@ -3562,10 +3736,23 @@
+@@ -3562,10 +3751,23 @@
  
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
                                           TrackBase::ChangeSource source) {
@@ -1631,7 +1646,7 @@
  
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3679,9 +3866,163 @@
+@@ -3679,9 +3881,163 @@
    }
  }
  
@@ -1795,7 +1810,7 @@
  
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +4031,16 @@
+@@ -3690,6 +4046,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -1812,7 +1827,7 @@
    // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
  
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4249,8 @@
+@@ -3898,7 +4264,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -1822,7 +1837,7 @@
          goto checkAgain;
      }
  
-@@ -4845,6 +5197,7 @@
+@@ -4845,6 +5212,7 @@
    visitor->Trace(deferred_load_timer_);
    visitor->Trace(media_source_tracer_);
    visitor->Trace(audio_tracks_);
@@ -1830,7 +1845,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4873,7 +5226,8 @@
+@@ -4873,7 +5241,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -1918,7 +1933,7 @@
    bool IsInAutoPIP() const override { return false; }
 +  bool PresentsParcSafariIdentity() const override;
 +  void ParcVideoLayerSize(gfx::SizeF* size, float* scale) const override;
-+  bool ParcLoadWasExplicit() const override { return ignore_preload_none_; }
++  bool ParcPreparesToPlay() const override;
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
@@ -1973,9 +1988,9 @@
 +  virtual void ParcVideoLayerSize(gfx::SizeF* /*size*/,
 +                                  float* /*scale*/) const {}
 +
-+  // Parc: whether the page called load() for this load (WebKit's load()
-+  // prepares the player to play whatever the preload).
-+  virtual bool ParcLoadWasExplicit() const { return false; }
++  // Parc: whether the element prepares Safari's native HLS player to play
++  // from the start (WebKit's HTMLMediaElement::prepareToPlay and preload).
++  virtual bool ParcPreparesToPlay() const { return false; }
 +
    // Requests the player to resume playback.
    virtual void ResumePlayback() = 0;
