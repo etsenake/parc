@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 462,
+  "version": 463,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1825,7 +1825,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_decoding.mm",
       "target": "content/browser/media/parc_video_toolbox_decoding.mm",
-      "sha256": "a1fd8263dc6e71f4543b4d05b7747ad890884d0748c7b915e8dc7e7c508fc8d7"
+      "sha256": "6ed73d135b6dcc3de7727390130435ef90c5346c45d8327ab058ea6fb9cac9ed"
     }
   ],
   "patches": [

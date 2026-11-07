@@ -90,6 +90,9 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   The first compilation also exposed an incomplete `VTTRegion` type in the
   in-band subtitle implementation; its source now includes the defining header
   explicitly, preserving subtitle behavior and the existing build objects.
+  The VideoToolbox decoding-info source also now names Chromium's actual
+  `string_number_conversions.h` header; the earlier include named a nonexistent
+  file. Focused real-target compilation checks precede the next full resume.
 
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in
