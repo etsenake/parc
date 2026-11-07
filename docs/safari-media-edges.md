@@ -199,7 +199,9 @@ Safari's Media Source player also drops negative rates), and rates outside
 4219-4221`) still counts rate 0 at the end as ended, so `play()` there
 seeks to the start and `ended` can fire. WebKit's `endedPlayback`
 (`HTMLMediaElement.cpp:6902-6928`) is false at rate 0 (`:4785-4787,
-6426-6467`). **In progress** (fix agent HME-29).
+6426-6467`). **Fixed** a714681a (and a rate raised above 0 at the end now
+pauses or loops a task later, as WebKit's player reports the end). `ended`
+firing only once per arrival is part of HME-23.
 
 **HME-17. The last `progress` before `suspend`.** Chromium
 `html_media_element.cc:2268-2283` fires it only if the player made progress
