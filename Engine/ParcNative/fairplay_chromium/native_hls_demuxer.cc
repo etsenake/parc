@@ -315,6 +315,17 @@ void NativeHlsDemuxer::OnTracksChanged(
 
 void NativeHlsDemuxer::SetPlaybackRate(double rate) {}
 
+void NativeHlsDemuxer::ParcProvideClearKey(const std::string& key_id,
+                                           const std::vector<uint8_t>& key) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // The page's legacy clear key session has the key a clearkey:// request
+  // asked for; AVFoundation gets its requested bytes (WebKit's
+  // fulfillRequestWithKeyData).
+  if (player_.is_bound() && !key_id.empty() && !key.empty()) {
+    player_->ProvideClearKey(key_id, key);
+  }
+}
+
 std::optional<media::Demuxer::ParcNativeTimeline>
 NativeHlsDemuxer::GetParcNativeTimeline() const {
   base::AutoLock lock(time_lock_);

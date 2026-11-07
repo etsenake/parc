@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -70,7 +71,9 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
     preserves_pitch_ = preserves_pitch;
   }
   void ProvideClearKey(const std::string& key_id,
-                       const std::vector<uint8_t>& key) override {}
+                       const std::vector<uint8_t>& key) override {
+    clear_keys_.emplace_back(key_id, key);
+  }
   void SelectAudioTrack(const std::string& id) override {}
   void SelectTextTrack(const std::optional<std::string>& id) override {}
   void Suspend() override {}
@@ -82,6 +85,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   std::optional<base::TimeDelta> seek_time_;
   std::vector<double> commands_;  // Play(rate) or 0 for Pause().
   std::vector<base::UnguessableToken> cdm_ids_;
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
   float volume_ = -1;
   std::optional<bool> preserves_pitch_;
 };
@@ -325,6 +329,16 @@ TEST_F(NativeHlsTest, LoadsGoToTheElementsLoader) {
                      load.InitWithNewPipeAndPassReceiver(),
                      std::move(load_client));
   task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, ClearKeyReachesThePlayer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  const std::vector<uint8_t> key(16, 0x2a);
+  demuxer_->ParcProvideClearKey("key-1", key);
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(player_.clear_keys_.size(), 1u);
+  EXPECT_EQ(player_.clear_keys_[0].first, "key-1");
+  EXPECT_EQ(player_.clear_keys_[0].second, key);
 }
 
 TEST_F(NativeHlsTest, KeyRequestComesBeforeEncrypted) {

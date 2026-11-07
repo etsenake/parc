@@ -142,7 +142,11 @@ DevTools attribution right.
   `OnStartDateChanged` under its time lock, and turns `OnKeyRequest` into
   `WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest`
   (`webkitneedkey`) through `DemuxerManager` on the main thread, posted in the
-  player's order so it precedes the request's `encrypted`.
+  player's order so it precedes the request's `encrypted`. A legacy clear key
+  Blink hands the element's player (`WebMediaPlayer::ParcProvideClearKey`)
+  goes from `WebMediaPlayerImpl` through `DemuxerManager` to the demuxer on
+  the media thread (`Demuxer::ParcProvideClearKey`) and on as
+  `FairPlayHlsPlayer.ProvideClearKey`.
 
 ## Mojo
 

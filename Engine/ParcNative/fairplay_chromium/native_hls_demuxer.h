@@ -160,6 +160,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void SetPlaybackRate(double rate) override;
   void SetCdmForNativePlayer(media::CdmContext* cdm_context) override;
   std::optional<ParcNativeTimeline> GetParcNativeTimeline() const override;
+  void ParcProvideClearKey(const std::string& key_id,
+                           const std::vector<uint8_t>& key) override;
 
   // NativeHlsSource.
   void SetClient(NativeHlsSource::Client* client) override;

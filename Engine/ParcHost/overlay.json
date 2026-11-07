@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 433,
+  "version": 434,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1700,12 +1700,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.h",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.h",
-      "sha256": "12d59ca3fa6f5ab1b1ad15d9120a6cdd7f2c3fc4a7cafcae95ea62545c08bc93"
+      "sha256": "05b089c557bbeb48a8899ab20750432f1ad915977e4c929f3ad68c0912e4bce4"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.cc",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.cc",
-      "sha256": "ae0825832e73131d9de74a3a548c2797a3183c0ce7d4202a9f6931ea63019512"
+      "sha256": "9fee08d2c0b4462b0bf311478b0aaedca55ddb19b55ffb66f793bfd9d00b232b"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.h",
@@ -1730,7 +1730,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_unittest.cc",
       "target": "content/renderer/media/fairplay/native_hls_unittest.cc",
-      "sha256": "72eac5b51d5a5b039c79a9920e53e0d84410fbcf62e08467b74256b0e9275bc0"
+      "sha256": "251fc0a3929f9ee61fb9e4a548fc1454130eb8bc6e5f557bb436bbde103fbc23"
     },
     {
       "source": "Engine/ParcRenderer/parc_managed_media_source.h",
@@ -4097,7 +4097,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "282e6d734c39d3f279e6f97b08f635f9b4c6107b9df5b88253412a961e636136",
+      "sha256": "a0ddb7840b6f0b2a042a5a8c273e4702a7ea204d24ff1eb13283ee1b6b19f67d",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4177,12 +4177,12 @@
         {
           "target": "media/base/demuxer.cc",
           "before_sha256": "0921018413b5862b1dca96425cf57a4dfd13f4de43befc3d9184ab0e450e1395",
-          "after_sha256": "891e5ddfccef680bcb49758c805e42926044ea95cf503d2c4d67fc6bea8234af"
+          "after_sha256": "698de3f5c90d6adba75b143572e5786f07c1b8292d18841983f0062a05b12454"
         },
         {
           "target": "media/base/demuxer.h",
           "before_sha256": "c1d509071e28586fdca660554f95b6da3c3adad1c2fdfbe5a5481ce36af5a356",
-          "after_sha256": "d8fb158390ee45739c167efd4f9f03607b7b9be57e6f52c800da0b82938e3641"
+          "after_sha256": "c323a5315790b3be9918908682128a4d7fa07f666ab2bcbdabaad33b132c3c98"
         },
         {
           "target": "media/base/eme_constants.cc",
@@ -4232,12 +4232,12 @@
         {
           "target": "media/filters/demuxer_manager.cc",
           "before_sha256": "01afd177b93b47f3cfa4ef41cbf58783cd4693a68b16f6c5ed89db21338c6ccd",
-          "after_sha256": "f4ddac0013af996405ab785936e88c0b2ef2e082c6dbbec49a4c44860765f2ac"
+          "after_sha256": "8ee7b52eaf5d11d2f1ebc9c85856eefe6a290272cfb564c414118bb4f4b454b5"
         },
         {
           "target": "media/filters/demuxer_manager.h",
           "before_sha256": "dca616bcfcd5d0b523d55469e57370e4f8da6ff7a887f6c45a8a2a6bd736215c",
-          "after_sha256": "a6f8145c0e718faa215ef4a8c5ff3d9f347156adbb7414baff39a9ba02c0f189"
+          "after_sha256": "d78fcbcc9d60d1814dae621b6bdd4b44810abc3e8004151a1823233ebb589c4c"
         },
         {
           "target": "media/formats/mp4/box_definitions.cc",
@@ -4372,12 +4372,12 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "e9aabc4c8d184be0cb0961a2359668f18d5f21f8643456351ab2fb266b24d3fd"
+          "after_sha256": "46d3696862a6091e0f68dc26b96ff362e0a877eba4d6d4af60088f2fe93b0873"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
           "before_sha256": "2afbe1b25d00714f9c8c7a8f381ac23bceb5b05d63e86a5fecb0ad55e133e584",
-          "after_sha256": "aa483e2e36a7b58f7e453623b6047bbc862ad8e7e089cdf13d69a3584f3fdba3"
+          "after_sha256": "cb999220db1448ee22a419ebdb256663304def860db5bda0fd644cbb6317ccf6"
         },
         {
           "target": "media/base/media_resource.h",
