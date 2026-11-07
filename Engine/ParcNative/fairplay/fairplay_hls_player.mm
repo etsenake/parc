@@ -15,6 +15,7 @@
 #include <set>
 
 #include "fairplay_hls_frame_stats.h"
+#include "fairplay_hls_player_layer.h"
 #include "fairplay_hls_player_internal.h"
 #include "fairplay_hls_timeline.h"
 
@@ -266,12 +267,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     [player_ replaceCurrentItemWithPlayerItem:nil];
     [asset_.resourceLoader setDelegate:nil queue:nil];
     [asset_ cancelLoading];
-    if (player_layer_) {
-      [CATransaction begin];
-      [CATransaction setDisableActions:YES];
-      player_layer_.player = nil;
-      [CATransaction commit];
-    }
+    [player_layer_ parcDetachPlayer];
   }
 
   Result CreateAsset(const std::string& url, const std::string& mime_type) {
@@ -328,7 +324,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     // WebKit's setting: the page, not AVFoundation, schedules HLS interstitials.
     item_.automaticallyHandlesInterstitialEvents = NO;
     UpdatePitchAlgorithm();
-    player_ = [AVPlayer playerWithPlayerItem:item_];
+    // As WebKit: the player first, then (for an element with a size) its
+    // layer at that size with the player, then the item, all in this turn,
+    // before AVFoundation picks a variant (fairplay_hls_player_layer.h).
+    player_ = [[AVPlayer alloc] init];
     // WebKit's settings: the page picks media options, the browser manages
     // display sleep, and there's no AirPlay route from here.
     player_.appliesMediaSelectionCriteriaAutomatically = NO;
@@ -336,6 +335,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     player_.allowsExternalPlayback = NO;
     player_.volume = volume_;
     player_.muted = muted_;
+    if (layer_width_ > 0 && layer_height_ > 0 && layer_scale_ > 0) {
+      [PlayerLayer() parcStageWithSize:CGSizeMake(layer_width_, layer_height_) scale:layer_scale_];
+    }
+    [player_ replaceCurrentItemWithPlayerItem:item_];
     observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
     [observer_ observePlayer:player_ item:item_];
     // A rate set before the player existed (play() before the item) applies
@@ -344,6 +347,12 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       SetRate(rate_);
     }
     return Result::Ok();
+  }
+
+  void SetVideoLayerSize(double width, double height, double scale) {
+    layer_width_ = width;
+    layer_height_ = height;
+    layer_scale_ = scale;
   }
 
   void SetRate(double rate) {
@@ -914,13 +923,16 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   AVURLAsset* asset() const { return asset_; }
   AVPlayer* player() const { return player_; }
 
-  AVPlayerLayer* PlayerLayer() {
+  PCHlsPlayerLayer* PlayerLayer() {
     if (!player_layer_ && player_ && !shut_down_) {
       [CATransaction begin];
       [CATransaction setDisableActions:YES];
-      player_layer_ = [AVPlayerLayer playerLayerWithPlayer:player_];
+      // The player arrives once the compositor has sized the layer, as WebKit
+      // sizes its layer first (fairplay_hls_player_layer.h).
+      player_layer_ = [PCHlsPlayerLayer layer];
       player_layer_.videoGravity = AVLayerVideoGravityResize;
       [CATransaction commit];
+      [player_layer_ parcAttachPlayerWhenSized:player_];
       // Frame counts come from the layer (WebKit's source for an AVPlayer).
       std::weak_ptr<Impl> weak = weak_from_this();
       std::shared_ptr<const PostTask> poster = poster_;
@@ -1009,7 +1021,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   AVURLAsset* asset_ = nil;
   AVPlayerItem* item_ = nil;
   AVPlayer* player_ = nil;
-  AVPlayerLayer* player_layer_ = nil;
+  PCHlsPlayerLayer* player_layer_ = nil;
+  // SetVideoLayerSize: points and scale; zero when unknown.
+  double layer_width_ = 0;
+  double layer_height_ = 0;
+  double layer_scale_ = 0;
   // With the layer; destroyed first in Shutdown.
   std::unique_ptr<HlsFrameStats> frame_stats_;
   PCHlsURLSession* session_ = nil;
@@ -1539,6 +1555,10 @@ Result FairPlayHlsPlayer::CreateAsset(const std::string& url, const std::string&
 
 Result FairPlayHlsPlayer::Start() {
   return impl_->Start();
+}
+
+void FairPlayHlsPlayer::SetVideoLayerSize(double width, double height, double scale) {
+  impl_->SetVideoLayerSize(width, height, scale);
 }
 
 Result FairPlayHlsPlayer::Load(const std::string& url, const std::string& mime_type) {

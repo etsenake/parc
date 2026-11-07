@@ -127,12 +127,10 @@
  CATransform3D ToCATransform3D(const gfx::Transform& t) {
    return CATransform3D{
        t.rc(0, 0), t.rc(1, 0), t.rc(2, 0), t.rc(3, 0),  //
-@@ -390,6 +403,25 @@
- CARendererLayerTree::SolidColorContents::GetMap() {
-   static base::NoDestructor<Map> map;
+@@ -392,6 +405,25 @@
    return map.get();
-+}
-+
+ }
+ 
 +// Every CALayerTreeCoordinator in the GPU process commits on its main thread,
 +// so this is only used there.
 +struct CARendererLayerTree::ProtectedLayerClaims {
@@ -150,9 +148,11 @@
 +CARendererLayerTree::GetProtectedLayerClaims() {
 +  static base::NoDestructor<ProtectedLayerClaims> claims;
 +  return *claims;
- }
- 
++}
++
  CARendererLayerTree::CARendererLayerTree(
+     bool allow_av_sample_buffer_display_layer,
+     bool allow_solid_color_layers,
 @@ -462,7 +494,11 @@
      CALayerMap& old_ca_layer_map,
      int& layer_order,
@@ -299,16 +299,16 @@
        ca_layer_.contentsRect = contents_rect_.ToCGRect();
    }
    if (update_rect) {
-@@ -1330,6 +1406,9 @@
+@@ -1329,6 +1405,9 @@
+   if (update_ca_filter) {
      ca_layer_.magnificationFilter = ca_filter_;
      ca_layer_.minificationFilter = ca_filter_;
-   }
++  }
 +  if (type_ == CALayerType::kProtectedLayer) {
 +    CommitProtectedLayer();
-+  }
+   }
  
  #if BUILDFLAG(IS_MAC)
-   static bool show_overlay_borders =
 @@ -1360,6 +1439,11 @@
            green = blue = 1;
          }
@@ -321,7 +321,7 @@
        case CALayerType::kDefault:
          if (pixel_format == 0) {
            // Grey is no IOSurface (a solid color layer).
-@@ -1412,4 +1496,119 @@
+@@ -1412,4 +1496,127 @@
  #endif
  }
  
@@ -359,6 +359,14 @@
 +  // The host carries the quad's rect and opacity; its ancestors carry the
 +  // transform, clip and rounded corners.
 +  const CGRect bounds = ca_layer_.bounds;
++  // The native HLS player's AVPlayerLayer gets the display's scale, as WebKit
++  // gives its AVPlayerLayer the page's (mediaPlayerContentsScale), before its
++  // bounds: it takes its player at its first size, and AVFoundation then
++  // keeps HLS variants to that size on screen (fairplay_hls_player_layer.h).
++  if ([protected_layer_ isKindOfClass:[AVPlayerLayer class]] &&
++      protected_layer_.contentsScale != tree()->scale_factor_) {
++    protected_layer_.contentsScale = tree()->scale_factor_;
++  }
 +  if (!CGPointEqualToPoint(protected_layer_.anchorPoint, CGPointZero)) {
 +    protected_layer_.anchorPoint = CGPointZero;
 +  }
@@ -459,7 +467,7 @@
  
    bool allow_av_layers = true;
    bool allow_solid_color_layers = true;
-@@ -71,15 +73,29 @@
+@@ -71,13 +73,27 @@
      io_surface = properties->io_surface;
      io_surface_color_space = properties->color_space;
    }
@@ -474,8 +482,8 @@
 +      gfx::HDRMetadata(), properties->protected_video_type, false);
 +  params.protected_layer_token = properties->protected_layer_token;
 +  return tree->ScheduleCALayer(params);
- }
- 
++}
++
 +// The single content layer under `superlayer` in a committed tree.
 +CALayer* OnlyContentLayerIn(CALayer* superlayer) {
 +  CALayer* layer = superlayer;
@@ -486,17 +494,13 @@
 +    layer = layer.sublayers[0];
 +  }
 +  return layer;
-+}
-+
+ }
+ 
  void UpdateCALayerTree(std::unique_ptr<ui::CARendererLayerTree>& ca_layer_tree,
-                        CALayerProperties* properties,
-                        CALayer* superlayer) {
-@@ -976,8 +992,257 @@
-     EXPECT_EQ(av_layer_new, av_layer_old);
-     EXPECT_FALSE(av_layer_new.preventsCapture);
+@@ -978,6 +994,258 @@
    }
-+}
-+
+ }
+ 
 +// Parc: a quad carrying a registered FairPlay layer's token puts that layer in
 +// the tree where the quad is, follows the quad, moves to whichever tree
 +// committed it last and leaves black when the layer is gone.
@@ -580,10 +584,11 @@
 +  EXPECT_EQ(1, CGColorGetAlpha(host.backgroundColor));
 +  const CGFloat* rgba = CGColorGetComponents(host.backgroundColor);
 +  EXPECT_EQ(0, rgba[0] + rgba[1] + rgba[2]);
- }
- 
++}
++
 +// Parc: the native HLS player's AVPlayerLayer is placed like the MSE
-+// renderer's layer, filling the quad at the video's aspect ratio, and moves
++// renderer's layer, filling the quad at the video's aspect ratio, with the
++// display's scale (as WebKit gives its AVPlayerLayer the page's), and moves
 +// to the tree that committed it last.
 +TEST_F(CALayerTreeTest, ProtectedPlayerLayer) {
 +  AVPlayerLayer* player_layer = [AVPlayerLayer playerLayerWithPlayer:nil];
@@ -596,14 +601,16 @@
 +  properties.background_color = SkColors::kTransparent;
 +  properties.is_clipped = false;
 +  properties.rect = gfx::Rect(16, 32, 64, 128);
++  properties.scale_factor = 2.0f;
 +  std::unique_ptr<ui::CARendererLayerTree> ca_layer_tree;
 +
 +  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
 +  CALayer* host = GetOnlyContentLayer();
 +  EXPECT_FALSE([host isKindOfClass:[AVPlayerLayer class]]);
 +  EXPECT_EQ(host, player_layer.superlayer);
-+  EXPECT_EQ(gfx::Rect(0, 0, 64, 128),
++  EXPECT_EQ(gfx::Rect(0, 0, 32, 64),
 +            gfx::ToEnclosingRect(gfx::RectF(player_layer.frame)));
++  EXPECT_EQ(2, player_layer.contentsScale);
 +  EXPECT_NSEQ(AVLayerVideoGravityResize, player_layer.videoGravity);
 +  EXPECT_FALSE(player_layer.geometryFlipped);
 +
@@ -612,7 +619,7 @@
 +  properties.rect = gfx::Rect(0, 0, 32, 18);
 +  UpdateCALayerTree(other_tree, &properties, other_superlayer);
 +  EXPECT_EQ(OnlyContentLayerIn(other_superlayer), player_layer.superlayer);
-+  EXPECT_EQ(gfx::Rect(0, 0, 32, 18),
++  EXPECT_EQ(gfx::Rect(0, 0, 16, 9),
 +            gfx::ToEnclosingRect(gfx::RectF(player_layer.frame)));
 +  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
 +  EXPECT_EQ(GetOnlyContentLayer(), player_layer.superlayer);

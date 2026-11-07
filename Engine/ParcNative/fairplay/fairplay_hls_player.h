@@ -175,6 +175,14 @@ class FairPlayHlsPlayer {
   Result CreateAsset(const std::string& url, const std::string& mime_type);
   Result Start();
 
+  // WebKit's initial video layer size: the element's size in points and the
+  // display's scale, from the render process, before Start. The player's
+  // layer then waits at that size in a CAContext of its own and has the
+  // player before the item does, so AVFoundation picks the first HLS variant
+  // for the element (fairplay_hls_player_layer.h). Without one (an element
+  // not laid out yet), the layer takes the player at the compositor's size.
+  void SetVideoLayerSize(double width, double height, double scale);
+
   // 0 pauses. AVPlayer waits to minimize stalling, as in Safari. Like
   // volume, mute and pitch, a rate set before Start applies when it starts.
   void SetRate(double rate);

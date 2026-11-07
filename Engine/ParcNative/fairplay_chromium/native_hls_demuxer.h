@@ -41,6 +41,7 @@
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_f.h"
 #include "url/gurl.h"
 
 namespace media {
@@ -256,6 +257,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
 
   const GURL url_;
   const std::string mime_type_;
+  // The element's size in points and its display's scale when the demuxer
+  // was made, for the player's layer (WebKit's initial video layer size).
+  const gfx::SizeF video_layer_size_;
+  const float video_layer_scale_;
   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   const std::unique_ptr<media::MediaLog> media_log_;
   const EncryptedMediaInitDataCB encrypted_media_init_data_cb_;

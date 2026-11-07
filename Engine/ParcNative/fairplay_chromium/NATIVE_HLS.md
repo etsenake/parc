@@ -522,7 +522,25 @@ scrolling, clipping, PiP and fullscreen behave as for MSE playback. Teardown
 unregisters the layer before the player goes.
 
 The compositor fills an `AVPlayerLayer` like the MSE layer, with Resize
-gravity (cc already laid the quad out at the video's aspect ratio). It sets no
+gravity (cc already laid the quad out at the video's aspect ratio), and gives
+it the display's scale as its `contentsScale` before its bounds, as WebKit
+gives its `AVPlayerLayer` the page's (`mediaPlayerContentsScale`).
+
+The layer exists before the page draws it, as WebKit's does. WebKit's web
+process sends the element's size to the GPU process up front
+(`setInitialVideoLayerSize`), and the player makes its `AVPlayerLayer` at
+that size and scale in a CAContext of its own (`LayerHostingContext`) and
+gives it the player in the same turn as the item
+(`createAVPlayerLayer`, then `updateLayerAttachment`). AVFoundation picks
+the item's first variant for that layer's size on screen. Parc does the
+same: `HTMLMediaElement::ParcVideoLayerSize` (the video element's content box
+in points and the display's scale) rides on `FairPlayHlsPlayer.Initialize`,
+and the core's `Start` makes the player, stages its layer
+(`PCHlsPlayerLayer`, `fairplay_hls_player_layer.h`) in an unhosted CAContext
+at that size, which hands it the player, and only then gives the player its
+item. The compositor's tree takes the layer when the page draws it. An
+element with no layout box yet (or an audio element) sends no size; its
+layer then takes the player at the compositor's first size. It sets no
 capture flag: AVFoundation keeps FairPlay video from an `AVPlayer` out of
 screenshots and screen sharing by itself, and clear HLS stays capturable, as
 in Safari. `tests/FairPlay/hls_presentation` (Display) proves on this Mac that
@@ -559,7 +577,12 @@ trees are, and proves on this Mac:
 - AVFoundation picks variants by the layer's size on screen inside such a
   context exactly as in a window: 720p (not 1080p) for a 640×360 pt layer on
   a 2× display, 1080p once fullscreen makes it 1280×720 pt, as Safari's
-  `AVPlayerLayer` gets.
+  `AVPlayerLayer` gets. That holds after earlier playback too, when
+  AVFoundation's bandwidth estimate would start the item at 1080p, because
+  the layer is staged at the element's size with the player before the item
+  arrives: the item starts at 720p (1030k). A layer with no size when the
+  item arrived (sized only once the page drew it) left the item at 1080p
+  (1924k) in 3 of 4 runs, and so did a layer sized but in no CAContext.
 - A variant switch can restart the frame counter (seen on the way back from
   PiP, 229 → 107), which `HlsFrameStats` counts as a new run.
 

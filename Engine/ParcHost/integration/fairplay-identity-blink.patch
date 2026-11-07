@@ -1388,7 +1388,7 @@
    if (name == html_names::kSrcAttr) {
      DVLOG(2) << "parseAttribute(" << *this
               << ", kSrcAttr, old=" << params.old_value
-@@ -1069,10 +1079,92 @@
+@@ -1069,10 +1079,118 @@
    return network_state_;
  }
  
@@ -1473,6 +1473,32 @@
 +  return context && IsParcSafariIdentityUserAgent(context->UserAgent());
 +}
 +
++void HTMLMediaElement::ParcVideoLayerSize(gfx::SizeF* size,
++                                          float* scale) const {
++  // WebKit's initial video layer size is the element's content box
++  // (mediaPlayerContentBoxRect). Layout here is in physical pixels (zoom for
++  // device scale), so the display's scale divides it back to points.
++  if (!IsHTMLVideoElement()) {
++    return;
++  }
++  LocalFrame* frame = GetDocument().GetFrame();
++  auto* box = DynamicTo<LayoutBox>(GetLayoutObject());
++  if (!frame || !frame->GetPage() || !box) {
++    return;
++  }
++  const float device_scale = frame->GetPage()
++                                 ->GetChromeClient()
++                                 .GetScreenInfo(*frame)
++                                 .device_scale_factor;
++  const PhysicalSize content = box->PhysicalContentBoxRect().size;
++  if (!(device_scale > 0) || content.IsEmpty()) {
++    return;
++  }
++  *size = gfx::SizeF(content.width.ToFloat() / device_scale,
++                     content.height.ToFloat() / device_scale);
++  *scale = device_scale;
++}
++
  V8CanPlayTypeResult HTMLMediaElement::canPlayType(
      const String& mime_type) const {
    MIMETypeRegistry::SupportsType support =
@@ -1482,7 +1508,7 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -1112,6 +1204,7 @@
+@@ -1112,6 +1230,7 @@
  // in resource selection algorithm.
  void HTMLMediaElement::InvokeLoadAlgorithm() {
    DVLOG(3) << "invokeLoadAlgorithm(" << *this << ")";
@@ -1490,7 +1516,7 @@
  
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -2727,7 +2820,11 @@
+@@ -2727,7 +2846,11 @@
    ScheduleNamedEvent(event_type_names::kSeeking);
  
    // 11 - Set the current playback position to the given new playback position.
@@ -1503,7 +1529,7 @@
    web_media_player_->OnTimeUpdate();
  
    // 14-17 are handled, if necessary, when the engine signals a readystate
-@@ -2898,6 +2995,52 @@
+@@ -2898,6 +3021,52 @@
    ReportCurrentTimeToMediaSource();
  }
  
@@ -1556,7 +1582,7 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -3160,6 +3303,7 @@
+@@ -3160,6 +3329,7 @@
  
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
    DVLOG(2) << "play(" << *this << ")";
@@ -1564,7 +1590,7 @@
  
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3400,6 +3544,9 @@
+@@ -3400,6 +3570,9 @@
      return;
    }
  
@@ -1574,7 +1600,7 @@
    volume_ = vol;
  
    ScheduleNamedEvent(event_type_names::kVolumechange);
-@@ -3438,6 +3585,7 @@
+@@ -3438,6 +3611,7 @@
  
  void HTMLMediaElement::setMuted(bool muted) {
    DVLOG(2) << "setMuted(" << *this << ", " << base::ToString(muted) << ")";
@@ -1582,7 +1608,7 @@
  
    bool was_muted = this->muted();
  
-@@ -3562,10 +3710,23 @@
+@@ -3562,10 +3736,23 @@
  
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
                                           TrackBase::ChangeSource source) {
@@ -1606,7 +1632,7 @@
  
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3679,9 +3840,163 @@
+@@ -3679,9 +3866,163 @@
    }
  }
  
@@ -1770,7 +1796,7 @@
  
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +4005,16 @@
+@@ -3690,6 +4031,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -1787,7 +1813,7 @@
    // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
  
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4223,8 @@
+@@ -3898,7 +4249,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -1797,7 +1823,7 @@
          goto checkAgain;
      }
  
-@@ -4845,6 +5171,7 @@
+@@ -4845,6 +5197,7 @@
    visitor->Trace(deferred_load_timer_);
    visitor->Trace(media_source_tracer_);
    visitor->Trace(audio_tracks_);
@@ -1805,7 +1831,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4873,7 +5200,8 @@
+@@ -4873,7 +5226,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -1887,15 +1913,16 @@
  
    void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
    void RemotePlaybackCompatibilityChanged(const KURL&,
-@@ -634,6 +667,7 @@
+@@ -634,6 +667,8 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
 +  bool PresentsParcSafariIdentity() const override;
++  void ParcVideoLayerSize(gfx::SizeF* size, float* scale) const override;
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -968,6 +1002,12 @@
+@@ -968,6 +1003,12 @@
    bool is_remote_rendering_ = false;
    // Whether the media content is encrypted.
    bool is_encrypted_media_ = false;
@@ -1908,7 +1935,7 @@
  
    // Whether the frame containing the media element is hidden. This is nullopt
    // if the visibility state of the frame is not yet known - e.g. during frame
-@@ -985,6 +1025,12 @@
+@@ -985,6 +1026,12 @@
    std::optional<media::VideoCodec> video_codec_;
  
    Member<AudioTrackList> audio_tracks_;
@@ -1923,7 +1950,15 @@
    HeapVector<Member<TextTrack>> text_tracks_when_resource_selection_began_;
 --- a/third_party/blink/renderer/platform/media/media_player_client.h
 +++ b/third_party/blink/renderer/platform/media/media_player_client.h
-@@ -143,6 +143,11 @@
+@@ -39,6 +39,7 @@
+ #include "third_party/blink/public/platform/web_media_player_client.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "ui/gfx/color_space.h"
++#include "ui/gfx/geometry/size_f.h"
+ 
+ namespace cc {
+ class Layer;
+@@ -143,6 +144,17 @@
    // behavior as regular Picture-in-Picture.
    virtual bool IsInAutoPIP() const = 0;
  
@@ -1931,6 +1966,12 @@
 +  // (third_party/blink/renderer/core/frame/parc_safari_identity.h), for what
 +  // the player offers only there.
 +  virtual bool PresentsParcSafariIdentity() const { return false; }
++
++  // Parc: the video element's size in points and its display's scale, for
++  // the native HLS player's layer (WebKit's initial video layer size). Leaves
++  // both alone when there's none (an audio element, no layout box yet).
++  virtual void ParcVideoLayerSize(gfx::SizeF* /*size*/,
++                                  float* /*scale*/) const {}
 +
    // Requests the player to resume playback.
    virtual void ResumePlayback() = 0;

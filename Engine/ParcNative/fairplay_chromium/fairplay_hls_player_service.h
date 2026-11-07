@@ -56,6 +56,7 @@ namespace parc::fairplay {
 class FairPlayHlsKeyLoader;
 }  // namespace parc::fairplay
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_f.h"
 
 namespace media {
 
@@ -92,7 +93,10 @@ class FairPlayHlsPlayerService final
   void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
 
   // mojom::FairPlayHlsPlayer:
-  void Initialize(const GURL& url, const std::string& mime_type) override;
+  void Initialize(const GURL& url,
+                  const std::string& mime_type,
+                  const gfx::SizeF& video_layer_size,
+                  float video_layer_scale) override;
   void SetCdm(const base::UnguessableToken& cdm_id,
               SetCdmCallback callback) override;
   void Play(double rate) override;

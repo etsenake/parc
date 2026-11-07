@@ -19,12 +19,12 @@ tests="$repo_root/tests/FairPlay"
 cxx_flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -I "$core")
 flags=("${cxx_flags[@]}" -fobjc-arc)
 xcrun clang++ "${cxx_flags[@]}" -c "$core/fairplay_hls_timeline.cc" -o "$output/fairplay_hls_timeline.o"
-for name in fairplay_hls_frame_stats fairplay_hls_player fairplay_hls_keys fairplay_key_session fairplay_init_data; do
+for name in fairplay_hls_frame_stats fairplay_hls_player fairplay_hls_player_layer fairplay_hls_keys fairplay_key_session fairplay_init_data; do
   xcrun clang++ "${flags[@]}" -c "$core/$name.mm" -o "$output/$name.o"
 done
 xcrun clang++ "${flags[@]}" -c "$tests/hls_player_harness.mm" -o "$output/hls_player_harness.o"
-xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreMedia -framework Foundation \
-  -framework QuartzCore -o "$output/hls-player-proof"
+xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreGraphics -framework CoreMedia \
+  -framework Foundation -framework QuartzCore -o "$output/hls-player-proof"
 # The harness bounds each wait itself; this caps the whole run. The cap's
 # sleep is its own process: stopping the cap must stop it too, or it would
 # hold the output open. Stopping this script stops both.

@@ -393,7 +393,9 @@ void FairPlayHlsPlayerService::SetMuteStateObserverCloser(
 }
 
 void FairPlayHlsPlayerService::Initialize(const GURL& url,
-                                          const std::string& mime_type) {
+                                          const std::string& mime_type,
+                                          const gfx::SizeF& video_layer_size,
+                                          float video_layer_scale) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (player_ || errored_) {
     mojo::ReportBadMessage("FairPlayHlsPlayer.Initialize called twice");
@@ -415,6 +417,12 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
     player_->SetRate(rate_);
   }
   ApplyMuted();
+  // The layer waits at the element's size, as WebKit's does, so AVFoundation
+  // picks the first variant for it (fairplay_hls_player_layer.h).
+  if (!video_layer_size.IsEmpty() && video_layer_scale > 0) {
+    player_->SetVideoLayerSize(video_layer_size.width(),
+                               video_layer_size.height(), video_layer_scale);
+  }
 
   fp::Result result = player_->CreateAsset(url.spec(), mime_type);
   if (result.ok()) {

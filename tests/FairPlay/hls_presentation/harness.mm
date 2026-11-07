@@ -11,6 +11,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 #import "fairplay_hls_frame_stats.h"
+#import "fairplay_hls_player_layer.h"
 
 #include <cstdarg>
 #include <thread>
@@ -134,11 +135,18 @@ Host MakeHost(NSRect frame, NSString* title) {
   return result;
 }
 
-// What FillProtectedLayer does for an AVPlayerLayer (fairplay-compositing).
-void Place(AVPlayerLayer* layer, CALayer* host) {
+// What FillProtectedLayer does for an AVPlayerLayer (fairplay-compositing):
+// the tree's scale factor (its window's display) as the contents scale, as
+// WebKit gives its AVPlayerLayer the page's (mediaPlayerContentsScale), then
+// the host's bounds, which hand the core's layer its player.
+void Place(AVPlayerLayer* layer, CALayer* host, NSWindow* window) {
   OnMain(^{
+    const CGFloat scale = window.backingScaleFactor;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    if (layer.contentsScale != scale) {
+      layer.contentsScale = scale;
+    }
     if (layer.superlayer != host) {
       [layer removeFromSuperlayer];
       [host addSublayer:layer];
@@ -198,7 +206,7 @@ std::string Variants(AVPlayerItem* item) {
 struct Player {
   AVPlayer* player = nil;
   AVPlayerItem* item = nil;
-  AVPlayerLayer* layer = nil;
+  PCHlsPlayerLayer* layer = nil;
 
   double Time() const {
     __block double t = NAN;
@@ -217,8 +225,11 @@ Player MakePlayer(NSURL* url) {
     p.item = [AVPlayerItem playerItemWithURL:url];
     p.player = [AVPlayer playerWithPlayerItem:p.item];
     p.player.automaticallyWaitsToMinimizeStalling = YES;
-    p.layer = [AVPlayerLayer playerLayerWithPlayer:p.player];
+    // The core's layer (fairplay_hls_player_layer.h): the player arrives
+    // once Place sizes it.
+    p.layer = [PCHlsPlayerLayer layer];
     [CATransaction commit];
+    [p.layer parcAttachPlayerWhenSized:p.player];
   });
   return p;
 }
@@ -254,7 +265,7 @@ void Display() {
   Check(p.layer != nil, "display: AVPlayerLayer made on a queue with no run loop");
   Check(WaitReady(p, 20), "display: item ready to play");
 
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   AVPlayer* player = p.player;
   OnMedia(^{
     player.rate = 1;
@@ -283,7 +294,7 @@ void Display() {
   Note(Format("dropped %ld, corrupted %ld", f1.dropped, f1.corrupted));
 
   // Picture in Picture: the PiP window's tree takes the layer.
-  Place(p.layer, pip.host);
+  Place(p.layer, pip.host, pip.window);
   Sleep(0.5);
   Frames f2 = ReadFrames(p.layer);
   const double t2 = p.Time();
@@ -302,7 +313,7 @@ void Display() {
         Format("videoRect %.0fx%.0f", video_rect.size.width, video_rect.size.height));
 
   // Leaving PiP: back to the page.
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   Sleep(0.5);
   Frames f4 = ReadFrames(p.layer);
   Sleep(2);
@@ -324,7 +335,7 @@ void Display() {
   Check(t7 - t6 > 2.5, "hidden: the clock keeps running with the layer in no tree",
         Format("+%.2f s", t7 - t6));
   Note(Format("frames while detached: %ld -> %ld", f6.total, f7.total));
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   Sleep(0.5);
   Frames f8 = ReadFrames(p.layer);
   Sleep(2);
@@ -334,12 +345,10 @@ void Display() {
         Format("%ld -> %ld", f8.total, f9.total));
 
   // Teardown on the media thread, as the player's destructor does it.
-  AVPlayerLayer* layer = p.layer;
+  PCHlsPlayerLayer* layer = p.layer;
   OnMedia(^{
     player.rate = 0;
-    [CATransaction begin];
-    layer.player = nil;
-    [CATransaction commit];
+    [layer parcDetachPlayer];
   });
   Detach(layer);
   Check(layer.player == nil, "teardown: layer let go of its player off the main thread");
@@ -397,11 +406,11 @@ void FrameStats() {
   Host page = MakeHost(NSMakeRect(80, 380, 640, 360), @"page");
   Player p = MakePlayer([NSURL URLWithString:@(kBipBop)]);
   Check(WaitReady(p, 20), "frame stats: item ready to play");
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
 
   auto reports = std::make_shared<Reports>();
   __block std::unique_ptr<fp::HlsFrameStats> stats;
-  AVPlayerLayer* layer = p.layer;
+  PCHlsPlayerLayer* layer = p.layer;
   AVPlayer* player = p.player;
   OnMedia(^{
     fp::PostTask post = [](std::function<void()> task) {
@@ -472,9 +481,7 @@ void FrameStats() {
 
   OnMedia(^{
     player.rate = 0;
-    [CATransaction begin];
-    layer.player = nil;
-    [CATransaction commit];
+    [layer parcDetachPlayer];
   });
   Detach(layer);
   const std::optional<fp::DecoderFrameCounts> orphan = fp::ReadDecoderFrameCounts(layer);
@@ -572,28 +579,56 @@ void RemotePiP() {
     scale = page.window.backingScaleFactor;
   });
   Check(scale == 2, "remote: the page is on a 2x display", Format("%.1fx", scale));
-  Player p = MakePlayer([NSURL URLWithString:@(kBipBop)]);
+  // FairPlayHlsPlayer::Start with the element's size from the render process
+  // (SetVideoLayerSize), as WebKit's order: the player, then its layer staged
+  // at that size in a CAContext of its own, which hands it the player, then
+  // the item, all in one turn of the media thread.
+  Player p;
+  Player* pp = &p;
+  const CGFloat element_scale = scale;
+  __block bool player_before_item = false;
+  OnMedia(^{
+    pp->player = [[AVPlayer alloc] init];
+    pp->player.automaticallyWaitsToMinimizeStalling = YES;
+    [CATransaction begin];
+    pp->layer = [PCHlsPlayerLayer layer];
+    [CATransaction commit];
+    [pp->layer parcAttachPlayerWhenSized:pp->player];
+    [pp->layer parcStageWithSize:CGSizeMake(640, 360) scale:element_scale];
+    player_before_item = pp->layer.player == pp->player;
+    pp->item = [AVPlayerItem playerItemWithURL:[NSURL URLWithString:@(kBipBop)]];
+    [pp->player replaceCurrentItemWithPlayerItem:pp->item];
+  });
+  Check(player_before_item, "remote: the staged layer has the player before the item");
   Check(WaitReady(p, 20), "remote: item ready to play");
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   AVPlayer* player = p.player;
+  __block CGFloat placed_scale = 0;
+  OnMain(^{
+    placed_scale = p.layer.contentsScale;
+  });
+  Check(p.layer.player == player && placed_scale == scale,
+        "remote: the page's tree takes it with the display's scale and its player",
+        Format("contentsScale %.1f", placed_scale));
   OnMedia(^{
     player.rate = 1;
   });
   Check(WaitFor(15, [&] { return ReadyForDisplay(p.layer); }),
         "remote: readyForDisplay in the page compositor's context");
   // AVFoundation picks variants by the layer's size on screen, which it finds
-  // inside a context with no window too, as in Safari.
-  // 720p, and still not 1080p 8 s later (a larger layer gets 1080p within
-  // a second, below).
+  // inside a context with no window too, as in Safari: 720p, and still not
+  // 1080p 8 s later (a larger layer gets 1080p within a second, below), even
+  // after the earlier sections left it a bandwidth estimate for 1080p.
   const bool reached_720 = WaitFor(15, [&] { return VideoHeight(p.item) >= 720; });
   const bool stayed_below_1080 = !WaitFor(8, [&] { return VideoHeight(p.item) >= 1080; });
+  Note("variants: " + Variants(p.item));
   Check(reached_720 && stayed_below_1080,
         "remote: the variant follows the 640x360 pt layer on a 2x display (720p, not 1080p)",
         Format("%.0fp", VideoHeight(p.item)));
 
   // Fullscreen is a resize of the page's context: 1280x720 pt.
   Resize(page, CGSizeMake(1280, 720));
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   __block CGRect video_rect;
   OnMain(^{
     video_rect = p.layer.videoRect;
@@ -612,10 +647,10 @@ void RemotePiP() {
 
   // Leaving fullscreen, then PiP: the PiP window's context takes the layer.
   Resize(page, CGSizeMake(640, 360));
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   RemoteHost pip = MakeRemoteHost(NSMakeRect(700, 20, 320, 180), @"pip (CAContext)");
   Sleep(1);
-  Place(p.layer, pip.host);
+  Place(p.layer, pip.host, pip.window);
   Sleep(0.5);
   Frames f2 = ReadFrames(p.layer);
   const double t2 = p.Time();
@@ -628,7 +663,7 @@ void RemotePiP() {
   Check(t3 - t2 > 2.0, "remote pip: the clock keeps running", Format("+%.2f s", t3 - t2));
 
   // Leaving PiP.
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   Sleep(0.5);
   Frames f4 = ReadFrames(p.layer);
   Sleep(2);
@@ -643,16 +678,14 @@ void RemotePiP() {
     [pip.window orderOut:nil];
   });
   Resize(page, CGSizeMake(1280, 720));
-  Place(p.layer, page.host);
+  Place(p.layer, page.host, page.window);
   Sleep(8);
   Note(Format("fullscreen again after PiP: %.0fp after 8 s", VideoHeight(p.item)));
 
-  AVPlayerLayer* layer = p.layer;
+  PCHlsPlayerLayer* layer = p.layer;
   OnMedia(^{
     player.rate = 0;
-    [CATransaction begin];
-    layer.player = nil;
-    [CATransaction commit];
+    [layer parcDetachPlayer];
   });
   Detach(layer);
   OnMain(^{

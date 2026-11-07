@@ -11,6 +11,7 @@ tests="$repo_root/tests/FairPlay/hls_presentation"
 core="$repo_root/Engine/ParcNative/fairplay"
 flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -fobjc-arc -I "$core" -I "$tests")
 xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_frame_stats.mm" -o "$output/fairplay_hls_frame_stats.o"
+xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_player_layer.mm" -o "$output/fairplay_hls_player_layer.o"
 xcrun clang++ "${flags[@]}" -c "$tests/harness.mm" -o "$output/harness.o"
 xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation \
   -framework CoreMedia -framework QuartzCore -o "$output/fairplay-hls-presentation-proof"

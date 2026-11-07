@@ -128,6 +128,8 @@ NativeHlsDemuxer::NativeHlsDemuxer(
     mojo::PendingReceiver<media::mojom::FairPlayHlsPlayerClient> client)
     : url_(std::move(params.url)),
       mime_type_(std::move(params.mime_type)),
+      video_layer_size_(params.video_layer_size),
+      video_layer_scale_(params.video_layer_scale),
       media_task_runner_(std::move(params.media_task_runner)),
       media_log_(media::MediaLog::CloneSafely(params.media_log)),
       encrypted_media_init_data_cb_(
@@ -197,7 +199,7 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
 
   // The answer is OnInitialized, on the client's pipe, after any OnError
   // about the item.
-  player_->Initialize(url_, mime_type_);
+  player_->Initialize(url_, mime_type_, video_layer_size_, video_layer_scale_);
 }
 
 void NativeHlsDemuxer::OnInitialized(

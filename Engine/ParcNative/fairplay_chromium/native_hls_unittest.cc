@@ -33,6 +33,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/geometry/size_f.h"
 #include "url/gurl.h"
 
 namespace parc::fairplay {
@@ -49,8 +50,13 @@ constexpr char kPlaylist[] = "https://media.example/master.m3u8";
 // answers Initialize with OnInitialized on the client pipe).
 class FakePlayer : public media::mojom::FairPlayHlsPlayer {
  public:
-  void Initialize(const GURL& url, const std::string& mime_type) override {
+  void Initialize(const GURL& url,
+                  const std::string& mime_type,
+                  const gfx::SizeF& video_layer_size,
+                  float video_layer_scale) override {
     url_ = url;
+    video_layer_size_ = video_layer_size;
+    video_layer_scale_ = video_layer_scale;
     initialized_ = true;
   }
   void SetCdm(const base::UnguessableToken& cdm_id,
@@ -84,6 +90,8 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void Resume() override {}
 
   GURL url_;
+  gfx::SizeF video_layer_size_;
+  float video_layer_scale_ = 0;
   bool initialized_ = false;
   SeekCallback seek_cb_;
   std::optional<base::TimeDelta> seek_time_;
@@ -124,6 +132,8 @@ class NativeHlsTest : public testing::Test {
     params.encrypted_media_init_data_cb = encrypted_cb_.Get();
     params.key_request_cb = key_request_cb_.Get();
     params.start_load_cb = start_load_cb_.Get();
+    params.video_layer_size = gfx::SizeF(640, 360);
+    params.video_layer_scale = 2;
     demuxer_ = std::make_unique<NativeHlsDemuxer>(
         std::move(params), std::move(player), std::move(client_receiver));
   }
@@ -146,6 +156,10 @@ class NativeHlsTest : public testing::Test {
                              &status));
     task_environment_.RunUntilIdle();
     EXPECT_TRUE(player_.initialized_);
+    // The element's size reaches the player with the load (WebKit's initial
+    // video layer size).
+    EXPECT_EQ(gfx::SizeF(640, 360), player_.video_layer_size_);
+    EXPECT_EQ(2, player_.video_layer_scale_);
     client_->OnInitialized(std::move(metadata));
     task_environment_.RunUntilIdle();
     EXPECT_TRUE(status);
