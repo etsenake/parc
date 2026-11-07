@@ -224,16 +224,18 @@ class NativeHlsDemuxer final : public media::Demuxer,
                       media::PipelineStatusCallback status_cb,
                       bool success);
   void OnPlayerDisconnected();
-  // The player's track list to the element: its text tracks as in-band text
-  // tracks (NATIVE_HLS.md Tracks).
+  // The player's track list to the element: its audio tracks and its text
+  // tracks as in-band text tracks (NATIVE_HLS.md Tracks).
   void ApplyTracks(
       const std::vector<media::mojom::FairPlayHlsTrackPtr>& tracks);
   void ForwardTextCues(
       const std::string& track_key,
       const std::vector<media::mojom::FairPlayHlsCuePtr>& cues);
-  // TextTrack.mode from the element, on to the player.
+  // TextTrack.mode and AudioTrack.enabled from the element, on to the
+  // player.
   void SetTextTrackMode(const std::string& key,
                         media::ParcInbandTextTrackMode mode);
+  void SetAudioTrackEnabled(const std::string& key, bool enabled);
   // Sends the player the CDM ID `cdm_context` names, once per ID.
   void SendCdm(media::CdmContext* cdm_context,
                NativeHlsSource::CdmAttachedCB cdm_attached_cb);

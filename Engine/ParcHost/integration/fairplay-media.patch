@@ -1317,10 +1317,11 @@
      SetDemuxer(std::move(demuxer));
      return std::move(on_demuxer_created)
          .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
-@@ -384,6 +399,30 @@
+@@ -383,6 +398,30 @@
+   }
    return false;
  }
- 
++
 +std::optional<Demuxer::ParcNativeTimeline>
 +DemuxerManager::GetParcNativeTimeline() const {
 +  if (!demuxer_) {
@@ -1344,11 +1345,10 @@
 +                     std::move(key)));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-   return loaded_url_.path().ends_with(".m3u8");
-@@ -474,6 +513,62 @@
+@@ -474,6 +513,71 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -1382,6 +1382,9 @@
 +      BindPostTaskToCurrentDefault(
 +          base::BindRepeating(&DemuxerManager::ParcAddInbandTextCues,
 +                              weak_factory_.GetWeakPtr())));
++  track_manager->SetParcInbandAudioCallback(BindPostTaskToCurrentDefault(
++      base::BindRepeating(&DemuxerManager::ParcSetInbandAudioTracks,
++                          weak_factory_.GetWeakPtr())));
 +  params.track_manager = std::move(track_manager);
 +  params.key_request_cb = base::BindPostTaskToCurrentDefault(
 +      base::BindRepeating(&DemuxerManager::OnParcWebKitKeyRequest,
@@ -1406,6 +1409,12 @@
 +    const std::vector<ParcInbandTextCue>& cues) {
 +  client_->ParcAddInbandTextCues(key, cues);
 +}
++
++void DemuxerManager::ParcSetInbandAudioTracks(
++    const std::vector<ParcInbandAudioTrack>& tracks,
++    ParcInbandAudioTrackEnabledCB set_enabled) {
++  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
++}
 +#endif  // BUILDFLAG(IS_MAC)
 +
  void DemuxerManager::AddTrack(const MediaTrack& track) {
@@ -1413,7 +1422,7 @@
  }
 --- a/media/filters/demuxer_manager.h
 +++ b/media/filters/demuxer_manager.h
-@@ -19,10 +19,15 @@
+@@ -19,9 +19,14 @@
  #include "media/base/media_log.h"
  #include "media/base/pipeline.h"
  #include "media/base/pipeline_status.h"
@@ -1421,14 +1430,13 @@
  #include "media/filters/chunk_demuxer.h"
  #include "net/storage_access_api/status.h"
  #include "url/origin.h"
- 
++
 +#if BUILDFLAG(IS_MAC)
 +#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/threading/sequence_bound.h"
- #include "media/filters/hls_data_source_provider.h"
 @@ -81,6 +86,24 @@
  
      // Allows a seek triggered by a demuxer (mainly used for live content)
@@ -1479,7 +1487,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +188,17 @@
+@@ -154,6 +188,19 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1493,11 +1501,13 @@
 +                               ParcInbandTextTrackModeCB set_mode);
 +  void ParcAddInbandTextCues(const std::string& key,
 +                             const std::vector<ParcInbandTextCue>& cues);
++  void ParcSetInbandAudioTracks(const std::vector<ParcInbandAudioTrack>& tracks,
++                                ParcInbandAudioTrackEnabledCB set_enabled);
 +#endif  // BUILDFLAG(IS_MAC)
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -209,6 +254,13 @@
+@@ -209,6 +256,13 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    bool hls_fallback_ = false;
@@ -2805,10 +2815,11 @@
  namespace blink {
  
  namespace {
-@@ -168,6 +178,47 @@
+@@ -167,6 +177,47 @@
+   sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, and Dolby Vision profile 8, which it plays
@@ -2849,10 +2860,9 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kDisableBackgroundMediaSuspend)) {
 @@ -356,7 +407,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
@@ -2892,10 +2902,12 @@
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
-@@ -1498,6 +1572,21 @@
-     return WebTimeRanges();
-   }
+@@ -1496,6 +1570,21 @@
  
+   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
+     return WebTimeRanges();
++  }
++
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -2909,11 +2921,9 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-+  }
-+
-   if (demuxer_manager_->IsLiveContent()) {
-     return WebTimeRanges();
    }
+ 
+   if (demuxer_manager_->IsLiveContent()) {
 @@ -1695,6 +1784,58 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
@@ -2973,10 +2983,12 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +1869,20 @@
+@@ -1726,6 +1867,27 @@
+ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
+                                        media::MediaTrack::State state) {
    client_->SetTrackState(track, state);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -2991,13 +3003,19 @@
 +  client_->ParcAddInbandTextCues(key, cues);
 +}
 +
- #if BUILDFLAG(ENABLE_HLS_DEMUXER)
++void WebMediaPlayerImpl::ParcSetInbandAudioTracks(
++    const std::vector<media::ParcInbandAudioTrack>& tracks,
++    media::ParcInbandAudioTrackEnabledCB set_enabled) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
+ }
  
- UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1777,6 +1932,49 @@
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+@@ -1776,6 +1938,49 @@
+           tick_clock_, main_task_runner_));
  }
  #endif
- 
++
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3040,11 +3058,10 @@
 +      std::string(key_id), std::vector<uint8_t>(key.begin(), key.end()));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-   DCHECK(cdm);
-@@ -3018,11 +3216,29 @@
+@@ -3018,11 +3223,29 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3074,7 +3091,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3254,14 @@
+@@ -3038,6 +3261,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -3089,7 +3106,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3377,14 @@
+@@ -3153,6 +3384,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -3104,7 +3121,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +4025,29 @@
+@@ -3793,6 +4032,29 @@
      return false;
    }
  
@@ -3168,7 +3185,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +466,18 @@
+@@ -455,6 +466,21 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -3184,10 +3201,13 @@
 +  void ParcAddInbandTextCues(
 +      const std::string& key,
 +      const std::vector<media::ParcInbandTextCue>& cues) override;
++  void ParcSetInbandAudioTracks(
++      const std::vector<media::ParcInbandAudioTrack>& tracks,
++      media::ParcInbandAudioTrackEnabledCB set_enabled) override;
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -885,6 +908,12 @@
+@@ -885,6 +911,12 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;

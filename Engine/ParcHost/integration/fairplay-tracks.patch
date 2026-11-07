@@ -93,7 +93,7 @@
  
  #include "base/functional/callback.h"
  #include "base/types/strong_alias.h"
-@@ -122,6 +126,91 @@
+@@ -122,6 +126,117 @@
    Language language_;
  };
  
@@ -182,10 +182,36 @@
 +    base::RepeatingCallback<void(const std::string& key,
 +                                 ParcInbandTextTrackMode mode)>;
 +
++// Parc: an audio track of Safari's native HLS route (the FairPlay core's
++// HlsTrack), with the values WebKit gives the DOM.
++struct MEDIA_EXPORT ParcInbandAudioTrack {
++  ParcInbandAudioTrack();
++  ParcInbandAudioTrack(const ParcInbandAudioTrack&);
++  ParcInbandAudioTrack(ParcInbandAudioTrack&&);
++  ParcInbandAudioTrack& operator=(const ParcInbandAudioTrack&);
++  ParcInbandAudioTrack& operator=(ParcInbandAudioTrack&&);
++  ~ParcInbandAudioTrack();
++
++  // Unique for the player; names the track in enable calls.
++  std::string key;
++  // AudioTrack's id (can repeat, as in Safari), kind ("main", "alternative",
++  // "description" or ""), label, language and enabled state.
++  std::string id;
++  std::string kind;
++  std::string label;
++  std::string language;
++  bool enabled = false;
++};
++
++// Parc: tells the native HLS player a page set AudioTrack.enabled; as
++// ParcInbandTextTrackModeCB.
++using ParcInbandAudioTrackEnabledCB =
++    base::RepeatingCallback<void(const std::string& key, bool enabled)>;
++
  // Interface for requiring track manager methods on different implementations
  // that either forward them or handle them directly, like WebMediaPlayerImpl
  // and HTMLMediaElement.
-@@ -131,6 +220,17 @@
+@@ -131,6 +246,23 @@
    virtual void AddTrack(const MediaTrack&) = 0;
    virtual void RemoveTrack(const MediaTrack&) = 0;
    virtual void SetTrackState(const MediaTrack&, MediaTrack::State) = 0;
@@ -200,10 +226,16 @@
 +  virtual void ParcAddInbandTextCues(
 +      const std::string& key,
 +      const std::vector<ParcInbandTextCue>& cues) {}
++  // Parc: the whole list of the native HLS route's audio tracks, in DOM
++  // order, replacing the previous one (matched by key), with the way back to
++  // the player for the page's enable changes.
++  virtual void ParcSetInbandAudioTracks(
++      const std::vector<ParcInbandAudioTrack>& tracks,
++      ParcInbandAudioTrackEnabledCB set_enabled) {}
  };
  
  class MEDIA_EXPORT ForwardingTrackManager : public TrackManager {
-@@ -146,10 +246,29 @@
+@@ -146,10 +278,38 @@
    void RemoveTrack(const MediaTrack&) override;
    void SetTrackState(const MediaTrack&, MediaTrack::State) override;
  
@@ -219,6 +251,12 @@
 +  void ParcAddInbandTextCues(
 +      const std::string& key,
 +      const std::vector<ParcInbandTextCue>& cues) override;
++  void SetParcInbandAudioCallback(
++      base::RepeatingCallback<void(const std::vector<ParcInbandAudioTrack>&,
++                                   ParcInbandAudioTrackEnabledCB)> set_tracks);
++  void ParcSetInbandAudioTracks(
++      const std::vector<ParcInbandAudioTrack>& tracks,
++      ParcInbandAudioTrackEnabledCB set_enabled) override;
 +
   private:
    base::RepeatingCallback<void(const MediaTrack&)> add_;
@@ -230,12 +268,15 @@
 +  base::RepeatingCallback<void(const std::string&,
 +                               const std::vector<ParcInbandTextCue>&)>
 +      parc_add_cues_;
++  base::RepeatingCallback<void(const std::vector<ParcInbandAudioTrack>&,
++                               ParcInbandAudioTrackEnabledCB)>
++      parc_set_audio_tracks_;
  };
  
  // Helper for logging.
 --- a/media/base/media_track.cc
 +++ b/media/base/media_track.cc
-@@ -144,4 +144,47 @@
+@@ -144,4 +144,71 @@
    update_.Run(track, state);
  }
  
@@ -279,6 +320,30 @@
 +    const std::vector<ParcInbandTextCue>& cues) {
 +  if (parc_add_cues_) {
 +    parc_add_cues_.Run(key, cues);
++  }
++}
++
++ParcInbandAudioTrack::ParcInbandAudioTrack() = default;
++ParcInbandAudioTrack::ParcInbandAudioTrack(const ParcInbandAudioTrack&) =
++    default;
++ParcInbandAudioTrack::ParcInbandAudioTrack(ParcInbandAudioTrack&&) = default;
++ParcInbandAudioTrack& ParcInbandAudioTrack::operator=(
++    const ParcInbandAudioTrack&) = default;
++ParcInbandAudioTrack& ParcInbandAudioTrack::operator=(ParcInbandAudioTrack&&) =
++    default;
++ParcInbandAudioTrack::~ParcInbandAudioTrack() = default;
++
++void ForwardingTrackManager::SetParcInbandAudioCallback(
++    base::RepeatingCallback<void(const std::vector<ParcInbandAudioTrack>&,
++                                 ParcInbandAudioTrackEnabledCB)> set_tracks) {
++  parc_set_audio_tracks_ = std::move(set_tracks);
++}
++
++void ForwardingTrackManager::ParcSetInbandAudioTracks(
++    const std::vector<ParcInbandAudioTrack>& tracks,
++    ParcInbandAudioTrackEnabledCB set_enabled) {
++  if (parc_set_audio_tracks_) {
++    parc_set_audio_tracks_.Run(tracks, std::move(set_enabled));
 +  }
 +}
 +
@@ -430,3 +495,65 @@
    "media/html_video_element.cc",
    "media/html_video_element.h",
    "media/lazy_load_media_observer.cc",
+--- a/third_party/blink/renderer/core/html/track/audio_track.cc
++++ b/third_party/blink/renderer/core/html/track/audio_track.cc
+@@ -13,11 +13,15 @@
+                        const AtomicString& label,
+                        const AtomicString& language,
+                        bool enabled,
+-                       bool exclusive)
++                       bool exclusive,
++                       bool webkit_kinds)
+     : TrackBase(WebMediaPlayer::kAudioTrack, label, language, id),
+       enabled_(enabled),
+       exclusive_(exclusive),
+-      kind_(IsValidKindKeyword(kind) ? kind : g_empty_atom) {}
++      kind_(IsValidKindKeyword(kind) ||
++                    (webkit_kinds && kind == "description")
++                ? kind
++                : g_empty_atom) {}
+ 
+ AudioTrack::~AudioTrack() = default;
+ 
+--- a/third_party/blink/renderer/core/html/track/track_list_base.h
++++ b/third_party/blink/renderer/core/html/track/track_list_base.h
+@@ -67,6 +67,20 @@
+     NOTREACHED();
+   }
+ 
++  // Parc: removes `track` itself, for lists whose ids can repeat.
++  void RemoveTrack(T* track) {
++    for (unsigned i = 0; i < tracks_.size(); ++i) {
++      if (tracks_[i] != track) {
++        continue;
++      }
++      tracks_[i]->SetMediaElement(nullptr);
++      ScheduleEvent(
++          TrackEvent::Create(event_type_names::kRemovetrack, tracks_[i].Get()));
++      tracks_.EraseAt(i);
++      return;
++    }
++  }
++
+   void RemoveAll() {
+     for (const auto& track : tracks_)
+       track->SetMediaElement(nullptr);
+--- a/third_party/blink/renderer/core/html/track/audio_track.h
++++ b/third_party/blink/renderer/core/html/track/audio_track.h
+@@ -16,12 +16,15 @@
+   DEFINE_WRAPPERTYPEINFO();
+ 
+  public:
++  // Parc: `webkit_kinds` also takes WebKit's "description" keyword, for
++  // Safari's native HLS route's tracks (Safari-identity documents).
+   AudioTrack(const String& id,
+              const AtomicString& kind,
+              const AtomicString& label,
+              const AtomicString& language,
+              bool enabled,
+-             bool exclusive);
++             bool exclusive,
++             bool webkit_kinds = false);
+   ~AudioTrack() override;
+   void Trace(Visitor*) const override;
+ 

@@ -623,23 +623,26 @@ pick.
 Page side, Safari-identity documents only (the route exists only there).
 The demuxer gets `ParcNativeHlsDemuxerParams.track_manager`, a
 `media::TrackManager` callable on the media thread that posts to the element:
-`AddTrack`/`RemoveTrack`/`SetTrackState` for audio, and
+`ParcSetInbandAudioTracks(tracks, set_enabled)` for audio, and
 `ParcSetInbandTextTracks(tracks, set_mode)` / `ParcAddInbandTextCues(key,
-cues)` (`media/base/media_track.h`, through `DemuxerManager` and
-`WebMediaPlayerImpl` to `HTMLMediaElement`) for text. `set_mode` is a
+cues)` for text (`media/base/media_track.h`, through `DemuxerManager` and
+`WebMediaPlayerImpl` to `HTMLMediaElement`); the demuxer sends both lists at
+`Initialize` and on every `OnTracksChanged`, holding lists and cues that
+overtake the `Initialize` reply until it arrives. `set_mode` is a
 `ParcInbandTextTrackModeCB` the demuxer binds to itself on the media thread
 (`BindPostTask` with its weak pointer) that sends `SetTextTrackMode`; the
 element calls it from the main thread on every in-band mode change.
 
 
-- Audio: each audio `FairPlayHlsTrack` becomes a `media::MediaTrack` through
-  the demuxer's `TrackManager` (added in list order, removed when gone,
-  `SetTrackState` for `enabled`), with WebKit's kind (`description` kept as
-  WebKit spells it), label and language. The `MediaTrack` id is the `key`,
-  so the pipeline's enabled-track ids stay unique; the page is shown WebKit's
-  `id`, which can repeat. The demuxer's `OnEnabledAudioTracksChanged` diffs
-  the enabled keys against the last list and sends
-  `SetAudioTrackEnabled(key, …)` per changed track.
+- Audio: the element makes one Blink `AudioTrack` per audio
+  `FairPlayHlsTrack` (added in list order, removed when gone, `enabled`
+  followed), with WebKit's id (which can repeat; the element keys its tracks
+  by `key`), kind (`description` as WebKit spells it), label and language.
+  As in WebKit the tracks aren't exclusive: a page's `enabled` change goes
+  to the player for that track alone (`set_enabled`, bound like `set_mode`,
+  sends `SetAudioTrackEnabled`), not through the pipeline, and the other
+  tracks follow when the player reports its selection. No placeholder audio
+  track is made for this route.
 - Text: M156 Blink defines `TextTrack::kInBand` but nothing creates such
   tracks, so `fp-hls-tracks` adds the minimal path: the player client makes
   Blink `TextTrack`s of type `kInBand` in the element's list (WebKit's kind

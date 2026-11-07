@@ -1492,7 +1492,23 @@
  
    bool was_muted = this->muted();
  
-@@ -3566,6 +3693,7 @@
+@@ -3562,10 +3689,23 @@
+ 
+ void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
+                                          TrackBase::ChangeSource source) {
++  if (const String* key = ParcInbandAudioTrackKey(track)) {
++    // Parc: a native HLS track (Safari's identity). As WebKit's AudioTrack,
++    // a page's change goes to the player for this track alone; the other
++    // tracks change when the player reports its selection.
++    audioTracks().ScheduleChangeEvent();
++    if (source != TrackBase::ChangeSource::kDemuxer &&
++        parc_set_inband_audio_track_enabled_) {
++      parc_set_inband_audio_track_enabled_.Run(key->Utf8(), track->enabled());
++    }
++    return;
++  }
++
+   DVLOG(3) << "audioTrackChanged(" << *this
             << ") trackId= " << String(track->id())
             << " enabled=" << base::ToString(track->enabled())
             << " exclusive=" << base::ToString(track->IsExclusive());
@@ -1500,7 +1516,7 @@
  
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3679,9 +3807,87 @@
+@@ -3679,9 +3819,155 @@
    }
  }
  
@@ -1542,6 +1558,71 @@
 +  }
 +}
 +
++void HTMLMediaElement::ParcSetInbandAudioTracks(
++    const std::vector<media::ParcInbandAudioTrack>& tracks,
++    media::ParcInbandAudioTrackEnabledCB set_enabled) {
++  // Only Safari's native HLS route reports these, under Safari's identity.
++  if (!PresentsParcSafariIdentity()) {
++    return;
++  }
++  parc_set_inband_audio_track_enabled_ = std::move(set_enabled);
++  if (!parc_reports_inband_audio_tracks_) {
++    // A placeholder made before the player's first list goes.
++    parc_reports_inband_audio_tracks_ = true;
++    HeapVector<Member<AudioTrack>> others;
++    for (unsigned i = 0; i < audioTracks().length(); ++i) {
++      AudioTrack* track = audioTracks().AnonymousIndexedGetter(i);
++      if (!ParcInbandAudioTrackKey(track)) {
++        others.push_back(track);
++      }
++    }
++    for (const auto& track : others) {
++      audioTracks().RemoveTrack(track.Get());
++    }
++  }
++  Vector<String> gone;
++  for (const auto& entry : parc_inband_audio_tracks_) {
++    bool listed = false;
++    for (const media::ParcInbandAudioTrack& info : tracks) {
++      listed = listed || String::FromUtf8(info.key) == entry.key;
++    }
++    if (!listed) {
++      gone.push_back(entry.key);
++    }
++  }
++  for (const String& key : gone) {
++    audioTracks().RemoveTrack(parc_inband_audio_tracks_.Take(key).Get());
++  }
++  for (const media::ParcInbandAudioTrack& info : tracks) {
++    const String key = String::FromUtf8(info.key);
++    auto it = parc_inband_audio_tracks_.find(key);
++    if (it != parc_inband_audio_tracks_.end()) {
++      // WebKit's AudioTrack follows its private track's enabled state.
++      it->value->setEnabled(info.enabled, TrackBase::ChangeSource::kDemuxer);
++      continue;
++    }
++    // Not exclusive: as in WebKit, enabling one leaves the others enabled
++    // until the player reports its selection.
++    auto* track = MakeGarbageCollected<AudioTrack>(
++        String::FromUtf8(info.id), AtomicString(String::FromUtf8(info.kind)),
++        AtomicString(String::FromUtf8(info.label)),
++        AtomicString(String::FromUtf8(info.language)), info.enabled,
++        /*exclusive=*/false, /*webkit_kinds=*/true);
++    parc_inband_audio_tracks_.Set(key, track);
++    audioTracks().Add(track);
++  }
++}
++
++const String* HTMLMediaElement::ParcInbandAudioTrackKey(
++    AudioTrack* track) const {
++  for (const auto& entry : parc_inband_audio_tracks_) {
++    if (entry.value == track) {
++      return &entry.key;
++    }
++  }
++  return nullptr;
++}
++
 +void HTMLMediaElement::ParcAddInbandTextCues(
 +    const std::string& key,
 +    const std::vector<media::ParcInbandTextCue>& cues) {
@@ -1577,6 +1658,9 @@
  void HTMLMediaElement::ForgetResourceSpecificTracks() {
    audio_tracks_->RemoveAll();
    video_tracks_->RemoveAll();
++  parc_inband_audio_tracks_.clear();
++  parc_set_inband_audio_track_enabled_.Reset();
++  parc_reports_inband_audio_tracks_ = false;
 +  // Parc: and the native HLS route's in-band text tracks, as WebKit's
 +  // forgetResourceSpecificTracks.
 +  if (text_tracks_) {
@@ -1588,7 +1672,7 @@
  
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +3896,16 @@
+@@ -3690,6 +3976,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -1605,7 +1689,7 @@
    // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
  
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4114,8 @@
+@@ -3898,7 +4194,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -1615,9 +1699,35 @@
          goto checkAgain;
      }
  
+@@ -4845,6 +5142,7 @@
+   visitor->Trace(deferred_load_timer_);
+   visitor->Trace(media_source_tracer_);
+   visitor->Trace(audio_tracks_);
++  visitor->Trace(parc_inband_audio_tracks_);
+   visitor->Trace(video_tracks_);
+   visitor->Trace(cue_timeline_);
+   visitor->Trace(text_tracks_);
+@@ -4873,7 +5171,8 @@
+ void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
+   // Create a placeholder audio track if the player says it has audio but it
+   // didn't explicitly announce the tracks.
+-  if (HasAudio() && !audioTracks().length()) {
++  if (HasAudio() && !audioTracks().length() &&
++      !parc_reports_inband_audio_tracks_) {
+     AddTrack(media::MediaTrack::CreateAudioTrack(
+         "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
+   }
 --- a/third_party/blink/renderer/core/html/media/html_media_element.h
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.h
-@@ -98,8 +98,10 @@
+@@ -52,6 +52,7 @@
+ #include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
+ #include "third_party/blink/renderer/platform/audio/audio_source_provider.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
++#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+ #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
+ #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
+ #include "third_party/blink/renderer/platform/media/media_player_client.h"
+@@ -98,8 +99,10 @@
  class MediaSourceHandle;
  class MediaSourceTracer;
  class MediaStreamDescriptor;
@@ -1628,7 +1738,7 @@
  class ScriptState;
  class TextTrack;
  class TextTrackContainer;
-@@ -235,6 +237,12 @@
+@@ -235,6 +238,12 @@
    WebTimeRanges BufferedInternal() const;
    TimeRanges* buffered() const;
    void load();
@@ -1641,7 +1751,7 @@
    V8CanPlayTypeResult canPlayType(const String& mime_type) const;
  
    // ready state
-@@ -252,6 +260,11 @@
+@@ -252,6 +261,11 @@
    // playback state
    double currentTime() const;
    void setCurrentTime(double);
@@ -1653,7 +1763,7 @@
    double duration() const;
    bool paused() const;
    void SetPaused(bool);
-@@ -618,6 +631,15 @@
+@@ -618,6 +632,20 @@
    void AddTrack(const media::MediaTrack&) final;
    void RemoveTrack(const media::MediaTrack&) final;
    void SetTrackState(const media::MediaTrack&, media::MediaTrack::State) final;
@@ -1666,10 +1776,15 @@
 +      const std::vector<media::ParcInbandTextCue>& cues) final;
 +  ParcInbandTextTrack* FindParcInbandTextTrack(const std::string& key);
 +  void RemoveParcInbandTextTrack(ParcInbandTextTrack* track);
++  void ParcSetInbandAudioTracks(
++      const std::vector<media::ParcInbandAudioTrack>& tracks,
++      media::ParcInbandAudioTrackEnabledCB set_enabled) final;
++  // The key of a native HLS audio track, or null for any other track.
++  const String* ParcInbandAudioTrackKey(AudioTrack* track) const;
  
    void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
    void RemotePlaybackCompatibilityChanged(const KURL&,
-@@ -634,6 +656,7 @@
+@@ -634,6 +662,7 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
@@ -1677,7 +1792,7 @@
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -968,6 +991,9 @@
+@@ -968,6 +997,9 @@
    bool is_remote_rendering_ = false;
    // Whether the media content is encrypted.
    bool is_encrypted_media_ = false;
@@ -1687,6 +1802,19 @@
  
    // Whether the frame containing the media element is hidden. This is nullopt
    // if the visibility state of the frame is not yet known - e.g. during frame
+@@ -985,6 +1017,12 @@
+   std::optional<media::VideoCodec> video_codec_;
+ 
+   Member<AudioTrackList> audio_tracks_;
++  // Parc: Safari's native HLS route's audio tracks by key, the way back to
++  // its player, and whether it reports this resource's audio tracks (no
++  // placeholder track then: WebKit has none).
++  HeapHashMap<String, Member<AudioTrack>> parc_inband_audio_tracks_;
++  media::ParcInbandAudioTrackEnabledCB parc_set_inband_audio_track_enabled_;
++  bool parc_reports_inband_audio_tracks_ = false;
+   Member<VideoTrackList> video_tracks_;
+   Member<TextTrackList> text_tracks_;
+   HeapVector<Member<TextTrack>> text_tracks_when_resource_selection_began_;
 --- a/third_party/blink/renderer/platform/media/media_player_client.h
 +++ b/third_party/blink/renderer/platform/media/media_player_client.h
 @@ -143,6 +143,11 @@

@@ -570,8 +570,20 @@ void NativeHlsDemuxer::ApplyTracks(
   if (!track_manager_ || stopped_) {
     return;
   }
+  std::vector<media::ParcInbandAudioTrack> audio_tracks;
   std::vector<media::ParcInbandTextTrack> text_tracks;
   for (const auto& track : tracks) {
+    if (track->type == media::mojom::FairPlayHlsTrackType::kAudio) {
+      media::ParcInbandAudioTrack audio;
+      audio.key = track->key;
+      audio.id = track->id;
+      audio.kind = track->kind;
+      audio.label = track->label;
+      audio.language = track->language;
+      audio.enabled = track->enabled;
+      audio_tracks.push_back(std::move(audio));
+      continue;
+    }
     if (track->type != media::mojom::FairPlayHlsTrackType::kText) {
       continue;
     }
@@ -591,6 +603,12 @@ void NativeHlsDemuxer::ApplyTracks(
     text.is_easy_to_read = track->is_easy_to_read;
     text_tracks.push_back(std::move(text));
   }
+  track_manager_->ParcSetInbandAudioTracks(
+      audio_tracks,
+      base::BindPostTask(
+          media_task_runner_,
+          base::BindRepeating(&NativeHlsDemuxer::SetAudioTrackEnabled,
+                              weak_factory_.GetWeakPtr())));
   track_manager_->ParcSetInbandTextTracks(
       text_tracks,
       base::BindPostTask(
@@ -645,6 +663,15 @@ void NativeHlsDemuxer::ForwardTextCues(
     result.push_back(std::move(out));
   }
   track_manager_->ParcAddInbandTextCues(track_key, result);
+}
+
+void NativeHlsDemuxer::SetAudioTrackEnabled(const std::string& key,
+                                            bool enabled) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!player_.is_bound() || stopped_) {
+    return;
+  }
+  player_->SetAudioTrackEnabled(key, enabled);
 }
 
 void NativeHlsDemuxer::SetTextTrackMode(const std::string& key,
