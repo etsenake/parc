@@ -4656,7 +4656,19 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2136,19 +2726,27 @@
+@@ -2108,7 +2698,10 @@
+     return;
+ 
+   ended_ = true;
+-  if (!paused_) {
++  // Parc: WebKit's player reports reaching the end while paused too (after a
++  // seek there), and the element fires ended then
++  // (HTMLMediaElement::handlePlaybackPositionChanged).
++  if (!paused_ || client_->PresentsParcSafariIdentity()) {
+     client_->TimeChanged();
+   }
+ 
+@@ -2136,19 +2729,27 @@
    MaybeSetContainerNameForMetrics();
  
    pipeline_metadata_ = metadata;
@@ -4691,7 +4703,7 @@
  
      if (overlay_enabled_) {
        // SurfaceView doesn't support rotated video, so transition back if
-@@ -2197,6 +2795,10 @@
+@@ -2197,6 +2798,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -4702,7 +4714,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2238,6 +2840,16 @@
+@@ -2238,6 +2843,16 @@
  void WebMediaPlayerImpl::OnBufferingStateChange(
      media::BufferingState state,
      media::BufferingStateChangeReason reason) {
@@ -4719,7 +4731,7 @@
    OnBufferingStateChangeInternal(state, reason, false);
  }
  
-@@ -2362,9 +2974,23 @@
+@@ -2362,9 +2977,23 @@
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
  
@@ -4743,7 +4755,7 @@
      // The SetReadyState() call below may clear
      // `skip_metrics_due_to_startup_suspend_` so report this first.
      if (!have_reported_time_to_play_ready_ &&
-@@ -2379,8 +3005,11 @@
+@@ -2379,8 +3008,11 @@
      }
  
      // Warning: This call may be re-entrant.
@@ -4757,7 +4769,7 @@
  
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
-@@ -2397,7 +3026,9 @@
+@@ -2397,7 +3029,9 @@
      }
  
      // Blink expects a timeChanged() in response to a seek().
@@ -4768,7 +4780,7 @@
        should_notify_time_changed_ = false;
        client_->TimeChanged();
      }
-@@ -2434,8 +3065,11 @@
+@@ -2434,8 +3068,11 @@
  
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
@@ -4782,7 +4794,7 @@
    }
  
    UpdatePlayState();
-@@ -2462,6 +3096,23 @@
+@@ -2462,6 +3099,23 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -4806,7 +4818,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,12 +3669,45 @@
+@@ -3018,12 +3672,45 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -4852,7 +4864,7 @@
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
      client_->DidUseAudioServiceChange(new_uses_audio_service);
-@@ -3038,6 +3722,14 @@
+@@ -3038,6 +3725,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -4867,7 +4879,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3845,27 @@
+@@ -3153,6 +3848,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -4895,7 +4907,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +3883,11 @@
+@@ -3170,6 +3886,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -4907,7 +4919,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3332,6 +4050,17 @@
+@@ -3332,6 +4053,17 @@
    // kReadyStateHaveMetadata.
    bool can_stay_suspended = (is_stale || have_future_data) && is_suspended &&
                              paused_ && !seeking_ && !needs_first_frame_;
@@ -4925,7 +4937,7 @@
  
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
-@@ -3530,6 +4259,12 @@
+@@ -3530,6 +4262,12 @@
      return;
    }
  
@@ -4938,7 +4950,7 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3769,6 +4504,13 @@
+@@ -3769,6 +4507,13 @@
    // This takes precedent over every restriction except PiP.
    if (!is_background_video_playback_enabled_)
      return true;
@@ -4952,7 +4964,7 @@
  
    if (is_flinging_)
      return false;
-@@ -3793,6 +4535,29 @@
+@@ -3793,6 +4538,29 @@
      return false;
    }
  
@@ -5170,7 +5182,16 @@
  };
  
  class MockWebMediaPlayerEncryptedMediaClient
-@@ -571,7 +572,35 @@
+@@ -524,6 +525,8 @@
+   void SetPaused(bool is_paused) { wmpi_->paused_ = is_paused; }
+   void SetSeeking(bool is_seeking) { wmpi_->seeking_ = is_seeking; }
+   void SetEnded(bool is_ended) { wmpi_->ended_ = is_ended; }
++  bool IsPaused() const { return wmpi_->paused_; }
++  void OnEnded() { wmpi_->OnEnded(); }
+   void SetTickClock(const base::TickClock* clock) {
+     wmpi_->SetTickClockForTest(clock);
+   }
+@@ -571,7 +574,35 @@
  
    void OnVideoConfigChange(const media::VideoDecoderConfig& config) {
      wmpi_->OnVideoConfigChange(config);
@@ -5206,7 +5227,40 @@
  
    WebMediaPlayerImpl::PlayState ComputePlayState() {
      return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
-@@ -2771,9 +2800,46 @@
+@@ -1807,6 +1838,32 @@
+                            1.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
+                            /*end_of_media=*/false));
+   wmpi_->OnTimeUpdate();
++}
++
++// On a Safari-identity page the end reaches the element while paused too, as
++// WebKit's player reports it (HTMLMediaElement::handlePlaybackPositionChanged).
++TEST_F(WebMediaPlayerImplTest, SafariIdentity_EndedWhilePausedTellsClient) {
++  InitializeWebMediaPlayerImpl();
++  LoadAndWaitForReadyState(kAudioOnlyTestFile,
++                           WebMediaPlayer::kReadyStateHaveFutureData);
++  ASSERT_TRUE(IsPaused());
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(true));
++  EXPECT_CALL(client_, TimeChanged());
++  OnEnded();
++  EXPECT_TRUE(wmpi_->IsEnded());
++}
++
++TEST_F(WebMediaPlayerImplTest, EndedWhilePausedDoesNotTellClient) {
++  InitializeWebMediaPlayerImpl();
++  LoadAndWaitForReadyState(kAudioOnlyTestFile,
++                           WebMediaPlayer::kReadyStateHaveFutureData);
++  ASSERT_TRUE(IsPaused());
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(false));
++  EXPECT_CALL(client_, TimeChanged()).Times(0);
++  OnEnded();
++  EXPECT_TRUE(wmpi_->IsEnded());
+ }
+ 
+ TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
+@@ -2771,9 +2828,46 @@
    OnVideoConfigChange(new_color_config);
    ASSERT_EQ(last_reporter, GetVideoStatsReporter());
    ASSERT_EQ(media::VP8PROFILE_MIN, GetVideoStatsReporterCodecProfile());
@@ -5253,7 +5307,7 @@
  
  TEST_F(WebMediaPlayerImplTest, NaturalSizeChange) {
    InitializeWebMediaPlayerImpl();
-@@ -3024,6 +3090,66 @@
+@@ -3024,6 +3118,66 @@
    EXPECT_FALSE(IsPausedBecauseFrameHidden());
  }
  
@@ -5320,7 +5374,7 @@
  // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
  // visibility changes should not affect the playback state.
  TEST_F(WebMediaPlayerImplTest, DisabledFlagShouldPauseWhenFrameIsHidden) {
-@@ -3090,6 +3216,20 @@
+@@ -3090,6 +3244,20 @@
    ASSERT_TRUE(IsSuspended());
  }
  
@@ -5341,7 +5395,7 @@
  TEST_F(WebMediaPlayerImplTest, BackgroundIdlePauseTimerDependsOnAudio) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
-@@ -3113,6 +3253,26 @@
+@@ -3113,6 +3281,26 @@
        PausePlayback(WebMediaPlayer::PauseReason::kSuspendedPlayerIdleTimeout));
    FireIdlePauseTimer();
    base::RunLoop().RunUntilIdle();
@@ -5368,7 +5422,7 @@
  }
  
  // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
-@@ -3815,6 +3975,55 @@
+@@ -3815,6 +4003,55 @@
    }
  }
  
