@@ -3132,6 +3132,113 @@ std::vector<Step> HeldTailScenario() {
   return steps;
 }
 
+// setMediaKeys(null) during playback, then the same MediaKeys again, as
+// WebKit's renderer takes them (AudioVideoRendererAVFObjC::setCDMInstance):
+// what AVFoundation already has plays out with its keys, protected samples
+// from then on, including ones a flush makes the renderer deliver again, wait
+// for a key, and the same CDM lets them through.
+std::vector<Step> DetachCdmScenario() {
+  World* w = g_world;
+  struct Detached {
+    uint64_t protected_enqueued = 0;
+    uint64_t redelivered = 0;
+    uint64_t audio_automatic_flushes = 0;
+    int waiting_results = 0;
+    int64_t frames_passed = 0;
+  };
+  auto at_detach = std::make_shared<Detached>();
+  auto frames = std::make_shared<int64_t>(0);
+  auto detach = [w, at_detach](int64_t frames_passed) {
+    w->player->renderer().DetachCdm();
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    at_detach->protected_enqueued = s.protected_enqueued;
+    at_detach->redelivered = s.redelivered;
+    at_detach->audio_automatic_flushes = s.audio_automatic_flushes;
+    at_detach->waiting_results = w->player->waiting_results;
+    at_detach->frames_passed = frames_passed;
+  };
+  std::vector<Step> steps;
+  steps.push_back(Section("setMediaKeys(null) during playback, then the same MediaKeys again"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("detach", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, &w->video, &w->audio, 0, 1, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "detach: play 2s with keys")(done); });
+  steps.push_back([=](Done done) { Metrics(w->player, "detach: before the detach", 1, frames)(done); });
+
+  // Paused, so the audio queued ahead of the clock stays ahead: naming the
+  // device in use flushes the audio renderer on this Mac
+  // (AudioDeviceSwitchScenario), and its re-delivery must wait for the keys.
+  steps.push_back([=](Done done) {
+    w->player->renderer().SetPlaybackRate(0);
+    detach(0);
+    fp::Result result = w->player->renderer().SetAudioOutputDevice(DefaultOutputDeviceUid());
+    Check(result.ok(), "detach: SetAudioOutputDevice(the device in use)", result.message);
+    After(1, done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.audio_automatic_flushes > at_detach->audio_automatic_flushes && s.redelivered == at_detach->redelivered &&
+              s.protected_enqueued == at_detach->protected_enqueued,
+          "detach: the protected audio a flush dropped waits for a key instead of being delivered again",
+          Format("automatic flushes %llu -> %llu, re-delivered %llu -> %llu, protected enqueued %llu -> %llu",
+                 at_detach->audio_automatic_flushes, s.audio_automatic_flushes, at_detach->redelivered,
+                 s.redelivered, at_detach->protected_enqueued, s.protected_enqueued));
+    fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+    Check(result.ok(), "detach: SetCdm with the same CDM after DetachCdm is accepted", result.message);
+    WaitUntil(5, [=] { return w->player->renderer().GetStatus().redelivered > at_detach->redelivered; },
+              [=](bool ok) {
+                Check(ok, "detach: the same CDM again delivers the audio the flush dropped");
+                w->player->renderer().SetPlaybackRate(1);
+                done();
+              });
+  });
+  steps.push_back([=](Done done) { Run(w->player, 1, 1, "detach: play 1s after the flushed audio returns")(done); });
+
+  // Playing: what AVFoundation has plays out; what comes next waits.
+  steps.push_back([=](Done done) {
+    w->player->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      detach(m.frames_passed);
+      w->player->AppendFeeds(Segments(w->video, 1, 3), Segments(w->audio, 1, 3));
+      After(2, done);
+    });
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.protected_enqueued == at_detach->protected_enqueued &&
+              w->player->waiting_results > at_detach->waiting_results,
+          "detach: no protected sample enqueued after DetachCdm; the new ones wait for a key",
+          Format("protected enqueued %llu -> %llu, held results %d -> %d", at_detach->protected_enqueued,
+                 s.protected_enqueued, at_detach->waiting_results, w->player->waiting_results));
+    CheckHealthy(*w->player, "detach: samples enqueued before DetachCdm still decrypt");
+    w->player->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      Check(m.frames_passed > at_detach->frames_passed && m.corrupted_frames == 0,
+            "detach: the video enqueued before DetachCdm plays out",
+            Format("frames passed %lld -> %lld, corrupted %lld", at_detach->frames_passed, m.frames_passed,
+                   m.corrupted_frames));
+      done();
+    });
+  });
+  steps.push_back([=](Done done) {
+    fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+    Check(result.ok(), "detach: SetCdm with the same CDM after DetachCdm is accepted", result.message);
+    WaitUntil(5,
+              [=] { return w->player->renderer().GetStatus().protected_enqueued > at_detach->protected_enqueued; },
+              [=](bool ok) {
+                Check(ok, "detach: the same CDM again lets the held protected samples through");
+                done();
+              });
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "detach: play 3s after the same keys return")(done); });
+  steps.push_back([=](Done done) { Metrics(w->player, "detach: after the keys return", 30, frames)(done); });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> InitDataScenario(fp::InitDataType type, std::vector<uint8_t> init_data) {
   World* w = g_world;
   std::string label = std::string("init data ") + fp::InitDataTypeName(type);
@@ -4588,6 +4695,7 @@ void RunAll() {
   add("WaitingForKeyScenario()", WaitingForKeyScenario());
   add("EndBeforeKeyScenario()", EndBeforeKeyScenario());
   add("HeldTailScenario()", HeldTailScenario());
+  add("DetachCdmScenario()", DetachCdmScenario());
 
   std::string sinf_json = Format("{\"sinf\":[\"%s\"]}",
                                  [Data(w->video.info.sinf_payload) base64EncodedStringWithOptions:0].UTF8String);

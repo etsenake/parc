@@ -256,6 +256,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void SendCdm(media::CdmContext* cdm_context,
                NativeHlsSource::CdmAttachedCB cdm_attached_cb);
   void OnCdmSet(const base::UnguessableToken& cdm_id,
+                int cdm_detaches,
                 NativeHlsSource::CdmAttachedCB cdm_attached_cb,
                 bool success);
   // A fatal error: to the renderer facade when one listens, otherwise to the
@@ -318,8 +319,11 @@ class NativeHlsDemuxer final : public media::Demuxer,
   // player was bound.
   std::optional<base::UnguessableToken> cdm_id_;
   raw_ptr<media::CdmContext> pending_cdm_context_ = nullptr;
-  // The player took a CDM (it keeps one until another replaces it).
+  // The player took a CDM (it keeps one until another replaces it or a null
+  // CDM detaches it).
   bool cdm_attached_ = false;
+  // Null CDMs set, so an attach reply knows whether one followed it.
+  int cdm_detaches_ = 0;
 
   // GetMediaTime() may be called from any thread.
   mutable base::Lock time_lock_;

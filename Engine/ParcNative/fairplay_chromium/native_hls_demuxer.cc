@@ -508,8 +508,19 @@ void NativeHlsDemuxer::SetCdm(media::CdmContext* cdm_context,
 void NativeHlsDemuxer::SendCdm(media::CdmContext* cdm_context,
                                NativeHlsSource::CdmAttachedCB cdm_attached_cb) {
   DCHECK(player_.is_bound());
-  const std::optional<base::UnguessableToken> cdm_id =
-      cdm_context ? cdm_context->GetCdmId() : std::nullopt;
+  if (!cdm_context) {
+    // setMediaKeys(null) (PipelineImpl's SetCdm(nullptr)): the player's key
+    // loader lets the CDM go, as WebKit's cdmInstanceDetached, so key
+    // requests wait again, and the next CDM, the same one included, is sent
+    // again. It goes to the player even when no CDM was sent or the last one
+    // failed: a refused replacement leaves the player the one before.
+    cdm_attached_ = false;
+    ++cdm_detaches_;
+    cdm_id_.reset();
+    player_->SetCdm(std::nullopt, std::move(cdm_attached_cb));
+    return;
+  }
+  const std::optional<base::UnguessableToken> cdm_id = cdm_context->GetCdmId();
   if (!cdm_id) {
     // Only a CDM hosted in the GPU process (MojoCdm) has an ID the player
     // can find; FairPlay's always does.
@@ -524,16 +535,21 @@ void NativeHlsDemuxer::SendCdm(media::CdmContext* cdm_context,
   player_->SetCdm(*cdm_id,
                   base::BindOnce(&NativeHlsDemuxer::OnCdmSet,
                                  weak_factory_.GetWeakPtr(), *cdm_id,
-                                 std::move(cdm_attached_cb)));
+                                 cdm_detaches_, std::move(cdm_attached_cb)));
 }
 
 void NativeHlsDemuxer::OnCdmSet(const base::UnguessableToken& cdm_id,
+                                int cdm_detaches,
                                 NativeHlsSource::CdmAttachedCB cdm_attached_cb,
                                 bool success) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  cdm_attached_ = cdm_attached_ || success;
-  if (!success && cdm_id_ == cdm_id) {
-    cdm_id_.reset();  // The page may offer it again.
+  // A reply that a detach overtook changes nothing: the player has let the
+  // CDM go since, and the CDM may have been sent again.
+  if (cdm_detaches == cdm_detaches_) {
+    cdm_attached_ = cdm_attached_ || success;
+    if (!success && cdm_id_ == cdm_id) {
+      cdm_id_.reset();  // The page may offer it again.
+    }
   }
   std::move(cdm_attached_cb).Run(success);
 }

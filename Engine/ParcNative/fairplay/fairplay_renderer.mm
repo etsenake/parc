@@ -9,9 +9,11 @@
 #include <limits>
 #include <atomic>
 #include <deque>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <queue>
+#include <utility>
 
 #include "fairplay_bitstream.h"
 #include "fairplay_key_session.h"
@@ -489,12 +491,23 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // attached first (the usual EME order); the CDM is then kept and attached
   // when Initialize creates the renderers.
   Result SetCdm(FairPlayCdm* cdm) {
+    Result result = Result::Ok();
     if (!synchronizer_) {
       pending_cdm_ = cdm;
-      return Result::Ok();
+    } else {
+      result = AttachCdm(cdm);
     }
-    return AttachCdm(cdm);
+    if (result.ok() && cdm && cdm_detached_) {
+      // WebKit's setCDMInstance then attemptToDecrypt: the held samples go.
+      cdm_detached_ = false;
+      if (cdm_) {
+        OnKeysChanged();
+      }
+    }
+    return result;
   }
+
+  void DetachCdm() { cdm_detached_ = true; }
 
   // Joins both renderers to |cdm|'s key session; cdm_ is set only once every
   // recipient joined. A null |cdm| detaches.
@@ -850,6 +863,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     double start = 0;  // Presentation start, seconds.
     double end = 0;    // Presentation end, seconds.
     bool keyframe = true;
+    // Given to AVFoundation before, and held again (HoldRedelivered).
+    bool redelivered = false;
 
     Held() = default;
     Held(Held&& other) noexcept
@@ -858,7 +873,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
           key_id(std::move(other.key_id)),
           start(other.start),
           end(other.end),
-          keyframe(other.keyframe) {
+          keyframe(other.keyframe),
+          redelivered(other.redelivered) {
       other.buffer = nullptr;
     }
     Held& operator=(Held&& other) noexcept {
@@ -872,6 +888,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         start = other.start;
         end = other.end;
         keyframe = other.keyframe;
+        redelivered = other.redelivered;
         other.buffer = nullptr;
       }
       return *this;
@@ -889,13 +906,27 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     double start = 0;
     double end = 0;
     bool keyframe = true;
+    // For holding it again after DetachCdm (HoldRedelivered).
+    bool encrypted = false;
+    std::vector<uint8_t> key_id;
 
-    Submitted(CMSampleBufferRef retained, double start, double end, bool keyframe)
-        : buffer(retained), start(start), end(end), keyframe(keyframe) {}
+    Submitted(CMSampleBufferRef retained, double start, double end, bool keyframe, bool encrypted,
+              std::vector<uint8_t> key_id)
+        : buffer(retained),
+          start(start),
+          end(end),
+          keyframe(keyframe),
+          encrypted(encrypted),
+          key_id(std::move(key_id)) {}
     Submitted(const Submitted&) = delete;
     Submitted& operator=(const Submitted&) = delete;
     Submitted(Submitted&& other) noexcept
-        : buffer(other.buffer), start(other.start), end(other.end), keyframe(other.keyframe) {
+        : buffer(other.buffer),
+          start(other.start),
+          end(other.end),
+          keyframe(other.keyframe),
+          encrypted(other.encrypted),
+          key_id(std::move(other.key_id)) {
       other.buffer = nullptr;
     }
     Submitted& operator=(Submitted&& other) noexcept {
@@ -907,6 +938,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         start = other.start;
         end = other.end;
         keyframe = other.keyframe;
+        encrypted = other.encrypted;
+        key_id = std::move(other.key_id);
         other.buffer = nullptr;
       }
       return *this;
@@ -1644,25 +1677,36 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   // Enqueues once the key system holds a usable key for an encrypted sample:
   // a protected sample enqueued without one fails the renderer with
-  // AVFoundationErrorDomain -11800 "no content key present".
+  // AVFoundationErrorDomain -11800 "no content key present". After DetachCdm
+  // none is enqueued (AudioVideoRendererAVFObjC::canEnqueueSample without a
+  // CDM).
   bool Submit(StreamType stream, Held& held) {
     if (held.encrypted) {
-      if (!cdm_ || !cdm_->HasUsableKey(held.key_id)) {
+      if (!cdm_ || cdm_detached_ || !cdm_->HasUsableKey(held.key_id)) {
         return false;
       }
-      ++status_.protected_enqueued;
+      if (!held.redelivered) {
+        ++status_.protected_enqueued;
+      }
     }
     [RendererFor(stream) enqueueSampleBuffer:held.buffer];
-    ++(stream == StreamType::kVideo ? status_.video_enqueued : status_.audio_enqueued);
+    // A sample given again is counted, and its video due, from the first time.
+    if (held.redelivered) {
+      ++status_.redelivered;
+    } else {
+      ++(stream == StreamType::kVideo ? status_.video_enqueued : status_.audio_enqueued);
+    }
     if (stream == StreamType::kVideo) {
-      video_due_.push(held.start);
+      if (!held.redelivered) {
+        video_due_.push(held.start);
+      }
     } else {
       NoteAudioQueued(held.start, held.end);
     }
     Stream& state = StreamFor(stream);
     state.enqueued_end = std::max(state.enqueued_end, held.end);
     CFRetain(held.buffer);
-    state.submitted.emplace_back(held.buffer, held.start, held.end, held.keyframe);
+    state.submitted.emplace_back(held.buffer, held.start, held.end, held.keyframe, held.encrypted, held.key_id);
     TrimSubmitted(stream);
     return true;
   }
@@ -1721,14 +1765,51 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     [audio_ flush];
     audio_stream_.queued_end = -std::numeric_limits<double>::infinity();
     const double now = GetMediaTime().InSeconds();
-    for (const Submitted& entry : submitted) {
+    for (size_t i = 0; i < submitted.size(); ++i) {
+      const Submitted& entry = submitted[i];
       if (entry.end > now) {
+        if (HoldRedelivered(StreamType::kAudio, i)) {
+          break;
+        }
         [audio_ enqueueSampleBuffer:entry.buffer];
         NoteAudioQueued(entry.start, entry.end);
         ++status_.redelivered;
       }
     }
     NotifyNeedData(StreamType::kAudio);
+  }
+
+  // A flush's re-delivery after DetachCdm: WebKit enqueues the samples again
+  // through enqueueSample, which holds protected ones without a CDM. So the
+  // submitted samples from |from|, a protected one, go back to the front of
+  // the held queue, in order, and wait as Enqueue's do.
+  bool HoldRedelivered(StreamType stream, size_t from) {
+    Stream& state = StreamFor(stream);
+    std::deque<Submitted>& submitted = state.submitted;
+    if (!cdm_detached_ || !submitted[from].encrypted) {
+      return false;
+    }
+    std::deque<Held> again;
+    for (size_t i = from; i < submitted.size(); ++i) {
+      Submitted& entry = submitted[i];
+      Held held;
+      held.buffer = std::exchange(entry.buffer, nullptr);
+      held.encrypted = entry.encrypted;
+      held.key_id = std::move(entry.key_id);
+      held.start = entry.start;
+      held.end = entry.end;
+      held.keyframe = entry.keyframe;
+      held.redelivered = true;
+      again.push_back(std::move(held));
+    }
+    submitted.erase(submitted.begin() + static_cast<std::ptrdiff_t>(from), submitted.end());
+    state.held.insert(state.held.begin(), std::make_move_iterator(again.begin()),
+                      std::make_move_iterator(again.end()));
+    if (!waiting_reported_) {
+      waiting_reported_ = true;
+      PostInGeneration([](Impl& impl) { impl.client_->OnWaitingForKey(); });
+    }
+    return true;
   }
 
   // Audio enters the renderer in presentation order, so a sample more than
@@ -1755,10 +1836,14 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ++status_.video_decoder_resets;
     const double now = GetMediaTime().InSeconds();
     bool from_keyframe = false;
-    for (const Submitted& entry : video_.submitted) {
+    for (size_t i = 0; i < video_.submitted.size(); ++i) {
+      const Submitted& entry = video_.submitted[i];
       from_keyframe |= entry.keyframe;
       if (!from_keyframe) {
         continue;
+      }
+      if (HoldRedelivered(StreamType::kVideo, i)) {
+        break;
       }
       if (entry.end <= now) {
         CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(entry.buffer, true);
@@ -2177,6 +2262,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   std::shared_ptr<const PostTask> poster_;
   FairPlayCdm* cdm_ = nullptr;
   FairPlayCdm* pending_cdm_ = nullptr;  // Set before Initialize.
+  bool cdm_detached_ = false;           // See DetachCdm.
   uint64_t observer_id_ = 0;
 
   std::optional<VideoConfig> video_config_;
@@ -2271,6 +2357,10 @@ Result FairPlayRenderer::Reconfigure(const AudioConfig& config) {
 
 Result FairPlayRenderer::SetCdm(FairPlayCdm* cdm) {
   return impl_->SetCdm(cdm);
+}
+
+void FairPlayRenderer::DetachCdm() {
+  impl_->DetachCdm();
 }
 
 void* FairPlayRenderer::display_layer() const {

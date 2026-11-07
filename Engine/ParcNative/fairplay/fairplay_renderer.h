@@ -144,8 +144,18 @@ class FairPlayRenderer {
   // first Enqueue, and can't move to another CDM afterwards: AVFoundation
   // allows recipients to join one session, before they process media, and
   // SetCdm(nullptr) leaves them unable to decrypt. Setting the same CDM again
-  // is a no-op.
+  // is a no-op, except after DetachCdm, which it undoes.
   Result SetCdm(FairPlayCdm* cdm);
+
+  // setMediaKeys(null) during playback, as WebKit's renderer takes it
+  // (AudioVideoRendererAVFObjC::setCDMInstance(nullptr)): samples already
+  // given to AVFoundation play out with their keys, clear samples go on, and
+  // every protected sample from now on, including one a flush makes the
+  // renderer deliver again, is held (kWaitingForKey) until SetCdm sets the
+  // same CDM again. The renderers stay recipients of its key session, which
+  // they can't leave or change once they processed media (above), so another
+  // CDM takes another renderer.
+  void DetachCdm();
 
   // The AVSampleBufferDisplayLayer to composite, borrowed. Nonnull once
   // Initialize succeeded with a video config.

@@ -283,7 +283,18 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   bool success = false;
   fp::FairPlayCdm* cdm = cdm_context ? cdm_context->GetFairPlayCdm() : nullptr;
-  if (cdm && !cdm_attached_) {
+  if (!cdm_context) {
+    // setMediaKeys(null) on a Safari-identity page (PipelineImpl's
+    // SetCdm(nullptr)): protected samples wait from now on, as WebKit's
+    // renderer without a CDM holds them.
+    core_->DetachCdm();
+    success = true;
+  } else if (cdm && cdm == attached_cdm_) {
+    // The same MediaKeys again: the held samples go on with its keys. A core
+    // that couldn't take it (below) still waits for the restart.
+    fp::Result result = core_->SetCdm(cdm);
+    success = result.ok() || result.exception == fp::Exception::kInvalidState;
+  } else if (cdm && !cdm_attached_) {
     // The core accepts the CDM before Initialize and joins its key session
     // once the renderers exist, before any sample is enqueued.
     fp::Result result = core_->SetCdm(cdm);
@@ -298,8 +309,11 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
       success = true;
     }
     LOG_IF(ERROR, !success) << "FairPlay SetCdm: " << result.message;
+    if (success) {
+      attached_cdm_ = cdm;
+    }
   }
-  cdm_attached_ = cdm_attached_ || success;
+  cdm_attached_ = cdm_attached_ || (success && cdm != nullptr);
   task_runner_->PostTask(FROM_HERE,
                          base::BindOnce(std::move(cdm_attached_cb), success));
 }

@@ -60,7 +60,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
     initialized_ = true;
   }
   void PrepareToPlay() override { prepared_ = true; }
-  void SetCdm(const base::UnguessableToken& cdm_id,
+  void SetCdm(const std::optional<base::UnguessableToken>& cdm_id,
               SetCdmCallback callback) override {
     cdm_ids_.push_back(cdm_id);
     std::move(callback).Run(accepts_cdm_);
@@ -99,7 +99,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   std::optional<base::TimeDelta> seek_time_;
   base::TimeDelta seek_tolerance_;
   std::vector<double> commands_;  // Play(rate) or 0 for Pause().
-  std::vector<base::UnguessableToken> cdm_ids_;
+  std::vector<std::optional<base::UnguessableToken>> cdm_ids_;
   bool accepts_cdm_ = true;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
   float volume_ = -1;
@@ -649,7 +649,86 @@ TEST_F(NativeHlsTest, CdmReachesThePlayerByIdOnce) {
   EXPECT_CALL(attached_cb, Run(true));
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
-  EXPECT_EQ(player_.cdm_ids_, (std::vector<base::UnguessableToken>{cdm_id}));
+  EXPECT_EQ(player_.cdm_ids_,
+            (std::vector<std::optional<base::UnguessableToken>>{cdm_id}));
+}
+
+// setMediaKeys(null) on a Safari-identity page (PipelineImpl's
+// SetCdm(nullptr)): the player detaches the CDM, as WebKit's
+// cdmInstanceDetached, and the same MediaKeys set again reach it again.
+TEST_F(NativeHlsTest, NullCdmDetachesAndTheSameCdmReattaches) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  NiceMock<media::MockCdmContext> cdm_context;
+  const base::UnguessableToken cdm_id = base::UnguessableToken::Create();
+  cdm_context.set_cdm_id(cdm_id);
+  NiceMock<media::MockCdmContext> other_cdm_context;
+  const base::UnguessableToken other_cdm_id = base::UnguessableToken::Create();
+  other_cdm_context.set_cdm_id(other_cdm_id);
+  CreateRenderer();
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(true)).Times(7);
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  renderer_->SetCdm(nullptr, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  // With no CDM attached, a key request waits again.
+  EXPECT_CALL(renderer_client_,
+              OnWaiting(media::WaitingReason::kNoDecryptionKey));
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+
+  // Attached again, the CDM answers key requests, including when it is set
+  // again before the null's reply.
+  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  renderer_->SetCdm(nullptr, attached_cb.Get());
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  renderer_->SetCdm(nullptr, attached_cb.Get());
+  renderer_->SetCdm(&other_cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.cdm_ids_,
+            (std::vector<std::optional<base::UnguessableToken>>{
+                cdm_id, std::nullopt, cdm_id, std::nullopt, cdm_id,
+                std::nullopt, other_cdm_id}));
+}
+
+// A replacement the player refuses leaves it the CDM before, which a null
+// then detaches.
+TEST_F(NativeHlsTest, NullCdmDetachesAfterARefusedReplacement) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  NiceMock<media::MockCdmContext> cdm_context;
+  const base::UnguessableToken cdm_id = base::UnguessableToken::Create();
+  cdm_context.set_cdm_id(cdm_id);
+  NiceMock<media::MockCdmContext> other_cdm_context;
+  const base::UnguessableToken other_cdm_id = base::UnguessableToken::Create();
+  other_cdm_context.set_cdm_id(other_cdm_id);
+  CreateRenderer();
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  {
+    InSequence sequence;
+    EXPECT_CALL(attached_cb, Run(true));
+    EXPECT_CALL(attached_cb, Run(false));
+    EXPECT_CALL(attached_cb, Run(true));
+  }
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  player_.accepts_cdm_ = false;
+  renderer_->SetCdm(&other_cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  player_.accepts_cdm_ = true;
+  renderer_->SetCdm(nullptr, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.cdm_ids_,
+            (std::vector<std::optional<base::UnguessableToken>>{
+                cdm_id, other_cdm_id, std::nullopt}));
 }
 
 TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
@@ -667,7 +746,8 @@ TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
   EXPECT_CALL(init_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
   renderer_->Initialize(demuxer_.get(), &renderer_client_, init_cb.Get());
   task_environment_.RunUntilIdle();
-  EXPECT_EQ(player_.cdm_ids_, (std::vector<base::UnguessableToken>{cdm_id}));
+  EXPECT_EQ(player_.cdm_ids_,
+            (std::vector<std::optional<base::UnguessableToken>>{cdm_id}));
 }
 
 }  // namespace

@@ -117,6 +117,10 @@ The core uses the public path WebKit used before adopting that API:
   recipients match on.
 - Recipients must join before they process media and belong to one session,
   so `SetCdm` comes before the first sample and can't move to another CDM.
+  `setMediaKeys(null)` is `DetachCdm`, as WebKit's renderer without a CDM:
+  the renderers stay in the session, so samples already enqueued keep
+  decrypting, and every later protected sample is held until `SetCdm` sets the
+  same CDM again.
 - Expiring the shared session would disable every recipient, so closing or
   removing an EME session revokes its keys with `-[AVContentKey revoke]`
   (macOS 14.4+; `AVContentKeyReportGroup` isn't in the macOS SDK). Before

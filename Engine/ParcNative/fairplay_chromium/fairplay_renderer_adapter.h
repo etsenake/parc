@@ -129,6 +129,9 @@ class FairPlayRendererAdapter final
   std::unique_ptr<parc::fairplay::FairPlayRenderer> core_;
   bool core_initialized_ = false;
   bool cdm_attached_ = false;
+  // The CDM accepted, which MojoRendererService keeps alive for this
+  // renderer; only compared, when the page sets the same MediaKeys again.
+  raw_ptr<parc::fairplay::FairPlayCdm> attached_cdm_ = nullptr;
   bool playing_ = false;
   double playback_rate_ = 0;
   bool errored_ = false;

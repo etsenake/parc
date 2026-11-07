@@ -237,7 +237,7 @@ interface FairPlayHlsPlayerLifetime {};  // browser implements, no methods
 
 interface FairPlayHlsPlayer {        // GPU implements
   Initialize(url.mojom.Url url, string mime_type);  // → OnInitialized
-  SetCdm(mojo_base.mojom.UnguessableToken cdm_id) => (bool success);
+  SetCdm(mojo_base.mojom.UnguessableToken? cdm_id) => (bool success);  // null: setMediaKeys(null)
   Play(double rate); Pause();
   Seek(mojo_base.mojom.TimeDelta time, mojo_base.mojom.TimeDelta tolerance_before)
       => (bool success, mojo_base.mojom.TimeDelta current_time);
@@ -488,7 +488,10 @@ What the key loader does (its header and the [core README](../fairplay/README.md
 "HLS assets"):
 
 1. The loader takes the element's CDM at creation if it has one, and
-   `SetCdm` attaches, replaces or drops it later. Every skd request stays on
+   `SetCdm` attaches, replaces or drops it later (a null `SetCdm`, the page's
+   `setMediaKeys(null)`, drops it as WebKit's `cdmInstanceDetached`: keys
+   already delivered stay with the asset and later requests wait for the next
+   CDM). Every skd request stays on
    the asset's resource loader (the loader never makes the asset a content
    key recipient), so each raises `webkitneedkey` as in Safari and is answered
    with its own SPC in whatever order the page licenses keys.

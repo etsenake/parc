@@ -364,7 +364,7 @@ FairPlayHlsPlayerService::~FairPlayHlsPlayerService() {
   // The tracks' selection detaches from the item first; the player's shutdown
   // then cancels every load and detaches its layer; the key loader goes once
   // the player hands it nothing more. None calls this object afterwards. The
-  // CDM reference goes last.
+  // CDM references go last.
   tracks_.reset();
   player_.reset();
   key_loader_.reset();
@@ -483,10 +483,27 @@ void FairPlayHlsPlayerService::PrepareToPlay() {
   }
 }
 
-void FairPlayHlsPlayerService::SetCdm(const base::UnguessableToken& cdm_id,
-                                      SetCdmCallback callback) {
+void FairPlayHlsPlayerService::SetCdm(
+    const std::optional<base::UnguessableToken>& cdm_id,
+    SetCdmCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  std::unique_ptr<CdmContextRef> ref = get_cdm_context_.Run(cdm_id);
+  if (!cdm_id) {
+    // setMediaKeys(null), as WebKit's cdmInstanceDetached: requests from now
+    // on wait for the next CDM (encrypted and waitingforkey), and keys
+    // already delivered stay with the asset.
+    // A request it took and hasn't answered stays with it, as in WebKit; with
+    // no key loader yet it took none.
+    if (key_loader_) {
+      key_loader_->SetCdm(nullptr);
+      if (cdm_context_ref_) {
+        detached_cdm_context_refs_.push_back(std::move(cdm_context_ref_));
+      }
+    }
+    cdm_context_ref_.reset();
+    std::move(callback).Run(true);
+    return;
+  }
+  std::unique_ptr<CdmContextRef> ref = get_cdm_context_.Run(*cdm_id);
   CdmContext* cdm_context = ref ? ref->GetCdmContext() : nullptr;
   fp::FairPlayCdm* cdm = cdm_context ? cdm_context->GetFairPlayCdm() : nullptr;
   if (!cdm) {
@@ -503,8 +520,17 @@ void FairPlayHlsPlayerService::SetCdm(const base::UnguessableToken& cdm_id,
       return;
     }
   }
+  // A CDM it replaces may still answer a request it took, as one detached.
+  if (key_loader_ && cdm_context_ref_ &&
+      cdm_context_ref_->GetCdmContext() != cdm_context) {
+    detached_cdm_context_refs_.push_back(std::move(cdm_context_ref_));
+  }
   // Before Initialize, the key loader is made with it.
   cdm_context_ref_ = std::move(ref);
+  std::erase_if(detached_cdm_context_refs_,
+                [cdm_context](const std::unique_ptr<CdmContextRef>& detached) {
+                  return detached->GetCdmContext() == cdm_context;
+                });
   std::move(callback).Run(true);
 }
 

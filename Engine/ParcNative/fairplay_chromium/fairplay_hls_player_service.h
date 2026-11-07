@@ -102,7 +102,7 @@ class FairPlayHlsPlayerService final
                   const gfx::SizeF& video_layer_size,
                   float video_layer_scale) override;
   void PrepareToPlay() override;
-  void SetCdm(const base::UnguessableToken& cdm_id,
+  void SetCdm(const std::optional<base::UnguessableToken>& cdm_id,
               SetCdmCallback callback) override;
   void Play(double rate) override;
   void Pause() override;
@@ -169,6 +169,9 @@ class FairPlayHlsPlayerService final
 
   // The frame's CDM after SetCdm(), held while the key loader may use it.
   std::unique_ptr<CdmContextRef> cdm_context_ref_;
+  // The CDMs SetCdm(null) detached once the key loader existed, which may
+  // still answer a request they took; one attached again leaves the list.
+  std::vector<std::unique_ptr<CdmContextRef>> detached_cdm_context_refs_;
 
   // Created by Initialize(). The destructor resets them tracks, player, key
   // loader: the player hands the loader requests until it is gone.
