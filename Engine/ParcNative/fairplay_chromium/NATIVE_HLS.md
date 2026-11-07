@@ -333,6 +333,15 @@ profile's proxy and appear in DevTools as the element's media requests.
 - `FairPlayHlsLoad.Cancel()`, the load's or client's pipe closing, or the body
   pipe's consumer closing early cancels the `WebAssociatedURLLoader`.
   Destroying the loader cancels every load.
+- GPU side (the service's `HlsLoader` over these pipes): `OnComplete` is a
+  message on `FairPlayHlsLoadClient` and the body is a separate data pipe, so
+  `OnComplete` can arrive while bytes are still unread. The service passes
+  `HlsLoadClient::OnComplete(net::OK)` to the core only after it has read the
+  pipe to its end (the producer closed it and nothing is left), and
+  `OnData` every chunk before that; a failure's `OnComplete` waits the same
+  way for the partial body already in the pipe. Otherwise AVFoundation gets a
+  truncated segment or playlist as complete. Destroying the core's `HlsLoad`
+  calls `Cancel()` and closes the pipe.
 
 `WebMediaPlayerImpl` (fp-hls-render's routing) builds the loader with
 `url_index_->fetch_context()`, its `cors_mode_` and
