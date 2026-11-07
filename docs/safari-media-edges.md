@@ -40,9 +40,9 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **33**. Being fixed now: **7** (casting, moved-video ownership, late
+main: **35**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, several TS audio tracks, Media Source
-types and codecs, preload after a source change, rewind and extreme rates). Queued:
+types and codecs, preload after a source change, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
@@ -238,7 +238,10 @@ differ: a negative rate leaves the time standing still where Safari's
 `src=` player plays backwards (Chromium's pipeline has no reverse playback;
 Safari's Media Source player also drops negative rates), and rates outside
 1/16 to 16 play at the nearest limit while the page reads its own rate.
-User-felt (a site's rewind or 32x control): **in progress** (WMPI-RATE).
+Rates outside 1/16 to 16 and native HLS reverse playback: **fixed**
+bac07f94. A plain `src=` file still stands still at a negative rate (a
+site's rewind control does nothing, in picture in picture too): **in
+progress** (WMPI-RATE-b, reverse playback in Chromium's pipeline).
 
 **HME-29. Ended at rate 0 inside the element.** Chromium's internal check
 (`html_media_element.cc:4223-4245`, used at `:3220-3221, 4041-4087,
