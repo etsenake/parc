@@ -463,8 +463,10 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     // that size with the player, then the item, before AVFoundation picks a
     // variant (fairplay_hls_player_layer.h).
     player_ = [[AVPlayer alloc] init];
-    // WebKit's settings: the page picks media options, the browser manages
-    // display sleep, and there's no AirPlay route from here.
+    // WebKit's settings: the page picks media options, and there's no AirPlay
+    // route from here. Display sleep is Chromium's wake lock for playing
+    // video (WebKit on macOS leaves AVPlayer's default and holds its own
+    // sleep disabler, HTMLMediaElement::updateSleepDisabling).
     player_.appliesMediaSelectionCriteriaAutomatically = NO;
     player_.preventsDisplaySleepDuringVideoPlayback = NO;
     player_.allowsExternalPlayback = NO;

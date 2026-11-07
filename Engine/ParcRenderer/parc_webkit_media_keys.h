@@ -1011,8 +1011,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       session.certificate = initData;
       session.chain = then(session.chain, () => secureStopRequest(session, 'first',
           (bytes) => sendMessage(session, bytes),
-          (error) => sendError(session, KEY_SYSTEM_NOT_SUPPORTED,
-                               systemCodeOf(error) || NO_EXPIRED_SESSIONS)));
+          () => sendError(session, KEY_SYSTEM_NOT_SUPPORTED, NO_EXPIRED_SESSIONS)));
       return;
     }
     if (session.keys.version === 2) {
