@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 567,
+  "version": 568,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4222,7 +4222,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "5ab983995d7de7d3b0ae0681492415fd4760ab02719e05ad081fe8d3c6fa0656",
+      "sha256": "685eae47f3c53b34d57e16f65042cd5f4be412e357571012291920cfc5920253",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4497,17 +4497,17 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "b232aad4e5b10dd62dc0ff1ad31749f17f0417978ae0e5fd4ec2573aba57326b"
+          "after_sha256": "ea5d1e7ae5aeedd600f2bc484d5992d477f222a817f8e2fe38e3cea8f76f9a36"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
           "before_sha256": "2afbe1b25d00714f9c8c7a8f381ac23bceb5b05d63e86a5fecb0ad55e133e584",
-          "after_sha256": "e2a5953986b1e68a9cb99bf6ccabea3b37fdccc3d62356c1f043f1f6d090ade8"
+          "after_sha256": "075f228116a956a227b8713ae1b594f5aeb52f96d02348cda6f75e582a50d27c"
         },
         {
           "target": "third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc",
           "before_sha256": "9385876e63a8e9de9dd5f01b3f716dbd8471007aaacd3c04b806af609053062a",
-          "after_sha256": "5bcb0b83dbb212ccabcd999a6755c3c4d72d532db42974afa9a11ab620aa2eab"
+          "after_sha256": "3f38cffdc7180f814fa9c00ce4f5eec5acaee1d0331ade674357b7c344d169ad"
         },
         {
           "target": "media/base/media_resource.h",
@@ -4782,12 +4782,12 @@
         {
           "target": "media/remoting/renderer_controller.cc",
           "before_sha256": "3130f979f11db47e8d4d49ffc19439650edf1b624f4259c8be974abd4a759acb",
-          "after_sha256": "3d25521a2038722db022564e0fe03aa0b0cc13508e8b0190f10951c1d3b74bbe"
+          "after_sha256": "14c2c59c4335f56c032d3021d30a337fcbc57b5767c8c6ba7eaa021cf643b336"
         },
         {
           "target": "media/remoting/renderer_controller_unittest.cc",
           "before_sha256": "9df966d710bbe7491e398d4823cb1515699943213c39456ee109e4d3ba5e1f69",
-          "after_sha256": "ea7fcb70c42cb04df274a0b9e2a64f92010de02eed33dc03622e8379113a05b2"
+          "after_sha256": "4300d4f6f948cbbcae60ab2cbe5be59cf9eaa2db77d58c2eb8ba3984a8929438"
         },
         {
           "target": "content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc",
