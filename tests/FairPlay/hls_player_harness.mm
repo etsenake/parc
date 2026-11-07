@@ -608,6 +608,40 @@ void Skd() {
         "a failed key request is asked for again (AVFoundation retries; the element keeps waiting, as in Safari)");
 }
 
+// The CDM's key loader takes skd requests itself: installed between
+// CreateAsset and Start, it gets the loading request, and the client's
+// OnKeyRequest never fires for it.
+struct RecordingKeyHandler : fp::HlsKeyRequestHandler {
+  void HandleLoadingRequest(AVAssetResourceLoadingRequest* request) override {
+    uris.push_back(request.request.URL.absoluteString.UTF8String ?: "");
+    [request finishLoadingWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
+  }
+  void HandleCancelledLoadingRequest(AVAssetResourceLoadingRequest*) override { cancelled++; }
+  std::vector<std::string> uris;
+  int cancelled = 0;
+};
+
+void SkdHandler() {
+  std::printf("-- FairPlay HLS: skd requests go to an installed key handler\n");
+  Rig rig;
+  RecordingKeyHandler handler;
+  fp::Result created, started;
+  OnOwner([&] {
+    created = rig.player->CreateAsset(Fake("media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/manifest.m3u8"), "");
+    Check(fp::HlsPlayerAsset(rig.player->impl()) != nil && fp::HlsPlayerAVPlayer(rig.player->impl()) == nil,
+          "CreateAsset makes the asset but no player yet");
+    fp::SetHlsKeyRequestHandler(rig.player->impl(), &handler);
+    started = rig.player->Start();
+    rig.player->SetMuted(true);
+    rig.player->SetRate(1);
+  });
+  Check(created.ok() && started.ok(), "CreateAsset then Start");
+  bool asked = WaitFor([&] { return !handler.uris.empty() || rig.client.errors; }, 20);
+  Check(asked && !handler.uris.empty() && handler.uris[0].rfind("skd://", 0) == 0, "the handler gets the skd request");
+  Check(rig.client.key_uris.empty(), "the client's OnKeyRequest doesn't fire for it");
+  OnOwner([&] { fp::SetHlsKeyRequestHandler(rig.player->impl(), nullptr); });
+}
+
 void Teardown() {
   std::printf("-- teardown with loads in flight\n");
   {
@@ -629,7 +663,7 @@ int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
-        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"teardown", Teardown}};
+        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

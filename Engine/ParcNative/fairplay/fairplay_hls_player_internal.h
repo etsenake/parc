@@ -9,7 +9,7 @@
 
 namespace parc::fairplay {
 
-// The asset, nil before Load. A content key recipient
+// The asset, nil before CreateAsset. A content key recipient
 // (addContentKeyRecipient:) like the MSE renderer's layer and audio renderer.
 AVURLAsset* HlsPlayerAsset(FairPlayHlsPlayer::Impl* player);
 
@@ -20,5 +20,24 @@ AVPlayer* HlsPlayerAVPlayer(FairPlayHlsPlayer::Impl* player);
 // CATransaction: the owner sequence has no run loop). nil before Load.
 // Shutdown detaches it from the player.
 AVPlayerLayer* HlsPlayerLayer(FairPlayHlsPlayer::Impl* player);
+
+// Takes the asset's skd:// loading requests: the CDM's key loader for the
+// asset (FairPlayHlsKeyLoader), which answers them itself. Called on the
+// owner sequence.
+class HlsKeyRequestHandler {
+ public:
+  virtual void HandleLoadingRequest(AVAssetResourceLoadingRequest* request) = 0;
+  virtual void HandleCancelledLoadingRequest(AVAssetResourceLoadingRequest* request) = 0;
+
+ protected:
+  virtual ~HlsKeyRequestHandler() = default;
+};
+
+// Hands every skd:// loading request and its cancellation to |handler|
+// instead of HlsPlayerClient::OnKeyRequest. Install it between CreateAsset and
+// Start, since the key loader must exist before the item routes any request;
+// null removes it. The player never calls it after shutdown; |handler| must
+// otherwise outlive the player or be removed first.
+void SetHlsKeyRequestHandler(FairPlayHlsPlayer::Impl* player, HlsKeyRequestHandler* handler);
 
 }  // namespace parc::fairplay

@@ -196,10 +196,11 @@ player the GPU service owns, on the media service thread with the core's
 | --- | --- |
 | `HlsLoader::StartLoad(request, HlsLoadClient*)` → `HlsLoad` (destroy = cancel) | `FairPlayHlsPlayerClient.StartLoad` → `FairPlayHlsLoad` (reset = `Cancel`) |
 | `HlsLoadClient::OnResponse` / `OnData` / `OnComplete(net_error)` | `FairPlayHlsLoadClient.OnResponse` + data pipe reads / `OnComplete` |
-| `Load(url, mime)`, `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
+| `CreateAsset(url, mime)` + `Start()` (or `Load`), `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
 | `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `Initialize` reply |
 | `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnStartDateChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
-| `OnKeyRequest(uri)`, `CompleteKeyRequests(uri)`, `FailKeyRequests` | `OnEncrypted("skd", uri)`; the CDM side (Keys) |
+| `SetHlsKeyRequestHandler` (between `CreateAsset` and `Start`) → the CDM's key loader takes skd requests | its `OnKeyNeeded(uri)` → `OnEncrypted("skd", uri)` (Keys) |
+| `OnOutputObscuredChange(bool)` | the key loader's `SetOutputObscured` |
 | `OnKeyRequest(clearkey uri)`, `FulfillKeyRequests(uri, key)`, `HlsClearKeyId` | `OnClearKeyNeeded(key_id)` / `ProvideClearKey(key_id, key)` |
 | `CurrentTime()` (any thread), `Rate()` | `OnTimeUpdate` |
 | `HlsPlayerAsset` / `HlsPlayerLayer` (`fairplay_hls_player_internal.h`) | `addContentKeyRecipient:` (Keys) / `ProtectedLayerRegistry` (Display) |
@@ -229,6 +230,19 @@ URL that relative playlist URIs resolve against. Bodies stream back over the
 load's data pipe. `skd://` URIs never reach `StartLoad` (Keys).
 
 ## Keys
+
+How the GPU service wires keys: after `FairPlayHlsPlayer::CreateAsset` it
+creates the CDM's key loader for the asset (`FairPlayHlsKeyLoader`, from
+`fp-hls-keys`) with the attached CDM if any, installs it with
+`SetHlsKeyRequestHandler`, then calls `Start`; it forwards the loader's
+`OnKeyNeeded(uri)` as `OnEncrypted("skd", uri)` plus
+`OnWaiting(kNoDecryptionKey)`, `SetCdm` to the loader, and the player's
+`OnOutputObscuredChange` to its `SetOutputObscured`. The key loader's tests
+showed that a request held on the resource loader can't be finished for the
+session afterwards (it never plays), so the loader decides at creation
+whether the asset is a content key recipient and answers held requests with
+their own SPC/CKC otherwise; where the steps below differ, the key loader's
+header is right.
 
 The player's `AVAssetResourceLoader` delegate sees `skd://` key requests
 (AVFoundation can't load that scheme). It follows WebKit

@@ -349,12 +349,13 @@ plan and the switch that keeps it off).
   `URLSession` is the player's stand-in, whose data tasks become
   `HlsLoader::StartLoad` calls (WebKit's SPI, its `WebCoreNSURLSession` does
   the same). `IsSupported()` checks both exist; `Load` refuses otherwise.
-- `skd://` key requests go to the client (`OnKeyRequest`, once per pending
-  URI). `CompleteKeyRequests` finishes them with
-  `AVStreamingKeyDeliveryContentKeyType`, so AVFoundation takes the key from
-  the `AVContentKeySession` the asset was added to (WebKit's
-  `attemptToDecryptWithInstance`). A failed key request is asked for again
-  rather than failing the item.
+- `skd://` key requests go to the CDM's key loader for the asset when one is
+  installed (`SetHlsKeyRequestHandler`, between `CreateAsset` and `Start`,
+  because the loader must exist before the item routes a request), else to
+  the client (`OnKeyRequest`, once per pending URI). A failed key request is
+  asked for again rather than failing the item. AVPlayer's
+  `outputObscuredDueToInsufficientExternalProtection` reaches the client as
+  `OnOutputObscuredChange`.
 - `clearkey://` key requests (the legacy `org.w3c.clearkey` key system) go to
   the client the same way; `FulfillKeyRequests` answers them with the raw key
   (WebKit's `fulfillRequestWithKeyData`), and `HlsClearKeyId` gives WebKit's

@@ -243,6 +243,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     shut_down_ = true;
+    key_handler_ = nullptr;
     [observer_ stop];
     observer_ = nil;
     for (auto& [identifier, load] : loads_) {
@@ -271,8 +272,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
   }
 
-  Result Load(const std::string& url, const std::string& mime_type) {
-    if (asset_) {
+  Result CreateAsset(const std::string& url, const std::string& mime_type) {
+    if (asset_ || shut_down_) {
       return Result::Error(Exception::kInvalidState, "already loading");
     }
     if (!FairPlayHlsPlayer::IsSupported()) {
@@ -313,7 +314,14 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     resource_loader.URLSession = (NSURLSession*)session_;
     loader_delegate_ = [[PCHlsResourceLoaderDelegate alloc] initWithImpl:weak poster:poster_];
     [resource_loader setDelegate:loader_delegate_ queue:DelegateQueue()];
+    return Result::Ok();
+  }
 
+  Result Start() {
+    if (!asset_ || item_ || shut_down_) {
+      return Result::Error(Exception::kInvalidState, asset_ ? "already started" : "no asset");
+    }
+    std::weak_ptr<Impl> weak = weak_from_this();
     item_ = [AVPlayerItem playerItemWithAsset:asset_];
     // WebKit's setting: the page, not AVFoundation, schedules HLS interstitials.
     item_.automaticallyHandlesInterstitialEvents = NO;
@@ -646,11 +654,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     status_.key_requests++;
-    std::string uri = request.request.URL.absoluteString.UTF8String ?: "";
-    if (completed_key_uris_.count(uri)) {
-      FinishForContentKeySession(request);
+    if (key_handler_ && IsSkdRequest(request)) {
+      key_handler_->HandleLoadingRequest(request);
       return;
     }
+    std::string uri = request.request.URL.absoluteString.UTF8String ?: "";
     if (auto key = fulfilled_keys_.find(uri); key != fulfilled_keys_.end()) {
       FulfillWithKey(request, key->second);
       return;
@@ -668,31 +676,16 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
   void OnKeyRequestCancelled(AVAssetResourceLoadingRequest* request) {
+    if (key_handler_ && IsSkdRequest(request)) {
+      key_handler_->HandleCancelledLoadingRequest(request);
+      return;
+    }
     std::string uri = request.request.URL.absoluteString.UTF8String ?: "";
     auto it = key_requests_.find(uri);
     if (it != key_requests_.end()) {
       [it->second removeObject:request];
       if (it->second.count == 0) {
         key_requests_.erase(it);
-      }
-    }
-  }
-
-  void CompleteKeyRequests(const std::string& uri) {
-    if (!uri.empty()) {
-      completed_key_uris_.insert(uri);
-    }
-    for (auto it = key_requests_.begin(); it != key_requests_.end();) {
-      if (uri.empty() ? IsSkd(it->first) : it->first == uri) {
-        for (AVAssetResourceLoadingRequest* request in it->second) {
-          FinishForContentKeySession(request);
-        }
-        if (uri.empty()) {
-          completed_key_uris_.insert(it->first);
-        }
-        it = key_requests_.erase(it);
-      } else {
-        ++it;
       }
     }
   }
@@ -871,6 +864,23 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     return HlsStartDate(item_.currentDate.timeIntervalSince1970, CMTimeGetSeconds(item_.currentTime));
   }
 
+  void SetKeyRequestHandler(HlsKeyRequestHandler* handler) {
+    if (!shut_down_) {
+      key_handler_ = handler;
+    }
+  }
+
+  void OnOutputObscured() {
+    if (shut_down_ || !player_) {
+      return;
+    }
+    bool obscured = player_.outputObscuredDueToInsufficientExternalProtection;
+    if (obscured != output_obscured_) {
+      output_obscured_ = obscured;
+      client_->OnOutputObscuredChange(obscured);
+    }
+  }
+
   AVURLAsset* asset() const { return asset_; }
   AVPlayer* player() const { return player_; }
 
@@ -902,9 +912,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
  private:
-  static bool IsSkd(const std::string& uri) {
-    return uri.size() >= 4 && (uri[0] == 's' || uri[0] == 'S') && (uri[1] == 'k' || uri[1] == 'K') &&
-           (uri[2] == 'd' || uri[2] == 'D') && uri[3] == ':';
+  static bool IsSkdRequest(AVAssetResourceLoadingRequest* request) {
+    return [request.request.URL.scheme.lowercaseString isEqualToString:@"skd"];
   }
 
   // WebKit's fulfillRequestWithKeyData: the requested range of the key.
@@ -916,21 +925,15 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     if (AVAssetResourceLoadingDataRequest* data = request.dataRequest) {
       long long start = data.currentOffset;
-      long long end = std::min<long long>(length, start + data.requestedLength);
-      if (start < 0 || end <= start || start >= length) {
+      long long requested = data.requestedLength;
+      if (start < 0 || start >= length || requested <= 0) {
         [request finishLoadingWithError:[NSError errorWithDomain:NSURLErrorDomain
                                                             code:NSURLErrorDataLengthExceedsMaximum
                                                         userInfo:nil]];
         return;
       }
-      [data respondWithData:[NSData dataWithBytes:key.data() + start length:static_cast<NSUInteger>(end - start)]];
-    }
-    [request finishLoading];
-  }
-
-  void FinishForContentKeySession(AVAssetResourceLoadingRequest* request) {
-    if (AVAssetResourceLoadingContentInformationRequest* info = request.contentInformationRequest) {
-      info.contentType = AVStreamingKeyDeliveryContentKeyType;
+      long long count = std::min<long long>(length - start, requested);
+      [data respondWithData:[NSData dataWithBytes:key.data() + start length:static_cast<NSUInteger>(count)]];
     }
     [request finishLoading];
   }
@@ -975,8 +978,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   // the loader may be inside a call to them.
   std::vector<std::unique_ptr<TaskLoad>> finished_loads_;
   std::map<std::string, NSMutableArray<AVAssetResourceLoadingRequest*>*> key_requests_;
-  std::set<std::string> completed_key_uris_;
   std::map<std::string, std::vector<uint8_t>> fulfilled_keys_;
+  HlsKeyRequestHandler* key_handler_ = nullptr;
 
   mutable std::mutex timebase_lock_;
   CMTimebaseRef timebase_ = nullptr;
@@ -985,6 +988,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   float volume_ = 1;
   bool muted_ = false;
   bool preserves_pitch_ = true;
+  bool output_obscured_ = false;
   bool reported_metadata_ = false;
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
@@ -1004,6 +1008,12 @@ AVPlayer* HlsPlayerAVPlayer(FairPlayHlsPlayer::Impl* impl) {
 
 AVPlayerLayer* HlsPlayerLayer(FairPlayHlsPlayer::Impl* impl) {
   return impl ? impl->PlayerLayer() : nil;
+}
+
+void SetHlsKeyRequestHandler(FairPlayHlsPlayer::Impl* impl, HlsKeyRequestHandler* handler) {
+  if (impl) {
+    impl->SetKeyRequestHandler(handler);
+  }
 }
 
 }  // namespace parc::fairplay
@@ -1346,11 +1356,13 @@ static void* const kItemLoaded = (void*)&kItemLoaded;
 static void* const kItemSeekable = (void*)&kItemSeekable;
 static void* const kItemDuration = (void*)&kItemDuration;
 static void* const kItemSize = (void*)&kItemSize;
+static void* const kPlayerObscured = (void*)&kPlayerObscured;
 
 @implementation PCHlsObserver {
   std::weak_ptr<FairPlayHlsPlayer::Impl> _impl;
   std::shared_ptr<const PostTask> _poster;
   AVPlayerItem* _item;
+  AVPlayer* _player;
   NSArray<NSString*>* _bufferingKeys;
   BOOL _stopped;
 }
@@ -1367,6 +1379,11 @@ static void* const kItemSize = (void*)&kItemSize;
 
 - (void)observePlayer:(AVPlayer*)player item:(AVPlayerItem*)item {
   _item = item;
+  _player = player;
+  [player addObserver:self
+           forKeyPath:@"outputObscuredDueToInsufficientExternalProtection"
+              options:0
+              context:kPlayerObscured];
   NSKeyValueObservingOptions options = NSKeyValueObservingOptionInitial;
   [item addObserver:self forKeyPath:@"status" options:options context:kItemStatus];
   for (NSString* key in _bufferingKeys) {
@@ -1403,8 +1420,12 @@ static void* const kItemSize = (void*)&kItemSize;
   [_item removeObserver:self forKeyPath:@"seekableTimeRanges" context:kItemSeekable];
   [_item removeObserver:self forKeyPath:@"duration" context:kItemDuration];
   [_item removeObserver:self forKeyPath:@"presentationSize" context:kItemSize];
+  [_player removeObserver:self
+               forKeyPath:@"outputObscuredDueToInsufficientExternalProtection"
+                  context:kPlayerObscured];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   _item = nil;
+  _player = nil;
 }
 
 - (void)post:(void (FairPlayHlsPlayer::Impl::*)())method {
@@ -1432,6 +1453,8 @@ static void* const kItemSize = (void*)&kItemSize;
     [self post:&FairPlayHlsPlayer::Impl::OnDuration];
   } else if (context == kItemSize) {
     [self post:&FairPlayHlsPlayer::Impl::OnPresentationSize];
+  } else if (context == kPlayerObscured) {
+    [self post:&FairPlayHlsPlayer::Impl::OnOutputObscured];
   } else {
     [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
   }
@@ -1467,8 +1490,17 @@ bool FairPlayHlsPlayer::IsSupported() {
   return ClientURLLoadingOnlyKey() != nil && ResourceLoaderTakesURLSession();
 }
 
+Result FairPlayHlsPlayer::CreateAsset(const std::string& url, const std::string& mime_type) {
+  return impl_->CreateAsset(url, mime_type);
+}
+
+Result FairPlayHlsPlayer::Start() {
+  return impl_->Start();
+}
+
 Result FairPlayHlsPlayer::Load(const std::string& url, const std::string& mime_type) {
-  return impl_->Load(url, mime_type);
+  Result result = impl_->CreateAsset(url, mime_type);
+  return result.ok() ? impl_->Start() : result;
 }
 
 void FairPlayHlsPlayer::SetRate(double rate) {
@@ -1497,10 +1529,6 @@ double FairPlayHlsPlayer::CurrentTime() const {
 
 double FairPlayHlsPlayer::Rate() const {
   return impl_->Rate();
-}
-
-void FairPlayHlsPlayer::CompleteKeyRequests(const std::string& skd_uri) {
-  impl_->CompleteKeyRequests(skd_uri);
 }
 
 void FairPlayHlsPlayer::FulfillKeyRequests(const std::string& clearkey_uri, const std::vector<uint8_t>& key) {
