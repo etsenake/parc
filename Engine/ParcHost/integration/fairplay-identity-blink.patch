@@ -1471,10 +1471,11 @@
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
  #include "third_party/blink/renderer/core/html/track/video_track_list.h"
-@@ -564,6 +565,16 @@
+@@ -563,6 +564,16 @@
+ 
    String codecs = content_type.Parameter("codecs");
    ContentType filtered_content_type = content_type;
- 
++
 +  // Parc: AC-3 and E-AC-3 only under Safari's identity, for isTypeSupported,
 +  // addSourceBuffer and changeType alike (parc_safari_identity.h).
 +  if (IsParcSafariOnlyAudioCodecs(codecs) &&
@@ -1484,10 +1485,9 @@
 +             << ") -> false (Dolby audio outside Safari's identity)";
 +    return false;
 +  }
-+
+ 
  #if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
    // Mime util doesn't include the mp2t container in order to prevent codec
-   // support leaking into HtmlMediaElement.canPlayType. If the stream parser
 @@ -595,10 +606,20 @@
    // from the codecs in the `filtered_content_type`.
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
@@ -1521,7 +1521,47 @@
            continue;
          }
        }
-@@ -1326,6 +1349,9 @@
+@@ -659,6 +682,15 @@
+       MIMETypeRegistry::SupportsMediaSourceMIMEType(mime_type, codecs);
+ 
+   bool result = supported == MIMETypeRegistry::kSupported;
++
++  // Parc: Safari takes a type without codecs that it may play, for
++  // isTypeSupported, addSourceBuffer and changeType alike (WebKit's
++  // MediaSource::isTypeSupported); its parser then takes the stream's codecs,
++  // as media::ChunkDemuxer::ParcSetSafariInitSegmentRules() lets it here.
++  if (supported == MIMETypeRegistry::kMaybeSupported && codecs.empty() &&
++      IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    result = true;
++  }
+ 
+   DVLOG(2) << __func__ << "(" << type << ", "
+            << base::ToString(enforce_codec_specificity) << ") -> "
+@@ -1015,6 +1047,23 @@
+   DCHECK_LE(highest_buffered_presentation_timestamp,
+             std::isnan(old_duration) ? 0 : old_duration);
+ 
++  // Parc: Safari's step 4.1 (WebKit's MediaSource::setDurationInternal): a
++  // new duration below the highest end time of any SourceBuffer's buffered
++  // ranges becomes that end time, for the demuxer and the element alike.
++  ExecutionContext* context = GetExecutionContext();
++  if (context && IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    for (unsigned i = 0; i < source_buffers_->length(); ++i) {
++      WebTimeRanges ranges;
++      source_buffers_->item(i)->GetBuffered_Locked(&ranges, pass_key);
++      if (!ranges.empty()) {
++        new_duration = std::max(new_duration, ranges.back().end);
++      }
++    }
++    if (new_duration == old_duration) {
++      return;
++    }
++  }
++
+   // 3. Set old duration to the current value of duration.
+   // Done for step 1 above, already.
+   // 4. Update duration to new duration.
+@@ -1326,6 +1375,9 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);
@@ -7748,3 +7788,13 @@
  base::TimeDelta CrossThreadMediaSourceAttachment::GetRecentMediaTime(
      MediaSourceTracer* /* tracer */) {
    attachment_state_lock_.AssertAcquired();
+--- a/third_party/blink/renderer/modules/BUILD.gn
++++ b/third_party/blink/renderer/modules/BUILD.gn
+@@ -521,6 +521,7 @@
+     "mediarecorder/track_recorder_unittest.cc",
+     "mediarecorder/video_track_recorder_unittest.cc",
+     "mediasession/media_session_test.cc",
++    "mediasource/parc_media_source_test.cc",
+     "mediastream/browser_capture_media_stream_track_test.cc",
+     "mediastream/html_media_track_element_media_track_test.cc",
+     "mediastream/html_user_media_element_media_stream_test.cc",

@@ -1288,7 +1288,7 @@
    }
 --- a/media/filters/chunk_demuxer.cc
 +++ b/media/filters/chunk_demuxer.cc
-@@ -140,6 +140,42 @@
+@@ -140,8 +140,44 @@
      CompletePendingReadIfPossible_Locked();
  
    return true;
@@ -1318,8 +1318,8 @@
 +  if (!is_enabled_) {
 +    stream_->Seek(media_time);
 +  }
-+}
-+
+ }
+ 
 +size_t ChunkDemuxerStream::ParcFreeGOPsBefore(base::TimeDelta end) {
 +  base::AutoLock auto_lock(lock_);
 +  return stream_->ParcFreeGOPsBefore(end);
@@ -1328,9 +1328,11 @@
 +size_t ChunkDemuxerStream::ParcFreeGOPsFrom(base::TimeDelta start) {
 +  base::AutoLock auto_lock(lock_);
 +  return stream_->ParcFreeGOPsFrom(start);
- }
- 
++}
++
  void ChunkDemuxerStream::Remove(base::TimeDelta start,
+                                 base::TimeDelta end,
+                                 base::TimeDelta duration) {
 @@ -529,6 +565,14 @@
      return;
    }
@@ -1355,12 +1357,10 @@
  
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -641,6 +687,43 @@
-   }
- 
+@@ -643,6 +689,43 @@
    RunSeekCB_Locked(PIPELINE_OK);
-+}
-+
+ }
+ 
 +void ChunkDemuxer::ParcSetFastSeek(base::TimeDelta target,
 +                                   base::TimeDelta tolerance_before) {
 +  base::AutoLock auto_lock(lock_);
@@ -1396,9 +1396,11 @@
 +    }
 +  }
 +  return landing;
- }
- 
++}
++
  ChunkDemuxer::Status ChunkDemuxer::AddId(
+     const std::string& id,
+     std::unique_ptr<AudioDecoderConfig> audio_config) {
 @@ -656,12 +739,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
@@ -1431,7 +1433,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,14 +781,15 @@
+@@ -696,17 +781,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
  
@@ -1448,7 +1450,11 @@
 +  CHECK(init_cb_ || state_ == INITIALIZED);
  
    std::unique_ptr<media::StreamParser> stream_parser(
-       CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
+-      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
++      ParcCreateParser_Locked(content_type, codecs));
+   if (!stream_parser) {
+     DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
+              << " codecs=" << codecs;
 @@ -762,6 +848,11 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
@@ -1461,7 +1467,7 @@
  
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -892,13 +983,86 @@
+@@ -892,6 +983,17 @@
      }
    }
  
@@ -1479,15 +1485,15 @@
    std::move(change_completed_cb).Run(enabled_stream);
  }
  
- void ChunkDemuxer::DisableCanChangeType() {
+@@ -899,6 +1001,80 @@
    supports_change_type_ = false;
-+}
-+
+ }
+ 
 +void ChunkDemuxer::RestrictCanChangeType(ChangeTypeFilter filter) {
 +  base::AutoLock auto_lock(lock_);
 +  change_type_filter_ = std::move(filter);
- }
- 
++}
++
 +void ChunkDemuxer::ParcSetSafariEviction(bool enabled) {
 +  base::AutoLock auto_lock(lock_);
 +  parc_safari_eviction_ = enabled;
@@ -1509,6 +1515,18 @@
 +void ChunkDemuxer::ParcSetSafariInitSegmentRules(bool safari) {
 +  base::AutoLock auto_lock(lock_);
 +  parc_safari_init_segment_rules_ = safari;
++}
++
++std::unique_ptr<StreamParser> ChunkDemuxer::ParcCreateParser_Locked(
++    const std::string& content_type,
++    const std::string& codecs) {
++  lock_.AssertAcquired();
++  std::unique_ptr<StreamParser> stream_parser =
++      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get());
++  if (!stream_parser && codecs.empty() && parc_safari_init_segment_rules_) {
++    stream_parser = StreamParserFactory::ParcCreateWithoutCodecs(content_type);
++  }
++  return stream_parser;
 +}
 +
 +void ChunkDemuxer::ParcSetDolbyVisionAppendedCallback(
@@ -1548,7 +1566,7 @@
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
                                      base::TimeDelta currentMediaTime,
                                      size_t newDataSize) {
-@@ -913,6 +1077,15 @@
+@@ -913,6 +1089,15 @@
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
@@ -1564,7 +1582,7 @@
    return itr->second->EvictCodedFrames(currentMediaTime, newDataSize);
  }
  
-@@ -1140,6 +1313,51 @@
+@@ -1140,6 +1325,51 @@
    host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
  }
  
@@ -1616,18 +1634,33 @@
  bool ChunkDemuxer::CanChangeType(const std::string& id,
                                   const std::string& content_type,
                                   const std::string& codecs) {
-@@ -1159,6 +1377,10 @@
-   DCHECK(IsValidId_Locked(id));
- 
-   if (!supports_change_type_) {
-+    return false;
-+  }
-+
-+  if (change_type_filter_ && !change_type_filter_.Run(content_type, codecs)) {
+@@ -1162,11 +1392,15 @@
      return false;
    }
  
-@@ -1440,6 +1662,10 @@
++  if (change_type_filter_ && !change_type_filter_.Run(content_type, codecs)) {
++    return false;
++  }
++
+   // CanChangeType() doesn't care if there has or hasn't been received a first
+   // initialization segment for the source buffer corresponding to |id|.
+ 
+   std::unique_ptr<media::StreamParser> stream_parser(
+-      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
++      ParcCreateParser_Locked(content_type, codecs));
+   return !!stream_parser;
+ }
+ 
+@@ -1182,7 +1416,7 @@
+   DCHECK(IsValidId_Locked(id));
+ 
+   std::unique_ptr<media::StreamParser> stream_parser(
+-      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
++      ParcCreateParser_Locked(content_type, codecs));
+   // Caller should query CanChangeType() first to protect from failing this.
+   DCHECK(stream_parser);
+   source_state_map_[id]->ChangeType(std::move(stream_parser),
+@@ -1440,6 +1674,10 @@
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
@@ -1638,11 +1671,10 @@
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1486,6 +1712,45 @@
-   CHECK_EQ(state_, INITIALIZING);
+@@ -1487,7 +1725,46 @@
    ChangeState_Locked(INITIALIZED);
    RunInitCB_Locked(PIPELINE_OK);
-+}
+ }
 +
 +// WebKit's SourceBuffer adds a late SourceBuffer's tracks like the first
 +// ones' (sourceBufferPrivateDidReceiveInitializationSegment); the duration and
@@ -1661,7 +1693,7 @@
 +  } else {
 +    source_state->AbortReads();
 +  }
-+
+ 
 +  PipelineMetadata added;
 +  for (ChunkDemuxerStream* stream : id_to_streams_map_[source_id]) {
 +    if (params.liveness != StreamLiveness::kUnknown) {
@@ -1681,10 +1713,12 @@
 +  if (added.has_audio || added.has_video) {
 +    parc_streams_added_cb_.Run(added);
 +  }
- }
- 
++}
++
  // static
-@@ -1598,6 +1863,13 @@
+ MediaTrack::Id ChunkDemuxer::GenerateMediaTrackId() {
+   static unsigned g_track_count = 0;
+@@ -1598,6 +1875,13 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -1698,7 +1732,7 @@
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
  
-@@ -1605,6 +1877,7 @@
+@@ -1605,6 +1889,7 @@
  }
  
  void ChunkDemuxer::StartReturningData() {
@@ -1706,7 +1740,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->StartReturningData();
-@@ -1612,6 +1885,7 @@
+@@ -1612,6 +1897,7 @@
  }
  
  void ChunkDemuxer::AbortPendingReads_Locked() {
@@ -1714,7 +1748,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +1893,7 @@
+@@ -1619,6 +1905,7 @@
  }
  
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
@@ -1722,7 +1756,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +1925,28 @@
+@@ -1650,6 +1937,28 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -1798,7 +1832,7 @@
  
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -313,6 +330,27 @@
+@@ -313,6 +330,31 @@
    void SetPlaybackRate(double rate) override {}
  
    void DisableCanChangeType() override;
@@ -1815,6 +1849,10 @@
 +  // Parc: SourceBuffers added after this check their init segments as
 +  // WebKit's do (SourceBufferState::ParcSetSafariInitSegmentRules()). Set on
 +  // a document presenting Safari's identity, before the page can add one.
++  // AddId(), CanChangeType() and ChangeType() then also take a type without
++  // codecs that needs them otherwise (video/mp4, audio/mp4, video/webm,
++  // audio/webm, video/mp2t), as Safari's Media Source does
++  // (StreamParserFactory::ParcCreateWithoutCodecs()).
 +  void ParcSetSafariInitSegmentRules(bool safari);
 +  // Parc: lets AddId() succeed after initialization, as WebKit's MediaSource
 +  // adds a SourceBuffer whenever it is open. |streams_added_cb| runs, posted
@@ -1826,7 +1864,7 @@
  
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -379,6 +417,14 @@
+@@ -379,6 +421,14 @@
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
  
@@ -1841,7 +1879,7 @@
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
    // |content_type| indicates the ContentType of the MIME type for the data that
-@@ -491,6 +537,15 @@
+@@ -491,6 +541,15 @@
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -1857,7 +1895,7 @@
  
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -597,6 +652,51 @@
+@@ -597,6 +656,56 @@
        track_id_to_demux_stream_map_;
  
    bool supports_change_type_ = true;
@@ -1871,6 +1909,11 @@
 +  base::RepeatingClosure parc_dolby_vision_appended_cb_;
 +  // Parc: see ParcSetSafariInitSegmentRules(). Guarded by `lock_`.
 +  bool parc_safari_init_segment_rules_ = false;
++  // Parc: the parser for |content_type| and |codecs|, or for |content_type|
++  // alone under Safari's init segment rules. Called with `lock_` held.
++  std::unique_ptr<StreamParser> ParcCreateParser_Locked(
++      const std::string& content_type,
++      const std::string& codecs);
 +  // Parc: a SourceBufferState took Dolby Vision. Called with `lock_` held.
 +  void ParcOnDolbyVisionAppended();
 +  // Parc: see ParcSetSafariEviction(). Guarded by `lock_`.
@@ -7310,6 +7353,39 @@
  }
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
+@@ -782,6 +803,32 @@
+ }
+ 
+ // static
++std::unique_ptr<StreamParser> StreamParserFactory::ParcCreateWithoutCodecs(
++    std::string_view type) {
++  if (IsTypeSupported(type, {}) != SupportsType::kMaybeSupported) {
++    return nullptr;
++  }
++  if (type == "video/webm" || type == "audio/webm") {
++    return std::make_unique<WebMStreamParser>();
++  }
++  if (type == "video/mp4" || type == "audio/mp4") {
++    // Dolby Vision as Dolby Vision, as if the codecs named it, rather than as
++    // its cross-compatible codec: no codec string says to do otherwise.
++    return std::make_unique<mp4::MP4StreamParser>(
++        std::nullopt, /*has_sbr=*/false, /*has_flac=*/true,
++        /*has_iamf=*/false, /*has_dv=*/true);
++  }
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && \
++    BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
++  if (type == "video/mp2t") {
++    return std::make_unique<mp2t::Mp2tStreamParser>(std::nullopt,
++                                                    /*has_sbr=*/false);
++  }
++#endif
++  return nullptr;
++}
++
++// static
+ std::unique_ptr<StreamParser> StreamParserFactory::Create(
+     std::unique_ptr<AudioDecoderConfig> audio_config) {
+   DCHECK(audio_config);
 --- a/media/base/stream_parser.h
 +++ b/media/base/stream_parser.h
 @@ -148,6 +148,11 @@
@@ -7387,7 +7463,7 @@
    }
  
    struct MuxedStreamInfo {
-@@ -2400,6 +2420,101 @@
+@@ -2400,8 +2420,103 @@
  
    // Adding an id after append should fail.
    ASSERT_EQ(AddId(video_id, HAS_VIDEO), ChunkDemuxer::kReachedIdLimit);
@@ -7430,8 +7506,8 @@
 +
 +  // A renderer made now reads it from the last seek, the start.
 +  CheckExpectedBuffers(audio_stream, "0K 23K 46K 69K");
-+}
-+
+ }
+ 
 +// Parc: a SourceBuffer added after the one of its type was removed enables
 +// and reports its stream; the player restarts for any reported stream, as no
 +// renderer made before has it.
@@ -7486,10 +7562,90 @@
 +                     &enabled));
 +  EXPECT_EQ(enabled, second);
 +  CheckExpectedBuffers(second, "0K 23K");
++}
++
+ // Test that Read() calls after a RemoveId() return "end of stream" buffers.
+ TEST_F(ChunkDemuxerTest, RemoveId) {
+   std::string audio_id = "audio1";
+@@ -3012,7 +3127,77 @@
+ 
+     if (result == ChunkDemuxer::kOk)
+       demuxer_->RemoveId("source_id");
++  }
++}
++
++// Parc: types named without codecs, which ChunkDemuxer takes only under
++// Safari's init segment rules (ParcSetSafariInitSegmentRules()).
++TEST_F(ChunkDemuxerTest, ParcTypesWithoutCodecsNeedSafariIdentity) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  demuxer_->Initialize(&host_,
++                       base::BindOnce(&ChunkDemuxerTest::DemuxerInitialized,
++                                      base::Unretained(this)));
++
++  for (const char* type :
++       {"video/webm", "audio/webm", "video/mp4", "audio/mp4", "video/mp2t"}) {
++    EXPECT_EQ(AddId(kSourceId, type, ""), ChunkDemuxer::kNotSupported)
++        << type;
++  }
++  ASSERT_EQ(AddId(kSourceId, "video/webm", "vorbis,vp8"), ChunkDemuxer::kOk);
++  EXPECT_FALSE(demuxer_->CanChangeType(kSourceId, "video/mp4", ""));
++}
++
++TEST_F(ChunkDemuxerTest, ParcSafariIdentityAddsTypesWithoutCodecs) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  demuxer_->ParcSetSafariInitSegmentRules(true);
++  demuxer_->Initialize(&host_,
++                       base::BindOnce(&ChunkDemuxerTest::DemuxerInitialized,
++                                      base::Unretained(this)));
++
++  std::vector<std::string> types = {"video/webm", "audio/webm", "video/mp4",
++                                    "audio/mp4"};
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && \
++    BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
++  types.push_back("video/mp2t");
++#endif
++  for (const std::string& type : types) {
++    ChunkDemuxer::Status result = AddId(kSourceId, type, "");
++    EXPECT_EQ(result, ChunkDemuxer::kOk) << type;
++    if (result == ChunkDemuxer::kOk) {
++      demuxer_->RemoveId(kSourceId);
++    }
+   }
++  EXPECT_EQ(AddId(kSourceId, "video/x-unknown", ""),
++            ChunkDemuxer::kNotSupported);
++  EXPECT_EQ(AddId(kSourceId, "video/webm", "bogus"),
++            ChunkDemuxer::kNotSupported);
++}
++
++TEST_F(ChunkDemuxerTest, ParcTypeWithoutCodecsTakesTheStreamsCodecs) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  EXPECT_CALL(host_, SetDuration(_)).Times(AnyNumber());
++  demuxer_->ParcSetSafariInitSegmentRules(true);
++  EXPECT_CALL(*this, DemuxerOpened());
++  demuxer_->Initialize(&host_, CreateInitDoneCallback(PIPELINE_OK));
++  ASSERT_EQ(AddId(kSourceId, "video/webm", ""), ChunkDemuxer::kOk);
++
++  scoped_refptr<DecoderBuffer> webm = ReadTestDataFile("bear-320x240.webm");
++  EXPECT_CALL(*this, InitSegmentReceivedMock(_));
++  EXPECT_TRUE(AppendData(kSourceId, base::span(*webm)));
++  EXPECT_TRUE(GetStream(DemuxerStream::AUDIO));
++  EXPECT_TRUE(GetStream(DemuxerStream::VIDEO));
++
++#if BUILDFLAG(USE_PROPRIETARY_CODECS)
++  ASSERT_TRUE(demuxer_->CanChangeType(kSourceId, "video/mp4", ""));
++  demuxer_->ResetParserState(kSourceId, append_window_start_for_next_append_,
++                             append_window_end_for_next_append_,
++                             &timestamp_offset_map_[kSourceId]);
++  demuxer_->ChangeType(kSourceId, "video/mp4", "");
++  scoped_refptr<DecoderBuffer> mp4 =
++      ReadTestDataFile("bear-640x360-av_frag.mp4");
++  EXPECT_CALL(*this, InitSegmentReceivedMock(_));
++  EXPECT_TRUE(AppendData(kSourceId, base::span(*mp4)));
++#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
  }
  
- // Test that Read() calls after a RemoveId() return "end of stream" buffers.
-@@ -3768,8 +3883,185 @@
+ TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
+@@ -3768,8 +3953,185 @@
    // Verify that the old data, and nothing more, has been garbage collected.
    CheckExpectedRanges(DemuxerStream::AUDIO, "{ [1000,1230) }");
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
@@ -7533,8 +7689,8 @@
 +  ParcAppendFiveSecondAudioFrames(0, 15);
 +  EXPECT_FALSE(
 +      demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 900000));
- }
- 
++}
++
 +TEST_F(ChunkDemuxerTest, ParcSafariEviction_OneBudgetAcrossTracks) {
 +  ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
 +  demuxer_->ParcSetSafariEviction(true);
@@ -7593,8 +7749,8 @@
 +
 +  EXPECT_TRUE(demuxer_->EvictCodedFrames(kSourceId, current_time, 2000000));
 +  CheckExpectedRanges("{ [25000,75000) }");
-+}
-+
+ }
+ 
 +TEST_F(ChunkDemuxerTest, ParcSafariEviction_DataAfterThePlayableSegment) {
 +  ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
 +  demuxer_->ParcSetSafariEviction(true);
@@ -7723,3 +7879,20 @@
  // Test saving the last GOP appended when the GOP containing the next buffer is
  // adjacent to the last GOP appended.
  TEST_F(SourceBufferStreamTest, GarbageCollection_SaveAppendGOP_Selected1) {
+--- a/media/filters/stream_parser_factory.h
++++ b/media/filters/stream_parser_factory.h
+@@ -74,6 +74,14 @@
+   static std::unique_ptr<StreamParser> Create(
+       std::unique_ptr<VideoDecoderConfig> video_config);
+ 
++  // Parc: a parser for a |type| named without codecs that IsTypeSupported()
++  // calls kMaybeSupported, as WebKit's SourceBufferParser::create makes one
++  // for Safari's Media Source. Used only under Safari's init segment rules
++  // (ChunkDemuxer::ParcSetSafariInitSegmentRules()), which take whatever
++  // codecs the stream carries. Returns null for any other type.
++  static std::unique_ptr<StreamParser> ParcCreateWithoutCodecs(
++      std::string_view type);
++
+   // Creates a parser used for determining which codecs are present in a media
+   // file. This parser won't log to media log because failure to parse is not
+   // itself an error in hls media playback. This function may return null if
