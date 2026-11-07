@@ -475,6 +475,118 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
+@@ -519,5 +522,111 @@
+   EXPECT_FALSE(AudibilityBypassTracker::ClaimGrant(player_id));
+ }
+ 
++// Parc: a Safari-identity page moving an element to another frame registers its
++// player there under the same id (HTMLMediaElement::ParcMovePlayerToFrame).
++class MediaWebContentsObserverMovedPlayerTest
++    : public MediaWebContentsObserverTest {
++ protected:
++  void SetUp() override {
++    MediaWebContentsObserverTest::SetUp();
++    RenderFrameHost* main_rfh = contents()->GetPrimaryMainFrame();
++    RenderFrameHostTester::For(main_rfh)->InitializeRenderFrameIfNeeded();
++    child_rfh_ = RenderFrameHostTester::For(main_rfh)->AppendChild("child");
++    RenderFrameHostTester::For(child_rfh_)->InitializeRenderFrameIfNeeded();
++    main_player_host_ = SetupPlayerHost();
++    media_web_contents_observer().BindMediaPlayerHost(
++        child_rfh_->GetGlobalId(),
++        child_player_host_.BindNewEndpointAndPassDedicatedReceiver());
++  }
++
++  void TearDown() override {
++    main_player_host_.reset();
++    child_player_host_.reset();
++    MediaWebContentsObserverTest::TearDown();
++  }
++
++  void BypassAudioService(PlayerSetup& player) {
++    SetMediaMetadata(player.observer, /*has_audio=*/true, /*has_video=*/false);
++    SetUseAudioService(player.observer, false);
++  }
++
++  void EndRegistration(PlayerSetup& player) {
++    player.observer.reset();
++    player.player.reset();
++    base::RunLoop().RunUntilIdle();
++  }
++
++  raw_ptr<RenderFrameHost> child_rfh_ = nullptr;
++  mojo::AssociatedRemote<media::mojom::MediaPlayerHost> main_player_host_;
++  mojo::AssociatedRemote<media::mojom::MediaPlayerHost> child_player_host_;
++};
++
++// The grant follows the player when its old registration ends first, and its
++// revocation reaches it in the new frame.
++TEST_F(MediaWebContentsObserverMovedPlayerTest, GrantFollowsAndIsRevoked) {
++  auto grant =
++      AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
++  auto player = CreateAndAddPlayer(main_player_host_, /*player_id=*/7);
++  BypassAudioService(player);
++  PlayMedia(player.observer);
++  ASSERT_TRUE(IsWebContentsAudible());
++
++  EndRegistration(player);
++  auto moved = CreateAndAddPlayer(child_player_host_, /*player_id=*/7);
++  BypassAudioService(moved);
++  PlayMedia(moved.observer);
++  EXPECT_TRUE(IsWebContentsAudible());
++
++  grant.RunAndReset();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(IsWebContentsAudible());
++}
++
++// A paused player's grant follows it when the new registration plays before
++// the old one ends, and no other player of the new frame gets it.
++TEST_F(MediaWebContentsObserverMovedPlayerTest,
++       PausedPlayersGrantFollowsWhenOldRegistrationEndsLast) {
++  auto grant =
++      AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
++  auto player = CreateAndAddPlayer(main_player_host_, /*player_id=*/7);
++  BypassAudioService(player);
++  ASSERT_FALSE(IsWebContentsAudible());
++
++  auto moved = CreateAndAddPlayer(child_player_host_, /*player_id=*/7);
++  BypassAudioService(moved);
++  PlayMedia(moved.observer);
++  EXPECT_FALSE(IsWebContentsAudible());
++  EndRegistration(player);
++  EXPECT_TRUE(IsWebContentsAudible());
++
++  auto other = CreateAndAddPlayer(child_player_host_, /*player_id=*/8);
++  PauseMedia(moved.observer);
++  BypassAudioService(other);
++  PlayMedia(other.observer);
++  EXPECT_FALSE(IsWebContentsAudible());
++}
++
++// A paused moved player takes its grant when its old registration ends, so
++// the grant stays its own after the old frame goes.
++TEST_F(MediaWebContentsObserverMovedPlayerTest,
++       PausedMovedPlayerKeepsGrantAfterOldFrameGoes) {
++  auto grant = AudibilityBypassTracker::AddGrant(child_rfh_);
++  auto player = CreateAndAddPlayer(child_player_host_, /*player_id=*/7);
++  BypassAudioService(player);
++
++  auto moved = CreateAndAddPlayer(main_player_host_, /*player_id=*/7);
++  BypassAudioService(moved);
++  EndRegistration(player);
++  RenderFrameHostTester::For(child_rfh_.ExtractAsDangling())->Detach();
++  base::RunLoop().RunUntilIdle();
++
++  PlayMedia(moved.observer);
++  EXPECT_TRUE(IsWebContentsAudible());
++
++  grant.RunAndReset();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(IsWebContentsAudible());
++}
++
+ }  // namespace
+ }  // namespace content
 --- a/content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc
 +++ b/content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc
 @@ -180,6 +180,9 @@
