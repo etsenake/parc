@@ -485,6 +485,13 @@ compiled into the core but not yet called by the GPU service.
   `CaptionUserPreferencesMediaAF` from MediaAccessibility's display mode,
   caption languages and SDH preference, the user's languages, and the
   enabled audio track's language; languages matched as WTF does on Cocoa).
+- Chapter tracks: one per locale in the asset's chapter locales (loaded
+  first, and again on `AVAssetChapterMetadataGroupsDidChangeNotification`),
+  kind `chapters`, language the locale identifier, numbered with the text
+  tracks; each chapter item becomes one WebVTT cue (its start and duration,
+  the chapter number as the id, the title as the text), made once, as
+  WebKit's `InbandChapterTrackPrivateAVFObjC`. They never feed the legible
+  output and a mode change does nothing.
 - Cues: one `AVPlayerItemLegibleOutput` (2 s advance, player rendering
   suppressed, source and rules styling) with WebVTT as native samples. WebVTT
   arrives as ISO WebVTT cue boxes (`kWebVtt`, plus the `vttC` header once per

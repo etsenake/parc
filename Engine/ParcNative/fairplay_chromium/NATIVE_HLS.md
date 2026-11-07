@@ -652,7 +652,9 @@ element calls it from the main thread on every in-band mode change.
   caption languages and SDH preference, the user's languages) and the
   enabled audio track, and marks that one track `automatic`; the element's
   automatic selection shows it as its default and gives these tracks no
-  score of Chrome's own. Cues
+  score of Chrome's own. Chapter tracks (WebKit's
+  `InbandChapterTrackPrivateAVFObjC`, one per chapter locale) arrive the
+  same way with kind `chapters` and WebVTT cues. Cues
   become `VTTCue`s as WebKit's `InbandGenericTextTrack` makes them (`kWebVtt`
   parsed like `WebVTTParser::parseCueData`, the header for regions and style
   sheets, generic cues added, updated and removed by `cue_id`, an open cue's

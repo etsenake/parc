@@ -32,6 +32,8 @@
                       poster:(std::shared_ptr<const parc::fairplay::PostTask>)poster;
 - (void)observeItem:(AVPlayerItem*)item;
 - (void)observeTracks:(NSArray<AVPlayerItemTrack*>*)tracks;
+// AVAssetChapterMetadataGroupsDidChangeNotification for |asset|.
+- (void)observeChapters:(AVAsset*)asset;
 - (void)stop;
 @end
 
@@ -50,6 +52,7 @@ constexpr NSTimeInterval kOutputAdvanceInterval = 2;
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 
 NSString* const kMediaSelectionKey = @"availableMediaCharacteristicsWithMediaSelectionOptions";
+NSString* const kChapterLocalesKey = @"availableChapterLocales";
 
 std::string ToStdString(NSString* string) {
   if (!string) {
@@ -887,6 +890,18 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     if (item_.tracks.count) {
       TracksDidChange();
     }
+
+    // MediaPlayerPrivateAVFoundationObjC::processChapterTracks, once the
+    // asset's chapter locales are loaded and on every chapter change.
+    [observer_ observeChapters:asset_];
+    [asset_ loadValuesAsynchronouslyForKeys:@[ kChapterLocalesKey ]
+                          completionHandler:^{
+                            (*poster)([weak] {
+                              if (auto impl = weak.lock()) {
+                                impl->ProcessChapterTracks();
+                              }
+                            });
+                          }];
   }
 
   void Detach() {
@@ -905,6 +920,7 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     audible_group_.reset();
     audio_tracks_.clear();
     text_tracks_.clear();
+    chapter_tracks_.clear();
     current_text_track_ = nullptr;
     reported_.clear();
     item_ = nil;
@@ -1733,6 +1749,9 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     for (auto& track : text_tracks_) {
       tracks.push_back(track->info);
     }
+    for (auto& track : chapter_tracks_) {
+      tracks.push_back(track->info);
+    }
     MarkAutomaticTextTrack(tracks);
     if (tracks == reported_) {
       return;
@@ -1820,6 +1839,174 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     return nullptr;
   }
 
+  // InbandChapterTrackPrivateAVFObjC: one track per chapter locale, kind
+  // "chapters", language the locale identifier, numbered with the text
+  // tracks (m_currentTextTrackID). Its cues are WebVTT cues (start, the
+  // item's duration, the chapter number as the id, the title as the text),
+  // each made once. It never takes part in the legible output, and its mode
+  // changes nothing (its private track is always hidden).
+  struct ChapterTrack {
+    struct Chapter {
+      double start = 0;
+      double duration = 0;
+      std::string title;
+      bool operator==(const Chapter&) const = default;
+    };
+    std::string language;
+    std::vector<Chapter> processed;
+    HlsTrack info;
+  };
+
+  // Called by the observer (asset loaded, chapters changed).
+ public:
+  void ProcessChapterTracks() {
+    if (!asset_ || [asset_ statusOfValueForKey:kChapterLocalesKey error:nil] != AVKeyValueStatusLoaded) {
+      return;
+    }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    // Loaded, so this doesn't block (AVAsset.h); WebKit reads it the same way.
+    NSArray<NSLocale*>* locales = asset_.availableChapterLocales;
+#pragma clang diagnostic pop
+    if (!locales.count) {
+      return;
+    }
+    // The non-deprecated form of WebKit's
+    // chapterMetadataGroupsWithTitleLocale:containingItemsWithCommonKeys:
+    // answers each locale separately; the tracks are still made in the
+    // locales' order, as WebKit's loop makes them, once all have answered.
+    struct Pending {
+      std::vector<std::string> languages;
+      std::vector<NSArray<AVTimedMetadataGroup*>*> chapters;
+      size_t remaining = 0;
+    };
+    auto pending = std::make_shared<Pending>();
+    for (NSLocale* locale in locales) {
+      pending->languages.push_back(ToStdString(locale.localeIdentifier));
+    }
+    pending->chapters.resize(pending->languages.size());
+    pending->remaining = pending->languages.size();
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    AVAsset* asset = asset_;
+    size_t position = 0;
+    for (NSLocale* locale in locales) {
+      size_t index = position++;
+      [asset_ loadChapterMetadataGroupsWithTitleLocale:locale
+                         containingItemsWithCommonKeys:@[ AVMetadataCommonKeyArtwork ]
+                                     completionHandler:^(NSArray<AVTimedMetadataGroup*>* chapters, NSError*) {
+                                       (*poster)([weak, asset, pending, index, chapters] {
+                                         auto impl = weak.lock();
+                                         if (!impl || impl->asset_ != asset) {
+                                           return;
+                                         }
+                                         pending->chapters[index] = chapters;
+                                         if (--pending->remaining) {
+                                           return;
+                                         }
+                                         for (size_t i = 0; i < pending->languages.size(); ++i) {
+                                           impl->ProcessChapters(pending->languages[i], pending->chapters[i]);
+                                         }
+                                       });
+                                     }];
+    }
+  }
+
+ private:
+  void ProcessChapters(const std::string& language, NSArray<AVTimedMetadataGroup*>* chapters) {
+    if (!chapters.count) {
+      return;
+    }
+    ChapterTrack* track = FindChapterTrack(language);
+    if (!track) {
+      auto made = std::make_unique<ChapterTrack>();
+      made->language = language;
+      uint64_t number = next_text_track_number_++;
+      HlsTrack& info = made->info;
+      info.type = HlsTrackType::kText;
+      info.key = "text-" + std::to_string(number);
+      info.id = std::to_string(number);
+      info.kind = "chapters";
+      info.language = language;
+      // InbandTextTrackPrivate's default trackIndex.
+      info.index = 0;
+      track = made.get();
+      chapter_tracks_.push_back(std::move(made));
+      ReportTracks();
+    }
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    int chapter_number = 0;
+    for (AVTimedMetadataGroup* chapter in chapters) {
+      for (AVMetadataItem* item in chapter.items) {
+        ++chapter_number;
+        if ([item statusOfValueForKey:@"value" error:nil] == AVKeyValueStatusLoaded) {
+          CreateChapterCue(*track, item, chapter_number);
+          continue;
+        }
+        std::string key = track->info.key;
+        int number = chapter_number;
+        [item loadValuesAsynchronouslyForKeys:@[ @"value" ]
+                            completionHandler:^{
+                              NSError* error = nil;
+                              if ([item statusOfValueForKey:@"value" error:&error] != AVKeyValueStatusLoaded || error) {
+                                return;
+                              }
+                              (*poster)([weak, key, item, number] {
+                                auto impl = weak.lock();
+                                if (!impl) {
+                                  return;
+                                }
+                                for (auto& candidate : impl->chapter_tracks_) {
+                                  if (candidate->info.key == key) {
+                                    impl->CreateChapterCue(*candidate, item, number);
+                                  }
+                                }
+                              });
+                            }];
+      }
+    }
+  }
+
+  void CreateChapterCue(ChapterTrack& track, AVMetadataItem* item, int chapter_number) {
+    CMTime time = item.time;
+    CMTime duration = item.duration;
+    ChapterTrack::Chapter chapter;
+    chapter.start = CMTIME_IS_NUMERIC(time) ? CMTimeGetSeconds(time) : 0;
+    chapter.duration = CMTIME_IS_NUMERIC(duration) ? CMTimeGetSeconds(duration) : 0;
+    chapter.title = ToStdString(item.stringValue);
+    if (std::find(track.processed.begin(), track.processed.end(), chapter) != track.processed.end()) {
+      return;
+    }
+    track.processed.push_back(chapter);
+    // ISOWebVTTCue(time, duration, id, payload), parsed as WebVTT cue data;
+    // an item without a duration gives no end (NaN), as for WebVTT samples.
+    HlsCue cue;
+    cue.type = HlsCue::Type::kWebVtt;
+    cue.start = chapter.start;
+    cue.end = CMTIME_IS_NUMERIC(duration) ? chapter.start + chapter.duration
+                                          : std::numeric_limits<double>::quiet_NaN();
+    cue.identifier = std::to_string(chapter_number);
+    cue.text = chapter.title;
+    std::weak_ptr<Impl> weak = weak_from_this();
+    HlsMediaSelectionClient* client = client_;
+    std::string key = track.info.key;
+    (*poster_)([weak, client, key, cue] {
+      if (weak.lock()) {
+        client->OnTextCues(key, {cue});
+      }
+    });
+  }
+
+  ChapterTrack* FindChapterTrack(const std::string& language) {
+    for (auto& track : chapter_tracks_) {
+      if (track->language == language) {
+        return track.get();
+      }
+    }
+    return nullptr;
+  }
+
   TextTrack* FindTextTrack(const std::string& key) {
     for (auto& track : text_tracks_) {
       if (track->info.key == key) {
@@ -1840,6 +2027,7 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
   std::unique_ptr<SelectionGroup> audible_group_;
   std::vector<std::unique_ptr<AudioTrack>> audio_tracks_;
   std::vector<std::unique_ptr<TextTrack>> text_tracks_;
+  std::vector<std::unique_ptr<ChapterTrack>> chapter_tracks_;
   TextTrack* current_text_track_ = nullptr;
   uint64_t next_text_track_number_ = 0;
   uint64_t next_audio_key_ = 0;
@@ -1890,6 +2078,7 @@ void* const kTrackEnabledContext = const_cast<void**>(&kTrackEnabledContext);
   std::shared_ptr<const parc::fairplay::PostTask> _poster;
   AVPlayerItem* _item;
   NSArray<AVPlayerItemTrack*>* _tracks;
+  AVAsset* _chapterAsset;
   BOOL _stopped;
   std::atomic<bool> _stopping;
 }
@@ -1928,6 +2117,31 @@ void* const kTrackEnabledContext = const_cast<void**>(&kTrackEnabledContext);
   }
 }
 
+- (void)observeChapters:(AVAsset*)asset {
+  @synchronized(self) {
+    if (_stopped || _chapterAsset) {
+      return;
+    }
+    _chapterAsset = asset;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(chapterMetadataDidChange:)
+                                                 name:AVAssetChapterMetadataGroupsDidChangeNotification
+                                               object:asset];
+  }
+}
+
+- (void)chapterMetadataDidChange:(NSNotification*)notification {
+  if (_stopping.load()) {
+    return;
+  }
+  std::weak_ptr<parc::fairplay::HlsMediaSelection::Impl> weak = _impl;
+  (*_poster)([weak] {
+    if (auto impl = weak.lock()) {
+      impl->ProcessChapterTracks();
+    }
+  });
+}
+
 - (void)stop {
   _stopping.store(true);
   @synchronized(self) {
@@ -1935,6 +2149,12 @@ void* const kTrackEnabledContext = const_cast<void**>(&kTrackEnabledContext);
       return;
     }
     _stopped = YES;
+    if (_chapterAsset) {
+      [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                      name:AVAssetChapterMetadataGroupsDidChangeNotification
+                                                    object:_chapterAsset];
+      _chapterAsset = nil;
+    }
     for (AVPlayerItemTrack* track in _tracks) {
       [track removeObserver:self forKeyPath:@"enabled" context:kTrackEnabledContext];
     }
