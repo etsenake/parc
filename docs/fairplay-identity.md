@@ -67,11 +67,26 @@ On a page that presents Safari's identity:
   gets a TypeError (fairplay-identity-blink.patch, `ContextEnabled=ParcSafariIdentity`;
   NATIVE_HLS.md, Live and DVR).
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
-  rejects with `NotSupportedError` and Chromium's usual message, and
-  `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`
-  answers unsupported. Apple TV+ probes PlayReady, Widevine and ClearKey
-  before FairPlay, so it would pick Widevine and fail if it answered. FairPlay
-  and ClearKey stay available (Safari has ClearKey too).
+  rejects with `NotSupportedError` and Chromium's usual message. Apple TV+
+  probes PlayReady, Widevine and ClearKey before FairPlay, so it would pick
+  Widevine and fail if it answered. FairPlay and ClearKey stay available
+  (Safari has ClearKey too).
+- `mediaCapabilities.decodingInfo` answers as WebKit's does. WebKit's
+  `MediaDecodingConfiguration` has no `keySystemConfiguration`, so it is
+  ignored (any key system, Widevine included) and the media answered as
+  clear; the result has no `keySystemAccess` and carries the `configuration`
+  WebKit read (with `alphaChannel`). For H.264, HEVC and Dolby Vision video
+  and for audio alone the answer is WebKit's `computeMediaCapabilitiesInfo`:
+  an HDR field (`hdrMetadataType`, `colorGamut`, `transferFunction`) refuses
+  H.264 and needs HEVC Main10, `smooth` and `powerEfficient` come from
+  VideoToolbox as WebKit reads it (H.264 hardware decode; HEVC per-profile
+  hardware and playback level, a level over the decode level refused; Dolby
+  Vision profiles, levels and hardware), and audio alone is supported but
+  neither smooth nor power efficient. The browser reads VideoToolbox once and
+  serves it to windows and dedicated workers
+  (`content/browser/media/parc_video_toolbox_decoding.mm`), since a renderer
+  can't ask from its sandbox. Other video codecs keep Chromium's answers in
+  WebKit's result shape.
 - FairPlay takes WebKit's init data types `sinf`, `skd` and `mpts` (MPEG-2
   TS, macOS) besides `cenc`: `requestMediaKeySystemAccess` keeps them in a
   FairPlay configuration and `generateRequest` accepts them. Every other page
@@ -152,7 +167,9 @@ encrypted Dolby Vision is on. The choice among
 `<source type>` children keeps Chromium's answer too: a `<source>` plays as a
 plain file, where clear Dolby Vision can't decode, and failing after its
 metadata loaded wouldn't fall back to the next `<source>`. Clear Dolby Vision
-still can't play, and `decodingInfo` without a key system still answers no.
+still can't play; `decodingInfo` on a Chrome page without a key system still
+answers no, and on a Safari-identity page answers profile 5 as Safari does
+(above).
 
 ## Which documents present it
 

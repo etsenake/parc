@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 425,
+  "version": 426,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4498,7 +4498,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "76cd40a8d8903575b0657775f4aacc454f33cf50109a698487132ba787ad1e72",
+      "sha256": "596de369d08f7cb014d0b680058ebc9755124bb0c06c6ed67496fb1028ec33bc",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4523,7 +4523,7 @@
         {
           "target": "third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc",
           "before_sha256": "31deb598eb56995fafbe96c1eebd1376a0eae40c6376a21632ce3506e9986b71",
-          "after_sha256": "f120606893d558e30cdfb8407238bbbc73c8f6675538e14f08b6843b883dd113"
+          "after_sha256": "b9a5b657f94b77a95116182b860a05201c416622d0213f7cde07d777897339d2"
         },
         {
           "target": "third_party/blink/renderer/modules/mediasource/media_source.cc",
@@ -4619,6 +4619,21 @@
           "target": "third_party/blink/renderer/modules/mediasource/source_buffer.cc",
           "before_sha256": "c860b87b640708a8b53fe4c747e4803e3742c442df4a5ed628a6e61771feba5f",
           "after_sha256": "695910b67ca89c8328b562a787848b9aac117470d86f7bb8c7b0dbdbb32632ec"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h",
+          "before_sha256": "41bf7b32953488a3745bb42b6e2990a1150f5c0a0d6c3dda99df18999458ba70",
+          "after_sha256": "0a832614d2adc95169e13175bb249af61f31a625c51c74d109f3943b8286e003"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_capabilities/media_capabilities_decoding_info.idl",
+          "before_sha256": "9b843688c7bd66f362e86ac4db6a14f853b6de572a514e1f34241fec4381fa6f",
+          "after_sha256": "04ef2a16e0d3d929c195557fb28a6953fee977f43b6c8be0a993f3a99208d5cf"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_capabilities/video_configuration.idl",
+          "before_sha256": "f40d6c88238f36272e23f710400103ce0e8ac04dcd32b0ebd4d497e0a4d6be99",
+          "after_sha256": "1358954e82c45fe23445096e6c3e240d61781a2352afb2b15a99a94eb59951c0"
         }
       ]
     },

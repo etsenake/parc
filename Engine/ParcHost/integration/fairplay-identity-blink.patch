@@ -483,15 +483,562 @@
      window->document()->AddPostPrerenderingActivationStep(
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
-@@ -50,6 +50,7 @@
+@@ -4,11 +4,16 @@
+ 
+ #include "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h"
+ 
++#include <algorithm>
++#include <limits>
+ #include <memory>
+ #include <optional>
+ #include <sstream>
++#include <string_view>
+ #include <utility>
++#include <vector>
+ 
++#include "base/containers/contains.h"
+ #include "base/feature_list.h"
+ #include "base/metrics/field_trial_params.h"
+ #include "base/metrics/histogram_functions.h"
+@@ -25,6 +30,7 @@
+ #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
+ #include "media/mojo/mojom/media_types.mojom-blink.h"
+ #include "media/video/gpu_video_accelerator_factories.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+@@ -50,6 +56,10 @@
  #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
 +#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
++#include "third_party/blink/renderer/core/html/media/html_media_element.h"
++#include "third_party/blink/renderer/platform/network/mime/content_type.h"
++#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
  #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
-@@ -921,6 +922,17 @@
+@@ -147,12 +157,20 @@
+   return info;
+ }
+ 
++MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
++    MediaCapabilitiesDecodingInfo* info,
++    ExecutionContext* context,
++    const MediaDecodingConfiguration* config,
++    MediaKeySystemAccess* access);
++
+ ScriptPromise<MediaCapabilitiesDecodingInfo>
+ CreateResolvedPromiseToDecodingInfoWith(
+     bool value,
+     ScriptState* script_state,
+     const MediaDecodingConfiguration* config) {
+-  MediaCapabilitiesDecodingInfo* info = CreateDecodingInfoWith(value);
++  MediaCapabilitiesDecodingInfo* info = ParcFinishDecodingInfo(
++      CreateDecodingInfoWith(value), ExecutionContext::From(script_state),
++      config, nullptr);
+   return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state, info);
+ }
+ 
+@@ -733,6 +751,411 @@
+   return true;
+ }
+ 
++// Parc: WebKit's MediaCapabilitiesDecodingInfo for a document presenting
++// Safari's identity carries the configuration as WebKit read it (its
++// MediaDecodingConfiguration, VideoConfiguration with alphaChannel and
++// AudioConfiguration) and no keySystemAccess.
++MediaDecodingConfiguration* ParcSafariEchoConfiguration(
++    const MediaDecodingConfiguration* config) {
++  auto* echo = MediaDecodingConfiguration::Create();
++  echo->setType(config->type());
++  if (config->hasVideo()) {
++    const VideoConfiguration* video = config->video();
++    auto* copy = VideoConfiguration::Create();
++    copy->setContentType(video->contentType());
++    copy->setWidth(video->width());
++    copy->setHeight(video->height());
++    copy->setBitrate(video->bitrate());
++    copy->setFramerate(video->framerate());
++    if (video->hasAlphaChannel()) {
++      copy->setAlphaChannel(video->alphaChannel());
++    }
++    if (video->hasHdrMetadataType()) {
++      copy->setHdrMetadataType(video->hdrMetadataType());
++    }
++    if (video->hasColorGamut()) {
++      copy->setColorGamut(video->colorGamut());
++    }
++    if (video->hasTransferFunction()) {
++      copy->setTransferFunction(video->transferFunction());
++    }
++    echo->setVideo(copy);
++  }
++  if (config->hasAudio()) {
++    const AudioConfiguration* audio = config->audio();
++    auto* copy = AudioConfiguration::Create();
++    copy->setContentType(audio->contentType());
++    if (audio->hasChannels()) {
++      copy->setChannels(audio->channels());
++    }
++    if (audio->hasBitrate()) {
++      copy->setBitrate(audio->bitrate());
++    }
++    if (audio->hasSamplerate()) {
++      copy->setSamplerate(audio->samplerate());
++    }
++    echo->setAudio(copy);
++  }
++  return echo;
++}
++
++// Parc: finishes a decodingInfo result in the shape of the document asking:
++// WebKit's under Safari's identity, Chromium's (keySystemAccess, null
++// without a key system) elsewhere.
++MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
++    MediaCapabilitiesDecodingInfo* info,
++    ExecutionContext* context,
++    const MediaDecodingConfiguration* config,
++    MediaKeySystemAccess* access) {
++  if (context && config &&
++      IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    info->setConfiguration(ParcSafariEchoConfiguration(config));
++  } else {
++    info->setKeySystemAccess(access);
++  }
++  return info;
++}
++
++// Parc: the video codecs whose decodingInfo answer under Safari's identity
++// is WebKit's (computeMediaCapabilitiesInfo): H.264, HEVC and Dolby Vision
++// on HEVC, which FairPlay plays. WebKit dispatches on these prefixes.
++bool IsParcSafariFairPlayVideoCodec(const String& codec) {
++  return codec.starts_with("avc1") || codec.starts_with("avc3") ||
++         codec.starts_with("hvc1") || codec.starts_with("hev1") ||
++         codec.starts_with("dvh1") || codec.starts_with("dvhe");
++}
++
++// Parc: WebKit's parseInteger (StringToIntegerConversion.h) for unsigned
++// types: ASCII whitespace around, an optional '+', at least one digit of
++// `base`, no overflow, nothing else.
++template <typename T>
++std::optional<T> ParcParseUnsigned(std::string_view text, unsigned base = 10) {
++  auto is_space = [](char c) {
++    return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
++  };
++  auto digit = [base](char c) -> int {
++    int value = 99;
++    if (c >= '0' && c <= '9') {
++      value = c - '0';
++    } else if (c >= 'a' && c <= 'z') {
++      value = c - 'a' + 10;
++    } else if (c >= 'A' && c <= 'Z') {
++      value = c - 'A' + 10;
++    }
++    return value < static_cast<int>(base) ? value : -1;
++  };
++  while (!text.empty() && is_space(text.front())) {
++    text.remove_prefix(1);
++  }
++  if (!text.empty() && text.front() == '+') {
++    text.remove_prefix(1);
++  }
++  if (text.empty() || digit(text.front()) < 0) {
++    return std::nullopt;
++  }
++  uint64_t value = 0;
++  while (!text.empty() && digit(text.front()) >= 0) {
++    value = value * base + static_cast<uint64_t>(digit(text.front()));
++    if (value > std::numeric_limits<T>::max()) {
++      return std::nullopt;
++    }
++    text.remove_prefix(1);
++  }
++  while (!text.empty() && is_space(text.front())) {
++    text.remove_prefix(1);
++  }
++  if (!text.empty()) {
++    return std::nullopt;
++  }
++  return static_cast<T>(value);
++}
++
++// WTF's StringView::split('.'): the non-empty pieces.
++std::vector<std::string_view> ParcSplitCodec(std::string_view codec) {
++  std::vector<std::string_view> pieces;
++  size_t start = 0;
++  while (start <= codec.size()) {
++    size_t end = codec.find('.', start);
++    if (end == std::string_view::npos) {
++      end = codec.size();
++    }
++    if (end > start) {
++      pieces.push_back(codec.substr(start, end - start));
++    }
++    start = end + 1;
++  }
++  return pieces;
++}
++
++struct ParcHevcParameters {
++  uint8_t profile_space = 0;
++  uint8_t profile_idc = 0;
++  uint32_t compatibility_flags = 0;  // Bit-reversed, as WebKit keeps it.
++  uint8_t level_idc = 0;
++};
++
++// WebKit's parseHEVCCodecParameters (HEVCUtilities.cpp).
++std::optional<ParcHevcParameters> ParcParseHevc(std::string_view codec) {
++  const std::vector<std::string_view> pieces = ParcSplitCodec(codec);
++  if (pieces.empty() || (pieces[0] != "hvc1" && pieces[0] != "hev1") ||
++      pieces.size() < 2) {
++    return std::nullopt;
++  }
++  ParcHevcParameters parameters;
++  std::string_view profile = pieces[1];
++  if (profile[0] >= 'A' && profile[0] <= 'C') {
++    parameters.profile_space = 1 + (profile[0] - 'A');
++    profile.remove_prefix(1);
++  }
++  const std::optional<uint8_t> idc = ParcParseUnsigned<uint8_t>(profile);
++  if (!idc || pieces.size() < 3) {
++    return std::nullopt;
++  }
++  parameters.profile_idc = *idc;
++  const std::optional<uint32_t> flags =
++      ParcParseUnsigned<uint32_t>(pieces[2], 16);
++  if (!flags || pieces.size() < 4) {
++    return std::nullopt;
++  }
++  uint32_t reversed = 0;
++  for (int bit = 0; bit < 32; ++bit) {
++    if (*flags & (1u << bit)) {
++      reversed |= 1u << (31 - bit);
++    }
++  }
++  parameters.compatibility_flags = reversed;
++  const std::string_view tier = pieces[3];
++  if (tier[0] != 'L' && tier[0] != 'H') {
++    return std::nullopt;
++  }
++  const std::optional<uint8_t> level =
++      ParcParseUnsigned<uint8_t>(tier.substr(1));
++  if (!level) {
++    return std::nullopt;
++  }
++  parameters.level_idc = *level;
++  for (size_t i = 4; i < pieces.size() && i < 10; ++i) {
++    if (!ParcParseUnsigned<uint8_t>(pieces[i], 16)) {
++      return std::nullopt;
++    }
++  }
++  return parameters;
++}
++
++struct ParcDoViParameters {
++  uint8_t profile = 0;
++  uint8_t level = 0;
++};
++
++// WebKit's parseDoViCodecParameters (HEVCUtilities.cpp), for the HEVC
++// codec types (dvh1, dvhe) Parc dispatches to it.
++std::optional<ParcDoViParameters> ParcParseDoVi(std::string_view codec) {
++  const std::vector<std::string_view> pieces = ParcSplitCodec(codec);
++  if (pieces.empty()) {
++    return std::nullopt;
++  }
++  const bool avc = pieces[0] == "dva1" || pieces[0] == "dvav";
++  if (!avc && pieces[0] != "dvh1" && pieces[0] != "dvhe") {
++    return std::nullopt;
++  }
++  if (pieces.size() < 2) {
++    return std::nullopt;
++  }
++  ParcDoViParameters parameters;
++  const std::string_view profile = pieces[1];
++  if (profile[0] == '0') {
++    const std::optional<uint8_t> id = ParcParseUnsigned<uint8_t>(profile);
++    if (!id) {
++      return std::nullopt;
++    }
++    parameters.profile = *id;
++  } else {
++    const std::string_view name =
++        codec.substr(0, std::min(codec.size(), 5 + profile.size()));
++    if (name == "dvav.se") {
++      parameters.profile = 9;
++    } else if (name == "dvhe.dtb") {
++      parameters.profile = 7;
++    } else if (name == "dvhe.dtr") {
++      parameters.profile = 4;
++    } else if (name == "dvhe.st") {
++      parameters.profile = 8;
++    } else if (name == "dvhe.stn") {
++      parameters.profile = 5;
++    } else {
++      return std::nullopt;
++    }
++  }
++  uint8_t maximum_level = 0;
++  switch (parameters.profile) {
++    case 4:
++    case 7:
++      maximum_level = 9;
++      break;
++    case 5:
++    case 8:
++      maximum_level = 13;
++      break;
++    case 9:
++      maximum_level = 5;
++      break;
++    default:
++      return std::nullopt;
++  }
++  if ((parameters.profile == 9) != avc || pieces.size() < 3) {
++    return std::nullopt;
++  }
++  const std::optional<uint8_t> level = ParcParseUnsigned<uint8_t>(pieces[2]);
++  if (!level || *level > maximum_level) {
++    return std::nullopt;
++  }
++  parameters.level = *level;
++  return parameters;
++}
++
++struct ParcDecodingAnswer {
++  bool supported = false;
++  bool smooth = false;
++  bool power_efficient = false;
++};
++
++// Parc: WebKit's MediaPlayer::supportsType(...) == IsSupported for one
++// track of a Safari-identity query. Media Source: Chromium's Media Source
++// parsers; a file: what canPlayType calls "probably". Dolby Vision profile 5,
++// which FairPlay plays encrypted, counts in MP4 as Safari counts it, as
++// Parc's Safari-identity canPlayType and isTypeSupported already do.
++bool ParcSafariTypeSupported(const MediaDecodingConfiguration* config,
++                             const String& content_type,
++                             const String& mime_type,
++                             const String& codec) {
++  if (mime_type == "video/mp4" &&
++      (codec.starts_with("dvh1.") || codec.starts_with("dvhe."))) {
++    const std::optional<ParcDoViParameters> parameters =
++        codec.ContainsOnlyAsciiOrEmpty()
++            ? ParcParseDoVi(codec.Ascii())
++            : std::nullopt;
++    if (parameters && parameters->profile == 5) {
++      return true;
++    }
++  }
++  if (config->type() == V8MediaDecodingType::Enum::kMediaSource) {
++    return CheckMseSupport(mime_type, codec);
++  }
++  return HTMLMediaElement::GetSupportsType(ContentType(content_type)) ==
++         MIMETypeRegistry::kSupported;
++}
++
++// Parc: computeMediaCapabilitiesInfo (WebKit's
++// PlatformMediaEngineConfigurationFactoryCocoa.cpp) for the codecs FairPlay
++// plays, with VideoToolbox's facts read by the browser
++// (content/browser/media/parc_video_toolbox_decoding.h; null when they
++// couldn't be had, which WebKit reads as VideoToolbox lacking them). Dolby
++// Vision answers for profile 5 only, the profile Parc's FairPlay offers.
++std::optional<ParcDecodingAnswer> ParcSafariAnswer(
++    const MediaDecodingConfiguration* config,
++    const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts) {
++  ParcDecodingAnswer answer;
++  if (config->hasVideo()) {
++    const VideoConfiguration* video = config->video();
++    String mime_type;
++    String codecs;
++    if (!ParseContentType(video->contentType(), &mime_type, &codecs) ||
++        !ParcSafariTypeSupported(config, video->contentType(), mime_type,
++                                 codecs)) {
++      return std::nullopt;
++    }
++    // WebKit wants exactly one codec, counting as ContentType::codecs()
++    // does: the non-empty pieces between commas, each trimmed.
++    String codec;
++    wtf_size_t codec_count = 0;
++    for (const String& piece : codecs.Split(',')) {
++      if (!piece.empty()) {
++        codec = piece.StripWhiteSpace();
++        ++codec_count;
++      }
++    }
++    if (codec_count != 1 || !codec.ContainsOnlyAsciiOrEmpty()) {
++      return std::nullopt;
++    }
++    answer.supported = true;
++    const bool hdr = video->hasColorGamut() || video->hasHdrMetadataType() ||
++                     video->hasTransferFunction();
++    const bool alpha = video->hasAlphaChannel() && video->alphaChannel();
++    const std::string ascii = codec.Ascii();
++    if (codec.starts_with("hvc1") || codec.starts_with("hev1")) {
++      // validateHEVCParameters (HEVCUtilitiesCocoa.mm).
++      const std::optional<ParcHevcParameters> parameters =
++          ParcParseHevc(ascii);
++      if (!parameters || !facts) {
++        return std::nullopt;
++      }
++      if (hdr && !(parameters->profile_space == 0 &&
++                   (parameters->profile_idc == 2 ||
++                    parameters->compatibility_flags == 1))) {
++        return std::nullopt;  // HDR needs HEVC Main10.
++      }
++      if (!(alpha ? facts->hevc_with_alpha_decoder : facts->hevc_decoder) ||
++          !facts->hevc_profiles) {
++        return std::nullopt;
++      }
++      const media::mojom::blink::ParcHevcProfileSupport* profile = nullptr;
++      for (const auto& entry : *facts->hevc_profiles) {
++        if (entry->profile_idc == parameters->profile_idc) {
++          profile = entry.get();
++          break;
++        }
++      }
++      if (!profile) {
++        return std::nullopt;
++      }
++      answer.power_efficient = profile->hardware_accelerated;
++      if (profile->has_max_decode_level &&
++          parameters->level_idc > profile->max_decode_level) {
++        return std::nullopt;
++      }
++      answer.smooth = profile->has_max_playback_level &&
++                      parameters->level_idc <= profile->max_playback_level;
++    } else if (codec.starts_with("dvh1") || codec.starts_with("dvhe")) {
++      // validateDoViParameters (HEVCUtilitiesCocoa.mm).
++      const std::optional<ParcDoViParameters> parameters = ParcParseDoVi(ascii);
++      if (!parameters || parameters->profile != 5 || alpha || !facts ||
++          !facts->hevc_decoder || !facts->dolby_vision_profiles ||
++          !facts->dolby_vision_levels) {
++        return std::nullopt;
++      }
++      // Profile 5 is HEVC Main10, so HDR fields don't refuse it.
++      if (!base::Contains(*facts->dolby_vision_profiles,
++                          parameters->profile) ||
++          !base::Contains(*facts->dolby_vision_levels, parameters->level)) {
++        return std::nullopt;
++      }
++      answer.smooth = true;
++      answer.power_efficient = facts->dolby_vision_hardware;
++    } else {
++      // H.264: no alpha or HDR; VTIsHardwareDecodeSupported.
++      if (alpha || hdr) {
++        return std::nullopt;
++      }
++      if (facts && facts->hardware_decode_query) {
++        answer.power_efficient = facts->h264_hardware;
++        answer.smooth = true;
++      }
++    }
++  }
++  if (config->hasAudio()) {
++    const AudioConfiguration* audio = config->audio();
++    String mime_type;
++    String codec;
++    if (!ParseContentType(audio->contentType(), &mime_type, &codec) ||
++        !ParcSafariTypeSupported(config, audio->contentType(), mime_type,
++                                 codec)) {
++      return std::nullopt;
++    }
++    answer.supported = true;
++  }
++  return answer;
++}
++
+ #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
+ bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
+   return video_codec_str.starts_with("dvh1.") ||
+@@ -782,11 +1205,13 @@
+ MediaCapabilities::MediaCapabilities(NavigatorBase& navigator)
+     : Supplement<NavigatorBase>(navigator),
+       decode_history_service_(navigator.GetExecutionContext()),
+-      webrtc_history_service_(navigator.GetExecutionContext()) {}
++      webrtc_history_service_(navigator.GetExecutionContext()),
++      parc_video_toolbox_(navigator.GetExecutionContext()) {}
+ 
+ void MediaCapabilities::Trace(blink::Visitor* visitor) const {
+   visitor->Trace(decode_history_service_);
+   visitor->Trace(webrtc_history_service_);
++  visitor->Trace(parc_video_toolbox_);
+   visitor->Trace(pending_cb_map_);
+   ScriptWrappable::Trace(visitor);
+   Supplement<NavigatorBase>::Trace(visitor);
+@@ -805,6 +1230,7 @@
+ void MediaCapabilities::PendingCallbackState::Trace(
+     blink::Visitor* visitor) const {
+   visitor->Trace(key_system_access);
++  visitor->Trace(decoding_config);
+   visitor->Trace(resolver);
+ }
+ 
+@@ -820,6 +1246,24 @@
+         WebFeature::kMediaCapabilitiesDecodingInfoWithKeySystemConfig);
+   }
+ 
++  // Parc: WebKit's MediaDecodingConfiguration has no keySystemConfiguration
++  // (MediaDecodingConfiguration.idl), so a document presenting Safari's
++  // identity has it ignored: not checked, and the media answered as clear.
++  ExecutionContext* const parc_context = ExecutionContext::From(script_state);
++  const bool parc_safari =
++      parc_context && IsParcSafariIdentityUserAgent(parc_context->UserAgent());
++  if (parc_safari && config->hasKeySystemConfiguration()) {
++    MediaDecodingConfiguration* clear = MediaDecodingConfiguration::Create();
++    clear->setType(config->type());
++    if (config->hasVideo()) {
++      clear->setVideo(config->video());
++    }
++    if (config->hasAudio()) {
++      clear->setAudio(config->audio());
++    }
++    config = clear;
++  }
++
+   const bool is_webrtc = config->type() == V8MediaDecodingType::Enum::kWebrtc;
+   String message;
+   if (!IsValidMediaDecodingConfiguration(config, is_webrtc, &message)) {
+@@ -847,6 +1291,7 @@
+                             : WebrtcDecodingInfoHandler::Instance()) {
+       const int callback_id = InsertCallbackAndScheduleTimeout(
+           resolver, nullptr, request_time, QueryType::kWebrtcDecoding);
++      pending_cb_map_.at(callback_id)->decoding_config = config;
+ 
+       std::optional<webrtc::SdpAudioFormat> sdp_audio_format =
+           config->hasAudio()
+@@ -898,11 +1343,27 @@
+     // happens.
+     DCHECK(false);
+     DVLOG(2) << __func__ << " Could not get DecodingInfoHandler.";
+-    MediaCapabilitiesDecodingInfo* info = CreateDecodingInfoWith(false);
++    MediaCapabilitiesDecodingInfo* info = ParcFinishDecodingInfo(
++        CreateDecodingInfoWith(false), ExecutionContext::From(script_state),
++        config, nullptr);
+     resolver->Resolve(info);
+     return promise;
+   }
+ 
++  // Parc: under Safari's identity, WebKit's answer for the codecs FairPlay
++  // plays, and for audio alone, where WebKit has MediaCapabilities (windows
++  // and dedicated workers, which the browser serves VideoToolbox's facts to).
++  if (parc_safari &&
++      (parc_context->IsWindow() ||
++       parc_context->IsDedicatedWorkerGlobalScope()) &&
++      (!config->hasVideo() ||
++       IsParcSafariFairPlayVideoCodec(
++           ParsedContentType(config->video()->contentType())
++               .ParameterValueForName(kCodecsMimeTypeParam)
++               .StripWhiteSpace()))) {
++    return ParcSafariDecodingInfo(script_state, config, exception_state);
++  }
++
+   String audio_mime_str;
+   String audio_codec_str;
+   if (config->hasAudio()) {
+@@ -921,6 +1382,17 @@
      DCHECK(valid_content_type);
    }
  
@@ -509,7 +1056,78 @@
    // MSE support is cheap to check (regex matching). Do it first. Also, note
    // that MSE support is not implied by EME support, so do it irrespective of
    // whether we have a KeySystem configuration.
-@@ -1353,6 +1365,15 @@
+@@ -931,10 +1403,9 @@
+          !CheckMseSupport(video_mime_str, video_codec_str))) {
+       // Unsupported EME queries should resolve with a null
+       // MediaKeySystemAccess.
+-      MediaCapabilitiesDecodingInfo* info =
+-          CreateEncryptedDecodingInfoWith(false, nullptr);
+-      return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state,
+-                                                              info);
++      // Parc: in the shape of the document asking.
++      return CreateResolvedPromiseToDecodingInfoWith(false, script_state,
++                                                     config);
+     }
+   }
+ 
+@@ -1163,6 +1634,56 @@
+   return promise;
+ }
+ 
++ScriptPromise<MediaCapabilitiesDecodingInfo>
++MediaCapabilities::ParcSafariDecodingInfo(
++    ScriptState* script_state,
++    const MediaDecodingConfiguration* config,
++    ExceptionState& exception_state) {
++  auto* resolver = MakeGarbageCollected<
++      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>>(
++      script_state, exception_state.GetContext());
++  auto promise = resolver->Promise();
++  if (parc_video_toolbox_facts_) {
++    OnParcVideoToolboxFacts(resolver, config,
++                            parc_video_toolbox_facts_.Clone());
++    return promise;
++  }
++  ExecutionContext* execution_context = ExecutionContext::From(script_state);
++  if (!parc_video_toolbox_.is_bound()) {
++    execution_context->GetBrowserInterfaceBroker().GetInterface(
++        parc_video_toolbox_.BindNewPipeAndPassReceiver(
++            execution_context->GetTaskRunner(TaskType::kMediaElementEvent)));
++  }
++  // Answered without the facts if the browser can't give them.
++  parc_video_toolbox_->GetFacts(mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++      BindOnce(&MediaCapabilities::OnParcVideoToolboxFacts,
++               WrapPersistent(this), WrapPersistent(resolver),
++               WrapPersistent(config)),
++      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr()));
++  return promise;
++}
++
++void MediaCapabilities::OnParcVideoToolboxFacts(
++    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
++    const MediaDecodingConfiguration* config,
++    media::mojom::blink::ParcVideoToolboxDecodingFactsPtr facts) {
++  if (facts && !parc_video_toolbox_facts_) {
++    parc_video_toolbox_facts_ = facts.Clone();
++  }
++  ExecutionContext* execution_context = resolver->GetExecutionContext();
++  if (!execution_context || execution_context->IsContextDestroyed()) {
++    return;
++  }
++  const std::optional<ParcDecodingAnswer> answer =
++      ParcSafariAnswer(config, facts.get());
++  auto* info = MediaCapabilitiesDecodingInfo::Create();
++  info->setSupported(answer && answer->supported);
++  info->setSmooth(answer && answer->smooth);
++  info->setPowerEfficient(answer && answer->power_efficient);
++  resolver->Resolve(
++      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
++}
++
+ bool MediaCapabilities::EnsurePerfHistoryService(
+     ExecutionContext* execution_context) {
+   if (decode_history_service_.is_bound())
+@@ -1353,6 +1874,15 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
  
@@ -525,6 +1143,70 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
+@@ -1374,8 +1904,9 @@
+ 
+   if (!decoding_config->hasVideo()) {
+     // Audio-only is always smooth and power efficient.
+-    MediaCapabilitiesDecodingInfo* info = CreateDecodingInfoWith(true);
+-    info->setKeySystemAccess(access);
++    MediaCapabilitiesDecodingInfo* info = ParcFinishDecodingInfo(
++        CreateDecodingInfoWith(true), execution_context, decoding_config,
++        access);
+     resolver->Resolve(info);
+     return;
+   }
+@@ -1393,13 +1924,16 @@
+   }
+ 
+   if (!EnsurePerfHistoryService(execution_context)) {
+-    MediaCapabilitiesDecodingInfo* info = CreateDecodingInfoWith(true);
++    MediaCapabilitiesDecodingInfo* info = ParcFinishDecodingInfo(
++        CreateDecodingInfoWith(true), execution_context, decoding_config,
++        access);
+     resolver->Resolve(WrapPersistent(info));
+     return;
+   }
+ 
+   const int callback_id = InsertCallbackAndScheduleTimeout(
+       resolver, access, request_time, QueryType::kDecoding);
++  pending_cb_map_.at(callback_id)->decoding_config = decoding_config;
+ 
+   media::mojom::blink::PredictionFeaturesPtr features =
+       media::mojom::blink::PredictionFeatures::New(
+@@ -1520,7 +2054,8 @@
+ 
+   auto* info = MediaCapabilitiesDecodingInfo::Create();
+   info->setSupported(true);
+-  info->setKeySystemAccess(pending_cb->key_system_access);
++  ParcFinishDecodingInfo(info, execution_context, pending_cb->decoding_config,
++                         pending_cb->key_system_access);
+ 
+   if (UseGpuFactoriesForPowerEfficient(execution_context,
+                                        pending_cb->key_system_access)) {
+@@ -1675,7 +2210,10 @@
+     pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(info);
+   } else {
+     CHECK_EQ(pending_cb->query_type, QueryType::kWebrtcDecoding);
+-    auto* info = MediaCapabilitiesDecodingInfo::Create();
++    auto* info = ParcFinishDecodingInfo(
++        MediaCapabilitiesDecodingInfo::Create(),
++        pending_cb->resolver->GetExecutionContext(),
++        pending_cb->decoding_config, nullptr);
+     info->setSupported(is_supported);
+     info->setPowerEfficient(is_power_efficient);
+     info->setSmooth(is_smooth);
+@@ -1716,8 +2254,9 @@
+   }
+ 
+   CHECK_EQ(pending_cb->query_type, QueryType::kDecoding);
+-  auto* info = MediaCapabilitiesDecodingInfo::Create();
+-  info->setKeySystemAccess(pending_cb->key_system_access);
++  auto* info = ParcFinishDecodingInfo(
++      MediaCapabilitiesDecodingInfo::Create(), execution_context,
++      pending_cb->decoding_config, pending_cb->key_system_access);
+ 
+   // If GPU factory support is unknown/hung, determine supported based on
+   // whether the codec is builtin or if we already received a DB response.
 --- a/third_party/blink/renderer/modules/mediasource/media_source.cc
 +++ b/third_party/blink/renderer/modules/mediasource/media_source.cc
 @@ -29,6 +29,7 @@
@@ -1706,3 +2388,77 @@
  }
  
  void SourceBuffer::AppendError(
+--- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
++++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
+@@ -150,6 +150,9 @@
+ 
+     Member<ScriptPromiseResolverBase> resolver;
+     Member<MediaKeySystemAccess> key_system_access;
++    // Parc: the decoding query, so its result takes the asking document's
++    // shape (Safari's identity: WebKit's).
++    Member<const MediaDecodingConfiguration> decoding_config;
+     std::optional<bool> is_supported;
+     std::optional<bool> is_bad_window_prediction_smooth;
+     std::optional<bool> is_nnr_prediction_smooth;
+@@ -183,6 +186,19 @@
+   // successful. Returns true if it was already bound.
+   bool EnsureWebrtcPerfHistoryService(ExecutionContext* execution_context);
+ 
++  // Parc: decodingInfo for a document presenting Safari's identity when the
++  // video, if any, is a codec FairPlay plays: WebKit's answer
++  // (PlatformMediaEngineConfigurationFactoryCocoa.cpp), with VideoToolbox's
++  // facts from the browser.
++  ScriptPromise<MediaCapabilitiesDecodingInfo> ParcSafariDecodingInfo(
++      ScriptState*,
++      const MediaDecodingConfiguration*,
++      ExceptionState&);
++  void OnParcVideoToolboxFacts(
++      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>*,
++      const MediaDecodingConfiguration*,
++      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr);
++
+   ScriptPromise<MediaCapabilitiesDecodingInfo> GetEmeSupport(
+       ScriptState*,
+       media::VideoCodec,
+@@ -265,6 +281,13 @@
+   HeapMojoRemote<media::mojom::blink::WebrtcVideoPerfHistory>
+       webrtc_history_service_;
+ 
++  // Parc: VideoToolbox's decoder facts for Safari-identity documents, asked
++  // of the browser once (ParcSafariDecodingInfo).
++  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>
++      parc_video_toolbox_;
++  media::mojom::blink::ParcVideoToolboxDecodingFactsPtr
++      parc_video_toolbox_facts_;
++
+   // Holds the last key for callbacks in the map below. Incremented for each
+   // usage.
+   int last_callback_id_ = 0;
+--- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities_decoding_info.idl
++++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities_decoding_info.idl
+@@ -5,5 +5,12 @@
+ // https://wicg.github.io/media-capabilities/#dictdef-mediacapabilitiesdecodinginfo
+ 
+ dictionary MediaCapabilitiesDecodingInfo : MediaCapabilitiesInfo {
+-    MediaKeySystemAccess? keySystemAccess = null;
++    // Parc: no default, so a result for a document presenting Safari's
++    // identity has none, as in WebKit, whose MediaDecodingConfiguration has no
++    // keySystemConfiguration; every other result sets it, null without one.
++    MediaKeySystemAccess? keySystemAccess;
++    // Parc: WebKit's result carries the configuration it read
++    // (MediaCapabilitiesDecodingInfo.idl, MediaCapabilitiesExtensionsEnabled
++    // on in WebKit); only Safari-identity results have it.
++    MediaDecodingConfiguration configuration;
+ };
+--- a/third_party/blink/renderer/modules/media_capabilities/video_configuration.idl
++++ b/third_party/blink/renderer/modules/media_capabilities/video_configuration.idl
+@@ -14,6 +14,9 @@
+     required unsigned long height;
+     required unsigned long bitrate;
+     required double framerate;
++    // Parc: WebKit's (MediaCapabilitiesExtensionsEnabled, on in WebKit), read
++    // for documents presenting Safari's identity only.
++    boolean alphaChannel;
+     HdrMetadataType hdrMetadataType;
+     ColorGamut colorGamut;
+     TransferFunction transferFunction;
