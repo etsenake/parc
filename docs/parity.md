@@ -82,6 +82,9 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   release covers main and no new main commit has been observed for ten minutes.
   All output appends to `build/master-release-development/nightly-release.log`.
   The release-only installation/runtime exclusions remain in effect.
+  Recovery overlay 447 refreshes CEF's Picture-in-Picture patch context for the
+  Safari-identity include; the original generation failed its already-applied
+  reverse check. The patch remains present and its behavior is unchanged.
 
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in

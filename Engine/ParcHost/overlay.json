@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 446,
+  "version": 447,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4836,6 +4836,17 @@
           "target": "third_party/blink/renderer/core/html/track/audio_track.h",
           "before_sha256": "d31735ba9b84b693846163f22bc1d4acbfbd193aed15acdc740596aaacaf6b00",
           "after_sha256": "8e55788c80c4ac19308dcd12ae895e07298809e6f4631997191250cc363f1848"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/cef-pip-regeneration.patch",
+      "sha256": "3a4d7206fe7c62cd6ffb3b1a51bc89d9098f5e9502113e9719e50c804d2333e4",
+      "files": [
+        {
+          "target": "cef/patch/patches/webkit_move_pip.patch",
+          "before_sha256": "bd1b19d93bcdae6b485477e5c8d37eba9186651757275021e5f3ddca63916b7c",
+          "after_sha256": "e563dacea102f5d25447de5e19f3888b13e45c0fe49c5a13aa7a0a1f19199084"
         }
       ]
     }
