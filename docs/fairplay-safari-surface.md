@@ -116,6 +116,8 @@ WebKit: `Modules/mediasource/ManagedMediaSource.*`, `ManagedSourceBuffer.*`,
 | `ManagedSourceBuffer` `bufferedchange`, `onbufferedchange`, `BufferedChangeEvent` | present (WebKit's timing: inside the operation, before `update`/`updateend`, with `updating` true and its guards; other changes as tasks) | fp-mms-presentation |
 | Dedicated workers, `handle`, `canConstructInDedicatedWorker` | present | fp-mms-presentation |
 | `src`/`<source>`/`srcObject` attachment | present | fp-mms-presentation |
+| Opening without `disableRemotePlayback` or an AirPlay source (`ManagedMediaSourceNeedsAirPlay`, on in Safari for macOS) | present: Parc opens at once, as WebKit built without wireless playback targets does (`deferredMediaSourceOpenCanProgress`); AirPlay is cut | fp-mms-presentation |
+| Memory-pressure purge (`SourceBuffer::memoryPressure`: active SourceBuffers keep the playback window, inactive ones empty; `bufferedchange` and `startstreaming` follow) | missing: Chromium's Media Source never evicts on memory pressure; needs a media-stack change ([fairplay-identity.md](fairplay-identity.md#known-limits)) | fp-mms-presentation |
 
 ## Presentation and fullscreen
 

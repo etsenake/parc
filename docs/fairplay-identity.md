@@ -482,6 +482,22 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - A shared worker that is already running when its site's identity changes
   keeps the old user agent until it ends. Service workers are stopped and
   restart with the new one.
+- Safari purges a `ManagedMediaSource`'s buffered data under memory
+  pressure (WebKit's `SourceBuffer::memoryPressure`, from
+  `HTMLMediaElement::purgeBufferedDataIfPossible`): an active SourceBuffer
+  keeps only the playback window, from the earlier of the keyframe before
+  the position and 3.75 s back to the end of the playable range, and an
+  inactive one is emptied; `bufferedchange` and `startstreaming` follow.
+  Chromium's Media Source never evicts on memory pressure, so Parc keeps the
+  data and a page never sees that purge. Matching it needs a purge in
+  Chromium's `SourceBufferStream` with keyframe-aware bounds (its append
+  garbage collection can't express it), plumbing through `ChunkDemuxer` and
+  `WebSourceBuffer`, and a memory-pressure listener on Blink's `MediaSource`
+  for managed sources.
+- A managed source opens without `disableRemotePlayback` or an AirPlay
+  source. Safari for macOS defers `sourceopen` until one is present
+  (`ManagedMediaSourceNeedsAirPlay`); WebKit built without wireless playback
+  targets opens at once, as Parc does with AirPlay cut.
 - `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
   WebKit's engine policy (below). It is visible to a page that inspects it,
   for example through `Function.prototype.toString`. Isolated worlds and
