@@ -135,12 +135,10 @@
      ]
 --- a/content/browser/media/cdm_registry_impl.cc
 +++ b/content/browser/media/cdm_registry_impl.cc
-@@ -39,6 +39,15 @@
- #include "content/browser/gpu/gpu_data_manager_impl.h"
- #include "content/browser/media/key_system_support_win.h"
+@@ -41,6 +41,15 @@
  #include "gpu/config/gpu_driver_bug_workaround_type.h"
-+#endif
-+
+ #endif
+ 
 +#if BUILDFLAG(IS_MAC)
 +#include "base/files/file_path.h"
 +#include "base/version.h"
@@ -148,13 +146,16 @@
 +#include "media/base/content_decryption_module.h"
 +#include "media/base/encryption_scheme.h"
 +#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
- #endif
- 
++#endif
++
  namespace content {
-@@ -232,6 +241,49 @@
+ 
+ namespace {
+@@ -231,6 +240,56 @@
+   return is_gpu_software_emulated;
  }
  #endif  // BUILDFLAG(IS_WIN)
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// Parc: Apple FairPlay Streaming. It has no CDM library or CDM process: the
 +// CDM and its renderer are created by the GPU process's media service (see
@@ -168,6 +169,13 @@
 +  capability.audio_codecs.insert(media::AudioCodec::kAC3);
 +  capability.audio_codecs.insert(media::AudioCodec::kEAC3);
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
++  // FLAC (clear, and protected through CoreAudio's qflc) and Opus (clear:
++  // CoreAudio has no protected Opus decoder) play through the FairPlay
++  // Renderer; Safari offers both where AVFoundation plays them, and so do
++  // Safari-identity pages, which ask AVFoundation besides. ALAC can't reach
++  // the renderer: Chromium's MP4 parser has no alac sample entry.
++  capability.audio_codecs.insert(media::AudioCodec::kFLAC);
++  capability.audio_codecs.insert(media::AudioCodec::kOpus);
 +  capability.video_codecs.emplace(media::VideoCodec::kH264,
 +                                  media::VideoCodecInfo());
 +#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
@@ -197,11 +205,10 @@
 +                 base::Version(), base::FilePath());
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  }  // namespace
  
- // static
-@@ -263,6 +315,11 @@
+@@ -263,6 +322,11 @@
  
    // Let embedders register CDMs.
    GetContentClient()->AddContentDecryptionModules(&cdms_, nullptr);

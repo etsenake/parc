@@ -2205,13 +2205,15 @@
  #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
  
  namespace blink {
-@@ -74,6 +79,101 @@
+@@ -72,6 +77,103 @@
+             : WebMediaKeySystemMediaCapability::EncryptionScheme::kNotSpecified;
+   }
    return result;
- }
- 
++}
++
 +// Parc: whether FairPlay plays `codec` (its CdmCapability in
-+// fairplay-media.patch): AAC, AC-3 and E-AC-3 audio; H.264, HEVC and Dolby
-+// Vision profile 5 video.
++// fairplay-media.patch): AAC, AC-3, E-AC-3, FLAC and Opus audio; H.264, HEVC
++// and Dolby Vision profile 5 video.
 +bool IsParcFairPlayCodec(const String& codec, bool video) {
 +  if (codec.empty() || !codec.ContainsOnlyAsciiOrEmpty()) {
 +    return false;
@@ -2228,7 +2230,9 @@
 +      media::ParseAudioCodecString("audio/mp4", codec.Ascii());
 +  return parsed && (parsed->codec == media::AudioCodec::kAAC ||
 +                    parsed->codec == media::AudioCodec::kAC3 ||
-+                    parsed->codec == media::AudioCodec::kEAC3);
++                    parsed->codec == media::AudioCodec::kEAC3 ||
++                    parsed->codec == media::AudioCodec::kFLAC ||
++                    parsed->codec == media::AudioCodec::kOpus);
 +}
 +
 +// Parc: how FairPlay judges a capability's contentType under Safari's
@@ -2302,12 +2306,10 @@
 +  capability.codecs = own_codecs.empty()
 +                          ? WebString::FromAscii(own_codec)
 +                          : WebString(own_codecs.ToString());
-+}
-+
+ }
+ 
  static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
-     const Vector<String>& session_types) {
-   std::vector<WebEncryptedMediaSessionType> result(session_types.size());
-@@ -96,20 +196,87 @@
+@@ -96,21 +198,109 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -2361,7 +2363,7 @@
      DCHECK(config->hasVideoCapabilities());
      web_config.video_capabilities =
          ConvertCapabilities(config->videoCapabilities());
-+
+ 
 +    if (parc_safari_fairplay && !is_from_media_capabilities) {
 +      for (WebMediaKeySystemMediaCapability& capability :
 +           web_config.audio_capabilities) {
@@ -2370,6 +2372,27 @@
 +      for (WebMediaKeySystemMediaCapability& capability :
 +           web_config.video_capabilities) {
 +        ParcApplySafariFairPlayContentType(capability, /*video=*/true);
++      }
++    }
++
++    // Parc: FairPlay plays MP4 only (and HLS, which the Safari path above
++    // turns into MP4), as AVFoundation does. FLAC and Opus, which its
++    // capability lists, are WebM codecs too, so a capability in any other
++    // container is skipped like any unsupported capability, for
++    // requestMediaKeySystemAccess and decodingInfo alike.
++    if (IsParcFairPlayKeySystem(key_system)) {
++      for (std::vector<WebMediaKeySystemMediaCapability>* capabilities :
++           {&web_config.audio_capabilities, &web_config.video_capabilities}) {
++        for (WebMediaKeySystemMediaCapability& capability : *capabilities) {
++          const String container = capability.mime_type;
++          if (!EqualIgnoringAsciiCase(container, "audio/mp4") &&
++              !EqualIgnoringAsciiCase(container, "video/mp4") &&
++              !capability.content_type.IsEmpty()) {
++            capability.mime_type =
++                WebString::FromAscii("application/x-parc-skipped");
++            capability.codecs = WebString::FromAscii("parc.skipped");
++          }
++        }
 +      }
 +    }
 +
@@ -2392,10 +2415,11 @@
 +        }
 +      }
 +    }
- 
++
      DCHECK(config->hasDistinctiveIdentifier());
      web_config.distinctive_identifier =
-@@ -123,6 +290,17 @@
+         EncryptedMediaUtils::ConvertToMediaKeysRequirement(
+@@ -123,6 +313,17 @@
  
      if (config->hasSessionTypes()) {
        web_config.session_types = ConvertSessionTypes(config->sessionTypes());
@@ -2413,7 +2437,7 @@
      } else {
        // From the spec
        // (http://w3c.github.io/encrypted-media/#idl-def-mediakeysystemconfiguration):
-@@ -137,6 +315,9 @@
+@@ -137,6 +338,9 @@
  
      // If |label| is not present, it will be a null string.
      web_config.label = config->label();
