@@ -74,6 +74,15 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 
 ## Current ownership and handoffs
 
+- **Codex root — monitored release sequence (November 6).** Root owns shared
+  engine/build/packaging operations directly on main, without agents or worktrees.
+  Start with a minor release from current main; monitor build failures and
+  origin/main continuously. Finish each frozen release before consuming later
+  commits, then publish them as a patch release. Stop only after the latest
+  release covers main and no new main commit has been observed for ten minutes.
+  All output appends to `build/master-release-development/nightly-release.log`.
+  The release-only installation/runtime exclusions remain in effect.
+
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in
   `WebMediaPlayerImpl`; its non-const `GetCdmContext()` call caused the official
