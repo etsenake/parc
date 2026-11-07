@@ -432,6 +432,9 @@ sequence.
    sample-buffer content source) needs the display layer in the browser
    process, and this layer lives in the GPU process. Parc's own panel is the
    path.
+6. **Native HLS.** The native HLS player's `AVPlayerLayer` takes the same
+   steps; what that route must keep for them, and the proof with the layer
+   moving between CAContexts, are in [NATIVE_HLS.md](NATIVE_HLS.md).
 
 ## What Josh's first build should check
 

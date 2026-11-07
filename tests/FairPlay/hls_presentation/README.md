@@ -40,10 +40,18 @@ main thread, as `CARendererLayerTree` places them.
   playback and stop for good when it is destroyed. A layer whose player is
   gone, or that never played, gives no reading.
 
+- **RemotePiP.** The layer inside CAContexts shown through `CALayerHost`s, as
+  the GPU process's page and PiP-window trees are
+  (`CALayerTreeCoordinator`'s context and flipped root layer), in windows
+  kept on screen and clear of each other. On a 2× display it plays in the
+  page's context at 720p (not 1080p) for its 640×360 pt size, moves to
+  1280×720 pt (fullscreen, a resize) and switches up to 1080p, then goes to
+  the PiP window's context and back, playing throughout.
+
 ## Results
 
 Recorded 2026-11-06 on this MacBook Air (macOS 27.2): Display 15 checks,
-Accumulator 8, FrameStats 10, 0 failed.
+Accumulator 8, FrameStats 10, RemotePiP 10, 0 failed.
 
 - Ready for display in the 640×360 host; `videoRect` 640×360, then 320×180 in
   the PiP host.
@@ -60,3 +68,10 @@ Accumulator 8, FrameStats 10, 0 failed.
   last count brought the sum to the layer's total (89 = 89); paused 2 s,
   89 → 89 with no reports; +72 after resuming; no report in the 1.5 s after
   destruction.
+- RemotePiP: 720p for the 640×360 pt layer on the 2× display, 1080p within
+  15 s of growing to 1280×720 pt; frames keep coming in the PiP context
+  (144 → 220, clock +2.51 s) and back in the page (the counter restarted,
+  229 → 107, on a variant switch). In separate runs, a visit at PiP size
+  before growing kept AVFoundation at its earlier best variant (720p) for
+  30 s, with plain windows as with CAContexts; without the visit, 1080p
+  within a second.

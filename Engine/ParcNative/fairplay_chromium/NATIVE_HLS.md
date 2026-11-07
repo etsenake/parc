@@ -407,6 +407,46 @@ a layer made on a queue with no run loop renders, fills its host, and keeps
 playing when moved between windows' hosts (PiP), back, and after a spell in no
 tree (a hidden tab).
 
+### Picture in Picture and fullscreen
+
+Parc's own paths, unchanged: the PiP sequence in
+[COMPOSITING.md](COMPOSITING.md) applies as it is. `WebMediaPlayerImpl` stops
+the page drawing the video, Parc's panel draws the same hole frame in its own
+compositor, whose tree takes the `AVPlayerLayer`, and leaving PiP gives it
+back. Fullscreen is a resize of the page's compositor. As for the MSE route,
+this is not AVKit's PiP: that needs the layer in the browser process. What
+the route must keep for it:
+
+- `NativeHlsRenderer` forwards each natural size to its `RendererClient`
+  before repainting the hole, as `FairPlayRendererClient` does (the panel's
+  aspect ratio comes from `NaturalSize()`). `AVPlayerItem.presentationSize`
+  changes with each variant switch, so this happens during playback, in PiP
+  too.
+- `WebMediaPlayerImpl`'s FairPlay exemptions cover
+  `RendererType::kFairPlayHls` (routing, 79a807d9): the video track stays
+  enabled while hidden (`ShouldDisableVideoWhenHidden`) and the player isn't
+  auto-suspended, so the layer keeps its picture for a PiP panel and a page
+  shown again.
+
+`tests/FairPlay/hls_presentation` (RemotePiP) runs this sequence with the
+layer inside CAContexts shown through `CALayerHost`s, as the GPU process's
+trees are, and proves on this Mac:
+
+- The layer keeps playing when it moves to the PiP window's context and back.
+- AVFoundation picks variants by the layer's size on screen inside such a
+  context exactly as in a window: 720p (not 1080p) for a 640×360 pt layer on
+  a 2× display, 1080p once fullscreen makes it 1280×720 pt, as Safari's
+  `AVPlayerLayer` gets.
+- A variant switch can restart the frame counter (seen on the way back from
+  PiP, 229 → 107), which `HlsFrameStats` counts as a new run.
+
+Separate runs (not in the harness) found the same variant choice with the
+layer under an ancestor transform, as Chromium's tree carries the quad's, and
+with plain windows instead of contexts. They also found that after a spell at
+PiP size AVFoundation doesn't go above its earlier best variant when the layer
+grows again. Plain windows behave the same, so this is AVFoundation's
+behavior, not Parc's hosting.
+
 ## Media element state and events
 
 `AVPlayerItem` is the authority, as in Safari; the render process mirrors it.

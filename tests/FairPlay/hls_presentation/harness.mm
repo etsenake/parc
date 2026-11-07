@@ -28,6 +28,19 @@
 - (AVVideoPerformanceMetrics*)videoPerformanceMetrics API_AVAILABLE(macos(14.4));
 @end
 
+// The GPU process's layer trees live in CAContexts that the browser shows
+// through CALayerHosts (ui/base/cocoa/remote_layer_api.h).
+typedef uint32_t ParcCGSConnectionID;
+extern "C" ParcCGSConnectionID CGSMainConnectionID(void);
+@interface CAContext : NSObject
++ (instancetype)contextWithCGSConnection:(uint32_t)connection options:(NSDictionary*)options;
+@property(readonly) uint32_t contextId;
+@property(retain) CALayer* layer;
+@end
+@interface CALayerHost : CALayer
+@property uint32_t contextId;
+@end
+
 namespace {
 
 constexpr const char* kBipBop =
@@ -474,6 +487,180 @@ void FrameStats() {
   });
 }
 
+
+// ---------------------------------------------------------------------------
+// Picture in Picture and fullscreen across CAContexts: the page's compositor
+// and Parc's PiP window each draw into their own CAContext in the GPU
+// process, shown in the browser through a CALayerHost. The layer moves
+// between the two contexts' trees; fullscreen is a resize of the page's.
+
+struct RemoteHost {
+  NSWindow* window = nil;
+  CAContext* context = nil;
+  CALayer* root = nil;
+  CALayerHost* layer_host = nil;
+  CALayer* host = nil;  // The content layer's host inside the context.
+};
+
+RemoteHost MakeRemoteHost(NSRect frame, NSString* title) {
+  __block RemoteHost r;
+  OnMain(^{
+    r.window = [[NSWindow alloc] initWithContentRect:frame
+                                           styleMask:NSWindowStyleMaskTitled
+                                             backing:NSBackingStoreBuffered
+                                               defer:NO];
+    r.window.releasedWhenClosed = NO;
+    r.window.title = title;
+    r.window.contentView.wantsLayer = YES;
+    // Kept on screen from the top-left corner of the visible frame.
+    const NSRect visible = NSScreen.mainScreen.visibleFrame;
+    [r.window setFrameTopLeftPoint:NSMakePoint(NSMinX(visible) + frame.origin.x,
+                                               NSMaxY(visible) - frame.origin.y)];
+    // As CALayerTreeCoordinator makes its context and root layer.
+    r.root = [CALayer layer];
+    r.root.geometryFlipped = YES;
+    r.root.opaque = YES;
+    r.root.anchorPoint = CGPointZero;
+    r.root.bounds = CGRectMake(0, 0, frame.size.width, frame.size.height);
+    r.context = [CAContext contextWithCGSConnection:CGSMainConnectionID() options:@{}];
+    r.context.layer = r.root;
+    r.host = [CALayer layer];
+    r.host.anchorPoint = CGPointZero;
+    r.host.frame = r.root.bounds;
+    [r.root addSublayer:r.host];
+    r.layer_host = [CALayerHost layer];
+    r.layer_host.contextId = r.context.contextId;
+    r.layer_host.anchorPoint = CGPointZero;
+    r.layer_host.frame = r.window.contentView.bounds;
+    [r.window.contentView.layer addSublayer:r.layer_host];
+    [r.window orderFrontRegardless];
+  });
+  return r;
+}
+
+void Resize(RemoteHost& r, CGSize size) {
+  RemoteHost* rp = &r;
+  OnMain(^{
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    // Grows down and right from the window's top-left corner, so it stays on
+    // screen.
+    const NSPoint top_left = NSMakePoint(NSMinX(rp->window.frame), NSMaxY(rp->window.frame));
+    [rp->window setContentSize:NSMakeSize(size.width, size.height)];
+    [rp->window setFrameTopLeftPoint:top_left];
+    rp->root.bounds = CGRectMake(0, 0, size.width, size.height);
+    rp->host.frame = rp->root.bounds;
+    rp->layer_host.frame = rp->window.contentView.bounds;
+    [CATransaction commit];
+  });
+}
+
+double VideoHeight(AVPlayerItem* item) {
+  __block double height = 0;
+  OnMedia(^{
+    height = item.presentationSize.height;
+  });
+  return height;
+}
+
+void RemotePiP() {
+  // Offsets from the visible frame's top-left corner. The PiP window comes
+  // later, beside the page once it is back to its inline size.
+  RemoteHost page = MakeRemoteHost(NSMakeRect(20, 20, 640, 360), @"page (CAContext)");
+  __block CGFloat scale = 0;
+  OnMain(^{
+    scale = page.window.backingScaleFactor;
+  });
+  Check(scale == 2, "remote: the page is on a 2x display", Format("%.1fx", scale));
+  Player p = MakePlayer([NSURL URLWithString:@(kBipBop)]);
+  Check(WaitReady(p, 20), "remote: item ready to play");
+  Place(p.layer, page.host);
+  AVPlayer* player = p.player;
+  OnMedia(^{
+    player.rate = 1;
+  });
+  Check(WaitFor(15, [&] { return ReadyForDisplay(p.layer); }),
+        "remote: readyForDisplay in the page compositor's context");
+  // AVFoundation picks variants by the layer's size on screen, which it finds
+  // inside a context with no window too, as in Safari.
+  // 720p, and still not 1080p 8 s later (a larger layer gets 1080p within
+  // a second, below).
+  const bool reached_720 = WaitFor(15, [&] { return VideoHeight(p.item) >= 720; });
+  const bool stayed_below_1080 = !WaitFor(8, [&] { return VideoHeight(p.item) >= 1080; });
+  Check(reached_720 && stayed_below_1080,
+        "remote: the variant follows the 640x360 pt layer on a 2x display (720p, not 1080p)",
+        Format("%.0fp", VideoHeight(p.item)));
+
+  // Fullscreen is a resize of the page's context: 1280x720 pt.
+  Resize(page, CGSizeMake(1280, 720));
+  Place(p.layer, page.host);
+  __block CGRect video_rect;
+  OnMain(^{
+    video_rect = p.layer.videoRect;
+  });
+  Check(CGRectEqualToRect(video_rect, CGRectMake(0, 0, 1280, 720)),
+        "fullscreen: the layer fills the resized host",
+        Format("videoRect %.0fx%.0f", video_rect.size.width, video_rect.size.height));
+  Check(WaitFor(15, [&] { return VideoHeight(p.item) >= 1080; }),
+        "fullscreen: AVFoundation switches up to the largest variant for the larger layer",
+        Format("%.0fp", VideoHeight(p.item)));
+  Frames f0 = ReadFrames(p.layer);
+  Sleep(2);
+  Frames f1 = ReadFrames(p.layer);
+  Check(f1.total != f0.total && ReadyForDisplay(p.layer), "fullscreen: still playing",
+        Format("%ld -> %ld", f0.total, f1.total));
+
+  // Leaving fullscreen, then PiP: the PiP window's context takes the layer.
+  Resize(page, CGSizeMake(640, 360));
+  Place(p.layer, page.host);
+  RemoteHost pip = MakeRemoteHost(NSMakeRect(700, 20, 320, 180), @"pip (CAContext)");
+  Sleep(1);
+  Place(p.layer, pip.host);
+  Sleep(0.5);
+  Frames f2 = ReadFrames(p.layer);
+  const double t2 = p.Time();
+  Sleep(2.5);
+  Frames f3 = ReadFrames(p.layer);
+  const double t3 = p.Time();
+  Check(ReadyForDisplay(p.layer), "remote pip: readyForDisplay in the PiP window's context");
+  Check(f3.total != f2.total, "remote pip: frames keep coming",
+        Format("%ld -> %ld", f2.total, f3.total));
+  Check(t3 - t2 > 2.0, "remote pip: the clock keeps running", Format("+%.2f s", t3 - t2));
+
+  // Leaving PiP.
+  Place(p.layer, page.host);
+  Sleep(0.5);
+  Frames f4 = ReadFrames(p.layer);
+  Sleep(2);
+  Frames f5 = ReadFrames(p.layer);
+  Check(ReadyForDisplay(p.layer) && f5.total != f4.total,
+        "remote pip: playing again in the page's context",
+        Format("%ld -> %ld", f4.total, f5.total));
+  // Fullscreen again after PiP: AVFoundation returns to its earlier best
+  // variant (it doesn't go above it after a spell at PiP size, separate runs
+  // showed). Recorded, not checked.
+  OnMain(^{
+    [pip.window orderOut:nil];
+  });
+  Resize(page, CGSizeMake(1280, 720));
+  Place(p.layer, page.host);
+  Sleep(8);
+  Note(Format("fullscreen again after PiP: %.0fp after 8 s", VideoHeight(p.item)));
+
+  AVPlayerLayer* layer = p.layer;
+  OnMedia(^{
+    player.rate = 0;
+    [CATransaction begin];
+    layer.player = nil;
+    [CATransaction commit];
+  });
+  Detach(layer);
+  OnMain(^{
+    [page.window close];
+    [pip.window close];
+  });
+}
+
 struct Section {
   const char* name;
   void (*run)();
@@ -483,6 +670,7 @@ const Section kSections[] = {
     {"Display", Display},
     {"Accumulator", Accumulator},
     {"FrameStats", FrameStats},
+    {"RemotePiP", RemotePiP},
 };
 
 }  // namespace
