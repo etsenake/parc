@@ -1090,6 +1090,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     if (state != ready_state_) {
       ready_state_ = state;
+      if (!SampleTimelineForReadyState()) {
+        return;
+      }
       client_->OnReadyStateChange(state);
     }
   }
@@ -1130,9 +1133,17 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     last_have_enough_ = have_enough;
-    // The element's ready state follows: Safari's GPU process samples the
-    // start date and the seekable window for the page then, and the page has
-    // them before the ready-state events.
+    // The element's ready state follows.
+    if (!SampleTimelineForReadyState()) {
+      return;
+    }
+    client_->OnBufferingStateChange(have_enough);
+  }
+
+  // At a ready-state change Safari's GPU process samples the start date and
+  // the seekable window for the page, which has them before the ready-state
+  // events. False when the client destroyed the player meanwhile.
+  bool SampleTimelineForReadyState() {
     std::optional<double> start_date = timeline_.start_date();
     std::optional<HlsSeekableWindow> window = timeline_.seekable();
     if (timeline_.ReadyStateChanged(StartDate())) {
@@ -1142,11 +1153,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       if (!shut_down_ && timeline_.seekable() != window) {
         client_->OnSeekableRangesChange(RangesOf(timeline_.SeekableRanges()));
       }
-      if (shut_down_) {
-        return;
-      }
     }
-    client_->OnBufferingStateChange(have_enough);
+    return !shut_down_;
   }
 
   void OnLoadedRanges() {

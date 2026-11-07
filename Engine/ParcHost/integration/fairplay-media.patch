@@ -3519,7 +3519,7 @@
  }
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -1777,6 +1958,93 @@
+@@ -1777,6 +1958,96 @@
  }
  #endif
  
@@ -3546,6 +3546,8 @@
 +      url_index_->fetch_context(), static_cast<UrlData::CorsMode>(cors_mode_),
 +      client_->IsAudioElement());
 +  params.start_load_cb = parc_hls_loader_->GetStartLoadCallback();
++  // A new player starts from HAVE_METADATA (an HLS restart).
++  parc_native_hls_ready_state_ = media::ParcNativeHlsReadyState::kHaveMetadata;
 +  // WebKit's player makes its item only once the element prepares to play:
 +  // preload auto (autoplay included) or an explicit load(); play and seek do
 +  // it in the GPU player.
@@ -3576,8 +3578,9 @@
 +// HAVE_FUTURE_DATA once the item can play with media ahead, before
 +// HAVE_ENOUGH_DATA, so loadeddata and canplay come at its moments rather than
 +// with canplaythrough. HAVE_ENOUGH_DATA and underflow keep coming through
-+// OnBufferingStateChange: this only raises the ready state from
-+// HAVE_METADATA, and never during a seek (which returns to HAVE_METADATA and
++// OnBufferingStateChange: this only raises the ready state (from
++// HAVE_METADATA, or from HAVE_CURRENT_DATA after an underflow, as WebKit
++// does), and never during a seek (which returns to HAVE_METADATA and
 +// completes at HAVE_ENOUGH_DATA).
 +void WebMediaPlayerImpl::ApplyParcNativeHlsReadyState() {
 +  ReadyState target;
@@ -3613,7 +3616,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,10 +2088,85 @@
+@@ -1820,10 +2091,85 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3699,7 +3702,7 @@
  
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-@@ -1841,11 +2184,22 @@
+@@ -1841,11 +2187,22 @@
        set_cdm_result_->Complete();
        set_cdm_result_.reset();
      }
@@ -3722,7 +3725,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1988,6 +2342,15 @@
+@@ -1988,6 +2345,15 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3738,7 +3741,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2197,6 +2560,10 @@
+@@ -2197,6 +2563,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -3749,7 +3752,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -3018,11 +3385,40 @@
+@@ -3018,11 +3388,40 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3790,7 +3793,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3434,14 @@
+@@ -3038,6 +3437,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -3805,7 +3808,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3557,14 @@
+@@ -3153,6 +3560,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -3820,7 +3823,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +4205,29 @@
+@@ -3793,6 +4208,29 @@
      return false;
    }
  
