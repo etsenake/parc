@@ -220,8 +220,9 @@ cellular). WebKit `HTMLMediaElement.cpp:1094-1104` and
 `HTMLMediaElement.h:1365` make it auto. A plain `<video src>` reports
 `preload` "auto" in Safari and buffers ahead to `canplaythrough` without
 `play()`; Parc reported "metadata" and stopped after metadata. Native HLS
-already prepares to play as WebKit does (`ParcPreparesToPlay`); the rest
-**in progress** (fix agent E5).
+already prepared to play as WebKit does; the rest **fixed** f0178670
+(an element with `autoplay` now preloads automatically whatever the
+autoplay policy, as WebKit's does).
 
 **HME-20. `muted` before script sets it.** WebKit
 `HTMLMediaElement.cpp:5102-5111` returns the content attribute itself until
@@ -233,7 +234,20 @@ already prepares to play as WebKit does (`ParcPreparesToPlay`); the rest
 (pause, waiting, load reset). WebKit `HTMLMediaElement.cpp:5383-5417` fires
 any `timeupdate` only when the time differs from the last one's (seek
 completion and load reset bypass it), so `pause()` at an unchanged time
-fires none. **In progress** (fix agent E5).
+fires none. **Fixed** f0178670.
+
+**HME-30. Preload once prepared to play.** WebKit's effective preload stays
+auto for every later load once the element was prepared to play
+(`HTMLMediaElement.cpp:2084-2101, 4021-4032`; `m_hasEverPreparedToPlay` is
+never reset). Parc's falls back to the attribute on the next `src`.
+**In progress** (fix agent HME-30).
+
+**HME-31. `timeupdate` on time jumps and cue boundaries.** WebKit fires one
+when the player reports a time change outside a seek
+(`HTMLMediaElement.cpp:6381-6398`) and from cue updates while playing
+(`:2423-2432, 2455-2476`). Chromium reports time changes only after seeks and
+at the end (`web_media_player_impl.cc:2100-2122, 2399-2403`) and its cue
+timer fires no `timeupdate`. **In progress** (fix agent HME-31).
 
 **HME-22. Autoplay policy.** Chromium `html_media_element.cc:3161-3196`
 asks `AutoplayPolicy::RequestPlay` (Chromium's document user activation,
