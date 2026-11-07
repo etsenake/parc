@@ -4251,7 +4251,7 @@
 @@ -121,6 +125,13 @@
  #include "media/base/android/media_codec_util.h"
  #endif
- 
+
 +#if BUILDFLAG(IS_MAC)
 +#include "media/base/audio_codecs.h"
 +#include "media/base/media_types.h"
@@ -4260,13 +4260,12 @@
 +#endif  // BUILDFLAG(IS_MAC)
 +
  namespace blink {
- 
+
  namespace {
-@@ -166,7 +177,52 @@
-     CrossThreadOnceFunction<void(media::OutputDeviceStatus)> callback) {
+@@ -167,6 +178,51 @@
    sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
-+}
+ }
 +
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
@@ -4310,9 +4309,9 @@
 +    }
 +  }
 +  return true;
- }
++}
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
 @@ -356,7 +412,12 @@
@@ -4327,7 +4326,7 @@
 +         renderer_type != media::RendererType::kFairPlay &&
 +         renderer_type != media::RendererType::kFairPlayHls;
  }
- 
+
  WebTimeRanges ConvertToWebTimeRanges(
 @@ -714,6 +775,9 @@
    encrypted_client_ = nullptr;
@@ -4336,15 +4335,13 @@
 +#if BUILDFLAG(IS_MAC)
 +  parc_cdm_event_registration_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
    weak_factory_.InvalidateWeakPtrsAndDoom();
- 
-@@ -1107,22 +1171,67 @@
-   was_suspended_for_frame_closed_or_frozen_ = true;
-   UpdateBackgroundVideoOptimizationState();
+
+@@ -1109,10 +1173,37 @@
    UpdatePlayState();
-+}
-+
+ }
+
 +void WebMediaPlayerImpl::ParcOnFrozenInBackForwardCache() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  DCHECK(paused_);
@@ -4358,8 +4355,8 @@
 +  if (demuxer_manager_->HasDataSource() && !IsStreaming()) {
 +    demuxer_manager_->StopPreloading();
 +  }
- }
- 
++}
++
  void WebMediaPlayerImpl::Seek(double seconds) {
    DVLOG(1) << __func__ << "(" << seconds << "s)";
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -4369,20 +4366,19 @@
 +      base::Seconds(seconds),
 +      std::exchange(parc_fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcFastSeek(double seconds,
 +                                      double tolerance_before) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_fast_seek_tolerance_ = base::Seconds(tolerance_before);
 +  Seek(seconds);
-+}
-+
+ }
+
  void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
-   TRACE_EVENT2("media", "WebMediaPlayerImpl::DoSeek", "target",
+@@ -1121,8 +1212,26 @@
                 time.InSecondsF(), "id", media_player_id_);
- 
+
    ReadyState old_state = ready_state_;
 -  if (ready_state_ > WebMediaPlayer::kReadyStateHaveMetadata)
 +  // Parc: Safari's native HLS element keeps AVPlayer's readyState through a
@@ -4405,7 +4401,7 @@
 +      !parc_keeps_ready_state) {
      SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
 +  }
- 
+
    // For playing zero duration video-only media, if we can elide the seek, use a
    // large delay to avoid an expensive spin loop. Per spec we must still deliver
 @@ -1203,7 +1312,11 @@
@@ -4417,13 +4413,15 @@
    pipeline_controller_->Seek(time, time_updated);
 +  // Warning: This call may be re-entrant.
 +  ParcMonitorSourceBuffers(/*seek_start=*/true);
- 
+
    // This needs to be called after Seek() so that if a resume is triggered, it
    // is to the correct time.
-@@ -1423,6 +1536,24 @@
+@@ -1421,6 +1534,24 @@
+     return std::numeric_limits<double>::quiet_NaN();
+
    return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
- }
- 
++}
++
 +double WebMediaPlayerImpl::ParcStartDate() const {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
@@ -4440,15 +4438,15 @@
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
 +  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
-+}
-+
+ }
+
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
- 
-@@ -1498,6 +1629,21 @@
+@@ -1496,6 +1627,21 @@
+
+   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
      return WebTimeRanges();
-   }
- 
++  }
++
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -4462,15 +4460,13 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-+  }
-+
-   if (demuxer_manager_->IsLiveContent()) {
-     return WebTimeRanges();
    }
+
+   if (demuxer_manager_->IsLiveContent()) {
 @@ -1665,6 +1811,33 @@
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
- 
+
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a Safari-identity page clearing or replacing FairPlay MediaKeys,
 +  // which WebKit's setMediaKeys allows during playback (Blink clears the old
@@ -4501,11 +4497,10 @@
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
    // http://crbug.com/40407494#comment8.
-@@ -1694,7 +1867,103 @@
-     media::EmeInitDataType init_data_type,
+@@ -1695,6 +1868,102 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
-+
+
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: native HLS reports each key request no session asked for as "skd"
 +  // init data (the key URI) just before its stall (ParcWaitForStalledKey).
@@ -4575,7 +4570,7 @@
 +    ParcSetWaitingForKey(true);
 +  }
 +}
- 
++
 +void WebMediaPlayerImpl::ParcSetWaitingForKey(bool waiting) {
 +#if BUILDFLAG(IS_MAC)
 +  // A change, or a request to stop, overtakes the CDM answer
@@ -4603,12 +4598,14 @@
 +    const std::vector<uint8_t>& init_data) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
    RecordEncryptedEvent(true);
- 
+
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +1997,34 @@
+@@ -1726,6 +1995,34 @@
+ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
+                                        media::MediaTrack::State state) {
    client_->SetTrackState(track, state);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -4635,16 +4632,13 @@
 +    media::ParcInbandAudioTrackEnabledCB set_enabled) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
-+}
-+
+ }
+
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
- 
- UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1776,7 +2073,366 @@
-           tick_clock_, main_task_runner_));
+@@ -1777,6 +2074,365 @@
  }
  #endif
-+
+
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -4960,7 +4954,7 @@
 +    }
 +    return false;
 +  };
- 
++
 +  const base::TimeDelta now = GetCurrentTimeInternal();
 +  ReadyState state;
 +  if (!has_buffered_time(now) && !within_start_gap(now)) {
@@ -5022,7 +5016,7 @@
        cdm_context,
        blink::BindOnce(&WebMediaPlayerImpl::OnCdmAttached, weak_this_));
  }
- 
+
 +#if BUILDFLAG(IS_MAC)
 +void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -5203,10 +5197,10 @@
 +    }
 +    ParcRestartIntoFairPlayIfNeeded();
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
      return;
    }
- 
+
    pending_cdm_context_ref_.reset();
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: the renderer may have been made while this CDM was pending, so it
@@ -5219,9 +5213,9 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1900,8 +2738,82 @@
+@@ -1900,6 +2738,80 @@
    }
- 
+
    attempting_suspended_start_ = false;
 +
 +#if BUILDFLAG(IS_MAC)
@@ -5284,8 +5278,8 @@
 +              ConvertToBaseOnceCallback(CrossThreadBindOnce(
 +                  &WebMediaPlayerImpl::ParcOnUrlSeekFrame, weak_this_,
 +                  parc_url_seek_id_))))));
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcOnUrlSeekFrame(uint64_t seek_id,
 +                                            base::TimeTicks frame_time,
 +                                            bool is_frame_readable) {
@@ -5297,21 +5291,19 @@
 +  }
 +  should_notify_time_changed_ = false;
 +  client_->TimeChanged();
-+}
-+
- void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
-   media_metrics_provider_->OnStarted(status);
  }
+
+ void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
 @@ -1911,6 +2823,7 @@
    media_log_->AddEvent<MediaLogEvent::kSuspended>();
- 
+
    pending_oneshot_suspend_ = false;
 +  parc_renderer_has_enough_ = false;
- 
+
    if (attempting_suspended_start_) {
      DCHECK(pipeline_controller_->IsSuspended());
 @@ -1988,6 +2901,24 @@
- 
+
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
 +#if BUILDFLAG(IS_MAC)
@@ -5334,10 +5326,10 @@
 +  parc_chunk_demuxer_ = demuxer;
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
- 
+
 @@ -2108,7 +3039,10 @@
      return;
- 
+
    ended_ = true;
 -  if (!paused_) {
 +  // Parc: WebKit's player reports reaching the end while paused too (after a
@@ -5346,10 +5338,10 @@
 +  if (!paused_ || client_->PresentsParcSafariIdentity()) {
      client_->TimeChanged();
    }
- 
+
 @@ -2136,19 +3070,27 @@
    MaybeSetContainerNameForMetrics();
- 
+
    pipeline_metadata_ = metadata;
 +#if BUILDFLAG(IS_MAC)
 +  if (parc_streams_added_before_metadata_) {
@@ -5360,7 +5352,7 @@
    if (power_status_helper_)
 -    power_status_helper_->SetMetadata(metadata);
 +    power_status_helper_->SetMetadata(pipeline_metadata_);
- 
+
    if (HasAudio()) {
 -    media_metrics_provider_->SetHasAudio(metadata.audio_decoder_config.codec());
 -    RecordEncryptionScheme("Audio",
@@ -5370,7 +5362,7 @@
 +    RecordEncryptionScheme(
 +        "Audio", pipeline_metadata_.audio_decoder_config.encryption_scheme());
    }
- 
+
    if (HasVideo()) {
 -    media_metrics_provider_->SetHasVideo(metadata.video_decoder_config.codec());
 -    RecordEncryptionScheme("Video",
@@ -5379,7 +5371,7 @@
 +        pipeline_metadata_.video_decoder_config.codec());
 +    RecordEncryptionScheme(
 +        "Video", pipeline_metadata_.video_decoder_config.encryption_scheme());
- 
+
      if (overlay_enabled_) {
        // SurfaceView doesn't support rotated video, so transition back if
 @@ -2197,6 +3139,12 @@
@@ -5393,7 +5385,7 @@
 +  // Media segments appended before the metadata.
 +  ParcMonitorSourceBuffers();
  }
- 
+
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
 @@ -2238,6 +3186,16 @@
  void WebMediaPlayerImpl::OnBufferingStateChange(
@@ -5411,7 +5403,7 @@
 +#endif  // BUILDFLAG(IS_MAC)
    OnBufferingStateChangeInternal(state, reason, false);
  }
- 
+
 @@ -2312,9 +3270,11 @@
      delegate_->ClearStaleFlag(delegate_id_);
      UpdatePlayState();
@@ -5423,12 +5415,12 @@
 +  // A Media Source append, removal or end of stream.
 +  ParcMonitorSourceBuffers();
  }
- 
+
  bool WebMediaPlayerImpl::CanPlayThrough() {
 @@ -2362,9 +3322,41 @@
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
- 
+
 +  // Parc: Safari's native HLS element takes readyState from AVPlayer's, up and
 +  // down (ApplyParcNativeHlsReadyState), not from the two buffering states.
 +  bool parc_native_ready_state = false;
@@ -5469,7 +5461,7 @@
      if (!have_reported_time_to_play_ready_ &&
 @@ -2379,8 +3371,11 @@
      }
- 
+
      // Warning: This call may be re-entrant.
 -    SetReadyState(CanPlayThrough() ? WebMediaPlayer::kReadyStateHaveEnoughData
 -                                   : WebMediaPlayer::kReadyStateHaveFutureData);
@@ -5478,13 +5470,13 @@
 +                        ? WebMediaPlayer::kReadyStateHaveEnoughData
 +                        : WebMediaPlayer::kReadyStateHaveFutureData);
 +    }
- 
+
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
 @@ -2396,8 +3391,11 @@
        }
      }
- 
+
 -    // Blink expects a timeChanged() in response to a seek().
 -    if (should_notify_time_changed_) {
 +    // Blink expects a timeChanged() in response to a seek(); a Safari Media
@@ -5496,7 +5488,7 @@
        client_->TimeChanged();
      }
 @@ -2434,8 +3432,11 @@
- 
+
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
 -    DCHECK_GT(highest_ready_state_, WebMediaPlayer::kReadyStateHaveCurrentData);
@@ -5507,15 +5499,15 @@
 +      SetReadyState(WebMediaPlayer::kReadyStateHaveCurrentData);
 +    }
    }
- 
+
    UpdatePlayState();
 @@ -2453,6 +3454,7 @@
- 
+
    if (watch_time_reporter_)
      watch_time_reporter_->OnDurationChanged(GetPipelineMediaDuration());
 +  ParcMonitorSourceBuffers();
  }
- 
+
  void WebMediaPlayerImpl::OnWaiting(media::WaitingReason reason) {
 @@ -2462,6 +3464,23 @@
    switch (reason) {
@@ -5541,7 +5533,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,12 +4037,47 @@
+@@ -3018,11 +4037,46 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -5554,7 +5546,7 @@
 +    factory = renderer_factory_selector_->GetFactory(renderer_type_);
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
    // TODO(crbug.com/40261162): Support codec changing for Media Foundation.
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
@@ -5567,7 +5559,7 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
- 
++
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -5585,14 +5577,13 @@
 +  // The renderer a replacement restarted into has the new CDM.
 +  parc_replaced_cdm_context_ref_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
-+
+
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-     client_->DidUseAudioServiceChange(new_uses_audio_service);
 @@ -3038,6 +4092,14 @@
      CreateWatchTimeReporter();
    }
- 
+
 +#if BUILDFLAG(IS_MAC)
 +  if (factory) {
 +    return factory->CreateRenderer(
@@ -5646,7 +5637,7 @@
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
 @@ -3182,6 +4270,11 @@
  }
- 
+
  void WebMediaPlayerImpl::OnTimeUpdate() {
 +  // The element's playback progress, as WebKit's playbackProgressTimerFired.
 +  if (!paused_ && !seeking_) {
@@ -5671,13 +5662,13 @@
 +    can_stay_suspended = false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
 @@ -3530,6 +4634,12 @@
      return;
    }
- 
+
 +  // Parc: as ShouldPausePlaybackWhenHidden(), WebKit never pauses a player
 +  // for staying hidden.
 +  if (client_->PresentsParcSafariIdentity()) {
@@ -5687,24 +5678,29 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3769,6 +4879,13 @@
-   // This takes precedent over every restriction except PiP.
+@@ -3770,6 +4880,13 @@
    if (!is_background_video_playback_enabled_)
      return true;
-+
+
 +  // Parc: a Safari-identity player plays on while its page is hidden, muted
 +  // or not: WebKit gives its media sessions no InvisibleAutoplayNotPermitted
 +  // or RequirePageVisibilityToPlayAudio restriction outside iOS.
 +  if (client_->PresentsParcSafariIdentity()) {
 +    return false;
 +  }
- 
++
    if (is_flinging_)
      return false;
-@@ -3790,8 +4907,31 @@
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
- 
+
+@@ -3792,6 +4909,36 @@
    if (!is_background_video_track_optimization_supported_) {
+     return false;
+   }
++
++  // WebKit's MediaPlayerPrivateAVFoundation::setPageIsVisible and
++  // MediaPlayerPrivateMediaSourceAVFObjC::updateRendererVisibility change
++  // presentation without deselecting the video track.
++  if (client_->PresentsParcSafariIdentity()) {
 +    return false;
 +  }
 +
@@ -5714,8 +5710,8 @@
 +  // own video.
 +  if (renderer_type_ == media::RendererType::kFairPlay ||
 +      renderer_type_ == media::RendererType::kFairPlayHls) {
-     return false;
-   }
++    return false;
++  }
 +#if BUILDFLAG(IS_MAC)
 +  // Before that renderer exists, the attached or attaching CDM tells. An
 +  // encrypted stream still waiting for its CDM has no renderer to save power
@@ -5730,7 +5726,7 @@
 +    return false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.h
@@ -5983,7 +5979,7 @@
  #include <string>
 +#include <string_view>
  #include <utility>
- 
+
  #include "base/command_line.h"
 +#include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
@@ -6015,13 +6011,12 @@
    MOCK_METHOD0(GetElementId, int());
 +  MOCK_CONST_METHOD0(PresentsParcSafariIdentity, bool());
  };
- 
+
  class MockWebMediaPlayerEncryptedMediaClient
-@@ -243,7 +251,103 @@
-                void(media::EmeInitDataType, base::span<const uint8_t>));
+@@ -244,6 +252,102 @@
    MOCK_METHOD0(DidBlockPlaybackWaitingForKey, void());
    MOCK_METHOD0(DidResumePlaybackBlockedForKey, void());
-+};
+ };
 +
 +#if BUILDFLAG(IS_MAC)
 +// A CDM whose sessions have key requests for `requested_keys` ("skd" init
@@ -6116,9 +6111,9 @@
 +
 +  bool completed = false;
 +  bool failed = false;
- };
++};
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
  class MockWebMediaPlayerDelegate : public WebMediaPlayerDelegate {
   public:
 @@ -404,6 +508,9 @@
@@ -6128,7 +6123,7 @@
 +    if (parc_demuxer_) {
 +      parc_demuxer_->Shutdown();
 +    }
- 
+
      CycleThreads();
    }
 @@ -524,6 +631,24 @@
@@ -6156,10 +6151,10 @@
    void SetTickClock(const base::TickClock* clock) {
      wmpi_->SetTickClockForTest(clock);
    }
-@@ -565,13 +690,71 @@
- 
+@@ -565,6 +690,36 @@
+
    void OnWaiting(media::WaitingReason reason) { wmpi_->OnWaiting(reason); }
- 
+
 +#if BUILDFLAG(IS_MAC)
 +  void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
 +                                const std::vector<uint8_t>& init_data) {
@@ -6193,10 +6188,10 @@
    void OnVideoNaturalSizeChange(const gfx::Size& size) {
      wmpi_->OnVideoNaturalSizeChange(size);
    }
- 
+@@ -572,6 +727,34 @@
    void OnVideoConfigChange(const media::VideoDecoderConfig& config) {
      wmpi_->OnVideoConfigChange(config);
-+  }
+   }
 +
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: reports |added| as a late SourceBuffer's streams to a paused player
@@ -6223,16 +6218,15 @@
 +    CycleThreads();
 +    EXPECT_FALSE(IsSuspended());
 +    EXPECT_TRUE(wmpi_->Paused());
-   }
++  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
    WebMediaPlayerImpl::PlayState ComputePlayState() {
      return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
-@@ -909,7 +1092,42 @@
-   }
- 
+@@ -910,6 +1093,41 @@
+
    void OnProgress() { wmpi_->OnProgress(); }
-+
+
 +  // Parc: a paused audio Media Source element at HAVE_METADATA over a
 +  // ChunkDemuxer the test appends to.
 +  void StartParcMediaSource(bool safari_identity) {
@@ -6250,7 +6244,7 @@
 +    SetMetadata(/*has_audio=*/true, /*has_video=*/false);
 +    SetPaused(true);
 +  }
- 
++
 +  // Appends the part of a 2.7 s audio file in [start, end) to SourceBuffer
 +  // |id|, as an append reports progress.
 +  void AppendParcMediaSource(base::TimeDelta start,
@@ -6271,13 +6265,10 @@
    void OnCdmCreated(base::RepeatingClosure quit_closure,
                      std::unique_ptr<WebContentDecryptionModule> cdm,
                      media::CreateCdmStatus status) {
-@@ -944,9 +1162,30 @@
-     DCHECK(web_cdm_);
-     EXPECT_CALL(*mock_cdm_, GetCdmContext())
-         .WillRepeatedly(Return(&mock_cdm_context_));
-+    wmpi_->SetCdmInternal(web_cdm_.get());
-+  }
-+
+@@ -947,6 +1165,27 @@
+     wmpi_->SetCdmInternal(web_cdm_.get());
+   }
+
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a Media Source element of a Safari-identity page gets FairPlay
 +  // MediaKeys (setMediaKeys).
@@ -6287,10 +6278,10 @@
 +    wmpi_->load_type_ = WebMediaPlayer::kLoadTypeMediaSource;
 +    EXPECT_CALL(*mock_cdm_, GetCdmContext())
 +        .WillRepeatedly(Return(&parc_fairplay_cdm_context_));
-     wmpi_->SetCdmInternal(web_cdm_.get());
++    wmpi_->SetCdmInternal(web_cdm_.get());
 +    CycleThreads();
-   }
- 
++  }
++
 +  // Parc: an init segment's FairPlay sinf for a protected track.
 +  void ParcAppendSinf() {
 +    wmpi_->OnEncryptedMediaInitData(media::EmeInitDataType::SINF,
@@ -6310,25 +6301,25 @@
 +  ParcFairPlayCdmContext parc_fairplay_cdm_context_;
 +  ParcKeyRequestCdmContext parc_cdm_context_;
 +#endif  // BUILDFLAG(IS_MAC)
- 
+
    viz::FrameSinkId frame_sink_id_ = viz::FrameSinkId(1, 1);
    viz::LocalSurfaceId local_surface_id_ = viz::LocalSurfaceId(
-@@ -1023,6 +1266,11 @@
+@@ -1022,6 +1265,11 @@
+
    // The WebMediaPlayerImpl's media observer.
    NiceMock<MockMediaObserver> mock_observer_;
- 
++
 +  // Parc: see StartParcMediaSource(); outlives |wmpi_|, which points at it.
 +  NiceMock<media::MockMediaLog> parc_media_log_;
 +  NiceMock<media::MockDemuxerHost> parc_demuxer_host_;
 +  std::unique_ptr<media::ChunkDemuxer> parc_demuxer_;
-+
+
    // The WebMediaPlayerImpl instance under test.
    std::unique_ptr<WebMediaPlayerImpl> wmpi_;
- 
 @@ -1809,6 +2057,32 @@
    wmpi_->OnTimeUpdate();
  }
- 
+
 +// On a Safari-identity page the end reaches the element while paused too, as
 +// WebKit's player reports it (HTMLMediaElement::handlePlaybackPositionChanged).
 +TEST_F(WebMediaPlayerImplTest, SafariIdentity_EndedWhilePausedTellsClient) {
@@ -6358,8 +6349,8 @@
  TEST_F(WebMediaPlayerImplTest, MediaPositionState_Paused) {
    InitializeWebMediaPlayerImpl();
    LoadAndWaitForReadyState(kAudioOnlyTestFile,
-@@ -1906,8 +2180,142 @@
- 
+@@ -1906,6 +2180,140 @@
+
    EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(_, _, _, _)).Times(0);
    wmpi_->OnTimeUpdate();
 +}
@@ -6429,8 +6420,8 @@
 +  EXPECT_CALL(client_, TimeChanged());
 +  OnPipelineSeeked(/*time_updated=*/true);
 +  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
- }
- 
++}
++
 +// A frame of an earlier seek doesn't end a later one.
 +TEST_F(WebMediaPlayerImplParcUrlSeekTest, SafariSeekIgnoresEarlierSeeksFrame) {
 +  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
@@ -6496,15 +6487,13 @@
 +  OnPipelineSeeked(/*time_updated=*/true);
 +  PaintFrame();
 +  CycleThreads();
-+}
-+
+ }
+
  TEST_F(WebMediaPlayerImplTest, NoStreams) {
-   InitializeWebMediaPlayerImpl();
-   media::PipelineMetadata metadata;
 @@ -1980,6 +2388,55 @@
    OnWaiting(media::WaitingReason::kNoDecryptionKey);
  }
- 
+
 +#if BUILDFLAG(IS_MAC)
 +// Parc: setMediaKeys(null) on a Safari-identity page detaches its FairPlay
 +// MediaKeys, as WebKit's HTMLMediaElement::setMediaKeys does
@@ -6556,11 +6545,12 @@
 +
  TEST_F(WebMediaPlayerImplTest, Waiting_SecureSurfaceLost) {
    InitializeWebMediaPlayerImpl();
- 
-@@ -1994,6 +2451,156 @@
+
+@@ -1993,6 +2450,156 @@
+   OnWaiting(media::WaitingReason::kSecureSurfaceLost);
    EXPECT_TRUE(IsSuspended());
  }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// WebKit's native HLS player stops waiting only once a session has a request
 +// for the key it waits on, not for another key becoming usable.
@@ -6710,18 +6700,13 @@
 +  base::RunLoop().RunUntilIdle();
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+
  ACTION(ReportHaveEnough) {
    arg0->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
-                                media::BUFFERING_CHANGE_REASON_UNKNOWN);
-@@ -2771,9 +3378,46 @@
-   OnVideoConfigChange(new_color_config);
-   ASSERT_EQ(last_reporter, GetVideoStatsReporter());
-   ASSERT_EQ(media::VP8PROFILE_MIN, GetVideoStatsReporterCodecProfile());
-+
-+  EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
-+}
-+
+@@ -2775,6 +3382,43 @@
+   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
+ }
+
 +#if BUILDFLAG(IS_MAC)
 +// Parc: a SourceBuffer added after the renderer was made enables a stream of a
 +// new type (ChunkDemuxer::ParcAllowSourceBuffersAfterInit()). readyState drops
@@ -6749,23 +6734,23 @@
 +  InitializeWebMediaPlayerImpl();
 +  LoadAndWaitForReadyState(kVideoOnlyTestFile,
 +                           WebMediaPlayer::kReadyStateHaveEnoughData);
- 
++
 +  media::PipelineMetadata added;
 +  added.has_video = true;
 +  added.video_decoder_config = TestVideoConfig::Normal();
 +  ParcAddStreamsAndWaitForRestart(added);
 +
-   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
- }
++  EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
++}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  TEST_F(WebMediaPlayerImplTest, NaturalSizeChange) {
    InitializeWebMediaPlayerImpl();
-@@ -3022,8 +3666,68 @@
-   ForegroundPlayer(BackgroundBehaviorType::Page);
+   media::PipelineMetadata metadata;
+@@ -3023,6 +3667,66 @@
    EXPECT_FALSE(IsPausedBecausePageHidden());
    EXPECT_FALSE(IsPausedBecauseFrameHidden());
-+}
+ }
 +
 +class WebMediaPlayerImplHiddenVideoTest
 +    : public WebMediaPlayerImplTest,
@@ -6810,8 +6795,8 @@
 +      .Times(PresentsSafariIdentity() ? 0 : 1);
 +  ForegroundPlayer(BackgroundBehaviorType::Page);
 +  EXPECT_FALSE(IsPausedBecausePageHidden());
- }
- 
++}
++
 +// The media-playback-while-not-visible policy still pauses a hidden frame.
 +TEST_P(WebMediaPlayerImplHiddenVideoTest, FrameHiddenWithPolicy) {
 +  PlayVideoOnly();
@@ -6826,14 +6811,13 @@
 +INSTANTIATE_TEST_SUITE_P(SafariIdentity,
 +                         WebMediaPlayerImplHiddenVideoTest,
 +                         ::testing::Bool());
-+
+
  // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
  // visibility changes should not affect the playback state.
- TEST_F(WebMediaPlayerImplTest, DisabledFlagShouldPauseWhenFrameIsHidden) {
 @@ -3090,6 +3794,20 @@
    ASSERT_TRUE(IsSuspended());
  }
- 
+
 +TEST_F(WebMediaPlayerImplTest, ParcFrozenInBackForwardCacheKeepsPipeline) {
 +  InitializeWebMediaPlayerImpl();
 +  wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
@@ -6876,9 +6860,9 @@
 +  ScheduleIdlePauseTimer();
 +  EXPECT_TRUE(IsIdlePauseTimerRunning());
  }
- 
+
  // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
-@@ -3448,8 +4186,106 @@
+@@ -3448,6 +4186,104 @@
    wmpi_->SetIsEffectivelyFullscreen(
        WebFullscreenVideoStatus::kFullscreenAndPictureInPictureEnabled);
    EXPECT_FALSE(delegate_.ExpireForTesting());
@@ -6929,8 +6913,8 @@
 +  parc_demuxer_->MarkEndOfStream(media::PIPELINE_OK);
 +  OnProgress();
 +  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
- }
- 
++}
++
 +// Parc: a SourceBuffer added after the others initialized joins the buffered
 +// ranges with its first init segment, so a second audio language drops
 +// readyState to HAVE_METADATA and it rises through HAVE_FUTURE_DATA to
@@ -6980,15 +6964,40 @@
 +  EXPECT_CALL(client_, ReadyStateChanged());
 +  wmpi_->Seek(1.0);
 +  EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
+ }
+
+ class WebMediaPlayerImplBackgroundBehaviorTest
+@@ -3815,6 +4651,84 @@
+   }
+ }
+
++// Exercise both load types: the optimization runs above renderer selection.
++TEST_P(WebMediaPlayerImplBackgroundBehaviorTest,
++       SafariIdentity_KeepsBackgroundVideoTrackSelected) {
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(true));
++  SetMetadata(true, true);
++  for (auto load_type : {WebMediaPlayer::kLoadTypeURL,
++                         WebMediaPlayer::kLoadTypeMediaSource}) {
++    SetLoadType(load_type);
++    EXPECT_FALSE(ShouldDisableVideoWhenHidden());
++  }
 +}
 +
- class WebMediaPlayerImplBackgroundBehaviorTest
-     : public WebMediaPlayerImplTest,
-       public WebAudioSourceProviderClient,
-@@ -3813,8 +4649,57 @@
-       }
-       break;
-   }
++TEST_P(WebMediaPlayerImplBackgroundBehaviorTest,
++       ChromeIdentity_PreservesBackgroundVideoOptimization) {
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(false));
++  SetMetadata(true, true);
++  const bool eligible =
++      !IsPictureInPictureOn() && !IsVideoBeingCaptured() &&
++      (GetDurationSec() < GetMaxKeyframeDistanceSec() ||
++       GetAverageKeyframeDistanceSec() < GetMaxKeyframeDistanceSec());
++  for (auto load_type : {WebMediaPlayer::kLoadTypeURL,
++                         WebMediaPlayer::kLoadTypeMediaSource}) {
++    SetLoadType(load_type);
++    EXPECT_EQ(eligible, ShouldDisableVideoWhenHidden());
++  }
 +}
 +
 +// On a Safari-identity page a hidden player pauses only for the
@@ -7018,8 +7027,8 @@
 +      IsFrameHiddenAndShouldPauseWhenHidden() ||
 +          (!IsBackgroundVideoPlaybackEnabled() && !IsPictureInPictureOn()),
 +      ShouldPausePlaybackWhenHidden());
- }
- 
++}
++
 +TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_AudioVideo) {
 +  base::test::ScopedFeatureList scoped_background_audio_flag{
 +      media::kPauseMutedBackgroundAudio};
