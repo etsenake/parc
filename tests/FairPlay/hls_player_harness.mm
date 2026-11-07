@@ -18,9 +18,11 @@
 #include <string>
 #include <vector>
 
+#include "fairplay_hls_keys.h"
 #include "fairplay_hls_player.h"
 #include "fairplay_hls_player_internal.h"
 #include "fairplay_hls_timeline.h"
+#include "fairplay_key_session.h"
 
 namespace fp = parc::fairplay;
 
@@ -653,6 +655,393 @@ void SkdHandler() {
   OnOwner([&] { fp::SetHlsKeyRequestHandler(rig.player->impl(), nullptr); });
 }
 
+// FairPlay keys (Engine/ParcNative/fairplay/README.md, "HLS assets"): a
+// stand-in page answers the player's key requests with skd sessions on a
+// FairPlayCdm sharing the player's owner queue, and Axinom's license service
+// (the vectors, service, certificate and tokens tests/FairPlay/harness.mm
+// uses; MultiKey has separate audio and video skd keys).
+NSString* const kLicenseUrl = @"https://drm-fairplay-licensing.axprod.net/AcquireLicense";
+NSString* const kCertificateUrl = @"https://tools.axinom.com/FPScert/fairplay.cer";
+NSString* const kSingleKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
+NSString* const kMultiKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImI1NGVjOTE0LTE5MmQtNGVhMS1hYzE5LWY0MjllYjQ5ODI2OCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiUldKemlSUDRqQkhjd2tJYzRTd1h5QT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4M2M0ZWE4LTBmMmEtNDUyMy04NTFjLWZiZWNjZGMwZjIwMiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiSHFoK1BCNVU1OStvclMzVGVZQ2lOUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4NjhjNzAyLWM3MWItNDA2NC1hZTJiLWMyNGY3Y2MxMDc5MiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiLy9nM2pmdktjUlliaHBwRW04c3BqUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.09GZO7pokr1k24NXKxIV7qyEZ2lhtbpfMoKfP7vzSns";
+const char* const kSingleKeyMaster = "media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/manifest.m3u8";
+const char* const kMultiKeyMaster = "media.axprod.net/TestVectors/MultiKey/Cmaf_h264_1080p_cbcs/manifest.m3u8";
+// The SingleKey playlists' EXT-X-KEY URI.
+const std::string kSkd = "skd://302f80dd-411e-4886-bca5-bb1f8018a024:77FD1889AAF4143B085548B3C0F95B9A";
+
+std::vector<uint8_t> Bytes(const std::string& text) {
+  return std::vector<uint8_t>(text.begin(), text.end());
+}
+
+std::vector<uint8_t> Bytes(NSData* data) {
+  const uint8_t* bytes = static_cast<const uint8_t*>(data.bytes);
+  return std::vector<uint8_t>(bytes, bytes + data.length);
+}
+
+// Blocking; never on the owner queue.
+NSData* Fetch(NSURLRequest* request, NSInteger* status) {
+  __block NSData* result = nil;
+  __block NSInteger code = 0;
+  dispatch_semaphore_t done = dispatch_semaphore_create(0);
+  [[[NSURLSession sharedSession] dataTaskWithRequest:request
+                                   completionHandler:^(NSData* data, NSURLResponse* response, NSError*) {
+                                     result = data;
+                                     if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                                       code = [(NSHTTPURLResponse*)response statusCode];
+                                     }
+                                     dispatch_semaphore_signal(done);
+                                   }] resume];
+  dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
+  *status = code;
+  return result;
+}
+
+NSData* Certificate() {
+  static NSData* certificate = [] {
+    NSInteger status = 0;
+    NSData* data = Fetch([NSURLRequest requestWithURL:[NSURL URLWithString:kCertificateUrl]], &status);
+    return status == 200 ? data : nil;
+  }();
+  return certificate;
+}
+
+// The page and its media element: MediaKeys, sessions and the element's
+// encrypted events (the key loader's needs). Everything but the license POST
+// runs on the owner queue. Declare it before the KeyRig.
+struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
+  explicit KeyPage(NSString* token) : token_(token) {}
+  ~KeyPage() {
+    OnOwner([this] { cdm.reset(); });
+  }
+
+  void Create() {
+    NSData* certificate = Certificate();
+    OnOwner([this, certificate] {
+      cdm = std::make_unique<fp::FairPlayCdm>(this, OwnerPoster());
+      cdm->SetServerCertificate(Bytes(certificate), [](const fp::Result&) {});
+    });
+  }
+
+  // generateRequest("skd", init_data); call on the owner queue.
+  void GenerateOnOwner(const std::string& init_data) {
+    std::weak_ptr<int> alive = alive_;
+    cdm->CreateSessionAndGenerateRequest(
+        fp::InitDataType::kSkd, Bytes(init_data), [this, alive](const fp::Result& result, const std::string& id) {
+          if (alive.expired()) {
+            return;
+          }
+          std::printf("   generateRequest -> %s\n", result.ok() ? id.c_str() : result.message.c_str());
+          if (result.ok()) {
+            sessions.push_back(id);
+          } else {
+            generate_failures++;
+          }
+        });
+  }
+  void Generate(const std::string& init_data) {
+    OnOwner([&] { GenerateOnOwner(init_data); });
+  }
+
+  void OnSessionMessage(const std::string& session_id,
+                        fp::MessageType type,
+                        const std::vector<uint8_t>& message) override {
+    messages++;
+    message_types.push_back(type);
+    if (hold_messages) {
+      held.push_back(session_id);
+      return;
+    }
+    std::weak_ptr<int> alive = alive_;
+    std::string session = session_id;
+    NSData* body = [NSData dataWithBytes:message.data() length:message.size()];
+    NSString* token = token_;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+      NSMutableURLRequest* post = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kLicenseUrl]];
+      post.HTTPMethod = @"POST";
+      post.HTTPBody = body;
+      [post setValue:token forHTTPHeaderField:@"X-AxDRM-Message"];
+      [post setValue:@"application/octet-stream" forHTTPHeaderField:@"Content-Type"];
+      NSInteger status = 0;
+      NSData* ckc = Fetch(post, &status);
+      dispatch_async(Owner(), ^{
+        if (alive.expired() || !cdm) {
+          return;
+        }
+        std::printf("   SPC %lu bytes -> HTTP %ld, CKC %lu bytes\n", (unsigned long)body.length, (long)status,
+                    (unsigned long)ckc.length);
+        if (status != 200 || !ckc.length) {
+          license_failures++;
+          return;
+        }
+        cdm->UpdateSession(session, Bytes(ckc), [this, alive](const fp::Result& result) {
+          if (!alive.expired()) {
+            (result.ok() ? updates_ok : updates_failed)++;
+          }
+        });
+      });
+    });
+  }
+
+  void OnSessionKeysChange(const std::string&, bool, const std::vector<fp::KeyInfo>& keys) override {
+    for (const fp::KeyInfo& key : keys) {
+      statuses[std::string(key.key_id.begin(), key.key_id.end())] = key.status;
+    }
+  }
+  void OnSessionClosed(const std::string&) override {}
+
+  // Every skd request the loader is handed (legacy pages' webkitneedkey).
+  void OnKeyLoadingRequest(const std::string& url) override { loading_requests.push_back(url); }
+
+  // The element's encrypted(skd) event.
+  void OnKeyNeeded(const std::string& uri) override {
+    needs.push_back(uri);
+    if (on_need) {
+      on_need(uri);
+    }
+  }
+
+  bool Is(const std::string& key_id, fp::KeyStatus status) const {
+    auto it = statuses.find(key_id);
+    return it != statuses.end() && it->second == status;
+  }
+  bool Usable(const std::string& key_id) const { return Is(key_id, fp::KeyStatus::kUsable); }
+
+  std::unique_ptr<fp::FairPlayCdm> cdm;
+  std::function<void(const std::string&)> on_need;  // The encrypted handler.
+  std::vector<std::string> needs;
+  std::vector<std::string> loading_requests;
+  std::vector<std::string> sessions;
+  std::vector<fp::MessageType> message_types;
+  std::map<std::string, fp::KeyStatus> statuses;
+  std::vector<std::string> held;
+  bool hold_messages = false;
+  int messages = 0;
+  int generate_failures = 0;
+  int license_failures = 0;
+  int updates_ok = 0;
+  int updates_failed = 0;
+
+ private:
+  NSString* token_;
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+};
+
+// The GPU service's order: CreateAsset, the key loader for the asset (with
+// the element's CDM if it has one), the handler, Start.
+struct KeyRig {
+  explicit KeyRig(fp::FairPlayHlsKeyLoaderClient* client) : client(client) {}
+  ~KeyRig() {
+    OnOwner([this] {
+      fp::SetHlsKeyRequestHandler(rig.player->impl(), nullptr);
+      keys.reset();
+    });
+  }
+  // Call on the owner queue.
+  void LoadOnOwner(const char* master, fp::FairPlayCdm* cdm) {
+    rig.player->CreateAsset(Fake(master), "");
+    keys = std::make_unique<fp::FairPlayHlsKeyLoader>(fp::HlsPlayerAsset(rig.player->impl()), cdm, client,
+                                                      OwnerPoster());
+    fp::SetHlsKeyRequestHandler(rig.player->impl(), keys.get());
+    rig.player->Start();
+    rig.player->SetMuted(true);
+  }
+  void Load(const char* master, fp::FairPlayCdm* cdm) {
+    OnOwner([&] { LoadOnOwner(master, cdm); });
+  }
+  void Play() {
+    OnOwner([&] { rig.player->SetRate(1); });
+  }
+  fp::Result SetCdm(fp::FairPlayCdm* cdm) {
+    fp::Result result;
+    OnOwner([&] { result = keys->SetCdm(cdm); });
+    return result;
+  }
+  bool PlaysTo5s() {
+    bool plays = WaitFor([&] { return rig.Time() >= 5 || rig.client.errors > 0; }, 25) && rig.client.errors == 0;
+    std::printf("   clock %.2f s, errors %d %s\n", rig.Time(), rig.client.errors,
+                rig.client.error_message.substr(0, 120).c_str());
+    return plays;
+  }
+
+  Rig rig;
+  std::unique_ptr<fp::FairPlayHlsKeyLoader> keys;
+  fp::FairPlayHlsKeyLoaderClient* client;
+};
+
+// MediaKeys before the load (Shaka): the request still comes through the
+// resource loader, raising webkitneedkey and encrypted as in Safari, and the
+// attached CDM answers the page's session with the request's own SPC.
+void KeysMediaKeysFirst() {
+  std::printf("-- FairPlay HLS keys: MediaKeys before the load\n");
+  KeyPage page(kSingleKeyToken);
+  page.Create();
+  page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
+  KeyRig kr(&page);
+  kr.Load(kSingleKeyMaster, page.cdm.get());
+  kr.Play();
+  bool plays = kr.PlaysTo5s();
+  Check(page.loading_requests.size() == 1 && page.loading_requests[0] == kSkd,
+        "the loading request is reported (legacy webkitneedkey)");
+  Check(page.needs == std::vector<std::string>{kSkd}, "one encrypted(skd) with the playlist's URI");
+  Check(page.messages == 1 && page.updates_ok == 1 && page.Usable(kSkd),
+        "one SPC/CKC exchange; key status usable under the URI");
+  Check(plays, "protected HLS plays");
+  Check(kr.SetCdm(nullptr).ok(), "setMediaKeys(null) detaches the CDM");
+}
+
+// MediaKeys after the key request (Apple's sample): the resource loader holds
+// the request, and the session answers it with the request's own SPC.
+void KeysLoaderRoute() {
+  std::printf("-- FairPlay HLS keys: key request first, MediaKeys after\n");
+  KeyPage page(kSingleKeyToken);
+  KeyRig kr(&page);
+  kr.Load(kSingleKeyMaster, nullptr);
+  kr.Play();
+  bool asked = WaitFor([&] { return !page.needs.empty(); }, 20);
+  Check(asked && page.needs[0] == kSkd, "encrypted(skd) with the URI before MediaKeys exist");
+  Check(!page.loading_requests.empty() && page.loading_requests[0] == kSkd,
+        "the loading request is reported first (legacy webkitneedkey)");
+  page.Create();
+  Check(kr.SetCdm(page.cdm.get()).ok(), "setMediaKeys after the load attaches the CDM");
+  page.Generate(kSkd);
+  bool plays = kr.PlaysTo5s();
+  Check(page.messages == 1 && page.updates_ok == 1 && page.Usable(kSkd) && page.needs.size() == 1,
+        "one encrypted event, one SPC/CKC exchange; key status usable under the URI");
+  Check(plays, "protected HLS plays");
+  OnOwner([&] { kr.keys->SetOutputObscured(true); });
+  WaitFor([&] { return page.Is(kSkd, fp::KeyStatus::kOutputRestricted); }, 3);
+  Check(page.Is(kSkd, fp::KeyStatus::kOutputRestricted), "obscured output reports output-restricted");
+  OnOwner([&] { kr.keys->SetOutputObscured(false); });
+  WaitFor([&] { return page.Usable(kSkd); }, 3);
+  Check(page.Usable(kSkd), "usable again once output is no longer obscured");
+}
+
+// Separate audio and video keys, MediaKeys before the load and after.
+void KeysMultiKey() {
+  std::printf("-- FairPlay HLS keys: MultiKey (audio and video keys)\n");
+  for (bool keys_first : {false, true}) {
+    KeyPage page(kMultiKeyToken);
+    KeyRig kr(&page);
+    if (keys_first) {
+      page.Create();
+      page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
+      kr.Load(kMultiKeyMaster, page.cdm.get());
+    } else {
+      kr.Load(kMultiKeyMaster, nullptr);
+    }
+    kr.Play();
+    if (!keys_first) {
+      WaitFor([&] { return page.needs.size() >= 2; }, 20);
+      page.Create();
+      OnOwner([&] {
+        kr.keys->SetCdm(page.cdm.get());
+        for (const std::string& uri : page.needs) {
+          page.GenerateOnOwner(uri);
+        }
+        page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
+      });
+    }
+    bool plays = kr.PlaysTo5s();
+    std::string order = keys_first ? "MediaKeys first" : "MediaKeys after the requests";
+    Check(page.needs.size() >= 2 && page.updates_ok == static_cast<int>(page.needs.size()),
+          order + ": an encrypted event and a license per key");
+    Check(plays, order + ": protected HLS plays");
+  }
+}
+
+// The session first: it waits for the asset's request. Everything runs in one
+// owner task, before any request can arrive.
+void KeysAwait() {
+  std::printf("-- FairPlay HLS keys: session waiting for the asset's request\n");
+  KeyPage page(kSingleKeyToken);
+  page.Create();
+  KeyRig kr(&page);
+  OnOwner([&] {
+    kr.LoadOnOwner(kSingleKeyMaster, nullptr);
+    kr.keys->SetCdm(page.cdm.get());
+    page.GenerateOnOwner(kSkd);
+    kr.rig.player->SetRate(1);
+  });
+  bool plays = kr.PlaysTo5s();
+  Check(page.needs.empty() && page.messages == 1 && page.updates_ok == 1,
+        "the waiting session takes the asset's request; no encrypted event");
+  Check(plays, "protected HLS plays");
+}
+
+// A session made before any asset was attached plans for the MSE route; the
+// asset's request reaches it as a second license request, whether the CDM
+// comes with the loader or later.
+void KeysEarlySession() {
+  std::printf("-- FairPlay HLS keys: session made before MediaKeys were attached\n");
+  for (bool cdm_first : {true, false}) {
+    KeyPage page(kSingleKeyToken);
+    page.Create();
+    page.Generate(kSkd);
+    WaitFor([&] { return page.updates_ok == 1; }, 15);
+    KeyRig kr(&page);
+    kr.Load(kSingleKeyMaster, cdm_first ? page.cdm.get() : nullptr);
+    kr.Play();
+    if (!cdm_first) {
+      WaitFor([&] { return !page.needs.empty(); }, 20);
+      kr.SetCdm(page.cdm.get());
+    }
+    bool plays = kr.PlaysTo5s();
+    std::string route = cdm_first ? "CDM at creation" : "CDM after the request";
+    Check(page.sessions.size() == 1 && page.messages == 2 &&
+              page.message_types.back() == fp::MessageType::kLicenseRequest && page.updates_ok == 2,
+          route + ": the earlier session sends the asset's request as a second license request");
+    Check(plays, route + ": protected HLS plays");
+  }
+}
+
+// Closing a session before it answered fails its loading request (one SPC
+// per request); AVFoundation asks again and a new session answers.
+void KeysClose() {
+  std::printf("-- FairPlay HLS keys: session closed before its answer\n");
+  KeyPage page(kSingleKeyToken);
+  KeyRig kr(&page);
+  kr.Load(kSingleKeyMaster, nullptr);
+  kr.Play();
+  WaitFor([&] { return !page.needs.empty(); }, 20);
+  page.Create();
+  OnOwner([&] {
+    kr.keys->SetCdm(page.cdm.get());
+    page.hold_messages = true;
+    page.GenerateOnOwner(kSkd);
+  });
+  WaitFor([&] { return !page.held.empty(); }, 15);
+  OnOwner([&] {
+    page.hold_messages = false;
+    page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
+    page.cdm->CloseSession(page.held.front(), [](const fp::Result&) {});
+  });
+  bool plays = kr.PlaysTo5s();
+  Check(page.needs.size() == 2 && page.updates_ok == 1,
+        "AVFoundation asks again after the close (a second encrypted event) and the next session answers");
+  Check(plays, "protected HLS plays");
+}
+
+// Legacy WebKitMediaKeys sessions: {"skd", "contentId"} names the SPC by the
+// page's content ID (here the URI, which Axinom's service expects).
+void KeysLegacy() {
+  std::printf("-- FairPlay HLS keys: legacy content ID\n");
+  KeyPage page(kSingleKeyToken);
+  KeyRig kr(&page);
+  kr.Load(kSingleKeyMaster, nullptr);
+  kr.Play();
+  WaitFor([&] { return !page.needs.empty(); }, 20);
+  page.Create();
+  NSString* content_id = [[NSData dataWithBytes:kSkd.data() length:kSkd.size()] base64EncodedStringWithOptions:0];
+  std::string init_data = std::string("{\"skd\": \"") + kSkd + "\", \"contentId\": \"" + content_id.UTF8String + "\"}";
+  OnOwner([&] {
+    kr.keys->SetCdm(page.cdm.get());
+    page.GenerateOnOwner(init_data);
+  });
+  bool plays = kr.PlaysTo5s();
+  Check(page.updates_ok == 1 && page.Usable(kSkd), "the legacy session licenses the held request");
+  Check(plays, "protected HLS plays");
+}
+
 void Teardown() {
   std::printf("-- teardown with loads in flight\n");
   {
@@ -674,7 +1063,10 @@ int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
-        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown}};
+        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
+        {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute}, {"keys-multikey", KeysMultiKey},
+        {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
+        {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

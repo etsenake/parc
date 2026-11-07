@@ -40,9 +40,11 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
   (`<video src="….m3u8">`) through `AVPlayer`, with every load handed to the
   embedder's `HlsLoader` (see below and
   [NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md)).
-- `fairplay_hls_player_internal.h`: the player's asset (a content key
-  recipient), `AVPlayer` and `AVPlayerLayer` for the CDM and display
-  (ObjC++ only).
+- `fairplay_hls_player_internal.h`: the player's asset, `AVPlayer` and
+  `AVPlayerLayer` for the key loader and display, and the key request
+  handler seam (ObjC++ only).
+- `fairplay_hls_keys.{h,mm}`: `FairPlayHlsKeyLoader`, the FairPlay keys of
+  the native HLS player's asset ("HLS assets" below; ObjC++ only).
 - `fairplay_hls_timeline.{h,cc}`: the player's duration, seekable window and
   start date by WebKit's rules, with Safari's caching (plain C++).
 
@@ -401,7 +403,9 @@ playlist (network error before metadata), an `http://` playlist (App
 Transport Security doesn't apply: AVFoundation fetches nothing itself),
 `preservesPitch` and rate picking the pitch algorithm, Axinom's FairPlay HLS (the skd URI
 reaches the client and never the loader; no key, no playback) and teardown
-with loads in flight. The `timeline` scenario checks WebKit's timing rules
+with loads in flight. The `keys-*` scenarios license Axinom's FairPlay HLS
+vectors through `FairPlayHlsKeyLoader` and `FairPlayCdm` on both key routes
+("HLS assets"). The `timeline` scenario checks WebKit's timing rules
 with no network; `live` also checks the one-range window, a whole-second start
 date that matches the wall clock, an exact seek into the DVR window and one to
 its end reaching the live edge.
@@ -409,6 +413,51 @@ its end reaching the live edge.
 `tests/FairPlay/sandbox` (`--scenarios hls-ts,hls-fmp4`) plays both clear
 streams inside Chromium's GPU seatbelt profile with only the MSE route's
 FairPlay rules, every load going through the unsandboxed helper.
+
+## HLS assets (FairPlay keys on the native HLS route)
+
+Safari gets an HLS stream's FairPlay keys from AVFoundation asking for each
+`EXT-X-KEY` skd URI. `FairPlayHlsKeyLoader` gives pages WebKit's events and
+messages for them: the element's `encrypted` (initDataType `skd`, the URI as
+UTF-8) when a key is needed and no session asked for it (`OnKeyNeeded`), a raw
+SPC with the URI as content identifier (a legacy session's `contentId`
+instead), the raw CKC, and key statuses under the URI's bytes. Every loading
+request it is handed is also reported (`OnKeyLoadingRequest`), for legacy
+pages' `webkitneedkey`.
+
+AVFoundation asks for the keys through the asset's resource loader, which
+the player hands to the loader, and Parc keeps it there: the loader holds
+each skd request and reports it, and the attached CDM answers the page's
+`generateRequest("skd", uri)` with a CKC from the request's own SPC
+(`streamingContentKeyRequestDataForApp:`, WebKit's legacy
+`CDMSessionAVFoundationObjC`). A `generateRequest` that comes first waits for
+the asset to ask. It works whatever order the page attaches MediaKeys and
+licenses keys in, and every request raises `webkitneedkey` as in Safari.
+WebKit's modern route instead licenses by URI through the
+`AVContentKeySession`, then makes the asset a content key recipient and
+finishes the held requests; on this macOS a held request finished before its
+key is usable never plays, and once the asset is a recipient a still-held
+request can neither make an SPC nor be requested through the session, so
+that order stalls a key requested before an earlier one was licensed, and a
+recipient asset raises no `webkitneedkey` at all
+([tests/FairPlay README](../../../tests/FairPlay/README.md#apple-api-behaviour),
+"HLS assets").
+
+These keys have no `AVContentKey`: no `renew`, no `revoke`, and output
+protection comes from `AVPlayer`'s
+`outputObscuredDueToInsufficientExternalProtection` (`SetOutputObscured`),
+WebKit's fallback. A loading request gives one SPC, so a session closed or
+removed before its answer, or a CDM detached, fails it and AVFoundation asks
+again (a new `encrypted`). AVFoundation asking again for a key a session
+answered becomes that session's renewal message, and after it cancelled a
+taken request (a seek) that session's new license request.
+
+With an asset attached, skd init data is always named by the URI; without
+one it keeps the MSE route's plan. A session made for a URI before its asset
+was attached gets the asset's request as a further license request instead
+of the page getting a second `encrypted` (pages drop duplicate init data).
+Legacy `WebKitMediaKeys` sessions (`com.apple.fps`, `1_0`) send
+`{"skd": URI, "contentId": base64}` through the same path.
 
 ## Native HLS tracks
 

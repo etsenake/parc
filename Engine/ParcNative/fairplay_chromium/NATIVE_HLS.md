@@ -37,9 +37,10 @@ WebKit's legacy AVFoundation-player key systems (`com.apple.fps`,
 `AVPlayer` lives in the GPU process, on the media service thread, next to the
 FairPlay CDM and renderer. Why:
 
-- Keys reach an `AVURLAsset` only as a content key recipient of the CDM's
-  `AVContentKeySession` (`addContentKeyRecipient:` takes the object), so the
-  asset must be in the CDM's process. The CDM is in the GPU process.
+- Keys reach an `AVURLAsset` only through objects of its own process: the
+  CDM answers the asset's `AVAssetResourceLoadingRequest`s (and
+  `addContentKeyRecipient:` would take the object too), so the asset must be
+  in the CDM's process. The CDM is in the GPU process.
 - `ui::ProtectedLayerRegistry` and `CARendererLayerTree` are in the GPU
   process: an `AVPlayerLayer` is placed exactly as the MSE route's
   `AVSampleBufferDisplayLayer`, with no remote layer hosting.
@@ -307,7 +308,7 @@ player the GPU service owns, on the media service thread with the core's
 | `OnOutputObscuredChange(bool)` | the key loader's `SetOutputObscured` |
 | `OnKeyRequest(clearkey uri)`, `FulfillKeyRequests(uri, key)`, `HlsClearKeyId` | `OnKeyRequest(uri)` / `ProvideClearKey(key_id, key)` |
 | `CurrentTime()` (any thread), `Rate()` | `OnTimeUpdate` |
-| `HlsPlayerAsset` / `HlsPlayerLayer` (`fairplay_hls_player_internal.h`) | `addContentKeyRecipient:` (Keys) / `ProtectedLayerRegistry` (Display) |
+| `HlsPlayerAsset` / `HlsPlayerLayer` (`fairplay_hls_player_internal.h`) | the key loader's asset (Keys) / `ProtectedLayerRegistry` (Display) |
 
 The core never blocks on the embedder and never calls the client inside a call
 into it. Facts the harness established: every load AVFoundation makes goes to
@@ -385,15 +386,14 @@ creates the CDM's key loader for the asset (`FairPlayHlsKeyLoader`, from
 `OnWaiting(kNoDecryptionKey)`, `SetCdm` to the loader, and the player's
 `OnOutputObscuredChange` to its `SetOutputObscured`. The key loader's tests
 showed that a request held on the resource loader can't be finished for the
-session afterwards (it never plays), so the loader decides at creation
-whether the asset is a content key recipient and answers held requests with
-their own SPC/CKC otherwise; where the steps below differ, the key loader's
-header is right.
+session afterwards (it never plays), so the loader answers held requests with
+their own SPC/CKC and never makes the asset a content key recipient; where
+the steps below differ, the key loader's header is right.
 
-`webkitneedkey`: every `skd://` request the key loader is handed and every
-`clearkey://` request the core reports, whether or not a CDM is set and
-including repeats of a URI, first sends `OnKeyRequest(<the request URL's
-absoluteString, UTF-8, unchanged>)`. The render process passes it to
+`webkitneedkey`: every `skd://` request the key loader is handed (its
+client's `OnKeyLoadingRequest(url)`) and every `clearkey://` request the core
+reports, whether or not a CDM is set and including repeats of a URI, first
+sends `OnKeyRequest(<the request URL's absoluteString, UTF-8, unchanged>)`. The render process passes it to
 `WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest()`, which on a
 Safari-identity page queues `webkitneedkey` at the element before anything
 else the request raises: for `skd://` with WebKit's legacy layout (4-byte
@@ -402,36 +402,28 @@ with the key ID (the URL after `clearkey:`, as `HlsClearKeyId`) as UTF-8
 (WebKit's `keyNeeded` in `shouldWaitForLoadingOfResource`;
 `parc_webkit_need_key.h`, `fp-legacy-element`).
 
-The player's `AVAssetResourceLoader` delegate sees `skd://` key requests
-(AVFoundation can't load that scheme). It follows WebKit
-(`MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource`,
-`attemptToDecryptWithInstance`):
+What the key loader does (its header and the [core README](../fairplay/README.md),
+"HLS assets", have the detail; the AVFoundation facts are in
+[tests/FairPlay README](../../../tests/FairPlay/README.md#apple-api-behaviour),
+"HLS assets"):
 
-1. No CDM yet: keep the loading request, send
-   `OnEncrypted("skd", <URI as UTF-8>)` and `OnWaiting(kNoDecryptionKey)`.
-   The render process raises `encrypted` (initDataType `"skd"`) and
-   `waitingforkey`, after the request's `webkitneedkey`.
-2. `SetCdm(cdm_id)` resolves the frame's `FairPlayCdm` through
-   `CdmContext::GetFairPlayCdm()`. The player registers with the core:
-   `FairPlayCdm::AttachAsset(AVURLAsset*, AssetKeyClient*)` /
-   `DetachAsset`, on the CDM's sequence (`fp-hls-keys` defines it).
-3. The page's `generateRequest("skd", uri)` names the request by the URI
-   (`processContentKeyRequestWithIdentifier:uri`, content identifier = the
-   URI, as WebKit) whenever an asset is attached, instead of the MSE route's
-   synthesized pssh. `update(ckc)` makes the key usable.
-4. When a usable key covers a pending URI, the core calls
-   `AssetKeyClient::OnKeyUsable(uri)`; the player adds the asset as a
-   recipient of the session (`addContentKeyRecipient:`), sets each pending
-   request's `contentInformationRequest.contentType =
-   AVStreamingKeyDeliveryContentKeyType`, `finishLoading`s it and sends
-   `OnWaiting` clear (playback resumes). AVFoundation then takes the key from
-   the session.
-5. An skd request after the CDM is attached is finished at once the same way.
-   A key request the session gets that no EME session asked for (a new key
-   mid-stream) is parked by the core and reported as
-   `AssetKeyClient::OnUnrequestedKey("skd", uri)` → `OnEncrypted`; the page's
-   `generateRequest` with that URI takes the parked request (WebKit's
-   `takeUnexpectedKeyRequestForInitializationData`).
+1. The loader takes the element's CDM at creation if it has one, and
+   `SetCdm` attaches, replaces or drops it later. Every skd request stays on
+   the asset's resource loader (the loader never makes the asset a content
+   key recipient), so each raises `webkitneedkey` as in Safari and is answered
+   with its own SPC in whatever order the page licenses keys.
+2. A key no session of the attached CDM asked for: `OnKeyNeeded(uri)`, which
+   the GPU service sends as `OnEncrypted("skd", <URI as UTF-8>)` and
+   `OnWaiting(kNoDecryptionKey)`. The render process raises `encrypted`
+   (initDataType `"skd"`) and `waitingforkey`, after the request's
+   `webkitneedkey` (above).
+3. The page's `generateRequest("skd", uri)` reaches the same `FairPlayCdm`
+   over its own pipe. With an asset attached the request is named by the URI
+   (content identifier = the URI, or a legacy session's `contentId`), and it
+   takes the asset's held loading request, answered with that request's own
+   SPC. Made first, it waits for the asset to ask.
+4. `update(ckc)` delivers the key and playback resumes by itself; nothing
+   else crosses the GPU service.
 
 `EmeInitDataType::SKD` and its `"skd"` string are on main (7c317739,
 `fp-safari-eme-surface`).

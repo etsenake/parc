@@ -9,8 +9,9 @@
 
 namespace parc::fairplay {
 
-// The asset, nil before CreateAsset. A content key recipient
-// (addContentKeyRecipient:) like the MSE renderer's layer and audio renderer.
+// The asset, nil before CreateAsset. The CDM's key loader for it
+// (FairPlayHlsKeyLoader) answers its skd resource loader requests; it never
+// becomes a content key recipient.
 AVURLAsset* HlsPlayerAsset(FairPlayHlsPlayer::Impl* player);
 
 // The AVPlayer, nil before Load.

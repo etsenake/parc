@@ -1,11 +1,15 @@
 #!/bin/bash
 # Native HLS player proof (Engine/ParcNative/fairplay/fairplay_hls_player.mm
-# and fairplay_hls_timeline.cc). Compiles the player with
+# and fairplay_hls_timeline.cc, with the key loader and key session for
+# FairPlay keys). Compiles the player with
 # tests/FairPlay/hls_player_harness.mm using clang only and plays public HLS
 # streams through a loader the harness controls. Needs network access, except
 # for the timeline scenario (WebKit's live and DVR timing rules). Optional
 # argument: one scenario (timeline, ts, fmp4, live, missing, http, bad-url,
-# skd, teardown).
+# skd, skd-handler, teardown, keys-first, keys-loader, keys-multikey,
+# keys-await, keys-early, keys-close, keys-legacy). The keys
+# scenarios license Axinom's FairPlay HLS vectors from its public test
+# license service.
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-fairplay-hls.XXXXXX")"
@@ -15,8 +19,9 @@ tests="$repo_root/tests/FairPlay"
 cxx_flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -I "$core")
 flags=("${cxx_flags[@]}" -fobjc-arc)
 xcrun clang++ "${cxx_flags[@]}" -c "$core/fairplay_hls_timeline.cc" -o "$output/fairplay_hls_timeline.o"
-xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_frame_stats.mm" -o "$output/fairplay_hls_frame_stats.o"
-xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_player.mm" -o "$output/fairplay_hls_player.o"
+for name in fairplay_hls_frame_stats fairplay_hls_player fairplay_hls_keys fairplay_key_session fairplay_init_data; do
+  xcrun clang++ "${flags[@]}" -c "$core/$name.mm" -o "$output/$name.o"
+done
 xcrun clang++ "${flags[@]}" -c "$tests/hls_player_harness.mm" -o "$output/hls_player_harness.o"
 xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreMedia -framework Foundation \
   -framework QuartzCore -o "$output/hls-player-proof"
