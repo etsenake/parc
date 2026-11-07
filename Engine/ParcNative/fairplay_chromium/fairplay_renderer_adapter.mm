@@ -35,10 +35,11 @@ namespace fp = parc::fairplay;
 constexpr fp::StreamType kStreamTypes[] = {fp::StreamType::kVideo,
                                            fp::StreamType::kAudio};
 
-// Safari's GPU process refreshes the counts a page reads from its 250 ms
-// cached-state timer while playing, as often as the page reads them
-// (RemoteMediaPlayerProxy::startUpdateCachedStateMessageTimer,
-// maybeUpdateCachedVideoMetrics).
+// Safari's GPU process refreshes the counts a page reads at the interval the
+// page reads them, checked every 250 ms while playing
+// (RemoteAudioVideoRendererProxyManager::setVideoPlaybackMetricsUpdateInterval,
+// RemoteMediaPlayerProxy::maybeUpdateCachedVideoMetrics); a 250 ms poll is as
+// fresh.
 constexpr base::TimeDelta kStatisticsInterval = base::Milliseconds(250);
 // A metrics request AVFoundation hasn't answered by then is given up, so a
 // lost answer can't stop the counts.
