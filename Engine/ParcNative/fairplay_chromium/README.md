@@ -229,6 +229,41 @@ EME's false, when there are none), other types reject with NotSupported.
     browser's UI thread, so a busy UI thread delays the first video frame's
     hole; the render-process client paints the hole whenever it arrives.
 
+## Ready state, stalls and keys (what the page sees)
+
+The FairPlay Renderer follows WebKit's Media Source model
+(`MediaSource::monitorSourceBuffers`, `AudioVideoRendererAVFObjC`,
+`MediaPlayerPrivateMediaSourceAVFObjC::resetStallForTime`,
+`HTMLMediaElement::mediaPlayerWaitingForKeyChanged`), within Chromium's
+two-state buffering:
+
+- `loadedmetadata` once the init segments are parsed. HAVE_ENOUGH, and with
+  it `canplay` and `canplaythrough` together, once every stream has 3 s
+  buffered past the current time (samples given to the renderer, encrypted
+  ones held for a key included), has ended, or AVFoundation has enough for a
+  reliable start. Keys don't matter, so a page that licenses only after
+  `canplay` plays, as in Safari. Safari fires `canplay` as soon as any data is
+  ahead and `canplaythrough` at 3 s; Chromium reports both at once.
+- `play()` before the keys: `playing` fires and `currentTime` stays at the
+  start until the keys let samples reach the renderers, as Safari's
+  synchronizer waits for `allRenderersHaveAvailableSamples`.
+- `waitingforkey` fires once when the first encrypted sample has no usable
+  key. Blink's element doesn't lower `readyState` for it. Safari fires it when
+  encrypted init data has no session and also lowers `readyState` to
+  HAVE_CURRENT_DATA or HAVE_METADATA until its next buffered-range check: at
+  the start that is already the state, and mid-playback it is a brief
+  `waiting` that Parc doesn't show.
+- Keys missing mid-playback (a new key ID, a license that hasn't come): the
+  picture freezes, audio goes quiet and `currentTime` runs on to the buffered
+  end, as in Safari. Held samples the clock passes are dropped, video kept
+  from its last keyframe, which decoding resumes from when the key arrives.
+  With end of stream, the element ends at the end even without the keys, as
+  Safari does.
+- A stall happens only at the buffered end (the end of what a stream without
+  end of stream was given), on a synchronizer boundary rather than a poll:
+  `waiting`, then `canplay`/`playing` once HAVE_ENOUGH is back. Safari resumes
+  as soon as any data is ahead (HAVE_FUTURE_DATA).
+
 ## Known gaps
 
 - FairPlay keys that arrive after playback started, and a switch into Dolby

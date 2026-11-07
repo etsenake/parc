@@ -40,6 +40,16 @@ static const CFStringRef kBytesOfClearDataCount = CFSTR("BytesOfClearDataCount")
 namespace parc::fairplay {
 namespace {
 
+// WebKit's MediaSource::monitorSourceBuffers: HAVE_ENOUGH_DATA once the
+// buffered ranges hold 3 s past the current time.
+constexpr double kEnoughAheadSeconds = 3;
+// How far past the clock samples held for a key are taken, a little beyond
+// kEnoughAheadSeconds so held data can reach it.
+constexpr double kHeldAheadSeconds = 4;
+// The stall boundary is armed once the clock is this close to it; the clock
+// observer polls every 0.1 s.
+constexpr double kStallArmSeconds = 0.25;
+
 class ScopedFormat {
  public:
   ScopedFormat() = default;
@@ -294,6 +304,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     RemoveEndObserver();
     RemoveSizeObservers();
+    RemoveStallObserver();
     if (clock_observer_) {
       [synchronizer_ removeTimeObserver:clock_observer_];
       clock_observer_ = nil;
@@ -561,8 +572,16 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool IsReadyForMoreData(StreamType stream) const {
     const Stream& state = StreamFor(stream);
     id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
-    return renderer && !state.end_of_stream && state.held.empty() &&
-           renderer.readyForMoreMediaData;
+    if (!renderer || state.end_of_stream) {
+      return false;
+    }
+    // Samples held for a key queue up to kHeldAheadSeconds past the clock,
+    // as WebKit keeps taking samples into its blocked queue, so held data
+    // counts towards HAVE_ENOUGH (UpdateBuffering).
+    if (!state.held.empty()) {
+      return state.given_end - GetMediaTime().InSeconds() < kHeldAheadSeconds;
+    }
+    return renderer.readyForMoreMediaData;
   }
 
   EnqueueResult Enqueue(StreamType stream, const EncodedSample& sample) {
@@ -597,12 +616,14 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (stream == StreamType::kVideo && size_change_pending_) {
       ArmSizeObserver(sample.pts);
     }
+    state.given_end = std::max(state.given_end, held.end);
     if (!state.held.empty() || !Submit(stream, held)) {
       state.held.push_back(std::move(held));
       if (!waiting_reported_) {
         waiting_reported_ = true;
         PostInGeneration([](Impl& impl) { impl.client_->OnWaitingForKey(); });
       }
+      UpdateBuffering();
       return EnqueueResult::kWaitingForKey;
     }
     if (!renderer.readyForMoreMediaData) {
@@ -627,15 +648,18 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ScheduleEndIfComplete();
   }
 
-  // The clock stays at |time| until both renderers have enough data, whatever
-  // rate is set meanwhile: Chromium's CompleteSeek calls StartPlayingFrom and
-  // SetPlaybackRate in one task, and RendererImpl starts its time source only
-  // on HAVE_ENOUGH. The requested rate is kept and applied then.
+  // The clock stays at |time| until HAVE_ENOUGH and both renderers have
+  // samples to play (UpdateClock), whatever rate is set meanwhile: Chromium's
+  // CompleteSeek calls StartPlayingFrom and SetPlaybackRate in one task, and
+  // RendererImpl starts its time source only on HAVE_ENOUGH. The requested
+  // rate is kept and applied then.
   void StartPlayingFrom(MediaTime time) {
     start_time_ = time;
     ended_ = false;
     have_enough_ = false;
+    renderers_have_samples_ = false;
     clock_held_ = true;
+    RemoveStallObserver();
     [synchronizer_ setRate:0 time:ToCMTime(time)];
     NotifyNeedData(StreamType::kVideo);
     NotifyNeedData(StreamType::kAudio);
@@ -719,7 +743,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // Like RendererImpl::Flush: back to HAVE_NOTHING without a callback; the
     // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
+    renderers_have_samples_ = false;
     clock_held_ = true;
+    RemoveStallObserver();
     Post([done](Impl&) { done(); });
   }
 
@@ -888,6 +914,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     bool armed = false;
     MediaTime last_end;
     double enqueued_end = -1;  // End of the last sample given to AVFoundation.
+    // End of the last sample this stream was given, enqueued or held for a
+    // key: the end of its buffered data as far as the renderer knows.
+    double given_end = -1;
   };
 
   static RenderingStatus Map(AVQueuedSampleBufferRenderingStatus status) {
@@ -1662,23 +1691,39 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void OnKeysChanged() {
     bool any_held = false;
+    const double now = GetMediaTime().InSeconds();
     for (StreamType stream : {StreamType::kVideo, StreamType::kAudio}) {
       Stream& state = StreamFor(stream);
-      while (!state.held.empty() && Submit(stream, state.held.front())) {
+      PruneHeld(stream, now);
+      while (!state.held.empty()) {
+        Held& held = state.held.front();
+        // Video the clock already passed while it waited (time runs on over
+        // a frozen picture) is decoded, not shown, from the keyframe kept.
+        if (stream == StreamType::kVideo && held.end <= now) {
+          SetDoNotDisplay(held.buffer);
+        }
+        if (!Submit(stream, held)) {
+          break;
+        }
         state.held.pop_front();
       }
       any_held |= !state.held.empty();
     }
-    if (any_held) {
-      return;
-    }
-    if (waiting_reported_) {
+    if (!any_held && waiting_reported_) {
       waiting_reported_ = false;
       ScheduleEndIfComplete();
-      NotifyNeedData(StreamType::kVideo);
-      NotifyNeedData(StreamType::kAudio);
     }
+    NotifyNeedData(StreamType::kVideo);
+    NotifyNeedData(StreamType::kAudio);
     UpdateBuffering();
+  }
+
+  static void SetDoNotDisplay(CMSampleBufferRef buffer) {
+    CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(buffer, true);
+    if (attachments && CFArrayGetCount(attachments)) {
+      CFDictionarySetValue((CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0),
+                           kCMSampleAttachmentKey_DoNotDisplay, kCFBooleanTrue);
+    }
   }
 
   // Asks AVFoundation to say when |stream| can take more. AVFoundation calls
@@ -1757,62 +1802,200 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // has all it will get. Samples still held for a key are not there yet.
   static bool Complete(const Stream& state) { return state.end_of_stream && state.held.empty(); }
 
-  // HAVE_ENOUGH once every configured renderer reports enough data for a
-  // reliable start, or is complete; then latched, because that property
-  // toggles as queues drain and refill. Only CheckUnderflow drops back to
-  // HAVE_NOTHING. OnKeysChanged re-evaluates once no sample is held. The
-  // property is read, not observed: AVFoundation posts no KVO for it, and it
-  // turns true on the enqueue that fills the renderer's preroll; every Submit
-  // is followed by this call.
+  // HAVE_ENOUGH as WebKit's MediaSource::monitorSourceBuffers decides it:
+  // from the data each stream was given, keys or not, so a page that waits
+  // for canplay before it licenses still gets it. Every configured stream has
+  // reached end of stream, or was given samples (enqueued or held for a key)
+  // reaching kEnoughAheadSeconds past the clock, or its renderer has enough
+  // for a reliable start. Latched; only a stall drops back to HAVE_NOTHING.
+  // Every enqueue and key change calls this; AVFoundation posts no KVO for
+  // its sufficiency property, which turns true on the enqueue that fills the
+  // renderer's preroll.
   void UpdateBuffering() {
-    if (have_enough_) {
-      return;
+    if (!renderers_have_samples_) {
+      // WebKit's allRenderersHaveAvailableSamples: every configured renderer
+      // has samples to play, or its stream is complete. Latched until Flush
+      // or StartPlayingFrom, so samples later held for a key don't stop the
+      // clock (the picture freezes and time runs on, as in Safari).
+      bool ready = true;
+      if (video_renderer_ && !Complete(video_)) {
+        ready &= video_renderer_.hasSufficientMediaDataForReliablePlaybackStart;
+      }
+      if (audio_ && !Complete(audio_stream_)) {
+        ready &= audio_.hasSufficientMediaDataForReliablePlaybackStart;
+      }
+      renderers_have_samples_ = ready;
     }
-    bool have_enough = true;
-    if (video_renderer_ && !Complete(video_)) {
-      have_enough &= video_renderer_.hasSufficientMediaDataForReliablePlaybackStart;
+    if (!have_enough_) {
+      const double now = GetMediaTime().InSeconds();
+      // The renderer's own sufficiency counts only while the stream still
+      // has data ahead of the clock, so a stall isn't undone at its own point.
+      auto enough = [now](const Stream& state, id<AVQueuedSampleBufferRendering> renderer) {
+        return state.end_of_stream || state.given_end - now >= kEnoughAheadSeconds ||
+               (state.given_end > now && renderer.hasSufficientMediaDataForReliablePlaybackStart);
+      };
+      bool have_enough = true;
+      if (video_renderer_) {
+        have_enough &= enough(video_, video_renderer_);
+      }
+      if (audio_) {
+        have_enough &= enough(audio_stream_, audio_);
+      }
+      if (have_enough) {
+        have_enough_ = true;
+        PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(true); });
+      }
     }
-    if (audio_ && !Complete(audio_stream_)) {
-      have_enough &= audio_.hasSufficientMediaDataForReliablePlaybackStart;
-    }
-    if (!have_enough) {
-      return;
-    }
-    have_enough_ = true;
-    if (clock_held_) {
-      clock_held_ = false;
-      synchronizer_.rate = status_.rate;
-    }
-    PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(true); });
+    UpdateClock();
   }
 
-  // Underflow, as RendererImpl handles it: when the clock reaches the end of
-  // what an incomplete stream (no end of stream yet, or samples held for a
-  // key) has been given, stop the clock and report HAVE_NOTHING;
-  // UpdateBuffering restarts it once data is back.
-  void CheckUnderflow() {
-    if (!have_enough_ || status_.rate == 0) {
+  // The clock runs at the requested rate once HAVE_ENOUGH and the renderers
+  // have samples, as WebKit's synchronizer runs while shouldBePlaying().
+  void UpdateClock() {
+    const bool run = have_enough_ && renderers_have_samples_;
+    if (run != clock_held_) {
       return;
     }
-    double now = GetMediaTime().InSeconds();
+    clock_held_ = !run;
+    synchronizer_.rate = run ? status_.rate : 0;
+  }
+
+  // From the clock observer (every 0.1 s of media time while it runs).
+  void CheckUnderflow() {
+    if (status_.rate == 0) {
+      return;
+    }
+    const double now = GetMediaTime().InSeconds();
+    for (StreamType stream : {StreamType::kVideo, StreamType::kAudio}) {
+      PruneHeld(stream, now);
+      if (!StreamFor(stream).held.empty()) {
+        NotifyNeedData(stream);  // The held window moved with the clock.
+      }
+    }
+    ArmStall(now);
+  }
+
+  // Samples held for a key that the clock passed are never shown; drop them,
+  // keeping video from the last keyframe at or before the clock, which
+  // decoding resumes from once the key arrives.
+  void PruneHeld(StreamType stream, double now) {
+    std::deque<Held>& held = StreamFor(stream).held;
+    if (stream == StreamType::kAudio) {
+      while (!held.empty() && held.front().end <= now) {
+        held.pop_front();
+      }
+      return;
+    }
+    size_t keep_from = 0;
+    for (size_t i = 0; i < held.size() && held[i].start <= now; ++i) {
+      if (held[i].keyframe) {
+        keep_from = i;
+      }
+    }
+    held.erase(held.begin(), held.begin() + static_cast<std::ptrdiff_t>(keep_from));
+  }
+
+  // Where the clock stalls, as WebKit's resetStallForTime places it: at the
+  // end of what a stream that hasn't ended was given (its buffered end), and
+  // nowhere else; a stream at end of stream ends there instead
+  // (ScheduleEndIfComplete). Negative when nothing bounds the clock.
+  double StallTime() const {
+    double stall = -1;
     for (StreamType stream : {StreamType::kVideo, StreamType::kAudio}) {
       const Stream& state = StreamFor(stream);
-      if (!RendererFor(stream) || Complete(state) || state.enqueued_end < 0) {
-        continue;
+      if (RendererFor(stream) && !state.end_of_stream && state.given_end >= 0 &&
+          (stall < 0 || state.given_end < stall)) {
+        stall = state.given_end;
       }
-      if (state.enqueued_end - now < 0.05) {
-        have_enough_ = false;
-        clock_held_ = true;
-        synchronizer_.rate = 0;
-        client_->OnBufferingStateChange(false);
-        return;
-      }
+    }
+    return stall;
+  }
+
+  // Arms a boundary observer at the stall time once the running clock is
+  // near it, like WebKit's notifyTimeReachedAndStall, so it stops there
+  // rather than up to a poll late.
+  void ArmStall(double now) {
+    const double stall = StallTime();
+    if (clock_held_ || stall < 0 || stall - now > kStallArmSeconds) {
+      RemoveStallObserver();
+      return;
+    }
+    if (now >= stall) {
+      Stall(stall);
+      return;
+    }
+    if (stall_observer_ && stall_time_ == stall) {
+      return;
+    }
+    RemoveStallObserver();
+    stall_time_ = stall;
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    uint64_t generation = generation_;
+    stall_observer_ = [synchronizer_
+        addBoundaryTimeObserverForTimes:@[ [NSValue
+                                            valueWithCMTime:ToCMTime(MediaTime::FromMicroseconds(
+                                                                int64_t(stall * 1e6)))] ]
+                                  queue:RequestQueue()
+                             usingBlock:^{
+                               (*poster)([weak, generation] {
+                                 auto impl = weak.lock();
+                                 if (impl && impl->generation_ == generation) {
+                                   impl->OnStallBoundary();
+                                 }
+                               });
+                             }];
+  }
+
+  // The boundary was reached; data that arrived since moves the stall later.
+  void OnStallBoundary() {
+    const double stall = StallTime();
+    RemoveStallObserver();
+    if (clock_held_ || stall < 0) {
+      return;
+    }
+    if (GetMediaTime().InSeconds() >= stall - 1e-3) {
+      Stall(stall);
+    } else {
+      ArmStall(GetMediaTime().InSeconds());
     }
   }
 
+  // Stops the clock at |stall| and reports HAVE_NOTHING; the clock is put
+  // back to |stall| if the synchronizer ran past it, as WebKit's stall cap
+  // masks that overshoot. UpdateBuffering resumes once data is back.
+  void Stall(double stall) {
+    RemoveStallObserver();
+    have_enough_ = false;
+    clock_held_ = true;
+    // Never back before where playback started or seeked to.
+    if (start_time_.IsValid()) {
+      stall = std::max(stall, start_time_.InSeconds());
+    }
+    if (GetMediaTime().InSeconds() > stall) {
+      [synchronizer_ setRate:0 time:ToCMTime(MediaTime::FromMicroseconds(int64_t(stall * 1e6)))];
+    } else {
+      synchronizer_.rate = 0;
+    }
+    // Posted like HAVE_ENOUGH (UpdateBuffering), so the two reach the client
+    // in the order they happened.
+    PostInGeneration([](Impl& impl) { impl.client_->OnBufferingStateChange(false); });
+  }
+
+  void RemoveStallObserver() {
+    if (stall_observer_) {
+      [synchronizer_ removeTimeObserver:stall_observer_];
+      stall_observer_ = nil;
+    }
+    stall_time_ = -1;
+  }
+
+  // The clock ends at the last sample's end once every stream reached end of
+  // stream, samples still held for a key or not: WebKit pauses and ends when
+  // the clock reaches the duration, over a frozen picture if keys never came.
   void ScheduleEndIfComplete() {
     if ((video_renderer_ && !video_.end_of_stream) || (audio_ && !audio_stream_.end_of_stream) ||
-        !video_.held.empty() || !audio_stream_.held.empty() || end_observer_) {
+        end_observer_) {
       return;
     }
     MediaTime end = video_.last_end;
@@ -1910,6 +2093,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   std::vector<std::pair<NSObject*, NSString*>> observed_;
   std::vector<id> notification_tokens_;
   id end_observer_ = nil;
+  id stall_observer_ = nil;  // See ArmStall.
+  double stall_time_ = -1;
   id clock_observer_ = nil;
 
   Stream video_;
@@ -1917,7 +2102,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   MediaTime start_time_;
   bool waiting_reported_ = false;
   bool have_enough_ = false;
-  // The clock waits for HAVE_ENOUGH (start, seek or underflow).
+  // See UpdateBuffering.
+  bool renderers_have_samples_ = false;
+  // The clock waits for HAVE_ENOUGH and renderers with samples (start, seek
+  // or stall).
   bool clock_held_ = true;
   bool awaiting_video_config_ = false;  // Record comes from the next keyframe.
   bool awaiting_audio_config_ = false;  // dac3/dec3 from the next syncframe.

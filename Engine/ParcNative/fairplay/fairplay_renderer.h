@@ -50,13 +50,17 @@ class FairPlayRendererClient {
   virtual void OnEnded() = 0;
   virtual void OnError(RendererError error, const std::string& description) = 0;
   virtual void OnVideoNaturalSizeChange(int32_t width, int32_t height) = 0;
-  // media::BUFFERING_HAVE_ENOUGH once every configured renderer has enough
-  // data for a reliable start (a stream at end of stream counts once none of
-  // its samples wait for a key); BUFFERING_HAVE_NOTHING when the clock reaches
-  // the end of a stream's data before its end of stream, or before samples
-  // held for a key behind it go out (underflow). On underflow the renderer
-  // stops its clock and restarts it at the playback rate once it has enough
-  // again. Flush resets to HAVE_NOTHING silently.
+  // media::BUFFERING_HAVE_ENOUGH as WebKit's MediaSource sets readyState,
+  // from the data given whether or not keys are usable: every configured
+  // stream reached end of stream, was given samples (enqueued or held for a
+  // key) 3 s past the clock, or has a renderer with enough for a reliable
+  // start. The clock runs from then once both renderers also have samples to
+  // play (so it waits for keys at the start, but samples held for a key later
+  // don't stop it: the picture freezes and time runs on, as in Safari).
+  // BUFFERING_HAVE_NOTHING only when the clock reaches the end of what a
+  // stream without end of stream was given (a stall at the buffered end); the
+  // clock stops there and restarts at HAVE_ENOUGH. Flush resets to
+  // HAVE_NOTHING silently.
   virtual void OnBufferingStateChange(bool have_enough) = 0;
 };
 

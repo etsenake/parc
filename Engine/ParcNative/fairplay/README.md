@@ -271,8 +271,11 @@ so this forces the following on the Chromium integration.
   `audioOutputDeviceUniqueID` throws on nil.
 - **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`,
   which may be called from any thread (it reads a retained `CMTimebase`). It
-  starts on HAVE_ENOUGH and stops on underflow inside the renderer, as
-  `RendererImpl` does.
+  runs once HAVE_ENOUGH (from the data given, keys or not, as WebKit's
+  `MediaSource::monitorSourceBuffers`) and both renderers have samples to
+  play (WebKit's `allRenderersHaveAvailableSamples`), and stops only at the
+  end of what a stream was given (WebKit's `resetStallForTime`), on a
+  boundary observer. Samples held for a key mid-playback don't stop it.
 - **The hosting process must not be napped.** Synchronizer time observers,
   media-data requests and posted callbacks drive end of stream, underflow and
   need-data. In the harness, a covered window playing video alone showed

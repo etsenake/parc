@@ -61,13 +61,15 @@ arrive in decode order with presentation times only).
 5. Clear lead: a clear segment, then protected segments, in one track.
 6. Underflow: 6 s of data, HAVE_NOTHING with the clock stopped, then more data
    and recovery.
-7. Samples before keys: encrypted samples are held, then played when the
-   license arrives. A short clip enqueued in full with end of stream before
-   its license gets no HAVE_ENOUGH and a clock held at its start (rate 1 set),
-   then plays from the start once the key arrives and ends on time. A clear
-   video lead followed by a protected tail and end of stream, before the
-   tail's license, stops the clock where the clear data ends and resumes there
-   when the key arrives.
+7. Samples before keys, as WebKit handles them: encrypted samples are held
+   (up to 4 s past the clock) and count as buffered, so HAVE_ENOUGH comes
+   before the license while the clock waits at the start for samples it can
+   play; they play when the license arrives. A short clip enqueued in full
+   with end of stream before its license gets HAVE_ENOUGH and a clock held at
+   its start (rate 1 set), then plays from the start once the key arrives and
+   ends on time. A clear video lead followed by a protected tail and end of
+   stream, without the tail's license, keeps the clock running over the
+   frozen picture and ends at the tail's end, as Safari does.
 8. sinf, keyids and cenc init data (cenc both with the vector's own pssh boxes
    and with a FairPlay pssh added): each gets a license and plays 3 s.
 9. Netflix's key flow on Axinom's three-key vector ("CMAF H264 MultiKey",

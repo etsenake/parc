@@ -2845,7 +2845,12 @@ std::vector<Step> WaitingForKeyScenario() {
           Format("waiting events %d, held results %d, enqueued v/a %llu/%llu", w->player->waiting_events,
                  w->player->waiting_results, s.video_enqueued, s.audio_enqueued));
     Check(!w->player->renderer().IsReadyForMoreData(fp::StreamType::kVideo),
-          "late keys: backpressure while held");
+          "late keys: backpressure once 4 s are held past the clock");
+    // WebKit's readyState follows buffered data, keys or not: canplay comes
+    // before the license, and the clock waits for samples it can play.
+    Check(w->player->have_enough && std::fabs(w->player->Time()) < 0.001,
+          "late keys: HAVE_ENOUGH from held data before the key, clock held at the start",
+          Format("have_enough %d, t=%.3f", int(w->player->have_enough), w->player->Time()));
     AcquireLicense(keys->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "late keys", [=](bool) {
       done();
     });
@@ -2995,8 +3000,10 @@ std::vector<Step> EndBeforeKeyScenario() {
           "eos-before-key: every sample held for the key, end of stream on both streams",
           Format("ends %d, waiting events %d, held results %d, enqueued v/a %llu/%llu", w->player->ends_sent,
                  w->player->waiting_events, w->player->waiting_results, s.video_enqueued, s.audio_enqueued));
-    Check(!line->enough_before_key && !w->player->have_enough && !w->player->ended,
-          Format("eos-before-key: no HAVE_ENOUGH and no OnEnded during the %.1f s without the key", hold));
+    Check(line->enough_before_key && !w->player->ended,
+          Format("eos-before-key: HAVE_ENOUGH (end of stream counts, keys or not) and no OnEnded during the "
+                 "%.1f s without the key",
+                 hold));
     Check(probe->samples > 0 && std::fabs(probe->max_time - clip->start) < 0.001,
           Format("eos-before-key: clock held at %.3f at rate 1 without the key (max %.3f over %d samples)",
                  clip->start, probe->max_time, probe->samples));
@@ -3005,15 +3012,16 @@ std::vector<Step> EndBeforeKeyScenario() {
                    [=](bool) { done(); });
   });
   steps.push_back([=](Done done) {
-    WaitFor(line->enough_after_key > 0, &line->on_enough, 10,
-            "eos-before-key: HAVE_ENOUGH once the key arrives", [=](bool ok) {
-              if (ok) {
-                Check(line->enough_time - clip->start < 0.1,
-                      Format("eos-before-key: playback starts from the clip's start (t=%.3f at HAVE_ENOUGH)",
-                             line->enough_time));
-              }
-              done();
-            });
+    // The clock starts once the key lets the samples reach the renderers.
+    PollUntil(CFAbsoluteTimeGetCurrent() + 10, [=] { return w->player->Time() > clip->start + 0.05; },
+              [=](bool ok) {
+                Check(ok, "eos-before-key: the clock starts once the key arrives");
+                line->enough_wall = CFAbsoluteTimeGetCurrent();
+                line->enough_time = w->player->Time();
+                Check(ok && line->enough_time - clip->start < 0.3,
+                      Format("eos-before-key: playback starts from the clip's start (t=%.3f)", line->enough_time));
+                done();
+              });
   });
   steps.push_back([=](Done done) {
     WaitFor(line->ended_time >= 0, &line->on_ended, clip->end - clip->start + 5,
@@ -3045,11 +3053,11 @@ std::vector<Step> EndBeforeKeyScenario() {
 }
 
 // A clear lead, then a protected tail whose key hasn't arrived, then end of
-// stream (a key change in the last period). The clock stops where the
-// enqueued data ends instead of running on past the held samples, and
-// resumes from there once the key arrives. Video only: resuming audio from an
-// underflow onto protected samples after clear ones moves the synchronizer's
-// clock back to about zero whether or not a key was held, a separate defect.
+// stream (a key change in the last period). As in WebKit, the held tail
+// doesn't stop the clock: it runs on over the frozen picture and the element
+// ends at the tail's end without the key. Video only, as before: resuming
+// audio onto protected samples after clear ones moved the synchronizer's
+// clock back to about zero, a separate defect.
 std::vector<Step> HeldTailScenario() {
   World* w = g_world;
   auto tail = std::make_shared<Clip>(ClipFrom(w->video, w->audio, 1, 1.5));
@@ -3076,46 +3084,20 @@ std::vector<Step> HeldTailScenario() {
       w->player->renderer().SetPlaybackRate(1);
     });
   });
+  // WebKit: a sample held for a key doesn't stop the clock; it runs on over
+  // the frozen picture to the buffered end, which with end of stream is the
+  // end, and the element ends there.
   steps.push_back([=](Done done) {
-    WaitFor(false, &line->on_nothing, 12, "held-tail: HAVE_NOTHING where the clear lead ends", [=](bool ok) {
-      if (ok) {
-        Check(line->nothing_time > 5.6 && line->nothing_time < 6.1,
-              Format("held-tail: stopped at t=%.3f, the end of the enqueued data (6.0)", line->nothing_time));
-      }
-      done();
-    });
-  });
-  steps.push_back([=](Done done) {
-    double before = w->player->Time();
-    After(1.0, [=] {
-      double t = w->player->Time();
-      fp::RendererStatus s = w->player->renderer().GetStatus();
-      Check(w->player->ends_sent == 1 && std::fabs(t - before) < 0.02 && !w->player->ended,
-            Format("held-tail: clock stopped while the tail waits for its key (%.3f -> %.3f over 1 s), "
-                   "end of stream sent",
-                   before, t),
-            Format("ends %d, protected enqueued %llu", w->player->ends_sent, s.protected_enqueued));
-      line->key_requested = true;
-      AcquireLicense(keys->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "held-tail",
-                     [=](bool) { done(); });
-    });
-  });
-  steps.push_back([=](Done done) {
-    WaitFor(line->enough_after_key > 0, &line->on_enough, 10, "held-tail: HAVE_ENOUGH once the key arrives",
-            [=](bool) { done(); });
-  });
-  steps.push_back([=](Done done) {
-    WaitFor(line->ended_time >= 0, &line->on_ended, tail->end - tail->start + 5,
-            "held-tail: OnEnded at the tail's end", [=](bool ok) {
+    WaitFor(line->ended_time >= 0, &line->on_ended, tail->end - tail->start + 8,
+            "held-tail: OnEnded at the tail's end without the key", [=](bool ok) {
               if (ok) {
-                double played = line->ended_wall - line->enough_wall;
-                double expected = tail->end - line->enough_time;
+                fp::RendererStatus s = w->player->renderer().GetStatus();
+                Check(line->nothing_time < 0 && w->player->ends_sent == 1 && s.protected_enqueued == 0,
+                      "held-tail: no stall where the clear lead ends; the tail stayed held",
+                      Format("HAVE_NOTHING at %.3f, ends %d, protected enqueued %llu", line->nothing_time,
+                             w->player->ends_sent, s.protected_enqueued));
                 Check(std::fabs(line->ended_time - tail->end) < 0.3,
                       Format("held-tail: ended at the tail's end (t=%.3f, end %.3f)", line->ended_time, tail->end));
-                Check(std::fabs(played - expected) < 0.35,
-                      Format("held-tail: no skip, %.3f s of wall time from HAVE_ENOUGH (t=%.3f) to OnEnded for "
-                             "%.3f s of media",
-                             played, line->enough_time, expected));
               }
               done();
             });
