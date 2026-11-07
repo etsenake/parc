@@ -166,8 +166,9 @@ EME's false, when there are none), other types reject with NotSupported.
    `LoadVideoMetrics` every 250 ms and reports `OnStatisticsUpdate`, which
    `PipelineImpl` adds up as deltas into what `getVideoPlaybackQuality()`,
    `webkitDecodedFrameCount`/`webkitDroppedFrameCount` and the decoded byte
-   counts read. Netflix fails with S7353-5101 (decoder timeout) when
-   `totalVideoFrames` stays put for 10 s. On macOS 14.4+ the frames come from
+   counts read, as often as Safari's GPU process refreshes them for the page
+   while playing (its 250 ms cached-state timer in `RemoteMediaPlayerProxy`).
+   On macOS 14.4+ the frames come from
    `AVSampleBufferVideoRenderer`'s `AVVideoPerformanceMetrics`: the decoder's
    own count, cumulative for the layer's lifetime, including frames decoded
    ahead of the clock (as `RendererImpl` counts them) and real drops. Before

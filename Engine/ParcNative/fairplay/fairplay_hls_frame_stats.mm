@@ -26,8 +26,10 @@ namespace parc::fairplay {
 
 namespace {
 
-// RendererImpl reports with every frame; pages sample the counts, and Netflix
-// gives up after 10 s without a new frame (as fairplay_renderer_adapter.mm).
+// Safari's GPU process refreshes the counts a page reads from its 250 ms
+// cached-state timer while playing, as often as the page reads them
+// (RemoteMediaPlayerProxy::startUpdateCachedStateMessageTimer,
+// maybeUpdateCachedVideoMetrics).
 constexpr int64_t kPollIntervalNs = 250 * NSEC_PER_MSEC;
 constexpr int64_t kPollLeewayNs = 25 * NSEC_PER_MSEC;
 
