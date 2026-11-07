@@ -385,8 +385,8 @@ Safari's TV keeps the frame up to an hour: **fixed** 31735c02. A cast started
 a second before leaving shows a blank TV until the user returns: **in
 progress** (CAST-3, an unfreezable queue for casting players only). Between
 30 and 60 minutes away Parc now restores the casting page and resumes on the
-TV, where Safari reloads the page: Parc is better here, **with Josh**
-(proposed: keep). FairPlay
+TV, where Safari reloads the page: Parc is better here: **kept**
+(Josh agreed November 7). FairPlay
 video can't be cast at all (Safari uses AirPlay, which Parc lacks): **queued**
 (AIRPLAY-1, Josh approved November 7: AirPlay, native HLS first). A streaming source's open connection may count against the
 cache's limits (**unchecked**).
