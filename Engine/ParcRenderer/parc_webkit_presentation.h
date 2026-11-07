@@ -1,8 +1,16 @@
 // Copyright 2026 Parc contributors.
 // Safari's video presentation and fullscreen API for documents presenting
 // Safari's identity
-// (docs/fairplay-identity.md, docs/fairplay-safari-surface.md). Run in the
-// main world before the page's own scripts. It adds what WebKit's
+// (docs/fairplay-identity.md, docs/fairplay-safari-surface.md). It
+// evaluates to a function that Blink calls in the main world, before the
+// page's own scripts, with helpers the page never sees (InstallParcSafariScripts
+// in fairplay-identity-blink.patch): `fire` dispatches trusted events, and
+// `mediaGesture` and `allowPictureInPicture` carry WebKit's lift of the
+// gesture rule for an element that had a gesture-started load, play, volume,
+// muted, audio track or autoplay change (HTMLMediaElement::
+// removeBehaviorRestrictionsAfterFirstUserGesture); without them it works
+// with script-made events and transient activation alone. It adds what
+// WebKit's
 // HTMLVideoElement offers on macOS (Source/WebCore/html/HTMLVideoElement.idl,
 // VIDEO_PRESENTATION_MODE, VIDEO_USES_ELEMENT_FULLSCREEN), built on Chromium's standard Picture-in-Picture
 // and Fullscreen APIs, which it captures before any page script can replace
@@ -21,8 +29,10 @@
 // - `webkitSetPresentationMode(mode)`: ignored while a change it started is in
 //   progress and when the mode is current; "inline" leaves picture in picture
 //   or fully exits fullscreen; the others need a user gesture (transient
-//   activation), except picture in picture while the document already has a
-//   picture-in-picture element, and are ignored when unsupported.
+//   activation, or the lifted rule), except picture in picture while the
+//   document already has a picture-in-picture element, and are ignored when
+//   unsupported. Element fullscreen itself still needs transient activation,
+//   as in WebKit (fullscreenerror otherwise).
 // - `webkitpresentationmodechanged` (not bubbling, cancelable) on every mode
 //   change, whoever made it, before the standard event of that change
 //   (`fullscreenchange`, `enterpictureinpicture`, `leavepictureinpicture`)
@@ -48,7 +58,7 @@
 namespace blink {
 
 inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
-(() => {
+(function(native) {
   'use strict';
   const g = globalThis;
   const videoPrototype = g.HTMLVideoElement && g.HTMLVideoElement.prototype;
@@ -99,6 +109,12 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const documentPictureInPictureElement = getter(documentPrototype, 'pictureInPictureElement');
   const shadowPictureInPictureElement = getter(shadowRootPrototype, 'pictureInPictureElement');
   const pictureInPictureEnabledOf = getter(documentPrototype, 'pictureInPictureEnabled');
+  const hasAttribute = method(g.Element && g.Element.prototype, 'hasAttribute');
+  const helper = (name) =>
+      native && typeof native[name] === 'function' ? native[name] : null;
+  const nativeFire = helper('fire');
+  const mediaGesture = helper('mediaGesture');
+  const allowPictureInPicture = helper('allowPictureInPicture');
   const activation = g.navigator && g.navigator.userActivation;
   const isActiveOf = getter(g.UserActivation && g.UserActivation.prototype, 'isActive');
   if (!NativeEvent || !NativeDOMException || !addListener || !dispatch || !typeOf || !getRootNode ||
@@ -120,8 +136,10 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const then = (promise, fulfilled, rejected) =>
       apply(promiseThen, promise, [fulfilled, rejected]);
   const later = (task) => apply(nativeSetTimeout, g, [task, 0]);
-  const fire = (target, type) => apply(dispatch, target, [
-      new NativeEvent(type, {bubbles: false, cancelable: true})]);
+  // HTMLMediaElement::scheduleEvent: trusted, not bubbling, cancelable.
+  const fire = (target, type) => (nativeFire ?
+      apply(nativeFire, undefined, [target, type]) :
+      apply(dispatch, target, [new NativeEvent(type, {bubbles: false, cancelable: true})]));
   function required(count, length, what) {
     if (length < count) {
       throw new TypeError('Failed to execute ' + what + ': ' + count +
@@ -207,6 +225,9 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   // MediaElementSession::fullscreenPermitted: RequireUserGestureForFullscreen
   // and Document::processingUserGestureForMedia, which is transient activation.
   const userGesture = () => !isActiveOf || !activation || !!apply(isActiveOf, activation, []);
+  // ...or the element's lifted rule.
+  const fullscreenPermitted = (element) => userGesture() ||
+      (!!mediaGesture && !!apply(mediaGesture, undefined, [element]));
   // WebKit creates the media player when a load starts (prepareForLoad); a
   // video that never loaded has none.
   const hasPlayer = (element) => apply(networkStateOf, element, []) !== 0;
@@ -406,6 +427,13 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   // HTMLMediaElement::enterFullscreen(mode).
   function enter(element, state, mode) {
     if (mode === PICTURE_IN_PICTURE) {
+      // The lifted rule lets picture in picture go without transient
+      // activation, through Chromium's picture-in-picture request token
+      // (not for a video Chromium refuses anyway).
+      if (allowPictureInPicture && !userGesture() && !documentHasPictureInPicture(element) &&
+          !(hasAttribute && apply(hasAttribute, element, ['disablepictureinpicture']))) {
+        apply(allowPictureInPicture, undefined, [element]);
+      }
       // Chromium leaves element fullscreen first, as WebKit does.
       begin(element, state, mode, true, true, start(requestPictureInPicture, element));
     } else {
@@ -428,7 +456,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
     }
     const requiresUserGesture = mode !== PICTURE_IN_PICTURE ||
         !documentHasPictureInPicture(element);
-    if ((requiresUserGesture && !userGesture()) || !supportsMode(element, mode)) {
+    if ((requiresUserGesture && !fullscreenPermitted(element)) || !supportsMode(element, mode)) {
       return;
     }
     enter(element, state, mode);
@@ -487,7 +515,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
     if (displaysFullscreen(element, state)) {
       return;
     }
-    if (!userGesture() || !supportsMode(element, FULLSCREEN) || changing(state)) {
+    if (!fullscreenPermitted(element) || !supportsMode(element, FULLSCREEN) || changing(state)) {
       throw new NativeDOMException('The object is in an invalid state.', 'InvalidStateError');
     }
     enter(element, known(element), FULLSCREEN);
@@ -590,7 +618,7 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
     } catch (error) {
     }
   }
-})();
+})
 )PARC_WKPM_JS";
 
 }  // namespace blink

@@ -509,7 +509,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   (`Engine/ParcRenderer/parc_managed_media_source.h`,
   `parc_webkit_media_keys.h`), the `getStatusForPolicy` removal
   (`parc_safari_media_keys.h`), the video presentation API
-  (`parc_webkit_presentation.h`), FairPlay's `sinf`, `skd` and `mpts` init
+  (`parc_webkit_presentation.h`) with its private helpers and
+  `HTMLMediaElement`'s record of a gesture-started media change, FairPlay's `sinf`, `skd` and `mpts` init
   data gate,
   the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`, and the memory-pressure
@@ -566,10 +567,16 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   `com.apple.fps.1_0`). `getStatusForPolicy` is removed by a main-world
   script too, so isolated worlds (extensions) still see it. The video
   presentation and fullscreen API is a script as well and overrides
-  `addEventListener` on `HTMLVideoElement.prototype`; its events are script-made (`isTrusted`
-  false), and changes the page or the browser starts through the standard
-  APIs report their new mode when Chromium's own event for them arrives
-  rather than as the change begins.
+  `addEventListener` on `HTMLVideoElement.prototype`. Blink hands it private
+  helpers the page never sees: its events are dispatched natively, so they
+  are trusted, and `HTMLMediaElement` remembers a gesture-started load,
+  play, volume, muted, audio track or autoplay change, after which WebKit
+  lets the element enter fullscreen or picture in picture without a gesture
+  (picture in picture then uses Chromium's picture-in-picture request token;
+  element fullscreen still needs transient activation, as in WebKit).
+  Changes the page or the browser starts through the standard APIs report
+  their new mode when Chromium's own event for them arrives rather than as
+  the change begins.
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used
