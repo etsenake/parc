@@ -79,11 +79,18 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   publishing new contributor changes as patch releases, monitoring each release
   through completion, and checking/pushing any required repairs directly on main.
   Active frozen releases finish before newer changes are consumed. Releases
-  v1.3.1 (overlay 466), v1.3.2 (467), v1.3.3 (479), and v1.3.4 (499) completed with signed,
+  v1.3.1 (overlay 466), v1.3.2 (467), v1.3.3 (479), v1.3.4 (499), v1.3.5 (510),
+  and v1.3.6 (516) completed with signed,
   notarized app/DMG assets, GitHub publication and verified pushed Homebrew casks.
   No source repairs were needed for v1.3.1–v1.3.3. Receipts remain under
-  `build/releases/`; v1.3.4 source is `98c3c6fe`, run
-  `20261107T084300Z-a3b5d701`. Scheduled checks continue through the authorized window.
+  `build/releases/`; v1.3.6 source is `307e1edf`, run
+  `20261107T153153Z-0b90f5ea`. The eight-hour check window ended at 14:26 UTC
+  and its heartbeat was deleted. The active release and the pre-deadline queue
+  were monitored through delivery; every contributor commit observed before
+  the deadline is an ancestor of v1.3.6's frozen source. Four later commits
+  through `d61bc7bd` remain outside this release and the completed watch scope.
+  The final ten-minute post-release watch completed without new contributor
+  commits. All required compiler corrections and this delivery record are pushed.
   Logs continue in `build/master-release-development/nightly-release.log`.
   No installation, launch or browser-runtime acceptance is claimed.
   The v1.3.4 compilation exposed two errors in `parc_webkit_need_key.h`:
