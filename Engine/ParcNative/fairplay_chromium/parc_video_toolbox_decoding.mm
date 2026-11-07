@@ -487,6 +487,15 @@ bool CanDecodeExtendedType(const std::string& raw,
          [asset isPlayableExtendedMIMEType:type_string];
 }
 
+// CDMInstanceFairPlayStreamingAVFObjC::supportsMediaCapability's question:
+// the type as given, no container rules.
+bool IsPlayableExtendedMIMEType(const std::string& type) {
+  Class<ParcAVURLAssetTypes> asset = AVURLAssetClass();
+  return !type.empty() && asset &&
+         [asset respondsToSelector:@selector(isPlayableExtendedMIMEType:)] &&
+         [asset isPlayableExtendedMIMEType:base::SysUTF8ToNSString(type)];
+}
+
 // MIMETypeCache::canDecodeType, as AVAssetMIMETypeCache specializes it: not
 // IsNotSupported.
 bool CanPlayAVFoundationType(const std::string& mime_type) {
@@ -532,6 +541,15 @@ class ParcVideoToolboxDecodingImpl
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
         base::BindOnce(&content::CanPlayAVFoundationType, mime_type),
+        std::move(callback));
+  }
+
+  void IsPlayableExtendedMIMEType(
+      const std::string& type,
+      IsPlayableExtendedMIMETypeCallback callback) override {
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(&content::IsPlayableExtendedMIMEType, type),
         std::move(callback));
   }
 };

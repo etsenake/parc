@@ -5137,7 +5137,7 @@
    demuxer_ = nullptr;
 --- a/media/mojo/mojom/video_decode_perf_history.mojom
 +++ b/media/mojo/mojom/video_decode_perf_history.mojom
-@@ -15,3 +15,57 @@
+@@ -15,3 +15,61 @@
    // conversion to bool higher in the stack.
    GetPerfInfo(PredictionFeatures features) => (bool is_smooth, bool is_power_efficient);
  };
@@ -5194,6 +5194,10 @@
 +  // Synchronous for the legacy WebKitMediaKeys.isTypeSupported, which is.
 +  [Sync]
 +  CanPlayAVFoundationType(string mime_type) => (bool supported);
++  // -[AVURLAsset isPlayableExtendedMIMEType:] for `type` as given, WebKit's
++  // FairPlay capability check (CDMInstanceFairPlayStreamingAVFObjC::
++  // supportsMediaCapability) for requestMediaKeySystemAccess.
++  IsPlayableExtendedMIMEType(string type) => (bool playable);
 +};
 --- a/content/browser/browser_interface_binders.cc
 +++ b/content/browser/browser_interface_binders.cc
