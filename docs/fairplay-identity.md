@@ -177,12 +177,11 @@ context's user agent like the rest of the identity:
 
 Netflix adds Dolby Vision SourceBuffers (`dvhe.05.01`, `dvhe.05.04`) and Apple
 TV+ uses `dvh1.05.01`. Both ask first and drop to other streams on a "no".
-Chromium plays Dolby Vision only encrypted here: fairplay-media builds with
-`enable_platform_encrypted_dolby_vision`, turns `kPlatformEncryptedDolbyVision`
-on for macOS and lists profile 5 for FairPlay. Chromium's own rules then
-already answer yes for `addSourceBuffer`, `changeType`, EME capabilities and
-`mediaCapabilities.decodingInfo` with a key system, and no for clear Dolby
-Vision everywhere else. On a Safari-identity document Parc also answers yes,
+fairplay-media builds with `enable_platform_encrypted_dolby_vision`, turns
+`kPlatformEncryptedDolbyVision` on for macOS and lists profile 5 for FairPlay.
+Chromium's own rules then already answer yes for `addSourceBuffer`,
+`changeType`, EME capabilities and `mediaCapabilities.decodingInfo` with a key
+system, and no for clear Dolby Vision on Chrome-identity documents. On a Safari-identity document Parc also answers yes,
 as Safari does, for profile 5 (`dvh1.05.*`, `dvhe.05.*`):
 
 - `MediaSource.isTypeSupported` checks the rest of the type without those
@@ -197,10 +196,12 @@ the profiles fairplay-media lists for FairPlay; `addSourceBuffer` and
 encrypted Dolby Vision is on. The choice among
 `<source type>` children keeps Chromium's answer too: a `<source>` plays as a
 plain file, where clear Dolby Vision can't decode, and failing after its
-metadata loaded wouldn't fall back to the next `<source>`. Clear Dolby Vision
-still can't play; `decodingInfo` on a Chrome page without a key system still
-answers no, and on a Safari-identity page answers profile 5 as Safari does
-(above).
+metadata loaded wouldn't fall back to the next `<source>`. In Media Source on
+a Safari-identity document, Dolby Vision 5 and 8 play clear or encrypted,
+with keys set before the first sample or never, through the FairPlay Renderer
+([fairplay_chromium/README.md](../Engine/ParcNative/fairplay_chromium/README.md),
+"Codec build flags"). `decodingInfo` on a Chrome page without a key system
+still answers no, and on a Safari-identity page answers profile 5 (above).
 
 ## Which documents present it
 

@@ -230,6 +230,12 @@ EME's false, when there are none), other types reject with NotSupported.
 
 ## Known gaps
 
+- `MediaKeys` set after the FairPlay Renderer has played clear samples (Dolby
+  Vision started without keys) aren't attached: AVFoundation takes key
+  recipients only before they process media, and per-sample keys
+  (`AVSampleBufferAttachContentKey`) need an entitlement only WebKit's GPU
+  process has, so `setMediaKeys()` rejects. Keys set before the first sample
+  attach as usual.
 - A page that turns its own video track off (`videoTracks`) ends video until
   the next seek; a disabled `ChunkDemuxerStream` answers with end of stream.
   The background-tab optimization that does the same is turned off for
@@ -278,23 +284,29 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
   Chromium's model on Windows. FairPlay's `CdmInfo` lists profile 5 only. The
   adapter and core can also play profile 8, but sites aren't offered it (Josh's
   decision, November 6).
-- A clear Dolby Vision init segment is accepted while the player's CDM is
-  FairPlay, in profiles 5 and 8; otherwise it is rejected as on Windows ("only
-  supported via platform decryptor"). Netflix starts Dolby Vision with a
-  clear-lead header (a plain `dvhe` sample entry, no `encv` or `tenc`) and its
-  encrypted init segment comes later. Safari plays that, and so does the
-  FairPlay Renderer: the adapter takes an unencrypted Dolby Vision config and
-  the core plays clear Chromium-framed DV5 to the end
-  ([tests/FairPlay](../../../tests/FairPlay/README.md)). Without this, Netflix
-  failed with S7381-1204 once its cached capabilities picked Dolby Vision.
-  `WebMediaPlayerImpl` decides on the main thread, when the CDM is set (before
-  the `setMediaKeys()` promise resolves) and when the Media Source opens, and
-  tells the demuxer (`Demuxer::ParcSetClearDolbyVisionAllowed`), which hands
-  it to each `SourceBufferState`. The global
-  `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` stays off, so
-  `isTypeSupported` answers the same for every document. A clear Dolby Vision
-  init segment appended before FairPlay `MediaKeys` are set is still
-  rejected: the page hasn't chosen FairPlay yet.
+- Dolby Vision in Media Source follows Safari, whose
+  `AVSampleBufferDisplayLayer` decodes it clear or encrypted, with keys set
+  before, after or never. On a document presenting Safari's identity (keys
+  after clear samples aside, see Known gaps):
+  - A clear Dolby Vision init segment (a plain `dvhe`/`dvh1` sample entry, no
+    `encv` or `tenc`, as in a clear lead) is accepted in profiles 5 and 8,
+    whatever the key timing. `WebMediaPlayerImpl` tells the demuxer when the
+    Media Source opens, before the page can add a SourceBuffer
+    (`Demuxer::ParcSetClearDolbyVisionAllowed`, handed to each
+    `SourceBufferState`). Chrome-identity documents still reject clear Dolby
+    Vision as on Windows ("only supported via platform decryptor") unless a
+    FairPlay CDM is set; the global
+    `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` stays off, so
+    `isTypeSupported` answers the same as before for every document.
+  - Playback whose video is Dolby Vision goes to the FairPlay Renderer with or
+    without a CDM (`PipelineImpl` picks it from the enabled video stream's
+    codec, where the demuxer lets clear Dolby Vision through), the
+    only renderer in Parc that decodes it: the adapter takes an unencrypted
+    Dolby Vision config and the core plays clear Chromium-framed DV5 to the end
+    ([tests/FairPlay](../../../tests/FairPlay/README.md)). The browser lets
+    Safari-identity frames create that renderer without a FairPlay CDM
+    (`parc::fairplay::SetSafariIdentityQuery`). Keys that arrive after that
+    renderer has played clear samples are a known gap (below).
 - AC-3/E-AC-3 is ordinary codec support (Josh's decision, November 6): pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:

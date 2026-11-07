@@ -728,6 +728,8 @@ void InstallFairPlayIdentity() {
   content::SetParcWorkerIdentityHook(&ApplyWorkerIdentity);
   parc::fairplay::SetWidevineCdmRequestObserver(
       base::BindRepeating(&OnWidevineCdmRequest));
+  parc::fairplay::SetSafariIdentityQuery(
+      base::BindRepeating(&FramePresentsSafari));
 }
 
 void AttachFairPlayIdentity(content::WebContents& contents) {
