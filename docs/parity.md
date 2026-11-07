@@ -100,7 +100,12 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   media-capabilities checks with C++23 `std::ranges::contains` from the existing
   algorithm header. All 82 FairPlay-patched upstream compilation units pass
   their actual shipping compiler commands; these are compile checks, not runtime
-  acceptance. Earlier objects and archives remain available for the full resume.
+  acceptance. The resumed release completed: v1.3.0 (build 5), source
+  `d3feffba`, overlay 465; app and DMG notarization/stapling, Gatekeeper checks,
+  GitHub publication and the pushed Homebrew cask audit passed. Delivery receipt:
+  `build/releases/20261107T030030Z-3b7676d4/delivery.json`. Earlier objects and
+  source archives remain available. The post-release ten-minute main watch is
+  active; no installation, launch or browser-runtime acceptance is claimed.
 
 - **Codex root — v1.2.0 release recovery (November 6).** Overlay 370 removes
   an incorrect const qualifier from the FairPlay `CdmContextRef` loop in
