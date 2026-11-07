@@ -95,7 +95,7 @@ Parc: `Engine/ParcNative/fairplay/fairplay_hls_timeline.*`, NATIVE_HLS.md
 | `seekable` of HLS | one range from the smallest start to the largest end of the valid `seekableTimeRanges`, the duration's end without any, none when the end is 0 | the core's timeline; `WebMediaPlayerImpl::Seekable()` answers the native HLS demuxer's window | pending (native HLS route) | fp-hls-live |
 | `getStartDate()` | WebKit IDL, unconditional: `round(currentDate − currentTime)` whole seconds sampled at ready-state changes, Invalid Date without a date or for other players, the epoch before the first ready-state change | the same method under Safari's identity (`[ContextEnabled=ParcSafariIdentity]`), values from the native HLS demuxer | present (method); dates pending (native HLS route) | fp-hls-live |
 | `currentTime` setter | `unrestricted double`: +Infinity seeks to the seekable end (live edge), −Infinity and NaN to 0 | the same under Safari's identity; a TypeError elsewhere | present | fp-hls-live |
-| `fastSeek(time)` | WebKit IDL: a seek with tolerance toward the current time | absent (Chromium's FIXME) | missing | — |
+| `fastSeek(time)` | WebKit IDL: a seek with tolerance toward the current time | Safari-identity pages only; Media Source and FairPlay land on WebKit's keyframe (ChunkDemuxer, once the target is buffered); native HLS still lands exactly (AVPlayer tolerance next); `src=` files land exactly, which the tolerance allows | different | fp-presentation |
 
 ## Legacy prefixed EME (`WebKitMediaKeys`)
 

@@ -63,6 +63,17 @@ On a page that presents Safari's identity:
   document listens for both, and both `fullscreenerror` and
   `webkitfullscreenerror` (Blink's fullscreen rendering steps,
   `FireParcSafariEvents`). Chrome pages keep one event by request type.
+- `HTMLMediaElement.fastSeek(time)` exists, as WebKit's
+  (`[ContextEnabled=ParcSafariIdentity]`): a seek that may land early, no
+  earlier than the current position going forward, anywhere before the
+  target going back, never after it. The element hands that tolerance to
+  `WebMediaPlayer::ParcFastSeek`; the demuxer lands the seek
+  (`Demuxer::ParcSetFastSeek`/`ParcTakeFastSeekLanding`) and the pipeline
+  starts the renderer there. A Media Source element (FairPlay too) lands
+  as WebKit's `SourceBufferPrivate::computeSeekTime` does once the target is
+  buffered: each enabled stream's last keyframe at or before the target
+  within the tolerance, the earliest of those. Demuxers that can't land
+  early seek exactly.
 - `disablePictureInPicture` is reflected but, as in WebKit, never checked:
   such a video still enters picture in picture, and setting the attribute
   leaves one there (`PictureInPictureControllerImpl::IsElementAllowedInternal`,

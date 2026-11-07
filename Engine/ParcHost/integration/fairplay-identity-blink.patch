@@ -1423,7 +1423,20 @@
  
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -2898,6 +2991,35 @@
+@@ -2727,7 +2820,11 @@
+   ScheduleNamedEvent(event_type_names::kSeeking);
+ 
+   // 11 - Set the current playback position to the given new playback position.
+-  web_media_player_->Seek(time);
++  if (parc_fast_seek_tolerance_) {
++    web_media_player_->ParcFastSeek(time, *parc_fast_seek_tolerance_);
++  } else {
++    web_media_player_->Seek(time);
++  }
+   web_media_player_->OnTimeUpdate();
+ 
+   // 14-17 are handled, if necessary, when the engine signals a readystate
+@@ -2898,6 +2995,52 @@
    ReportCurrentTimeToMediaSource();
  }
  
@@ -1446,6 +1459,23 @@
 +  setCurrentTime(time);
 +}
 +
++// WebKit's HTMLMediaElement::fastSeek: a seek that may land early, at a
++// keyframe the player can start from promptly. Forward it lands no earlier
++// than the current position, backward anywhere before the target, never
++// after the target (seekWithTolerance with a negative threshold of the
++// distance, or infinite going back, and no positive one). Before metadata it
++// does nothing. Non-finite times are taken as currentTime takes them here.
++void HTMLMediaElement::fastSeek(double time) {
++  time = std::isnan(time)
++             ? 0
++             : std::clamp(time, 0.0, std::numeric_limits<double>::max());
++  const double delta = time - currentTime();
++  parc_fast_seek_tolerance_ =
++      delta < 0 ? std::numeric_limits<double>::infinity() : delta;
++  Seek(time);
++  parc_fast_seek_tolerance_.reset();
++}
++
 +ScriptObject HTMLMediaElement::getStartDate(ScriptState* script_state) const {
 +  // WebKit: NaN without a player, otherwise the player's start date; a Date
 +  // either way (an Invalid Date for NaN).
@@ -1459,7 +1489,7 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -3160,6 +3282,7 @@
+@@ -3160,6 +3303,7 @@
  
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
    DVLOG(2) << "play(" << *this << ")";
@@ -1467,7 +1497,7 @@
  
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3400,6 +3523,9 @@
+@@ -3400,6 +3544,9 @@
      return;
    }
  
@@ -1477,7 +1507,7 @@
    volume_ = vol;
  
    ScheduleNamedEvent(event_type_names::kVolumechange);
-@@ -3438,6 +3564,7 @@
+@@ -3438,6 +3585,7 @@
  
  void HTMLMediaElement::setMuted(bool muted) {
    DVLOG(2) << "setMuted(" << *this << ", " << base::ToString(muted) << ")";
@@ -1485,7 +1515,7 @@
  
    bool was_muted = this->muted();
  
-@@ -3562,10 +3689,23 @@
+@@ -3562,10 +3710,23 @@
  
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
                                           TrackBase::ChangeSource source) {
@@ -1509,7 +1539,7 @@
  
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3679,9 +3819,155 @@
+@@ -3679,9 +3840,155 @@
    }
  }
  
@@ -1665,7 +1695,7 @@
  
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +3976,16 @@
+@@ -3690,6 +3997,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -1682,7 +1712,7 @@
    // https://html.spec.whatwg.org/C/#dom-media-addtexttrack
  
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4194,8 @@
+@@ -3898,7 +4215,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -1692,7 +1722,7 @@
          goto checkAgain;
      }
  
-@@ -4845,6 +5142,7 @@
+@@ -4845,6 +5163,7 @@
    visitor->Trace(deferred_load_timer_);
    visitor->Trace(media_source_tracer_);
    visitor->Trace(audio_tracks_);
@@ -1700,7 +1730,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4873,7 +5171,8 @@
+@@ -4873,7 +5192,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -1744,7 +1774,7 @@
    V8CanPlayTypeResult canPlayType(const String& mime_type) const;
  
    // ready state
-@@ -252,6 +261,11 @@
+@@ -252,6 +261,13 @@
    // playback state
    double currentTime() const;
    void setCurrentTime(double);
@@ -1753,10 +1783,12 @@
 +  double currentTimeForBindings() const { return currentTime(); }
 +  void setCurrentTimeForBindings(double time, ExceptionState& exception_state);
 +  ScriptObject getStartDate(ScriptState* script_state) const;
++  // Parc: WebKit's fastSeek(), on Safari-identity pages only.
++  void fastSeek(double time);
    double duration() const;
    bool paused() const;
    void SetPaused(bool);
-@@ -618,6 +632,20 @@
+@@ -618,6 +634,20 @@
    void AddTrack(const media::MediaTrack&) final;
    void RemoveTrack(const media::MediaTrack&) final;
    void SetTrackState(const media::MediaTrack&, media::MediaTrack::State) final;
@@ -1777,7 +1809,7 @@
  
    void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
    void RemotePlaybackCompatibilityChanged(const KURL&,
-@@ -634,6 +662,7 @@
+@@ -634,6 +664,7 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
@@ -1785,17 +1817,20 @@
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -968,6 +997,9 @@
+@@ -968,6 +999,12 @@
    bool is_remote_rendering_ = false;
    // Whether the media content is encrypted.
    bool is_encrypted_media_ = false;
 +  // Parc: see ParcHadMediaUserGesture().
 +  void ParcNoteMediaUserGesture();
 +  bool parc_had_media_user_gesture_ = false;
++  // Parc: while fastSeek() runs Seek(), how far before its target the seek
++  // may land.
++  std::optional<double> parc_fast_seek_tolerance_;
  
    // Whether the frame containing the media element is hidden. This is nullopt
    // if the visibility state of the frame is not yet known - e.g. during frame
-@@ -985,6 +1017,12 @@
+@@ -985,6 +1022,12 @@
    std::optional<media::VideoCodec> video_codec_;
  
    Member<AudioTrackList> audio_tracks_;
@@ -2145,15 +2180,17 @@
  
 --- a/third_party/blink/renderer/core/html/media/html_media_element.idl
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.idl
-@@ -61,10 +61,14 @@
+@@ -61,10 +61,15 @@
      readonly attribute boolean seeking;
  
      // playback state
 -    attribute double currentTime;
+-    // FIXME: void fastSeek(double time);
 +    // Parc: an unrestricted double, as WebKit's, on Safari-identity pages
 +    // (html_media_element.cc); a non-finite value is a TypeError elsewhere.
 +    [ImplementedAs=currentTimeForBindings, RaisesException=Setter] attribute unrestricted double currentTime;
-     // FIXME: void fastSeek(double time);
++    // Parc: WebKit's fastSeek(), on Safari-identity pages only.
++    [ContextEnabled=ParcSafariIdentity] undefined fastSeek(unrestricted double time);
      readonly attribute unrestricted double duration;
      // FIXME: Date getStartDate(); crbug.com/312699
 +    // Parc: WebKit's getStartDate(), on Safari-identity pages only.
