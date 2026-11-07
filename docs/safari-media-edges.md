@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **66**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **67**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -643,8 +643,14 @@ user-felt: several audio streams in one TS showed as one track, so a
 language or commentary menu did nothing, and E-AC-3 7.1 frames split across
 packets lost their extra channels: **fixed** ffa89f7f. Still FairPlay SAMPLE-AES
 H.264, AAC, AC-3 and E-AC-3 in TS fail to play (**queued**, SBS-2c, about
-600-900 lines); MPEG-1/2 video in TS plays black (**queued**, SBS-2d, about
-700-1,000 lines: parser plus a VideoToolbox or AVFoundation decode route).
+600-900 lines); MPEG-1/2 video in TS played black: **fixed** 9f8ba00d (a TS
+elementary-stream parser with Safari's types, key frames, timestamps and pixel
+aspect, decoded by VideoToolbox in the GPU process). Left: `videoWidth`/
+`videoHeight` for non-square pixels follow Chromium's model for every codec
+(720x528 where Safari reports about 655x480; same shape on screen, a
+different default element size); plain `.ts`/`.mpg` files are
+**unchecked**; no decode with GPU video decoding turned off; which video
+track Safari picks when H.264 and MPEG-2 share a TS is **unchecked**.
 
 Clear Dolby Vision in Media Source (`:675-698`) is **handled** on
 Safari-identity pages (`ParcSetClearDolbyVisionAllowed`). In-band text
