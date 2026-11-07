@@ -38,16 +38,22 @@ bool FairPlayKeySystemInfo::ShouldUseBaseKeySystemName() const {
 
 bool FairPlayKeySystemInfo::IsSupportedInitDataType(
     EmeInitDataType init_data_type) const {
-  // Chromium's EME knows "cenc", "keyids" and "webm"; "sinf" and "skd" have no
-  // EmeInitDataType. Netflix and Apple TV+ send "cenc".
+  // WebKit's FairPlay types ("cenc", "sinf", "skd"; fairplay-media.patch adds
+  // the last two to EmeInitDataType, and Blink accepts them only from a
+  // Safari-identity document) plus "keyids". Netflix and Apple TV+ send
+  // "cenc".
   switch (init_data_type) {
     case EmeInitDataType::CENC:
+    case EmeInitDataType::SINF:
+    case EmeInitDataType::SKD:
       return (codecs_ & media::EME_CODEC_MP4_ALL) != 0;
     case EmeInitDataType::KEYIDS:
       return true;
-    default:
+    case EmeInitDataType::WEBM:
+    case EmeInitDataType::UNKNOWN:
       return false;
   }
+  return false;
 }
 
 EmeConfig::Rule FairPlayKeySystemInfo::GetEncryptionSchemeConfigRule(

@@ -78,8 +78,11 @@ receivers on macOS for it.
    close promise resolves, and the core settles the promise before it reports
    the session closed.
 
-Init data: `cenc` and `keyids` (Chromium's `EmeInitDataType` has no `sinf`
-or `skd`; Netflix and Apple TV+ use `cenc` only). Sessions: temporary only.
+Init data: `cenc`, `keyids`, and on Safari-identity documents `sinf` and
+`skd` (fairplay-media.patch adds both to `EmeInitDataType`; Blink treats them
+as unregistered elsewhere). `sinf` and `skd` pass to the core unchanged, as
+WebKit passes them. Netflix and Apple TV+ use `cenc` only. Sessions:
+temporary only.
 `LoadSession` and `GetStatusForPolicy` reject with NotSupported.
 
 ## Call flow (playback)

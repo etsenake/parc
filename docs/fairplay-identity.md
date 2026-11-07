@@ -37,6 +37,11 @@ On a page that presents Safari's identity:
   answers unsupported. Apple TV+ probes PlayReady, Widevine and ClearKey
   before FairPlay, so it would pick Widevine and fail if it answered. FairPlay
   and ClearKey stay available (Safari has ClearKey too).
+- FairPlay takes WebKit's init data types `sinf` and `skd` besides `cenc`:
+  `requestMediaKeySystemAccess` keeps them in a FairPlay configuration and
+  `generateRequest` accepts them. Every other page treats them as the
+  unregistered names they were before. Netflix and Apple TV+ ask for `cenc`
+  only.
 - Service and shared workers of the site start with the same user agent
   (not those partitioned under another site's page, where the site's frames
   stay Chrome), so their `navigator.userAgent` and their fetches match, and
@@ -246,8 +251,8 @@ has it in windows only.
   leaves it out.
 - `com.apple.fps` and `com.apple.fps.1_0` answer false. WebKit gives them to
   its AVFoundation player, which plays HLS through `<video src>` with skd key
-  requests and `webkitneedkey`. Parc has none of that: its FairPlay CDM takes
-  `cenc` and `keyids` init data through Media Source only.
+  requests and `webkitneedkey`. Parc has none of that: its FairPlay CDM
+  serves Media Source only.
 - `new WebKitMediaKeys(keySystem)` always throws: `InvalidAccessError` for an
   empty key system, otherwise `NotSupportedError`, as WebKit throws for a key
   system it can't serve. There are no legacy key sessions,
@@ -275,7 +280,7 @@ in, November 6, 2026):
   `HTMLMediaElement.setMediaKeys` with legacy WebKit EME, and TELUS's
   FairPlay key system, `com.apple.fps.1_0`, is refused there. Its Safari path
   (native HLS with skd FairPlay) can't play in Parc with or without the
-  object, because the CDM takes no skd or sinf init data. If TELUS is learned
+  object, because Parc has no native HLS player. If TELUS is learned
   as a Safari site, View > Use Chrome Identity for This Site puts it back on
   Widevine.
 

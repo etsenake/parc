@@ -150,6 +150,12 @@ void FairPlayCdmAdapter::CreateSessionAndGenerateRequest(
     case EmeInitDataType::KEYIDS:
       type = fp::InitDataType::kKeyIds;
       break;
+    case EmeInitDataType::SINF:
+      type = fp::InitDataType::kSinf;
+      break;
+    case EmeInitDataType::SKD:
+      type = fp::InitDataType::kSkd;
+      break;
     default:
       promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
                       "Init data type not supported by FairPlay");

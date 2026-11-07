@@ -5,8 +5,8 @@
 // document, the frames sharing its process and its workers see Safari's user
 // agent string. The rest of what Safari lacks or reports differently follows
 // from that string here, so every surface of one context stays consistent:
-// navigator.vendor, no navigator.userAgentData, no Widevine, and Dolby audio
-// (AC-3, E-AC-3) offered only there.
+// navigator.vendor, no navigator.userAgentData, no Widevine, Dolby audio
+// (AC-3, E-AC-3) and FairPlay's init data types offered only there.
 // Installed at third_party/blink/renderer/core/frame/parc_safari_identity.h.
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_
@@ -55,6 +55,17 @@ inline bool IsParcSafariOnlyAudioCodecs(const String& codecs) {
     }
   }
   return false;
+}
+
+// FairPlay's EME initialization data types, as WebKit registers them
+// (CDMFairPlayStreaming.cpp): "sinf", which Safari's Media Source fires
+// `encrypted` with, and "skd", an HLS key URI. fairplay-media.patch adds them
+// to media::EmeInitDataType; anywhere but under Safari's identity
+// requestMediaKeySystemAccess and generateRequest treat them as the
+// unregistered names they were before. Compared case-sensitively, as EME
+// compares init data types.
+inline bool IsParcSafariOnlyInitDataType(const String& init_data_type) {
+  return init_data_type == "sinf" || init_data_type == "skd";
 }
 
 }  // namespace blink

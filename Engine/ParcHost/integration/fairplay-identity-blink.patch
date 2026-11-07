@@ -475,7 +475,30 @@
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-@@ -106,6 +107,18 @@
+@@ -96,16 +97,41 @@
+       key_system_(key_system),
+       supported_configurations_(supported_configurations.size()),
+       is_from_media_capabilities_(is_from_media_capabilities) {
++  // Parc: what only a document presenting Safari's identity is offered
++  // (parc_safari_identity.h).
++  const bool parc_safari_identity =
++      context && IsParcSafariIdentityUserAgent(context->UserAgent());
+   for (wtf_size_t i = 0; i < supported_configurations.size(); ++i) {
+     const MediaKeySystemConfiguration* config = supported_configurations[i];
+     WebMediaKeySystemConfiguration web_config;
+ 
+     DCHECK(config->hasInitDataTypes());
+     web_config.init_data_types = ConvertInitDataTypes(config->initDataTypes());
++    // Parc: "sinf" and "skd", FairPlay's init data types, only under Safari's
++    // identity; elsewhere they stay unregistered, so no key system takes them.
++    if (!parc_safari_identity) {
++      for (wtf_size_t j = 0; j < config->initDataTypes().size(); ++j) {
++        if (IsParcSafariOnlyInitDataType(config->initDataTypes()[j])) {
++          web_config.init_data_types[j] = media::EmeInitDataType::UNKNOWN;
++        }
++      }
++    }
+ 
      DCHECK(config->hasAudioCapabilities());
      web_config.audio_capabilities =
          ConvertCapabilities(config->audioCapabilities());
@@ -483,7 +506,7 @@
 +    // (parc_safari_identity.h). A capability naming them gets a codec no key
 +    // system supports, so it is skipped like any unsupported capability
 +    // while the configuration's other capabilities still count.
-+    if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    if (!parc_safari_identity) {
 +      for (WebMediaKeySystemMediaCapability& capability :
 +           web_config.audio_capabilities) {
 +        if (IsParcSafariOnlyAudioCodecs(capability.codecs)) {
@@ -494,6 +517,30 @@
  
      DCHECK(config->hasVideoCapabilities());
      web_config.video_capabilities =
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.cc
+@@ -51,6 +51,7 @@
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+ #include "third_party/blink/renderer/core/dom/events/event_queue.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/content_decryption_module_result_promise.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
+@@ -541,6 +542,13 @@
+   //     |initDataType| is one of the registered values.)
+   media::EmeInitDataType init_data_type =
+       EncryptedMediaUtils::ConvertToInitDataType(init_data_type_string);
++  // Parc: "sinf" and "skd" are FairPlay's and exist only under Safari's
++  // identity (parc_safari_identity.h); elsewhere they stay unregistered.
++  if (IsParcSafariOnlyInitDataType(init_data_type_string) &&
++      !(GetExecutionContext() &&
++        IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent()))) {
++    init_data_type = media::EmeInitDataType::UNKNOWN;
++  }
+   if (init_data_type == media::EmeInitDataType::UNKNOWN) {
+     exception_state.ThrowDOMException(
+         DOMExceptionCode::kNotSupportedError,
 --- a/third_party/blink/renderer/modules/webcodecs/audio_decoder.cc
 +++ b/third_party/blink/renderer/modules/webcodecs/audio_decoder.cc
 @@ -25,6 +25,8 @@

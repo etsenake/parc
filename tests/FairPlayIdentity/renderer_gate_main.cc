@@ -5,6 +5,8 @@
 // the user agent Parc sends for Safari's identity. A Safari-identity document
 // gets ManagedMediaSource and WebKitMediaKeys; Chrome's identity and other
 // browsers' user agents get neither. webkit_media_keys.mjs runs the script.
+// It also checks which EME init data types a document may name: FairPlay's
+// "sinf" and "skd" only under Safari's identity.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -41,6 +43,19 @@ std::vector<std::string> ScriptsFor(const std::string& user_agent) {
   return scripts;
 }
 
+// requestMediaKeySystemAccess's initDataTypes and generateRequest's
+// initDataType after Parc's gate (fairplay-identity-blink.patch): the name is
+// one media::StringToEmeInitDataType registers (fairplay-media.patch), and
+// FairPlay's own only under Safari's identity.
+bool InitDataTypeRegistered(const std::string& user_agent,
+                            const std::string& type) {
+  const bool registered = type == "cenc" || type == "keyids" ||
+                          type == "webm" || type == "sinf" || type == "skd";
+  return registered &&
+         (!blink::IsParcSafariOnlyInitDataType(blink::String(type)) ||
+          blink::IsParcSafariIdentityUserAgent(blink::String(user_agent)));
+}
+
 // Each script installs its global unless the page already has one.
 bool Installs(const std::vector<std::string>& scripts, const char* global) {
   const std::string guard = std::string("'") + global + "' in g";
@@ -65,6 +80,19 @@ int main() {
           "a Safari-identity document gets WebKitMediaKeys");
     Check(Installs(safari, "ManagedMediaSource"),
           "a Safari-identity document gets ManagedMediaSource");
+  }
+  for (const char* version : {"27.2", "26.0.1"}) {
+    const std::string safari =
+        parc::fairplay_identity::SafariUserAgent(version);
+    for (const char* type : {"sinf", "skd", "cenc", "keyids"}) {
+      Check(InitDataTypeRegistered(safari, type),
+            "a Safari-identity document may name sinf, skd, cenc and keyids");
+    }
+    // EME compares init data types case-sensitively, as WebKit does.
+    for (const char* type : {"SINF", "Skd", "sinf ", ""}) {
+      Check(!InitDataTypeRegistered(safari, type),
+            "other spellings of sinf and skd stay unregistered");
+    }
   }
   Check(std::strstr(blink::kParcWebKitMediaKeysScript,
                     "isTypeSupported(keySystem, type = undefined)") != nullptr,
@@ -94,6 +122,12 @@ int main() {
   for (const char* user_agent : not_safari) {
     Check(ScriptsFor(user_agent).empty(),
           "documents not presenting Safari's identity get neither script");
+    Check(!InitDataTypeRegistered(user_agent, "sinf") &&
+              !InitDataTypeRegistered(user_agent, "skd"),
+          "documents not presenting Safari's identity can't name sinf or skd");
+    Check(InitDataTypeRegistered(user_agent, "cenc") &&
+              InitDataTypeRegistered(user_agent, "keyids"),
+          "every document keeps cenc and keyids");
   }
 
   std::printf("renderer gate: %u checks passed\n", checks);
