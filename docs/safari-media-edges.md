@@ -42,7 +42,7 @@ Unchecked claims are labelled **unchecked**.
 | File | Pristine lines | Read through |
 |---|---:|---:|
 | `third_party/blink/renderer/core/html/media/html_media_element.cc` | 5,504 | 5,504 |
-| `third_party/blink/renderer/platform/media/web_media_player_impl.cc` | 4,242 | 0 |
+| `third_party/blink/renderer/platform/media/web_media_player_impl.cc` | 4,242 | 4,242 |
 | `media/base/pipeline_impl.cc` | 1,861 | 0 |
 | `media/filters/pipeline_controller.cc` | 478 | 0 |
 | `media/filters/chunk_demuxer.cc` | 1,658 | 0 |
@@ -267,3 +267,50 @@ otherwise. **In progress** (fix agent E8).
 permissions policy (pausing hidden frames, deferring `play()` until
 visibility is known). WebKit has no such policy. **In progress** (fix agent
 E6).
+
+### `web_media_player_impl.cc`
+
+**WMPI-1. Seeks on `src=` files.** Chromium `web_media_player_impl.cc:1118-1211`
+drops `readyState` to `HAVE_METADATA` at every seek and completes it at the
+renderer's next `BUFFERING_HAVE_ENOUGH` (`:1857-1903, 2345-2442`), so a
+playing file fires `waiting`, `canplay`, `playing` and `canplaythrough` on
+every seek. WebKit's AVFoundation player keeps `readyState` from the item's
+status (`MediaPlayerPrivateAVFoundation.cpp`, `updateStates`) and the element
+finishes the seek when the player's seek resolves
+(`HTMLMediaElement.cpp:4180-4360`). Media Source is HME-7; native HLS
+**handled** (a13b5579). **In progress** (fix agent WMPI-1).
+
+**WMPI-2. Waiting for a key.** Chromium `web_media_player_impl.cc:2457-2494`
+reports block and resume together for every wait and Blink's element never
+changes `readyState`. WebKit `HTMLMediaElement.cpp`
+(`mediaPlayerWaitingForKeyChanged`) runs Wait for Key once per blocked
+episode: `readyState` to `HAVE_CURRENT_DATA` or `HAVE_METADATA`, then
+`waitingforkey`, restored when the key arrives; native HLS waits only for a
+key request with no CDM attached
+(`MediaPlayerPrivateAVFoundationObjC.mm:2210-2235, 3090-3110`). Media Source
+key timing **handled** (35589317); the `readyState` drop and the native HLS
+rule **in progress** (fix agent WMPI-2).
+
+**WMPI-3. Hidden pages pause video.** Chromium
+`web_media_player_impl.cc:3744-3787, 3825-3870, 3528-3551, 2643-2714` pauses
+video without unmuted audio when its page or frame is hidden (the page sees
+`pause` and a rejected play promise) and resumes it when shown. WebKit on
+macOS pauses nothing for being hidden (`InvisibleAutoplayNotPermitted` and
+`RequiresPageVisibilityToPlayAudio` are iOS-only:
+`UnifiedWebPreferences.yaml:3348-3365, 5281-5303`;
+`HTMLMediaElement.cpp:733-741`). A muted video in a background tab keeps
+playing in Safari. **In progress** (fix agent WMPI-3).
+
+**WMPI-4. Servers without range requests.** Chromium
+`web_media_player_impl.cc:1494-1515` plays a file from a server that ignores
+range requests and makes it unseekable (seekable `[0, 0]`), and gives live
+content no seekable range. Safari loads files through AVFoundation, which
+needs range requests for such files. **Open** (with Josh).
+
+**WMPI-5. `setMediaKeys(null)`.** Chromium
+`web_media_player_impl.cc:1662-1687` refuses to clear a CDM; Parc accepts it
+on Safari-identity FairPlay players but keeps decrypting with the old CDM
+(14ce748a). WebKit detaches it (`HTMLMediaElement.cpp` `setMediaKeys`,
+`MediaPlayerPrivateMediaSourceAVFObjC.mm:1162-1166`,
+`MediaPlayerPrivateAVFoundationObjC.mm:3060-3080`), so samples after that
+wait for a key. **In progress** (fix agent WMPI-5).
