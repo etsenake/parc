@@ -111,7 +111,19 @@
    }
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -2765,6 +2765,9 @@
+@@ -2719,6 +2719,11 @@
+       "gpu/ca_transaction_gpu_coordinator.cc",
+       "gpu/ca_transaction_gpu_coordinator.h",
+       "media/desktop_media_window_registry_mac.mm",
++
++      # Parc: VideoToolbox's decoder facts for Safari-identity documents'
++      # MediaCapabilities answers.
++      "media/parc_video_toolbox_decoding.h",
++      "media/parc_video_toolbox_decoding.mm",
+       "memory/swap_metrics_driver_impl_mac.cc",
+       "memory/swap_metrics_driver_impl_mac.h",
+       "renderer_host/browser_compositor_view_mac.h",
+@@ -2765,6 +2770,9 @@
        "//components/remote_cocoa/common:mojo",
        "//media",
        "//services/webnn/public/cpp",
@@ -3415,3 +3427,89 @@
  void WebSourceBufferImpl::RemovedFromMediaSource() {
    demuxer_->RemoveId(id_);
    demuxer_ = nullptr;
+--- a/media/mojo/mojom/video_decode_perf_history.mojom
++++ b/media/mojo/mojom/video_decode_perf_history.mojom
+@@ -15,3 +15,44 @@
+   // conversion to bool higher in the stack.
+   GetPerfInfo(PredictionFeatures features) => (bool is_smooth, bool is_power_efficient);
+ };
++
++// Parc: VideoToolbox's decoder facts behind WebKit's MediaCapabilities
++// answers on macOS (PlatformMediaEngineConfigurationFactoryCocoa.cpp,
++// HEVCUtilitiesCocoa.mm), which documents presenting Safari's identity get.
++// The browser reads them (content/browser/media/parc_video_toolbox_decoding.h)
++// because a renderer can't ask VideoToolbox from its sandbox.
++struct ParcHevcProfileSupport {
++  int16 profile_idc;
++  // kVTHEVCDecoderProfileCapability_IsHardwareAccelerated.
++  bool hardware_accelerated;
++  // kVTHEVCDecoderProfileCapability_MaxDecodeLevel and _MaxPlaybackLevel,
++  // when VideoToolbox gives them.
++  bool has_max_decode_level;
++  int16 max_decode_level;
++  bool has_max_playback_level;
++  int16 max_playback_level;
++};
++
++struct ParcVideoToolboxDecodingFacts {
++  // VTIsHardwareDecodeSupported exists, and its answer for H.264.
++  bool hardware_decode_query;
++  bool h264_hardware;
++  // VTSelectAndCreateVideoDecoderInstance finds a decoder for H.264, HEVC and
++  // HEVC with alpha.
++  bool h264_decoder;
++  bool hevc_decoder;
++  bool hevc_with_alpha_decoder;
++  // The profiles VTCopyHEVCDecoderCapabilitiesDictionary supports that carry
++  // a usable per-profile entry; null when the dictionary or a key is missing.
++  array<ParcHevcProfileSupport>? hevc_profiles;
++  // The same dictionary's Dolby Vision profiles and levels; null when missing
++  // or unparsable.
++  array<uint16>? dolby_vision_profiles;
++  array<uint16>? dolby_vision_levels;
++  bool dolby_vision_hardware;
++};
++
++// Bound for frames and dedicated workers on macOS.
++interface ParcVideoToolboxDecoding {
++  GetFacts() => (ParcVideoToolboxDecodingFacts facts);
++};
+--- a/content/browser/browser_interface_binders.cc
++++ b/content/browser/browser_interface_binders.cc
+@@ -43,6 +43,9 @@
+ #include "content/browser/media/media_web_contents_observer.h"
+ #include "content/browser/media/midi_host.h"
+ #include "content/browser/media/session/media_session_service_impl.h"
++#if BUILDFLAG(IS_MAC)
++#include "content/browser/media/parc_video_toolbox_decoding.h"
++#endif
+ #include "content/browser/network/reporting_service_proxy.h"
+ #include "content/browser/picture_in_picture/picture_in_picture_service_impl.h"
+ #include "content/browser/preloading/anchor_element_interaction_host_impl.h"
+@@ -1293,6 +1296,14 @@
+         host->GetProcess()->BindVideoDecodePerfHistory(std::move(receiver));
+       }));
+ 
++#if BUILDFLAG(IS_MAC)
++  // Parc: VideoToolbox's decoder facts for Safari-identity documents.
++  map->Add<media::mojom::ParcVideoToolboxDecoding>(base::BindRepeating(
++      [](RenderFrameHost*,
++         mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding>
++             receiver) { BindParcVideoToolboxDecoding(std::move(receiver)); }));
++#endif
++
+   map->Add<network::mojom::RestrictedCookieManager>(
+       &BindRenderFrameHostImpl<
+           &RenderFrameHostImpl::BindRestrictedCookieManager>);
+@@ -1618,6 +1629,11 @@
+   // RenderProcessHost binders
+   map->Add<media::mojom::VideoDecodePerfHistory>(BindWorkerReceiver(
+       &RenderProcessHostImpl::BindVideoDecodePerfHistory, host));
++#if BUILDFLAG(IS_MAC)
++  // Parc: VideoToolbox's decoder facts for Safari-identity documents.
++  map->Add<media::mojom::ParcVideoToolboxDecoding>(
++      base::BindRepeating(&BindParcVideoToolboxDecoding));
++#endif
+   map->Add<media::mojom::WebrtcVideoPerfHistory>(BindWorkerReceiver(
+       &RenderProcessHostImpl::BindWebrtcVideoPerfHistory, host));
+ #if BUILDFLAG(IS_FUCHSIA)

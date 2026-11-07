@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 417,
+  "version": 418,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1701,6 +1701,16 @@
       "source": "Engine/ParcRenderer/parc_webkit_presentation.h",
       "target": "third_party/blink/renderer/bindings/core/v8/parc_webkit_presentation.h",
       "sha256": "2a8227b23bb001b2ce65219522b08ea3068124986aec06ca24b630e50c9e343d"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_decoding.h",
+      "target": "content/browser/media/parc_video_toolbox_decoding.h",
+      "sha256": "2c15fe9695c9dd98c839f4925cd95775019eb466cada68d4bbc547d7063db9b1"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_decoding.mm",
+      "target": "content/browser/media/parc_video_toolbox_decoding.mm",
+      "sha256": "06fa64b9f2203e58219bd086a05348e74fca8a31110e7576ab593e0297710f7c"
     }
   ],
   "patches": [
@@ -4027,7 +4037,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "e7de83b8e710d219bc875844c6d40d3a9d97c7ac609f7b6801a69e346a54e7a3",
+      "sha256": "7378850aaec9b5b37ecbe52316fc5d14247d13014effc79e936c83d9033b05a2",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4047,7 +4057,7 @@
         {
           "target": "content/browser/BUILD.gn",
           "before_sha256": "9419aa1fbfc0f5e2e80f1391e13ac919cd1e2dd97053d50f78353a8fb206f1d3",
-          "after_sha256": "1f2fa211b3ba0c83e37dc0e6238d195a9e999ae5c68874aecc098f2690e775d5"
+          "after_sha256": "b4486bb8378934529dec22cd3dd232849820b6c044fe6100818689750aed0964"
         },
         {
           "target": "content/browser/media/cdm_registry_impl.cc",
@@ -4453,6 +4463,16 @@
           "target": "third_party/blink/renderer/platform/media/web_source_buffer_impl.cc",
           "before_sha256": "0cc17893a50d7f348258c5911adf1fdf63ee11c0234a200c7644dfe1fd451a00",
           "after_sha256": "1c5cd46c8561b1d3f1dc8be1e5064f2046529c97e05c9eaa07f91df3171b5944"
+        },
+        {
+          "target": "media/mojo/mojom/video_decode_perf_history.mojom",
+          "before_sha256": "a95b2185fd55e319b8b8ed76a23c0e06a7c423dc7402b12334a2accf2af000d8",
+          "after_sha256": "99f970380b6c2c6a3e144dbdd4680f6ec98b1b4a2b48cfb3ed9efb60517704d4"
+        },
+        {
+          "target": "content/browser/browser_interface_binders.cc",
+          "before_sha256": "349336579ab9f28517a8031cae6d8dbfa6df5d35ac91308efeac5bc75413c55c",
+          "after_sha256": "2c2c0b84a72ad7d777c4491104c7c2ac8438bc244de07cd685725cf8ad9c2c2f"
         }
       ]
     },

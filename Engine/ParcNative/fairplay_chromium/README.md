@@ -51,6 +51,7 @@ service wires it in.
 | Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |
 | Key system registration | `GetFairPlayCdmInfo()` in `CdmRegistryImpl::Init` (browser); `fairplay_key_system_info.{h,cc}` → `//components/cdm/renderer`, added by `key_system_support_update.cc` (renderer) |
 | Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `media_interface_proxy.cc`), for fairplay-identity |
+| VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames and dedicated workers, for Safari-identity `decodingInfo` |
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
 
 No mojo-media GN arguments change. `enable_library_cdms` is true on macOS,
