@@ -40,9 +40,9 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **36**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
-audio track joining the running player, several TS audio tracks, Media Source
-types and codecs, a worker's Media Source dying, rewinding plain files). Queued:
+main: **37**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+audio track joining the running player, several TS audio tracks, the rest of
+Safari's autoplay rules, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
 AV1 without hardware: match Safari). Done when the queue is empty, every
@@ -609,12 +609,23 @@ type only when it is fully supported (`:658-661`), so
 `video/quicktime`, `audio/x-m4a`, `video/x-m4v`, `audio/3gpp` and
 `audio/ogg`, which Parc refuses; init segments on Safari pages accept IAMF,
 which Safari doesn't play; and Dolby Vision outside profiles 5 and 8 fails
-where Safari plays the HEVC base layer (profiles 4, 7, 9; measured
-against `AVStreamDataParser`): **in progress** (MS-4). After it: Ogg and
-WebVTT in Media Source, PCM in MP4, AMR, H.263 and Dolby Vision 10/20 need
-parsers or player paths Parc lacks (MS-4 names each). AV1 on Macs without
-hardware AV1: Safari refuses it, so sites pick a hardware codec; Parc decodes
-in software. **With Josh** (proposed: match Safari). A
+where Safari plays its HEVC base layer: **fixed** 0095776c (QuickTime,
+`x-m4a`/`x-m4v` family, 3GPP, MP3 and AAC aliases accepted; IAMF refused and
+dropped from mixed init segments; Dolby Vision 4/7/9 refused in
+`addSourceBuffer` and played as their base layer). Still different, each
+user-felt and **queued**: Ogg (Opus/Vorbis/FLAC) in Media Source, so a site
+falls back or plays silent (MS-4b, an Ogg stream parser, 800-1,200 lines);
+PCM in MP4 fails (MS-4c, 150-250 lines); Dolby Vision 10 (`dav1`) and 20, and
+4/7 in `dvh1`/`dvhe` entries, so the picture differs slightly (MS-4d, 200-400
+lines); AMR and H.263 in 3GPP fail (MS-4e, AudioToolbox/VideoToolbox
+decoders, 600+ lines). `text/vtt` in `isTypeSupported` differs but no site
+appends WebVTT, so no user can perceive it: **with Josh** (proposed: leave).
+Lowercase `flac`/`opus` in MP4 and Parc's runtime answer for Dolby Vision 8
+and `dav1.10` are **unchecked**. AV1 on Macs without hardware AV1 (M1/M2):
+Safari refuses it so sites send VP9 or H.264, decoded in hardware; Parc
+accepts it and decodes in software: more CPU, battery drain, heat, fan noise
+and possibly dropped frames at 1440p60 or 4K, in background tabs and picture
+in picture too. **With Josh** (proposed: match Safari). A
 codec-less TS stream carrying HEVC or AC-3 now gets a SourceBuffer and fails
 on append: part of SBS-2.
 
