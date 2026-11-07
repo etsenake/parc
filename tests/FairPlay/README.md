@@ -286,7 +286,10 @@ probed through its runtime interface)
   are denied (`sandbox-exec`); the proof script runs that case.
 - `AVSampleBufferDisplayLayer` plays reordered H.264 the same with real decode
   times, with `kCMTimeInvalid`, or with the PTS copied in (decode times
-  running backwards): 0 dropped and 0 corrupted frames each way.
+  running backwards): 0 dropped and 0 corrupted frames each way. The same
+  holds for HEVC with Netflix's hierarchical B-frames, 1080p and 4K, clear and
+  under FairPlay: AVFoundation decodes about 1.6 s ahead of the clock with or
+  without decode times ([decode_times/](decode_times/README.md#results)).
 - Removing the display layer from its tree for 3 s mid-playback neither stops
   decoding nor sets `requiresFlushToResumeDecoding`.
 - DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator)
