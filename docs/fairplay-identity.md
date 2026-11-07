@@ -36,6 +36,9 @@ On a page that presents Safari's identity:
   `MediaKeys.idl` has none), so a player that tests for it behaves as it
   does there. A main-world script (`Engine/ParcRenderer/parc_safari_media_keys.h`),
   run with the other Safari scripts, deletes it from `MediaKeys.prototype`.
+- Encrypted Media works on `http://` pages and in frames without
+  `allow="encrypted-media"`, legacy and modern alike, as WebKit gates none of
+  it on a secure context or a permissions policy (Chrome pages keep both).
 - `requestMediaKeySystemAccess` reads its configurations as WebKit's bindings
   do: an `encryptionScheme` other than `cenc` or `cbcs` (`cbcs-1-9` included)
   or a session type WebKit doesn't know is a TypeError for the whole call,
