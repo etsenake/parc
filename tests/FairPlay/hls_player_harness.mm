@@ -290,6 +290,7 @@ struct Client : fp::HlsPlayerClient {
     width = w;
     height = h;
   }
+  void OnTimeJumped() override { time_jumps++; }
   void OnEnded() override { ended++; }
   void OnError(fp::HlsError e, const std::string& message) override {
     error = static_cast<int>(e);
@@ -316,6 +317,7 @@ struct Client : fp::HlsPlayerClient {
   std::vector<std::optional<double>> start_date_changes;
   int32_t width = 0, height = 0;
   int ended = 0;
+  int time_jumps = 0;
   int error = -1;
   int errors = 0;
   std::string error_message;
@@ -415,12 +417,16 @@ void VodTs() {
   Check(std::fabs(rig.Time() - paused_at) < 0.05, "pause holds the clock");
   int seek_result = -1;
   size_t buffering_before_seek = 0;
+  int jumps_before_seek = 0;
   OnOwner([&] {
     buffering_before_seek = rig.client.buffering.size();
+    jumps_before_seek = rig.client.time_jumps;
     rig.player->Seek(300, [&](bool finished) { seek_result = finished; });
   });
   WaitFor([&] { return seek_result != -1; }, 20);
   Check(seek_result == 1 && std::fabs(rig.Time() - 300) < 0.1, "exact seek to 300 s finishes there");
+  Check(WaitFor([&] { return rig.client.time_jumps > jumps_before_seek; }, 5),
+        "the time jump reaches the client while paused");
   // Chromium finishes a seek only at HAVE_ENOUGH; AVFoundation's dip and
   // recovery within the seek is too quick to show as a change.
   Check(WaitFor([&] { return rig.client.buffering.size() > buffering_before_seek && rig.client.buffering.back(); }, 10),

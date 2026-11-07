@@ -1353,6 +1353,12 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
   }
 
+  void OnTimeJumped() {
+    if (!shut_down_) {
+      client_->OnTimeJumped();
+    }
+  }
+
   // Counted while the rate is above 0 (WebKit reads the same counts, from its
   // AVPlayerLayer, whenever the page asks); stopping counts once more. At the
   // end AVFoundation pauses by itself, and readings that add nothing are
@@ -1993,6 +1999,10 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
              selector:@selector(itemDidPlayToEnd:)
                  name:AVPlayerItemDidPlayToEndTimeNotification
                object:item];
+  [center addObserver:self
+             selector:@selector(itemTimeJumped:)
+                 name:AVPlayerItemTimeJumpedNotification
+               object:item];
 }
 
 - (void)observeLayer:(AVPlayerLayer*)layer {
@@ -2110,6 +2120,10 @@ static void* const kItemMediaTypes = (void*)&kItemMediaTypes;
 
 - (void)itemDidPlayToEnd:(NSNotification*)notification {
   [self post:&FairPlayHlsPlayer::Impl::OnEnded];
+}
+
+- (void)itemTimeJumped:(NSNotification*)notification {
+  [self post:&FairPlayHlsPlayer::Impl::OnTimeJumped];
 }
 
 - (void)deliverItemChange:(NSString*)keyPath newValue:(id)newValue prior:(BOOL)prior {

@@ -132,6 +132,7 @@ class FairPlayHlsPlayerService final
   void OnDurationChange(double seconds) override;
   void OnStartDateChange(std::optional<double> start_date_ms) override;
   void OnNaturalSizeChange(int32_t width, int32_t height) override;
+  void OnTimeJumped() override;
   void OnEnded() override;
   void OnError(parc::fairplay::HlsError error,
                const std::string& message) override;
@@ -193,6 +194,12 @@ class FairPlayHlsPlayerService final
 
   double rate_ = 0;  // The page's rate while playing, else 0.
   base::RepeatingTimer time_update_timer_;
+  // Seeks received and not yet done, and the time last sent outside them
+  // (none from a seek's start until its result goes out), for
+  // OnTimeJumpedBackward.
+  uint32_t seeks_received_ = 0;
+  int seeks_in_flight_ = 0;
+  std::optional<base::TimeDelta> last_sent_time_;
 
   float volume_ = 1;
   bool preserves_pitch_ = true;

@@ -140,6 +140,9 @@ class HlsPlayerClient {
   // didn't say), once it is ready to play and whenever they change after:
   // WebKit's characteristicsChanged.
   virtual void OnMediaTypesChange(bool /*has_audio*/, bool /*has_video*/) {}
+  // The item's time jumped (AVPlayerItemTimeJumpedNotification), playing or
+  // paused, when AVPlayer also runs WebKit's periodic time observer.
+  virtual void OnTimeJumped() {}
   virtual void OnEnded() = 0;
   virtual void OnError(HlsError error, const std::string& message) = 0;
   // AVFoundation asks for the key behind a clearkey:// URI, or an skd:// one

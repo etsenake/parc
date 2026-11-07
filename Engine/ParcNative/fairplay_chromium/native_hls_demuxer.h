@@ -193,6 +193,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void OnTimeUpdate(base::TimeDelta time,
                     double rate,
                     base::TimeTicks capture_time) override;
+  void OnTimeJumpedBackward(uint32_t seeks_received) override;
   void OnBufferingStateChange(media::BufferingState state) override;
   void OnReadyStateChanged(media::mojom::FairPlayHlsReadyState state) override;
   void OnMediaTypesChanged(bool has_audio, bool has_video) override;
@@ -279,6 +280,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   const base::RepeatingCallback<void(media::ParcNativeHlsReadyState)>
       ready_state_cb_;
   const base::RepeatingCallback<void(bool, bool)> media_types_cb_;
+  const base::RepeatingClosure time_jumped_cb_;
   const StartLoadCallback start_load_cb_;
   // The element's tracks; posts to the main thread. Null in unit tests.
   const std::unique_ptr<media::TrackManager> track_manager_;
@@ -338,6 +340,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
   std::optional<std::pair<base::TimeDelta, base::TimeDelta>>
       requested_fast_seek_ GUARDED_BY(time_lock_);
   std::optional<base::TimeDelta> fast_seek_landing_ GUARDED_BY(time_lock_);
+  // Seeks sent to the player, and whether it jumped back after finishing the
+  // one in flight here, so that seek keeps the time it jumped to.
+  uint32_t seeks_sent_ = 0;
+  bool jumped_after_seek_ GUARDED_BY(time_lock_) = false;
   // The element's seekable window and getStartDate() as the player computed
   // them (one range or none; GetParcNativeTimeline()).
   media::Ranges<base::TimeDelta> seekable_ GUARDED_BY(time_lock_);

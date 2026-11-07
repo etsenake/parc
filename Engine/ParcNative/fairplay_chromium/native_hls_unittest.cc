@@ -135,6 +135,7 @@ class NativeHlsTest : public testing::Test {
     params.encrypted_media_init_data_cb = encrypted_cb_.Get();
     params.key_request_cb = key_request_cb_.Get();
     params.start_load_cb = start_load_cb_.Get();
+    params.time_jumped_cb = time_jumped_cb_.Get();
     params.video_layer_size = gfx::SizeF(640, 360);
     params.video_layer_scale = 2;
     demuxer_ = std::make_unique<NativeHlsDemuxer>(
@@ -186,6 +187,7 @@ class NativeHlsTest : public testing::Test {
   base::MockCallback<base::RepeatingCallback<void(const std::string&)>>
       key_request_cb_;
   base::MockCallback<NativeHlsDemuxer::StartLoadCallback> start_load_cb_;
+  base::MockCallback<base::RepeatingClosure> time_jumped_cb_;
   NiceMock<media::MockDemuxerHost> host_;
   NiceMock<media::MockRendererClient> renderer_client_;
   NiceMock<media::MockVideoRendererSink> sink_;
@@ -574,6 +576,53 @@ TEST_F(NativeHlsTest, TimeComesFromThePlayersClock) {
   task_environment_.RunUntilIdle();
   EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(40));
   EXPECT_EQ(demuxer_->ParcTakeFastSeekLanding(), std::nullopt);
+}
+
+// The player's backward jump reaches the element (WebKit's
+// mediaPlayerTimeChanged), unless a seek the player hadn't received answers
+// for the time.
+TEST_F(NativeHlsTest, TimeJumpedBackwardReachesTheElement) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  EXPECT_CALL(time_jumped_cb_, Run()).Times(1);
+  client_->OnTimeUpdate(base::Seconds(4), 1, base::TimeTicks::Now());
+  client_->OnTimeJumpedBackward(0);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(renderer_->GetMediaTime().InSeconds(), 4);
+  testing::Mock::VerifyAndClearExpectations(&time_jumped_cb_);
+
+  EXPECT_CALL(time_jumped_cb_, Run()).Times(0);
+  base::MockCallback<media::PipelineStatusCallback> seek_cb;
+  EXPECT_CALL(seek_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
+  demuxer_->Seek(base::Seconds(40), seek_cb.Get());
+  client_->OnTimeJumpedBackward(0);
+  task_environment_.RunUntilIdle();
+  std::move(player_.seek_cb_).Run(true, base::Seconds(40));
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(renderer_->GetMediaTime().InSeconds(), 40);
+
+  demuxer_->Stop();
+  client_->OnTimeJumpedBackward(1);
+  task_environment_.RunUntilIdle();
+}
+
+// A jump after the player finished a seek whose reply is still to come: the
+// seek keeps the time the player jumped to.
+TEST_F(NativeHlsTest, TimeJumpedBackwardAfterSeekKeepsItsTime) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  EXPECT_CALL(time_jumped_cb_, Run()).Times(0);
+  base::MockCallback<media::PipelineStatusCallback> seek_cb;
+  EXPECT_CALL(seek_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
+  demuxer_->Seek(base::Seconds(40), seek_cb.Get());
+  task_environment_.RunUntilIdle();
+  client_->OnTimeUpdate(base::Seconds(40), 0, base::TimeTicks::Now());
+  client_->OnTimeUpdate(base::Seconds(12), 0, base::TimeTicks::Now());
+  client_->OnTimeJumpedBackward(1);
+  task_environment_.RunUntilIdle();
+  std::move(player_.seek_cb_).Run(true, base::Seconds(40));
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(12));
 }
 
 // HTMLMediaElement.fastSeek: the tolerance reaches AVPlayer for the seek to

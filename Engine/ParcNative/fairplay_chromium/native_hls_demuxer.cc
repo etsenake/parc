@@ -138,6 +138,7 @@ NativeHlsDemuxer::NativeHlsDemuxer(
       key_request_cb_(std::move(params.key_request_cb)),
       ready_state_cb_(std::move(params.ready_state_cb)),
       media_types_cb_(std::move(params.media_types_cb)),
+      time_jumped_cb_(std::move(params.time_jumped_cb)),
       start_load_cb_(std::move(params.start_load_cb)),
       track_manager_(std::move(params.track_manager)),
       pending_player_(std::move(player)),
@@ -296,6 +297,7 @@ void NativeHlsDemuxer::Seek(base::TimeDelta time,
     }
   }
   const bool fast = tolerance_before.is_positive();
+  ++seeks_sent_;
   player_->Seek(time, tolerance_before,
                 base::BindOnce(&NativeHlsDemuxer::OnPlayerSeeked,
                                weak_factory_.GetWeakPtr(), time, fast,
@@ -345,12 +347,15 @@ void NativeHlsDemuxer::OnPlayerSeeked(base::TimeDelta time,
     // follows. A fast seek that didn't finish says nothing of a landing.
     seek_time_.reset();
     const bool landed = fast && success;
-    time_ = landed ? current_time : time;
     if (landed) {
       fast_seek_landing_ = current_time;
     }
-    rate_ = 0;
-    capture_time_ = base::TimeTicks::Now();
+    // The player's time after its jump came after its seek result.
+    if (!std::exchange(jumped_after_seek_, false)) {
+      time_ = landed ? current_time : time;
+      rate_ = 0;
+      capture_time_ = base::TimeTicks::Now();
+    }
   }
   // AVFoundation answers false only when a later seek interrupted this one;
   // the pipeline serializes its seeks, so the later one completes it.
@@ -378,6 +383,7 @@ void NativeHlsDemuxer::Stop() {
   {
     base::AutoLock lock(time_lock_);
     seek_time_.reset();
+    jumped_after_seek_ = false;
   }
   if (init_cb_) {
     std::move(init_cb_).Run(media::PIPELINE_ERROR_ABORT);
@@ -593,6 +599,25 @@ void NativeHlsDemuxer::OnTimeUpdate(base::TimeDelta time,
   time_ = time;
   rate_ = rate;
   capture_time_ = capture_time;
+}
+
+void NativeHlsDemuxer::OnTimeJumpedBackward(uint32_t seeks_received) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // A seek the player hadn't received when it sent this answers for the time
+  // itself.
+  if (!time_jumped_cb_ || stopped_ || seeks_received != seeks_sent_) {
+    return;
+  }
+  {
+    // The player finished the seek in flight here, then jumped: its reply,
+    // on the other pipe, is still to come, and the seek reports the time.
+    base::AutoLock lock(time_lock_);
+    if (seek_time_) {
+      jumped_after_seek_ = true;
+      return;
+    }
+  }
+  time_jumped_cb_.Run();
 }
 
 void NativeHlsDemuxer::OnBufferingStateChange(media::BufferingState state) {
@@ -996,6 +1021,7 @@ void NativeHlsDemuxer::OnPlayerDisconnected() {
     // A pending seek's reply went with the player; the clock stays put.
     base::AutoLock lock(time_lock_);
     seek_time_.reset();
+    jumped_after_seek_ = false;
   }
   // The GPU process went away (as a MojoRenderer reports it).
   const media::PipelineStatus status(media::PIPELINE_ERROR_DISCONNECTED);

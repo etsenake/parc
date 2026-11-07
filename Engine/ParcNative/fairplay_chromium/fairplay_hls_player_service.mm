@@ -562,11 +562,14 @@ void FairPlayHlsPlayerService::Seek(base::TimeDelta time,
                                     base::TimeDelta tolerance_before,
                                     SeekCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ++seeks_received_;
   if (!player_ || errored_) {
     std::move(callback).Run(false, time);
     return;
   }
   tracks_->WillSeek();
+  ++seeks_in_flight_;
+  last_sent_time_.reset();
   auto shared_callback = std::make_shared<SeekCallback>(std::move(callback));
   base::WeakPtr<FairPlayHlsPlayerService> weak = weak_factory_.GetWeakPtr();
   // TimeDelta::Max() (a fast seek backward) reads as infinity.
@@ -582,6 +585,7 @@ void FairPlayHlsPlayerService::OnSeekDone(SeekCallback callback,
                                           bool finished) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   tracks_->DidSeek();
+  --seeks_in_flight_;
   SendTimeUpdate();
   std::move(callback).Run(
       finished, player_ ? ToTimeDelta(player_->CurrentTime()) : base::TimeDelta());
@@ -793,6 +797,12 @@ void FairPlayHlsPlayerService::OnNaturalSizeChange(int32_t width,
   client_->OnNaturalSizeChange(size);
 }
 
+void FairPlayHlsPlayerService::OnTimeJumped() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // A jump while paused too, when the time updates have stopped.
+  SendTimeUpdate();
+}
+
 void FairPlayHlsPlayerService::OnEnded() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!initialized_ || errored_) {
@@ -907,8 +917,18 @@ void FairPlayHlsPlayerService::SendTimeUpdate() {
   if (!initialized_ || errored_ || !player_) {
     return;
   }
-  client_->OnTimeUpdate(ToTimeDelta(player_->CurrentTime()), player_->Rate(),
-                        base::TimeTicks::Now());
+  const base::TimeDelta time = ToTimeDelta(player_->CurrentTime());
+  client_->OnTimeUpdate(time, player_->Rate(), base::TimeTicks::Now());
+  // WebKit's MediaPlayerPrivateRemote::currentTimeChanged: times while
+  // seeking are ignored and the seek's result starts afresh.
+  if (seeks_in_flight_) {
+    return;
+  }
+  const bool jumped_backward = last_sent_time_ && time < *last_sent_time_;
+  last_sent_time_ = time;
+  if (jumped_backward) {
+    client_->OnTimeJumpedBackward(seeks_received_);
+  }
 }
 
 void FairPlayHlsPlayerService::UpdateTimeUpdateTimer() {
