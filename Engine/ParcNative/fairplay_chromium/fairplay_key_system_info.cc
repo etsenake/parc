@@ -43,8 +43,7 @@ bool FairPlayKeySystemInfo::IsSupportedInitDataType(
     EmeInitDataType init_data_type) const {
   // WebKit's FairPlay types on macOS ("cenc", "sinf", "skd", "mpts";
   // fairplay-media.patch adds the last three to EmeInitDataType, and Blink
-  // accepts them only from a Safari-identity document) plus "keyids". Netflix
-  // and Apple TV+ send "cenc".
+  // accepts them only from a Safari-identity document) plus "keyids".
   switch (init_data_type) {
     case EmeInitDataType::CENC:
     case EmeInitDataType::SINF:

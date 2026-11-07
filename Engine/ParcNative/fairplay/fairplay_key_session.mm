@@ -1918,7 +1918,7 @@ bool FairPlayCdm::IsKeySystemSupported(const std::string& key_system) {
   static constexpr char kPrefix[] = "com.apple.fps.";
   constexpr size_t kPrefixSize = sizeof(kPrefix) - 1;
   return key_system == "com.apple.fps" ||
-         (key_system.size() > kPrefixSize && key_system.compare(0, kPrefixSize, kPrefix) == 0);
+         key_system.compare(0, kPrefixSize, kPrefix) == 0;
 }
 
 bool FairPlayCdm::IsInitDataTypeSupported(const std::string& init_data_type) {

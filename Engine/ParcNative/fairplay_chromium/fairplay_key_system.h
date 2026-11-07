@@ -9,8 +9,8 @@
 
 namespace parc::fairplay {
 
-// The base key system. Sites ask for it or for a versioned sub key system:
-// Netflix requests "com.apple.fps.3_0", Shaka Player "com.apple.fps".
+// The base key system. Pages ask for it or for a versioned sub key system
+// ("com.apple.fps.3_0").
 inline constexpr char kFairPlayKeySystem[] = "com.apple.fps";
 
 // Display name of the CDM in chrome://media-internals and CdmInfo.
@@ -18,13 +18,14 @@ inline constexpr char kFairPlayCdmDisplayName[] = "Apple FairPlay Streaming";
 
 // Same rule as FairPlayCdm::IsKeySystemSupported in the core and WebKit's
 // CDMFactoryFairPlayStreaming::supportsKeySystem: "com.apple.fps" or
-// "com.apple.fps." followed by a non-empty version. Case-sensitive.
+// anything starting with "com.apple.fps." (the bare prefix too).
+// Case-sensitive.
 inline bool IsFairPlayKeySystem(std::string_view key_system) {
   constexpr std::string_view kBase(kFairPlayKeySystem);
   if (key_system == kBase) {
     return true;
   }
-  return key_system.size() > kBase.size() + 1 &&
+  return key_system.size() > kBase.size() &&
          key_system.substr(0, kBase.size()) == kBase &&
          key_system[kBase.size()] == '.';
 }
