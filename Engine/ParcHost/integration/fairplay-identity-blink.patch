@@ -5855,7 +5855,7 @@
 +constexpr char kParcPurgedEvent[] = "parcmanagedmediasourcepurged";
 +
  }  // namespace
- 
++
 +// Parc: hears memory pressure on the SourceBuffer's own thread (the window's
 +// or the dedicated worker's) while it belongs to a ManagedMediaSource.
 +class SourceBuffer::ParcMemoryPressureListener final
@@ -5870,7 +5870,7 @@
 +  ParcMemoryPressureListener& operator=(const ParcMemoryPressureListener&) =
 +      delete;
 +  ~ParcMemoryPressureListener() override { registration_.Dispose(); }
-+
+ 
 + private:
 +  void OnMemoryPressure(base::MemoryPressureLevel level) override {
 +    if (SourceBuffer* owner = owner_.Get()) {
@@ -6039,7 +6039,20 @@
  
    bool result = web_source_buffer_->EvictCodedFrames(media_time, new_data_size);
    if (!result) {
-@@ -2073,6 +2199,11 @@
+@@ -2060,6 +2186,12 @@
+   } else {
+     updating_ = false;
+ 
++    // Parc: WebKit redoes its eviction estimate here
++    // (media::ChunkDemuxer::ParcUpdateEvictionData).
++    if (IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent())) {
++      web_source_buffer_->ParcUpdateEvictionData(GetMediaTime());
++    }
++
+     source_->SendUpdatedInfoToMainThreadCache();
+ 
+     // Don't schedule 'update' or 'updateend' for this promisified async
+@@ -2073,6 +2205,11 @@
    TRACE_EVENT_END("media", /* SourceBuffer::appendEncodedChunks */
                    trace_track_);
  
@@ -6051,7 +6064,20 @@
    DVLOG(3) << __func__ << " done. this=" << this
             << " media_time=" << GetMediaTime() << " buffered="
             << WebTimeRangesToString(web_source_buffer_->Buffered());
-@@ -2130,12 +2261,21 @@
+@@ -2120,6 +2257,12 @@
+     case media::StreamParser::ParseStatus::kSuccess:
+       // 3. Set the updating attribute to false.
+       updating_ = false;
++
++      // Parc: WebKit redoes its eviction estimate here
++      // (media::ChunkDemuxer::ParcUpdateEvictionData).
++      if (IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent())) {
++        web_source_buffer_->ParcUpdateEvictionData(GetMediaTime());
++      }
+ 
+       source_->SendUpdatedInfoToMainThreadCache();
+ 
+@@ -2130,12 +2273,21 @@
        // 5. Queue a task to fire a simple event named updateend at this
        //    SourceBuffer object.
        ScheduleEvent(event_type_names::kUpdateend);
@@ -6073,7 +6099,20 @@
    double media_time = GetMediaTime();
    DVLOG(3) << __func__ << " done. this=" << this << " media_time=" << media_time
             << " buffered="
-@@ -2187,6 +2327,9 @@
+@@ -2173,6 +2325,12 @@
+   //    and end of the removal range.
+   web_source_buffer_->Remove(pending_remove_start_, pending_remove_end_);
+ 
++  // Parc: WebKit redoes its eviction estimate here
++  // (media::ChunkDemuxer::ParcUpdateEvictionData).
++  if (IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent())) {
++    web_source_buffer_->ParcUpdateEvictionData(GetMediaTime());
++  }
++
+   // 10. Set the updating attribute to false.
+   updating_ = false;
+   pending_remove_start_ = -1;
+@@ -2187,6 +2345,9 @@
    // 12. Queue a task to fire a simple event named updateend at this
    //     SourceBuffer object.
    ScheduleEvent(event_type_names::kUpdateend);
