@@ -201,6 +201,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
       std::vector<media::mojom::FairPlayHlsTrackPtr> tracks) override;
   void OnTextCues(const std::string& track_key,
                   std::vector<media::mojom::FairPlayHlsCuePtr> cues) override;
+  void OnDataCues(const std::string& track_key,
+                  std::vector<media::mojom::FairPlayHlsDataCuePtr> cues) override;
   void OnNaturalSizeChange(const gfx::Size& size) override;
   void OnLayerRegistered(const base::UnguessableToken& layer_token,
                          const gfx::Size& natural_size) override;
@@ -237,6 +239,9 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void ForwardTextCues(
       const std::string& track_key,
       const std::vector<media::mojom::FairPlayHlsCuePtr>& cues);
+  void ForwardDataCues(
+      const std::string& track_key,
+      const std::vector<media::mojom::FairPlayHlsDataCuePtr>& cues);
   // TextTrack.mode and AudioTrack.enabled from the element, on to the
   // player.
   void SetTextTrackMode(const std::string& key,
@@ -265,6 +270,10 @@ class NativeHlsDemuxer final : public media::Demuxer,
   std::vector<
       std::pair<std::string, std::vector<media::mojom::FairPlayHlsCuePtr>>>
       pending_cues_;
+  // Data cues for the metadata track, likewise.
+  std::vector<std::pair<std::string,
+                        std::vector<media::mojom::FairPlayHlsDataCuePtr>>>
+      pending_data_cues_;
 
   // Bound on the media thread in Initialize().
   mojo::PendingRemote<media::mojom::FairPlayHlsPlayer> pending_player_;

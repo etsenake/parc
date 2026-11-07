@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -76,6 +77,9 @@ struct HlsTrack {
   // CaptionUserPreferencesMediaAF from the system caption settings: display
   // mode, caption languages, SDH preference) for the enabled audio track.
   bool automatic = false;
+  // Text only: TextTrack.inBandMetadataTrackDispatchType, "com.apple.streaming"
+  // for the metadata track (InbandMetadataTextTrackPrivateAVF), else "".
+  std::string in_band_metadata_dispatch_type;
 
   bool operator==(const HlsTrack&) const = default;
 };
@@ -138,6 +142,41 @@ struct HlsCue {
   bool prevent_line_wrapping = true;
 };
 
+// What a DataCue's value carries of a timed metadata item
+// (SerializedPlatformDataCueValue): the page sees an object with "type",
+// the other attributes, "locale", "key" and "data" (a string, number,
+// boolean or ArrayBuffer; none for a date or no value).
+struct HlsDataCueValue {
+  std::optional<std::string> type;  // MIMEtype, or an IANA media-type dataType.
+  // The item's other non-empty string extra attributes, keys lowercased.
+  std::map<std::string, std::string> attributes;
+  std::optional<std::string> locale;  // The item's locale identifier.
+  std::optional<std::string> key;     // The item's key, when it is a string.
+  enum class Kind { kNone, kString, kNumber, kBoolean, kData, kDate };
+  Kind kind = Kind::kNone;
+  std::string string_value;
+  // kNumber, kBoolean (0 or 1), kDate (seconds since 1970; compared only).
+  double number_value = 0;
+  std::vector<uint8_t> data;
+
+  bool operator==(const HlsDataCueValue&) const = default;
+};
+
+// One change to the metadata track's DataCues, in delivery order
+// (InbandTextTrackPrivateClient's addDataCue, updateDataCue, removeDataCue):
+// the page side finds the cue to update or remove by an open cue with an
+// equal value, as InbandDataTextTrack does.
+struct HlsDataCue {
+  enum class Type { kAdd, kUpdate, kRemove };
+  Type type = Type::kAdd;
+  double start = 0;  // Seconds.
+  double end = 0;    // Seconds; +infinity while open.
+  // DataCue.type: the item's key space as WebKit names it ("org.id3",
+  // "com.apple.quicktime.HLS"…), "" for another, nullopt without one.
+  std::optional<std::string> cue_type;
+  HlsDataCueValue value;
+};
+
 // Posted to the owner sequence, never inside a call into the selection.
 class HlsMediaSelectionClient {
  public:
@@ -146,6 +185,8 @@ class HlsMediaSelectionClient {
   // from the previous list (tracks match by key).
   virtual void OnTracksChanged(const std::vector<HlsTrack>& tracks) = 0;
   virtual void OnTextCues(const std::string& track_key, const std::vector<HlsCue>& cues) = 0;
+  // Timed and date range metadata, as DataCue changes on the metadata track.
+  virtual void OnDataCues(const std::string& track_key, const std::vector<HlsDataCue>& cues) {}
 
  protected:
   virtual ~HlsMediaSelectionClient() = default;

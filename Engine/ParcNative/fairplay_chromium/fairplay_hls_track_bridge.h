@@ -59,6 +59,8 @@ class FairPlayHlsTrackBridge final
       const std::vector<parc::fairplay::HlsTrack>& tracks) override;
   void OnTextCues(const std::string& track_key,
                   const std::vector<parc::fairplay::HlsCue>& cues) override;
+  void OnDataCues(const std::string& track_key,
+                  const std::vector<parc::fairplay::HlsDataCue>& cues) override;
 
  private:
   const raw_ptr<mojom::FairPlayHlsPlayerClient> client_;

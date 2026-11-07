@@ -4,6 +4,8 @@
 
 #include <utility>
 
+#include "base/containers/flat_map.h"
+
 #include "third_party/parc_fairplay/core/fairplay_hls_media_selection_internal.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_player_internal.h"
 
@@ -33,6 +35,7 @@ mojom::FairPlayHlsTrackPtr ToMojo(const fp::HlsTrack& track) {
   result->is_main_program_content = track.is_main_program_content;
   result->is_easy_to_read = track.is_easy_to_read;
   result->automatic = track.automatic;
+  result->in_band_metadata_dispatch_type = track.in_band_metadata_dispatch_type;
   return result;
 }
 
@@ -183,6 +186,63 @@ void FairPlayHlsTrackBridge::OnTracksChanged(
   }
   last_sent_ = current;
   client_->OnTracksChanged(ToMojo(current));
+}
+
+void FairPlayHlsTrackBridge::OnDataCues(
+    const std::string& track_key,
+    const std::vector<parc::fairplay::HlsDataCue>& cues) {
+  using Kind = parc::fairplay::HlsDataCueValue::Kind;
+  std::vector<mojom::FairPlayHlsDataCuePtr> result;
+  result.reserve(cues.size());
+  for (const parc::fairplay::HlsDataCue& cue : cues) {
+    auto out = mojom::FairPlayHlsDataCue::New();
+    switch (cue.type) {
+      case parc::fairplay::HlsDataCue::Type::kAdd:
+        out->type = mojom::FairPlayHlsDataCueType::kAdd;
+        break;
+      case parc::fairplay::HlsDataCue::Type::kUpdate:
+        out->type = mojom::FairPlayHlsDataCueType::kUpdate;
+        break;
+      case parc::fairplay::HlsDataCue::Type::kRemove:
+        out->type = mojom::FairPlayHlsDataCueType::kRemove;
+        break;
+    }
+    out->start = cue.start;
+    out->end = cue.end;
+    out->cue_type = cue.cue_type;
+    auto value = mojom::FairPlayHlsDataCueValue::New();
+    value->type = cue.value.type;
+    value->attributes = base::flat_map<std::string, std::string>(
+        cue.value.attributes.begin(), cue.value.attributes.end());
+    value->locale = cue.value.locale;
+    value->key = cue.value.key;
+    switch (cue.value.kind) {
+      case Kind::kNone:
+        value->kind = mojom::FairPlayHlsDataCueValueKind::kNone;
+        break;
+      case Kind::kString:
+        value->kind = mojom::FairPlayHlsDataCueValueKind::kString;
+        break;
+      case Kind::kNumber:
+        value->kind = mojom::FairPlayHlsDataCueValueKind::kNumber;
+        break;
+      case Kind::kBoolean:
+        value->kind = mojom::FairPlayHlsDataCueValueKind::kBoolean;
+        break;
+      case Kind::kData:
+        value->kind = mojom::FairPlayHlsDataCueValueKind::kData;
+        break;
+      case Kind::kDate:
+        value->kind = mojom::FairPlayHlsDataCueValueKind::kDate;
+        break;
+    }
+    value->string_value = cue.value.string_value;
+    value->number_value = cue.value.number_value;
+    value->data = cue.value.data;
+    out->value = std::move(value);
+    result.push_back(std::move(out));
+  }
+  client_->OnDataCues(track_key, std::move(result));
 }
 
 void FairPlayHlsTrackBridge::OnTextCues(

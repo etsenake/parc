@@ -257,6 +257,10 @@ void NativeHlsDemuxer::OnPlayerInitialized(
     ForwardTextCues(track_key, cues);
   }
   pending_cues_.clear();
+  for (const auto& [track_key, cues] : pending_data_cues_) {
+    ForwardDataCues(track_key, cues);
+  }
+  pending_data_cues_.clear();
   std::move(init_cb_).Run(media::PIPELINE_OK);
 }
 
@@ -632,6 +636,7 @@ void NativeHlsDemuxer::ApplyTracks(
     text.is_main_program_content = track->is_main_program_content;
     text.is_easy_to_read = track->is_easy_to_read;
     text.automatic = track->automatic;
+    text.in_band_metadata_dispatch_type = track->in_band_metadata_dispatch_type;
     text_tracks.push_back(std::move(text));
   }
   track_manager_->ParcSetInbandAudioTracks(
@@ -694,6 +699,75 @@ void NativeHlsDemuxer::ForwardTextCues(
     result.push_back(std::move(out));
   }
   track_manager_->ParcAddInbandTextCues(track_key, result);
+}
+
+void NativeHlsDemuxer::OnDataCues(
+    const std::string& track_key,
+    std::vector<media::mojom::FairPlayHlsDataCuePtr> cues) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!tracks_ready_) {
+    pending_data_cues_.emplace_back(track_key, std::move(cues));
+    return;
+  }
+  ForwardDataCues(track_key, cues);
+}
+
+void NativeHlsDemuxer::ForwardDataCues(
+    const std::string& track_key,
+    const std::vector<media::mojom::FairPlayHlsDataCuePtr>& cues) {
+  if (!track_manager_ || stopped_) {
+    return;
+  }
+  using Kind = media::ParcDataCueValue::Kind;
+  std::vector<media::ParcInbandDataCue> result;
+  result.reserve(cues.size());
+  for (const auto& cue : cues) {
+    media::ParcInbandDataCue out;
+    switch (cue->type) {
+      case media::mojom::FairPlayHlsDataCueType::kAdd:
+        out.type = media::ParcInbandDataCue::Type::kAdd;
+        break;
+      case media::mojom::FairPlayHlsDataCueType::kUpdate:
+        out.type = media::ParcInbandDataCue::Type::kUpdate;
+        break;
+      case media::mojom::FairPlayHlsDataCueType::kRemove:
+        out.type = media::ParcInbandDataCue::Type::kRemove;
+        break;
+    }
+    out.start = cue->start;
+    out.end = cue->end;
+    out.cue_type = cue->cue_type;
+    const media::mojom::FairPlayHlsDataCueValue& value = *cue->value;
+    out.value.type = value.type;
+    out.value.attributes.assign(value.attributes.begin(), value.attributes.end());
+    out.value.locale = value.locale;
+    out.value.key = value.key;
+    switch (value.kind) {
+      case media::mojom::FairPlayHlsDataCueValueKind::kNone:
+        out.value.kind = Kind::kNone;
+        break;
+      case media::mojom::FairPlayHlsDataCueValueKind::kString:
+        out.value.kind = Kind::kString;
+        break;
+      case media::mojom::FairPlayHlsDataCueValueKind::kNumber:
+        out.value.kind = Kind::kNumber;
+        break;
+      case media::mojom::FairPlayHlsDataCueValueKind::kBoolean:
+        out.value.kind = Kind::kBoolean;
+        break;
+      case media::mojom::FairPlayHlsDataCueValueKind::kData:
+        out.value.kind = Kind::kData;
+        break;
+      case media::mojom::FairPlayHlsDataCueValueKind::kDate:
+        out.value.kind = Kind::kDate;
+        break;
+    }
+    out.value.string_value = value.string_value;
+    out.value.number_value = value.number_value;
+    out.value.data = value.data;
+    result.push_back(std::move(out));
+  }
+  track_manager_->ParcAddInbandDataCues(track_key, result);
 }
 
 void NativeHlsDemuxer::SetAudioTrackEnabled(const std::string& key,

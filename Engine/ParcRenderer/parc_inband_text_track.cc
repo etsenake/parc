@@ -2,6 +2,7 @@
 
 #include "third_party/blink/renderer/core/html/media/parc_inband_text_track.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+#include "third_party/blink/renderer/core/html/track/data_cue.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue_list.h"
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_region.h"
@@ -396,7 +398,108 @@ TextTrackCue* ParcInbandTextTrack::CueToExtend(double start,
   return nullptr;
 }
 
+void ParcInbandTextTrack::AddDataCues(
+    const std::vector<media::ParcInbandDataCue>& cues) {
+  for (const media::ParcInbandDataCue& cue : cues) {
+    switch (cue.type) {
+      case media::ParcInbandDataCue::Type::kAdd:
+        AddDataCue(cue);
+        break;
+      case media::ParcInbandDataCue::Type::kUpdate:
+        UpdateDataCue(cue);
+        break;
+      case media::ParcInbandDataCue::Type::kRemove:
+        RemoveDataCue(cue);
+        break;
+    }
+  }
+}
+
+String ParcInbandTextTrack::inBandMetadataTrackDispatchType() const {
+  return String::FromUtf8(info_.in_band_metadata_dispatch_type);
+}
+
+DataCue* ParcInbandTextTrack::FindIncompleteDataCue(
+    const media::ParcDataCueValue& value) {
+  for (wtf_size_t i = 0; i < incomplete_data_cues_.size();) {
+    DataCue* cue = incomplete_data_cues_[i];
+    if (cue->track() != this) {
+      incomplete_data_cues_.EraseAt(i);
+      continue;
+    }
+    if (cue->PlatformValue() && *cue->PlatformValue() == value) {
+      return cue;
+    }
+    ++i;
+  }
+  return nullptr;
+}
+
+void ParcInbandTextTrack::AddDataCue(const media::ParcInbandDataCue& data) {
+  ExecutionContext* context = element_->GetExecutionContext();
+  if (!context || FindIncompleteDataCue(data.value)) {
+    return;
+  }
+  String type = data.cue_type ? String::FromUtf8(*data.cue_type) : String();
+  DataCue* cue = DataCue::CreateFromPlatformValue(context, data.start,
+                                                  data.end, data.value, type);
+  // TextTrack::hasCue(cue, IgnoreDuration): a DataCue at the same start with
+  // the same contents, whatever the track's mode. Cues the page removed are
+  // forgotten.
+  for (wtf_size_t i = 0; i < data_cues_.size();) {
+    DataCue* existing = data_cues_[i];
+    if (existing->track() != this) {
+      data_cues_.EraseAt(i);
+      continue;
+    }
+    if (existing->startTime() == cue->startTime() &&
+        existing->ContentsMatch(*cue)) {
+      return;
+    }
+    ++i;
+  }
+  if (std::isinf(data.end) && data.end > 0) {
+    const double duration = element_->duration();
+    if (!std::isnan(duration)) {
+      cue->setEndTime(duration, IGNORE_EXCEPTION);
+    }
+    incomplete_data_cues_.push_back(cue);
+  }
+  addCue(cue);
+  data_cues_.push_back(cue);
+}
+
+void ParcInbandTextTrack::UpdateDataCue(const media::ParcInbandDataCue& data) {
+  DataCue* cue = FindIncompleteDataCue(data.value);
+  if (!cue) {
+    return;
+  }
+  double end = data.end;
+  if (std::isinf(end) && end > 0) {
+    // Still open: it shows the duration meanwhile, when there is one.
+    const double duration = element_->duration();
+    if (!std::isnan(duration)) {
+      end = duration;
+    }
+  } else {
+    incomplete_data_cues_.erase(std::find(incomplete_data_cues_.begin(),
+                                          incomplete_data_cues_.end(), cue));
+  }
+  cue->setStartTime(data.start);
+  cue->setEndTime(end, IGNORE_EXCEPTION);
+}
+
+void ParcInbandTextTrack::RemoveDataCue(const media::ParcInbandDataCue& data) {
+  if (DataCue* cue = FindIncompleteDataCue(data.value)) {
+    incomplete_data_cues_.erase(std::find(incomplete_data_cues_.begin(),
+                                          incomplete_data_cues_.end(), cue));
+    removeCue(cue, IGNORE_EXCEPTION);
+  }
+}
+
 void ParcInbandTextTrack::Trace(Visitor* visitor) const {
+  visitor->Trace(incomplete_data_cues_);
+  visitor->Trace(data_cues_);
   visitor->Trace(element_);
   visitor->Trace(generic_cues_);
   visitor->Trace(records_);

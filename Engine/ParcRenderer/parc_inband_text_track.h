@@ -29,6 +29,7 @@
 
 namespace blink {
 
+class DataCue;
 class HTMLMediaElement;
 class TextTrackCue;
 
@@ -51,6 +52,13 @@ class CORE_EXPORT ParcInbandTextTrack final : public TextTrack,
 
   // Changes to the cues, in order.
   void AddCues(const std::vector<media::ParcInbandTextCue>& cues);
+  // Changes to the metadata track's DataCues, in order (WebKit's
+  // InbandDataTextTrack: an add equal to an open cue or to a cue at the same
+  // start is dropped, an open cue ends at the duration, updates and removals
+  // find the open cue by its value).
+  void AddDataCues(const std::vector<media::ParcInbandDataCue>& cues);
+  // TextTrack: "com.apple.streaming" for the metadata track.
+  String inBandMetadataTrackDispatchType() const override;
 
   // TextTrack: a mode change also goes to the player.
   void setMode(const V8TextTrackMode&) override;
@@ -97,6 +105,13 @@ class CORE_EXPORT ParcInbandTextTrack final : public TextTrack,
     CueContents contents;
   };
 
+  void AddDataCue(const media::ParcInbandDataCue& data);
+  void UpdateDataCue(const media::ParcInbandDataCue& data);
+  void RemoveDataCue(const media::ParcInbandDataCue& data);
+  // InbandDataTextTrack::findIncompleteCue; forgets open cues the page
+  // removed from the track (InbandDataTextTrack::removeCue).
+  DataCue* FindIncompleteDataCue(const media::ParcDataCueValue& value);
+
   void ParseWebVttHeader(const std::string& header);
   void AddWebVttCue(const media::ParcInbandTextCue& data);
   void AddGenericCue(const media::ParcInbandTextCue& data);
@@ -127,6 +142,11 @@ class CORE_EXPORT ParcInbandTextTrack final : public TextTrack,
   HeapHashMap<uint64_t, Member<VTTCue>> generic_cues_;
   // The contents of every cue this track made.
   HeapHashMap<Member<TextTrackCue>, Member<CueRecord>> records_;
+  // DataCues still open (m_incompleteCueMap).
+  HeapVector<Member<DataCue>> incomplete_data_cues_;
+  // The DataCues this track added and still holds: TextTrack::cues() is null
+  // while the track is disabled, where WebKit's hasCue still finds them.
+  HeapVector<Member<DataCue>> data_cues_;
   VTTRegionMap regions_;
 };
 

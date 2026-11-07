@@ -1,0 +1,21 @@
+// Copyright 2026 Parc contributors.
+// WebKit's DataCue (Source/WebCore/html/track/DataCue.idl) on Safari-identity
+// documents: the cues of the native HLS route's in-band metadata track
+// (com.apple.streaming), and the interface pages construct. Installed by the
+// overlay at third_party/blink/renderer/core/html/track/data_cue.idl.
+//
+// WebKit's two constructors, (startTime, endTime, any value, optional
+// DOMString type) and (startTime, endTime, ArrayBuffer data), aren't
+// distinguishable overloads in Blink's IDL, so there is one: an ArrayBuffer
+// value without a type takes the second's path (data_cue.cc), as WebKit's
+// overload resolution picks it.
+
+[
+    Exposed=Window,
+    ContextEnabled=ParcSafariIdentity
+] interface DataCue : TextTrackCue {
+    [CallWith=ScriptState, RaisesException] constructor(unrestricted double startTime, unrestricted double endTime, any value, optional DOMString type);
+    [CallWith=ScriptState] attribute any value;
+    readonly attribute DOMString type;
+    [RaisesException=Setter] attribute ArrayBuffer? data;
+};

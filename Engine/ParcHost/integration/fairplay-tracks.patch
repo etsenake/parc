@@ -12,6 +12,17 @@
  
  [Exposed=Window]
  interface TextTrack : EventTarget {
+@@ -35,7 +38,9 @@
+     readonly attribute DOMString language;
+ 
+     readonly attribute DOMString id;
+-    // readonly attribute DOMString inBandMetadataTrackDispatchType;
++    // Parc: WebKit's attribute on Safari-identity documents; the native HLS
++    // metadata track answers "com.apple.streaming", other tracks "".
++    [ContextEnabled=ParcSafariIdentity] readonly attribute DOMString inBandMetadataTrackDispatchType;
+ 
+     attribute TextTrackMode mode;
+ 
 --- a/third_party/blink/renderer/core/html/track/text_track.cc
 +++ b/third_party/blink/renderer/core/html/track/text_track.cc
 @@ -111,8 +111,11 @@
@@ -93,7 +104,7 @@
                               AtomicString::Number(track_list->length() + 1));
 --- a/media/base/media_track.h
 +++ b/media/base/media_track.h
-@@ -5,7 +5,11 @@
+@@ -5,7 +5,12 @@
  #ifndef MEDIA_BASE_MEDIA_TRACK_H_
  #define MEDIA_BASE_MEDIA_TRACK_H_
  
@@ -101,11 +112,12 @@
 +
 +#include <optional>
  #include <string>
++#include <utility>
 +#include <vector>
  
  #include "base/functional/callback.h"
  #include "base/types/strong_alias.h"
-@@ -122,6 +126,121 @@
+@@ -122,6 +127,171 @@
    Language language_;
  };
  
@@ -140,6 +152,56 @@
 +  // (the player scores them by the system caption settings): the element's
 +  // automatic selection shows it (ParcInbandTextTrack::IsDefault).
 +  bool automatic = false;
++  // TextTrack.inBandMetadataTrackDispatchType: "com.apple.streaming" for the
++  // metadata track, else "".
++  std::string in_band_metadata_dispatch_type;
++};
++
++// Parc: a DataCue's value (the FairPlay core's HlsDataCueValue: what WebKit's
++// SerializedPlatformDataCueValue keeps of a timed metadata item).
++struct MEDIA_EXPORT ParcDataCueValue {
++  ParcDataCueValue();
++  ParcDataCueValue(const ParcDataCueValue&);
++  ParcDataCueValue(ParcDataCueValue&&);
++  ParcDataCueValue& operator=(const ParcDataCueValue&);
++  ParcDataCueValue& operator=(ParcDataCueValue&&);
++  ~ParcDataCueValue();
++  bool operator==(const ParcDataCueValue&) const;
++
++  enum class Kind { kNone, kString, kNumber, kBoolean, kData, kDate };
++  // The value object's "type" (MIMEtype, or an IANA dataType).
++  std::optional<std::string> type;
++  // Its other attributes, lowercase names, by name.
++  std::vector<std::pair<std::string, std::string>> attributes;
++  std::optional<std::string> locale;
++  std::optional<std::string> key;
++  // Its "data": a string, number, boolean or ArrayBuffer; none for a date
++  // (compared by its seconds since 1970) or no value.
++  Kind kind = Kind::kNone;
++  std::string string_value;
++  double number_value = 0;
++  std::vector<uint8_t> data;
++};
++
++// Parc: one change to the metadata track's DataCues (InbandDataTextTrack's
++// addDataCue, updateDataCue and removeDataCue; the cue to update or remove
++// is the open one with an equal value).
++struct MEDIA_EXPORT ParcInbandDataCue {
++  ParcInbandDataCue();
++  ParcInbandDataCue(const ParcInbandDataCue&);
++  ParcInbandDataCue(ParcInbandDataCue&&);
++  ParcInbandDataCue& operator=(const ParcInbandDataCue&);
++  ParcInbandDataCue& operator=(ParcInbandDataCue&&);
++  ~ParcInbandDataCue();
++
++  enum class Type { kAdd, kUpdate, kRemove };
++  Type type = Type::kAdd;
++  // Seconds; the end is +infinity while the cue is open.
++  double start = 0;
++  double end = 0;
++  // DataCue.type; nullopt without one.
++  std::optional<std::string> cue_type;
++  ParcDataCueValue value;
 +};
 +
 +// Parc: TextTrack.mode, for the native HLS player.
@@ -227,7 +289,7 @@
  // Interface for requiring track manager methods on different implementations
  // that either forward them or handle them directly, like WebMediaPlayerImpl
  // and HTMLMediaElement.
-@@ -131,6 +250,23 @@
+@@ -131,6 +301,27 @@
    virtual void AddTrack(const MediaTrack&) = 0;
    virtual void RemoveTrack(const MediaTrack&) = 0;
    virtual void SetTrackState(const MediaTrack&, MediaTrack::State) = 0;
@@ -242,6 +304,10 @@
 +  virtual void ParcAddInbandTextCues(
 +      const std::string& key,
 +      const std::vector<ParcInbandTextCue>& cues) {}
++  // Parc: changes to the metadata track's DataCues, in order.
++  virtual void ParcAddInbandDataCues(
++      const std::string& key,
++      const std::vector<ParcInbandDataCue>& cues) {}
 +  // Parc: the whole list of the native HLS route's audio tracks, in DOM
 +  // order, replacing the previous one (matched by key), with the way back to
 +  // the player for the page's enable changes.
@@ -251,7 +317,7 @@
  };
  
  class MEDIA_EXPORT ForwardingTrackManager : public TrackManager {
-@@ -146,10 +282,38 @@
+@@ -146,10 +337,48 @@
    void RemoveTrack(const MediaTrack&) override;
    void SetTrackState(const MediaTrack&, MediaTrack::State) override;
  
@@ -267,6 +333,13 @@
 +  void ParcAddInbandTextCues(
 +      const std::string& key,
 +      const std::vector<ParcInbandTextCue>& cues) override;
++  void SetParcInbandDataCueCallback(
++      base::RepeatingCallback<void(const std::string&,
++                                   const std::vector<ParcInbandDataCue>&)>
++          add_data_cues);
++  void ParcAddInbandDataCues(
++      const std::string& key,
++      const std::vector<ParcInbandDataCue>& cues) override;
 +  void SetParcInbandAudioCallback(
 +      base::RepeatingCallback<void(const std::vector<ParcInbandAudioTrack>&,
 +                                   ParcInbandAudioTrackEnabledCB)> set_tracks);
@@ -284,6 +357,9 @@
 +  base::RepeatingCallback<void(const std::string&,
 +                               const std::vector<ParcInbandTextCue>&)>
 +      parc_add_cues_;
++  base::RepeatingCallback<void(const std::string&,
++                               const std::vector<ParcInbandDataCue>&)>
++      parc_add_data_cues_;
 +  base::RepeatingCallback<void(const std::vector<ParcInbandAudioTrack>&,
 +                               ParcInbandAudioTrackEnabledCB)>
 +      parc_set_audio_tracks_;
@@ -292,7 +368,7 @@
  // Helper for logging.
 --- a/media/base/media_track.cc
 +++ b/media/base/media_track.cc
-@@ -144,4 +144,71 @@
+@@ -144,4 +144,103 @@
    update_.Run(track, state);
  }
  
@@ -312,6 +388,23 @@
 +    default;
 +ParcInbandTextCue& ParcInbandTextCue::operator=(ParcInbandTextCue&&) = default;
 +ParcInbandTextCue::~ParcInbandTextCue() = default;
++
++ParcDataCueValue::ParcDataCueValue() = default;
++ParcDataCueValue::ParcDataCueValue(const ParcDataCueValue&) = default;
++ParcDataCueValue::ParcDataCueValue(ParcDataCueValue&&) = default;
++ParcDataCueValue& ParcDataCueValue::operator=(const ParcDataCueValue&) =
++    default;
++ParcDataCueValue& ParcDataCueValue::operator=(ParcDataCueValue&&) = default;
++ParcDataCueValue::~ParcDataCueValue() = default;
++bool ParcDataCueValue::operator==(const ParcDataCueValue&) const = default;
++
++ParcInbandDataCue::ParcInbandDataCue() = default;
++ParcInbandDataCue::ParcInbandDataCue(const ParcInbandDataCue&) = default;
++ParcInbandDataCue::ParcInbandDataCue(ParcInbandDataCue&&) = default;
++ParcInbandDataCue& ParcInbandDataCue::operator=(const ParcInbandDataCue&) =
++    default;
++ParcInbandDataCue& ParcInbandDataCue::operator=(ParcInbandDataCue&&) = default;
++ParcInbandDataCue::~ParcInbandDataCue() = default;
 +
 +void ForwardingTrackManager::SetParcInbandTextCallbacks(
 +    base::RepeatingCallback<void(const std::vector<ParcInbandTextTrack>&,
@@ -336,6 +429,21 @@
 +    const std::vector<ParcInbandTextCue>& cues) {
 +  if (parc_add_cues_) {
 +    parc_add_cues_.Run(key, cues);
++  }
++}
++
++void ForwardingTrackManager::SetParcInbandDataCueCallback(
++    base::RepeatingCallback<void(const std::string&,
++                                 const std::vector<ParcInbandDataCue>&)>
++        add_data_cues) {
++  parc_add_data_cues_ = std::move(add_data_cues);
++}
++
++void ForwardingTrackManager::ParcAddInbandDataCues(
++    const std::string& key,
++    const std::vector<ParcInbandDataCue>& cues) {
++  if (parc_add_data_cues_) {
++    parc_add_data_cues_.Run(key, cues);
 +  }
 +}
 +
@@ -511,6 +619,15 @@
    "media/html_video_element.cc",
    "media/html_video_element.h",
    "media/lazy_load_media_observer.cc",
+@@ -564,6 +566,8 @@
+   "track/automatic_track_selection.h",
+   "track/cue_timeline.cc",
+   "track/cue_timeline.h",
++  "track/data_cue.cc",
++  "track/data_cue.h",
+   "track/html_track_element.cc",
+   "track/html_track_element.h",
+   "track/loadable_text_track.cc",
 --- a/third_party/blink/renderer/core/html/track/audio_track.cc
 +++ b/third_party/blink/renderer/core/html/track/audio_track.cc
 @@ -13,11 +13,15 @@
@@ -573,3 +690,38 @@
    ~AudioTrack() override;
    void Trace(Visitor*) const override;
  
+--- a/third_party/blink/renderer/core/html/track/text_track.h
++++ b/third_party/blink/renderer/core/html/track/text_track.h
+@@ -124,6 +124,11 @@
+   void SetHasBeenConfigured(bool flag) { has_been_configured_ = flag; }
+ 
+   virtual bool IsDefault() const { return false; }
++  // Parc: TextTrack.inBandMetadataTrackDispatchType on Safari-identity
++  // documents (WebKit's TextTrack); ParcInbandTextTrack overrides it.
++  virtual String inBandMetadataTrackDispatchType() const {
++    return g_empty_string;
++  }
+ 
+   void Reset();
+ 
+--- a/third_party/blink/renderer/bindings/idl_in_core.gni
++++ b/third_party/blink/renderer/bindings/idl_in_core.gni
+@@ -519,6 +519,7 @@
+   "//third_party/blink/renderer/core/html/time_ranges.idl",
+   "//third_party/blink/renderer/core/html/track/audio_track.idl",
+   "//third_party/blink/renderer/core/html/track/audio_track_list.idl",
++  "//third_party/blink/renderer/core/html/track/data_cue.idl",
+   "//third_party/blink/renderer/core/html/track/html_track_element.idl",
+   "//third_party/blink/renderer/core/html/track/text_track.idl",
+   "//third_party/blink/renderer/core/html/track/text_track_cue.idl",
+--- a/third_party/blink/renderer/bindings/generated_in_core.gni
++++ b/third_party/blink/renderer/bindings/generated_in_core.gni
+@@ -1004,6 +1004,8 @@
+   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_custom_state_set.h",
+   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_container_query_list.cc",
+   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_container_query_list.h",
++  "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_cue.cc",
++  "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_cue.h",
+   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_transfer.cc",
+   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_transfer.h",
+   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_transfer_item.cc",

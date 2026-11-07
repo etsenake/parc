@@ -494,6 +494,18 @@ compiled into the core but not yet called by the GPU service.
   the chapter number as the id, the title as the text), made once, as
   WebKit's `InbandChapterTrackPrivateAVFObjC`. They never feed the legible
   output and a mode change does nothing.
+- Metadata track: WebKit's `InbandMetadataTextTrackPrivateAVF`, kind
+  `metadata`, dispatch type `com.apple.streaming`, made once when the item
+  has an enabled metadata track or the first timed metadata arrives.
+  `AVPlayerItemMetadataOutput` (every identifier, 2 s advance) gives timed
+  metadata such as ID3; `AVPlayerItemMetadataCollector` gives date ranges,
+  placed on the timeline by the item's current date. Each item becomes a
+  data cue (`HlsDataCue`): its value as `SerializedPlatformDataCueValue`
+  keeps it (MIME type, lower-cased extra attributes, locale, key, string,
+  number, boolean, bytes or date), its type names the key space
+  (`org.id3`, `com.apple.quicktime.HLS`, ...). A cue without a duration is
+  open until the next item ends it (an update); a seek removes the open ones
+  and drops metadata until it ends.
 - Cues: one `AVPlayerItemLegibleOutput` (2 s advance, player rendering
   suppressed, source and rules styling) with WebVTT as native samples. WebVTT
   arrives as ISO WebVTT cue boxes (`kWebVtt`, plus the `vttC` header once per

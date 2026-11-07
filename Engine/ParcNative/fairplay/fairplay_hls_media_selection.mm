@@ -27,7 +27,10 @@
 - (AVAssetTrack*)track;
 @end
 
-@interface PCHlsSelectionObserver : NSObject <AVPlayerItemLegibleOutputPushDelegate>
+@interface PCHlsSelectionObserver
+    : NSObject <AVPlayerItemLegibleOutputPushDelegate,
+                AVPlayerItemMetadataOutputPushDelegate,
+                AVPlayerItemMetadataCollectorPushDelegate>
 - (instancetype)initWithImpl:(std::weak_ptr<parc::fairplay::HlsMediaSelection::Impl>)impl
                       poster:(std::shared_ptr<const parc::fairplay::PostTask>)poster;
 - (void)observeItem:(AVPlayerItem*)item;
@@ -332,6 +335,99 @@ int TextTrackSelectionScore(const HlsTrack& track,
     score = track.kind == "subtitles" ? 3 : (!track.is_closed_captions ? 2 : 1);
   }
   return score + TextTrackLanguageSelectionScore(language, languages);
+}
+
+// SerializedPlatformDataCueValue(AVMetadataItem*): what a DataCue's value
+// carries of a timed metadata item.
+HlsDataCueValue DataCueValueFromItem(AVMetadataItem* item) {
+  HlsDataCueValue value;
+  NSDictionary* extras = item.extraAttributes;
+  for (id key in extras) {
+    if (![key isKindOfClass:[NSString class]]) {
+      continue;
+    }
+    NSString* key_string = key;
+    id attribute = extras[key];
+    if (![attribute isKindOfClass:[NSString class]]) {
+      continue;
+    }
+    NSString* string = attribute;
+    if ([key_string isEqualToString:@"MIMEtype"]) {
+      key_string = @"type";
+    } else if ([key_string isEqualToString:@"dataTypeNamespace"] || [key_string isEqualToString:@"pictureType"]) {
+      continue;
+    } else if ([key_string isEqualToString:@"dataType"]) {
+      id name_space = extras[@"dataTypeNamespace"];
+      if (![name_space isKindOfClass:[NSString class]] || ![name_space isEqualToString:@"org.iana.media-type"]) {
+        continue;
+      }
+      key_string = @"type";
+    } else {
+      if (!string.length) {
+        continue;
+      }
+      key_string = key_string.lowercaseString;
+    }
+    if ([key_string isEqualToString:@"type"]) {
+      value.type = ToStdString(string);
+    } else {
+      // HashMap::add: the first value for a key stays.
+      value.attributes.emplace(ToStdString(key_string), ToStdString(string));
+    }
+  }
+  if ([item.key isKindOfClass:[NSString class]]) {
+    value.key = ToStdString((NSString*)item.key);
+  }
+  if (item.locale) {
+    value.locale = ToStdString(item.locale.localeIdentifier);
+  }
+  id item_value = item.value;
+  if ([item_value isKindOfClass:[NSString class]]) {
+    value.kind = HlsDataCueValue::Kind::kString;
+    value.string_value = ToStdString(item_value);
+  } else if ([item_value isKindOfClass:[NSData class]]) {
+    NSData* data = item_value;
+    value.kind = HlsDataCueValue::Kind::kData;
+    const uint8_t* bytes = static_cast<const uint8_t*>(data.bytes);
+    value.data.assign(bytes, bytes + data.length);
+  } else if ([item_value isKindOfClass:[NSDate class]]) {
+    value.kind = HlsDataCueValue::Kind::kDate;
+    value.number_value = [(NSDate*)item_value timeIntervalSince1970];
+  } else if ([item_value isKindOfClass:[NSNumber class]]) {
+    // JSC turns an NSNumber holding a CFBoolean into a boolean.
+    bool boolean = CFGetTypeID((__bridge CFTypeRef)item_value) == CFBooleanGetTypeID();
+    value.kind = boolean ? HlsDataCueValue::Kind::kBoolean : HlsDataCueValue::Kind::kNumber;
+    value.number_value = [(NSNumber*)item_value doubleValue];
+  }
+  return value;
+}
+
+// MediaPlayerPrivateAVFoundationObjC::metadataType: the DataCue's type for
+// an item's key space; null for any other.
+std::optional<std::string> DataCueTypeForKeySpace(NSString* key_space) {
+  if (!key_space) {
+    return std::nullopt;
+  }
+  if ([key_space isEqualToString:AVMetadataKeySpaceQuickTimeUserData]) {
+    return "com.apple.quicktime.udta";
+  }
+  if ([key_space isEqualToString:AVMetadataKeySpaceISOUserData]) {
+    return "org.mp4ra";
+  }
+  if ([key_space isEqualToString:AVMetadataKeySpaceQuickTimeMetadata]) {
+    return "com.apple.quicktime.mdta";
+  }
+  if ([key_space isEqualToString:AVMetadataKeySpaceiTunes]) {
+    return "com.apple.itunes";
+  }
+  if ([key_space isEqualToString:AVMetadataKeySpaceID3]) {
+    return "org.id3";
+  }
+  if ([key_space isEqualToString:AVMetadataKeySpaceHLSDateRange]) {
+    return "com.apple.quicktime.HLS";
+  }
+  // emptyAtom(): an unknown key space gives an empty type.
+  return std::string();
 }
 
 // The common metadata title in one of the user's languages
@@ -874,6 +970,16 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     legible_output_.textStylingResolution = AVPlayerItemLegibleOutputTextStylingResolutionSourceAndRulesOnly;
     [item_ addOutput:legible_output_];
 
+    // createAVPlayerItem: the date range collector and the timed metadata
+    // output (every identifier), delegates on WebKit's main queue there.
+    metadata_collector_ = [[AVPlayerItemMetadataCollector alloc] initWithIdentifiers:nil classifyingLabels:nil];
+    [metadata_collector_ setDelegate:observer_ queue:LegibleQueue()];
+    [item_ addMediaDataCollector:metadata_collector_];
+    metadata_output_ = [[AVPlayerItemMetadataOutput alloc] initWithIdentifiers:nil];
+    [metadata_output_ setDelegate:observer_ queue:LegibleQueue()];
+    metadata_output_.advanceIntervalForDelegateInvocation = kOutputAdvanceInterval;
+    [item_ addOutput:metadata_output_];
+
     [observer_ observeItem:item_];
 
     // hasLoadedMediaSelectionGroups needs this key loaded (WebKit loads it
@@ -912,6 +1018,15 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     [legible_output_ setDelegate:nil queue:nil];
     [item_ removeOutput:legible_output_];
     legible_output_ = nil;
+    // WebKit leaves the collector on the item (removeMediaDataCollector can
+    // crash, rdar://56617504) and only drops it.
+    [metadata_collector_ setDelegate:nil queue:nil];
+    metadata_collector_ = nil;
+    [metadata_output_ setDelegate:nil queue:nil];
+    [item_ removeOutput:metadata_output_];
+    metadata_output_ = nil;
+    metadata_track_.reset();
+    metadata_seeking_ = false;
     // A KVO notification or delegate call already running on another thread
     // when observation stopped still uses the observer: keep it alive for
     // one more hop.
@@ -973,6 +1088,13 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
       return;
     }
     UpdateAudioTracks();
+    // An enabled metadata track makes the metadata text track at once.
+    for (AVPlayerItemTrack* track in cached_tracks_) {
+      if (track.enabled && [track.assetTrack.mediaType isEqualToString:AVMediaTypeMetadata]) {
+        EnsureMetadataTrack();
+        break;
+      }
+    }
     AVMediaSelectionGroup* legible_group = LegibleGroup();
     if (legible_group && cached_tracks_) {
       if ([AVMediaSelectionGroup playableMediaSelectionOptionsFromArray:legible_group.options].count) {
@@ -1008,6 +1130,10 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
   }
 
   void BeginSeeking() {
+    // setCurrentTime: the metadata track's open cues are flushed, and
+    // metadata arriving while seeking is dropped (metadataDidArrive).
+    metadata_seeking_ = true;
+    FlushPartialDataCues();
     if (TextTrack* track = current_text_track_) {
       // Forget partial cue data: the next cue could be outside its range.
       std::vector<HlsCue> cues;
@@ -1018,9 +1144,96 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
   }
 
   void EndSeeking() {
+    metadata_seeking_ = false;
     if (TextTrack* track = current_text_track_) {
       track->seeking = false;
     }
+  }
+
+  // Timed metadata (metadataOutput:didOutputTimedMetadataGroups:), on the
+  // owner sequence: MediaPlayerPrivateAVFoundationObjC::metadataDidArrive.
+  void MetadataDidArrive(NSArray* items, double current_time) {
+    if (!item_ || metadata_seeking_) {
+      return;
+    }
+    EnsureMetadataTrack();
+    MetadataTrack& track = *metadata_track_;
+    std::vector<HlsDataCue> cues;
+    if (!items || [items isKindOfClass:[NSNull class]]) {
+      UpdatePendingDataCueEndTimes(track, current_time, cues);
+      SendDataCues(std::move(cues));
+      return;
+    }
+    // Set the end of every open cue before adding new ones.
+    double earliest = kInfinity;
+    for (AVMetadataItem* item in items) {
+      if (CMTIME_IS_VALID(item.time)) {
+        earliest = std::min(earliest, std::max(CMTimeGetSeconds(item.time), 0.0));
+      }
+    }
+    UpdatePendingDataCueEndTimes(track, earliest, cues);
+    for (AVMetadataItem* item in items) {
+      double start = CMTIME_IS_VALID(item.time) ? std::max(CMTimeGetSeconds(item.time), 0.0) : 0;
+      double end = kInfinity;
+      CMTime duration = item.duration;
+      if (CMTIME_IS_VALID(duration) && CMTimeGetSeconds(duration) > 0.001) {
+        end = start + CMTimeGetSeconds(duration);
+      }
+      HlsDataCue cue;
+      cue.type = HlsDataCue::Type::kAdd;
+      cue.start = start;
+      cue.end = end;
+      cue.cue_type = DataCueTypeForKeySpace(item.keySpace);
+      cue.value = DataCueValueFromItem(item);
+      // InbandMetadataTextTrackPrivateAVF::addDataCue.
+      track.current_cue_start = start;
+      if (std::isinf(end)) {
+        track.incomplete.push_back({cue.value, start});
+      }
+      cues.push_back(std::move(cue));
+    }
+    SendDataCues(std::move(cues));
+  }
+
+  // Date range metadata (metadataCollector:didCollectDateRangeMetadataGroups:):
+  // metadataGroupDidArrive. Each group's items take its start and length,
+  // placed on the timeline by currentDate (from 0 without one).
+  void MetadataGroupDidArrive(NSArray* groups, double current_time) {
+    if (!item_) {
+      return;
+    }
+    for (AVDateRangeMetadataGroup* group in groups) {
+      if (![group isKindOfClass:[AVDateRangeMetadataGroup class]]) {
+        continue;
+      }
+      double group_start_date = group.startDate.timeIntervalSince1970;
+      double group_end_date = group.endDate.timeIntervalSince1970;
+      double group_duration = group_end_date - group_start_date;
+      double group_start = 0;
+      if (double current_date = item_.currentDate.timeIntervalSince1970) {
+        group_start = group_start_date - (current_date - current_time);
+      }
+      NSMutableArray* copies = [NSMutableArray array];
+      for (AVMetadataItem* item in group.items) {
+        AVMutableMetadataItem* copy = [item mutableCopy];
+        if (!CMTIME_IS_VALID(copy.time)) {
+          copy.time = CMTimeMakeWithSeconds(group_start, 1000000);
+        }
+        if (!CMTIME_IS_VALID(copy.duration)) {
+          copy.duration = CMTimeMakeWithSeconds(group_duration, 1000000);
+        }
+        [copies addObject:copy];
+      }
+      MetadataDidArrive(copies, current_time);
+    }
+  }
+
+  double CurrentItemTime() const {
+    if (!item_) {
+      return 0;
+    }
+    CMTime time = item_.currentTime;
+    return CMTIME_IS_NUMERIC(time) ? CMTimeGetSeconds(time) : 0;
   }
 
   std::vector<HlsTrack> Tracks() const { return reported_; }
@@ -1755,6 +1968,9 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     for (auto& track : chapter_tracks_) {
       tracks.push_back(track->info);
     }
+    if (metadata_track_) {
+      tracks.push_back(metadata_track_->info);
+    }
     MarkAutomaticTextTrack(tracks);
     if (tracks == reported_) {
       return;
@@ -1859,6 +2075,84 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     std::vector<Chapter> processed;
     HlsTrack info;
   };
+
+  // InbandMetadataTextTrackPrivateAVF: kind "metadata", dispatch type
+  // "com.apple.streaming", made once (processMetadataTrack) with the next
+  // text track number. Its cues are DataCues.
+  struct MetadataTrack {
+    struct Incomplete {
+      HlsDataCueValue value;
+      double start = 0;
+    };
+    double current_cue_start = 0;
+    std::vector<Incomplete> incomplete;
+    HlsTrack info;
+  };
+
+  void EnsureMetadataTrack() {
+    if (metadata_track_) {
+      return;
+    }
+    metadata_track_ = std::make_unique<MetadataTrack>();
+    uint64_t number = next_text_track_number_++;
+    HlsTrack& info = metadata_track_->info;
+    info.type = HlsTrackType::kText;
+    info.key = "text-" + std::to_string(number);
+    info.id = std::to_string(number);
+    info.kind = "metadata";
+    info.index = 0;
+    info.in_band_metadata_dispatch_type = "com.apple.streaming";
+    ReportTracks();
+  }
+
+  // InbandMetadataTextTrackPrivateAVF::updatePendingCueEndTimes.
+  static void UpdatePendingDataCueEndTimes(MetadataTrack& track, double time, std::vector<HlsDataCue>& cues) {
+    if (time >= track.current_cue_start) {
+      for (const auto& partial : track.incomplete) {
+        HlsDataCue cue;
+        cue.type = HlsDataCue::Type::kUpdate;
+        cue.start = partial.start;
+        cue.end = time;
+        cue.value = partial.value;
+        cues.push_back(std::move(cue));
+      }
+    }
+    track.incomplete.clear();
+    track.current_cue_start = 0;
+  }
+
+  // InbandMetadataTextTrackPrivateAVF::flushPartialCues.
+  void FlushPartialDataCues() {
+    if (!metadata_track_) {
+      return;
+    }
+    std::vector<HlsDataCue> cues;
+    for (const auto& partial : metadata_track_->incomplete) {
+      HlsDataCue cue;
+      cue.type = HlsDataCue::Type::kRemove;
+      cue.start = partial.start;
+      cue.end = kInfinity;
+      cue.value = partial.value;
+      cues.push_back(std::move(cue));
+    }
+    metadata_track_->incomplete.clear();
+    metadata_track_->current_cue_start = 0;
+    SendDataCues(std::move(cues));
+  }
+
+  void SendDataCues(std::vector<HlsDataCue> cues) {
+    if (cues.empty() || !metadata_track_) {
+      return;
+    }
+    std::weak_ptr<Impl> weak = weak_from_this();
+    HlsMediaSelectionClient* client = client_;
+    std::string key = metadata_track_->info.key;
+    (*poster_)([weak, client, key = std::move(key), cues = std::move(cues)] {
+      if (weak.lock()) {
+        client->OnDataCues(key, cues);
+      }
+    });
+  }
 
   // Called by the observer (asset loaded, chapters changed).
  public:
@@ -2031,6 +2325,10 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
   std::vector<std::unique_ptr<AudioTrack>> audio_tracks_;
   std::vector<std::unique_ptr<TextTrack>> text_tracks_;
   std::vector<std::unique_ptr<ChapterTrack>> chapter_tracks_;
+  std::unique_ptr<MetadataTrack> metadata_track_;
+  AVPlayerItemMetadataOutput* metadata_output_ = nil;
+  AVPlayerItemMetadataCollector* metadata_collector_ = nil;
+  bool metadata_seeking_ = false;
   TextTrack* current_text_track_ = nullptr;
   uint64_t next_text_track_number_ = 0;
   uint64_t next_audio_key_ = 0;
@@ -2206,6 +2504,41 @@ void* const kTrackEnabledContext = const_cast<void**>(&kTrackEnabledContext);
   (*_poster)([weak, retained_strings, retained_samples, time] {
     if (auto impl = weak.lock()) {
       impl->ProcessCue(retained_strings, retained_samples, time);
+    }
+  });
+}
+
+- (void)metadataOutput:(AVPlayerItemMetadataOutput*)output
+    didOutputTimedMetadataGroups:(NSArray<AVTimedMetadataGroup*>*)groups
+             fromPlayerItemTrack:(AVPlayerItemTrack*)track {
+  if (!groups || _stopping.load()) {
+    return;
+  }
+  std::weak_ptr<parc::fairplay::HlsMediaSelection::Impl> weak = _impl;
+  NSArray<AVTimedMetadataGroup*>* retained = groups;
+  (*_poster)([weak, retained] {
+    if (auto impl = weak.lock()) {
+      // The element's current time when the task runs, as WebKit queues it.
+      double time = impl->CurrentItemTime();
+      for (AVTimedMetadataGroup* group in retained) {
+        impl->MetadataDidArrive(group.items, time);
+      }
+    }
+  });
+}
+
+- (void)metadataCollector:(AVPlayerItemMetadataCollector*)collector
+    didCollectDateRangeMetadataGroups:(NSArray<AVDateRangeMetadataGroup*>*)groups
+                   indexesOfNewGroups:(NSIndexSet*)newGroups
+              indexesOfModifiedGroups:(NSIndexSet*)modifiedGroups {
+  if (!groups || _stopping.load()) {
+    return;
+  }
+  std::weak_ptr<parc::fairplay::HlsMediaSelection::Impl> weak = _impl;
+  NSArray<AVDateRangeMetadataGroup*>* retained = groups;
+  (*_poster)([weak, retained] {
+    if (auto impl = weak.lock()) {
+      impl->MetadataGroupDidArrive(retained, impl->CurrentItemTime());
     }
   });
 }

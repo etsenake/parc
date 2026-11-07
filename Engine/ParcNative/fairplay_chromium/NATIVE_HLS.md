@@ -654,7 +654,12 @@ element calls it from the main thread on every in-band mode change.
   automatic selection shows it as its default and gives these tracks no
   score of Chrome's own. Chapter tracks (WebKit's
   `InbandChapterTrackPrivateAVFObjC`, one per chapter locale) arrive the
-  same way with kind `chapters` and WebVTT cues. Cues
+  same way with kind `chapters` and WebVTT cues. The metadata track (WebKit's
+  `InbandMetadataTextTrackPrivateAVF`, kind `metadata`) arrives the same way
+  with `inBandMetadataTrackDispatchType` `com.apple.streaming`; its timed
+  and date range metadata come as data cue changes (`OnDataCues`) that the
+  track applies as WebKit's `InbandDataTextTrack` does to Blink `DataCue`s,
+  a Safari-identity-only interface Parc adds (`parc_data_cue.*`). Cues
   become `VTTCue`s as WebKit's `InbandGenericTextTrack` makes them (`kWebVtt`
   parsed like `WebVTTParser::parseCueData`, the header for regions and style
   sheets, generic cues added, updated and removed by `cue_id`, an open cue's
