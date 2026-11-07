@@ -4146,7 +4146,15 @@
  #include "base/numerics/checked_math.h"
  #include "base/task/single_thread_task_runner.h"
  #include "media/base/logging_override_if_enabled.h"
-@@ -73,6 +75,8 @@
+@@ -58,6 +60,7 @@
+ #include "third_party/blink/renderer/core/dom/events/event_queue.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/html/time_ranges.h"
+ #include "third_party/blink/renderer/core/html/track/audio_track.h"
+@@ -73,6 +76,8 @@
  #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
  #include "third_party/blink/renderer/platform/bindings/exception_state.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -4155,7 +4163,7 @@
  #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
  #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
  #include "third_party/blink/renderer/platform/network/mime/content_type.h"
-@@ -195,7 +199,40 @@
+@@ -195,8 +200,41 @@
    return stream_parser_buffer;
  }
  
@@ -4167,7 +4175,7 @@
 +constexpr char kParcPurgedEvent[] = "parcmanagedmediasourcepurged";
 +
  }  // namespace
-+
+ 
 +// Parc: hears memory pressure on the SourceBuffer's own thread (the window's
 +// or the dedicated worker's) while it belongs to a ManagedMediaSource.
 +class SourceBuffer::ParcMemoryPressureListener final
@@ -4193,10 +4201,11 @@
 +  WeakPersistent<SourceBuffer> owner_;
 +  MemoryPressureListenerRegistration registration_;
 +};
- 
++
  SourceBuffer::SourceBuffer(std::unique_ptr<WebSourceBuffer> web_source_buffer,
                             MediaSource* source,
-@@ -248,6 +285,13 @@
+                            EventQueue* async_event_queue)
+@@ -248,6 +286,13 @@
  
    source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
    web_source_buffer_->SetClient(this);
@@ -4210,13 +4219,13 @@
  }
  
  SourceBuffer::~SourceBuffer() {
-@@ -258,6 +302,75 @@
+@@ -258,8 +303,77 @@
    // Promptly clears a raw reference from content/ to an on-heap object
    // so that content/ doesn't access it in a lazy sweeping phase.
    web_source_buffer_.reset();
 +  ParcStopMemoryPressure();
-+}
-+
+ }
+ 
 +// Parc: WebKit purges a ManagedMediaSource's SourceBuffers as memory pressure
 +// rises (MemoryRelease::releaseNoncriticalMemory, then
 +// HTMLMediaElement::purgeBufferedDataIfPossible and MediaSource::
@@ -4283,10 +4292,12 @@
 +void SourceBuffer::ParcStopMemoryPressure() {
 +  parc_memory_pressure_listener_.reset();
 +  parc_purge_pending_ = false;
- }
- 
++}
++
  void SourceBuffer::setMode(const V8AppendMode& new_mode,
-@@ -1173,6 +1286,7 @@
+                            ExceptionState& exception_state) {
+   DVLOG(3) << __func__ << " this=" << this << " new_mode=" << new_mode.AsCStr();
+@@ -1173,6 +1287,7 @@
    web_source_buffer_.reset();
    source_ = nullptr;
    async_event_queue_ = nullptr;
@@ -4294,7 +4305,7 @@
  }
  
  double SourceBuffer::HighestPresentationTimestamp() {
-@@ -1814,6 +1928,7 @@
+@@ -1814,6 +1929,7 @@
    pending_remove_end_ = -1;
  
    updating_ = false;
@@ -4302,7 +4313,22 @@
  }
  
  ExecutionContext* SourceBuffer::GetExecutionContext() const {
-@@ -2130,6 +2245,9 @@
+@@ -1891,8 +2007,13 @@
+   source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
+ 
+   // Nothing to do if this SourceBuffer does not yet have frames to evict.
+-  if (!first_initialization_segment_received_)
++  // Parc: except that WebKit's budget, as for audio alone until an init
++  // segment brings video, holds from the first append
++  // (SourceBuffer::maximumBufferSize; ChunkDemuxer::ParcSetSafariEviction).
++  if (!first_initialization_segment_received_ &&
++      !IsParcSafariIdentityUserAgent(GetExecutionContext()->UserAgent())) {
+     return true;
++  }
+ 
+   bool result = web_source_buffer_->EvictCodedFrames(media_time, new_data_size);
+   if (!result) {
+@@ -2130,6 +2251,9 @@
        // 5. Queue a task to fire a simple event named updateend at this
        //    SourceBuffer object.
        ScheduleEvent(event_type_names::kUpdateend);
@@ -4312,7 +4338,7 @@
        break;
    }
  
-@@ -2187,6 +2305,9 @@
+@@ -2187,6 +2311,9 @@
    // 12. Queue a task to fire a simple event named updateend at this
    //     SourceBuffer object.
    ScheduleEvent(event_type_names::kUpdateend);
