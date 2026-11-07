@@ -2,6 +2,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #include <dlfcn.h>
+#include <objc/message.h>
 
 #include <algorithm>
 #include <deque>
@@ -1956,11 +1957,50 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
               break;
           }
         }
-      } else if (output_obscured_) {
-        status = KeyStatus::kOutputRestricted;
+      } else if (std::optional<KeyStatus> protection = RequestProtectionStatus(av_request)) {
+        status = *protection;
       }
     }
     return status;
+  }
+
+  // Before macOS 14.4, as WebKit's protectionStatusForRequest without
+  // AVContentKey's status: the request's own externalContentProtectionStatus
+  // where AVFoundation has it, else, once the request has a response,
+  // -willOutputBeObscuredDueToInsufficientExternalProtectionForDisplays: for
+  // no display in particular (both SPI, asked only when present), else the
+  // players' obscured output.
+  std::optional<KeyStatus> RequestProtectionStatus(AVContentKeyRequest* av_request) const {
+    SEL status_selector = NSSelectorFromString(@"externalContentProtectionStatus");
+    if ([av_request respondsToSelector:status_selector]) {
+      const NSInteger protection =
+          reinterpret_cast<NSInteger (*)(id, SEL)>(objc_msgSend)(av_request, status_selector);
+      switch (protection) {
+        case 0:  // AVExternalContentProtectionStatusPending
+          return KeyStatus::kStatusPending;
+        case 1:  // AVExternalContentProtectionStatusSufficient
+          return KeyStatus::kUsable;
+        case 2:  // AVExternalContentProtectionStatusInsufficient
+          return KeyStatus::kOutputRestricted;
+        default:
+          return std::nullopt;
+      }
+    }
+    SEL obscured_selector =
+        NSSelectorFromString(@"willOutputBeObscuredDueToInsufficientExternalProtectionForDisplays:");
+    if ([av_request respondsToSelector:obscured_selector]) {
+      if (av_request.status != AVContentKeyRequestStatusReceivedResponse &&
+          av_request.status != AVContentKeyRequestStatusRenewed) {
+        return std::nullopt;
+      }
+      const BOOL obscured = reinterpret_cast<BOOL (*)(id, SEL, NSArray*)>(objc_msgSend)(
+          av_request, obscured_selector, @[]);
+      return obscured ? KeyStatus::kOutputRestricted : KeyStatus::kUsable;
+    }
+    if (output_obscured_) {
+      return KeyStatus::kOutputRestricted;
+    }
+    return std::nullopt;
   }
 
   // |always|: a successful update() reports the statuses even when none
@@ -2268,6 +2308,13 @@ void SetAssetOutputObscured(FairPlayCdm::Impl* cdm, AssetKeyClient* client, bool
 - (void)contentKeySession:(AVContentKeySession*)session
     externalProtectionStatusDidChangeForContentKey:(AVContentKey*)contentKey
     API_AVAILABLE(macos(14.4)) {
+  [self post:[](FairPlayCdm::Impl& impl) { impl.OnProtectionStatusChanged(); }];
+}
+
+// The same change for a request, which AVFoundation reports before macOS 14.4
+// (SPI; WebKit's delegate implements it alongside).
+- (void)contentKeySession:(AVContentKeySession*)session
+    externalProtectionStatusDidChangeForContentKeyRequest:(AVContentKeyRequest*)keyRequest {
   [self post:[](FairPlayCdm::Impl& impl) { impl.OnProtectionStatusChanged(); }];
 }
 
