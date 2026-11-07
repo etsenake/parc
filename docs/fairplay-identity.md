@@ -45,8 +45,9 @@ On a page that presents Safari's identity:
   names no init data type, as that CDM does. Its capabilities read
   `contentType` as WebKit does: `video/mp4` or `audio/mp4` without codecs is
   supported, a type may also list the other kind's FairPlay codecs, and an
-  unparsable type skips only that capability. The HLS types join once
-  Parc's native HLS route is on.
+  unparsable type skips only that capability. The HLS types
+  (`application/vnd.apple.mpegurl`, `application/x-mpegurl`) are taken as
+  MP4, since Parc's native HLS route plays them.
 - Videos have Safari's presentation and fullscreen API
   (`webkitSupportsPresentationMode`, `webkitSetPresentationMode`,
   `webkitPresentationMode`, `webkitpresentationmodechanged`,
@@ -389,14 +390,10 @@ has it in windows only. The rows and what is still open are in
   `MediaSource.isTypeSupported`, taken before any page script). `createSession`
   takes `keyrelease` only in lower case, as WebKit's `supportsMIMEType`.
 - `com.apple.fps` and `com.apple.fps.1_0` belong to WebKit's AVFoundation
-  player, which plays HLS through `<video src>` with skd key requests. They
-  answer false, and constructing `WebKitMediaKeys` with them throws
-  `NotSupportedError`, until Parc's native HLS route
-  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) is
-  on: the installer turns the script's `/*PARC_NATIVE_HLS*/false` token into
-  true when `parc::fairplay::kNativeHlsEnabled` is (it includes the header-only
-  `fairplay_key_system.h` without a GN dep, which `gn check` would flag; Parc's
-  build doesn't run it). Then they follow WebKit's
+  player, which plays HLS through `<video src>` with skd key requests, and
+  Parc's native HLS route
+  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md))
+  serves them. They follow WebKit's
   `CDMSessionAVFoundationObjC`: types by what AVFoundation decodes, sessions
   bound to the attached player's held key requests, the SPC as the first
   message, `webkitkeyadded` after every update. Clear key
@@ -458,28 +455,28 @@ has it in windows only. The rows and what is still open are in
 What the other services' current scripts do with it (fetched without signing
 in, November 6, 2026):
 
-- **Apple TV+** keeps its path. Its hls.js never touches `WebKitMediaKeys`
-  and picks its key system from `requestMediaKeySystemAccess`. MusicKit
-  (`mediakit~*.js`) probes only `isTypeSupported("com.apple.fps.1_0", …)`, for
-  `hasWebKitMediaKeysSupport` and in the media extension of its encrypted
-  audio player and the native Safari video player behind a feature flag. A yes
-  there would switch it to skd EME or `new WebKitMediaKeys("com.apple.fps")`.
-  That probe answers false, so it stays on standard EME.
+- **Apple TV+** video keeps its path. Its hls.js never touches
+  `WebKitMediaKeys` and picks its key system from
+  `requestMediaKeySystemAccess`. MusicKit (`mediakit~*.js`) probes only
+  `isTypeSupported("com.apple.fps.1_0", …)`, for `hasWebKitMediaKeysSupport`
+  and in the media extension of its encrypted audio player and the native
+  Safari video player behind a feature flag. That probe answers true, as in
+  Safari, since native HLS serves `1_0`, so those take Safari's skd EME or
+  `new WebKitMediaKeys("com.apple.fps")` path.
 - **Disney+** keeps its path. Its web player detects DRM with
   `requestMediaKeySystemAccess` over Widevine, PlayReady, `com.apple.fps.2_0`
   and ClearKey. Its native media client constructs
   `new WebKitMediaKeys("com.apple.fps.1_0")` inside a try, but the server's
-  playback schema chooses that client, not this object. The throw ends the way
-  the `ReferenceError` did before.
-- **TELUS TV+** changes path. On a Safari user agent its app calls Shaka's
-  `PatchedMediaKeysApple.install()`, which only acts when `WebKitMediaKeys`
-  exists. It then replaces `requestMediaKeySystemAccess`, `MediaKeys` and
-  `HTMLMediaElement.setMediaKeys` with legacy WebKit EME, and TELUS's
-  FairPlay key system, `com.apple.fps.1_0`, is refused there. Its Safari path
-  (native HLS with skd FairPlay) can't play in Parc with or without the
-  object, because Parc has no native HLS player. If TELUS is learned
-  as a Safari site, View > Use Chrome Identity for This Site puts it back on
-  Widevine.
+  playback schema chooses that client, not this object. `1_0` constructs, as
+  in Safari, since native HLS serves it, so that client gets its keys when
+  the server picks it.
+- **TELUS TV+** takes its Safari path. On a Safari user agent its app calls
+  Shaka's `PatchedMediaKeysApple.install()`, which only acts when
+  `WebKitMediaKeys` exists. It then replaces `requestMediaKeySystemAccess`,
+  `MediaKeys` and `HTMLMediaElement.setMediaKeys` with legacy WebKit EME,
+  where TELUS's FairPlay key system, `com.apple.fps.1_0`, is served by the
+  native HLS route: the HLS URL plays through AVPlayer, and its skd key
+  requests reach the page as `webkitneedkey`.
 
 `scripts/test-fairplay-identity.sh` runs the script
 (`tests/FairPlayIdentity/webkit_media_keys.mjs`, with each service's check
@@ -580,6 +577,16 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 
 ## Known limits
 
+- Native HLS (`<video src="….m3u8">` through AVPlayer,
+  [NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) is on
+  for Safari-identity pages but has not been compiled or run in an engine
+  yet. The GPU-sandbox probe played clear HLS with the existing rules;
+  FairPlay HLS inside the sandbox is unchecked. It depends on WebKit's
+  AVFoundation SPI for client URL loading: on a macOS without it the element
+  reports an unsupported source rather than letting AVFoundation fetch. The
+  sandbox denies the caption-preferences service (`mediaaccessibilityd`), so
+  whether caption styling follows the system settings is unchecked. AirPlay
+  is cut, as for the MSE route.
 - A Safari site embedded by a page on another site keeps Chrome's identity
   (see the subframe rule above).
 - The lists are a preference, not site data: clearing a site's data leaves
@@ -613,9 +620,7 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   shared or service workers don't get it (Safari offers it to windows and
   dedicated workers). `WebKitMediaKeys` is a script too, visible the same
   way, and it overrides `addEventListener` and the `mediaKeys` getter on
-  `HTMLMediaElement.prototype`. Its legacy HLS key systems wait for native
-  HLS (TELUS TV+'s Shaka setup and Disney+'s native client use
-  `com.apple.fps.1_0`). `getStatusForPolicy` is removed by a main-world
+  `HTMLMediaElement.prototype`. `getStatusForPolicy` is removed by a main-world
   script too, so isolated worlds (extensions) still see it. The video
   presentation and fullscreen API is a script as well and overrides
   `addEventListener` on `HTMLVideoElement.prototype`. Blink hands it private
@@ -668,3 +673,12 @@ while Parc is quit. On a fresh build, signed in to each service:
 6. **Private windows.** A private window plays Netflix as Safari right away
    (inherited). Learning a new site there doesn't change the file, and the
    site is forgotten after the last private window closes.
+7. **Native HLS.** On telustvplus.com (learned as Safari), play a live
+   channel: the player gets an HLS URL, `chrome://media-internals` shows the
+   renderer `NativeHlsRenderer` (Safari's native HLS route, not
+   `ManifestDemuxer`), each `skd://` key request raises `webkitneedkey` and
+   gets a license, and video shows in the element's box, follows scrolling,
+   PiP and fullscreen, with `seekable` covering the DVR window. Pause, seek
+   back, return to live (`currentTime = Infinity`), switch the audio track.
+   If it fails, check the GPU process's sandbox denials first, as for the
+   MSE route.

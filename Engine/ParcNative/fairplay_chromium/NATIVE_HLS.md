@@ -1,6 +1,7 @@
 # Native HLS (Safari's second FairPlay route)
 
-Status: design; pieces landing. Owners: `fp-native-hls` (the GPU core player,
+Status: on main and on for Safari-identity pages; not yet built or run in
+an engine. Owners: `fp-native-hls` (the GPU core player,
 `Engine/ParcNative/fairplay/fairplay_hls_player.*`), `fp-hls-render` (the
 render-process route: Blink, `DemuxerManager`, `NativeHlsDemuxer`, the
 `NativeHlsRenderer` facade, pipeline hooks, element state), `fp-hls-mojo`
@@ -19,18 +20,15 @@ TELUS TV+ (Shaka 4.15.5) hands the element an HLS URL with
 `EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://…"`; Chromium's built-in HLS player
 takes it and fails fetching `skd://` as a URL.
 
-## Switch
+## On for Safari-identity pages
 
-Until every piece below is on main, the route is off: `DemuxerManager` keeps
-choosing Chromium's `ManifestDemuxer`, exactly as today. One build-time
-constant, `parc::fairplay::kNativeHlsEnabled` (`fairplay_key_system.h`,
-false), gates it; the last piece flips it to true. It is never a runtime,
-command-line or Finch switch (Josh's rule for FairPlay). Every piece lands
-compiled but unreachable. The same constant makes the Safari-identity script
-installer (`fairplay-identity-blink.patch`) turn `/*PARC_NATIVE_HLS*/false` into
-`true` in `Engine/ParcRenderer/parc_webkit_media_keys.h`, which then offers
-WebKit's legacy AVFoundation-player key systems (`com.apple.fps`,
-`com.apple.fps.1_0`, `org.w3c.clearkey`) on `WebKitMediaKeys`.
+The route has no switch: every Safari-identity page plays HLS through it, and
+every other page keeps Chromium's `ManifestDemuxer` as before. Its pieces
+landed separately behind a build-time constant, which was removed once they
+were all on main. The Safari-identity script installer always offers WebKit's
+legacy AVFoundation-player key systems (`com.apple.fps`, `com.apple.fps.1_0`,
+`org.w3c.clearkey`) on `WebKitMediaKeys`
+(`Engine/ParcRenderer/parc_webkit_media_keys.h`).
 
 ## Process: the GPU process
 
@@ -75,8 +73,8 @@ DevTools attribution right.
   rest of fairplay-identity); `WebMediaPlayerImpl` passes it on as
   `DemuxerManager::Client::PresentsParcSafariIdentity()`.
 - `DemuxerManager::CreateDemuxer` takes its HLS branch as today (path ends in
-  `.m3u8`, or `DEMUXER_ERROR_DETECTED_HLS` from FFmpeg's sniffing). With the
-  switch on and Safari's identity, it asks its client
+  `.m3u8`, or `DEMUXER_ERROR_DETECTED_HLS` from FFmpeg's sniffing). With
+  Safari's identity, it asks its client
   (`DemuxerManager::Client::CreateParcNativeHlsDemuxer`, default null) and
   uses that demuxer instead of `ManifestDemuxer`, with no data source.
   `canPlayType` keeps answering "maybe". The request is a
@@ -282,9 +280,8 @@ Routing, as the FairPlay renderer's and CDM's:
 
 - Render process: `content::MediaInterfaceFactory::CreateFairPlayHlsPlayer`
   hops to its thread and always sends a null lifetime.
-- Browser: `MediaInterfaceProxy::CreateFairPlayHlsPlayer` drops the request
-  unless `parc::fairplay::kNativeHlsEnabled` is true, then forwards it to the frame's
-  GPU `InterfaceFactory` (the one that created its FairPlay CDMs) with its own
+- Browser: `MediaInterfaceProxy::CreateFairPlayHlsPlayer` forwards it to the
+  frame's GPU `InterfaceFactory` (the one that created its FairPlay CDMs) with its own
   `FairPlayHlsPlayerLifetime`, a self-owned receiver holding the frame's
   `AudibilityBypassTracker` grant until the GPU player closes it: AVPlayer's
   audio bypasses the audio service like the MSE renderer's.
@@ -484,7 +481,7 @@ What the key loader does (its header and the [core README](../fairplay/README.md
 
 WebKit's player also answers `clearkey://` key requests, for the legacy
 `org.w3c.clearkey` key system (`CDMSessionClearKey`, in
-`parc_webkit_media_keys.h` behind the same switch). Safari raises no
+`parc_webkit_media_keys.h`). Safari raises no
 `encrypted` event for them, only `webkitneedkey`:
 
 1. The core reports the request (`HlsPlayerClient::OnKeyRequest(uri)`, scheme
@@ -740,7 +737,7 @@ through `DemuxerManager` on the main thread, as the built-in HLS player's do.
 
 ## Pieces, in landing order
 
-1. This design. 2. Routing, switch off. 3. GPU player with clear HLS and
-network through Chromium (harness first). 4. Display (`fp-hls-display`).
-5. skd keys and modern EME (`fp-hls-keys`). 6. Live/DVR, tracks, frame counts.
-7. Switch on, docs (`docs/fairplay-identity.md` known limits, READMEs).
+1. This design. 2. Routing. 3. GPU player with clear HLS and network through
+Chromium. 4. Display. 5. skd keys and modern EME. 6. Live/DVR, tracks, frame
+counts, legacy EME. 7. The route turned on for Safari-identity pages, with
+no switch left.

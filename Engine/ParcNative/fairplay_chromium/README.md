@@ -31,11 +31,10 @@ Landed on main in increments, each building on its own:
 5. Tab mute and the tab's audio indicator.
 
 Safari's second route, native HLS (`<video src="….m3u8">` through `AVPlayer`
-with `skd` keys), is designed in [NATIVE_HLS.md](NATIVE_HLS.md) and lands in
-pieces behind a disabled switch. Its engine-free player is the core's
-`FairPlayHlsPlayer` ([core README](../fairplay/README.md#native-hls-player)),
-compiled into the core source set (overlay 381) and unused until the GPU
-service wires it in.
+with `skd` keys), plays HLS on Safari-identity pages; [NATIVE_HLS.md](NATIVE_HLS.md)
+describes it. Its engine-free player is the core's `FairPlayHlsPlayer`
+([core README](../fairplay/README.md#native-hls-player)), which the GPU
+service (`fairplay_hls_player_service.{h,mm}`) runs.
 
 ## What is where
 

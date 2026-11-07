@@ -16,11 +16,6 @@ inline constexpr char kFairPlayKeySystem[] = "com.apple.fps";
 // Display name of the CDM in chrome://media-internals and CdmInfo.
 inline constexpr char kFairPlayCdmDisplayName[] = "Apple FairPlay Streaming";
 
-// Safari's native HLS route (fairplay_chromium/NATIVE_HLS.md): false until
-// every piece of it is on main, when the last piece flips it. A build-time
-// constant, never a runtime switch.
-inline constexpr bool kNativeHlsEnabled = false;
-
 // Same rule as FairPlayCdm::IsKeySystemSupported in the core and WebKit's
 // CDMFactoryFairPlayStreaming::supportsKeySystem: "com.apple.fps" or
 // "com.apple.fps." followed by a non-empty version. Case-sensitive.

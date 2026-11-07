@@ -351,9 +351,9 @@ for what the proof established.
 ## Native HLS player
 
 `FairPlayHlsPlayer` plays an HLS URL through `AVPlayer`, as Safari does, for
-pages that hand the element a playlist instead of using MSE. It is not wired
-into Chromium yet ([NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md) has the
-plan and the switch that keeps it off).
+pages that hand the element a playlist instead of using MSE. The GPU
+service runs it for Safari-identity pages
+([NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md)).
 
 - AVFoundation never fetches by itself: the asset is created with
   `AVURLAssetUseClientURLLoadingExclusively` and its resource loader's

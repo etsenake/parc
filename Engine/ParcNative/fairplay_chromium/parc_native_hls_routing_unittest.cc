@@ -1,9 +1,8 @@
 // Installed by the reviewed overlay at
 // //media/filters/parc_native_hls_routing_unittest.cc (media_unittests, macOS).
 // Safari's native HLS route (NATIVE_HLS.md): DemuxerManager's HLS branch asks
-// its client for the route's demuxer only with the route on
-// (parc::fairplay::kNativeHlsEnabled, which the fixture overrides) and
-// Safari's identity presented, and keeps Chromium's ManifestDemuxer otherwise.
+// its client for the route's demuxer when Safari's identity is presented, and
+// keeps Chromium's ManifestDemuxer otherwise.
 
 #include <memory>
 #include <optional>
@@ -72,17 +71,14 @@ class FakeClient : public DemuxerManager::Client {
 
 }  // namespace
 
-// A friend of DemuxerManager, so it can turn the route on.
 class ParcNativeHlsRoutingTest : public testing::Test {
  protected:
-  // Runs the HLS branch for `kPlaylist` with the route `on` and returns the
-  // demuxer it chose.
-  Demuxer* CreateDemuxer(FakeClient& client, bool on) {
+  // Runs the HLS branch for `kPlaylist` and returns the demuxer it chose.
+  Demuxer* CreateDemuxer(FakeClient& client) {
     manager_ = std::make_unique<DemuxerManager>(
         &client, url::Origin::Create(GURL(kPlaylist)),
         task_environment_.GetMainThreadTaskRunner(), &media_log_,
         /*demuxer_override=*/nullptr);
-    manager_->parc_native_hls_enabled_ = on;
     manager_->SetLoadedUrl(GURL(kPlaylist));
     Demuxer* chosen = nullptr;
     PipelineStatus status = manager_->CreateDemuxer(
@@ -114,22 +110,11 @@ class ParcNativeHlsRoutingTest : public testing::Test {
 
 namespace {
 
-TEST_F(ParcNativeHlsRoutingTest, OffKeepsManifestDemuxer) {
-  FakeClient client(task_environment_.GetMainThreadTaskRunner());
-  client.safari_identity = true;
-  client.native_demuxer = std::make_unique<testing::NiceMock<MockDemuxer>>();
-
-  Demuxer* chosen = CreateDemuxer(client, /*on=*/false);
-  ASSERT_TRUE(chosen);
-  EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);
-  EXPECT_FALSE(client.asked);
-}
-
 TEST_F(ParcNativeHlsRoutingTest, ChromeIdentityKeepsManifestDemuxer) {
   FakeClient client(task_environment_.GetMainThreadTaskRunner());
   client.native_demuxer = std::make_unique<testing::NiceMock<MockDemuxer>>();
 
-  Demuxer* chosen = CreateDemuxer(client, /*on=*/true);
+  Demuxer* chosen = CreateDemuxer(client);
   ASSERT_TRUE(chosen);
   EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);
   EXPECT_FALSE(client.asked);
@@ -142,7 +127,7 @@ TEST_F(ParcNativeHlsRoutingTest, SafariIdentityTakesNativeDemuxer) {
   Demuxer* native_ptr = native.get();
   client.native_demuxer = std::move(native);
 
-  EXPECT_EQ(CreateDemuxer(client, /*on=*/true), native_ptr);
+  EXPECT_EQ(CreateDemuxer(client), native_ptr);
   ASSERT_TRUE(client.asked);
   ASSERT_TRUE(client.last_params);
   EXPECT_EQ(client.last_params->url, GURL(kPlaylist));
@@ -160,7 +145,7 @@ TEST_F(ParcNativeHlsRoutingTest, NoNativeDemuxerFallsBackToManifestDemuxer) {
   FakeClient client(task_environment_.GetMainThreadTaskRunner());
   client.safari_identity = true;
 
-  Demuxer* chosen = CreateDemuxer(client, /*on=*/true);
+  Demuxer* chosen = CreateDemuxer(client);
   ASSERT_TRUE(chosen);
   EXPECT_TRUE(client.asked);
   EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);

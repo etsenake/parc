@@ -77,7 +77,7 @@
  #include "third_party/blink/renderer/core/script/modulator.h"
  #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
  #include "third_party/blink/renderer/platform/bindings/extensions_registry.h"
-@@ -72,12 +91,16 @@
+@@ -72,12 +91,15 @@
  #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
  #include "third_party/blink/renderer/platform/bindings/v8_set_return_value.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -90,11 +90,10 @@
  #include "third_party/blink/renderer/platform/weborigin/reporting_disposition.h"
  #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 +#include "third_party/blink/renderer/platform/wtf/functional.h"
-+#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
  #include "v8/include/v8.h"
  
  namespace blink {
-@@ -240,6 +263,177 @@
+@@ -240,6 +262,171 @@
    lifecycle_ = next_status;
  }
  
@@ -219,9 +218,7 @@
 +// without getStatusForPolicy (parc_safari_media_keys.h) and its video
 +// presentation API (parc_webkit_presentation.h), before any script of the
 +// page runs, unless the document can't run scripts. Errors from them are
-+// reported unmuted, like the page's. The legacy EME offers WebKit's
-+// AVFoundation-player key systems only once native HLS is built in
-+// (parc::fairplay::kNativeHlsEnabled). The legacy EME script's value is its
++// reported unmuted, like the page's. The legacy EME script's value is its
 +// webkitneedkey hook, which only Blink reaches (parc_webkit_need_key.h).
 +void InstallParcSafariScripts(ScriptState* script_state,
 +                              LocalDOMWindow* window) {
@@ -230,10 +227,6 @@
 +         {kParcManagedMediaSourceScript, kParcWebKitMediaKeysScript,
 +          kParcSafariMediaKeysScript, kParcWebKitPresentationScript}) {
 +      String script(source);
-+      if (parc::fairplay::kNativeHlsEnabled &&
-+          source == kParcWebKitMediaKeysScript) {
-+        script.Replace("/*PARC_NATIVE_HLS*/false", "true");
-+      }
 +      v8::HandleScope handle_scope(script_state->GetIsolate());
 +      ScriptEvaluationResult result =
 +          ClassicScript::CreateUnspecifiedScript(
@@ -272,7 +265,7 @@
  void LocalWindowProxy::Initialize() {
    TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
                 GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -299,6 +493,11 @@
+@@ -299,6 +486,11 @@
      SetSecurityToken(origin.get());
    }
  
@@ -284,7 +277,7 @@
    {
      TRACE_EVENT2("v8", "ContextCreatedNotification", "IsMainFrame",
                   GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +508,12 @@
+@@ -309,6 +501,12 @@
    }
  
    InstallConditionalFeatures();
@@ -297,7 +290,7 @@
  
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +757,26 @@
+@@ -552,6 +750,26 @@
      return;
    }
  
@@ -1842,7 +1835,7 @@
  #include "services/metrics/public/cpp/ukm_builders.h"
  #include "services/metrics/public/cpp/ukm_recorder.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-@@ -13,11 +16,14 @@
+@@ -13,10 +16,12 @@
  #include "third_party/blink/renderer/core/dom/document.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -1853,11 +1846,9 @@
  #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
 +#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
  #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
-+#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
  
  namespace blink {
- 
-@@ -74,6 +80,103 @@
+@@ -74,6 +79,98 @@
    return result;
  }
  
@@ -1893,8 +1884,7 @@
 +//   "codecs", skips only this capability (Chromium would refuse the whole
 +//   configuration for the first).
 +// - The HLS types (application/vnd.apple.mpegurl, application/x-mpegurl) go
-+//   in either list as MP4, once Parc's native HLS route plays them
-+//   (parc::fairplay::kNativeHlsEnabled).
++//   in either list as MP4: Parc's native HLS route plays them.
 +// - Without codecs, video/mp4 (video) and audio/mp4 (audio) are supported:
 +//   FairPlay plays a codec of each. Chromium requires codecs.
 +// - The codecs may include those of the other media type that FairPlay
@@ -1925,10 +1915,6 @@
 +  String container = type.MimeType();
 +  if (EqualIgnoringAsciiCase(container, "application/vnd.apple.mpegurl") ||
 +      EqualIgnoringAsciiCase(container, "application/x-mpegurl")) {
-+    if (!parc::fairplay::kNativeHlsEnabled) {
-+      skip();
-+      return;
-+    }
 +    container = video ? "video/mp4" : "audio/mp4";
 +  }
 +  const char* const own_codec = video ? "avc1.42E01E" : "mp4a.40.2";
@@ -1961,7 +1947,7 @@
  static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
      const Vector<String>& session_types) {
    std::vector<WebEncryptedMediaSessionType> result(session_types.size());
-@@ -96,21 +199,88 @@
+@@ -96,20 +193,87 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -2015,7 +2001,7 @@
      DCHECK(config->hasVideoCapabilities());
      web_config.video_capabilities =
          ConvertCapabilities(config->videoCapabilities());
- 
++
 +    if (parc_safari_fairplay && !is_from_media_capabilities) {
 +      for (WebMediaKeySystemMediaCapability& capability :
 +           web_config.audio_capabilities) {
@@ -2046,11 +2032,10 @@
 +        }
 +      }
 +    }
-+
+ 
      DCHECK(config->hasDistinctiveIdentifier());
      web_config.distinctive_identifier =
-         EncryptedMediaUtils::ConvertToMediaKeysRequirement(
-@@ -123,6 +293,17 @@
+@@ -123,6 +287,17 @@
  
      if (config->hasSessionTypes()) {
        web_config.session_types = ConvertSessionTypes(config->sessionTypes());
@@ -2068,7 +2053,7 @@
      } else {
        // From the spec
        // (http://w3c.github.io/encrypted-media/#idl-def-mediakeysystemconfiguration):
-@@ -137,6 +318,9 @@
+@@ -137,6 +312,9 @@
  
      // If |label| is not present, it will be a null string.
      web_config.label = config->label();

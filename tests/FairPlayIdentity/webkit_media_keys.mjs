@@ -245,17 +245,18 @@ const thrown = (fn) => {
   check(run(world, '(() => { let a; return !!(null != (a = window.WebKitMediaKeys) && a.isTypeSupported("com.apple.fps.2_0")); })()') === true,
         "Netflix's capability observable passes");
 
-  // Apple TV+'s MusicKit (mediakit~*.js), exactly: it probes only 1_0 and
-  // must keep choosing standard EME.
+  // Apple TV+'s MusicKit (mediakit~*.js), exactly: it probes only 1_0, and
+  // gets Safari's answer now that native HLS plays it.
   check(run(world, `(() => { const s = 'video/mp4; codecs="avc1.42E01E"', n = [];
       typeof window.WebKitMediaKeys?.isTypeSupported == "function" &&
           window.WebKitMediaKeys.isTypeSupported("com.apple.fps.1_0", s) === true && n.push("fairplay_legacy");
-      return n.length; })()`) === 0, 'Apple TV+ hasWebKitMediaKeysSupport stays false');
-  check(run(world, 'window.WebKitMediaKeys?.isTypeSupported(`com.apple.fps.1_0`, "audio/mp4")') === false,
-        "Apple TV+'s media extension stays on standard EME");
+      return n.length; })()`) === 1, "Apple TV+ hasWebKitMediaKeysSupport is true, as in Safari");
+  check(run(world, 'window.WebKitMediaKeys?.isTypeSupported(`com.apple.fps.1_0`, "audio/mp4")') === true,
+        "Apple TV+'s media extension sees Safari's 1_0 answer");
 }
 
-// ---- Key systems: WebKit's legacy Media Source CDM only.
+// ---- Key systems: WebKit's legacy Media Source CDM's (the AVFoundation
+// player's com.apple.fps, 1_0 and org.w3c.clearkey are checked below).
 {
   const world = makeWorld();
   run(world, script);
@@ -264,9 +265,9 @@ const thrown = (fn) => {
                            'com.apple.fps.3_0,1', 'COM.APPLE.FPS.3_0']) {
     check(supports(keySystem) === true, `${keySystem} is supported`);
   }
-  for (const keySystem of ['com.apple.fps', 'com.apple.fps.1_0', 'com.apple.fps.4_0',
+  for (const keySystem of ['com.apple.fps.4_0',
                            'com.apple.fps.2_', 'com.apple.fps.2_0,', 'com.apple.fps.2_0 ',
-                           'com.widevine.alpha', 'org.w3c.clearkey', 'org.w3.clearkey',
+                           'com.widevine.alpha', 'org.w3.clearkey',
                            'com.microsoft.playready', '', 'undefined']) {
     check(supports(keySystem) === false, `${JSON.stringify(keySystem)} is not supported`);
   }
@@ -311,7 +312,7 @@ const thrown = (fn) => {
     'mp4',
   ];
   for (const type of no) check(supports(type) === false, `${type} is not supported`);
-  check(world.WebKitMediaKeys.isTypeSupported('com.apple.fps.1_0', 'video/mp4') === false,
+  check(world.WebKitMediaKeys.isTypeSupported('com.apple.fps.4_0', 'video/mp4') === false,
         'a type never makes an unsupported key system supported');
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
   check(thrown(() => keys.createSession('KeyRelease', new Uint8Array([1])))?.name === 'NotSupportedError' &&
@@ -360,8 +361,7 @@ const thrown = (fn) => {
     check(construct(keySystem) === null, `new WebKitMediaKeys(${keySystem}) succeeds`);
     check(new world.WebKitMediaKeys(keySystem).keySystem === keySystem, `${keySystem} keySystem`);
   }
-  for (const keySystem of ['com.apple.fps', 'com.apple.fps.1_0', 'com.widevine.alpha',
-                           'org.w3c.clearkey', 'com.apple.fps.4_0']) {
+  for (const keySystem of ['com.widevine.alpha', 'org.w3.clearkey', 'com.apple.fps.4_0']) {
     const error = construct(keySystem);
     check(error instanceof DOMException && error.name === 'NotSupportedError',
           `new WebKitMediaKeys(${keySystem}) throws NotSupportedError`);
@@ -372,10 +372,10 @@ const thrown = (fn) => {
   check(construct()?.name === 'TypeError', 'the constructor needs a key system');
   check(thrown(() => world.WebKitMediaKeys('com.apple.fps.2_0'))?.name === 'TypeError',
         'calling it without new throws TypeError');
-  // Disney+'s native client (dwp bundle), exactly: 1_0 is native HLS, still
-  // refused, and the failure stays inside its try.
+  // Disney+'s native client (dwp bundle), exactly: 1_0 is native HLS, which
+  // Parc plays, so the keys are made as in Safari.
   check(run(world, `((J = WebKitMediaKeys) => { try { new J("com.apple.fps.1_0"); return "made"; }
-      catch (e) { return e.name; } })()`) === 'NotSupportedError', "Disney+'s native client catches it");
+      catch (e) { return e.name; } })()`) === 'made', "Disney+'s native client gets its keys");
 }
 
 // ---- Without modern EME (an insecure context) no keys can be made.
@@ -864,13 +864,10 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(needs.length === 0, 'no webkitneedkey from encrypted events');
 }
 
-// ---- WebKit's AVFoundation player key systems (native HLS), with the
-// installer's switch on.
+// ---- WebKit's AVFoundation player key systems (native HLS).
 {
-  const hlsScript = script.replace('/*PARC_NATIVE_HLS*/false', 'true');
-  check(hlsScript !== script, 'the installer has a native HLS switch to turn on');
   const world = makeWorld();
-  const hook = run(world, hlsScript);
+  const hook = run(world, script);
   const supports = (...args) => world.WebKitMediaKeys.isTypeSupported(...args);
   check(supports('com.apple.fps') && supports('com.apple.fps.1_0') && supports('COM.APPLE.FPS.1_0'),
         'com.apple.fps and 1_0 (ignoring case)');
@@ -945,15 +942,10 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         'a key URI no request holds (or already taken), or unreadable init data: UNKNOWN');
 }
 
-// ---- Legacy clear key for HLS (LegacyCDMPrivateClearKey, CDMSessionClearKey),
-// with the native HLS switch on.
+// ---- Legacy clear key for HLS (LegacyCDMPrivateClearKey, CDMSessionClearKey).
 {
-  const plain = makeWorld();
-  run(plain, script);
-  check(plain.WebKitMediaKeys.isTypeSupported('org.w3c.clearkey') === false,
-        'no clear key while native HLS is off');
   const world = makeWorld();
-  run(world, script.replace('/*PARC_NATIVE_HLS*/false', 'true'));
+  run(world, script);
   const supports = (...args) => world.WebKitMediaKeys.isTypeSupported(...args);
   check(supports('org.w3c.clearkey') && supports('ORG.W3C.CLEARKEY', 'application/x-mpegURL'),
         'clear key, for application/x-mpegurl');
@@ -996,7 +988,7 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
 // answers the held ones).
 {
   const world = makeWorld();
-  const hook = run(world, script.replace('/*PARC_NATIVE_HLS*/false', 'true'));
+  const hook = run(world, script);
   const video = new world.HTMLMediaElement('v');
   const provided = [];
   const provide = (keyId, key) => provided.push(keyId + '=' + Buffer.from(key).toString('hex'));

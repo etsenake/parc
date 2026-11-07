@@ -468,7 +468,7 @@
  }  // namespace
  
  MediaInterfaceProxy::MediaInterfaceProxy(RenderFrameHost* render_frame_host)
-@@ -523,10 +661,134 @@
+@@ -523,10 +661,128 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -510,12 +510,6 @@
 +    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
 +    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime) {
 +  CHECK(thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M160);
-+
-+  // Parc: Safari's native HLS route is unreachable until its build-time
-+  // switch is on.
-+  if (!parc::fairplay::kNativeHlsEnabled) {
-+    return;
-+  }
 +
 +  // The player lives in the same media service as the frame's FairPlay CDMs
 +  // (see CreateCdm), so its SetCdm() finds them.
@@ -681,7 +675,7 @@
  namespace {
  
  // This limit is much higher than it needs to be right now, because the logic
-@@ -658,6 +663,24 @@
+@@ -658,6 +663,23 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -694,9 +688,8 @@
 +      std::make_unique<media::FairPlayRendererClientFactory>(
 +          CreateMojoRendererFactory()));
 +  // Parc: Safari's native HLS route. DemuxerManager asks this factory for its
-+  // demuxer (an AVPlayer next to the frame's FairPlay CDMs) only while
-+  // parc::fairplay::kNativeHlsEnabled is on, on pages presenting Safari's
-+  // identity; PipelineImpl then takes its renderer.
++  // demuxer (an AVPlayer next to the frame's FairPlay CDMs) on pages
++  // presenting Safari's identity; PipelineImpl then takes its renderer.
 +  factory_selector->AddFactory(
 +      RendererType::kFairPlayHls,
 +      std::make_unique<parc::fairplay::NativeHlsRendererFactory>(
@@ -1354,7 +1347,7 @@
  
 +#if BUILDFLAG(IS_MAC)
 +std::unique_ptr<Demuxer> DemuxerManager::MaybeCreateParcNativeHlsDemuxer() {
-+  if (!parc_native_hls_enabled_ || !client_->PresentsParcSafariIdentity()) {
++  if (!client_->PresentsParcSafariIdentity()) {
 +    return nullptr;
 +  }
 +  ParcNativeHlsDemuxerParams params;
@@ -1422,7 +1415,7 @@
  }
 --- a/media/filters/demuxer_manager.h
 +++ b/media/filters/demuxer_manager.h
-@@ -19,9 +19,14 @@
+@@ -19,6 +19,7 @@
  #include "media/base/media_log.h"
  #include "media/base/pipeline.h"
  #include "media/base/pipeline_status.h"
@@ -1430,14 +1423,7 @@
  #include "media/filters/chunk_demuxer.h"
  #include "net/storage_access_api/status.h"
  #include "url/origin.h"
-+
-+#if BUILDFLAG(IS_MAC)
-+#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
-+#endif  // BUILDFLAG(IS_MAC)
- 
- #if BUILDFLAG(ENABLE_HLS_DEMUXER)
- #include "base/threading/sequence_bound.h"
-@@ -81,6 +86,24 @@
+@@ -81,6 +82,24 @@
  
      // Allows a seek triggered by a demuxer (mainly used for live content)
      virtual void DemuxerRequestsSeek(base::TimeDelta seek_time) = 0;
@@ -1448,8 +1434,8 @@
 +    virtual bool PresentsParcSafariIdentity() { return false; }
 +
 +    // Parc: the demuxer of Safari's native HLS route for `params`, or null
-+    // to keep Chromium's ManifestDemuxer. Asked only with the route on
-+    // (parc::fairplay::kNativeHlsEnabled) and Safari's identity presented.
++    // to keep Chromium's ManifestDemuxer. Asked only when Safari's identity
++    // is presented.
 +    virtual std::unique_ptr<Demuxer> CreateParcNativeHlsDemuxer(
 +        ParcNativeHlsDemuxerParams params) {
 +      return nullptr;
@@ -1462,7 +1448,7 @@
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +134,8 @@
+@@ -111,6 +130,8 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -1471,7 +1457,7 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +165,15 @@
+@@ -140,6 +161,15 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -1487,7 +1473,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +188,19 @@
+@@ -154,6 +184,19 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1507,20 +1493,6 @@
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -209,6 +256,13 @@
- 
- #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-   bool hls_fallback_ = false;
-+
-+#if BUILDFLAG(IS_MAC)
-+  // Parc: Safari's native HLS route, on when its build-time switch is. Only
-+  // ParcNativeHlsRoutingTest sets it otherwise.
-+  bool parc_native_hls_enabled_ = parc::fairplay::kNativeHlsEnabled;
-+  friend class ParcNativeHlsRoutingTest;
-+#endif  // BUILDFLAG(IS_MAC)
- #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
- 
-   // Are we allowed to switch demuxer mid-stream when fallback error codes
 --- a/media/formats/mp4/box_definitions.cc
 +++ b/media/formats/mp4/box_definitions.cc
 @@ -459,6 +459,11 @@
@@ -3446,19 +3418,7 @@
      RequestRemotePlayStateChangeCB callback_request) {
 --- a/media/filters/BUILD.gn
 +++ b/media/filters/BUILD.gn
-@@ -124,6 +124,11 @@
-     "//ui/gfx/geometry",
-   ]
- 
-+  if (is_mac) {
-+    # Parc: Safari's native HLS switch, read by demuxer_manager.h.
-+    public_deps = [ "//third_party/parc_fairplay:key_system" ]
-+  }
-+
-   libs = []
- 
-   if (proprietary_codecs) {
-@@ -462,6 +467,10 @@
+@@ -462,6 +462,10 @@
        "manifest_demuxer_unittest.cc",
        "stream_parser_factory_unittest.cc",
      ]

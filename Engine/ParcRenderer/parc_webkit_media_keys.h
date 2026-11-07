@@ -7,9 +7,7 @@
 // built on Parc's FairPlay CDM through the modern EME natives it captures
 // before any page script can replace them:
 // - `WebKitMediaKeys(keySystem)`: InvalidAccessError for an empty key system,
-//   NotSupportedError for one WebKit's MSE CDM doesn't serve (`com.apple.fps`
-//   and `com.apple.fps.1_0` belong to WebKit's AVFoundation player: native
-//   HLS, see Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md). `keySystem`,
+//   NotSupportedError for one it doesn't serve. `keySystem`,
 //   `createSession(type, initData)`, and `isTypeSupported(keySystem, type)`
 //   answering for those key systems by what Media Source plays, and true for
 //   `keyrelease`, as LegacyCDMPrivateAVFObjC does.
@@ -23,12 +21,13 @@
 //   `keyrelease` sessions find no expired-session reports (Parc keeps none) and
 //   answer as WebKit does then.
 // - Clear key (`org.w3c.clearkey`, LegacyCDMPrivateClearKey and
-//   CDMSessionClearKey) for HLS once native HLS is on: the message is the key
+//   CDMSessionClearKey) for native HLS: the message is the key
 //   ID, `update` takes a JWK set whose keys the attached player's
 //   `clearkey://` requests get.
 // - WebKit's AVFoundation player key systems, `com.apple.fps` and
-//   `com.apple.fps.1_0` (CDMSessionAVFoundationObjC), once Parc's native HLS
-//   route is on: the init data names the key URI of a request the attached
+//   `com.apple.fps.1_0` (CDMSessionAVFoundationObjC), for Parc's native HLS
+//   route (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md): the init data
+//   names the key URI of a request the attached
 //   player holds, the content ID and the certificate; the SPC is the first
 //   message; every update answers the request and fires `webkitkeyadded`.
 // - `HTMLMediaElement.webkitSetMediaKeys`/`webkitKeys` (keys follow the last
@@ -136,10 +135,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // WebKit's AVFoundation player takes these
   // (MediaPlayerPrivateAVFoundationObjC::keySystemIsSupported, ignoring case).
   // Parc serves them through its native HLS route
-  // (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md); the installer
-  // (InstallParcSafariScripts) turns the token below into true when
-  // parc::fairplay::kNativeHlsEnabled is.
-  const NATIVE_HLS = /*PARC_NATIVE_HLS*/false;
+  // (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md).
   const HLS_KEY_SYSTEM = /^com\.apple\.fps(?:\.1_0)?$/i;
   // LegacyCDMPrivateClearKey: clear key, which the AVFoundation player takes
   // for HLS only.
@@ -404,13 +400,13 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // Which WebKit legacy CDM serves a key system: its Media Source CDM, or
   // its AVFoundation player (native HLS).
   function keySystemKind(keySystem) {
-    if (NATIVE_HLS && CLEAR_KEY_SYSTEM.test(keySystem)) {
+    if (CLEAR_KEY_SYSTEM.test(keySystem)) {
       return 'clearkey';
     }
     if (MEDIA_SOURCE_KEY_SYSTEM.test(keySystem)) {
       return 'mse';
     }
-    return NATIVE_HLS && HLS_KEY_SYSTEM.test(keySystem) ? 'hls' : null;
+    return HLS_KEY_SYSTEM.test(keySystem) ? 'hls' : null;
   }
 
   function legacyVersion(keySystem) {
