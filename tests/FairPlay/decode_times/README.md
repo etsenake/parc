@@ -12,6 +12,7 @@ B-frames; `trun` composition offsets 7, 4, 2, 3 frames).
 tests/FairPlay/decode_times/run.sh                  # clear, eager feed
 tests/FairPlay/decode_times/run.sh --feed 2         # one sample per 2 ms round trip
 tests/FairPlay/decode_times/run.sh --protected 1    # FairPlay, Axinom license (network)
+tests/FairPlay/decode_times/run.sh --start 1.37      # start mid-GOP, as after a seek
 PARC_DECODE_TIMES_SIZE=3840x2160 PARC_DECODE_TIMES_KBPS=40000 tests/FairPlay/decode_times/run.sh
 ```
 
@@ -75,3 +76,13 @@ keeps more than a second enqueued ahead of the clock even when every sample
 costs a 30 ms round trip at 4K and 39 Mb/s. At 24 fps the lead falls only if
 round trips average over 41 ms (a frame's time) or the render process stops
 answering for over a second.
+
+## Starting after a seek
+
+`--start <s>` feeds from the keyframe at or before `<s>` and starts the clock
+there, as Chromium's seek does (`Flush`, then `StartPlayingFrom`). It prints
+how long after `StartPlayingFrom` the clock first moved. On a 4K clip started
+at 1.37 s (33 frames past the keyframe), Parc's renderer used to release the
+clock 48 ms in, before the frame at 1.37 s had decoded, and dropped 2 frames.
+It now waits for that frame, as WebKit does (115–139 ms), and drops none.
+Protected runs (`--protected 1`) start at 0, 1.37 s and 3.10 s with 0 dropped.

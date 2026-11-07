@@ -664,7 +664,12 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ended_ = false;
     have_enough_ = false;
     renderers_have_samples_ = false;
-    video_reset_pending_ = false;
+    // WebKit's flushVideo: after a start or seek no video frame is available
+    // until one decodes at the new time, and the clock waits for it
+    // (updateAllRenderersHaveAvailableSamples). Releasing it on enqueued data
+    // alone starts the clock while decoding still runs from the keyframe
+    // before |time|, so the first frames arrive late and are dropped.
+    video_reset_pending_ = video_renderer_ != nil;
     clock_held_ = true;
     RemoveStallObserver();
     [synchronizer_ setRate:0 time:ToCMTime(time)];
@@ -1595,8 +1600,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       if (!sample.is_keyframe) {
         CFDictionarySetValue(attachments, kCMSampleAttachmentKey_NotSync, kCFBooleanTrue);
       }
-      if (start_time_.IsValid() && sample.pts.InSeconds() < start_time_.InSeconds()) {
-        CFDictionarySetValue(attachments, kCMSampleAttachmentKey_DoNotDisplay, kCFBooleanTrue);
+      // WebKit's reenqueueMediaForTime: samples before the one containing the
+      // start time decode without display; that one is shown, so a frame is
+      // ready at the start time (VideoFrameAvailable) and the clock can run.
+      if (start_time_.IsValid()) {
+        const double start = start_time_.InSeconds();
+        const bool before = sample.duration.IsValid()
+                                ? sample.pts.InSeconds() + sample.duration.InSeconds() <= start
+                                : sample.pts.InSeconds() < start;
+        if (before) {
+          CFDictionarySetValue(attachments, kCMSampleAttachmentKey_DoNotDisplay, kCFBooleanTrue);
+        }
       }
     }
     if (!encrypted) {
@@ -1764,7 +1778,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     NotifyNeedData(StreamType::kVideo);
   }
 
-  // After a decoder reset, whether a frame decoded again: readyForDisplay on
+  // After a start, seek or decoder reset, whether a frame decoded: readyForDisplay on
   // macOS 14.4+ (AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification
   // runs UpdateClock). Earlier macOS posts nothing when a frame decodes, and a
   // full queue under a stopped clock enqueues nothing more to look again, so
@@ -2200,7 +2214,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool have_enough_ = false;
   // See UpdateBuffering.
   bool renderers_have_samples_ = false;
-  // A decoder reset waits for a frame (VideoFrameAvailable).
+  // A start, seek or decoder reset waits for a decoded frame
+  // (VideoFrameAvailable).
   bool video_reset_pending_ = false;
   // The clock waits for HAVE_ENOUGH and renderers with samples (start, seek
   // or stall).

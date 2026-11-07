@@ -197,6 +197,7 @@ struct Options {
   int dts_shift = 4;
   double feed_delay_ms = -1;  // < 0: eager.
   double seconds = 0;
+  double start = 0;  // Start (seek) time; feeding begins at the keyframe before it.
   int width = 1920, height = 1080;
   bool protect = false;
 };
@@ -420,7 +421,13 @@ class Harness : public fp::FairPlayRendererClient {
     [window_.contentView.layer addSublayer:layer];
     [window_ orderFrontRegardless];
     start_wall_ = CACurrentMediaTime();
-    renderer_->StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    if (options_.start > 0) {
+      // As a seek: decoding starts at the last keyframe at or before the start.
+      for (size_t i = 0; i < samples_.size(); ++i) {
+        if (samples_[i].keyframe && FrameTime(samples_[i].display).InSeconds() <= options_.start + 1e-9) next_ = i;
+      }
+    }
+    renderer_->StartPlayingFrom(fp::MediaTime::FromMicroseconds(int64_t(std::llround(options_.start * 1e6))));
     OnNeedData(fp::StreamType::kVideo);
     StartPolling();
   }
@@ -514,6 +521,7 @@ class Harness : public fp::FairPlayRendererClient {
     const double wall = CACurrentMediaTime();
     const double clock = renderer_->GetMediaTime().InSeconds();
     if (playing_) {
+      if (first_move_ < 0 && clock > options_.start + 0.0005) first_move_ = wall;
       polls_.push_back({wall, clock, DisplayedFrame()});
       if (wall - last_metrics_ >= 0.05 && !metrics_pending_) {
         last_metrics_ = wall;
@@ -596,6 +604,8 @@ class Harness : public fp::FairPlayRendererClient {
            options_.protect ? "protected " : "", options_.real_dts ? "real" : "invalid", options_.dts_shift,
            options_.feed_delay_ms < 0 ? "eager" : (std::to_string(options_.feed_delay_ms) + "ms").c_str(), why,
            played_wall, renderer_->GetMediaTime().InSeconds(), samples_.size(), next_, underflows_);
+    printf("start=%.3fs clock started %.0f ms after StartPlayingFrom\n", options_.start,
+           first_move_ < 0 ? NAN : 1000 * (first_move_ - start_wall_));
     printf("metrics: total=%lld dropped=%lld corrupted=%lld accumulated_delay=%.3fs\n", m.total_frames,
            m.dropped_frames, m.corrupted_frames, m.accumulated_frame_delay);
     // Decode ahead: frames AVFoundation has decoded beyond those due, from
@@ -681,7 +691,7 @@ class Harness : public fp::FairPlayRendererClient {
   bool finished_ = false;
   bool metrics_pending_ = false;
   int underflows_ = 0;
-  double start_wall_ = 0, play_wall_ = 0, last_metrics_ = 0;
+  double start_wall_ = 0, play_wall_ = 0, last_metrics_ = 0, first_move_ = -1;
   double max_enqueued_pts_ = -1;
   std::vector<double> leads_;
   std::vector<Poll> polls_;
@@ -715,6 +725,7 @@ int main(int argc, char** argv) {
       if (flag == "--dts") options.real_dts = value == "real";
       else if (flag == "--dts-shift") options.dts_shift = atoi(value.c_str());
       else if (flag == "--feed") options.feed_delay_ms = value == "eager" ? -1 : atof(value.c_str());
+      else if (flag == "--start") options.start = atof(value.c_str());
       else if (flag == "--seconds") options.seconds = atof(value.c_str());
       else if (flag == "--protected") options.protect = value == "1";
       else if (flag == "--size") sscanf(value.c_str(), "%dx%d", &options.width, &options.height);
