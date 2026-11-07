@@ -427,6 +427,26 @@ void ClosedCaptionScenario() {
       },
       40);
   Check(added, "CEA-608 captions arrive as open-ended generic cues");
+  // TextTrackCueGeneric's style comes from the cue's markup attributes: the
+  // colours the page draws (CEA-608 gives white text on a black character
+  // background, and no base font size).
+  OnOwner([&] {
+    const fp::HlsCue* styled = nullptr;
+    for (const auto& c : r.cues_) {
+      if (c.track_id == cc_id && c.cue.type == fp::HlsCue::Type::kAdd && !c.cue.text.empty()) {
+        styled = &c.cue;
+        break;
+      }
+    }
+    if (styled) {
+      std::printf("  style: fg=%08x bg=%08x hl=%08x base=%.2f relative=%.2f font=\"%s\" nowrap=%d\n",
+                  styled->foreground_color.value_or(0), styled->background_color.value_or(0),
+                  styled->highlight_color.value_or(0), styled->base_font_size, styled->relative_font_size,
+                  styled->font_name.c_str(), styled->prevent_line_wrapping);
+    }
+    Check(styled && styled->foreground_color && styled->highlight_color,
+          "CEA-608 cues carry their text and character background colours");
+  });
   bool completed = WaitFor(
       [&] {
         return r.CueCount([&](const ReceivedCue& c) {

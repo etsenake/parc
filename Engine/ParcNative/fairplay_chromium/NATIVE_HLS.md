@@ -663,7 +663,10 @@ element calls it from the main thread on every in-band mode change.
   become `VTTCue`s as WebKit's `InbandGenericTextTrack` makes them (`kWebVtt`
   parsed like `WebVTTParser::parseCueData`, the header for regions and style
   sheets, generic cues added, updated and removed by `cue_id`, an open cue's
-  end shown as the media duration, +inf for live).
+  end shown as the media duration, +inf for live). A generic cue draws its
+  colours as WebKit's `TextTrackCueGeneric` does (foreground and highlight
+  on the text, background on the box) and wraps only when its markup allows;
+  its font size and font name are kept, as in WebKit, not drawn.
 
 ## Frame counts
 

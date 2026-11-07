@@ -725,3 +725,122 @@
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_transfer.cc",
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_transfer.h",
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_data_transfer_item.cc",
+--- a/third_party/blink/renderer/core/html/track/vtt/vtt_cue.h
++++ b/third_party/blink/renderer/core/html/track/vtt/vtt_cue.h
+@@ -30,6 +30,9 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_TRACK_VTT_VTT_CUE_H_
+ #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_TRACK_VTT_VTT_CUE_H_
+ 
++#include <cstdint>
++#include <optional>
++
+ #include "third_party/blink/renderer/bindings/core/v8/v8_align_setting.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_line_align_setting.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_position_align_setting.h"
+@@ -156,6 +159,22 @@
+   // Applies CSS override style from user settings.
+   void ApplyUserOverrideCSSProperties();
+ 
++  // Parc: what WebKit draws of a generic cue of Safari's native HLS route
++  // (TextTrackCueGeneric: CEA-608/708 and other non-WebVTT captions), set by
++  // ParcInbandTextTrack. Colours are 0xRRGGBBAA. WebKit keeps a generic cue's
++  // font size and font name without drawing them, so they aren't here.
++  struct ParcGenericCueStyle {
++    std::optional<uint32_t> foreground_color;
++    std::optional<uint32_t> background_color;
++    std::optional<uint32_t> highlight_color;
++    bool prevent_line_wrapping = true;
++    bool operator==(const ParcGenericCueStyle&) const = default;
++  };
++  const std::optional<ParcGenericCueStyle>& ParcGenericStyle() const {
++    return parc_generic_style_;
++  }
++  void SetParcGenericStyle(const ParcGenericCueStyle& style);
++
+   DocumentFragment* getCueAsHTML();
+ 
+ 
+@@ -230,6 +249,10 @@
+   Member<VTTCueBackgroundBox> cue_background_box_;
+   Member<VTTCueBox> display_tree_;
+ 
++  // Parc: TextTrackCueGenericBoxElement::applyCSSProperties.
++  void ApplyParcGenericStyle();
++  std::optional<ParcGenericCueStyle> parc_generic_style_;
++
+   bool snap_to_lines_ : 1;
+   bool display_tree_should_change_ : 1;
+ };
+--- a/third_party/blink/renderer/core/html/track/vtt/vtt_cue.cc
++++ b/third_party/blink/renderer/core/html/track/vtt/vtt_cue.cc
+@@ -375,6 +375,62 @@
+   CueWillChange();
+   cue_alignment_ = alignment;
+   CueDidChange();
++}
++
++void VTTCue::SetParcGenericStyle(const ParcGenericCueStyle& style) {
++  if (parc_generic_style_ == style) {
++    return;
++  }
++  CueWillChange();
++  parc_generic_style_ = style;
++  CueDidChange();
++}
++
++namespace {
++
++String ParcCssColor(uint32_t rgba) {
++  StringBuilder builder;
++  builder.Append("rgba(");
++  builder.AppendNumber(rgba >> 24);
++  builder.Append(", ");
++  builder.AppendNumber((rgba >> 16) & 0xff);
++  builder.Append(", ");
++  builder.AppendNumber((rgba >> 8) & 0xff);
++  builder.Append(", ");
++  builder.AppendNumber((rgba & 0xff) / 255.0);
++  builder.Append(")");
++  return builder.ToString();
++}
++
++}  // namespace
++
++void VTTCue::ApplyParcGenericStyle() {
++  if (!parc_generic_style_) {
++    return;
++  }
++  const ParcGenericCueStyle& style = *parc_generic_style_;
++  // WebKit colours its cue highlight box, the span around the cue's text
++  // (Blink's background box here), with the foreground and highlight
++  // colours, and the cue's box with the background colour.
++  if (style.foreground_color) {
++    cue_background_box_->SetInlineStyleProperty(
++        CSSPropertyID::kColor, ParcCssColor(*style.foreground_color));
++  }
++  if (style.highlight_color) {
++    cue_background_box_->SetInlineStyleProperty(
++        CSSPropertyID::kBackgroundColor, ParcCssColor(*style.highlight_color));
++  }
++  if (style.background_color) {
++    display_tree_->SetInlineStyleProperty(
++        CSSPropertyID::kBackgroundColor, ParcCssColor(*style.background_color));
++  }
++  // WebKit keeps a generic cue on one line only when it says so
++  // (VTTCueBox::applyCSSProperties); Blink does it for every cue that doesn't
++  // snap to lines, which generic cues never do.
++  if (!style.prevent_line_wrapping) {
++    display_tree_->RemoveInlineStyleProperty(CSSPropertyID::kWhiteSpaceCollapse);
++    display_tree_->RemoveInlineStyleProperty(CSSPropertyID::kTextWrapMode);
++  }
+ }
+ 
+ void VTTCue::setText(const String& text) {
+@@ -871,6 +927,7 @@
+   if (!region()) {
+     VTTDisplayParameters display_parameters = CalculateDisplayParameters();
+     display_tree_->ApplyCSSProperties(display_parameters);
++    ApplyParcGenericStyle();
+   } else {
+     display_tree_->SetInlineStyleProperty(CSSPropertyID::kPosition,
+                                           CSSValueID::kRelative);

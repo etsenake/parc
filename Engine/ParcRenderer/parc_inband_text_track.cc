@@ -275,8 +275,21 @@ void ParcInbandTextTrack::UpdateCueFromCueData(
   cue.setStartTime(data.start);
   cue.setEndTime(GenericCueEnd(data.end), IGNORE_EXCEPTION);
   cue.setText(String::FromUtf8(data.text));
-  // TextTrackCueGeneric's font size, font name and colours have no VTTCue
-  // counterpart in Blink.
+  // TextTrackCueGeneric's colours replace the cue's only when given; WebKit
+  // keeps its font size and font name without drawing them.
+  VTTCue::ParcGenericCueStyle style =
+      cue.ParcGenericStyle().value_or(VTTCue::ParcGenericCueStyle());
+  if (data.background_color) {
+    style.background_color = data.background_color;
+  }
+  if (data.foreground_color) {
+    style.foreground_color = data.foreground_color;
+  }
+  if (data.highlight_color) {
+    style.highlight_color = data.highlight_color;
+  }
+  style.prevent_line_wrapping = data.prevent_line_wrapping;
+  cue.SetParcGenericStyle(style);
   if (data.position > 0 && IsPercentage(std::round(data.position))) {
     cue.setPosition(MakeGarbageCollected<V8UnionAutoKeywordOrDouble>(
                         std::round(data.position)),
