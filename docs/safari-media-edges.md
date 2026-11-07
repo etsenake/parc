@@ -178,7 +178,19 @@ included) and ignores such a `defaultPlaybackRate`. WebKit
 `ended` is true at the end with `playbackRate` 0 (direction forward means
 rate ≥ 0). WebKit `HTMLMediaElement.cpp:4629-4645`: only with a rate above 0.
 
-HME-13, HME-15, HME-16: **in progress** (fix agent E4, time and rate).
+HME-13, HME-15, HME-16: **fixed** f66198f5. Two parts of HME-15 still
+differ: a negative rate leaves the time standing still where Safari's
+`src=` player plays backwards (Chromium's pipeline has no reverse playback;
+Safari's Media Source player also drops negative rates), and rates outside
+1/16 to 16 play at the nearest limit while the page reads its own rate.
+**Open** (with Josh).
+
+**HME-29. Ended at rate 0 inside the element.** Chromium's internal check
+(`html_media_element.cc:4223-4245`, used at `:3220-3221, 4041-4087,
+4219-4221`) still counts rate 0 at the end as ended, so `play()` there
+seeks to the start and `ended` can fire. WebKit's `endedPlayback`
+(`HTMLMediaElement.cpp:6902-6928`) is false at rate 0 (`:4785-4787,
+6426-6467`). **In progress** (fix agent HME-29).
 
 **HME-17. The last `progress` before `suspend`.** Chromium
 `html_media_element.cc:2268-2283` fires it only if the player made progress
