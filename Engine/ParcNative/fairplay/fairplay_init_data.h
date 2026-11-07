@@ -17,9 +17,11 @@ namespace parc::fairplay {
 // (an skd URI, mpts) produce licenses no renderer can use.
 enum class InitDataType {
   // UTF-8 "skd://..." URI from an HLS EXT-X-KEY. The whole URI is the SPC
-  // content identifier (WebKit). When the URI's host is the key ID (a UUID or
-  // 32 hex digits), the request goes through a FairPlay pssh for that key ID;
-  // otherwise it is named by the URI and its key can't be used by a renderer.
+  // content identifier (WebKit). This plan is the MSE route's: when the URI's
+  // host is the key ID (a UUID or 32 hex digits), the request goes through a
+  // FairPlay pssh for that key ID; otherwise it is named by the URI and its key
+  // can't be used by a renderer. With an HLS asset attached, FairPlayCdm names
+  // the request by the URI instead (fairplay_hls_keys.h).
   // Parc extension for WebKit's legacy AVFoundation-player sessions:
   // {"skd": "<URI>", "contentId": "<base64>"} is that URI's request with the
   // SPC named by contentId.
@@ -66,6 +68,9 @@ struct ContentKeyRequestPlan {
 
 struct InitDataPlan {
   std::vector<ContentKeyRequestPlan> calls;
+  // skd init data (either form): the URI. An HLS asset asks for its key by
+  // this URI, so with one attached FairPlayCdm names the request by it.
+  std::string skd_uri;
   // cenc/keyids sessions exchange JSON arrays of {keyID, payload} entries;
   // skd/sinf/mpts sessions exchange the raw SPC and CKC.
   bool json_messages = false;

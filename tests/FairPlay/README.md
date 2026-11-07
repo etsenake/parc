@@ -292,3 +292,43 @@ probed through its runtime interface)
   carries `dec3` `chan_loc` = 0x002 for Lrs/Rrs: bit 0 is the LSB. CoreMedia's
   format description reads that box (and the 5.1-only one) as 6 channels, and
   the stream decodes to the end.
+
+HLS assets (`AVURLAsset` under `AVPlayer`, the native HLS route; probed with
+Axinom's SingleKey and MultiKey HLS on assets that load by themselves, not
+through the player's client URL loading)
+- An asset added with `addContentKeyRecipient:` before its `AVPlayerItem`
+  exists never sends skd requests to its resource loader. Its key request
+  reaches the session's delegate named by the skd URI (`NSString`, no init
+  data, `ProtocolVersionsKey [1]`), once per URI even when audio and video
+  playlists share it; a CKC from that request's SPC (content identifier = the
+  URI) plays.
+- A key the session already holds for the URI
+  (`processContentKeyRequestWithIdentifier:<URI>`, made before the asset
+  existed) is used without a further request once the asset is a recipient.
+  The same key made while a loading request is held plays once the asset is
+  made a recipient and the held request is finished with
+  `contentType = AVStreamingKeyDeliveryContentKeyType` (WebKit's
+  `attemptToDecryptWithInstance` order).
+- A held skd loading request finished that way before the session has a
+  usable key for its URI never plays, also when the key arrives afterwards
+  (one requested and in flight when it was finished included): no delegate
+  call, the player waits for ever. Finished that way while the asset is no
+  recipient, the item fails with `CoreMediaErrorDomain -19156`.
+- Once the asset is a recipient, `processContentKeyRequestWithIdentifier:` for
+  the URI of a still-held loading request produces no request at all, and
+  `-[AVAssetResourceLoadingRequest streamingContentKeyRequestDataForApp:...]`
+  throws `NSInternalInconsistencyException` ("Cannot generate content key
+  request when AVAsset is attached to AVContentKeySession").
+- While the asset is no recipient, a held loading request answered with a CKC
+  from its own SPC (`respondWithData:`, the streaming key content type,
+  `finishLoading`) plays (WebKit's legacy route); Axinom expects the URI as
+  content identifier there too. A second SPC from the same loading request
+  fails (`AVFoundationErrorDomain -11800` over `-12158`): one SPC per request.
+- With these, a stand-in of the core's routes passed 35 of 37 checks
+  (session route, resource loader route, MultiKey's separate audio and video
+  keys on both, a key licensed before the load, a session waiting for the
+  asset, sessions made before the asset was attached, a legacy content ID,
+  obscured output); the two failures were a closed session handing its used
+  loading request to another session, which the core now fails instead so
+  AVFoundation asks again. The `keys-*` scenarios of
+  `scripts/test-fairplay-hls.sh` cover the same through `FairPlayHlsPlayer`.

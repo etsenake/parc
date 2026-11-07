@@ -111,6 +111,15 @@ class FairPlayCdm {
   // is the uppercase hex of the session's random 16-byte identifier
   // (WebAVContentKeyGroup's UUID). A persistent-usage-record session is
   // refused (kNotSupported) unless persistent state is allowed.
+  //
+  // skd with an HLS asset attached (FairPlayHlsKeyLoader): the request
+  // is named by the URI, with the URI (or a legacy session's contentId) as the
+  // SPC content identifier (WebKit). It takes the asset's own request for that
+  // URI if AVFoundation already made one (the asset reported the key as
+  // needed), else asks the session for the key by URI; an asset served
+  // through its resource loader is waited for until it asks for the URI.
+  // Without an asset, skd plans as PlanContentKeyRequests says (the MSE
+  // route).
   void CreateSessionAndGenerateRequest(SessionType session_type,
                                        InitDataType type,
                                        std::vector<uint8_t> init_data,
@@ -155,9 +164,11 @@ class FairPlayCdm {
   uint64_t AddKeysChangedObserver(KeysChangedCallback callback);
   void RemoveKeysChangedObserver(uint64_t id);
 
-  // Implementation access for FairPlayRenderer (fairplay_key_session_internal.h).
+  // Implementation access for FairPlayRenderer and FairPlayHlsKeyLoader
+  // (fairplay_key_session_internal.h).
   class Impl;
   Impl* impl() const { return impl_.get(); }
+  std::weak_ptr<Impl> weak_impl() const { return impl_; }
 
  private:
   std::shared_ptr<Impl> impl_;

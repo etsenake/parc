@@ -366,6 +366,7 @@ InitDataPlan PlanForSkdUri(const std::vector<uint8_t>& init_data) {
     return Fail("skd init data is not a UTF-8 string");
   }
   InitDataPlan plan;
+  plan.skd_uri = identifier.UTF8String;
   ContentKeyRequestPlan call;
   call.content_identifier = init_data;
   if (auto key_id = KeyIdFromSkdUri(identifier.UTF8String)) {
