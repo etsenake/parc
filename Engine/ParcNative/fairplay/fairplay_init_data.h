@@ -28,7 +28,9 @@ enum class InitDataType {
   kSkd,
   // JSON {"sinf": ["<base64 sinf payload>"]}: frma/schm/schi boxes, the form
   // AVStreamDataParser emits. Passed through; the 'tenc' key ID is the SPC
-  // content identifier (WebKit).
+  // content identifier (WebKit). Parc extension for WebKit's legacy
+  // com.apple.fps.2_N sessions: a "contentId" member (base64) names the SPC
+  // instead, and AVFoundation gets the sinf entries alone.
   kSinf,
   // Concatenated 'pssh' boxes (Chromium's MP4 parser output). The FairPlay
   // pssh alone goes to AVFoundation (WebKit). Parc extension: without one, the
@@ -37,10 +39,6 @@ enum class InitDataType {
   // JSON {"kids": ["<base64url key ID>", ...]} (W3C). Parc extension, not in
   // WebKit: one request per key ID through a FairPlay pssh naming it, with the
   // raw key ID as the SPC content identifier, as WebKit names sinf requests.
-  // Parc extension for WebKit's legacy com.apple.fps.2_N sessions:
-  // {"initDataType": "cenc"|"sinf", "initData": "<base64>", "contentId":
-  // "<base64>"} plans the inner init data and names every SPC by contentId;
-  // {"kids": [...], "contentId": "<base64>"} does the same for key IDs.
   kKeyIds,
   // JSON {"codc": <number>, "mtyp": <number>, "cont": "mpts"}: MPEG-2 TS
   // content (WebKit on macOS, HAVE(FAIRPLAYSTREAMING_MTPS_INITDATA)). Passed

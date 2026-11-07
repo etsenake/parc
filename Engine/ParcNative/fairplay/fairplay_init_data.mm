@@ -405,42 +405,6 @@ InitDataPlan PlanSkdWithContentIdentifier(const std::vector<uint8_t>& init_data)
   return plan;
 }
 
-// Parc extension for WebKit's legacy com.apple.fps.2_N sessions
-// (Engine/ParcRenderer/parc_webkit_media_keys.h), whose SPC content
-// identifier is the page's bytes while the request comes from the media's own
-// init data (CDMSessionAVContentKeySession: processContentKeyRequestWithIdentifier
-// with the source buffer's init data, then contentIdentifier = the identifier):
-//   {"initDataType": "cenc" | "sinf", "initData": "<base64>",
-//    "contentId": "<base64>"}
-// plans the inner init data as that type and names every request's SPC by
-// contentId. Sessions exchange messages in the inner type's format. Key IDs
-// take {"kids": [...], "contentId": "<base64>"} instead (below).
-InitDataPlan PlanWithContentIdentifier(NSDictionary* root) {
-  NSData* content_id = DecodeBase64(root[@"contentId"], false);
-  if (!content_id.length) {
-    return Fail("keyids contentId is not non-empty base64");
-  }
-  NSString* inner_name = root[@"initDataType"];
-  std::optional<InitDataType> inner;
-  if ([inner_name isKindOfClass:[NSString class]]) {
-    inner = InitDataTypeFromName(inner_name.UTF8String);
-  }
-  if (inner != InitDataType::kCenc && inner != InitDataType::kSinf) {
-    return Fail("keyids with a contentId names no cenc or sinf init data");
-  }
-  NSData* inner_data = DecodeBase64(root[@"initData"], false);
-  if (!inner_data.length) {
-    return Fail("keyids initData is not non-empty base64");
-  }
-  InitDataPlan plan = PlanContentKeyRequests(*inner, ToVector(inner_data));
-  if (plan.error.empty()) {
-    for (ContentKeyRequestPlan& call : plan.calls) {
-      call.content_identifier = ToVector(content_id);
-    }
-  }
-  return plan;
-}
-
 }  // namespace
 
 InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t>& init_data) {
@@ -471,6 +435,21 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
         return Fail("sinf init data names no FairPlay-compatible scheme and key ID");
       }
       call.initialization_data = init_data;
+      // Parc extension for WebKit's legacy com.apple.fps.2_N sessions
+      // (Engine/ParcRenderer/parc_webkit_media_keys.h): their SPC is named by
+      // the page's identifier (CDMSessionAVContentKeySession's
+      // contentIdentifier) while the request comes from the source buffer's
+      // sinf. {"sinf": [...], "contentId": "<base64>"} names it so, and
+      // AVFoundation gets {"sinf": [...]} alone, as WebKit's sanitizeSinf
+      // leaves it. Blink passes sinf init data through unchanged; keyids
+      // init data it rebuilds from the key IDs alone. Any other contentId is
+      // ignored, as Safari ignores members besides "sinf".
+      NSData* content_id = DecodeBase64(root[@"contentId"], false);
+      if (content_id.length) {
+        call.content_identifier = ToVector(content_id);
+        call.initialization_data = ToVector(
+            [NSJSONSerialization dataWithJSONObject:@{@"sinf" : sinfs} options:0 error:nil]);
+      }
       InitDataPlan plan;
       plan.calls.push_back(std::move(call));
       return plan;
@@ -504,9 +483,6 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
     }
     case InitDataType::kKeyIds: {
       NSDictionary* root = ParseJSON(init_data);
-      if ([root isKindOfClass:[NSDictionary class]] && root[@"initDataType"]) {
-        return PlanWithContentIdentifier(root);
-      }
       NSArray* kids = [root isKindOfClass:[NSDictionary class]] ? root[@"kids"] : nil;
       if (![kids isKindOfClass:[NSArray class]] || !kids.count) {
         return Fail("keyids init data is not {\"kids\": [base64url]}");
@@ -519,16 +495,7 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
         }
         AddUnique(&key_ids, ToVector(key_id));
       }
-      InitDataPlan plan = PlanForKeyIds(key_ids);
-      // The same extension for legacy key IDs: a non-empty base64 contentId
-      // names every SPC (anything else there is ignored, as before).
-      NSData* content_id = DecodeBase64(root[@"contentId"], false);
-      if (content_id.length) {
-        for (ContentKeyRequestPlan& call : plan.calls) {
-          call.content_identifier = ToVector(content_id);
-        }
-      }
-      return plan;
+      return PlanForKeyIds(key_ids);
     }
     case InitDataType::kMpts: {
       // WebKit accepts what extractKeyIDsMpts reads: an object whose "cont"

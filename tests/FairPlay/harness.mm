@@ -1339,38 +1339,32 @@ void SelfTests(const Media& video, const Media& audio) {
           "init data: Media Source's sinf init data for each protected track -> one request "
           "for its tenc key ID, the raw SPC/CKC exchange WebKit uses");
   }
-  // WebKit's legacy com.apple.fps.2_N: the media's init data, the page's
-  // content identifier (parc_webkit_media_keys.h's keyids extension).
-  auto legacy = [&](const char* type, const std::vector<uint8_t>& data) {
-    return fp::PlanContentKeyRequests(
-        fp::InitDataType::kKeyIds,
-        Bytes(Format("{\"initDataType\":\"%s\",\"initData\":\"%s\",\"contentId\":\"YXNzZXQtNw==\"}", type,
-                     [Data(data) base64EncodedStringWithOptions:0].UTF8String)));
-  };
-  auto legacy_cenc = legacy("cenc", v.pssh_boxes);
-  auto legacy_sinf = legacy("sinf", Bytes(sinf_json));
-  Check(legacy_cenc.error.empty() && legacy_cenc.json_messages && legacy_cenc.calls.size() == 1 &&
-            legacy_cenc.calls[0].key_ids[0] == g_key_id &&
-            legacy_cenc.calls[0].content_identifier == Bytes(std::string("asset-7")) &&
-            legacy_sinf.error.empty() && !legacy_sinf.json_messages && legacy_sinf.calls.size() == 1 &&
-            legacy_sinf.calls[0].initialization_data == Bytes(sinf_json) &&
-            legacy_sinf.calls[0].content_identifier == Bytes(std::string("asset-7")),
-        "init data: legacy 2_N keyids envelope -> the inner cenc/sinf plan, SPC named by contentId");
-  Check(!legacy("skd", Bytes(std::string(kSkd))).error.empty() &&
-            !legacy("keyids", Bytes(Format("{\"kids\":[\"%s\"]}", kid64.UTF8String))).error.empty() &&
-            !fp::PlanContentKeyRequests(fp::InitDataType::kKeyIds,
-                                        Bytes(std::string("{\"initDataType\":\"cenc\",\"contentId\":\"\"}")))
-                 .error.empty(),
-        "init data: legacy envelope only wraps cenc/sinf and needs a contentId and init data");
-  auto legacy_kids = fp::PlanContentKeyRequests(
-      fp::InitDataType::kKeyIds,
-      Bytes(Format("{\"kids\":[\"%s\"],\"contentId\":\"YXNzZXQtNw==\"}", kid64.UTF8String)));
-  auto null_id = fp::PlanContentKeyRequests(
-      fp::InitDataType::kKeyIds, Bytes(Format("{\"kids\":[\"%s\"],\"contentId\":null}", kid64.UTF8String)));
-  Check(legacy_kids.error.empty() && legacy_kids.calls.size() == 1 &&
-            legacy_kids.calls[0].content_identifier == Bytes(std::string("asset-7")) && null_id.error.empty() &&
-            null_id.calls.size() == 1 && null_id.calls[0].content_identifier == g_key_id,
-        "init data: keyids with a contentId names the SPC by it; without a usable one, by the key ID");
+  // WebKit's legacy com.apple.fps.2_N: the source buffer's sinf, the page's
+  // content identifier (parc_webkit_media_keys.h's sinf "contentId").
+  {
+    NSString* sinf64 = [Data(v.sinf_payload) base64EncodedStringWithOptions:0];
+    auto legacy = fp::PlanContentKeyRequests(
+        fp::InitDataType::kSinf,
+        Bytes(Format("{\"sinf\":[\"%s\"],\"contentId\":\"YXNzZXQtNw==\"}", sinf64.UTF8String)));
+    NSDictionary* sent = legacy.calls.empty()
+                             ? nil
+                             : [NSJSONSerialization JSONObjectWithData:Data(legacy.calls[0].initialization_data)
+                                                               options:0
+                                                                 error:nil];
+    Check(legacy.error.empty() && !legacy.json_messages && legacy.calls.size() == 1 &&
+              legacy.calls[0].key_ids.size() == 1 && legacy.calls[0].key_ids[0] == g_key_id &&
+              legacy.calls[0].content_identifier == Bytes(std::string("asset-7")) &&
+              [sent isEqual:@{@"sinf" : @[ sinf64 ]}],
+          "init data: legacy 2_N sinf with a contentId -> the tenc key's request, SPC named by "
+          "contentId, AVFoundation given the sinf entries alone");
+    auto ignored = fp::PlanContentKeyRequests(
+        fp::InitDataType::kSinf,
+        Bytes(Format("{\"sinf\":[\"%s\"],\"contentId\":null}", sinf64.UTF8String)));
+    Check(ignored.error.empty() && ignored.calls.size() == 1 &&
+              ignored.calls[0].content_identifier.empty(),
+          "init data: a sinf contentId that isn't non-empty base64 is ignored, as Safari ignores "
+          "members besides sinf");
+  }
   // WebKit's mpts (macOS): the JSON passed through with no identifier, the
   // request named "TransportStreamIdentifier" (extractKeyIDsMpts), the raw
   // SPC/CKC exchange, and no 16-byte key ID for renderers.

@@ -335,10 +335,10 @@ init data (`{"codc": n, "mtyp": n, "cont": "mpts"}`, passed to AVFoundation
 unchanged), which names no key ID; key statuses report that name, and no
 renderer can use the key. WebKit's legacy `com.apple.fps.2_N`
 sessions name the SPC by the page's bytes instead; Parc's legacy script
-(`Engine/ParcRenderer/parc_webkit_media_keys.h`) sends them as keyids init data
-`{"initDataType": "cenc"|"sinf", "initData": "<base64>", "contentId":
-"<base64>"}`, planned as the inner type (and exchanging its messages) with
-every SPC named by `contentId`. Its legacy `com.apple.fps`/`1_0` sessions
+(`Engine/ParcRenderer/parc_webkit_media_keys.h`) sends them as sinf init data
+with a `"contentId"` member (base64), and AVFoundation gets the sinf entries
+alone. (Blink passes sinf init data through unchanged but rebuilds keyids init
+data from its key IDs, so extensions can't ride on keyids.) Its legacy `com.apple.fps`/`1_0` sessions
 (WebKit's AVFoundation player) name the SPC by the page's content ID: skd init
 data `{"skd": "<URI>", "contentId": "<base64>"}` is the URI's request with
 that content identifier.

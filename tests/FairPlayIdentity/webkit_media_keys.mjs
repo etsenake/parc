@@ -98,14 +98,17 @@ function makeWorld({sinf = true, failSpc = 0} = {}) {
         return Promise.resolve();
       }
       if (type === 'keyids') {
-        // Parc's keyids extension for com.apple.fps.2_N: the media's init
-        // data plus the SPC's content identifier.
-        const json = JSON.parse(inner);
-        if (!json.contentId || !['cenc', 'sinf'].includes(json.initDataType)) {
-          return Promise.reject(new DOMException('bad keyids', 'TypeError'));
+        // Blink's SanitizeInitData rebuilds keyids init data from its key IDs
+        // alone, so nothing else in it reaches the CDM.
+        let json;
+        try {
+          json = JSON.parse(inner);
+        } catch (error) {
         }
-        innerType = json.initDataType;
-        inner = Buffer.from(json.initData, 'base64').toString('latin1');
+        if (!json || !Array.isArray(json.kids) || !json.kids.length) {
+          return Promise.reject(new TypeError('Invalid keyids init data'));
+        }
+        inner = JSON.stringify({kids: json.kids});
       }
       if (innerType === 'sinf' && !sinf) {
         return Promise.reject(new DOMException('Unsupported initDataType', 'NotSupportedError'));
@@ -573,10 +576,12 @@ for (const sinf of [true, false]) {
   check(unknown.error && unknown.error.code === 6, 'init data Parc cannot read is a DOMAIN key error');
 }
 
-// ---- com.apple.fps.2_0: the init data comes from the attached media.
+// ---- com.apple.fps.2_0: the init data is the source buffer's sinf.
 {
   const world = makeWorld();
   const hook = run(world, script);
+  const sinfOf = (tag) => Buffer.from(JSON.stringify({sinf: [Buffer.from(tag).toString('base64')]}));
+  const tagOf = (entry) => Buffer.from(JSON.parse(entry[2]).sinf[0], 'base64').toString();
   const video = new world.HTMLMediaElement();
   const keys = new world.WebKitMediaKeys('com.apple.fps.2_0');
   video.webkitSetMediaKeys(keys);
@@ -588,44 +593,38 @@ for (const sinf of [true, false]) {
   session.update(new Uint8Array(bytesOf('CERT')));
   await settle();
   check(events.join() === 'certificate,error:1', 'no protected media yet: InvalidPlayerState');
-  // The window sees encrypted events of elements in its tree; here the
-  // element forwards once keys are set on it.
-  needKey(hook, video, pssh('C'), 'media-source');
+  needKey(hook, video, sinfOf('C'), 'media-source');
   const second = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
   second.addEventListener('webkitkeymessage', (event) => events.push(text(event.message)));
   await settle();
   second.update(new Uint8Array(bytesOf('CERT')));
   await settle();
   const request = world.log.find((entry) => entry[0] === 'generateRequest');
-  const envelope = request && request[1] === 'keyids' && JSON.parse(request[2]);
-  check(envelope && envelope.initDataType === 'cenc' &&
-        Buffer.from(envelope.initData, 'base64').equals(pssh('C')) &&
-        Buffer.from(envelope.contentId, 'base64').toString() === 'content-id',
-        "the request uses the media's init data and names the SPC by the page's identifier");
-  check(events.slice(-2).join() === 'certificate,SPC(CERT,C)', 'then the SPC');
+  const json = request && request[1] === 'sinf' && JSON.parse(request[2]);
+  check(json && tagOf(request) === 'C' && Buffer.from(json.contentId, 'base64').toString() === 'content-id',
+        "the request is the source buffer's sinf, the SPC named by the page's identifier");
+  check(events.slice(-2).join() === 'certificate,SPC(CERT,sinf-key)', 'then the raw SPC');
 
   // A session keeps the first source buffer init data it is given: the
   // renderer's latest when it becomes the renderer's session, else the next.
   const third = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
-  needKey(hook, video, pssh('D'), 'media-source');
+  needKey(hook, video, sinfOf('D'), 'media-source');
   await settle();
   third.update(new Uint8Array(bytesOf('CERT')));
   await settle();
-  const thirdRequest = world.log.filter((entry) => entry[0] === 'generateRequest').pop();
-  check(Buffer.from(JSON.parse(thirdRequest[2]).initData, 'base64').equals(pssh('C')),
+  check(tagOf(world.log.filter((entry) => entry[0] === 'generateRequest').pop()) === 'C',
         'init data arriving later does not replace a session\'s first');
 
   // Keys attached after their session was created hand it the element's.
   const other = new world.HTMLMediaElement('other');
-  needKey(hook, other, pssh('E'), 'media-source');
+  needKey(hook, other, sinfOf('E'), 'media-source');
   const late = new world.WebKitMediaKeys('com.apple.fps.2_0');
   const lateSession = late.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
   await settle();
   other.webkitSetMediaKeys(late);
   lateSession.update(new Uint8Array(bytesOf('CERT')));
   await settle();
-  const lateRequest = world.log.filter((entry) => entry[0] === 'generateRequest').pop();
-  check(Buffer.from(JSON.parse(lateRequest[2]).initData, 'base64').equals(pssh('E')),
+  check(tagOf(world.log.filter((entry) => entry[0] === 'generateRequest').pop()) === 'E',
         "attaching the keys gives their latest session the element's init data");
 }
 
