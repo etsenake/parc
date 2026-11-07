@@ -359,7 +359,15 @@ episode: `readyState` to `HAVE_CURRENT_DATA` or `HAVE_METADATA`, then
 key request with no CDM attached
 (`MediaPlayerPrivateAVFoundationObjC.mm:2210-2235, 3090-3110`). Media Source
 key timing **handled** (35589317); the `readyState` drop and the native HLS
-rule **in progress** (fix agent WMPI-2).
+rule **fixed** 88efb22f. Still differing: any newly usable key ends the wait
+rather than the one playback asked for, and a key event racing the stall
+report can leave `readyState` lowered while playing: **in progress** (fix
+agent WMPI-2b). Native HLS decides "no CDM attached" when the GPU player
+accepts the CDM rather than at the key request, and a CDM offered twice
+answers "attached" early: **in progress** (fix agent WMPI-2c). Encrypted
+`src=` media through Chromium's pipeline waits while a CDM is attached, where
+WebKit's player doesn't, and Media Source tracks waiting per player rather
+than per SourceBuffer: **in progress** (fix agent WMPI-2d).
 
 **WMPI-3. Hidden pages pause video.** Chromium
 `web_media_player_impl.cc:3744-3787, 3825-3870, 3528-3551, 2643-2714` pauses
