@@ -109,7 +109,10 @@ void NativeHlsRenderer::StartPlayingFrom(base::TimeDelta time) {
   }
   // AVPlayer already sits at `time` (Demuxer::Seek). Whatever it has
   // buffered there tells readyState, as playbackLikelyToKeepUp does in
-  // Safari. The pipeline sets the rate next.
+  // Safari. The pipeline sets the rate next. Reported afresh, as RendererImpl
+  // reports HAVE_ENOUGH after every StartPlayingFrom: the pipeline finishes a
+  // seek only then, whatever was reported before it.
+  reported_buffering_state_ = media::BUFFERING_HAVE_NOTHING;
   ReportBufferingState(source_->GetBufferingState());
 }
 
