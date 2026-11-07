@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **64**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **65**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -52,10 +52,16 @@ slot list and queue are in `work/safari-media-audit-src/RUNNING_LOG.md`.
 
 A cast still connecting, or of a video played under five seconds, ended when
 the page entered the back/forward cache: **fixed** ed1b5e34 (overlay 578).
-A progressive file whose data at the paused position isn't downloaded yet
-shows no picture on the TV while the page is cached and evicts it past about
-1 MB; a background tab frozen outside the cache loses a cast that connects
-after freezing: **in progress** (CAST-5). An unmeasured paused cast is sized
+A progressive file whose data at the paused position wasn't downloaded
+showed no picture on the TV while the page was cached and evicted it past
+about 1 MB; a background tab frozen outside the cache lost a cast that
+connected after freezing: **fixed** b6d0a63e (casting players only). A cast
+still connecting 60 s after leaving is lost when Chromium evicts a page with
+an unfinished download, and Chrome's own HLS player's data sources aren't
+covered: **in progress** (CAST-6). Media Source past its buffer can't feed a
+cast from a frozen page (Safari's AirPlay can't cast plain Media Source
+either) and a cast paused while its page is cached can't be resumed from the
+TV until the page runs: **left**. An unmeasured paused cast is sized
 at 30 fps, so a paused 1080p60 video can start on a TV without 4K support
 where Chromium's measurement would refuse it: **left** (no frame rate exists
 in the config; the TV's own limit still applies).
