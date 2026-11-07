@@ -609,7 +609,7 @@ void Skd() {
   }
   Check(!skd_loaded, "skd never went to the loader");
   WaitFor([] { return false; }, 2);
-  Check(rig.client.key_uris.size() == 1, "one notification per pending URI");
+  Check(rig.client.key_uris.size() == 1, "one notification for AVFoundation's one request");
   Check(rig.Time() < 0.5, "no key, no playback");
   OnOwner([&] { rig.player->FailKeyRequests(rig.client.key_uris[0], "no license in this harness"); });
   bool failed = WaitFor([&] { return rig.client.errors > 0 || rig.client.key_uris.size() > 1; }, 20);

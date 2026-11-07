@@ -124,8 +124,10 @@ class HlsPlayerClient {
   virtual void OnError(HlsError error, const std::string& message) = 0;
   // AVFoundation asks for the key behind a clearkey:// URI, or an skd:// one
   // when no key request handler is installed (fairplay_hls_player_internal.h),
-  // once per pending URI. The requests stay pending until FulfillKeyRequests
-  // (clearkey) or FailKeyRequests names the URI.
+  // for every request, repeats of a URI included (each raises webkitneedkey,
+  // as WebKit's keyNeeded). A clearkey:// URI whose key FulfillKeyRequests
+  // already gave is answered without asking. The requests stay pending until
+  // FulfillKeyRequests (clearkey) or FailKeyRequests names the URI.
   virtual void OnKeyRequest(const std::string& uri) = 0;
   // AVPlayer's outputObscuredDueToInsufficientExternalProtection changed
   // (WebKit reports it to the CDM, which marks keys output-restricted).

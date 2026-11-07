@@ -361,7 +361,7 @@ plan and the switch that keeps it off).
 - `skd://` key requests go to the CDM's key loader for the asset when one is
   installed (`SetHlsKeyRequestHandler`, between `CreateAsset` and `Start`,
   because the loader must exist before the item routes a request), else to
-  the client (`OnKeyRequest`, once per pending URI). A failed key request is
+  the client (`OnKeyRequest`, for every request). A failed key request is
   asked for again rather than failing the item. AVPlayer's
   `outputObscuredDueToInsufficientExternalProtection` reaches the client as
   `OnOutputObscuredChange`.

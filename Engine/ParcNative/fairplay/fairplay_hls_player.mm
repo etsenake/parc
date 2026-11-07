@@ -667,15 +667,14 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
       return;
     }
     NSMutableArray<AVAssetResourceLoadingRequest*>* pending = key_requests_[uri];
-    bool first = !pending;
     if (!pending) {
       pending = [NSMutableArray array];
       key_requests_[uri] = pending;
     }
     [pending addObject:request];
-    if (first) {
-      client_->OnKeyRequest(uri);
-    }
+    // Every request, repeats of a URI included, as WebKit's keyNeeded
+    // (shouldWaitForLoadingOfResource): each one raises webkitneedkey.
+    client_->OnKeyRequest(uri);
   }
 
   void OnKeyRequestCancelled(AVAssetResourceLoadingRequest* request) {
