@@ -4580,7 +4580,7 @@
        NOTREACHED();
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_keys.idl
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_keys.idl
-@@ -25,9 +25,13 @@
+@@ -25,15 +25,19 @@
  
  // https://w3c.github.io/encrypted-media/#mediakeys-interface
  
@@ -4594,6 +4594,13 @@
  };
  
  [
+     Exposed=Window,
+     ActiveScriptWrappable,
+-    SecureContext
++    SecureContext=ParcSafariIdentityEme
+ ] interface MediaKeys {
+     [CallWith=ScriptState, RaisesException] MediaKeySession createSession(optional MediaKeySessionType sessionType = "temporary");
+ 
 --- a/third_party/blink/renderer/platform/media/key_system_config_selector.cc
 +++ b/third_party/blink/renderer/platform/media/key_system_config_selector.cc
 @@ -6,6 +6,7 @@

@@ -616,18 +616,23 @@
  }
  
  }  // namespace
-@@ -133,6 +323,10 @@
+@@ -133,7 +323,14 @@
    DVLOG(3) << __func__;
  
    LocalDOMWindow* window = LocalDOMWindow::From(script_state);
+-  if (!window->IsFeatureEnabled(
 +  if (IsParcSafariIdentityUserAgent(window->UserAgent()) &&
 +      !ParcCheckSafariEnumValues(supported_configurations, exception_state)) {
 +    return EmptyPromise();
 +  }
-   if (!window->IsFeatureEnabled(
++  // Parc: WebKit has no encrypted-media permissions policy feature, so a
++  // document presenting Safari's identity isn't held to it.
++  if (!IsParcSafariIdentityUserAgent(window->UserAgent()) &&
++      !window->IsFeatureEnabled(
            network::mojom::PermissionsPolicyFeature::kEncryptedMedia,
            ReportOptions::kReportOnFailure)) {
-@@ -189,6 +383,15 @@
+     UseCounter::Count(window,
+@@ -189,6 +386,15 @@
            window, resolver, key_system, supported_configurations);
    auto promise = resolver->Promise();
  
@@ -643,7 +648,7 @@
    // Defer to determine support until the prerendering page is activated.
    if (window->document()->IsPrerendering()) {
      window->document()->AddPostPrerenderingActivationStep(
-@@ -198,11 +401,9 @@
+@@ -198,11 +404,9 @@
    }
  
    // 6. Asynchronously determine support, and if allowed, create and
@@ -3295,4 +3300,141 @@
 +    // still uses it only with MediaCapabilitiesSpatialAudio, and documents
 +    // presenting Safari's identity get WebKit's answer.
 +    boolean spatialRendering;
+ };
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -4781,6 +4781,15 @@
+       origin_trial_feature_name: "Parakeet",
+     },
+     {
++      // Parc: names the Encrypted Media constructs exposed to documents
++      // presenting Safari's identity even outside a secure context
++      // ([SecureContext=ParcSafariIdentityEme], bind_gen/codegen_expr.py).
++      // Its own value is never read.
++      name: "ParcSafariIdentityEme",
++      status: "stable",
++      base_feature: "none",
++    },
++    {
+       name: "PartitionVisitedLinkDatabaseWithSelfLinks",
+       status: {"iOS": "", "default": "stable"},
+     },
+--- a/third_party/blink/renderer/bindings/scripts/bind_gen/codegen_expr.py
++++ b/third_party/blink/renderer/bindings/scripts/bind_gen/codegen_expr.py
+@@ -259,6 +259,14 @@
+         secure_context_term = _Expr("${is_in_secure_context}")
+     elif exposure.only_in_secure_contexts is False:
+         secure_context_term = _Expr(True)
++    elif "ParcSafariIdentityEme" in exposure.only_in_secure_contexts:
++        # Parc: [SecureContext=ParcSafariIdentityEme] constructs are also
++        # exposed to a document presenting Safari's identity, as WebKit gates
++        # no Encrypted Media construct on a secure context.
++        secure_context_term = expr_or([
++            _Expr("${is_in_secure_context}"),
++            _Expr("${execution_context}->IsParcSafariIdentityContext()")
++        ])
+     else:
+         terms = list(map(ref_enabled, exposure.only_in_secure_contexts))
+         secure_context_term = expr_or(
+--- a/third_party/blink/renderer/core/execution_context/execution_context.h
++++ b/third_party/blink/renderer/core/execution_context/execution_context.h
+@@ -282,6 +282,12 @@
+   SecureContextMode GetSecureContextMode() const {
+     return security_context_.GetSecureContextMode();
+   }
++  // Parc: this context presents Safari's identity (its user agent,
++  // parc_safari_identity.h). The Encrypted Media bindings marked
++  // [SecureContext=ParcSafariIdentityEme] are exposed to it even when it isn't
++  // a secure context, as in WebKit (bind_gen/codegen_expr.py).
++  bool IsParcSafariIdentityContext() const;
++
+   virtual bool IsSecureContext() const {
+     return GetSecureContextMode() == SecureContextMode::kSecureContext;
+   }
+--- a/third_party/blink/renderer/core/execution_context/execution_context.cc
++++ b/third_party/blink/renderer/core/execution_context/execution_context.cc
+@@ -44,6 +44,7 @@
+ #include "third_party/blink/renderer/core/execution_context/agent.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_state_observer.h"
+ #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
+ #include "third_party/blink/renderer/core/frame/csp/execution_context_csp_delegate.h"
+ #include "third_party/blink/renderer/core/frame/integrity_policy.h"
+@@ -439,6 +440,10 @@
+   return window_interaction_tokens_ > 0;
+ }
+ 
++bool ExecutionContext::IsParcSafariIdentityContext() const {
++  return IsParcSafariIdentityUserAgent(UserAgent());
++}
++
+ bool ExecutionContext::IsSecureContext(String& error_message) const {
+   if (!IsSecureContext()) {
+     error_message = SecurityOrigin::IsPotentiallyTrustworthyErrorMessage();
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.idl
+@@ -36,7 +36,7 @@
+ [
+     Exposed=Window,
+     ActiveScriptWrappable,
+-    SecureContext
++    SecureContext=ParcSafariIdentityEme
+ ] interface MediaKeySession : EventTarget {
+     // session properties
+     readonly attribute DOMString sessionId;
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_message_event.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_message_event.idl
+@@ -34,7 +34,7 @@
+ 
+ [
+     Exposed=Window,
+-    SecureContext
++    SecureContext=ParcSafariIdentityEme
+ ] interface MediaKeyMessageEvent : Event {
+     constructor(DOMString type, MediaKeyMessageEventInit eventInitDict);
+     readonly attribute MediaKeyMessageType messageType;
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.idl
+@@ -6,7 +6,7 @@
+ 
+ [
+     Exposed=Window,
+-    SecureContext
++    SecureContext=ParcSafariIdentityEme
+ ] interface MediaKeySystemAccess {
+     readonly attribute DOMString keySystem;
+     MediaKeySystemConfiguration getConfiguration();
+--- a/third_party/blink/renderer/modules/encryptedmedia/media_key_status_map.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_status_map.idl
+@@ -17,7 +17,7 @@
+ 
+ [
+     Exposed=Window,
+-    SecureContext
++    SecureContext=ParcSafariIdentityEme
+ ] interface MediaKeyStatusMap {
+     iterable <BufferSource, MediaKeyStatus>;
+     readonly attribute unsigned long size;
+--- a/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.idl
+@@ -7,5 +7,5 @@
+ [
+     ImplementedAs=NavigatorRequestMediaKeySystemAccess
+ ] partial interface Navigator {
+-    [SecureContext, CallWith=ScriptState, RaisesException] Promise<MediaKeySystemAccess> requestMediaKeySystemAccess(DOMString keySystem, sequence<MediaKeySystemConfiguration> supportedConfigurations);
++    [SecureContext=ParcSafariIdentityEme, CallWith=ScriptState, RaisesException] Promise<MediaKeySystemAccess> requestMediaKeySystemAccess(DOMString keySystem, sequence<MediaKeySystemConfiguration> supportedConfigurations);
+ };
+--- a/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.idl
++++ b/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.idl
+@@ -6,8 +6,8 @@
+ [
+     ImplementedAs=HTMLMediaElementEncryptedMedia
+ ] partial interface HTMLMediaElement {
+-    [SecureContext] readonly attribute MediaKeys mediaKeys;
+-    [SecureContext, CallWith=ScriptState, RaisesException] Promise<undefined> setMediaKeys(MediaKeys? mediaKeys);
++    [SecureContext=ParcSafariIdentityEme] readonly attribute MediaKeys mediaKeys;
++    [SecureContext=ParcSafariIdentityEme, CallWith=ScriptState, RaisesException] Promise<undefined> setMediaKeys(MediaKeys? mediaKeys);
+     attribute EventHandler onencrypted;
+     attribute EventHandler onwaitingforkey;
  };
