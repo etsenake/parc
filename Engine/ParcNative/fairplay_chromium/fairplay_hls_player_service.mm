@@ -392,13 +392,38 @@ void FairPlayHlsPlayerService::SetMuteStateObserverCloser(
   ApplyMuted();
 }
 
+base::OnceCallback<void(bool)>
+FairPlayHlsPlayerService::GetEphemeralSessionCallback() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  awaiting_ephemeral_session_ = true;
+  return base::BindOnce(&FairPlayHlsPlayerService::OnEphemeralSession,
+                        weak_factory_.GetWeakPtr());
+}
+
+void FairPlayHlsPlayerService::OnEphemeralSession(bool ephemeral) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ephemeral_session_ = ephemeral;
+  awaiting_ephemeral_session_ = false;
+  if (std::optional<PendingInitialize> pending =
+          std::exchange(pending_initialize_, std::nullopt)) {
+    Initialize(pending->url, pending->mime_type, pending->video_layer_size,
+               pending->video_layer_scale);
+  }
+}
+
 void FairPlayHlsPlayerService::Initialize(const GURL& url,
                                           const std::string& mime_type,
                                           const gfx::SizeF& video_layer_size,
                                           float video_layer_scale) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (player_ || errored_) {
+  if (player_ || errored_ || pending_initialize_) {
     mojo::ReportBadMessage("FairPlayHlsPlayer.Initialize called twice");
+    return;
+  }
+  if (awaiting_ephemeral_session_) {
+    // The asset's options need the browser's answer first.
+    pending_initialize_ =
+        PendingInitialize{url, mime_type, video_layer_size, video_layer_scale};
     return;
   }
   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() ||
@@ -417,6 +442,10 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
     player_->SetRate(rate_);
   }
   ApplyMuted();
+  player_->SetEphemeralSession(ephemeral_session_);
+  if (prepare_to_play_) {
+    player_->PrepareToPlay();
+  }
   // The layer waits at the element's size, as WebKit's does, so AVFoundation
   // picks the first variant for it (fairplay_hls_player_layer.h).
   if (!video_layer_size.IsEmpty() && video_layer_scale > 0) {
@@ -448,6 +477,7 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
 
 void FairPlayHlsPlayerService::PrepareToPlay() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  prepare_to_play_ = true;
   if (player_) {
     player_->PrepareToPlay();
   }

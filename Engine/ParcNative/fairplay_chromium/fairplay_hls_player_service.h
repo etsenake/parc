@@ -91,6 +91,10 @@ class FairPlayHlsPlayerService final
   // muted until its first answer. |closer| closes the observer when the
   // service goes.
   void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
+  // WebKit's ephemeral session for the frame, which the browser answers
+  // (FrameInterfaceFactory.IsFairPlayEphemeralSession): once this was asked
+  // for, Initialize waits for it. Bound to a weak pointer.
+  base::OnceCallback<void(bool)> GetEphemeralSessionCallback();
 
   // mojom::FairPlayHlsPlayer:
   void Initialize(const GURL& url,
@@ -191,6 +195,19 @@ class FairPlayHlsPlayerService final
   bool page_muted_ = false;
   bool tab_muted_ = false;
   bool awaiting_mute_state_ = false;
+  // GetEphemeralSessionCallback: the answer, and an Initialize waiting for it.
+  void OnEphemeralSession(bool ephemeral);
+  bool awaiting_ephemeral_session_ = false;
+  bool ephemeral_session_ = false;
+  struct PendingInitialize {
+    GURL url;
+    std::string mime_type;
+    gfx::SizeF video_layer_size;
+    float video_layer_scale = 0;
+  };
+  std::optional<PendingInitialize> pending_initialize_;
+  // PrepareToPlay arrived before the player existed.
+  bool prepare_to_play_ = false;
   base::ScopedClosureRunner mute_state_observer_closer_;
 
   // clearkey:// key ID (HlsClearKeyId) → URI, for ProvideClearKey.

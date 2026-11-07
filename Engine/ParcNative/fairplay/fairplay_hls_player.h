@@ -195,6 +195,12 @@ class FairPlayHlsPlayer {
   Result CreateAsset(const std::string& url, const std::string& mime_type);
   Result Start();
 
+  // WebKit's ephemeral session (Page::usesEphemeralSession: Safari's private
+  // browsing, an off-the-record profile here), before CreateAsset: the asset
+  // then keeps no persistent cache and AVFoundation logs no URLs, as
+  // WebKit's createAVAssetForURL asks.
+  void SetEphemeralSession(bool ephemeral);
+
   // HTMLMediaElement::prepareToPlay: the element's preload is auto or the
   // page called load(). WebKit makes the item only then (or at HAVE_METADATA
   // for a live stream, or on play or seek, which SetRate and Seek do here);

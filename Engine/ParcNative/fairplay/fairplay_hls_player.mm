@@ -66,6 +66,29 @@ NSString* OutOfBandMIMETypeKey() {
   return key;
 }
 
+// AVFoundation's asset keys WebKit sets that the page can't see (SPI; each
+// skipped if absent): parse in a sandbox, keep no persistent cache, log no
+// URLs.
+NSString* AssetKey(const char* name) {
+  void* symbol = dlsym(RTLD_DEFAULT, name);
+  return symbol ? *static_cast<NSString* __unsafe_unretained*>(symbol) : nil;
+}
+
+NSString* PrefersSandboxedParsingKey() {
+  static NSString* key = AssetKey("AVAssetPrefersSandboxedParsingOptionKey");
+  return key;
+}
+
+NSString* UsesNoPersistentCacheKey() {
+  static NSString* key = AssetKey("AVURLAssetUsesNoPersistentCacheKey");
+  return key;
+}
+
+NSString* DoNotLogURLsKey() {
+  static NSString* key = AssetKey("AVURLAssetDoNotLogURLsKey");
+  return key;
+}
+
 bool ResourceLoaderTakesURLSession() {
   return [AVAssetResourceLoader instancesRespondToSelector:@selector(setURLSession:)] &&
          [AVAssetResourceLoader instancesRespondToSelector:@selector(URLSessionDataDelegate)] &&
@@ -294,6 +317,21 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     NSString* ns_mime_type = NSStringOrNil(mime_type);
     if (ns_mime_type.length && OutOfBandMIMETypeKey()) {
       options[OutOfBandMIMETypeKey()] = ns_mime_type;
+    }
+    // MediaPlayerPrivateAVFoundationObjC::createAVAssetForURL's keys the
+    // page can't see. The asset parses in a sandbox. In an ephemeral session
+    // (Safari's private browsing, an off-the-record profile here) it keeps
+    // no persistent cache and AVFoundation logs no URLs; otherwise WebKit
+    // gives it an AVAssetCache in its media cache directory or, without one
+    // (as in the GPU process here), leaves AVFoundation's own cache on.
+    if (PrefersSandboxedParsingKey()) {
+      options[PrefersSandboxedParsingKey()] = @YES;
+    }
+    if (UsesNoPersistentCacheKey()) {
+      options[UsesNoPersistentCacheKey()] = @(ephemeral_session_);
+    }
+    if (ephemeral_session_ && DoNotLogURLsKey()) {
+      options[DoNotLogURLsKey()] = @YES;
     }
     asset_ = [AVURLAsset URLAssetWithURL:ns_url options:options];
     if (!asset_) {
@@ -592,6 +630,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     metadata.seekable = RangesOf(timeline_.SeekableRanges());
     return metadata;
   }
+
+  void SetEphemeralSession(bool ephemeral) { ephemeral_session_ = ephemeral; }
 
   void SetVideoLayerSize(double width, double height, double scale) {
     layer_width_ = width;
@@ -1347,6 +1387,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   AVPlayerItem* item_ = nil;
   AVPlayer* player_ = nil;
   PCHlsPlayerLayer* player_layer_ = nil;
+  // SetEphemeralSession, before CreateAsset.
+  bool ephemeral_session_ = false;
   // SetVideoLayerSize: points and scale; zero when unknown.
   double layer_width_ = 0;
   double layer_height_ = 0;
@@ -1907,6 +1949,10 @@ Result FairPlayHlsPlayer::CreateAsset(const std::string& url, const std::string&
 
 Result FairPlayHlsPlayer::Start() {
   return impl_->Start();
+}
+
+void FairPlayHlsPlayer::SetEphemeralSession(bool ephemeral) {
+  impl_->SetEphemeralSession(ephemeral);
 }
 
 void FairPlayHlsPlayer::PrepareToPlay() {
