@@ -64,7 +64,7 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `StartPlayingFrom` / `SetPlaybackRate` / `SetVolume` / `Flush` / `GetMediaTime` | same names (plus `SetMuted`); the rate picks the audio renderer's pitch algorithm as WebKit's `AudioVideoRendererAVFObjC` does (Spectral off 1x, else Varispeed) |
 | `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set; the GPU adapter has no call for it yet, as `media::mojom::Renderer` carries none) |
 | `RendererClient::OnWaiting(kNoDecryptionKey)` | `OnWaitingForKey` |
-| `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names |
+| `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names; a later natural size is reported when the clock reaches its first sample (WebKit's `sizeWillChangeAtTime`) |
 | compositing (`ca_renderer_layer_tree.mm`) | `display_layer()` (`AVSampleBufferDisplayLayer*`) |
 | `RendererClient::OnStatisticsUpdate` (frames decoded/dropped) | `LoadVideoMetrics`: AVFoundation's cumulative counts (macOS 14.4+) and `frames_passed`, the core's count of video samples the clock reached |
 

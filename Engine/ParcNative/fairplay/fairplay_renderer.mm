@@ -293,6 +293,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       observer_ = nil;
     }
     RemoveEndObserver();
+    RemoveSizeObservers();
     if (clock_observer_) {
       [synchronizer_ removeTimeObserver:clock_observer_];
       clock_observer_ = nil;
@@ -315,6 +316,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ++initialize_attempt_;
     natural_width_ = 0;
     natural_height_ = 0;
+    reported_width_ = 0;
+    reported_height_ = 0;
+    size_change_pending_ = false;
     video_config_ = video;
     audio_config_ = audio;
     std::string error;
@@ -590,6 +594,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     held.start = sample.pts.InSeconds();
     held.end = end.InSeconds();
     held.keyframe = stream == StreamType::kAudio || sample.is_keyframe;
+    if (stream == StreamType::kVideo && size_change_pending_) {
+      ArmSizeObserver(sample.pts);
+    }
     if (!state.held.empty() || !Submit(stream, held)) {
       state.held.push_back(std::move(held));
       if (!waiting_reported_) {
@@ -695,6 +702,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     synchronizer_.rate = 0;
     status_.rate = 0;
     RemoveEndObserver();
+    // A size not shown yet waits for the next sample queued.
+    RemoveSizeObservers();
+    size_change_pending_ = natural_width_ != reported_width_ || natural_height_ != reported_height_;
     for (StreamType stream : {StreamType::kVideo, StreamType::kAudio}) {
       id<AVQueuedSampleBufferRendering> renderer = RendererFor(stream);
       Stream& state = StreamFor(stream);
@@ -1127,12 +1137,30 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return CreateAudioFormats(error);
   }
 
+  // The first size is reported at once (metadata). A later one, from a new
+  // config or a keyframe's own size, is reported when the clock reaches the
+  // first sample in that size, as WebKit's AudioVideoRendererAVFObjC::
+  // sizeWillChangeAtTime does with a boundary observer per change, not when
+  // samples in it are queued ahead of playback.
   void ReportNaturalSize(int32_t width, int32_t height) {
     if (width == natural_width_ && height == natural_height_) {
       return;
     }
     natural_width_ = width;
     natural_height_ = height;
+    if (!reported_width_ && !reported_height_) {
+      PostNaturalSize(width, height);
+      return;
+    }
+    size_change_pending_ = true;  // Armed at the next sample, its first.
+  }
+
+  void PostNaturalSize(int32_t width, int32_t height) {
+    if (width == reported_width_ && height == reported_height_) {
+      return;
+    }
+    reported_width_ = width;
+    reported_height_ = height;
     // Only for the Initialize attempt that queued it, and only if that
     // attempt succeeded (a synchronizer exists).
     const uint64_t attempt = initialize_attempt_;
@@ -1141,6 +1169,37 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         impl.client_->OnVideoNaturalSizeChange(width, height);
       }
     });
+  }
+
+  void ArmSizeObserver(MediaTime time) {
+    size_change_pending_ = false;
+    const int32_t width = natural_width_;
+    const int32_t height = natural_height_;
+    if (!synchronizer_ || !time.IsValid() || GetMediaTime().InSeconds() >= time.InSeconds()) {
+      PostNaturalSize(width, height);
+      return;
+    }
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    uint64_t generation = generation_;
+    size_observers_.push_back([synchronizer_
+        addBoundaryTimeObserverForTimes:@[ [NSValue valueWithCMTime:ToCMTime(time)] ]
+                                  queue:RequestQueue()
+                             usingBlock:^{
+                               (*poster)([weak, generation, width, height] {
+                                 auto impl = weak.lock();
+                                 if (impl && impl->generation_ == generation) {
+                                   impl->PostNaturalSize(width, height);
+                                 }
+                               });
+                             }]);
+  }
+
+  void RemoveSizeObservers() {
+    for (id observer : size_observers_) {
+      [synchronizer_ removeTimeObserver:observer];
+    }
+    size_observers_.clear();
   }
 
   // Keyframes carry the decoder configuration in-band (Chromium re-inserts
@@ -1864,8 +1923,14 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool awaiting_audio_config_ = false;  // dac3/dec3 from the next syncframe.
   std::vector<std::vector<uint8_t>> parameter_sets_;  // Behind the current record.
   std::vector<uint8_t> av1_sequence_header_;
-  int32_t natural_width_ = 0;
+  int32_t natural_width_ = 0;   // The size of the samples queued last.
   int32_t natural_height_ = 0;
+  int32_t reported_width_ = 0;  // The size last reported to the client.
+  int32_t reported_height_ = 0;
+  // A new size waits for its first sample to be queued, then for the clock
+  // to reach it (one boundary observer per change, removed by Flush).
+  bool size_change_pending_ = false;
+  std::vector<id> size_observers_;
   uint64_t generation_ = 0;  // Bumped by Flush; stale posted tasks compare it.
   // generation_ for threads other than the owner's (notification blocks).
   const std::shared_ptr<std::atomic<uint64_t>> flush_count_ = std::make_shared<std::atomic<uint64_t>>(0);
