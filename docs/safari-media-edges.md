@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **54**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **55**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -620,8 +620,13 @@ points and different ranges disappear. **Fixed** e9a50704. Still differing:
 back eviction drops a longer track's tail that WebKit keeps; Parc removes
 whole GOPs where WebKit cuts frame by frame; Parc keeps the last appended GOP
 as its own range where WebKit removes it; and WebKit's cached evictable-size
-shortcut that skips the exception isn't modelled. **Queued** (SBST-1b,
-paused with its design saved).
+shortcut that skips the exception wasn't modelled. **Fixed** 4ba6c7c3 (no
+playback-gap risk: back eviction only removes data past the stall point and
+front eviction never removes the current group). An append starting
+mid-group after a removal drops frames to the next keyframe in Chromium where
+Safari keeps them, but neither can show them: no user can perceive it. The
+memory-pressure purge still drops a longer audio track's tail Safari keeps (a
+possible rebuffer): **in progress** (SBST-1c).
 
 **SBST-2. Small gaps in `buffered`.** Chromium keeps separate ranges unless
 the gap is within twice the largest inter-buffer distance
