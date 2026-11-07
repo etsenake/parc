@@ -21,7 +21,9 @@ namespace parc::fairplay {
 class NativeHlsRendererFactory final : public media::RendererFactory {
  public:
   // `interface_factory` is the frame's (MediaFactory's), which outlives every
-  // player of the frame and hops to its own thread.
+  // player of the frame and hops to its own thread. A player a
+  // Safari-identity element moves to another frame takes that frame's
+  // (ParcSetInterfaceFactory).
   explicit NativeHlsRendererFactory(
       media::mojom::InterfaceFactory* interface_factory);
   NativeHlsRendererFactory(const NativeHlsRendererFactory&) = delete;
@@ -39,8 +41,11 @@ class NativeHlsRendererFactory final : public media::RendererFactory {
   std::unique_ptr<media::Demuxer> CreateParcNativeHlsDemuxer(
       media::ParcNativeHlsDemuxerParams params) override;
 
+  void ParcSetInterfaceFactory(
+      media::mojom::InterfaceFactory* interface_factory);
+
  private:
-  const raw_ptr<media::mojom::InterfaceFactory> interface_factory_;
+  raw_ptr<media::mojom::InterfaceFactory> interface_factory_;
 };
 
 }  // namespace parc::fairplay

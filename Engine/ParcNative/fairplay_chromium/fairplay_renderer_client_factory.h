@@ -31,6 +31,10 @@ class FairPlayRendererClientFactory final : public RendererFactory {
       RequestOverlayInfoCB request_overlay_info_cb,
       const gfx::ColorSpace& target_color_space) override;
 
+  MojoRendererFactory* mojo_renderer_factory() {
+    return mojo_renderer_factory_.get();
+  }
+
  private:
   std::unique_ptr<MojoRendererFactory> mojo_renderer_factory_;
 };

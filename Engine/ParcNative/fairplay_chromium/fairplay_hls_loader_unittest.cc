@@ -188,8 +188,8 @@ class FairPlayHlsLoaderTest : public testing::Test {
     captured_ = CapturedRequest();
     captured_->options = options;
     EXPECT_CALL(*url_loader, LoadAsynchronously(_, _))
-        .WillOnce(Invoke([this](const WebURLRequest& request,
-                                WebAssociatedURLLoaderClient* client) {
+        .WillOnce([this](const WebURLRequest& request,
+                         WebAssociatedURLLoaderClient* client) {
           url_client_ = client;
           CapturedRequest& c = *captured_;
           c.url = GURL(KURL(request.Url()));
@@ -213,7 +213,7 @@ class FairPlayHlsLoaderTest : public testing::Test {
           c.destination = request.GetRequestDestination();
           c.mode = request.GetMode();
           c.credentials = request.GetCredentialsMode();
-        }));
+        });
     return url_loader;
   }
 
@@ -433,6 +433,34 @@ TEST_F(FairPlayHlsLoaderTest, AFailureBeforeAResponseOnlyCompletes) {
   EXPECT_TRUE(client_->completed_);
   EXPECT_EQ(net::ERR_CONNECTION_REFUSED, client_->net_error_);
   EXPECT_EQ(0u, loader_->load_count_for_testing());
+}
+
+// A load the old frame ends before any response, after the element moved its
+// player to another frame, is made again through that frame's fetch context;
+// one that already answered reports the failure.
+TEST_F(FairPlayHlsLoaderTest, AFailureBeforeAResponseAfterAMoveLoadsAgain) {
+  MakeLoader();
+  Start(Request());
+  NiceMock<MockResourceFetchContext> moved_fetch_context;
+  EXPECT_CALL(moved_fetch_context, CreateUrlLoader(_))
+      .WillOnce([this](const WebAssociatedURLLoaderOptions& options) {
+        return CreateUrlLoader(options);
+      });
+  loader_->SetFetchContext(&moved_fetch_context);
+  url_client_->DidFail(
+      WebURLError(net::ERR_ABORTED, WebURL(KURL(kPlaylistUrl))));
+  task_environment_.RunUntilIdle();
+  EXPECT_FALSE(client_->completed_);
+  EXPECT_EQ(GURL(kPlaylistUrl), captured_->url);
+  EXPECT_EQ(1u, loader_->load_count_for_testing());
+
+  Respond(200, "application/vnd.apple.mpegurl", 4);
+  url_client_->DidFail(
+      WebURLError(net::ERR_CONNECTION_RESET, WebURL(KURL(kPlaylistUrl))));
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(client_->completed_);
+  EXPECT_EQ(net::ERR_CONNECTION_RESET, client_->net_error_);
+  loader_.reset();
 }
 
 TEST_F(FairPlayHlsLoaderTest, AFailureMidBodyReportsTheError) {

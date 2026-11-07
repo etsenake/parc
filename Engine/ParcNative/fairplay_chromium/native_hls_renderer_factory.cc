@@ -17,6 +17,12 @@ NativeHlsRendererFactory::NativeHlsRendererFactory(
 
 NativeHlsRendererFactory::~NativeHlsRendererFactory() = default;
 
+void NativeHlsRendererFactory::ParcSetInterfaceFactory(
+    media::mojom::InterfaceFactory* interface_factory) {
+  DCHECK(interface_factory);
+  interface_factory_ = interface_factory;
+}
+
 std::unique_ptr<media::Renderer> NativeHlsRendererFactory::CreateRenderer(
     const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
     const scoped_refptr<base::TaskRunner>& /*worker_task_runner*/,

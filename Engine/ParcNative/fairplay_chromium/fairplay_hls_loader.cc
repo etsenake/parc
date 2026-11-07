@@ -128,6 +128,8 @@ class FairPlayHlsLoader::Load final : public WebAssociatedURLLoaderClient,
       return;
     }
     final_url_ = url;
+    request_ = request.Clone();
+    fetch_context_ = &fetch_context;
 
     WebURLRequest web_request{WebURL(KURL(url))};
     web_request.SetHttpMethod(WebString::FromAscii(request.method));
@@ -260,6 +262,15 @@ class FairPlayHlsLoader::Load final : public WebAssociatedURLLoaderClient,
 
   void DidFail(const WebURLError& error) override {
     loader_.reset();
+    // A load the old frame ended before any response, once the element moved
+    // its player to another frame (SetFetchContext), is made again there.
+    if (!producer_ && owner_->fetch_context_ != fetch_context_) {
+      // Start() replaces `request_`.
+      media::mojom::FairPlayHlsRequestPtr request = std::move(request_);
+      Start(*request, *owner_->fetch_context_, owner_->cors_mode_,
+            owner_->is_audio_element_);
+      return;
+    }
     Complete(error.reason() < 0 ? error.reason() : net::ERR_FAILED);
   }
 
@@ -329,6 +340,9 @@ class FairPlayHlsLoader::Load final : public WebAssociatedURLLoaderClient,
   mojo::Remote<media::mojom::FairPlayHlsLoadClient> client_;
   std::unique_ptr<WebAssociatedURLLoader> loader_;
   GURL final_url_;
+  // What Start() made the request from.
+  media::mojom::FairPlayHlsRequestPtr request_;
+  raw_ptr<ResourceFetchContext> fetch_context_ = nullptr;
 
   mojo::ScopedDataPipeProducerHandle producer_;
   mojo::SimpleWatcher watcher_;
@@ -378,6 +392,12 @@ FairPlayHlsLoader::StartLoadCallback FairPlayHlsLoader::GetStartLoadCallback() {
   return base::BindPostTask(
       task_runner_, base::BindRepeating(&FairPlayHlsLoader::StartLoad,
                                         weak_factory_.GetWeakPtr()));
+}
+
+void FairPlayHlsLoader::SetFetchContext(ResourceFetchContext* fetch_context) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(fetch_context);
+  fetch_context_ = fetch_context;
 }
 
 void FairPlayHlsLoader::RemoveLoad(Load* load) {

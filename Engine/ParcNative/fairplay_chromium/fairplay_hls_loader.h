@@ -67,7 +67,8 @@ class PLATFORM_EXPORT FairPlayHlsLoader {
   static constexpr uint32_t kBodyPipeCapacity = 512 * 1024;
 
   // Runs on the current sequence, the render thread. |fetch_context| (the
-  // element's UrlIndex's) must outlive the loader. |cors_mode| is the
+  // element's UrlIndex's) must outlive the loader, or be replaced
+  // (SetFetchContext) before it goes. |cors_mode| is the
   // element's crossorigin state; |is_audio_element| picks the audio request
   // destination over video.
   FairPlayHlsLoader(ResourceFetchContext* fetch_context,
@@ -87,6 +88,10 @@ class PLATFORM_EXPORT FairPlayHlsLoader {
   // and dropped (closing its pipes) once the loader is gone.
   StartLoadCallback GetStartLoadCallback();
 
+  // Makes later loads with |fetch_context|: the element moved its player to
+  // another frame (WebMediaPlayerImpl::ParcMoveToFrame).
+  void SetFetchContext(ResourceFetchContext* fetch_context);
+
   size_t load_count_for_testing() const { return loads_.size(); }
 
  private:
@@ -95,7 +100,7 @@ class PLATFORM_EXPORT FairPlayHlsLoader {
   // Destroys |load|, which has stopped.
   void RemoveLoad(Load* load);
 
-  const raw_ptr<ResourceFetchContext> fetch_context_;
+  raw_ptr<ResourceFetchContext> fetch_context_;
   const UrlData::CorsMode cors_mode_;
   const bool is_audio_element_;
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
