@@ -1271,3 +1271,247 @@
    if (triggers->event != g_null_atom) {
      SetElementAttributeEventListenerFromScriptBody(
          triggers->event, params.name, params.new_value, params.reason);
+--- a/third_party/blink/renderer/modules/mediasource/source_buffer.h
++++ b/third_party/blink/renderer/modules/mediasource/source_buffer.h
+@@ -31,8 +31,10 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIASOURCE_SOURCE_BUFFER_H_
+ #define THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIASOURCE_SOURCE_BUFFER_H_
+ 
++#include <limits>
+ #include <memory>
+ 
++#include "base/memory/memory_pressure_level.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "media/base/stream_parser.h"
+ #include "third_party/blink/public/platform/web_source_buffer_client.h"
+@@ -209,6 +211,20 @@
+   // in seconds, or NaN if media element is not available.
+   double GetMediaTime();
+ 
++  // Parc: a SourceBuffer of a ManagedMediaSource (its MediaSource carries the
++  // marker listener that Safari-identity pages' ManagedMediaSource adds)
++  // purges its buffered data under memory pressure, as WebKit's
++  // SourceBuffer::memoryPressure does.
++  class ParcMemoryPressureListener;
++  void ParcOnMemoryPressure(base::MemoryPressureLevel);
++  void ParcPurge();
++  void ParcPurge_Locked(
++      MediaSourceAttachmentSupplement::ExclusiveKey /* passkey */);
++  // Called with the attachment lock held, as by the _Locked methods.
++  void ParcPurgeNow();
++  void ParcRunPendingPurge();
++  void ParcStopMemoryPressure();
++
+   const TrackDefault* GetTrackDefault(
+       V8TrackDefaultType::Enum track_type,
+       const AtomicString& byte_stream_track_id) const;
+@@ -246,6 +262,13 @@
+   V8AppendMode::Enum mode_ = V8AppendMode::Enum::kSegments;
+   bool updating_;
+ 
++  // Parc: see ParcOnMemoryPressure().
++  std::unique_ptr<ParcMemoryPressureListener> parc_memory_pressure_listener_;
++  base::MemoryPressureLevel parc_memory_pressure_level_ =
++      base::MEMORY_PRESSURE_LEVEL_NONE;
++  bool parc_purge_pending_ = false;
++  double parc_purged_media_time_ = std::numeric_limits<double>::quiet_NaN();
++
+   double timestamp_offset_;
+   Member<AudioTrackList> audio_tracks_;
+   Member<VideoTrackList> video_tracks_;
+--- a/third_party/blink/renderer/modules/mediasource/source_buffer.cc
++++ b/third_party/blink/renderer/modules/mediasource/source_buffer.cc
+@@ -30,12 +30,14 @@
+ 
+ #include "third_party/blink/renderer/modules/mediasource/source_buffer.h"
+ 
++#include <cmath>
+ #include <limits>
+ #include <memory>
+ #include <sstream>
+ #include <tuple>
+ #include <utility>
+ 
++#include "base/memory/memory_pressure_listener.h"
+ #include "base/numerics/checked_math.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "media/base/logging_override_if_enabled.h"
+@@ -73,6 +75,8 @@
+ #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
++#include "third_party/blink/renderer/platform/heap/persistent.h"
++#include "third_party/blink/renderer/platform/instrumentation/memory_pressure_listener.h"
+ #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+ #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+ #include "third_party/blink/renderer/platform/network/mime/content_type.h"
+@@ -195,7 +199,43 @@
+   return stream_parser_buffer;
+ }
+ 
++// Parc: the event types shared with Safari-identity pages' ManagedMediaSource
++// script (parc_managed_media_source.h): it listens for the first on each
++// ManagedMediaSource, marking it, and for the second on its SourceBuffers,
++// which this queues when a purge has changed their buffered ranges.
++constexpr char kParcManagedMediaSourceMarker[] = "parcmanagedmediasource";
++constexpr char kParcPurgedEvent[] = "parcmanagedmediasourcepurged";
++
++// Parc: a tag past base's MemoryPressureListenerTag values, so base/memory
++// stays unedited; such a tag is never suppressed
++// (memory_pressure_listener_registry.cc).
++constexpr auto kParcMemoryPressureTag =
++    static_cast<base::MemoryPressureListenerTag>(1000);
++
+ }  // namespace
++
++// Parc: hears memory pressure on the SourceBuffer's own thread (the window's
++// or the dedicated worker's) while it belongs to a ManagedMediaSource.
++class SourceBuffer::ParcMemoryPressureListener final
++    : public base::MemoryPressureListener {
++ public:
++  explicit ParcMemoryPressureListener(SourceBuffer* owner)
++      : owner_(owner), registration_(FROM_HERE, kParcMemoryPressureTag, this) {}
++  ParcMemoryPressureListener(const ParcMemoryPressureListener&) = delete;
++  ParcMemoryPressureListener& operator=(const ParcMemoryPressureListener&) =
++      delete;
++  ~ParcMemoryPressureListener() override { registration_.Dispose(); }
++
++ private:
++  void OnMemoryPressure(base::MemoryPressureLevel level) override {
++    if (SourceBuffer* owner = owner_.Get()) {
++      owner->ParcOnMemoryPressure(level);
++    }
++  }
++
++  WeakPersistent<SourceBuffer> owner_;
++  MemoryPressureListenerRegistration registration_;
++};
+ 
+ SourceBuffer::SourceBuffer(std::unique_ptr<WebSourceBuffer> web_source_buffer,
+                            MediaSource* source,
+@@ -248,6 +288,13 @@
+ 
+   source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
+   web_source_buffer_->SetClient(this);
++
++  // Parc: see ParcOnMemoryPressure().
++  if (source_->HasEventListeners(
++          AtomicString(kParcManagedMediaSourceMarker))) {
++    parc_memory_pressure_listener_ =
++        std::make_unique<ParcMemoryPressureListener>(this);
++  }
+ }
+ 
+ SourceBuffer::~SourceBuffer() {
+@@ -258,6 +305,75 @@
+   // Promptly clears a raw reference from content/ to an on-heap object
+   // so that content/ doesn't access it in a lazy sweeping phase.
+   web_source_buffer_.reset();
++  ParcStopMemoryPressure();
++}
++
++// Parc: WebKit purges a ManagedMediaSource's SourceBuffers as memory pressure
++// rises (MemoryRelease::releaseNoncriticalMemory, then
++// HTMLMediaElement::purgeBufferedDataIfPossible and MediaSource::
++// memoryPressure), after the operation in progress, and not again until
++// playback has moved on (the PurgeResources buffering policy it sets lasts
++// until playback resumes). The script reports the change as bufferedchange,
++// and its streaming policy then asks for the data again.
++void SourceBuffer::ParcOnMemoryPressure(base::MemoryPressureLevel level) {
++  const bool rose = level > parc_memory_pressure_level_;
++  parc_memory_pressure_level_ = level;
++  if (rose) {
++    ParcPurge();
++  }
++}
++
++void SourceBuffer::ParcPurge() {
++  if (IsRemoved()) {
++    parc_purge_pending_ = false;
++    return;
++  }
++  if (updating_) {
++    // Runs as the append or removal completes (ParcRunPendingPurge()).
++    parc_purge_pending_ = true;
++    return;
++  }
++  parc_purge_pending_ = false;
++  source_->RunUnlessElementGoneOrClosingUs(
++      blink::BindOnce(&SourceBuffer::ParcPurge_Locked, WrapPersistent(this)));
++}
++
++void SourceBuffer::ParcPurge_Locked(
++    MediaSourceAttachmentSupplement::ExclusiveKey /* passkey */) {
++  ParcPurgeNow();
++}
++
++// Parc: a purge that waited for an append or removal runs as it completes,
++// after its update and updateend are queued, so a page that appends again
++// from updateend can't hold it off. The caller holds the attachment lock.
++void SourceBuffer::ParcRunPendingPurge() {
++  if (parc_purge_pending_) {
++    parc_purge_pending_ = false;
++    ParcPurgeNow();
++  }
++}
++
++void SourceBuffer::ParcPurgeNow() {
++  DCHECK(source_);
++  source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
++  if (source_->IsClosed()) {
++    return;
++  }
++  const double media_time = GetMediaTime();
++  if (std::isnan(media_time) || media_time == parc_purged_media_time_) {
++    return;
++  }
++  parc_purged_media_time_ = media_time;
++  web_source_buffer_->ParcPurgeForMemoryPressure(
++      media_time, source_->activeSourceBuffers()->Contains(this));
++  // A worker's source tells the media element's thread its new ranges.
++  source_->SendUpdatedInfoToMainThreadCache();
++  ScheduleEvent(AtomicString(kParcPurgedEvent));
++}
++
++void SourceBuffer::ParcStopMemoryPressure() {
++  parc_memory_pressure_listener_.reset();
++  parc_purge_pending_ = false;
+ }
+ 
+ void SourceBuffer::setMode(const V8AppendMode& new_mode,
+@@ -1173,6 +1289,7 @@
+   web_source_buffer_.reset();
+   source_ = nullptr;
+   async_event_queue_ = nullptr;
++  ParcStopMemoryPressure();
+ }
+ 
+ double SourceBuffer::HighestPresentationTimestamp() {
+@@ -1814,6 +1931,7 @@
+   pending_remove_end_ = -1;
+ 
+   updating_ = false;
++  ParcStopMemoryPressure();
+ }
+ 
+ ExecutionContext* SourceBuffer::GetExecutionContext() const {
+@@ -2130,6 +2248,9 @@
+       // 5. Queue a task to fire a simple event named updateend at this
+       //    SourceBuffer object.
+       ScheduleEvent(event_type_names::kUpdateend);
++
++      // Parc: see ParcRunPendingPurge().
++      ParcRunPendingPurge();
+       break;
+   }
+ 
+@@ -2187,6 +2308,9 @@
+   // 12. Queue a task to fire a simple event named updateend at this
+   //     SourceBuffer object.
+   ScheduleEvent(event_type_names::kUpdateend);
++
++  // Parc: see ParcRunPendingPurge().
++  ParcRunPendingPurge();
+ }
+ 
+ void SourceBuffer::AppendError(

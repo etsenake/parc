@@ -265,6 +265,27 @@ tested. So the main world of every Safari-identity document gets a
   changes is caught by the once-a-second check. The replaced members sit
   where Chromium has them, on `SourceBuffer.prototype` and
   `MediaSource.prototype`, and act only for managed ones.
+- Under memory pressure its SourceBuffers drop buffered data as WebKit's
+  `SourceBuffer::memoryPressure` does (`HTMLMediaElement::
+  purgeBufferedDataIfPossible`): as the pressure level rises, an inactive
+  SourceBuffer is emptied, and an active one keeps only the playback window,
+  from the earlier of the keyframe at or before the position and 3.75 s back
+  (the removal ends at a keyframe, so the GOP being played stays), to the end
+  of the playable run holding the position (ranges joined by gaps of up to
+  125 ms), or 3.75 s past it when it isn't buffered. A purge waits for the
+  append or removal in progress and runs as it completes, and doesn't repeat
+  until playback has moved on. The page then gets `bufferedchange` with the
+  removed ranges and, when the next 10 s are gone, `startstreaming`.
+  Chromium's Media Source has no such eviction, so the engine does it
+  (`ParcPurgeForMemoryPressure` in `SourceBufferStream`, reached through
+  `ChunkDemuxer` and `WebSourceBuffer` in `fairplay-media.patch`, and Blink's
+  `SourceBuffer`, which listens for memory pressure, in
+  `fairplay-identity-blink.patch`); it recognises a managed source by a
+  listener the script adds, and the script reports the purge when the engine
+  tells it. An ended source keeps what follows the playable run, since
+  Chromium would end playback there where WebKit waits for data, and the gap
+  tolerance is a fixed 125 ms per track where WebKit widens it to 250 ms
+  where audio covers a gap and to 1 s near the start.
 - `streaming` follows WebKit's `ManagedMediaSource::monitorSourceBuffers`.
   With no active SourceBuffer it's true. Otherwise it turns true while the
   next 10 s after the playback position aren't buffered, and false once the
@@ -490,8 +511,13 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   (`parc_safari_media_keys.h`), the video presentation API
   (`parc_webkit_presentation.h`), FairPlay's `sinf`, `skd` and `mpts` init
   data gate,
-  and the Widevine refusal in
-  `requestMediaKeySystemAccess` and `decodingInfo`.
+  the Widevine refusal in
+  `requestMediaKeySystemAccess` and `decodingInfo`, and the memory-pressure
+  listener of a `ManagedMediaSource`'s SourceBuffers
+  (`SourceBuffer::ParcOnMemoryPressure`).
+- `fairplay-media.patch` also carries the purge those SourceBuffers run:
+  `SourceBufferStream::ParcPurgeForMemoryPressure` and its path through
+  `SourceBufferState`, `ChunkDemuxer` and `WebSourceBuffer`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
   a hook that service and shared workers call as they start, and that worker
   script requests consult for their `User-Agent` (a dedicated worker's with
@@ -525,18 +551,6 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - A shared worker that is already running when its site's identity changes
   keeps the old user agent until it ends. Service workers are stopped and
   restart with the new one.
-- Safari purges a `ManagedMediaSource`'s buffered data under memory
-  pressure (WebKit's `SourceBuffer::memoryPressure`, from
-  `HTMLMediaElement::purgeBufferedDataIfPossible`): an active SourceBuffer
-  keeps only the playback window, from the earlier of the keyframe before
-  the position and 3.75 s back to the end of the playable range, and an
-  inactive one is emptied; `bufferedchange` and `startstreaming` follow.
-  Chromium's Media Source never evicts on memory pressure, so Parc keeps the
-  data and a page never sees that purge. Matching it needs a purge in
-  Chromium's `SourceBufferStream` with keyframe-aware bounds (its append
-  garbage collection can't express it), plumbing through `ChunkDemuxer` and
-  `WebSourceBuffer`, and a memory-pressure listener on Blink's `MediaSource`
-  for managed sources.
 - A managed source opens without `disableRemotePlayback` or an AirPlay
   source. Safari for macOS defers `sourceopen` until one is present
   (`ManagedMediaSourceNeedsAirPlay`); WebKit built without wireless playback

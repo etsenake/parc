@@ -624,6 +624,55 @@ function makeWorld(options = {}) {
         'a failed append reports its parsed ranges before updateend');
 }
 
+// ---- A memory-pressure purge by the engine (SourceBuffer::ParcPurge_Locked)
+// is reported as WebKit reports it: bufferedchange as a task, streaming
+// re-evaluated, the engine's events hidden from the page.
+{
+  const world = makeWorld();
+  const { context } = world;
+  const source = new context.ManagedMediaSource();
+  const video = new context.HTMLVideoElement();
+  video.srcObject = source;
+  source._open();
+  world.run();
+  const sb = source.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+  sb._finish([[0, 40], [60, 90]]);
+  world.run();
+  check(source.streaming === false, 'buffered ahead: not streaming');
+  const changes = [];
+  sb.addEventListener('bufferedchange', (e) => changes.push(e));
+  let pageSawPurge = false, pageSawMarker = false;
+  sb.addEventListener('parcmanagedmediasourcepurged', () => { pageSawPurge = true; });
+  source.addEventListener('parcmanagedmediasource', () => { pageSawMarker = true; });
+  source.dispatchEvent(new context.Event('parcmanagedmediasource'));
+  check(!pageSawMarker, 'the marker event never reaches the page');
+
+  // The engine kept 0-40 around the position 0 and dropped 60-90.
+  sb._ranges = [[0, 40]];
+  sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
+  check(changes.length === 1 && changes[0].removedRanges.length === 1 &&
+        changes[0].removedRanges.start(0) === 60 && changes[0].removedRanges.end(0) === 90 &&
+        changes[0].addedRanges.length === 0, 'the purge is a bufferedchange with the removed ranges');
+  check(!pageSawPurge, 'the engine\'s purge event never reaches the page');
+
+  // A purge that took the data ahead of the position restarts streaming.
+  video.currentTime = 30;
+  sb._ranges = [[28, 40]];
+  sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
+  check(changes.length === 2 && changes[1].removedRanges.start(0) === 0 && changes[1].removedRanges.end(0) === 28,
+        'the front of the buffer went');
+  check(source.streaming === true, 'less than 10 s ahead after the purge: streaming again');
+
+  // An operation started since reports the change when it completes.
+  sb.appendBuffer(new Uint8Array(1));
+  sb._ranges = [[30, 40]];
+  sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
+  check(changes.length === 2, 'no report while an operation runs');
+  sb._finish([[30, 50]]);
+  check(changes.length === 3 && changes[2].removedRanges.start(0) === 28 && changes[2].addedRanges.start(0) === 40,
+        'the operation reports the purge with its own change');
+}
+
 // ---- Other SourceBuffers and MediaSources keep the native behaviour.
 {
   const world = makeWorld();

@@ -744,6 +744,7 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
       // Capturing listeners added first run before any of the page's, so
       // `streaming` is current when the page hears these events, as in
       // WebKit, which updates it as the state changes.
+      this.addEventListener(MARKER_EVENT, marker, true);
       this.addEventListener('sourceopen', () => opened(this), true);
       this.addEventListener('sourceended', () => evaluate(this), true);
       this.addEventListener('sourceclose', () => closed(this), true);
@@ -776,6 +777,33 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     }
   }
 
+  // The engine purges a managed source's buffered data under memory
+  // pressure, as WebKit does (SourceBuffer::ParcOnMemoryPressure in
+  // fairplay-identity-blink.patch). It recognises a managed source by this
+  // marker listener and tells its SourceBuffers through the purge event,
+  // which is reported here as WebKit reports the purge: a bufferedchange
+  // task, with `streaming` re-evaluated so the page is asked for the data
+  // again. Neither event reaches the page's listeners.
+  const MARKER_EVENT = 'parcmanagedmediasource';
+  const PURGED_EVENT = 'parcmanagedmediasourcepurged';
+  function marker(event) {
+    event.stopImmediatePropagation();
+  }
+  function purged(source, sourceBuffer, event) {
+    event.stopImmediatePropagation();
+    // A SourceBuffer that started an operation since reports the change as
+    // that operation completes.
+    if (!readNative(nativeUpdating, sourceBuffer)) {
+      const change = takeChange(sourceBuffer);
+      if (change) {
+        sourceBuffer.dispatchEvent(changeEvent(change));
+      }
+    }
+    if (source) {
+      evaluate(source);
+    }
+  }
+
   // SourceBuffers a managed source creates are ManagedSourceBuffers. Added to
   // MediaSource's addSourceBuffer in place, so ManagedMediaSource.prototype
   // has only WebKit's members, and canConstructInDedicatedWorker comes from
@@ -796,6 +824,9 @@ inline constexpr char kParcManagedMediaSourceScript[] = R"PARC_MMS_JS(
     }, true);
     sourceBuffer.addEventListener('updateend', (event) => {
       operationEnded(ref.deref(), sourceBuffer, state, event);
+    }, true);
+    sourceBuffer.addEventListener(PURGED_EVENT, (event) => {
+      purged(ref.deref(), sourceBuffer, event);
     }, true);
   }
   wrapMember(mediaSourcePrototype, 'addSourceBuffer', (descriptor) => ({
