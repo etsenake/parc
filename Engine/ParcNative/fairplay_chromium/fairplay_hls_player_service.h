@@ -22,9 +22,11 @@
 //    (parc::fairplay::FairPlayHlsKeyLoader), installed between CreateAsset
 //    and Start with the frame's CDM once SetCdm names one. Every skd:// and
 //    clearkey:// request is reported first as OnKeyRequest(URL)
-//    (webkitneedkey); a key no session asked for as OnEncrypted("skd", URI)
-//    with OnWaiting(kNoDecryptionKey). clearkey:// requests are answered by
-//    ProvideClearKey with their key ID (HlsClearKeyId).
+//    (webkitneedkey); a key no session asked for as OnEncrypted("skd", URI),
+//    with OnWaiting(kNoDecryptionKey) only if AVFoundation asked while the
+//    loader held no CDM (the render process can't tell: SetCdm's answer and
+//    the request cross on different pipes). clearkey:// requests are
+//    answered by ProvideClearKey with their key ID (HlsClearKeyId).
 //  - Audio: muted while the page or the tab mutes it; the tab's state comes
 //    from the browser's MuteStateObserver, and audio stays muted until its
 //    first answer.
@@ -152,7 +154,7 @@ class FairPlayHlsPlayerService final
   class KeyLoaderClient;
 
   // From the key loader.
-  void OnKeyNeeded(const std::string& uri);
+  void OnKeyNeeded(const std::string& uri, bool cdm_attached);
   void OnKeyLoadingRequest(const std::string& url);
 
   // Sends OnInitialized: |metadata|, or null for a failure.

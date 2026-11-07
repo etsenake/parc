@@ -63,6 +63,10 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void SetCdm(const std::optional<base::UnguessableToken>& cdm_id,
               SetCdmCallback callback) override {
     cdm_ids_.push_back(cdm_id);
+    if (holds_cdm_answers_) {
+      cdm_answers_.push_back(std::move(callback));
+      return;
+    }
     std::move(callback).Run(accepts_cdm_);
   }
   void Play(double rate) override { commands_.push_back(rate); }
@@ -101,6 +105,9 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   std::vector<double> commands_;  // Play(rate) or 0 for Pause().
   std::vector<std::optional<base::UnguessableToken>> cdm_ids_;
   bool accepts_cdm_ = true;
+  // SetCdm answers wait in `cdm_answers_` for the test.
+  bool holds_cdm_answers_ = false;
+  std::vector<SetCdmCallback> cdm_answers_;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
   float volume_ = -1;
   std::optional<bool> preserves_pitch_;
@@ -395,42 +402,39 @@ TEST_F(NativeHlsTest, WaitingForKeyReachesALaterRenderer) {
   CreateRenderer();
 }
 
-// WebKit's player waits for a key only when AVFoundation asks for it with no
-// CDM attached (MediaPlayerPrivateAVFoundationObjC::
-// shouldWaitForLoadingOfResource).
-TEST_F(NativeHlsTest, WaitsForAKeyOnlyWithoutACdm) {
+// The GPU player decides at each key request whether it held a CDM, as
+// WebKit's player does (MediaPlayerPrivateAVFoundationObjC::
+// shouldWaitForLoadingOfResource), and reports the wait only without one. A
+// request that came before SetCdm reached it waits even when SetCdm's answer
+// gets here first: the two cross on different pipes.
+TEST_F(NativeHlsTest, WaitsWhenThePlayerSaysSoWithACdmAttached) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
-  EXPECT_CALL(renderer_client_,
-              OnWaiting(media::WaitingReason::kNoDecryptionKey));
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
-  task_environment_.RunUntilIdle();
-  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
-
   NiceMock<media::MockCdmContext> cdm_context;
   cdm_context.set_cdm_id(base::UnguessableToken::Create());
   base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
   EXPECT_CALL(attached_cb, Run(true));
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
-  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  EXPECT_CALL(renderer_client_,
+              OnWaiting(media::WaitingReason::kNoDecryptionKey));
   client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
   task_environment_.RunUntilIdle();
 }
 
-TEST_F(NativeHlsTest, KeyRequestAfterTheCdmReachesNoLaterRenderer) {
+TEST_F(NativeHlsTest, WaitingWithACdmAttachedReachesALaterRenderer) {
   NiceMock<media::MockCdmContext> cdm_context;
   cdm_context.set_cdm_id(base::UnguessableToken::Create());
   demuxer_->SetCdmForNativePlayer(&cdm_context);
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
   task_environment_.RunUntilIdle();
-  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  EXPECT_CALL(renderer_client_,
+              OnWaiting(media::WaitingReason::kNoDecryptionKey));
   CreateRenderer();
-  task_environment_.RunUntilIdle();
 }
 
-TEST_F(NativeHlsTest, KeyRequestAfterARefusedCdmWaits) {
+TEST_F(NativeHlsTest, ARefusedCdmMayBeOfferedAgain) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
   player_.accepts_cdm_ = false;
@@ -440,22 +444,94 @@ TEST_F(NativeHlsTest, KeyRequestAfterARefusedCdmWaits) {
   EXPECT_CALL(attached_cb, Run(false));
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
-  EXPECT_CALL(renderer_client_,
-              OnWaiting(media::WaitingReason::kNoDecryptionKey));
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
-  task_environment_.RunUntilIdle();
-  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
 
-  // The same CDM offered again reaches the player.
   player_.accepts_cdm_ = true;
   base::MockCallback<NativeHlsSource::CdmAttachedCB> again_cb;
   EXPECT_CALL(again_cb, Run(true));
   renderer_->SetCdm(&cdm_context, again_cb.Get());
   task_environment_.RunUntilIdle();
   EXPECT_EQ(player_.cdm_ids_.size(), 2u);
-  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+}
+
+// The pipeline hands the demuxer its CDM, then the renderer offers the same
+// one: the offer is answered with the player's own answer to the first.
+TEST_F(NativeHlsTest, ASecondOfferOfAnUnansweredCdmWaitsForThePlayer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  player_.holds_cdm_answers_ = true;
+  for (bool accepts : {false, true}) {
+    SCOPED_TRACE(accepts ? "accepted" : "refused");
+    NiceMock<media::MockCdmContext> cdm_context;
+    cdm_context.set_cdm_id(base::UnguessableToken::Create());
+    demuxer_->SetCdmForNativePlayer(&cdm_context);
+    base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+    EXPECT_CALL(attached_cb, Run(_)).Times(0);
+    renderer_->SetCdm(&cdm_context, attached_cb.Get());
+    task_environment_.RunUntilIdle();
+    testing::Mock::VerifyAndClearExpectations(&attached_cb);
+    ASSERT_EQ(player_.cdm_answers_.size(), 1u);
+
+    EXPECT_CALL(attached_cb, Run(accepts));
+    std::move(player_.cdm_answers_[0]).Run(accepts);
+    player_.cdm_answers_.clear();
+    task_environment_.RunUntilIdle();
+  }
+}
+
+// A CDM offered again after another one was sent goes to the player again
+// and takes the answer to that SetCdm, not to its first one.
+TEST_F(NativeHlsTest, ACdmOfferedAgainAfterAnotherTakesItsOwnAnswer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  player_.holds_cdm_answers_ = true;
+  NiceMock<media::MockCdmContext> first;
+  first.set_cdm_id(base::UnguessableToken::Create());
+  NiceMock<media::MockCdmContext> second;
+  second.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> first_cb;
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> second_cb;
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> again_cb;
+  renderer_->SetCdm(&first, first_cb.Get());
+  renderer_->SetCdm(&second, second_cb.Get());
+  renderer_->SetCdm(&first, again_cb.Get());
   task_environment_.RunUntilIdle();
+  ASSERT_EQ(player_.cdm_answers_.size(), 3u);
+  EXPECT_EQ(player_.cdm_ids_[2], *first.GetCdmId());
+
+  EXPECT_CALL(first_cb, Run(true));
+  EXPECT_CALL(second_cb, Run(true));
+  EXPECT_CALL(again_cb, Run(_)).Times(0);
+  std::move(player_.cdm_answers_[0]).Run(true);
+  std::move(player_.cdm_answers_[1]).Run(true);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&again_cb);
+
+  EXPECT_CALL(again_cb, Run(false));
+  std::move(player_.cdm_answers_[2]).Run(false);
+  task_environment_.RunUntilIdle();
+}
+
+// A lost GPU player refuses the offers it hadn't answered, as MojoRenderer
+// does.
+TEST_F(NativeHlsTest, ALostPlayerRefusesUnansweredCdmOffers) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  player_.holds_cdm_answers_ = true;
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> again_cb;
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  renderer_->SetCdm(&cdm_context, again_cb.Get());
+  task_environment_.RunUntilIdle();
+
+  EXPECT_CALL(attached_cb, Run(false));
+  EXPECT_CALL(again_cb, Run(false));
+  EXPECT_CALL(renderer_client_,
+              OnError(media::HasStatusCode(media::PIPELINE_ERROR_DISCONNECTED)));
+  player_receiver_.reset();
+  task_environment_.RunUntilIdle();
+  player_.cdm_answers_.clear();
 }
 
 TEST_F(NativeHlsTest, BufferingStateFollowsPlaybackStart) {
@@ -732,29 +808,15 @@ TEST_F(NativeHlsTest, NullCdmDetachesAndTheSameCdmReattaches) {
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
   renderer_->SetCdm(nullptr, attached_cb.Get());
   task_environment_.RunUntilIdle();
-  // With no CDM attached, a key request waits again.
-  EXPECT_CALL(renderer_client_,
-              OnWaiting(media::WaitingReason::kNoDecryptionKey));
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
-  task_environment_.RunUntilIdle();
-  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
 
-  // Attached again, the CDM answers key requests, including when it is set
-  // again before the null's reply.
-  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  // Set again, including before the null's reply, it reaches the player.
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
-  task_environment_.RunUntilIdle();
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
   task_environment_.RunUntilIdle();
   renderer_->SetCdm(nullptr, attached_cb.Get());
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
-  task_environment_.RunUntilIdle();
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
   task_environment_.RunUntilIdle();
   renderer_->SetCdm(nullptr, attached_cb.Get());
   renderer_->SetCdm(&other_cdm_context, attached_cb.Get());
-  task_environment_.RunUntilIdle();
-  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
   task_environment_.RunUntilIdle();
   EXPECT_EQ(player_.cdm_ids_,
             (std::vector<std::optional<base::UnguessableToken>>{

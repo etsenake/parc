@@ -329,8 +329,8 @@ class FairPlayHlsPlayerService::KeyLoaderClient final
   explicit KeyLoaderClient(FairPlayHlsPlayerService* service)
       : service_(service) {}
 
-  void OnKeyNeeded(const std::string& uri) override {
-    service_->OnKeyNeeded(uri);
+  void OnKeyNeeded(const std::string& uri, bool cdm_attached) override {
+    service_->OnKeyNeeded(uri, cdm_attached);
   }
   void OnKeyLoadingRequest(const std::string& url) override {
     service_->OnKeyLoadingRequest(url);
@@ -847,12 +847,17 @@ void FairPlayHlsPlayerService::OnOutputObscuredChange(bool obscured) {
   }
 }
 
-void FairPlayHlsPlayerService::OnKeyNeeded(const std::string& uri) {
+void FairPlayHlsPlayerService::OnKeyNeeded(const std::string& uri,
+                                           bool cdm_attached) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // No session asked for this key yet: encrypted and waitingforkey, after
-  // the request's webkitneedkey (OnKeyLoadingRequest).
+  // No session asked for this key yet: encrypted, after the request's
+  // webkitneedkey (OnKeyLoadingRequest), and waitingforkey only if no CDM
+  // was attached when AVFoundation asked (MediaPlayerPrivateAVFoundationObjC::
+  // shouldWaitForLoadingOfResource).
   client_->OnEncrypted("skd", std::vector<uint8_t>(uri.begin(), uri.end()));
-  client_->OnWaiting(WaitingReason::kNoDecryptionKey);
+  if (!cdm_attached) {
+    client_->OnWaiting(WaitingReason::kNoDecryptionKey);
+  }
 }
 
 void FairPlayHlsPlayerService::OnKeyLoadingRequest(const std::string& url) {

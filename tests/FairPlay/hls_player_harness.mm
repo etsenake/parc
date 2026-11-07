@@ -855,9 +855,10 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
     }
   }
 
-  // The element's encrypted(skd) event.
-  void OnKeyNeeded(const std::string& uri) override {
+  // The element's encrypted(skd) event, and its waitingforkey without a CDM.
+  void OnKeyNeeded(const std::string& uri, bool cdm_attached) override {
     needs.push_back(uri);
+    need_cdm_attached.push_back(cdm_attached);
     if (on_need) {
       on_need(uri);
     }
@@ -873,6 +874,7 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
   std::function<void(const std::string&)> on_need;  // The encrypted handler.
   std::function<void(const std::string&)> on_loading_request;  // webkitneedkey.
   std::vector<std::string> needs;
+  std::vector<bool> need_cdm_attached;  // Each need's, in order.
   std::vector<std::string> loading_requests;
   std::vector<std::string> sessions;
   std::vector<fp::MessageType> message_types;
@@ -947,6 +949,7 @@ void KeysMediaKeysFirst() {
   Check(page.loading_requests.size() == 1 && page.loading_requests[0] == kSkd,
         "the loading request is reported (legacy webkitneedkey)");
   Check(page.needs == std::vector<std::string>{kSkd}, "one encrypted(skd) with the playlist's URI");
+  Check(page.need_cdm_attached == std::vector<bool>{true}, "the request came with the CDM attached: no waitingforkey");
   Check(page.messages == 1 && page.updates_ok == 1 && page.Usable(kSkd),
         "one SPC/CKC exchange; key status usable under the URI");
   Check(plays, "protected HLS plays");
@@ -963,6 +966,7 @@ void KeysLoaderRoute() {
   kr.Play();
   bool asked = WaitFor([&] { return !page.needs.empty(); }, 20);
   Check(asked && page.needs[0] == kSkd, "encrypted(skd) with the URI before MediaKeys exist");
+  Check(asked && !page.need_cdm_attached[0], "the request came with no CDM: waitingforkey");
   Check(!page.loading_requests.empty() && page.loading_requests[0] == kSkd,
         "the loading request is reported first (legacy webkitneedkey)");
   page.Create();
@@ -978,6 +982,33 @@ void KeysLoaderRoute() {
   OnOwner([&] { kr.keys->SetOutputObscured(false); });
   WaitFor([&] { return page.Usable(kSkd); }, 3);
   Check(page.Usable(kSkd), "usable again once output is no longer obscured");
+}
+
+// MediaKeys attached after AVFoundation's request but before the loader
+// reports its need (here in the page's webkitneedkey handler, which comes
+// first): the request came with no CDM, so the element waits for the key, as
+// WebKit decides when AVFoundation asks (shouldWaitForLoadingOfResource).
+void KeysAttachAtRequest() {
+  std::printf("-- FairPlay HLS keys: MediaKeys attached between the request and its report\n");
+  KeyPage page(kSingleKeyToken);
+  page.Create();
+  KeyRig kr(&page);
+  KeyRig* krp = &kr;
+  KeyPage* pagep = &page;
+  page.on_loading_request = [krp, pagep](const std::string&) {
+    if (pagep->loading_requests.size() == 1) {
+      krp->keys->SetCdm(pagep->cdm.get());
+    }
+  };
+  page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
+  kr.Load(kSingleKeyMaster, nullptr);
+  kr.Play();
+  bool plays = kr.PlaysTo5s();
+  Check(page.needs == std::vector<std::string>{kSkd} && page.need_cdm_attached == std::vector<bool>{false},
+        "one encrypted(skd), reported as a request made with no CDM: waitingforkey");
+  Check(page.messages == 1 && page.updates_ok == 1 && page.Usable(kSkd),
+        "the attached CDM's session licenses the held request");
+  Check(plays, "protected HLS plays");
 }
 
 // Separate audio and video keys, MediaKeys before the load and after.
@@ -1209,7 +1240,8 @@ int main(int argc, char** argv) {
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
         {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
-        {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute}, {"keys-multikey", KeysMultiKey},
+        {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute},
+        {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
         {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},
         {"keys-legacy-order", KeysLegacyOrder}};

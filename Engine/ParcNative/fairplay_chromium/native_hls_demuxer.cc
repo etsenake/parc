@@ -520,10 +520,8 @@ void NativeHlsDemuxer::SendCdm(media::CdmContext* cdm_context,
     // requests wait again, and the next CDM, the same one included, is sent
     // again. It goes to the player even when no CDM was sent or the last one
     // failed: a refused replacement leaves the player the one before.
-    cdm_attached_ = false;
-    ++cdm_detaches_;
     cdm_id_.reset();
-    player_->SetCdm(std::nullopt, std::move(cdm_attached_cb));
+    SendCdmId(std::nullopt, std::move(cdm_attached_cb));
     return;
   }
   const std::optional<base::UnguessableToken> cdm_id = cdm_context->GetCdmId();
@@ -534,30 +532,45 @@ void NativeHlsDemuxer::SendCdm(media::CdmContext* cdm_context,
     return;
   }
   if (cdm_id_ == cdm_id) {
+    // The player took it, or hasn't yet answered the SetCdm that sent it.
+    if (auto it = unanswered_cdm_offers_.find(cdm_sets_);
+        it != unanswered_cdm_offers_.end()) {
+      it->second.push_back(std::move(cdm_attached_cb));
+      return;
+    }
     std::move(cdm_attached_cb).Run(true);
     return;
   }
   cdm_id_ = cdm_id;
-  player_->SetCdm(*cdm_id,
-                  base::BindOnce(&NativeHlsDemuxer::OnCdmSet,
-                                 weak_factory_.GetWeakPtr(), *cdm_id,
-                                 cdm_detaches_, std::move(cdm_attached_cb)));
+  SendCdmId(cdm_id, std::move(cdm_attached_cb));
 }
 
-void NativeHlsDemuxer::OnCdmSet(const base::UnguessableToken& cdm_id,
-                                int cdm_detaches,
-                                NativeHlsSource::CdmAttachedCB cdm_attached_cb,
-                                bool success) {
+void NativeHlsDemuxer::SendCdmId(
+    const std::optional<base::UnguessableToken>& cdm_id,
+    NativeHlsSource::CdmAttachedCB cdm_attached_cb) {
+  ++cdm_sets_;
+  unanswered_cdm_offers_[cdm_sets_].push_back(std::move(cdm_attached_cb));
+  player_->SetCdm(cdm_id, base::BindOnce(&NativeHlsDemuxer::OnCdmSet,
+                                         weak_factory_.GetWeakPtr(),
+                                         cdm_sets_));
+}
+
+void NativeHlsDemuxer::OnCdmSet(uint64_t cdm_set, bool success) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // A reply that a detach overtook changes nothing: the player has let the
-  // CDM go since, and the CDM may have been sent again.
-  if (cdm_detaches == cdm_detaches_) {
-    cdm_attached_ = cdm_attached_ || success;
-    if (!success && cdm_id_ == cdm_id) {
-      cdm_id_.reset();  // The page may offer it again.
-    }
+  std::vector<NativeHlsSource::CdmAttachedCB> offers;
+  if (auto it = unanswered_cdm_offers_.find(cdm_set);
+      it != unanswered_cdm_offers_.end()) {
+    offers = std::move(it->second);
+    unanswered_cdm_offers_.erase(it);
   }
-  std::move(cdm_attached_cb).Run(success);
+  // A refusal a later SetCdm overtook changes nothing: the CDM may have been
+  // sent again since.
+  if (!success && cdm_set == cdm_sets_) {
+    cdm_id_.reset();  // The page may offer it again.
+  }
+  for (NativeHlsSource::CdmAttachedCB& offer : offers) {
+    std::move(offer).Run(success);
+  }
 }
 
 media::BufferingState NativeHlsDemuxer::GetBufferingState() const {
@@ -970,13 +983,11 @@ void NativeHlsDemuxer::OnKeyRequest(const std::string& key_uri) {
 
 void NativeHlsDemuxer::OnWaiting(media::WaitingReason reason) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // The GPU player sends kNoDecryptionKey only for a key request that came
+  // while it held no CDM: SetCdm's answer and the request cross on different
+  // pipes, so only it knows (MediaPlayerPrivateAVFoundationObjC::
+  // shouldWaitForLoadingOfResource).
   if (reason == media::WaitingReason::kNoDecryptionKey) {
-    // WebKit waits only for a key request that comes with no CDM attached;
-    // the attached CDM takes the others (MediaPlayerPrivateAVFoundationObjC::
-    // shouldWaitForLoadingOfResource).
-    if (cdm_attached_) {
-      return;
-    }
     waiting_for_key_ = true;
   }
   // `waitingforkey` reaches the element through the renderer facade; one
@@ -1017,6 +1028,12 @@ void NativeHlsDemuxer::OnPlayerDisconnected() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   client_receiver_.reset();
   player_.reset();
+  // Their SetCdm answers went with the player (MojoRenderer refuses them).
+  for (auto& [cdm_set, offers] : std::exchange(unanswered_cdm_offers_, {})) {
+    for (NativeHlsSource::CdmAttachedCB& offer : offers) {
+      std::move(offer).Run(false);
+    }
+  }
   {
     // A pending seek's reply went with the player; the clock stays put.
     base::AutoLock lock(time_lock_);

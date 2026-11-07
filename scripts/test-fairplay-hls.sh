@@ -6,7 +6,8 @@
 # streams through a loader the harness controls. Needs network access, except
 # for the timeline scenario (WebKit's live and DVR timing rules). Optional
 # argument: one scenario (timeline, ts, fmp4, live, missing, http, bad-url,
-# skd, skd-handler, teardown, keys-first, keys-loader, keys-multikey,
+# skd, skd-handler, teardown, keys-first, keys-loader,
+# keys-attach-at-request, keys-multikey,
 # keys-await, keys-early, keys-close, keys-legacy, metadata-first,
 # keys-legacy-order). The keys
 # scenarios license Axinom's FairPlay HLS vectors from its public test

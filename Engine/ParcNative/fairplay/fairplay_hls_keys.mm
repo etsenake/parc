@@ -63,11 +63,12 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
     // The CDM may answer it at once: a session waiting for the URI, the
     // session whose earlier request AVFoundation cancelled, or one made
     // before the CDM was attached.
-    if (auto core = cdm_.lock(); core && OfferLoadingRequest(core.get(), this, uri, request)) {
+    std::shared_ptr<FairPlayCdm::Impl> core = cdm_.lock();
+    if (core && OfferLoadingRequest(core.get(), this, uri, request)) {
       return;
     }
     std::deque<Held>& queue = held_[uri];
-    queue.push_back({request});
+    queue.push_back({request, core != nullptr});
     if (queue.size() == 1) {
       ReportNeed(uri, request);
     }
@@ -172,7 +173,8 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
  private:
   struct Held {
     AVAssetResourceLoadingRequest* request = nil;
-    bool reported = false;  // Its OnKeyNeeded has been delivered.
+    bool cdm_attached = false;  // When AVFoundation made it.
+    bool reported = false;      // Its OnKeyNeeded has been delivered.
   };
 
   void ReportLoadingRequest(const std::string& url) {
@@ -199,7 +201,7 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
         return;
       }
       it->second.front().reported = true;
-      impl->client_->OnKeyNeeded(uri);
+      impl->client_->OnKeyNeeded(uri, it->second.front().cdm_attached);
     });
   }
 

@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -253,13 +254,15 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void SetTextTrackMode(const std::string& key,
                         media::ParcInbandTextTrackMode mode);
   void SetAudioTrackEnabled(const std::string& key, bool enabled);
-  // Sends the player the CDM ID `cdm_context` names, once per ID.
+  // Sends the player the CDM ID `cdm_context` names unless it was the last one
+  // sent; an offer of that one waits for the player's answer to it.
   void SendCdm(media::CdmContext* cdm_context,
                NativeHlsSource::CdmAttachedCB cdm_attached_cb);
-  void OnCdmSet(const base::UnguessableToken& cdm_id,
-                int cdm_detaches,
-                NativeHlsSource::CdmAttachedCB cdm_attached_cb,
-                bool success);
+  // Sends `cdm_id` (null detaches) as the next SetCdm.
+  void SendCdmId(const std::optional<base::UnguessableToken>& cdm_id,
+                 NativeHlsSource::CdmAttachedCB cdm_attached_cb);
+  // The player's answer to the `cdm_set`th SetCdm.
+  void OnCdmSet(uint64_t cdm_set, bool success);
   // A fatal error: to the renderer facade when one listens, otherwise to the
   // pipeline through the demuxer host.
   void ReportError(media::PipelineStatus status);
@@ -321,11 +324,12 @@ class NativeHlsDemuxer final : public media::Demuxer,
   // player was bound.
   std::optional<base::UnguessableToken> cdm_id_;
   raw_ptr<media::CdmContext> pending_cdm_context_ = nullptr;
-  // The player took a CDM (it keeps one until another replaces it or a null
-  // CDM detaches it).
-  bool cdm_attached_ = false;
-  // Null CDMs set, so an attach reply knows whether one followed it.
-  int cdm_detaches_ = 0;
+  // SetCdm calls sent so far, detaches included (`cdm_id_` went with the
+  // last unless it was one), and the offers of each one the player hasn't
+  // answered.
+  uint64_t cdm_sets_ = 0;
+  std::map<uint64_t, std::vector<NativeHlsSource::CdmAttachedCB>>
+      unanswered_cdm_offers_;
 
   // GetMediaTime() may be called from any thread.
   mutable base::Lock time_lock_;

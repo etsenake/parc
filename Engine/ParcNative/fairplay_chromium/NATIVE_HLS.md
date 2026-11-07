@@ -320,8 +320,9 @@ render process:
   the bridge to the new item (not yet on the player), registers the layer
   and sends `OnInitialized`. `SetCdm` afterwards goes to the loader (`false` when it can't
   take the asset; the old CDM stays). The loader's `OnKeyLoadingRequest(url)`
-  is `OnKeyRequest(url)`, its `OnKeyNeeded(uri)` is `OnEncrypted("skd", uri)`
-  plus `OnWaiting(kNoDecryptionKey)`, and the player's
+  is `OnKeyRequest(url)`, its `OnKeyNeeded(uri, cdm_attached)` is
+  `OnEncrypted("skd", uri)` plus, unless `cdm_attached`,
+  `OnWaiting(kNoDecryptionKey)`, and the player's
   `OnOutputObscuredChange` goes to `SetOutputObscured`. `OnInitialized` carries the
   metadata as WebKit reports `HAVE_METADATA`: once the asset's metadata keys
   have loaded and it is playable, before the item exists (GPU core player).
@@ -467,8 +468,9 @@ creates the CDM's key loader for the asset (`FairPlayHlsKeyLoader`, from
 `fp-hls-keys`) with the attached CDM if any, installs it with
 `SetHlsKeyRequestHandler`, then calls `Start`, which makes the item only
 after `HAVE_METADATA` (so no key request precedes `loadedmetadata`); it forwards the loader's
-`OnKeyNeeded(uri)` as `OnEncrypted("skd", uri)` plus
-`OnWaiting(kNoDecryptionKey)`, `SetCdm` to the loader, and the player's
+`OnKeyNeeded(uri, cdm_attached)` as `OnEncrypted("skd", uri)` plus, unless
+`cdm_attached`, `OnWaiting(kNoDecryptionKey)`, `SetCdm` to the loader, and the
+player's
 `OnOutputObscuredChange` to its `SetOutputObscured`. The key loader's tests
 showed that a request held on the resource loader can't be finished for the
 session afterwards (it never plays), so the loader answers held requests with
@@ -500,15 +502,19 @@ What the key loader does (its header and the [core README](../fairplay/README.md
    the asset's resource loader (the loader never makes the asset a content
    key recipient), so each raises `webkitneedkey` as in Safari and is answered
    with its own SPC in whatever order the page licenses keys.
-2. A key no session of the attached CDM asked for: `OnKeyNeeded(uri)`, which
-   the GPU service sends as `OnEncrypted("skd", <URI as UTF-8>)` and
-   `OnWaiting(kNoDecryptionKey)`. The render process raises `encrypted`
-   (initDataType `"skd"`), after the request's `webkitneedkey` (above), and,
-   only while the player has taken no CDM (`SetCdm` answered true), waits for
-   the key: `waitingforkey` and the lower `readyState` of WebKit's Wait for
-   Key ([README](README.md#ready-state-stalls-and-keys-what-the-page-sees)).
-   The attached CDM's next newly usable key, or the player playing on, ends
-   the wait.
+2. A key no session of the attached CDM asked for: `OnKeyNeeded(uri,
+   cdm_attached)`, which the GPU service sends as `OnEncrypted("skd", <URI as
+   UTF-8>)`, followed by `OnWaiting(kNoDecryptionKey)` only if the loader held
+   no CDM when AVFoundation made the request. As WebKit's
+   `shouldWaitForLoadingOfResource` checks `m_cdmInstance` then, only the GPU
+   player can decide: `SetCdm`'s answer and the request cross on different
+   pipes. The render process raises `encrypted` (initDataType `"skd"`), after
+   the request's `webkitneedkey` (above), and on `OnWaiting` waits for the
+   key: `waitingforkey` and the lower `readyState` of WebKit's Wait for Key
+   ([README](README.md#ready-state-stalls-and-keys-what-the-page-sees)). A
+   session of the attached CDM with a request for that key (checked at once
+   for a CDM attached since, as WebKit's setMediaKeys does, and at each newly
+   usable key), or the player playing on, ends the wait.
 3. The page's `generateRequest("skd", uri)` reaches the same `FairPlayCdm`
    over its own pipe. With an asset attached the request is named by the URI
    (content identifier = the URI, or a legacy session's `contentId`), and it
@@ -671,7 +677,7 @@ behavior, not Parc's hosting.
 | `audioTracks` / `textTracks` | `HlsMediaSelection` (Tracks) | `OnTracksChanged`, `OnTextCues` (Tracks) |
 | decoded/dropped frames | `-[AVPlayerLayer videoPerformanceMetrics]` (`HlsFrameStats`) | `OnStatisticsUpdate` deltas (as fp-frame-stats) |
 | `webkitneedkey` | every resource loader skd and clearkey request | `OnKeyRequest` → `ParcWebKitKeyRequest` |
-| `encrypted`, `waitingforkey` | resource loader skd requests; waiting only while the player holds no CDM, until the CDM has a usable key or playback goes on | `OnEncrypted`, `OnWaiting`; `WebMediaPlayerImpl::ParcOnCdmEvent` or `BUFFERING_HAVE_ENOUGH` ends it |
+| `encrypted`, `waitingforkey` | resource loader skd requests; waiting only for a request made while the player held no CDM, until a session has a request for the key or playback goes on | `OnEncrypted`, `OnWaiting`; `WebMediaPlayerImpl::ParcOnCdmEvent` or `BUFFERING_HAVE_ENOUGH` ends it |
 
 ## Tracks
 

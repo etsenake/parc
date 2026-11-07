@@ -47,13 +47,16 @@ class FairPlayHlsKeyLoaderClient {
   // AVFoundation needs the key named |uri| (the EXT-X-KEY skd URI) and no EME
   // session of the attached CDM has asked for it (or none is attached). The
   // media element raises `encrypted` with initDataType "skd" and the URI's
-  // UTF-8 bytes as init data, and `waitingforkey`. The page's
-  // generateRequest("skd", uri) then answers it. Called again for a URI when
-  // a further request for it is still held once a session took the earlier
-  // one (each takes its own session) or AVFoundation cancelled it, or after
-  // the earlier one failed and AVFoundation asked again. A need a session met
-  // before delivery isn't reported.
-  virtual void OnKeyNeeded(const std::string& uri) = 0;
+  // UTF-8 bytes as init data, and `waitingforkey` unless |cdm_attached|: a
+  // CDM was attached when AVFoundation made the request, whatever happened
+  // since (WebKit checks m_cdmInstance then, in
+  // MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource). The
+  // page's generateRequest("skd", uri) then answers it. Called again for a
+  // URI when a further request for it is still held once a session took the
+  // earlier one (each takes its own session) or AVFoundation cancelled it, or
+  // after the earlier one failed and AVFoundation asked again. A need a
+  // session met before delivery isn't reported.
+  virtual void OnKeyNeeded(const std::string& uri, bool cdm_attached) = 0;
   // Every skd loading request the player hands the loader, before anything
   // else it raises, whether or not a CDM is attached and including repeats of
   // a URI: |url| is the request URL's absoluteString. Legacy pages hear it as
