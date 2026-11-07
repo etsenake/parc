@@ -656,12 +656,17 @@ function makeWorld(options = {}) {
   check(!pageSawPurge, 'the engine\'s purge event never reaches the page');
 
   // A purge that took the data ahead of the position restarts streaming.
+  // WebKit's low threshold is the closed window [t, t + 10 s], so exactly
+  // 10 s ahead still counts as buffered.
   video.currentTime = 30;
   sb._ranges = [[28, 40]];
   sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
   check(changes.length === 2 && changes[1].removedRanges.start(0) === 0 && changes[1].removedRanges.end(0) === 28,
         'the front of the buffer went');
-  check(source.streaming === true, 'less than 10 s ahead after the purge: streaming again');
+  check(source.streaming === false, 'exactly 10 s ahead after the purge: still not streaming');
+  video.currentTime = 31;
+  video.dispatchEvent(new context.Event('timeupdate'));
+  check(source.streaming === true, '9 s ahead after the purge: streaming again');
 
   // An operation started since reports the change when it completes.
   sb.appendBuffer(new Uint8Array(1));
