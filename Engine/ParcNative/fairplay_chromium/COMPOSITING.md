@@ -54,7 +54,9 @@ Mojo services).
    clip, rounded corners, transform, opacity and sorting context like any quad,
    plus `protected_layer_token` (new, Apple only, in
    `overlay_candidate.h`) and `protected_video_type = kHardwareProtected`. It
-   counts as a video for CoreAnimation's layer limits.
+   counts as a video for CoreAnimation's layer limits. A hole inside a
+   non-root render pass is placed too (see "When the video is inside a render
+   pass").
 6. **SkiaRenderer** (`skia_renderer.cc`). `ScheduleOverlays` skips the resource
    lock for such a candidate (it has no resource), so it reaches the output
    surface with a zero mailbox. `SkiaOutputDeviceBufferQueue` already passes a
@@ -194,16 +196,101 @@ Frames that take this underlay route (the user sees no difference):
   non-axis-aligned clip, more than 30 render passes, or non-uniform corner
   radii.
 
+## When the video is inside a render pass
+
+Some players draw the video inside a render pass of its own. Apple TV+'s
+player is a modal `<dialog>` that fades in with a CSS animation (opacity and
+transform, `fill: forwards`). The finished animation holds its end state, so
+Chromium keeps the dialog as an opacity effect with its own render surface. A
+GPU trace showed the hole drawn in that 10-quad pass, never in the 14-quad
+root pass. The overlay processor only looks at the root pass, so the hole was
+drawn black there.
+
+`CALayerOverlayProcessor::ProcessNestedProtectedLayers` (`ca_layer_overlay.cc`)
+runs after the root pass, on both routes. It walks from the hole's pass up to
+the root through the render pass draw quad that draws each pass, and works out
+the hole's geometry in root space:
+- each quad's transform, plus the offset between the pass's output rect and
+  the quad's rect;
+- every clip on the way: the hole's own, each pass's output rect, each
+  quad's rect and clip, and any mask filter that is a plain rect;
+- the opacities;
+- at most one uniform rounded clip.
+
+Then:
+
+- **All CALayers:** the protected layer goes into the candidate list right
+  before the CALayer of the pass that the root draws. The root's content below
+  that pass stays below the video, and the pass stays above it. The hole is
+  punched out of its own pass with `ReplaceExistingQuadWithHolePunch`
+  (transparent, or DstOut when the video is translucent), so captions and
+  controls that the pass draws over the video stay on top.
+- **Underlays:** Apple TV+'s playing page went this way, with about 130 layers.
+  The protected layer is an underlay below the primary plane. The hole is
+  punched out of its own pass the same way. The root also gets a black DstOut
+  copy of the video's footprint just below the pass's quad, at that quad's
+  opacity, so what the root draws under the dialog gives way by the share the
+  video covers.
+
+Opacity is handled differently on each route:
+- **Underlays:** the punches carry the opacity, so the layer is drawn at full
+  strength. Upstream's hole punch relies on the same identity: DstOut over an
+  opaque page, then the video at full strength below it.
+- **All CALayers:** the pass's CALayer applies the outer pass's opacity to what
+  the punch leaves. So the layer gets c / (1 − a + c), where c is the video's
+  opacity times every pass's, and a is the outermost pass's.
+
+Both are exact when at most one of the video and its passes is translucent,
+assuming that what a translucent video covers in its own pass is opaque (a
+dialog background). That covers a fading dialog and a fading video once the
+fade ends, and a fading video at any point. Two translucent levels at once come
+out slightly off. So does content drawn over the video inside a translucent
+pass, such as captions or controls while a dialog fades: part of the video
+shows through them. Separate layers can't reproduce a group's flattening,
+which Safari's CALayer group opacity does. One case is exact anyway. Where the
+pass draws something opaque over the video, the occlusion culler trims the
+hole there, and the layer and the root's copy leave that part out.
+
+Ordinary pages are unchanged. A frame with no hole quad in a non-root pass
+costs one look at each non-root quad, and nothing in it changes. When a pass's
+punch starts or stops, that pass is redrawn whole, along with the passes that
+draw it and, on the underlay route, the root. That happens when a display
+parks or a hole becomes placeable or stops being placeable. A cached pass
+backing never keeps a stale punch or stale black. A parked display leaves
+nested holes black, exactly as it does root ones.
+
+The hole stays black, the way Safari leaves video it can't composite, when
+something on the way changes how the video looks:
+- a CSS filter or backdrop-filter;
+- a mask image (clip-path or mask) or a gradient mask;
+- mix-blend-mode;
+- rotation, skew or perspective on a pass;
+- a 3D sorting context;
+- two different rounded clips;
+- a pass drawn twice;
+- a pass that no quad draws. One kept only for a copy request, which the
+  aggregator's forced merge leaves, is like this; the hole's copy in the root
+  is placed instead.
+
+A pass on the way that has a copy request (a tab preview, `CopyFromSurface`,
+tab capture) is still punched, so the screen keeps the video, as Safari's does
+while capturing. The copy shows the punch, transparent where the video is, and
+never the video. Leaving such a frame black would flash the video black on
+screen for every snapshot, and for the whole of a tab capture.
+
+A hole two or more passes deep also stays black for now. Placing it needs the
+same DstOut copy in each pass in between, which is the next change.
+
+## When the video stays black
+
 The video area is **black** (never stale, never garbage) only when even the
 underlay can't be used:
 
-- **The hole quad isn't in the root render pass,** because an ancestor of the
-  video needs a render surface. Causes: CSS filter, clip-path or mask, an
-  opacity group over the video and siblings (for example a fade transition),
-  mix-blend-mode isolation, preserve-3d, or a video surface transform that
-  isn't axis-aligned (a rotation other than a multiple of 90°), which stops
-  the aggregator merging the surface. SkiaRenderer already draws any quad that
-  requires an overlay as solid black in release builds (magenta with DCHECKs).
+- **The hole is inside a render pass behind an effect a CALayer can't carry**
+  (above). `SkiaRenderer::DrawQuadInternal` draws any quad that requires an
+  overlay solid black in release builds, magenta with DCHECKs. Every
+  `kVideoHole` requires one, and that check comes before the material switch,
+  so `DrawUnsupportedQuad`'s release white never reaches a hole.
 - **The quad itself can't be a CALayer:** a blend mode other than src-over on
   the video, non-uniform corner radii, or a clip change inside a 3D sorting
   context. The hole stays in the primary plane, drawn black, and other videos'
@@ -214,22 +301,23 @@ underlay can't be used:
   process restarted and the page still shows the last hole frame. The host is
   black and empty.
 
-How often: the services' players (Netflix's watch page, Apple TV+'s player)
-put the video in an ordinary box under their controls, so they should stay on
-the all-CALayer path while playing. They should drop to the underlay for single
-capture frames and on busy pages. They go black only during effects applied to
-the video or its container, such as a cross-fade, a filter or clip-path, or a
-free rotation. Counts are unmeasured until there is a build. Each frame's result
-is recorded in the `Compositing.Renderer.CALayerResult` histogram, and
+How often:
+- Netflix's watch page puts the video in an ordinary box under its controls,
+  so it should stay on the all-CALayer path while playing.
+- Apple TV+'s player puts the video in a dialog pass (above), and its playing
+  page took the underlay route.
+- Both should take the underlay route for single capture frames and on busy
+  pages.
+- They go black only during effects that a CALayer can't carry, applied to the
+  video or its container: a filter, clip-path, or a free rotation.
+
+Counts are unmeasured until there is a build. Each frame's result is recorded
+in the `Compositing.Renderer.CALayerResult` histogram, and
 `--show-mac-overlay-borders` outlines the protected host in orange.
 
-Whether the black frames can be avoided: the underlay route already covers
-every case where the quad reaches the root pass. Covering a quad inside a
-render pass would mean promoting that pass as a CALayer, punching a hole in its
-backing and placing the protected layer below it, with the pass's filter
-applied to the video. CoreAnimation can't apply most CSS filters to another
-process's AVSampleBufferDisplayLayer, so this stays black by design. Safari
-behaves the same way for filters it can't composite.
+The black cases are black by design. CoreAnimation can't apply most CSS filters
+or masks to another process's AVSampleBufferDisplayLayer, and Safari leaves
+video it can't composite the same way.
 
 ## Geometry, windows and teardown
 
@@ -348,10 +436,15 @@ sequence.
    with `--gtest_filter='CALayerTreeTest.ProtectedLayer*'`. `ProtectedLayer`
    checks placement, reuse across frames, taking the layer back from an idle
    tree, handing it back when a late tree drops the token, and the black host.
-   `ProtectedLayerPictureInPicture` runs the PiP sequence. `viz_unittests`
-   with `--gtest_filter='CALayerOverlayTest.Protected*'` checks that a parked
-   display shows the hole black without a token, and that the flag leaves an
-   ordinary frame alone.
+   `ProtectedLayerPictureInPicture` runs the PiP sequence, and
+   `ProtectedLayerBelowPass` checks a host scheduled below a pass's layer with
+   a composed clip, rounded clip and opacity. `viz_unittests` with
+   `--gtest_filter='CALayerOverlayTest.Protected*:CALayerOverlayNestedTest.*'`
+   checks that a parked display shows the hole black without a token, and
+   that the flag leaves an ordinary frame alone. It also checks the video
+   inside a dialog pass on both routes: the punches, the root's DstOut copy,
+   opacity, clips, the effects that keep it black, and redraws when a punch
+   starts or stops.
 2. Ordinary video is unchanged: YouTube and an MSE test page still show
    yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
    `--show-mac-overlay-borders`.
@@ -380,7 +473,11 @@ sequence.
 7. Hidden tab for about 30 seconds, then back: does the video resume, or
    does the display layer report `requiresFlushToResumeDecoding`?
 8. `chrome://histograms/Compositing.Renderer.CALayerResult` while playing:
-   mostly success (0) on Netflix's and Apple TV+'s players.
+   mostly success (0) on Netflix's watch page.
+9. Apple TV+: play a title. The player dialog shows the picture in an
+   orange-bordered host, under its controls and subtitles, on either route.
+   The picture fades in with the dialog, and the area is never black while
+   playing.
 
 ## Verification done without a build
 
@@ -396,6 +493,13 @@ sequence.
   viz code is compiled as an extract against the real viz headers. The full viz
   `.cc` files need generated mojom headers that don't exist without a build
   directory, so their hunks were re-read against the pinned source.
+- The nested-pass change: the patched `ca_layer_overlay.cc`,
+  `overlay_processor_mac.cc`, `overlay_ca_unittest.cc` and
+  `ca_layer_tree_unittest_mac.mm` are syntax-checked whole with the pinned
+  clang and libc++ (`-std=c++23 -Wall -Wextra -Werror -Wthread-safety
+  -Wshorten-64-to-32 -Wunreachable-code-aggressive`). Generated headers are
+  stood in for: buildflags (all off), trace macros, enum-only mojoms and the
+  mojom interfaces the test fixtures name.
 - Every hunk applies with `scripts/engine-source.py`'s exact-context patcher,
   and the whole overlay transforms in memory against the shared workspace's
   recorded originals, with no writes.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 386,
+  "version": 387,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3851,7 +3851,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "45cb840bf96d4ce7e3891c0aa3d326661fe6c49c50972cfb402807f4cacf3b03",
+      "sha256": "cf1b83e71232b7ef276bb4f8ffb8d2926031886254f2d9fe78fec5bf4eb0768c",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -3871,7 +3871,7 @@
         {
           "target": "ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm",
           "before_sha256": "e4a284b5b6219f47d50e13ef70dd379d91f9563ae3a337c4ae022f5dabfb11e2",
-          "after_sha256": "5663dbd84ba7bc17da28e2d8f617522c3c19b6e3a98942f719f0afdaadf70422"
+          "after_sha256": "28ff1fd161e0a3461cdc68862a94270cb49e2650263e103c89fa1566618966a2"
         },
         {
           "target": "ui/gl/ca_renderer_layer_params.h",
@@ -3886,7 +3886,7 @@
         {
           "target": "components/viz/service/display/ca_layer_overlay.cc",
           "before_sha256": "5cd1ee86cff67c5fa24995edd03f8d84ae8200f86445fd610959564fbfd16689",
-          "after_sha256": "3eec1152aad13197ef11c70f5df48b0a09984f2abb376e8e61709028bc00f852"
+          "after_sha256": "ad04fc8181ddebb4b1065d68cb0d81235ed6124be99d8f480a3b5821a36f9859"
         },
         {
           "target": "components/viz/service/display/skia_renderer.cc",
@@ -3906,7 +3906,7 @@
         {
           "target": "components/viz/service/display/ca_layer_overlay.h",
           "before_sha256": "1e3ebabf223391b77b335876a8d16af5b21a985df8a16a3a3e83196235c4de25",
-          "after_sha256": "2afca5e25512c245e790e6e0fe9adb93f18fd0a7664d6b9f96e50f977c32aca7"
+          "after_sha256": "185a5e65f3941da8a4d89fcf6681eb485041f94eee3aa64db54e31b0ff92fe3f"
         },
         {
           "target": "components/viz/service/display/overlay_processor_interface.h",
@@ -3921,7 +3921,7 @@
         {
           "target": "components/viz/service/display/overlay_processor_mac.cc",
           "before_sha256": "412ed8d7f0fa8eb3b1ce94021b79f09256442d6fa58c5de2578aa87a04f06e08",
-          "after_sha256": "f6892584f894a859061a4d579d8a28e85271040e693fd1e0883813bd2916db40"
+          "after_sha256": "baff1c87a4668d901f5bdc1f1eb23577e2702f8f5fbf97d0910b224011baa1dd"
         },
         {
           "target": "components/viz/service/display/display.h",
@@ -3936,7 +3936,7 @@
         {
           "target": "components/viz/service/display/overlay_ca_unittest.cc",
           "before_sha256": "ab18f208269cdacd2c4ec35ba42a205b6c93e4e962005668c7fcb216e7537f7e",
-          "after_sha256": "cd9cc3ddcec55128f03dfe6d8328d8f1bc7bbd9eb2a450b3988d4255c3f7931f"
+          "after_sha256": "c93923a63e11beb4d32ad334085ef64fc3fb8c7d5883f1b072b2f27b90128c31"
         },
         {
           "target": "components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h",
