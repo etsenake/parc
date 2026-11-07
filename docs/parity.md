@@ -91,6 +91,11 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   macro needs a type alias to avoid parsing the HashMap template comma as a
   fourth argument. Both includers compile with the corrected header under the
   actual shipping flags. The same release resumes with preserved objects.
+  Its next failed target exposed the same invalid broker-header path in the
+  navigator media-key-access patch. That occurrence is corrected too; the
+  corrected target and all 82 FairPlay-patched upstream compilation units pass
+  focused shipping compiler checks before resumption. These are inert compile
+  checks, not browser-runtime acceptance.
 
 - **Codex root — monitored release sequence (November 6).** Root owns shared
   engine/build/packaging operations directly on main, without agents or worktrees.
