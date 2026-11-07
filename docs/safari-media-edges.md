@@ -63,7 +63,16 @@ position back to 0) and resumes playing if it was. WebKit
 `HTMLMediaElement.cpp:994-1023` (`didMoveToNewDocument`) keeps its player,
 position and state and only re-registers with the new document. A page that
 adopts a playing video into an iframe or popup sees it restart from 0 in
-Parc and carry on in Safari. **Open.**
+Parc and carry on in Safari. **Fixed** 47fe80b9 for same-origin moves between
+framed Safari-identity documents (the player stays bound to the frame that
+made it, as Chromium already does for Document Picture-in-Picture; the
+element's event queue moves with it). Still different, **open** (with
+Josh): if the frame that made the player is destroyed, Parc reloads it,
+since a Chromium player can't move between frames; a video moved into a
+popup still takes the opener tab's visibility and freezing; and a move into
+a document without a browsing context (`createHTMLDocument`) reloads and
+fails, where Safari keeps the player (unchecked against WebKit's `dom/`
+files beyond `DOMImplementation.cpp:144`, `Document.cpp:2740`).
 
 **HME-2. `muted` content attribute set by script.** Chromium
 `html_media_element.cc:852-856, 878-886`: the attribute sets `muted` only when
