@@ -74,6 +74,19 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 
 ## Current ownership and handoffs
 
+- **Codex root — eight-hour release watch (November 7).** Josh authorized
+  checking main every twenty minutes through 07:26 Mountain (14:26 UTC),
+  publishing new contributor changes as patch releases, monitoring each release
+  through completion, and checking/pushing any required repairs directly on main.
+  Active frozen releases finish before newer changes are consumed. Releases
+  v1.3.1 (overlay 466), v1.3.2 (467), and v1.3.3 (479) completed with signed,
+  notarized app/DMG assets, GitHub publication and verified pushed Homebrew casks.
+  No source repairs were needed for those three builds. Receipts remain under
+  `build/releases/`; v1.3.3 source is `b088654a`, run
+  `20261107T080400Z-4332c06b`. Further contributor changes await the next patch.
+  Logs continue in `build/master-release-development/nightly-release.log`.
+  No installation, launch or browser-runtime acceptance is claimed.
+
 - **Codex root — monitored release sequence (November 6).** Root owns shared
   engine/build/packaging operations directly on main, without agents or worktrees.
   Start with a minor release from current main; monitor build failures and
