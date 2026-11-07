@@ -146,6 +146,7 @@ interface FairPlayHlsPlayer {        // GPU implements
   Play(double rate); Pause();
   Seek(mojo_base.mojom.TimeDelta time) => (bool success);
   SetVolume(float volume); SetMuted(bool muted);
+  SetPreservesPitch(bool preserves_pitch);   // Renderer::SetPreservesPitch
   SelectAudioTrack(string id); SelectTextTrack(string? id);
   Suspend(); Resume();               // stop/restart loading (preload, idle)
 };
@@ -186,7 +187,7 @@ player the GPU service owns, on the media service thread with the core's
 | --- | --- |
 | `HlsLoader::StartLoad(request, HlsLoadClient*)` → `HlsLoad` (destroy = cancel) | `FairPlayHlsPlayerClient.StartLoad` → `FairPlayHlsLoad` (reset = `Cancel`) |
 | `HlsLoadClient::OnResponse` / `OnData` / `OnComplete(net_error)` | `FairPlayHlsLoadClient.OnResponse` + data pipe reads / `OnComplete` |
-| `Load(url, mime)`, `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted` |
+| `Load(url, mime)`, `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
 | `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `Initialize` reply |
 | `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
 | `OnKeyRequest(uri)`, `CompleteKeyRequests(uri)`, `FailKeyRequests` | `OnEncrypted("skd", uri)`; the CDM side (Keys) |
@@ -197,7 +198,9 @@ The core never blocks on the embedder and never calls the client inside a call
 into it. Facts the harness established: every load AVFoundation makes goes to
 `HlsLoader` (a host only the loader can reach still plays); AVFoundation asks
 again for a key whose request failed instead of failing the item; a live
-variant that 404s makes it retry silently, with no item error.
+variant that 404s makes it retry silently, with no item error; an `http://`
+playlist plays (App Transport Security doesn't apply to client loads). The
+GPU-sandbox probe plays native HLS with only the MSE route's sandbox rules.
 
 ## Network (render process)
 
