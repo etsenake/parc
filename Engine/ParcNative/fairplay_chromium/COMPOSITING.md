@@ -278,8 +278,12 @@ while capturing. The copy shows the punch, transparent where the video is, and
 never the video. Leaving such a frame black would flash the video black on
 screen for every snapshot, and for the whole of a tab capture.
 
-A hole two or more passes deep also stays black for now. Placing it needs the
-same DstOut copy in each pass in between, which is the next change.
+A hole several passes deep, such as a dialog inside a page-level opacity
+group, works the same way. Each pass in between draws the inner pass over what
+it draws below it, which the video covers too. So each of those passes gets the
+same black DstOut copy of the footprint, in its own space, just below the inner
+pass's quad and at that quad's opacity. On the underlay route the root gets
+one too.
 
 ## When the video stays black
 
@@ -442,9 +446,9 @@ sequence.
    `--gtest_filter='CALayerOverlayTest.Protected*:CALayerOverlayNestedTest.*'`
    checks that a parked display shows the hole black without a token, and
    that the flag leaves an ordinary frame alone. It also checks the video
-   inside a dialog pass on both routes: the punches, the root's DstOut copy,
-   opacity, clips, the effects that keep it black, and redraws when a punch
-   starts or stops.
+   inside a dialog pass, and two passes deep, on both routes: the punches, the
+   DstOut copies, opacity, clips, occluded parts, the effects that keep it
+   black, and redraws when a punch starts or stops.
 2. Ordinary video is unchanged: YouTube and an MSE test page still show
    yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
    `--show-mac-overlay-borders`.

@@ -941,10 +941,12 @@
    OverlayCandidate ca_layer;
    bool skip = false;
    bool render_pass_draw_quad = false;
-@@ -534,4 +595,438 @@
+@@ -532,6 +593,447 @@
+ // Expand this function to save the results of the last N frames.
+ void CALayerOverlayProcessor::SaveCALayerResult(gfx::CALayerResult result) {
    ca_layer_result_ = result;
- }
- 
++}
++
 +namespace {
 +
 +// Parc: the render pass draw quad that draws a non-root pass into its parent.
@@ -1160,8 +1162,8 @@
 +                          : visible;
 +  }
 +  return NestedHolePlan::kShow;
-+}
-+
+ }
+ 
 +// Parc: the layer's opacity when the pass drawn in the root is a CALayer
 +// above it, with the hole punched out of the pass and the pass's opacity
 +// applying to what is left. With c the video's own opacity times every
@@ -1296,8 +1298,7 @@
 +          hole.pass = pass.get();
 +          hole.quad = quad;
 +          if (PlanNestedHole(resource_provider, root, embeddings, &hole) ==
-+                  NestedHolePlan::kShow &&
-+              hole.levels.size() == 1) {
++              NestedHolePlan::kShow) {
 +            holes.push_back(std::move(hole));
 +          }
 +        }
@@ -1328,16 +1329,24 @@
 +        // performance guard, and a video is one layer either way.
 +        hole.layer.opacity = CALayerRouteOpacity(hole);
 +        ca_layer_overlays->insert(pass_layer, hole.layer);
++        // Each pass in between draws the inner pass over what it draws below
++        // it, which the video covers too.
++        for (size_t i = 0; i + 1 < hole.levels.size(); ++i) {
++          below_pass_punches.push_back(
++              MakeBelowPassPunch(hole, hole.levels[i]));
++        }
 +      } else {
 +        // An underlay below the primary plane, as for a hole in the root
-+        // pass. The root draws the pass too, over what it draws below the
-+        // pass, so that is punched as well. The punches carry the opacity,
-+        // so the layer is drawn at full strength: exact when at most one of
-+        // the video and its passes is translucent, the page being opaque.
++        // pass. Every pass up to the root draws the inner pass over what it
++        // draws below it, so each of those is punched as well. The punches
++        // carry the opacity, so the layer is drawn at full strength: exact
++        // when at most one of the video and its passes is translucent, the
++        // page being opaque.
 +        hole.layer.opacity = 1.f;
 +        ca_layer_overlays->push_back(hole.layer);
-+        below_pass_punches.push_back(
-+            MakeBelowPassPunch(hole, hole.levels.back()));
++        for (const NestedLevel& level : hole.levels) {
++          below_pass_punches.push_back(MakeBelowPassPunch(hole, level));
++        }
 +      }
 +
 +      // The video shows through a transparent punch in its own pass (DstOut
@@ -1626,10 +1635,12 @@
  #include "base/memory/raw_ptr.h"
  #include "base/unguessable_token.h"
  #include "build/build_config.h"
-@@ -401,7 +402,597 @@
+@@ -399,9 +400,713 @@
+         &ca_layer_list, &damage_rect_);
+     EXPECT_EQ(gfx::Rect(), damage_rect_);
      EXPECT_EQ(1U, test::NumOverlaysExcludingPrimaryPlane(ca_layer_list));
-   }
- }
++  }
++}
 +
 +// Parc: a FairPlay video (a VideoHoleDrawQuad naming a registered layer) is
 +// placed with its token, except on a display that may not show protected
@@ -1662,7 +1673,7 @@
 +    }
 +    return found;
 +  };
- 
++
 +  // Allowed (the default): every quad is a CALayer, the hole with its token.
 +  {
 +    OverlayCandidateList ca_layer_list;
@@ -1822,7 +1833,7 @@
 +      *video_sqs_out = video_sqs;
 +    }
 +    return pass;
-+  }
+   }
 +
 +  Frame Process(float dialog_opacity, float video_opacity) {
 +    return Process(dialog_opacity, video_opacity, [](const Parts&) {});
@@ -1925,8 +1936,8 @@
 +  ASSERT_TRUE(ProtectedLayer(next));
 +  EXPECT_FALSE(next.dialog->has_damage_from_contributing_content);
 +  EXPECT_EQ(gfx::Rect(), next.dialog->damage_rect);
-+}
-+
+ }
+ 
 +// Opacity is exact when only one of the video and its passes is translucent;
 +// a translucent video leaves a DstOut punch that keeps the rest of what it
 +// covers.
@@ -2179,6 +2190,120 @@
 +  EXPECT_EQ(2u, parked.passes.back()->quad_list.size());
 +  EXPECT_EQ(DrawQuad::Material::kVideoHole, DialogVideoQuad(parked)->material);
 +  EXPECT_EQ(parked.passes.back()->output_rect, damage_rect_);
++}
++
++// A video two passes deep (the dialog inside a page-level opacity group): the
++// pass in between gets a DstOut copy of the footprint below the dialog, at
++// the dialog's opacity, in its own space; the root gets one too on the
++// underlay route.
++TEST_F(CALayerOverlayNestedTest, TwoPassesDeep) {
++  constexpr AggregatedRenderPassId kGroupPassId{3};
++  const auto process = [&](float group_opacity, float dialog_opacity,
++                           bool all_ca_layers, AggregatedRenderPass** group_out,
++                           AggregatedRenderPassList* passes) {
++    passes->push_back(CreateDialogPass(/*video_opacity=*/1.f));
++    // The group's 200x150 content is drawn at (8, 4); the dialog is at
++    // (20, 30) in it, twice as large.
++    auto group = std::make_unique<AggregatedRenderPass>();
++    group->SetNew(kGroupPassId, gfx::Rect(0, 0, 200, 150), gfx::Rect(),
++                  gfx::Transform());
++    group->has_damage_from_contributing_content = false;
++    SharedQuadState* dialog_sqs = group->CreateAndAppendSharedQuadState();
++    dialog_sqs->opacity = dialog_opacity;
++    dialog_sqs->quad_to_target_transform.Translate(20, 30);
++    dialog_sqs->quad_to_target_transform.Scale(2, 2);
++    auto* dialog_quad =
++        group->CreateAndAppendDrawQuad<AggregatedRenderPassDrawQuad>();
++    dialog_quad->SetNew(dialog_sqs, gfx::Rect(0, 0, 100, 60),
++                        gfx::Rect(0, 0, 100, 60), kDialogPassId,
++                        kInvalidResourceId, gfx::RectF(), gfx::Size(),
++                        /*force_anti_aliasing_off=*/false);
++    SharedQuadState* group_bg_sqs = group->CreateAndAppendSharedQuadState();
++    group_bg_sqs->opacity = 1.f;
++    auto* group_bg = group->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
++    group_bg->SetNew(group_bg_sqs, group->output_rect, group->output_rect,
++                     SkColors::kGreen, /*anti_aliasing_off=*/false);
++    *group_out = group.get();
++    passes->push_back(std::move(group));
++
++    auto root = CreateRenderPass();
++    SharedQuadState* group_sqs = root->CreateAndAppendSharedQuadState();
++    group_sqs->opacity = group_opacity;
++    group_sqs->quad_to_target_transform.Translate(8, 4);
++    auto* group_quad =
++        root->CreateAndAppendDrawQuad<AggregatedRenderPassDrawQuad>();
++    group_quad->SetNew(group_sqs, gfx::Rect(0, 0, 200, 150),
++                       gfx::Rect(0, 0, 200, 150), kGroupPassId,
++                       kInvalidResourceId, gfx::RectF(), gfx::Size(),
++                       /*force_anti_aliasing_off=*/false);
++    if (!all_ca_layers) {
++      root->copy_requests.push_back(CopyOutputRequest::CreateStubForTesting());
++    }
++    passes->push_back(std::move(root));
++    OverlayCandidateList candidates;
++    overlay_processor_->ProcessForOverlays(
++        resource_provider_.get(), passes, GetIdentityColorMatrix(),
++        SurfaceDamageRectList(),
++        GetDefaultPrimaryPlane(passes->back()->output_rect.size()),
++        &candidates, &damage_rect_);
++    return candidates;
++  };
++  gfx::Transform in_group;
++  in_group.Translate(20, 30);
++  in_group.Scale(2, 2);
++  in_group.Translate(10, 10);
++  gfx::Transform in_root;
++  in_root.Translate(8, 4);
++  in_root.PreConcat(in_group);
++  const auto expect_copy = [](const DrawQuad* copy,
++                              const gfx::Transform& transform, float opacity) {
++    ASSERT_EQ(DrawQuad::Material::kSolidColor, copy->material);
++    EXPECT_EQ(SkColors::kBlack, SolidColorDrawQuad::MaterialCast(copy)->color);
++    EXPECT_EQ(SkBlendMode::kDstOut, copy->shared_quad_state->blend_mode);
++    EXPECT_EQ(transform, copy->shared_quad_state->quad_to_target_transform);
++    EXPECT_FLOAT_EQ(opacity, copy->shared_quad_state->opacity);
++  };
++
++  {
++    // All CALayers: the layer sits below the group's CALayer with the
++    // group's opacity; only the group pass gets a copy.
++    AggregatedRenderPassList passes;
++    AggregatedRenderPass* group = nullptr;
++    OverlayCandidateList candidates =
++        process(/*group_opacity=*/0.5f, /*dialog_opacity=*/1.f,
++                /*all_ca_layers=*/true, &group, &passes);
++    ASSERT_EQ(2u, candidates.size());
++    EXPECT_EQ(token_, candidates[0].protected_layer_token);
++    EXPECT_EQ(in_root, std::get<gfx::Transform>(candidates[0].transform));
++    EXPECT_FLOAT_EQ(0.5f, candidates[0].opacity);
++    ASSERT_TRUE(candidates[1].rpdq);
++    EXPECT_EQ(kGroupPassId, candidates[1].rpdq->render_pass_id);
++    ASSERT_EQ(3u, group->quad_list.size());
++    expect_copy(*std::next(group->quad_list.begin()), in_group, 1.f);
++    EXPECT_EQ(1u, passes.back()->quad_list.size());
++    EXPECT_EQ(DrawQuad::Material::kSolidColor,
++              (*std::next(passes.front()->quad_list.begin()))->material);
++    EXPECT_TRUE(group->has_damage_from_contributing_content);
++    EXPECT_EQ(group->output_rect, group->damage_rect);
++  }
++  {
++    // Underlays: copies in the group at the dialog's opacity and in the root
++    // at the group's, and the underlay at full strength.
++    AggregatedRenderPassList passes;
++    AggregatedRenderPass* group = nullptr;
++    OverlayCandidateList candidates =
++        process(/*group_opacity=*/1.f, /*dialog_opacity=*/0.5f,
++                /*all_ca_layers=*/false, &group, &passes);
++    ASSERT_EQ(2u, candidates.size());
++    EXPECT_EQ(token_, candidates[0].protected_layer_token);
++    EXPECT_EQ(in_root, std::get<gfx::Transform>(candidates[0].transform));
++    EXPECT_FLOAT_EQ(1.f, candidates[0].opacity);
++    ASSERT_EQ(3u, group->quad_list.size());
++    expect_copy(*std::next(group->quad_list.begin()), in_group, 0.5f);
++    const QuadList& root_quads = passes.back()->quad_list;
++    ASSERT_EQ(2u, root_quads.size());
++    expect_copy(root_quads.back(), in_root, 1.f);
++  }
 +}
 +
 +// Where the dialog draws something opaque over the video, the occlusion

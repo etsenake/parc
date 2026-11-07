@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 389,
+  "version": 390,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3861,7 +3861,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing.patch",
-      "sha256": "cf1b83e71232b7ef276bb4f8ffb8d2926031886254f2d9fe78fec5bf4eb0768c",
+      "sha256": "1e65218e842b788ff2dcedf93a1e4ce4b3315b977062604af7ab5adf8f5dc8c7",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -3896,7 +3896,7 @@
         {
           "target": "components/viz/service/display/ca_layer_overlay.cc",
           "before_sha256": "5cd1ee86cff67c5fa24995edd03f8d84ae8200f86445fd610959564fbfd16689",
-          "after_sha256": "ad04fc8181ddebb4b1065d68cb0d81235ed6124be99d8f480a3b5821a36f9859"
+          "after_sha256": "40e90da849f6782db1f4f00703980e5c4c7a9707f4e2161f27f57608dff36818"
         },
         {
           "target": "components/viz/service/display/skia_renderer.cc",
@@ -3946,7 +3946,7 @@
         {
           "target": "components/viz/service/display/overlay_ca_unittest.cc",
           "before_sha256": "ab18f208269cdacd2c4ec35ba42a205b6c93e4e962005668c7fcb216e7537f7e",
-          "after_sha256": "c93923a63e11beb4d32ad334085ef64fc3fb8c7d5883f1b072b2f27b90128c31"
+          "after_sha256": "ceaa3d42c5c42a823c7f2489765f7507af7eae33ceb46acb6bf12288a2f142d6"
         },
         {
           "target": "components/viz/service/frame_sinks/root_compositor_frame_sink_impl.h",
