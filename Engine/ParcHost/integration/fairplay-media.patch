@@ -193,7 +193,7 @@
  void CdmRegistryImpl::RegisterCdm(const CdmInfo& info) {
 --- a/content/browser/media/frameless_media_interface_proxy.cc
 +++ b/content/browser/media/frameless_media_interface_proxy.cc
-@@ -137,6 +137,14 @@
+@@ -137,6 +137,20 @@
          renderer_extension_receiver) {}
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -203,6 +203,12 @@
 +    mojo::PendingReceiver<media::mojom::Renderer> receiver,
 +    mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
 +        client_extension) {}
++
++// Unimplemented: the native HLS player plays a frame's <video> element.
++void FramelessMediaInterfaceProxy::CreateFairPlayHlsPlayer(
++    mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
++    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
++    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime) {}
 +#endif  // BUILDFLAG(IS_MAC)
 +
  void FramelessMediaInterfaceProxy::CreateCdm(const media::CdmConfig& cdm_config,
@@ -210,7 +216,7 @@
    std::move(callback).Run(mojo::NullRemote(), nullptr,
 --- a/content/browser/media/frameless_media_interface_proxy.h
 +++ b/content/browser/media/frameless_media_interface_proxy.h
-@@ -81,6 +81,12 @@
+@@ -81,6 +81,17 @@
        mojo::PendingReceiver<media::mojom::MediaFoundationRendererExtension>
            renderer_extension_receiver) final;
  #endif  // BUILDFLAG(IS_WIN)
@@ -219,6 +225,11 @@
 +      mojo::PendingReceiver<media::mojom::Renderer> receiver,
 +      mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
 +          client_extension) final;
++  void CreateFairPlayHlsPlayer(
++      mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
++      mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
++      mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime)
++      final;
 +#endif  // BUILDFLAG(IS_MAC)
    void CreateCdm(const media::CdmConfig& cdm_config,
                   CreateCdmCallback callback) final;
@@ -241,11 +252,10 @@
  #include "media/cdm/cdm_type.h"
  #include "media/media_buildflags.h"
  #include "media/mojo/buildflags.h"
-@@ -85,6 +87,43 @@
- #include "media/base/media_switches.h"
+@@ -86,6 +88,43 @@
  #include "mojo/public/cpp/bindings/message.h"
  #endif  // BUILDFLAG(ENABLE_OOP_VIDEO_DECODER)
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +#include "content/browser/media/cdm_registry_impl.h"
 +#include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -282,9 +292,10 @@
 +}
 +
 +}  // namespace parc::fairplay
- 
++
  namespace content {
  
+ namespace {
 @@ -198,7 +237,8 @@
  #endif
    }
@@ -299,9 +310,8 @@
      site_mute_observers_.Get(remote_id)->OnMuteStateChange(
          WebContents::FromRenderFrameHost(render_frame_host_)->IsAudioMuted());
    }
--
 +#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-+
+ 
 +#if BUILDFLAG(IS_WIN)
    void CreateDCOMPSurfaceRegistry(
        mojo::PendingReceiver<media::mojom::DCOMPSurfaceRegistry> receiver)
@@ -324,17 +334,16 @@
    const raw_ptr<RenderFrameHost> render_frame_host_;
    const media::CdmType cdm_type_;
  
+-#if BUILDFLAG(IS_WIN)
 +#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-+  mojo::RemoteSet<media::mojom::MuteStateObserver> site_mute_observers_;
+   mojo::RemoteSet<media::mojom::MuteStateObserver> site_mute_observers_;
 +#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-+
- #if BUILDFLAG(IS_WIN)
--  mojo::RemoteSet<media::mojom::MuteStateObserver> site_mute_observers_;
--
+ 
++#if BUILDFLAG(IS_WIN)
    // `has_value()` indicates `ContentProtectionWindow::Create()` has been
    // attempted. The inner pointer is null if creation failed. This prevents
    // retrying creation (and re-recording the UMA) on every call.
-@@ -350,6 +394,34 @@
+@@ -350,6 +394,51 @@
  };
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -364,12 +373,29 @@
 +  mojo::Remote<media::mojom::FairPlayRendererClientExtension> client_remote_;
 +  AudibilityBypassTracker::ScopedGrant grant_;
 +};
++
++// Parc: the browser's end of a native HLS player's lifetime handle. It holds
++// the frame's audibility-bypass grant until the GPU player closes the pipe:
++// AVPlayer's audio goes straight to CoreAudio, not through the audio service,
++// so this is how AudioStreamMonitor may count the player audible.
++class FairPlayHlsPlayerLifetimeImpl
++    : public media::mojom::FairPlayHlsPlayerLifetime {
++ public:
++  explicit FairPlayHlsPlayerLifetimeImpl(
++      AudibilityBypassTracker::ScopedGrant grant)
++      : grant_(std::move(grant)) {}
++
++  ~FairPlayHlsPlayerLifetimeImpl() override = default;
++
++ private:
++  AudibilityBypassTracker::ScopedGrant grant_;
++};
 +#endif  // BUILDFLAG(IS_MAC)
 +
  }  // namespace
  
  MediaInterfaceProxy::MediaInterfaceProxy(RenderFrameHost* render_frame_host)
-@@ -523,10 +595,103 @@
+@@ -523,11 +612,135 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -405,13 +431,44 @@
 +  factory->CreateFairPlayRenderer(std::move(receiver),
 +                                  std::move(gpu_extension_remote));
 +}
++
++void MediaInterfaceProxy::CreateFairPlayHlsPlayer(
++    mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
++    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
++    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime) {
++  CHECK(thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M160);
++
++  // Parc: Safari's native HLS route is unreachable until its build-time
++  // switch is on.
++  if (!parc::fairplay::kNativeHlsEnabled) {
++    return;
++  }
++
++  // The player lives in the same media service as the frame's FairPlay CDMs
++  // (see CreateCdm), so its SetCdm() finds them.
++  InterfaceFactory* factory = media_interface_factory_ptr_->Get();
++  if (!factory) {
++    return;
++  }
++
++  // The render process's handle, if any, is dropped: the GPU player holds the
++  // browser's, which carries the frame's audibility-bypass grant.
++  mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime>
++      browser_lifetime;
++  mojo::MakeSelfOwnedReceiver(
++      std::make_unique<FairPlayHlsPlayerLifetimeImpl>(
++          AudibilityBypassTracker::AddGrant(&render_frame_host())),
++      browser_lifetime.InitWithNewPipeAndPassReceiver());
++  factory->CreateFairPlayHlsPlayer(std::move(player), std::move(client),
++                                   std::move(browser_lifetime));
++}
 +#endif  // BUILDFLAG(IS_MAC)
 +
  void MediaInterfaceProxy::CreateCdm(const media::CdmConfig& cdm_config,
                                      CreateCdmCallback create_cdm_cb) {
    CHECK(thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M160);
    DVLOG(1) << __func__ << ": cdm_config=" << cdm_config;
-+
+ 
 +  // Parc: let the observer hold a Widevine CDM request. A copy, in case the
 +  // observer replaces itself while it runs.
 +  parc::fairplay::WidevineCdmRequestObserver widevine_observer =
@@ -470,12 +527,13 @@
 +    return;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // Handle `use_hw_secure_codecs` cases first.
  #if BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA)
+   bool enable_cdm_factory_daemon = true;
 --- a/content/browser/media/media_interface_proxy.h
 +++ b/content/browser/media/media_interface_proxy.h
-@@ -86,6 +86,12 @@
+@@ -86,6 +86,17 @@
        mojo::PendingReceiver<media::mojom::MediaFoundationRendererExtension>
            renderer_extension_receiver) final;
  #endif  // BUILDFLAG(IS_WIN)
@@ -484,11 +542,16 @@
 +      mojo::PendingReceiver<media::mojom::Renderer> receiver,
 +      mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
 +          client_extension) final;
++  void CreateFairPlayHlsPlayer(
++      mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
++      mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
++      mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime)
++      final;
 +#endif  // BUILDFLAG(IS_MAC)
    void CreateCdm(const media::CdmConfig& cdm_config,
                   CreateCdmCallback create_cdm_cb) final;
  
-@@ -187,6 +193,18 @@
+@@ -187,6 +198,18 @@
  
    base::ThreadChecker thread_checker_;
  
@@ -558,7 +621,7 @@
  #if BUILDFLAG(ENABLE_CAST_RENDERER)
 --- a/content/renderer/media/media_interface_factory.cc
 +++ b/content/renderer/media/media_interface_factory.cc
-@@ -171,6 +171,26 @@
+@@ -171,6 +171,45 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -580,6 +643,25 @@
 +  GetMediaInterfaceFactory()->CreateFairPlayRenderer(
 +      std::move(receiver), std::move(client_extension));
 +}
++
++void MediaInterfaceFactory::CreateFairPlayHlsPlayer(
++    mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
++    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
++    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime) {
++  if (!task_runner_->BelongsToCurrentThread()) {
++    task_runner_->PostTask(
++        FROM_HERE,
++        base::BindOnce(&MediaInterfaceFactory::CreateFairPlayHlsPlayer,
++                       weak_this_, std::move(player), std::move(client),
++                       std::move(lifetime)));
++    return;
++  }
++
++  DVLOG(1) << __func__;
++  // The lifetime handle is the browser's to give; never send one.
++  GetMediaInterfaceFactory()->CreateFairPlayHlsPlayer(
++      std::move(player), std::move(client), mojo::NullRemote());
++}
 +#endif  // BUILDFLAG(IS_MAC)
 +
  void MediaInterfaceFactory::CreateCdm(const media::CdmConfig& cdm_config,
@@ -587,7 +669,7 @@
    if (!task_runner_->BelongsToCurrentThread()) {
 --- a/content/renderer/media/media_interface_factory.h
 +++ b/content/renderer/media/media_interface_factory.h
-@@ -79,6 +79,12 @@
+@@ -79,6 +79,17 @@
        mojo::PendingReceiver<media::mojom::MediaFoundationRendererExtension>
            renderer_extension_receiver) final;
  #endif  // BUILDFLAG(IS_WIN)
@@ -596,6 +678,11 @@
 +      mojo::PendingReceiver<media::mojom::Renderer> receiver,
 +      mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
 +          client_extension) final;
++  void CreateFairPlayHlsPlayer(
++      mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
++      mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
++      mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime)
++      final;
 +#endif  // BUILDFLAG(IS_MAC)
    void CreateCdm(const media::CdmConfig& cdm_config,
                   CreateCdmCallback callback) final;
@@ -1193,7 +1280,7 @@
  
 --- a/media/mojo/mojom/interface_factory.mojom
 +++ b/media/mojo/mojom/interface_factory.mojom
-@@ -83,6 +83,14 @@
+@@ -83,6 +83,24 @@
        pending_receiver<Renderer> renderer,
        pending_receiver<MediaFoundationRendererExtension> renderer_extension);
  
@@ -1204,6 +1291,16 @@
 +  CreateFairPlayRenderer(
 +      pending_receiver<Renderer> renderer,
 +      pending_remote<FairPlayRendererClientExtension> client_extension);
++
++  [EnableIf=is_mac]
++  // Parc: creates Safari's native HLS player (an AVPlayer) in the media
++  // service that also hosts the frame's FairPlay CDMs, whose key sessions it
++  // joins. The render process passes a null `lifetime`; the browser passes
++  // its own, which the player holds for as long as it lives.
++  CreateFairPlayHlsPlayer(
++      pending_receiver<FairPlayHlsPlayer> player,
++      pending_remote<FairPlayHlsPlayerClient> client,
++      pending_remote<FairPlayHlsPlayerLifetime>? lifetime);
 +
    [EnableIf=is_android]
    // Creates a FlingingRenderer (FlingingRendererClientFactory).
@@ -1240,12 +1337,20 @@
      NOTREACHED();
 --- a/media/mojo/mojom/renderer_extensions.mojom
 +++ b/media/mojo/mojom/renderer_extensions.mojom
-@@ -22,6 +22,20 @@
-   // play state (e.g. when another phone play/pauses a cast device on the same
-   // network).
-   OnRemotePlayStateChange(MediaStatusState state);
-+};
+@@ -12,6 +12,9 @@
+ [EnableIf=is_win]
+ import "ui/gfx/mojom/buffer_types.mojom";
+ 
++[EnableIf=is_mac]
++import "url/mojom/url.mojom";
 +
+ // Extension of the mojo::RendererClient communication layer for media flinging,
+ // a.k.a RemotePlayback, when playing media on a remote Cast device.
+ // This allows the Browser side to call back into the Renderer side.
+@@ -24,6 +27,176 @@
+   OnRemotePlayStateChange(MediaStatusState state);
+ };
+ 
 +// Parc: extension of the mojo::RendererClient communication layer for the
 +// FairPlay Streaming Renderer, which runs next to the FairPlay CDM in the GPU
 +// process's media service. Implemented by FairPlayRendererClient in the
@@ -1258,9 +1363,167 @@
 +  // compositor places the layer where that frame is drawn.
 +  OnLayerRegistered(mojo_base.mojom.UnguessableToken layer_token,
 +                    gfx.mojom.Size natural_size);
- };
- 
++};
++
++// Parc: Safari's native HLS route. An AVPlayer in the GPU process's media
++// service, next to the frame's FairPlay CDMs, plays <video src="....m3u8"> on
++// pages that present Safari's identity; every load AVFoundation makes is
++// fetched by the render process through the element's loader. See
++// NATIVE_HLS.md beside third_party/parc_fairplay's sources in the Parc
++// repository.
++
++// One load AVFoundation asks for.
++[EnableIf=is_mac]
++struct FairPlayHlsLoadRequest {
++  url.mojom.Url url;
++  string method;
++  // As AVFoundation set them. The render process forwards only Range.
++  map<string, string> headers;
++};
++
++[EnableIf=is_mac]
++struct FairPlayHlsLoadResponse {
++  int32 http_status;
++  // The server's Content-Type without parameters, or empty.
++  string mime_type;
++  // -1 when unknown, also when the network stack decoded a Content-Encoding.
++  int64 content_length;
++  // The URL after redirects, which relative playlist URIs resolve against.
++  url.mojom.Url final_url;
++  // The response's headers, combined per name.
++  map<string, string> headers;
++};
++
++// Implemented by the render process, one per load. Cancel() or closing the
++// pipe ends the load; no more client calls follow.
++[EnableIf=is_mac]
++interface FairPlayHlsLoad {
++  Cancel();
++};
++
++// Implemented by the GPU process, one per load: OnResponse at most once, then
++// OnComplete once. A load that fails before a response gets only OnComplete.
++[EnableIf=is_mac]
++interface FairPlayHlsLoadClient {
++  // `body` carries the response body and closes after its last byte.
++  OnResponse(FairPlayHlsLoadResponse response,
++             handle<data_pipe_consumer> body);
++  // net::OK once the whole body is in the pipe, otherwise a net error.
++  OnComplete(int32 net_error);
++};
++
++[EnableIf=is_mac]
++struct FairPlayHlsTimeRange {
++  mojo_base.mojom.TimeDelta start;
++  mojo_base.mojom.TimeDelta end;
++};
++
++[EnableIf=is_mac]
++enum FairPlayHlsTrackType {
++  kAudio,
++  kVideo,
++  kText,
++};
++
++// An audio, video or text rendition (AVMediaSelectionGroup option).
++[EnableIf=is_mac]
++struct FairPlayHlsTrack {
++  string id;
++  string kind;
++  string label;
++  string language;
++  bool enabled;
++  FairPlayHlsTrackType type;
++};
++
++// The item's state when it is ready to play.
++[EnableIf=is_mac]
++struct FairPlayHlsMetadata {
++  bool has_audio;
++  bool has_video;
++  gfx.mojom.Size natural_size;
++  // kUnknown when AVFoundation names a format Chromium has no codec for.
++  AudioCodec audio_codec;
++  VideoCodec video_codec;
++  // media::kInfiniteDuration (TimeDelta::Max()) for live streams.
++  mojo_base.mojom.TimeDelta duration;
++  // getStartDate(): EXT-X-PROGRAM-DATE-TIME at media time 0, if any.
++  mojo_base.mojom.Time? start_date;
++  array<FairPlayHlsTimeRange> seekable;
++  array<FairPlayHlsTimeRange> buffered;
++  array<FairPlayHlsTrack> tracks;
++};
++
++// Lifetime handle the browser binds, holding the frame's audibility-bypass
++// grant while the GPU player keeps the remote. No methods.
++[EnableIf=is_mac]
++interface FairPlayHlsPlayerLifetime {};
++
++// Implemented by the GPU process (media::FairPlayHlsPlayerService).
++[EnableIf=is_mac]
++interface FairPlayHlsPlayer {
++  // Loads `url` (http or https); `mime_type` is the element's <source type>,
++  // or empty. Replies when the item is ready to play, or failed before that.
++  Initialize(url.mojom.Url url, string mime_type)
++      => (bool success, FairPlayHlsMetadata? metadata);
++  // The frame's CDM, as MojoCdmServiceContext names it.
++  SetCdm(mojo_base.mojom.UnguessableToken cdm_id) => (bool success);
++  // `rate` > 0. AVPlayer waits to minimize stalling, as in Safari.
++  Play(double rate);
++  Pause();
++  // Exact (zero tolerance). False when a later seek interrupted it.
++  Seek(mojo_base.mojom.TimeDelta time) => (bool success);
++  SetVolume(float volume);
++  SetMuted(bool muted);
++  SetPreservesPitch(bool preserves_pitch);
++  // Legacy clear key: the key for a held clearkey:// request's key ID (the
++  // page's WebKitMediaKeys session took it).
++  ProvideClearKey(string key_id, array<uint8> key);
++  SelectAudioTrack(string id);
++  SelectTextTrack(string? id);
++  // Stop and restart loading (preload, idle suspension).
++  Suspend();
++  Resume();
++};
++
++// Implemented by the render process (the native HLS demuxer).
++[EnableIf=is_mac]
++interface FairPlayHlsPlayerClient {
++  // A load AVFoundation needs. The render process fetches it through the
++  // element's loader and answers on `client`.
++  StartLoad(FairPlayHlsLoadRequest request,
++            pending_receiver<FairPlayHlsLoad> load,
++            pending_remote<FairPlayHlsLoadClient> client);
++  // The media time `time` at `capture_time`, advancing at `rate`.
++  OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
++               mojo_base.mojom.TimeTicks capture_time);
++  OnBufferingStateChange(BufferingState state);
++  OnBufferedRangesChanged(array<FairPlayHlsTimeRange> buffered);
++  OnSeekableRangesChanged(array<FairPlayHlsTimeRange> seekable);
++  OnDurationChange(mojo_base.mojom.TimeDelta duration);
++  // getStartDate(), sampled as Safari does at metadata and at each buffering
++  // change; sent just before the OnBufferingStateChange it goes with.
++  OnStartDateChanged(mojo_base.mojom.Time? start_date);
++  OnTracksChanged(array<FairPlayHlsTrack> tracks);
++  OnNaturalSizeChange(gfx.mojom.Size size);
++  // The player's AVPlayerLayer is registered under `layer_token` in the GPU
++  // process's ui::ProtectedLayerRegistry; paint a hole frame naming it.
++  OnLayerRegistered(mojo_base.mojom.UnguessableToken layer_token,
++                    gfx.mojom.Size natural_size);
++  OnStatisticsUpdate(PipelineStatistics delta);
++  // `init_data_type` "skd": the key URI as UTF-8.
++  OnEncrypted(string init_data_type, array<uint8> init_data);
++  // Legacy clear key: AVFoundation asks for a clearkey:// key; `key_id` is
++  // WebKit's (the URL's resource specifier). The element raises webkitneedkey.
++  OnClearKeyNeeded(string key_id);
++  OnWaiting(WaitingReason reason);
++  OnEnded();
++  OnError(PipelineStatus status, string message);
++};
++
  [EnableIf=is_win]
+ struct FrameTextureInfo {
+   gfx.mojom.GpuMemoryBufferHandle texture_handle;
 --- a/media/mojo/services/BUILD.gn
 +++ b/media/mojo/services/BUILD.gn
 @@ -111,6 +111,10 @@
@@ -1401,7 +1664,7 @@
  #include "base/functional/callback_helpers.h"
  #include "media/base/renderer.h"
  #include "media/mojo/services/mojo_renderer_service.h"
-@@ -284,6 +284,26 @@
+@@ -284,6 +284,48 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -1423,12 +1686,34 @@
 +
 +  AddRenderer(std::move(renderer), std::move(receiver));
 +}
++
++void InterfaceFactoryImpl::CreateFairPlayHlsPlayer(
++    mojo::PendingReceiver<mojom::FairPlayHlsPlayer> player,
++    mojo::PendingRemote<mojom::FairPlayHlsPlayerClient> client,
++    mojo::PendingRemote<mojom::FairPlayHlsPlayerLifetime> lifetime) {
++  DVLOG(2) << __func__;
++  // Resolves SetCdm()'s ID among the CDMs this factory created. Unretained:
++  // the player is owned by |fairplay_hls_player_receivers_|, which this
++  // factory owns, so it never runs the getter after |cdm_service_context_|
++  // is gone.
++  auto service = mojo_media_client_->CreateFairPlayHlsPlayer(
++      base::SequencedTaskRunner::GetCurrentDefault(), frame_interfaces_.get(),
++      base::BindRepeating(&MojoCdmServiceContext::GetCdmContextRef,
++                          base::Unretained(&cdm_service_context_)),
++      std::move(client), std::move(lifetime));
++  if (!service) {
++    DLOG(ERROR) << "FairPlay HLS player creation failed.";
++    return;
++  }
++
++  fairplay_hls_player_receivers_.Add(std::move(service), std::move(player));
++}
 +#endif  // BUILDFLAG(IS_MAC)
 +
  void InterfaceFactoryImpl::CreateCdm(const CdmConfig& cdm_config,
                                       CreateCdmCallback callback) {
    DVLOG(2) << __func__;
-@@ -338,7 +358,7 @@
+@@ -338,7 +380,7 @@
  #endif  // BUILDFLAG(ENABLE_MOJO_AUDIO_ENCODER)
  
  #if BUILDFLAG(ENABLE_MOJO_RENDERER) || BUILDFLAG(ENABLE_CAST_RENDERER) || \
@@ -1437,7 +1722,20 @@
    if (!renderer_receivers_.empty())
      return false;
  #endif
-@@ -370,7 +390,7 @@
+@@ -351,6 +393,12 @@
+   if (!decryptor_receivers_.empty())
+     return false;
+ 
++#if BUILDFLAG(IS_MAC)
++  if (!fairplay_hls_player_receivers_.empty()) {
++    return false;
++  }
++#endif  // BUILDFLAG(IS_MAC)
++
+   return true;
+ }
+ 
+@@ -370,7 +418,7 @@
  #endif  // BUILDFLAG(ENABLE_MOJO_AUDIO_ENCODER)
  
  #if BUILDFLAG(ENABLE_MOJO_RENDERER) || BUILDFLAG(ENABLE_CAST_RENDERER) || \
@@ -1446,7 +1744,18 @@
    renderer_receivers_.set_disconnect_handler(disconnect_cb);
  #endif
  
-@@ -388,7 +408,7 @@
+@@ -379,6 +427,10 @@
+ #endif  // BUILDFLAG(ENABLE_MOJO_CDM)
+ 
+   decryptor_receivers_.set_disconnect_handler(disconnect_cb);
++
++#if BUILDFLAG(IS_MAC)
++  fairplay_hls_player_receivers_.set_disconnect_handler(disconnect_cb);
++#endif  // BUILDFLAG(IS_MAC)
+ }
+ 
+ void InterfaceFactoryImpl::OnReceiverDisconnect() {
+@@ -388,7 +440,7 @@
  }
  
  #if BUILDFLAG(ENABLE_MOJO_RENDERER) || BUILDFLAG(ENABLE_CAST_RENDERER) || \
@@ -1457,7 +1766,7 @@
      mojo::PendingReceiver<mojom::Renderer> receiver) {
 --- a/media/mojo/services/interface_factory_impl.h
 +++ b/media/mojo/services/interface_factory_impl.h
-@@ -85,6 +85,12 @@
+@@ -85,6 +85,16 @@
        mojo::PendingReceiver<mojom::MediaFoundationRendererExtension>
            renderer_extension_receiver) final;
  #endif  // BUILDFLAG(IS_WIN)
@@ -1466,11 +1775,15 @@
 +      mojo::PendingReceiver<mojom::Renderer> receiver,
 +      mojo::PendingRemote<mojom::FairPlayRendererClientExtension>
 +          client_extension) final;
++  void CreateFairPlayHlsPlayer(
++      mojo::PendingReceiver<mojom::FairPlayHlsPlayer> player,
++      mojo::PendingRemote<mojom::FairPlayHlsPlayerClient> client,
++      mojo::PendingRemote<mojom::FairPlayHlsPlayerLifetime> lifetime) final;
 +#endif  // BUILDFLAG(IS_MAC)
  
    void CreateCdm(const CdmConfig& cdm_config, CreateCdmCallback callback) final;
  
-@@ -100,7 +106,7 @@
+@@ -100,7 +110,7 @@
    void OnReceiverDisconnect();
  
  #if BUILDFLAG(ENABLE_MOJO_RENDERER) || BUILDFLAG(ENABLE_CAST_RENDERER) || \
@@ -1479,7 +1792,7 @@
    // Creates MojoRendererService for `renderer`, bind it to `receiver` and add
    // them to `renderer_receivers_`.
    void AddRenderer(std::unique_ptr<media::Renderer> renderer,
-@@ -140,7 +146,7 @@
+@@ -140,7 +150,7 @@
  #endif  // BUILDFLAG(ENABLE_MOJO_VIDEO_ENCODER)
  
  #if BUILDFLAG(ENABLE_MOJO_RENDERER) || BUILDFLAG(ENABLE_CAST_RENDERER) || \
@@ -1488,6 +1801,21 @@
    // TODO(xhwang): Use MojoMediaLog for Renderer.
    NullMediaLog media_log_;
    mojo::UniqueReceiverSet<mojom::Renderer> renderer_receivers_;
+@@ -159,6 +169,14 @@
+ 
+   mojo::UniqueReceiverSet<mojom::Decryptor> decryptor_receivers_;
+ 
++#if BUILDFLAG(IS_MAC)
++  // Parc: native HLS players. Declared after |cdm_service_context_| and
++  // |cdm_receivers_|, so they go first: they hold CdmContextRefs and the
++  // getter that reads |cdm_service_context_|.
++  mojo::UniqueReceiverSet<mojom::FairPlayHlsPlayer>
++      fairplay_hls_player_receivers_;
++#endif  // BUILDFLAG(IS_MAC)
++
+   raw_ptr<MojoMediaClient> mojo_media_client_;
+   base::OnceClosure destroy_cb_;
+ 
 --- a/media/mojo/services/mojo_cdm_service.cc
 +++ b/media/mojo/services/mojo_cdm_service.cc
 @@ -88,6 +88,22 @@
@@ -1549,7 +1877,7 @@
        EmeInitDataType init_data_type,
 --- a/media/mojo/services/mojo_media_client.cc
 +++ b/media/mojo/services/mojo_media_client.cc
-@@ -94,6 +94,16 @@
+@@ -94,6 +94,26 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -1559,6 +1887,16 @@
 +    mojom::FrameInterfaceFactory* frame_interfaces,
 +    mojo::PendingRemote<mojom::FairPlayRendererClientExtension>
 +        client_extension) {
++  return nullptr;
++}
++
++std::unique_ptr<mojom::FairPlayHlsPlayer>
++MojoMediaClient::CreateFairPlayHlsPlayer(
++    scoped_refptr<base::SequencedTaskRunner> task_runner,
++    mojom::FrameInterfaceFactory* frame_interfaces,
++    CdmContextGetter get_cdm_context,
++    mojo::PendingRemote<mojom::FairPlayHlsPlayerClient> client,
++    mojo::PendingRemote<mojom::FairPlayHlsPlayerLifetime> lifetime) {
 +  return nullptr;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
@@ -1583,7 +1921,23 @@
    void GetFrameScreenRect(GetFrameScreenRectCallback callback) override {
 --- a/media/mojo/services/mojo_media_client.h
 +++ b/media/mojo/services/mojo_media_client.h
-@@ -124,6 +124,17 @@
+@@ -9,6 +9,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include "base/functional/callback_forward.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/unguessable_token.h"
+@@ -36,6 +37,7 @@
+ 
+ class AudioDecoder;
+ class AudioEncoder;
++class CdmContextRef;
+ class CdmFactory;
+ class MediaLog;
+ class Renderer;
+@@ -124,6 +126,31 @@
            renderer_extension_receiver);
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -1596,6 +1950,20 @@
 +      mojom::FrameInterfaceFactory* frame_interfaces,
 +      mojo::PendingRemote<mojom::FairPlayRendererClientExtension>
 +          client_extension);
++
++  // Parc: Safari's native HLS player (an AVPlayer, Engine/ParcNative's
++  // NATIVE_HLS.md). `get_cdm_context` resolves SetCdm()'s CDM ID among the
++  // frame's CDMs and must not be run after the factory that passed it is
++  // gone; `client` serves its loads; it keeps `lifetime` (may be unbound)
++  // until it is destroyed. |frame_interfaces| may be null.
++  using CdmContextGetter = base::RepeatingCallback<std::unique_ptr<
++      CdmContextRef>(const base::UnguessableToken& cdm_id)>;
++  virtual std::unique_ptr<mojom::FairPlayHlsPlayer> CreateFairPlayHlsPlayer(
++      scoped_refptr<base::SequencedTaskRunner> task_runner,
++      mojom::FrameInterfaceFactory* frame_interfaces,
++      CdmContextGetter get_cdm_context,
++      mojo::PendingRemote<mojom::FairPlayHlsPlayerClient> client,
++      mojo::PendingRemote<mojom::FairPlayHlsPlayerLifetime> lifetime);
 +#endif  // BUILDFLAG(IS_MAC)
 +
    // Returns the CdmFactory to be used by MojoCdmService. |frame_interfaces|

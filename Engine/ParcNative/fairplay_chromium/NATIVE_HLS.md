@@ -104,44 +104,55 @@ DevTools attribution right.
 
 ## Mojo
 
-New interfaces in `media/mojo/mojom/renderer_extensions.mojom`, beside
-`FairPlayRendererClientExtension`, module `media.mojom`:
+The interfaces are in `media/mojo/mojom/renderer_extensions.mojom`, beside
+`FairPlayRendererClientExtension`, module `media.mojom`, all
+`[EnableIf=is_mac]` (fairplay-media.patch; the patch's comments are the
+reference):
 
 ```
 // InterfaceFactory (render process → browser MediaInterfaceProxy → the
-// frame's GPU InterfaceFactoryImpl, the one holding its CDMs):
+// frame's GPU InterfaceFactoryImpl, the one holding its CDMs). The render
+// process passes a null lifetime; the browser substitutes its own.
 CreateFairPlayHlsPlayer(pending_receiver<FairPlayHlsPlayer> player,
-                        pending_remote<FairPlayHlsPlayerClient> client);
+                        pending_remote<FairPlayHlsPlayerClient> client,
+                        pending_remote<FairPlayHlsPlayerLifetime>? lifetime);
 
 struct FairPlayHlsLoadRequest {
   url.mojom.Url url; string method;
-  map<string, string> headers;      // Range, Accept, X-Playback-Session-Id…
+  map<string, string> headers;      // as AVFoundation set them
 };
 struct FairPlayHlsLoadResponse {
-  int32 http_status; string mime_type; int64 content_length;  // -1 unknown
+  int32 http_status; string mime_type;  // Content-Type without parameters
+  int64 content_length;             // -1 unknown or decoded Content-Encoding
   url.mojom.Url final_url;          // after redirects
+  map<string, string> headers;      // combined per name
 };
 interface FairPlayHlsLoad {          // render process implements, per load
-  Cancel();
+  Cancel();                          // or close the pipe
 };
 interface FairPlayHlsLoadClient {    // GPU implements, per load
   OnResponse(FairPlayHlsLoadResponse response,
-             handle<data_pipe_consumer> body);
+             handle<data_pipe_consumer> body);  // closes after the last byte
   OnComplete(int32 net_error);       // net::OK or a net error
 };
 
+struct FairPlayHlsTimeRange { mojo_base.mojom.TimeDelta start, end; };
+enum FairPlayHlsTrackType { kAudio, kVideo, kText };
 struct FairPlayHlsTrack {
   string id; string kind; string label; string language;
-  bool enabled; DemuxerStream.Type type;   // AUDIO, VIDEO or TEXT
+  bool enabled; FairPlayHlsTrackType type;
 };
 struct FairPlayHlsMetadata {
   bool has_audio; bool has_video; gfx.mojom.Size natural_size;
   AudioCodec audio_codec; VideoCodec video_codec;   // kUnknown if not given
   mojo_base.mojom.TimeDelta duration;  // TimeDelta::Max() = live (Infinity)
   mojo_base.mojom.Time? start_date;    // getStartDate() (Live and DVR)
-  array<MediaTimeRange> seekable;      // one window or none (Live and DVR)
+  array<FairPlayHlsTimeRange> seekable;  // one window or none (Live and DVR)
+  array<FairPlayHlsTimeRange> buffered;  // loadedTimeRanges
   array<FairPlayHlsTrack> tracks;
 };
+
+interface FairPlayHlsPlayerLifetime {};  // browser implements, no methods
 
 interface FairPlayHlsPlayer {        // GPU implements
   Initialize(url.mojom.Url url, string mime_type)
@@ -163,13 +174,12 @@ interface FairPlayHlsPlayerClient {  // render process implements
   OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
                mojo_base.mojom.TimeTicks capture_time);
   OnBufferingStateChange(BufferingState state);
-  OnBufferedRangesChanged(array<MediaTimeRange> loaded);
-  OnSeekableRangesChanged(array<MediaTimeRange> seekable);
+  OnBufferedRangesChanged(array<FairPlayHlsTimeRange> buffered);
+  OnSeekableRangesChanged(array<FairPlayHlsTimeRange> seekable);
   OnDurationChange(mojo_base.mojom.TimeDelta duration);
   OnStartDateChanged(mojo_base.mojom.Time? start_date);  // before
                                      // the OnBufferingStateChange it goes with
   OnTracksChanged(array<FairPlayHlsTrack> tracks);
-  OnTextCues(string track_id, array<FairPlayHlsCue> cues);  // fp-hls-display
   OnNaturalSizeChange(gfx.mojom.Size size);
   OnLayerRegistered(mojo_base.mojom.UnguessableToken token,
                     gfx.mojom.Size natural_size);
@@ -182,7 +192,31 @@ interface FairPlayHlsPlayerClient {  // render process implements
 };
 ```
 
-`fp-hls-display` defines `FairPlayHlsCue` here when it gets there.
+`media.mojom` has no time-range struct, and `DemuxerStream.Type` is a
+`[Native]` enum, hence `FairPlayHlsTimeRange` and `FairPlayHlsTrackType`.
+The text-track owner adds `FairPlayHlsCue` and
+`FairPlayHlsPlayerClient.OnTextCues(string track_id, array<FairPlayHlsCue>)`
+when cues land.
+
+Routing, as the FairPlay renderer's and CDM's:
+
+- Render process: `content::MediaInterfaceFactory::CreateFairPlayHlsPlayer`
+  hops to its thread and always sends a null lifetime.
+- Browser: `MediaInterfaceProxy::CreateFairPlayHlsPlayer` drops the request
+  unless `parc::fairplay::kNativeHlsEnabled` is true, then forwards it to the frame's
+  GPU `InterfaceFactory` (the one that created its FairPlay CDMs) with its own
+  `FairPlayHlsPlayerLifetime`, a self-owned receiver holding the frame's
+  `AudibilityBypassTracker` grant until the GPU player closes it: AVPlayer's
+  audio bypasses the audio service like the MSE renderer's.
+  `FramelessMediaInterfaceProxy` drops it.
+- GPU: `InterfaceFactoryImpl::CreateFairPlayHlsPlayer` asks
+  `MojoMediaClient::CreateFairPlayHlsPlayer` (default null) for the service,
+  handing it a getter for `MojoCdmServiceContext::GetCdmContextRef` so
+  `SetCdm` resolves the frame's CDM, and owns it in a receiver set that keeps
+  the factory alive (`IsEmpty`) and goes before the CDMs.
+  `GpuMojoMediaClientMac` returns `media::FairPlayHlsPlayerService`
+  (`fairplay_hls_player_service.{h,mm}`), which also registers the tab-mute
+  observer as `CreateFairPlayRenderer` does.
 
 ## GPU core player
 

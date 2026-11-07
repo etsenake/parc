@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 400,
+  "version": 401,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3992,7 +3992,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "d7c3bcec833d6c4fba04e966d1f574177cf13b68695d7ace89a69d89bee303fd",
+      "sha256": "8a5f3922f5555237d6ddff351255cec9edb8bb39dbc86dea924a4159b24c86f1",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4022,22 +4022,22 @@
         {
           "target": "content/browser/media/frameless_media_interface_proxy.cc",
           "before_sha256": "1168af1e2efe7c3f28038c137b525cdbec57c89c7683377687a8793a3291ce31",
-          "after_sha256": "a57a3a85a194f8f22ca30e866157a2108d2e6ac1bd19b307a3ea94fccf20a38a"
+          "after_sha256": "59e8f00dd1fa2bb051b42d008fe881b470d6cc59f2f21887ff42d9ab1ff03bb9"
         },
         {
           "target": "content/browser/media/frameless_media_interface_proxy.h",
           "before_sha256": "2f7f8de9c7b66da12b26727b63d2a7470a704c01a89756ee68477f2f09bda950",
-          "after_sha256": "b4f9528f48ee589b973f8d7ed90b84e80f26704725bed4561faf6c5e93f68fd6"
+          "after_sha256": "bd4b7a0b34f4d6c570833370da123bfd0ddf5cf3fb1e0d6e8a512d891991afd8"
         },
         {
           "target": "content/browser/media/media_interface_proxy.cc",
           "before_sha256": "151fd2acf0b00762c9debb229b6ab62cebc2fbc91cb6a5d9d0afd5bd48c89b67",
-          "after_sha256": "eb6ab89c69aad293337a2579b24675e4a4a36547d873ba04a546a583fe6adb95"
+          "after_sha256": "980e6fba7175bc91b31320939eee85d81f1d1383d2d76cecb59676ee876b21ec"
         },
         {
           "target": "content/browser/media/media_interface_proxy.h",
           "before_sha256": "85d90df1953eafb590cae0bac50876ec23d27d05cbccda65acf10ea85a4f894f",
-          "after_sha256": "bc57f8c232033be19fedd91ddd3e903f8b75b5461c67e73a9ba0f237b3cbf595"
+          "after_sha256": "535edfa6aed8ff1666d3415ff86875199fc03c5cb5941cd8341433a6cc538c47"
         },
         {
           "target": "content/renderer/BUILD.gn",
@@ -4052,12 +4052,12 @@
         {
           "target": "content/renderer/media/media_interface_factory.cc",
           "before_sha256": "0d7481f402c5dd4883a059bc4f2be3323cf1912dbeb95597f93a2a82bd85251c",
-          "after_sha256": "b06d48a441f8cd0c2ec27adb7d89f25ae1b66836f2499379e16324f2aadf1c78"
+          "after_sha256": "c7198b9b7fe443038cce6f34e0856902565b87168cac5583c393b0b88a8585a7"
         },
         {
           "target": "content/renderer/media/media_interface_factory.h",
           "before_sha256": "61feedd9a349529d12eca4cb1c5424dc51a5f060d8f5ad46a41c573252fcab50",
-          "after_sha256": "cfe8d4a0b6193a53a792344f5ae0dc514f998c7a2d08fa564cbe406b07fc5ea4"
+          "after_sha256": "f443eebc9ca32c54ec67d8d3b219bd843b5263aabe770a3b7c918e60186b5173"
         },
         {
           "target": "media/base/cdm_context.cc",
@@ -4187,7 +4187,7 @@
         {
           "target": "media/mojo/mojom/interface_factory.mojom",
           "before_sha256": "44b7ed54aee55d131f6295fa5e5e8d9a2f06d80ad29459f3912f763ddc5a9c47",
-          "after_sha256": "e0fd73b28cf9dd1be1bb996eac609895bafc176067e338be52e43e08ed21231f"
+          "after_sha256": "b9b8585dd177bba85329aad0dbcf6f7aebd51a17b611998404646a1676dcd20a"
         },
         {
           "target": "media/mojo/mojom/media_types.mojom",
@@ -4202,7 +4202,7 @@
         {
           "target": "media/mojo/mojom/renderer_extensions.mojom",
           "before_sha256": "d8c555a7884c5c557a91a62b2c9fc709b9c5356eb33bc6f0b91fcac53af1ed0d",
-          "after_sha256": "1f84071a3e536407e40c615c4719b0e217299a05ce61acb43d1db043699338d9"
+          "after_sha256": "27d74e2f1003a0efee050ed14f0facb593b5acddb7d15a976cfd92607c811165"
         },
         {
           "target": "media/mojo/services/BUILD.gn",
@@ -4217,12 +4217,12 @@
         {
           "target": "media/mojo/services/interface_factory_impl.cc",
           "before_sha256": "031060f942e388b6335c5d73f16db4bcada24a7625a23c674d5a5b69ccf2076a",
-          "after_sha256": "2211d91b6c7d9e6e7828de2f227d0a4502749a93669ecc3f1d23268849f789e1"
+          "after_sha256": "dbf9508326811f43a7f8600800a4c0cfa8a02eb240887e783d04f07ff6a9d044"
         },
         {
           "target": "media/mojo/services/interface_factory_impl.h",
           "before_sha256": "72a249d51e808eec98b3d85a6b9914ce0b8ae70231d4c96ed3047ab13390ea1b",
-          "after_sha256": "749ad4576707d806a399ff73056ddc63c712a4f8fee50e5a05951a44f573d1cb"
+          "after_sha256": "0e0b23c651818b2830023e6f753389d853d58c29fdbca5f9ad0aff811e5cd36c"
         },
         {
           "target": "media/mojo/services/mojo_cdm_service.cc",
@@ -4237,7 +4237,7 @@
         {
           "target": "media/mojo/services/mojo_media_client.cc",
           "before_sha256": "ce1f71ae9d481a4a2c9b38da6217d41995090425222ee7bf3510bc7509686e7b",
-          "after_sha256": "65c24378dc85728e0975e6acb8039704038aee8e9c438b1fb7fd88691f38d75b"
+          "after_sha256": "564465cf9f6a2031ec601c4f098bdd3735c76c3f78e64cc9e2f5fc6b0fd2bd58"
         },
         {
           "target": "media/mojo/services/mojo_cdm_helper_unittest.cc",
@@ -4247,7 +4247,7 @@
         {
           "target": "media/mojo/services/mojo_media_client.h",
           "before_sha256": "f7f86427e6ce6c4e4257f2690533f42ee8e4346a137c7df930b5a7888087b87f",
-          "after_sha256": "3b46fa412e2613c96778120ef4ace6303d01c4cc62d4f7662e6f7aed2c998e4c"
+          "after_sha256": "d2a4b927513ebe6ec46772952f81187d1845966ee6605165c6d1638991b4708f"
         },
         {
           "target": "sandbox/policy/mac/gpu.sb",
@@ -4288,7 +4288,7 @@
         {
           "target": "third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc",
           "before_sha256": "bd093e3dba56c043ccc4a9396b2afca512c96eee9f3697450d8d27c4ccad2189",
-          "after_sha256": "0d839fc034bf78407a233b7489e3907f8e63802aa6a02b22d6749c0d8f136eb4"
+          "after_sha256": "072cd4eb6b10ac24cf05cd5067cbc6e14c969dd008b89cc89d093ae0092262b2"
         },
         {
           "target": "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.cc",
