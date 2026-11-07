@@ -38,6 +38,8 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 - `fairplay_hls_player_internal.h`: the player's asset (a content key
   recipient), `AVPlayer` and `AVPlayerLayer` for the CDM and display
   (ObjC++ only).
+- `fairplay_hls_timeline.{h,cc}`: the player's duration, seekable window and
+  start date by WebKit's rules, with Safari's caching (plain C++).
 
 ## Mapping onto Chromium (M1)
 
@@ -355,10 +357,22 @@ plan and the switch that keeps it off).
   rather than failing the item.
 - State comes from the item: metadata at `readyToPlay`, buffering from
   `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`,
-  loaded and seekable ranges, duration (+infinity for live), presentation
-  size, end, failure (URL errors are network errors; others before metadata
-  are unsupported sources, after it decode errors). `getStartDate()` is
-  `currentDate` minus `currentTime`. Seeks are exact (zero tolerance).
+  loaded ranges, presentation size, end, failure (URL errors are network
+  errors; others before metadata are unsupported sources, after it decode
+  errors). Seeks are exact (zero tolerance).
+- Live and DVR timing (`HlsTimeline`, WebKit's
+  `MediaPlayerPrivateAVFoundationObjC` with the cache its GPU process keeps
+  for the page): the duration is the item's, +infinity when indefinite (live)
+  and 0 when invalid, and `OnDurationChange` fires only when it really
+  changes (live becoming VOD at `EXT-X-ENDLIST`; never while live). Seekable
+  is one window from the smallest start to the largest end of the valid,
+  non-empty `seekableTimeRanges`, up to the duration when there are none,
+  and empty when its end is 0; it is recomputed when the ranges change and,
+  while empty, at each buffering change. `getStartDate()` is
+  `round(currentDate − currentTime)` in whole seconds, none without
+  `EXT-X-PROGRAM-DATE-TIME`, sampled at metadata and at each buffering change
+  (Safari's ready-state changes), reported by `OnStartDateChange` just before
+  `OnBufferingStateChange`.
 - Threads: one owner sequence; KVO, notifications and resource loader calls
   hop to it. `CurrentTime()` reads the item's timebase from any thread.
 
@@ -373,7 +387,10 @@ playlist (network error before metadata), an `http://` playlist (App
 Transport Security doesn't apply: AVFoundation fetches nothing itself),
 `preservesPitch` and rate picking the pitch algorithm, Axinom's FairPlay HLS (the skd URI
 reaches the client and never the loader; no key, no playback) and teardown
-with loads in flight.
+with loads in flight. The `timeline` scenario checks WebKit's timing rules
+with no network; `live` also checks the one-range window, a whole-second start
+date that matches the wall clock, an exact seek into the DVR window and one to
+its end reaching the live edge.
 
 `tests/FairPlay/sandbox` (`--scenarios hls-ts,hls-fmp4`) plays both clear
 streams inside Chromium's GPU seatbelt profile with only the MSE route's

@@ -20,6 +20,7 @@
 
 #include "fairplay_hls_player.h"
 #include "fairplay_hls_player_internal.h"
+#include "fairplay_hls_timeline.h"
 
 namespace fp = parc::fairplay;
 
@@ -276,6 +277,9 @@ struct Client : fp::HlsPlayerClient {
     seekable_changes++;
   }
   void OnDurationChange(double seconds) override { duration_changes.push_back(seconds); }
+  void OnStartDateChange(std::optional<double> start_date_ms) override {
+    start_date_changes.push_back(start_date_ms);
+  }
   void OnNaturalSizeChange(int32_t w, int32_t h) override {
     width = w;
     height = h;
@@ -294,6 +298,7 @@ struct Client : fp::HlsPlayerClient {
   std::vector<fp::HlsTimeRange> loaded, seekable;
   int seekable_changes = 0;
   std::vector<double> duration_changes;
+  std::vector<std::optional<double>> start_date_changes;
   int32_t width = 0, height = 0;
   int ended = 0;
   int error = -1;
@@ -346,7 +351,9 @@ void VodTs() {
   Check(m.has_video && m.natural_width > 0 && m.natural_height > 0, "video with a natural size");
   Check(m.has_audio, "audio");
   Check(!m.is_live && std::fabs(m.duration - 600) < 2, "finite duration about 600 s");
-  Check(!m.seekable.empty() && m.seekable[0].end > 500, "seekable covers the stream");
+  Check(m.seekable.size() == 1 && m.seekable[0].start == 0 && m.seekable[0].end > 500,
+        "seekable is one range covering the stream");
+  Check(!m.start_date_ms, "no EXT-X-PROGRAM-DATE-TIME: no start date");
   OnOwner([&] { rig.player->SetRate(1); });
   bool playing = WaitFor([&] { return rig.Time() > 3; }, 20);
   Check(playing, "time advances past 3 s");
@@ -412,8 +419,87 @@ void VodFmp4() {
   Check(WaitFor([&] { return rig.Time() > before + 2; }, 10), "plays on at 1.5x");
 }
 
+// WebKit's rules (fairplay_hls_timeline.h), no network.
+void Timeline() {
+  std::printf("-- live and DVR timing rules (WebKit's)\n");
+  using fp::HlsSeekableRangeInput;
+  using fp::HlsSeekableWindow;
+  using fp::HlsTime;
+  using fp::HlsTimeKind;
+  const HlsTime live{HlsTimeKind::kIndefinite, 0};
+  const HlsTime invalid{HlsTimeKind::kInvalid, 0};
+  auto numeric = [](double seconds) { return HlsTime{HlsTimeKind::kNumeric, seconds}; };
+  auto range = [](double start, double end) { return HlsSeekableRangeInput{true, end == start, start, end}; };
+  auto is = [](const std::optional<HlsSeekableWindow>& window, double start, double end) {
+    return window && window->start == start && window->end == end;
+  };
+
+  Check(fp::HlsDurationSeconds(numeric(600)) == 600, "numeric duration");
+  Check(std::isinf(fp::HlsDurationSeconds(live)) && fp::HlsDurationSeconds(live) > 0, "indefinite duration is +Infinity");
+  Check(fp::HlsDurationSeconds(invalid) == 0, "invalid duration is 0");
+
+  Check(is(fp::HlsSeekable({range(1000, 1300)}, INFINITY), 1000, 1300), "live DVR window");
+  Check(is(fp::HlsSeekable({range(30, 40), range(10, 20)}, 600), 10, 40),
+        "disjoint ranges make one window from the smallest start to the largest end");
+  Check(is(fp::HlsSeekable({HlsSeekableRangeInput{false, false, 0, 900}, range(50, 50), range(100, 200)}, 600), 100, 200),
+        "invalid and empty ranges are skipped");
+  Check(is(fp::HlsSeekable({}, 600), 0, 600), "no range: up to the duration");
+  Check(is(fp::HlsSeekable({}, INFINITY), 0, INFINITY), "no range on a live stream: [0, Infinity)");
+  Check(!fp::HlsSeekable({}, 0), "no range and no duration: nothing seekable");
+  Check(!fp::HlsSeekable({HlsSeekableRangeInput{false, false, 5, 9}, range(7, 7)}, 600),
+        "only invalid or empty ranges: nothing seekable (the end is 0)");
+  Check(is(fp::HlsSeekable({range(0, 0.5)}, 600), 0, 0.5), "a window ending after 0 is kept");
+
+  Check(!fp::HlsStartDate(0, 12), "currentDate 0 (nil): no start date");
+  Check(fp::HlsStartDate(1762480000.4, 10.3) == 1762479990.0, "start date rounds date − currentTime");
+  Check(fp::HlsStartDate(1762480000.5, 0) == 1762480001.0, "a half second rounds away from zero");
+  Check(!fp::HlsStartDate(1762480000, NAN), "an invalid currentTime: no start date");
+
+  fp::HlsTimeline timeline;
+  timeline.Start(live, {range(1000, 1300)}, std::nullopt);
+  Check(std::isinf(timeline.duration()) && is(timeline.seekable(), 1000, 1300) && !timeline.start_date(),
+        "live start: Infinity, one window, no date yet");
+  Check(!timeline.DurationChanged(live), "the same live duration: no durationchange");
+  Check(!timeline.SeekableChanged({range(1000, 1300)}), "the same window: no change");
+  Check(timeline.SeekableChanged({range(1002, 1302)}) && is(timeline.seekable(), 1002, 1302), "the window slides");
+  Check(timeline.ReadyStateChanged(1762480000) && timeline.start_date() == 1762480000.0,
+        "a ready-state change samples the start date");
+  Check(!timeline.ReadyStateChanged(1762480000), "the same start date: no change");
+  Check(timeline.DurationChanged(numeric(3600)) && timeline.duration() == 3600,
+        "live becoming VOD (EXT-X-ENDLIST) fires durationchange");
+  Check(!timeline.DurationChanged(numeric(3600)), "the same duration again: no durationchange");
+  Check(timeline.SeekableRanges().size() == 1, "seekable is one range");
+
+  fp::HlsTimeline from_invalid;
+  from_invalid.Start(invalid, {}, std::nullopt);
+  Check(!from_invalid.seekable(), "invalid duration, no range: nothing seekable");
+  Check(!from_invalid.DurationChanged(numeric(10)) && from_invalid.duration() == 10,
+        "a duration arriving from invalid fires no durationchange (WebKit's durationDidChange)");
+
+  // WebKit caches the window's ends and computes them again only when the
+  // ranges change or, at a ready-state change, while the end is 0.
+  fp::HlsTimeline cached;
+  cached.Start(numeric(0), {}, std::nullopt);
+  Check(!cached.seekable(), "duration 0, no range: nothing seekable");
+  Check(cached.DurationChanged(numeric(50)) && !cached.seekable(), "a duration change alone leaves seekable");
+  Check(cached.ReadyStateChanged(std::nullopt) && is(cached.seekable(), 0, 50),
+        "the next ready-state change computes the empty window again");
+  Check(cached.DurationChanged(numeric(60)) && !cached.ReadyStateChanged(std::nullopt) && is(cached.seekable(), 0, 50),
+        "a cached window keeps its end across ready-state changes");
+  Check(cached.SeekableChanged({}) && is(cached.seekable(), 0, 60), "a ranges change computes it again");
+}
+
+// The window the page sees now: the last change, or the metadata's.
+std::vector<fp::HlsTimeRange> CurrentSeekable(const Client& client) {
+  return client.seekable_changes ? client.seekable : client.metadata->seekable;
+}
+
+std::optional<double> CurrentStartDate(const Client& client) {
+  return client.start_date_changes.empty() ? client.metadata->start_date_ms : client.start_date_changes.back();
+}
+
 void Live() {
-  std::printf("-- live with a DVR window (Unified Streaming demo)\n");
+  std::printf("-- live with a DVR window and EXT-X-PROGRAM-DATE-TIME (Unified Streaming demo)\n");
   Rig rig;
   Check(rig.Load(Fake("demo.unified-streaming.com/k8s/live/stable/live.isml/.m3u8")).ok(), "Load");
   bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 25);
@@ -430,12 +516,39 @@ void Live() {
   WaitFor([&] { return rig.Time() > 0; }, 15);
   start = rig.Time();
   Check(WaitFor([&] { return rig.Time() > start + 2; }, 20), "live time advances");
-  Check(!rig.client.seekable.empty() || !rig.client.metadata->seekable.empty(), "seekable window reported");
-  std::printf("   seekable %s, start date %s\n",
-              rig.client.seekable.empty() ? "none"
-                                          : (std::to_string(rig.client.seekable.back().start) + "-" +
-                                             std::to_string(rig.client.seekable.back().end)).c_str(),
-              rig.client.metadata->start_date_ms ? std::to_string(*rig.client.metadata->start_date_ms).c_str() : "none");
+  std::vector<fp::HlsTimeRange> window;
+  OnOwner([&] { window = CurrentSeekable(rig.client); });
+  Check(window.size() == 1 && window[0].start < window[0].end && window[0].end > 0,
+        "seekable is one DVR window");
+  std::optional<double> date;
+  OnOwner([&] { date = CurrentStartDate(rig.client); });
+  double now = [[NSDate date] timeIntervalSince1970];
+  std::printf("   seekable %s, start date %s, at %.3f\n",
+              window.empty() ? "none"
+                             : (std::to_string(window[0].start) + "-" + std::to_string(window[0].end)).c_str(),
+              date ? std::to_string(*date).c_str() : "none", rig.Time());
+  Check(date && std::fmod(*date, 1000) == 0, "getStartDate is a whole second (WebKit rounds)");
+  Check(date && std::fabs(*date / 1000 + rig.Time() - now) < 120,
+        "start date + currentTime is the wall-clock time of the live picture");
+  if (window.size() != 1) {
+    return;
+  }
+  // Within the DVR window.
+  double target = window[0].start + (window[0].end - window[0].start) / 2;
+  int seek_result = -1;
+  OnOwner([&] { rig.player->Seek(target, [&](bool finished) { seek_result = finished; }); });
+  WaitFor([&] { return seek_result != -1; }, 20);
+  Check(seek_result == 1 && std::fabs(rig.Time() - target) < 1, "an exact seek into the DVR window lands there");
+  // To the live edge (the window's end, where the element's seek clamps
+  // anything later, Infinity included).
+  OnOwner([&] { window = CurrentSeekable(rig.client); });
+  seek_result = -1;
+  OnOwner([&] { rig.player->Seek(window[0].end, [&](bool finished) { seek_result = finished; }); });
+  WaitFor([&] { return seek_result != -1; }, 20);
+  Check(seek_result == 1 && rig.Time() > window[0].end - 3, "a seek to the window's end reaches the live edge");
+  Check(WaitFor([&] { return rig.Time() > window[0].end + 1; }, 20), "plays on from the live edge");
+  Check(rig.client.duration_changes.empty(), "no durationchange while live");
+  Check(rig.client.seekable_changes > 0 && rig.client.seekable.size() == 1, "the sliding window is reported as one range");
   Check(rig.loader.foreign_ == 0 && rig.client.errors == 0, "only the loader's host, no error");
 }
 
@@ -516,7 +629,7 @@ int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
-        {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"teardown", Teardown}};
+        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"teardown", Teardown}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

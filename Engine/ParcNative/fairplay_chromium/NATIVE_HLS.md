@@ -7,8 +7,8 @@ render-process route: Blink, `DemuxerManager`, `NativeHlsDemuxer`, the
 (mojo interfaces, `InterfaceFactory`, the GPU service wrapping the core, the
 render-process loader), `fp-hls-keys` (skd in the CDM, the asset's content
 keys, modern EME), `fp-hls-display` (display, PiP and fullscreen, frame
-counts, audio and text tracks, live/DVR ranges). Interface changes go into
-this file first.
+counts), `fp-hls-tracks` (audio and text tracks), `fp-hls-live` (live and DVR
+timing). Interface changes go into this file first.
 
 Safari plays `<video src="….m3u8">` through `AVPlayer` (WebKit's
 `MediaPlayerPrivateAVFoundationObjC`) and FairPlay HLS keys through
@@ -137,8 +137,8 @@ struct FairPlayHlsMetadata {
   bool has_audio; bool has_video; gfx.mojom.Size natural_size;
   AudioCodec audio_codec; VideoCodec video_codec;   // kUnknown if not given
   mojo_base.mojom.TimeDelta duration;  // TimeDelta::Max() = live (Infinity)
-  mojo_base.mojom.Time? start_date;    // EXT-X-PROGRAM-DATE-TIME at time 0
-  array<MediaTimeRange> seekable;      // seekableTimeRanges (DVR window)
+  mojo_base.mojom.Time? start_date;    // getStartDate() (Live and DVR)
+  array<MediaTimeRange> seekable;      // one window or none (Live and DVR)
   array<FairPlayHlsTrack> tracks;
 };
 
@@ -164,6 +164,8 @@ interface FairPlayHlsPlayerClient {  // render process implements
   OnBufferedRangesChanged(array<MediaTimeRange> loaded);
   OnSeekableRangesChanged(array<MediaTimeRange> seekable);
   OnDurationChange(mojo_base.mojom.TimeDelta duration);
+  OnStartDateChanged(mojo_base.mojom.Time? start_date);  // before
+                                     // the OnBufferingStateChange it goes with
   OnTracksChanged(array<FairPlayHlsTrack> tracks);
   OnTextCues(string track_id, array<FairPlayHlsCue> cues);  // fp-hls-display
   OnNaturalSizeChange(gfx.mojom.Size size);
@@ -182,7 +184,8 @@ interface FairPlayHlsPlayerClient {  // render process implements
 ## GPU core player
 
 `parc::fairplay::FairPlayHlsPlayer` (`Engine/ParcNative/fairplay/fairplay_hls_player.h`,
-[core README](../fairplay/README.md#native-hls-player)) is the engine-free
+with `fairplay_hls_timeline.{h,cc}`, which the core's build target lists with
+it; [core README](../fairplay/README.md#native-hls-player)) is the engine-free
 player the GPU service owns, on the media service thread with the core's
 `PostTask`:
 
@@ -192,7 +195,7 @@ player the GPU service owns, on the media service thread with the core's
 | `HlsLoadClient::OnResponse` / `OnData` / `OnComplete(net_error)` | `FairPlayHlsLoadClient.OnResponse` + data pipe reads / `OnComplete` |
 | `Load(url, mime)`, `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
 | `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `Initialize` reply |
-| `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
+| `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnStartDateChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
 | `OnKeyRequest(uri)`, `CompleteKeyRequests(uri)`, `FailKeyRequests` | `OnEncrypted("skd", uri)`; the CDM side (Keys) |
 | `CurrentTime()` (any thread), `Rate()` | `OnTimeUpdate` |
 | `HlsPlayerAsset` / `HlsPlayerLayer` (`fairplay_hls_player_internal.h`) | `addContentKeyRecipient:` (Keys) / `ProtectedLayerRegistry` (Display) |
@@ -289,10 +292,10 @@ tree (a hidden tab).
 | `HAVE_METADATA` | item `readyToPlay` | `Initialize` reply → demuxer init → pipeline metadata |
 | `HAVE_ENOUGH` / underflow | `playbackLikelyToKeepUp` / `playbackBufferEmpty` | `OnBufferingStateChange` → facade's `RendererClient` |
 | `currentTime` | `currentTime`, periodic observer | `OnTimeUpdate` → facade's `GetMediaTime` interpolates |
-| `duration` | `duration` (indefinite = live) | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |
+| `duration` | `duration` (indefinite = live), Live and DVR | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |
 | `buffered` | `loadedTimeRanges` | `DemuxerHost::OnBufferedTimeRangesChanged` |
-| `seekable` | `seekableTimeRanges` | demuxer; `WebMediaPlayerImpl::Seekable()` asks it for this demuxer type (today live gives empty) |
-| `getStartDate()` | `currentDate` − `currentTime` | `Demuxer::GetTimelineOffset()` |
+| `seekable` | `seekableTimeRanges` as one window, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayerImpl::Seekable()` answers it |
+| `getStartDate()` | `round(currentDate − currentTime)`, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayer::ParcStartDate()` |
 | seeking/seeked | `seekToTime:completionHandler:` | `Demuxer::Seek` / facade `StartPlayingFrom` |
 | rate, pause | `rate` | facade `SetPlaybackRate` → `Play`/`Pause` |
 | volume, muted | `volume`, `muted` | facade `SetVolume`; tab mute as the MSE route |
@@ -331,6 +334,44 @@ route reports none. One difference from Safari, kept on purpose: its
 `webkitDecodedFrameCount` reads 0 there for HLS, while in Parc it advances
 with `getVideoPlaybackQuality()` because Chromium reads both from the same
 statistics, as for the MSE route.
+
+## Live and DVR
+
+`HlsTimeline` (`fairplay/fairplay_hls_timeline.h`) gives the GPU player
+WebKit's rules (`MediaPlayerPrivateAVFoundationObjC`), with the cache Safari's
+GPU process (`RemoteMediaPlayerProxy`) keeps for the page:
+
+- `duration`: the item's, +Infinity when indefinite (live), 0 when invalid.
+  `durationchange` fires at `loadedmetadata` and then only when the value
+  really changes: never while live, once when a live playlist gains
+  `EXT-X-ENDLIST`. A live stream's duration never shrinks at its end.
+- `seekable`: one range from the smallest start to the largest end of the
+  valid, non-empty `seekableTimeRanges` (start 0 when none is valid), up to
+  the duration when AVFoundation lists none ([0, Infinity) for live), and no
+  range when its end is 0. It changes with the ranges; while it is empty a
+  ready-state change computes it again. No DOM event, as in Safari.
+- `getStartDate()`: `round(currentDate − currentTime)` whole seconds since
+  the epoch, from `EXT-X-PROGRAM-DATE-TIME`, an Invalid Date without one.
+  Safari samples it only at ready-state changes, so the player samples it at
+  metadata and at each buffering change and sends `OnStartDateChanged` just
+  before the `OnBufferingStateChange`.
+- Seeking: the element clamps to the duration and then to the nearest point
+  of the one seekable range, as WebKit's `seekTask` does, so a seek past the
+  window's end lands on the live edge and one before its start on the oldest
+  DVR point. The player seeks exactly. On Safari-identity pages `currentTime`
+  takes WebKit's `unrestricted double`: +Infinity (`currentTime = duration` on
+  a live stream) seeks to the live edge, −Infinity and NaN to 0, where
+  Chromium throws a TypeError.
+
+Render process: the native HLS demuxer keeps the last window and start date
+under a lock and answers `media::Demuxer::GetParcNativeTimeline()` (nullopt
+from every other demuxer) from any thread: `{Ranges<TimeDelta> seekable,
+std::optional<base::Time> start_date}`, an end of `kInfiniteDuration` meaning
+Infinity. `WebMediaPlayerImpl::Seekable()` returns that window for it (instead
+of Chromium's empty live answer), and `WebMediaPlayer::ParcStartDate()`
+(milliseconds, NaN without one) backs `HTMLMediaElement.getStartDate()`, which
+exists only on Safari-identity pages (`[ContextEnabled=ParcSafariIdentity]`)
+and answers an Invalid Date for every other player, as WebKit's default.
 
 ## Threads
 

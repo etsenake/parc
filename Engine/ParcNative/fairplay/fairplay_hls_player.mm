@@ -9,12 +9,12 @@
 
 #include <atomic>
 #include <cmath>
-#include <limits>
 #include <map>
 #include <mutex>
 #include <set>
 
 #include "fairplay_hls_player_internal.h"
+#include "fairplay_hls_timeline.h"
 
 using parc::fairplay::FairPlayHlsPlayer;
 using parc::fairplay::HlsError;
@@ -23,6 +23,12 @@ using parc::fairplay::HlsLoadClient;
 using parc::fairplay::HlsLoadRequest;
 using parc::fairplay::HlsLoadResponse;
 using parc::fairplay::HlsMetadata;
+using parc::fairplay::HlsSeekableRangeInput;
+using parc::fairplay::HlsSeekableWindow;
+using parc::fairplay::HlsStartDate;
+using parc::fairplay::HlsTime;
+using parc::fairplay::HlsTimeKind;
+using parc::fairplay::HlsTimeline;
 using parc::fairplay::HlsTimeRange;
 using parc::fairplay::PostTask;
 
@@ -85,14 +91,42 @@ NSString* NSStringOrNil(const std::string& value) {
   return [[NSString alloc] initWithBytes:value.data() length:value.size() encoding:NSUTF8StringEncoding];
 }
 
-double Seconds(CMTime time) {
-  if (CMTIME_IS_INDEFINITE(time) || CMTIME_IS_POSITIVE_INFINITY(time)) {
-    return std::numeric_limits<double>::infinity();
+// A CMTime as WebKit's platformDuration tells them apart.
+HlsTime TimeOf(CMTime time) {
+  if (CMTIME_IS_NUMERIC(time)) {
+    return {HlsTimeKind::kNumeric, CMTimeGetSeconds(time)};
   }
-  if (!CMTIME_IS_NUMERIC(time)) {
-    return 0;
+  if (CMTIME_IS_INDEFINITE(time)) {
+    return {HlsTimeKind::kIndefinite, 0};
   }
-  return CMTimeGetSeconds(time);
+  return {HlsTimeKind::kInvalid, 0};
+}
+
+// seekableTimeRanges as WebKit's platformMin/MaxTimeSeekable read them.
+std::vector<HlsSeekableRangeInput> SeekableInputs(NSArray<NSValue*>* values) {
+  std::vector<HlsSeekableRangeInput> inputs;
+  for (NSValue* value in values) {
+    CMTimeRange range = value.CMTimeRangeValue;
+    inputs.push_back({static_cast<bool>(CMTIMERANGE_IS_VALID(range)),
+                      static_cast<bool>(CMTIMERANGE_IS_EMPTY(range)), CMTimeGetSeconds(range.start),
+                      CMTimeGetSeconds(CMTimeRangeGetEnd(range))});
+  }
+  return inputs;
+}
+
+std::vector<HlsTimeRange> RangesOf(const std::vector<HlsSeekableWindow>& windows) {
+  std::vector<HlsTimeRange> ranges;
+  for (const HlsSeekableWindow& window : windows) {
+    ranges.push_back({window.start, window.end});
+  }
+  return ranges;
+}
+
+std::optional<double> Milliseconds(const std::optional<double>& seconds) {
+  if (!seconds) {
+    return std::nullopt;
+  }
+  return *seconds * 1000.0;
 }
 
 // net::ERR_* values the embedder reports, mapped onto the NSURLError codes
@@ -726,11 +760,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     }
     natural_width_ = metadata.natural_width;
     natural_height_ = metadata.natural_height;
-    metadata.duration = Seconds(item_.duration);
+    timeline_.Start(TimeOf(item_.duration), SeekableInputs(item_.seekableTimeRanges), StartDate());
+    metadata.duration = timeline_.duration();
     metadata.is_live = std::isinf(metadata.duration);
-    duration_ = metadata.duration;
-    metadata.start_date_ms = StartDate();
-    metadata.seekable = Ranges(item_.seekableTimeRanges);
+    metadata.start_date_ms = Milliseconds(timeline_.start_date());
+    metadata.seekable = RangesOf(timeline_.SeekableRanges());
     metadata.loaded = Ranges(item_.loadedTimeRanges);
     client_->OnMetadata(metadata);
     // The client may have destroyed the player in OnMetadata.
@@ -747,10 +781,27 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     if (!have_enough && !item_.playbackBufferEmpty && last_have_enough_.has_value()) {
       return;  // Between the two: keep the last state.
     }
-    if (last_have_enough_ != have_enough) {
-      last_have_enough_ = have_enough;
-      client_->OnBufferingStateChange(have_enough);
+    if (last_have_enough_ == have_enough) {
+      return;
     }
+    last_have_enough_ = have_enough;
+    // The element's ready state follows: Safari's GPU process samples the
+    // start date and the seekable window for the page then, and the page has
+    // them before the ready-state events.
+    std::optional<double> start_date = timeline_.start_date();
+    std::optional<HlsSeekableWindow> window = timeline_.seekable();
+    if (timeline_.ReadyStateChanged(StartDate())) {
+      if (timeline_.start_date() != start_date) {
+        client_->OnStartDateChange(Milliseconds(timeline_.start_date()));
+      }
+      if (!shut_down_ && timeline_.seekable() != window) {
+        client_->OnSeekableRangesChange(RangesOf(timeline_.SeekableRanges()));
+      }
+      if (shut_down_) {
+        return;
+      }
+    }
+    client_->OnBufferingStateChange(have_enough);
   }
 
   void OnLoadedRanges() {
@@ -760,19 +811,15 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   }
 
   void OnSeekableRanges() {
-    if (!shut_down_ && reported_metadata_ && item_) {
-      client_->OnSeekableRangesChange(Ranges(item_.seekableTimeRanges));
+    if (!shut_down_ && reported_metadata_ && item_ &&
+        timeline_.SeekableChanged(SeekableInputs(item_.seekableTimeRanges))) {
+      client_->OnSeekableRangesChange(RangesOf(timeline_.SeekableRanges()));
     }
   }
 
   void OnDuration() {
-    if (shut_down_ || !reported_metadata_ || !item_) {
-      return;
-    }
-    double duration = Seconds(item_.duration);
-    if (duration != duration_ && !(std::isnan(duration) && std::isnan(duration_))) {
-      duration_ = duration;
-      client_->OnDurationChange(duration);
+    if (!shut_down_ && reported_metadata_ && item_ && timeline_.DurationChanged(TimeOf(item_.duration))) {
+      client_->OnDurationChange(timeline_.duration());
     }
   }
 
@@ -798,16 +845,9 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
 
   void OnFailedToPlayToEnd(NSError* error) { ReportFailure(error); }
 
+  // WebKit's getStartDate, in seconds.
   std::optional<double> StartDate() const {
-    NSDate* date = item_.currentDate;
-    if (!date) {
-      return std::nullopt;
-    }
-    double now = Seconds(item_.currentTime);
-    if (!std::isfinite(now)) {
-      return std::nullopt;
-    }
-    return date.timeIntervalSince1970 * 1000.0 - now * 1000.0;
+    return HlsStartDate(item_.currentDate.timeIntervalSince1970, CMTimeGetSeconds(item_.currentTime));
   }
 
   AVURLAsset* asset() const { return asset_; }
@@ -900,7 +940,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   bool reported_metadata_ = false;
   bool reported_error_ = false;
   std::optional<bool> last_have_enough_;
-  double duration_ = 0;
+  HlsTimeline timeline_;
   int32_t natural_width_ = 0;
   int32_t natural_height_ = 0;
   FairPlayHlsPlayer::Status status_;

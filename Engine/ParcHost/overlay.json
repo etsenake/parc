@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 396,
+  "version": 397,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1520,17 +1520,27 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_player.h",
       "target": "third_party/parc_fairplay/core/fairplay_hls_player.h",
-      "sha256": "7031c153742497eecb02969f60146110189ab297257958e281c404a115273769"
+      "sha256": "25342c1446d70eaad5bbd0102b62c18a85c6dfc55302fd9f156d0594e7d7b020"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_player.mm",
       "target": "third_party/parc_fairplay/core/fairplay_hls_player.mm",
-      "sha256": "bc505bc0fa901bc100b8a828b9563c24e472119ee4c4726591ab1c0c21cdaac1"
+      "sha256": "96b8a26277e8859e615247fe110594358205e5df8abbda597e03de3aef076768"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_hls_player_internal.h",
       "target": "third_party/parc_fairplay/core/fairplay_hls_player_internal.h",
       "sha256": "30e77ca3f5f587f1753c9fe0e837dee0f818869277136cb3bcebc30cdce74a7f"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay/fairplay_hls_timeline.cc",
+      "target": "third_party/parc_fairplay/core/fairplay_hls_timeline.cc",
+      "sha256": "eeeed0d6963d9c1119e81278a69d04ce8242a800883dbfdc918486e6b16c9f9e"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay/fairplay_hls_timeline.h",
+      "target": "third_party/parc_fairplay/core/fairplay_hls_timeline.h",
+      "sha256": "309cb093b30e03b9b672ec707557ae3c6ee3ce5d9f5ec203e835d77e2efa048b"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_types.h",
@@ -1540,7 +1550,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/BUILD.gn",
       "target": "third_party/parc_fairplay/BUILD.gn",
-      "sha256": "7af2c9c47fff01f70156440b673f27906f7f143bc7b7d0d1ef522ae80026fcec"
+      "sha256": "6a37ab17883e388c2623c954a4bb75d64af63caa64717b99b120babddd8a6217"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_key_system.h",

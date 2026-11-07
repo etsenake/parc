@@ -88,11 +88,15 @@ struct HlsMetadata {
   // ('avc1', 'hvc1', 'mp4a', 'ec-3', protected 'qavc'…), 0 when unknown.
   uint32_t video_fourcc = 0;
   uint32_t audio_fourcc = 0;
-  double duration = 0;  // Seconds; +infinity for live (indefinite) streams.
+  // Seconds; +infinity for live (indefinite) streams. Duration, seekable
+  // and start date follow WebKit's rules (fairplay_hls_timeline.h).
+  double duration = 0;
   bool is_live = false;
   // getStartDate(): milliseconds since the epoch at media time 0, from
-  // EXT-X-PROGRAM-DATE-TIME (AVPlayerItem.currentDate). nullopt without one.
+  // EXT-X-PROGRAM-DATE-TIME (AVPlayerItem.currentDate), a whole number of
+  // seconds. nullopt without one.
   std::optional<double> start_date_ms;
+  // The element's seekable attribute: one range or none.
   std::vector<HlsTimeRange> seekable;
   std::vector<HlsTimeRange> loaded;
 };
@@ -107,8 +111,13 @@ class HlsPlayerClient {
   // or not (an empty buffer while playing).
   virtual void OnBufferingStateChange(bool have_enough) = 0;
   virtual void OnLoadedRangesChange(const std::vector<HlsTimeRange>& loaded) = 0;
+  // The element's seekable attribute changed (one range or none).
   virtual void OnSeekableRangesChange(const std::vector<HlsTimeRange>& seekable) = 0;
+  // The element's duration changed, so it fires durationchange.
   virtual void OnDurationChange(double seconds) = 0;  // +infinity for live.
+  // What getStartDate() answers changed, as HlsMetadata::start_date_ms. Comes
+  // only with a buffering state change, just before OnBufferingStateChange.
+  virtual void OnStartDateChange(std::optional<double> start_date_ms) = 0;
   virtual void OnNaturalSizeChange(int32_t width, int32_t height) = 0;
   virtual void OnEnded() = 0;
   virtual void OnError(HlsError error, const std::string& message) = 0;

@@ -533,6 +533,7 @@ class HlsProbe : public fp::HlsPlayerClient, public fp::HlsLoader {
   void OnLoadedRangesChange(const std::vector<fp::HlsTimeRange>&) override {}
   void OnSeekableRangesChange(const std::vector<fp::HlsTimeRange>&) override {}
   void OnDurationChange(double) override {}
+  void OnStartDateChange(std::optional<double>) override {}
   void OnNaturalSizeChange(int32_t w, int32_t) override { width_ = w; }
   void OnEnded() override {}
   void OnError(fp::HlsError error, const std::string& message) override {

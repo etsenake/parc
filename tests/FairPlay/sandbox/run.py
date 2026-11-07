@@ -81,7 +81,8 @@ def compile_all(output):
     flags = ["-std=c++20", "-Wall", "-Wextra", "-Werror", "-mmacosx-version-min=13.0",
              "-I", str(core), "-I", str(tests), "-I", str(probe)]
     objects = {}
-    jobs = [(core / "fairplay_bitstream.cc", []), (tests / "fmp4_parser.cc", []),
+    jobs = [(core / "fairplay_bitstream.cc", []), (core / "fairplay_hls_timeline.cc", []),
+            (tests / "fmp4_parser.cc", []),
             (probe / "probe_main.cc", []), (probe / "probe_helper.mm", ["-fobjc-arc"]),
             (probe / "probe_player.mm", ["-fobjc-arc", "-fvisibility=hidden"])]
     jobs += [(core / f"{n}.mm", ["-fobjc-arc"]) for n in
@@ -104,7 +105,8 @@ def compile_all(output):
     for f in ("Foundation", "AVFoundation", "AudioToolbox", "CoreAudio", "CoreMedia", "QuartzCore"):
         frameworks += ["-framework", f]
     link("libfpsbplayer.dylib", ["probe_player", "fmp4_parser", "fairplay_bitstream", "fairplay_init_data",
-                                 "fairplay_key_session", "fairplay_renderer", "fairplay_hls_player"],
+                                 "fairplay_key_session", "fairplay_renderer", "fairplay_hls_player",
+                                 "fairplay_hls_timeline"],
          ["-dynamiclib", *frameworks])
     libraries = subprocess.run(["otool", "-L", str(output / PROBE_NAME)], check=True,
                                capture_output=True, text=True).stdout.splitlines()[1:]

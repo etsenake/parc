@@ -31,6 +31,8 @@ source_set("core") {
     "core/fairplay_hls_frame_stats.mm",
     "core/fairplay_hls_player.mm",
     "core/fairplay_hls_player_internal.h",
+    "core/fairplay_hls_timeline.cc",
+    "core/fairplay_hls_timeline.h",
     "core/fairplay_init_data.mm",
     "core/fairplay_key_session.mm",
     "core/fairplay_key_session_internal.h",
