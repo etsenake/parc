@@ -252,12 +252,25 @@ two-state buffering:
 - `play()` before the keys: `playing` fires and `currentTime` stays at the
   start until the keys let samples reach the renderers, as Safari's
   synchronizer waits for `allRenderersHaveAvailableSamples`.
-- `waitingforkey` fires once when the first encrypted sample has no usable
-  key. Blink's element doesn't lower `readyState` for it. Safari fires it when
-  encrypted init data has no session and also lowers `readyState` to
-  HAVE_CURRENT_DATA or HAVE_METADATA until its next buffered-range check: at
-  the start that is already the state, and mid-playback it is a brief
-  `waiting` that Parc doesn't show.
+- Waiting for a key runs WebKit's Wait for Key on the element
+  (`HTMLMediaElement::ParcWaitForKey`), once per blocked episode: `readyState`
+  drops to HAVE_CURRENT_DATA if the current time is buffered, else
+  HAVE_METADATA (only if that is lower), `waiting` fires if the element was
+  potentially playing, then `waitingforkey`. While blocked the element follows
+  only changes of the player's `readyState` (Chromium's player repeats its
+  own); when the player stops waiting the latch clears and the player's
+  `readyState` comes back. A new load clears the latch (WebKit's
+  `prepareForLoad`). Media Source waits when encrypted init data finds no
+  session and stops when later init data finds one (WebKit's
+  `SourceBufferPrivateAVFObjC`); at the start the element is already at
+  HAVE_NOTHING, so nothing drops, and keys don't hold `readyState` before the
+  first block. Native HLS waits only for a key request that comes while its
+  player holds no CDM, and stops when the attached CDM has a newly usable key
+  or the player plays on (`MediaPlayerPrivateAVFoundationObjC::
+  shouldWaitForLoadingOfResource` and `attemptToDecryptWithInstance`). Any
+  other Safari-identity player waits from Chromium's first stall for a key
+  until the CDM has a newly usable key or it plays on, rather than for an
+  instant.
 - Keys missing mid-playback (a new key ID, a license that hasn't come): the
   picture freezes, audio goes quiet and `currentTime` runs on to the buffered
   end, as in Safari. Held samples the clock passes are dropped, video kept

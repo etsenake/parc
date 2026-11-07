@@ -63,7 +63,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void SetCdm(const base::UnguessableToken& cdm_id,
               SetCdmCallback callback) override {
     cdm_ids_.push_back(cdm_id);
-    std::move(callback).Run(true);
+    std::move(callback).Run(accepts_cdm_);
   }
   void Play(double rate) override { commands_.push_back(rate); }
   void Pause() override { commands_.push_back(0); }
@@ -100,6 +100,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   base::TimeDelta seek_tolerance_;
   std::vector<double> commands_;  // Play(rate) or 0 for Pause().
   std::vector<base::UnguessableToken> cdm_ids_;
+  bool accepts_cdm_ = true;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
   float volume_ = -1;
   std::optional<bool> preserves_pitch_;
@@ -380,6 +381,69 @@ TEST_F(NativeHlsTest, WaitingForKeyReachesALaterRenderer) {
   EXPECT_CALL(renderer_client_,
               OnWaiting(media::WaitingReason::kNoDecryptionKey));
   CreateRenderer();
+}
+
+// WebKit's player waits for a key only when AVFoundation asks for it with no
+// CDM attached (MediaPlayerPrivateAVFoundationObjC::
+// shouldWaitForLoadingOfResource).
+TEST_F(NativeHlsTest, WaitsForAKeyOnlyWithoutACdm) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  EXPECT_CALL(renderer_client_,
+              OnWaiting(media::WaitingReason::kNoDecryptionKey));
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(true));
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, KeyRequestAfterTheCdmReachesNoLaterRenderer) {
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  demuxer_->SetCdmForNativePlayer(&cdm_context);
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  CreateRenderer();
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, KeyRequestAfterARefusedCdmWaits) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  player_.accepts_cdm_ = false;
+  NiceMock<media::MockCdmContext> cdm_context;
+  cdm_context.set_cdm_id(base::UnguessableToken::Create());
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(false));
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(renderer_client_,
+              OnWaiting(media::WaitingReason::kNoDecryptionKey));
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+
+  // The same CDM offered again reaches the player.
+  player_.accepts_cdm_ = true;
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> again_cb;
+  EXPECT_CALL(again_cb, Run(true));
+  renderer_->SetCdm(&cdm_context, again_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.cdm_ids_.size(), 2u);
+  EXPECT_CALL(renderer_client_, OnWaiting(_)).Times(0);
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
 }
 
 TEST_F(NativeHlsTest, BufferingStateFollowsPlaybackStart) {

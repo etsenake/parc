@@ -521,7 +521,21 @@ void NativeHlsDemuxer::SendCdm(media::CdmContext* cdm_context,
     return;
   }
   cdm_id_ = cdm_id;
-  player_->SetCdm(*cdm_id, std::move(cdm_attached_cb));
+  player_->SetCdm(*cdm_id,
+                  base::BindOnce(&NativeHlsDemuxer::OnCdmSet,
+                                 weak_factory_.GetWeakPtr(), *cdm_id,
+                                 std::move(cdm_attached_cb)));
+}
+
+void NativeHlsDemuxer::OnCdmSet(const base::UnguessableToken& cdm_id,
+                                NativeHlsSource::CdmAttachedCB cdm_attached_cb,
+                                bool success) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  cdm_attached_ = cdm_attached_ || success;
+  if (!success && cdm_id_ == cdm_id) {
+    cdm_id_.reset();  // The page may offer it again.
+  }
+  std::move(cdm_attached_cb).Run(success);
 }
 
 media::BufferingState NativeHlsDemuxer::GetBufferingState() const {
@@ -916,6 +930,12 @@ void NativeHlsDemuxer::OnKeyRequest(const std::string& key_uri) {
 void NativeHlsDemuxer::OnWaiting(media::WaitingReason reason) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (reason == media::WaitingReason::kNoDecryptionKey) {
+    // WebKit waits only for a key request that comes with no CDM attached;
+    // the attached CDM takes the others (MediaPlayerPrivateAVFoundationObjC::
+    // shouldWaitForLoadingOfResource).
+    if (cdm_attached_) {
+      return;
+    }
     waiting_for_key_ = true;
   }
   // `waitingforkey` reaches the element through the renderer facade; one

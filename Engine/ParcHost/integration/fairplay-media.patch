@@ -3648,12 +3648,10 @@
  namespace blink {
  
  namespace {
-@@ -166,7 +176,52 @@
-     CrossThreadOnceFunction<void(media::OutputDeviceStatus)> callback) {
-   sink->SwitchOutputDevice(device_id,
+@@ -168,6 +178,51 @@
                             ConvertToBaseOnceCallback(std::move(callback)));
-+}
-+
+ }
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, Dolby Vision profile 8, which it plays
@@ -3696,11 +3694,12 @@
 +    }
 +  }
 +  return true;
- }
++}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kDisableBackgroundMediaSuspend)) {
 @@ -356,7 +411,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
@@ -3715,7 +3714,17 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1109,20 +1169,56 @@
+@@ -714,6 +774,9 @@
+   encrypted_client_ = nullptr;
+   frame_ = nullptr;
+   url_index_ = nullptr;
++#if BUILDFLAG(IS_MAC)
++  parc_cdm_event_registration_.reset();
++#endif  // BUILDFLAG(IS_MAC)
+ 
+   weak_factory_.InvalidateWeakPtrsAndDoom();
+ 
+@@ -1109,10 +1172,37 @@
    UpdatePlayState();
  }
  
@@ -3743,18 +3752,17 @@
 +      base::Seconds(seconds),
 +      std::exchange(parc_fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
- }
- 
++}
++
 +void WebMediaPlayerImpl::ParcFastSeek(double seconds,
 +                                      double tolerance_before) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_fast_seek_tolerance_ = base::Seconds(tolerance_before);
 +  Seek(seconds);
-+}
-+
+ }
+ 
  void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
-   TRACE_EVENT2("media", "WebMediaPlayerImpl::DoSeek", "target",
+@@ -1121,8 +1211,17 @@
                 time.InSecondsF(), "id", media_player_id_);
  
    ReadyState old_state = ready_state_;
@@ -3773,7 +3781,7 @@
  
    // For playing zero duration video-only media, if we can elide the seek, use a
    // large delay to avoid an expensive spin loop. Per spec we must still deliver
-@@ -1421,6 +1517,24 @@
+@@ -1421,6 +1520,24 @@
      return std::numeric_limits<double>::quiet_NaN();
  
    return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
@@ -3798,7 +3806,7 @@
  }
  
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-@@ -1496,6 +1610,21 @@
+@@ -1496,6 +1613,21 @@
  
    if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
      return WebTimeRanges();
@@ -3820,7 +3828,7 @@
    }
  
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1665,6 +1794,20 @@
+@@ -1665,6 +1797,20 @@
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
@@ -3841,10 +3849,11 @@
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
    // http://crbug.com/40407494#comment8.
-@@ -1695,6 +1838,83 @@
+@@ -1694,7 +1840,84 @@
+     media::EmeInitDataType init_data_type,
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
- 
++
 +  // Parc: the MP4 parser reports FairPlay's "sinf" init data for every
 +  // protected track, as Safari's Media Source does. A Media Source element of
 +  // a document presenting Safari's identity hears only that, as Safari's
@@ -3867,7 +3876,7 @@
 +  if (parc_safari_media_source) {
 +    encrypted_client_->ParcWebKitMediaSourceKeyNeeded(init_data);
 +  }
-+
+ 
 +  // Parc: and only while no session of the element's MediaKeys has a key
 +  // request for a key ID it names, as Safari checks
 +  // (AudioVideoRendererAVFObjC::setInitData). The FairPlay CDM answers from
@@ -3925,7 +3934,7 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1728,6 +1948,34 @@
+@@ -1728,6 +1951,34 @@
    client_->SetTrackState(track, state);
  }
  
@@ -3960,10 +3969,11 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  
  UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1777,6 +2025,139 @@
+@@ -1776,7 +2027,148 @@
+           tick_clock_, main_task_runner_));
  }
  #endif
- 
++
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -4081,10 +4091,18 @@
 +  }
 +  UpdatePlayState();
 +}
-+
+ 
 +bool WebMediaPlayerImpl::ParcPlaysNativeHls() const {
 +  return renderer_type_ == media::RendererType::kFairPlayHls ||
 +         demuxer_manager_->HasParcNativeHlsDemuxer();
++}
++
++void WebMediaPlayerImpl::ParcOnCdmEvent(media::CdmContext::Event event) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  if (event == media::CdmContext::Event::kHasAdditionalUsableKey &&
++      load_type_ != kLoadTypeMediaSource) {
++    ParcSetWaitingForKey(false);
++  }
 +}
 +
 +void WebMediaPlayerImpl::ParcProvideClearKey(std::string_view key_id,
@@ -4100,7 +4118,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2201,93 @@
+@@ -1820,11 +2212,93 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -4194,7 +4212,7 @@
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -1835,17 +2298,36 @@
+@@ -1835,17 +2309,43 @@
    // If the CDM is set from the constructor there is no promise
    // (`set_cdm_result_`) to fulfill.
    if (success) {
@@ -4205,6 +4223,7 @@
 +        cdm_context_ref_->GetCdmContext() == parc_renderer_cdm_context_) {
 +      parc_replaced_cdm_context_ref_ = std::move(cdm_context_ref_);
 +    }
++    parc_cdm_event_registration_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
      // This will release the previously attached CDM (if any).
      cdm_context_ref_ = std::move(pending_cdm_context_ref_);
@@ -4213,6 +4232,12 @@
        set_cdm_result_.reset();
      }
 +#if BUILDFLAG(IS_MAC)
++    if (client_->PresentsParcSafariIdentity()) {
++      parc_cdm_event_registration_ =
++          cdm_context_ref_->GetCdmContext()->RegisterEventCB(
++              base::BindRepeating(&WebMediaPlayerImpl::ParcOnCdmEvent,
++                                  weak_this_));
++    }
 +    ParcRestartIntoFairPlayIfNeeded();
 +#endif  // BUILDFLAG(IS_MAC)
  
@@ -4231,7 +4256,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1900,6 +2382,21 @@
+@@ -1900,6 +2400,21 @@
    }
  
    attempting_suspended_start_ = false;
@@ -4253,7 +4278,7 @@
  }
  
  void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
-@@ -1988,6 +2485,16 @@
+@@ -1988,6 +2503,16 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -4270,7 +4295,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2197,6 +2704,10 @@
+@@ -2197,6 +2722,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -4281,7 +4306,24 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2362,6 +2873,13 @@
+@@ -2238,6 +2767,16 @@
+ void WebMediaPlayerImpl::OnBufferingStateChange(
+     media::BufferingState state,
+     media::BufferingStateChangeReason reason) {
++#if BUILDFLAG(IS_MAC)
++  // Parc: a Safari-identity player other than Media Source playing on means
++  // it has its key, as when the MediaKeys attached already held it (WebKit's
++  // setMediaKeys runs attemptToResumePlaybackIfNecessary).
++  if (state == media::BUFFERING_HAVE_ENOUGH &&
++      load_type_ != kLoadTypeMediaSource &&
++      !pipeline_controller_->IsPendingSeek()) {
++    ParcSetWaitingForKey(false);
++  }
++#endif  // BUILDFLAG(IS_MAC)
+   OnBufferingStateChangeInternal(state, reason, false);
+ }
+ 
+@@ -2362,6 +2901,13 @@
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
  
@@ -4295,7 +4337,7 @@
    if (state == media::BUFFERING_HAVE_ENOUGH) {
      TRACE_EVENT1("media", "WebMediaPlayerImpl::BufferingHaveEnough", "id",
                   media_player_id_);
-@@ -2379,8 +2897,11 @@
+@@ -2379,8 +2925,11 @@
      }
  
      // Warning: This call may be re-entrant.
@@ -4309,7 +4351,7 @@
  
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
-@@ -2397,7 +2918,9 @@
+@@ -2397,7 +2946,9 @@
      }
  
      // Blink expects a timeChanged() in response to a seek().
@@ -4320,7 +4362,7 @@
        should_notify_time_changed_ = false;
        client_->TimeChanged();
      }
-@@ -2434,8 +2957,11 @@
+@@ -2434,8 +2985,11 @@
  
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
@@ -4334,7 +4376,7 @@
    }
  
    UpdatePlayState();
-@@ -2462,6 +2988,14 @@
+@@ -2462,6 +3016,23 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -4346,10 +4388,19 @@
 +        has_waiting_for_key_ = true;
 +        return;
 +      }
++#if BUILDFLAG(IS_MAC)
++      // Parc: any other Safari-identity player (native HLS's waits only with
++      // no CDM attached) waits until a key is usable (ParcOnCdmEvent), not
++      // for an instant.
++      if (client_->PresentsParcSafariIdentity()) {
++        ParcSetWaitingForKey(true);
++        return;
++      }
++#endif  // BUILDFLAG(IS_MAC)
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,11 +3552,44 @@
+@@ -3018,12 +3589,45 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -4366,7 +4417,7 @@
    // TODO(crbug.com/40261162): Support codec changing for Media Foundation.
    if (renderer_type_ == media::RendererType::kMediaFoundation) {
      demuxer_manager_->DisableDemuxerCanChangeType();
-+  }
+   }
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: the FairPlay Renderer switches codecs (an audio language change
 +  // from E-AC-3 to AAC), but only among those it plays; others throw
@@ -4375,7 +4426,7 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
-+
+ 
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -4387,14 +4438,15 @@
 +      parc_renderer_had_fairplay_cdm_ = true;
 +      parc_renderer_cdm_context_ = ref->GetCdmContext();
 +    }
-   }
++  }
 +  // The renderer a replacement restarted into has the new CDM.
 +  parc_replaced_cdm_context_ref_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3605,14 @@
+     client_->DidUseAudioServiceChange(new_uses_audio_service);
+@@ -3038,6 +3642,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -4409,7 +4461,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3728,27 @@
+@@ -3153,6 +3765,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -4437,7 +4489,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +3766,11 @@
+@@ -3170,6 +3803,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -4449,7 +4501,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3530,6 +4131,12 @@
+@@ -3530,6 +4168,12 @@
      return;
    }
  
@@ -4462,24 +4514,27 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3770,6 +4377,13 @@
+@@ -3769,6 +4413,13 @@
+   // This takes precedent over every restriction except PiP.
    if (!is_background_video_playback_enabled_)
      return true;
- 
++
 +  // Parc: a Safari-identity player plays on while its page is hidden, muted
 +  // or not: WebKit gives its media sessions no InvisibleAutoplayNotPermitted
 +  // or RequirePageVisibilityToPlayAudio restriction outside iOS.
 +  if (client_->PresentsParcSafariIdentity()) {
 +    return false;
 +  }
-+
+ 
    if (is_flinging_)
      return false;
+@@ -3790,8 +4441,31 @@
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
  
-@@ -3793,6 +4407,29 @@
-     return false;
-   }
- 
+   if (!is_background_video_track_optimization_supported_) {
++    return false;
++  }
++
 +  // Parc: the FairPlay Renderer can't drop its video stream and rejoin it
 +  // later (a disabled ChunkDemuxerStream ends it), so keep the track enabled.
 +  // Safari's native HLS player has no stream to disable: AVPlayer keeps its
@@ -4499,16 +4554,25 @@
 +    }
 +  }
 +  if (is_encrypted_ && !cdm_context_ref_) {
-+    return false;
-+  }
+     return false;
+   }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
-   if (!HasVideo() || !HasAudio()) {
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.h
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.h
-@@ -89,6 +89,9 @@
+@@ -25,7 +25,9 @@
+ #include "base/timer/elapsed_timer.h"
+ #include "base/timer/timer.h"
+ #include "build/build_config.h"
++#include "media/base/callback_registry.h"
+ #include "media/base/cdm_config.h"
++#include "media/base/cdm_context.h"
+ #include "media/base/data_source.h"
+ #include "media/base/demuxer.h"
+ #include "media/base/eme_constants.h"
+@@ -89,6 +91,9 @@
  namespace blink {
  
  class BufferedDataSourceHostImpl;
@@ -4518,7 +4582,7 @@
  class PowerStatusHelper;
  class KURL;
  class ThreadSafeBrowserInterfaceBrokerProxy;
-@@ -194,6 +197,7 @@
+@@ -194,6 +199,7 @@
    WebTimeRanges Seekable() const override;
  
    void OnFrozen() override;
@@ -4526,7 +4590,7 @@
  
    // paint() the current video frame into |canvas|. This is used to support
    // various APIs and functionalities, including but not limited to: <canvas>,
-@@ -231,6 +235,12 @@
+@@ -231,6 +237,12 @@
    bool Seeking() const override;
    double Duration() const override;
    virtual double timelineOffset() const;
@@ -4539,7 +4603,7 @@
    bool IsEnded() const override;
  
    // Shared between the WebMediaPlayer and DemuxerManager::Client interfaces.
-@@ -445,6 +455,13 @@
+@@ -445,6 +457,14 @@
    void OnProgress() override;
    void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data) override;
@@ -4549,11 +4613,12 @@
 +  // Parc: WebKit's SourceBufferPrivateAVFObjC::setWaitingForKey for a
 +  // Safari-identity Media Source element: waiting once its init data finds no
 +  // session (waitingforkey, once), not waiting once a later one finds one.
++  // Other Safari-identity players wait from OnWaiting until ParcOnCdmEvent.
 +  void ParcSetWaitingForKey(bool waiting);
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +472,30 @@
+@@ -455,6 +475,35 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -4567,6 +4632,11 @@
 +  void ApplyParcNativeHlsReadyState();
 +  // Whether this element plays through Safari's native HLS player.
 +  bool ParcPlaysNativeHls() const;
++  // Parc: a Safari-identity player other than Media Source stops waiting for
++  // a key once a session of the attached CDM has one, as WebKit's native HLS
++  // player (MediaPlayerPrivateAVFoundationObjC::attemptToDecryptWithInstance,
++  // which key status changes run).
++  void ParcOnCdmEvent(media::CdmContext::Event event);
 +  void ParcNativeHlsMediaTypesChanged(bool has_audio, bool has_video) override;
 +#endif  // BUILDFLAG(IS_MAC)
 +  void ParcSetInbandTextTracks(
@@ -4584,18 +4654,17 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -533,7 +574,26 @@
- 
+@@ -534,6 +583,25 @@
    // Called when a CDM has been attached to the |pipeline_|.
    void OnCdmAttached(bool success);
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: whether clear Dolby Vision goes through Media Source (see
 +  // media::Demuxer::ParcSetClearDolbyVisionAllowed()): on a document
 +  // presenting Safari's identity, or while the CDM being attached, else the
 +  // attached one, is FairPlay.
 +  bool ParcClearDolbyVisionAllowed();
- 
++
 +  // Parc: restarts the pipeline into the FairPlay Renderer (a suspend/resume
 +  // cycle, as Windows does for a hardware context reset) when the current
 +  // renderer can't play what follows: FairPlay keys attached to Chromium's
@@ -4611,7 +4680,7 @@
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
    //   - toggles the memory usage reporting timer, and
-@@ -885,6 +945,30 @@
+@@ -885,6 +953,30 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -4642,12 +4711,17 @@
    scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
  
    // Video rendering members.
-@@ -919,6 +1003,8 @@
+@@ -919,6 +1011,13 @@
    // Whether the EME playback has been blocked waiting for the CDM to be set
    // or waiting for decryption key.
    bool has_waiting_for_key_ = false;
 +  // Parc: ParcSetWaitingForKey's state.
 +  bool parc_waiting_for_key_ = false;
++#if BUILDFLAG(IS_MAC)
++  // Parc: ParcOnCdmEvent's registration with `cdm_context_ref_`'s CDM, reset
++  // before that reference goes.
++  std::unique_ptr<media::CallbackRegistration> parc_cdm_event_registration_;
++#endif  // BUILDFLAG(IS_MAC)
  
    // Tracks if we are currently flinging a video (e.g. in a RemotePlayback
    // session). Used to prevent videos from being paused when hidden.

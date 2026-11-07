@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 530,
+  "version": 531,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1755,12 +1755,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.h",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.h",
-      "sha256": "f94fcd8c244a06f7c9dc93a4c3d01ad6b8e6162ef5df00c8593d033b4d1087cc"
+      "sha256": "5b4a2a07ea5f229b2e29d1c0f3325b69092f0af31063417fbe22c7cd22345f13"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.cc",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.cc",
-      "sha256": "2b2577002a11d2f0bc5d7924d098925e46fb5f6daec0a9edf1bb44a4269e4a48"
+      "sha256": "efb66dcdbb8eece5003ec2e5c909303d0bcaf915751c9db6713086884f5d51ef"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.h",
@@ -1785,7 +1785,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_unittest.cc",
       "target": "content/renderer/media/fairplay/native_hls_unittest.cc",
-      "sha256": "49a68e96916ca5d132b811c33d22aa1448abb74217f92162c833fef890d0e28f"
+      "sha256": "463f9616179802cf50323da00f9fd487efb9939c1978ba784f2a39fad163ed95"
     },
     {
       "source": "Engine/ParcRenderer/parc_managed_media_source.h",
@@ -4172,7 +4172,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "438dff4ce26e87222f5618c23f4937ee90548a419a0a6b86c94b077d622e596c",
+      "sha256": "75754f0579140a57a748f5717204c0fb59cd541a93cfdbdd5d0c8cf8418a5816",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4447,12 +4447,12 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "0149f79f1cd9364b0a7f9340379677941a9b9547246a5630de94c644731c906d"
+          "after_sha256": "23651d24f06850c6b637345fad1ae6f01e8378c6a2ae52c7b405ecba3cadddfc"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
           "before_sha256": "2afbe1b25d00714f9c8c7a8f381ac23bceb5b05d63e86a5fecb0ad55e133e584",
-          "after_sha256": "8b582b3d64393fc5131636f51bf35914bcd5445b505c9433a17d53a8b624c0c2"
+          "after_sha256": "683e60c18ac37794a17a31a43c7ba8ed488c3ca4d7f120baae6f6d361f576d84"
         },
         {
           "target": "third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc",
@@ -4658,7 +4658,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "d3adbab219d181d60339c1ec82d5c05f622a1e4373bcf73f79fb7c9831c11dca",
+      "sha256": "dcab0898ddf5304f2071444876f8120cddd7cef816c4b33b63eaef5ece96d7c6",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4693,7 +4693,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.cc",
           "before_sha256": "cbe10ab50ec054bd72cd04df8dfcdb84d11ae88a6ffcc073c0555c3010429bc0",
-          "after_sha256": "5f130647454355dc48e8d4caada120ddab37073c72569fce4905a71bfc1e2742"
+          "after_sha256": "6a42ea13ed3a5f99d8c58f2dc042e429ed40706613d66bd63a70a64db184e5f0"
         },
         {
           "target": "third_party/blink/renderer/core/dom/events/event_queue.h",
@@ -4708,7 +4708,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.h",
           "before_sha256": "6c6fe284d5cb150545f9d649227d86c96b201138c226e3bcdb0173a2c07c0a34",
-          "after_sha256": "ce15d3883d9d7de3d4f064788b673d92a19f1f7d688af188fed820f180e27374"
+          "after_sha256": "25ebe6cb324dba386c1423c527c25dff2ede08aeef759291fbc860ffffe2107c"
         },
         {
           "target": "third_party/blink/renderer/platform/media/media_player_client.h",
@@ -4763,7 +4763,7 @@
         {
           "target": "third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.cc",
           "before_sha256": "647c13786e62e5dee9cae3a2029260a08d1e285ef3214e8d6b2f1eb09eebe952",
-          "after_sha256": "57ac98301771106507eb2057ebc2a67c4c53c8658f843a0710359e64aa960645"
+          "after_sha256": "418c17faa0861b7a867413838edcec06360afdb7666c4b640ba98514536ae8ec"
         },
         {
           "target": "third_party/blink/renderer/core/events/event_type_names.json5",
@@ -4933,7 +4933,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element_test.cc",
           "before_sha256": "10bf01e97e98cc4ad176a4ec1f3fccc307960f79a9231fe361cf1b8ca272b88f",
-          "after_sha256": "fa2c8ed201fdc2935d477193f768ec815bfab5a654b84199f7347e69b2f1001e"
+          "after_sha256": "1d07d2a48427a64a7a0c4261ec8378c4f88e4abc95fd20d3fd58feda9462fe92"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/cue_timeline.cc",

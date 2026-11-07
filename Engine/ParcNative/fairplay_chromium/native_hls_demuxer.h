@@ -255,6 +255,9 @@ class NativeHlsDemuxer final : public media::Demuxer,
   // Sends the player the CDM ID `cdm_context` names, once per ID.
   void SendCdm(media::CdmContext* cdm_context,
                NativeHlsSource::CdmAttachedCB cdm_attached_cb);
+  void OnCdmSet(const base::UnguessableToken& cdm_id,
+                NativeHlsSource::CdmAttachedCB cdm_attached_cb,
+                bool success);
   // A fatal error: to the renderer facade when one listens, otherwise to the
   // pipeline through the demuxer host.
   void ReportError(media::PipelineStatus status);
@@ -315,6 +318,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
   // player was bound.
   std::optional<base::UnguessableToken> cdm_id_;
   raw_ptr<media::CdmContext> pending_cdm_context_ = nullptr;
+  // The player took a CDM (it keeps one until another replaces it).
+  bool cdm_attached_ = false;
 
   // GetMediaTime() may be called from any thread.
   mutable base::Lock time_lock_;

@@ -139,8 +139,9 @@ DevTools attribution right.
   the metadata fails `Initialize` with that status (otherwise
   `DEMUXER_ERROR_COULD_NOT_OPEN`); later ones go to the facade's
   `RendererClient`, or to the demuxer host while no facade exists. A lost GPU
-  connection is `PIPELINE_ERROR_DISCONNECTED`. `waitingforkey` and the display
-  layer arriving before a facade exists are replayed to it. The facade reports
+  connection is `PIPELINE_ERROR_DISCONNECTED`. A wait for a key (only while no
+  CDM is attached) and the display layer arriving before a facade exists are
+  replayed to it. The facade reports
   buffering only between `StartPlayingFrom` and `Flush` (RendererImpl's
   contract) and `ended` once per run to the end; its time is the player's last
   `OnTimeUpdate` advanced at that rate within [0, duration], and the target
@@ -494,8 +495,12 @@ What the key loader does (its header and the [core README](../fairplay/README.md
 2. A key no session of the attached CDM asked for: `OnKeyNeeded(uri)`, which
    the GPU service sends as `OnEncrypted("skd", <URI as UTF-8>)` and
    `OnWaiting(kNoDecryptionKey)`. The render process raises `encrypted`
-   (initDataType `"skd"`) and `waitingforkey`, after the request's
-   `webkitneedkey` (above).
+   (initDataType `"skd"`), after the request's `webkitneedkey` (above), and,
+   only while the player has taken no CDM (`SetCdm` answered true), waits for
+   the key: `waitingforkey` and the lower `readyState` of WebKit's Wait for
+   Key ([README](README.md#ready-state-stalls-and-keys-what-the-page-sees)).
+   The attached CDM's next newly usable key, or the player playing on, ends
+   the wait.
 3. The page's `generateRequest("skd", uri)` reaches the same `FairPlayCdm`
    over its own pipe. With an asset attached the request is named by the URI
    (content identifier = the URI, or a legacy session's `contentId`), and it
@@ -657,7 +662,7 @@ behavior, not Parc's hosting.
 | `audioTracks` / `textTracks` | `HlsMediaSelection` (Tracks) | `OnTracksChanged`, `OnTextCues` (Tracks) |
 | decoded/dropped frames | `-[AVPlayerLayer videoPerformanceMetrics]` (`HlsFrameStats`) | `OnStatisticsUpdate` deltas (as fp-frame-stats) |
 | `webkitneedkey` | every resource loader skd and clearkey request | `OnKeyRequest` → `ParcWebKitKeyRequest` |
-| `encrypted`, `waitingforkey` | resource loader skd requests | `OnEncrypted`, `OnWaiting` |
+| `encrypted`, `waitingforkey` | resource loader skd requests; waiting only while the player holds no CDM, until the CDM has a usable key or playback goes on | `OnEncrypted`, `OnWaiting`; `WebMediaPlayerImpl::ParcOnCdmEvent` or `BUFFERING_HAVE_ENOUGH` ends it |
 
 ## Tracks
 
