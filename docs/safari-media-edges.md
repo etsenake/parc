@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **51**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **52**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -458,8 +458,9 @@ CDM rather than at the key request, and a CDM offered twice answered
 player exists resolves before the GPU player takes the keys, so a player that
 couldn't take them left a video that never played with no error: **fixed**
 c1673012 (refusal now rejects with `NotSupportedError`; WebKit's own refusal
-path is a FIXME). A key session that can't be created when the native player
-starts still fails silently: **in progress** (WMPI-2f).
+path is a FIXME). A key session that couldn't be created when the native player
+started failed silently: **fixed** fe2b500d (`generateRequest()` rejects with
+`NotSupportedError`, as WebKit's CDM path does; a fresh request can retry).
 
 **WMPI-3. Hidden pages pause video.** Chromium
 `web_media_player_impl.cc:3744-3787, 3825-3870, 3528-3551, 2643-2714` pauses
