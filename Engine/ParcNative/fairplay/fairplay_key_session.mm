@@ -141,7 +141,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     AssetKeyClient* loading_owner = nullptr;
     std::string loading_uri;
     bool loading_answered = false;
-    bool loading_cancelled = false;  // Cancelled by AVFoundation, or released.
+    bool loading_cancelled = false;  // Cancelled by AVFoundation, released or abandoned.
     bool loading_failed = false;     // Its SPC or answer failed.
   };
 
@@ -642,7 +642,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     sessions_.erase(it);
     RejectPending(session.get(), "session closed");
     RevokeKeys(session.get());
-    ReleaseLoading(session.get());
+    AbandonLoading(session.get());
     done(Result::Ok());
     Deliver([session_id](FairPlayCdmClient* client) { client->OnSessionClosed(session_id); });
     NotifyObservers();
@@ -668,7 +668,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     // as a binary property list). Any other session type fails (NotSupported)
     // after reporting no keys.
     RevokeKeys(session);
-    ReleaseLoading(session);
+    AbandonLoading(session);
     session->keys_removed = true;
     std::vector<KeyInfo> released;
     std::vector<uint8_t> release_message;
@@ -1150,13 +1150,13 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (it == assets_.end()) {
       return;
     }
-    // Requests a session took and hasn't answered fail (AVFoundation asks
-    // again, and the asset reports them anew); answered keys keep their
-    // status.
+    // Requests a session took and hasn't answered stay pending, as WebKit
+    // leaves a detached CDM's key requests (AVFoundation doesn't ask again);
+    // answered keys keep their status.
     for (auto& [id, session] : sessions_) {
       for (auto& request : session->requests) {
         if (request->loading_owner == client) {
-          ReleaseLoadingRequest(session.get(), request.get());
+          AbandonLoadingRequest(session.get(), request.get());
           request->loading_owner = nullptr;
         }
       }
@@ -1190,11 +1190,12 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (waiting != waiting_for_loading_.end()) {
       waiting_for_loading_.erase(waiting);
     }
-    // AVFoundation asking again for a key a session took from this asset:
-    // after an answer (an expiring lease, or the key loaded anew) that session
-    // renews it; after AVFoundation cancelled the earlier request (a seek, a
-    // variant switch) it sends a new license request, since pages drop init
-    // data a live session already has.
+    // AVFoundation asking again for a key a session took from this asset
+    // after AVFoundation cancelled the earlier request (a seek, a variant
+    // switch): that session sends a new license request, since pages drop
+    // init data a live session already has. Asking again for a key a session
+    // answered is a request no session expects, as WebKit treats it: the
+    // page gets a new encrypted and answers it with a new session.
     for (auto& [id, session] : sessions_) {
       if (session->keys_removed) {
         continue;
@@ -1210,9 +1211,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
           pending |= !request->loading_answered && !request->loading_cancelled;
         }
       }
-      if (!pending && (answered || cancelled)) {
-        AdoptLoading(session.get(), client, uri, loading,
-                     answered ? MessageType::kLicenseRenewal : MessageType::kLicenseRequest);
+      if (!pending && !answered && cancelled) {
+        AdoptLoading(session.get(), client, uri, loading, MessageType::kLicenseRequest);
         return true;
       }
     }
@@ -1435,6 +1435,30 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   void ReleaseLoading(Session* session) {
     for (auto& request : session->requests) {
       ReleaseLoadingRequest(session, request.get());
+    }
+  }
+
+  // A session closed or removed, or its CDM detached, before answering: the
+  // loading request stays pending, as WebKit leaves its key requests (legacy
+  // releaseKeys does nothing; closing a modern session drops its requests
+  // without failing them), so AVFoundation doesn't ask again. Nothing answers
+  // it later. Settles an update waiting on it.
+  void AbandonLoadingRequest(Session* session, Request* request) {
+    if (!request->loading || request->loading_answered || request->loading_cancelled) {
+      return;
+    }
+    request->loading_cancelled = true;
+    request->awaiting_response = false;
+    if (session->update_pending.erase(request) && session->update_pending.empty() &&
+        session->update_done) {
+      ResultCallback done = std::move(session->update_done);
+      done(Result::Error(Exception::kTypeError, "key request withdrawn"));
+    }
+  }
+
+  void AbandonLoading(Session* session) {
+    for (auto& request : session->requests) {
+      AbandonLoadingRequest(session, request.get());
     }
   }
 

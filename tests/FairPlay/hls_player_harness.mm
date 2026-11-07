@@ -1009,8 +1009,9 @@ void KeysEarlySession() {
   }
 }
 
-// Closing a session before it answered fails its loading request (one SPC
-// per request); AVFoundation asks again and a new session answers.
+// Closing a session before it answered leaves its loading request pending,
+// as WebKit leaves a closed session's key requests: AVFoundation doesn't ask
+// again (no second encrypted event) and playback waits.
 void KeysClose() {
   std::printf("-- FairPlay HLS keys: session closed before its answer\n");
   KeyPage page(kSingleKeyToken);
@@ -1030,10 +1031,12 @@ void KeysClose() {
     page.on_need = [&](const std::string& uri) { page.GenerateOnOwner(uri); };
     page.cdm->CloseSession(page.held.front(), [](const fp::Result&) {});
   });
-  bool plays = kr.PlaysTo5s();
-  Check(page.needs.size() == 2 && page.updates_ok == 1,
-        "AVFoundation asks again after the close (a second encrypted event) and the next session answers");
-  Check(plays, "protected HLS plays");
+  WaitFor([] { return false; }, 8);
+  std::printf("   clock %.2f s, encrypted events %zu, errors %d\n", kr.rig.Time(), page.needs.size(),
+              kr.rig.client.errors);
+  Check(page.needs.size() == 1 && page.updates_ok == 0 && kr.rig.client.errors == 0,
+        "the request stays pending after the close: no second encrypted event, no error");
+  Check(kr.rig.Time() < 0.5, "playback waits for the key");
 }
 
 // Legacy WebKitMediaKeys sessions: {"skd", "contentId"} names the SPC by the

@@ -37,8 +37,8 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
     }
   }
 
-  // Requests the CDM took and hasn't answered fail with everything held: the
-  // asset is going away.
+  // The asset is going away: requests the CDM took and hasn't answered stay
+  // as the detach leaves them, and the ones still held here fail.
   void Shutdown() {
     if (auto core = cdm_.lock()) {
       DetachAsset(core.get(), this);
@@ -60,8 +60,9 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
     }
     std::string uri = url.UTF8String;
     ReportLoadingRequest(uri);  // Posted ahead of anything else it raises.
-    // The CDM may answer it at once: a session waiting for the URI, a
-    // renewal, or one made before the CDM was attached.
+    // The CDM may answer it at once: a session waiting for the URI, the
+    // session whose earlier request AVFoundation cancelled, or one made
+    // before the CDM was attached.
     if (auto core = cdm_.lock(); core && OfferLoadingRequest(core.get(), this, uri, request)) {
       return;
     }
@@ -107,7 +108,7 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
       }
     }
     if (current) {
-      DetachAsset(current.get(), this);  // Its unanswered requests fail.
+      DetachAsset(current.get(), this);  // Its unanswered requests stay pending.
     }
     cdm_ = next;
     if (!next) {

@@ -475,11 +475,17 @@ recipient asset raises no `webkitneedkey` at all
 These keys have no `AVContentKey`: no `renew`, no `revoke`, and output
 protection comes from `AVPlayer`'s
 `outputObscuredDueToInsufficientExternalProtection` (`SetOutputObscured`),
-WebKit's fallback. A loading request gives one SPC, so a session closed or
-removed before its answer, or a CDM detached, fails it and AVFoundation asks
-again (a new `encrypted`). AVFoundation asking again for a key a session
-answered becomes that session's renewal message, and after it cancelled a
-taken request (a seek) that session's new license request.
+WebKit's fallback. A loading request gives one SPC. A session closed or
+removed before its answer, or a CDM detached, leaves it pending, as WebKit
+leaves its key requests (legacy `releaseKeys` does nothing; closing a modern
+session drops its requests without failing them): AVFoundation doesn't ask
+again and nothing answers it. AVFoundation asking again for a key a session
+answered is a request no session expects, as in WebKit: a new `encrypted`,
+which the page answers with a new session. After AVFoundation cancelled a
+taken request (a seek), its next request goes to that session as a new
+license request. The player answers no AVFoundation renewal request
+(`shouldWaitForRenewalOfRequestedResource`), which WebKit's loader delegate
+doesn't implement.
 
 With an asset attached, skd init data is always named by the URI; without
 one it keeps the MSE route's plan. A session made for a URI before its asset

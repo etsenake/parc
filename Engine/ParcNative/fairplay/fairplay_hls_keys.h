@@ -83,8 +83,9 @@ class FairPlayHlsKeyLoader : public HlsKeyRequestHandler {
   FairPlayHlsKeyLoader& operator=(const FairPlayHlsKeyLoader&) = delete;
 
   // setMediaKeys: attaches, replaces or (null) detaches the CDM that answers
-  // the held requests. Requests a detached CDM took and hadn't answered fail,
-  // and AVFoundation asks again. If the new CDM can't take the asset, the old
+  // the held requests. Requests a detached CDM took and hadn't answered stay
+  // pending, as WebKit leaves a detached CDM's key requests, so AVFoundation
+  // doesn't ask again for them. If the new CDM can't take the asset, the old
   // one stays and the result says why (the page's setMediaKeys rejects).
   Result SetCdm(FairPlayCdm* cdm);
 
