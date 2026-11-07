@@ -1491,7 +1491,10 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     info.language = LanguageForOption(option);
     info.enabled = false;
     info.index = track.index;
-    info.is_default = legible_group.defaultOption == option;
+    // WebKit compares with the defaultOption of the group instance its option
+    // came from; the group is fetched again here, so the same option can be
+    // another object: compare the options themselves.
+    info.is_default = [legible_group.defaultOption isEqual:option];
     bool subtitle = [option.mediaType isEqualToString:AVMediaTypeSubtitle];
     info.is_closed_captions = [option.mediaType isEqualToString:AVMediaTypeClosedCaption];
     info.is_sdh =
