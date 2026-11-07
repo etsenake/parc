@@ -93,6 +93,18 @@ class FairPlayRendererClient final
   void OnRendererExtension(
       mojo::PendingRemote<mojom::FairPlayRendererExtension> extension) override;
 
+  // The GPU process's renderer follows the tab mute of |handoff|'s frame
+  // (FairPlayRendererExtension.FollowMuteStateHandoff), unless one asked for
+  // later (a higher |order|) came first: the frames answer on their own pipes.
+  // None (a frame without tab mute) still supersedes earlier ones.
+  void FollowMuteStateHandoff(
+      const std::optional<base::UnguessableToken>& handoff,
+      uint64_t order);
+
+  base::WeakPtr<FairPlayRendererClient> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
  private:
   class PlayedStreams;
   // A stream the GPU process plays, with the proxy that gave it there after
@@ -131,8 +143,12 @@ class FairPlayRendererClient final
   base::OnceClosure pending_track_change_;
   std::optional<base::UnguessableToken> layer_token_;
   gfx::Size natural_size_;
+  // One from before |renderer_extension_| came.
+  std::optional<base::UnguessableToken> pending_mute_state_handoff_;
+  uint64_t mute_state_handoff_order_ = 0;
 
   SEQUENCE_CHECKER(sequence_checker_);
+  base::WeakPtrFactory<FairPlayRendererClient> weak_factory_{this};
 };
 
 }  // namespace media

@@ -2,6 +2,9 @@
 
 #include <utility>
 
+#include "base/functional/bind.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "content/renderer/media/fairplay/fairplay_renderer_client.h"
 #include "media/mojo/clients/mojo_renderer.h"
 #include "media/mojo/clients/mojo_renderer_factory.h"
@@ -34,9 +37,29 @@ std::unique_ptr<Renderer> FairPlayRendererClientFactory::CreateRenderer(
       mojo_renderer_factory_->CreateFairPlayRenderer(
           std::move(client_extension_remote), media_task_runner,
           video_renderer_sink);
-  return std::make_unique<FairPlayRendererClient>(
+  auto renderer = std::make_unique<FairPlayRendererClient>(
       media_task_runner, std::move(mojo_renderer),
       std::move(client_extension_receiver), video_renderer_sink);
+  media_task_runner_ = media_task_runner;
+  renderer_ = renderer->GetWeakPtr();
+  return renderer;
+}
+
+FairPlayRendererClientFactory::MuteStateHandoffTarget
+FairPlayRendererClientFactory::ParcMuteStateHandoffTarget() {
+  if (!media_task_runner_) {
+    return {};
+  }
+  return base::BindPostTask(
+      media_task_runner_,
+      base::BindOnce(
+          [](base::WeakPtr<FairPlayRendererClient> renderer, uint64_t order,
+             const std::optional<base::UnguessableToken>& handoff) {
+            if (renderer) {
+              renderer->FollowMuteStateHandoff(handoff, order);
+            }
+          },
+          renderer_, ++mute_state_handoff_requests_));
 }
 
 }  // namespace media

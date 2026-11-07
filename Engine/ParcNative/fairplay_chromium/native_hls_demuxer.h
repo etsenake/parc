@@ -155,6 +155,14 @@ class NativeHlsDemuxer final : public media::Demuxer,
   std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
   // Main thread: posts the player's PrepareToPlay to the media thread.
   void ParcPrepareToPlay() override;
+  // The player follows the tab mute of |handoff|'s frame
+  // (FairPlayHlsPlayer.FollowMuteStateHandoff), as
+  // FairPlayRendererClient::FollowMuteStateHandoff. Media thread.
+  // None (a frame without tab mute) still supersedes earlier ones.
+  void FollowMuteStateHandoff(
+      const std::optional<base::UnguessableToken>& handoff,
+      uint64_t order);
+  base::WeakPtr<NativeHlsDemuxer> GetDemuxerWeakPtr() { return weak_this_; }
   bool IsSeekable() const override;
   void Stop() override;
   base::TimeDelta GetStartTime() const override;
@@ -316,6 +324,9 @@ class NativeHlsDemuxer final : public media::Demuxer,
   mojo::PendingReceiver<media::mojom::FairPlayHlsPlayerClient>
       pending_client_receiver_;
   mojo::Remote<media::mojom::FairPlayHlsPlayer> player_;
+  // One from before |player_| was bound.
+  std::optional<base::UnguessableToken> pending_mute_state_handoff_;
+  uint64_t mute_state_handoff_order_ = 0;
   mojo::Receiver<media::mojom::FairPlayHlsPlayerClient> client_receiver_{
       this};
 

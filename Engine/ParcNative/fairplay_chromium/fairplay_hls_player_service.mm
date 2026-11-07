@@ -22,8 +22,10 @@
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_codecs.h"
 #include "media/base/waiting.h"
+#include "media/mojo/mojom/frame_interface_factory.mojom.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 #include "net/base/net_errors.h"
@@ -161,7 +163,37 @@ bool HasScheme(const std::string& uri, const char* scheme) {
   return url.is_valid() && url.SchemeIs(scheme);
 }
 
+// The tab's mute state for |on_change|.
+class FairPlayMuteStateObserver final : public mojom::MuteStateObserver {
+ public:
+  explicit FairPlayMuteStateObserver(
+      base::RepeatingCallback<void(bool)> on_change)
+      : on_change_(std::move(on_change)) {}
+  ~FairPlayMuteStateObserver() final = default;
+
+  void OnMuteStateChange(bool muted) final { on_change_.Run(muted); }
+
+ private:
+  base::RepeatingCallback<void(bool)> on_change_;
+};
+
 }  // namespace
+
+base::ScopedClosureRunner BindFairPlayMuteStateObserver(
+    mojo::PendingReceiver<mojom::MuteStateObserver> observer,
+    base::RepeatingCallback<void(bool)> on_change) {
+  mojo::SelfOwnedReceiverRef<mojom::MuteStateObserver> observer_ref =
+      mojo::MakeSelfOwnedReceiver(
+          std::make_unique<FairPlayMuteStateObserver>(std::move(on_change)),
+          std::move(observer));
+  return base::ScopedClosureRunner(base::BindOnce(
+      [](mojo::SelfOwnedReceiverRef<mojom::MuteStateObserver> ref) {
+        if (ref) {
+          ref->Close();
+        }
+      },
+      observer_ref));
+}
 
 // One load: the core's HlsLoad, the GPU end of its FairPlayHlsLoad and
 // FairPlayHlsLoadClient pipes, and the body pipe's reader. The core owns it;
@@ -391,6 +423,12 @@ void FairPlayHlsPlayerService::SetMuteStateObserverCloser(
   mute_state_observer_closer_ = std::move(closer);
   awaiting_mute_state_ = true;
   ApplyMuted();
+}
+
+void FairPlayHlsPlayerService::SetMuteStateHandoffTaker(
+    MuteStateHandoffTaker take_mute_state_handoff) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  take_mute_state_handoff_ = std::move(take_mute_state_handoff);
 }
 
 base::OnceCallback<void(bool)>
@@ -673,6 +711,22 @@ void FairPlayHlsPlayerService::SetWirelessVideoPlaybackDisabled(
 // keeps managing its own buffer, as in Safari.
 void FairPlayHlsPlayerService::Suspend() {}
 void FairPlayHlsPlayerService::Resume() {}
+
+// For the frame a Safari-identity page moved the element to: the current mute
+// holds until that frame answers, so a move within a tab never cuts the sound.
+void FairPlayHlsPlayerService::FollowMuteStateHandoff(
+    const base::UnguessableToken& handoff) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!take_mute_state_handoff_) {
+    return;
+  }
+  mojo::PendingReceiver<mojom::MuteStateObserver> observer =
+      take_mute_state_handoff_.Run(handoff);
+  if (observer) {
+    mute_state_observer_closer_ = BindFairPlayMuteStateObserver(
+        std::move(observer), GetMuteStateCallback());
+  }
+}
 
 void FairPlayHlsPlayerService::OnMetadata(const fp::HlsMetadata& metadata) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

@@ -192,6 +192,10 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
     return;
   }
   player_.Bind(std::move(pending_player_), media_task_runner_);
+  if (pending_mute_state_handoff_) {
+    player_->FollowMuteStateHandoff(
+        *std::exchange(pending_mute_state_handoff_, std::nullopt));
+  }
   client_receiver_.Bind(std::move(pending_client_receiver_),
                         media_task_runner_);
   player_.set_disconnect_handler(base::BindOnce(
@@ -346,6 +350,25 @@ void NativeHlsDemuxer::ParcSetWirelessVideoPlaybackDisabled(bool disabled) {
   if (player_.is_bound()) {
     player_->SetWirelessVideoPlaybackDisabled(disabled);
   }
+}
+
+void NativeHlsDemuxer::FollowMuteStateHandoff(
+    const std::optional<base::UnguessableToken>& handoff,
+    uint64_t order) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (order <= mute_state_handoff_order_) {
+    return;
+  }
+  mute_state_handoff_order_ = order;
+  pending_mute_state_handoff_.reset();
+  if (!handoff) {
+    return;
+  }
+  if (!player_.is_bound()) {
+    pending_mute_state_handoff_ = handoff;
+    return;
+  }
+  player_->FollowMuteStateHandoff(*handoff);
 }
 
 void NativeHlsDemuxer::ParcSetFastSeek(base::TimeDelta target,

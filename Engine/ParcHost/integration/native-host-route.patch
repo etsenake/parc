@@ -1625,7 +1625,7 @@
        const OpenURLParams& params,
 --- a/content/renderer/render_frame_impl.cc
 +++ b/content/renderer/render_frame_impl.cc
-@@ -3620,6 +3620,19 @@
+@@ -3620,6 +3620,14 @@
        std::move(compositor_worker_task_runner));
  }
  
@@ -1637,15 +1637,10 @@
 +                                             inspector_context);
 +}
 +
-+bool RenderFrameImpl::ParcAdoptMediaPlayerCdmFactories(
-+    blink::WebMediaPlayer& player) {
-+  return media_factory_.ParcAdoptMediaPlayerCdmFactories(player);
-+}
-+
  std::unique_ptr<blink::WebContentSettingsClient>
  RenderFrameImpl::CreateWorkerContentSettingsClient() {
    if (!frame_ || !frame_->View()) {
-@@ -4356,6 +4369,7 @@
+@@ -4356,6 +4364,7 @@
          screenshot_destination,
      base::UnguessableToken same_document_metrics_token,
      bool caused_by_ad) {
@@ -1653,7 +1648,7 @@
    TRACE_EVENT1("navigation,rail",
                 "RenderFrameImpl::didFinishSameDocumentNavigation",
                 "frame_token", frame_token_);
-@@ -4543,6 +4557,7 @@
+@@ -4543,6 +4552,7 @@
  
  void RenderFrameImpl::AbortClientNavigation(bool for_new_navigation) {
    CHECK(in_frame_tree_);
@@ -1661,7 +1656,7 @@
  
    // If the navigations are deferred, cancellations should be deferred too.
    client_navigation_throttler_.DispatchOrScheduleNavigation(
-@@ -5038,17 +5053,15 @@
+@@ -5038,17 +5048,15 @@
  }
  
  bool RenderFrameImpl::ShouldUseUserAgentOverride() const {
@@ -1688,7 +1683,7 @@
    DocumentState* document_state =
        document_loader ? DocumentState::FromDocumentLoader(document_loader)
                        : nullptr;
-@@ -5689,6 +5702,7 @@
+@@ -5689,6 +5697,7 @@
    // JS should be running in |this|, and no other frame should have a reference
    // to |this|.
    CHECK(in_frame_tree_);
@@ -1696,7 +1691,7 @@
  
    // This might be the first navigation in this RenderFrame.
    const bool first_navigation_in_render_frame = !had_started_any_navigation_;
-@@ -5741,6 +5755,59 @@
+@@ -5741,6 +5750,59 @@
      return;
    }
  
@@ -1756,7 +1751,7 @@
    // If the browser is interested, then give it a chance to look at the request.
    if (IsTopLevelNavigation(frame_) &&
        GetWebView()
-@@ -6108,12 +6175,15 @@
+@@ -6108,12 +6170,15 @@
    std::move(callback).Run(GetWebFrame()->GetFrameToken().value());
  }
  
@@ -1775,7 +1770,7 @@
    if (info->requestor_base_url.IsValid()) {
 --- a/content/renderer/render_frame_impl.h
 +++ b/content/renderer/render_frame_impl.h
-@@ -489,6 +489,12 @@
+@@ -489,6 +489,10 @@
        const blink::WebString& sink_id,
        const cc::LayerTreeSettings* settings,
        scoped_refptr<base::TaskRunner> compositor_worker_task_runner) override;
@@ -1783,12 +1778,10 @@
 +      blink::WebMediaPlayer& player,
 +      const blink::WebString& sink_id,
 +      blink::MediaInspectorContext* inspector_context) override;
-+  bool ParcAdoptMediaPlayerCdmFactories(
-+      blink::WebMediaPlayer& player) override;
    std::unique_ptr<blink::WebContentSettingsClient>
    CreateWorkerContentSettingsClient() override;
  #if !BUILDFLAG(IS_ANDROID)
-@@ -928,7 +934,9 @@
+@@ -928,7 +932,9 @@
        mojom::MhtmlSaveStatus save_status);
  
    // Requests that the browser process navigates to |url|.
@@ -1994,7 +1987,7 @@
    navigation_info->should_check_main_world_content_security_policy =
        should_check_main_world_content_security_policy;
    navigation_info->blob_url_token = std::move(blob_url_token);
-@@ -1063,6 +1074,22 @@
+@@ -1063,6 +1074,15 @@
        html_media_element);
  }
  
@@ -2005,13 +1998,6 @@
 +  }
 +  return CoreInitializer::GetInstance().ParcMoveWebMediaPlayer(
 +      web_frame_->Client(), html_media_element);
-+}
-+
-+bool LocalFrameClientImpl::ParcMoveWebMediaPlayerCdmFactories(
-+    HTMLMediaElement& html_media_element) {
-+  return web_frame_->Client() &&
-+         web_frame_->Client()->ParcAdoptMediaPlayerCdmFactories(
-+             *html_media_element.GetWebMediaPlayer());
 +}
 +
  void LocalFrameClientImpl::DidChangeName(const String& name) {

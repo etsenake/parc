@@ -7,16 +7,29 @@
 #ifndef CONTENT_RENDERER_MEDIA_FAIRPLAY_NATIVE_HLS_RENDERER_FACTORY_H_
 #define CONTENT_RENDERER_MEDIA_FAIRPLAY_NATIVE_HLS_RENDERER_FACTORY_H_
 
-#include <memory>
+#include <stdint.h>
 
+#include <memory>
+#include <optional>
+
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/unguessable_token.h"
 #include "media/base/renderer_factory.h"
+
+namespace base {
+class SequencedTaskRunner;
+}  // namespace base
 
 namespace media::mojom {
 class InterfaceFactory;
 }  // namespace media::mojom
 
 namespace parc::fairplay {
+
+class NativeHlsDemuxer;
 
 class NativeHlsRendererFactory final : public media::RendererFactory {
  public:
@@ -43,9 +56,17 @@ class NativeHlsRendererFactory final : public media::RendererFactory {
 
   void ParcSetInterfaceFactory(
       media::mojom::InterfaceFactory* interface_factory);
+  // Parc: as FairPlayRendererClientFactory::ParcMuteStateHandoffTarget, for
+  // the last player made.
+  using MuteStateHandoffTarget = base::OnceCallback<void(
+      const std::optional<base::UnguessableToken>& handoff)>;
+  MuteStateHandoffTarget ParcMuteStateHandoffTarget();
 
  private:
   raw_ptr<media::mojom::InterfaceFactory> interface_factory_;
+  scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
+  base::WeakPtr<NativeHlsDemuxer> demuxer_;
+  uint64_t mute_state_handoff_requests_ = 0;
 };
 
 }  // namespace parc::fairplay

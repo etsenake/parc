@@ -49,7 +49,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
 #include "base/unguessable_token.h"
+#include "media/mojo/mojom/frame_interface_factory.mojom-forward.h"
 #include "media/mojo/mojom/renderer_extensions.mojom.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_player.h"
@@ -64,6 +66,13 @@ namespace media {
 
 class CdmContextRef;
 class FairPlayHlsTrackBridge;
+
+// Binds |observer| to pass the browser's tab mute answers to |on_change|, as
+// the FairPlay Renderer and the native HLS player take them. Running the
+// returned closer closes it.
+base::ScopedClosureRunner BindFairPlayMuteStateObserver(
+    mojo::PendingReceiver<mojom::MuteStateObserver> observer,
+    base::RepeatingCallback<void(bool)> on_change);
 
 class FairPlayHlsPlayerService final
     : public mojom::FairPlayHlsPlayer,
@@ -93,6 +102,12 @@ class FairPlayHlsPlayerService final
   // muted until its first answer. |closer| closes the observer when the
   // service goes.
   void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
+  // The tab mute observer of a FollowMuteStateHandoff() handoff, or an
+  // invalid one (MojoMediaClient::MuteStateHandoffTaker).
+  using MuteStateHandoffTaker =
+      base::RepeatingCallback<mojo::PendingReceiver<mojom::MuteStateObserver>(
+          const base::UnguessableToken& handoff)>;
+  void SetMuteStateHandoffTaker(MuteStateHandoffTaker take_mute_state_handoff);
   // WebKit's ephemeral session for the frame, which the browser answers
   // (FrameInterfaceFactory.IsFairPlayEphemeralSession): once this was asked
   // for, Initialize waits for it. Bound to a weak pointer.
@@ -124,6 +139,7 @@ class FairPlayHlsPlayerService final
   void SetPlaybackTarget(const std::string& output_context_id,
                          bool should_play) override;
   void SetWirelessVideoPlaybackDisabled(bool disabled) override;
+  void FollowMuteStateHandoff(const base::UnguessableToken& handoff) override;
 
   // parc::fairplay::HlsPlayerClient:
   void OnMetadata(const parc::fairplay::HlsMetadata& metadata) override;
@@ -217,6 +233,7 @@ class FairPlayHlsPlayerService final
   bool page_muted_ = false;
   bool tab_muted_ = false;
   bool awaiting_mute_state_ = false;
+  MuteStateHandoffTaker take_mute_state_handoff_;
   // GetEphemeralSessionCallback: the answer, and an Initialize waiting for it.
   void OnEphemeralSession(bool ephemeral);
   bool awaiting_ephemeral_session_ = false;

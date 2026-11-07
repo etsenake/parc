@@ -533,6 +533,12 @@ void FairPlayRendererAdapter::SetMuteStateObserverCloser(
   }
 }
 
+void FairPlayRendererAdapter::ReplaceMuteStateObserverCloser(
+    base::ScopedClosureRunner closer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  mute_state_observer_closer_ = std::move(closer);
+}
+
 void FairPlayRendererAdapter::SetMuted(bool muted) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   muted_ = muted;

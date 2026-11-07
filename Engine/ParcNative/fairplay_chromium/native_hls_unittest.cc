@@ -100,6 +100,9 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void SetWirelessVideoPlaybackDisabled(bool disabled) override {
     wireless_disabled_.push_back(disabled);
   }
+  void FollowMuteStateHandoff(const base::UnguessableToken& handoff) override {
+    mute_state_handoffs_.push_back(handoff);
+  }
 
   struct Target {
     std::string id;
@@ -125,6 +128,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
   float volume_ = -1;
   std::optional<bool> preserves_pitch_;
+  std::vector<base::UnguessableToken> mute_state_handoffs_;
 };
 
 media::mojom::FairPlayHlsMetadataPtr Metadata(base::TimeDelta duration) {
@@ -274,6 +278,33 @@ TEST(NativeHlsErrorTest, InitializeFailureStatus) {
             media::PIPELINE_ERROR_NETWORK);
   EXPECT_EQ(NativeHlsDemuxer::InitializeFailureStatus(std::nullopt).code(),
             media::DEMUXER_ERROR_COULD_NOT_OPEN);
+}
+
+// Parc: the player follows the tab mute of the frame a Safari-identity page
+// moved its element to, handed off before its pipe is bound as well as after.
+TEST_F(NativeHlsTest, TheMovedElementsTabMuteReachesThePlayer) {
+  const base::UnguessableToken before = base::UnguessableToken::Create();
+  demuxer_->FollowMuteStateHandoff(before, /*order=*/1);
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(player_.mute_state_handoffs_.empty());
+
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  EXPECT_EQ(std::vector<base::UnguessableToken>({before}),
+            player_.mute_state_handoffs_);
+
+  // Moved twice more: the later frame answered first, so the earlier one's
+  // answer is dropped.
+  const base::UnguessableToken later = base::UnguessableToken::Create();
+  demuxer_->FollowMuteStateHandoff(later, /*order=*/3);
+  demuxer_->FollowMuteStateHandoff(base::UnguessableToken::Create(),
+                                   /*order=*/2);
+  // A frame without tab mute answers none, which still supersedes.
+  demuxer_->FollowMuteStateHandoff(std::nullopt, /*order=*/5);
+  demuxer_->FollowMuteStateHandoff(base::UnguessableToken::Create(),
+                                   /*order=*/4);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(std::vector<base::UnguessableToken>({before, later}),
+            player_.mute_state_handoffs_);
 }
 
 TEST_F(NativeHlsTest, MetadataBecomesStreamsDurationAndBuffered) {

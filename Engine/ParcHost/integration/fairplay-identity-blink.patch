@@ -2536,7 +2536,7 @@
    web_media_player_ =
        frame->Client()->CreateWebMediaPlayer(*this, source, this);
  
-@@ -1775,15 +2227,8 @@
+@@ -1775,14 +2227,7 @@
    // Setup the communication channels between the renderer and browser processes
    // via the MediaPlayer and MediaPlayerObserver mojo interfaces.
    DCHECK(media_player_receiver_set_->Value().empty());
@@ -2544,15 +2544,14 @@
 -      media_player_remote;
 -  BindMediaPlayerReceiver(
 -      media_player_remote.InitWithNewEndpointAndPassReceiver());
-+  RegisterWithMediaPlayerHost();
- 
+-
 -  GetMediaPlayerHostRemote().OnMediaPlayerAdded(
 -      std::move(media_player_remote), AddMediaPlayerObserverAndPassReceiver(),
 -      web_media_player_->GetPlayerId());
--
++  RegisterWithMediaPlayerHost();
+ 
    if (GetLayoutObject())
      GetLayoutObject()->SetShouldDoFullPaintInvalidation();
-   // Make sure if we create/re-create the WebMediaPlayer that we update our
 @@ -1798,8 +2243,24 @@
  
    web_media_player_->RequestRemotePlaybackDisabled(
@@ -2713,7 +2712,7 @@
        ScheduleNamedEvent(event_type_names::kProgress);
      ScheduleNamedEvent(event_type_names::kSuspend);
      SetNetworkState(kNetworkIdle);
-@@ -2282,17 +2800,149 @@
+@@ -2282,8 +2800,140 @@
    }
  }
  
@@ -2817,8 +2816,8 @@
 +    parc_player_ready_state_ = state;
 +  }
 +  SetReadyState(state);
- }
- 
++}
++
 +bool HTMLMediaElement::ParcWaitForKey() {
 +  if (!PresentsParcSafariIdentity()) {
 +    return false;
@@ -2852,11 +2851,10 @@
 +    SetReadyState(static_cast<ReadyState>(web_media_player_->GetReadyState()));
 +  }
 +  return true;
-+}
-+
+ }
+ 
  void HTMLMediaElement::SetReadyState(ReadyState state) {
-   DVLOG(3) << "setReadyState(" << *this << ", " << int{state}
-            << ") - current state is " << int{ready_state_};
+@@ -2292,7 +2942,7 @@
  
    // Set "wasPotentiallyPlaying" BEFORE updating ready_state_,
    // potentiallyPlaying() uses it
@@ -3044,6 +3042,12 @@
    // change or otherwise satisfies seek completion and signals a time change.
  }
  
+-void HTMLMediaElement::FinishSeek() {
+-  DVLOG(3) << "finishSeek(" << *this << ")";
+-  DCHECK(seeking_);
+-
+-  // 14 - Set the seeking IDL attribute to false.
+-  SetSeeking(false);
 +// WebKit's HTMLMediaElement::seekWithTolerance: seeking and the target
 +// (clamped to the duration) show at once; a page's seek continues in a queued
 +// task, which a further seek before it runs replaces, keeping the position
@@ -3057,20 +3061,27 @@
 +      !ParcHasFutureDataAsWebKit(ready_state_)) {
 +    ParcPrepareToPlay();
 +  }
-+
+ 
+-  // Force an update to officialPlaybackPosition. Periodic updates generally
+-  // handle this, but may be skipped paused or waiting for data.
+-  SetOfficialPlaybackPosition(CurrentPlaybackPosition());
 +  double now = currentTime();
 +  if (parc_seek_task_.IsActive()) {
 +    parc_seek_task_.Cancel();
 +    now = parc_pending_seek_->now;
 +    parc_fast_seek_with_player_ = false;
 +  }
-+
+ 
+-  // 15 - Run the time marches on steps.
+-  GetCueTimeline().InvokeTimeMarchesOn();
 +  SetSeeking(true);
 +  if (playing_ && last_seek_time_ < now) {
 +    AddPlayedRange(last_seek_time_, now);
 +  }
 +  last_seek_time_ = std::min(time, duration());
-+
+ 
+-  // 16 - Queue a task to fire a simple event named timeupdate at the element.
+-  ScheduleTimeupdateEvent(false);
 +  parc_pending_seek_ = ParcPendingSeek{now, time,
 +                                       parc_fast_seek_tolerance_.value_or(0)};
 +  if (parc_seek_from_page_) {
@@ -3170,28 +3181,27 @@
 +  ScheduleNotifyPlaying();
 +}
 +
- void HTMLMediaElement::FinishSeek() {
-   DVLOG(3) << "finishSeek(" << *this << ")";
-   DCHECK(seeking_);
++void HTMLMediaElement::FinishSeek() {
++  DVLOG(3) << "finishSeek(" << *this << ")";
++  DCHECK(seeking_);
 +  const bool parc_was_playing_before_seeking = parc_was_playing_before_seeking_;
- 
-   // 14 - Set the seeking IDL attribute to false.
-   SetSeeking(false);
++
++  // 14 - Set the seeking IDL attribute to false.
++  SetSeeking(false);
 +  parc_seek_with_player_ = false;
 +  parc_fast_seek_with_player_ = false;
 +  parc_player_finished_seek_ = false;
 +  parc_was_playing_before_seeking_ = false;
- 
-   // Force an update to officialPlaybackPosition. Periodic updates generally
-   // handle this, but may be skipped paused or waiting for data.
-   SetOfficialPlaybackPosition(CurrentPlaybackPosition());
- 
-   // 15 - Run the time marches on steps.
++
++  // Force an update to officialPlaybackPosition. Periodic updates generally
++  // handle this, but may be skipped paused or waiting for data.
++  SetOfficialPlaybackPosition(CurrentPlaybackPosition());
++
++  // 15 - Run the time marches on steps.
 +  base::AutoReset<bool> finishing_seek(&parc_finishing_seek_, true);
-   GetCueTimeline().InvokeTimeMarchesOn();
- 
-   // 16 - Queue a task to fire a simple event named timeupdate at the element.
--  ScheduleTimeupdateEvent(false);
++  GetCueTimeline().InvokeTimeMarchesOn();
++
++  // 16 - Queue a task to fire a simple event named timeupdate at the element.
 +  ScheduleTimeupdateEvent(false, /*parc_unconditional=*/true);
  
    // 17 - Queue a task to fire a simple event named seeked at the element.
@@ -4436,17 +4446,7 @@
        web_media_player_->SetVolume(EffectiveMediaVolume());
        web_media_player_->Play();
  
-@@ -4349,12 +6042,17 @@
-         .GetTaskRunner(TaskType::kInternalMedia)
-         ->DeleteSoon(FROM_HERE, std::move(web_media_player_));
-     // Do not clear `opener_document_` here; new players might still use it.
-+    // Parc: the next player is made with this frame's renderer factories.
-+    if (!is_disposing_) {
-+      ParcWatchCdmFrame(nullptr);
-+    }
- 
-     // The lifetime of the mojo endpoints are tied to the WebMediaPlayer's, so
-     // we need to reset those as well.
+@@ -4355,6 +6048,7 @@
      media_player_receiver_set_->Value().Clear();
      media_player_observer_remote_set_->Value().Clear();
    }
@@ -4454,7 +4454,7 @@
  
    OnWebMediaPlayerCleared();
  }
-@@ -4368,6 +6066,7 @@
+@@ -4368,6 +6062,7 @@
    if (RuntimeEnabledFeatures::LazyLoadVideoAndAudioEnabled()) {
      lazy_media_load_state_ = LazyMediaLoadState::kNone;
      LazyMediaHelper::StopMonitoring(this);
@@ -4462,12 +4462,12 @@
    }
  
    {
-@@ -4377,7 +6076,20 @@
+@@ -4377,6 +6072,19 @@
  
    StopPeriodicTimers();
    load_timer_.Stop();
 +  parc_prepare_to_play_after_selection_ = false;
- 
++
 +  // Parc: WebKit's clearMediaPlayer tells availability listeners the element
 +  // has nothing to play to a target, and it plays to none.
 +  if (PresentsParcSafariIdentity()) {
@@ -4479,11 +4479,10 @@
 +      ParcUpdatePlayingToWirelessTarget();
 +    }
 +  }
-+
+ 
    pending_action_flags_ = 0;
    load_state_ = kWaitingForSource;
- 
-@@ -4387,6 +6099,33 @@
+@@ -4387,6 +6095,33 @@
  
  void HTMLMediaElement::ContextLifecycleStateChanged(
      mojom::blink::FrameLifecycleState state) {
@@ -4517,7 +4516,7 @@
    if (state == mojom::blink::FrameLifecycleState::kFrozen) {
      if (playing_) {
        PausePlayback(WebMediaPlayer::PauseReason::kFrameFrozen);
-@@ -4397,6 +6136,50 @@
+@@ -4397,6 +6132,50 @@
    }
  }
  
@@ -4568,7 +4567,7 @@
  void HTMLMediaElement::ContextDestroyed() {
    DVLOG(3) << "contextDestroyed(" << static_cast<void*>(this) << ")";
  
-@@ -4409,6 +6192,8 @@
+@@ -4409,6 +6188,8 @@
    ClearMediaPlayer();
    ready_state_ = kHaveNothing;
    ready_state_maximum_ = kHaveNothing;
@@ -4577,7 +4576,7 @@
    SetNetworkState(kNetworkEmpty);
    SetShouldDelayLoadEvent(false);
    current_source_node_ = nullptr;
-@@ -4423,6 +6208,10 @@
+@@ -4423,6 +6204,10 @@
  
    StopPeriodicTimers();
    removed_from_document_timer_.Stop();
@@ -4588,7 +4587,7 @@
  
    UpdateVideoVisibilityTracker();
  }
-@@ -4839,12 +6628,15 @@
+@@ -4839,12 +6624,15 @@
    visitor->Trace(removed_from_document_timer_);
    visitor->Trace(played_time_ranges_);
    visitor->Trace(async_event_queue_);
@@ -4604,17 +4603,15 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4865,6 +6657,9 @@
+@@ -4865,6 +6653,7 @@
    visitor->Trace(media_player_receiver_set_);
    visitor->Trace(opener_document_);
    visitor->Trace(opener_context_observer_);
 +  visitor->Trace(parc_page_visibility_observer_);
-+  visitor->Trace(parc_cdm_frame_document_);
-+  visitor->Trace(parc_cdm_frame_observer_);
    Supplementable<HTMLMediaElement>::Trace(visitor);
    HTMLElement::Trace(visitor);
    ExecutionContextLifecycleStateObserver::Trace(visitor);
-@@ -4873,7 +6668,8 @@
+@@ -4873,7 +6662,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -4624,7 +4621,7 @@
      AddTrack(media::MediaTrack::CreateAudioTrack(
          "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
    }
-@@ -4993,6 +6789,10 @@
+@@ -4993,6 +6783,10 @@
          "Failed to load because no supported source was found.");
      return;
    }
@@ -4635,7 +4632,7 @@
  
    const char* reason = "";
    switch (play_promise_error_code_) {
-@@ -5032,6 +6832,7 @@
+@@ -5032,6 +6826,7 @@
            "media-playback-while-not-visible permission policy";
        break;
      case PlayPromiseError::kNotSupported:
@@ -4643,7 +4640,7 @@
        NOTREACHED();
    }
    RejectPlayPromisesInternal(DOMExceptionCode::kAbortError,
-@@ -5056,8 +6857,11 @@
+@@ -5056,8 +6851,11 @@
    DCHECK(code == DOMExceptionCode::kAbortError ||
           code == DOMExceptionCode::kNotSupportedError ||
           code == DOMExceptionCode::kNotAllowedError);
@@ -4656,7 +4653,7 @@
  
    play_promise_reject_list_.clear();
  }
-@@ -5070,10 +6874,22 @@
+@@ -5070,10 +6868,22 @@
      return;
    }
  
@@ -4680,7 +4677,7 @@
  }
  
  void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
-@@ -5212,8 +7028,23 @@
+@@ -5212,6 +7022,21 @@
    }
  
    OnRemotePlaybackMetadataChange();
@@ -4690,8 +4687,8 @@
 +    ParcPauseIfPlaybackNotPermitted(/*reject_as_not_allowed=*/true,
 +                                    /*audio_reported=*/true);
 +  }
- }
- 
++}
++
 +void HTMLMediaElement::ParcReportMediaMetadata(
 +    bool has_audio,
 +    bool has_video,
@@ -4699,12 +4696,10 @@
 +  for (auto& observer : media_player_observer_remote_set_->Value()) {
 +    observer->OnMediaMetadataChanged(has_audio, has_video, media_content_type);
 +  }
-+}
-+
+ }
+ 
  void HTMLMediaElement::DidPlayerMediaPositionStateChange(
-     double playback_rate,
-     base::TimeDelta duration,
-@@ -5299,6 +7130,9 @@
+@@ -5299,6 +7124,9 @@
  }
  
  String HTMLMediaElement::GetPlayErrorMessage(DOMExceptionCode code) const {
@@ -4714,7 +4709,7 @@
    switch (code) {
      case DOMExceptionCode::kNotAllowedError:
        return autoplay_policy_->GetPlayErrorMessage();
-@@ -5324,6 +7158,83 @@
+@@ -5324,6 +7152,40 @@
    return *media_player_host_remote_->Value().get();
  }
  
@@ -4745,13 +4740,6 @@
 +  OnRemotePlaybackMetadataChange();
 +  ParcDidMovePlayerToFrame();
 +
-+  // The frame that made the player's FairPlay renderer factories, its first
-+  // opener, until they follow too.
-+  Document* cdm_frame_document =
-+      parc_cdm_frame_document_ ? parc_cdm_frame_document_.Get()
-+                               : opener_document_.Get();
-+  ParcWatchCdmFrame(cdm_frame_document == &GetDocument() ? nullptr
-+                                                         : cdm_frame_document);
 +  if (opener_context_observer_) {
 +    opener_context_observer_->SetContextLifecycleNotifier(nullptr);
 +  }
@@ -4759,46 +4747,10 @@
 +  opener_document_ = nullptr;
 +}
 +
-+void HTMLMediaElement::ParcWatchCdmFrame(Document* document) {
-+  parc_cdm_frame_document_ = document;
-+  if (!document) {
-+    if (parc_cdm_frame_observer_) {
-+      parc_cdm_frame_observer_->SetContextLifecycleNotifier(nullptr);
-+    }
-+    parc_cdm_frame_observer_ = nullptr;
-+    return;
-+  }
-+  if (!parc_cdm_frame_observer_) {
-+    parc_cdm_frame_observer_ = MakeGarbageCollected<ParcCdmFrameObserver>(this);
-+  }
-+  parc_cdm_frame_observer_->SetContextLifecycleNotifier(
-+      document->GetExecutionContext());
-+}
-+
-+// The player plays on without its FairPlay renderers' frame unless a CDM is
-+// attached, which may be that frame's; it reloads in the element's frame then,
-+// as when an opener goes (AttachToNewFrame()). The factories go to the
-+// player's frame, which a later move watches in turn.
-+void HTMLMediaElement::ParcCdmFrameDestroyed() {
-+  // The observer may not stop observing from its own notification.
-+  parc_cdm_frame_document_ = nullptr;
-+  parc_cdm_frame_observer_ = nullptr;
-+  LocalFrame* player_frame = LocalFrameForPlayer();
-+  if (web_media_player_ && player_frame &&
-+      player_frame->Client()->ParcMoveWebMediaPlayerCdmFactories(*this)) {
-+    return;
-+  }
-+  // A player kept by a move it couldn't follow watches its own frame too.
-+  if (opener_context_observer_) {
-+    opener_context_observer_->SetContextLifecycleNotifier(nullptr);
-+  }
-+  AttachToNewFrame();
-+}
-+
  mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
  HTMLMediaElement::AddMediaPlayerObserverAndPassReceiver() {
    mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayerObserver>
-@@ -5360,24 +7271,105 @@
+@@ -5360,24 +7222,105 @@
    PauseInternal(triggered_by_user
                      ? WebMediaPlayer::PauseReason::kPauseRequestedByUser
                      : WebMediaPlayer::PauseReason::kPauseRequestedInternally);
@@ -4904,25 +4856,10 @@
  void HTMLMediaElement::RequestMute(bool mute) {
    setMuted(mute);
  }
-@@ -5488,6 +7480,42 @@
- 
- void HTMLMediaElement::OpenerContextObserver::ContextDestroyed() {
+@@ -5490,6 +7433,29 @@
    element_->AttachToNewFrame();
-+}
-+
-+HTMLMediaElement::ParcCdmFrameObserver::ParcCdmFrameObserver(
-+    HTMLMediaElement* element)
-+    : element_(element) {}
-+
-+void HTMLMediaElement::ParcCdmFrameObserver::Trace(Visitor* visitor) const {
-+  ContextLifecycleObserver::Trace(visitor);
-+  visitor->Trace(element_);
-+}
-+
-+void HTMLMediaElement::ParcCdmFrameObserver::ContextDestroyed() {
-+  element_->ParcCdmFrameDestroyed();
-+}
-+
+ }
+ 
 +HTMLMediaElement::ParcPageVisibilityObserver::ParcPageVisibilityObserver(
 +    HTMLMediaElement* element)
 +    : PageVisibilityObserver(nullptr), element_(element) {}
@@ -4944,9 +4881,11 @@
 +    element_->ParcUpdatePlayerPageVisibility();
 +  }
 +  element_->ParcResumeAfterBackForwardCacheIfAllowed();
- }
- 
++}
++
  STATIC_ASSERT_ENUM(WebMediaPlayer::kReadyStateHaveNothing,
+                    HTMLMediaElement::kHaveNothing);
+ STATIC_ASSERT_ENUM(WebMediaPlayer::kReadyStateHaveMetadata,
 --- a/third_party/blink/renderer/core/dom/events/event_queue.h
 +++ b/third_party/blink/renderer/core/dom/events/event_queue.h
 @@ -48,7 +48,13 @@
@@ -5235,16 +5174,16 @@
    bool StoppedDueToErrors() const;
    bool CouldPlayIfEnoughData() const override;
  
-@@ -831,6 +936,9 @@
-   // bind to.
+@@ -832,6 +937,9 @@
    mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
    AddMediaPlayerObserverAndPassReceiver();
-+
+ 
 +  // Tells the browser side of the document's frame about |web_media_player_|.
 +  void RegisterWithMediaPlayerHost();
- 
++
    // Timers used to schedule one-shot tasks with no delay.
    HeapTaskRunnerTimer<HTMLMediaElement> load_timer_;
+   HeapTaskRunnerTimer<HTMLMediaElement> audio_tracks_timer_;
 @@ -851,6 +959,9 @@
    NetworkState network_state_maximum_ = kNetworkEmpty;
    ReadyState ready_state_ = kHaveNothing;
@@ -5414,11 +5353,10 @@
    Member<VideoTrackList> video_tracks_;
    Member<TextTrackList> text_tracks_;
    HeapVector<Member<TextTrack>> text_tracks_when_resource_selection_began_;
-@@ -1078,6 +1320,60 @@
- 
+@@ -1079,6 +1321,37 @@
    Member<Document> opener_document_;
    Member<OpenerContextObserver> opener_context_observer_;
-+
+ 
 +  // Parc: under Safari's identity, tells a player made by a frame on another
 +  // page than the element's the visibility of the element's page.
 +  void ParcUpdatePlayerPageVisibility();
@@ -5450,31 +5388,9 @@
 +
 +  Member<ParcPageVisibilityObserver> parc_page_visibility_observer_;
 +
-+  // Parc: the document whose frame made the FairPlay renderer factories of a
-+  // player a move made this element's frame's
-+  // (WebMediaPlayer::ParcMoveCdmFactoriesToFrame), and when it goes.
-+  class ParcCdmFrameObserver final
-+      : public GarbageCollected<ParcCdmFrameObserver>,
-+        public ContextLifecycleObserver {
-+   public:
-+    explicit ParcCdmFrameObserver(HTMLMediaElement* element);
-+
-+    void Trace(Visitor* visitor) const final;
-+
-+   private:
-+    void ContextDestroyed() final;
-+
-+    Member<HTMLMediaElement> element_;
-+  };
-+
-+  void ParcWatchCdmFrame(Document* document);
-+  void ParcCdmFrameDestroyed();
-+
-+  Member<Document> parc_cdm_frame_document_;
-+  Member<ParcCdmFrameObserver> parc_cdm_frame_observer_;
- 
    friend class AutoplayPolicy;
    friend class AutoplayUmaHelperTest;
+   friend class Internals;
 --- a/third_party/blink/renderer/platform/media/media_player_client.h
 +++ b/third_party/blink/renderer/platform/media/media_player_client.h
 @@ -39,6 +39,7 @@
@@ -7305,7 +7221,7 @@
  #include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
  #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
  #include "third_party/blink/renderer/platform/testing/task_environment.h"
-@@ -136,7 +149,16 @@
+@@ -136,7 +149,12 @@
    MOCK_METHOD0(OnTimeUpdate, void());
    MOCK_CONST_METHOD0(Paused, bool());
    MOCK_CONST_METHOD0(Seekable, WebTimeRanges());
@@ -7314,15 +7230,11 @@
 +  MOCK_METHOD0(ParcOnFrozenInBackForwardCache, void());
 +  MOCK_METHOD1(ParcSetPageHidden, void(std::optional<bool>));
 +  MOCK_METHOD(bool, ParcMoveToFrame, (ParcFrameServices), (override));
-+  MOCK_METHOD(bool,
-+              ParcMoveCdmFactoriesToFrame,
-+              (base::OnceCallback<void(media::RendererFactorySelector&)>),
-+              (override));
 +  MOCK_METHOD(void, ParcReportStateToClient, (), (override));
    MOCK_CONST_METHOD0(HasAudio, bool());
    MOCK_CONST_METHOD0(HasVideo, bool());
    MOCK_CONST_METHOD0(Duration, double());
-@@ -150,6 +172,8 @@
+@@ -150,6 +168,8 @@
    MOCK_METHOD1(SetWasPlayedWithUserActivationAndHighMediaEngagement,
                 void(bool));
    MOCK_METHOD1(EnabledAudioTracksChanged, void(std::optional<TrackId>));
@@ -7331,7 +7243,7 @@
    MOCK_METHOD1(SelectedVideoTrackChanged, void(std::optional<TrackId>));
    MOCK_METHOD4(
        Load,
-@@ -163,6 +187,18 @@
+@@ -163,6 +183,18 @@
  
    MOCK_CONST_METHOD0(HasAvailableVideoFrame, bool());
    MOCK_CONST_METHOD0(HasReadableVideoFrame, bool());
@@ -7350,7 +7262,7 @@
  };
  
  class WebMediaStubLocalFrameClient : public EmptyLocalFrameClient {
-@@ -178,8 +214,24 @@
+@@ -178,8 +210,20 @@
      return std::move(player_);
    }
  
@@ -7359,10 +7271,6 @@
 +  bool ParcMoveWebMediaPlayer(HTMLMediaElement& element) override {
 +    return element.GetWebMediaPlayer()->ParcMoveToFrame(
 +        WebMediaPlayer::ParcFrameServices());
-+  }
-+  bool ParcMoveWebMediaPlayerCdmFactories(HTMLMediaElement& element) override {
-+    return element.GetWebMediaPlayer()->ParcMoveCdmFactoriesToFrame(
-+        base::BindOnce([](media::RendererFactorySelector&) {}));
 +  }
 +
 +  void SetPlayer(std::unique_ptr<WebMediaPlayer> player) { player_ = std::move(player); }
@@ -7375,7 +7283,7 @@
  };
  
  class FullscreenMockChromeClient : public EmptyChromeClient {
-@@ -313,6 +365,38 @@
+@@ -313,6 +357,38 @@
      }
    }
  
@@ -7414,7 +7322,7 @@
    void WaitForVideoFrameAvailability() {
      if (received_video_frame_availability_.has_value()) {
        return;
-@@ -366,6 +450,8 @@
+@@ -366,6 +442,8 @@
    gfx::Size received_media_size_{0, 0};
    std::optional<bool> received_uses_audio_service_;
    std::optional<bool> received_video_frame_availability_;
@@ -7423,7 +7331,7 @@
    media_session::mojom::blink::RemotePlaybackMetadataPtr
        received_remote_playback_metadata_;
  };
-@@ -377,28 +463,52 @@
+@@ -377,28 +455,52 @@
    // media::mojom::MediaPlayerHost
    void OnMediaPlayerAdded(
        mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
@@ -7477,7 +7385,7 @@
   protected:
    void SetUp() override {
      // Sniff the media player pointer to facilitate mocking.
-@@ -456,6 +566,11 @@
+@@ -456,6 +558,11 @@
    }
  
    HTMLMediaElement* Media() const { return media_.Get(); }
@@ -7489,7 +7397,7 @@
    void SetCurrentSrc(const AtomicString& src) {
      KURL url(src);
      Media()->current_src_.SetSource(
-@@ -470,8 +585,27 @@
+@@ -470,8 +577,27 @@
  
    bool PotentiallyPlaying() { return Media()->PotentiallyPlaying(); }
  
@@ -7517,7 +7425,7 @@
    void SetNetworkState(WebMediaPlayer::NetworkState state) {
      Media()->SetNetworkState(state);
    }
-@@ -484,9 +618,19 @@
+@@ -484,9 +610,19 @@
  
    void ReadyStateChanged() { Media()->ReadyStateChanged(); }
  
@@ -7537,7 +7445,7 @@
  
    bool MediaIsPlaying() const { return Media()->playing_; }
  
-@@ -525,6 +669,10 @@
+@@ -525,6 +661,10 @@
             decltype(Media()->lazy_media_load_state_)::kNone;
    }
  
@@ -7548,7 +7456,7 @@
    bool ControlsVisible() const { return Media()->ShouldShowControls(); }
  
    bool MediaShouldShowAllControls() const {
-@@ -535,12 +683,50 @@
+@@ -535,12 +675,50 @@
      return dummy_page_holder_->GetFrame().DomWindow();
    }
  
@@ -7599,7 +7507,7 @@
    void ContextDestroyed() { Media()->ContextDestroyed(); }
  
    MediaVideoVisibilityTracker* VideoVisibilityTracker() {
-@@ -589,11 +775,62 @@
+@@ -589,11 +767,62 @@
  
    void CallProgressEventTimerFired() { Media()->ProgressEventTimerFired(); }
  
@@ -7662,7 +7570,7 @@
   protected:
    KURL SelectNextSourceChild(String* content_type,
                               HTMLMediaElement::InvalidURLAction action) {
-@@ -729,6 +966,16 @@
+@@ -729,6 +958,16 @@
      return dummy_page_holder;
    }
  
@@ -7679,7 +7587,7 @@
    // Set the security origin of our window.
    void SetSecurityOrigin(const char* origin) {
      Media()
-@@ -790,6 +1037,36 @@
+@@ -790,6 +1029,36 @@
      EXPECT_FALSE(WasPlayerDestroyed());
    }
  
@@ -7716,7 +7624,7 @@
    bool HasEventListenerRegistered(EventTarget& target,
                                    const AtomicString& event_type,
                                    const EventListener* listener) const {
-@@ -2191,17 +2468,6 @@
+@@ -2191,17 +2460,6 @@
    EXPECT_NE(old_frame, Media()->LocalFrameForPlayer());
  }
  
@@ -7734,7 +7642,7 @@
  // A document move that doesn't keep the player (same-origin without
  // kDocumentPictureInPictureAPI) re-runs the load algorithm. The HTML spec
  // does not treat a cross-document move as a pause trigger, so the element
-@@ -2312,6 +2578,378 @@
+@@ -2312,6 +2570,345 @@
    EXPECT_EQ(play_listener->count(), 0);
  }
  
@@ -7845,45 +7753,12 @@
 +        event_type_names::kLoadstart, event_type_names::kPause}) {
 +    Media()->addEventListener(type, reload_listener);
 +  }
-+  // Its FairPlay renderers follow it then, with no CDM attached.
-+  EXPECT_CALL(*MockMediaPlayer(), ParcMoveCdmFactoriesToFrame(_))
-+      .WillOnce(Return(true));
 +  GetDomWindow()->FrameDestroyed();
 +  test::RunPendingTasks();
 +  testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 +  EXPECT_FALSE(WasPlayerDestroyed());
 +  EXPECT_FALSE(Media()->paused());
 +  EXPECT_EQ(reload_listener->count(), 0);
-+}
-+
-+// A moved player with a CDM attached, which may be the frame that made it's,
-+// reloads when that frame goes, as before.
-+TEST_P(HTMLMediaElementTest, SafariIdentityMovedPlayerWithCdmReloadsWhenFrameGoes) {
-+  ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
-+  const char* origin = "https://a.com";
-+  SetSecurityOrigin(origin);
-+  PresentSafariIdentity(Media()->GetDocument());
-+  Media()->GetDocument().body()->AppendChild(Media());
-+  WaitForPlayer();
-+  test::RunPendingTasks();
-+
-+  auto new_page = CreatePageWithSecurityOrigin(
-+      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
-+  PresentSafariIdentity(new_page->GetDocument());
-+  EXPECT_CALL(*MockMediaPlayer(), ParcMoveToFrame(_)).WillOnce(Return(true));
-+  new_page->GetDocument().body()->AppendChild(Media());
-+  test::RunPendingTasks();
-+  ASSERT_FALSE(WasPlayerDestroyed());
-+
-+  auto* emptied_listener = MakeGarbageCollected<EventCountingListener>();
-+  Media()->addEventListener(event_type_names::kEmptied, emptied_listener);
-+  EXPECT_CALL(*MockMediaPlayer(), ParcMoveCdmFactoriesToFrame(_))
-+      .WillOnce(Return(false));
-+  GetDomWindow()->FrameDestroyed();
-+  EXPECT_TRUE(WasPlayerDestroyed());
-+  EXPECT_EQ(new_page->GetDocument().GetFrame(), Media()->LocalFrameForPlayer());
-+  test::RunPendingTasks();
-+  EXPECT_EQ(emptied_listener->count(), 1);
 +}
 +
 +// Chromium's reload stays for Chrome's identity on either document and for
@@ -8113,12 +7988,10 @@
  TEST_P(HTMLMediaElementTest, PlayedWithoutUserActivation) {
    Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
    test::RunPendingTasks();
-@@ -3592,6 +4230,4247 @@
-   test::RunPendingTasks();
- 
+@@ -3594,4 +4191,4245 @@
    EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
-+}
-+
+ }
+ 
 +
 +constexpr char kParcSafariUserAgent[] =
 +    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
@@ -12358,8 +12231,8 @@
 +  EXPECT_FALSE(media_player_observer()
 +                   .received_playback_target_state()
 +                   ->requires_monitoring);
- }
- 
++}
++
  }  // namespace blink
 --- a/third_party/blink/renderer/core/html/track/cue_timeline.cc
 +++ b/third_party/blink/renderer/core/html/track/cue_timeline.cc
@@ -13125,7 +12998,7 @@
    void ObserverSetWillBeCleared();
 --- a/third_party/blink/public/web/web_local_frame_client.h
 +++ b/third_party/blink/public/web/web_local_frame_client.h
-@@ -208,6 +208,21 @@
+@@ -208,6 +208,16 @@
      return nullptr;
    }
  
@@ -13138,18 +13011,13 @@
 +                                    MediaInspectorContext* inspector_context) {
 +    return false;
 +  }
-+  // Parc: and the factories of its FairPlay renderers, once the frame that
-+  // made it went (WebMediaPlayer::ParcMoveCdmFactoriesToFrame).
-+  virtual bool ParcAdoptMediaPlayerCdmFactories(WebMediaPlayer& player) {
-+    return false;
-+  }
 +
    // May return null.
    virtual std::unique_ptr<WebServiceWorkerProvider>
    CreateServiceWorkerProvider() {
 --- a/third_party/blink/renderer/core/frame/local_frame_client.h
 +++ b/third_party/blink/renderer/core/frame/local_frame_client.h
-@@ -305,6 +305,15 @@
+@@ -305,6 +305,10 @@
        WebMediaPlayerClient*) = 0;
    virtual RemotePlaybackClient* CreateRemotePlaybackClient(
        HTMLMediaElement&) = 0;
@@ -13157,22 +13025,16 @@
 +  // frame, made by another frame, this frame's. Returns false if the player
 +  // can't move.
 +  virtual bool ParcMoveWebMediaPlayer(HTMLMediaElement&) { return false; }
-+  // Parc: and the factories of its FairPlay renderers, once the frame that
-+  // made it went (WebMediaPlayer::ParcMoveCdmFactoriesToFrame).
-+  virtual bool ParcMoveWebMediaPlayerCdmFactories(HTMLMediaElement&) {
-+    return false;
-+  }
  
    virtual void DidCommitDocumentReplacementNavigation(DocumentLoader*) = 0;
    virtual void DispatchDidClearWindowObjectInMainWorld(LocalDOMWindow*) = 0;
 --- a/third_party/blink/renderer/core/frame/local_frame_client_impl.h
 +++ b/third_party/blink/renderer/core/frame/local_frame_client_impl.h
-@@ -211,6 +211,8 @@
+@@ -211,6 +211,7 @@
        const WebMediaPlayerSource&,
        WebMediaPlayerClient*) override;
    RemotePlaybackClient* CreateRemotePlaybackClient(HTMLMediaElement&) override;
 +  bool ParcMoveWebMediaPlayer(HTMLMediaElement&) override;
-+  bool ParcMoveWebMediaPlayerCdmFactories(HTMLMediaElement&) override;
    void DidChangeScrollOffset(mojom::blink::ScrollType) override;
    void NotifyCurrentHistoryItemChanged() override;
    void DidUpdateCurrentHistoryItem() override;

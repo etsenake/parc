@@ -97,6 +97,10 @@ class FairPlayRendererAdapter final
   // while the answer is on its way. |closer| closes the observer when the
   // adapter is destroyed.
   void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
+  // For the frame a Safari-identity page moved the element to: the current
+  // mute holds until that frame answers, so a move within a tab never cuts
+  // the sound. |closer| replaces the old frame's.
+  void ReplaceMuteStateObserverCloser(base::ScopedClosureRunner closer);
 
   // parc::fairplay::FairPlayRendererClient implementation.
   void OnNeedData(parc::fairplay::StreamId stream) override;

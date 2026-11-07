@@ -281,9 +281,32 @@ void FairPlayRendererClient::OnRendererExtension(
     return;
   }
   renderer_extension_.Bind(std::move(extension), media_task_runner_);
+  if (pending_mute_state_handoff_) {
+    renderer_extension_->FollowMuteStateHandoff(
+        *std::exchange(pending_mute_state_handoff_, std::nullopt));
+  }
   if (pending_track_change_) {
     std::move(pending_track_change_).Run();
   }
+}
+
+void FairPlayRendererClient::FollowMuteStateHandoff(
+    const std::optional<base::UnguessableToken>& handoff,
+    uint64_t order) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (order <= mute_state_handoff_order_) {
+    return;
+  }
+  mute_state_handoff_order_ = order;
+  pending_mute_state_handoff_.reset();
+  if (!handoff) {
+    return;
+  }
+  if (!renderer_extension_) {
+    pending_mute_state_handoff_ = handoff;
+    return;
+  }
+  renderer_extension_->FollowMuteStateHandoff(*handoff);
 }
 
 void FairPlayRendererClient::PaintHoleFrame() {
