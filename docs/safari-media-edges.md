@@ -45,8 +45,8 @@ Unchecked claims are labelled **unchecked**.
 | `third_party/blink/renderer/platform/media/web_media_player_impl.cc` | 4,242 | 4,242 |
 | `media/base/pipeline_impl.cc` | 1,861 | 1,861 |
 | `media/filters/pipeline_controller.cc` | 478 | 478 |
-| `media/filters/chunk_demuxer.cc` | 1,658 | 0 |
-| `media/filters/source_buffer_state.cc` | 931 | 0 |
+| `media/filters/chunk_demuxer.cc` | 1,658 | 1,658 |
+| `media/filters/source_buffer_state.cc` | 931 | 931 |
 | `media/filters/source_buffer_stream.cc` | 2,029 | 0 |
 | `third_party/blink/renderer/modules/mediasource/media_source.cc` | 1,652 | 0 |
 | `third_party/blink/renderer/modules/mediasource/source_buffer.cc` | 2,237 | 0 |
@@ -344,3 +344,39 @@ WebKit keeps the position. Part of HME-26, **in progress** (fix agent E7).
 
 Seeks during seeks are coalesced (`:65-86, 273-288`), as WebKit queues the
 latest (`HTMLMediaElement.cpp:4136-4145`). **Same.**
+
+### `chunk_demuxer.cc`
+
+**CD-1. Adding a SourceBuffer after metadata.** Chromium
+`chunk_demuxer.cc:646-718, 1430-1489` accepts `AddId` only until every
+SourceBuffer's first init segment has arrived (`kReachedIdLimit` after that),
+which Blink turns into `QuotaExceededError`. WebKit's AVFoundation Media
+Source adds a SourceBuffer whenever the source is open
+(`MediaSource.cpp` `addSourceBuffer`, `MediaSourcePrivateAVFObjC.mm:117-141`).
+A player that adds an audio SourceBuffer after the video one started
+fails in Parc. **Open** (see `media_source.cc` below).
+
+Seeks wait for data at the target (`:512-541, 1017-1022`), end of stream
+before any init segment is a format error (`:1305-1312`), buffered ranges
+intersect across SourceBuffers with the end extended once ended
+(`:1592-1605`, `source_buffer_state.cc:72-122`) and duration follows the
+MSE duration change rules (`:1192-1254, 1537-1585`), as in WebKit
+(`MediaSource.cpp`, `MediaSourcePrivate.cpp:computeBufferedRanges`).
+**Same.** A disabled stream returns end of stream (`:267-282, 315-329`):
+a page turning its own video track off is one of Josh's cuts.
+
+### `source_buffer_state.cc`
+
+**SBS-1. Init segments that don't match the declared codecs.** Chromium
+`source_buffer_state.cc:533-574, 576-800` fails an append whose init
+segment has a codec missing from the type given to `addSourceBuffer` (or
+lacks a declared codec's track). WebKit never compares them
+(`SourceBuffer.cpp:780-1090`, `SourceBufferPrivate.cpp:910-990`): it fails
+only an init segment with no tracks, a later one whose track counts differ,
+or unknown ids among several tracks of a type. Sites with loose codec
+strings play in Safari and fail in Parc. **In progress** (fix agent SBS-1).
+
+Clear Dolby Vision in Media Source (`:675-698`) is **handled** on
+Safari-identity pages (`ParcSetClearDolbyVisionAllowed`). In-band text
+tracks in Media Source are off in Safari too (`TextTracksInMSEEnabled`
+defaults false, `UnifiedWebPreferences.yaml:6413-6420`). **Same.**
