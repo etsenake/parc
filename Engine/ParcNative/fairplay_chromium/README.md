@@ -231,18 +231,36 @@ EME's false, when there are none), other types reject with NotSupported.
 
 ## Known gaps
 
-- `MediaKeys` set after the FairPlay Renderer has played clear samples (Dolby
-  Vision started without keys) aren't attached: AVFoundation takes key
-  recipients only before they process media, and per-sample keys
-  (`AVSampleBufferAttachContentKey`) need an entitlement only WebKit's GPU
-  process has, so `setMediaKeys()` rejects. Keys set before the first sample
-  attach as usual.
+- FairPlay keys that arrive after playback started, and a switch into Dolby
+  Vision while Chromium's renderer plays, cost one rebuffer that Safari
+  doesn't have. Safari attaches each sample's key itself
+  (`AVSampleBufferAttachContentKey`), so keys can come at any time, but that
+  needs the private `com.apple.private.coremedia.allow-fps-attachment`
+  entitlement only WebKit's GPU process has. Parc's renderers join the key
+  session as recipients instead, which AVFoundation allows only before they
+  process media. So `WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded`
+  restarts the pipeline with a suspend/resume cycle, as Windows does for a
+  hardware context reset: when FairPlay keys attach to Chromium's renderer
+  (a clear start in H.264, HEVC, AV1 or Dolby Vision) or to a FairPlay
+  Renderer created without them, and when a SourceBuffer takes Dolby Vision
+  while Chromium's renderer plays. The new FairPlay Renderer gets the CDM
+  before its first sample. The page sees at most `waiting` and `playing`:
+  no `error` or `emptied`, and `currentTime`, `paused` and `playbackRate`
+  stay. A FairPlay Renderer that gets the keys before processing media
+  (setMediaKeys before or soon after the first append) attaches them in place
+  and restarts once anyway, before showing anything.
+- Dolby Vision with a track the FairPlay Renderer can't play fails where
+  Safari plays it: VP9 video before a switch into Dolby Vision, Opus or
+  Vorbis audio alongside it, or a `changeType()` from Dolby Vision to VP9
+  (which throws NotSupportedError once the FairPlay Renderer plays). The core
+  plays H.264, HEVC, Dolby Vision and AV1 video and AAC, AC-3 and E-AC-3
+  audio; Safari's AVFoundation path decodes everything its Media Source
+  offers. Such a switch into Dolby Vision gets no restart, and fails at the
+  switch.
 - A page that turns its own video track off (`videoTracks`) ends video until
   the next seek; a disabled `ChunkDemuxerStream` answers with end of stream.
   The background-tab optimization that does the same is turned off for
   FairPlay players.
-- A `setMediaKeys` that arrives after a clear pipeline already chose
-  `RendererImpl` doesn't switch renderers (same as MediaFoundation upstream).
 - `setSinkId` isn't wired. The core has `SetAudioOutputDevice`, but
   `media::Renderer` has no sink switch, so it needs a client extension call.
 - Two FairPlay players in one frame can lose the speaker icon: upstream's
@@ -287,8 +305,8 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
   decision, November 6).
 - Dolby Vision in Media Source follows Safari, whose
   `AVSampleBufferDisplayLayer` decodes it clear or encrypted, with keys set
-  before, after or never. On a document presenting Safari's identity (keys
-  after clear samples aside, see Known gaps):
+  before, after or never. On a document presenting Safari's identity (with
+  one rebuffer where keys or Dolby Vision arrive late, see Known gaps):
   - A clear Dolby Vision init segment (a plain `dvhe`/`dvh1` sample entry, no
     `encv` or `tenc`, as in a clear lead) is accepted in profiles 5 and 8,
     whatever the key timing. `WebMediaPlayerImpl` tells the demuxer when the
@@ -306,8 +324,10 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
     Dolby Vision config and the core plays clear Chromium-framed DV5 to the end
     ([tests/FairPlay](../../../tests/FairPlay/README.md)). The browser lets
     Safari-identity frames create that renderer without a FairPlay CDM
-    (`parc::fairplay::SetSafariIdentityQuery`). Keys that arrive after that
-    renderer has played clear samples are a known gap (below).
+    (`parc::fairplay::SetSafariIdentityQuery`). A SourceBuffer that takes
+    Dolby Vision later (`changeType()`) makes the demuxer prefer that renderer
+    too (`Demuxer::ParcPrefersFairPlayRenderer`), and the player restarts into
+    it (Known gaps).
 - AC-3/E-AC-3 is ordinary codec support (Josh's decision, November 6): pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:

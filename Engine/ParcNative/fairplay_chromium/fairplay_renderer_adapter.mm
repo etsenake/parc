@@ -282,6 +282,15 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
     // once the renderers exist, before any sample is enqueued.
     fp::Result result = core_->SetCdm(cdm);
     success = result.ok();
+    if (result.exception == fp::Exception::kInvalidState) {
+      // The core already processed media (Dolby Vision started without
+      // keys), so its renderers can't join the key session any more:
+      // AVFoundation takes recipients only before. WebMediaPlayerImpl
+      // restarts the pipeline on this attach, and the new renderer gets the
+      // CDM before its first sample (ParcRestartIntoFairPlayIfNeeded), so
+      // accept it for that one. Protected samples wait here until then.
+      success = true;
+    }
     LOG_IF(ERROR, !success) << "FairPlay SetCdm: " << result.message;
   }
   cdm_attached_ = cdm_attached_ || success;

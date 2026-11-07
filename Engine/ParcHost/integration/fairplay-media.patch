@@ -878,7 +878,7 @@
 +
 +void Demuxer::ParcSetClearDolbyVisionAllowed(bool allowed) {}
 +
-+bool Demuxer::ParcIsClearDolbyVisionAllowed() {
++bool Demuxer::ParcPrefersFairPlayRenderer() {
 +  return false;
 +}
 +
@@ -928,7 +928,7 @@
  class MediaTracks;
  
  // WARNING: These values are reported to metrics. Entries should not be
-@@ -181,6 +184,68 @@
+@@ -181,6 +184,71 @@
  
    // Allow canChangeType to be disabled.
    virtual void DisableCanChangeType();
@@ -948,9 +948,12 @@
 +  // with keys set before, after or never, and so does the FairPlay Renderer
 +  // that Dolby Vision is routed to. Called on the main thread.
 +  virtual void ParcSetClearDolbyVisionAllowed(bool allowed);
-+  // Parc: the last value set above, read by the pipeline on the media thread
-+  // to route Dolby Vision to the FairPlay Renderer. False by default.
-+  virtual bool ParcIsClearDolbyVisionAllowed();
++  // Parc: whether the pipeline picks the FairPlay Renderer without a FairPlay
++  // CDM: a SourceBuffer took Dolby Vision where clear Dolby Vision is allowed
++  // (above), at the start or later (changeType()). That renderer also plays
++  // the H.264, HEVC or AV1 before a switch into Dolby Vision. Any thread.
++  // False by default.
++  virtual bool ParcPrefersFairPlayRenderer();
 +
 +  // Parc: hands the pipeline's CDM to a demuxer whose own player takes keys
 +  // (Safari's native HLS route, see MediaResource::GetParcNativeHlsSource()),
@@ -1077,25 +1080,24 @@
  
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
-@@ -705,6 +711,13 @@
+@@ -704,6 +710,13 @@
+   // in InitializeRenderer().
    cdm_context_ = cdm_context;
    std::move(cdm_attached_cb).Run(true);
- 
++
 +  // Parc: a demuxer whose own player takes keys (Safari's native HLS route)
 +  // gets the CDM now: its key requests may be waiting for it before any
 +  // renderer exists.
 +  if (demuxer_) {
 +    demuxer_->SetCdmForNativePlayer(cdm_context);
 +  }
-+
+ 
    // Continue Renderer creation if it's waiting for the CDM to be set.
    if (create_renderer_done_cb_)
-     CreateRendererInternal(std::move(create_renderer_done_cb_));
-@@ -733,6 +746,33 @@
-     }
+@@ -734,6 +747,28 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a FairPlay CDM's keys reach only the FairPlay Renderer hosted next
 +  // to it in the GPU process.
@@ -1105,15 +1107,10 @@
 +
 +  // Parc: Dolby Vision decodes only there too (AVFoundation, which Safari's
 +  // AVSampleBufferDisplayLayer uses for every Media Source video), with keys
-+  // or without, where the demuxer lets clear Dolby Vision through (the
-+  // documents allowed to create that renderer). The first stream is the
-+  // enabled one the renderer plays.
-+  if (demuxer_->ParcIsClearDolbyVisionAllowed()) {
-+    DemuxerStream* video = demuxer_->GetFirstStream(DemuxerStream::VIDEO);
-+    if (video &&
-+        video->video_decoder_config().codec() == VideoCodec::kDolbyVision) {
-+      renderer_type = RendererType::kFairPlay;
-+    }
++  // or without, once a SourceBuffer took it where the demuxer lets clear
++  // Dolby Vision through (the documents allowed to create that renderer).
++  if (demuxer_->ParcPrefersFairPlayRenderer()) {
++    renderer_type = RendererType::kFairPlay;
 +  }
 +
 +  // Parc: Safari's native HLS route plays through the demuxer's own player,
@@ -1122,10 +1119,11 @@
 +    renderer_type = RendererType::kFairPlayHls;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
-@@ -1146,6 +1186,12 @@
+   if (!default_renderer_ ||
+@@ -1146,6 +1181,12 @@
      return;
    }
  
@@ -1190,7 +1188,7 @@
    }
 --- a/media/filters/chunk_demuxer.cc
 +++ b/media/filters/chunk_demuxer.cc
-@@ -140,8 +140,26 @@
+@@ -140,6 +140,24 @@
      CompletePendingReadIfPossible_Locked();
  
    return true;
@@ -1206,32 +1204,30 @@
 +                                          base::TimeDelta duration) {
 +  base::AutoLock auto_lock(lock_);
 +  stream_->ParcRemoveBefore(end, duration);
- }
- 
++}
++
 +void ChunkDemuxerStream::ParcRemoveFrom(base::TimeDelta start,
 +                                        base::TimeDelta duration) {
 +  base::AutoLock auto_lock(lock_);
 +  stream_->ParcRemoveFrom(start, duration);
-+}
-+
+ }
+ 
  void ChunkDemuxerStream::Remove(base::TimeDelta start,
-                                 base::TimeDelta end,
-                                 base::TimeDelta duration) {
-@@ -527,6 +545,14 @@
-     cancel_next_seek_ = false;
-     RunSeekCB_Locked(PIPELINE_OK);
+@@ -529,6 +547,14 @@
      return;
-+  }
-+
+   }
+ 
 +  // Parc: a fast seek set for this target applies to this seek; it lands
 +  // once the target's data is buffered (RunSeekCB_Locked).
 +  parc_fast_seek_.reset();
 +  parc_fast_seek_landing_.reset();
 +  if (parc_requested_fast_seek_ && parc_requested_fast_seek_->target == time) {
 +    parc_fast_seek_ = std::exchange(parc_requested_fast_seek_, std::nullopt);
-   }
- 
++  }
++
    SeekAllSources(time);
+   StartReturningData();
+ 
 @@ -634,6 +660,8 @@
  
    AbortPendingReads_Locked();
@@ -1285,16 +1281,18 @@
  ChunkDemuxer::Status ChunkDemuxer::AddId(
      const std::string& id,
      std::unique_ptr<AudioDecoderConfig> audio_config) {
-@@ -762,6 +827,8 @@
+@@ -762,6 +827,10 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
 +  source_state->ParcSetClearDolbyVisionAllowed(
 +      parc_clear_dolby_vision_allowed_);
++  source_state->ParcSetDolbyVisionCallback(base::BindRepeating(
++      &ChunkDemuxer::ParcOnDolbyVisionAppended, base::Unretained(this)));
  
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -892,6 +959,17 @@
+@@ -892,13 +961,59 @@
      }
    }
  
@@ -1312,10 +1310,10 @@
    std::move(change_completed_cb).Run(enabled_stream);
  }
  
-@@ -899,6 +977,24 @@
+ void ChunkDemuxer::DisableCanChangeType() {
    supports_change_type_ = false;
- }
- 
++}
++
 +void ChunkDemuxer::RestrictCanChangeType(ChangeTypeFilter filter) {
 +  base::AutoLock auto_lock(lock_);
 +  change_type_filter_ = std::move(filter);
@@ -1327,20 +1325,39 @@
 +  for (auto& entry : source_state_map_) {
 +    entry.second->ParcSetClearDolbyVisionAllowed(allowed);
 +  }
+ }
+ 
++bool ChunkDemuxer::ParcPrefersFairPlayRenderer() {
++  base::AutoLock auto_lock(lock_);
++  return parc_clear_dolby_vision_allowed_ && parc_dolby_vision_appended_;
 +}
 +
-+bool ChunkDemuxer::ParcIsClearDolbyVisionAllowed() {
++void ChunkDemuxer::ParcSetDolbyVisionAppendedCallback(
++    base::RepeatingClosure callback) {
 +  base::AutoLock auto_lock(lock_);
-+  return parc_clear_dolby_vision_allowed_;
++  parc_dolby_vision_appended_cb_ = std::move(callback);
++}
++
++void ChunkDemuxer::ParcOnDolbyVisionAppended() {
++  lock_.AssertAcquired();
++  if (std::exchange(parc_dolby_vision_appended_, true) ||
++      !parc_clear_dolby_vision_allowed_) {
++    return;
++  }
++  if (parc_dolby_vision_appended_cb_) {
++    parc_dolby_vision_appended_cb_.Run();
++  }
 +}
 +
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
                                      base::TimeDelta currentMediaTime,
                                      size_t newDataSize) {
-@@ -1139,7 +1235,44 @@
+@@ -1137,6 +1252,43 @@
+     return;
+ 
    source_state_map_[id]->Remove(start, end, duration_);
-   host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
- }
++  host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
++}
 +
 +void ChunkDemuxer::ParcPurgeForMemoryPressure(const std::string& id,
 +                                              base::TimeDelta media_time,
@@ -1348,7 +1365,7 @@
 +  DVLOG(1) << __func__ << "(" << id << ", " << media_time.InSecondsF() << ", "
 +           << active << ")";
 +  base::AutoLock auto_lock(lock_);
- 
++
 +  auto itr = source_state_map_.find(id);
 +  if (itr == source_state_map_.end() || state_ == SHUTDOWN ||
 +      duration_ == kNoTimestamp) {
@@ -1376,24 +1393,21 @@
 +      media_time, active, duration_,
 +      SourceBufferState::ComputeRangesIntersection(active_ranges, ended),
 +      audio);
-+  host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
-+}
-+
- bool ChunkDemuxer::CanChangeType(const std::string& id,
-                                  const std::string& content_type,
-                                  const std::string& codecs) {
-@@ -1162,6 +1295,10 @@
-     return false;
-   }
+   host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
+ }
  
-+  if (change_type_filter_ && !change_type_filter_.Run(content_type, codecs)) {
+@@ -1159,6 +1311,10 @@
+   DCHECK(IsValidId_Locked(id));
+ 
+   if (!supports_change_type_) {
 +    return false;
 +  }
 +
-   // CanChangeType() doesn't care if there has or hasn't been received a first
-   // initialization segment for the source buffer corresponding to |id|.
++  if (change_type_filter_ && !change_type_filter_.Run(content_type, codecs)) {
+     return false;
+   }
  
-@@ -1598,6 +1735,10 @@
+@@ -1598,6 +1754,10 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -1404,7 +1418,7 @@
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
  
-@@ -1650,6 +1791,28 @@
+@@ -1650,6 +1810,28 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -1467,17 +1481,20 @@
  
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -313,6 +324,9 @@
+@@ -313,6 +324,12 @@
    void SetPlaybackRate(double rate) override {}
  
    void DisableCanChangeType() override;
 +  void RestrictCanChangeType(ChangeTypeFilter filter) override;
 +  void ParcSetClearDolbyVisionAllowed(bool allowed) override;
-+  bool ParcIsClearDolbyVisionAllowed() override;
++  bool ParcPrefersFairPlayRenderer() override;
++  // Parc: run, posted, the first time a SourceBuffer takes Dolby Vision where
++  // clear Dolby Vision is allowed (see ParcPrefersFairPlayRenderer()).
++  void ParcSetDolbyVisionAppendedCallback(base::RepeatingClosure callback);
  
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -379,6 +393,14 @@
+@@ -379,6 +396,14 @@
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
  
@@ -1492,15 +1509,20 @@
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
    // |content_type| indicates the ContentType of the MIME type for the data that
-@@ -597,6 +619,30 @@
+@@ -597,6 +622,35 @@
        track_id_to_demux_stream_map_;
  
    bool supports_change_type_ = true;
 +  // Parc: see Demuxer::RestrictCanChangeType(). Guarded by `lock_`.
 +  ChangeTypeFilter change_type_filter_;
 +  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed(), handed to every
-+  // SourceBufferState. Guarded by `lock_`.
++  // SourceBufferState, and Demuxer::ParcPrefersFairPlayRenderer(). Guarded by
++  // `lock_`.
 +  bool parc_clear_dolby_vision_allowed_ = false;
++  bool parc_dolby_vision_appended_ = false;
++  base::RepeatingClosure parc_dolby_vision_appended_cb_;
++  // Parc: a SourceBufferState took Dolby Vision. Called with `lock_` held.
++  void ParcOnDolbyVisionAppended();
 +
 +  // Parc: where a fast seek to |target| lands, WebKit's
 +  // SourceBufferPrivate::computeSeekTime over the active source buffers
@@ -1525,7 +1547,7 @@
  }  // namespace media
 --- a/media/filters/demuxer_manager.cc
 +++ b/media/filters/demuxer_manager.cc
-@@ -230,6 +230,17 @@
+@@ -230,8 +230,23 @@
  
  void DemuxerManager::DisableDemuxerCanChangeType() {
    demuxer_->DisableCanChangeType();
@@ -1542,8 +1564,14 @@
 +  }
  }
  
++bool DemuxerManager::ParcDemuxerPrefersFairPlayRenderer() {
++  return demuxer_ && demuxer_->ParcPrefersFairPlayRenderer();
++}
++
  PipelineStatus DemuxerManager::CreateDemuxer(
-@@ -251,7 +262,17 @@
+     bool load_media_source,
+     DataSource::Preload preload,
+@@ -251,7 +266,17 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    if (hls_fallback_ || IsManifestDemuxerURL()) {
      std::unique_ptr<Demuxer> demuxer;
@@ -1562,7 +1590,7 @@
      SetDemuxer(std::move(demuxer));
      return std::move(on_demuxer_created)
          .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
-@@ -382,8 +403,39 @@
+@@ -382,8 +407,39 @@
      return !demuxer_->IsSeekable();
    }
    return false;
@@ -1574,15 +1602,15 @@
 +    return std::nullopt;
 +  }
 +  return demuxer_->GetParcNativeTimeline();
-+}
-+
+ }
+ 
 +void DemuxerManager::ParcSetFastSeek(base::TimeDelta target,
 +                                     base::TimeDelta tolerance_before) {
 +  if (demuxer_) {
 +    demuxer_->ParcSetFastSeek(target, tolerance_before);
 +  }
- }
- 
++}
++
 +#if BUILDFLAG(IS_MAC)
 +void DemuxerManager::ParcProvideClearKey(std::string key_id,
 +                                         std::vector<uint8_t> key) {
@@ -1602,7 +1630,7 @@
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    return loaded_url_.path().ends_with(".m3u8");
-@@ -472,8 +524,82 @@
+@@ -472,8 +528,82 @@
                base::BindRepeating(&DemuxerManager::DemuxerRequestsSeek,
                                    weak_factory_.GetWeakPtr())),
            std::move(engine), media_log_.get()));
@@ -1720,7 +1748,7 @@
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +130,11 @@
+@@ -111,6 +130,14 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -1729,10 +1757,13 @@
 +  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed(). No-op before the
 +  // demuxer exists.
 +  void ParcSetDemuxerClearDolbyVisionAllowed(bool allowed);
++  // Parc: see Demuxer::ParcPrefersFairPlayRenderer(). False before the
++  // demuxer exists.
++  bool ParcDemuxerPrefersFairPlayRenderer();
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +164,17 @@
+@@ -140,6 +167,17 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -1750,7 +1781,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +189,21 @@
+@@ -154,6 +192,21 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -3219,10 +3250,12 @@
  namespace blink {
  
  namespace {
-@@ -168,6 +178,47 @@
+@@ -166,7 +176,48 @@
+     CrossThreadOnceFunction<void(media::OutputDeviceStatus)> callback) {
+   sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
- }
- 
++}
++
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, and Dolby Vision profile 8, which it plays
@@ -3261,12 +3294,11 @@
 +    }
 +  }
 +  return true;
-+}
+ }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kDisableBackgroundMediaSuspend)) {
 @@ -356,7 +407,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
@@ -3328,10 +3360,12 @@
  }
  
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-@@ -1498,6 +1584,21 @@
-     return WebTimeRanges();
-   }
+@@ -1496,6 +1582,21 @@
  
+   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
+     return WebTimeRanges();
++  }
++
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -3345,16 +3379,13 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-+  }
-+
-   if (demuxer_manager_->IsLiveContent()) {
-     return WebTimeRanges();
    }
-@@ -1694,7 +1795,59 @@
-     media::EmeInitDataType init_data_type,
+ 
+   if (demuxer_manager_->IsLiveContent()) {
+@@ -1695,6 +1796,58 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
-+
+ 
 +  // Parc: the MP4 parser reports FairPlay's "sinf" init data for every
 +  // protected track, as Safari's Media Source does. A Media Source element of
 +  // a document presenting Safari's identity hears only that, as Safari's
@@ -3377,7 +3408,7 @@
 +  if (parc_safari_media_source) {
 +    encrypted_client_->ParcWebKitMediaSourceKeyNeeded(init_data);
 +  }
- 
++
 +  // Parc: and only while no session of the element's MediaKeys has a key
 +  // request for a key ID it names, as Safari checks
 +  // (AudioVideoRendererAVFObjC::setInitData). The FairPlay CDM answers from
@@ -3499,7 +3530,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,10 +2048,29 @@
+@@ -1820,10 +2048,85 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3516,6 +3547,62 @@
 +}
 +
 +#if BUILDFLAG(IS_MAC)
++void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  // Before the first renderer, the pipeline picks the FairPlay one itself.
++  if (!parc_renderer_created_ ||
++      renderer_type_ == media::RendererType::kFairPlayHls) {
++    return;
++  }
++  const bool fairplay_cdm =
++      cdm_context_ref_ &&
++      cdm_context_ref_->GetCdmContext()->RequiresFairPlayRenderer();
++  if (renderer_type_ == media::RendererType::kFairPlay) {
++    // It plays the current streams already; only the keys are missing (its
++    // adapter accepted the CDM for the renderer this restart makes).
++    if (!fairplay_cdm || parc_renderer_had_fairplay_cdm_) {
++      return;
++    }
++  } else if ((!fairplay_cdm &&
++              !demuxer_manager_->ParcDemuxerPrefersFairPlayRenderer()) ||
++             !ParcFairPlayPlaysCurrentStreams()) {
++    return;
++  }
++  ScheduleRestart();
++}
++
++bool WebMediaPlayerImpl::ParcFairPlayPlaysCurrentStreams() const {
++  if (pipeline_metadata_.has_video) {
++    const media::VideoDecoderConfig& video =
++        pipeline_metadata_.video_decoder_config;
++    switch (video.codec()) {
++      case media::VideoCodec::kH264:
++      case media::VideoCodec::kHEVC:
++      case media::VideoCodec::kAV1:
++        break;
++      case media::VideoCodec::kDolbyVision:
++        if (video.profile() != media::DOLBYVISION_PROFILE5 &&
++            video.profile() != media::DOLBYVISION_PROFILE8) {
++          return false;
++        }
++        break;
++      default:
++        return false;
++    }
++  }
++  if (pipeline_metadata_.has_audio) {
++    switch (pipeline_metadata_.audio_decoder_config.codec()) {
++      case media::AudioCodec::kAAC:
++      case media::AudioCodec::kAC3:
++      case media::AudioCodec::kEAC3:
++        break;
++      default:
++        return false;
++    }
++  }
++  return true;
++}
++
 +bool WebMediaPlayerImpl::ParcClearDolbyVisionAllowed() {
 +  if (PresentsParcSafariIdentity()) {
 +    return true;
@@ -3529,11 +3616,22 @@
  
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-@@ -1846,6 +2093,11 @@
+@@ -1841,11 +2144,22 @@
+       set_cdm_result_->Complete();
+       set_cdm_result_.reset();
+     }
++#if BUILDFLAG(IS_MAC)
++    ParcRestartIntoFairPlayIfNeeded();
++#endif  // BUILDFLAG(IS_MAC)
+ 
+     return;
    }
  
    pending_cdm_context_ref_.reset();
 +#if BUILDFLAG(IS_MAC)
++  // Parc: the renderer may have been made while this CDM was pending, so it
++  // can't count on it (see ParcRestartIntoFairPlayIfNeeded()).
++  parc_renderer_had_fairplay_cdm_ = false;
 +  // Parc: the CDM that stays attached decides again.
 +  demuxer_manager_->ParcSetDemuxerClearDolbyVisionAllowed(
 +      ParcClearDolbyVisionAllowed());
@@ -3541,7 +3639,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1988,6 +2240,12 @@
+@@ -1988,6 +2302,15 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3550,11 +3648,14 @@
 +  // identity, or by a CDM set before the demuxer existed (MediaKeys set
 +  // before loading).
 +  demuxer->ParcSetClearDolbyVisionAllowed(ParcClearDolbyVisionAllowed());
++  demuxer->ParcSetDolbyVisionAppendedCallback(
++      base::BindPostTaskToCurrentDefault(blink::BindRepeating(
++          &WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded, weak_this_)));
 +#endif  // BUILDFLAG(IS_MAC)
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -3018,11 +3276,29 @@
+@@ -3018,12 +3341,41 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -3580,11 +3681,23 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
-+#endif  // BUILDFLAG(IS_MAC)
  
++  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
++  // attached or attaching now before this renderer's Initialize().
++  parc_renderer_created_ = true;
++  parc_renderer_had_fairplay_cdm_ = false;
++  for (media::CdmContextRef* ref :
++       {cdm_context_ref_.get(), pending_cdm_context_ref_.get()}) {
++    if (ref && ref->GetCdmContext()->RequiresFairPlayRenderer()) {
++      parc_renderer_had_fairplay_cdm_ = true;
++    }
++  }
++#endif  // BUILDFLAG(IS_MAC)
++
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3314,14 @@
+     client_->DidUseAudioServiceChange(new_uses_audio_service);
+@@ -3038,6 +3390,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -3599,7 +3712,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3437,14 @@
+@@ -3153,6 +3513,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -3614,7 +3727,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +4085,29 @@
+@@ -3793,6 +4161,29 @@
      return false;
    }
  
@@ -3704,7 +3817,7 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -533,6 +563,14 @@
+@@ -533,7 +563,26 @@
  
    // Called when a CDM has been attached to the |pipeline_|.
    void OnCdmAttached(bool success);
@@ -3715,11 +3828,23 @@
 +  // presenting Safari's identity, or while the CDM being attached, else the
 +  // attached one, is FairPlay.
 +  bool ParcClearDolbyVisionAllowed();
-+#endif  // BUILDFLAG(IS_MAC)
  
++  // Parc: restarts the pipeline into the FairPlay Renderer (a suspend/resume
++  // cycle, as Windows does for a hardware context reset) when the current
++  // renderer can't play what follows: FairPlay keys attached to Chromium's
++  // renderer, or to a FairPlay Renderer created without them (its renderers
++  // can't join the key session once they processed media), or Dolby Vision
++  // appended while Chromium's renderer plays. The new renderer gets the CDM
++  // before its first sample. Only when that renderer plays the current
++  // streams' codecs.
++  void ParcRestartIntoFairPlayIfNeeded();
++  bool ParcFairPlayPlaysCurrentStreams() const;
++#endif  // BUILDFLAG(IS_MAC)
++
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-@@ -885,6 +923,14 @@
+   //   - toggles the memory usage reporting timer, and
+@@ -885,6 +934,21 @@
  
    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
    raw_ptr<UrlIndex> url_index_ = nullptr;
@@ -3728,6 +3853,13 @@
 +  // FairPlayHlsPlayerClient.StartLoad) through `url_index_`'s fetch context;
 +  // destroying it cancels them.
 +  std::unique_ptr<FairPlayHlsLoader> parc_hls_loader_;
++#endif  // BUILDFLAG(IS_MAC)
++#if BUILDFLAG(IS_MAC)
++  // Parc: see ParcRestartIntoFairPlayIfNeeded(). Whether a renderer was
++  // created, and whether the last one got a FairPlay CDM before its first
++  // sample.
++  bool parc_renderer_created_ = false;
++  bool parc_renderer_had_fairplay_cdm_ = false;
 +#endif  // BUILDFLAG(IS_MAC)
 +  // Parc: the tolerance ParcFastSeek() hands the Seek() it makes.
 +  base::TimeDelta parc_fast_seek_tolerance_;
@@ -4435,11 +4567,10 @@
  }
 --- a/media/filters/source_buffer_state.h
 +++ b/media/filters/source_buffer_state.h
-@@ -97,7 +97,35 @@
-   void Remove(base::TimeDelta start,
+@@ -98,6 +98,39 @@
                base::TimeDelta end,
                base::TimeDelta duration);
-+
+ 
 +  // Parc: WebKit's SourceBufferPrivate::memoryPressure for this
 +  // ManagedMediaSource SourceBuffer; see the definition. |buffered| is the
 +  // media source's buffered ranges and |audio| the union of the ranges of the
@@ -4462,37 +4593,41 @@
 +  // one would empty the element's buffered ranges and hold seeks forever.
 +  bool ParcLeftOutOfMediaSource() const;
 +  bool ParcPurgedWhileInactive() const { return parc_purged_while_inactive_; }
- 
++
 +  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed().
 +  void ParcSetClearDolbyVisionAllowed(bool allowed) {
 +    parc_clear_dolby_vision_allowed_ = allowed;
++  }
++  // Parc: run whenever an init segment's Dolby Vision video passes the check
++  // above (see ChunkDemuxer::ParcPrefersFairPlayRenderer()).
++  void ParcSetDolbyVisionCallback(base::RepeatingClosure callback) {
++    parc_dolby_vision_cb_ = std::move(callback);
 +  }
 +
    // Set the append window boundaries.
    void SetAppendWindow(base::TimeDelta start, base::TimeDelta end);
  
-@@ -256,6 +284,12 @@
+@@ -256,6 +289,14 @@
    // Keeps track of whether a media segment is being parsed.
    bool parsing_media_segment_;
  
 +  // Parc: see ParcLeftOutOfMediaSource().
 +  bool parc_purged_while_inactive_ = false;
 +
-+  // Parc: see ParcSetClearDolbyVisionAllowed().
++  // Parc: see ParcSetClearDolbyVisionAllowed() and
++  // ParcSetDolbyVisionCallback().
 +  bool parc_clear_dolby_vision_allowed_ = false;
++  base::RepeatingClosure parc_dolby_vision_cb_;
 +
    // Valid only while |parsing_media_segment_| is true. These flags enable
    // warning when the parsed media segment doesn't have frames for some track.
    std::map<StreamParser::TrackId, bool> media_segment_has_data_for_track_;
 --- a/media/filters/source_buffer_state.cc
 +++ b/media/filters/source_buffer_state.cc
-@@ -292,9 +292,155 @@
+@@ -295,6 +295,152 @@
+   }
+ }
  
-   for (const auto& it : video_streams_) {
-     it.second->Remove(start, end, duration);
-+  }
-+}
-+
 +// Parc: WebKit's SourceBufferPrivate::memoryPressure, which a
 +// ManagedMediaSource's SourceBuffers run as memory pressure rises. An
 +// inactive SourceBuffer is emptied. An active one runs evictFrames(
@@ -4617,15 +4752,15 @@
 +    if (it.second->GetMemoryUsage()) {
 +      return false;
 +    }
-   }
++  }
 +  for (const auto& it : video_streams_) {
 +    if (it.second->GetMemoryUsage()) {
 +      return false;
 +    }
 +  }
 +  return true;
- }
- 
++}
++
 +Ranges<base::TimeDelta> SourceBufferState::ParcAudioBufferedRanges(
 +    base::TimeDelta duration) const {
 +  Ranges<base::TimeDelta> ranges;
@@ -4654,10 +4789,11 @@
    for (const auto& it : audio_streams_) {
      if (it.second->IsSeekWaitingForData())
        return true;
-@@ -685,11 +836,20 @@
+@@ -684,17 +835,31 @@
+                  "kPlatformEncryptedDolbyVision feature is disabled.";
            return false;
          }
- 
++
 +        // Parc: where the demuxer allows it (a Safari-identity document, or
 +        // a FairPlay CDM), clear Dolby Vision of the profiles the FairPlay
 +        // Renderer plays (5, and 8) goes through too, as in Safari; see
@@ -4666,7 +4802,7 @@
 +            parc_clear_dolby_vision_allowed_ &&
 +            (video_config.profile() == DOLBYVISION_PROFILE5 ||
 +             video_config.profile() == DOLBYVISION_PROFILE8);
-+
+ 
          // If `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
          // specified which force allow Dolby Vision in Media Source.
          if (!base::FeatureList::IsEnabled(
@@ -4676,6 +4812,16 @@
            MEDIA_LOG(ERROR, media_log_)
                << "MSE playback of DolbyVision is only supported via platform "
                   "decryptor, but the provided DV track is not encrypted.";
+           return false;
+         }
++
++        // Parc: see ParcSetDolbyVisionCallback().
++        if (parc_dolby_vision_cb_) {
++          parc_dolby_vision_cb_.Run();
++        }
+       }
+ #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
+ 
 --- a/media/filters/source_buffer_state_unittest.cc
 +++ b/media/filters/source_buffer_state_unittest.cc
 @@ -11,7 +11,9 @@
@@ -4696,7 +4842,7 @@
  #include "testing/gtest/include/gtest/gtest.h"
  
  namespace media {
-@@ -166,8 +169,85 @@
+@@ -166,8 +169,95 @@
    std::vector<std::unique_ptr<ChunkDemuxerStream>> demuxer_streams_;
    raw_ptr<MockStreamParser, DanglingUntriaged> mock_stream_parser_;
    StreamParser::NewConfigCB new_config_cb_;
@@ -4736,6 +4882,8 @@
 +    sbs->SetParseWarningCallback(base::BindRepeating(
 +        &SourceBufferStateTest::OnParseWarningMock, base::Unretained(this)));
 +    sbs->ParcSetClearDolbyVisionAllowed(allowed);
++    sbs->ParcSetDolbyVisionCallback(base::BindRepeating(
++        [](int* count) { ++*count; }, &dolby_vision_taken_));
 +
 +    const gfx::Size size(16, 16);
 +    auto tracks = std::make_unique<MediaTracks>();
@@ -4750,32 +4898,40 @@
 +    return AppendDataAndReportTracks(sbs, std::move(tracks));
 +  }
 +
++  // How often ParcSetDolbyVisionCallback()'s callback ran (Dolby Vision
++  // taken, which routes the player to the FairPlay Renderer).
++  int dolby_vision_taken_ = 0;
++
 + private:
 +  base::test::ScopedFeatureList feature_list_;
  };
- 
++
 +TEST_F(SourceBufferStateClearDolbyVisionTest, RejectedWhereNotAllowed) {
 +  EXPECT_MEDIA_LOG(
 +      testing::HasSubstr("the provided DV track is not encrypted"));
 +  EXPECT_FALSE(AppendClearDolbyVision(false, DOLBYVISION_PROFILE5));
++  EXPECT_EQ(dolby_vision_taken_, 0);
 +}
 +
 +TEST_F(SourceBufferStateClearDolbyVisionTest, Profile5PlaysWhereAllowed) {
 +  EXPECT_FOUND_CODEC_NAME(Video, "dolbyvision");
 +  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
 +  EXPECT_TRUE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE5));
++  EXPECT_EQ(dolby_vision_taken_, 1);
 +}
-+
+ 
 +TEST_F(SourceBufferStateClearDolbyVisionTest, Profile8PlaysWhereAllowed) {
 +  EXPECT_FOUND_CODEC_NAME(Video, "dolbyvision");
 +  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
 +  EXPECT_TRUE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE8));
++  EXPECT_EQ(dolby_vision_taken_, 1);
 +}
 +
 +TEST_F(SourceBufferStateClearDolbyVisionTest, OtherProfilesStayRejected) {
 +  EXPECT_MEDIA_LOG(
 +      testing::HasSubstr("the provided DV track is not encrypted"));
 +  EXPECT_FALSE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE9));
++  EXPECT_EQ(dolby_vision_taken_, 0);
 +}
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 +

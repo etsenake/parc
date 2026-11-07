@@ -198,7 +198,8 @@ encrypted Dolby Vision is on. The choice among
 plain file, where clear Dolby Vision can't decode, and failing after its
 metadata loaded wouldn't fall back to the next `<source>`. In Media Source on
 a Safari-identity document, Dolby Vision 5 and 8 play clear or encrypted,
-with keys set before the first sample or never, through the FairPlay Renderer
+with keys set before, after or never, through the FairPlay Renderer (keys or
+a switch into Dolby Vision arriving late cost one rebuffer)
 ([fairplay_chromium/README.md](../Engine/ParcNative/fairplay_chromium/README.md),
 "Codec build flags"). `decodingInfo` on a Chrome page without a key system
 still answers no, and on a Safari-identity page answers profile 5 (above).
