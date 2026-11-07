@@ -11,11 +11,8 @@
 //   and `com.apple.fps.1_0` belong to WebKit's AVFoundation player: native
 //   HLS, see Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md). `keySystem`,
 //   `createSession(type, initData)`, and `isTypeSupported(keySystem, type)`
-//   answering for those key systems by what Parc's FairPlay path plays (an MP4
-//   container whose codecs are all ones FairPlay's CDM lists in
-//   fairplay-media.patch and that Media Source accepts). Netflix's DRM check is
-//   exactly `WebKitMediaKeys.isTypeSupported("com.apple.fps.2_0")`; Apple TV+'s
-//   MusicKit probes only `com.apple.fps.1_0`, which stays false.
+//   answering for those key systems by what Media Source plays, and true for
+//   `keyrelease`, as LegacyCDMPrivateAVFObjC does.
 // - `WebKitMediaKeySession` with WebKit's protocol: the first
 //   `webkitkeymessage` is the bytes "certificate"; `update(certificate)` sets
 //   the FairPlay certificate and sends the SPC; `update(ckc)` answers it and
@@ -147,17 +144,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     /^mp4a\.(?:40(?:\.\d+)?|67)$/,
     /^(?:ac-3|ec-3|alac|fLaC|Opus|ulaw|alaw|wvtt)$/,
   ];
-  const CONTAINER = /^\s*(?:video|audio)\/mp4\s*(?:;|$)/i;
   const CODECS_PARAMETER = /;\s*codecs\s*=\s*(?:"([^"]*)"|([^;]*))/i;
-  // The codecs of FairPlay's CdmCapability (GetFairPlayCdmInfo in
-  // fairplay-media.patch); Media Source then checks each one's details.
-  const FAIRPLAY_CODECS = [
-    /^avc[13](?:\.|$)/i,                 // H.264
-    /^(?:hvc1|hev1)(?:\.|$)/i,           // HEVC
-    /^(?:dvh1|dvhe)\.05(?:\.|$)/i,       // Dolby Vision profile 5
-    /^mp4a\.(?:40(?:\.\d+)?|6[678])$/i,  // AAC
-    /^(?:ac-3|ec-3|mp4a\.a[56])$/i,      // AC-3, E-AC-3
-  ];
   // The modern access the legacy keys are built on: every FairPlay codec, so
   // whatever the page plays is covered.
   const ACCESS_CONFIGURATIONS = [{
@@ -408,28 +395,16 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     return match ? +match[1] : 0;
   }
 
-  function fairPlayPlays(type) {
-    if (!CONTAINER.test(type)) {
-      return false;
-    }
-    const parameter = CODECS_PARAMETER.exec(type);
-    if (parameter) {
-      const list = parameter[1] !== undefined ? parameter[1] : parameter[2];
-      for (const codec of list.split(',')) {
-        const id = codec.trim();
-        if (!FAIRPLAY_CODECS.some((pattern) => pattern.test(id))) {
-          return false;
-        }
-      }
-    }
-    return !!mediaSourceSupports &&
-        apply(mediaSourceSupports, NativeMediaSource, [type]) === true;
-  }
+  // MediaPlayerPrivateMediaSourceAVFObjC::supportsTypeAndCodecs: what Media
+  // Source plays (Chromium's answer, taken before any page script).
+  const mediaSourcePlays = (type) => !!mediaSourceSupports &&
+      apply(mediaSourceSupports, NativeMediaSource, [type]) === true;
+  const asciiLower = (text) => text.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 
   // LegacyCDMPrivateAVFObjC::supportsMIMEType, and for the AVFoundation
   // player MediaPlayer::supportsKeySystem.
   const sessionTypeSupported = (kind, type) => kind === 'hls' ? avFoundationDecodes(type) :
-      type === 'keyrelease' || fairPlayPlays(type);
+      type === 'keyrelease' || mediaSourcePlays(type);
 
   // Event handler IDL attributes.
   function handlerOf(target, type) {
@@ -807,7 +782,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       generateHlsRequest(session, initData);
       return;
     }
-    if (type.toLowerCase() === 'keyrelease') {
+    if (asciiLower(type) === 'keyrelease') {
       // CDMSessionAVContentKeySession::generateKeyReleaseMessage without any
       // expired-session report.
       session.keyRelease = true;
@@ -886,8 +861,11 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       if (!kind) {
         return false;
       }
+      // LegacyCDMPrivateAVFObjC::supportsKeySystemAndMimeType answers
+      // "keyrelease" ignoring case, where supportsMIMEType doesn't.
       return contentType === '' ||
-          (kind === 'hls' ? avFoundationDecodes(contentType) : fairPlayPlays(contentType));
+          (kind === 'hls' ? avFoundationDecodes(contentType) :
+              asciiLower(contentType) === 'keyrelease' || mediaSourcePlays(contentType));
     }
   }
 

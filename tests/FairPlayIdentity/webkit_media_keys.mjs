@@ -229,53 +229,46 @@ const thrown = (fn) => {
   check(thrown(() => supports(Symbol('fps')))?.name === 'TypeError', 'a Symbol is not a DOMString');
 }
 
-// ---- Content types: what Parc's FairPlay path plays.
+// ---- Content types: what Media Source plays, as WebKit's legacy Media Source
+// CDM answers (LegacyCDMPrivateAVFObjC::supportsKeySystemAndMimeType).
 {
   const world = makeWorld();
   run(world, script);
   const supports = (type) => world.WebKitMediaKeys.isTypeSupported('com.apple.fps.3_0', type);
   const yes = [
-    'video/mp4',
-    'audio/mp4',
+    'video/mp4', 'audio/mp4', 'video/webm',
     'video/mp4; codecs="avc1.640028"',
-    'video/mp4; codecs="avc3.4d401f"',
     'VIDEO/MP4; CODECS="avc1.640028"',
     'video/mp4;codecs=avc1.640028',
     'video/mp4; codecs="hvc1.2.4.L153.B0"',
-    'video/mp4; codecs="hev1.1.6.L93.B0"',
     'video/mp4; codecs="dvh1.05.06"',
-    'video/mp4; codecs="dvhe.05.04"',
-    'audio/mp4; codecs="mp4a.40.2"',
-    'audio/mp4; codecs="mp4a.40.5"',
-    'audio/mp4; codecs="mp4a.40.42"',
     'audio/mp4; codecs="ec-3"',
-    'audio/mp4; codecs="ac-3"',
-    'audio/mp4; codecs="mp4a.a6"',
-    'video/mp4; codecs="avc1.640028, mp4a.40.2"',
-  ];
-  for (const type of yes) check(supports(type) === true, `FairPlay plays ${type}`);
-  const no = [
-    'video/mp4; codecs="av01.0.08M.08"',    // Media Source plays it, FairPlay's CDM doesn't list AV1
-    'video/mp4; codecs="vp09.00.10.08"',
+    'video/mp4; codecs="av01.0.08M.08"',
     'video/webm; codecs="vp9"',
-    'video/webm',
     'audio/mp4; codecs="opus"',
-    'audio/mp4; codecs="flac"',
-    'audio/mp4; codecs="mp4a.6B"',          // MP3
-    'video/mp4; codecs="dvhe.08.07"',       // profile 8 isn't offered
-    'video/mp4; codecs="avc1.640028,opus"',
+    'video/mp4; codecs="avc1.640028, mp4a.40.2"',
+    'keyrelease', 'KeyRelease',
+  ];
+  for (const type of yes) check(supports(type) === true, `${type} is supported`);
+  const no = [
+    'audio/mp4; codecs="mp4a.6B"',          // Media Source doesn't play it
+    'video/mp4; codecs="dvhe.08.07"',
     'video/mp4; codecs="avc1.640028,"',
     'video/mp4; codecs=""',
-    'video/mp4; codecs="avc1.zzz"',         // Media Source rejects it
+    'video/mp4; codecs="avc1.zzz"',
     'application/x-mpegurl',
     'application/vnd.apple.mpegurl',
     'video/mp2t',
-    'keyrelease',
     'mp4',
   ];
-  for (const type of no) check(supports(type) === false, `FairPlay doesn't play ${type}`);
+  for (const type of no) check(supports(type) === false, `${type} is not supported`);
   check(world.WebKitMediaKeys.isTypeSupported('com.apple.fps.1_0', 'video/mp4') === false,
         'a type never makes an unsupported key system supported');
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  check(thrown(() => keys.createSession('KeyRelease', new Uint8Array([1])))?.name === 'NotSupportedError' &&
+        thrown(() => keys.createSession('keyrelease', new Uint8Array([1]))) === null &&
+        thrown(() => keys.createSession('video/webm', new Uint8Array([1]))) === null,
+        'createSession: keyrelease case-sensitively, then what Media Source plays');
 }
 
 // ---- A page replacing MediaSource.isTypeSupported doesn't change the answers.
@@ -406,7 +399,7 @@ const thrown = (fn) => {
   check(name(() => keys.createSession('video/mp4', [1])) === 'TypeError', 'initData must be a Uint8Array');
   check(name(() => keys.createSession('', data)) === 'InvalidAccessError', 'an empty type');
   check(name(() => keys.createSession('video/mp4', new Uint8Array())) === 'InvalidAccessError', 'empty init data');
-  check(name(() => keys.createSession('video/webm', data)) === 'NotSupportedError', 'a type FairPlay does not play');
+  check(name(() => keys.createSession('video/mp2t', data)) === 'NotSupportedError', 'a type Media Source does not play');
   check(name(() => keys.createSession('KeyRelease', data)) === 'NotSupportedError', 'keyrelease is case-sensitive');
   check(name(() => world.WebKitMediaKeys.prototype.createSession.call({}, 'video/mp4', data)) === 'TypeError',
         'createSession checks its receiver');

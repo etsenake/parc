@@ -66,7 +66,7 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `decodingInfo` with `keySystemConfiguration` | supported | supported; Widevine refused on Safari identity | present | fp-eme-modern |
 | `MediaSource.isTypeSupported`, `canPlayType` (MP4) | Safari's answers incl. Dolby | identity patch answers Dolby audio and DV profile 5 like Safari | present | fp-eme-modern |
 | `canPlayType('application/vnd.apple.mpegurl')` and HLS `<video src>` | "maybe" | Chromium's | missing | fp-native-hls |
-| `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_N'/'3_N', type)` | legacy MSE CDM, by MSE support | fp-netflix-identity's probe object (`parc_webkit_media_keys.h`) | pending | fp-netflix-identity |
+| `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_N'/'3_N', type)` | legacy MSE CDM: `keyrelease` (ignoring case), else MSE support | the same (`parc_webkit_media_keys.h`) | present | fp-safari-eme-surface |
 | `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | false until native HLS exists | missing (flip when fp-native-hls lands) | fp-safari-eme-surface |
 | `WebKitMediaKeys.isTypeSupported('org.w3c.clearkey', 'application/x-mpegurl')` | true (HLS only) | false | missing (with HLS) | fp-safari-eme-surface |
 

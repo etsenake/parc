@@ -259,11 +259,10 @@ has it in windows only. The rows and what is still open are in
 - `WebKitMediaKeys.isTypeSupported(keySystem, type)` answers true for the key
   systems of WebKit's legacy Media Source CDM, `com.apple.fps.2_N` and
   `com.apple.fps.3_N` (`LegacyCDMPrivateAVFObjC`, the same pattern). With a
-  type, it answers whether Parc's FairPlay path plays it. That means an
-  `audio/mp4` or `video/mp4` type whose codecs are all ones FairPlay's CDM
-  lists (H.264, HEVC, Dolby Vision profile 5, AAC, AC-3, E-AC-3) and that
-  Chromium's `MediaSource.isTypeSupported` accepts. AV1 answers no, as the CDM
-  leaves it out.
+  type, it answers as that CDM does: true for `keyrelease` (ignoring case),
+  otherwise whether Media Source plays the type (Chromium's
+  `MediaSource.isTypeSupported`, taken before any page script). `createSession`
+  takes `keyrelease` only in lower case, as WebKit's `supportsMIMEType`.
 - `com.apple.fps` and `com.apple.fps.1_0` belong to WebKit's AVFoundation
   player, which plays HLS through `<video src>` with skd key requests. They
   answer false, and constructing `WebKitMediaKeys` with them throws
