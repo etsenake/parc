@@ -492,7 +492,12 @@ after the last append, then before the playhead, then from the back
 chunks (halving to 3 s) from the start up to before the playhead, then from
 the end back to the playable segment (`SourceBufferPrivate.cpp:703-776,
 1747-1830`). `appendBuffer()` throws `QuotaExceededError` at different
-points and different ranges disappear. **In progress** (fix agent SBST-1).
+points and different ranges disappear. **Fixed** e9a50704. Still differing:
+back eviction drops a longer track's tail that WebKit keeps; Parc removes
+whole GOPs where WebKit cuts frame by frame; Parc keeps the last appended GOP
+as its own range where WebKit removes it; and WebKit's cached evictable-size
+shortcut that skips the exception isn't modelled. **In progress** (fix agent
+SBST-1b).
 
 **SBST-2. Small gaps in `buffered`.** Chromium keeps separate ranges unless
 the gap is within twice the largest inter-buffer distance
