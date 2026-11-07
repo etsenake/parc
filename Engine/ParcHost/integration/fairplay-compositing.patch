@@ -22,17 +22,18 @@
  #include "third_party/skia/include/core/SkColor.h"
  #include "ui/accelerated_widget_mac/accelerated_widget_mac_export.h"
  #include "ui/gfx/geometry/rect.h"
-@@ -45,6 +46,9 @@
+@@ -45,6 +46,10 @@
    kVideo,
    // A CAMetalLayer that copies half-float or 10-bit IOSurfaces.
    kHDRCopier,
-+  // Parc: a CALayer this tree owns, hosting the layer a FairPlay renderer
-+  // registered in ProtectedLayerRegistry (an AVSampleBufferDisplayLayer).
++  // Parc: a CALayer this tree owns, hosting the layer a FairPlay player
++  // registered in ProtectedLayerRegistry (the MSE renderer's
++  // AVSampleBufferDisplayLayer or the native HLS player's AVPlayerLayer).
 +  kProtectedLayer,
  };
  
  // The CARendererLayerTree will construct a hierarchy of CALayers from a linear
-@@ -97,9 +101,16 @@
+@@ -97,9 +102,16 @@
    class ContentLayer;
    friend class ContentLayer;
  
@@ -50,7 +51,7 @@
    void MatchLayersToOldTree(CARendererLayerTree* old_tree);
  
    class RootLayer {
-@@ -242,7 +253,9 @@
+@@ -242,7 +254,9 @@
                   bool nearest_neighbor_filter,
                   const gfx::HDRMetadata& hdr_metadata,
                   gfx::ProtectedVideoType protected_video_type,
@@ -61,7 +62,7 @@
  
      ContentLayer(ContentLayer&& layer) = delete;
      ContentLayer(const ContentLayer&) = delete;
-@@ -252,6 +265,15 @@
+@@ -252,6 +266,15 @@
      ~ContentLayer();
      void CommitToCA(CALayer* last_committed_ca_layer);
  
@@ -77,7 +78,7 @@
      CARendererLayerTree* tree() { return parent_layer_->tree(); }
      void UpdateMapAndMatchOldLayers(CALayerMap& old_ca_layer_map,
                                      int& layer_order,
-@@ -298,6 +320,12 @@
+@@ -298,6 +321,12 @@
      // AVSampleBufferDisplayLayer, then |ca_layer| will point to |av_layer|.
      AVSampleBufferDisplayLayer* __strong av_layer_;
  
@@ -320,7 +321,7 @@
        case CALayerType::kDefault:
          if (pixel_format == 0) {
            // Grey is no IOSurface (a solid color layer).
-@@ -1412,4 +1496,107 @@
+@@ -1412,4 +1496,119 @@
  #endif
  }
  
@@ -394,6 +395,18 @@
 +    // which is otherwise flipped vertically (https://crbug.com/398425794).
 +    if (!av_layer.geometryFlipped) {
 +      av_layer.geometryFlipped = YES;
++    }
++  } else if ([protected_layer_ isKindOfClass:[AVPlayerLayer class]]) {
++    // The native HLS player's layer (NATIVE_HLS.md) fills the quad the same
++    // way. AVFoundation itself keeps FairPlay video from an AVPlayer out of
++    // screenshots and screen sharing; clear HLS can be captured, as in
++    // Safari. Its geometry is left alone: the flip above works around an
++    // AVSampleBufferDisplayLayer bug, and WebKit doesn't flip its
++    // AVPlayerLayer.
++    AVPlayerLayer* player_layer = static_cast<AVPlayerLayer*>(protected_layer_);
++    if (![player_layer.videoGravity
++            isEqualToString:AVLayerVideoGravityResize]) {
++      player_layer.videoGravity = AVLayerVideoGravityResize;
 +    }
 +  }
 +}
@@ -476,7 +489,7 @@
  }
  
  void UpdateCALayerTree(std::unique_ptr<ui::CARendererLayerTree>& ca_layer_tree,
-@@ -976,6 +992,152 @@
+@@ -976,6 +992,192 @@
      EXPECT_EQ(av_layer_new, av_layer_old);
      EXPECT_FALSE(av_layer_new.preventsCapture);
    }
@@ -565,6 +578,46 @@
 +  EXPECT_EQ(1, CGColorGetAlpha(host.backgroundColor));
 +  const CGFloat* rgba = CGColorGetComponents(host.backgroundColor);
 +  EXPECT_EQ(0, rgba[0] + rgba[1] + rgba[2]);
++}
++
++// Parc: the native HLS player's AVPlayerLayer is placed like the MSE
++// renderer's layer, filling the quad at the video's aspect ratio, and moves
++// to the tree that committed it last.
++TEST_F(CALayerTreeTest, ProtectedPlayerLayer) {
++  AVPlayerLayer* player_layer = [AVPlayerLayer playerLayerWithPlayer:nil];
++  const base::UnguessableToken token = base::UnguessableToken::Create();
++  ASSERT_TRUE(ui::ProtectedLayerRegistry::Register(token, player_layer));
++
++  CALayerProperties properties;
++  properties.protected_layer_token = token;
++  properties.protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
++  properties.background_color = SkColors::kTransparent;
++  properties.is_clipped = false;
++  properties.rect = gfx::Rect(16, 32, 64, 128);
++  std::unique_ptr<ui::CARendererLayerTree> ca_layer_tree;
++
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  CALayer* host = GetOnlyContentLayer();
++  EXPECT_FALSE([host isKindOfClass:[AVPlayerLayer class]]);
++  EXPECT_EQ(host, player_layer.superlayer);
++  EXPECT_EQ(gfx::Rect(0, 0, 64, 128),
++            gfx::ToEnclosingRect(gfx::RectF(player_layer.frame)));
++  EXPECT_NSEQ(AVLayerVideoGravityResize, player_layer.videoGravity);
++  EXPECT_FALSE(player_layer.geometryFlipped);
++
++  CALayer* other_superlayer = [[CALayer alloc] init];
++  std::unique_ptr<ui::CARendererLayerTree> other_tree;
++  properties.rect = gfx::Rect(0, 0, 32, 18);
++  UpdateCALayerTree(other_tree, &properties, other_superlayer);
++  EXPECT_EQ(OnlyContentLayerIn(other_superlayer), player_layer.superlayer);
++  EXPECT_EQ(gfx::Rect(0, 0, 32, 18),
++            gfx::ToEnclosingRect(gfx::RectF(player_layer.frame)));
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  EXPECT_EQ(GetOnlyContentLayer(), player_layer.superlayer);
++
++  ui::ProtectedLayerRegistry::Unregister(token);
++  UpdateCALayerTree(ca_layer_tree, &properties, superlayer_);
++  EXPECT_EQ(0u, GetOnlyContentLayer().sublayers.count);
 +}
 +
 +// Parc: Picture in Picture moves a FairPlay layer between the page's tree and

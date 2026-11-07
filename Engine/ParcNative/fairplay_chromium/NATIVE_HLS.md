@@ -222,6 +222,15 @@ every natural-size change, exactly like `FairPlayRendererClient`. cc makes a
 scrolling, clipping, PiP and fullscreen behave as for MSE playback. Teardown
 unregisters the layer before the player goes.
 
+The compositor fills an `AVPlayerLayer` like the MSE layer, with Resize
+gravity (cc already laid the quad out at the video's aspect ratio). It sets no
+capture flag: AVFoundation keeps FairPlay video from an `AVPlayer` out of
+screenshots and screen sharing by itself, and clear HLS stays capturable, as
+in Safari. `tests/FairPlay/hls_presentation` (Display) proves on this Mac that
+a layer made on a queue with no run loop renders, fills its host, and keeps
+playing when moved between windows' hosts (PiP), back, and after a spell in no
+tree (a hidden tab).
+
 ## Media element state and events
 
 `AVPlayerItem` is the authority, as in Safari; the render process mirrors it.

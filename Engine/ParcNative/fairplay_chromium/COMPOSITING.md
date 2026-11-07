@@ -22,7 +22,10 @@ Mojo services).
    `media::Renderer` creates a `base::UnguessableToken`, then calls
    `ui::ProtectedLayerRegistry::Register(token, layer)` with its
    `AVSampleBufferDisplayLayer` before the token leaves the process. The
-   registry is thread-safe and retains the layer until `Unregister`.
+   registry is thread-safe and retains the layer until `Unregister`. The
+   native HLS player ([NATIVE_HLS.md](NATIVE_HLS.md), not built yet) will
+   register its `AVPlayerLayer` the same way, and it is placed the same way,
+   except as noted in step 8.
 2. **Renderer process.** The renderer client receives `(token, natural_size)`
    over its client extension and paints
    `media::VideoFrame::CreateVideoHoleFrame(token, natural_size, ts)` through
@@ -73,6 +76,11 @@ Mojo services).
      `AVSampleBufferDisplayLayer` it also sets `preventsCapture = YES`,
      `videoGravity = AVLayerVideoGravityResize` (as Chromium's own video layers
      do) and `geometryFlipped = YES` (Chromium's HDR-transform workaround).
+     On the native HLS player's `AVPlayerLayer` ([NATIVE_HLS.md](NATIVE_HLS.md))
+     it sets only the Resize gravity: AVFoundation keeps FairPlay video from an
+     `AVPlayer` out of captures by itself (clear HLS stays capturable, as in
+     Safari), and the flip is an `AVSampleBufferDisplayLayer` workaround that
+     WebKit doesn't apply to its `AVPlayerLayer`.
    - The host sits in the same back-to-front sibling order as the quad, so page
      content drawn over the video (controls, subtitles) stays above it.
    - Old-tree matching keys a protected content layer by its registered layer,
