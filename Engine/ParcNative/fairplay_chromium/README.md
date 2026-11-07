@@ -270,22 +270,39 @@ returns.
 `enable_platform_ac3_eac3_audio=true`. Netflix and Apple TV+ pick Dolby
 Vision 5 and AC-3/E-AC-3 when they see Safari.
 
-- Dolby Vision is encrypted-only: `kPlatformEncryptedDolbyVision` is on by
-  default for macOS too (`media_switches.cc`). `MediaSource.isTypeSupported`
-  still says no to `dvh1`/`dvhe`, clear Dolby Vision is rejected at the init
-  segment, and EME offers it only through key systems whose codecs list it,
-  which means FairPlay and not Widevine. That is Chromium's model on Windows.
-  FairPlay's `CdmInfo` lists profile 5 only. The adapter and core can also play
-  profile 8, but sites aren't offered it (Josh's decision, November 6).
+- Dolby Vision plays only through FairPlay: `kPlatformEncryptedDolbyVision` is
+  on by default for macOS too (`media_switches.cc`). `MediaSource.isTypeSupported`
+  still says no to `dvh1`/`dvhe`, and EME offers it only through key systems
+  whose codecs list it, which means FairPlay and not Widevine. That is
+  Chromium's model on Windows. FairPlay's `CdmInfo` lists profile 5 only. The
+  adapter and core can also play profile 8, but sites aren't offered it (Josh's
+  decision, November 6).
+- A clear Dolby Vision init segment is accepted while the player's CDM is
+  FairPlay, in profiles 5 and 8; otherwise it is rejected as on Windows ("only
+  supported via platform decryptor"). Netflix starts Dolby Vision with a
+  clear-lead header (a plain `dvhe` sample entry, no `encv` or `tenc`) and its
+  encrypted init segment comes later. Safari plays that, and so does the
+  FairPlay Renderer: the adapter takes an unencrypted Dolby Vision config and
+  the core plays clear Chromium-framed DV5 to the end
+  ([tests/FairPlay](../../../tests/FairPlay/README.md)). Without this, Netflix
+  failed with S7381-1204 once its cached capabilities picked Dolby Vision.
+  `WebMediaPlayerImpl` decides on the main thread, when the CDM is set (before
+  the `setMediaKeys()` promise resolves) and when the Media Source opens, and
+  tells the demuxer (`Demuxer::ParcSetClearDolbyVisionAllowed`), which hands
+  it to each `SourceBufferState`. The global
+  `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` stays off, so
+  `isTypeSupported` answers the same for every document. A clear Dolby Vision
+  init segment appended before FairPlay `MediaKeys` are set is still
+  rejected: the page hasn't chosen FairPlay yet.
 - AC-3/E-AC-3 is ordinary codec support (Josh's decision, November 6): pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:
   `media/cdm/supported_audio_codecs.cc` leaves AC-3/E-AC-3 out of library CDMs
   on macOS, so Widevine sites negotiate the same codecs as today.
 - Upstream side effects of the flags, the same as on Windows: every page's
-  `addSourceBuffer`/`changeType` now accept `dvh1`/`dvhe` (only to reject a
-  clear Dolby Vision init segment later, where it threw NotSupportedError
-  before), and ClearKey's EME also offers AC-3/E-AC-3.
+  `addSourceBuffer`/`changeType` now accept `dvh1`/`dvhe` (outside FairPlay
+  only to reject a clear Dolby Vision init segment later, where it threw
+  NotSupportedError before), and ClearKey's EME also offers AC-3/E-AC-3.
 - Changing `gn_defines` changes the source lock's digest, so Josh's existing
   workspace needs `scripts/engine-source.py reconfigure` before the next build.
   The media buildflag headers change, so dependents of
