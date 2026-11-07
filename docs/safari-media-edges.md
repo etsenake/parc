@@ -48,7 +48,7 @@ Unchecked claims are labelled **unchecked**.
 | `media/filters/chunk_demuxer.cc` | 1,658 | 1,658 |
 | `media/filters/source_buffer_state.cc` | 931 | 931 |
 | `media/filters/source_buffer_stream.cc` | 2,029 | 2,029 |
-| `third_party/blink/renderer/modules/mediasource/media_source.cc` | 1,652 | 0 |
+| `third_party/blink/renderer/modules/mediasource/media_source.cc` | 1,652 | 1,652 |
 | `third_party/blink/renderer/modules/mediasource/source_buffer.cc` | 2,237 | 0 |
 
 ## Edges
@@ -354,7 +354,8 @@ which Blink turns into `QuotaExceededError`. WebKit's AVFoundation Media
 Source adds a SourceBuffer whenever the source is open
 (`MediaSource.cpp` `addSourceBuffer`, `MediaSourcePrivateAVFObjC.mm:117-141`).
 A player that adds an audio SourceBuffer after the video one started
-fails in Parc. **Open** (see `media_source.cc` below).
+fails in Parc (`QuotaExceededError`, `media_source.cc:1626-1637`). **In progress**
+(fix agent CD-1).
 
 Seeks wait for data at the target (`:512-541, 1017-1022`), end of stream
 before any init segment is a format error (`:1305-1312`), buffered ranges
@@ -410,3 +411,24 @@ replace what they overlap (`:1193-1301`), as WebKit's coded frame processing
 does. **Same** (the audio splice trim at `:1060-1191` shortens an overlapped
 frame where WebKit drops it; the difference stays below the 83 ms gap that
 `buffered` merges, so pages don't see it).
+
+### `media_source.cc`
+
+**MS-1. Types without codecs.** Chromium `media_source.cc:530-667` accepts a
+type only when it is fully supported (`:658-661`), so
+`isTypeSupported('video/mp4')`, `addSourceBuffer('video/mp4')` and
+`changeType('audio/mp4')` are refused. WebKit `MediaSource.cpp`
+(`isTypeSupported`) accepts a codec-less type the player may support.
+**In progress** (fix agent MS-1/2).
+
+**MS-2. Duration inside the last frame.** Chromium
+`media_source.cc:980-1034` keeps a new duration between the highest
+presentation timestamp and the highest buffered end. WebKit
+(`setDurationInternal`, step 4.1) raises it to the highest buffered end.
+**In progress** (fix agent MS-1/2).
+
+AC-3/E-AC-3 and Dolby Vision profile 5 answers are **handled**
+(`fairplay-identity-blink.patch`). `endOfStream`, `setLiveSeekableRange`,
+`seekable` for an infinite duration (`:830-885`), the closed-state and
+updating checks and active SourceBuffer ordering follow the MSE spec as
+WebKit does. **Same.**
