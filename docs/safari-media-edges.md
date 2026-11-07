@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **56**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **57**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -94,7 +94,7 @@ aren't re-homed. A move into a document without a browsing context
 **queued** (HME-1d; unchecked against WebKit's `dom/` files beyond
 `DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
 video moved from a Chrome-identity document keeps Chrome's muted handling:
-**queued** (HME-1e).
+**in progress** (HME-1e).
 
 **HME-2. `muted` content attribute set by script.** Chromium
 `html_media_element.cc:852-856, 878-886`: the attribute sets `muted` only when
@@ -629,8 +629,8 @@ playback-gap risk: back eviction only removes data past the stall point and
 front eviction never removes the current group). An append starting
 mid-group after a removal drops frames to the next keyframe in Chromium where
 Safari keeps them, but neither can show them: no user can perceive it. The
-memory-pressure purge still drops a longer audio track's tail Safari keeps (a
-possible rebuffer): **in progress** (SBST-1c).
+memory-pressure purge dropped a longer audio track's tail Safari keeps (a
+possible rebuffer): **fixed** 575b0add.
 
 **SBST-2. Small gaps in `buffered`.** Chromium keeps separate ranges unless
 the gap is within twice the largest inter-buffer distance
