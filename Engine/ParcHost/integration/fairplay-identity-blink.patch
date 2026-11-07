@@ -55,7 +55,7 @@
  #include "third_party/blink/renderer/core/script/modulator.h"
  #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
  #include "third_party/blink/renderer/platform/bindings/extensions_registry.h"
-@@ -72,12 +78,15 @@
+@@ -72,12 +78,16 @@
  #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
  #include "third_party/blink/renderer/platform/bindings/v8_set_return_value.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -68,13 +68,16 @@
  #include "third_party/blink/renderer/platform/weborigin/reporting_disposition.h"
  #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 +#include "third_party/blink/renderer/platform/wtf/functional.h"
++#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
  #include "v8/include/v8.h"
  
  namespace blink {
-@@ -240,6 +249,62 @@
-   lifecycle_ = next_status;
- }
+@@ -238,8 +248,71 @@
  
+   DCHECK_EQ(lifecycle_, Lifecycle::kContextIsInitialized);
+   lifecycle_ = next_status;
++}
++
 +namespace {
 +
 +bool PresentsParcSafariIdentity(LocalDOMWindow* window) {
@@ -98,24 +101,31 @@
 +
 +// Parc: the main world of a new context also gets Safari's
 +// ManagedMediaSource, which Chromium lacks (parc_managed_media_source.h),
-+// its WebKitMediaKeys capability probe (parc_webkit_media_keys.h) and its
-+// MediaKeys without getStatusForPolicy (parc_safari_media_keys.h), before any
-+// script of the page runs, unless the document can't run scripts. Errors
-+// from them are reported unmuted, like the page's.
++// its legacy prefixed EME (parc_webkit_media_keys.h) and its MediaKeys
++// without getStatusForPolicy (parc_safari_media_keys.h), before any script of
++// the page runs, unless the document can't run scripts. Errors from them are
++// reported unmuted, like the page's. The legacy EME offers WebKit's
++// AVFoundation-player key systems only once native HLS is built in
++// (parc::fairplay::kNativeHlsEnabled).
 +void InstallParcSafariScripts(ScriptState* script_state,
 +                              LocalDOMWindow* window) {
 +  if (window->CanExecuteScripts(kNotAboutToExecuteScript)) {
 +    for (const char* source :
 +         {kParcManagedMediaSourceScript, kParcWebKitMediaKeysScript,
 +          kParcSafariMediaKeysScript}) {
++      String script(source);
++      if (parc::fairplay::kNativeHlsEnabled &&
++          source == kParcWebKitMediaKeysScript) {
++        script.Replace("/*PARC_NATIVE_HLS*/false", "true");
++      }
 +      ClassicScript::CreateUnspecifiedScript(
-+          String(source), ScriptSourceLocationType::kInternal,
++          script, ScriptSourceLocationType::kInternal,
 +          SanitizeScriptErrors::kDoNotSanitize)
 +          ->RunScriptOnScriptState(script_state);
 +    }
 +  }
-+}
-+
+ }
+ 
 +// A document that took over its window's context gets them in a microtask:
 +// after the commit that installed it has finished, and before any of its own
 +// scripts run.
@@ -134,7 +144,7 @@
  void LocalWindowProxy::Initialize() {
    TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
                 GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +374,12 @@
+@@ -309,6 +382,12 @@
    }
  
    InstallConditionalFeatures();
@@ -147,7 +157,7 @@
  
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +623,25 @@
+@@ -552,6 +631,25 @@
      return;
    }
  

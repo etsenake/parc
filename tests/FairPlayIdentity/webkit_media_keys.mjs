@@ -735,8 +735,9 @@ for (const sinf of [true, false]) {
         'the raw CKC answers the request and the key is added');
   session.update(new Uint8Array(bytesOf('renew')));
   await settle();
-  check(world.log.filter((entry) => entry[0] === 'update').pop()[1] === 'renew' && events.pop() === 'added',
-        'every update is an answer for the AVFoundation player');
+  check(world.log.filter((entry) => entry[0] === 'update').pop()[1] === 'CKC' && events.pop() === 'added' &&
+        !events.some((event) => event.includes('renew')),
+        'every update is an answer for the AVFoundation player, which never renews');
 
   const taken = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://key1', 'asset-9', 'CERT'));
   const unknown = keys.createSession('application/vnd.apple.mpegurl', hlsInitData('skd://other', 'x', 'CERT'));

@@ -312,8 +312,10 @@ has it in windows only. The rows and what is still open are in
   answer false, and constructing `WebKitMediaKeys` with them throws
   `NotSupportedError`, until Parc's native HLS route
   ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) is
-  on: the script's `/*PARC_NATIVE_HLS*/false` token flips with
-  `parc::fairplay::kNativeHlsEnabled`. Then they follow WebKit's
+  on: the installer turns the script's `/*PARC_NATIVE_HLS*/false` token into
+  true when `parc::fairplay::kNativeHlsEnabled` is (it includes the header-only
+  `fairplay_key_system.h` without a GN dep, which `gn check` would flag; Parc's
+  build doesn't run it). Then they follow WebKit's
   `CDMSessionAVFoundationObjC`: types by what AVFoundation decodes, sessions
   bound to the attached player's held key requests, the SPC as the first
   message, `webkitkeyadded` after every update. Clear key

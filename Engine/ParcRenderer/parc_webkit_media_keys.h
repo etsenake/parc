@@ -121,8 +121,9 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // WebKit's AVFoundation player takes these
   // (MediaPlayerPrivateAVFoundationObjC::keySystemIsSupported, ignoring case).
   // Parc serves them through its native HLS route
-  // (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md); the token below
-  // turns true when parc::fairplay::kNativeHlsEnabled does.
+  // (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md); the installer
+  // (InstallParcSafariScripts) turns the token below into true when
+  // parc::fairplay::kNativeHlsEnabled is.
   const NATIVE_HLS = /*PARC_NATIVE_HLS*/false;
   const HLS_KEY_SYSTEM = /^com\.apple\.fps(?:\.1_0)?$/i;
   // LegacyCDMPrivateClearKey: clear key, which the AVFoundation player takes
@@ -730,14 +731,15 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   }
 
   // CDMSessionAVFoundationObjC::update: every key is the answer to the held
-  // request, and WebKit reports it added.
+  // request, and WebKit reports it added. It never renews, so "renew" isn't
+  // passed to Parc's CDM, which would read it as a renewal request.
   function processHlsKey(session, key) {
     const added = () => {
       if (session.open) {
         fire(session.object, plainEvent('webkitkeyadded'));
       }
     };
-    if (!session.modern) {
+    if (!session.modern || equalsAscii(key, 'renew')) {
       added();
       return undefined;
     }
