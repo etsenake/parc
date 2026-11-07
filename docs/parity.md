@@ -80,8 +80,12 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   engine compilation to fail. No behavior or family completion change. The
   release command now supports an explicit source refresh for stopped,
   unpublished engine builds, retaining the version, original source archive
-  and compiled objects. Artifact delivery remains pending the resumed release;
-  this source correction does not establish browser-runtime acceptance.
+  and compiled objects. The resumed release completed: v1.2.0 (build 4), source
+  `1c6a3bc4`, overlay 370; app and DMG notarization/stapling, Gatekeeper checks,
+  GitHub publication and the Homebrew cask audit passed. Delivery receipt:
+  `build/releases/20261106T205535Z-209beca2/delivery.json`. The persistent
+  `build/master-release-development/nightly-release.log` contains the release
+  output. No installation, launch or browser-runtime acceptance is claimed.
 
 - **Codex root — Cmd-T domain ranking and site search (November 6).**
   Corrects the November 2 unified-ranking regression: merging Chromium's
