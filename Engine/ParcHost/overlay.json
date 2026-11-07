@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 432,
+  "version": 433,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1520,12 +1520,12 @@
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.h",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.h",
-      "sha256": "bb92d7ff6e625192021b7c339ff2bd766f352d3163e6e70c9b6b340c609ccef6"
+      "sha256": "c66e1c695536a54d9c27bc416237279dfe9e7f42f06363c05c6d3735b7254b9f"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session.mm",
       "target": "third_party/parc_fairplay/core/fairplay_key_session.mm",
-      "sha256": "575c3c037aed1739e984db8f2688ff463c2eaa48206a882f9453708cd714837b"
+      "sha256": "377948fde8b668804ddb3f6c82ad1a08f4464131757106e7ec0ee7235dc0c287"
     },
     {
       "source": "Engine/ParcNative/fairplay/fairplay_key_session_internal.h",
@@ -1595,7 +1595,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_adapter.cc",
       "target": "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.cc",
-      "sha256": "7476714c04573fd2dc4ef1c69ec5ea2ca79f05ba5b692310ff09089e2bbb5c38"
+      "sha256": "c7168eead8560659af73dd1cb1d590d396c4778068ab36705e89d47367392650"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_cdm_factory.h",

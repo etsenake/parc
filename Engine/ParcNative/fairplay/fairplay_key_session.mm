@@ -171,13 +171,13 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::vector<KeyInfo> last_keys;  // As last reported.
     bool keys_removed = false;
     std::string skd_uri;  // The init data of an skd session.
-    // After remove(), the key statuses it reported, which stay (WebKit
-    // replaces the session's statuses with removeSessionData's keys).
-    std::vector<KeyInfo> removed_keys;
     // Expired-session reports matching this session, found by remove() (or
     // load()), as WebKit's m_expiredSessions; update("acknowledged") removes
     // them from the storage.
     std::vector<NSData*> expired_reports;
+    // Made by LoadSession: its key statuses are the loaded reports' and stay
+    // (it has no key requests of its own).
+    bool loaded = false;
   };
 
   Impl(FairPlayCdmClient* client, PostTask post_task)
@@ -670,6 +670,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
         NSMutableArray* matching = [NSMutableArray array];
         for (NSData* report : ExpiredSessionReports(session->id)) {
           released.push_back({{}, KeyStatus::kReleased, 0});
+          // Appended as WebKit appends to m_expiredSessions, also after a
+          // load() already holds the report; removing it twice is harmless.
           session->expired_reports.push_back(report);
           [matching addObject:[NSPropertyListSerialization propertyListWithData:report
                                                                         options:NSPropertyListImmutable
@@ -690,7 +692,6 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     // WebKit runs the Update Key Statuses algorithm with those keys whether or
     // not any were found, so keystatuseschange always fires.
-    session->removed_keys = released;
     session->last_keys = released;
     session->last_usable_count = 0;
     std::string id = session->id;
@@ -704,6 +705,53 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     NotifyObservers();
     done(result);
+  }
+
+  void LoadSession(SessionType session_type, const std::string& session_id, SessionCallback done) {
+    // WebKit's CDMInstanceSessionFairPlayStreamingAVFObjC::loadSession, which
+    // loads only persistent-usage-record sessions.
+    if (session_type != SessionType::kPersistentUsageRecord) {
+      done(Result::Error(Exception::kNotSupported, "only persistent-usage-record sessions load"), "");
+      return;
+    }
+    // SessionLoadFailure::MismatchedSessionType: a TypeError.
+    if (!persistent_state_allowed_ || !storage_url_) {
+      done(Result::Error(Exception::kTypeError, "no persistent state or storage"), "");
+      return;
+    }
+    // SessionLoadFailure::NoSessionData: load() resolves false.
+    if (!certificate_) {
+      done(Result::Ok(), "");
+      return;
+    }
+    // MediaKeySession::load's step 8.3, which Chromium leaves to the CDM.
+    if (Find(session_id)) {
+      done(Result::Error(Exception::kQuotaExceeded, "a session with this ID is open"), "");
+      return;
+    }
+    std::vector<NSData*> reports = ExpiredSessionReports(session_id);
+    if (reports.empty()) {
+      done(Result::Ok(), "");
+      return;
+    }
+    // Each report is a released key with no key ID (WebKit's FIXME: the
+    // report's key values aren't available).
+    std::vector<KeyInfo> released(reports.size(), KeyInfo{{}, KeyStatus::kReleased, 0});
+    auto session = std::make_unique<Session>();
+    session->id = session_id;
+    session->type = SessionType::kPersistentUsageRecord;
+    session->loaded = true;
+    session->expired_reports = std::move(reports);
+    session->last_keys = released;
+    sessions_[session_id] = std::move(session);
+    // The session ID first, so the page's session exists when the statuses
+    // arrive (Blink routes them by ID); WebKit also resolves load() before
+    // its keystatuseschange event runs.
+    done(Result::Ok(), session_id);
+    Deliver([session_id, released](FairPlayCdmClient* client) {
+      client->OnSessionKeysChange(session_id, false, released);
+    });
+    NotifyObservers();
   }
 
   // AVFoundation's pending expired-session reports in this key system's
@@ -1673,9 +1721,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   }
 
   void NotifyKeyStatuses(Session* session) {
-    if (session->keys_removed) {
-      // remove() reported the statuses, which stay: WebKit replaces them with
-      // removeSessionData's keys.
+    if (session->keys_removed || session->loaded) {
+      // remove() or load() reported the statuses, which stay: WebKit replaces
+      // them with removeSessionData's or loadSession's keys.
       NotifyObservers();
       return;
     }
@@ -1815,6 +1863,12 @@ void FairPlayCdm::CreateSessionAndGenerateRequest(InitDataType type,
                                                   SessionCallback done) {
   CreateSessionAndGenerateRequest(SessionType::kTemporary, type, std::move(init_data),
                                   std::move(done));
+}
+
+void FairPlayCdm::LoadSession(SessionType session_type,
+                              const std::string& session_id,
+                              SessionCallback done) {
+  impl_->LoadSession(session_type, session_id, impl_->Posted(std::move(done)));
 }
 
 void FairPlayCdm::UpdateSession(const std::string& session_id,

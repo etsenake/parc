@@ -2580,6 +2580,147 @@ std::vector<Step> PersistentUsageRecordScenario() {
                      });
                    });
   });
+  // load() is WebKit's loadSession: refused for a temporary session, a
+  // TypeError without persistent state or storage, false for an ID no report
+  // carries.
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->cdm->LoadSession(fp::SessionType::kTemporary, std::string(32, 'A'),
+                         [=](const fp::Result& r, const std::string& id) {
+      Check(!r.ok() && r.exception == fp::Exception::kNotSupported && id.empty(),
+            "usage-record: load() of a temporary session is refused", r.message);
+      ks->cdm->LoadSession(fp::SessionType::kPersistentUsageRecord, std::string(32, '0'),
+                           [=](const fp::Result& r2, const std::string& id2) {
+        Check(r2.ok() && id2.empty(),
+              "usage-record: load() of an ID no expired-session report carries resolves false",
+              r2.message);
+        done();
+      });
+    });
+  });
+  steps.push_back([=](Done done) {
+    auto stateless = std::make_shared<std::unique_ptr<KeySystem>>(MakeKeySystem("usage-record stateless"));
+    (*stateless)->cdm->LoadSession(fp::SessionType::kPersistentUsageRecord, std::string(32, '0'),
+                                   [=](const fp::Result& r, const std::string& id) {
+      Check(!r.ok() && r.exception == fp::Exception::kTypeError && id.empty(),
+            "usage-record: load() without persistent state is a TypeError", r.message);
+      w->retired.push_back(std::move(*stateless));
+      done();
+    });
+  });
+  // A report AVFoundation wrote. Expiring a key session that has storage
+  // (Parc does when the CDM goes away) leaves its expired-session report,
+  // named by that key session's own identifier, which no EME session carries
+  // (as in Safari on macOS). Loading that name runs the rest of WebKit's path:
+  // load() reports the report's key, remove() sends the report as the
+  // license-release message, "acknowledged" removes it from the storage.
+  auto playback_id = std::make_shared<std::string>();
+  auto reports_named = [storage](const std::string& id) {
+    NSURL* url = [NSURL fileURLWithPath:[storage stringByAppendingPathComponent:@"SecureStop.plist"]
+                            isDirectory:NO];
+    size_t count = 0;
+    for (NSData* data in [AVContentKeySession pendingExpiredSessionReportsWithAppIdentifier:Data(g_certificate)
+                                                                    storageDirectoryAtURL:url]) {
+      NSDictionary* report = [NSPropertyListSerialization propertyListWithData:data
+                                                                       options:NSPropertyListImmutable
+                                                                        format:nil
+                                                                         error:nil];
+      NSString* name = [report isKindOfClass:[NSDictionary class]] ? report[@"PlaybackSessionID"] : nil;
+      if ([name isKindOfClass:[NSString class]] && (id.empty() || id == name.UTF8String)) {
+        ++count;
+      }
+    }
+    return count;
+  };
+  steps.push_back([=](Done done) {
+    keys->reset();
+    After(1.0, [=] {
+      NSURL* url = [NSURL fileURLWithPath:[storage stringByAppendingPathComponent:@"SecureStop.plist"]
+                              isDirectory:NO];
+      for (NSData* data in [AVContentKeySession pendingExpiredSessionReportsWithAppIdentifier:Data(g_certificate)
+                                                                      storageDirectoryAtURL:url]) {
+        NSDictionary* report = [NSPropertyListSerialization propertyListWithData:data
+                                                                         options:NSPropertyListImmutable
+                                                                          format:nil
+                                                                           error:nil];
+        NSString* name = [report isKindOfClass:[NSDictionary class]] ? report[@"PlaybackSessionID"] : nil;
+        if ([name isKindOfClass:[NSString class]]) {
+          *playback_id = name.UTF8String;
+          break;
+        }
+      }
+      // AVFoundation decides when it writes a report (it may want playback),
+      // so its absence only skips the steps that need one.
+      Log("usage-record: expired-session report after the CDM went away: %s",
+          playback_id->empty() ? "none (load/remove/acknowledged with a report skipped)"
+                               : playback_id->c_str());
+      done();
+    });
+  });
+  steps.push_back([=](Done done) {
+    *keys = MakeKeySystem("usage-record reload");
+    KeySystem* ks = keys->get();
+    ks->cdm->SetPersistentStateAllowed(true);
+    ks->cdm->SetStorageDirectory(storage.fileSystemRepresentation);
+    if (playback_id->empty()) {
+      done();
+      return;
+    }
+    ks->client->hold = true;
+    const int keys_events = ks->client->keys_events;
+    ks->cdm->LoadSession(fp::SessionType::kPersistentUsageRecord, *playback_id,
+                         [=](const fp::Result& r, const std::string& id) {
+      Check(r.ok() && id == *playback_id,
+            "usage-record: load() of the report's PlaybackSessionID resolves with that ID", r.message);
+      After(0.5, [=] {
+        bool released = !ks->client->keys.empty();
+        for (const fp::KeyInfo& key : ks->client->keys) {
+          released &= key.key_id.empty() && key.status == fp::KeyStatus::kReleased;
+        }
+        Check(ks->client->keys_events == keys_events + 1 && released,
+              "usage-record: load() reports each report as a released key with no key ID",
+              KeysText(ks->client->keys));
+        ks->cdm->LoadSession(fp::SessionType::kPersistentUsageRecord, *playback_id,
+                             [=](const fp::Result& again, const std::string&) {
+          Check(!again.ok() && again.exception == fp::Exception::kQuotaExceeded,
+                "usage-record: loading an open session's ID again is QuotaExceeded", again.message);
+          done();
+        });
+      });
+    });
+  });
+  steps.push_back([=](Done done) {
+    if (playback_id->empty()) {
+      done();
+      return;
+    }
+    KeySystem* ks = keys->get();
+    const int messages = ks->client->messages;
+    ks->cdm->RemoveSession(*playback_id, [=](const fp::Result& r) {
+      Check(r.ok(), "usage-record: remove() of the loaded session resolves", r.message);
+      After(0.5, [=] {
+        id plist = [NSPropertyListSerialization propertyListWithData:Data(ks->client->held_message)
+                                                             options:NSPropertyListImmutable
+                                                              format:nil
+                                                               error:nil];
+        NSDictionary* report = [plist isKindOfClass:[NSArray class]] ? [plist firstObject] : plist;
+        Check(ks->client->messages == messages + 1 &&
+                  ks->client->message_types.back() == fp::MessageType::kLicenseRelease &&
+                  [report isKindOfClass:[NSDictionary class]] &&
+                  [report[@"PlaybackSessionID"] isEqual:@(playback_id->c_str())],
+              "usage-record: remove() sends the expired-session report as a license-release message "
+              "(a binary property list)");
+        ks->cdm->UpdateSession(*playback_id, Bytes(std::string("acknowledged")), [=](const fp::Result& ack) {
+          Check(ack.ok(), "usage-record: update(\"acknowledged\") resolves", ack.message);
+          After(0.5, [=] {
+            Check(reports_named(*playback_id) == 0,
+                  "usage-record: \"acknowledged\" removes the report from the storage");
+            ks->cdm->CloseSession(*playback_id, [=](const fp::Result&) { done(); });
+          });
+        });
+      });
+    });
+  });
   steps.push_back([=](Done done) {
     w->retired.push_back(std::move(*keys));
     done();

@@ -135,6 +135,18 @@ class FairPlayCdm {
                                        std::vector<uint8_t> init_data,
                                        SessionCallback done);
 
+  // As WebKit's loadSession: a persistent-usage-record session loads the
+  // expired-session reports AVFoundation keeps under |session_id| (their
+  // PlaybackSessionID). Resolves with |session_id| and then reports one
+  // released key with an empty key ID per report when there are any; resolves
+  // with an empty ID (EME's false) when there are none or no server
+  // certificate. Rejects with kTypeError without persistent state or storage,
+  // kQuotaExceeded if a session with that ID is open, and kNotSupported for
+  // other session types. The loaded session's remove() then sends the reports.
+  void LoadSession(SessionType session_type,
+                   const std::string& session_id,
+                   SessionCallback done);
+
   // Resolves once AVFoundation has accepted (or rejected) every CKC in
   // |response|; key statuses follow through OnSessionKeysChange. Calls made
   // while an update is in flight run in order after it. During a renewal the

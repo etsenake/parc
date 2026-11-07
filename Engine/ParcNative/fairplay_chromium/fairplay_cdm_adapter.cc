@@ -211,8 +211,27 @@ void FairPlayCdmAdapter::LoadSession(
     const std::string& session_id,
     std::unique_ptr<NewSessionCdmPromise> promise) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
-                  "FairPlay has no persistent sessions to load");
+  // WebKit's loadSession: persistent-usage-record sessions load the
+  // expired-session reports AVFoundation keeps under their ID. An empty
+  // session ID resolves load() with false.
+  const std::optional<fp::SessionType> fairplay_session_type =
+      ToFairPlaySessionType(session_type);
+  if (!fairplay_session_type) {
+    promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
+                    "FairPlay has no persistent-license sessions on macOS");
+    return;
+  }
+  const uint32_t promise_id =
+      promises_.SavePromise(std::move(promise), "LoadSession");
+  base::WeakPtr<FairPlayCdmAdapter> weak = weak_factory_.GetWeakPtr();
+  cdm_->LoadSession(*fairplay_session_type, session_id,
+                    [weak, promise_id](const fp::Result& result,
+                                       const std::string& loaded_session_id) {
+                      if (weak) {
+                        weak->OnNewSessionResult(promise_id, result,
+                                                 loaded_session_id);
+                      }
+                    });
 }
 
 void FairPlayCdmAdapter::UpdateSession(

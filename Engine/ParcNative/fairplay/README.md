@@ -55,7 +55,7 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `ContentDecryptionModule::SetServerCertificate` | `FairPlayCdm::SetServerCertificate` |
 | `CdmConfig::allow_persistent_state` | `SetPersistentStateAllowed(bool)` |
 | `CreateSessionAndGenerateRequest` | `CreateSessionAndGenerateRequest(SessionType, InitDataType, init_data)` (temporary or Safari's persistent-usage-record) |
-| `UpdateSession` / `CloseSession` / `RemoveSession` | same names |
+| `LoadSession` / `UpdateSession` / `CloseSession` / `RemoveSession` | same names (`LoadSession` and `RemoveSession` as WebKit's `loadSession`/`removeSessionData`) |
 | `ContentDecryptionModuleClient` (`OnSessionMessage`, `OnSessionKeysChange`, `OnSessionClosed`) | `FairPlayCdmClient` |
 | `Renderer::Initialize` (decoder configs) | `FairPlayRenderer::Initialize(VideoConfig, AudioConfig)` |
 | `Renderer::SetCdm` | `SetCdm(FairPlayCdm*)` (joins the renderers to the CDM's key session) |
