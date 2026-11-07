@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **60**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **62**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -275,8 +275,8 @@ never stops; frames drop evenly when decoding can't keep up). Still: 4K with
 needs FFmpeg's disposable-frame skipping, about a day (**left**, Josh agreed
 November 7: negative rates on plain 4K files are rare); a rewind can
 take up to 2 s longer to start; rewinding holds up to 384 MB (was 192 MB);
-dropped rewind frames aren't counted in `getVideoPlaybackQuality`: **queued**
-(RATE-STATS, count them as the spec's decoded-but-not-presented frames;
+dropped rewind frames weren't counted in `getVideoPlaybackQuality`: **fixed**
+1e420a54 ( count them as the spec's decoded-but-not-presented frames;
 Safari reports AVPlayerLayer's `videoPerformanceMetrics`,
 `MediaPlayerPrivateAVFoundationObjC.mm:4039-4059`, so AVFoundation decides
 and whether it counts reverse drops is **unchecked**); while casting, Now Playing showed a backward
@@ -580,12 +580,11 @@ adds it to the live renderer, and a late second audio-language SourceBuffer
 plays only the original audio where Safari mixes both enabled tracks:
 **fixed** 00671621 (late tracks join the playing renderer, FairPlay and
 RendererImpl, no restart; a second audio SourceBuffer plays mixed on
-FairPlay). Still different, user-felt, **in progress** (CD-1c): clear Media
-Source plays only the first of two audio SourceBuffers (RendererImpl has one
-audio renderer); after the page toggles `audioTracks` only one track plays
-(Blink sends only the first enabled id, `html_media_element.cc:4486`); an
-encrypted late track on RendererImpl still restarts (a rebuffer); a rare race
-with two merged late audio SourceBuffers. Video track switches on FairPlay
+FairPlay). Clear Media Source played only the first of two audio SourceBuffers,
+`audioTracks` toggles played only one track (`html_media_element.cc:4486`),
+and an encrypted late track on RendererImpl restarted (a rebuffer): **fixed**
+83554da3 (every enabled track mixed, as Safari); whether the rare race with
+two merged late audio SourceBuffers is closed awaits the CD-1c report. Video track switches on FairPlay
 freeze the picture: **in progress** with the late-key handoff (FP-RESTART).
 `readyState` returned straight to
 `HAVE_ENOUGH_DATA` after the new track's data arrived: **fixed** f50e1aab.
