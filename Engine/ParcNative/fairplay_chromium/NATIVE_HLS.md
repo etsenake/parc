@@ -332,11 +332,16 @@ render process:
 - `preload`: as WebKit (`updateStates`, `setPreload`), the item goes on the
   player only once the element prepares to play: by WebKit's rules its
   preload is auto (any `preload` but `none` or `metadata`, a missing one
-  included, where Chromium's default is metadata), it has `autoplay`, or the
-  page called `load()` (`HTMLMediaElement::ParcPreparesToPlay`; the demuxer
-  sends `PrepareToPlay` after `Initialize`), its preload becomes auto later
-  (`Demuxer::ParcPrepareToPlay` from `DemuxerManager::SetPreload`), or it plays
-  or seeks (the core's `SetRate` and `Seek`); a live stream's goes on at once.
+  included, where Chromium's default is metadata), it has `autoplay`, or it
+  has prepared to play on this or any earlier load, as WebKit's never-reset
+  `m_hasEverPreparedToPlay`: `load()`, play while it has no future data, a
+  seek before future data below preload auto, or a fragment start
+  (`HTMLMediaElement::ParcPreparesToPlay`; the demuxer sends `PrepareToPlay`
+  after `Initialize`), so after one of those every later source on the
+  element puts its item on at once; or its preload becomes auto later
+  (`Demuxer::ParcPrepareToPlay` from `DemuxerManager::SetPreload`), or it
+  plays or seeks (the core's `SetRate` and `Seek`); a live stream's goes on
+  at once.
   Until then a `preload="metadata"` VOD loads its playlists only and asks for
   no key.
 - Before `OnInitialized`, the client gets only `StartLoad` (the asset's
