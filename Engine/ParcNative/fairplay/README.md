@@ -26,6 +26,13 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
   bookkeeping, and the `tenc`/`sinf`/`esds` bytes.
 - `fairplay_key_session_internal.h`: content key recipient attachment for the
   renderer (ObjC++ only).
+- `fairplay_hls_player.{h,mm}`: `FairPlayHlsPlayer`, Safari's native HLS route
+  (`<video src="….m3u8">`) through `AVPlayer`, with every load handed to the
+  embedder's `HlsLoader` (see below and
+  [NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md)).
+- `fairplay_hls_player_internal.h`: the player's asset (a content key
+  recipient), `AVPlayer` and `AVPlayerLayer` for the CDM and display
+  (ObjC++ only).
 
 ## Mapping onto Chromium (M1)
 
@@ -319,3 +326,41 @@ every SPC named by `contentId`.
 
 See [tests/FairPlay/README.md](../../../tests/FairPlay/README.md#apple-api-behaviour)
 for what the proof established.
+
+## Native HLS player
+
+`FairPlayHlsPlayer` plays an HLS URL through `AVPlayer`, as Safari does, for
+pages that hand the element a playlist instead of using MSE. It is not wired
+into Chromium yet ([NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md) has the
+plan and the switch that keeps it off).
+
+- AVFoundation never fetches by itself: the asset is created with
+  `AVURLAssetUseClientURLLoadingExclusively` and its resource loader's
+  `URLSession` is the player's stand-in, whose data tasks become
+  `HlsLoader::StartLoad` calls (WebKit's SPI, its `WebCoreNSURLSession` does
+  the same). `IsSupported()` checks both exist; `Load` refuses otherwise.
+- `skd://` key requests go to the client (`OnKeyRequest`, once per pending
+  URI). `CompleteKeyRequests` finishes them with
+  `AVStreamingKeyDeliveryContentKeyType`, so AVFoundation takes the key from
+  the `AVContentKeySession` the asset was added to (WebKit's
+  `attemptToDecryptWithInstance`). A failed key request is asked for again
+  rather than failing the item.
+- State comes from the item: metadata at `readyToPlay`, buffering from
+  `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`,
+  loaded and seekable ranges, duration (+infinity for live), presentation
+  size, end, failure (URL errors are network errors; others before metadata
+  are unsupported sources, after it decode errors). `getStartDate()` is
+  `currentDate` minus `currentTime`. Seeks are exact (zero tolerance).
+- Threads: one owner sequence; KVO, notifications and resource loader calls
+  hop to it. `CurrentTime()` reads the item's timebase from any thread.
+
+Proof: `scripts/test-fairplay-hls.sh` ([harness](../../../tests/FairPlay/hls_player_harness.mm))
+runs the player on a serial queue with no run loop and serves the streams
+under a host only its loader can reach (`parc-hls.invalid`), so playing proves
+every load went through `HlsLoader`. On macOS 27.2 (M3): Apple's TS VOD
+(79 loads, exact seek to 300 s, pause holds the clock, ended), Axinom's clear
+CMAF fMP4 with alternate audio and subtitle groups, Unified Streaming's live
+stream (infinite duration, a ~595 s DVR window, a program date time), a 404
+playlist (network error before metadata), Axinom's FairPlay HLS (the skd URI
+reaches the client and never the loader; no key, no playback) and teardown
+with loads in flight.
