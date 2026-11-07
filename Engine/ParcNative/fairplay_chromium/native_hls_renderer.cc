@@ -3,6 +3,8 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/functional/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "media/base/media_resource.h"
 #include "media/base/renderer_client.h"
@@ -111,8 +113,23 @@ void NativeHlsRenderer::StartPlayingFrom(base::TimeDelta time) {
   // buffered there tells readyState, as playbackLikelyToKeepUp does in
   // Safari. The pipeline sets the rate next. Reported afresh, as RendererImpl
   // reports HAVE_ENOUGH after every StartPlayingFrom: the pipeline finishes a
-  // seek only then, whatever was reported before it.
+  // seek only then, whatever was reported before it. And in a later task, as
+  // RendererImpl's always comes: PipelineImpl posts the seek's completion
+  // when this returns, and WebMediaPlayerImpl drops a buffering state that
+  // reaches it before that completion, so a report made here would be lost
+  // and the seek would never finish.
   reported_buffering_state_ = media::BUFFERING_HAVE_NOTHING;
+  media_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&NativeHlsRenderer::ReportStartState,
+                                weak_factory_.GetWeakPtr(), ++starts_));
+}
+
+void NativeHlsRenderer::ReportStartState(uint64_t start) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Not after a flush or a later start, which reports for itself.
+  if (!playing_ || start != starts_ || !source_) {
+    return;
+  }
   ReportBufferingState(source_->GetBufferingState());
 }
 

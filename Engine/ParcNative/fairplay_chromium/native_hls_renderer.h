@@ -11,6 +11,8 @@
 #ifndef CONTENT_RENDERER_MEDIA_FAIRPLAY_NATIVE_HLS_RENDERER_H_
 #define CONTENT_RENDERER_MEDIA_FAIRPLAY_NATIVE_HLS_RENDERER_H_
 
+#include <stdint.h>
+
 #include <atomic>
 #include <optional>
 
@@ -75,6 +77,9 @@ class NativeHlsRenderer final : public media::Renderer,
   // pipeline starts playback (and after a flush) nothing is reported:
   // RendererImpl's contract, which seeks and readyState follow.
   void ReportBufferingState(media::BufferingState state);
+  // The player's buffering state after the StartPlayingFrom() numbered
+  // `start`, reported in the task after it.
+  void ReportStartState(uint64_t start);
   void PaintHoleFrame();
 
   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
@@ -89,6 +94,8 @@ class NativeHlsRenderer final : public media::Renderer,
 
   // Between StartPlayingFrom() and Flush().
   bool playing_ = false;
+  // StartPlayingFrom() calls so far.
+  uint64_t starts_ = 0;
   media::BufferingState reported_buffering_state_ =
       media::BUFFERING_HAVE_NOTHING;
   bool ended_ = false;
@@ -105,6 +112,7 @@ class NativeHlsRenderer final : public media::Renderer,
   std::optional<bool> preserves_pitch_;
 
   SEQUENCE_CHECKER(sequence_checker_);
+  base::WeakPtrFactory<NativeHlsRenderer> weak_factory_{this};
 };
 
 }  // namespace parc::fairplay

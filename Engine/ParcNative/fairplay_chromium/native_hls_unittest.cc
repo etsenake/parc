@@ -412,6 +412,55 @@ TEST_F(NativeHlsTest, BufferingStateFollowsPlaybackStart) {
   client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
   task_environment_.RunUntilIdle();
   renderer_->StartPlayingFrom(base::Seconds(30));
+  task_environment_.RunUntilIdle();
+}
+
+// PipelineImpl posts a seek's completion right after StartPlayingFrom()
+// returns, and WebMediaPlayerImpl drops buffering states that reach it before
+// that completion. The state after every start comes in a later task, as
+// RendererImpl's does, even when the player had enough data all along.
+TEST_F(NativeHlsTest, StateAfterEveryStartComesInALaterTask) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
+  task_environment_.RunUntilIdle();
+
+  EXPECT_CALL(renderer_client_, OnBufferingStateChange(_, _)).Times(0);
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+  EXPECT_CALL(renderer_client_,
+              OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
+                                     media::BUFFERING_CHANGE_REASON_UNKNOWN))
+      .Times(1);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+
+  // A seek within what AVPlayer holds: no change reaches the facade.
+  base::MockCallback<base::OnceClosure> flush_cb;
+  EXPECT_CALL(flush_cb, Run());
+  renderer_->Flush(flush_cb.Get());
+  EXPECT_CALL(renderer_client_, OnBufferingStateChange(_, _)).Times(0);
+  renderer_->StartPlayingFrom(base::Seconds(30));
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+  EXPECT_CALL(renderer_client_,
+              OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
+                                     media::BUFFERING_CHANGE_REASON_UNKNOWN))
+      .Times(1);
+  task_environment_.RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(&renderer_client_);
+
+  // A flush before the report: the next start reports, once.
+  EXPECT_CALL(flush_cb, Run());
+  renderer_->Flush(flush_cb.Get());
+  renderer_->StartPlayingFrom(base::Seconds(40));
+  EXPECT_CALL(flush_cb, Run());
+  renderer_->Flush(flush_cb.Get());
+  renderer_->StartPlayingFrom(base::Seconds(50));
+  EXPECT_CALL(renderer_client_,
+              OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
+                                     media::BUFFERING_CHANGE_REASON_UNKNOWN))
+      .Times(1);
+  task_environment_.RunUntilIdle();
 }
 
 TEST_F(NativeHlsTest, RateAndVolumeDriveThePlayer) {
