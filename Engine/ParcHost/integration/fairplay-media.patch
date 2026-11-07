@@ -773,11 +773,23 @@
  };
 --- a/media/base/demuxer.cc
 +++ b/media/base/demuxer.cc
-@@ -16,4 +16,8 @@
+@@ -16,4 +16,20 @@
  // Do nothing by default.
  void Demuxer::DisableCanChangeType() {}
  
 +void Demuxer::RestrictCanChangeType(ChangeTypeFilter filter) {}
++
++Demuxer::ParcNativeTimeline::ParcNativeTimeline() = default;
++Demuxer::ParcNativeTimeline::ParcNativeTimeline(const ParcNativeTimeline&) =
++    default;
++Demuxer::ParcNativeTimeline& Demuxer::ParcNativeTimeline::operator=(
++    const ParcNativeTimeline&) = default;
++Demuxer::ParcNativeTimeline::~ParcNativeTimeline() = default;
++
++std::optional<Demuxer::ParcNativeTimeline> Demuxer::GetParcNativeTimeline()
++    const {
++  return std::nullopt;
++}
 +
 +void Demuxer::SetCdmForNativePlayer(CdmContext* cdm_context) {}
 +
@@ -803,7 +815,7 @@
  class MediaTracks;
  
  // WARNING: These values are reported to metrics. Entries should not be
-@@ -181,6 +184,21 @@
+@@ -181,6 +184,38 @@
  
    // Allow canChangeType to be disabled.
    virtual void DisableCanChangeType();
@@ -822,6 +834,23 @@
 +  // Called on the media thread; `cdm_context` stays valid while the pipeline
 +  // holds it, as for Renderer::SetCdm().
 +  virtual void SetCdmForNativePlayer(CdmContext* cdm_context);
++
++  // Parc: what a native HLS demuxer's AVPlayer last reported for the media
++  // element (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md, Live and DVR):
++  // the seekable attribute, one range or none, an end of kInfiniteDuration
++  // meaning Infinity; and getStartDate(), none without a program date time.
++  struct MEDIA_EXPORT ParcNativeTimeline {
++    ParcNativeTimeline();
++    ParcNativeTimeline(const ParcNativeTimeline&);
++    ParcNativeTimeline& operator=(const ParcNativeTimeline&);
++    ~ParcNativeTimeline();
++
++    Ranges<base::TimeDelta> seekable;
++    std::optional<base::Time> start_date;
++  };
++  // Callable from any thread. nullopt from every demuxer but a native HLS
++  // one, whose element then keeps Chromium's own rules.
++  virtual std::optional<ParcNativeTimeline> GetParcNativeTimeline() const;
  };
  
  }  // namespace media
@@ -1048,7 +1077,22 @@
      SetDemuxer(std::move(demuxer));
      return std::move(on_demuxer_created)
          .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
-@@ -474,6 +489,26 @@
+@@ -382,6 +397,14 @@
+     return !demuxer_->IsSeekable();
+   }
+   return false;
++}
++
++std::optional<Demuxer::ParcNativeTimeline>
++DemuxerManager::GetParcNativeTimeline() const {
++  if (!demuxer_) {
++    return std::nullopt;
++  }
++  return demuxer_->GetParcNativeTimeline();
+ }
+ 
+ bool DemuxerManager::IsManifestDemuxerURL() const {
+@@ -474,6 +497,26 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -1077,7 +1121,7 @@
  }
 --- a/media/filters/demuxer_manager.h
 +++ b/media/filters/demuxer_manager.h
-@@ -19,10 +19,15 @@
+@@ -19,9 +19,14 @@
  #include "media/base/media_log.h"
  #include "media/base/pipeline.h"
  #include "media/base/pipeline_status.h"
@@ -1085,14 +1129,13 @@
  #include "media/filters/chunk_demuxer.h"
  #include "net/storage_access_api/status.h"
  #include "url/origin.h"
- 
++
 +#if BUILDFLAG(IS_MAC)
 +#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/threading/sequence_bound.h"
- #include "media/filters/hls_data_source_provider.h"
 @@ -81,6 +86,20 @@
  
      // Allows a seek triggered by a demuxer (mainly used for live content)
@@ -1123,7 +1166,17 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -154,6 +175,11 @@
+@@ -140,6 +161,9 @@
+   bool DataSourceFullyBuffered() const;
+   bool IsStreaming() const;
+   bool IsLiveContent() const;
++  // Parc: the native HLS demuxer's seekable window and start date
++  // (Demuxer::GetParcNativeTimeline), nullopt for any other demuxer.
++  std::optional<Demuxer::ParcNativeTimeline> GetParcNativeTimeline() const;
+   bool IsManifestDemuxerURL() const;
+ 
+  private:
+@@ -154,6 +178,11 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1135,7 +1188,7 @@
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -209,6 +235,13 @@
+@@ -209,6 +238,13 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    bool hls_fallback_ = false;
@@ -2234,10 +2287,11 @@
  namespace blink {
  
  namespace {
-@@ -168,6 +175,47 @@
+@@ -167,6 +174,47 @@
+   sink->SwitchOutputDevice(device_id,
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, and Dolby Vision profile 8, which it plays
@@ -2278,10 +2332,9 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kDisableBackgroundMediaSuspend)) {
 @@ -356,7 +404,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
@@ -2296,7 +2349,54 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1695,6 +1748,50 @@
+@@ -1423,6 +1476,24 @@
+   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
+ }
+ 
++double WebMediaPlayerImpl::ParcStartDate() const {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++
++  // Safari's page reads the start date its GPU process sampled at the
++  // player's last ready-state change, and the epoch (a zero MediaTime, WebKit's
++  // RemoteMediaPlayerState default) before the first.
++  if (ready_state_ == WebMediaPlayer::kReadyStateHaveNothing) {
++    return 0;
++  }
++  // Only the native HLS route has one (NATIVE_HLS.md, Live and DVR).
++  std::optional<media::Demuxer::ParcNativeTimeline> timeline =
++      demuxer_manager_->GetParcNativeTimeline();
++  if (!timeline || !timeline->start_date) {
++    return std::numeric_limits<double>::quiet_NaN();
++  }
++  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
++}
++
+ base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ 
+@@ -1496,6 +1567,21 @@
+ 
+   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
+     return WebTimeRanges();
++  }
++
++  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
++  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
++  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
++          demuxer_manager_->GetParcNativeTimeline()) {
++    WebTimeRanges ranges;
++    for (size_t i = 0; i < timeline->seekable.size(); ++i) {
++      const base::TimeDelta end = timeline->seekable.end(i);
++      ranges.Add(timeline->seekable.start(i).InSecondsF(),
++                 end == media::kInfiniteDuration
++                     ? std::numeric_limits<double>::infinity()
++                     : end.InSecondsF());
++    }
++    return ranges;
+   }
+ 
+   if (demuxer_manager_->IsLiveContent()) {
+@@ -1695,6 +1781,50 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -2347,10 +2447,11 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1777,6 +1874,26 @@
+@@ -1776,6 +1906,26 @@
+           tick_clock_, main_task_runner_));
  }
  #endif
- 
++
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -2370,11 +2471,10 @@
 +  return factory->CreateParcNativeHlsDemuxer(std::move(params));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-   DCHECK(cdm);
-@@ -3018,11 +3135,29 @@
+@@ -3018,11 +3168,29 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -2404,7 +2504,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3173,14 @@
+@@ -3038,6 +3206,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -2419,7 +2519,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3296,14 @@
+@@ -3153,6 +3329,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -2434,7 +2534,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3944,29 @@
+@@ -3793,6 +3977,29 @@
      return false;
    }
  
@@ -2466,7 +2566,15 @@
    if (!HasVideo() || !HasAudio()) {
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.h
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.h
-@@ -445,6 +445,9 @@
+@@ -231,6 +231,7 @@
+   bool Seeking() const override;
+   double Duration() const override;
+   virtual double timelineOffset() const;
++  double ParcStartDate() const override;
+   bool IsEnded() const override;
+ 
+   // Shared between the WebMediaPlayer and DemuxerManager::Client interfaces.
+@@ -445,6 +446,9 @@
    void OnProgress() override;
    void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data) override;
@@ -2476,7 +2584,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +458,11 @@
+@@ -455,6 +459,11 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -2698,3 +2806,27 @@
  
      # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
      # enable the diagnostic by removing this line.
+--- a/third_party/blink/public/platform/web_media_player.h
++++ b/third_party/blink/public/platform/web_media_player.h
+@@ -31,6 +31,7 @@
+ #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
+ #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
+ 
++#include <limits>
+ #include <optional>
+ 
+ #include "base/memory/scoped_refptr.h"
+@@ -291,6 +292,13 @@
+   virtual double CurrentTime() const = 0;
+   virtual bool IsEnded() const = 0;
+ 
++  // Parc: what HTMLMediaElement.getStartDate() answers on a Safari-identity
++  // page, in milliseconds since the epoch, NaN for none. Safari's players
++  // other than AVPlayer have no start date.
++  virtual double ParcStartDate() const {
++    return std::numeric_limits<double>::quiet_NaN();
++  }
++
+   // Internal states of loading and network.
+   virtual NetworkState GetNetworkState() const = 0;
+   virtual ReadyState GetReadyState() const = 0;

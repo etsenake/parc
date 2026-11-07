@@ -32,15 +32,16 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_state_impl.h"
  #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
-@@ -45,6 +49,7 @@
+@@ -45,13 +49,16 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_html_document.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
 +#include "third_party/blink/renderer/bindings/core/v8/v8_navigator.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_page_popup_controller_binding.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
++#include "third_party/blink/renderer/core/context_features/context_feature_settings.h"
  #include "third_party/blink/renderer/core/execution_context/agent.h"
-@@ -52,6 +57,7 @@
+ #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -48,7 +49,7 @@
  #include "third_party/blink/renderer/core/html/document_name_collection.h"
  #include "third_party/blink/renderer/core/html/html_document.h"
  #include "third_party/blink/renderer/core/html/html_iframe_element.h"
-@@ -61,6 +67,7 @@
+@@ -61,6 +68,7 @@
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -56,7 +57,7 @@
  #include "third_party/blink/renderer/core/script/modulator.h"
  #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
  #include "third_party/blink/renderer/platform/bindings/extensions_registry.h"
-@@ -72,12 +79,16 @@
+@@ -72,12 +80,16 @@
  #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
  #include "third_party/blink/renderer/platform/bindings/v8_set_return_value.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -73,7 +74,7 @@
  #include "v8/include/v8.h"
  
  namespace blink {
-@@ -240,6 +251,70 @@
+@@ -240,6 +252,79 @@
    lifecycle_ = next_status;
  }
  
@@ -81,6 +82,15 @@
 +
 +bool PresentsParcSafariIdentity(LocalDOMWindow* window) {
 +  return IsParcSafariIdentityUserAgent(window->UserAgent());
++}
++
++// Parc: Safari's members of Blink interfaces
++// ([ContextEnabled=ParcSafariIdentity], such as HTMLMediaElement's
++// getStartDate) are installed with each interface object made after the
++// window has these settings; they check the document's user agent then.
++void EnableParcSafariBindings(LocalDOMWindow* window) {
++  ContextFeatureSettings::From(
++      window, ContextFeatureSettings::CreationMode::kCreateIfNotExists);
 +}
 +
 +// Parc: Safari has no navigator.userAgentData, so a document presenting
@@ -144,7 +154,19 @@
  void LocalWindowProxy::Initialize() {
    TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
                 GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +384,12 @@
+@@ -299,6 +384,11 @@
+     SetSecurityToken(origin.get());
+   }
+ 
++  // Before anything, embedder hooks included, makes an interface object.
++  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
++    EnableParcSafariBindings(GetFrame()->DomWindow());
++  }
++
+   {
+     TRACE_EVENT2("v8", "ContextCreatedNotification", "IsMainFrame",
+                  GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
+@@ -309,6 +399,12 @@
    }
  
    InstallConditionalFeatures();
@@ -157,7 +179,7 @@
  
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +633,25 @@
+@@ -552,6 +648,26 @@
      return;
    }
  
@@ -169,6 +191,7 @@
 +  // So its main world gets ManagedMediaSource, WebKitMediaKeys, Safari's
 +  // MediaKeys and its video presentation API from a microtask instead.
 +  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
++    EnableParcSafariBindings(GetFrame()->DomWindow());
 +    ScriptState::Scope scope(script_state_);
 +    RemoveParcUserAgentData(script_state_);
 +    if (world_->IsMainWorld()) {
@@ -446,7 +469,15 @@
        }
 --- a/third_party/blink/renderer/core/html/media/html_media_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
-@@ -45,6 +45,8 @@
+@@ -27,6 +27,7 @@
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <limits>
+ #include <utility>
+ #include <variant>
+@@ -45,6 +46,8 @@
  #include "media/base/media_content_type.h"
  #include "media/base/media_switches.h"
  #include "media/base/media_track.h"
@@ -455,7 +486,15 @@
  #include "services/media_session/public/mojom/media_session.mojom-blink.h"
  #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
  #include "third_party/blink/public/common/features.h"
-@@ -71,6 +73,7 @@
+@@ -54,6 +57,7 @@
+ #include "third_party/blink/public/platform/web_media_player.h"
+ #include "third_party/blink/public/platform/web_media_player_source.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
++#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_can_play_type_result.h"
+ #include "third_party/blink/renderer/core/core_initializer.h"
+ #include "third_party/blink/renderer/core/core_probes_inl.h"
+@@ -71,6 +75,7 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -463,7 +502,7 @@
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -127,6 +130,7 @@
+@@ -127,6 +132,7 @@
  #include "third_party/blink/renderer/platform/wtf/casting.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
@@ -471,7 +510,7 @@
  #include "third_party/blink/renderer/platform/wtf/vector.h"
  #include "ui/accessibility/accessibility_features.h"
  #include "ui/display/screen_info.h"
-@@ -1069,10 +1073,85 @@
+@@ -1069,10 +1075,85 @@
    return network_state_;
  }
  
@@ -558,7 +597,43 @@
  
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -3898,7 +3977,8 @@
+@@ -2898,6 +2979,35 @@
+   ReportCurrentTimeToMediaSource();
+ }
+ 
++void HTMLMediaElement::setCurrentTimeForBindings(
++    double time,
++    ExceptionState& exception_state) {
++  if (PresentsParcSafariIdentity()) {
++    // WebKit's setCurrentTimeForBindings clamps to [0, DBL_MAX]: +Infinity
++    // (`currentTime = duration` on a live stream) seeks to the end of the
++    // seekable range, the live edge, and -Infinity to 0. A NaN seek lands
++    // on time 0 in WebKit (its nearest seekable point of an invalid time).
++    time = std::isnan(time)
++               ? 0
++               : std::clamp(time, 0.0, std::numeric_limits<double>::max());
++  } else if (!std::isfinite(time)) {
++    // What the bindings say for a restricted double.
++    exception_state.ThrowTypeError("The provided double value is non-finite.");
++    return;
++  }
++  setCurrentTime(time);
++}
++
++ScriptObject HTMLMediaElement::getStartDate(ScriptState* script_state) const {
++  // WebKit: NaN without a player, otherwise the player's start date; a Date
++  // either way (an Invalid Date for NaN).
++  double date = web_media_player_ ? web_media_player_->ParcStartDate()
++                                  : std::numeric_limits<double>::quiet_NaN();
++  return ScriptObject(
++      script_state->GetIsolate(),
++      v8::Date::New(script_state->GetContext(), date).ToLocalChecked());
++}
++
+ double HTMLMediaElement::duration() const {
+   return duration_;
+ }
+@@ -3898,7 +4008,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -570,7 +645,27 @@
  
 --- a/third_party/blink/renderer/core/html/media/html_media_element.h
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.h
-@@ -634,6 +634,7 @@
+@@ -100,6 +100,7 @@
+ class MediaStreamDescriptor;
+ class RemotePlaybackClient;
+ class ScriptPromiseResolverBase;
++class ScriptObject;
+ class ScriptState;
+ class TextTrack;
+ class TextTrackContainer;
+@@ -252,6 +253,11 @@
+   // playback state
+   double currentTime() const;
+   void setCurrentTime(double);
++  // Parc: the currentTime attribute and WebKit's getStartDate()
++  // ([ContextEnabled=ParcSafariIdentity]).
++  double currentTimeForBindings() const { return currentTime(); }
++  void setCurrentTimeForBindings(double time, ExceptionState& exception_state);
++  ScriptObject getStartDate(ScriptState* script_state) const;
+   double duration() const;
+   bool paused() const;
+   void SetPaused(bool);
+@@ -634,6 +640,7 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
@@ -882,3 +977,57 @@
    return MakeMediaAudioDecoderConfig(config, js_error_message /* out */);
  }
  
+--- a/third_party/blink/renderer/core/html/media/html_media_element.idl
++++ b/third_party/blink/renderer/core/html/media/html_media_element.idl
+@@ -61,10 +61,14 @@
+     readonly attribute boolean seeking;
+ 
+     // playback state
+-    attribute double currentTime;
++    // Parc: an unrestricted double, as WebKit's, on Safari-identity pages
++    // (html_media_element.cc); a non-finite value is a TypeError elsewhere.
++    [ImplementedAs=currentTimeForBindings, RaisesException=Setter] attribute unrestricted double currentTime;
+     // FIXME: void fastSeek(double time);
+     readonly attribute unrestricted double duration;
+     // FIXME: Date getStartDate(); crbug.com/312699
++    // Parc: WebKit's getStartDate(), on Safari-identity pages only.
++    [ContextEnabled=ParcSafariIdentity, CallWith=ScriptState] object getStartDate();
+     readonly attribute boolean paused;
+     attribute double defaultPlaybackRate;
+     [RaisesException=Setter] attribute double playbackRate;
+--- a/third_party/blink/renderer/core/context_features/context_feature_settings.h
++++ b/third_party/blink/renderer/core/context_features/context_feature_settings.h
+@@ -72,6 +72,12 @@
+   }
+   bool isUnboundedElementEnabled() const;
+ 
++  // ContextEnabled=ParcSafariIdentity: Parc's members for a context that
++  // presents Safari's identity (parc_safari_identity.h), decided by its user
++  // agent when the bindings are installed. A window gets these settings when
++  // its context is created for such a document (local_window_proxy.cc).
++  bool isParcSafariIdentityEnabled() const;
++
+   void Trace(Visitor*) const override;
+ 
+  private:
+--- a/third_party/blink/renderer/core/context_features/context_feature_settings.cc
++++ b/third_party/blink/renderer/core/context_features/context_feature_settings.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_feature_checks.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
+@@ -77,6 +78,10 @@
+              : UnboundedElementAuth::kAllowedOpenWeb;
+ }
+ 
++bool ContextFeatureSettings::isParcSafariIdentityEnabled() const {
++  return IsParcSafariIdentityUserAgent(GetSupplementable()->UserAgent());
++}
++
+ bool ContextFeatureSettings::isUnboundedElementEnabled() const {
+   return GetUnboundedElementAuth(GetSupplementable()) !=
+          UnboundedElementAuth::kDenied;

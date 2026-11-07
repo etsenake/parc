@@ -54,6 +54,15 @@ On a page that presents Safari's identity:
   Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's
   picture-in-picture panel and fullscreen window present the video and the
   standard API's state always agrees with it.
+- `HTMLMediaElement.getStartDate()` exists, as in WebKit's IDL. It answers
+  what Safari's GPU process last sampled: the native HLS route's
+  `EXT-X-PROGRAM-DATE-TIME` date in whole seconds, an Invalid Date for other
+  media, and the epoch before the player's first ready-state change.
+  `currentTime` takes WebKit's `unrestricted double`: Infinity
+  (`currentTime = duration` on a live stream) seeks to the end of the seekable
+  range, the live edge, and −Infinity and NaN seek to 0, where a Chrome page
+  gets a TypeError (fairplay-identity-blink.patch, `ContextEnabled=ParcSafariIdentity`;
+  NATIVE_HLS.md, Live and DVR).
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`

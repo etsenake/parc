@@ -78,6 +78,22 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | false until native HLS exists | missing (flip when fp-native-hls lands) | fp-safari-eme-surface |
 | `WebKitMediaKeys.isTypeSupported('org.w3c.clearkey', 'application/x-mpegurl')` | true (HLS only) | false | missing (with HLS) | fp-safari-eme-surface |
 
+## Media element timing (native HLS live and DVR)
+
+WebKit: `platform/graphics/avfoundation/objc/MediaPlayerPrivateAVFoundationObjC.mm`,
+`MediaPlayerPrivateAVFoundation.cpp`, `html/HTMLMediaElement.{idl,cpp}`, and
+the GPU process's cache (`RemoteMediaPlayerProxy`, `MediaPlayerPrivateRemote`).
+Parc: `Engine/ParcNative/fairplay/fairplay_hls_timeline.*`, NATIVE_HLS.md
+(Live and DVR).
+
+| Piece | Safari | Parc | Status | Owner |
+|---|---|---|---|---|
+| `duration` of live HLS, `durationchange` | +Infinity; fires only on a real change (live to VOD at `EXT-X-ENDLIST`) | the core's timeline; the route sets it | pending (native HLS route) | fp-hls-live |
+| `seekable` of HLS | one range from the smallest start to the largest end of the valid `seekableTimeRanges`, the duration's end without any, none when the end is 0 | the core's timeline; `WebMediaPlayerImpl::Seekable()` answers the native HLS demuxer's window | pending (native HLS route) | fp-hls-live |
+| `getStartDate()` | WebKit IDL, unconditional: `round(currentDate − currentTime)` whole seconds sampled at ready-state changes, Invalid Date without a date or for other players, the epoch before the first ready-state change | the same method under Safari's identity (`[ContextEnabled=ParcSafariIdentity]`), values from the native HLS demuxer | present (method); dates pending (native HLS route) | fp-hls-live |
+| `currentTime` setter | `unrestricted double`: +Infinity seeks to the seekable end (live edge), −Infinity and NaN to 0 | the same under Safari's identity; a TypeError elsewhere | present | fp-hls-live |
+| `fastSeek(time)` | WebKit IDL: a seek with tolerance toward the current time | absent (Chromium's FIXME) | missing | — |
+
 ## Legacy prefixed EME (`WebKitMediaKeys`)
 
 WebKit: `Modules/encryptedmedia/legacy/*`, `LegacyCDMPrivateAVFObjC.mm`

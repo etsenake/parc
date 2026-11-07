@@ -538,7 +538,10 @@ Infinity. `WebMediaPlayerImpl::Seekable()` returns that window for it (instead
 of Chromium's empty live answer), and `WebMediaPlayer::ParcStartDate()`
 (milliseconds, NaN without one) backs `HTMLMediaElement.getStartDate()`, which
 exists only on Safari-identity pages (`[ContextEnabled=ParcSafariIdentity]`)
-and answers an Invalid Date for every other player, as WebKit's default.
+and answers an Invalid Date for every other player, as WebKit's default. It
+is installed with the context's `HTMLMediaElement` interface object, so a
+document that takes over a context in which an earlier document (an initial
+`about:blank`) already used that interface goes without it.
 
 ## Threads
 
