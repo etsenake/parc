@@ -422,6 +422,19 @@ Nothing here builds the engine. For each increment:
   every before/after digest matching) and stub buildflag headers; a copy
   with a misspelled member fails, so the check reads the code. The counts it
   reports are covered by `tests/FairPlay` (see its README's results).
+- Native HLS mojo and loader (2026-11-06): Chromium's mojom parser accepts
+  the patched `renderer_extensions.mojom` and `interface_factory.mojom` with
+  every import, and its C++ bindings generator (Python 3.13, a typemap file
+  written from the GN `cpp_typemaps` of the types used) produces their
+  headers. Against those, the generated `-shared.h` headers of the network
+  and Blink fetch mojoms, the pinned headers and stub buildflag headers,
+  `fairplay_hls_loader.cc` and `fairplay_hls_loader_unittest.cc` pass
+  `-fsyntax-only -Wall -Wextra -Werror` (`NDEBUG`, `INSIDE_BLINK`); a copy
+  with a misspelled member fails. That check caught a struct name clashing
+  with a mojo-generated alias (`FairPlayHlsLoadRequest` vs the
+  `FairPlayHlsLoadRequestDataView` of interface `FairPlayHlsLoad`), now
+  `FairPlayHlsRequest`/`FairPlayHlsResponse`. The unit tests run only when
+  `blink_platform_unittests` is built.
 - Each increment had an independent read-only review before main, and its
   findings were fixed.
 

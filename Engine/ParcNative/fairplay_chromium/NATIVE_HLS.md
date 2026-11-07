@@ -134,11 +134,11 @@ CreateFairPlayHlsPlayer(pending_receiver<FairPlayHlsPlayer> player,
                         pending_remote<FairPlayHlsPlayerClient> client,
                         pending_remote<FairPlayHlsPlayerLifetime>? lifetime);
 
-struct FairPlayHlsLoadRequest {
+struct FairPlayHlsRequest {
   url.mojom.Url url; string method;
   map<string, string> headers;      // as AVFoundation set them
 };
-struct FairPlayHlsLoadResponse {
+struct FairPlayHlsResponse {
   int32 http_status; string mime_type;  // Content-Type without parameters
   int64 content_length;             // -1 unknown or decoded Content-Encoding
   url.mojom.Url final_url;          // after redirects
@@ -148,7 +148,7 @@ interface FairPlayHlsLoad {          // render process implements, per load
   Cancel();                          // or close the pipe
 };
 interface FairPlayHlsLoadClient {    // GPU implements, per load
-  OnResponse(FairPlayHlsLoadResponse response,
+  OnResponse(FairPlayHlsResponse response,
              handle<data_pipe_consumer> body);  // closes after the last byte
   OnComplete(int32 net_error);       // net::OK or a net error
 };
@@ -209,7 +209,7 @@ interface FairPlayHlsPlayer {        // GPU implements
 };
 
 interface FairPlayHlsPlayerClient {  // render process implements
-  StartLoad(FairPlayHlsLoadRequest request,
+  StartLoad(FairPlayHlsRequest request,
             pending_receiver<FairPlayHlsLoad> load,
             pending_remote<FairPlayHlsLoadClient> client);
   OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
@@ -295,19 +295,52 @@ GPU-sandbox probe plays native HLS with only the MSE route's sandbox rules.
 
 ## Network (render process)
 
-`StartLoad` runs one `blink::WebAssociatedURLLoader` per load on the main
-thread, made by the element's `ResourceFetchContext` (the factory
-`ResourceMultiBufferDataProvider` uses for every `<video src>` load), with the
-element's CORS mode and credentials. So AVFoundation's loads carry the page's
-cookies and referrer, pass CORS, use the profile's proxy and appear in DevTools
-as the element's media requests. The real status, headers and MIME type go
-back to AVFoundation. Of AVFoundation's request headers only `Range` is
-forwarded: its own `User-Agent` (AppleCoreMedia) and `X-Playback-Session-Id`
-would make cross-origin CORS loads preflight, and the page's identity UA is
-sent instead. Redirects are followed in the render process (cross-origin ones
-only in CORS mode, as for any media load); `final_url` tells AVFoundation the
-URL that relative playlist URIs resolve against. Bodies stream back over the
-load's data pipe. `skd://` URIs never reach `StartLoad` (Keys).
+`blink::FairPlayHlsLoader`
+(`third_party/blink/renderer/platform/media/fairplay_hls_loader.{h,cc}`,
+installed from `fairplay_chromium/`) serves `StartLoad` on the main thread.
+Each load is one `blink::WebAssociatedURLLoader` made by the element's
+`ResourceFetchContext` (the factory `ResourceMultiBufferDataProvider` uses for
+every `<video src>` load), with the element's CORS mode and credentials
+exactly as that provider applies them (CORS mode with no preflight; anonymous
+sends same-origin credentials) and the video or audio request destination. So
+AVFoundation's loads carry the page's cookies and referrer, pass CORS, use the
+profile's proxy and appear in DevTools as the element's media requests.
+
+- Only `GET` and `HEAD` of `http`/`https` URLs are fetched; anything else
+  answers `OnComplete(ERR_DISALLOWED_URL_SCHEME / ERR_METHOD_NOT_SUPPORTED)`
+  at once. `skd://` and `clearkey://` URIs never reach `StartLoad` (Keys).
+- Of AVFoundation's request headers only `Range` is forwarded (a well-formed
+  ASCII value): its own `User-Agent` (AppleCoreMedia) and
+  `X-Playback-Session-Id` would make cross-origin CORS loads preflight, and
+  the page's identity UA is sent instead. A `Range` request gets the
+  identity encoding exactly as `ResourceMultiBufferDataProvider`'s do: added
+  by the network layer after any service worker
+  (`kDeferMediaAcceptEncodingInjection`, on by default), or by the loader when
+  that switch is off. A playlist fetched without `Range` lets the network
+  stack negotiate and decode compression.
+- Redirects are followed in the render process as for any fresh media load
+  (`WebAssociatedURLLoader` enforces CORS on them in CORS mode); `final_url`
+  is the URL after the last one, which relative playlist URIs resolve
+  against.
+- The real status, MIME type (without parameters) and headers go back to
+  AVFoundation. A body the network stack decoded (a `Content-Encoding` other
+  than identity) reports length -1 and drops `Content-Length` and
+  `Content-Encoding`, since the decoded body is not that length.
+- The body streams over the load's data pipe (512 KiB); while the pipe is full
+  the loader defers loading and keeps the overflow, and `OnComplete(net::OK)`
+  follows the last byte. A failure reports its net error (after a partial
+  body, the bytes already sent stay in the pipe).
+- `FairPlayHlsLoad.Cancel()`, the load's or client's pipe closing, or the body
+  pipe's consumer closing early cancels the `WebAssociatedURLLoader`.
+  Destroying the loader cancels every load.
+
+`WebMediaPlayerImpl` (fp-hls-render's routing) builds the loader with
+`url_index_->fetch_context()`, its `cors_mode_` and
+`client_->IsAudioElement()`, and gives the demuxer `GetStartLoadCallback()`, a
+callback any thread may run that posts to the loader and is dropped (closing
+the pipes) once the loader is gone. The demuxer's
+`FairPlayHlsPlayerClient::StartLoad` just runs it. Unit tests:
+`fairplay_hls_loader_unittest.cc` in `blink_platform_unittests`.
 
 ## Keys
 

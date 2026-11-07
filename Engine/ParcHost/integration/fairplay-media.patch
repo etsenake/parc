@@ -1801,7 +1801,7 @@
 +
 +// One load AVFoundation asks for.
 +[EnableIf=is_mac]
-+struct FairPlayHlsLoadRequest {
++struct FairPlayHlsRequest {
 +  url.mojom.Url url;
 +  string method;
 +  // As AVFoundation set them. The render process forwards only Range.
@@ -1809,7 +1809,7 @@
 +};
 +
 +[EnableIf=is_mac]
-+struct FairPlayHlsLoadResponse {
++struct FairPlayHlsResponse {
 +  int32 http_status;
 +  // The server's Content-Type without parameters, or empty.
 +  string mime_type;
@@ -1833,7 +1833,7 @@
 +[EnableIf=is_mac]
 +interface FairPlayHlsLoadClient {
 +  // `body` carries the response body and closes after its last byte.
-+  OnResponse(FairPlayHlsLoadResponse response,
++  OnResponse(FairPlayHlsResponse response,
 +             handle<data_pipe_consumer> body);
 +  // net::OK once the whole body is in the pipe, otherwise a net error.
 +  OnComplete(int32 net_error);
@@ -1918,7 +1918,7 @@
 +interface FairPlayHlsPlayerClient {
 +  // A load AVFoundation needs. The render process fetches it through the
 +  // element's loader and answers on `client`.
-+  StartLoad(FairPlayHlsLoadRequest request,
++  StartLoad(FairPlayHlsRequest request,
 +            pending_receiver<FairPlayHlsLoad> load,
 +            pending_remote<FairPlayHlsLoadClient> client);
 +  // The media time `time` at `capture_time`, advancing at `rate`.
@@ -3680,3 +3680,31 @@
    map->Add<media::mojom::WebrtcVideoPerfHistory>(BindWorkerReceiver(
        &RenderProcessHostImpl::BindWebrtcVideoPerfHistory, host));
  #if BUILDFLAG(IS_FUCHSIA)
+--- a/third_party/blink/renderer/platform/media/BUILD.gn
++++ b/third_party/blink/renderer/platform/media/BUILD.gn
+@@ -84,6 +84,14 @@
+     "web_source_buffer_impl.h",
+   ]
+ 
++  if (is_mac) {
++    # Parc: the loads of Safari's native HLS route (fairplay_hls_loader.h).
++    sources += [
++      "fairplay_hls_loader.cc",
++      "fairplay_hls_loader.h",
++    ]
++  }
++
+   configs += [
+     "//third_party/blink/renderer/platform:blink_platform_config",
+     "//third_party/blink/renderer/platform:blink_platform_implementation",
+@@ -135,6 +143,10 @@
+     "watch_time_component_unittest.cc",
+     "watch_time_reporter_unittest.cc",
+   ]
++  if (is_mac) {
++    # Parc: Safari's native HLS route's loader.
++    sources += [ "fairplay_hls_loader_unittest.cc" ]
++  }
+   deps = [
+     ":media",
+     "//base",
