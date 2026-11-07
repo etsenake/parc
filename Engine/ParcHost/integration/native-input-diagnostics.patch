@@ -122,21 +122,44 @@
  #include "base/memory/ptr_util.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory_coordinator/traits.h"
-@@ -468,6 +472,13 @@
+@@ -116,6 +120,7 @@
+ #include "content/browser/media/key_system_support_impl.h"
+ #include "content/browser/media/media_devices_util.h"
+ #include "content/browser/media/media_interface_proxy.h"
++#include "content/browser/media/parc_fairplay_hooks.h"
+ #include "content/browser/media/webaudio/audio_context_manager_impl.h"
+ #include "content/browser/navigation_or_document_handle.h"
+ #include "content/browser/network/cross_origin_embedder_policy_reporter.h"
+@@ -467,6 +472,13 @@
+ };
  
  namespace {
- 
++
 +// Opt-in delivery observations only; never log page content or input values.
 +bool ParcInputDiagnosticsEnabled() {
 +  return base::CommandLine::InitializedForCurrentProcess() &&
 +         base::CommandLine::ForCurrentProcess()->HasSwitch(
 +             "parc-input-diagnostics");
 +}
-+
+ 
  // Maximum amount of time to wait for beforeunload/unload handlers to be
  // processed by the renderer process.
- constexpr base::TimeDelta kUnloadTimeout = base::Milliseconds(500);
-@@ -4026,10 +4037,29 @@
+@@ -3220,6 +3232,14 @@
+           LoadedWithCacheControlNoStoreHeader()
+               ? BackForwardCacheImpl::kInCCNSContext
+               : BackForwardCacheImpl::kNotInCCNSContext);
++  // Parc: a Safari-identity page stays restorable as long as WebKit keeps
++  // one (BackForwardCacheExpirationInterval, 30 minutes), so a video it was
++  // casting, paused there, still resumes on the receiver when the user
++  // comes back.
++  if (!LoadedWithCacheControlNoStoreHeader() &&
++      parc::fairplay::FramePresentsSafariIdentity(this)) {
++    evict_after = std::max(evict_after, base::Minutes(30));
++  }
+ 
+   back_forward_cache_eviction_timer_.SetTaskRunner(
+       GetBackForwardCache().GetTaskRunner());
+@@ -4026,10 +4046,29 @@
  
  void RenderFrameHostImpl::AccessibilityPerformAction(
      const ui::AXActionData& action_data) {
@@ -166,7 +189,7 @@
      return;
    }
  
-@@ -4043,6 +4073,7 @@
+@@ -4043,6 +4082,7 @@
    // Don't perform the action if the WebContents is set to ignore input events.
    // See WebContents::IgnoreInputEvents for more information.
    if (delegate()->ShouldIgnoreInputEvents()) {
@@ -174,7 +197,7 @@
      return;
    }
  
-@@ -4056,6 +4087,7 @@
+@@ -4056,6 +4096,7 @@
      }
    }
  
@@ -182,10 +205,12 @@
    render_accessibility_->PerformAction(action_data);
  }
  
-@@ -10297,6 +10329,28 @@
-   frame_tree_->controller().UpdateStateForFrame(this, state);
- }
+@@ -10295,6 +10336,28 @@
+   }
  
+   frame_tree_->controller().UpdateStateForFrame(this, state);
++}
++
 +void RenderFrameHostImpl::PrepareNativeMainFrameLink(
 +    const GURL& url, const blink::DocumentToken& document,
 +    WindowOpenDisposition disposition, std::optional<uint32_t> input_modifiers,
@@ -206,12 +231,10 @@
 +  auto token = contents->GetDelegate()->PrepareNativeMainFrameLink(this, url, disposition, input_modifiers);
 +  if (!lease.AsRenderFrameHostIfValid()) token.reset();
 +  std::move(callback).Run(token);
-+}
-+
+ }
+ 
  void RenderFrameHostImpl::OpenURL(blink::mojom::OpenURLParamsPtr params) {
-   // Verify and unpack the Mojo payload.
-   GURL validated_url;
-@@ -10447,7 +10501,7 @@
+@@ -10447,7 +10510,7 @@
        params->disposition, params->should_replace_current_entry,
        params->user_gesture, params->triggering_event_info,
        params->href_translate, std::move(blob_url_loader_factory),
