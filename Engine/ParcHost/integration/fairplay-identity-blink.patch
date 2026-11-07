@@ -2534,3 +2534,55 @@
    const AtomicString& adjusted_type = AdjustEventType(type, request_type);
    document.EnqueueAnimationFrameTask(BindOnce(FireEvent, adjusted_type,
                                                WrapWeakPersistent(&element),
+--- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
++++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
+@@ -27,6 +27,7 @@
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+ #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+@@ -131,7 +132,15 @@
+   if (!video_element.HasVideo())
+     return Status::kVideoTrackNotAvailable;
+ 
+-  if (video_element.FastHasAttribute(html_names::kDisablepictureinpictureAttr))
++  // Parc: WebKit only reflects disablePictureInPicture and never checks it,
++  // so a document presenting Safari's identity may put such a video in
++  // picture in picture, as in Safari (parc_safari_identity.h).
++  const ExecutionContext* context =
++      video_element.GetDocument().GetExecutionContext();
++  const bool parc_safari_identity =
++      context && IsParcSafariIdentityUserAgent(context->UserAgent());
++  if (!parc_safari_identity &&
++      video_element.FastHasAttribute(html_names::kDisablepictureinpictureAttr))
+     return Status::kDisabledByAttribute;
+ 
+   if (video_element.IsInAutoPIP())
+--- a/third_party/blink/renderer/core/html/media/html_video_element.cc
++++ b/third_party/blink/renderer/core/html/media/html_video_element.cc
+@@ -56,6 +56,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_client.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
++#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+ #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+@@ -1301,6 +1302,14 @@
+     return;
+   }
+ 
++  // Parc: WebKit never checks disablePictureInPicture, so setting it leaves
++  // a Safari-identity document's video in picture in picture
++  // (parc_safari_identity.h).
++  if (const ExecutionContext* context = GetDocument().GetExecutionContext();
++      context && IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    return;
++  }
++
+   PictureInPictureController& controller =
+       PictureInPictureController::From(GetDocument());
+   if (controller.PictureInPictureElement(GetTreeScope()) == *this) {

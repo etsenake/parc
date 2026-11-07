@@ -111,7 +111,6 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   const documentPictureInPictureElement = getter(documentPrototype, 'pictureInPictureElement');
   const shadowPictureInPictureElement = getter(shadowRootPrototype, 'pictureInPictureElement');
   const pictureInPictureEnabledOf = getter(documentPrototype, 'pictureInPictureEnabled');
-  const hasAttribute = method(g.Element && g.Element.prototype, 'hasAttribute');
   const helper = (name) =>
       native && typeof native[name] === 'function' ? native[name] : null;
   const nativeFire = helper('fire');
@@ -438,10 +437,8 @@ inline constexpr char kParcWebKitPresentationScript[] = R"PARC_WKPM_JS(
   function enter(element, state, mode) {
     if (mode === PICTURE_IN_PICTURE) {
       // The lifted rule lets picture in picture go without transient
-      // activation, through Chromium's picture-in-picture request token
-      // (not for a video Chromium refuses anyway).
-      if (allowPictureInPicture && !userGesture() && !documentHasPictureInPicture(element) &&
-          !(hasAttribute && apply(hasAttribute, element, ['disablepictureinpicture']))) {
+      // activation, through Chromium's picture-in-picture request token.
+      if (allowPictureInPicture && !userGesture() && !documentHasPictureInPicture(element)) {
         apply(allowPictureInPicture, undefined, [element]);
       }
       // Chromium leaves element fullscreen first, as WebKit does.

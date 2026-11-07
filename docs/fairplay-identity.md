@@ -62,6 +62,10 @@ On a page that presents Safari's identity:
   document listens for both, and both `fullscreenerror` and
   `webkitfullscreenerror` (Blink's fullscreen rendering steps,
   `FireParcSafariEvents`). Chrome pages keep one event by request type.
+- `disablePictureInPicture` is reflected but, as in WebKit, never checked:
+  such a video still enters picture in picture, and setting the attribute
+  leaves one there (`PictureInPictureControllerImpl::IsElementAllowedInternal`,
+  `HTMLVideoElement::AttributeChanged`).
 - `HTMLMediaElement.getStartDate()` exists, as in WebKit's IDL. It answers
   what Safari's GPU process last sampled: the native HLS route's
   `EXT-X-PROGRAM-DATE-TIME` date in whole seconds, an Invalid Date for other
@@ -533,7 +537,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   (`parc_safari_media_keys.h`), the video presentation API
   (`parc_webkit_presentation.h`) with its private helpers and
   `HTMLMediaElement`'s record of a gesture-started media change, WebKit's
-  fullscreen events (`core/fullscreen/fullscreen.cc`), FairPlay's `sinf`, `skd` and `mpts` init
+  fullscreen events (`core/fullscreen/fullscreen.cc`), its ignored
+  `disablePictureInPicture` (`picture_in_picture_controller_impl.cc`,
+  `html_video_element.cc`), FairPlay's `sinf`, `skd` and `mpts` init
   data gate,
   the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`, and the memory-pressure
