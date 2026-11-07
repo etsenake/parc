@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 437,
+  "version": 438,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1710,12 +1710,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.h",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.h",
-      "sha256": "05b089c557bbeb48a8899ab20750432f1ad915977e4c929f3ad68c0912e4bce4"
+      "sha256": "434fec89c1bce5064fd1653d58839a932d278f544d7f96e96ebf3a276c5be506"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_demuxer.cc",
       "target": "content/renderer/media/fairplay/native_hls_demuxer.cc",
-      "sha256": "9fee08d2c0b4462b0bf311478b0aaedca55ddb19b55ffb66f793bfd9d00b232b"
+      "sha256": "52997ee8562befd217b920f63aee4a6fc331654a4a1a2944a353d3a727e56625"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.h",
@@ -1740,7 +1740,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_unittest.cc",
       "target": "content/renderer/media/fairplay/native_hls_unittest.cc",
-      "sha256": "251fc0a3929f9ee61fb9e4a548fc1454130eb8bc6e5f557bb436bbde103fbc23"
+      "sha256": "e3ccee60b286e067933950ee76a606f4b044150e47a6a4bcf0b03d34c4f9913c"
     },
     {
       "source": "Engine/ParcRenderer/parc_managed_media_source.h",
@@ -4107,7 +4107,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "98c926d5ebba0bac001a9df806729facf857017e3bb3bf21091bf98d9fdf17e8",
+      "sha256": "889b4d098642a031121c0f70d010cbaaa1ed3bb47b4290092e864ccfc5b6f240",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4317,7 +4317,7 @@
         {
           "target": "media/mojo/mojom/renderer_extensions.mojom",
           "before_sha256": "d8c555a7884c5c557a91a62b2c9fc709b9c5356eb33bc6f0b91fcac53af1ed0d",
-          "after_sha256": "6bfa67307ece9f1f0219f4189d1979d2fe07158bcaace5aebbfe3d3deb59da3c"
+          "after_sha256": "66e8e3096a97d2c20e1449513c514378ff6ef71837d25f4c9aa57a916a866370"
         },
         {
           "target": "media/mojo/services/BUILD.gn",

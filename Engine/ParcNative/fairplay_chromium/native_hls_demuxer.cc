@@ -6,6 +6,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/task/bind_post_task.h"
 #include "base/logging.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/cdm_context.h"
@@ -15,6 +16,7 @@
 #include "media/base/eme_constants.h"
 #include "media/base/encryption_scheme.h"
 #include "media/base/media_log.h"
+#include "media/base/media_track.h"
 #include "media/base/ranges.h"
 #include "media/base/sample_format.h"
 #include "media/base/timestamp_constants.h"
@@ -26,6 +28,38 @@
 namespace parc::fairplay {
 
 namespace {
+
+media::ParcInbandTextCue::Type ToParcCueType(
+    media::mojom::FairPlayHlsCueType type) {
+  switch (type) {
+    case media::mojom::FairPlayHlsCueType::kWebVttHeader:
+      return media::ParcInbandTextCue::Type::kWebVttHeader;
+    case media::mojom::FairPlayHlsCueType::kWebVtt:
+      return media::ParcInbandTextCue::Type::kWebVtt;
+    case media::mojom::FairPlayHlsCueType::kAdd:
+      return media::ParcInbandTextCue::Type::kAdd;
+    case media::mojom::FairPlayHlsCueType::kUpdate:
+      return media::ParcInbandTextCue::Type::kUpdate;
+    case media::mojom::FairPlayHlsCueType::kRemove:
+      return media::ParcInbandTextCue::Type::kRemove;
+  }
+  return media::ParcInbandTextCue::Type::kAdd;
+}
+
+media::ParcInbandTextCue::Align ToParcCueAlign(
+    media::mojom::FairPlayHlsCueAlign align) {
+  switch (align) {
+    case media::mojom::FairPlayHlsCueAlign::kNone:
+      return media::ParcInbandTextCue::Align::kNone;
+    case media::mojom::FairPlayHlsCueAlign::kStart:
+      return media::ParcInbandTextCue::Align::kStart;
+    case media::mojom::FairPlayHlsCueAlign::kMiddle:
+      return media::ParcInbandTextCue::Align::kMiddle;
+    case media::mojom::FairPlayHlsCueAlign::kEnd:
+      return media::ParcInbandTextCue::Align::kEnd;
+  }
+  return media::ParcInbandTextCue::Align::kNone;
+}
 
 media::Ranges<base::TimeDelta> ToRanges(
     const std::vector<media::mojom::FairPlayHlsTimeRangePtr>& ranges) {
@@ -100,6 +134,7 @@ NativeHlsDemuxer::NativeHlsDemuxer(
           std::move(params.encrypted_media_init_data_cb)),
       key_request_cb_(std::move(params.key_request_cb)),
       start_load_cb_(std::move(params.start_load_cb)),
+      track_manager_(std::move(params.track_manager)),
       pending_player_(std::move(player)),
       pending_client_receiver_(std::move(client)) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
@@ -206,6 +241,13 @@ void NativeHlsDemuxer::OnPlayerInitialized(
   }
   host_->SetDuration(metadata->duration);
   host_->OnBufferedTimeRangesChanged(ToRanges(metadata->buffered));
+  tracks_ready_ = true;
+  ApplyTracks(pending_tracks_ ? *pending_tracks_ : metadata->tracks);
+  pending_tracks_.reset();
+  for (const auto& [track_key, cues] : pending_cues_) {
+    ForwardTextCues(track_key, cues);
+  }
+  pending_cues_.clear();
   std::move(init_cb_).Run(media::PIPELINE_OK);
 }
 
@@ -506,7 +548,116 @@ void NativeHlsDemuxer::OnStartDateChanged(
 
 void NativeHlsDemuxer::OnTracksChanged(
     std::vector<media::mojom::FairPlayHlsTrackPtr> tracks) {
-  // audioTracks and textTracks are fp-hls-tracks'.
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!tracks_ready_) {
+    pending_tracks_ = std::move(tracks);
+    return;
+  }
+  ApplyTracks(tracks);
+}
+
+void NativeHlsDemuxer::ApplyTracks(
+    const std::vector<media::mojom::FairPlayHlsTrackPtr>& tracks) {
+  if (!track_manager_ || stopped_) {
+    return;
+  }
+  std::vector<media::ParcInbandTextTrack> text_tracks;
+  for (const auto& track : tracks) {
+    if (track->type != media::mojom::FairPlayHlsTrackType::kText) {
+      continue;
+    }
+    media::ParcInbandTextTrack text;
+    text.key = track->key;
+    text.id = track->id;
+    text.kind = track->kind;
+    text.label = track->label;
+    text.language = track->language;
+    text.index = track->index;
+    text.is_default = track->is_default;
+    text.is_closed_captions = track->is_closed_captions;
+    text.is_sdh = track->is_sdh;
+    text.contains_only_forced_subtitles =
+        track->contains_only_forced_subtitles;
+    text.is_main_program_content = track->is_main_program_content;
+    text.is_easy_to_read = track->is_easy_to_read;
+    text_tracks.push_back(std::move(text));
+  }
+  track_manager_->ParcSetInbandTextTracks(
+      text_tracks,
+      base::BindPostTask(
+          media_task_runner_,
+          base::BindRepeating(&NativeHlsDemuxer::SetTextTrackMode,
+                              weak_factory_.GetWeakPtr())));
+}
+
+void NativeHlsDemuxer::OnTextCues(
+    const std::string& track_key,
+    std::vector<media::mojom::FairPlayHlsCuePtr> cues) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!tracks_ready_) {
+    pending_cues_.emplace_back(track_key, std::move(cues));
+    return;
+  }
+  ForwardTextCues(track_key, cues);
+}
+
+void NativeHlsDemuxer::ForwardTextCues(
+    const std::string& track_key,
+    const std::vector<media::mojom::FairPlayHlsCuePtr>& cues) {
+  if (!track_manager_ || stopped_) {
+    return;
+  }
+  std::vector<media::ParcInbandTextCue> result;
+  result.reserve(cues.size());
+  for (const auto& cue : cues) {
+    media::ParcInbandTextCue out;
+    out.type = ToParcCueType(cue->type);
+    out.cue_id = cue->cue_id;
+    out.start = cue->start;
+    out.end = cue->end;
+    out.complete = cue->complete;
+    out.text = cue->text;
+    out.identifier = cue->identifier;
+    out.settings = cue->settings;
+    out.source_id = cue->source_id;
+    out.original_start_time = cue->original_start_time;
+    out.line = cue->line;
+    out.position = cue->position;
+    out.size = cue->size;
+    out.base_font_size = cue->base_font_size;
+    out.relative_font_size = cue->relative_font_size;
+    out.font_name = cue->font_name;
+    out.align = ToParcCueAlign(cue->align);
+    out.position_align = ToParcCueAlign(cue->position_align);
+    out.foreground_color = cue->foreground_color;
+    out.background_color = cue->background_color;
+    out.highlight_color = cue->highlight_color;
+    out.prevent_line_wrapping = cue->prevent_line_wrapping;
+    result.push_back(std::move(out));
+  }
+  track_manager_->ParcAddInbandTextCues(track_key, result);
+}
+
+void NativeHlsDemuxer::SetTextTrackMode(const std::string& key,
+                                        media::ParcInbandTextTrackMode mode) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!player_.is_bound() || stopped_) {
+    return;
+  }
+  media::mojom::FairPlayHlsTextTrackMode mojo_mode =
+      media::mojom::FairPlayHlsTextTrackMode::kDisabled;
+  switch (mode) {
+    case media::ParcInbandTextTrackMode::kDisabled:
+      mojo_mode = media::mojom::FairPlayHlsTextTrackMode::kDisabled;
+      break;
+    case media::ParcInbandTextTrackMode::kHidden:
+      mojo_mode = media::mojom::FairPlayHlsTextTrackMode::kHidden;
+      break;
+    case media::ParcInbandTextTrackMode::kShowing:
+      mojo_mode = media::mojom::FairPlayHlsTextTrackMode::kShowing;
+      break;
+  }
+  player_->SetTextTrackMode(key, mojo_mode);
 }
 
 void NativeHlsDemuxer::OnNaturalSizeChange(const gfx::Size& size) {

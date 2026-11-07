@@ -74,8 +74,10 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
                        const std::vector<uint8_t>& key) override {
     clear_keys_.emplace_back(key_id, key);
   }
-  void SelectAudioTrack(const std::string& id) override {}
-  void SelectTextTrack(const std::optional<std::string>& id) override {}
+  void SetAudioTrackEnabled(const std::string& key, bool enabled) override {}
+  void SetTextTrackMode(const std::string& key,
+                        media::mojom::FairPlayHlsTextTrackMode mode) override {
+  }
   void Suspend() override {}
   void Resume() override {}
 

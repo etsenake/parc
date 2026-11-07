@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/functional/callback.h"
@@ -193,6 +194,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void OnStartDateChanged(std::optional<base::Time> start_date) override;
   void OnTracksChanged(
       std::vector<media::mojom::FairPlayHlsTrackPtr> tracks) override;
+  void OnTextCues(const std::string& track_key,
+                  std::vector<media::mojom::FairPlayHlsCuePtr> cues) override;
   void OnNaturalSizeChange(const gfx::Size& size) override;
   void OnLayerRegistered(const base::UnguessableToken& layer_token,
                          const gfx::Size& natural_size) override;
@@ -220,6 +223,16 @@ class NativeHlsDemuxer final : public media::Demuxer,
                       media::PipelineStatusCallback status_cb,
                       bool success);
   void OnPlayerDisconnected();
+  // The player's track list to the element: its text tracks as in-band text
+  // tracks (NATIVE_HLS.md Tracks).
+  void ApplyTracks(
+      const std::vector<media::mojom::FairPlayHlsTrackPtr>& tracks);
+  void ForwardTextCues(
+      const std::string& track_key,
+      const std::vector<media::mojom::FairPlayHlsCuePtr>& cues);
+  // TextTrack.mode from the element, on to the player.
+  void SetTextTrackMode(const std::string& key,
+                        media::ParcInbandTextTrackMode mode);
   // Sends the player the CDM ID `cdm_context` names, once per ID.
   void SendCdm(media::CdmContext* cdm_context,
                NativeHlsSource::CdmAttachedCB cdm_attached_cb);
@@ -234,6 +247,15 @@ class NativeHlsDemuxer final : public media::Demuxer,
   const EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
   const base::RepeatingCallback<void(const std::string&)> key_request_cb_;
   const StartLoadCallback start_load_cb_;
+  // The element's tracks; posts to the main thread. Null in unit tests.
+  const std::unique_ptr<media::TrackManager> track_manager_;
+  // The client pipe can overtake the Initialize reply: track lists and cues
+  // that arrive first wait for it, the newest list replacing the reply's.
+  bool tracks_ready_ = false;
+  std::optional<std::vector<media::mojom::FairPlayHlsTrackPtr>> pending_tracks_;
+  std::vector<
+      std::pair<std::string, std::vector<media::mojom::FairPlayHlsCuePtr>>>
+      pending_cues_;
 
   // Bound on the media thread in Initialize().
   mojo::PendingRemote<media::mojom::FairPlayHlsPlayer> pending_player_;

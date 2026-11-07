@@ -1886,20 +1886,22 @@
      NOTREACHED();
 --- a/media/mojo/mojom/renderer_extensions.mojom
 +++ b/media/mojo/mojom/renderer_extensions.mojom
-@@ -12,6 +12,9 @@
+@@ -11,6 +11,9 @@
+ 
  [EnableIf=is_win]
  import "ui/gfx/mojom/buffer_types.mojom";
- 
++
 +[EnableIf=is_mac]
 +import "url/mojom/url.mojom";
-+
+ 
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
- // This allows the Browser side to call back into the Renderer side.
-@@ -24,6 +27,178 @@
+@@ -22,6 +25,258 @@
+   // play state (e.g. when another phone play/pauses a cast device on the same
+   // network).
    OnRemotePlayStateChange(MediaStatusState state);
- };
- 
++};
++
 +// Parc: extension of the mojo::RendererClient communication layer for the
 +// FairPlay Streaming Renderer, which runs next to the FairPlay CDM in the GPU
 +// process's media service. Implemented by FairPlayRendererClient in the
@@ -1974,15 +1976,90 @@
 +  kText,
 +};
 +
-+// An audio, video or text rendition (AVMediaSelectionGroup option).
++// An audioTracks or textTracks entry with the values WebKit's AVFoundation
++// player gives the DOM (the FairPlay core's HlsTrack).
 +[EnableIf=is_mac]
 +struct FairPlayHlsTrack {
++  // Unique for the player; names the track in calls and cues.
++  string key;
++  // The DOM id (audio ids can repeat, as in Safari), kind, label, language.
 +  string id;
 +  string kind;
 +  string label;
 +  string language;
++  // Audio: AudioTrack.enabled.
 +  bool enabled;
++  // WebKit's track index; each list orders by it (an audio -1 last).
++  int64 index;
 +  FairPlayHlsTrackType type;
++  // Text: what WebKit's caption preferences weigh.
++  bool is_default;
++  bool is_closed_captions;
++  bool is_sdh;
++  bool contains_only_forced_subtitles;
++  bool is_main_program_content;
++  bool is_easy_to_read;
++};
++
++// TextTrack.mode.
++[EnableIf=is_mac]
++enum FairPlayHlsTextTrackMode {
++  kDisabled,
++  kHidden,
++  kShowing,
++};
++
++[EnableIf=is_mac]
++enum FairPlayHlsCueType {
++  // `text`: the WebVTT header (regions and style sheets).
++  kWebVttHeader,
++  // A WebVTT cue (WebKit's WebVTTParser::parseCueData).
++  kWebVtt,
++  // Generic cues by `cue_id`: InbandGenericTextTrack's addGenericCue,
++  // updateGenericCue and removeGenericCue.
++  kAdd,
++  kUpdate,
++  kRemove,
++};
++
++[EnableIf=is_mac]
++enum FairPlayHlsCueAlign {
++  kNone,
++  kStart,
++  kMiddle,
++  kEnd,
++};
++
++// One change to a text track's cues (the FairPlay core's HlsCue).
++[EnableIf=is_mac]
++struct FairPlayHlsCue {
++  FairPlayHlsCueType type;
++  uint64 cue_id;
++  // Seconds. A generic cue's end is +infinity while it is open; a WebVTT
++  // cue's is NaN when its sample has no duration.
++  double start;
++  double end;
++  bool complete;
++  string text;
++  // WebVTT iden, sttg, vsid and ctim boxes.
++  string identifier;
++  string settings;
++  string source_id;
++  string original_start_time;
++  // Generic cue layout; -1 when unset.
++  double line;
++  double position;
++  double size;
++  double base_font_size;
++  double relative_font_size;
++  string font_name;
++  FairPlayHlsCueAlign align;
++  FairPlayHlsCueAlign position_align;
++  // 0xRRGGBBAA.
++  uint32? foreground_color;
++  uint32? background_color;
++  uint32? highlight_color;
++  bool prevent_line_wrapping;
 +};
 +
 +// The item's state when it is ready to play.
@@ -2028,8 +2105,9 @@
 +  // Legacy clear key: the key for a held clearkey:// request's key ID (the
 +  // page's WebKitMediaKeys session took it).
 +  ProvideClearKey(string key_id, array<uint8> key);
-+  SelectAudioTrack(string id);
-+  SelectTextTrack(string? id);
++  // AudioTrack.enabled and TextTrack.mode, set by the page or the element.
++  SetAudioTrackEnabled(string key, bool enabled);
++  SetTextTrackMode(string key, FairPlayHlsTextTrackMode mode);
 +  // Stop and restart loading (preload, idle suspension).
 +  Suspend();
 +  Resume();
@@ -2053,7 +2131,11 @@
 +  // getStartDate(), sampled as Safari does at metadata and at each buffering
 +  // change; sent just before the OnBufferingStateChange it goes with.
 +  OnStartDateChanged(mojo_base.mojom.Time? start_date);
++  // The whole list after any change (never before the Initialize reply):
++  // audio then text tracks, each in DOM order; tracks match by key.
 +  OnTracksChanged(array<FairPlayHlsTrack> tracks);
++  // Changes to one text track's cues, in order.
++  OnTextCues(string track_key, array<FairPlayHlsCue> cues);
 +  OnNaturalSizeChange(gfx.mojom.Size size);
 +  // The player's AVPlayerLayer is registered under `layer_token` in the GPU
 +  // process's ui::ProtectedLayerRegistry; paint a hole frame naming it.
@@ -2070,11 +2152,9 @@
 +  OnWaiting(WaitingReason reason);
 +  OnEnded();
 +  OnError(PipelineStatus status, string message);
-+};
-+
+ };
+ 
  [EnableIf=is_win]
- struct FrameTextureInfo {
-   gfx.mojom.GpuMemoryBufferHandle texture_handle;
 --- a/media/mojo/services/BUILD.gn
 +++ b/media/mojo/services/BUILD.gn
 @@ -111,6 +111,10 @@
