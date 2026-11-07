@@ -42,7 +42,11 @@ On a page that presents Safari's identity:
   where a Chrome page skips that capability or configuration. FairPlay takes
   a capability naming no encryption scheme or `cbcs`, as WebKit's FairPlay
   CDM does, and skips one naming `cenc`; it refuses a configuration that
-  names no init data type, as that CDM does.
+  names no init data type, as that CDM does. Its capabilities read
+  `contentType` as WebKit does: `video/mp4` or `audio/mp4` without codecs is
+  supported, a type may also list the other kind's FairPlay codecs, and an
+  unparsable type skips only that capability. The HLS types join once
+  Parc's native HLS route is on.
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`

@@ -594,7 +594,18 @@
  
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.cc
-@@ -13,6 +13,7 @@
+@@ -5,7 +5,10 @@
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.h"
+ 
+ #include "base/metrics/histogram_functions.h"
++#include "media/base/audio_codecs.h"
+ #include "media/base/eme_constants.h"
++#include "media/base/mime_util.h"
++#include "media/base/video_codecs.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_recorder.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+@@ -13,11 +16,14 @@
  #include "third_party/blink/renderer/core/dom/document.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -602,7 +613,118 @@
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-@@ -96,21 +97,76 @@
+ #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
++#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
++#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
+ 
+ namespace blink {
+ 
+@@ -74,6 +80,103 @@
+   return result;
+ }
+ 
++// Parc: whether FairPlay plays `codec` (its CdmCapability in
++// fairplay-media.patch): AAC, AC-3 and E-AC-3 audio; H.264, HEVC and Dolby
++// Vision profile 5 video.
++bool IsParcFairPlayCodec(const String& codec, bool video) {
++  if (codec.empty() || !codec.ContainsOnlyAsciiOrEmpty()) {
++    return false;
++  }
++  if (video) {
++    const std::optional<media::VideoType> parsed =
++        media::ParseVideoCodecString("video/mp4", codec.Ascii());
++    return parsed && (parsed->codec == media::VideoCodec::kH264 ||
++                      parsed->codec == media::VideoCodec::kHEVC ||
++                      (parsed->codec == media::VideoCodec::kDolbyVision &&
++                       parsed->profile == media::DOLBYVISION_PROFILE5));
++  }
++  const std::optional<media::AudioType> parsed =
++      media::ParseAudioCodecString("audio/mp4", codec.Ascii());
++  return parsed && (parsed->codec == media::AudioCodec::kAAC ||
++                    parsed->codec == media::AudioCodec::kAC3 ||
++                    parsed->codec == media::AudioCodec::kEAC3);
++}
++
++// Parc: how FairPlay judges a capability's contentType under Safari's
++// identity, as WebKit does (CDMPrivate::getSupportedCapabilitiesForAudioVideo
++// Type, then CDMInstanceFairPlayStreamingAVFObjC::supportsMediaCapability,
++// where AVFoundation decides what plays), rewritten into the container and
++// codecs Chromium's key system selector checks. content_type, which
++// getConfiguration() returns, stays the page's.
++// - An unparsable type, or one with a parameter besides a non-empty
++//   "codecs", skips only this capability (Chromium would refuse the whole
++//   configuration for the first).
++// - The HLS types (application/vnd.apple.mpegurl, application/x-mpegurl) go
++//   in either list as MP4, once Parc's native HLS route plays them
++//   (parc::fairplay::kNativeHlsEnabled).
++// - Without codecs, video/mp4 (video) and audio/mp4 (audio) are supported:
++//   FairPlay plays a codec of each. Chromium requires codecs.
++// - The codecs may include those of the other media type that FairPlay
++//   plays, as AVFoundation plays muxed media; they are checked here and the
++//   rest by the selector. With only those, the type is judged as the
++//   container with a FairPlay codec of its own kind.
++void ParcApplySafariFairPlayContentType(
++    WebMediaKeySystemMediaCapability& capability,
++    bool video) {
++  const String content_type = capability.content_type;
++  if (content_type.empty()) {
++    return;  // Refuses the configuration, in WebKit too.
++  }
++  auto skip = [&capability] {
++    capability.mime_type = WebString::FromAscii("application/x-parc-skipped");
++    capability.codecs = WebString::FromAscii("parc.skipped");
++  };
++  ParsedContentType type(content_type);
++  if (!type.IsValid() || type.GetParameters().HasDuplicatedNames()) {
++    skip();
++    return;
++  }
++  const String codecs = type.ParameterValueForName("codecs");
++  if (type.GetParameters().ParameterCount() > (codecs.empty() ? 0u : 1u)) {
++    skip();
++    return;
++  }
++  String container = type.MimeType();
++  if (EqualIgnoringAsciiCase(container, "application/vnd.apple.mpegurl") ||
++      EqualIgnoringAsciiCase(container, "application/x-mpegurl")) {
++    if (!parc::fairplay::kNativeHlsEnabled) {
++      skip();
++      return;
++    }
++    container = video ? "video/mp4" : "audio/mp4";
++  }
++  const char* const own_codec = video ? "avc1.42E01E" : "mp4a.40.2";
++  if (codecs.empty()) {
++    if (!EqualIgnoringAsciiCase(container, video ? "video/mp4" : "audio/mp4")) {
++      skip();
++      return;
++    }
++    capability.mime_type = container;
++    capability.codecs = WebString::FromAscii(own_codec);
++    return;
++  }
++  StringBuilder own_codecs;
++  for (const String& entry : codecs.Split(',')) {
++    const String codec = entry.StripWhiteSpace();
++    if (IsParcFairPlayCodec(codec, !video)) {
++      continue;
++    }
++    if (!own_codecs.empty()) {
++      own_codecs.Append(',');
++    }
++    own_codecs.Append(codec);
++  }
++  capability.mime_type = container;
++  capability.codecs = own_codecs.empty()
++                          ? WebString::FromAscii(own_codec)
++                          : WebString(own_codecs.ToString());
++}
++
+ static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
+     const Vector<String>& session_types) {
+   std::vector<WebEncryptedMediaSessionType> result(session_types.size());
+@@ -96,21 +199,87 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -656,6 +778,17 @@
      web_config.video_capabilities =
          ConvertCapabilities(config->videoCapabilities());
  
++    if (parc_safari_fairplay && !is_from_media_capabilities) {
++      for (WebMediaKeySystemMediaCapability& capability :
++           web_config.audio_capabilities) {
++        ParcApplySafariFairPlayContentType(capability, /*video=*/false);
++      }
++      for (WebMediaKeySystemMediaCapability& capability :
++           web_config.video_capabilities) {
++        ParcApplySafariFairPlayContentType(capability, /*video=*/true);
++      }
++    }
++
 +    // Parc: under Safari's identity FairPlay takes the encryption schemes
 +    // WebKit's FairPlay CDM takes (CDMInstanceFairPlayStreamingAVFObjC::
 +    // supportsMediaCapability): none named, or "cbcs". A capability naming
