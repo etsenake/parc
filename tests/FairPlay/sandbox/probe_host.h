@@ -63,6 +63,9 @@ struct Scenario {
   std::string license_url;
   std::string license_token;
   double play_seconds = 5;
+  // Native HLS (fairplay_hls_player.h): the player plays this URL through
+  // AVPlayer, every load going through the helper. Empty for the MSE route.
+  std::string hls_url;
 };
 
 struct Host {

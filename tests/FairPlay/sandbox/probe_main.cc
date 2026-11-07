@@ -360,6 +360,17 @@ bool LoadScenario(const std::string& name, const std::string& media_dir, fpsb::S
   }
   // Clear clips for codecs no public FairPlay vector has. Their decoders and
   // output are the same once a protected sample is decrypted.
+  if (name == "hls-ts") {
+    // Native HLS through AVPlayer: Apple's clear TS stream (H.264 + AAC).
+    s->hls_url = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8";
+    return true;
+  }
+  if (name == "hls-fmp4") {
+    // Native HLS through AVPlayer: Axinom's clear CMAF (fMP4, alternate
+    // audio and subtitle groups).
+    s->hls_url = "https://media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/manifest.m3u8";
+    return true;
+  }
   if (name == "dolby-vision") return LoadFile(media_dir + "/glass-blowing2-dolby-vision-profile-5-frag.mp4", &s->video, error);
   if (name == "eac3") return LoadFile(media_dir + "/bear-eac3-only-frag.mp4", &s->audio, error);
   if (name == "ac3") return LoadFile(media_dir + "/bear-ac3-only-frag.mp4", &s->audio, error);

@@ -32,7 +32,7 @@ REPO = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_SOURCE = pathlib.Path(
     "/Users/josh/Documents/Codex/2026-10-23/re/work/engine-source/chromium/src")
 PROBE_NAME = "fpsbprobe"  # Short: the kernel logs at most 16 bytes of name.
-SCENARIOS = ["h264", "hevc", "dolby-vision", "eac3", "ac3", "audio-switch", "video-switch"]
+SCENARIOS = ["h264", "hevc", "dolby-vision", "eac3", "ac3", "audio-switch", "video-switch", "hls-ts", "hls-fmp4"]
 # Clear clips for the codecs no public FairPlay vector has, from the pinned
 # checkout's media/test/data.
 CHROMIUM_MEDIA = ["glass-blowing2-dolby-vision-profile-5-frag.mp4",
@@ -85,7 +85,7 @@ def compile_all(output):
             (probe / "probe_main.cc", []), (probe / "probe_helper.mm", ["-fobjc-arc"]),
             (probe / "probe_player.mm", ["-fobjc-arc", "-fvisibility=hidden"])]
     jobs += [(core / f"{n}.mm", ["-fobjc-arc"]) for n in
-             ("fairplay_init_data", "fairplay_key_session", "fairplay_renderer")]
+             ("fairplay_init_data", "fairplay_key_session", "fairplay_renderer", "fairplay_hls_player")]
     for source, extra in jobs:
         obj = output / (source.stem + ".o")
         subprocess.run(["xcrun", "clang++", *flags, *extra, "-c", str(source), "-o", str(obj)],
@@ -104,7 +104,7 @@ def compile_all(output):
     for f in ("Foundation", "AVFoundation", "AudioToolbox", "CoreAudio", "CoreMedia", "QuartzCore"):
         frameworks += ["-framework", f]
     link("libfpsbplayer.dylib", ["probe_player", "fmp4_parser", "fairplay_bitstream", "fairplay_init_data",
-                                 "fairplay_key_session", "fairplay_renderer"],
+                                 "fairplay_key_session", "fairplay_renderer", "fairplay_hls_player"],
          ["-dynamiclib", *frameworks])
     libraries = subprocess.run(["otool", "-L", str(output / PROBE_NAME)], check=True,
                                capture_output=True, text=True).stdout.splitlines()[1:]

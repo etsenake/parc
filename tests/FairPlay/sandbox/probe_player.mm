@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "fairplay_bitstream.h"
+#include "fairplay_hls_player.h"
 #include "fairplay_init_data.h"
 #include "fairplay_key_session.h"
 #include "fairplay_renderer.h"
@@ -450,6 +451,136 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
 
 Player* g_player = nullptr;
 
+// Native HLS: FairPlayHlsPlayer on a serial queue with no run loop, as on the
+// GPU media thread. AVFoundation fetches nothing itself; every load goes to
+// the unsandboxed helper, as Parc's go to the render process.
+class HlsProbe : public fp::HlsPlayerClient, public fp::HlsLoader {
+ public:
+  explicit HlsProbe(const fpsb::Scenario& s)
+      : s_(s), owner_(dispatch_queue_create("parc.fpsb.hls-owner", DISPATCH_QUEUE_SERIAL)) {}
+
+  void Start() {
+    dispatch_async(owner_, ^{
+      SetStage("hls Load");
+      dispatch_queue_t owner = owner_;
+      player_ = std::make_unique<fp::FairPlayHlsPlayer>(this, this, [owner](std::function<void()> task) {
+        dispatch_async(owner, ^{
+          task();
+        });
+      });
+      player_->SetMuted(true);
+      fp::Result r = player_->Load(s_.hls_url, "");
+      if (!r.ok()) Finish(fpsb::Outcome::kFail, "Load: " + r.message);
+      SetStage("hls metadata");
+    });
+  }
+
+  // HlsLoader.
+  class Load : public fp::HlsLoad {
+   public:
+    explicit Load(std::shared_ptr<std::atomic<bool>> alive) : alive_(std::move(alive)) {}
+    ~Load() override { *alive_ = false; }
+
+   private:
+    std::shared_ptr<std::atomic<bool>> alive_;
+  };
+
+  std::unique_ptr<fp::HlsLoad> StartLoad(const fp::HlsLoadRequest& request, fp::HlsLoadClient* client) override {
+    loads_++;
+    auto alive = std::make_shared<std::atomic<bool>>(true);
+    fpsb::HttpRequest http;
+    http.method = request.method;
+    http.url = request.url;
+    for (const auto& [name, value] : request.headers) {
+      if (name == "Range" || name == "range") http.headers.emplace_back(name, value);
+    }
+    dispatch_queue_t owner = owner_;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+      auto response = std::make_shared<fpsb::HttpResponse>();
+      bool ok = g_host->request(http, response.get());
+      dispatch_async(owner, ^{
+        if (!*alive) return;
+        if (!ok || !response->error.empty()) {
+          client->OnComplete(-2);  // net::ERR_FAILED
+          return;
+        }
+        fp::HlsLoadResponse r;
+        r.http_status = static_cast<int>(response->status);
+        r.mime_type = MimeFor(http.url);
+        r.content_length = static_cast<int64_t>(response->body.size());
+        client->OnResponse(r);
+        if (!*alive) return;
+        if (!response->body.empty()) client->OnData(response->body.data(), response->body.size());
+        if (!*alive) return;
+        client->OnComplete(0);
+      });
+    });
+    return std::make_unique<Load>(alive);
+  }
+
+  // HlsPlayerClient.
+  void OnMetadata(const fp::HlsMetadata& m) override {
+    Log("hls metadata: video=%d %dx%d audio=%d duration=%.1f", m.has_video, m.natural_width, m.natural_height,
+        m.has_audio, m.duration);
+    width_ = m.natural_width;
+    SetStage("hls playback");
+    player_->SetRate(1);
+    Poll();
+  }
+  void OnBufferingStateChange(bool have_enough) override {
+    if (!have_enough) underflows_++;
+  }
+  void OnLoadedRangesChange(const std::vector<fp::HlsTimeRange>&) override {}
+  void OnSeekableRangesChange(const std::vector<fp::HlsTimeRange>&) override {}
+  void OnDurationChange(double) override {}
+  void OnNaturalSizeChange(int32_t w, int32_t) override { width_ = w; }
+  void OnEnded() override {}
+  void OnError(fp::HlsError error, const std::string& message) override {
+    Finish(fpsb::Outcome::kFail, "player error " + std::to_string(static_cast<int>(error)) + ": " + message);
+  }
+  void OnKeyRequest(const std::string& uri) override {
+    Finish(fpsb::Outcome::kFail, "unexpected key request " + uri);
+  }
+
+ private:
+  static std::string MimeFor(const std::string& url) {
+    std::string path = url.substr(0, url.find('?'));
+    auto ends = [&](const char* ext) {
+      size_t n = strlen(ext);
+      return path.size() >= n && path.compare(path.size() - n, n, ext) == 0;
+    };
+    if (ends(".m3u8")) return "application/vnd.apple.mpegurl";
+    if (ends(".ts")) return "video/mp2t";
+    if (ends(".aac")) return "audio/aac";
+    if (ends(".vtt") || ends(".webvtt")) return "text/vtt";
+    if (ends(".mp4") || ends(".m4s") || ends(".m4v") || ends(".m4a") || ends(".cmfv") || ends(".cmfa")) return "video/mp4";
+    return "";
+  }
+
+  void Poll() {
+    double t = player_->CurrentTime();
+    if (t >= s_.play_seconds) {
+      Finish(fpsb::Outcome::kPass, "played " + std::to_string(t) + " s of native HLS, " + std::to_string(loads_) +
+                                       " loads through the helper, width " + std::to_string(width_) +
+                                       ", underflows " + std::to_string(underflows_));
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), owner_, ^{
+      Poll();
+    });
+  }
+
+  static void Finish(fpsb::Outcome outcome, const std::string& detail) { g_host->finish(outcome, detail); }
+
+  const fpsb::Scenario& s_;
+  dispatch_queue_t owner_;
+  std::unique_ptr<fp::FairPlayHlsPlayer> player_;
+  int loads_ = 0;
+  int underflows_ = 0;
+  int32_t width_ = 0;
+};
+
+HlsProbe* g_hls_probe = nullptr;
+
 void Player::Fail(const std::string& reason) {
   g_host->finish(fpsb::Outcome::kFail, reason + (g_player ? g_player->State() : ""));
 }
@@ -467,6 +598,12 @@ extern "C" __attribute__((visibility("default"))) void FpsbRunPlayer(const fpsb:
     g_host->finish(fpsb::Outcome::kFail, std::string("uncaught exception ") + (name ? name : "?") + ": " +
                                              (reason ? reason : "") + " stage=" + g_host->stage->load());
   });
+  if (!scenario->hls_url.empty()) {
+    g_hls_probe = new HlsProbe(*scenario);
+    g_hls_probe->Start();
+    CFRunLoopRun();
+    return;
+  }
   g_player = new Player(*scenario);
   g_player->Start();
   CFRunLoopRun();

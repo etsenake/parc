@@ -364,3 +364,7 @@ stream (infinite duration, a ~595 s DVR window, a program date time), a 404
 playlist (network error before metadata), Axinom's FairPlay HLS (the skd URI
 reaches the client and never the loader; no key, no playback) and teardown
 with loads in flight.
+
+`tests/FairPlay/sandbox` (`--scenarios hls-ts,hls-fmp4`) plays both clear
+streams inside Chromium's GPU seatbelt profile with only the MSE route's
+FairPlay rules, every load going through the unsandboxed helper.

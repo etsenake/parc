@@ -72,6 +72,14 @@ the pinned Chromium checkout (`--source`, default the shared engine source, or
 | `eac3`, `ac3` | Chromium's clear E-AC-3 and AC-3 clips |
 | `audio-switch` | An audio language switch through MSE `changeType`: `h264`'s protected video throughout, audio its protected AAC to 2 s, then Chromium's clear E-AC-3 clip, then the AAC again |
 | `video-switch` | A video codec switch through `changeType` (clear): Chromium's H.264 clip to 1.5 s, then its HEVC clip, then the H.264 clip again |
+| `hls-ts` | Native HLS: Apple's clear TS stream (H.264 + AAC) through `FairPlayHlsPlayer` (`AVPlayer`) |
+| `hls-fmp4` | Native HLS: Axinom's clear CMAF (fMP4, alternate audio and subtitle groups) through `FairPlayHlsPlayer` |
+
+The HLS scenarios download nothing before the sandbox. The player runs on a
+serial queue with no run loop, as on the GPU media thread, and every load
+AVFoundation makes goes to its `HlsLoader`, which asks the helper (the
+render process's part in Parc); only `Range` is forwarded, as in Parc. They
+pass at 5 s of media time.
 
 In the switch scenarios each part continues the timeline, and the player
 calls `FairPlayRenderer::Reconfigure` with the new codec's config before the
@@ -119,6 +127,17 @@ With the rules in the patch, every scenario passes:
 | `eac3`, `ac3` | to the clip's end, audio rendering |
 | `audio-switch` | 5.2 s, formats `aac ` → `ec-3` → `aac `, no underflow, video 167 frames (125 due), 56 of 62 between the counts, 0 dropped, 0 corrupted |
 | `video-switch` | 5.2 s, formats `avc1` → `hvc1` → `avc1`, no underflow, 198 frames (152 due), 73 of 77 between the counts, 0 dropped, 0 corrupted |
+| `hls-ts` | 5.2 s, 48 loads through the helper, 960 wide, no underflow |
+| `hls-fmp4` | 5.2 s, 40 loads through the helper, 512 wide, no underflow |
+
+Native HLS needs no rule beyond the MSE route's. Its only network denial is
+the probe's own check (`network-outbound remote:*:443`): AVFoundation
+attempted no fetch of its own. Besides the MSE route's harmless denials it
+was refused, and plays without, `com.apple.PerfPowerTelemetryClientRegistrationService`,
+`com.apple.coremedia.volumecontroller.xpc`,
+`com.apple.accessibility.mediaaccessibilityd` (caption appearance
+preferences; unchecked for legible output), `networkd.plist`,
+`eligibility.plist` and a few sysctls.
 
 Without the FairPlay rules, `h264` fails at renderer Initialize:
 `AVSampleBufferRenderSynchronizer addRenderer:` refuses the audio renderer
