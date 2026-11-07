@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 546,
+  "version": 547,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4182,7 +4182,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "c7c8b3717a3c91b9ccf72cd6a9f5c392ace7e118b5fa4f2730fee71c706c705b",
+      "sha256": "98a68235d5cb41d69cdc3ab8cfffebc1b7dc6eea27941287e4bea92d2e36fb8d",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4457,17 +4457,17 @@
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.cc",
           "before_sha256": "6b650cb68e48c50f62e85f88d8892ca3f67615989628c33724a87a4a349538b7",
-          "after_sha256": "7f15cc1099b261be5f0ae30d06cc82eac5e0f966c4e333344b6ded5f410de545"
+          "after_sha256": "e9f117c69fe77bbcbe76df73f610932f0a7d1329cce9c1bb0f31d8c5d24e31b3"
         },
         {
           "target": "third_party/blink/renderer/platform/media/web_media_player_impl.h",
           "before_sha256": "2afbe1b25d00714f9c8c7a8f381ac23bceb5b05d63e86a5fecb0ad55e133e584",
-          "after_sha256": "fad2e500f50b7ce7d8980272db197b2ad9bdd31d4111fbdb1b09a5c9c7566f93"
+          "after_sha256": "0f0ad25923f1b8d8de11efa2bceeeb8e69275bbfc8ff091474bfc4b52b54c5f1"
         },
         {
           "target": "third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc",
           "before_sha256": "9385876e63a8e9de9dd5f01b3f716dbd8471007aaacd3c04b806af609053062a",
-          "after_sha256": "4f081b1d3907c4e9fcb0cabd23518ca07996ac25dbb332470f231220efa9a6fc"
+          "after_sha256": "d9e0cdc844956ac712a27985b19ac829f838635f2cc505e22345f2eb7115e7ab"
         },
         {
           "target": "media/base/media_resource.h",
