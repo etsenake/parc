@@ -429,8 +429,15 @@ has it in windows only. The rows and what is still open are in
   key, so the script sends each SPC as its own message and gives each CKC to
   the oldest unanswered one. Errors are `webkitkeyerror` with a
   `WebKitMediaKeyError`: DOMAIN with the CDM's system code when an SPC can't be
-  made. `keyrelease` sessions and `update("acknowledged")` answer as WebKit
-  does when it holds no expired-session report (Parc keeps none).
+  made. Secure stop follows WebKit's: legacy keys ask for persistent state
+  first, so their sessions keep AVFoundation's expired-session reports in the
+  document's MediaKeys storage (none in a private window); when a keys
+  object's last session closes, its key session expires and the report kept
+  for it arrives as a `webkitkeymessage` on the closed session;
+  `createSession("keyrelease", certificate)` sends the first report for that
+  certificate (none: CLIENT with `'!mor'`), and `update("acknowledged")`
+  removes it and fires `webkitkeyadded`. The CDM takes these as sinf init
+  data `{"legacySecureStop": "session" | "first"}`.
 - `webkitneedkey` (`WebKitMediaKeyNeededEvent`) is raised as WebKit's
   `HTMLMediaElement::mediaPlayerKeyNeeded` raises it: a trusted task queued at
   the media element, whether or not anything listens, before the `encrypted`

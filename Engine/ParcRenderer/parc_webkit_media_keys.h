@@ -105,6 +105,8 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const dispatch = eventTargetPrototype && eventTargetPrototype.dispatchEvent;
   const navigatorObject = g.navigator;
   const requestAccess = g.Navigator && g.Navigator.prototype.requestMediaKeySystemAccess;
+  const getConfiguration = g.MediaKeySystemAccess &&
+      g.MediaKeySystemAccess.prototype.getConfiguration;
   const createMediaKeys = g.MediaKeySystemAccess &&
       g.MediaKeySystemAccess.prototype.createMediaKeys;
   const keysPrototype = g.MediaKeys && g.MediaKeys.prototype;
@@ -168,17 +170,28 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   ];
   const CODECS_PARAMETER = /;\s*codecs\s*=\s*(?:"([^"]*)"|([^;]*))/i;
   // The modern access the legacy keys are built on: every FairPlay codec, so
-  // whatever the page plays is covered.
-  const ACCESS_CONFIGURATIONS = [{
+  // whatever the page plays is covered. WebKit's legacy Media Source sessions
+  // keep expired-session reports in the document's MediaKeys storage
+  // (CDMSessionAVContentKeySession::contentKeySession), so their keys first
+  // ask for persistent state, which FairPlay's CDM grants with
+  // persistent-usage-record sessions; a private window has no storage, as in
+  // WebKit, and gets temporary ones. The AVFoundation player's sessions keep
+  // no reports.
+  const FAIRPLAY_CAPABILITIES = {
     initDataTypes: ['cenc', 'sinf', 'skd', 'keyids'],
     videoCapabilities: ['avc1.640028', 'hvc1.1.6.L93.B0', 'dvh1.05.06'].map(
         (codec) => ({contentType: 'video/mp4; codecs="' + codec + '"'})),
     audioCapabilities: ['mp4a.40.2', 'ec-3', 'ac-3'].map(
         (codec) => ({contentType: 'audio/mp4; codecs="' + codec + '"'})),
     distinctiveIdentifier: 'not-allowed',
-    persistentState: 'optional',
-    sessionTypes: ['temporary'],
-  }];
+  };
+  const TEMPORARY_CONFIGURATION = Object.assign({}, FAIRPLAY_CAPABILITIES, {
+    persistentState: 'optional', sessionTypes: ['temporary'],
+  });
+  const STORAGE_CONFIGURATION = Object.assign({}, FAIRPLAY_CAPABILITIES, {
+    persistentState: 'required', sessionTypes: ['persistent-usage-record'],
+  });
+  const PERSISTENT_USAGE_RECORD = 'persistent-usage-record';
   // WebKitMediaKeyError codes (LegacyCDM::CDMErrorCode) and the
   // MediaPlayer::MediaKeyException values WebKit reports through them.
   const UNKNOWN = 1;
@@ -565,8 +578,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
           session.keys.sessions.splice(index, 1);
         }
       }
+      if (session.releaseReport) {
+        then(apply(closeModern, session.releaseReport, []), undefined, () => {});
+      }
       if (session.modern) {
-        then(apply(closeModern, session.modern, []), undefined, () => {});
+        const closing = then(apply(closeModern, session.modern, []), undefined, () => {});
+        if (session.keys.kind === 'mse' && session.certificate) {
+          releaseKeys(session, closing);
+        }
       }
     }
     get onwebkitkeyadded() { return handlerOf(this, 'webkitkeyadded'); }
@@ -588,6 +607,53 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       fire(session.object, plainEvent('webkitkeyerror'));
     }
   }
+  // WebKit's legacy secure stop on Parc's CDM (fairplay_key_session.mm's
+  // CreateLegacySecureStopSession): a session of the keys' modern MediaKeys
+  // asks with sinf init data {"legacySecureStop": operation} for an
+  // expired-session report, which comes back raw as its license-release
+  // message ("session": the keys' own key session's, which expires; "first":
+  // the first one for the certificate). |found| gets the report; |failed| the
+  // rejection (no storage, no report).
+  function secureStopRequest(session, operation, found, failed) {
+    const keys = session.keys;
+    return then(modernKeysOf(keys), (mediaKeys) => serialized(keys, () => {
+      const setCertificate = operation === 'first' ?
+          apply(setServerCertificate, mediaKeys, [copy(session.certificate)]) : resolved;
+      return then(setCertificate, () => {
+        const helper = apply(createModernSession, mediaKeys, [keys.sessionType]);
+        apply(addListener, helper, ['message', (event) => {
+          if (apply(messageTypeOf, event, []) === 'license-release') {
+            session.releaseReport = helper;
+            found(new NativeUint8Array(apply(messageOf, event, [])));
+          }
+        }]);
+        return then(apply(generateRequest, helper, [
+          'sinf', ascii(apply(jsonStringify, JSON, [{legacySecureStop: operation}]))]),
+          undefined, failed);
+      }, failed);
+    }), failed);
+  }
+
+  // CDMSessionAVContentKeySession::releaseKeys, on close(): once the keys'
+  // last Media Source session with a key request closes, their key session
+  // expires and the report AVFoundation kept for it arrives as a message on
+  // the closed session, as WebKit queues it. (WebKit gives each legacy session
+  // its own key session; here a keys object's sessions share one, so the
+  // report waits for the last of them.)
+  function releaseKeys(session, closing) {
+    const keys = session.keys;
+    keys.requestSessions.delete(session);
+    if (keys.requestSessions.size || keys.sessionType !== PERSISTENT_USAGE_RECORD) {
+      return;
+    }
+    then(closing, () => secureStopRequest(session, 'session', (bytes) => {
+      fire(session.object, new WebKitMediaKeyMessageEvent('webkitkeymessage', {message: bytes}));
+      // The closed session can't acknowledge it (WebKit drops updates after
+      // close()); a keyrelease session can, so the helper goes.
+      then(apply(closeModern, session.releaseReport, []), undefined, () => {});
+    }, () => {}), () => {});
+  }
+
   // Blink adds a CDM's system code to the rejection message as " (code)".
   function systemCodeOf(error) {
     const match = /\((\d+)\)\s*$/.exec(error && typeof error.message === 'string' ? error.message : '');
@@ -597,9 +663,18 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // The modern MediaKeys of one WebKitMediaKeys, made once.
   function modernKeysOf(keys) {
     if (!keys.modern) {
+      const configurations = keys.kind === 'mse' ?
+          [STORAGE_CONFIGURATION, TEMPORARY_CONFIGURATION] : [TEMPORARY_CONFIGURATION];
       keys.modern = then(
-          apply(requestAccess, navigatorObject, ['com.apple.fps', ACCESS_CONFIGURATIONS]),
+          apply(requestAccess, navigatorObject, ['com.apple.fps', configurations]),
           (access) => {
+            let types = [];
+            try {
+              types = apply(getConfiguration, access, []).sessionTypes || [];
+            } catch (error) {
+            }
+            keys.sessionType = Array.prototype.includes.call(types, PERSISTENT_USAGE_RECORD) ?
+                PERSISTENT_USAGE_RECORD : 'temporary';
             const modern = apply(createMediaKeys, access, []);
             return then(modern, (mediaKeys) => {
               legacyModernKeys.add(mediaKeys);
@@ -675,8 +750,9 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         if (!session.open) {
           return undefined;
         }
-        const modern = apply(createModernSession, mediaKeys, ['temporary']);
+        const modern = apply(createModernSession, mediaKeys, [keys.sessionType]);
         session.modern = modern;
+        keys.requestSessions.add(session);
         apply(addListener, modern, ['message', (event) => onModernMessage(session, event)]);
         if (!session.open) {
           then(apply(closeModern, modern, []), undefined, () => {});
@@ -728,7 +804,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         if (!session.open) {
           return undefined;
         }
-        const modern = apply(createModernSession, mediaKeys, ['temporary']);
+        const modern = apply(createModernSession, mediaKeys, [keys.sessionType]);
         session.modern = modern;
         apply(addListener, modern, ['message', (event) => onModernMessage(session, event)]);
         return then(apply(generateRequest, modern, ['skd', request]), undefined, failed);
@@ -834,9 +910,17 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       return undefined;
     }
     if (equalsAscii(key, 'acknowledged')) {
-      // A secure-stop acknowledgement with no expired session in hand.
-      sendError(session, INVALID_PLAYER_STATE, 0);
-      return undefined;
+      // The report in hand leaves the storage, and the key counts as added;
+      // without one it's InvalidPlayerState.
+      if (!session.releaseReport) {
+        sendError(session, INVALID_PLAYER_STATE, 0);
+        return undefined;
+      }
+      return then(apply(updateModern, session.releaseReport, [ascii('acknowledged')]), () => {
+        if (session.open) {
+          fire(session.object, plainEvent('webkitkeyadded'));
+        }
+      }, () => sendError(session, INVALID_PLAYER_STATE, 0));
     }
     const renew = equalsAscii(key, 'renew');
     const makeRequest = !session.certificate || renew;
@@ -893,11 +977,16 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       return;
     }
     if (asciiLower(type) === 'keyrelease') {
-      // CDMSessionAVContentKeySession::generateKeyReleaseMessage without any
-      // expired-session report.
+      // CDMSessionAVContentKeySession::generateKeyReleaseMessage: the first
+      // expired-session report the document's storage holds for this
+      // certificate is the message; none (or no storage, as in a private
+      // window) is KeySystemNotSupported with '!mor'.
       session.keyRelease = true;
       session.certificate = initData;
-      sendError(session, KEY_SYSTEM_NOT_SUPPORTED, NO_EXPIRED_SESSIONS);
+      session.chain = then(session.chain, () => secureStopRequest(session, 'first',
+          (bytes) => sendMessage(session, bytes),
+          (error) => sendError(session, KEY_SYSTEM_NOT_SUPPORTED,
+                               systemCodeOf(error) || NO_EXPIRED_SESSIONS)));
       return;
     }
     if (session.keys.version === 2) {
@@ -924,6 +1013,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       keysState.set(this, {
         object: this, keySystem: system, kind, version: legacyVersion(system),
         element: null, modern: null, requests: resolved, attaching: resolved, sessions: [],
+        requestSessions: new NativeSet(),
       });
     }
     get keySystem() { return stateOf(keysState, this).keySystem; }

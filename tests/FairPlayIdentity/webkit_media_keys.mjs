@@ -38,7 +38,11 @@ const MSE_CODECS = [
 const text = (data) => Buffer.from(ArrayBuffer.isView(data) ?
     new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data)).toString('latin1');
 const bytesOf = (value) => new Uint8Array(Buffer.from(value, 'latin1'));
-function makeWorld({sinf = true, failSpc = 0} = {}) {
+// `privateWindow` refuses persistent state, as Chromium's FairPlay selector
+// does off the record; `reports` are the storage's expired-session reports for
+// "first", `sessionReport` the one a legacy key session leaves for "session".
+function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [],
+                    sessionReport = null} = {}) {
   const calls = [];
   const log = [];
   class MediaSource {
@@ -78,8 +82,22 @@ function makeWorld({sinf = true, failSpc = 0} = {}) {
       setTimeout(() => this.dispatchEvent(new MediaKeyMessageEvent('message',
           {messageType: type, message: bytesOf(body).buffer})));
     }
+    #report = null;
     generateRequest(type, data) {
       log.push(['generateRequest', type, text(data)]);
+      if (type === 'sinf' && JSON.parse(text(data)).legacySecureStop) {
+        // Parc's CDM: WebKit's legacy secure stop (fairplay_key_session.mm).
+        const operation = JSON.parse(text(data)).legacySecureStop;
+        const none = () => Promise.reject(
+            new DOMException('no expired-session report (560820082)', 'NotSupportedError'));
+        if (!this.#keys.storage) return none();
+        const report = operation === 'first' ? reports[0] : sessionReport;
+        if (!report) return none();
+        this.#report = report;
+        setTimeout(() => this.dispatchEvent(new MediaKeyMessageEvent('message',
+            {messageType: 'license-release', message: bytesOf(report).buffer})));
+        return Promise.resolve();
+      }
       if (type === 'sinf' && !sinf) {
         return Promise.reject(new DOMException('Unsupported initDataType', 'NotSupportedError'));
       }
@@ -123,6 +141,11 @@ function makeWorld({sinf = true, failSpc = 0} = {}) {
     update(response) {
       const body = text(response);
       log.push(['update', body]);
+      if (body === 'acknowledged') {
+        if (!this.#report) return Promise.reject(new TypeError('nothing to acknowledge'));
+        log.push(['acknowledge', this.#report]);
+        return Promise.resolve();
+      }
       if (body === 'renew') {
         this.send('license-renewal', [[this.#lastKey, spc(this.#keys, 'renew:' + this.#lastKey)]]);
       }
@@ -132,6 +155,8 @@ function makeWorld({sinf = true, failSpc = 0} = {}) {
   }
   class MediaKeys {
     certificate = null;
+    storage;
+    constructor(storage) { this.storage = storage; }
     setServerCertificate(certificate) {
       this.certificate = text(certificate);
       log.push(['setServerCertificate', this.certificate]);
@@ -140,12 +165,21 @@ function makeWorld({sinf = true, failSpc = 0} = {}) {
     createSession(type) { log.push(['createSession', type]); return new MediaKeySession(this); }
   }
   class MediaKeySystemAccess {
-    createMediaKeys() { log.push(['createMediaKeys']); return Promise.resolve(new MediaKeys()); }
+    #configuration;
+    constructor(configuration) { this.#configuration = configuration; }
+    getConfiguration() { return this.#configuration; }
+    createMediaKeys() {
+      log.push(['createMediaKeys']);
+      return Promise.resolve(new MediaKeys(
+          this.#configuration.sessionTypes.includes('persistent-usage-record')));
+    }
   }
   class Navigator {
     requestMediaKeySystemAccess(keySystem, configurations) {
       log.push(['requestMediaKeySystemAccess', keySystem, configurations]);
-      return Promise.resolve(new MediaKeySystemAccess());
+      const chosen = configurations.find(
+          (configuration) => !(privateWindow && configuration.persistentState === 'required'));
+      return Promise.resolve(new MediaKeySystemAccess(chosen));
     }
   }
   class HTMLMediaElement extends EventTarget {
@@ -485,8 +519,14 @@ const skdInitData = (uri) => {
   check(events.length === 1 && events[0][1] === 'certificate' && events[0][2].destinationURL === '' &&
         events[0][2] instanceof world.WebKitMediaKeyMessageEvent, 'the first message asks for the certificate');
   const access = world.log.find((entry) => entry[0] === 'requestMediaKeySystemAccess');
-  check(access && access[1] === 'com.apple.fps' && access[2][0].initDataTypes.includes('cenc') &&
-        access[2][0].sessionTypes[0] === 'temporary', 'the keys are modern FairPlay keys');
+  check(access && access[1] === 'com.apple.fps' && access[2][0].initDataTypes.includes('sinf') &&
+        access[2][0].persistentState === 'required' &&
+        access[2][0].sessionTypes[0] === 'persistent-usage-record' &&
+        access[2][1].sessionTypes[0] === 'temporary',
+        'the keys are modern FairPlay keys, with storage first as WebKit\'s legacy sessions keep reports');
+  check(world.log.some((entry) => entry[0] === 'createSession' && entry[1] === 'persistent-usage-record') ||
+        !world.log.some((entry) => entry[0] === 'createSession'),
+        'their sessions are persistent-usage-record ones');
   const attached = world.log.find((entry) => entry[0] === 'setMediaKeys');
   check(attached && attached[1] === 'video' && attached[2] instanceof world.MediaKeys,
         'webkitSetMediaKeys attaches the modern keys');
@@ -628,9 +668,35 @@ for (const sinf of [true, false]) {
         "attaching the keys gives their latest session the element's init data");
 }
 
-// ---- keyrelease (secure stop): Parc keeps no expired-session reports.
+// ---- Secure stop (CDMSessionAVContentKeySession: keyrelease, acknowledged,
+// the report on close).
 {
-  const world = makeWorld();
+  // keyrelease: the first report for the certificate, acknowledged away.
+  const world = makeWorld({reports: ['REPORT-1', 'REPORT-2']});
+  run(world, script);
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  const release = keys.createSession('keyrelease', new Uint8Array(bytesOf('CERT')));
+  const events = [];
+  release.addEventListener('webkitkeymessage', (event) => events.push('message:' + text(event.message)));
+  release.addEventListener('webkitkeyadded', () => events.push('added'));
+  release.addEventListener('webkitkeyerror', () => events.push('error:' + release.error.code));
+  await settle();
+  const request = world.log.find((entry) => entry[0] === 'generateRequest');
+  check(request && request[1] === 'sinf' && JSON.parse(request[2]).legacySecureStop === 'first' &&
+        world.log.some((entry) => entry[0] === 'setServerCertificate' && entry[1] === 'CERT'),
+        'keyrelease asks the CDM for the first report, with the certificate from its init data');
+  check(events.join() === 'message:REPORT-1', 'the report is the message');
+  release.update(new Uint8Array(bytesOf('acknowledged')));
+  await settle();
+  check(world.log.some((entry) => entry[0] === 'acknowledge' && entry[1] === 'REPORT-1') &&
+        events.pop() === 'added', 'acknowledged removes it and the key counts as added');
+  release.update(new Uint8Array(bytesOf('other')));
+  await settle();
+  check(events.length === 2, 'a keyrelease session takes nothing else');
+}
+for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1']}]) {
+  // No report, or no storage (a private window): KeySystemNotSupported '!mor'.
+  const world = makeWorld(options);
   run(world, script);
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
   const session = keys.createSession('keyrelease', new Uint8Array(bytesOf('CERT')));
@@ -638,18 +704,70 @@ for (const sinf of [true, false]) {
   session.onwebkitkeyerror = () => { error = session.error; };
   await settle();
   check(error && error.code === 2 && error.systemCode === 0x216d6f72,
-        "keyrelease answers as WebKit does without reports ('!mor')");
+        `keyrelease without ${options.privateWindow ? 'storage' : 'a report'}: CLIENT, '!mor'`);
   const other = keys.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   other.update(new Uint8Array(bytesOf('acknowledged')));
   await settle();
   check(other.error && other.error.code === 1, 'acknowledged without a report: InvalidPlayerState');
-  const closed = keys.createSession('video/mp4', new Uint8Array(pssh('A')));
+}
+{
+  // The report a legacy session's key session leaves arrives after close().
+  const world = makeWorld({sessionReport: 'SESSION-REPORT'});
+  run(world, script);
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  const session = keys.createSession('video/mp4', new Uint8Array(pssh('A')));
   const messages = [];
-  closed.onwebkitkeymessage = () => messages.push(1);
-  closed.close();
+  session.addEventListener('webkitkeymessage', (event) => messages.push(text(event.message)));
   await settle();
-  check(messages.length === 0, 'a session closed at once sends nothing');
+  session.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  session.update(new Uint8Array(bytesOf('CKC')));
+  await settle();
+  session.close();
+  await settle();
+  const stop = world.log.filter((entry) => entry[0] === 'generateRequest').pop();
+  check(JSON.parse(stop[2]).legacySecureStop === 'session', 'closing asks for the key session\'s report');
+  check(messages.pop() === 'SESSION-REPORT', 'which arrives as a message on the closed session');
+  check(world.log[world.log.length - 1][0] === 'close', 'and the session that fetched it closes');
+  session.update(new Uint8Array(bytesOf('acknowledged')));
+  await settle();
+  check(!world.log.some((entry) => entry[0] === 'acknowledge'),
+        'a closed session ignores updates, as WebKit drops them');
+
+  // Sessions sharing keys: only the last one's close asks.
+  const two = makeWorld({sessionReport: 'R'});
+  run(two, script);
+  const shared = new two.WebKitMediaKeys('com.apple.fps.3_0');
+  const a = shared.createSession('video/mp4', new Uint8Array(pssh('A')));
+  const b = shared.createSession('video/mp4', new Uint8Array(pssh('B')));
+  await settle();
+  a.update(new Uint8Array(bytesOf('CERT')));
+  b.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  a.close();
+  await settle();
+  const asked = () => two.log.filter((entry) => entry[0] === 'generateRequest' &&
+                                                entry[2].includes('legacySecureStop')).length;
+  check(asked() === 0, 'another open session keeps the key session');
+  b.close();
+  await settle();
+  check(asked() === 1, 'the last close asks');
+}
+{
+  // A private window has no storage: temporary sessions, nothing on close.
+  const world = makeWorld({privateWindow: true, sessionReport: 'R'});
+  run(world, script);
+  const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
+  const session = keys.createSession('video/mp4', new Uint8Array(pssh('A')));
+  await settle();
+  session.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  session.close();
+  await settle();
+  check(world.log.some((entry) => entry[0] === 'createSession' && entry[1] === 'temporary') &&
+        !world.log.some((entry) => entry[0] === 'generateRequest' && entry[2].includes('legacySecureStop')),
+        'temporary sessions and no report request without storage');
 }
 
 // ---- The key-needed hook: what Blink calls for each key a media element

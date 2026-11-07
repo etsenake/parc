@@ -417,6 +417,21 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
     }
     case InitDataType::kSinf: {
       NSDictionary* root = ParseJSON(init_data);
+      // Parc extension for WebKit's legacy secure stop (LegacySecureStop):
+      // {"legacySecureStop": "session" | "first"} with no sinf.
+      if ([root isKindOfClass:[NSDictionary class]] && root[@"legacySecureStop"] &&
+          !root[@"sinf"]) {
+        id operation = root[@"legacySecureStop"];
+        InitDataPlan plan;
+        if ([operation isEqual:@"session"]) {
+          plan.legacy_secure_stop = LegacySecureStop::kSession;
+        } else if ([operation isEqual:@"first"]) {
+          plan.legacy_secure_stop = LegacySecureStop::kFirst;
+        } else {
+          return Fail("sinf legacySecureStop is not \"session\" or \"first\"");
+        }
+        return plan;
+      }
       NSArray* sinfs = [root isKindOfClass:[NSDictionary class]] ? root[@"sinf"] : nil;
       if (![sinfs isKindOfClass:[NSArray class]] || !sinfs.count) {
         return Fail("sinf init data is not {\"sinf\": [base64]}");

@@ -64,8 +64,18 @@ struct ContentKeyRequestPlan {
   std::vector<std::vector<uint8_t>> key_ids;
 };
 
+// WebKit's legacy secure stop (CDMSessionAVContentKeySession), asked for by
+// Engine/ParcRenderer/parc_webkit_media_keys.h through sinf init data
+// {"legacySecureStop": "session" | "first"} (Blink passes sinf init data
+// through unchanged and rebuilds keyids): an expired-session report
+// instead of a key. "session" is the report of this key system's own key
+// session, which it expires (releaseKeys); "first" is the first pending one
+// for the server certificate (generateKeyReleaseMessage).
+enum class LegacySecureStop { kNone, kSession, kFirst };
+
 struct InitDataPlan {
   std::vector<ContentKeyRequestPlan> calls;
+  LegacySecureStop legacy_secure_stop = LegacySecureStop::kNone;  // No calls then.
   // skd init data (either form): the URI. An HLS asset asks for its key by
   // this URI, so with one attached FairPlayCdm names the request by it.
   std::string skd_uri;

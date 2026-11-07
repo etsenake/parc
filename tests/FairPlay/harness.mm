@@ -1357,6 +1357,17 @@ void SelfTests(const Media& video, const Media& audio) {
               [sent isEqual:@{@"sinf" : @[ sinf64 ]}],
           "init data: legacy 2_N sinf with a contentId -> the tenc key's request, SPC named by "
           "contentId, AVFoundation given the sinf entries alone");
+    auto stop_session = fp::PlanContentKeyRequests(
+        fp::InitDataType::kSinf, Bytes(std::string("{\"legacySecureStop\":\"session\"}")));
+    auto stop_first = fp::PlanContentKeyRequests(
+        fp::InitDataType::kSinf, Bytes(std::string("{\"legacySecureStop\":\"first\"}")));
+    Check(stop_session.error.empty() && stop_session.calls.empty() &&
+              stop_session.legacy_secure_stop == fp::LegacySecureStop::kSession &&
+              stop_first.error.empty() && stop_first.legacy_secure_stop == fp::LegacySecureStop::kFirst &&
+              !fp::PlanContentKeyRequests(fp::InitDataType::kSinf,
+                                          Bytes(std::string("{\"legacySecureStop\":\"x\"}")))
+                   .error.empty(),
+          "init data: legacy secure stop requests ride on sinf JSON, no key request");
     auto ignored = fp::PlanContentKeyRequests(
         fp::InitDataType::kSinf,
         Bytes(Format("{\"sinf\":[\"%s\"],\"contentId\":null}", sinf64.UTF8String)));

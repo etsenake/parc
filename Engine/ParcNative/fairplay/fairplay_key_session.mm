@@ -229,20 +229,25 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (!EnsureSession()) {
       return Result::Error(Exception::kNotSupported, "AVContentKeySession unavailable");
     }
-    if ([av_session_.contentKeyRecipients containsObject:recipient]) {
-      return Result::Ok();
+    if (![av_session_.contentKeyRecipients containsObject:recipient]) {
+      @try {
+        [av_session_ addContentKeyRecipient:recipient];
+      } @catch (NSException* exception) {
+        return Result::Error(Exception::kInvalidState,
+                             std::string("addContentKeyRecipient: ") +
+                                 (exception.reason.UTF8String ?: ""));
+      }
     }
-    @try {
-      [av_session_ addContentKeyRecipient:recipient];
-    } @catch (NSException* exception) {
-      return Result::Error(Exception::kInvalidState,
-                           std::string("addContentKeyRecipient: ") +
-                               (exception.reason.UTF8String ?: ""));
+    // Tracked once attached, for the key session a legacy secure stop makes
+    // next (EnsureSession).
+    if (![recipients_ containsObject:recipient]) {
+      [recipients_ addObject:recipient];
     }
     return Result::Ok();
   }
 
   void DetachRecipient(id<AVContentKeyRecipient> recipient) {
+    [recipients_ removeObject:recipient];
     @try {
       [av_session_ removeContentKeyRecipient:recipient];
     } @catch (NSException*) {
@@ -306,6 +311,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     InitDataPlan plan = PlanContentKeyRequests(type, init_data);
     if (!plan.error.empty()) {
       done(Result::Error(Exception::kTypeError, plan.error), "");
+      return;
+    }
+    if (plan.legacy_secure_stop != LegacySecureStop::kNone) {
+      CreateLegacySecureStopSession(session_type, plan.legacy_secure_stop, std::move(done));
       return;
     }
     if (!EnsureSession()) {
@@ -752,6 +761,80 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       client->OnSessionKeysChange(session_id, false, released);
     });
     NotifyObservers();
+  }
+
+  // WebKit's legacy secure stop (CDMSessionAVContentKeySession, through
+  // parc_webkit_media_keys.h): a session holding one expired-session report,
+  // sent raw as its license-release message, which "acknowledged" removes as
+  // for remove(). kSession is releaseKeys: the key session expires, and the
+  // report is the one whose PlaybackSessionID is that key session's
+  // contentProtectionSessionIdentifier (WebKit's legacy session ID; each
+  // legacy MediaKeys has its own key session). The next session gets a new
+  // key session, which the attached renderers join. kFirst is
+  // generateKeyReleaseMessage: the first pending report for the server
+  // certificate. No report (none for the key session, none at all), or no
+  // persistent state and storage (a private window), fails with WebKit's
+  // KeySystemNotSupported '!mor' and leaves no session. A page reaching this
+  // through modern EME expires only its own MediaKeys' key session.
+  void CreateLegacySecureStopSession(SessionType session_type,
+                                     LegacySecureStop operation,
+                                     SessionCallback done) {
+    static constexpr uint32_t kNoExpiredSessions = 0x216d6f72;  // '!mor'
+    if (!persistent_state_allowed_ || !storage_url_ || !SupportsPersistableState()) {
+      done(Result::Error(Exception::kNotSupported, "no expired-session storage",
+                         kNoExpiredSessions),
+           "");
+      return;
+    }
+    NSString* playback_session_id = nil;
+    if (operation == LegacySecureStop::kSession && av_session_) {
+      NSData* identifier = av_session_.contentProtectionSessionIdentifier;
+      if (identifier) {
+        playback_session_id = [[NSString alloc] initWithData:identifier
+                                                    encoding:NSUTF8StringEncoding];
+      }
+      [av_session_ expire];
+      av_session_ = nil;
+      delegate_ = nil;
+    }
+    NSData* report = nil;
+    for (NSData* data in [AVContentKeySession pendingExpiredSessionReportsWithAppIdentifier:certificate_
+                                                                    storageDirectoryAtURL:storage_url_]) {
+      if (operation == LegacySecureStop::kFirst) {
+        report = data;
+        break;
+      }
+      id dictionary = [NSPropertyListSerialization propertyListWithData:data
+                                                                options:NSPropertyListImmutable
+                                                                 format:nil
+                                                                  error:nil];
+      id id_value = [dictionary isKindOfClass:[NSDictionary class]]
+                        ? dictionary[@"PlaybackSessionID"]
+                        : nil;
+      if (playback_session_id && [id_value isKindOfClass:[NSString class]] &&
+          [id_value isEqualToString:playback_session_id]) {
+        report = data;
+        break;
+      }
+    }
+    if (!report) {
+      done(Result::Error(Exception::kNotSupported, "no expired-session report",
+                         kNoExpiredSessions),
+           "");
+      return;
+    }
+    auto session = std::make_unique<Session>();
+    session->id = NewSessionId();
+    session->type = session_type;
+    session->keys_removed = true;  // It never asks for keys.
+    session->expired_reports.push_back(report);
+    std::string id = session->id;
+    sessions_[id] = std::move(session);
+    done(Result::Ok(), id);
+    std::vector<uint8_t> message = ToVector(report);
+    Deliver([id, message](FairPlayCdmClient* client) {
+      client->OnSessionMessage(id, MessageType::kLicenseRelease, message);
+    });
   }
 
   // AVFoundation's pending expired-session reports in this key system's
@@ -1381,6 +1464,15 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     }
     delegate_ = [[PCFairPlayContentKeyDelegate alloc] initWithImpl:weak_from_this() poster:poster_];
     [av_session_ setDelegate:delegate_ queue:DelegateQueue()];
+    // A key session made after a legacy secure stop expired the last one
+    // takes the renderers already attached, as WebKit's renderers join each
+    // new legacy session (AudioVideoRendererAVFObjC::setCDMSession).
+    for (id<AVContentKeyRecipient> recipient in recipients_) {
+      @try {
+        [av_session_ addContentKeyRecipient:recipient];
+      } @catch (NSException*) {
+      }
+    }
     return true;
   }
 
@@ -1799,6 +1891,8 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   std::shared_ptr<const PostTask> poster_;
   AVContentKeySession* av_session_ = nil;  // Shared by every EME session.
   PCFairPlayContentKeyDelegate* delegate_ = nil;
+  // Content key recipients (renderers) attached through AttachRecipient.
+  NSMutableArray<id<AVContentKeyRecipient>>* recipients_ = [NSMutableArray array];
   NSData* certificate_ = nil;
   double request_timeout_ = 15;  // Seconds for generateRequest and update().
   std::map<std::string, std::unique_ptr<Session>> sessions_;
