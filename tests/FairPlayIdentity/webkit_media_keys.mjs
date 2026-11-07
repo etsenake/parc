@@ -560,11 +560,20 @@ const skdInitData = (uri) => {
         'the renewal answer goes to the renewed key');
 
   const before = events.length;
+  const logged = world.log.length;
   session.close();
   session.update(new Uint8Array(bytesOf('late')));
   await settle();
-  check(world.log[world.log.length - 1][0] === 'close' && events.length === before,
+  // WebKit's close() is releaseKeys(): the key session expires and its
+  // expired-session report is looked for, so the CDM is asked for it after
+  // the modern session closes.
+  const after = world.log.slice(logged);
+  check(after[0] && after[0][0] === 'close' &&
+        !after.some((entry) => entry[0] === 'update') && events.length === before,
         'close() closes the modern session and later updates are dropped');
+  check(after.some((entry) => entry[0] === 'generateRequest' &&
+                              JSON.parse(entry[2]).legacySecureStop === 'session'),
+        "then the closed keys' expired-session report is asked for");
   session.close();
 
   video.webkitSetMediaKeys(null);
@@ -692,7 +701,9 @@ for (const sinf of [true, false]) {
         events.pop() === 'added', 'acknowledged removes it and the key counts as added');
   release.update(new Uint8Array(bytesOf('other')));
   await settle();
-  check(events.length === 2, 'a keyrelease session takes nothing else');
+  // (The check above popped 'added'.) WebKit's KeyRelease mode returns
+  // false for anything else, with no event.
+  check(events.join() === 'message:REPORT-1', 'a keyrelease session takes nothing else');
 }
 for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1']}]) {
   // No report, or no storage (a private window): KeySystemNotSupported '!mor'.
@@ -796,7 +807,8 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   const video = new world.HTMLMediaElement();
   const keys = new world.WebKitMediaKeys('com.apple.fps.2_0');
   video.webkitSetMediaKeys(keys);
-  needKey(hook, video, pssh('K'), 'media-source').initData.fill(0);
+  const sinfK = Buffer.from(JSON.stringify({sinf: [Buffer.from('K').toString('base64')]}));
+  needKey(hook, video, sinfK, 'media-source').initData.fill(0);
   needKey(hook, video, skdInitData('skd://x'), 'skd');
   needKey(hook, video, bytesOf('kid'), 'clearkey');
   const session = keys.createSession('video/mp4', new Uint8Array(bytesOf('id')));
@@ -804,7 +816,8 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   session.update(new Uint8Array(bytesOf('CERT')));
   await settle();
   const request = world.log.find((entry) => entry[0] === 'generateRequest');
-  check(request && Buffer.from(JSON.parse(request[2]).initData, 'base64').equals(pssh('K')),
+  check(request && request[1] === 'sinf' &&
+        Buffer.from(JSON.parse(request[2]).sinf[0], 'base64').toString() === 'K',
         'the keys keep their own copy of the Media Source init data');
   // The constructor's dictionary, as WebIDL converts it.
   run(world, 'Object.defineProperty(Object.prototype, "initData", {get() { throw new Error("read"); }, configurable: true});');
