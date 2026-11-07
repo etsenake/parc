@@ -49,6 +49,7 @@ service wires it in.
 | GPU `media::Renderer` | `fairplay_renderer_adapter.{h,mm}` over `parc::fairplay::FairPlayRenderer`, created by `GpuMojoMediaClientMac::CreateFairPlayRenderer` through `InterfaceFactory.CreateFairPlayRenderer` |
 | Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered in `MediaFactory` as `kFairPlay` (never the base renderer) |
 | Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |
+| Native HLS (Safari's AVPlayer route) | [NATIVE_HLS.md](NATIVE_HLS.md): `mojom::FairPlayHlsPlayer` over `InterfaceFactory.CreateFairPlayHlsPlayer`; GPU `fairplay_hls_player_service.{h,mm}` (`GpuMojoMediaClientMac::CreateFairPlayHlsPlayer`); render-process loads `fairplay_hls_loader.{h,cc}` → `//third_party/blink/renderer/platform/media` |
 | Key system registration | `GetFairPlayCdmInfo()` in `CdmRegistryImpl::Init` (browser); `fairplay_key_system_info.{h,cc}` → `//components/cdm/renderer`, added by `key_system_support_update.cc` (renderer) |
 | Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `media_interface_proxy.cc`), for fairplay-identity |
 | VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames and dedicated workers, for Safari-identity `decodingInfo` |
@@ -442,7 +443,11 @@ Nothing here builds the engine. For each increment:
   with a mojo-generated alias (`FairPlayHlsLoadRequest` vs the
   `FairPlayHlsLoadRequestDataView` of interface `FairPlayHlsLoad`), now
   `FairPlayHlsRequest`/`FairPlayHlsResponse`. The unit tests run only when
-  `blink_platform_unittests` is built.
+  `blink_platform_unittests` is built. `fairplay_hls_player_service.mm`
+  on main and fairplay-media's patched `cdm_context.h`; copies with a
+  misspelled core or mojom member fail. `gpu_mojo_media_client_mac.cc`'s
+  hunk (it needs the GPU channel's generated headers) mirrors
+  `CreateFairPlayRenderer` beside it.
 - Each increment had an independent read-only review before main, and its
   findings were fixed.
 

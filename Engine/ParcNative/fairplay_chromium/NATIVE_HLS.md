@@ -224,8 +224,7 @@ struct FairPlayHlsMetadata {
 interface FairPlayHlsPlayerLifetime {};  // browser implements, no methods
 
 interface FairPlayHlsPlayer {        // GPU implements
-  Initialize(url.mojom.Url url, string mime_type)
-      => (bool success, FairPlayHlsMetadata? metadata);
+  Initialize(url.mojom.Url url, string mime_type);  // → OnInitialized
   SetCdm(mojo_base.mojom.UnguessableToken cdm_id) => (bool success);
   Play(double rate); Pause();
   Seek(mojo_base.mojom.TimeDelta time) => (bool success);
@@ -241,6 +240,8 @@ interface FairPlayHlsPlayerClient {  // render process implements
   StartLoad(FairPlayHlsRequest request,
             pending_receiver<FairPlayHlsLoad> load,
             pending_remote<FairPlayHlsLoadClient> client);
+  OnInitialized(FairPlayHlsMetadata? metadata);  // null: failed (after an
+                                     // OnError naming the item's failure)
   OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
                mojo_base.mojom.TimeTicks capture_time);
   OnBufferingStateChange(BufferingState state);
@@ -268,9 +269,13 @@ interface FairPlayHlsPlayerClient {  // render process implements
 `media.mojom` has no time-range struct, and `DemuxerStream.Type` is a
 `[Native]` enum, hence `FairPlayHlsTimeRange` and `FairPlayHlsTrackType`.
 `FairPlayHlsMetadata.tracks` is the selection's list (`Tracks()`) when the
-`Initialize` reply is sent; the GPU service sends no `OnTracksChanged` before
-that reply (the two travel on different pipes) and folds earlier lists into
-it. The page treats `metadata.tracks` and every `OnTracksChanged` alike: the
+`OnInitialized` is sent; the GPU service sends no `OnTracksChanged` before it
+and folds earlier lists into it. `Initialize` has no reply: its answer is
+`OnInitialized` on the client's pipe, because the player's pipe and the
+client's (both made in the render process and passed through the browser)
+aren't ordered with each other, and everything the render process does at
+initialization (the item error, the layer token, buffering) must arrive in
+order with the answer. The page treats `metadata.tracks` and every `OnTracksChanged` alike: the
 whole list replaces the previous one, tracks matched by `key`.
 
 Routing, as the FairPlay renderer's and CDM's:
@@ -293,6 +298,49 @@ Routing, as the FairPlay renderer's and CDM's:
   (`fairplay_hls_player_service.{h,mm}`), which also registers the tab-mute
   observer as `CreateFairPlayRenderer` does.
 
+What the GPU service (`fairplay_hls_player_service.{h,mm}`) guarantees the
+render process:
+
+- `Initialize` creates the core player and the track bridge (Tracks), calls
+  `CreateAsset`, creates the CDM's `FairPlayHlsKeyLoader` for the asset (with
+  the CDM a `SetCdm` before it named) and installs it with
+  `SetHlsKeyRequestHandler`, calls `Start`, and attaches the bridge to the
+  new item. `SetCdm` afterwards goes to the loader (`false` when it can't
+  take the asset; the old CDM stays). The loader's `OnKeyLoadingRequest(url)`
+  is `OnKeyRequest(url)`, its `OnKeyNeeded(uri)` is `OnEncrypted("skd", uri)`
+  plus `OnWaiting(kNoDecryptionKey)`, and the player's
+  `OnOutputObscuredChange` goes to `SetOutputObscured`. `OnInitialized` carries the
+  metadata at `readyToPlay`. A failure before it is `OnInitialized(null)`:
+  after `OnError` with the item's error when the item failed (the demuxer
+  fails with that status), alone for a bad URL or an OS without client URL
+  loading (`DEMUXER_ERROR_COULD_NOT_OPEN`). A second `Initialize` is a bad
+  message.
+- Before `OnInitialized`, the client gets only `StartLoad` and the key calls
+  (`OnKeyRequest`, `OnEncrypted`, `OnWaiting`), which loading needs, the
+  item error above, and any cues the bridge sends (the render process holds
+  those until initialization). Ranges, duration, start date, natural size and
+  tracks reported earlier are in the metadata; buffering changes wait and
+  follow it in order. The layer token (`OnLayerRegistered`, video only) is
+  sent just before it.
+- `OnTimeUpdate` carries the item's timebase time and AVPlayer's actual rate
+  (0 while it waits for data), at every play, pause, seek completion,
+  buffering change and end, and every 125 ms while the page's rate is above
+  0, as `MojoRendererService`.
+- Errors map as WebKit reports them: network to
+  `PIPELINE_ERROR_NETWORK`, decode to `PIPELINE_ERROR_DECODE`, not supported
+  to `DEMUXER_ERROR_COULD_NOT_OPEN`. Frame counts go out as
+  `OnStatisticsUpdate` deltas; the codecs come from the format descriptions'
+  media subtypes (Core Audio IDs, MP4 sample entries and the protected
+  `q…` forms), `kUnknown` for anything else.
+- AVPlayer is muted while the page mutes (`SetMuted`) or the tab does, and
+  until the browser's first mute answer. `Suspend`/`Resume` do nothing:
+  WebKit's AVFoundation player has no suspended-loading state.
+- A load is one `Load` object owned by the core: it cancels the render
+  process's load when the core drops it, delivers the body as it arrives and
+  completes once both the pipe is drained and `OnComplete` arrived (a
+  failure's partial body is delivered first too, see Network); the client
+  pipe closing without `OnComplete` is `ERR_ABORTED`.
+
 ## GPU core player
 
 `parc::fairplay::FairPlayHlsPlayer` (`Engine/ParcNative/fairplay/fairplay_hls_player.h`,
@@ -306,7 +354,7 @@ player the GPU service owns, on the media service thread with the core's
 | `HlsLoader::StartLoad(request, HlsLoadClient*)` → `HlsLoad` (destroy = cancel) | `FairPlayHlsPlayerClient.StartLoad` → `FairPlayHlsLoad` (reset = `Cancel`) |
 | `HlsLoadClient::OnResponse` / `OnData` / `OnComplete(net_error)` | `FairPlayHlsLoadClient.OnResponse` + data pipe reads / `OnComplete` |
 | `CreateAsset(url, mime)` + `Start()` (or `Load`), `SetRate`, `Seek(s, done)`, `SetVolume`, `SetMuted`, `SetPreservesPitch` | `Initialize`, `Play`/`Pause`, `Seek`, `SetVolume`, `SetMuted`, `SetPreservesPitch` |
-| `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `Initialize` reply |
+| `HlsPlayerClient::OnMetadata` (once, `readyToPlay`) | `OnInitialized(metadata)` |
 | `OnBufferingStateChange`, `OnLoadedRangesChange`, `OnSeekableRangesChange`, `OnDurationChange`, `OnStartDateChange`, `OnNaturalSizeChange`, `OnEnded`, `OnError` | the client calls of the same meaning |
 | `SetHlsKeyRequestHandler` (between `CreateAsset` and `Start`) → the CDM's key loader takes skd requests | `OnKeyRequest(uri)` for every request it is handed; its `OnKeyNeeded(uri)` → `OnEncrypted("skd", uri)` (Keys) |
 | `OnOutputObscuredChange(bool)` | the key loader's `SetOutputObscured` |
@@ -530,7 +578,7 @@ behavior, not Parc's hosting.
 
 | Element | Source in the GPU | Render-process path |
 | --- | --- | --- |
-| `HAVE_METADATA` | item `readyToPlay` | `Initialize` reply → demuxer init → pipeline metadata |
+| `HAVE_METADATA` | item `readyToPlay` | `OnInitialized` → demuxer init → pipeline metadata |
 | `HAVE_ENOUGH` / underflow | `playbackLikelyToKeepUp` / `playbackBufferEmpty` | `OnBufferingStateChange` → facade's `RendererClient` |
 | `currentTime` | `currentTime`, periodic observer | `OnTimeUpdate` → facade's `GetMediaTime` interpolates |
 | `duration` | `duration` (indefinite = live), Live and DVR | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |
@@ -557,14 +605,14 @@ from the legible group, cues from one `AVPlayerItemLegibleOutput` for the one
 track the modes pick. GPU service: `media::FairPlayHlsTrackBridge`
 (`fairplay_hls_track_bridge.{h,mm}`, the GPU source set) owns the selection
 and does the rest; the service makes one with its client remote and
-`PostTask`, calls `Attach(player.impl())` right after `Load`, puts
-`TakeTracksForInitialize()` in the `Initialize` reply, forwards
+`PostTask`, calls `Attach(player.impl())` right after `Start`, puts
+`TakeTracksForInitialize()` in `OnInitialized`'s metadata, forwards
 `SetAudioTrackEnabled`/`SetTextTrackMode`, and calls `WillSeek()` before each
 `FairPlayHlsPlayer::Seek` and `DidSeek()` in its `done`, whatever the result.
 The bridge attaches with `HlsMediaSelectionAttach(selection.impl(),
 HlsPlayerAVPlayer(player.impl()), player.currentItem)`, maps
 `HlsTrack`/`HlsCue` onto `FairPlayHlsTrack`/`FairPlayHlsCue` field for field,
-holds lists back until the reply, and brackets seeks as WebKit does: the
+holds lists back until `OnInitialized`, and brackets seeks as WebKit does: the
 selection's `BeginSeeking()` on every seek and `EndSeeking()` once the last
 one is done (WebKit's `beginSeeking`/`endSeeking` on the current text track:
 the open cue is flushed and cues arriving meanwhile get no end from the next

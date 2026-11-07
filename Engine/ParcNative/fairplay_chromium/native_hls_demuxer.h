@@ -182,6 +182,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
       mojo::PendingReceiver<media::mojom::FairPlayHlsLoad> load,
       mojo::PendingRemote<media::mojom::FairPlayHlsLoadClient> client)
       override;
+  void OnInitialized(media::mojom::FairPlayHlsMetadataPtr metadata) override;
   void OnTimeUpdate(base::TimeDelta time,
                     double rate,
                     base::TimeTicks capture_time) override;

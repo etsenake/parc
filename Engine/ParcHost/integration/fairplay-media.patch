@@ -1886,22 +1886,20 @@
      NOTREACHED();
 --- a/media/mojo/mojom/renderer_extensions.mojom
 +++ b/media/mojo/mojom/renderer_extensions.mojom
-@@ -11,6 +11,9 @@
- 
+@@ -12,6 +12,9 @@
  [EnableIf=is_win]
  import "ui/gfx/mojom/buffer_types.mojom";
-+
+ 
 +[EnableIf=is_mac]
 +import "url/mojom/url.mojom";
- 
++
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
-@@ -22,6 +25,258 @@
-   // play state (e.g. when another phone play/pauses a cast device on the same
-   // network).
+ // This allows the Browser side to call back into the Renderer side.
+@@ -24,6 +27,265 @@
    OnRemotePlayStateChange(MediaStatusState state);
-+};
-+
+ };
+ 
 +// Parc: extension of the mojo::RendererClient communication layer for the
 +// FairPlay Streaming Renderer, which runs next to the FairPlay CDM in the GPU
 +// process's media service. Implemented by FairPlayRendererClient in the
@@ -2089,9 +2087,10 @@
 +[EnableIf=is_mac]
 +interface FairPlayHlsPlayer {
 +  // Loads `url` (http or https); `mime_type` is the element's <source type>,
-+  // or empty. Replies when the item is ready to play, or failed before that.
-+  Initialize(url.mojom.Url url, string mime_type)
-+      => (bool success, FairPlayHlsMetadata? metadata);
++  // or empty. FairPlayHlsPlayerClient.OnInitialized answers, on the client's
++  // pipe so it is ordered with every other client call (this pipe and the
++  // client's aren't ordered with each other).
++  Initialize(url.mojom.Url url, string mime_type);
 +  // The frame's CDM, as MojoCdmServiceContext names it.
 +  SetCdm(mojo_base.mojom.UnguessableToken cdm_id) => (bool success);
 +  // `rate` > 0. AVPlayer waits to minimize stalling, as in Safari.
@@ -2121,6 +2120,12 @@
 +  StartLoad(FairPlayHlsRequest request,
 +            pending_receiver<FairPlayHlsLoad> load,
 +            pending_remote<FairPlayHlsLoadClient> client);
++  // Initialize's result: the item's state when it is ready to play, or null
++  // when it failed before that (after an OnError naming the item's failure,
++  // if it had one). Before it come only StartLoad, the key calls
++  // (OnKeyRequest, OnEncrypted, OnWaiting), OnError, OnLayerRegistered and
++  // OnTextCues.
++  OnInitialized(FairPlayHlsMetadata? metadata);
 +  // The media time `time` at `capture_time`, advancing at `rate`.
 +  OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
 +               mojo_base.mojom.TimeTicks capture_time);
@@ -2131,7 +2136,7 @@
 +  // getStartDate(), sampled as Safari does at metadata and at each buffering
 +  // change; sent just before the OnBufferingStateChange it goes with.
 +  OnStartDateChanged(mojo_base.mojom.Time? start_date);
-+  // The whole list after any change (never before the Initialize reply):
++  // The whole list after any change (never before OnInitialized):
 +  // audio then text tracks, each in DOM order; tracks match by key.
 +  OnTracksChanged(array<FairPlayHlsTrack> tracks);
 +  // Changes to one text track's cues, in order.
@@ -2152,9 +2157,11 @@
 +  OnWaiting(WaitingReason reason);
 +  OnEnded();
 +  OnError(PipelineStatus status, string message);
- };
- 
++};
++
  [EnableIf=is_win]
+ struct FrameTextureInfo {
+   gfx.mojom.GpuMemoryBufferHandle texture_handle;
 --- a/media/mojo/services/BUILD.gn
 +++ b/media/mojo/services/BUILD.gn
 @@ -111,6 +111,10 @@
@@ -2178,7 +2185,7 @@
  #include "media/base/audio_decoder.h"
  #include "media/base/offloading_audio_encoder.h"
  #include "media/filters/mac/audio_toolbox_audio_decoder.h"
-@@ -13,13 +14,88 @@
+@@ -13,14 +14,124 @@
  #include "media/gpu/mac/video_toolbox_video_decoder.h"
  #include "media/mojo/services/gpu_mojo_media_client.h"
  
@@ -2192,11 +2199,12 @@
 +#include "mojo/public/cpp/bindings/remote.h"
 +#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 +#include "third_party/parc_fairplay/chromium/fairplay_cdm_factory.h"
++#include "third_party/parc_fairplay/chromium/fairplay_hls_player_service.h"
 +#include "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.h"
 +#endif
 +
  namespace media {
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: the frame's mute state (tab mute) for a FairPlay Renderer, whose audio
 +// bypasses the audio service, the way MediaFoundationRendererWrapper gets it.
@@ -2213,13 +2221,13 @@
 +  base::RepeatingCallback<void(bool)> on_change_;
 +};
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  class GpuMojoMediaClientMac final : public GpuMojoMediaClient {
   public:
    GpuMojoMediaClientMac(GpuMojoMediaClientTraits& traits)
        : GpuMojoMediaClient(traits) {}
    ~GpuMojoMediaClientMac() final = default;
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: the FairPlay Streaming Renderer, hosted with the FairPlay CDMs. The
 +  // client extension carries the display layer's token. The adapter keeps the
@@ -2263,11 +2271,46 @@
 +    }
 +    return renderer;
 +  }
++
++  // Parc: Safari's native HLS player (an AVPlayer), hosted with the FairPlay
++  // CDMs whose key sessions serve its keys. Its audio bypasses the audio
++  // service too, so it gets the frame's mute state the same way.
++  std::unique_ptr<mojom::FairPlayHlsPlayer> CreateFairPlayHlsPlayer(
++      scoped_refptr<base::SequencedTaskRunner> task_runner,
++      mojom::FrameInterfaceFactory* frame_interfaces,
++      CdmContextGetter get_cdm_context,
++      mojo::PendingRemote<mojom::FairPlayHlsPlayerClient> client,
++      mojo::PendingRemote<mojom::FairPlayHlsPlayerLifetime> lifetime) final {
++    auto player = std::make_unique<FairPlayHlsPlayerService>(
++        std::move(task_runner), std::move(get_cdm_context), std::move(client),
++        std::move(lifetime));
++    if (frame_interfaces) {
++      // As for the FairPlay Renderer: the browser answers at once, and the
++      // observer closes with the player.
++      mojo::PendingRemote<mojom::MuteStateObserver> observer;
++      mojo::SelfOwnedReceiverRef<mojom::MuteStateObserver> observer_ref =
++          mojo::MakeSelfOwnedReceiver(
++              std::make_unique<FairPlayMuteStateObserver>(
++                  player->GetMuteStateCallback()),
++              observer.InitWithNewPipeAndPassReceiver());
++      player->SetMuteStateObserverCloser(base::ScopedClosureRunner(
++          base::BindOnce(
++              [](mojo::SelfOwnedReceiverRef<mojom::MuteStateObserver> ref) {
++                if (ref) {
++                  ref->Close();
++                }
++              },
++              observer_ref)));
++      frame_interfaces->RegisterMuteStateObserver(std::move(observer));
++    }
++    return player;
++  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
   protected:
    std::unique_ptr<VideoDecoder> CreatePlatformVideoDecoder(
-@@ -63,6 +139,17 @@
+       VideoDecoderTraits& traits) final {
+@@ -63,6 +174,17 @@
    VideoDecoderType GetPlatformDecoderImplementationType() final {
      return VideoDecoderType::kVideoToolbox;
    }

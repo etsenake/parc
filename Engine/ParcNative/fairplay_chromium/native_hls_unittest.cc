@@ -45,14 +45,13 @@ using ::testing::StrictMock;
 
 constexpr char kPlaylist[] = "https://media.example/master.m3u8";
 
-// The GPU player: records commands and answers Initialize/Seek when told.
+// The GPU player: records commands and answers Seek when told (the test
+// answers Initialize with OnInitialized on the client pipe).
 class FakePlayer : public media::mojom::FairPlayHlsPlayer {
  public:
-  void Initialize(const GURL& url,
-                  const std::string& mime_type,
-                  InitializeCallback callback) override {
+  void Initialize(const GURL& url, const std::string& mime_type) override {
     url_ = url;
-    initialize_cb_ = std::move(callback);
+    initialized_ = true;
   }
   void SetCdm(const base::UnguessableToken& cdm_id,
               SetCdmCallback callback) override {
@@ -82,7 +81,7 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void Resume() override {}
 
   GURL url_;
-  InitializeCallback initialize_cb_;
+  bool initialized_ = false;
   SeekCallback seek_cb_;
   std::optional<base::TimeDelta> seek_time_;
   std::vector<double> commands_;  // Play(rate) or 0 for Pause().
@@ -142,9 +141,8 @@ class NativeHlsTest : public testing::Test {
                                 media::PipelineStatus s) { *out = s; },
                              &status));
     task_environment_.RunUntilIdle();
-    EXPECT_TRUE(player_.initialize_cb_);
-    const bool success = !metadata.is_null();
-    std::move(player_.initialize_cb_).Run(success, std::move(metadata));
+    EXPECT_TRUE(player_.initialized_);
+    client_->OnInitialized(std::move(metadata));
     task_environment_.RunUntilIdle();
     EXPECT_TRUE(status);
     return status.value_or(media::PipelineStatus(media::PIPELINE_OK));

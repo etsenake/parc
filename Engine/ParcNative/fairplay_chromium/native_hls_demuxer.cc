@@ -184,6 +184,10 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
                         media_task_runner_);
   player_.set_disconnect_handler(base::BindOnce(
       &NativeHlsDemuxer::OnPlayerDisconnected, base::Unretained(this)));
+  // The client pipe carries Initialize's answer: losing it is losing the
+  // player.
+  client_receiver_.set_disconnect_handler(base::BindOnce(
+      &NativeHlsDemuxer::OnPlayerDisconnected, base::Unretained(this)));
 
   // A CDM the pipeline held before this demuxer started: AVFoundation may
   // ask for keys before the item is ready to play.
@@ -191,10 +195,15 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
     SendCdm(std::exchange(pending_cdm_context_, nullptr), base::DoNothing());
   }
 
-  player_->Initialize(
-      url_, mime_type_,
-      base::BindOnce(&NativeHlsDemuxer::OnPlayerInitialized,
-                     weak_factory_.GetWeakPtr()));
+  // The answer is OnInitialized, on the client's pipe, after any OnError
+  // about the item.
+  player_->Initialize(url_, mime_type_);
+}
+
+void NativeHlsDemuxer::OnInitialized(
+    media::mojom::FairPlayHlsMetadataPtr metadata) {
+  const bool success = !metadata.is_null();
+  OnPlayerInitialized(success, std::move(metadata));
 }
 
 void NativeHlsDemuxer::OnPlayerInitialized(
@@ -747,7 +756,7 @@ void NativeHlsDemuxer::OnError(const media::PipelineStatus& status,
     return;
   }
   if (init_cb_) {
-    // The Initialize() reply follows and reports it.
+    // OnInitialized(null) follows on the same pipe and reports it.
     if (!init_error_) {
       init_error_ = status;
     }

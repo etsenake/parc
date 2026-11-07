@@ -67,6 +67,8 @@ source_set("gpu") {
     "chromium/fairplay_cdm_adapter.h",
     "chromium/fairplay_cdm_factory.cc",
     "chromium/fairplay_cdm_factory.h",
+    "chromium/fairplay_hls_player_service.h",
+    "chromium/fairplay_hls_player_service.mm",
     "chromium/fairplay_hls_track_bridge.h",
     "chromium/fairplay_hls_track_bridge.mm",
     "chromium/fairplay_renderer_adapter.h",
@@ -80,8 +82,11 @@ source_set("gpu") {
     "//media",
     "//media/mojo/mojom",
     "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
+    "//net",
     "//ui/accelerated_widget_mac",
     "//ui/gfx/geometry",
+    "//url",
   ]
   frameworks = [
     "AVFoundation.framework",
