@@ -293,25 +293,36 @@ tested. So the main world of every Safari-identity document gets a
   `MediaSource.prototype`, and act only for managed ones.
 - Under memory pressure its SourceBuffers drop buffered data as WebKit's
   `SourceBuffer::memoryPressure` does (`HTMLMediaElement::
-  purgeBufferedDataIfPossible`): as the pressure level rises, an inactive
-  SourceBuffer is emptied, and an active one keeps only the playback window,
-  from the earlier of the keyframe at or before the position and 3.75 s back
-  (the removal ends at a keyframe, so the GOP being played stays), to the end
-  of the playable run holding the position (ranges joined by gaps of up to
-  125 ms), or 3.75 s past it when it isn't buffered. A purge waits for the
-  append or removal in progress and runs as it completes, and doesn't repeat
-  until playback has moved on. The page then gets `bufferedchange` with the
-  removed ranges and, when the next 10 s are gone, `startstreaming`.
-  Chromium's Media Source has no such eviction, so the engine does it
-  (`ParcPurgeForMemoryPressure` in `SourceBufferStream`, reached through
-  `ChunkDemuxer` and `WebSourceBuffer` in `fairplay-media.patch`, and Blink's
-  `SourceBuffer`, which listens for memory pressure, in
-  `fairplay-identity-blink.patch`); it recognises a managed source by a
-  listener the script adds, and the script reports the purge when the engine
-  tells it. An ended source keeps what follows the playable run, since
-  Chromium would end playback there where WebKit waits for data, and the gap
-  tolerance is a fixed 125 ms per track where WebKit widens it to 250 ms
-  where audio covers a gap and to 1 s near the start.
+  purgeBufferedDataIfPossible`, then `SourceBufferPrivate::evictFrames`): as
+  the pressure level rises, an inactive SourceBuffer is emptied, and an
+  active one loses, across its tracks, everything before the earlier of
+  3.75 s before the position and its previous keyframe (each track's removal
+  then runs to its next keyframe, so the GOP being played stays), and
+  everything after the point where playback from the position would stall
+  (`nextStallTime` over the SourceBuffer's intersected track ranges, gaps
+  bridged by WebKit's tolerance: 125 ms, 250 ms where the active
+  SourceBuffers' audio covers the gap, 1 s before a first range that starts
+  within the first second), or after 3.75 s past the position when it isn't
+  buffered. An ended source is purged the same way, and playback then waits
+  where the data stops, as in WebKit, until the page appends again. An
+  inactive SourceBuffer the purge emptied stops counting toward the
+  element's buffered ranges and the data a seek waits for while it stays
+  inactive and empty, since WebKit counts only active SourceBuffers there
+  and Chromium otherwise counts them all. A purge
+  waits for the append or removal in progress and runs as it completes, and
+  doesn't repeat until playback has moved on. The page then gets
+  `bufferedchange` with the removed ranges and, when the next 10 s are gone,
+  `startstreaming`. Chromium's Media Source has no such eviction, so the
+  engine does it (`SourceBufferState::ParcPurgeForMemoryPressure`, reached
+  through `ChunkDemuxer` and `WebSourceBuffer` in `fairplay-media.patch`, and
+  Blink's `SourceBuffer`, which listens for memory pressure under its own
+  `MemoryPressureListenerTag`, in `fairplay-identity-blink.patch`); it
+  recognises a managed source by a listener the script adds, and the script
+  reports the purge when the engine tells it. For a SourceBuffer carrying
+  several tracks, WebKit's previous keyframe is that of whichever track its
+  hash map visits last, so which one wins is arbitrary and can cut into
+  another track's playing GOP; Parc takes the earliest, which keeps every
+  track's.
 - `streaming` follows WebKit's `ManagedMediaSource::monitorSourceBuffers`.
   With no active SourceBuffer it's true. Otherwise it turns true while the
   next 10 s after the playback position aren't buffered, and false once the
@@ -546,10 +557,12 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`, and the memory-pressure
   listener of a `ManagedMediaSource`'s SourceBuffers
-  (`SourceBuffer::ParcOnMemoryPressure`).
+  (`SourceBuffer::ParcOnMemoryPressure`, with its
+  `MemoryPressureListenerTag::kParcManagedMediaSource` in
+  `base/memory/memory_pressure_listener.h`).
 - `fairplay-media.patch` also carries the purge those SourceBuffers run:
-  `SourceBufferStream::ParcPurgeForMemoryPressure` and its path through
-  `SourceBufferState`, `ChunkDemuxer` and `WebSourceBuffer`.
+  `SourceBufferState::ParcPurgeForMemoryPressure`, its `SourceBufferStream`
+  pieces and its path through `ChunkDemuxer` and `WebSourceBuffer`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
   a hook that service and shared workers call as they start, and that worker
   script requests consult for their `User-Agent` (a dedicated worker's with

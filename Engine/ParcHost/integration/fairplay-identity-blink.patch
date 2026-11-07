@@ -2221,7 +2221,7 @@
  #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
  #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
  #include "third_party/blink/renderer/platform/network/mime/content_type.h"
-@@ -195,7 +199,43 @@
+@@ -195,7 +199,40 @@
    return stream_parser_buffer;
  }
  
@@ -2232,12 +2232,6 @@
 +constexpr char kParcManagedMediaSourceMarker[] = "parcmanagedmediasource";
 +constexpr char kParcPurgedEvent[] = "parcmanagedmediasourcepurged";
 +
-+// Parc: a tag past base's MemoryPressureListenerTag values, so base/memory
-+// stays unedited; such a tag is never suppressed
-+// (memory_pressure_listener_registry.cc).
-+constexpr auto kParcMemoryPressureTag =
-+    static_cast<base::MemoryPressureListenerTag>(1000);
-+
  }  // namespace
 +
 +// Parc: hears memory pressure on the SourceBuffer's own thread (the window's
@@ -2246,7 +2240,10 @@
 +    : public base::MemoryPressureListener {
 + public:
 +  explicit ParcMemoryPressureListener(SourceBuffer* owner)
-+      : owner_(owner), registration_(FROM_HERE, kParcMemoryPressureTag, this) {}
++      : owner_(owner),
++        registration_(FROM_HERE,
++                      base::MemoryPressureListenerTag::kParcManagedMediaSource,
++                      this) {}
 +  ParcMemoryPressureListener(const ParcMemoryPressureListener&) = delete;
 +  ParcMemoryPressureListener& operator=(const ParcMemoryPressureListener&) =
 +      delete;
@@ -2265,7 +2262,7 @@
  
  SourceBuffer::SourceBuffer(std::unique_ptr<WebSourceBuffer> web_source_buffer,
                             MediaSource* source,
-@@ -248,6 +288,13 @@
+@@ -248,6 +285,13 @@
  
    source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
    web_source_buffer_->SetClient(this);
@@ -2279,7 +2276,7 @@
  }
  
  SourceBuffer::~SourceBuffer() {
-@@ -258,6 +305,75 @@
+@@ -258,6 +302,75 @@
    // Promptly clears a raw reference from content/ to an on-heap object
    // so that content/ doesn't access it in a lazy sweeping phase.
    web_source_buffer_.reset();
@@ -2355,7 +2352,7 @@
  }
  
  void SourceBuffer::setMode(const V8AppendMode& new_mode,
-@@ -1173,6 +1289,7 @@
+@@ -1173,6 +1286,7 @@
    web_source_buffer_.reset();
    source_ = nullptr;
    async_event_queue_ = nullptr;
@@ -2363,7 +2360,7 @@
  }
  
  double SourceBuffer::HighestPresentationTimestamp() {
-@@ -1814,6 +1931,7 @@
+@@ -1814,6 +1928,7 @@
    pending_remove_end_ = -1;
  
    updating_ = false;
@@ -2371,7 +2368,7 @@
  }
  
  ExecutionContext* SourceBuffer::GetExecutionContext() const {
-@@ -2130,6 +2248,9 @@
+@@ -2130,6 +2245,9 @@
        // 5. Queue a task to fire a simple event named updateend at this
        //    SourceBuffer object.
        ScheduleEvent(event_type_names::kUpdateend);
@@ -2381,7 +2378,7 @@
        break;
    }
  
-@@ -2187,6 +2308,9 @@
+@@ -2187,6 +2305,9 @@
    // 12. Queue a task to fire a simple event named updateend at this
    //     SourceBuffer object.
    ScheduleEvent(event_type_names::kUpdateend);
@@ -2586,3 +2583,15 @@
    PictureInPictureController& controller =
        PictureInPictureController::From(GetDocument());
    if (controller.PictureInPictureElement(GetTreeScope()) == *this) {
+--- a/base/memory/memory_pressure_listener.h
++++ b/base/memory/memory_pressure_listener.h
+@@ -102,6 +102,9 @@
+   kGrShaderCache = 68,
+   kMemoryPressureListenerPolicy = 69,
+   kLongScreenshotsTabService = 70,
++  // Parc: the SourceBuffers of a ManagedMediaSource on Safari-identity pages
++  // (third_party/blink/renderer/modules/mediasource/source_buffer.cc).
++  kParcManagedMediaSource = 71,
+ };
+ 
+ // base::MemoryPressureListener is deprecated. Use base::MemoryConsumer instead.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 435,
+  "version": 436,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4097,7 +4097,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "a0ddb7840b6f0b2a042a5a8c273e4702a7ea204d24ff1eb13283ee1b6b19f67d",
+      "sha256": "98c926d5ebba0bac001a9df806729facf857017e3bb3bf21091bf98d9fdf17e8",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4222,12 +4222,12 @@
         {
           "target": "media/filters/chunk_demuxer.cc",
           "before_sha256": "bfe9309a25c772e3362e2da90ccf528e21ad98abb3621566484e585d6ca4c3ee",
-          "after_sha256": "469b6b3a7d13f069d78cf53ec142a10102bcfa4271e3a0cd1ccc048d76326ef8"
+          "after_sha256": "9c6ca1656f1d8c2a2eabbe9675a4aeeb7b3e099971cb2ea3c56a76045f3db6b2"
         },
         {
           "target": "media/filters/chunk_demuxer.h",
           "before_sha256": "7882b1b7d0ec10bc36f06ca11b835bd474163070b8b0d032e719c8ecbd5250d9",
-          "after_sha256": "b90bec26dcba8c857c3f9d0f12e6473550ef638e48f1768e72bf79dc883f2ddb"
+          "after_sha256": "79e2355afce30f4fd1ece4d5aa2f82ddc53b7ae575908596c5173d04bc18a7b3"
         },
         {
           "target": "media/filters/demuxer_manager.cc",
@@ -4492,22 +4492,22 @@
         {
           "target": "media/filters/source_buffer_stream.h",
           "before_sha256": "bfc63514119e39b516ab20c64c124deed1efed80c2e565c5e1ad10a70042417f",
-          "after_sha256": "943d3fed6f40383c83818ea8ae7dd3c0235c0a86c8f1060dc47aa79187e3e401"
+          "after_sha256": "2f5bac784e15b43f82d2b84567e58c542233730d95027efff5992c7b8d6b1d27"
         },
         {
           "target": "media/filters/source_buffer_stream.cc",
           "before_sha256": "6d6f996179c344e2ceace3bdd41766548826959bded29a98c9b98c37967dedd0",
-          "after_sha256": "633f6f3d42a25ed515aad11c4f4fa75ced417d1ebb4877eba6e64e36c29cda37"
+          "after_sha256": "37210ba68a77bc06bc75e7b5985be77f09e9ae7892afe58b2e2f659a2530a7c2"
         },
         {
           "target": "media/filters/source_buffer_state.h",
           "before_sha256": "03bd38edb9cd7cf5b244068f37b65e7f29e8ea2f33441c2933d4ddb21f339574",
-          "after_sha256": "285ee80bcae958acd557b3eba31fd52bf2fc9248ca12c95e07b50b8da758ad5b"
+          "after_sha256": "3fdd5dd2cc0d2033c9fda4ed1c3ff60df0acdff4a6930c9c38b45309c23e3eee"
         },
         {
           "target": "media/filters/source_buffer_state.cc",
           "before_sha256": "5c5994b780510f476106b8269ffa6802e18e2a43c8942de684e8edef7ce765a0",
-          "after_sha256": "5a60deea7c5fcbf1916d014fa14d2439e2f66844c7358f9bb09f67d30ddb6960"
+          "after_sha256": "9b47be2fe2e061f4fbe4e139c46aded48a65635d69552486806c57ddf3baba36"
         },
         {
           "target": "third_party/blink/public/platform/web_source_buffer.h",
@@ -4548,7 +4548,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "3eafaa53c60fda2608657796fe18253cd2594829dcc3586b5c51d422c7c354d9",
+      "sha256": "dc72737ecd0087c51aaeee0abd96e449722443ac14125e146f3506782ad307ef",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4668,7 +4668,7 @@
         {
           "target": "third_party/blink/renderer/modules/mediasource/source_buffer.cc",
           "before_sha256": "c860b87b640708a8b53fe4c747e4803e3742c442df4a5ed628a6e61771feba5f",
-          "after_sha256": "695910b67ca89c8328b562a787848b9aac117470d86f7bb8c7b0dbdbb32632ec"
+          "after_sha256": "ea6e354e7341726f6721e4646fa94e6fcd94da3a310f8020b54b96c5b32ed747"
         },
         {
           "target": "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h",
@@ -4699,6 +4699,11 @@
           "target": "third_party/blink/renderer/core/html/media/html_video_element.cc",
           "before_sha256": "c99190ade522dcb959327abf510223bbd6ad137afeb7d6f4d39185ad7f5b6699",
           "after_sha256": "480c46f11807d5251e138d285e634ec572cca0f8583a7ae870a06657bdf83179"
+        },
+        {
+          "target": "base/memory/memory_pressure_listener.h",
+          "before_sha256": "25c5e697a2c9a51ac4571fbad13a575ad8b57d6baf0ed2e27f60d9b89224fe8c",
+          "after_sha256": "595a83d2ee6f6784a33e6d6258c3749dc91be835b84d23a0ccfe52cbd86e72fd"
         }
       ]
     },
