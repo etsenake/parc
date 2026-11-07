@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **49**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **50**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -158,7 +158,7 @@ said `canplay` before keys and `seeked` before the picture: **fixed** 7597d287
 minimum is 13.0). Pre-existing FairPlay renderer gaps a user feels
 (`fairplay_chromium/README.md` Known gaps): keys arriving after playback
 started, or a switch into Dolby Vision, cost one rebuffer Safari doesn't have
-(**in progress**, FP-RESTART); Dolby Vision alongside a track the FairPlay
+(**in progress**, FP-RESTART, a seamless renderer handoff); Dolby Vision alongside a track the FairPlay
 renderer can't play (VP9 before the switch, Vorbis) fails (**queued**, FP-DV);
 a page turning its own video track off ends video until the next seek
 (**queued**, FP-TRACK); `setSinkId` audio output selection isn't wired
@@ -536,7 +536,16 @@ b294d1e7. Still differing: Parc restarts the renderer for the new track (an
 extra rebuffer, and a blank picture with the FairPlay renderer) where WebKit
 adds it to the live renderer, and a late second audio-language SourceBuffer
 plays only the original audio where Safari mixes both enabled tracks:
-**in progress** (CD-1b). `readyState` returned straight to
+**fixed** 00671621 (late tracks join the playing renderer, FairPlay and
+RendererImpl, no restart; a second audio SourceBuffer plays mixed on
+FairPlay). Still different, user-felt, **queued** (CD-1c): clear Media
+Source plays only the first of two audio SourceBuffers (RendererImpl has one
+audio renderer); after the page toggles `audioTracks` only one track plays
+(Blink sends only the first enabled id, `html_media_element.cc:4486`); an
+encrypted late track on RendererImpl still restarts (a rebuffer); a rare race
+with two merged late audio SourceBuffers. Video track switches on FairPlay
+freeze the picture: **in progress** with the late-key handoff (FP-RESTART).
+`readyState` returned straight to
 `HAVE_ENOUGH_DATA` after the new track's data arrived: **fixed** f50e1aab.
 
 Seeks wait for data at the target (`:512-541, 1017-1022`), end of stream
