@@ -8,8 +8,11 @@ repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-fairplay-hls-presentation.XXXXXX")"
 trap 'rm -rf "$output"' EXIT
 tests="$repo_root/tests/FairPlay/hls_presentation"
-flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -fobjc-arc -I "$tests")
-xcrun clang++ "${flags[@]}" "$tests/harness.mm" -framework AppKit -framework AVFoundation \
+core="$repo_root/Engine/ParcNative/fairplay"
+flags=(-std=c++20 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -fobjc-arc -I "$core" -I "$tests")
+xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_frame_stats.mm" -o "$output/fairplay_hls_frame_stats.o"
+xcrun clang++ "${flags[@]}" -c "$tests/harness.mm" -o "$output/harness.o"
+xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation \
   -framework CoreMedia -framework QuartzCore -o "$output/fairplay-hls-presentation-proof"
 # The harness exits by itself; a 300 s cap backs that up. The cap's sleep is
 # its own process: stopping the cap must stop it too.

@@ -26,6 +26,11 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
   bookkeeping, and the `tenc`/`sinf`/`esds` bytes.
 - `fairplay_key_session_internal.h`: content key recipient attachment for the
   renderer (ObjC++ only).
+- `fairplay_hls_frame_stats.{h,mm}`: frame counts for the native HLS player
+  ([NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md)), read from
+  `-[AVPlayerLayer videoPerformanceMetrics]` on a private queue every 250 ms
+  while playing and reported as deltas (ObjC++ only). Proven by
+  [tests/FairPlay/hls_presentation](../../../tests/FairPlay/hls_presentation/README.md).
 - `fairplay_hls_player.{h,mm}`: `FairPlayHlsPlayer`, Safari's native HLS route
   (`<video src="….m3u8">`) through `AVPlayer`, with every load handed to the
   embedder's `HlsLoader` (see below and

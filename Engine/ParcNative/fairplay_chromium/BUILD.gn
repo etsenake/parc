@@ -27,6 +27,8 @@ source_set("core") {
   sources = [
     "core/fairplay_bitstream.cc",
     "core/fairplay_bitstream.h",
+    "core/fairplay_hls_frame_stats.h",
+    "core/fairplay_hls_frame_stats.mm",
     "core/fairplay_hls_player.mm",
     "core/fairplay_hls_player_internal.h",
     "core/fairplay_init_data.mm",

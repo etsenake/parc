@@ -29,10 +29,21 @@ main thread, as `CARendererLayerTree` places them.
   `-[AVPlayerLayer videoPerformanceMetrics]` (WebKit's source) off the main
   thread. Teardown lets go of the player on the queue.
 
+- **Accumulator.** `FrameCountAccumulator` on synthetic readings: the first
+  reading counts in full, later ones add what moved, either count going back
+  (a restarted decoder) counts both readings in full, negative readings add
+  nothing.
+- **FrameStats.** `HlsFrameStats` on a playing `AVPlayerLayer`, reporting on
+  the media queue: reports arrive about four times a second while playing and
+  add up to the frames played; stopping counts once more, so the sum reaches
+  the layer's total; nothing is reported while paused; counts resume with
+  playback and stop for good when it is destroyed. A layer whose player is
+  gone, or that never played, gives no reading.
+
 ## Results
 
 Recorded 2026-11-06 on this MacBook Air (macOS 27.2): Display 15 checks,
-0 failed.
+Accumulator 8, FrameStats 10, 0 failed.
 
 - Ready for display in the 640×360 host; `videoRect` 640×360, then 320×180 in
   the PiP host.
@@ -45,3 +56,7 @@ Recorded 2026-11-06 on this MacBook Air (macOS 27.2): Display 15 checks,
   earlier run the frame counter restarted (178 → 75) on the move back to the
   larger page host, when AVFoundation switched variants: a count below the
   last one starts a new run, which the frame statistics must add, not ignore.
+- FrameStats: +79 decoded over 3.01 s of media in 12 reports; on pausing the
+  last count brought the sum to the layer's total (89 = 89); paused 2 s,
+  89 → 89 with no reports; +72 after resuming; no report in the 1.5 s after
+  destruction.

@@ -10,9 +10,13 @@
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
 
+#import "fairplay_hls_frame_stats.h"
+
 #include <cstdarg>
 #include <thread>
 #include <atomic>
+#include <memory>
+#include <mutex>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -332,6 +336,144 @@ void Display() {
   });
 }
 
+
+// ---------------------------------------------------------------------------
+// Frame statistics: fairplay_hls_frame_stats turns the layer's counts into
+// the deltas PipelineImpl adds up, polling while playing.
+
+namespace fp = parc::fairplay;
+
+void Accumulator() {
+  fp::FrameCountAccumulator acc;
+  fp::FrameCountDelta d = acc.Advance({12, 1});
+  Check(d.decoded == 12 && d.dropped == 1, "accumulator: the first reading counts in full");
+  d = acc.Advance({40, 1});
+  Check(d.decoded == 28 && d.dropped == 0, "accumulator: later readings add what moved");
+  d = acc.Advance({40, 1});
+  Check(d.empty(), "accumulator: an unchanged reading adds nothing");
+  d = acc.Advance({7, 0});
+  Check(d.decoded == 7 && d.dropped == 0,
+        "accumulator: a smaller total is a restarted decoder and counts in full",
+        Format("+%u decoded, +%u dropped", d.decoded, d.dropped));
+  d = acc.Advance({9, 2});
+  Check(d.decoded == 2 && d.dropped == 2, "accumulator: the new run then adds what moved");
+  acc.Advance({1000, 5});
+  d = acc.Advance({300, 8});
+  Check(d.decoded == 300 && d.dropped == 8,
+        "accumulator: a restart counts both readings in full, even a dropped count that grew",
+        Format("+%u decoded, +%u dropped", d.decoded, d.dropped));
+  d = acc.Advance({300, 3});
+  Check(d.decoded == 300 && d.dropped == 3, "accumulator: a dropped count going back is a restart too");
+  d = acc.Advance({-5, -1});
+  Check(d.empty(), "accumulator: negative readings add nothing");
+}
+
+// Reports land on the media queue, as on the player's sequence.
+struct Reports {
+  std::mutex lock;
+  int64_t decoded = 0;
+  int64_t dropped = 0;
+  int count = 0;
+  std::pair<int64_t, int> Get() {
+    std::lock_guard<std::mutex> hold(lock);
+    return {decoded, count};
+  }
+};
+
+void FrameStats() {
+  Host page = MakeHost(NSMakeRect(80, 380, 640, 360), @"page");
+  Player p = MakePlayer([NSURL URLWithString:@(kBipBop)]);
+  Check(WaitReady(p, 20), "frame stats: item ready to play");
+  Place(p.layer, page.host);
+
+  auto reports = std::make_shared<Reports>();
+  __block std::unique_ptr<fp::HlsFrameStats> stats;
+  AVPlayerLayer* layer = p.layer;
+  AVPlayer* player = p.player;
+  OnMedia(^{
+    fp::PostTask post = [](std::function<void()> task) {
+      dispatch_async(MediaQueue(), ^{
+        task();
+      });
+    };
+    stats = std::make_unique<fp::HlsFrameStats>(layer, post, [reports](const fp::FrameCountDelta& d) {
+      std::lock_guard<std::mutex> hold(reports->lock);
+      reports->decoded += d.decoded;
+      reports->dropped += d.dropped;
+      ++reports->count;
+    });
+    player.rate = 1;
+    stats->SetPlaying(true);
+  });
+  Check(WaitFor(15, [&] { return reports->Get().first > 0; }), "frame stats: the first report arrives");
+  const auto [d0, n0] = reports->Get();
+  const double t0 = p.Time();
+  Sleep(3);
+  const auto [d1, n1] = reports->Get();
+  const double t1 = p.Time();
+  const fp::DecoderFrameCounts raw = fp::ReadDecoderFrameCounts(layer).value_or(fp::DecoderFrameCounts{});
+  Check(d1 - d0 > 30, "frame stats: decoded frames advance with playback",
+        Format("+%lld over %.2f s of media in %d reports", d1 - d0, t1 - t0, n1 - n0));
+  Check(n1 - n0 >= 8 && n1 - n0 <= 14, "frame stats: about four reports a second while playing",
+        Format("%d reports in 3 s", n1 - n0));
+  Note(Format("summed %lld, layer total now %lld (equal unless the decoder restarted)", d1,
+              raw.total));
+
+  // Pause: one last count, then nothing. That count is the only reading after
+  // the clock stops, so the sum reaching the layer's total (more if the
+  // decoder restarted during the run) proves it.
+  OnMedia(^{
+    player.rate = 0;
+    stats->SetPlaying(false);
+  });
+  Sleep(0.5);
+  const auto [d2, n2] = reports->Get();
+  const int64_t paused_total = fp::ReadDecoderFrameCounts(layer).value_or(fp::DecoderFrameCounts{}).total;
+  Check(d2 >= paused_total, "frame stats: stopping counts once more, up to the layer's total",
+        Format("summed %lld, layer %lld", d2, paused_total));
+  Sleep(2);
+  const auto [d3, n3] = reports->Get();
+  Check(d3 == d2 && n3 == n2, "frame stats: paused, no reports and the count stands",
+        Format("%lld -> %lld", d2, d3));
+
+  // Resume.
+  OnMedia(^{
+    player.rate = 1;
+    stats->SetPlaying(true);
+  });
+  Sleep(2.5);
+  const auto [d4, n4] = reports->Get();
+  Check(d4 > d3, "frame stats: counts resume with playback", Format("+%lld", d4 - d3));
+
+  // Destroyed while polling: nothing reported afterwards.
+  OnMedia(^{
+    stats.reset();
+  });
+  const auto [d5, n5] = reports->Get();
+  Sleep(1.5);
+  const auto [d6, n6] = reports->Get();
+  Check(n6 == n5, "frame stats: no report after destruction", Format("%d -> %d", n5, n6));
+  (void)d5;
+  (void)d6;
+  (void)n4;
+
+  OnMedia(^{
+    player.rate = 0;
+    [CATransaction begin];
+    layer.player = nil;
+    [CATransaction commit];
+  });
+  Detach(layer);
+  const std::optional<fp::DecoderFrameCounts> orphan = fp::ReadDecoderFrameCounts(layer);
+  Check(!orphan || orphan->total > 0, "frame stats: a layer without its player reads safely",
+        orphan ? Format("%lld frames", orphan->total) : "no reading");
+  Check(!fp::ReadDecoderFrameCounts([AVPlayerLayer playerLayerWithPlayer:nil]),
+        "frame stats: a layer that never played gives no reading");
+  OnMain(^{
+    [page.window close];
+  });
+}
+
 struct Section {
   const char* name;
   void (*run)();
@@ -339,6 +481,8 @@ struct Section {
 
 const Section kSections[] = {
     {"Display", Display},
+    {"Accumulator", Accumulator},
+    {"FrameStats", FrameStats},
 };
 
 }  // namespace

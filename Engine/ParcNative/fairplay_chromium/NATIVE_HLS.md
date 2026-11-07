@@ -299,8 +299,38 @@ tree (a hidden tab).
 | `ended` | `AVPlayerItemDidPlayToEndTimeNotification` | `OnEnded` |
 | `error` | item `failed`, `AVPlayerItemFailedToPlayToEndTime`, error log | `OnError` → `MEDIA_ERR_NETWORK` / `DECODE` / `SRC_NOT_SUPPORTED` as Safari maps them |
 | `audioTracks` / `textTracks` | `AVMediaSelectionGroup`s, legible output | `OnTracksChanged` → `DemuxerManager`'s track manager; cues by `OnTextCues` |
-| decoded/dropped frames | access log / video metrics | `OnStatisticsUpdate` (as fp-frame-stats) |
+| decoded/dropped frames | `-[AVPlayerLayer videoPerformanceMetrics]` (`HlsFrameStats`) | `OnStatisticsUpdate` deltas (as fp-frame-stats) |
 | `encrypted`, `waitingforkey` | resource loader skd requests | `OnEncrypted`, `OnWaiting` |
+
+## Frame counts
+
+`getVideoPlaybackQuality()`, `webkitDecodedFrameCount` and
+`webkitDroppedFrameCount` come from WebKit's source for an `AVPlayer`,
+`-[AVPlayerLayer videoPerformanceMetrics]` (SPI; the object answers WebKit's
+`totalNumberOfVideoFrames`/`numberOfDroppedVideoFrames` and, from macOS 14.4,
+the public `totalNumberOfFrames`/`numberOfDroppedFrames`). The core's
+`HlsFrameStats` (`fairplay/fairplay_hls_frame_stats.h`) owns the polling: the
+player creates it with its `AVPlayerLayer` and its `PostTask`, calls
+`SetPlaying(started && rate > 0)` on every play, pause, rate change, seek and
+end, and forwards each `FrameCountDelta` as `OnStatisticsUpdate`
+(`video_frames_decoded`, `video_frames_dropped`), which `PipelineImpl` adds
+up as for the MSE route. It reads on its own serial queue every 250 ms while
+playing, because the call can block (WebKit reads it on a background queue),
+counts once more on stopping, and never reports after it is destroyed.
+
+Unlike an `AVSampleBufferDisplayLayer`'s, this count restarts when
+AVFoundation rebuilds its decoder (seen once on a variant switch, 178 → 75):
+a reading with either count below the previous one is a new run and both of
+its counts are added in full, where the MSE adapter's rule (a smaller total
+adds nothing) would stall the counts until the new run passed the old total.
+An all-zero reading (nothing decoded yet, or no player) is skipped, so it
+can't be taken for a restart. The class holds the layer weakly and drops its
+callback on the owner sequence when destroyed. Bytes decoded stay 0, as Safari's AVPlayer
+route reports none. One difference from Safari, kept on purpose: its
+`MediaPlayerPrivateAVFoundationObjC` has no `decodedFrameCount()`, so
+`webkitDecodedFrameCount` reads 0 there for HLS, while in Parc it advances
+with `getVideoPlaybackQuality()` because Chromium reads both from the same
+statistics, as for the MSE route.
 
 ## Threads
 
