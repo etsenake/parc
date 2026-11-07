@@ -186,7 +186,7 @@ class HlsMediaSelectionClient {
   virtual void OnTracksChanged(const std::vector<HlsTrack>& tracks) = 0;
   virtual void OnTextCues(const std::string& track_key, const std::vector<HlsCue>& cues) = 0;
   // Timed and date range metadata, as DataCue changes on the metadata track.
-  virtual void OnDataCues(const std::string& track_key, const std::vector<HlsDataCue>& cues) {}
+  virtual void OnDataCues(const std::string& /*track_key*/, const std::vector<HlsDataCue>& /*cues*/) {}
 
  protected:
   virtual ~HlsMediaSelectionClient() = default;
