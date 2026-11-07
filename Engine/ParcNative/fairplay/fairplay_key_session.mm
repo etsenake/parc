@@ -172,6 +172,13 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     std::vector<KeyInfo> last_keys;  // As last reported.
     bool keys_removed = false;
     std::string skd_uri;  // The init data of an skd session.
+    // After remove(), the key statuses it reported, which stay (WebKit
+    // replaces the session's statuses with removeSessionData's keys).
+    std::vector<KeyInfo> removed_keys;
+    // Expired-session reports matching this session, found by remove() (or
+    // load()), as WebKit's m_expiredSessions; update("acknowledged") removes
+    // them from the storage.
+    std::vector<NSData*> expired_reports;
   };
 
   Impl(FairPlayCdmClient* client, PostTask post_task)
@@ -459,6 +466,27 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       }
     };
     Session* session = Find(session_id);
+    // WebKit's updateLicense: once remove() or load() found expired-session
+    // reports, "acknowledged" removes them from the storage. They stay the
+    // session's, so another "acknowledged" asks again. A failure is WebKit's
+    // TypeError.
+    static constexpr char kAcknowledged[] = "acknowledged";
+    if (session && !session->expired_reports.empty() &&
+        std::string(response.begin(), response.end()) == kAcknowledged) {
+      if (!certificate_ || !storage_url_) {
+        done(Result::Error(Exception::kTypeError, "no server certificate or storage"));
+        return;
+      }
+      NSMutableArray<NSData*>* reports = [NSMutableArray array];
+      for (NSData* report : session->expired_reports) {
+        [reports addObject:report];
+      }
+      [AVContentKeySession removePendingExpiredSessionReports:reports
+                                            withAppIdentifier:certificate_
+                                        storageDirectoryAtURL:storage_url_];
+      done(Result::Ok());
+      return;
+    }
     if (!session || session->keys_removed) {
       done(Result::Error(Exception::kInvalidState, "session is closed or removed"));
       return;
@@ -651,11 +679,92 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     RejectPending(session, "session removed");
+    // WebKit's CDMInstanceSessionFairPlayStreamingAVFObjC::removeSessionData:
+    // the session's keys are expired (its key group revokes them), then a
+    // persistent-usage-record session looks for AVFoundation's expired-session
+    // reports whose PlaybackSessionID is its session ID. Each one found counts
+    // as a released key with no key ID, and the reports go to the page as the
+    // license-release message (one report's dictionary, or an array of them,
+    // as a binary property list). Any other session type fails (NotSupported)
+    // after reporting no keys.
     RevokeKeys(session);
     ReleaseLoading(session);
     session->keys_removed = true;
-    NotifyKeyStatuses(session);
-    done(Result::Ok());
+    std::vector<KeyInfo> released;
+    std::vector<uint8_t> release_message;
+    Result result = Result::Error(Exception::kNotSupported,
+                                  "only persistent-usage-record sessions have data to remove");
+    if (session->type == SessionType::kPersistentUsageRecord) {
+      if (!persistent_state_allowed_ || !storage_url_ || !certificate_) {
+        result = Result::Error(Exception::kNotSupported,
+                               "no persistent state, storage or server certificate");
+      } else {
+        NSMutableArray* matching = [NSMutableArray array];
+        for (NSData* report : ExpiredSessionReports(session->id)) {
+          released.push_back({{}, KeyStatus::kReleased, 0});
+          session->expired_reports.push_back(report);
+          [matching addObject:[NSPropertyListSerialization propertyListWithData:report
+                                                                        options:NSPropertyListImmutable
+                                                                         format:nil
+                                                                          error:nil]];
+        }
+        if (matching.count) {
+          id property_list = matching.count == 1 ? matching.firstObject : matching;
+          NSData* data =
+              [NSPropertyListSerialization dataWithPropertyList:property_list
+                                                         format:NSPropertyListBinaryFormat_v1_0
+                                                        options:0
+                                                          error:nil];
+          release_message = ToVector(data);
+        }
+        result = Result::Ok();
+      }
+    }
+    // WebKit runs the Update Key Statuses algorithm with those keys whether or
+    // not any were found, so keystatuseschange always fires.
+    session->removed_keys = released;
+    session->last_keys = released;
+    session->last_usable_count = 0;
+    std::string id = session->id;
+    Deliver([id, released](FairPlayCdmClient* client) {
+      client->OnSessionKeysChange(id, false, released);
+    });
+    if (!release_message.empty()) {
+      Deliver([id, release_message](FairPlayCdmClient* client) {
+        client->OnSessionMessage(id, MessageType::kLicenseRelease, release_message);
+      });
+    }
+    NotifyObservers();
+    done(result);
+  }
+
+  // AVFoundation's pending expired-session reports in this key system's
+  // storage, for the server certificate (the app identifier), whose
+  // PlaybackSessionID is |session_id|: WebKit compares that string with its
+  // session ID exactly. Needs persistent state, storage and a certificate.
+  std::vector<NSData*> ExpiredSessionReports(const std::string& session_id) const {
+    std::vector<NSData*> found;
+    if (!persistent_state_allowed_ || !storage_url_ || !certificate_ ||
+        !SupportsPersistableState()) {
+      return found;
+    }
+    NSString* wanted = @(session_id.c_str());
+    for (NSData* data in [AVContentKeySession pendingExpiredSessionReportsWithAppIdentifier:certificate_
+                                                                    storageDirectoryAtURL:storage_url_]) {
+      id report = [NSPropertyListSerialization propertyListWithData:data
+                                                             options:NSPropertyListImmutable
+                                                              format:nil
+                                                               error:nil];
+      if (![report isKindOfClass:[NSDictionary class]]) {
+        continue;
+      }
+      id playback_session_id = report[@"PlaybackSessionID"];
+      if ([playback_session_id isKindOfClass:[NSString class]] &&
+          [playback_session_id isEqualToString:wanted]) {
+        found.push_back(data);
+      }
+    }
+    return found;
   }
 
   uint64_t AddObserver(KeysChangedCallback callback) {
@@ -1674,6 +1783,12 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   }
 
   void NotifyKeyStatuses(Session* session) {
+    if (session->keys_removed) {
+      // remove() reported the statuses, which stay: WebKit replaces them with
+      // removeSessionData's keys.
+      NotifyObservers();
+      return;
+    }
     std::vector<KeyInfo> keys;
     size_t usable = 0;
     for (const auto& request : session->requests) {

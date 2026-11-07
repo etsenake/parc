@@ -54,7 +54,7 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `setServerCertificate` | resolves true | resolves true; required before `generateRequest` | present | fp-eme-modern |
 | Key statuses | usable, status-pending, released, internal-error, output-restricted (request status, SecurityLevelError, external protection status); never expired/output-downscaled | same mapping (`StatusOf` in `fairplay_key_session.mm`) | present | fp-eme-modern |
 | Renewal | `update("renew")` → `license-renewal` message | same | present | fp-eme-modern |
-| Release | `remove()` on `persistent-usage-record` → `license-release` with the expired-session report; temporary → keys released | temporary → keys released; no `license-release` (no usage records) | missing (with session type) | fp-eme-pur |
+| Release | `remove()` (`removeSessionData`): keys revoked; `persistent-usage-record` → one released key with an empty key ID per AVFoundation expired-session report whose `PlaybackSessionID` is the session ID, the reports as `license-release` (binary plist, dict or array), resolve; on macOS the session ID is the built-in key group's random UUID, which no report carries, so remove() fires an empty `keystatuseschange` and resolves with no message; temporary → empty `keystatuseschange`, NotSupportedError; `update("acknowledged")` removes found reports | same, over the key session's storage (`ExpiredSessionReports`, `fairplay_key_session.mm`) | present | fp-eme-pur |
 | `load()` | persistent sessions | rejects NotSupportedError | missing (with session type) | fp-eme-pur |
 | `closed` | `Promise<undefined>` | `Promise<MediaKeySessionClosedReason>` | present (superset) | fp-eme-modern |
 | `expiration` | NaN | NaN | present | fp-eme-modern |

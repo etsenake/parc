@@ -102,7 +102,12 @@ MediaKeys directory: `<Profile engine folder>/Parc FairPlay/MediaKeys/`, then
 the SHA-256 of the top-level origin and of the frame's origin, created by the
 browser, empty off the record or for an opaque origin. The core then creates
 its AVContentKeySession with `SecureStop.plist` there, which the GPU sandbox
-allows (`gpu.sb`). `persistent-license` rejects with NotSupported, as
+allows (`gpu.sb`). `remove()` follows WebKit's `removeSessionData`: keys
+revoked; a persistent-usage-record session reports the expired-session
+reports AVFoundation keeps under its session ID as released keys and a
+`license-release` message (none on macOS, where reports are named by the
+shared key session), a temporary one rejects with NotSupported after an empty
+key status change; `update("acknowledged")` removes reports found. `persistent-license` rejects with NotSupported, as
 on Safari for macOS. `CdmContext::ParcHasSessionForInitData` (asked by a
 Safari-identity Media Source element through MojoCdm before it fires
 `encrypted` with `sinf`) answers from `FairPlayCdm::HasSessionForInitData`.

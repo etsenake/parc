@@ -148,8 +148,15 @@ class FairPlayCdm {
   // Expires the session's keys, then reports OnSessionClosed.
   void CloseSession(const std::string& session_id, ResultCallback done);
 
-  // Temporary sessions only: expires the keys and reports them released,
-  // leaving the session open until CloseSession.
+  // As WebKit's removeSessionData: revokes the session's keys and leaves it
+  // open until CloseSession. A persistent-usage-record session (with
+  // persistent state, storage and a server certificate) then reports one
+  // released key with an empty key ID per expired-session report of
+  // AVFoundation's whose PlaybackSessionID is its session ID, sends those
+  // reports as a kLicenseRelease message (a binary property list: the report,
+  // or an array of them) when there are any, and resolves. Any other session
+  // reports no keys and rejects with kNotSupported. UpdateSession with the
+  // literal "acknowledged" then removes the reports from the storage.
   void RemoveSession(const std::string& session_id, ResultCallback done);
 
   // generateRequest and update() reject if AVFoundation hasn't answered

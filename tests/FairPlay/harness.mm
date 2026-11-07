@@ -2522,6 +2522,64 @@ std::vector<Step> PersistentUsageRecordScenario() {
           if (!r.ok()) finish(false);
         });
   });
+  // remove(): as in Safari on macOS, AVFoundation's reports are named by the
+  // shared key session, never by an EME session's ID, so none matches: the
+  // keys are revoked, the statuses become empty, no license-release message.
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->client->hold = true;
+    const int keys_events = ks->client->keys_events;
+    const int messages = ks->client->messages;
+    ks->cdm->RemoveSession(ks->session, [=](const fp::Result& r) {
+      Check(r.ok(), "usage-record: remove() resolves", r.message);
+      After(0.5, [=] {
+        Check(ks->client->keys_events == keys_events + 1 && ks->client->keys.empty(),
+              "usage-record: remove() fires keystatuseschange with no keys", KeysText(ks->client->keys));
+        Check(ks->client->messages == messages,
+              "usage-record: no license-release message without a matching expired-session report");
+        Check(!ks->cdm->HasUsableKey(g_key_id), "usage-record: remove() revokes the key");
+        done();
+      });
+    });
+  });
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->cdm->UpdateSession(ks->session, Bytes(std::string("acknowledged")), [=](const fp::Result& r) {
+      Check(!r.ok(), "usage-record: update(\"acknowledged\") with no expired-session report is refused",
+            r.message);
+      ks->cdm->CloseSession(ks->session, [=](const fp::Result& closed) {
+        Check(closed.ok(), "usage-record: close() after remove() resolves", closed.message);
+        done();
+      });
+    });
+  });
+  // A temporary session has nothing to remove (WebKit's removeSessionData
+  // fails after expiring its keys): no keys, NotSupported.
+  steps.push_back([=](Done done) {
+    KeySystem* ks = keys->get();
+    ks->client->hold = false;
+    AcquireLicense(ks, fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "usage-record temporary",
+                   [=](bool ok) {
+                     if (!ok) {
+                       done();
+                       return;
+                     }
+                     const int keys_events = ks->client->keys_events;
+                     ks->cdm->RemoveSession(ks->session, [=](const fp::Result& r) {
+                       Check(!r.ok() && r.exception == fp::Exception::kNotSupported,
+                             "usage-record: remove() of a temporary session rejects NotSupported",
+                             r.message);
+                       After(0.5, [=] {
+                         Check(ks->client->keys_events == keys_events + 1 && ks->client->keys.empty(),
+                               "usage-record: ...after keystatuseschange with no keys",
+                               KeysText(ks->client->keys));
+                         Check(!ks->cdm->HasUsableKey(g_key_id),
+                               "usage-record: remove() revokes the temporary session's key");
+                         done();
+                       });
+                     });
+                   });
+  });
   steps.push_back([=](Done done) {
     w->retired.push_back(std::move(*keys));
     done();
@@ -4188,9 +4246,13 @@ std::vector<Step> CloseScenario() {
           "session for init data: an answered skd request covers the tracks' key ID");
     ks->cdm->RemoveSession(ks->session, [=](const fp::Result& r) {
       After(0.2, [=] {
-        Check(r.ok() && !ks->cdm->HasUsableKey(g_key_id) && !ks->client->keys.empty() &&
-                  ks->client->keys[0].status == fp::KeyStatus::kReleased,
-              "remove: keys reported released and no longer attachable", KeysText(ks->client->keys));
+        // WebKit's removeSessionData for a temporary session: keys revoked,
+        // statuses emptied, NotSupportedError.
+        Check(!r.ok() && r.exception == fp::Exception::kNotSupported &&
+                  !ks->cdm->HasUsableKey(g_key_id) && ks->client->keys.empty(),
+              "remove: a temporary session's keys are revoked and its statuses emptied, then "
+              "NotSupported",
+              KeysText(ks->client->keys) + " " + r.message);
         Check(ks->cdm->HasSessionForInitData(sinf, video_sinf),
               "session for init data: a removed session still covers its key ID");
         ks->cdm->CloseSession(ks->session, [=](const fp::Result& closed) {
