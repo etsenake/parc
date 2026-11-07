@@ -225,6 +225,7 @@ Player MakePlayer(NSURL* url) {
     p.item = [AVPlayerItem playerItemWithURL:url];
     p.player = [AVPlayer playerWithPlayerItem:p.item];
     p.player.automaticallyWaitsToMinimizeStalling = YES;
+    p.player.muted = YES;  // Video only matters here; no sound out loud.
     // The core's layer (fairplay_hls_player_layer.h): the player arrives
     // once Place sizes it.
     p.layer = [PCHlsPlayerLayer layer];
@@ -590,6 +591,7 @@ void RemotePiP() {
   OnMedia(^{
     pp->player = [[AVPlayer alloc] init];
     pp->player.automaticallyWaitsToMinimizeStalling = YES;
+    pp->player.muted = YES;
     [CATransaction begin];
     pp->layer = [PCHlsPlayerLayer layer];
     [CATransaction commit];
