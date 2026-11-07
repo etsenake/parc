@@ -746,6 +746,51 @@ for (const sinf of [true, false]) {
         'a key URI no request holds (or already taken), or unreadable init data: UNKNOWN');
 }
 
+// ---- Legacy clear key for HLS (LegacyCDMPrivateClearKey, CDMSessionClearKey),
+// with the native HLS switch on.
+{
+  const plain = makeWorld();
+  run(plain, script);
+  check(plain.WebKitMediaKeys.isTypeSupported('org.w3c.clearkey') === false,
+        'no clear key while native HLS is off');
+  const world = makeWorld();
+  run(world, script.replace('/*PARC_NATIVE_HLS*/false', 'true'));
+  const supports = (...args) => world.WebKitMediaKeys.isTypeSupported(...args);
+  check(supports('org.w3c.clearkey') && supports('ORG.W3C.CLEARKEY', 'application/x-mpegURL'),
+        'clear key, for application/x-mpegurl');
+  check(!supports('org.w3c.clearkey', 'application/vnd.apple.mpegurl') &&
+        !supports('org.w3c.clearkey', 'video/mp4') && !supports('org.w3.clearkey'),
+        'only that type, only that name');
+  const keys = new world.WebKitMediaKeys('org.w3c.clearkey');
+  check(thrown(() => keys.createSession('video/mp4', new Uint8Array([1])))?.name === 'NotSupportedError',
+        'createSession takes the HLS type only');
+  const session = keys.createSession('application/x-mpegurl', new Uint8Array(bytesOf('key-1')));
+  check(/^[0-9a-f-]{36}$/.test(session.sessionId), 'clear key sessions have a UUID');
+  const events = [];
+  session.addEventListener('webkitkeymessage', (event) => events.push('message:' + text(event.message)));
+  session.addEventListener('webkitkeyadded', () => events.push('added'));
+  session.addEventListener('webkitkeyerror', () => events.push('error:' + session.error.code));
+  await settle();
+  check(events.join() === 'message:key-1', 'the key ID comes back as the message');
+  const jwk = (entry) => new Uint8Array(Buffer.from(JSON.stringify({keys: [entry]})));
+  const good = {kty: 'oct', alg: 'A128KW', kid: 'key-1', k: 'AAECAwQFBgcICQoLDA0ODw'};
+  session.update(jwk({...good, k: 'AAECAwQFBgcICQoLDA0OD-_'}));
+  session.update(jwk({...good, alg: 'dir'}));
+  session.update(new Uint8Array(Buffer.from('{"keys":[]}')));
+  session.update(new Uint8Array([0xff, 0xfe]));
+  session.update(jwk(good));
+  await settle();
+  check(events.slice(1).join() === 'error:2,error:2,error:2,error:2,added',
+        'a JWK set with a usable A128KW oct key is added; anything else is a CLIENT error');
+  const broken = keys.createSession('application/x-mpegurl', new Uint8Array([0xc3]));
+  await settle();
+  check(broken.error?.code === 2, 'init data that is not UTF-8 is a CLIENT error');
+  session.close();
+  session.update(jwk(good));
+  await settle();
+  check(events.length === 6, 'nothing after close()');
+}
+
 // ---- An ordinary addEventListener still works on media elements.
 {
   const world = makeWorld();

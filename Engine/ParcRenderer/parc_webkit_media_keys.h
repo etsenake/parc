@@ -22,6 +22,10 @@
 //   there and the init data from the protected media the keys are attached to.
 //   `keyrelease` sessions find no expired-session reports (Parc keeps none) and
 //   answer as WebKit does then.
+// - Clear key (`org.w3c.clearkey`, LegacyCDMPrivateClearKey and
+//   CDMSessionClearKey) for HLS once native HLS is on: the message is the key
+//   ID, `update` takes a JWK set whose keys the attached player's
+//   `clearkey://` requests get.
 // - WebKit's AVFoundation player key systems, `com.apple.fps` and
 //   `com.apple.fps.1_0` (CDMSessionAVFoundationObjC), once Parc's native HLS
 //   route is on: the init data names the key URI of a request the attached
@@ -117,10 +121,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // WebKit's AVFoundation player takes these
   // (MediaPlayerPrivateAVFoundationObjC::keySystemIsSupported, ignoring case).
   // Parc serves them through its native HLS route
-  // (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md); the installer turns
-  // the token below into true while media::kParcNativeHls is on.
+  // (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md); the token below
+  // turns true when parc::fairplay::kNativeHlsEnabled does.
   const NATIVE_HLS = /*PARC_NATIVE_HLS*/false;
   const HLS_KEY_SYSTEM = /^com\.apple\.fps(?:\.1_0)?$/i;
+  // LegacyCDMPrivateClearKey: clear key, which the AVFoundation player takes
+  // for HLS only.
+  const CLEAR_KEY_SYSTEM = /^org\.w3c\.clearkey$/i;
+  const CLEAR_KEY_TYPE = 'application/x-mpegurl';
   // AVURLAsset.audiovisualMIMETypes on macOS 27.2, the container list of
   // WebKit's AVAssetMIMETypeCache.
   const AVFOUNDATION_TYPES = new Set((
@@ -384,6 +392,9 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // Which WebKit legacy CDM serves a key system: its Media Source CDM, or
   // its AVFoundation player (native HLS).
   function keySystemKind(keySystem) {
+    if (NATIVE_HLS && CLEAR_KEY_SYSTEM.test(keySystem)) {
+      return 'clearkey';
+    }
     if (MEDIA_SOURCE_KEY_SYSTEM.test(keySystem)) {
       return 'mse';
     }
@@ -403,7 +414,9 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
 
   // LegacyCDMPrivateAVFObjC::supportsMIMEType, and for the AVFoundation
   // player MediaPlayer::supportsKeySystem.
-  const sessionTypeSupported = (kind, type) => kind === 'hls' ? avFoundationDecodes(type) :
+  const sessionTypeSupported = (kind, type) =>
+      kind === 'hls' ? avFoundationDecodes(type) :
+      kind === 'clearkey' ? asciiLower(type) === CLEAR_KEY_TYPE :
       type === 'keyrelease' || mediaSourcePlays(type);
 
   // Event handler IDL attributes.
@@ -543,6 +556,13 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         return;
       }
       session.open = false;
+      if (session.cache) {
+        session.cache.clear();
+        const index = session.keys.sessions.indexOf(session);
+        if (index >= 0) {
+          session.keys.sessions.splice(index, 1);
+        }
+      }
       if (session.modern) {
         then(apply(closeModern, session.modern, []), undefined, () => {});
       }
@@ -724,12 +744,86 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     return then(apply(updateModern, session.modern, [key]), added, added);
   }
 
+  // WTF::base64Decode without options: the standard alphabet, padding
+  // optional, no whitespace.
+  function decodeBase64Strict(text) {
+    const body = text.replace(/={1,2}$/, '');
+    if (!/^[A-Za-z0-9+/]*$/.test(body) || body.length % 4 === 1) {
+      return null;
+    }
+    try {
+      return fromBase64(body + '=='.slice(0, (4 - body.length % 4) % 4));
+    } catch (error) {
+      return null;
+    }
+  }
+  function decodeUtf8Strict(bytes) {
+    try {
+      return new NativeTextDecoder('utf-8', {fatal: true}).decode(bytes);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // CDMSessionClearKey::update: a JWK set; each A128KW "oct" key with a kid
+  // and a base64 k is kept for the player's clearkey:// requests.
+  function processClearKey(session, key) {
+    const text = decodeUtf8Strict(key);
+    let json;
+    try {
+      json = text ? apply(jsonParse, JSON, [text]) : undefined;
+    } catch (error) {
+      json = undefined;
+    }
+    const list = json && typeof json === 'object' && !Array.isArray(json) ? json.keys : undefined;
+    let found = false;
+    if (Array.isArray(list)) {
+      for (const entry of list) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          continue;
+        }
+        const string = (name) => typeof entry[name] === 'string' ? entry[name] : '';
+        const keyId = string('kid');
+        const value = string('k');
+        const bytes = value ? decodeBase64Strict(value) : null;
+        if (asciiLower(string('alg')) !== 'a128kw' || asciiLower(string('kty')) !== 'oct' ||
+            !keyId || !bytes || !bytes.length) {
+          continue;
+        }
+        session.cache.set(keyId, bytes);
+        found = true;
+      }
+    }
+    if (!found) {
+      sendError(session, CLIENT, 0);
+      return;
+    }
+    fire(session.object, plainEvent('webkitkeyadded'));
+    keysAdded(session.keys);
+  }
+
+  // WebKitMediaKeys::cachedKeyForKeyId: the first open session holding it
+  // (keys.sessions lists a keys object's open clear key sessions).
+  function cachedKeyFor(keys, keyId) {
+    for (const session of keys.sessions) {
+      const bytes = session.open && session.cache && session.cache.get(keyId);
+      if (bytes) {
+        return copy(bytes);
+      }
+    }
+    return null;
+  }
+
   function processKey(session, key) {
     if (!session.open || session.inert) {
       return undefined;
     }
     if (session.keys.kind === 'hls') {
       return processHlsKey(session, key);
+    }
+    if (session.keys.kind === 'clearkey') {
+      processClearKey(session, key);
+      return undefined;
     }
     if (equalsAscii(key, 'acknowledged')) {
       // A secure-stop acknowledgement with no expired session in hand.
@@ -782,6 +876,16 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       generateHlsRequest(session, initData);
       return;
     }
+    if (session.keys.kind === 'clearkey') {
+      // CDMSessionClearKey::generateKeyRequest: init data that is UTF-8 (the
+      // key ID) comes back as the message.
+      if (decodeUtf8Strict(initData) === null) {
+        sendError(session, CLIENT, 0);
+      } else {
+        sendMessage(session, copy(initData));
+      }
+      return;
+    }
     if (asciiLower(type) === 'keyrelease') {
       // CDMSessionAVContentKeySession::generateKeyReleaseMessage without any
       // expired-session report.
@@ -805,13 +909,15 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       if (system === '') {
         throw new DOMException('', 'InvalidAccessError');
       }
-      const kind = canUseKeys ? keySystemKind(system) : null;
-      if (!kind) {
+      // FairPlay keys are built on modern EME, which an insecure context
+      // lacks; clear key keys are the script's own.
+      const kind = keySystemKind(system);
+      if (!kind || (kind !== 'clearkey' && !canUseKeys)) {
         throw new DOMException('', 'NotSupportedError');
       }
       keysState.set(this, {
         object: this, keySystem: system, kind, version: legacyVersion(system),
-        element: null, modern: null, requests: resolved, attaching: resolved,
+        element: null, modern: null, requests: resolved, attaching: resolved, sessions: [],
       });
     }
     get keySystem() { return stateOf(keysState, this).keySystem; }
@@ -837,16 +943,21 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       // The AVFoundation player's sessions belong to the player of the
       // element the keys are attached to; without one the session does
       // nothing (CDMPrivateMediaPlayer::createSession returns none). They
-      // have an ID (CDMSessionAVFoundationObjC); Media Source ones don't.
+      // and clear key sessions have an ID (CDMSessionAVFoundationObjC,
+      // CDMSessionClearKey); Media Source ones don't.
       const element = keys.kind === 'hls' ? keys.element : null;
       const inert = keys.kind === 'hls' && !element;
       const session = {
         object, keys, element, inert, open: true, error: null,
-        sessionId: keys.kind === 'hls' && !inert ? uuid() : '', chain: resolved,
+        sessionId: keys.kind !== 'mse' && !inert ? uuid() : '', chain: resolved,
         certificate: null, keyRelease: false, initData: null, identifier: null,
         modern: null, json: false, pending: [], lastKeyId: null,
+        cache: keys.kind === 'clearkey' ? new Map() : null,
       };
       sessionState.set(object, session);
+      if (session.cache) {
+        keys.sessions.push(session);
+      }
       const bytes = copy(initData);
       later(() => generateKeyRequest(session, mime, bytes));
       return object;
@@ -863,17 +974,31 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       }
       // LegacyCDMPrivateAVFObjC::supportsKeySystemAndMimeType answers
       // "keyrelease" ignoring case, where supportsMIMEType doesn't.
+      // The AVFoundation player takes clear key for the one HLS type only
+      // (MediaPlayerPrivateAVFoundationObjC::supportsKeySystem).
       return contentType === '' ||
           (kind === 'hls' ? avFoundationDecodes(contentType) :
+           kind === 'clearkey' ? asciiLower(contentType) === CLEAR_KEY_TYPE :
               asciiLower(contentType) === 'keyrelease' || mediaSourcePlays(contentType));
     }
   }
 
+  // Element side: WebKitMediaKeys::keyAdded reaches the attached player
+  // (MediaPlayerPrivateAVFoundationObjC::keyAdded), which fulfils each held
+  // clearkey:// request whose key ID cachedKeyFor(keys, keyId) now has.
+  // fp-legacy-element and native HLS provide the player side.
+  function keysAdded(keys) {
+  }
+
   // Attaching legacy keys gives the element their modern MediaKeys. Keys
   // follow the last element they were set on (WebKitMediaKeys::setMediaElement).
+  // Clear key keys have no FairPlay keys to attach.
   function attachKeys(keys, element) {
     const previous = keys.element;
     keys.element = element;
+    if (keys.kind === 'clearkey') {
+      return;
+    }
     const step = () => then(modernKeysOf(keys), (mediaKeys) => {
       if (keys.element !== element) {
         return undefined;
@@ -890,6 +1015,9 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       return;
     }
     keys.element = null;
+    if (keys.kind === 'clearkey') {
+      return;
+    }
     keys.attaching = then(keys.attaching, () => keys.element === null ?
         then(apply(setMediaKeys, element, [null]), undefined, () => {}) : undefined);
   }

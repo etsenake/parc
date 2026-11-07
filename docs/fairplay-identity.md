@@ -293,11 +293,14 @@ has it in windows only. The rows and what is still open are in
   answer false, and constructing `WebKitMediaKeys` with them throws
   `NotSupportedError`, until Parc's native HLS route
   ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) is
-  on: the script's `/*PARC_NATIVE_HLS*/false` token is what the installer
-  turns into true under `media::kParcNativeHls`. Then they follow WebKit's
+  on: the script's `/*PARC_NATIVE_HLS*/false` token flips with
+  `parc::fairplay::kNativeHlsEnabled`. Then they follow WebKit's
   `CDMSessionAVFoundationObjC`: types by what AVFoundation decodes, sessions
   bound to the attached player's held key requests, the SPC as the first
-  message, `webkitkeyadded` after every update.
+  message, `webkitkeyadded` after every update. Clear key
+  (`org.w3c.clearkey`, for `application/x-mpegurl` only) comes with them, as
+  WebKit's `CDMSessionClearKey`: the key ID is the message and `update` takes a
+  JWK set for the player's `clearkey://` key requests.
 - `new WebKitMediaKeys(keySystem)` works for `com.apple.fps.2_N` and `3_N`
   (`InvalidAccessError` for an empty key system, `NotSupportedError` for one
   it doesn't serve, as WebKit). Its keys are a modern FairPlay `MediaKeys`

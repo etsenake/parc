@@ -25,7 +25,10 @@ choosing Chromium's `ManifestDemuxer`, exactly as today. One build-time
 constant, `parc::fairplay::kNativeHlsEnabled` (`fairplay_key_system.h`,
 false), gates it; the last piece flips it to true. It is never a runtime,
 command-line or Finch switch (Josh's rule for FairPlay). Every piece lands
-compiled but unreachable.
+compiled but unreachable. The same flip turns `/*PARC_NATIVE_HLS*/false` into
+`true` in `Engine/ParcRenderer/parc_webkit_media_keys.h`, which offers WebKit's
+legacy AVFoundation-player key systems (`com.apple.fps`, `com.apple.fps.1_0`,
+`org.w3c.clearkey`) on `WebKitMediaKeys`.
 
 ## Process: the GPU process
 
