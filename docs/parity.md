@@ -96,6 +96,12 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   corrected target and all 82 FairPlay-patched upstream compilation units pass
   focused shipping compiler checks before resumption. These are inert compile
   checks, not browser-runtime acceptance.
+  The native capability-query target subsequently needed explicit class-method
+  introspection in its Objective-C protocol and WebKit's public-SDK declaration
+  of the private AudioToolbox `adcl` property. The property query and its
+  unsupported-error handling are preserved, rather than substituting an encode
+  capability. All 28 focused native media compilation checks pass, including
+  the corrected source, before the next resume.
 
 - **Codex root — monitored release sequence (November 6).** Root owns shared
   engine/build/packaging operations directly on main, without agents or worktrees.

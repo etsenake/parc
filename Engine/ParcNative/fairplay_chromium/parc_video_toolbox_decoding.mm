@@ -28,6 +28,7 @@
 // the class AVFoundation registers (looked up, as content/browser doesn't
 // link AVFoundation).
 @protocol ParcAVURLAssetTypes
++ (BOOL)respondsToSelector:(SEL)selector;
 + (NSArray<NSString*>*)audiovisualMIMETypes;
 + (BOOL)isPlayableExtendedMIMEType:(NSString*)extendedMIMEType;
 + (BOOL)isPlayableExtendedMIMEType:(NSString*)extendedMIMEType
@@ -42,6 +43,10 @@ namespace {
 // for VTSelectAndCreateVideoDecoderInstance when a configuration asks for an
 // alpha channel.
 constexpr CMVideoCodecType kHevcWithAlphaCodecType = 'muxa';
+
+// WebKit's PAL AudioToolboxSPI.h supplies this private property for public SDKs.
+// AudioFormatGetProperty{Info} returns an error when it is unsupported.
+constexpr AudioFormatPropertyID kAvailableDecodeChannelLayoutTags = 'adcl';
 
 // VideoToolbox, opened the way WebKit soft-links it (VideoToolboxSoftLink.h):
 // a symbol that isn't there reads as WebKit's canLoad_ failing. Several of
@@ -425,13 +430,13 @@ bool IsMultichannelOpusAvailable() {
     AudioStreamBasicDescription description = {};
     description.mFormatID = kAudioFormatOpus;
     UInt32 size = 0;
-    if (get_info(kAudioFormatProperty_AvailableDecodeChannelLayoutTags,
+    if (get_info(kAvailableDecodeChannelLayoutTags,
                  sizeof(description), &description, &size) != noErr ||
         size < sizeof(AudioChannelLayoutTag)) {
       return false;
     }
     std::vector<AudioChannelLayoutTag> tags(size / sizeof(AudioChannelLayoutTag));
-    if (get(kAudioFormatProperty_AvailableDecodeChannelLayoutTags,
+    if (get(kAvailableDecodeChannelLayoutTags,
             sizeof(description), &description, &size, tags.data()) != noErr) {
       return false;
     }
