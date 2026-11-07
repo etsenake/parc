@@ -360,8 +360,11 @@ has it in windows only. The rows and what is still open are in
   `update("renew")` sends a renewal SPC; `close()` closes the keys. Version 3
   takes the init data from `createSession` (the `webkitneedkey` data, `cenc`
   pssh boxes or `sinf` JSON); version 2 takes the SPC's content identifier
-  there and the init data from the media the keys are attached to
-  (InvalidPlayerState until it has some), which Parc's CDM takes as a `keyids`
+  there and the source buffer's init data, the first the session got while it
+  was its element's renderer session (WebKit's `AudioVideoRendererAVFObjC`
+  hands it the latest when the session is created on attached keys or the keys
+  are attached, and later arrivals while it has none; InvalidPlayerState until
+  it has some), which Parc's CDM takes as a `keyids`
   extension (`{"initDataType", "initData", "contentId"}`). Parc's CDM sends `cenc` requests as JSON with one SPC per
   key, so the script sends each SPC as its own message and gives each CKC to
   the oldest unanswered one. Errors are `webkitkeyerror` with a

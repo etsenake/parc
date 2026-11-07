@@ -603,6 +603,30 @@ for (const sinf of [true, false]) {
         Buffer.from(envelope.contentId, 'base64').toString() === 'content-id',
         "the request uses the media's init data and names the SPC by the page's identifier");
   check(events.slice(-2).join() === 'certificate,SPC(CERT,C)', 'then the SPC');
+
+  // A session keeps the first source buffer init data it is given: the
+  // renderer's latest when it becomes the renderer's session, else the next.
+  const third = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
+  needKey(hook, video, pssh('D'), 'media-source');
+  await settle();
+  third.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  const thirdRequest = world.log.filter((entry) => entry[0] === 'generateRequest').pop();
+  check(Buffer.from(JSON.parse(thirdRequest[2]).initData, 'base64').equals(pssh('C')),
+        'init data arriving later does not replace a session\'s first');
+
+  // Keys attached after their session was created hand it the element's.
+  const other = new world.HTMLMediaElement('other');
+  needKey(hook, other, pssh('E'), 'media-source');
+  const late = new world.WebKitMediaKeys('com.apple.fps.2_0');
+  const lateSession = late.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
+  await settle();
+  other.webkitSetMediaKeys(late);
+  lateSession.update(new Uint8Array(bytesOf('CERT')));
+  await settle();
+  const lateRequest = world.log.filter((entry) => entry[0] === 'generateRequest').pop();
+  check(Buffer.from(JSON.parse(lateRequest[2]).initData, 'base64').equals(pssh('E')),
+        "attaching the keys gives their latest session the element's init data");
 }
 
 // ---- keyrelease (secure stop): Parc keeps no expired-session reports.

@@ -79,6 +79,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   // calls may reach page code: it uses these instead of the prototypes.
   const weakMapGet = NativeWeakMap.prototype.get;
   const weakMapSet = NativeWeakMap.prototype.set;
+  const weakMapDelete = NativeWeakMap.prototype.delete;
   const setAdd = NativeSet.prototype.add;
   const typedArrayTag = getter(Object.getPrototypeOf(NativeUint8Array.prototype), Symbol.toStringTag);
   const promiseThen = Promise.prototype.then;
@@ -835,16 +836,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
       return undefined;
     }
     if (session.keys.version === 2) {
-      // com.apple.fps.2_0: the init data comes from the protected media the
-      // keys are attached to.
-      const element = session.keys.element;
-      const initData = element && elementInitData.get(element);
-      if (!initData) {
+      // com.apple.fps.2_0: the init data is the source buffer's, given to the
+      // session while it was its element's renderer session.
+      if (!session.sourceInitData) {
         sendError(session, INVALID_PLAYER_STATE, 0);
         return undefined;
       }
       if (!session.modern) {
-        session.initData = initData;
+        session.initData = session.sourceInitData;
       }
     }
     if (makeRequest && !session.modern) {
@@ -947,10 +946,14 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
         object, keys, element, inert, open: true, error: null,
         sessionId: keys.kind !== 'mse' && !inert ? uuid() : '', chain: resolved,
         certificate: null, keyRelease: false, initData: null, identifier: null,
-        modern: null, json: false, pending: [], lastKeyId: null,
+        modern: null, json: false, pending: [], lastKeyId: null, sourceInitData: null,
         cache: keys.kind === 'clearkey' ? new Map() : null,
       };
       sessionState.set(object, session);
+      keys.lastSession = session;
+      if (keys.kind === 'mse') {
+        setRendererSession(keys.element, session);
+      }
       if (session.cache) {
         keys.sessions.push(session);
       }
@@ -979,6 +982,43 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     }
   }
 
+  // The legacy Media Source session each element's renderer holds
+  // (AudioVideoRendererAVFObjC::m_session): the keys' latest session, set when
+  // it is created on keys that follow the element (LegacyCDM::createSession)
+  // or when the keys come to follow it (WebKitMediaKeys::setMediaElement).
+  // Becoming the renderer's session hands it the renderer's latest source
+  // buffer init data, and init data arriving later goes to it too; a session
+  // keeps the first it is given (CDMSessionAVContentKeySession::setInitData).
+  // Only com.apple.fps.2_N reads it.
+  const rendererSessions = new NativeWeakMap();
+  function giveSourceInitData(session, initData) {
+    if (session && initData && !session.sourceInitData) {
+      session.sourceInitData = copy(initData);
+    }
+  }
+  function setRendererSession(element, session) {
+    if (!element) {
+      return;
+    }
+    if (!session) {
+      apply(weakMapDelete, rendererSessions, [element]);
+      return;
+    }
+    apply(weakMapSet, rendererSessions, [element, session]);
+    giveSourceInitData(session, apply(weakMapGet, elementInitData, [element]));
+  }
+  function rendererFollows(keys, element) {
+    if (keys.kind !== 'mse') {
+      return;
+    }
+    if (keys.element && keys.element !== element) {
+      setRendererSession(keys.element, null);
+    }
+    if (element && keys.lastSession) {
+      setRendererSession(element, keys.lastSession);
+    }
+  }
+
   // Element side: WebKitMediaKeys::keyAdded reaches the attached player
   // (MediaPlayerPrivateAVFoundationObjC::keyAdded), which fulfils each held
   // clearkey:// request whose key ID cachedKeyFor(keys, keyId) now has.
@@ -999,6 +1039,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
   const attachedTo = new NativeWeakMap();
   let attachChain = resolved;
   function setMediaElement(keys, element) {
+    rendererFollows(keys, element);
     keys.element = element;
     if (keys.kind === 'clearkey') {
       return;
@@ -1059,6 +1100,7 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
     }
     if (kind === 'media-source') {
       apply(weakMapSet, elementInitData, [element, copy(initData)]);
+      giveSourceInitData(apply(weakMapGet, rendererSessions, [element]), initData);
     } else if (kind === 'skd') {
       let requests = apply(weakMapGet, elementKeyRequests, [element]);
       if (!requests) {
