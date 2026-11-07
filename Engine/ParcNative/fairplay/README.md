@@ -321,6 +321,14 @@ so this forces the following on the Chromium integration.
   AVFoundation drops without a delegate call (a FairPlay pssh naming no key)
   leaves `generateRequest` pending, as in Safari. A failure for a request
   AVFoundation never provided fails that request's part of the license request.
+- Failures carry WebKit's names: `generateRequest` rejects with
+  NotSupportedError (no certificate, init data `supportsInitData` refuses,
+  AVFoundation failing the request, the session closed meanwhile), `update()`
+  with TypeError (`MediaKeySession::update` rejects whatever `updateLicense`
+  fails with), except on a closed session (InvalidStateError). A JSON
+  session's `update()` resolves once every entry settled, even when
+  AVFoundation rejected some (WebKit's `UpdateResponseCollector` counts errors
+  as responses); their keys then show `internal-error`.
 - A renewal (`update("renew")`, or one AVFoundation starts) runs beside the
   answered request. The answered key stays usable until the renewal succeeds
   (it then replaces the key) or fails (it is dropped).

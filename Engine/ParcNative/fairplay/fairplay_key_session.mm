@@ -305,13 +305,16 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
            "");
       return;
     }
+    // Every failure from here is WebKit's NotSupportedError: requestLicense
+    // fails without a certificate, and init data its supportsInitData refuses
+    // (sinf, skd and mpts are sanitized as they are) never reaches it.
     if (!certificate_) {
-      done(Result::Error(Exception::kInvalidState, "server certificate not set"), "");
+      done(Result::Error(Exception::kNotSupported, "server certificate not set"), "");
       return;
     }
     InitDataPlan plan = PlanContentKeyRequests(type, init_data);
     if (!plan.error.empty()) {
-      done(Result::Error(Exception::kTypeError, plan.error), "");
+      done(Result::Error(Exception::kNotSupported, plan.error), "");
       return;
     }
     if (plan.legacy_secure_stop != LegacySecureStop::kNone) {
@@ -456,8 +459,15 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       done(Result::Ok());
       return;
     }
-    if (!session || session->keys_removed) {
-      done(Result::Error(Exception::kInvalidState, "session is closed or removed"));
+    // A closed session is the IDL's InvalidStateError; every other failure
+    // of update() is WebKit's TypeError (MediaKeySession::update rejects
+    // whatever updateLicense fails with).
+    if (!session) {
+      done(Result::Error(Exception::kInvalidState, "session is closed"));
+      return;
+    }
+    if (session->keys_removed) {
+      done(Result::Error(Exception::kTypeError, "session is removed"));
       return;
     }
     static constexpr char kRenew[] = "renew";
@@ -469,7 +479,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
           return;
         }
       }
-      done(Result::Error(Exception::kInvalidState, "no key to renew"));
+      done(Result::Error(Exception::kTypeError, "no key to renew"));
       return;
     }
     std::vector<Request*> awaiting;
@@ -479,7 +489,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       }
     }
     if (awaiting.empty()) {
-      done(Result::Error(Exception::kInvalidState, "no license request awaits a response"));
+      done(Result::Error(Exception::kTypeError, "no license request awaits a response"));
       return;
     }
     if (response.empty()) {
@@ -1409,7 +1419,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     if (session->update_pending.erase(request) && session->update_pending.empty() &&
         session->update_done) {
       ResultCallback done = std::move(session->update_done);
-      done(Result::Error(Exception::kInvalidState, "key request withdrawn"));
+      done(Result::Error(Exception::kTypeError, "key request withdrawn"));
     }
   }
 
@@ -1705,27 +1715,32 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
       return;
     }
     ResultCallback done = std::move(session->update_done);
-    if (session->update_succeeded) {
+    // A JSON session's update() resolves once every entry settled, failed or
+    // not (WebKit's UpdateResponseCollector counts errors as responses); a
+    // raw one fails with WebKit's TypeError.
+    if (session->update_succeeded || session->plan.json_messages) {
       done(Result::Ok());
     } else {
-      done(Failure(Exception::kNotSupported, "license response rejected", session->update_error));
+      done(Failure(Exception::kTypeError, "license response rejected", session->update_error));
     }
   }
 
+  // As WebKit's closeSession: a pending generateRequest fails with
+  // NotSupportedError and a pending update() with TypeError.
   void RejectPending(Session* session, const char* reason) {
     if (session->generate_done) {
       SessionCallback done = std::move(session->generate_done);
-      done(Result::Error(Exception::kInvalidState, reason), "");
+      done(Result::Error(Exception::kNotSupported, reason), "");
     }
     if (session->update_done) {
       session->update_pending.clear();
       ResultCallback done = std::move(session->update_done);
-      done(Result::Error(Exception::kInvalidState, reason));
+      done(Result::Error(Exception::kTypeError, reason));
     }
     while (!session->queued_updates.empty()) {
       ResultCallback done = std::move(session->queued_updates.front().second);
       session->queued_updates.pop_front();
-      done(Result::Error(Exception::kInvalidState, reason));
+      done(Result::Error(Exception::kTypeError, reason));
     }
   }
 
