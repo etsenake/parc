@@ -4381,7 +4381,34 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3793,6 +4378,29 @@
+@@ -3530,6 +4115,12 @@
+     return;
+   }
+ 
++  // Parc: as ShouldPausePlaybackWhenHidden(), WebKit never pauses a player
++  // for staying hidden.
++  if (client_->PresentsParcSafariIdentity()) {
++    return;
++  }
++
+   // Only schedule the pause timer if we're not paused or paused but going to
+   // resume when foregrounded, and are suspended and have audio.
+   if ((paused_ && !IsPausedBecausePageHidden()) ||
+@@ -3770,6 +4361,13 @@
+   if (!is_background_video_playback_enabled_)
+     return true;
+ 
++  // Parc: a Safari-identity player plays on while its page is hidden, muted
++  // or not: WebKit gives its media sessions no InvisibleAutoplayNotPermitted
++  // or RequirePageVisibilityToPlayAudio restriction outside iOS.
++  if (client_->PresentsParcSafariIdentity()) {
++    return false;
++  }
++
+   if (is_flinging_)
+     return false;
+ 
+@@ -3793,6 +4391,29 @@
      return false;
    }
  
@@ -4547,6 +4574,169 @@
  
    // Tracks if we are currently flinging a video (e.g. in a RemotePlayback
    // session). Used to prevent videos from being paused when hidden.
+--- a/third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc
++++ b/third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc
+@@ -227,6 +227,7 @@
+   MOCK_METHOD2(OnFirstFrame, void(base::TimeTicks, size_t));
+   MOCK_METHOD0(OnRequestVideoFrameCallback, void());
+   MOCK_METHOD0(GetElementId, int());
++  MOCK_CONST_METHOD0(PresentsParcSafariIdentity, bool());
+ };
+ 
+ class MockWebMediaPlayerEncryptedMediaClient
+@@ -3023,7 +3024,67 @@
+   EXPECT_FALSE(IsPausedBecausePageHidden());
+   EXPECT_FALSE(IsPausedBecauseFrameHidden());
+ }
++
++class WebMediaPlayerImplHiddenVideoTest
++    : public WebMediaPlayerImplTest,
++      public ::testing::WithParamInterface<bool> {
++ protected:
++  bool PresentsSafariIdentity() const { return GetParam(); }
++
++  // A playing video-only player on a desktop renderer's defaults.
++  void PlayVideoOnly() {
++    std::unique_ptr<media::MockDemuxer> demuxer =
++        std::make_unique<NiceMock<media::MockDemuxer>>();
++    ON_CALL(*demuxer, IsSeekable()).WillByDefault(Return(true));
++    InitializeWebMediaPlayerImpl(std::move(demuxer));
++    Load(kVideoOnlyTestFile);
++    EXPECT_FALSE(IsSuspended());
++
++    media::PipelineMetadata metadata;
++    metadata.has_video = true;
++    metadata.video_decoder_config = TestVideoConfig::Normal();
++    EXPECT_CALL(delegate_, DidMediaMetadataChange(_, false, true, _)).Times(2);
++    OnMetadata(metadata);
+ 
++    ON_CALL(client_, PresentsParcSafariIdentity())
++        .WillByDefault(Return(PresentsSafariIdentity()));
++    SetReadyState(WebMediaPlayer::kReadyStateHaveFutureData);
++    SetSeeking(false);
++    Play();
++  }
++};
++
++// Safari doesn't pause a video for its page being hidden, so the page sees no
++// `pause` and no auto-resume when shown; Chrome pages still pause and resume.
++TEST_P(WebMediaPlayerImplHiddenVideoTest, PageHidden) {
++  PlayVideoOnly();
++
++  EXPECT_CALL(client_, PausePlayback(WebMediaPlayer::PauseReason::kPageHidden))
++      .Times(PresentsSafariIdentity() ? 0 : 1);
++  BackgroundPlayer(BackgroundBehaviorType::Page);
++  EXPECT_EQ(!PresentsSafariIdentity(), IsPausedBecausePageHidden());
++
++  EXPECT_CALL(client_, ResumePlayback())
++      .Times(PresentsSafariIdentity() ? 0 : 1);
++  ForegroundPlayer(BackgroundBehaviorType::Page);
++  EXPECT_FALSE(IsPausedBecausePageHidden());
++}
++
++// The media-playback-while-not-visible policy still pauses a hidden frame.
++TEST_P(WebMediaPlayerImplHiddenVideoTest, FrameHiddenWithPolicy) {
++  PlayVideoOnly();
++  wmpi_->SetShouldPauseWhenFrameIsHidden(true);
++
++  EXPECT_CALL(client_,
++              PausePlayback(WebMediaPlayer::PauseReason::kFrameHidden));
++  BackgroundPlayer(BackgroundBehaviorType::Frame);
++  EXPECT_TRUE(IsPausedBecauseFrameHidden());
++}
++
++INSTANTIATE_TEST_SUITE_P(SafariIdentity,
++                         WebMediaPlayerImplHiddenVideoTest,
++                         ::testing::Bool());
++
+ // When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
+ // visibility changes should not affect the playback state.
+ TEST_F(WebMediaPlayerImplTest, DisabledFlagShouldPauseWhenFrameIsHidden) {
+@@ -3113,6 +3174,26 @@
+       PausePlayback(WebMediaPlayer::PauseReason::kSuspendedPlayerIdleTimeout));
+   FireIdlePauseTimer();
+   base::RunLoop().RunUntilIdle();
++}
++
++TEST_F(WebMediaPlayerImplTest, SafariIdentityHasNoBackgroundIdlePauseTimer) {
++  base::test::ScopedFeatureList feature_list;
++  feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
++  InitializeWebMediaPlayerImpl();
++  SetSuspendState(true);
++  SetPaused(false);
++  SetMetadata(true, true);
++  ASSERT_TRUE(IsSuspended());
++
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(true));
++  ScheduleIdlePauseTimer();
++  EXPECT_FALSE(IsIdlePauseTimerRunning());
++
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(false));
++  ScheduleIdlePauseTimer();
++  EXPECT_TRUE(IsIdlePauseTimerRunning());
+ }
+ 
+ // Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
+@@ -3813,8 +3894,57 @@
+       }
+       break;
+   }
++}
++
++// On a Safari-identity page a hidden player pauses only for the
++// media-playback-while-not-visible policy or an embedder that disables
++// background video playback, whatever its tracks, volume or suspend flags.
++TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_AudioOnly) {
++  base::test::ScopedFeatureList scoped_background_audio_flag{
++      media::kPauseMutedBackgroundAudio};
++  SCOPED_TRACE(testing::Message() << PrintValues());
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(true));
++  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
++  SetMetadata(true, false);
++  SetVolume(0.);
++  EXPECT_EQ(IsFrameHiddenAndShouldPauseWhenHidden() ||
++                !IsBackgroundVideoPlaybackEnabled(),
++            ShouldPausePlaybackWhenHidden());
++}
++
++TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_VideoOnly) {
++  SCOPED_TRACE(testing::Message() << PrintValues());
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(true));
++  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
++  SetMetadata(false, true);
++  EXPECT_EQ(
++      IsFrameHiddenAndShouldPauseWhenHidden() ||
++          (!IsBackgroundVideoPlaybackEnabled() && !IsPictureInPictureOn()),
++      ShouldPausePlaybackWhenHidden());
+ }
+ 
++TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_AudioVideo) {
++  base::test::ScopedFeatureList scoped_background_audio_flag{
++      media::kPauseMutedBackgroundAudio};
++  SCOPED_TRACE(testing::Message() << PrintValues());
++  const bool should_pause =
++      IsFrameHiddenAndShouldPauseWhenHidden() ||
++      (!IsBackgroundVideoPlaybackEnabled() && !IsPictureInPictureOn());
++  EXPECT_CALL(client_, PresentsParcSafariIdentity())
++      .WillRepeatedly(Return(true));
++  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
++  SetMetadata(true, true);
++  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
++  SetVolume(0.);
++  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
++
++  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(false));
++  SetVolume(1.);
++  EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
++}
++
+ INSTANTIATE_TEST_SUITE_P(
+     BackgroundBehaviorTestInstances,
+     WebMediaPlayerImplBackgroundBehaviorTest,
 --- a/media/base/media_resource.h
 +++ b/media/base/media_resource.h
 @@ -8,9 +8,16 @@
