@@ -640,16 +640,16 @@ behavior, not Parc's hosting.
 | Element | Source in the GPU | Render-process path |
 | --- | --- | --- |
 | `HAVE_METADATA` | the asset's metadata keys loaded and the asset playable, before the item exists (WebKit's `updateStates`) | `OnInitialized` → demuxer init → pipeline metadata |
-| `HAVE_CURRENT_DATA` | the layer's first frame (`readyForDisplay`, WebKit's `hasAvailableVideoFrame`) | `OnReadyStateChanged` → demuxer's `ready_state_cb` → `WebMediaPlayerImpl` raises it from `HAVE_METADATA` (not during a seek) |
+| `HAVE_CURRENT_DATA` | the layer's first frame (`readyForDisplay`, WebKit's `hasAvailableVideoFrame`), or `playbackBufferEmpty` | `OnReadyStateChanged` → demuxer's `ready_state_cb` → `WebMediaPlayerImpl::ApplyParcNativeHlsReadyState` sets it, up or down, as WebKit's element takes the player's; held while a seek is in flight |
 | `HAVE_FUTURE_DATA` | item `readyToPlay` with media loaded past `currentTime` (and, with video, its first frame), WebKit's `updateStates` | as `HAVE_CURRENT_DATA` |
 | media types (`hasVideo`, audio) | the variants at metadata (both assumed when they don't name codecs), then the item's `hasEnabledAudio`/`hasEnabledVideo` once it is ready to play and at each change (WebKit's `characteristicsChanged`) | `OnMediaTypesChanged` (after `OnLayerRegistered` when video appears) → demuxer's `media_types_cb` → `WebMediaPlayerImpl` updates the pipeline metadata, `DidMediaMetadataChange`, the video surface |
-| `HAVE_ENOUGH` / underflow | `playbackLikelyToKeepUp` or a full buffer / `playbackBufferEmpty` | `OnBufferingStateChange` → facade's `RendererClient` |
+| `HAVE_ENOUGH_DATA` | `playbackLikelyToKeepUp` or a full buffer | as `HAVE_CURRENT_DATA`. The same state also goes to the pipeline as buffering (`OnBufferingStateChange` → facade's `RendererClient`, reported in the task after every `StartPlayingFrom`), which no longer sets `readyState` for this route |
 | `currentTime` | `currentTime`, periodic observer (0 until the item is ready) | `OnTimeUpdate` → facade's `GetMediaTime` interpolates |
 | `duration` | the asset's until the item is ready to play, then the item's (indefinite = live), Live and DVR | demuxer's `DemuxerHost::SetDuration` (`kInfiniteDuration`) |
 | `buffered` | `loadedTimeRanges` (none before the item loads) | `DemuxerHost::OnBufferedTimeRangesChanged` |
 | `seekable` | `seekableTimeRanges` as one window, up to the duration before the item lists any, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayerImpl::Seekable()` answers it |
 | `getStartDate()` | `round(currentDate − currentTime)`, Live and DVR | demuxer's `GetParcNativeTimeline()`; `WebMediaPlayer::ParcStartDate()` |
-| seeking/seeked | `seekToTime:completionHandler:`; a seek before the item is ready to play waits for it (the latest only) | `Demuxer::Seek` / facade `StartPlayingFrom` |
+| seeking/seeked | `seekToTime:completionHandler:`; a seek before the item is ready to play waits for it (the latest only). `readyState` stays where AVPlayer has it (Chromium's drop to `HAVE_METADATA` is skipped), and `seeked` fires when the AVPlayer seek completes with `readyState` at `HAVE_CURRENT_DATA` or more (WebKit's `seekCompleted` and `resolveSeekPromiseIfNeeded`), not at `HAVE_ENOUGH_DATA`: a seek within what AVPlayer holds raises no `waiting`, `canplay` or `playing` | `Demuxer::Seek` / facade `StartPlayingFrom`; `WebMediaPlayerImpl::OnPipelineSeeked` applies the held `readyState` and calls `TimeChanged` |
 | rate, pause | `rate` | facade `SetPlaybackRate` → `Play`/`Pause` |
 | volume, muted | `volume`, `muted` | facade `SetVolume`; tab mute as the MSE route |
 | `ended` | `AVPlayerItemDidPlayToEndTimeNotification` | `OnEnded` |
