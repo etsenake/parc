@@ -74,7 +74,9 @@ the parser creates it or `cloneNode` copies it
 first connection or load. A video built by script with
 `setAttribute('muted', '')` is muted in Safari, so muted autoplay starts and
 it makes no sound; in Parc it was unmuted, so autoplay could be refused or it
-played sound. **In progress** (fix agent E1).
+played sound. **Fixed** 3b5b12cc (one corner differs: an element never
+connected or loaded that moves from a Chrome-identity document into a
+Safari-identity one keeps Chromium's value).
 
 **HME-3. `load()` with no source after `play()`.** Chromium
 `html_media_element.cc:1182-1239`: with `networkState` `NETWORK_EMPTY`,
@@ -202,8 +204,8 @@ already prepares to play as WebKit does (`ParcPreparesToPlay`); the rest
 
 **HME-20. `muted` before script sets it.** WebKit
 `HTMLMediaElement.cpp:5102-5111` returns the content attribute itself until
-`muted` is set by script or latched at connection or load. Part of HME-2,
-**in progress** (fix agent E1).
+`muted` is set by script or latched at connection or load. **Fixed**
+3b5b12cc.
 
 **HME-21. Non-periodic `timeupdate`.** Chromium
 `html_media_element.cc:3527-3550` fires every non-periodic `timeupdate`
