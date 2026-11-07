@@ -242,7 +242,10 @@ OSStatus ProvidePcm(AudioConverterRef, UInt32* packets, AudioBufferList* data, A
 // AAC-LC, HE-AAC and HE-AACv2 tracks encoded with AudioToolbox (Chromium's
 // test data has no HE-AAC MP4): 44.1 kHz stereo tones, packets and the
 // encoder's AudioSpecificConfig, as an MP4 parser would hand them over.
+// AAC from Apple's encoder, or ALAC (kAudioFormatAppleLossless) as Apple's
+// 'alac' sample entry carries it.
 bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* error) {
+  const bool alac = format == kAudioFormatAppleLossless;
   AudioStreamBasicDescription in = {44100, kAudioFormatLinearPCM, kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
                                     8,     1,
                                     8,     2,
@@ -251,6 +254,10 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
   out.mFormatID = format;
   out.mSampleRate = 44100;
   out.mChannelsPerFrame = 2;
+  if (alac) {
+    out.mFormatFlags = kAppleLosslessFormatFlag_16BitSourceData;
+    out.mFramesPerPacket = 4096;
+  }
   UInt32 size = sizeof(out);
   AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, nullptr, &size, &out);
   AudioConverterRef converter = nullptr;
@@ -279,9 +286,12 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
       ft::Sample sample;
       sample.data.assign(buffer.begin() + d.mStartOffset, buffer.begin() + d.mStartOffset + d.mDataByteSize);
       sample.pts = sample.dts = pts;
-      sample.duration = out.mFramesPerPacket;
+      // ALAC's last packet holds only the frames left (its header says so).
+      const int64_t frames = alac ? std::min<int64_t>(out.mFramesPerPacket, int64_t(seconds * 44100) - pts)
+                                  : int64_t(out.mFramesPerPacket);
+      sample.duration = frames;
       sample.is_keyframe = true;
-      pts += out.mFramesPerPacket;
+      pts += frames;
       media->samples.push_back(std::move(sample));
     }
   }
@@ -292,10 +302,16 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
   AudioConverterDispose(converter);
   media->info.is_video = false;
   media->info.timescale = uint32_t(out.mSampleRate);
-  media->info.sample_entry = media->info.original_format = fp::FourCC('m', 'p', '4', 'a');
+  media->info.sample_entry = media->info.original_format =
+      alac ? fp::FourCC('a', 'l', 'a', 'c') : fp::FourCC('m', 'p', '4', 'a');
   media->info.channels = 2;
   media->info.sample_rate = uint32_t(out.mSampleRate);
-  media->info.codec_config = ft::AscFromDescriptor(cookie.data(), cookie.size());
+  if (alac) {
+    // The 'alac' child box's payload, as the parser keeps it from a file.
+    media->info.codec_config = fp::AlacSpecificBoxPayload(cookie).value_or(std::vector<uint8_t>());
+  } else {
+    media->info.codec_config = ft::AscFromDescriptor(cookie.data(), cookie.size());
+  }
   if (media->info.codec_config.empty() || media->samples.empty()) {
     *error = Format("encoder produced %zu packets, %zu-byte cookie", media->samples.size(), cookie.size());
     return false;
@@ -839,6 +855,16 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
     ac.extra_data.clear();
     if (c.size() >= 8 + 34) ac.extra_data.assign(c.begin() + 8, c.begin() + 8 + 34);
     ac.channels = info.channels;
+  } else if (f == fp::FourCC('a', 'l', 'a', 'c')) {
+    // fairplay-media.patch's ALACSpecificBox: the 24-byte ALACSpecificConfig
+    // after the box's version and flags; channels and rate from it.
+    ac.codec = fp::AudioCodec::kALAC;
+    ac.extra_data.clear();
+    if (c.size() >= 4 + 24) {
+      ac.extra_data.assign(c.begin() + 4, c.begin() + 4 + 24);
+      ac.channels = c[4 + 9];
+      ac.sample_rate = int32_t(uint32_t(c[24]) << 24 | uint32_t(c[25]) << 16 | uint32_t(c[26]) << 8 | c[27]);
+    }
   } else if (f == fp::FourCC('O', 'p', 'u', 's')) {
     // OpusSpecificBox::Parse: "OpusHead" and the 'dOps' fields, little-endian.
     ac.codec = fp::AudioCodec::kOpus;
@@ -1056,7 +1082,7 @@ struct World {
   std::vector<ClipResult> results;
   // Loaded media.
   Media h264, h264_cbcs_ref, hevc, dv5_dvh1, dv5_dvhe, av1_ref, av1, av1_10bit_ref, av1_10bit, xhe_aac, ac3, eac3,
-      eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus;
+      eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus, alac;
   // The Dolby Vision dvhe test file's own cenc layout (dv5_dvhe holds it
   // decrypted).
   std::vector<std::vector<fp::SubsampleEntry>> dv5_dvhe_layout;
@@ -1651,6 +1677,11 @@ void RunAll() {
   // CoreAudio has no protected Opus decoder (its list has qflc and qlac, no
   // Opus one), so FairPlay can't carry Opus.
   AddClip("Opus cbcs, whole sample", w->opus, audio, "", Expect::kFails);
+  // ALAC from Apple's encoder, as Chromium's MP4 parser gives it (the
+  // ALACSpecificConfig).
+  add_loaded("ALAC alac clear", w->alac, "alac", Expect::kPlays);
+  AddClip("ALAC alac cbcs, whole sample", w->alac, audio, "qlac");
+  AddClip("ALAC alac cbcs, wrong key (control)", w->alac, audio, "qlac", Expect::kGarbage, 0x5a);
 
   std::vector<Step> steps;
   steps.push_back(Section("FairPlay license for Axinom's published key"));
@@ -1706,7 +1737,8 @@ bool LoadAll(World* w, std::string* error) {
       !LoadChromiumFile(@"bear-opus.mp4", &w->opus, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC, 3, &w->aac_lc, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC_HE, 3, &w->he_aac, error) ||
-      !EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 3, &w->he_aac_v2, error)) {
+      !EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 3, &w->he_aac_v2, error) ||
+      !EncodeAac(kAudioFormatAppleLossless, 3, &w->alac, error)) {
     return false;
   }
   // Chromium's cenc test files decrypted with its test key: the AV1 ones

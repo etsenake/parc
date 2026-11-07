@@ -221,8 +221,11 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
   with `dfLa` and `Opus` with `dOps` (48 kHz in the sample entry, the input
   rate in `dOps`), which CoreMedia reads; protected FLAC becomes `qflc`.
   Protected Opus has no decoder, so it fails at the first enqueue, as it would
-  in Safari. ALAC never reaches the renderer: Chromium's MP4 parser has no
-  `alac` sample entry, so Media Source refuses it before any renderer.
+  in Safari.
+- ALAC (`AudioCodec::kALAC`) comes as the 24-byte ALACSpecificConfig (or
+  Apple's magic cookie with its `alac` atom, FFmpeg's form). The core builds
+  Apple's `alac` sample entry with that config in its ALACSpecificBox;
+  protected ALAC becomes `qlac`.
 
 ## M1 constraints from key delivery
 

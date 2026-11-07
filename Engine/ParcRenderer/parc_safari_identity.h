@@ -38,9 +38,9 @@ inline bool IsParcSafariHiddenKeySystem(const String& key_system) {
          key_system.starts_with("com.widevine.alpha.");
 }
 
-// AC-3 and E-AC-3 (Dolby Digital and Dolby Digital Plus). Safari plays them,
-// so Parc answers yes for them only under Safari's identity and every other
-// page keeps Chromium's usual answer. `codecs` is a codecs parameter value
+// AC-3 and E-AC-3 (Dolby Digital and Dolby Digital Plus), and ALAC (Apple
+// Lossless). Safari plays them, so Parc answers yes for them only under
+// Safari's identity and every other page keeps Chromium's usual answer. `codecs` is a codecs parameter value
 // without quotes ("avc1.640028,ec-3"), as ContentType and ParsedContentType
 // give it.
 inline bool IsParcSafariOnlyAudioCodecs(const String& codecs) {
@@ -52,11 +52,19 @@ inline bool IsParcSafariOnlyAudioCodecs(const String& codecs) {
     if (EqualIgnoringAsciiCase(id, "ac-3") ||
         EqualIgnoringAsciiCase(id, "ec-3") ||
         EqualIgnoringAsciiCase(id, "mp4a.a5") ||
-        EqualIgnoringAsciiCase(id, "mp4a.a6")) {
+        EqualIgnoringAsciiCase(id, "mp4a.a6") ||
+        EqualIgnoringAsciiCase(id, "alac")) {
       return true;
     }
   }
   return false;
+}
+
+// Whether Safari's WebCodecs decodes a Safari-only audio codec: AC-3 and
+// E-AC-3 as the platform decoder takes them, ALAC never
+// (AudioDecoderCocoa::isCodecSupported lists no Apple Lossless).
+inline bool IsParcSafariWebCodecsAudioCodec(const String& codec) {
+  return !EqualIgnoringAsciiCase(codec.StripWhiteSpace(), "alac");
 }
 
 // FairPlay's EME initialization data types, as WebKit registers them on

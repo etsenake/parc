@@ -135,6 +135,14 @@ std::optional<std::vector<uint8_t>> FlacSpecificBoxPayload(const std::vector<uin
 // nullopt for a malformed head.
 std::optional<std::vector<uint8_t>> OpusSpecificBoxPayload(const std::vector<uint8_t>& opus_head);
 
+// The 'alac' child box's payload (ALACSpecificBox: version and flags 0, then
+// the 24-byte ALACSpecificConfig) from ALAC extra data: the config alone, as
+// Chromium's MP4 parser gives it, or Apple's magic cookie form that FFmpeg
+// keeps (an optional 'frma' atom, then the whole 'alac' atom). nullopt when
+// the config is malformed (frame length 0, compatible version other than 0,
+// bit depth other than 16, 20, 24 or 32, no channels).
+std::optional<std::vector<uint8_t>> AlacSpecificBoxPayload(const std::vector<uint8_t>& extra_data);
+
 // The Dolby Vision base-layer compatibility ID for a profile when the stream
 // doesn't say (Chromium carries only profile and level): 0 for profiles 4, 5
 // and 7 (no compatible base layer), 2 (SDR) for 9, the only one it allows;

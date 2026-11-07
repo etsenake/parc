@@ -1083,6 +1083,17 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         children.push_back(MakeBox(FourCC('d', 'O', 'p', 's'), *dops));
         break;
       }
+      case AudioCodec::kALAC: {
+        // Apple's 'alac' sample entry with its ALACSpecificBox; protected,
+        // CoreMedia makes it 'qlac'.
+        std::optional<std::vector<uint8_t>> alac = AlacSpecificBoxPayload(config.extra_data);
+        if (!alac) {
+          return Result::Error(Exception::kTypeError, "ALAC config needs its ALACSpecificConfig");
+        }
+        entry_type = FourCC('a', 'l', 'a', 'c');
+        children.push_back(MakeBox(FourCC('a', 'l', 'a', 'c'), *alac));
+        break;
+      }
     }
     // Opus in ISO-BMFF states 48 kHz in the sample entry whatever the input
     // rate ('dOps' carries that).

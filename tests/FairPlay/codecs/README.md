@@ -113,8 +113,9 @@ under the same key ID fails visibly.
 | E-AC-3 7.1 as Chromium delivers it (8 channels, no `dec3`) | `qec3` | 188/188 packets, 6.016 s, no decoder errors, with the box the core builds from rate and channels |
 | FLAC (`fLaC`, Chromium's `bear-flac_frag.mp4`) as Chromium delivers it (STREAMINFO only) | `qflc` | clear: 27/27 frames as `flac`, `OnEnded` at 2.740 s, no decoder errors; protected: 27/27, no decoder errors; wrong key: 328 decoder errors (`ACFLACDecoder`) |
 | Opus (`Opus`, Chromium's `bear-opus.mp4`) as Chromium delivers it (an OpusHead) | none | clear: 137/137 packets as `opus`, `OnEnded` at 2.741 s, no decoder errors |
+| ALAC (`alac`, 3 s stereo 16-bit from Apple's encoder) as the ALACSpecificConfig | `qlac` | clear: 33/33 packets as `alac`, played to `OnEnded`, no decoder errors; protected: 33/33, no decoder errors; wrong key: 3 decoder errors (`ACCPEDecoderWrapper`) |
 
-FLAC and Opus were run with `--muted` (2026-11-07): every audio renderer muted
+FLAC, Opus and ALAC were run with `--muted` (2026-11-07): every audio renderer muted
 at volume 0, which still decodes each packet and logs decoder errors, so
 nothing plays through the speakers. One of four muted runs of the three FLAC
 clips stalled the protected one at 1.88 s with 18 of 27 frames enqueued:

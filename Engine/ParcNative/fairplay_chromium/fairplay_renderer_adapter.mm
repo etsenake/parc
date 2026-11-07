@@ -103,6 +103,8 @@ std::optional<fp::AudioCodec> ToAudioCodec(AudioCodec codec) {
       return fp::AudioCodec::kFLAC;
     case AudioCodec::kOpus:
       return fp::AudioCodec::kOpus;
+    case AudioCodec::kALAC:
+      return fp::AudioCodec::kALAC;
     default:
       return std::nullopt;
   }

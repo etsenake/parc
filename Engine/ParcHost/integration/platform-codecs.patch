@@ -16,13 +16,14 @@
  
 --- a/media/ffmpeg/ffmpeg_common.cc
 +++ b/media/ffmpeg/ffmpeg_common.cc
-@@ -409,6 +409,13 @@
+@@ -409,6 +409,14 @@
        sample_format = kSampleFormatMpegHAudio;
        break;
  #endif
-+    // FFmpeg built without its AAC decoder can't fill |sample_fmt|; the
-+    // platform decoder (AudioToolbox) decodes to planar float.
++    // FFmpeg built without its AAC or ALAC decoder can't fill |sample_fmt|;
++    // the platform decoder (AudioToolbox) decodes to planar float.
 +    case AudioCodec::kAAC:
++    case AudioCodec::kALAC:
 +      if (sample_format == kUnknownSampleFormat) {
 +        sample_format = kSampleFormatPlanarF32;
 +      }
@@ -30,7 +31,7 @@
  
      default:
        break;
-@@ -482,8 +489,9 @@
+@@ -482,8 +490,9 @@
  
    // Verify that AudioConfig.bytes_per_channel was calculated correctly for
    // codecs that have |sample_fmt| set by FFmpeg.
@@ -169,7 +170,7 @@
  #include "media/media_buildflags.h"
  
  namespace media {
-@@ -40,13 +46,274 @@
+@@ -40,13 +46,276 @@
      return true;
    }
  #endif
@@ -177,10 +178,12 @@
 -  // macOS 10.15 or higher.
 -  return config.profile() == AudioCodecProfile::kXHE_AAC;
 +  // FFmpeg is built without its AAC decoder, so AudioToolbox decodes every AAC
-+  // profile, including HE-AAC and xHE-AAC.
-+  return config.codec() == AudioCodec::kAAC;
-+}
-+
++  // profile, including HE-AAC and xHE-AAC, and Apple Lossless, which FFmpeg
++  // doesn't decode here either.
++  return config.codec() == AudioCodec::kAAC ||
++         config.codec() == AudioCodec::kALAC;
+ }
+ 
 +bool MayArriveAsAdts(const AudioDecoderConfig& config) {
 +  return config.codec() == AudioCodec::kAAC &&
 +         config.profile() != AudioCodecProfile::kXHE_AAC;
@@ -358,8 +361,8 @@
 +                layer.mASBD.mFormatID == kAudioFormatMPEG4AAC_HE_V2) &&
 +               layer.mASBD.mSampleRate == 2 * core_rate;
 +      });
- }
- 
++}
++
 +// The rate to decode `audio_specific_config` at, given `access_unit`, the
 +// first its stream can be judged by. Like FFmpeg's decoder, this takes SBR
 +// that only that access unit signals (implicitly signalled HE-AAC) and runs at
@@ -447,7 +450,7 @@
    AudioStreamPacketDescription packet = {};
  };
  
-@@ -60,18 +327,29 @@
+@@ -60,18 +329,29 @@
                                AudioStreamPacketDescription** packets,
                                void* user_data) {
    auto* input_data = reinterpret_cast<InputData*>(user_data);
@@ -481,16 +484,16 @@
  
    if (packets)
      *packets = &input_data->packet;
-@@ -116,7 +394,7 @@
+@@ -116,7 +396,7 @@
                                            const WaitingCB& waiting_cb) {
    if (!CanUseAudioToolbox(config)) {
      DLOG(WARNING)
 -        << "Only xHE-AAC/AC3/E-AC3 decoding is supported by this decoder.";
-+        << "Only AAC/AC3/E-AC3 decoding is supported by this decoder.";
++        << "Only AAC/ALAC/AC3/E-AC3 decoding is supported by this decoder.";
      std::move(init_cb).Run(DecoderStatus::Codes::kUnsupportedCodec);
      return;
    }
-@@ -131,7 +409,15 @@
+@@ -131,7 +411,15 @@
    decoder_.reset();
  
    output_cb_ = output_cb;
@@ -507,7 +510,7 @@
    if (!success) {
      decoder_.reset();
    }
-@@ -142,10 +428,15 @@
+@@ -142,10 +430,15 @@
  
  void AudioToolboxAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                        DecodeCB decode_cb) {
@@ -524,7 +527,7 @@
    // Make sure we are notified if https://crbug.com/49709 returns. Issue also
    // occurs with some damaged files.
    if (!buffer->end_of_stream() && buffer->timestamp() == kNoTimestamp) {
-@@ -163,63 +454,149 @@
+@@ -163,63 +456,149 @@
  
    InputData input_data;
    input_data.buffer = buffer.get();
@@ -713,7 +716,7 @@
    if (result != noErr && result != kNoMoreDataError) {
      OSSTATUS_MEDIA_LOG(ERROR, result, media_log_)
          << "AudioConverterFillComplexBuffer() failed";
-@@ -227,35 +604,102 @@
+@@ -227,35 +606,102 @@
          .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
      return;
    }
@@ -741,8 +744,8 @@
 -                                      base::Unretained(this), time_info));
 -
    std::move(decode_cb_bound).Run(OkStatus());
- }
- 
++}
++
 +// static
 +bool AudioToolboxAudioDecoder::DrainsAtEndOfStreamForTesting(
 +    const AudioDecoderConfig& config) {
@@ -781,8 +784,8 @@
 +  held_frames_ = frames - completing;
 +  output_bus_->CopyPartialFramesTo(completing, held_frames_, 0, held_.get());
 +  held_time_info_ = time_info;
-+}
-+
+ }
+ 
 +void AudioToolboxAudioDecoder::DeliverHeldFrames() {
 +  if (held_frames_) {
 +    Output(*held_, held_frames_, held_time_info_);
@@ -839,7 +842,7 @@
    last_input_timestamp_ = kNoTimestamp;
    base::BindPostTaskToCurrentDefault(std::move(reset_cb)).Run();
  }
-@@ -266,16 +710,47 @@
+@@ -266,16 +712,47 @@
    return false;
  }
  
@@ -871,8 +874,6 @@
  
    switch (config.codec()) {
      case AudioCodec::kAAC: {
--      // Input is xHE-AAC / USAC.
--      CHECK_EQ(config.profile(), AudioCodecProfile::kXHE_AAC);
 +      if (config.profile() != AudioCodecProfile::kXHE_AAC) {
 +        // Input is AAC-LC, HE-AAC or HE-AAC v2.
 +        magic_cookie = mp4::ESDescriptor::CreateEsds(
@@ -884,14 +885,49 @@
 +        break;
 +      }
 +
-+      // Input is xHE-AAC / USAC.
+       // Input is xHE-AAC / USAC.
+-      CHECK_EQ(config.profile(), AudioCodecProfile::kXHE_AAC);
        input_format.mFormatID = kAudioFormatMPEGD_USAC;
 -      magic_cookie = mp4::ESDescriptor::CreateEsds(config.extra_data());
 +      magic_cookie = mp4::ESDescriptor::CreateEsds(audio_specific_config);
  
        // Have macOS fill in the rest of the input_format for us.
        UInt32 format_size = sizeof(input_format);
-@@ -424,7 +899,9 @@
+@@ -289,6 +766,23 @@
+       }
+       break;
+     }
++    case AudioCodec::kALAC: {
++      // Input is Apple Lossless. The extra data is its magic cookie: the
++      // ALACSpecificConfig from MP4StreamParser, or the 'alac' atom FFmpeg
++      // keeps; AudioToolbox reads either, and fills in the rest.
++      input_format.mFormatID = kAudioFormatAppleLossless;
++      magic_cookie = config.extra_data();
++      UInt32 format_size = sizeof(input_format);
++      auto status = AudioFormatGetProperty(
++          kAudioFormatProperty_FormatInfo, magic_cookie.size(),
++          magic_cookie.data(), &format_size, &input_format);
++      if (status != noErr) {
++        OSSTATUS_MEDIA_LOG(ERROR, status, media_log_)
++            << "AudioFormatGetProperty() failed for ALAC";
++        return false;
++      }
++      break;
++    }
+ #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+     case AudioCodec::kAC3:
+     case AudioCodec::kEAC3:
+@@ -414,7 +908,8 @@
+     return false;
+   }
+ 
+-  if (config.codec() == AudioCodec::kAAC) {
++  if (config.codec() == AudioCodec::kAAC ||
++      config.codec() == AudioCodec::kALAC) {
+     // Instill the magic!
+     result = AudioConverterSetProperty(
+         decoder_.get(), kAudioConverterDecompressionMagicCookie,
+@@ -424,7 +919,9 @@
            << "AudioConverterSetProperty() failed";
        return false;
      }
@@ -901,7 +937,7 @@
      // macOS doesn't provide a default target loudness. Use the value
      // recommended by Fraunhofer. AC3/E-AC3 doesn't support set this,
      // so limit this to xHE-AAC only.
-@@ -460,10 +937,33 @@
+@@ -460,10 +957,33 @@
    output_bus_ = AudioBus::Create(input_format.mChannelsPerFrame,
                                   input_format.mFramesPerPacket);
  
@@ -1184,3 +1220,100 @@
      // LCM of all possible ADTS sample rates
      avpriv_set_pts_info(st, 64, 1, 28224000);
  
+--- a/media/base/mime_util_internal.cc
++++ b/media/base/mime_util_internal.cc
+@@ -89,6 +89,8 @@
+       {"Opus", MimeUtil::OPUS},
+       {"flac", MimeUtil::FLAC},
+       {"fLaC", MimeUtil::FLAC},
++      // Parc: Apple Lossless, as Safari names it.
++      {"alac", MimeUtil::ALAC},
+       {"vp8", MimeUtil::VP8},
+       {"vp8.0", MimeUtil::VP8},
+       {"theora", MimeUtil::THEORA},
+@@ -189,6 +191,8 @@
+       return AudioCodec::kAC4;
+     case MimeUtil::IAMF:
+       return AudioCodec::kIAMF;
++    case MimeUtil::ALAC:
++      return AudioCodec::kALAC;
+     default:
+       break;
+   }
+@@ -381,6 +385,12 @@
+   mp4_audio_codecs.emplace(IAMF);
+ #endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
+ 
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
++  // Parc: Apple Lossless in MP4, decoded by AudioToolbox; Blink answers yes
++  // only under Safari's identity (parc_safari_identity.h).
++  mp4_audio_codecs.emplace(ALAC);
++#endif
++
+   CodecSet mp4_codecs(mp4_audio_codecs);
+   mp4_codecs.insert(mp4_video_codecs.begin(), mp4_video_codecs.end());
+ 
+@@ -663,6 +673,9 @@
+     case AC4:
+       return false;
+ 
++    case ALAC:
++      return false;
++
+     case IAMF:
+       return !is_encrypted && IsIamfAudioDecodingSupported();
+   }
+--- a/media/base/mime_util_internal.h
++++ b/media/base/mime_util_internal.h
+@@ -55,7 +55,8 @@
+     DTSE,
+     AC4,
+     IAMF,
+-    LAST_CODEC = IAMF
++    ALAC,  // Parc: Apple Lossless (macOS, AudioToolbox).
++    LAST_CODEC = ALAC
+   };
+ 
+   // Platform configuration structure.  Controls which codecs are supported at
+--- a/media/base/supported_types.cc
++++ b/media/base/supported_types.cc
+@@ -494,10 +494,12 @@
+     case AudioCodec::kAMR_NB:
+     case AudioCodec::kAMR_WB:
+     case AudioCodec::kGSM_MS:
+-    case AudioCodec::kALAC:
+     case AudioCodec::kMpegHAudio:
+     case AudioCodec::kUnknown:
+       return false;
++    case AudioCodec::kALAC:
++      // Parc: AudioToolbox decodes Apple Lossless on macOS.
++      return BUILDFLAG(IS_MAC);
+     case AudioCodec::kIAMF:
+       return IsIamfAudioDecodingSupported();
+     case AudioCodec::kDTS:
+--- a/media/base/mime_util_unittest.cc
++++ b/media/base/mime_util_unittest.cc
+@@ -542,6 +542,11 @@
+ 
+           case MimeUtil::IAMF:
+             EXPECT_EQ(HasIamfSupport(true), result);
++            break;
++
++          // Parc: Apple Lossless is macOS-only (AudioToolbox).
++          case MimeUtil::ALAC:
++            EXPECT_FALSE(result);
+             break;
+         }
+       });
+@@ -614,6 +619,11 @@
+           case MimeUtil::IAMF:
+             EXPECT_EQ(HasIamfSupport(false), result);
+             break;
++
++          // Parc: Apple Lossless is macOS-only (AudioToolbox).
++          case MimeUtil::ALAC:
++            EXPECT_FALSE(result);
++            break;
+         }
+       });
+ }

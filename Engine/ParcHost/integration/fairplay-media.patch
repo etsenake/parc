@@ -37,7 +37,17 @@
  SupportedCodecs GetVP9Codecs(
      const base::flat_set<media::VideoCodecProfile>& profiles) {
    if (profiles.empty()) {
-@@ -249,7 +254,7 @@
+@@ -181,6 +186,9 @@
+       case media::AudioCodec::kAAC:
+         supported_codecs |= media::EME_CODEC_AAC;
+         break;
++      case media::AudioCodec::kALAC:  // Parc: FairPlay's.
++        supported_codecs |= media::EME_CODEC_ALAC;
++        break;
+ #if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+       case media::AudioCodec::kDTS:
+         supported_codecs |= media::EME_CODEC_DTS;
+@@ -249,7 +257,7 @@
    return supported_codecs;
  }
  #endif  // BUILDFLAG(ENABLE_WIDEVINE) || BUILDFLAG(IS_ANDROID) ||
@@ -46,10 +56,11 @@
  
  #if BUILDFLAG(ENABLE_WIDEVINE)
  
-@@ -500,6 +505,35 @@
+@@ -499,6 +507,35 @@
+ #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
  }
  #endif  // BUILDFLAG(IS_WIN)
- 
++
 +#if BUILDFLAG(IS_MAC)
 +// Parc: Apple FairPlay Streaming, registered by the browser's CdmRegistry with
 +// a software-secure capability only. Temporary sessions persist nothing, so
@@ -78,11 +89,10 @@
 +              CdmSessionType::kPersistentUsageRecord)));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  #if BUILDFLAG(IS_ANDROID)
  void AddAndroidPlatformKeySystem(const std::string& key_system,
-                                  const media::KeySystemCapability& capability,
-@@ -575,6 +609,13 @@
+@@ -575,6 +612,13 @@
      }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -151,11 +161,10 @@
  namespace content {
  
  namespace {
-@@ -231,6 +240,56 @@
-   return is_gpu_software_emulated;
+@@ -232,6 +241,57 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: Apple FairPlay Streaming. It has no CDM library or CDM process: the
 +// CDM and its renderer are created by the GPU process's media service (see
@@ -169,13 +178,14 @@
 +  capability.audio_codecs.insert(media::AudioCodec::kAC3);
 +  capability.audio_codecs.insert(media::AudioCodec::kEAC3);
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
-+  // FLAC (clear, and protected through CoreAudio's qflc) and Opus (clear:
-+  // CoreAudio has no protected Opus decoder) play through the FairPlay
-+  // Renderer; Safari offers both where AVFoundation plays them, and so do
-+  // Safari-identity pages, which ask AVFoundation besides. ALAC can't reach
-+  // the renderer: Chromium's MP4 parser has no alac sample entry.
++  // FLAC (clear, and protected through CoreAudio's qflc), Opus (clear:
++  // CoreAudio has no protected Opus decoder) and ALAC (clear, and protected
++  // through qlac) play through the FairPlay Renderer; Safari offers them where
++  // AVFoundation plays them, and so do Safari-identity pages, which ask
++  // AVFoundation besides.
 +  capability.audio_codecs.insert(media::AudioCodec::kFLAC);
 +  capability.audio_codecs.insert(media::AudioCodec::kOpus);
++  capability.audio_codecs.insert(media::AudioCodec::kALAC);
 +  capability.video_codecs.emplace(media::VideoCodec::kH264,
 +                                  media::VideoCodecInfo());
 +#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
@@ -205,10 +215,11 @@
 +                 base::Version(), base::FilePath());
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  }  // namespace
  
-@@ -263,6 +322,11 @@
+ // static
+@@ -263,6 +323,11 @@
  
    // Let embedders register CDMs.
    GetContentClient()->AddContentDecryptionModules(&cdms_, nullptr);
@@ -1099,6 +1110,25 @@
  };
  
  // Returns the canonical string representation of |init_data_type| as defined
+@@ -72,6 +81,9 @@
+   EME_CODEC_IAMF = 1 << 23,
+   EME_CODEC_DOLBY_VISION_PROFILE10 = 1 << 24,
+   EME_CODEC_DOLBY_VISION_PROFILE20 = 1 << 25,
++  // Parc: Apple Lossless (FairPlay plays it). Bits 26 to 28 are
++  // key_systems_unittest.cc's test codecs.
++  EME_CODEC_ALAC = 1 << 29,
+ };
+ 
+ // *_ALL values should only be used for masking, do not use them to specify
+@@ -95,6 +107,8 @@
+   SupportedCodecs codecs = EME_CODEC_OPUS | EME_CODEC_FLAC;
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+   codecs |= EME_CODEC_AAC;
++  // Parc: only FairPlay's CdmCapability lists it.
++  codecs |= EME_CODEC_ALAC;
+ #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+   codecs |= EME_CODEC_AC3 | EME_CODEC_EAC3;
+ #endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 --- a/media/base/media_switches.cc
 +++ b/media/base/media_switches.cc
 @@ -1208,8 +1208,10 @@
@@ -1960,6 +1990,66 @@
    RCHECK(reader->ScanChildren() &&
           reader->ReadChild(&format) &&
           reader->ReadChild(&type));
+@@ -1588,7 +1593,45 @@
+   // The lower 4 bits of byte 13 and all of bytes 14-17 (number of samples in
+   // stream) are ignored here.
+   // Bytes 18-33 (hash of the unencoded audio data) are ignored here.
++
++  return true;
++}
+ 
++ALACSpecificBox::ALACSpecificBox() = default;
++
++ALACSpecificBox::ALACSpecificBox(const ALACSpecificBox& other) = default;
++
++ALACSpecificBox::~ALACSpecificBox() = default;
++
++FourCC ALACSpecificBox::BoxType() const {
++  return FOURCC_ALAC;
++}
++
++bool ALACSpecificBox::Parse(BoxReader* reader) {
++  constexpr size_t kConfigSize = 24;
++  RCHECK(reader->ReadFullBoxHeader());
++  RCHECK_MEDIA_LOGGED(reader->version() == 0 && reader->flags() == 0,
++                      reader->media_log(),
++                      "Only version 0, flags 0 ALACSpecificBox is supported.");
++  RCHECK_MEDIA_LOGGED(reader->ReadVec(&config, kConfigSize),
++                      reader->media_log(),
++                      "ALACSpecificBox is missing its ALACSpecificConfig.");
++  // frameLength (4), compatibleVersion (1), bitDepth (1), pb, mb, kb,
++  // numChannels (1), maxRun (2), maxFrameBytes (4), avgBitRate (4),
++  // sampleRate (4); big-endian.
++  const uint32_t frame_length = uint32_t{config[0]} << 24 |
++                                uint32_t{config[1]} << 16 |
++                                uint32_t{config[2]} << 8 | config[3];
++  bit_depth = config[5];
++  channel_count = config[9];
++  sample_rate = uint32_t{config[20]} << 24 | uint32_t{config[21]} << 16 |
++                uint32_t{config[22]} << 8 | config[23];
++  RCHECK_MEDIA_LOGGED(frame_length > 0 && config[4] == 0 &&
++                          (bit_depth == 16 || bit_depth == 20 ||
++                           bit_depth == 24 || bit_depth == 32) &&
++                          channel_count > 0 && sample_rate > 0,
++                      reader->media_log(),
++                      "Unsupported ALACSpecificConfig.");
+   return true;
+ }
+ 
+@@ -1923,6 +1966,13 @@
+     }
+   }
+ 
++  // Parc: Apple Lossless keeps its config in an ALACSpecificBox.
++  if (format == FOURCC_ALAC ||
++      (format == FOURCC_ENCA && sinf.format.format == FOURCC_ALAC)) {
++    RCHECK_MEDIA_LOGGED(reader->ReadChild(&alac), reader->media_log(),
++                        "Failure parsing ALACSpecificBox (alac)");
++  }
++
+   if (format == FOURCC_OPUS ||
+       (format == FOURCC_ENCA && sinf.format.format == FOURCC_OPUS)) {
+     RCHECK_MEDIA_LOGGED(reader->ReadChild(&dops), reader->media_log(),
 --- a/media/formats/mp4/box_definitions.h
 +++ b/media/formats/mp4/box_definitions.h
 @@ -164,6 +164,9 @@
@@ -1972,6 +2062,33 @@
  
    bool HasSupportedScheme() const;
    bool IsCbcsEncryptionScheme() const;
+@@ -437,6 +440,18 @@
+   uint32_t sample_rate;
+   uint8_t channel_count;
+   uint8_t bits_per_sample;
++};
++
++// Parc: ALACSpecificBox, the 'alac' box inside an 'alac' sample entry
++// (Apple's ALACMagicCookieDescription): version and flags 0, then the
++// 24-byte ALACSpecificConfig, which AudioToolbox takes as the magic cookie.
++struct MEDIA_EXPORT ALACSpecificBox : Box {
++  DECLARE_BOX_METHODS(ALACSpecificBox);
++
++  std::vector<uint8_t> config;  // The ALACSpecificConfig.
++  uint8_t bit_depth = 0;
++  uint8_t channel_count = 0;
++  uint32_t sample_rate = 0;
+ };
+ 
+ struct MEDIA_EXPORT OpusSpecificBox : Box {
+@@ -509,6 +524,7 @@
+   ElementaryStreamDescriptor esds;
+   FlacSpecificBox dfla;
+   OpusSpecificBox dops;
++  ALACSpecificBox alac;  // Parc.
+ #if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+   DtsSpecificBox ddts;
+   DtsUhdSpecificBox udts;
 --- a/media/formats/mp4/mp4_stream_parser.cc
 +++ b/media/formats/mp4/mp4_stream_parser.cc
 @@ -12,6 +12,7 @@
@@ -2012,7 +2129,7 @@
  
    for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
         track != moov_->tracks.end(); ++track) {
-@@ -497,6 +514,9 @@
+@@ -497,8 +514,12 @@
        FourCC audio_format = (entry.format == FOURCC_ENCA)
                                  ? entry.sinf.format.format
                                  : entry.format;
@@ -2021,18 +2138,59 @@
 +      }
  
        if (audio_format != FOURCC_OPUS && audio_format != FOURCC_FLAC &&
++          audio_format != FOURCC_ALAC &&
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
-@@ -774,6 +794,9 @@
+           audio_format != FOURCC_AC3 && audio_format != FOURCC_EAC3 &&
+ #endif
+@@ -556,6 +577,22 @@
+         channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
+         sample_per_second = entry.samplerate;
+         extra_data = entry.dfla.stream_info;
++      } else if (audio_format == FOURCC_ALAC) {
++        // Parc: Apple Lossless, as Safari's Media Source plays it. Channels
++        // and rate come from the ALACSpecificConfig (the sample entry's rate
++        // field can't hold rates above 65535), which is the extra data
++        // AudioToolbox and the FairPlay renderer take.
++        if (!parc_has_alac_) {
++          MEDIA_LOG(ERROR, media_log_) << "ALAC audio stream detected in MP4, "
++                                          "mismatching what is specified in "
++                                          "the mimetype.";
++          return false;
++        }
++        codec = AudioCodec::kALAC;
++        channel_layout_config =
++            ChannelLayoutConfig::Guess(entry.alac.channel_count);
++        sample_per_second = entry.alac.sample_rate;
++        extra_data = entry.alac.config;
+ #if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
+       } else if (audio_format == FOURCC_IAMF) {
+         // ISOBMFF IAMF streams do not use object type indication.
+@@ -703,7 +740,13 @@
+       }
+ 
+       SampleFormat sample_format;
+-      if (entry.samplesize == 8) {
++      if (codec == AudioCodec::kALAC) {
++        // Parc: the ALACSpecificConfig's bit depth (16, 20, 24 or 32); a
++        // sample entry may state 20, which the sizes below don't take.
++        sample_format = entry.alac.bit_depth == 16   ? kSampleFormatS16
++                        : entry.alac.bit_depth == 32 ? kSampleFormatS32
++                                                     : kSampleFormatS24;
++      } else if (entry.samplesize == 8) {
+         sample_format = kSampleFormatU8;
+       } else if (entry.samplesize == 16) {
+         sample_format = kSampleFormatS16;
+@@ -773,6 +816,9 @@
+                                      << std::hex << entry.format
                                       << " in stsd box.";
          return false;
-       }
++      }
 +      if (entry.format == FOURCC_ENCV) {
 +        AddSinfInitData(entry.sinf, &sinf_init_data);
-+      }
+       }
  
        // TODO(strobe): Recover correct crop box
-       gfx::Size coded_size(entry.width, entry.height);
-@@ -888,6 +911,10 @@
+@@ -888,6 +934,10 @@
  
    if (!moov_->pssh.empty())
      OnEncryptedMediaInitData(moov_->pssh);
@@ -3442,16 +3600,15 @@
  namespace blink {
  
  namespace {
-@@ -167,6 +177,50 @@
-   sink->SwitchOutputDevice(device_id,
+@@ -168,6 +178,51 @@
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, Dolby Vision profile 8, which it plays
-+// without offering it, and FLAC and Opus (clear; FLAC also protected). An
-+// empty list leaves the decision to the demuxer.
++// without offering it, and FLAC, Opus and ALAC (clear; FLAC and ALAC also
++// protected). An empty list leaves the decision to the demuxer.
 +bool IsFairPlayChangeTypeSupported(const std::string& content_type,
 +                                   const std::string& codecs) {
 +  std::vector<std::string> codec_ids;
@@ -3463,7 +3620,8 @@
 +          audio->codec != media::AudioCodec::kAC3 &&
 +          audio->codec != media::AudioCodec::kEAC3 &&
 +          audio->codec != media::AudioCodec::kFLAC &&
-+          audio->codec != media::AudioCodec::kOpus) {
++          audio->codec != media::AudioCodec::kOpus &&
++          audio->codec != media::AudioCodec::kALAC) {
 +        return false;
 +      }
 +      continue;
@@ -3490,10 +3648,11 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-@@ -356,7 +410,12 @@
+           switches::kDisableBackgroundMediaSuspend)) {
+@@ -356,7 +411,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
  bool UsesAudioService(media::RendererType renderer_type) {
@@ -3507,7 +3666,7 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1112,7 +1171,19 @@
+@@ -1112,7 +1172,19 @@
  void WebMediaPlayerImpl::Seek(double seconds) {
    DVLOG(1) << __func__ << "(" << seconds << "s)";
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3527,10 +3686,12 @@
  }
  
  void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
-@@ -1423,6 +1494,24 @@
-   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
- }
+@@ -1421,6 +1493,24 @@
+     return std::numeric_limits<double>::quiet_NaN();
  
+   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
++}
++
 +double WebMediaPlayerImpl::ParcStartDate() const {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
@@ -3547,12 +3708,10 @@
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
 +  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
-+}
-+
- base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ }
  
-@@ -1496,6 +1585,21 @@
+ base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
+@@ -1496,6 +1586,21 @@
  
    if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
      return WebTimeRanges();
@@ -3574,7 +3733,7 @@
    }
  
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1665,6 +1769,20 @@
+@@ -1665,6 +1770,20 @@
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
@@ -3595,7 +3754,7 @@
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
    // http://crbug.com/40407494#comment8.
-@@ -1695,6 +1813,83 @@
+@@ -1695,6 +1814,83 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -3679,12 +3838,10 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1726,6 +1921,34 @@
- void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
-                                        media::MediaTrack::State state) {
+@@ -1728,6 +1924,34 @@
    client_->SetTrackState(track, state);
-+}
-+
+ }
+ 
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -3711,13 +3868,16 @@
 +    media::ParcInbandAudioTrackEnabledCB set_enabled) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
- }
- 
++}
++
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -1777,6 +2000,122 @@
+ 
+ UrlData::CacheMode TranslateCacheMode(bool always_disable,
+@@ -1776,7 +2000,123 @@
+           tick_clock_, main_task_runner_));
  }
  #endif
- 
++
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3787,7 +3947,7 @@
 +  DidMediaMetadataChange();
 +  UpdatePlayState();
 +}
-+
+ 
 +void WebMediaPlayerImpl::ParcNativeHlsReadyStateChanged(
 +    media::ParcNativeHlsReadyState state) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3837,7 +3997,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2159,92 @@
+@@ -1820,10 +2160,92 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -3851,8 +4011,8 @@
    pipeline_controller_->SetCdm(
        cdm_context,
        blink::BindOnce(&WebMediaPlayerImpl::OnCdmAttached, weak_this_));
- }
- 
++}
++
 +#if BUILDFLAG(IS_MAC)
 +void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3908,6 +4068,7 @@
 +      case media::AudioCodec::kEAC3:
 +      case media::AudioCodec::kFLAC:
 +      case media::AudioCodec::kOpus:
++      case media::AudioCodec::kALAC:
 +        break;
 +      default:
 +        return false;
@@ -3924,13 +4085,12 @@
 +                                  ? pending_cdm_context_ref_.get()
 +                                  : cdm_context_ref_.get();
 +  return ref && ref->GetCdmContext()->RequiresFairPlayRenderer();
-+}
+ }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -1835,17 +2255,36 @@
+@@ -1835,17 +2257,36 @@
    // If the CDM is set from the constructor there is no promise
    // (`set_cdm_result_`) to fulfill.
    if (success) {
@@ -3967,7 +4127,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1988,6 +2427,15 @@
+@@ -1988,6 +2429,15 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -3983,7 +4143,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2197,6 +2645,10 @@
+@@ -2197,6 +2647,10 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -3994,7 +4154,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2462,6 +2914,14 @@
+@@ -2462,6 +2916,14 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -4009,7 +4169,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -3018,11 +3478,44 @@
+@@ -3018,12 +3480,45 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -4035,7 +4195,7 @@
 +    demuxer_manager_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&IsFairPlayChangeTypeSupported));
 +  }
-+
+ 
 +  // Parc: for ParcRestartIntoFairPlayIfNeeded(). The pipeline sets a CDM
 +  // attached or attaching now before this renderer's Initialize().
 +  parc_renderer_created_ = true;
@@ -4051,10 +4211,11 @@
 +  // The renderer a replacement restarted into has the new CDM.
 +  parc_replaced_cdm_context_ref_.reset();
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3531,14 @@
+     client_->DidUseAudioServiceChange(new_uses_audio_service);
+@@ -3038,6 +3533,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -4069,7 +4230,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3654,27 @@
+@@ -3153,6 +3656,27 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -4097,7 +4258,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +3692,11 @@
+@@ -3170,6 +3694,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -4109,7 +4270,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3793,6 +4320,29 @@
+@@ -3793,6 +4322,29 @@
      return false;
    }
  
@@ -4661,10 +4822,21 @@
        const std::string& key_system) const = 0;
 --- a/media/base/key_systems_impl.cc
 +++ b/media/base/key_systems_impl.cc
-@@ -627,6 +627,16 @@
-   return key_system_info->GetPersistentLicenseSessionSupport();
- }
+@@ -56,6 +56,8 @@
+       return EME_CODEC_VORBIS;
+     case AudioCodec::kFLAC:
+       return EME_CODEC_FLAC;
++    case AudioCodec::kALAC:
++      return EME_CODEC_ALAC;  // Parc.
+     case AudioCodec::kOpus:
+       return EME_CODEC_OPUS;
+     case AudioCodec::kEAC3:
+@@ -625,6 +627,16 @@
+   CHECK(key_system_info);
  
+   return key_system_info->GetPersistentLicenseSessionSupport();
++}
++
 +EmeConfig::Rule KeySystemsImpl::GetPersistentUsageRecordSessionSupport(
 +    const std::string& key_system) const {
 +  DCHECK(thread_checker_.CalledOnValidThread());
@@ -4673,11 +4845,9 @@
 +  CHECK(key_system_info);
 +
 +  return key_system_info->GetPersistentUsageRecordSessionSupport();
-+}
-+
+ }
+ 
  EmeFeatureSupport KeySystemsImpl::GetPersistentStateSupport(
-     const std::string& key_system) const {
-   DCHECK(thread_checker_.CalledOnValidThread());
 --- a/media/base/key_systems_impl.h
 +++ b/media/base/key_systems_impl.h
 @@ -64,6 +64,8 @@
@@ -5557,3 +5727,101 @@
    }
  
    if (is_posix) {
+--- a/media/formats/mp4/fourccs.h
++++ b/media/formats/mp4/fourccs.h
+@@ -24,6 +24,8 @@
+   FOURCC_AC4 = 0x61632d34,   // "ac-4"
+   FOURCC_DAC4 = 0x64616334,  // "dac4"
+ #endif
++  // Parc: Apple Lossless (Safari-only audio, decoded by AudioToolbox).
++  FOURCC_ALAC = 0x616c6163,  // "alac"
+   FOURCC_AV01 = 0x61763031,  // "av01"
+   FOURCC_AV1C = 0x61763143,  // "av1C"
+   FOURCC_AVC1 = 0x61766331,
+--- a/media/formats/mp4/mp4_stream_parser.h
++++ b/media/formats/mp4/mp4_stream_parser.h
+@@ -62,6 +62,10 @@
+       base::span<const uint8_t> buf) override;
+   [[nodiscard]] ParseStatus Parse(int max_pending_bytes_to_inspect) override;
+ 
++  // Parc: the type named Apple Lossless ("alac"), so an 'alac' sample entry
++  // is expected, as |has_flac| does for FLAC (stream_parser_factory.cc).
++  void ParcSetHasAlac(bool has_alac) { parc_has_alac_ = has_alac; }
++
+   // Calculates the rotation value from the track header display matricies.
+   VideoTransformation CalculateRotation(const TrackHeader& track,
+                                         const MovieHeader& movie);
+@@ -171,6 +175,7 @@
+   const std::optional<base::flat_set<int>> strict_audio_object_types_;
+   const bool has_sbr_;
+   const bool has_flac_;
++  bool parc_has_alac_ = false;
+   const bool has_iamf_;
+   // Indicate if source buffer has been set as Dolby Vision. If true,
+   // always treat the source buffer as Dolby Vision, if false and if
+--- a/media/filters/stream_parser_factory.cc
++++ b/media/filters/stream_parser_factory.cc
+@@ -303,6 +303,12 @@
+                                               CodecInfo::HISTOGRAM_FLAC};
+ static const CodecInfo kMPEG4FLACCodecInfo2 = {
+     "fLaC", CodecInfo::AUDIO, nullptr, CodecInfo::HISTOGRAM_FLAC};
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
++// Parc: Apple Lossless in MP4, which AudioToolbox decodes; Blink answers yes
++// for it only under Safari's identity (parc_safari_identity.h).
++static const CodecInfo kParcALACCodecInfo = {"alac", CodecInfo::AUDIO, nullptr,
++                                             CodecInfo::HISTOGRAM_UNKNOWN};
++#endif
+ #if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
+ static const CodecInfo kIAMFCodecInfo1 = {"iamf", CodecInfo::AUDIO, nullptr,
+                                           CodecInfo::HISTOGRAM_IAMF};
+@@ -313,6 +319,9 @@
+ static const auto kVideoMP4Codecs = std::to_array<const CodecInfo* const>({
+     &kMPEG4FLACCodecInfo,
+     &kMPEG4FLACCodecInfo2,
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
++    &kParcALACCodecInfo,
++#endif
+     &kOpusCodecInfo,
+     &kOpusCodecInfo2,
+     &kMPEG4VP09CodecInfo,
+@@ -379,6 +388,9 @@
+ static const auto kAudioMP4Codecs = std::to_array<const CodecInfo* const>({
+     &kMPEG4FLACCodecInfo,
+     &kMPEG4FLACCodecInfo2,
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
++    &kParcALACCodecInfo,
++#endif
+     &kOpusCodecInfo,
+     &kOpusCodecInfo2,
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+@@ -442,10 +454,17 @@
+   // an encapsulation using MP4AudioSampleEntry with objectTypeIndication.
+   bool has_iamf = false;
+ 
++  // Parc: Apple Lossless names no object type either.
++  bool has_alac = false;
++
+   for (const auto& codec_id : codecs) {
+     if (base::MatchPattern(codec_id, kMPEG4FLACCodecInfo.pattern) ||
+         base::MatchPattern(codec_id, kMPEG4FLACCodecInfo2.pattern)) {
+       has_flac = true;
++#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
++    } else if (base::MatchPattern(codec_id, kParcALACCodecInfo.pattern)) {
++      has_alac = true;
++#endif
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+     } else if (base::MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern)) {
+       audio_object_types.insert(mp4::kISO_13818_7_AAC_LC);
+@@ -515,8 +534,10 @@
+     }
+   }
+ 
+-  return new mp4::MP4StreamParser(audio_object_types, has_sbr, has_flac,
+-                                  has_iamf, has_dv);
++  auto* parser = new mp4::MP4StreamParser(audio_object_types, has_sbr,
++                                          has_flac, has_iamf, has_dv);
++  parser->ParcSetHasAlac(has_alac);
++  return parser;
+ }
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+ static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,

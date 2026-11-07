@@ -2224,15 +2224,13 @@
  #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
  
  namespace blink {
-@@ -72,6 +77,103 @@
-             : WebMediaKeySystemMediaCapability::EncryptionScheme::kNotSpecified;
-   }
+@@ -74,6 +79,104 @@
    return result;
-+}
-+
+ }
+ 
 +// Parc: whether FairPlay plays `codec` (its CdmCapability in
-+// fairplay-media.patch): AAC, AC-3, E-AC-3, FLAC and Opus audio; H.264, HEVC
-+// and Dolby Vision profile 5 video.
++// fairplay-media.patch): AAC, AC-3, E-AC-3, FLAC, Opus and ALAC audio; H.264,
++// HEVC and Dolby Vision profile 5 video.
 +bool IsParcFairPlayCodec(const String& codec, bool video) {
 +  if (codec.empty() || !codec.ContainsOnlyAsciiOrEmpty()) {
 +    return false;
@@ -2251,7 +2249,8 @@
 +                    parsed->codec == media::AudioCodec::kAC3 ||
 +                    parsed->codec == media::AudioCodec::kEAC3 ||
 +                    parsed->codec == media::AudioCodec::kFLAC ||
-+                    parsed->codec == media::AudioCodec::kOpus);
++                    parsed->codec == media::AudioCodec::kOpus ||
++                    parsed->codec == media::AudioCodec::kALAC);
 +}
 +
 +// Parc: how FairPlay judges a capability's contentType under Safari's
@@ -2325,10 +2324,12 @@
 +  capability.codecs = own_codecs.empty()
 +                          ? WebString::FromAscii(own_codec)
 +                          : WebString(own_codecs.ToString());
- }
- 
++}
++
  static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
-@@ -96,21 +198,109 @@
+     const Vector<String>& session_types) {
+   std::vector<WebEncryptedMediaSessionType> result(session_types.size());
+@@ -96,21 +199,109 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -2438,7 +2439,7 @@
      DCHECK(config->hasDistinctiveIdentifier());
      web_config.distinctive_identifier =
          EncryptedMediaUtils::ConvertToMediaKeysRequirement(
-@@ -123,6 +313,17 @@
+@@ -123,6 +314,17 @@
  
      if (config->hasSessionTypes()) {
        web_config.session_types = ConvertSessionTypes(config->sessionTypes());
@@ -2456,7 +2457,7 @@
      } else {
        // From the spec
        // (http://w3c.github.io/encrypted-media/#idl-def-mediakeysystemconfiguration):
-@@ -137,6 +338,9 @@
+@@ -137,6 +339,9 @@
  
      // If |label| is not present, it will be a null string.
      web_config.label = config->label();
@@ -2614,32 +2615,36 @@
  #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
  #include "third_party/blink/renderer/modules/webcodecs/array_buffer_util.h"
  #include "third_party/blink/renderer/modules/webcodecs/audio_data.h"
-@@ -209,7 +211,15 @@
+@@ -209,7 +211,17 @@
    }
  
    AudioDecoderSupport* support = AudioDecoderSupport::Create();
 -  support->setSupported(media::IsDecoderSupportedAudioType(*audio_type));
 +  bool supported = media::IsDecoderSupportedAudioType(*audio_type);
-+  // Parc: AC-3 and E-AC-3 only under Safari's identity
++  // Parc: AC-3 and E-AC-3 only under Safari's identity, ALAC never, as
++  // Safari's WebCodecs
 +  // (third_party/blink/renderer/core/frame/parc_safari_identity.h).
 +  if (supported && IsParcSafariOnlyAudioCodecs(config->codec())) {
 +    ExecutionContext* context = ExecutionContext::From(script_state);
-+    supported =
-+        context && IsParcSafariIdentityUserAgent(context->UserAgent());
++    supported = context &&
++                IsParcSafariIdentityUserAgent(context->UserAgent()) &&
++                IsParcSafariWebCodecsAudioCodec(config->codec());
 +  }
 +  support->setSupported(supported);
    support->setConfig(CopyConfig(*config));
    return ToResolvedPromise<AudioDecoderSupport>(script_state, support);
  }
-@@ -352,6 +362,17 @@
+@@ -352,6 +364,19 @@
      const ConfigType& config,
      String* js_error_message) {
    DCHECK(js_error_message);
-+  // Parc: AC-3 and E-AC-3 only under Safari's identity
++  // Parc: AC-3 and E-AC-3 only under Safari's identity, ALAC never, as
++  // Safari's WebCodecs
 +  // (third_party/blink/renderer/core/frame/parc_safari_identity.h).
 +  if (IsParcSafariOnlyAudioCodecs(config.codec())) {
 +    ExecutionContext* context = GetExecutionContext();
-+    if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent()) ||
++        !IsParcSafariWebCodecsAudioCodec(config.codec())) {
 +      *js_error_message =
 +          "Unsupported configuration. Check isConfigSupported() prior to "
 +          "calling configure().";

@@ -648,6 +648,39 @@ std::optional<std::vector<uint8_t>> OpusSpecificBoxPayload(const std::vector<uin
   return out;
 }
 
+std::optional<std::vector<uint8_t>> AlacSpecificBoxPayload(const std::vector<uint8_t>& extra_data) {
+  constexpr size_t kConfigSize = 24;
+  // ALACMagicCookieDescription.txt: frameLength (BE32), compatibleVersion,
+  // bitDepth, pb, mb, kb, numChannels, maxRun (BE16), maxFrameBytes,
+  // avgBitRate, sampleRate (BE32 each).
+  size_t offset = 0;
+  auto atom_at = [&extra_data](size_t at, uint32_t type) {
+    return extra_data.size() >= at + 12 &&
+           (uint32_t(extra_data[at + 4]) << 24 | uint32_t(extra_data[at + 5]) << 16 |
+            uint32_t(extra_data[at + 6]) << 8 | extra_data[at + 7]) == type;
+  };
+  if (atom_at(offset, FourCC('f', 'r', 'm', 'a'))) {
+    offset += 12;  // Size, type and the original format.
+  }
+  if (atom_at(offset, FourCC('a', 'l', 'a', 'c'))) {
+    offset += 12;  // Size, type, version and flags.
+  }
+  if (extra_data.size() < offset + kConfigSize) {
+    return std::nullopt;
+  }
+  const uint8_t* config = extra_data.data() + offset;
+  const uint32_t frame_length =
+      uint32_t(config[0]) << 24 | uint32_t(config[1]) << 16 | uint32_t(config[2]) << 8 | config[3];
+  const uint8_t bit_depth = config[5];
+  if (!frame_length || config[4] != 0 || !config[9] ||
+      (bit_depth != 16 && bit_depth != 20 && bit_depth != 24 && bit_depth != 32)) {
+    return std::nullopt;
+  }
+  std::vector<uint8_t> out = {0, 0, 0, 0};
+  out.insert(out.end(), config, config + kConfigSize);
+  return out;
+}
+
 int DefaultDolbyVisionCompatibilityId(int profile) {
   return profile == 8 ? 1 : profile == 9 ? 2 : 0;
 }

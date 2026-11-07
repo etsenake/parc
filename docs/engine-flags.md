@@ -366,6 +366,12 @@ for each message, which the check can't measure without a browser.
   here). They are rare.
 - MP3, FLAC, Opus, Vorbis and PCM are unchanged; Chromium's FFmpeg already
   decodes MP3. AC-3 and E-AC-3 stay off on macOS, as in Chrome.
+- ALAC (Apple Lossless) in MP4, which Safari plays: `AudioToolboxAudioDecoder`
+  in the GPU process decodes it from its magic cookie (the ALACSpecificConfig
+  from Chromium's MP4 parser, or the `alac` atom from FFmpeg's demuxer), and
+  `ffmpeg_common.cc` gives `src=` files planar float as for AAC. Pages see it
+  only under Safari's identity (`IsParcSafariOnlyAudioCodecs`), and never in
+  WebCodecs, which Safari's lacks.
 
 ## Widevine
 
