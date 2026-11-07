@@ -1463,7 +1463,26 @@
    // whether the codec is builtin or if we already received a DB response.
 --- a/third_party/blink/renderer/modules/mediasource/media_source.cc
 +++ b/third_party/blink/renderer/modules/mediasource/media_source.cc
-@@ -29,6 +29,7 @@
+@@ -5,7 +5,10 @@
+ #include "third_party/blink/renderer/modules/mediasource/media_source.h"
+ 
+ #include <memory>
++#include <optional>
++#include <string>
+ #include <tuple>
++#include <vector>
+ 
+ #include "base/feature_list.h"
+ #include "base/memory/ptr_util.h"
+@@ -19,6 +22,7 @@
+ #include "media/base/mime_util.h"
+ #include "media/base/supported_types.h"
+ #include "media/base/video_decoder_config.h"
++#include "media/filters/stream_parser_factory.h"
+ #include "media/media_buildflags.h"
+ #include "third_party/blink/public/platform/web_media_source.h"
+ #include "third_party/blink/public/platform/web_source_buffer.h"
+@@ -29,6 +33,7 @@
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/dom/events/event_queue.h"
  #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
@@ -1471,7 +1490,7 @@
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
  #include "third_party/blink/renderer/core/html/track/video_track_list.h"
-@@ -380,10 +381,15 @@
+@@ -380,10 +385,15 @@
    // can be buffered, with appropriate invocations of the
    // InitializationSegmentReceived and AppendError methods.
    ContentType content_type(type);
@@ -1489,11 +1508,42 @@
  
    if (!web_source_buffer) {
      // 2. If type contains a MIME type that is not supported ..., then throw a
-@@ -563,8 +569,27 @@
+@@ -562,9 +572,58 @@
+   }
  
    String codecs = content_type.Parameter("codecs");
-   ContentType filtered_content_type = content_type;
 +
++  // Parc: Safari's containers and codecs, for isTypeSupported,
++  // addSourceBuffer and changeType alike; ChunkDemuxer reads them the same
++  // way (media::StreamParserFactory::ParcSafariMediaSourceType()).
++  if (IsParcSafariIdentityUserAgent(context->UserAgent())) {
++    const std::string lower_mime_type = mime_type.ToAsciiLower().Ascii();
++    std::vector<std::string> parsed_codec_ids;
++    media::SplitCodecs(codecs.Ascii(), &parsed_codec_ids);
++    std::optional<media::StreamParserFactory::ParcSafariType> safari_type =
++        media::StreamParserFactory::ParcSafariMediaSourceType(lower_mime_type,
++                                                              parsed_codec_ids);
++    if (!safari_type) {
++      DVLOG(1) << __func__ << "(" << type << ", "
++               << base::ToString(enforce_codec_specificity)
++               << ") -> false (refused by Safari's Media Source)";
++      return false;
++    }
++    if (safari_type->type != lower_mime_type ||
++        safari_type->codecs != parsed_codec_ids) {
++      std::string safari_codecs;
++      for (const std::string& codec_id : safari_type->codecs) {
++        safari_codecs += (safari_codecs.empty() ? "" : ",") + codec_id;
++      }
++      mime_type = String::FromUtf8(safari_type->type);
++      codecs = String::FromUtf8(safari_codecs);
++      content_type = ContentType(
++          codecs.empty() ? mime_type
++                         : StrCat({mime_type, "; codecs=\"", codecs, "\""}));
++    }
++  }
+   ContentType filtered_content_type = content_type;
+ 
 +  // Parc: AC-3 and E-AC-3 only under Safari's identity, for isTypeSupported,
 +  // addSourceBuffer and changeType alike (parc_safari_identity.h).
 +  if (IsParcSafariOnlyAudioCodecs(codecs) &&
@@ -1503,7 +1553,7 @@
 +             << ") -> false (Dolby audio outside Safari's identity)";
 +    return false;
 +  }
- 
++
  #if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
 +  // Parc: under Safari's identity the TS names and codecs Safari's Media
 +  // Source takes and Parc plays, for isTypeSupported, addSourceBuffer and
@@ -1517,7 +1567,7 @@
    // Mime util doesn't include the mp2t container in order to prevent codec
    // support leaking into HtmlMediaElement.canPlayType. If the stream parser
    // is enabled, we should check that the codecs are valid using the mp4
-@@ -595,10 +620,20 @@
+@@ -595,10 +654,24 @@
    // from the codecs in the `filtered_content_type`.
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
    // specified, allow DV regardless of `enforce_codec_specificity`.
@@ -1525,12 +1575,16 @@
 +  // isTypeSupported too for Dolby Vision profile 5, which FairPlay plays
 +  // encrypted (its CDM capability in fairplay-media.patch), as Safari tells
 +  // it; other profiles stay in the query and answer as before
-+  // (parc_safari_identity.h).
-+  const bool parc_fairplay_profiles_only =
-+      enforce_codec_specificity &&
++  // (parc_safari_identity.h). addSourceBuffer and changeType drop only
++  // profiles 5 and 8, which the FairPlay Renderer plays clear there too;
++  // others stay in the query and are refused where the platform doesn't
++  // play them, as Safari's addSourceBuffer refuses profiles 4, 7 and 9.
++  const bool parc_safari_profiles_only =
 +      !base::FeatureList::IsEnabled(
 +          media::kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled) &&
 +      IsParcSafariIdentityUserAgent(context->UserAgent());
++  const bool parc_fairplay_profiles_only =
++      enforce_codec_specificity && parc_safari_profiles_only;
    if (base::FeatureList::IsEnabled(media::kPlatformEncryptedDolbyVision) &&
        (base::FeatureList::IsEnabled(
             media::kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled) ||
@@ -1539,22 +1593,23 @@
      // Remove any detected DolbyVision codec from the query to GetSupportsType.
      std::string filtered_codecs;
      std::vector<std::string> parsed_codec_ids;
-@@ -608,7 +643,9 @@
+@@ -608,7 +681,11 @@
        if (auto result =
                media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
                                             /*allow_ambiguous_matches=*/false)) {
 -        if (result->codec == media::VideoCodec::kDolbyVision) {
 +        if (result->codec == media::VideoCodec::kDolbyVision &&
-+            (!parc_fairplay_profiles_only ||
-+             result->profile == media::DOLBYVISION_PROFILE5)) {
++            (!parc_safari_profiles_only ||
++             result->profile == media::DOLBYVISION_PROFILE5 ||
++             (!enforce_codec_specificity &&
++              result->profile == media::DOLBYVISION_PROFILE8))) {
            continue;
          }
        }
-@@ -659,6 +696,15 @@
-       MIMETypeRegistry::SupportsMediaSourceMIMEType(mime_type, codecs);
+@@ -660,6 +737,15 @@
  
    bool result = supported == MIMETypeRegistry::kSupported;
-+
+ 
 +  // Parc: Safari takes a type without codecs that it may play, for
 +  // isTypeSupported, addSourceBuffer and changeType alike (WebKit's
 +  // MediaSource::isTypeSupported); its parser then takes the stream's codecs,
@@ -1563,10 +1618,11 @@
 +      IsParcSafariIdentityUserAgent(context->UserAgent())) {
 +    result = true;
 +  }
- 
++
    DVLOG(2) << __func__ << "(" << type << ", "
             << base::ToString(enforce_codec_specificity) << ") -> "
-@@ -1015,6 +1061,23 @@
+            << base::ToString(result);
+@@ -1015,6 +1101,23 @@
    DCHECK_LE(highest_buffered_presentation_timestamp,
              std::isnan(old_duration) ? 0 : old_duration);
  
@@ -1590,7 +1646,7 @@
    // 3. Set old duration to the current value of duration.
    // Done for step 1 above, already.
    // 4. Update duration to new duration.
-@@ -1051,6 +1114,13 @@
+@@ -1051,6 +1154,13 @@
  
    ready_state_ = state;
  
@@ -1604,7 +1660,7 @@
    OnReadyStateChange(old_state, state);
  }
  
-@@ -1326,11 +1396,21 @@
+@@ -1326,11 +1436,21 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);

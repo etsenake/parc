@@ -1406,7 +1406,25 @@
    }
 --- a/media/filters/chunk_demuxer.cc
 +++ b/media/filters/chunk_demuxer.cc
-@@ -142,6 +142,63 @@
+@@ -7,13 +7,17 @@
+ #include <algorithm>
+ #include <limits>
+ #include <memory>
++#include <optional>
++#include <string>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/not_fatal_until.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
+ #include "base/task/bind_post_task.h"
+ #include "base/trace_event/trace_event.h"
+ #include "media/base/audio_decoder_config.h"
+@@ -142,6 +146,63 @@
    return true;
  }
  
@@ -1470,7 +1488,7 @@
  void ChunkDemuxerStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -231,6 +288,7 @@
+@@ -231,6 +292,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -1478,7 +1496,7 @@
      return true;
    }
  
-@@ -247,6 +305,7 @@
+@@ -247,6 +309,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -1486,7 +1504,7 @@
      return true;
    }
  
-@@ -529,6 +588,14 @@
+@@ -529,6 +592,14 @@
      return;
    }
  
@@ -1501,7 +1519,7 @@
    SeekAllSources(time);
    StartReturningData();
  
-@@ -634,6 +701,8 @@
+@@ -634,6 +705,8 @@
  
    AbortPendingReads_Locked();
    SeekAllSources(seek_time);
@@ -1510,7 +1528,7 @@
  
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -641,6 +710,43 @@
+@@ -641,6 +714,43 @@
    }
  
    RunSeekCB_Locked(PIPELINE_OK);
@@ -1554,7 +1572,7 @@
  }
  
  ChunkDemuxer::Status ChunkDemuxer::AddId(
-@@ -656,12 +762,13 @@
+@@ -656,12 +766,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -1570,7 +1588,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
                         std::nullopt);
  }
-@@ -679,12 +786,13 @@
+@@ -679,12 +790,13 @@
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -1586,7 +1604,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,17 +804,18 @@
+@@ -696,17 +808,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
  
@@ -1608,7 +1626,7 @@
    if (!stream_parser) {
      DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
               << " codecs=" << codecs;
-@@ -762,6 +871,11 @@
+@@ -762,6 +875,11 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
@@ -1620,7 +1638,7 @@
  
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -774,7 +888,17 @@
+@@ -774,7 +892,17 @@
  
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
                                      base::Unretained(this), id),
@@ -1639,7 +1657,7 @@
  
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
-@@ -802,7 +926,10 @@
+@@ -802,7 +930,10 @@
  void ChunkDemuxer::RemoveId(const std::string& id) {
    DVLOG(1) << __func__ << " id=" << id;
    base::AutoLock auto_lock(lock_);
@@ -1650,7 +1668,7 @@
  
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
-@@ -830,6 +957,7 @@
+@@ -830,6 +961,7 @@
      CHECK(stream_found);
    }
    id_to_streams_map_.erase(id);
@@ -1658,7 +1676,7 @@
  }
  
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
-@@ -870,6 +998,7 @@
+@@ -870,6 +1002,7 @@
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
@@ -1666,7 +1684,7 @@
  
    ChunkDemuxerStream* enabled_stream = nullptr;
    if (track_id.has_value()) {
-@@ -891,12 +1020,141 @@
+@@ -891,12 +1024,160 @@
        stream->SetEnabled(false, curr_time);
      }
    }
@@ -1727,12 +1745,31 @@
 +    const std::string& content_type,
 +    const std::string& codecs) {
 +  lock_.AssertAcquired();
-+  std::unique_ptr<StreamParser> stream_parser =
-+      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get());
-+  if (!stream_parser && codecs.empty() && parc_safari_init_segment_rules_) {
-+    stream_parser = StreamParserFactory::ParcCreateWithoutCodecs(content_type);
++  if (!parc_safari_init_segment_rules_) {
++    return CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get());
++  }
++  std::optional<StreamParserFactory::ParcSafariType> safari_type =
++      ParcSafariMediaSourceType(content_type, codecs);
++  if (!safari_type) {
++    return nullptr;
++  }
++  std::unique_ptr<StreamParser> stream_parser = StreamParserFactory::Create(
++      safari_type->type, safari_type->codecs, media_log_.get());
++  if (!stream_parser && safari_type->codecs.empty()) {
++    stream_parser =
++        StreamParserFactory::ParcCreateWithoutCodecs(safari_type->type);
 +  }
 +  return stream_parser;
++}
++
++// static
++std::optional<StreamParserFactory::ParcSafariType>
++ChunkDemuxer::ParcSafariMediaSourceType(const std::string& content_type,
++                                        const std::string& codecs) {
++  std::vector<std::string> parsed_codec_ids;
++  SplitCodecs(codecs, &parsed_codec_ids);
++  return StreamParserFactory::ParcSafariMediaSourceType(
++      base::ToLowerASCII(content_type), parsed_codec_ids);
 +}
 +
 +void ChunkDemuxer::ParcSetDolbyVisionAppendedCallback(
@@ -1808,7 +1845,7 @@
  }
  
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
-@@ -913,7 +1171,21 @@
+@@ -913,7 +1194,21 @@
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
@@ -1831,7 +1868,7 @@
  }
  
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
-@@ -1013,6 +1285,7 @@
+@@ -1013,6 +1308,7 @@
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
@@ -1839,7 +1876,7 @@
  
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1075,6 +1348,7 @@
+@@ -1075,6 +1371,7 @@
          DVLOG(1) << "AppendChunks(): called in unexpected state " << state_;
          return false;
      }
@@ -1847,7 +1884,7 @@
  
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1102,6 +1376,7 @@
+@@ -1102,6 +1399,7 @@
    source_state_map_[id]->ResetParserState(append_window_start,
                                            append_window_end,
                                            timestamp_offset);
@@ -1855,7 +1892,7 @@
    // ResetParserState can possibly emit some buffers.
    // Need to check whether seeking can be completed.
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
-@@ -1136,8 +1411,87 @@
+@@ -1136,8 +1434,87 @@
    if (start == duration_)
      return;
  
@@ -1943,11 +1980,26 @@
  }
  
  bool ChunkDemuxer::CanChangeType(const std::string& id,
-@@ -1162,11 +1516,15 @@
+@@ -1162,11 +1539,30 @@
      return false;
    }
  
-+  if (change_type_filter_ && !change_type_filter_.Run(content_type, codecs)) {
++  // Parc: under Safari's init segment rules the filter judges the type and
++  // codecs the parser takes (ParcCreateParser_Locked()).
++  std::string filter_type = content_type;
++  std::string filter_codecs = codecs;
++  if (parc_safari_init_segment_rules_) {
++    std::optional<StreamParserFactory::ParcSafariType> safari_type =
++        ParcSafariMediaSourceType(content_type, codecs);
++    if (!safari_type) {
++      return false;
++    }
++    filter_type = safari_type->type;
++    filter_codecs = base::JoinString(safari_type->codecs, ",");
++  }
++
++  if (change_type_filter_ &&
++      !change_type_filter_.Run(filter_type, filter_codecs)) {
 +    return false;
 +  }
 +
@@ -1960,7 +2012,7 @@
    return !!stream_parser;
  }
  
-@@ -1182,7 +1540,7 @@
+@@ -1182,7 +1578,7 @@
    DCHECK(IsValidId_Locked(id));
  
    std::unique_ptr<media::StreamParser> stream_parser(
@@ -1969,7 +2021,7 @@
    // Caller should query CanChangeType() first to protect from failing this.
    DCHECK(stream_parser);
    source_state_map_[id]->ChangeType(std::move(stream_parser),
-@@ -1244,6 +1602,7 @@
+@@ -1244,6 +1640,7 @@
    DCHECK(duration_td.is_positive());
  
    user_specified_duration_ = duration;
@@ -1977,7 +2029,7 @@
    duration_ = duration_td;
    host_->SetDuration(duration_);
  
-@@ -1251,6 +1610,7 @@
+@@ -1251,6 +1648,7 @@
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
@@ -1985,7 +2037,7 @@
  }
  
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
-@@ -1332,6 +1692,10 @@
+@@ -1332,6 +1730,10 @@
  
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
      RunSeekCB_Locked(PIPELINE_OK);
@@ -1996,7 +2048,7 @@
  }
  
  void ChunkDemuxer::UnmarkEndOfStream() {
-@@ -1440,6 +1804,10 @@
+@@ -1440,6 +1842,10 @@
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
@@ -2007,7 +2059,7 @@
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1488,6 +1856,45 @@
+@@ -1488,6 +1894,45 @@
    RunInitCB_Locked(PIPELINE_OK);
  }
  
@@ -2053,7 +2105,7 @@
  // static
  MediaTrack::Id ChunkDemuxer::GenerateMediaTrackId() {
    static unsigned g_track_count = 0;
-@@ -1525,6 +1932,7 @@
+@@ -1525,6 +1970,7 @@
    track_id_to_demux_stream_map_[media_track_id] = stream.get();
    id_to_streams_map_[source_id].push_back(stream.get());
    stream->SetEnabled(owning_vector->empty(), base::TimeDelta());
@@ -2061,7 +2113,7 @@
    owning_vector->push_back(std::move(stream));
    return owning_vector->back().get();
  }
-@@ -1598,6 +2006,13 @@
+@@ -1598,6 +2044,13 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -2075,7 +2127,7 @@
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
  
-@@ -1605,6 +2020,7 @@
+@@ -1605,6 +2058,7 @@
  }
  
  void ChunkDemuxer::StartReturningData() {
@@ -2083,7 +2135,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->StartReturningData();
-@@ -1612,6 +2028,7 @@
+@@ -1612,6 +2066,7 @@
  }
  
  void ChunkDemuxer::AbortPendingReads_Locked() {
@@ -2091,7 +2143,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +2036,7 @@
+@@ -1619,6 +2074,7 @@
  }
  
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
@@ -2099,7 +2151,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +2068,28 @@
+@@ -1650,6 +2106,28 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -2201,7 +2253,7 @@
  
    // Gets the currently buffered ranges for the specified ID.
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
-@@ -313,6 +342,36 @@
+@@ -313,6 +342,37 @@
    void SetPlaybackRate(double rate) override {}
  
    void DisableCanChangeType() override;
@@ -2226,7 +2278,8 @@
 +  // AddId(), CanChangeType() and ChangeType() then also take a type without
 +  // codecs that needs them otherwise (video/mp4, audio/mp4, video/webm,
 +  // audio/webm, video/mp2t), as Safari's Media Source does
-+  // (StreamParserFactory::ParcCreateWithoutCodecs()).
++  // (StreamParserFactory::ParcCreateWithoutCodecs()), and read types and
++  // codecs as Safari does (ParcSafariMediaSourceType()).
 +  void ParcSetSafariInitSegmentRules(bool safari);
 +  // Parc: lets AddId() succeed after initialization, as WebKit's MediaSource
 +  // adds a SourceBuffer whenever it is open. |streams_added_cb| runs, posted
@@ -2238,7 +2291,7 @@
  
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -379,6 +438,27 @@
+@@ -379,6 +439,27 @@
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
  
@@ -2266,7 +2319,7 @@
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
    // |content_type| indicates the ContentType of the MIME type for the data that
-@@ -491,6 +571,15 @@
+@@ -491,6 +572,15 @@
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -2282,7 +2335,7 @@
  
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -550,6 +639,7 @@
+@@ -550,6 +640,7 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
    base::OnceClosure open_cb_;
    const base::RepeatingClosure progress_cb_;
@@ -2290,7 +2343,7 @@
    EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
  
    // MediaLog for reporting messages and properties to debug content and engine.
-@@ -597,6 +687,64 @@
+@@ -597,6 +688,69 @@
        track_id_to_demux_stream_map_;
  
    bool supports_change_type_ = true;
@@ -2304,11 +2357,16 @@
 +  base::RepeatingClosure parc_dolby_vision_appended_cb_;
 +  // Parc: see ParcSetSafariInitSegmentRules(). Guarded by `lock_`.
 +  bool parc_safari_init_segment_rules_ = false;
-+  // Parc: the parser for |content_type| and |codecs|, or for |content_type|
-+  // alone under Safari's init segment rules. Called with `lock_` held.
++  // Parc: the parser for |content_type| and |codecs|, read as Safari reads
++  // them under Safari's init segment rules. Called with `lock_` held.
 +  std::unique_ptr<StreamParser> ParcCreateParser_Locked(
 +      const std::string& content_type,
 +      const std::string& codecs);
++  // Parc: |content_type| and |codecs| as Safari's Media Source reads them
++  // (StreamParserFactory::ParcSafariMediaSourceType()).
++  static std::optional<StreamParserFactory::ParcSafariType>
++  ParcSafariMediaSourceType(const std::string& content_type,
++                            const std::string& codecs);
 +  // Parc: a SourceBufferState took Dolby Vision. Called with `lock_` held.
 +  void ParcOnDolbyVisionAppended();
 +  // Parc: see ParcSetSafariEviction(). Guarded by `lock_`.
@@ -2700,7 +2758,17 @@
  #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 --- a/media/formats/mp4/box_definitions.cc
 +++ b/media/formats/mp4/box_definitions.cc
-@@ -459,6 +459,11 @@
+@@ -85,6 +85,9 @@
+                                      dovi_config->dv_level};
+   DolbyVisionInfo dv_info;
+   dv_info.codec_info = dv_codec_info;
++  if (dovi_config->dv_bl_signal_compatibility_id != 0) {
++    dv_info.parc_base_codec_info = video_info;
++  }
+   dv_info.color_space = mp4::ParseDolbyVisionColorSpace(
+       dovi_config->codec_profile, dovi_config->dv_bl_signal_compatibility_id);
+ 
+@@ -459,6 +462,11 @@
  FourCC ProtectionSchemeInfo::BoxType() const { return FOURCC_SINF; }
  
  bool ProtectionSchemeInfo::Parse(BoxReader* reader) {
@@ -2712,14 +2780,12 @@
    RCHECK(reader->ScanChildren() &&
           reader->ReadChild(&format) &&
           reader->ReadChild(&type));
-@@ -1588,7 +1593,45 @@
-   // The lower 4 bits of byte 13 and all of bytes 14-17 (number of samples in
-   // stream) are ignored here.
+@@ -1590,8 +1598,46 @@
    // Bytes 18-33 (hash of the unencoded audio data) are ignored here.
-+
-+  return true;
-+}
  
+   return true;
++}
++
 +ALACSpecificBox::ALACSpecificBox() = default;
 +
 +ALACSpecificBox::ALACSpecificBox(const ALACSpecificBox& other) = default;
@@ -2728,8 +2794,8 @@
 +
 +FourCC ALACSpecificBox::BoxType() const {
 +  return FOURCC_ALAC;
-+}
-+
+ }
+ 
 +bool ALACSpecificBox::Parse(BoxReader* reader) {
 +  constexpr size_t kConfigSize = 24;
 +  RCHECK(reader->ReadFullBoxHeader());
@@ -2755,23 +2821,26 @@
 +                          channel_count > 0 && sample_rate > 0,
 +                      reader->media_log(),
 +                      "Unsupported ALACSpecificConfig.");
-   return true;
- }
++  return true;
++}
++
+ OpusSpecificBox::OpusSpecificBox()
+     : seek_preroll(base::Milliseconds(80)), codec_delay_in_frames(0) {}
  
-@@ -1923,6 +1966,13 @@
+@@ -1921,6 +1967,13 @@
+       if (!reader->ReadChild(&sinf))
+         return false;
      }
-   }
- 
++  }
++
 +  // Parc: Apple Lossless keeps its config in an ALACSpecificBox.
 +  if (format == FOURCC_ALAC ||
 +      (format == FOURCC_ENCA && sinf.format.format == FOURCC_ALAC)) {
 +    RCHECK_MEDIA_LOGGED(reader->ReadChild(&alac), reader->media_log(),
 +                        "Failure parsing ALACSpecificBox (alac)");
-+  }
-+
+   }
+ 
    if (format == FOURCC_OPUS ||
-       (format == FOURCC_ENCA && sinf.format.format == FOURCC_OPUS)) {
-     RCHECK_MEDIA_LOGGED(reader->ReadChild(&dops), reader->media_log(),
 --- a/media/formats/mp4/box_definitions.h
 +++ b/media/formats/mp4/box_definitions.h
 @@ -164,6 +164,9 @@
@@ -2784,12 +2853,22 @@
  
    bool HasSupportedScheme() const;
    bool IsCbcsEncryptionScheme() const;
-@@ -437,6 +440,18 @@
-   uint32_t sample_rate;
-   uint8_t channel_count;
+@@ -343,6 +346,11 @@
+ struct MEDIA_EXPORT DolbyVisionInfo {
+   CodecProfileLevel codec_info;
+   VideoColorSpace color_space;
++  // Parc: the codec of the sample entry's own configuration (avcC, hvcC or
++  // av1C) where the base layer is signalled compatible with one (any
++  // dv_bl_signal_compatibility_id but 0), which MP4StreamParser plays under
++  // Safari's init segment rules for a profile it can't play as Dolby Vision.
++  std::optional<CodecProfileLevel> parc_base_codec_info;
+ };
+ 
+ struct MEDIA_EXPORT Stereoscopic3DVideo : Box {
+@@ -439,6 +447,18 @@
    uint8_t bits_per_sample;
-+};
-+
+ };
+ 
 +// Parc: ALACSpecificBox, the 'alac' box inside an 'alac' sample entry
 +// (Apple's ALACMagicCookieDescription): version and flags 0, then the
 +// 24-byte ALACSpecificConfig, which AudioToolbox takes as the magic cookie.
@@ -2800,10 +2879,12 @@
 +  uint8_t bit_depth = 0;
 +  uint8_t channel_count = 0;
 +  uint32_t sample_rate = 0;
- };
- 
++};
++
  struct MEDIA_EXPORT OpusSpecificBox : Box {
-@@ -509,6 +524,7 @@
+   DECLARE_BOX_METHODS(OpusSpecificBox);
+   std::vector<uint8_t> extradata;
+@@ -509,6 +529,7 @@
    ElementaryStreamDescriptor esds;
    FlacSpecificBox dfla;
    OpusSpecificBox dops;
@@ -2843,17 +2924,17 @@
  EncryptionScheme GetEncryptionScheme(const ProtectionSchemeInfo& sinf) {
    if (!sinf.HasSupportedScheme())
      return EncryptionScheme::kUnencrypted;
-@@ -173,6 +189,10 @@
+@@ -172,6 +188,10 @@
+       num_sei_recovery_point_promotions_(0) {}
  
  MP4StreamParser::~MP4StreamParser() = default;
- 
++
 +void MP4StreamParser::ParcIgnoreDeclaredCodecs() {
 +  parc_ignore_declared_codecs_ = true;
 +}
-+
+ 
  void MP4StreamParser::Init(
      InitCB init_cb,
-     NewConfigCB config_cb,
 @@ -455,6 +475,7 @@
    int detected_audio_track_count = 0;
    int detected_video_track_count = 0;
@@ -2862,10 +2943,19 @@
  
    for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
         track != moov_->tracks.end(); ++track) {
-@@ -497,8 +518,12 @@
+@@ -497,8 +518,21 @@
        FourCC audio_format = (entry.format == FOURCC_ENCA)
                                  ? entry.sinf.format.format
                                  : entry.format;
++#if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
++      // Parc: AVStreamDataParser leaves IAMF tracks out of the init segment
++      // it gives Safari's SourceBuffer, which fails one left with no tracks
++      // (sourceBufferPrivateDidReceiveInitializationSegment, step 2).
++      if (parc_ignore_declared_codecs_ && audio_format == FOURCC_IAMF) {
++        --detected_audio_track_count;
++        continue;
++      }
++#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
 +      if (entry.format == FOURCC_ENCA) {
 +        AddSinfInitData(entry.sinf, &sinf_init_data);
 +      }
@@ -2875,7 +2965,7 @@
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
            audio_format != FOURCC_AC3 && audio_format != FOURCC_EAC3 &&
  #endif
-@@ -545,7 +570,7 @@
+@@ -545,7 +579,7 @@
        } else if (audio_format == FOURCC_FLAC) {
          // FLAC-in-ISOBMFF does not use object type indication. |audio_format|
          // is sufficient for identifying FLAC codec.
@@ -2884,7 +2974,7 @@
            MEDIA_LOG(ERROR, media_log_) << "FLAC audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -556,11 +581,27 @@
+@@ -556,11 +590,27 @@
          channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
          sample_per_second = entry.samplerate;
          extra_data = entry.dfla.stream_info;
@@ -2913,7 +3003,7 @@
            MEDIA_LOG(ERROR, media_log_) << "IAMF audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -618,7 +659,8 @@
+@@ -618,7 +668,8 @@
          }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
          DVLOG(1) << "audio_type 0x" << std::hex << static_cast<int>(audio_type);
@@ -2923,7 +3013,7 @@
            if (!strict_audio_object_types_->contains(audio_type)) {
              MEDIA_LOG(ERROR, media_log_)
                  << "audio object type 0x" << std::hex
-@@ -703,7 +745,13 @@
+@@ -703,7 +754,13 @@
        }
  
        SampleFormat sample_format;
@@ -2938,7 +3028,7 @@
          sample_format = kSampleFormatU8;
        } else if (entry.samplesize == 16) {
          sample_format = kSampleFormatS16;
-@@ -774,6 +822,9 @@
+@@ -774,6 +831,9 @@
                                       << " in stsd box.";
          return false;
        }
@@ -2948,7 +3038,49 @@
  
        // TODO(strobe): Recover correct crop box
        gfx::Size coded_size(entry.width, entry.height);
-@@ -888,6 +939,10 @@
+@@ -803,7 +863,31 @@
+       VideoCodec video_codec = entry.video_info.codec;
+       VideoCodecProfile video_codec_profile = entry.video_info.profile;
+       VideoCodecLevel video_codec_level = entry.video_info.level;
+-      if (entry.dv_info.has_value()) {
++      // Parc: AVStreamDataParser gives Safari's SourceBuffer a Dolby Vision
++      // track in an avc1, avc3, hvc1, hev1 or av01 sample entry as that
++      // entry's codec. A compatible base layer plays where the FairPlay
++      // Renderer can't play the profile as Dolby Vision (it plays 5 and 8).
++      bool parc_base_layer = false;
++      if (entry.dv_info.has_value() && parc_ignore_declared_codecs_ &&
++          entry.dv_info->parc_base_codec_info.has_value() &&
++          entry.dv_info->codec_info.profile != DOLBYVISION_PROFILE5 &&
++          entry.dv_info->codec_info.profile != DOLBYVISION_PROFILE8) {
++        const FourCC video_format =
++            entry.format == FOURCC_ENCV ? entry.sinf.format.format
++                                        : entry.format;
++        parc_base_layer = video_format == FOURCC_AVC1 ||
++                          video_format == FOURCC_AVC3 ||
++#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
++                          video_format == FOURCC_HVC1 ||
++                          video_format == FOURCC_HEV1 ||
++#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
++                          video_format == FOURCC_AV01;
++      }
++      if (parc_base_layer) {
++        video_codec = entry.dv_info->parc_base_codec_info->codec;
++        video_codec_profile = entry.dv_info->parc_base_codec_info->profile;
++        video_codec_level = entry.dv_info->parc_base_codec_info->level;
++      } else if (entry.dv_info.has_value()) {
+         DCHECK_EQ(entry.dv_info->codec_info.codec, VideoCodec::kDolbyVision);
+         if (has_dv_) {
+           video_codec = entry.dv_info->codec_info.codec;
+@@ -835,7 +919,7 @@
+       if (entry.video_color_space.IsSpecified())
+         video_config.set_color_space_info(entry.video_color_space);
+ 
+-      if (entry.dv_info.has_value() && has_dv_ &&
++      if (entry.dv_info.has_value() && has_dv_ && !parc_base_layer &&
+           entry.dv_info->color_space.IsSpecified()) {
+         video_config.set_color_space_info(entry.dv_info->color_space);
+       }
+@@ -888,6 +972,10 @@
  
    if (!moov_->pssh.empty())
      OnEncryptedMediaInitData(moov_->pssh);
@@ -10079,7 +10211,7 @@
  }
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
-@@ -782,6 +803,32 @@
+@@ -782,6 +803,76 @@
  }
  
  // static
@@ -10109,6 +10241,50 @@
 +}
 +
 +// static
++std::optional<StreamParserFactory::ParcSafariType>
++StreamParserFactory::ParcSafariMediaSourceType(
++    std::string_view type,
++    base::span<const std::string> codecs) {
++  static constexpr auto kIsoBmffTypes = std::to_array<std::string_view>(
++      {"application/mp4", "audio/3gpp", "audio/3gpp2", "audio/mp4",
++       "audio/x-m4a", "audio/x-m4b", "audio/x-m4p", "audio/x-m4r",
++       "audio/x-quicktime", "video/3gpp", "video/3gpp2", "video/quicktime",
++       "video/x-m4v"});
++  static constexpr auto kMp3Types = std::to_array<std::string_view>(
++      {"audio/mp3", "audio/mpeg", "audio/mpeg3", "audio/mpg", "audio/x-mp3",
++       "audio/x-mpeg", "audio/x-mpeg3", "audio/x-mpg"});
++
++  ParcSafariType result{std::string(type),
++                        std::vector<std::string>(codecs.begin(), codecs.end())};
++#if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
++  if (std::ranges::any_of(result.codecs, [](const std::string& codec_id) {
++        return base::MatchPattern(codec_id, kIAMFCodecInfo1.pattern) ||
++               base::MatchPattern(codec_id, kIAMFCodecInfo2.pattern);
++      })) {
++    return std::nullopt;
++  }
++#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
++  if (std::ranges::find(kIsoBmffTypes, type) != kIsoBmffTypes.end()) {
++    result.type = "video/mp4";
++  } else if (std::ranges::find(kMp3Types, type) != kMp3Types.end()) {
++    result.type = "audio/mpeg";
++    std::erase(result.codecs, "mp3");
++  } else if (type == "audio/aacp") {
++    result.type = "audio/aac";
++#if BUILDFLAG(USE_PROPRIETARY_CODECS)
++  } else if (type == "audio/aac") {
++    NullMediaLog media_log;
++    std::erase_if(result.codecs, [&media_log](const std::string& codec_id) {
++      return base::MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern) ||
++             (base::MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern) &&
++              ValidateMP4ACodecID(codec_id, &media_log));
++    });
++#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
++  }
++  return result;
++}
++
++// static
  std::unique_ptr<StreamParser> StreamParserFactory::Create(
      std::unique_ptr<AudioDecoderConfig> audio_config) {
    DCHECK(audio_config);
@@ -10128,10 +10304,24 @@
    virtual bool GetGenerateTimestampsFlag() const = 0;
 --- a/media/formats/mp4/mp4_stream_parser_unittest.cc
 +++ b/media/formats/mp4/mp4_stream_parser_unittest.cc
-@@ -518,6 +518,31 @@
-   EXPECT_EQ(audio_decoder_config_.profile(), AudioCodecProfile::kUnknown);
- }
+@@ -8,9 +8,11 @@
+ #include <stdint.h>
  
+ #include <algorithm>
++#include <array>
+ #include <memory>
+ #include <string>
+ #include <tuple>
++#include <vector>
+ 
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+@@ -516,8 +518,33 @@
+   InitializeParserWithInitParametersExpectations(params);
+   ParseMP4File("bear-mpeg2-aac-only_frag.mp4", 512);
+   EXPECT_EQ(audio_decoder_config_.profile(), AudioCodecProfile::kUnknown);
++}
++
 +// Parc: a type naming only video (codecs="avc1...") fails an init segment
 +// that also has AAC, unless the parser ignores the declared codecs, as on a
 +// document presenting Safari's identity
@@ -10146,8 +10336,8 @@
 +  EXPECT_MEDIA_LOG(
 +      ErrorLog("does not match what is specified in the mimetype"));
 +  EXPECT_FALSE(AppendAllDataThenParseInPieces(*buffer, 512));
-+}
-+
+ }
+ 
 +TEST_F(MP4StreamParserTest, ParcIgnoresDeclaredAudioObjectTypes) {
 +  parser_.reset(new MP4StreamParser(base::flat_set<int>(), false, false,
 +                                    false, false));
@@ -10160,9 +10350,131 @@
  TEST_F(MP4StreamParserTest, MPEG4_XHE_AAC) {
    InSequence s;  // The keyframeness sequence matters for this test.
    base::flat_set<int> audio_object_types;
+@@ -850,8 +877,95 @@
+   EXPECT_EQ(VideoCodec::kHEVC, video_decoder_config_.codec());
+   EXPECT_EQ(HEVCPROFILE_MAIN10, video_decoder_config_.profile());
+ #endif
++}
++
++#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
++// Parc: the profile 8.1 stream, its hvc1 sample entry now configured as
++// profile 7 with an HDR10 base layer (compatibility id 6, which Chromium
++// doesn't count as backward compatible) in a dvcC box.
++scoped_refptr<DecoderBuffer> ReadParcDVProfile7InHvc1() {
++  scoped_refptr<DecoderBuffer> file =
++      ReadTestDataFile("glass-blowing2-dolby-vision-profile-8-1-frag.mp4");
++  std::vector<uint8_t> data(file->begin(), file->end());
++  constexpr std::array<uint8_t, 4> kDvvC = {'d', 'v', 'v', 'C'};
++  auto box = std::ranges::search(data, kDvvC).begin();
++  CHECK(box != data.end());
++  box[2] = 'c';
++  // dv_profile 7, dv_level 5, RPU and base layer present; compatibility 6.
++  box[6] = 0x0e;
++  box[7] = 0x2d;
++  box[8] = 0x60 | (box[8] & 0x0f);
++  return DecoderBuffer::CopyFrom(data);
++}
++
++class MP4StreamParserParcDVTest : public MP4StreamParserTest {
++ protected:
++  void ParseDolbyVision(scoped_refptr<DecoderBuffer> buffer, bool parc_safari) {
++    parser_.reset(new MP4StreamParser(base::flat_set<int>(), false, false,
++                                      false, /*has_dv=*/true));
++    if (parc_safari) {
++      parser_->ParcIgnoreDeclaredCodecs();
++    }
++    auto params = GetDefaultInitParametersExpectations();
++    params.duration = base::Microseconds(2000000);
++    params.liveness = StreamLiveness::kRecorded;
++    params.detected_audio_track_count = 0;
++    InitializeParserWithInitParametersExpectations(params);
++    EXPECT_TRUE(AppendAllDataThenParseInPieces(*buffer, 512));
++  }
++};
++
++TEST_F(MP4StreamParserParcDVTest, Profile7StaysDolbyVisionOutsideSafariRules) {
++  ParseDolbyVision(ReadParcDVProfile7InHvc1(), /*parc_safari=*/false);
++  EXPECT_EQ(VideoCodec::kDolbyVision, video_decoder_config_.codec());
++  EXPECT_EQ(DOLBYVISION_PROFILE7, video_decoder_config_.profile());
++}
++
++// As AVStreamDataParser gives Safari's SourceBuffer the hvc1 track as HEVC.
++TEST_F(MP4StreamParserParcDVTest, SafariRulesPlayProfile7BaseLayer) {
++  ParseDolbyVision(ReadParcDVProfile7InHvc1(), /*parc_safari=*/true);
++  EXPECT_EQ(VideoCodec::kHEVC, video_decoder_config_.codec());
++  EXPECT_EQ(HEVCPROFILE_MAIN10, video_decoder_config_.profile());
++}
++
++TEST_F(MP4StreamParserParcDVTest, SafariRulesKeepProfile8AsDolbyVision) {
++  ParseDolbyVision(
++      ReadTestDataFile("glass-blowing2-dolby-vision-profile-8-1-frag.mp4"),
++      /*parc_safari=*/true);
++  EXPECT_EQ(VideoCodec::kDolbyVision, video_decoder_config_.codec());
++  EXPECT_EQ(DOLBYVISION_PROFILE8, video_decoder_config_.profile());
++}
++#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
++
++#if (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)) && \
++    BUILDFLAG(USE_PROPRIETARY_CODECS)
++TEST_F(MP4StreamParserTest, IamfTrackWithDeclaredCodec) {
++  parser_.reset(new MP4StreamParser(std::nullopt, false, false,
++                                    /*has_iamf=*/true, false));
++  InitializeParser();
++  ParseMP4File("iamf_alternating_sine_waves_stereo.mp4", 512);
++  EXPECT_EQ(AudioCodec::kIAMF, audio_decoder_config_.codec());
++  EXPECT_EQ(VideoCodec::kH264, video_decoder_config_.codec());
+ }
+ 
++// Parc: under Safari's init segment rules an IAMF track is left out, as
++// AVStreamDataParser leaves it out of the init segment Safari's SourceBuffer
++// gets; the video track plays on.
++TEST_F(MP4StreamParserTest, ParcSafariRulesLeaveOutIamfTrack) {
++  parser_.reset(new MP4StreamParser(std::nullopt, false, false,
++                                    /*has_iamf=*/true, false));
++  parser_->ParcIgnoreDeclaredCodecs();
++  auto params = GetDefaultInitParametersExpectations();
++  params.detected_audio_track_count = 0;
++  InitializeParserWithInitParametersExpectations(params);
++  ParseMP4File("iamf_alternating_sine_waves_stereo.mp4", 512);
++  ASSERT_TRUE(media_tracks_);
++  EXPECT_EQ(media_tracks_->tracks().size(), 1u);
++  EXPECT_FALSE(audio_decoder_config_.IsValidConfig());
++  EXPECT_EQ(VideoCodec::kH264, video_decoder_config_.codec());
++}
++#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
++
+ TEST_F(MP4StreamParserTest, DemuxingAC3) {
+   base::flat_set<int> audio_object_types;
+   audio_object_types.insert(kAC3);
 --- a/media/filters/chunk_demuxer_unittest.cc
 +++ b/media/filters/chunk_demuxer_unittest.cc
-@@ -597,6 +597,26 @@
+@@ -12,7 +12,9 @@
+ #include <cstdint>
+ #include <memory>
+ #include <queue>
++#include <string>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+@@ -27,6 +29,7 @@
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
+ #include "base/synchronization/waitable_event.h"
++#include "base/test/bind.h"
+ #include "base/test/task_environment.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
+@@ -45,6 +48,7 @@
+ #include "media/formats/webm/webm_cluster_parser.h"
+ #include "media/formats/webm/webm_constants.h"
+ #include "media/media_buildflags.h"
++#include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ using ::testing::AnyNumber;
+@@ -597,6 +601,26 @@
      ASSERT_TRUE(AppendCluster(source_id, GenerateCluster(blocks, false)));
    }
  
@@ -10189,7 +10501,7 @@
    struct MuxedStreamInfo {
      MuxedStreamInfo()
          : track_number(0),
-@@ -1188,6 +1208,12 @@
+@@ -1188,6 +1212,12 @@
      base::RunLoop().RunUntilIdle();
    }
  
@@ -10202,7 +10514,7 @@
    void ExpectConfigChanged(DemuxerStream::Type type) {
      EXPECT_CALL(*this, ReadDone(DemuxerStream::kConfigChanged, _));
      GetStream(type)->Read(
-@@ -2402,6 +2428,116 @@
+@@ -2402,6 +2432,116 @@
    ASSERT_EQ(AddId(video_id, HAS_VIDEO), ChunkDemuxer::kReachedIdLimit);
  }
  
@@ -10319,11 +10631,10 @@
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
-@@ -3013,6 +3149,76 @@
-     if (result == ChunkDemuxer::kOk)
+@@ -3014,6 +3154,211 @@
        demuxer_->RemoveId("source_id");
    }
-+}
+ }
 +
 +// Parc: types named without codecs, which ChunkDemuxer takes only under
 +// Safari's init segment rules (ParcSetSafariInitSegmentRules()).
@@ -10393,10 +10704,146 @@
 +  EXPECT_CALL(*this, InitSegmentReceivedMock(_));
 +  EXPECT_TRUE(AppendData(kSourceId, base::span(*mp4)));
 +#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
- }
++}
++
++// Parc: Safari's other Media Source types (AVStreamDataParser's
++// audiovisualMIMETypes) and their codecs, which ChunkDemuxer takes only under
++// Safari's init segment rules (StreamParserFactory::ParcSafariMediaSourceType).
++TEST_F(ChunkDemuxerTest, ParcSafariContainerTypesNeedSafariRules) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  demuxer_->Initialize(&host_,
++                       base::BindOnce(&ChunkDemuxerTest::DemuxerInitialized,
++                                      base::Unretained(this)));
++
++  EXPECT_EQ(AddId(kSourceId, "video/quicktime", ""),
++            ChunkDemuxer::kNotSupported);
++  EXPECT_EQ(AddId(kSourceId, "audio/x-m4a", "opus"),
++            ChunkDemuxer::kNotSupported);
++  EXPECT_EQ(AddId(kSourceId, "audio/mp4", "vp09.00.10.08"),
++            ChunkDemuxer::kNotSupported);
++  EXPECT_EQ(AddId(kSourceId, "audio/x-mpeg", ""), ChunkDemuxer::kNotSupported);
++}
++
++TEST_F(ChunkDemuxerTest, ParcSafariRulesTakeSafariContainerTypes) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  demuxer_->ParcSetSafariInitSegmentRules(true);
++  demuxer_->Initialize(&host_,
++                       base::BindOnce(&ChunkDemuxerTest::DemuxerInitialized,
++                                      base::Unretained(this)));
++
++  struct {
++    const char* type;
++    const char* codecs;
++    ChunkDemuxer::Status status;
++  } kCases[] = {
++      {"video/quicktime", "", ChunkDemuxer::kOk},
++      {"Video/QuickTime", "", ChunkDemuxer::kOk},
++      {"application/mp4", "", ChunkDemuxer::kOk},
++      {"audio/x-m4a", "", ChunkDemuxer::kOk},
++      {"audio/x-m4a", "opus", ChunkDemuxer::kOk},
++      {"audio/mp4", "vp09.00.10.08", ChunkDemuxer::kOk},
++      {"video/x-m4v", "", ChunkDemuxer::kOk},
++      {"audio/3gpp", "", ChunkDemuxer::kOk},
++      {"video/3gpp2", "", ChunkDemuxer::kOk},
++      {"audio/mp3", "", ChunkDemuxer::kOk},
++      {"audio/x-mpeg", "mp3", ChunkDemuxer::kOk},
++      {"audio/mpeg", "mp3", ChunkDemuxer::kOk},
++      {"audio/mpeg", "mp4a.6B", ChunkDemuxer::kNotSupported},
++      {"audio/ogg", "", ChunkDemuxer::kNotSupported},
++      {"text/vtt", "", ChunkDemuxer::kNotSupported},
++#if BUILDFLAG(USE_PROPRIETARY_CODECS)
++      {"audio/aacp", "", ChunkDemuxer::kOk},
++      {"audio/aac", "mp4a.40.2", ChunkDemuxer::kOk},
++      {"audio/aacp", "mp4a.40.2", ChunkDemuxer::kNotSupported},
++#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
++#if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
++      {"audio/mp4", "iamf.001.001.Opus", ChunkDemuxer::kNotSupported},
++      {"video/mp4", "avc1.640028,iamf", ChunkDemuxer::kNotSupported},
++#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
++  };
++  for (const auto& test_case : kCases) {
++    ChunkDemuxer::Status result =
++        AddId(kSourceId, test_case.type, test_case.codecs);
++    EXPECT_EQ(result, test_case.status)
++        << test_case.type << "; codecs=" << test_case.codecs;
++    if (result == ChunkDemuxer::kOk) {
++      demuxer_->RemoveId(kSourceId);
++    }
++  }
++}
++
++TEST_F(ChunkDemuxerTest, ParcSafariAudioContainerTypeTakesMp4Video) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  EXPECT_CALL(host_, SetDuration(_)).Times(AnyNumber());
++  demuxer_->ParcSetSafariInitSegmentRules(true);
++  EXPECT_CALL(*this, DemuxerOpened());
++  demuxer_->Initialize(&host_, CreateInitDoneCallback(PIPELINE_OK));
++  ASSERT_EQ(AddId(kSourceId, "audio/x-m4a", ""), ChunkDemuxer::kOk);
++
++  scoped_refptr<DecoderBuffer> mp4 =
++      ReadTestDataFile("bear-320x240-v_frag-vp9.mp4");
++  EXPECT_CALL(*this, InitSegmentReceivedMock(_));
++  EXPECT_TRUE(AppendData(kSourceId, base::span(*mp4)));
++  EXPECT_TRUE(GetStream(DemuxerStream::VIDEO));
++}
++
++TEST_F(ChunkDemuxerTest, ParcSafariChangeTypeFilterSeesTheParserType) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  demuxer_->ParcSetSafariInitSegmentRules(true);
++  demuxer_->Initialize(&host_,
++                       base::BindOnce(&ChunkDemuxerTest::DemuxerInitialized,
++                                      base::Unretained(this)));
++  ASSERT_EQ(AddId(kSourceId, "video/webm", "vp8"), ChunkDemuxer::kOk);
++
++  std::vector<std::pair<std::string, std::string>> filtered;
++  demuxer_->RestrictCanChangeType(base::BindLambdaForTesting(
++      [&filtered](const std::string& content_type, const std::string& codecs) {
++        filtered.emplace_back(content_type, codecs);
++        return true;
++      }));
++  EXPECT_TRUE(demuxer_->CanChangeType(kSourceId, "audio/x-m4a", "opus"));
++  EXPECT_TRUE(demuxer_->CanChangeType(kSourceId, "audio/x-mpeg", "mp3"));
++  EXPECT_THAT(filtered, testing::ElementsAre(testing::Pair("video/mp4", "opus"),
++                                             testing::Pair("audio/mpeg", "")));
++}
++
++#if (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)) && \
++    BUILDFLAG(USE_PROPRIETARY_CODECS)
++// Parc: Safari's SourceBuffer gets an IAMF and H.264 stream without its IAMF
++// track, and plays the video. (Safari refuses an "iamf" codecs string.)
++class ChunkDemuxerParcIamfTest : public ChunkDemuxerTest {
++ protected:
++  void AppendIamfAndH264(bool safari, const std::string& codecs) {
++    EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++    EXPECT_CALL(host_, SetDuration(_)).Times(AnyNumber());
++    demuxer_->ParcSetSafariInitSegmentRules(safari);
++    EXPECT_CALL(*this, DemuxerOpened());
++    demuxer_->Initialize(&host_, CreateInitDoneCallback(PIPELINE_OK));
++    ASSERT_EQ(AddId(kSourceId, "video/mp4", codecs), ChunkDemuxer::kOk);
++
++    scoped_refptr<DecoderBuffer> mp4 =
++        ReadTestDataFile("iamf_alternating_sine_waves_stereo.mp4");
++    EXPECT_CALL(*this, InitSegmentReceivedMock(_));
++    EXPECT_TRUE(AppendData(kSourceId, base::span(*mp4)));
++    EXPECT_TRUE(GetStream(DemuxerStream::VIDEO));
++  }
++};
++
++TEST_F(ChunkDemuxerParcIamfTest, IamfTrackPlaysOutsideSafariRules) {
++  ASSERT_NO_FATAL_FAILURE(
++      AppendIamfAndH264(/*safari=*/false, "avc1.640028,iamf"));
++  EXPECT_TRUE(GetStream(DemuxerStream::AUDIO));
++}
++
++TEST_F(ChunkDemuxerParcIamfTest, SafariRulesLeaveOutIamfTrack) {
++  ASSERT_NO_FATAL_FAILURE(AppendIamfAndH264(/*safari=*/true, ""));
++  EXPECT_FALSE(GetStream(DemuxerStream::AUDIO));
++}
++#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
  
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
-@@ -3770,6 +3976,183 @@
+   ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
+@@ -3770,6 +4115,183 @@
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
  }
  
@@ -10580,7 +11027,7 @@
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
    demuxer_->SetMemoryLimitsForTest(
-@@ -5073,4 +5456,52 @@
+@@ -5073,4 +5595,52 @@
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
  
@@ -10907,7 +11354,15 @@
      std::move(callback).Run(false);
 --- a/media/filters/stream_parser_factory.h
 +++ b/media/filters/stream_parser_factory.h
-@@ -74,6 +74,14 @@
+@@ -6,6 +6,7 @@
+ #define MEDIA_FILTERS_STREAM_PARSER_FACTORY_H_
+ 
+ #include <memory>
++#include <optional>
+ #include <string>
+ #include <string_view>
+ #include <vector>
+@@ -74,6 +75,30 @@
    static std::unique_ptr<StreamParser> Create(
        std::unique_ptr<VideoDecoderConfig> video_config);
  
@@ -10918,6 +11373,22 @@
 +  // codecs the stream carries. Returns null for any other type.
 +  static std::unique_ptr<StreamParser> ParcCreateWithoutCodecs(
 +      std::string_view type);
++
++  // Parc: |type| and |codecs| as Safari's Media Source reads them, in the
++  // terms the checks above take, or nullopt where Safari refuses them.
++  // Safari takes every type AVStreamDataParser lists (audiovisualMIMETypes),
++  // each with the codecs its family takes (WebKit's
++  // SourceBufferParserAVFObjC::isContentTypeSupported): any ISO-BMFF type
++  // as video/mp4, audio and video codecs alike; an MP3 type as audio/mpeg,
++  // naming "mp3" or nothing; audio/aac with or without AAC codecs; audio/aacp
++  // without codecs. It refuses IAMF. Other types come back unchanged.
++  struct ParcSafariType {
++    std::string type;
++    std::vector<std::string> codecs;
++  };
++  static std::optional<ParcSafariType> ParcSafariMediaSourceType(
++      std::string_view type,
++      base::span<const std::string> codecs);
 +
    // Creates a parser used for determining which codecs are present in a media
    // file. This parser won't log to media log because failure to parse is not

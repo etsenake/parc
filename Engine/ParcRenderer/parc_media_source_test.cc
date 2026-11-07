@@ -3,8 +3,8 @@
 // //third_party/blink/renderer/modules/mediasource/parc_media_source_test.cc
 // (blink_unittests). Tests what a MediaSource tells a page and its media
 // engine under Safari's identity (parc_safari_identity.h) and under Chrome's:
-// types named without codecs, MPEG-2 TS types, and a duration set below the
-// buffered end.
+// types named without codecs, MPEG-2 TS types, Safari's other types and
+// codecs, and a duration set below the buffered end.
 
 #include <limits>
 #include <memory>
@@ -232,6 +232,109 @@ TEST_F(ParcMediaSourceTest, ChromeIsTypeSupportedNeedsCodecs) {
   EXPECT_TRUE(
       MediaSource::isTypeSupported(Context(), "video/webm; codecs=\"vp8\""));
 }
+
+// WebKit's SourceBufferParserAVFObjC::isContentTypeSupported: every type
+// AVStreamDataParser lists, with the codecs its family takes.
+TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedSafariContainers) {
+  SetUserAgent(kSafariUserAgent);
+  for (const char* type :
+       {"video/quicktime", "audio/x-m4a", "video/x-m4v", "audio/3gpp",
+        "video/3gpp", "application/mp4", "audio/mp3", "audio/x-mpeg",
+        "audio/mpeg; codecs=\"mp3\"", "audio/x-m4a; codecs=\"opus\"",
+        "audio/mp4; codecs=\"vp09.00.10.08\"",
+        "video/quicktime; codecs=\"vp09.00.10.08,opus\""}) {
+    EXPECT_TRUE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+  for (const char* type :
+       {"audio/mpeg; codecs=\"mp4a.6B\"", "audio/ogg", "text/vtt",
+        "audio/x-m4a; codecs=\"bogus\""}) {
+    EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+  EXPECT_TRUE(MediaSource::isTypeSupported(Context(), "audio/aacp"));
+  EXPECT_TRUE(MediaSource::isTypeSupported(Context(),
+                                           "audio/aac; codecs=\"mp4a.40.2\""));
+  EXPECT_FALSE(MediaSource::isTypeSupported(
+      Context(), "audio/aacp; codecs=\"mp4a.40.2\""));
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+#if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
+  EXPECT_FALSE(MediaSource::isTypeSupported(
+      Context(), "audio/mp4; codecs=\"iamf.001.001.Opus\""));
+#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
+}
+
+TEST_F(ParcMediaSourceTest, ChromeIsTypeSupportedChromeContainers) {
+  SetUserAgent(kChromeUserAgent);
+  for (const char* type :
+       {"video/quicktime", "audio/mp3", "audio/mpeg; codecs=\"mp3\"",
+        "audio/x-m4a; codecs=\"opus\"",
+        "audio/mp4; codecs=\"vp09.00.10.08\""}) {
+    EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+  EXPECT_TRUE(MediaSource::isTypeSupported(Context(), "audio/mpeg"));
+}
+
+TEST_F(ParcMediaSourceTest, SafariSourceBufferSafariContainer) {
+  SetUserAgent(kSafariUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  SourceBuffer* source_buffer = media_source->addSourceBuffer(
+      "video/quicktime; codecs=\"vp09.00.10.08\"", add_exception);
+  EXPECT_FALSE(add_exception.HadException());
+  ASSERT_TRUE(source_buffer);
+  EXPECT_EQ(engine_->data.added_type, "video/quicktime");
+  EXPECT_EQ(engine_->data.added_codecs, "vp09.00.10.08");
+
+  DummyExceptionStateForTesting change_exception;
+  source_buffer->changeType("audio/x-mpeg", change_exception);
+  EXPECT_FALSE(change_exception.HadException());
+  EXPECT_EQ(engine_->data.changed_type, "audio/x-mpeg");
+}
+
+TEST_F(ParcMediaSourceTest, ChromeSourceBufferRefusesSafariContainer) {
+  SetUserAgent(kChromeUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting add_exception;
+  EXPECT_FALSE(media_source->addSourceBuffer(
+      "video/quicktime; codecs=\"vp09.00.10.08\"", add_exception));
+  EXPECT_EQ(add_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+  EXPECT_EQ(engine_->data.add_source_buffer_calls, 0);
+}
+
+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION) && \
+    BUILDFLAG(ENABLE_PLATFORM_HEVC)
+// WebKit's MediaSource::addSourceBuffer runs isTypeSupported, which refuses
+// Dolby Vision profile 7; profiles 5 and 8 play through the FairPlay Renderer.
+TEST_F(ParcMediaSourceTest, SafariSourceBufferDolbyVisionProfiles) {
+  SetUserAgent(kSafariUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting profile7_exception;
+  EXPECT_FALSE(media_source->addSourceBuffer(
+      "video/mp4; codecs=\"dvh1.07.06\"", profile7_exception));
+  EXPECT_EQ(profile7_exception.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
+  EXPECT_EQ(engine_->data.add_source_buffer_calls, 0);
+
+  DummyExceptionStateForTesting profile8_exception;
+  EXPECT_TRUE(media_source->addSourceBuffer("video/mp4; codecs=\"dvh1.08.06\"",
+                                            profile8_exception));
+  EXPECT_FALSE(profile8_exception.HadException());
+}
+
+TEST_F(ParcMediaSourceTest, ChromeSourceBufferTakesDolbyVisionProfile7) {
+  SetUserAgent(kChromeUserAgent);
+  MediaSource* media_source = OpenMediaSource();
+
+  DummyExceptionStateForTesting exception_state;
+  EXPECT_TRUE(media_source->addSourceBuffer("video/mp4; codecs=\"dvh1.07.06\"",
+                                            exception_state));
+  EXPECT_FALSE(exception_state.HadException());
+}
+#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION) && ...
 
 TEST_F(ParcMediaSourceTest, SafariSourceBufferWithoutCodecs) {
   SetUserAgent(kSafariUserAgent);
