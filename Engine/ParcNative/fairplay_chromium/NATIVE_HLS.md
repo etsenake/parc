@@ -501,7 +501,17 @@ from the next one; like WebKit, only the track current at the seek's start
 is flagged). The GPU never picks a text track: it serves whichever one the
 page's modes pick.
 
-Page side, Safari-identity documents only (the route exists only there):
+Page side, Safari-identity documents only (the route exists only there).
+The demuxer gets `ParcNativeHlsDemuxerParams.track_manager`, a
+`media::TrackManager` callable on the media thread that posts to the element:
+`AddTrack`/`RemoveTrack`/`SetTrackState` for audio, and
+`ParcSetInbandTextTracks(tracks, set_mode)` / `ParcAddInbandTextCues(key,
+cues)` (`media/base/media_track.h`, through `DemuxerManager` and
+`WebMediaPlayerImpl` to `HTMLMediaElement`) for text. `set_mode` is a
+`ParcInbandTextTrackModeCB` the demuxer binds to itself on the media thread
+(`BindPostTask` with its weak pointer) that sends `SetTextTrackMode`; the
+element calls it from the main thread on every in-band mode change.
+
 
 - Audio: each audio `FairPlayHlsTrack` becomes a `media::MediaTrack` through
   the demuxer's `TrackManager` (added in list order, removed when gone,

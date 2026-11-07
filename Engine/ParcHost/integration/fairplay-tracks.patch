@@ -79,3 +79,207 @@
      auto* track_item = CreateTextTrackListItem(track);
      track_item->setAttribute(html_names::kAriaSetsizeAttr,
                               AtomicString::Number(track_list->length() + 1));
+--- a/media/base/media_track.h
++++ b/media/base/media_track.h
+@@ -5,7 +5,11 @@
+ #ifndef MEDIA_BASE_MEDIA_TRACK_H_
+ #define MEDIA_BASE_MEDIA_TRACK_H_
+ 
++#include <stdint.h>
++
++#include <optional>
+ #include <string>
++#include <vector>
+ 
+ #include "base/functional/callback.h"
+ #include "base/types/strong_alias.h"
+@@ -122,6 +126,91 @@
+   Language language_;
+ };
+ 
++// Parc: an in-band text track of Safari's native HLS route (macOS; the
++// FairPlay core's HlsTrack, third_party/parc_fairplay NATIVE_HLS.md).
++struct MEDIA_EXPORT ParcInbandTextTrack {
++  ParcInbandTextTrack();
++  ParcInbandTextTrack(const ParcInbandTextTrack&);
++  ParcInbandTextTrack(ParcInbandTextTrack&&);
++  ParcInbandTextTrack& operator=(const ParcInbandTextTrack&);
++  ParcInbandTextTrack& operator=(ParcInbandTextTrack&&);
++  ~ParcInbandTextTrack();
++
++  // Unique for the player; names the track in mode changes and cues.
++  std::string key;
++  // TextTrack's id, kind ("subtitles", "captions" or "forced"), label and
++  // language, as WebKit gives them.
++  std::string id;
++  std::string kind;
++  std::string label;
++  std::string language;
++  // The in-band position (TextTrackList orders in-band tracks by it).
++  int64_t index = 0;
++  // What WebKit's caption preferences weigh.
++  bool is_default = false;
++  bool is_closed_captions = false;
++  bool is_sdh = false;
++  bool contains_only_forced_subtitles = false;
++  bool is_main_program_content = false;
++  bool is_easy_to_read = false;
++};
++
++// Parc: TextTrack.mode, for the native HLS player.
++enum class ParcInbandTextTrackMode { kDisabled, kHidden, kShowing };
++
++// Parc: one change to an in-band text track's cues (the core's HlsCue).
++struct MEDIA_EXPORT ParcInbandTextCue {
++  enum class Type {
++    kWebVttHeader,  // `text`: the WebVTT header (regions, style sheets).
++    kWebVtt,        // A WebVTT cue: WebVTTParser::parseCueData.
++    kAdd,           // Generic cues, by `cue_id`: InbandGenericTextTrack's
++    kUpdate,        // addGenericCue, updateGenericCue and removeGenericCue.
++    kRemove,
++  };
++  enum class Align { kNone, kStart, kMiddle, kEnd };
++
++  ParcInbandTextCue();
++  ParcInbandTextCue(const ParcInbandTextCue&);
++  ParcInbandTextCue(ParcInbandTextCue&&);
++  ParcInbandTextCue& operator=(const ParcInbandTextCue&);
++  ParcInbandTextCue& operator=(ParcInbandTextCue&&);
++  ~ParcInbandTextCue();
++
++  Type type = Type::kAdd;
++  uint64_t cue_id = 0;
++  // Seconds. A generic cue's end is +infinity while it is open; a WebVTT
++  // cue's is NaN when its sample has no duration.
++  double start = 0;
++  double end = 0;
++  bool complete = false;
++  std::string text;
++  // WebVTT iden, sttg, vsid and ctim boxes.
++  std::string identifier;
++  std::string settings;
++  std::string source_id;
++  std::string original_start_time;
++  // Generic cue layout; -1 when unset.
++  double line = -1;
++  double position = -1;
++  double size = -1;
++  double base_font_size = 0;
++  double relative_font_size = 0;
++  std::string font_name;
++  Align align = Align::kNone;
++  Align position_align = Align::kNone;
++  // 0xRRGGBBAA.
++  std::optional<uint32_t> foreground_color;
++  std::optional<uint32_t> background_color;
++  std::optional<uint32_t> highlight_color;
++  bool prevent_line_wrapping = true;
++};
++
++// Parc: tells the native HLS player a track's mode. Callable on the main
++// thread; it posts to the player's thread and does nothing once it is gone.
++using ParcInbandTextTrackModeCB =
++    base::RepeatingCallback<void(const std::string& key,
++                                 ParcInbandTextTrackMode mode)>;
++
+ // Interface for requiring track manager methods on different implementations
+ // that either forward them or handle them directly, like WebMediaPlayerImpl
+ // and HTMLMediaElement.
+@@ -131,6 +220,17 @@
+   virtual void AddTrack(const MediaTrack&) = 0;
+   virtual void RemoveTrack(const MediaTrack&) = 0;
+   virtual void SetTrackState(const MediaTrack&, MediaTrack::State) = 0;
++
++  // Parc: Safari's native HLS route. The whole list of in-band text tracks,
++  // replacing the previous one (tracks matched by key), with the way back to
++  // the player for their modes. Ignored unless overridden.
++  virtual void ParcSetInbandTextTracks(
++      const std::vector<ParcInbandTextTrack>& tracks,
++      ParcInbandTextTrackModeCB set_mode) {}
++  // Parc: changes to one in-band text track's cues, in order.
++  virtual void ParcAddInbandTextCues(
++      const std::string& key,
++      const std::vector<ParcInbandTextCue>& cues) {}
+ };
+ 
+ class MEDIA_EXPORT ForwardingTrackManager : public TrackManager {
+@@ -146,10 +246,29 @@
+   void RemoveTrack(const MediaTrack&) override;
+   void SetTrackState(const MediaTrack&, MediaTrack::State) override;
+ 
++  // Parc: forwards the in-band text track calls too (else they're dropped).
++  void SetParcInbandTextCallbacks(
++      base::RepeatingCallback<void(const std::vector<ParcInbandTextTrack>&,
++                                   ParcInbandTextTrackModeCB)> set_tracks,
++      base::RepeatingCallback<void(const std::string&,
++                                   const std::vector<ParcInbandTextCue>&)>
++          add_cues);
++  void ParcSetInbandTextTracks(const std::vector<ParcInbandTextTrack>& tracks,
++                               ParcInbandTextTrackModeCB set_mode) override;
++  void ParcAddInbandTextCues(
++      const std::string& key,
++      const std::vector<ParcInbandTextCue>& cues) override;
++
+  private:
+   base::RepeatingCallback<void(const MediaTrack&)> add_;
+   base::RepeatingCallback<void(const MediaTrack&)> remove_;
+   base::RepeatingCallback<void(const MediaTrack&, MediaTrack::State)> update_;
++  base::RepeatingCallback<void(const std::vector<ParcInbandTextTrack>&,
++                               ParcInbandTextTrackModeCB)>
++      parc_set_tracks_;
++  base::RepeatingCallback<void(const std::string&,
++                               const std::vector<ParcInbandTextCue>&)>
++      parc_add_cues_;
+ };
+ 
+ // Helper for logging.
+--- a/media/base/media_track.cc
++++ b/media/base/media_track.cc
+@@ -144,4 +144,47 @@
+   update_.Run(track, state);
+ }
+ 
++ParcInbandTextTrack::ParcInbandTextTrack() = default;
++ParcInbandTextTrack::ParcInbandTextTrack(const ParcInbandTextTrack&) = default;
++ParcInbandTextTrack::ParcInbandTextTrack(ParcInbandTextTrack&&) = default;
++ParcInbandTextTrack& ParcInbandTextTrack::operator=(
++    const ParcInbandTextTrack&) = default;
++ParcInbandTextTrack& ParcInbandTextTrack::operator=(ParcInbandTextTrack&&) =
++    default;
++ParcInbandTextTrack::~ParcInbandTextTrack() = default;
++
++ParcInbandTextCue::ParcInbandTextCue() = default;
++ParcInbandTextCue::ParcInbandTextCue(const ParcInbandTextCue&) = default;
++ParcInbandTextCue::ParcInbandTextCue(ParcInbandTextCue&&) = default;
++ParcInbandTextCue& ParcInbandTextCue::operator=(const ParcInbandTextCue&) =
++    default;
++ParcInbandTextCue& ParcInbandTextCue::operator=(ParcInbandTextCue&&) = default;
++ParcInbandTextCue::~ParcInbandTextCue() = default;
++
++void ForwardingTrackManager::SetParcInbandTextCallbacks(
++    base::RepeatingCallback<void(const std::vector<ParcInbandTextTrack>&,
++                                 ParcInbandTextTrackModeCB)> set_tracks,
++    base::RepeatingCallback<void(const std::string&,
++                                 const std::vector<ParcInbandTextCue>&)>
++        add_cues) {
++  parc_set_tracks_ = std::move(set_tracks);
++  parc_add_cues_ = std::move(add_cues);
++}
++
++void ForwardingTrackManager::ParcSetInbandTextTracks(
++    const std::vector<ParcInbandTextTrack>& tracks,
++    ParcInbandTextTrackModeCB set_mode) {
++  if (parc_set_tracks_) {
++    parc_set_tracks_.Run(tracks, std::move(set_mode));
++  }
++}
++
++void ForwardingTrackManager::ParcAddInbandTextCues(
++    const std::string& key,
++    const std::vector<ParcInbandTextCue>& cues) {
++  if (parc_add_cues_) {
++    parc_add_cues_.Run(key, cues);
++  }
++}
++
+ }  // namespace media
