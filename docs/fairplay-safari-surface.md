@@ -16,7 +16,9 @@ in-flight change from the named owner provides it), **decision** (an open
 choice, with the default followed). Owner is the session driving the row:
 
 - `fp-safari-eme-surface`: the legacy prefixed API (this document's author).
-- `fp-eme-modern`: modern EME and capability answers.
+- `fp-eme-modern`: modern EME.
+- `fp-eme-caps`: capability answers and `requestMediaKeySystemAccess`
+  configuration handling (taken over from fp-eme-modern).
 - `fp-mms-presentation`: ManagedMediaSource and presentation/fullscreen.
 - `fp-native-hls`: native HLS on AVPlayer and `skd` in the CDM.
 - `fp-netflix-identity`, `fp-frame-stats`, `fp-compositor-groups`: their
@@ -55,16 +57,20 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `MediaKeys.getStatusForPolicy` | absent (not in WebKit's IDL) | absent on Safari-identity pages: a main-world script deletes it from `MediaKeys.prototype` (`parc_safari_media_keys.h`); isolated worlds keep Chromium's | present | fp-eme-modern |
 | Robustness | `""` only | `""` only | present | fp-eme-modern |
 | distinctiveIdentifier / persistentState | not-allowed / optional | not-supported / requestable | present | fp-eme-modern |
-| encryptionScheme | `cbcs`, `cbcs-1-9` | `cbcs`, `cbcs-1-9` (Blink maps it to `cbcs`); `cenc` listed but cut | present | fp-eme-modern |
 | Widevine hidden | n/a | refused on Safari identity (`fairplay-identity-blink.patch`) | present | identity |
 
 ## Capability answers
 
 | Piece | Safari | Parc | Status | Owner |
 |---|---|---|---|---|
-| `requestMediaKeySystemAccess` codecs | AVFoundation's MSE types | FairPlay `CdmCapability` (H.264, HEVC, DV profile 5, AAC, AC-3, E-AC-3) | present | fp-eme-modern |
-| `decodingInfo` with `keySystemConfiguration` | supported | supported; Widevine refused on Safari identity | present | fp-eme-modern |
-| `MediaSource.isTypeSupported`, `canPlayType` (MP4) | Safari's answers incl. Dolby | identity patch answers Dolby audio and DV profile 5 like Safari | present | fp-eme-modern |
+| `requestMediaKeySystemAccess` codecs | AVFoundation's MSE types | FairPlay `CdmCapability` (H.264, HEVC, DV profile 5, AAC, AC-3, E-AC-3) | present | fp-eme-caps |
+| Configuration enum values | `encryptionScheme` and `sessionTypes` are IDL enums (`cenc`, `cbcs`; `temporary`, `persistent-usage-record`, `persistent-license`): any other value, `cbcs-1-9` included, is a TypeError for the whole call, whatever the key system | the same under Safari's identity (`navigator_request_media_key_system_access.cc`); Chrome pages skip such a capability or configuration | present | fp-eme-caps |
+| FairPlay `encryptionScheme` | null or `cbcs` (`supportsMediaCapability`); a `cenc` capability is skipped | `cenc` accepted | different | fp-eme-caps |
+| FairPlay `initDataTypes` | required: a configuration without any is refused (`supportsConfiguration`); `cenc`, `sinf`, `skd` and, on macOS, `mpts` | an empty list accepted; no `mpts`; `keyids` too (superset) | different; missing (`mpts`) | fp-eme-caps |
+| FairPlay capability `contentType` | codecs optional (`video/mp4` alone is supported); `video/` types only in `videoCapabilities`, `audio/` only in `audioCapabilities`, the HLS types (`application/vnd.apple.mpegurl`, `application/x-mpegurl`) in either; an unparsable type skips only that capability | codecs required; either top-level type in either list; an unparsable type refuses the configuration; no HLS types | different | fp-eme-caps |
+| `decodingInfo` with `keySystemConfiguration` | not in WebKit's IDL: ignored, the media answered as clear, no `keySystemAccess` in the result, which carries `configuration` | Chromium's EME path and `keySystemAccess`, no `configuration`; Widevine refused | different | fp-eme-caps |
+| `decodingInfo` HDR, `smooth`, `powerEfficient` | any of `hdrMetadataType`/`colorGamut`/`transferFunction`: H.264 unsupported, HEVC Main10 only, Dolby Vision profiles 4/5/7/8; values from VideoToolbox (H.264 smooth, hardware; HEVC smooth up to the profile's playback level, per-profile hardware; Dolby Vision smooth, hardware); audio alone not smooth or power efficient | Chromium's (color-space checks, SMPTE 2094 refused, playback history) | different | fp-eme-caps |
+| `MediaSource.isTypeSupported`, `canPlayType` (MP4) | Safari's answers incl. Dolby | identity patch answers Dolby audio and DV profile 5 like Safari | present | fp-eme-caps |
 | `canPlayType('application/vnd.apple.mpegurl')` and HLS `<video src>` | "maybe" | Chromium's | missing | fp-native-hls |
 | `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_N'/'3_N', type)` | legacy MSE CDM: `keyrelease` (ignoring case), else MSE support | the same (`parc_webkit_media_keys.h`) | present | fp-safari-eme-surface |
 | `WebKitMediaKeys.isTypeSupported('com.apple.fps'/'1_0', type)` | true (AVFoundation player) | false until native HLS exists | missing (flip when fp-native-hls lands) | fp-safari-eme-surface |

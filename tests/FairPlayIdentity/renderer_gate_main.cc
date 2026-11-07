@@ -9,7 +9,10 @@
 // scripts.
 // It also checks which EME init data types a document may name: FairPlay's
 // "sinf" and "skd" only under Safari's identity, and that a Media Source
-// element there hears `encrypted` with "sinf" init data only, as in Safari.
+// element there hears `encrypted` with "sinf" init data only, as in Safari;
+// which encryptionScheme and sessionTypes values requestMediaKeySystemAccess
+// takes there without a TypeError (WebKit's IDL enums); and FairPlay's key
+// system names.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -136,6 +139,35 @@ int main() {
   Check(std::strstr(blink::kParcWebKitMediaKeysScript,
                     "isTypeSupported(keySystem, type = undefined)") != nullptr,
         "the script defines the static isTypeSupported");
+
+  // WebKit's MediaKeyEncryptionScheme and MediaKeySessionType enums.
+  for (const char* scheme : {"cenc", "cbcs"}) {
+    Check(blink::IsParcSafariEncryptionScheme(scheme),
+          "cenc and cbcs are WebKit's encryption schemes");
+  }
+  for (const char* scheme : {"cbcs-1-9", "", "CBCS", "cens", "cbc1"}) {
+    Check(!blink::IsParcSafariEncryptionScheme(scheme),
+          "any other encryptionScheme is a TypeError under Safari's identity");
+  }
+  for (const char* type :
+       {"temporary", "persistent-usage-record", "persistent-license"}) {
+    Check(blink::IsParcSafariSessionType(type),
+          "WebKit's three session types convert");
+  }
+  for (const char* type : {"", "Temporary", "persistent", "persistent-license "}) {
+    Check(!blink::IsParcSafariSessionType(type),
+          "any other session type is a TypeError under Safari's identity");
+  }
+  for (const char* key_system :
+       {"com.apple.fps", "com.apple.fps.1_0", "com.apple.fps.3_0", "com.apple.fps."}) {
+    Check(blink::IsParcFairPlayKeySystem(key_system),
+          "com.apple.fps and names under it are FairPlay");
+  }
+  for (const char* key_system :
+       {"com.apple.fpsx", "COM.APPLE.FPS", "com.apple", "org.w3c.clearkey", ""}) {
+    Check(!blink::IsParcFairPlayKeySystem(key_system),
+          "FairPlay's names compare case-sensitively");
+  }
 
   const char* const not_safari[] = {
       // Chrome's identity (Parc's own user agent everywhere else).

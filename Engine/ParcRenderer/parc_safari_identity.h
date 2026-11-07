@@ -68,6 +68,29 @@ inline bool IsParcSafariOnlyInitDataType(const String& init_data_type) {
   return init_data_type == "sinf" || init_data_type == "skd";
 }
 
+// Values of WebKit's EME IDL enums that Blink declares as DOMString:
+// MediaKeyEncryptionScheme ("cenc", "cbcs"; MediaKeyEncryptionScheme.idl) and
+// MediaKeySessionType (MediaKeySessionType.idl). Under Safari's identity any
+// other value in a requestMediaKeySystemAccess configuration is a TypeError,
+// as WebKit's bindings throw while converting the dictionary.
+inline bool IsParcSafariEncryptionScheme(const String& encryption_scheme) {
+  return encryption_scheme == "cenc" || encryption_scheme == "cbcs";
+}
+
+inline bool IsParcSafariSessionType(const String& session_type) {
+  return session_type == "temporary" ||
+         session_type == "persistent-usage-record" ||
+         session_type == "persistent-license";
+}
+
+// FairPlay Streaming's key system names, matched as WebKit matches them
+// (CDMFactoryFairPlayStreaming::supportsKeySystem): case-sensitive,
+// "com.apple.fps" or any name under "com.apple.fps.".
+inline bool IsParcFairPlayKeySystem(const String& key_system) {
+  return key_system == "com.apple.fps" ||
+         key_system.starts_with("com.apple.fps.");
+}
+
 }  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_PARC_SAFARI_IDENTITY_H_

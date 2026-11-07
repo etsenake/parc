@@ -36,6 +36,10 @@ On a page that presents Safari's identity:
   `MediaKeys.idl` has none), so a player that tests for it behaves as it
   does there. A main-world script (`Engine/ParcRenderer/parc_safari_media_keys.h`),
   run with the other Safari scripts, deletes it from `MediaKeys.prototype`.
+- `requestMediaKeySystemAccess` reads its configurations as WebKit's bindings
+  do: an `encryptionScheme` other than `cenc` or `cbcs` (`cbcs-1-9` included)
+  or a session type WebKit doesn't know is a TypeError for the whole call,
+  where a Chrome page skips that capability or configuration.
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`
