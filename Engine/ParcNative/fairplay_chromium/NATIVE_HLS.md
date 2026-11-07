@@ -7,7 +7,8 @@ render-process route: Blink, `DemuxerManager`, `NativeHlsDemuxer`, the
 (mojo interfaces, `InterfaceFactory`, the GPU service wrapping the core, the
 render-process loader), `fp-hls-keys` (skd in the CDM, the asset's content
 keys, modern EME), `fp-hls-display` (display, PiP and fullscreen, frame
-counts), `fp-hls-tracks` (audio and text tracks), `fp-hls-live` (live and DVR
+counts), `fp-hls-tracks` (audio and text tracks: `fairplay_hls_media_selection.*`
+and the page side, Tracks below), `fp-hls-live` (live and DVR
 timing). Interface changes go into this file first.
 
 Safari plays `<video src="….m3u8">` through `AVPlayer` (WebKit's
@@ -138,9 +139,32 @@ interface FairPlayHlsLoadClient {    // GPU implements, per load
 
 struct FairPlayHlsTimeRange { mojo_base.mojom.TimeDelta start, end; };
 enum FairPlayHlsTrackType { kAudio, kVideo, kText };
-struct FairPlayHlsTrack {
-  string id; string kind; string label; string language;
-  bool enabled; FairPlayHlsTrackType type;
+enum FairPlayHlsTextTrackMode { kDisabled, kHidden, kShowing };
+struct FairPlayHlsTrack {            // core HlsTrack (Tracks below)
+  string key;                        // unique; names it in calls and cues
+  string id; string kind; string label; string language;  // WebKit's DOM values
+  bool enabled;                      // audio
+  int64 index;                       // TrackPrivateBase::trackIndex: lists
+                                     // order by it, -1 (audio) last
+  FairPlayHlsTrackType type;         // kAudio or kText
+  bool is_default; bool is_closed_captions; bool is_sdh;  // text: caption
+  bool contains_only_forced_subtitles;                    // preference inputs
+  bool is_main_program_content; bool is_easy_to_read;
+};
+enum FairPlayHlsCueType { kWebVttHeader, kWebVtt, kAdd, kUpdate, kRemove };
+enum FairPlayHlsCueAlign { kNone, kStart, kMiddle, kEnd };
+struct FairPlayHlsCue {              // core HlsCue, one change in order
+  FairPlayHlsCueType type; uint64 cue_id;   // cue_id: generic cues
+  double start; double end;          // seconds; generic end +inf while
+                                     // open; WebVTT end NaN if no duration
+  bool complete; string text;
+  string identifier; string settings;       // WebVTT iden, sttg,
+  string source_id; string original_start_time;   // vsid, ctim boxes
+  double line; double position; double size;      // generic layout, -1 unset
+  double base_font_size; double relative_font_size; string font_name;
+  FairPlayHlsCueAlign align; FairPlayHlsCueAlign position_align;
+  uint32? foreground_color; uint32? background_color;   // 0xRRGGBBAA
+  uint32? highlight_color; bool prevent_line_wrapping;
 };
 struct FairPlayHlsMetadata {
   bool has_audio; bool has_video; gfx.mojom.Size natural_size;
@@ -163,7 +187,8 @@ interface FairPlayHlsPlayer {        // GPU implements
   SetVolume(float volume); SetMuted(bool muted);
   SetPreservesPitch(bool preserves_pitch);   // Renderer::SetPreservesPitch
   ProvideClearKey(string key_id, array<uint8> key);  // legacy clear key
-  SelectAudioTrack(string id); SelectTextTrack(string? id);
+  SetAudioTrackEnabled(string key, bool enabled);   // AudioTrack.enabled
+  SetTextTrackMode(string key, FairPlayHlsTextTrackMode mode);  // .mode
   Suspend(); Resume();               // stop/restart loading (preload, idle)
 };
 
@@ -179,7 +204,9 @@ interface FairPlayHlsPlayerClient {  // render process implements
   OnDurationChange(mojo_base.mojom.TimeDelta duration);
   OnStartDateChanged(mojo_base.mojom.Time? start_date);  // before
                                      // the OnBufferingStateChange it goes with
-  OnTracksChanged(array<FairPlayHlsTrack> tracks);
+  OnTracksChanged(array<FairPlayHlsTrack> tracks);  // whole list: audio
+                                     // then text, each in DOM order
+  OnTextCues(string track_key, array<FairPlayHlsCue> cues);
   OnNaturalSizeChange(gfx.mojom.Size size);
   OnLayerRegistered(mojo_base.mojom.UnguessableToken token,
                     gfx.mojom.Size natural_size);
@@ -194,9 +221,11 @@ interface FairPlayHlsPlayerClient {  // render process implements
 
 `media.mojom` has no time-range struct, and `DemuxerStream.Type` is a
 `[Native]` enum, hence `FairPlayHlsTimeRange` and `FairPlayHlsTrackType`.
-The text-track owner adds `FairPlayHlsCue` and
-`FairPlayHlsPlayerClient.OnTextCues(string track_id, array<FairPlayHlsCue>)`
-when cues land.
+`FairPlayHlsMetadata.tracks` is the selection's list (`Tracks()`) when the
+`Initialize` reply is sent; the GPU service sends no `OnTracksChanged` before
+that reply (the two travel on different pipes) and folds earlier lists into
+it. The page treats `metadata.tracks` and every `OnTracksChanged` alike: the
+whole list replaces the previous one, tracks matched by `key`.
 
 Routing, as the FairPlay renderer's and CDM's:
 
@@ -380,9 +409,52 @@ tree (a hidden tab).
 | volume, muted | `volume`, `muted` | facade `SetVolume`; tab mute as the MSE route |
 | `ended` | `AVPlayerItemDidPlayToEndTimeNotification` | `OnEnded` |
 | `error` | item `failed`, `AVPlayerItemFailedToPlayToEndTime`, error log | `OnError` → `MEDIA_ERR_NETWORK` / `DECODE` / `SRC_NOT_SUPPORTED` as Safari maps them |
-| `audioTracks` / `textTracks` | `AVMediaSelectionGroup`s, legible output | `OnTracksChanged` → `DemuxerManager`'s track manager; cues by `OnTextCues` |
+| `audioTracks` / `textTracks` | `HlsMediaSelection` (Tracks) | `OnTracksChanged`, `OnTextCues` (Tracks) |
 | decoded/dropped frames | `-[AVPlayerLayer videoPerformanceMetrics]` (`HlsFrameStats`) | `OnStatisticsUpdate` deltas (as fp-frame-stats) |
 | `encrypted`, `waitingforkey` | resource loader skd requests | `OnEncrypted`, `OnWaiting` |
+
+## Tracks
+
+The core's `HlsMediaSelection` (`fairplay/fairplay_hls_media_selection.h`,
+[core README](../fairplay/README.md#native-hls-tracks)) is a port of WebKit's
+AVFoundation track code: audioTracks from the audible media selection group
+(WebKit choosing the option, AVFoundation's automatic criteria off), textTracks
+from the legible group, cues from one `AVPlayerItemLegibleOutput` for the one
+track the modes pick. GPU service: it creates the selection with its client
+and `PostTask` and calls `HlsMediaSelectionAttach(selection.impl(),
+HlsPlayerAVPlayer(player.impl()), player.currentItem)` right after `Load`;
+`SetAudioTrackEnabled`/`SetTextTrackMode` and the client's `OnTracksChanged`
+/`OnTextCues` map one to one onto the mojo calls (`HlsTrack`/`HlsCue` →
+`FairPlayHlsTrack`/`FairPlayHlsCue` field for field). Around seeks it calls
+`BeginSeeking()` before each `FairPlayHlsPlayer::Seek` (repeats are harmless)
+and `EndSeeking()` once, when the `done` of the most recently issued seek
+runs, whatever its result (WebKit's `beginSeeking`/`endSeeking` on the current
+text track: the open cue is flushed and cues arriving meanwhile get no end
+from the next one; like WebKit, only the track current at the seek's start
+is flagged). The GPU never picks a text track: it serves whichever one the
+page's modes pick.
+
+Page side, Safari-identity documents only (the route exists only there):
+
+- Audio: each audio `FairPlayHlsTrack` becomes a `media::MediaTrack` through
+  the demuxer's `TrackManager` (added in list order, removed when gone,
+  `SetTrackState` for `enabled`), with WebKit's kind (`description` kept as
+  WebKit spells it), label and language. The `MediaTrack` id is the `key`,
+  so the pipeline's enabled-track ids stay unique; the page is shown WebKit's
+  `id`, which can repeat. The demuxer's `OnEnabledAudioTracksChanged` diffs
+  the enabled keys against the last list and sends
+  `SetAudioTrackEnabled(key, …)` per changed track.
+- Text: M156 Blink defines `TextTrack::kInBand` but nothing creates such
+  tracks, so `fp-hls-tracks` adds the minimal path: the player client makes
+  Blink `TextTrack`s of type `kInBand` in the element's list (WebKit's kind
+  `forced` included) and forwards their mode changes as
+  `SetTextTrackMode(key, mode)`. Which track shows by default is decided only
+  in the render process, by the element's automatic text track selection
+  with WebKit's caption preference rules (the flags above feed them). Cues
+  become `VTTCue`s as WebKit's `InbandGenericTextTrack` makes them (`kWebVtt`
+  parsed like `WebVTTParser::parseCueData`, the header for regions and style
+  sheets, generic cues added, updated and removed by `cue_id`, an open cue's
+  end shown as the media duration, +inf for live).
 
 ## Frame counts
 
