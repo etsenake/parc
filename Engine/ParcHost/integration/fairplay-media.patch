@@ -10631,11 +10631,10 @@
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
-@@ -3014,6 +3154,211 @@
-       demuxer_->RemoveId("source_id");
+@@ -3015,6 +3155,211 @@
    }
  }
-+
+ 
 +// Parc: types named without codecs, which ChunkDemuxer takes only under
 +// Safari's init segment rules (ParcSetSafariInitSegmentRules()).
 +TEST_F(ChunkDemuxerTest, ParcTypesWithoutCodecsNeedSafariIdentity) {
@@ -10840,10 +10839,50 @@
 +  EXPECT_FALSE(GetStream(DemuxerStream::AUDIO));
 +}
 +#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
- 
++
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
-@@ -3770,6 +4115,183 @@
+ 
+@@ -3309,6 +3654,38 @@
+ namespace {
+ const char* kMp2tMimeType = "video/mp2t";
+ const char* kMp2tCodecs = "mp4a.40.2,avc1.640028";
++}
++
++TEST_F(ChunkDemuxerTest, ParcSafariTsAudioTrackSwitchAndDisable) {
++  EXPECT_FOUND_CODEC_NAME(Audio, "mp3").Times(2);
++  demuxer_->ParcSetSafariMediaSource(true);
++  EXPECT_CALL(*this, DemuxerOpened());
++  demuxer_->Initialize(&host_,
++      CreateInitDoneCallback(kInfiniteDuration, PIPELINE_OK));
++  ASSERT_EQ(ChunkDemuxer::kOk, AddId(kSourceId, kMp2tMimeType, "mp3"));
++  EXPECT_CALL(*this, InitSegmentReceivedMock(_));
++  const auto data = ReadTestDataFile("parc-two-audio.ts");
++  ASSERT_TRUE(AppendData(kSourceId, base::span(*data)));
++  const auto streams = demuxer_->GetAllStreams();
++  ASSERT_EQ(streams.size(), 2u);
++  auto* first = static_cast<ChunkDemuxerStream*>(streams[0].get());
++  auto* second = static_cast<ChunkDemuxerStream*>(streams[1].get());
++  ASSERT_EQ(first->type(), DemuxerStream::AUDIO);
++  ASSERT_EQ(second->type(), DemuxerStream::AUDIO);
++  EXPECT_TRUE(first->IsEnabled());
++  EXPECT_FALSE(second->IsEnabled());
++  DemuxerStream* selected = nullptr;
++  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, second->media_track_id(),
++      base::Seconds(1), base::BindOnce([](DemuxerStream** out, DemuxerStream* s) {
++        *out = s;
++      }, &selected));
++  EXPECT_EQ(selected, second);
++  EXPECT_FALSE(first->IsEnabled());
++  EXPECT_TRUE(second->IsEnabled());
++  demuxer_->OnTracksChanged(DemuxerStream::AUDIO, std::nullopt,
++      base::Seconds(1), base::DoNothing());
++  EXPECT_FALSE(first->IsEnabled());
++  EXPECT_FALSE(second->IsEnabled());
+ }
+ 
+ TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
+@@ -3770,6 +4147,183 @@
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
  }
  
@@ -11027,7 +11066,7 @@
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
    demuxer_->SetMemoryLimitsForTest(
-@@ -5073,4 +5595,52 @@
+@@ -5073,4 +5627,52 @@
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
  
@@ -11551,7 +11590,7 @@
      if (enable_platform_hevc) {
 --- a/media/formats/mp2t/mp2t_stream_parser.h
 +++ b/media/formats/mp2t/mp2t_stream_parser.h
-@@ -62,6 +62,10 @@
+@@ -62,17 +62,21 @@
        base::span<const uint8_t> buf) override;
    [[nodiscard]] ParseStatus Parse(int max_pending_bytes_to_inspect) override;
  
@@ -11562,6 +11601,20 @@
   private:
    struct BufferQueueWithConfig {
      BufferQueueWithConfig(bool is_cfg_sent,
+-                          const AudioDecoderConfig& audio_cfg,
++                          const std::map<int, AudioDecoderConfig>& audio_cfg,
+                           const VideoDecoderConfig& video_cfg);
+     BufferQueueWithConfig(const BufferQueueWithConfig& other);
+     ~BufferQueueWithConfig();
+ 
+     bool is_config_sent;
+-    AudioDecoderConfig audio_config;
+-    StreamParser::BufferQueue audio_queue;
++    std::map<int, AudioDecoderConfig> audio_configs;
++    StreamParser::BufferQueueMap audio_queues;
+     VideoDecoderConfig video_config;
+     StreamParser::BufferQueue video_queue;
+   };
 @@ -118,6 +122,9 @@
    std::unique_ptr<EsParser> CreateH264Parser(int pes_pid);
    std::unique_ptr<EsParser> CreateAacParser(int pes_pid);
@@ -11572,17 +11625,17 @@
  
    bool ShouldForceEncryptedParser();
    std::unique_ptr<EsParser> CreateEncryptedH264Parser(int pes_pid,
-@@ -163,6 +170,10 @@
+@@ -162,6 +169,10 @@
+   // True when AAC SBR extension is signalled in the mimetype
    // (mp4a.40.5 in the codecs parameter).
    bool sbr_in_mimetype_;
- 
++
 +  // Parc: whether ParcIgnoreDeclaredCodecs() asked for the streams Safari's
 +  // Media Source parses beyond Chromium's.
 +  bool parc_safari_streams_ = false;
-+
+ 
    // Bytes of the TS stream.
    // `uninspected_pending_bytes_` tracks how much data has not yet been
-   // attempted to be parsed from `ts_byte_queue_` between calls to Parse().
 --- a/media/formats/mp2t/mp2t_stream_parser.cc
 +++ b/media/formats/mp2t/mp2t_stream_parser.cc
 @@ -33,6 +33,10 @@
@@ -11606,27 +11659,38 @@
    kStreamTypeAACWithSampleAES = 0xcf,
    kStreamTypeAVCWithSampleAES = 0xdb,
    // TODO(dougsteed). Consider adding support for the following:
-@@ -327,6 +334,14 @@
-   EmitRemainingBuffers();
+@@ -214,10 +221,10 @@
+ 
+ Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
+     bool is_cfg_sent,
+-    const AudioDecoderConfig& audio_cfg,
++    const std::map<int, AudioDecoderConfig>& audio_cfg,
+     const VideoDecoderConfig& video_cfg)
+   : is_config_sent(is_cfg_sent),
+-    audio_config(audio_cfg),
++    audio_configs(audio_cfg),
+     video_config(video_cfg) {
  }
  
+@@ -325,6 +332,14 @@
+ 
+   // Deliver the remaining buffers to the SourceBufferState
+   EmitRemainingBuffers();
++}
++
 +// Parc: Safari's Media Source parses MPEG-2 TS with AVStreamDataParser
 +// (SourceBufferParserAVFObjC), which takes every elementary stream it
 +// recognizes without consulting the SourceBuffer's type.
 +void Mp2tStreamParser::ParcIgnoreDeclaredCodecs() {
 +  allowed_stream_types_.reset();
 +  parc_safari_streams_ = true;
-+}
-+
- bool Mp2tStreamParser::GetGenerateTimestampsFlag() const {
-   return false;
  }
-@@ -517,7 +532,20 @@
-   return std::make_unique<EsParserMpeg1Audio>(on_audio_config_changed,
-                                               std::move(on_emit_audio_buffer),
+ 
+ bool Mp2tStreamParser::GetGenerateTimestampsFlag() const {
+@@ -519,6 +534,19 @@
                                                media_log_.get());
-+}
-+
+ }
+ 
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 +std::unique_ptr<EsParser> Mp2tStreamParser::CreateParcAc3Parser(int pes_pid,
 +                                                                bool eac3) {
@@ -11637,16 +11701,16 @@
 +  return std::make_unique<ParcEsParserAc3>(eac3, on_audio_config_changed,
 +                                           std::move(on_emit_audio_buffer),
 +                                           media_log_.get());
- }
++}
 +#endif
- 
++
  bool Mp2tStreamParser::ShouldForceEncryptedParser() {
    // If we expect to handle encrypted data later in the stream, then force the
-@@ -610,7 +638,17 @@
-     case kStreamTypeMpeg1Audio:
+   // use of the encrypted parser variant so that the initial configuration
+@@ -611,6 +639,16 @@
      case kStreamTypeMpeg2Audio:
        es_parser = CreateMpeg1AudioParser(pes_pid);
-+      break;
+       break;
 +
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 +    case kStreamTypeParcAC3:
@@ -11655,20 +11719,285 @@
 +        es_parser = CreateParcAc3Parser(
 +            pes_pid, stream_type == kStreamTypeParcEAC3);
 +      }
-       break;
++      break;
 +#endif
  
      case kStreamTypeAVCWithSampleAES:
        if (descriptors.HasPrivateDataIndicator(
+@@ -692,6 +730,11 @@
+   // Disable all the other audio and video PIDs.
+   for (auto it = pids_.begin(); it != pids_.end(); ++it) {
+     PidState* pid_state = it->second.get();
++    if (parc_safari_streams_ &&
++        pid_state->pid_type() == PidState::kPidAudioPes) {
++      pid_state->Enable();
++      continue;
++    }
+     if (it != lowest_audio_pid && it != lowest_video_pid &&
+         (pid_state->pid_type() == PidState::kPidAudioPes ||
+          pid_state->pid_type() == PidState::kPidVideoPes))
+@@ -716,7 +759,8 @@
+     BufferQueueWithConfig buffer_queue_with_config(
+         false,
+         buffer_queue_chain_.empty()
+-        ? AudioDecoderConfig() : buffer_queue_chain_.back().audio_config,
++        ? std::map<int, AudioDecoderConfig>()
++        : buffer_queue_chain_.back().audio_configs,
+         video_decoder_config);
+     buffer_queue_chain_.push_back(buffer_queue_with_config);
+   }
+@@ -735,42 +779,38 @@
+     int pes_pid,
+     const AudioDecoderConfig& audio_decoder_config) {
+   DVLOG(1) << "OnAudioConfigChanged for pid=" << pes_pid;
+-  DCHECK_EQ(pes_pid, selected_audio_pid_);
++  DCHECK(parc_safari_streams_ || pes_pid == selected_audio_pid_);
+   DCHECK(audio_decoder_config.IsValidConfig());
+-
+-  if (!buffer_queue_chain_.empty() &&
+-      !buffer_queue_chain_.back().audio_config.IsValidConfig()) {
+-    // No audio has been received so far, can reuse the existing audio queue.
+-    DCHECK(buffer_queue_chain_.back().audio_queue.empty());
+-    buffer_queue_chain_.back().audio_config = audio_decoder_config;
+-  } else {
+-    // Create a new entry in |buffer_queue_chain_| with the updated configs.
+-    BufferQueueWithConfig buffer_queue_with_config(
+-        false,
+-        audio_decoder_config,
+-        buffer_queue_chain_.empty()
+-        ? VideoDecoderConfig() : buffer_queue_chain_.back().video_config);
+-    buffer_queue_chain_.push_back(buffer_queue_with_config);
+-  }
+-
+-  // Replace any non valid config with the 1st valid entry.
+-  // This might happen if there was no available config before.
+-  for (std::list<BufferQueueWithConfig>::iterator it =
+-       buffer_queue_chain_.begin(); it != buffer_queue_chain_.end(); ++it) {
+-    if (it->audio_config.IsValidConfig())
+-      break;
+-    it->audio_config = audio_decoder_config;
++  // Offset PIDs past the fixed video track ID; Chrome keeps its original ID.
++  const int track_id = parc_safari_streams_ ? pes_pid + 2 : kMp2tAudioTrackId;
++  if (buffer_queue_chain_.empty()) {
++    buffer_queue_chain_.emplace_back(
++        false, std::map<int, AudioDecoderConfig>(), VideoDecoderConfig());
++  }
++  if (buffer_queue_chain_.back().audio_configs.contains(track_id) ||
++      buffer_queue_chain_.back().is_config_sent) {
++    BufferQueueWithConfig next(false,
++        buffer_queue_chain_.back().audio_configs,
++        buffer_queue_chain_.back().video_config);
++    next.audio_configs[track_id] = audio_decoder_config;
++    buffer_queue_chain_.push_back(next);
++  }
++  // Backfill the first config for this PID into queues waiting for it.
++  for (auto& queue : buffer_queue_chain_) {
++    if (!queue.is_config_sent) {
++      queue.audio_configs.try_emplace(track_id, audio_decoder_config);
++    }
+   }
+ }
+ 
+ std::unique_ptr<MediaTracks> GenerateMediaTrackInfo(
+-    const AudioDecoderConfig& audio_config,
++    const std::map<int, AudioDecoderConfig>& audio_configs,
+     const VideoDecoderConfig& video_config) {
+   auto media_tracks = std::make_unique<MediaTracks>();
+   // TODO(servolk): Implement proper sourcing of media track info as described
+   // in crbug.com/590085
+-  if (audio_config.IsValidConfig()) {
+-    media_tracks->AddAudioTrack(audio_config, true, kMp2tAudioTrackId,
++  for (const auto& [track_id, audio_config] : audio_configs) {
++    media_tracks->AddAudioTrack(audio_config, track_id == audio_configs.begin()->first, track_id,
+                                 MediaTrack::Kind("main"), MediaTrack::Label(""),
+                                 MediaTrack::Language(""));
+   }
+@@ -794,15 +834,24 @@
+   // Wait for more data to come if one of the config is not available.
+   BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
+   if (selected_audio_pid_ > 0 &&
+-      !queue_with_config.audio_config.IsValidConfig())
++      queue_with_config.audio_configs.empty())
+     return true;
+   if (selected_video_pid_ > 0 &&
+       !queue_with_config.video_config.IsValidConfig())
+     return true;
+ 
++  if (parc_safari_streams_) {
++    for (const auto& [pid, state] : pids_) {
++      if (state->pid_type() == PidState::kPidAudioPes &&
++          !queue_with_config.audio_configs.contains(pid + 2)) {
++        return true;
++      }
++    }
++  }
++
+   // Pass the config before invoking the initialization callback.
+   std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
+-      queue_with_config.audio_config, queue_with_config.video_config);
++      queue_with_config.audio_configs, queue_with_config.video_config);
+   RCHECK(config_cb_.Run(std::move(media_tracks)));
+   queue_with_config.is_config_sent = true;
+ 
+@@ -813,7 +862,7 @@
+   // accurately here. Currently, capped at max 1 each for audio and video.
+   InitParameters params(kInfiniteDuration);
+   params.detected_audio_track_count =
+-      queue_with_config.audio_config.IsValidConfig() ? 1 : 0;
++      queue_with_config.audio_configs.size();
+   params.detected_video_track_count =
+       queue_with_config.video_config.IsValidConfig() ? 1 : 0;
+   std::move(init_cb_).Run(params);
+@@ -825,7 +874,7 @@
+ void Mp2tStreamParser::OnEmitAudioBuffer(
+     int pes_pid,
+     scoped_refptr<StreamParserBuffer> stream_parser_buffer) {
+-  DCHECK_EQ(pes_pid, selected_audio_pid_);
++  DCHECK(parc_safari_streams_ || pes_pid == selected_audio_pid_);
+ 
+   DVLOG(LOG_LEVEL_ES)
+       << "OnEmitAudioBuffer: " << " size=" << stream_parser_buffer->size()
+@@ -839,7 +888,9 @@
+     return;
+   }
+ 
+-  buffer_queue_chain_.back().audio_queue.push_back(stream_parser_buffer);
++  const int track_id = parc_safari_streams_ ? pes_pid + 2 : kMp2tAudioTrackId;
++  stream_parser_buffer->set_track_id(track_id);
++  buffer_queue_chain_.back().audio_queues[track_id].push_back(stream_parser_buffer);
+ }
+ 
+ void Mp2tStreamParser::OnEmitVideoBuffer(
+@@ -873,16 +924,24 @@
+     return true;
+ 
+   // Keep track of the last audio and video config sent.
+-  AudioDecoderConfig last_audio_config =
+-      buffer_queue_chain_.back().audio_config;
++  const auto last_audio_configs = buffer_queue_chain_.back().audio_configs;
+   VideoDecoderConfig last_video_config =
+       buffer_queue_chain_.back().video_config;
+ 
+   // Do not have all the configs, need more data.
+-  if (selected_audio_pid_ >= 0 && !last_audio_config.IsValidConfig())
++  if (selected_audio_pid_ >= 0 && last_audio_configs.empty())
+     return true;
+   if (selected_video_pid_ >= 0 && !last_video_config.IsValidConfig())
+     return true;
++
++  if (parc_safari_streams_) {
++    for (const auto& [pid, state] : pids_) {
++      if (state->pid_type() == PidState::kPidAudioPes &&
++          !last_audio_configs.contains(pid + 2)) {
++        return true;
++      }
++    }
++  }
+ 
+   // Buffer emission.
+   while (!buffer_queue_chain_.empty()) {
+@@ -897,7 +956,7 @@
+     BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
+     if (!queue_with_config.is_config_sent) {
+       std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
+-          queue_with_config.audio_config, queue_with_config.video_config);
++          queue_with_config.audio_configs, queue_with_config.video_config);
+       if (!config_cb_.Run(std::move(media_tracks))) {
+         return false;
+       }
+@@ -905,10 +964,7 @@
+     }
+ 
+     // Add buffers.
+-    BufferQueueMap buffer_queue_map;
+-    if (!queue_with_config.audio_queue.empty())
+-      buffer_queue_map.insert(
+-          std::make_pair(kMp2tAudioTrackId, queue_with_config.audio_queue));
++    BufferQueueMap buffer_queue_map = queue_with_config.audio_queues;
+     if (!queue_with_config.video_queue.empty())
+       buffer_queue_map.insert(
+           std::make_pair(kMp2tVideoTrackId, queue_with_config.video_queue));
+@@ -922,7 +978,7 @@
+   // Push an empty queue with the last audio/video config
+   // so that buffers with the same config can be added later on.
+   BufferQueueWithConfig queue_with_config(
+-      true, last_audio_config, last_video_config);
++      true, last_audio_configs, last_video_config);
+   buffer_queue_chain_.push_back(queue_with_config);
+ 
+   return true;
 --- a/media/formats/mp2t/mp2t_stream_parser_unittest.cc
 +++ b/media/formats/mp2t/mp2t_stream_parser_unittest.cc
-@@ -525,9 +525,81 @@
-   EXPECT_EQ(video_frame_count_, 82);
+@@ -25,6 +25,7 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_view_util.h"
+ #include "base/time/time.h"
++#include "base/test/bind.h"
+ #include "crypto/openssl_util.h"
+ #include "media/base/audio_decoder_config.h"
+ #include "media/base/decoder_buffer.h"
+@@ -408,6 +409,57 @@
+   }
+ };
  
-   // There should be a single configuration, with no audio.
-+  EXPECT_EQ(config_count_, 1);
++TEST(Mp2tSafariTracksTest, SafariKeepsBothAudioPidsChromeKeepsLowest) {
++  for (bool safari : {false, true}) {
++    Mp2tStreamParser parser(std::nullopt, false);
++    if (safari) {
++      parser.ParcIgnoreDeclaredCodecs();
++    }
++    NullMediaLog log;
++    std::map<int, size_t> counts;
++    size_t configs = 0;
++    parser.Init(base::BindOnce([](const StreamParser::InitParameters& p) {}),
++        base::BindLambdaForTesting([&](std::unique_ptr<MediaTracks> tracks) {
++          configs = tracks->GetAudioConfigs().size();
++          EXPECT_EQ(configs, safari ? 2u : 1u);
++          for (const auto& [id, config] : tracks->GetAudioConfigs()) {
++            EXPECT_TRUE(config.IsValidConfig());
++            counts.try_emplace(id, 0);
++          }
++          return true;
++        }),
++        base::BindLambdaForTesting([&](const StreamParser::BufferQueueMap& buffers) {
++          for (const auto& [id, queue] : buffers) {
++            EXPECT_TRUE(counts.contains(id));
++            for (const auto& buffer : queue) {
++              EXPECT_EQ(buffer->track_id(), id);
++              ++counts[id];
++            }
++          }
++          return true;
++        }), base::BindRepeating([](EmeInitDataType, const std::vector<uint8_t>&) {}),
++        base::DoNothing(), base::DoNothing(), &log);
++    const auto data = ReadTestDataFile("parc-two-audio.ts");
++    for (size_t start = 0; start < data->size();) {
++      const size_t size = std::min(size_t{188}, data->size() - start);
++      ASSERT_TRUE(parser.AppendToParseBuffer(base::span(*data).subspan(start, size)));
++      ASSERT_NE(parser.Parse(size), StreamParser::ParseStatus::kFailed);
++      start += size;
++    }
++    parser.MarkEndOfStream();
++    parser.Flush();
++    // After abort/reset, each returning PID still requires its own config.
++    ASSERT_TRUE(parser.AppendToParseBuffer(base::span(*data)));
++    ASSERT_NE(parser.Parse(data->size()), StreamParser::ParseStatus::kFailed);
++    parser.MarkEndOfStream();
++    EXPECT_EQ(configs, safari ? 2u : 1u);
++    EXPECT_EQ(counts.size(), safari ? 2u : 1u);
++    for (const auto& [id, count] : counts) {
++      EXPECT_GT(count, 1u);
++    }
++  }
 +}
 +
+ TEST_F(Mp2tStreamParserTest, NonStrictCodecChecking) {
+   CreateNonStrictParser();
+   InitializeParser();
+@@ -528,6 +580,78 @@
+   EXPECT_EQ(config_count_, 1);
+ }
+ 
 +// Parc: with ParcIgnoreDeclaredCodecs(), as on a document presenting Safari's
 +// identity (SourceBufferState::ParcSetSafariInitSegmentRules()), streams of
 +// codecs the type didn't name are parsed too.
@@ -11710,12 +12039,12 @@
 +  InitializeParser();
 +  ParseMpeg2TsFile("parc-bear-ac3.ts", 512);
 +  parser_->Flush();
-   EXPECT_EQ(config_count_, 1);
++  EXPECT_EQ(config_count_, 1);
 +  EXPECT_EQ(audio_frame_count_, 10);
 +  EXPECT_EQ(current_audio_config_.codec(), AudioCodec::kAC3);
 +  EXPECT_EQ(current_audio_config_.samples_per_second(), 44100);
- }
- 
++}
++
 +TEST_F(Mp2tStreamParserTest, ParcEac3StreamUnderSafariRules) {
 +  CreateNonStrictParser();
 +  parser_->ParcIgnoreDeclaredCodecs();
@@ -11845,3 +12174,28 @@
  TEST_F(BackForwardCacheImplTest, CrossOriginReachableFrameCount) {
    auto tree_root = SetUpTree();
    // The reachable cross-origin frames are b-1 and b-3 and b-4.
+
+--- a/media/base/stream_parser_buffer.h
++++ b/media/base/stream_parser_buffer.h
+@@ -189,6 +189,12 @@
+   // Gets the parser's track ID associated with this buffer. Value is
+   // meaningless for EOS buffers.
+   TrackId track_id() const { return track_id_; }
++  void set_track_id(TrackId track_id) {
++    track_id_ = track_id;
++    if (preroll_buffer_) {
++      preroll_buffer_->set_track_id(track_id);
++    }
++  }
+ 
+   // Specifies a buffer which must be decoded prior to this one to ensure this
+   // buffer can be accurately decoded.  The given buffer must be of the same
+@@ -234,7 +240,7 @@
+   bool is_duration_estimated_ : 1 = false;
+   DecodeTimestamp decode_timestamp_ = kNoDecodeTimestamp;
+   int config_id_ = kInvalidConfigId;
+-  const TrackId track_id_;
++  TrackId track_id_;
+   scoped_refptr<StreamParserBuffer> preroll_buffer_;
+ };
+ 

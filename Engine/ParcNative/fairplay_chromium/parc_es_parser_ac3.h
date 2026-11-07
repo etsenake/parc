@@ -77,6 +77,7 @@ class MEDIA_EXPORT ParcEsParserAc3 : public EsParser {
   bool UpdateAudioConfiguration(const Syncframe& first,
                                 const std::vector<Syncframe>& dependents);
 
+  bool flushing_ = false;
   const bool eac3_;
   const std::unique_ptr<MediaLog> media_log_;
   size_t parse_error_limit_ = 0;

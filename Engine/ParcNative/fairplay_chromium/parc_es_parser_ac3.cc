@@ -53,10 +53,15 @@ ParcEsParserAc3::ParcEsParserAc3(bool eac3,
 
 ParcEsParserAc3::~ParcEsParserAc3() = default;
 
-void ParcEsParserAc3::Flush() {}
+void ParcEsParserAc3::Flush() {
+  flushing_ = true;
+  ParseFromEsQueue();
+  flushing_ = false;
+}
 
 void ParcEsParserAc3::ResetInternal() {
   last_audio_decoder_config_ = AudioDecoderConfig();
+  audio_timestamp_helper_.reset();
 }
 
 std::optional<ParcEsParserAc3::Syncframe> ParcEsParserAc3::ReadSyncframe(
@@ -201,11 +206,9 @@ bool ParcEsParserAc3::ParseFromEsQueue() {
       dependents.push_back(*next);
       access_unit_size += next->size;
     }
-    // An E-AC-3 access unit may go on in syncframes whose header hasn't
-    // arrived. PES packets reach this parser whole, so the queue ending with
-    // the syncframe ends the access unit.
-    if (eac3_ && access_unit_size < es.size() &&
-        es.size() < access_unit_size + kHeaderSize) {
+    // A packet boundary need not end an E-AC-3 access unit. Keep its
+    // dependents until the next independent header (at most one frame).
+    if (eac3_ && !flushing_ && es.size() < access_unit_size + kHeaderSize) {
       return true;
     }
     // As EsParserMpeg1Audio: a sync word not followed by another one where

@@ -197,6 +197,28 @@ TEST_F(ParcEsParserAc3Test, Eac3DependentSubstreamsJoinTheirAccessUnit) {
   EXPECT_EQ(buffer_timestamps_, "(1000) (1032) (1064) (1096)");
 }
 
+TEST_F(ParcEsParserAc3Test, Eac3ExtensionInNextPacketWaitsForNextFrame) {
+  const auto core = Eac3Syncframe(0, 7, 1, std::nullopt, 256);
+  const auto extension = Eac3Syncframe(1, 2, 0, 0x8000 >> 6, 128);
+  ParcEsParserAc3 parser(
+      true,
+      base::BindRepeating(&ParcEsParserAc3Test_Eac3ExtensionInNextPacketWaitsForNextFrame_Test::OnAudioConfig,
+                          base::Unretained(this)),
+      base::BindRepeating(&ParcEsParserAc3Test_Eac3ExtensionInNextPacketWaitsForNextFrame_Test::OnBuffer,
+                          base::Unretained(this)), &media_log_);
+  EXPECT_TRUE(parser.Parse(core, base::Seconds(1), kNoDecodeTimestamp));
+  EXPECT_TRUE(buffer_sizes_.empty());
+  EXPECT_TRUE(parser.Parse(extension, kNoTimestamp, kNoDecodeTimestamp));
+  EXPECT_TRUE(buffer_sizes_.empty());
+  EXPECT_TRUE(parser.Parse(core, kNoTimestamp, kNoDecodeTimestamp));
+  EXPECT_EQ(buffer_sizes_, std::vector<size_t>({384}));
+  EXPECT_EQ(config_.channel_layout(), CHANNEL_LAYOUT_7_1);
+  EXPECT_TRUE(parser.Parse(extension, kNoTimestamp, kNoDecodeTimestamp));
+  parser.Flush();
+  EXPECT_EQ(buffer_sizes_, std::vector<size_t>({384, 384}));
+  EXPECT_EQ(config_count_, 1u);
+}
+
 TEST_F(ParcEsParserAc3Test, Eac3DependentChanmapLfe2AndLtsRts) {
   // Lrs/Rrs (chanmap bit 6) with LFE2 (bit 14) is chan_loc LRS_RRS | LFE2,
   // which matches no single location, as in mp4::EAC3: 5.1. With Lts/Rts

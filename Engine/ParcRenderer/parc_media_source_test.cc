@@ -27,6 +27,8 @@
 #include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/core/html/track/audio_track.h"
+#include "third_party/blink/renderer/core/html/track/audio_track_list.h"
 #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
 #include "third_party/blink/renderer/core/html/media/media_source_tracer.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
@@ -39,6 +41,8 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 
 namespace blink {
 namespace {
@@ -55,6 +59,7 @@ constexpr const char* kTypesWithoutCodecs[] = {"video/mp4", "audio/mp4",
 
 // What the MediaSource told the media engine, and what the engine reports.
 struct FakeEngine {
+  std::vector<WebSourceBufferClient::MediaTrackInfo> tracks;
   int add_source_buffer_calls = 0;
   String added_type;
   String added_codecs;
@@ -71,7 +76,7 @@ class FakeWebSourceBuffer final : public WebSourceBuffer {
   explicit FakeWebSourceBuffer(FakeEngineRef engine)
       : engine_(std::move(engine)) {}
 
-  void SetClient(WebSourceBufferClient*) override {}
+  void SetClient(WebSourceBufferClient* client) override { client_ = client; }
   bool SetMode(AppendMode) override { return true; }
   bool GetGenerateTimestampsFlag() override { return false; }
   WebTimeRanges Buffered() override { return engine_->data.buffered; }
@@ -83,6 +88,9 @@ class FakeWebSourceBuffer final : public WebSourceBuffer {
     return true;
   }
   media::StreamParser::ParseStatus RunSegmentParserLoop(double*) override {
+    if (!engine_->data.tracks.empty()) {
+      EXPECT_TRUE(client_->InitializationSegmentReceived(engine_->data.tracks));
+    }
     return media::StreamParser::ParseStatus::kSuccess;
   }
   bool AppendChunks(std::unique_ptr<media::StreamParser::BufferQueue>,
@@ -105,6 +113,7 @@ class FakeWebSourceBuffer final : public WebSourceBuffer {
   void RemovedFromMediaSource() override {}
 
  private:
+  WebSourceBufferClient* client_ = nullptr;
   FakeEngineRef engine_;
 };
 
@@ -211,6 +220,35 @@ class ParcMediaSourceTest : public PageTestBase {
   Persistent<MediaSourceTracer> tracer_;
   scoped_refptr<MediaSourceAttachment> attachment_;
 };
+
+TEST_F(ParcMediaSourceTest, SafariTsSourceBufferExposesEveryAudioTrack) {
+  SetUserAgent(kSafariUserAgent);
+  auto* source = OpenMediaSource();
+  DummyExceptionStateForTesting exception_state;
+  auto* buffer = source->addSourceBuffer("video/mp2t", exception_state);
+  ASSERT_NE(buffer, nullptr);
+  using Info = WebSourceBufferClient::MediaTrackInfo;
+  std::vector<Info> tracks = {
+      {WebMediaPlayer::kAudioTrack, WebMediaPlayer::TrackId("1"),
+       WebString::FromUtf8("258"), WebString::FromUtf8("main"),
+       WebString(), WebString()},
+      {WebMediaPlayer::kAudioTrack, WebMediaPlayer::TrackId("2"),
+       WebString::FromUtf8("259"), WebString::FromUtf8("main"),
+       WebString(), WebString()}};
+  engine_->data.tracks = tracks;
+  buffer->appendBuffer(DOMArrayBuffer::Create(1, 1), exception_state);
+  ASSERT_FALSE(exception_state.HadException());
+  test::RunPendingTasks();
+  ASSERT_EQ(buffer->audioTracks().length(), 2u);
+  ASSERT_EQ(video_->audioTracks().length(), 2u);
+  EXPECT_NE(buffer->audioTracks().AnonymousIndexedGetter(0)->id(),
+            buffer->audioTracks().AnonymousIndexedGetter(1)->id());
+  engine_->data.tracks = tracks;
+  buffer->appendBuffer(DOMArrayBuffer::Create(1, 1), exception_state);
+  ASSERT_FALSE(exception_state.HadException());
+  test::RunPendingTasks();
+  EXPECT_EQ(video_->audioTracks().length(), 2u);
+}
 
 // WebKit's MediaSource::isTypeSupported: without codecs, anything but
 // IsNotSupported is supported.
