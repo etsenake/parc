@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 576,
+  "version": 577,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -4222,7 +4222,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "aaa09f0c19be18d206cfa08b62732d869718f843c4196571f5ec32a4f906af81",
+      "sha256": "c455b111625c9882d2cd707af2cdef133d0891e9098d2a5a2eb66be3e77c542b",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4347,12 +4347,12 @@
         {
           "target": "media/filters/chunk_demuxer.cc",
           "before_sha256": "bfe9309a25c772e3362e2da90ccf528e21ad98abb3621566484e585d6ca4c3ee",
-          "after_sha256": "8ff3ece0c12ec61f54e8e4186ecac65a82cdbb5fa30b4096a7367021b97d1af8"
+          "after_sha256": "24eb1ab712a4d6042fc68407b516a30db8862d8a664581cf682c65d0b8783de7"
         },
         {
           "target": "media/filters/chunk_demuxer.h",
           "before_sha256": "7882b1b7d0ec10bc36f06ca11b835bd474163070b8b0d032e719c8ecbd5250d9",
-          "after_sha256": "de2e3ff71984906d5acc5da023eaccb6ef3b14c40f1f1305c09dad9b6f81a64d"
+          "after_sha256": "be3901f573a81513957d49bcfdabccf5363faea1238b83620d4185b57139ffe6"
         },
         {
           "target": "media/filters/demuxer_manager.cc",
@@ -4622,12 +4622,12 @@
         {
           "target": "media/filters/source_buffer_stream.h",
           "before_sha256": "bfc63514119e39b516ab20c64c124deed1efed80c2e565c5e1ad10a70042417f",
-          "after_sha256": "0b4b90a90764118abedd94a310f8fa775625a0d785cca718aa42f2c1c1a67aa3"
+          "after_sha256": "bb4a5e436292a11b8ff29edd946aa7e17376753f6f29f6dbae8e6c7f779fa231"
         },
         {
           "target": "media/filters/source_buffer_stream.cc",
           "before_sha256": "6d6f996179c344e2ceace3bdd41766548826959bded29a98c9b98c37967dedd0",
-          "after_sha256": "b59229282b5101bf6c13a67ed8c0e778a982a40c298d91d1e5a7e30ed4dfb6ea"
+          "after_sha256": "4cb6d1bc0865e7034ed1cb508cb518cdbc083cc7cdded232c9272d6d6b038933"
         },
         {
           "target": "media/filters/source_buffer_range.h",
@@ -4642,12 +4642,12 @@
         {
           "target": "media/filters/source_buffer_state.h",
           "before_sha256": "03bd38edb9cd7cf5b244068f37b65e7f29e8ea2f33441c2933d4ddb21f339574",
-          "after_sha256": "900d8b9e91ee1035e037e86d0dca50ac91591867503f77a411dde90a9c32f9bc"
+          "after_sha256": "508445738871dafe5266edde9ad4544f366d56aec7fbf9d633e691d11bb2926e"
         },
         {
           "target": "media/filters/source_buffer_state.cc",
           "before_sha256": "5c5994b780510f476106b8269ffa6802e18e2a43c8942de684e8edef7ce765a0",
-          "after_sha256": "fb045896e7675b9cb11b72249ceaf9699f134f8431bf0d124e6b8ee1ef25794e"
+          "after_sha256": "efbfe04d0ed4fbb5e09ecf7c9b9e3c13d12adc90a1eb27eb7306671ecd4550f0"
         },
         {
           "target": "media/filters/source_buffer_state_unittest.cc",
@@ -4717,7 +4717,7 @@
         {
           "target": "media/filters/chunk_demuxer_unittest.cc",
           "before_sha256": "d840d132e021395d7d52bf836a6bac56acf9f2a2b2688e44f0cbfcde0ebae570",
-          "after_sha256": "3ec76eada456f89683b46b7c58259b890448b6ed28938f56b16f892dcff1e775"
+          "after_sha256": "0a72787cc89d6c4efa360ce3bddf75612dd9fc1ecd982cf042b478660fc56088"
         },
         {
           "target": "media/filters/source_buffer_stream_unittest.cc",

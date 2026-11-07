@@ -1906,7 +1906,7 @@
  #include "base/task/bind_post_task.h"
  #include "base/trace_event/trace_event.h"
  #include "media/base/audio_decoder_config.h"
-@@ -47,6 +51,11 @@
+@@ -47,6 +51,11 @@ std::unique_ptr<media::StreamParser> CreateParserForTypeAndCodecs(
      media::MediaLog* media_log) {
    std::vector<std::string> parsed_codec_ids;
    media::SplitCodecs(codecs, &parsed_codec_ids);
@@ -1918,7 +1918,7 @@
    return media::StreamParserFactory::Create(content_type, parsed_codec_ids,
                                              media_log);
  }
-@@ -142,6 +151,59 @@
+@@ -142,6 +151,60 @@ bool ChunkDemuxerStream::Append(const StreamParser::BufferQueue& buffers) {
    return true;
  }
  
@@ -1935,9 +1935,10 @@
 +}
 +
 +void ChunkDemuxerStream::ParcRemoveFrom(base::TimeDelta start,
-+                                        base::TimeDelta duration) {
++                                        base::TimeDelta duration,
++                                        base::TimeDelta removal_end) {
 +  base::AutoLock auto_lock(lock_);
-+  stream_->ParcRemoveFrom(start, duration);
++  stream_->ParcRemoveFrom(start, duration, removal_end);
 +}
 +
 +void ChunkDemuxerStream::ParcSetSafariMediaSource(bool safari) {
@@ -1978,7 +1979,7 @@
  void ChunkDemuxerStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -231,6 +293,7 @@
+@@ -231,6 +294,7 @@ bool ChunkDemuxerStream::UpdateAudioConfig(const AudioDecoderConfig& config,
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -1986,7 +1987,7 @@
      return true;
    }
  
-@@ -247,6 +310,7 @@
+@@ -247,6 +311,7 @@ bool ChunkDemuxerStream::UpdateVideoConfig(const VideoDecoderConfig& config,
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -1994,12 +1995,10 @@
      return true;
    }
  
-@@ -310,6 +374,17 @@
- bool ChunkDemuxerStream::IsEnabled() const {
-   base::AutoLock auto_lock(lock_);
+@@ -312,6 +377,17 @@ bool ChunkDemuxerStream::IsEnabled() const {
    return is_enabled_;
-+}
-+
+ }
+ 
 +bool ChunkDemuxerStream::ParcIsEnabled() const {
 +  return IsEnabled();
 +}
@@ -2009,23 +2008,23 @@
 +  if (is_enabled_ && !read_cb_) {
 +    stream_->Seek(time);
 +  }
- }
- 
- void ChunkDemuxerStream::SetEnabled(bool enabled, base::TimeDelta timestamp) {
-@@ -527,11 +602,29 @@
-     cancel_next_seek_ = false;
-     RunSeekCB_Locked(PIPELINE_OK);
-     return;
-+  }
++}
 +
+ void ChunkDemuxerStream::SetEnabled(bool enabled, base::TimeDelta timestamp) {
+   base::AutoLock auto_lock(lock_);
+ 
+@@ -529,9 +605,27 @@ void ChunkDemuxer::Seek(base::TimeDelta time, PipelineStatusCallback cb) {
+     return;
+   }
+ 
 +  // Parc: a fast seek set for this target applies to this seek; it lands
 +  // once the target's data is buffered (RunSeekCB_Locked).
 +  parc_fast_seek_.reset();
 +  parc_fast_seek_landing_.reset();
 +  if (parc_requested_fast_seek_ && parc_requested_fast_seek_->target == time) {
 +    parc_fast_seek_ = std::exchange(parc_requested_fast_seek_, std::nullopt);
-   }
- 
++  }
++
    SeekAllSources(time);
    StartReturningData();
  
@@ -2042,7 +2041,7 @@
    if (IsSeekWaitingForData_Locked()) {
      DVLOG(1) << "Seek() : waiting for more data to arrive.";
      return;
-@@ -634,6 +727,8 @@
+@@ -634,6 +728,8 @@ void ChunkDemuxer::CancelPendingSeek(base::TimeDelta seek_time) {
  
    AbortPendingReads_Locked();
    SeekAllSources(seek_time);
@@ -2051,7 +2050,7 @@
  
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -643,6 +738,43 @@
+@@ -643,6 +739,43 @@ void ChunkDemuxer::CancelPendingSeek(base::TimeDelta seek_time) {
    RunSeekCB_Locked(PIPELINE_OK);
  }
  
@@ -2095,7 +2094,7 @@
  ChunkDemuxer::Status ChunkDemuxer::AddId(
      const std::string& id,
      std::unique_ptr<AudioDecoderConfig> audio_config) {
-@@ -656,12 +788,13 @@
+@@ -656,12 +789,13 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -2111,7 +2110,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
                         std::nullopt);
  }
-@@ -679,12 +812,13 @@
+@@ -679,12 +813,13 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -2127,7 +2126,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,17 +830,18 @@
+@@ -696,17 +831,18 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
  
@@ -2149,7 +2148,7 @@
    if (!stream_parser) {
      DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
               << " codecs=" << codecs;
-@@ -762,6 +897,11 @@
+@@ -762,6 +898,11 @@ ChunkDemuxer::Status ChunkDemuxer::AddIdInternal(
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
@@ -2161,7 +2160,7 @@
  
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -774,7 +914,17 @@
+@@ -774,7 +915,17 @@ ChunkDemuxer::Status ChunkDemuxer::AddIdInternal(
  
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
                                      base::Unretained(this), id),
@@ -2180,7 +2179,7 @@
  
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
-@@ -802,7 +952,10 @@
+@@ -802,7 +953,10 @@ void ChunkDemuxer::SetParseWarningCallback(
  void ChunkDemuxer::RemoveId(const std::string& id) {
    DVLOG(1) << __func__ << " id=" << id;
    base::AutoLock auto_lock(lock_);
@@ -2191,7 +2190,7 @@
  
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
-@@ -830,6 +983,7 @@
+@@ -830,6 +984,7 @@ void ChunkDemuxer::RemoveId(const std::string& id) {
      CHECK(stream_found);
    }
    id_to_streams_map_.erase(id);
@@ -2199,7 +2198,7 @@
  }
  
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
-@@ -870,9 +1024,66 @@
+@@ -870,9 +1025,66 @@ void ChunkDemuxer::OnTracksChanged(DemuxerStream::Type track_type,
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
@@ -2267,7 +2266,7 @@
      auto it = track_id_to_demux_stream_map_.find(*track_id);
      if (it != track_id_to_demux_stream_map_.end()) {
        DCHECK(it->second);
-@@ -885,20 +1096,178 @@
+@@ -885,20 +1097,178 @@ void ChunkDemuxer::OnTracksChanged(DemuxerStream::Type track_type,
      }
    }
  
@@ -2280,7 +2279,7 @@
      }
    }
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
- 
++
 +  // Parc: which SourceBuffers are active decides whether one a purge emptied
 +  // counts toward the media source's buffered ranges
 +  // (SourceBufferState::ParcLeftOutOfMediaSource), as activeSourceBuffers
@@ -2291,7 +2290,7 @@
 +      break;
 +    }
 +  }
-+
+ 
    std::move(change_completed_cb).Run(enabled_stream);
  }
  
@@ -2449,7 +2448,7 @@
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
                                      base::TimeDelta currentMediaTime,
                                      size_t newDataSize) {
-@@ -913,7 +1282,31 @@
+@@ -913,7 +1283,31 @@ bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
@@ -2482,7 +2481,7 @@
  }
  
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
-@@ -1013,6 +1406,7 @@
+@@ -1013,6 +1407,7 @@ StreamParser::ParseStatus ChunkDemuxer::RunSegmentParserLoop(
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
@@ -2490,7 +2489,7 @@
  
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1075,6 +1469,7 @@
+@@ -1075,6 +1470,7 @@ bool ChunkDemuxer::AppendChunks(
          DVLOG(1) << "AppendChunks(): called in unexpected state " << state_;
          return false;
      }
@@ -2498,7 +2497,7 @@
  
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1102,6 +1497,7 @@
+@@ -1102,6 +1498,7 @@ void ChunkDemuxer::ResetParserState(const std::string& id,
    source_state_map_[id]->ResetParserState(append_window_start,
                                            append_window_end,
                                            timestamp_offset);
@@ -2506,7 +2505,7 @@
    // ResetParserState can possibly emit some buffers.
    // Need to check whether seeking can be completed.
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
-@@ -1136,10 +1532,113 @@
+@@ -1136,8 +1533,111 @@ void ChunkDemuxer::Remove(const std::string& id,
    if (start == duration_)
      return;
  
@@ -2520,8 +2519,8 @@
 +  if (parc_safari_init_segment_rules_) {
 +    progress_cb_.Run();
 +  }
- }
- 
++}
++
 +std::optional<ChunkDemuxer::ParcBufferedState>
 +ChunkDemuxer::ParcGetBufferedState() const {
 +  base::AutoLock auto_lock(lock_);
@@ -2563,7 +2562,7 @@
 +  ParcMediaSourceRanges_Locked(&buffered, &audio);
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
 +  itr->second->ParcPurgeForMemoryPressure(media_time, active, duration_,
-+                                          buffered, audio);
++                                          buffered, audio, parc_safari_eviction_);
 +  ParcComputeEvictionData_Locked(itr->second.get(), media_time);
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
 +  host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
@@ -2615,18 +2614,13 @@
 +  }
 +  *buffered =
 +      SourceBufferState::ComputeRangesIntersection(active_ranges, ended);
-+}
-+
- bool ChunkDemuxer::CanChangeType(const std::string& id,
-                                  const std::string& content_type,
-                                  const std::string& codecs) {
-@@ -1159,6 +1658,25 @@
-   DCHECK(IsValidId_Locked(id));
+ }
  
-   if (!supports_change_type_) {
-+    return false;
-+  }
-+
+ bool ChunkDemuxer::CanChangeType(const std::string& id,
+@@ -1162,11 +1662,30 @@ bool ChunkDemuxer::CanChangeType(const std::string& id,
+     return false;
+   }
+ 
 +  // Parc: under Safari's init segment rules the filter judges the type and
 +  // codecs the parser takes (ParcCreateParser_Locked()).
 +  std::string filter_type = content_type;
@@ -2643,10 +2637,10 @@
 +
 +  if (change_type_filter_ &&
 +      !change_type_filter_.Run(filter_type, filter_codecs)) {
-     return false;
-   }
- 
-@@ -1166,7 +1684,7 @@
++    return false;
++  }
++
+   // CanChangeType() doesn't care if there has or hasn't been received a first
    // initialization segment for the source buffer corresponding to |id|.
  
    std::unique_ptr<media::StreamParser> stream_parser(
@@ -2655,7 +2649,7 @@
    return !!stream_parser;
  }
  
-@@ -1182,7 +1700,7 @@
+@@ -1182,7 +1701,7 @@ void ChunkDemuxer::ChangeType(const std::string& id,
    DCHECK(IsValidId_Locked(id));
  
    std::unique_ptr<media::StreamParser> stream_parser(
@@ -2664,7 +2658,7 @@
    // Caller should query CanChangeType() first to protect from failing this.
    DCHECK(stream_parser);
    source_state_map_[id]->ChangeType(std::move(stream_parser),
-@@ -1244,6 +1762,7 @@
+@@ -1244,6 +1763,7 @@ void ChunkDemuxer::SetDuration(double duration) {
    DCHECK(duration_td.is_positive());
  
    user_specified_duration_ = duration;
@@ -2672,7 +2666,7 @@
    duration_ = duration_td;
    host_->SetDuration(duration_);
  
-@@ -1251,6 +1770,7 @@
+@@ -1251,6 +1771,7 @@ void ChunkDemuxer::SetDuration(double duration) {
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
@@ -2680,7 +2674,7 @@
  }
  
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
-@@ -1332,6 +1852,10 @@
+@@ -1332,6 +1853,10 @@ void ChunkDemuxer::MarkEndOfStream(PipelineStatus status) {
  
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
      RunSeekCB_Locked(PIPELINE_OK);
@@ -2691,7 +2685,7 @@
  }
  
  void ChunkDemuxer::UnmarkEndOfStream() {
-@@ -1440,6 +1964,10 @@
+@@ -1440,6 +1965,10 @@ void ChunkDemuxer::OnSourceInitDone(
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
@@ -2702,12 +2696,10 @@
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1486,6 +2014,59 @@
-   CHECK_EQ(state_, INITIALIZING);
-   ChangeState_Locked(INITIALIZED);
+@@ -1488,6 +2017,59 @@ void ChunkDemuxer::OnSourceInitDone(
    RunInitCB_Locked(PIPELINE_OK);
-+}
-+
+ }
+ 
 +// WebKit's SourceBuffer adds a late SourceBuffer's tracks like the first
 +// ones' (sourceBufferPrivateDidReceiveInitializationSegment); the duration and
 +// timeline the pipeline reported stay. Its streams join the others: returning
@@ -2759,10 +2751,12 @@
 +  if (!tracks.empty()) {
 +    parc_streams_added_cb_.Run(added, tracks);
 +  }
- }
- 
++}
++
  // static
-@@ -1523,8 +2104,19 @@
+ MediaTrack::Id ChunkDemuxer::GenerateMediaTrackId() {
+   static unsigned g_track_count = 0;
+@@ -1523,8 +2105,19 @@ ChunkDemuxerStream* ChunkDemuxer::CreateDemuxerStream(
    DCHECK(track_id_to_demux_stream_map_.find(media_track_id) ==
           track_id_to_demux_stream_map_.end());
    track_id_to_demux_stream_map_[media_track_id] = stream.get();
@@ -2783,7 +2777,7 @@
    owning_vector->push_back(std::move(stream));
    return owning_vector->back().get();
  }
-@@ -1598,6 +2190,13 @@
+@@ -1598,6 +2191,13 @@ Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges_Locked() const {
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -2797,7 +2791,7 @@
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
  
-@@ -1605,6 +2204,7 @@
+@@ -1605,6 +2205,7 @@ Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges_Locked() const {
  }
  
  void ChunkDemuxer::StartReturningData() {
@@ -2805,7 +2799,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->StartReturningData();
-@@ -1612,6 +2212,7 @@
+@@ -1612,6 +2213,7 @@ void ChunkDemuxer::StartReturningData() {
  }
  
  void ChunkDemuxer::AbortPendingReads_Locked() {
@@ -2813,7 +2807,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +2220,10 @@
+@@ -1619,6 +2221,10 @@ void ChunkDemuxer::AbortPendingReads_Locked() {
  }
  
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
@@ -2824,7 +2818,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +2255,28 @@
+@@ -1650,6 +2256,28 @@ void ChunkDemuxer::RunInitCB_Locked(PipelineStatus status) {
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -2871,7 +2865,7 @@
  #include "media/base/ranges.h"
  #include "media/base/stream_parser.h"
  #include "media/filters/source_buffer_parse_warnings.h"
-@@ -74,6 +76,25 @@
+@@ -74,6 +76,27 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
    void Remove(base::TimeDelta start, base::TimeDelta end,
                base::TimeDelta duration);
  
@@ -2879,7 +2873,9 @@
 +  // and ParcRemoveFrom.
 +  base::TimeDelta ParcKeyframeAtOrBefore(base::TimeDelta time) const;
 +  void ParcRemoveBefore(base::TimeDelta end, base::TimeDelta duration);
-+  void ParcRemoveFrom(base::TimeDelta start, base::TimeDelta duration);
++  void ParcRemoveFrom(base::TimeDelta start,
++                      base::TimeDelta duration,
++                      base::TimeDelta end = kInfiniteDuration);
 +  // Parc: see SourceBufferStream::ParcRemove and ParcRemovalSize.
 +  void ParcRemove(base::TimeDelta start,
 +                  base::TimeDelta end,
@@ -2897,7 +2893,7 @@
    // If the buffer is full, attempts to try to free up space, as specified in
    // the "Coded Frame Eviction Algorithm" in the Media Source Extensions Spec.
    // Returns false iff buffer is still full after running eviction.
-@@ -137,6 +158,10 @@
+@@ -137,6 +160,10 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
    bool SupportsConfigChanges() override;
  
    bool IsEnabled() const;
@@ -2908,7 +2904,7 @@
    void SetEnabled(bool enabled, base::TimeDelta timestamp);
  
    // Sets the memory limit, in bytes, on the SourceBufferStream.
-@@ -198,6 +223,8 @@
+@@ -198,6 +225,8 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
    State state_ GUARDED_BY(lock_);
    ReadCB read_cb_ GUARDED_BY(lock_);
    bool is_enabled_ GUARDED_BY(lock_);
@@ -2917,7 +2913,7 @@
  };
  
  // Demuxer implementation that allows chunks of media data to be passed
-@@ -248,6 +275,10 @@
+@@ -248,6 +277,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
    // associated JS method calls.
    void StartWaitingForSeek(base::TimeDelta seek_time) override;
    void CancelPendingSeek(base::TimeDelta seek_time) override;
@@ -2928,19 +2924,18 @@
  
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -293,7 +324,11 @@
+@@ -293,6 +326,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
    // Removed an ID & associated resources that were previously added with
    // AddId().
    void RemoveId(const std::string& id);
 +  using ParcSourceKeyCB = base::RepeatingCallback<void(
 +      const std::string&, const std::vector<uint8_t>&)>;
 +  void ParcSetSourceKeyCallback(ParcSourceKeyCB callback);
- 
 +
+ 
    // Gets the currently buffered ranges for the specified ID.
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
- 
-@@ -313,6 +348,53 @@
+@@ -313,6 +350,53 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
    void SetPlaybackRate(double rate) override {}
  
    void DisableCanChangeType() override;
@@ -2994,7 +2989,7 @@
  
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -379,6 +461,34 @@
+@@ -379,6 +463,34 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
  
@@ -3029,7 +3024,7 @@
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
    // |content_type| indicates the ContentType of the MIME type for the data that
-@@ -491,6 +601,15 @@
+@@ -491,6 +603,15 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -3045,7 +3040,7 @@
  
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -550,6 +669,7 @@
+@@ -550,6 +671,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
    raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
    base::OnceClosure open_cb_;
    const base::RepeatingClosure progress_cb_;
@@ -3053,7 +3048,7 @@
    EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
  
    // MediaLog for reporting messages and properties to debug content and engine.
-@@ -597,6 +717,79 @@
+@@ -597,6 +719,79 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
        track_id_to_demux_stream_map_;
  
    bool supports_change_type_ = true;
@@ -10295,7 +10290,7 @@
  #include <string>
  #include <type_traits>
  #include <utility>
-@@ -96,6 +97,41 @@
+@@ -96,6 +97,43 @@ class MEDIA_EXPORT SourceBufferStream {
    // |media_time| is current playback position.
    bool GarbageCollectIfNeeded(base::TimeDelta media_time, size_t newDataSize);
  
@@ -10309,7 +10304,9 @@
 +  // end of stream until UnmarkEndOfStream(), so playback waits there for
 +  // data, as WebKit's does, instead of ending.
 +  void ParcRemoveBefore(base::TimeDelta end, base::TimeDelta duration);
-+  void ParcRemoveFrom(base::TimeDelta start, base::TimeDelta duration);
++  void ParcRemoveFrom(base::TimeDelta start,
++                      base::TimeDelta duration,
++                      base::TimeDelta end = kInfiniteDuration);
 +
 +  // Parc: a Safari-identity page's Media Source
 +  // (ChunkDemuxer::ParcSetSafariMediaSource()). GetBufferedTime() reports
@@ -10337,7 +10334,7 @@
    // Changes the SourceBufferStream's state so that it will start returning
    // buffers starting from the closest keyframe before |timestamp|.
    void Seek(base::TimeDelta timestamp);
-@@ -191,6 +227,9 @@
+@@ -191,6 +229,9 @@ class MEDIA_EXPORT SourceBufferStream {
                       base::TimeDelta media_time,
                       bool reverse_direction);
  
@@ -10347,7 +10344,7 @@
    // Attempts to delete approximately |total_bytes_to_free| amount of data from
    // |ranges_|, starting after the last appended media
    // (|highest_buffered_end_time_in_append_sequence_|) but before the current
-@@ -422,6 +461,44 @@
+@@ -422,6 +463,44 @@ class MEDIA_EXPORT SourceBufferStream {
    // True if the end of the stream has been signalled.
    bool end_of_stream_ = false;
  
@@ -10402,7 +10399,7 @@
  #include <map>
  #include <memory>
  #include <sstream>
-@@ -68,6 +69,99 @@
+@@ -68,6 +69,99 @@ base::TimeDelta kSeekToStartFudgeRoom() {
    return base::Milliseconds(1000);
  }
  
@@ -10502,11 +10499,10 @@
  // Helper method for logging.
  std::string StatusToString(const SourceBufferStreamStatus& status) {
    switch (status) {
-@@ -274,6 +368,14 @@
-   BufferQueue deleted_buffers;
+@@ -275,6 +369,14 @@ void SourceBufferStream::Append(const BufferQueue& buffers) {
  
    PrepareRangesForNextAppend(buffers, &deleted_buffers);
-+
+ 
 +  // Parc: WebKit's buffered ranges before |buffers| (ParcFillSmallGaps()).
 +  Ranges<base::TimeDelta> parc_buffered;
 +  if (parc_safari_media_source_) {
@@ -10514,10 +10510,11 @@
 +    parc_filled_gaps_ = ParcKeptFilledGaps();
 +    parc_buffered = ParcBufferedTime();
 +  }
- 
++
    // If there's a range for |buffers|, insert |buffers| accordingly. Otherwise,
    // create a new range with |buffers|.
-@@ -291,6 +393,7 @@
+   if (range_for_next_append_ != ranges_.end()) {
+@@ -291,6 +393,7 @@ void SourceBufferStream::Append(const BufferQueue& buffers) {
        // Otherwise, use the first new buffer as proof of adjacency.
        (*range_for_next_append_)->AppendBuffersToEnd(buffers, kNoTimestamp);
      }
@@ -10525,7 +10522,7 @@
  
      last_appended_buffer_timestamp_ = buffers.back()->timestamp();
      last_appended_buffer_duration_ = buffers.back()->duration();
-@@ -351,6 +454,7 @@
+@@ -351,6 +454,7 @@ void SourceBufferStream::Append(const BufferQueue& buffers) {
          new_range_start_time,
          base::BindRepeating(&SourceBufferStream::GetMaxInterbufferDistance,
                              base::Unretained(this))));
@@ -10533,12 +10530,10 @@
  
      last_appended_buffer_timestamp_ =
          buffers_for_new_range->back()->timestamp();
-@@ -412,8 +516,264 @@
-            << ": done. ranges_=" << RangesToString(ranges_);
-   DCHECK(IsRangeListSorted(ranges_));
+@@ -414,6 +518,263 @@ void SourceBufferStream::Append(const BufferQueue& buffers) {
    DCHECK(OnlySelectedRangeIsSeeked());
-+}
-+
+ }
+ 
 +// Parc: Remove() extends |end| to the next keyframe, or stops at |duration|
 +// when none follows.
 +base::TimeDelta SourceBufferStream::ParcRemoveEnd(base::TimeDelta end,
@@ -10599,12 +10594,13 @@
 +}
 +
 +void SourceBufferStream::ParcRemoveFrom(base::TimeDelta start,
-+                                        base::TimeDelta duration) {
++                                        base::TimeDelta duration,
++                                        base::TimeDelta removal_end) {
 +  if (ranges_.empty()) {
 +    return;
 +  }
 +  const base::TimeDelta buffered_end = ranges_.back()->GetBufferedEndTimestamp();
-+  ParcRemove(start, kInfiniteDuration, duration);
++  ParcRemove(start, removal_end, duration);
 +  const base::TimeDelta end = ranges_.empty()
 +                                  ? base::TimeDelta()
 +                                  : ranges_.back()->GetBufferedEndTimestamp();
@@ -10643,8 +10639,8 @@
 +    parc_frames_ = ParcCoalesce(intervals, base::Microseconds(1));
 +  }
 +  return *parc_frames_;
- }
- 
++}
++
 +// Parc: TrackBuffer::removeSamples() erases a filled gap with the frame on
 +// either side of it.
 +ParcIntervals SourceBufferStream::ParcKeptFilledGaps() const {
@@ -10798,7 +10794,7 @@
  void SourceBufferStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -424,6 +784,7 @@
+@@ -424,6 +785,7 @@ void SourceBufferStream::Remove(base::TimeDelta start,
    DCHECK(start < end) << "start " << start.InMicroseconds() << "us, end "
                        << end.InMicroseconds() << "us";
    DCHECK(duration != kNoTimestamp);
@@ -10806,7 +10802,7 @@
  
    base::TimeDelta remove_end_timestamp = duration;
    base::TimeDelta keyframe_timestamp = FindKeyframeAfterTimestamp(end);
-@@ -620,6 +981,7 @@
+@@ -620,6 +982,7 @@ void SourceBufferStream::ResetSeekState() {
    track_buffer_.clear();
    config_change_pending_ = false;
    highest_output_buffer_timestamp_ = kNoTimestamp;
@@ -10814,7 +10810,7 @@
    just_exhausted_track_buffer_ = false;
    pending_buffer_.reset();
    pending_buffers_complete_ = false;
-@@ -737,6 +1099,7 @@
+@@ -737,6 +1100,7 @@ bool SourceBufferStream::GarbageCollectIfNeeded(base::TimeDelta media_time,
                                                  size_t newDataSize) {
    DCHECK(media_time != kNoTimestamp);
    DCHECK(!end_of_stream_);
@@ -10822,13 +10818,10 @@
  
    // Compute size of |ranges_|.
    size_t ranges_size = GetMemoryUsage();
-@@ -1435,7 +1798,25 @@
-   auto itr = ranges_.end();
-   for (itr = ranges_.begin(); itr != ranges_.end(); ++itr) {
-     if ((*itr)->CanSeekTo(timestamp))
-+      break;
-+  }
-+
+@@ -1438,6 +1802,24 @@ void SourceBufferStream::Seek(base::TimeDelta timestamp) {
+       break;
+   }
+ 
 +  // Parc: WebKit's TrackBuffer::reenqueueMediaForTime() starts from the next
 +  // frame when the gap to it is within its enqueue tolerance. The audio
 +  // renderer plays silence up to the first buffer after a seek.
@@ -10843,12 +10836,14 @@
 +        SetSelectedRange(range.get());
 +        seek_pending_ = false;
 +      }
-       break;
++      break;
 +    }
-   }
- 
++  }
++
    if (itr == ranges_.end())
-@@ -1473,6 +1854,7 @@
+     return;
+ 
+@@ -1473,6 +1855,7 @@ void SourceBufferStream::OnSetDuration(base::TimeDelta duration) {
    DVLOG(1) << __func__ << " " << GetStreamTypeName() << " ("
             << duration.InMicroseconds() << "us)";
    DCHECK(!end_of_stream_);
@@ -10856,7 +10851,7 @@
  
    if (ranges_.empty())
      return;
-@@ -1552,6 +1934,7 @@
+@@ -1552,6 +1935,7 @@ SourceBufferStreamStatus SourceBufferStream::GetNextBufferInternal(
      WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
      highest_output_buffer_timestamp_ =
          std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
@@ -10864,7 +10859,7 @@
  
      // If the track buffer becomes empty, then try to set the selected range
      // based on the timestamp of this buffer being returned.
-@@ -1564,6 +1947,7 @@
+@@ -1564,6 +1948,7 @@ SourceBufferStreamStatus SourceBufferStream::GetNextBufferInternal(
    }
  
    DCHECK(track_buffer_.empty());
@@ -10872,7 +10867,7 @@
    if (!selected_range_ || !selected_range_->HasNextBuffer()) {
      if (IsEndOfStreamReached()) {
        return SourceBufferStreamStatus::kEndOfStream;
-@@ -1585,6 +1969,7 @@
+@@ -1585,6 +1970,7 @@ SourceBufferStreamStatus SourceBufferStream::GetNextBufferInternal(
    WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
    highest_output_buffer_timestamp_ =
        std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
@@ -10880,7 +10875,7 @@
    return SourceBufferStreamStatus::kSuccess;
  }
  
-@@ -1614,6 +1999,7 @@
+@@ -1614,6 +2000,7 @@ bool SourceBufferStream::IsNextBufferConfigChanged() {
    if (!track_buffer_.empty())
      return track_buffer_.front()->GetConfigId() != current_config_index_;
  
@@ -10888,7 +10883,7 @@
    if (!selected_range_ || !selected_range_->HasNextBuffer())
      return false;
  
-@@ -1670,6 +2056,9 @@
+@@ -1670,6 +2057,9 @@ void SourceBufferStream::SetSelectedRange(SourceBufferRange* range) {
  }
  
  Ranges<base::TimeDelta> SourceBufferStream::GetBufferedTime() const {
@@ -10898,7 +10893,7 @@
    Ranges<base::TimeDelta> ranges;
    for (auto itr = ranges_.begin(); itr != ranges_.end(); ++itr) {
      ranges.Add((*itr)->GetStartTimestamp(), (*itr)->GetBufferedEndTimestamp());
-@@ -1709,9 +2098,16 @@
+@@ -1709,9 +2099,16 @@ size_t SourceBufferStream::GetMemoryUsage() const {
  void SourceBufferStream::MarkEndOfStream() {
    DCHECK(!end_of_stream_);
    end_of_stream_ = true;
@@ -11002,11 +10997,10 @@
  #include "base/functional/bind.h"
  #include "base/memory/memory_pressure_listener.h"
  #include "base/memory/raw_ptr.h"
-@@ -97,7 +99,68 @@
-   void Remove(base::TimeDelta start,
+@@ -98,6 +100,69 @@ class MEDIA_EXPORT SourceBufferState {
                base::TimeDelta end,
                base::TimeDelta duration);
-+
+ 
 +  // Parc: WebKit's SourceBufferPrivate::memoryPressure for this
 +  // ManagedMediaSource SourceBuffer; see the definition. |buffered| is the
 +  // media source's buffered ranges and |audio| the union of the ranges of the
@@ -11016,7 +11010,8 @@
 +                                  bool active,
 +                                  base::TimeDelta duration,
 +                                  const Ranges<base::TimeDelta>& buffered,
-+                                  const Ranges<base::TimeDelta>& audio);
++                                  const Ranges<base::TimeDelta>& audio,
++                                  bool safari_eviction);
 +  // Parc: the pieces of WebKit's SourceBufferPrivate::evictCodedFrames that
 +  // ChunkDemuxer::EvictCodedFrames() runs for a Safari-identity SourceBuffer:
 +  // isBufferFullFor, canAppend (from the estimate computeEvictionData keeps)
@@ -11029,7 +11024,8 @@
 +                       size_t new_data_size,
 +                       base::TimeDelta duration,
 +                       const Ranges<base::TimeDelta>& buffered,
-+                       const Ranges<base::TimeDelta>& audio);
++                       const Ranges<base::TimeDelta>& audio,
++                       bool memory_pressure = false);
 +  // Parc: WebKit's SourceBufferPrivate::computeEvictionData: estimates, at
 +  // |media_time|, what evictFrames could free.
 +  void ParcComputeEvictionData(base::TimeDelta media_time,
@@ -11050,7 +11046,7 @@
 +  // one would empty the element's buffered ranges and hold seeks forever.
 +  bool ParcLeftOutOfMediaSource() const;
 +  bool ParcPurgedWhileInactive() const { return parc_purged_while_inactive_; }
- 
++
 +  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed().
 +  void ParcSetClearDolbyVisionAllowed(bool allowed) {
 +    parc_clear_dolby_vision_allowed_ = allowed;
@@ -11071,7 +11067,7 @@
    // Set the append window boundaries.
    void SetAppendWindow(base::TimeDelta start, base::TimeDelta end);
  
-@@ -195,6 +258,11 @@
+@@ -195,6 +260,11 @@ class MEDIA_EXPORT SourceBufferState {
      PENDING_PARSER_REINIT
    };
  
@@ -11083,7 +11079,7 @@
    // Initializes |stream_parser_|. Also, updates |expected_audio_codecs| and
    // |expected_video_codecs|.
    void InitializeParser(std::optional<std::string_view> expected_codecs);
-@@ -256,6 +324,20 @@
+@@ -256,6 +326,20 @@ class MEDIA_EXPORT SourceBufferState {
    // Keeps track of whether a media segment is being parsed.
    bool parsing_media_segment_;
  
@@ -11119,13 +11115,10 @@
  #include "base/strings/string_number_conversions.h"
  #include "build/build_config.h"
  #include "media/base/media_switches.h"
-@@ -292,9 +294,373 @@
+@@ -295,6 +297,383 @@ void SourceBufferState::Remove(base::TimeDelta start,
+   }
+ }
  
-   for (const auto& it : video_streams_) {
-     it.second->Remove(start, end, duration);
-+  }
-+}
-+
 +namespace {
 +
 +// Parc: WebKit's SourceBufferPrivate::findPreviousSyncSamplePresentationTime.
@@ -11226,7 +11219,8 @@
 +    bool active,
 +    base::TimeDelta duration,
 +    const Ranges<base::TimeDelta>& buffered,
-+    const Ranges<base::TimeDelta>& audio) {
++    const Ranges<base::TimeDelta>& audio,
++    bool safari_eviction) {
 +  const std::vector<ChunkDemuxerStream*> streams = ParcStreams();
 +
 +  if (!active) {
@@ -11235,7 +11229,14 @@
 +    }
 +    parc_purged_while_inactive_ = true;
 +    return;
-   }
++  }
++
++  if (safari_eviction) {
++    // SourceBufferPrivate::memoryPressure passes its full maximumBufferSize.
++    ParcEvictFrames(media_time, ParcMaximumBufferSize(!video_streams_.empty()),
++                    duration, buffered, audio, true);
++    return;
++  }
 +
 +  const base::TimeDelta kTimeChunk = base::Milliseconds(3750);
 +
@@ -11252,8 +11253,8 @@
 +  for (ChunkDemuxerStream* stream : streams) {
 +    stream->ParcRemoveFrom(back_start, duration);
 +  }
- }
- 
++}
++
 +// static
 +size_t SourceBufferState::ParcMaximumBufferSize(bool has_video) {
 +  // WebKit's SettingsBase::defaultMaximumSourceBufferSize, split in float
@@ -11340,11 +11341,16 @@
 +    size_t new_data_size,
 +    base::TimeDelta duration,
 +    const Ranges<base::TimeDelta>& buffered,
-+    const Ranges<base::TimeDelta>& audio) {
++    const Ranges<base::TimeDelta>& audio,
++    bool memory_pressure) {
 +  const std::vector<ChunkDemuxerStream*> streams = ParcStreams();
 +  const auto remove = [&](base::TimeDelta start, base::TimeDelta end) {
 +    for (ChunkDemuxerStream* stream : streams) {
-+      stream->ParcRemove(start, end, duration);
++      if (memory_pressure) {
++        stream->ParcRemoveFrom(start, duration, end);
++      } else {
++        stream->ParcRemove(start, end, duration);
++      }
 +    }
 +  };
 +  const base::TimeDelta kInitialTimeChunk = base::Seconds(30);
@@ -11493,7 +11499,7 @@
  bool SourceBufferState::EvictCodedFrames(base::TimeDelta media_time,
                                           size_t newDataSize) {
    size_t total_buffered_size = 0;
-@@ -517,6 +883,11 @@
+@@ -517,6 +896,11 @@ void SourceBufferState::SetMemoryLimits(DemuxerStream::Type type,
  }
  
  bool SourceBufferState::IsSeekWaitingForData() const {
@@ -11505,7 +11511,7 @@
    for (const auto& it : audio_streams_) {
      if (it.second->IsSeekWaitingForData())
        return true;
-@@ -535,6 +906,14 @@
+@@ -535,6 +919,14 @@ void SourceBufferState::InitializeParser(
    expected_audio_codecs_.clear();
    expected_video_codecs_.clear();
  
@@ -11520,11 +11526,10 @@
    std::vector<std::string> expected_codecs_parsed;
    if ((strict_codec_expectations_ = expected_codecs.has_value())) {
      DVLOG(1) << __func__ << " expected_codecs=" << expected_codecs.value();
-@@ -591,6 +970,31 @@
-   // MSE spec allows new configs to be emitted only during
+@@ -592,6 +984,31 @@ bool SourceBufferState::OnNewConfigs(std::unique_ptr<MediaTracks> tracks) {
    // RunSegmentParserLoop(), but not during Flush or parser reset operations.
    CHECK(new_configs_possible_);
-+
+ 
 +  // Parc: a later init segment carries as many audio and video tracks as the
 +  // first, as WebKit's SourceBuffer::validateInitializationSegment requires.
 +  // With two or more of a type, each id must be one the first segment had
@@ -11549,10 +11554,11 @@
 +      return false;
 +    }
 +  }
- 
++
    bool success = true;
  
-@@ -602,7 +1006,10 @@
+   // TODO(wolenetz): Update codec string strictness, if necessary, once spec
+@@ -602,7 +1019,10 @@ bool SourceBufferState::OnNewConfigs(std::unique_ptr<MediaTracks> tracks) {
    // TODO(wolenetz): Once codec strictness is relaxed, we can change
    // |allow_codec_changes| to always be true. Until then, we only allow codec
    // changes on explicit ChangeType().
@@ -11564,7 +11570,7 @@
  
    FrameProcessor::TrackIdChanges track_id_changes;
    for (const auto& track : tracks->tracks()) {
-@@ -685,16 +1092,30 @@
+@@ -685,16 +1105,30 @@ bool SourceBufferState::OnNewConfigs(std::unique_ptr<MediaTracks> tracks) {
            return false;
          }
  
@@ -12580,7 +12586,7 @@
  #include "testing/gtest/include/gtest/gtest.h"
  
  using ::testing::AnyNumber;
-@@ -597,6 +601,26 @@
+@@ -597,6 +601,26 @@ class ChunkDemuxerTest : public ::testing::Test {
      ASSERT_TRUE(AppendCluster(source_id, GenerateCluster(blocks, false)));
    }
  
@@ -12607,25 +12613,23 @@
    struct MuxedStreamInfo {
      MuxedStreamInfo()
          : track_number(0),
-@@ -1186,6 +1210,12 @@
-     GetStream(type)->Read(
-         1, base::BindOnce(&ChunkDemuxerTest::ReadDone, base::Unretained(this)));
+@@ -1188,6 +1212,12 @@ class ChunkDemuxerTest : public ::testing::Test {
      base::RunLoop().RunUntilIdle();
-+  }
-+
+   }
+ 
 +  // Parc: a read of |type| answered into ReadDone() whenever it completes.
 +  void ParcStartRead(DemuxerStream::Type type) {
 +    GetStream(type)->Read(
 +        1, base::BindOnce(&ChunkDemuxerTest::ReadDone, base::Unretained(this)));
-   }
- 
-   void ExpectConfigChanged(DemuxerStream::Type type) {
-@@ -2400,8 +2430,320 @@
- 
-   // Adding an id after append should fail.
-   ASSERT_EQ(AddId(video_id, HAS_VIDEO), ChunkDemuxer::kReachedIdLimit);
-+}
++  }
 +
+   void ExpectConfigChanged(DemuxerStream::Type type) {
+     EXPECT_CALL(*this, ReadDone(DemuxerStream::kConfigChanged, _));
+     GetStream(type)->Read(
+@@ -2402,6 +2432,318 @@ TEST_F(ChunkDemuxerTest, AddIdFailures) {
+   ASSERT_EQ(AddId(video_id, HAS_VIDEO), ChunkDemuxer::kReachedIdLimit);
+ }
+ 
 +// Parc: on Safari's identity a SourceBuffer can be added after the first ones
 +// initialized the demuxer, as WebKit's MediaSource adds one whenever it is
 +// open. Its first init segment adds an enabled stream, reported for the
@@ -12847,8 +12851,8 @@
 +                            base::BindOnce(record, &enabled));
 +  EXPECT_EQ(enabled, first);
 +  EXPECT_FALSE(second->IsEnabled());
- }
- 
++}
++
 +// Parc: the pipeline keeps one pending change per type, so two joins can
 +// become one change naming the later track; both join, each started then.
 +// The other track's own change, if it still comes, is a join too.
@@ -12941,13 +12945,10 @@
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
-@@ -3012,9 +3354,229 @@
+@@ -3015,6 +3357,226 @@ TEST_F(ChunkDemuxerTest, CodecIDsThatAreNotRFC6381Compliant) {
+   }
+ }
  
-     if (result == ChunkDemuxer::kOk)
-       demuxer_->RemoveId("source_id");
-+  }
-+}
-+
 +// Parc: types named without codecs, which ChunkDemuxer takes only under
 +// Safari's init segment rules (ParcSetSafariInitSegmentRules()).
 +TEST_F(ChunkDemuxerTest, ParcTypesWithoutCodecsNeedSafariIdentity) {
@@ -12960,11 +12961,11 @@
 +       {"video/webm", "audio/webm", "video/mp4", "audio/mp4", "video/mp2t"}) {
 +    EXPECT_EQ(AddId(kSourceId, type, ""), ChunkDemuxer::kNotSupported)
 +        << type;
-   }
++  }
 +  ASSERT_EQ(AddId(kSourceId, "video/webm", "vorbis,vp8"), ChunkDemuxer::kOk);
 +  EXPECT_FALSE(demuxer_->CanChangeType(kSourceId, "video/mp4", ""));
- }
- 
++}
++
 +TEST_F(ChunkDemuxerTest, ParcSafariIdentityAddsTypesWithoutCodecs) {
 +  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
 +  demuxer_->ParcSetSafariInitSegmentRules(true);
@@ -13171,7 +13172,7 @@
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
  
-@@ -3311,6 +3873,38 @@
+@@ -3311,6 +3873,38 @@ const char* kMp2tMimeType = "video/mp2t";
  const char* kMp2tCodecs = "mp4a.40.2,avc1.640028";
  }
  
@@ -13210,12 +13211,10 @@
  TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
    EXPECT_CALL(*this, DemuxerOpened());
    EXPECT_FOUND_CODEC_NAME(Audio, "aac");
-@@ -3768,6 +4362,305 @@
-   // Verify that the old data, and nothing more, has been garbage collected.
-   CheckExpectedRanges(DemuxerStream::AUDIO, "{ [1000,1230) }");
+@@ -3770,6 +4364,345 @@ TEST_F(ChunkDemuxerTest, SetMemoryLimitType) {
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
-+}
-+
+ }
+ 
 +namespace {
 +
 +// Parc: Chromium's audio stream limit on macOS, 12 MiB.
@@ -13418,6 +13417,46 @@
 +  CheckExpectedRanges(DemuxerStream::VIDEO, "{ [0,10000) }");
 +}
 +
++TEST_F(ChunkDemuxerTest, ParcMemoryPressure_SafariKeepsLongerAudioTail) {
++  ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
++  demuxer_->ParcSetSafariEviction(true);
++  block_size_ = 1000000;
++  AppendMuxedCluster(MuxedStreamInfo(kAudioTrackNum, "0K 5000D5000K"),
++                     MuxedStreamInfo(kVideoTrackNum, "0K 5000D5000K"));
++  AppendMuxedCluster(
++      MuxedStreamInfo(kAudioTrackNum, "20000K 25000K 30000K 35000D5000K"),
++      MuxedStreamInfo(kVideoTrackNum, "20000K 25000K 30000K 35000D5000K"));
++  EXPECT_MEDIA_LOG(SegmentMissingFrames("1"));
++  AppendSingleStreamCluster(kSourceId, kAudioTrackNum, "40000K 45000D5000K");
++  CheckExpectedRanges(DemuxerStream::AUDIO, "{ [0,10000) [20000,50000) }");
++  CheckExpectedRanges(DemuxerStream::VIDEO, "{ [0,10000) [20000,40000) }");
++  Seek(base::TimeDelta());
++
++  demuxer_->ParcPurgeForMemoryPressure(kSourceId, base::TimeDelta(), true);
++  CheckExpectedRanges(DemuxerStream::AUDIO, "{ [0,10000) [40000,50000) }");
++  CheckExpectedRanges(DemuxerStream::VIDEO, "{ [0,10000) }");
++}
++
++TEST_F(ChunkDemuxerTest, ParcMemoryPressure_ChromePurgeUnchanged) {
++  ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
++  demuxer_->ParcSetSafariEviction(false);
++  block_size_ = 1000000;
++  AppendMuxedCluster(MuxedStreamInfo(kAudioTrackNum, "0K 5000D5000K"),
++                     MuxedStreamInfo(kVideoTrackNum, "0K 5000D5000K"));
++  AppendMuxedCluster(
++      MuxedStreamInfo(kAudioTrackNum, "20000K 25000K 30000K 35000D5000K"),
++      MuxedStreamInfo(kVideoTrackNum, "20000K 25000K 30000K 35000D5000K"));
++  EXPECT_MEDIA_LOG(SegmentMissingFrames("1"));
++  AppendSingleStreamCluster(kSourceId, kAudioTrackNum, "40000K 45000D5000K");
++  CheckExpectedRanges(DemuxerStream::AUDIO, "{ [0,10000) [20000,50000) }");
++  CheckExpectedRanges(DemuxerStream::VIDEO, "{ [0,10000) [20000,40000) }");
++  Seek(base::TimeDelta());
++
++  demuxer_->ParcPurgeForMemoryPressure(kSourceId, base::TimeDelta(), true);
++  CheckExpectedRanges(DemuxerStream::AUDIO, "{ [0,10000) }");
++  CheckExpectedRanges(DemuxerStream::VIDEO, "{ [0,10000) }");
++}
++
 +TEST_F(ChunkDemuxerTest, ParcSafariEviction_RemovesFramesNotWholeGOPs) {
 +  ASSERT_TRUE(InitDemuxer(HAS_VIDEO));
 +  demuxer_->ParcSetSafariEviction(true);
@@ -13513,14 +13552,15 @@
 +  EXPECT_TRUE(
 +      demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 1000000));
 +  CheckExpectedRanges("{ [0,55000) }");
- }
- 
++}
++
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
-@@ -5072,5 +5965,53 @@
- // TODO(servolk): Add a unit test with multiple audio/video tracks using the
+   ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
+   demuxer_->SetMemoryLimitsForTest(
+@@ -5073,4 +6006,52 @@ TEST_F(ChunkDemuxerTest, HlsEndOfStreamFlushWithOffset) {
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
-+
+ 
 +// Parc: a Safari-identity page's Media Source
 +// (ChunkDemuxer::ParcSetSafariMediaSource()) fills a gap under
 +// 2002/24000 s in buffered, as WebKit's TrackBuffer does, and plays video
@@ -13530,7 +13570,7 @@
 +  std::string audio_id = "audio1";
 +  std::string video_id = "video1";
 +  ASSERT_TRUE(InitDemuxerAudioAndVideoSources(audio_id, video_id));
- 
++
 +  AppendSingleStreamCluster(video_id, kVideoTrackNum, "0K 33 66 99D33");
 +  AppendSingleStreamCluster(video_id, kVideoTrackNum, "202K 235D33");
 +  CheckExpectedRanges(video_id, "{ [0,132) [202,268) }");
