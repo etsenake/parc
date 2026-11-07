@@ -6,6 +6,7 @@
 #import <CoreMedia/CoreMedia.h>
 
 #include <algorithm>
+#include <limits>
 #include <atomic>
 #include <deque>
 #include <map>
@@ -400,9 +401,14 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         impl.OnDecodeFailed(note.userInfo[decode_error_key]);
       });
       AddNotification(center, requires_flush, video_renderer_, [](Impl& impl, NSNotification*) {
-        impl.CheckRendererStatus();
         impl.ResumeVideoDecoding();
+        impl.CheckRendererStatus();
       });
+      // readyForDisplay isn't key-value observable (VideoFrameAvailable).
+      if (@available(macOS 14.4, *)) {
+        AddNotification(center, AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification, layer_,
+                        [](Impl& impl, NSNotification*) { impl.UpdateClock(); });
+      }
     }
     if (audio) {
       audio_ = [[AVSampleBufferAudioRenderer alloc] init];
@@ -658,6 +664,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ended_ = false;
     have_enough_ = false;
     renderers_have_samples_ = false;
+    video_reset_pending_ = false;
     clock_held_ = true;
     RemoveStallObserver();
     [synchronizer_ setRate:0 time:ToCMTime(time)];
@@ -744,6 +751,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // next HAVE_ENOUGH follows StartPlayingFrom.
     have_enough_ = false;
     renderers_have_samples_ = false;
+    video_reset_pending_ = false;
     clock_held_ = true;
     RemoveStallObserver();
     Post([done](Impl&) { done(); });
@@ -917,6 +925,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // End of the last sample this stream was given, enqueued or held for a
     // key: the end of its buffered data as far as the renderer knows.
     double given_end = -1;
+    // Audio: end of the latest sample in the renderer since it was flushed.
+    double queued_end = -std::numeric_limits<double>::infinity();
   };
 
   static RenderingStatus Map(AVQueuedSampleBufferRenderingStatus status) {
@@ -1621,6 +1631,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     ++(stream == StreamType::kVideo ? status_.video_enqueued : status_.audio_enqueued);
     if (stream == StreamType::kVideo) {
       video_due_.push(held.start);
+    } else {
+      NoteAudioQueued(held.start, held.end);
     }
     Stream& state = StreamFor(stream);
     state.enqueued_end = std::max(state.enqueued_end, held.end);
@@ -1663,22 +1675,46 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // AVSampleBufferAudioRenderer flushes itself when the output changes (a
   // route or device switch) and reports the start of the first sample it
   // dropped; without re-delivery the queued duration would play as silence.
+  // As WebKit's SourceBufferPrivate::reenqueSamples (NeedsFlush::Yes) does:
+  // flush the renderer first, then enqueue again, in order, every submitted
+  // sample from the one containing the clock. The renderer is empty when the
+  // first goes in and nothing else enqueues meanwhile (one sequence), so each
+  // sample is in it once, including any the pipeline enqueued between
+  // AVFoundation's flush and this notice, which |submitted| holds too.
   void OnAudioFlushedAutomatically(double flush_time) {
     ++status_.audio_automatic_flushes;
     // A flush of the previous timeline whose notice arrives after Flush
     // carries a time outside what was enqueued since; acting on it would
-    // queue the new audio twice.
+    // flush the new audio for nothing.
     const std::deque<Submitted>& submitted = audio_stream_.submitted;
     if (submitted.empty() || flush_time + 1e-6 < submitted.front().start ||
         flush_time > audio_stream_.enqueued_end + 1e-6) {
       return;
     }
+    StopRequest(StreamType::kAudio);
+    audio_stream_.armed = false;
+    [audio_ flush];
+    audio_stream_.queued_end = -std::numeric_limits<double>::infinity();
+    const double now = GetMediaTime().InSeconds();
     for (const Submitted& entry : submitted) {
-      if (entry.start + 1e-6 >= flush_time) {
+      if (entry.end > now) {
         [audio_ enqueueSampleBuffer:entry.buffer];
+        NoteAudioQueued(entry.start, entry.end);
         ++status_.redelivered;
       }
     }
+    NotifyNeedData(StreamType::kAudio);
+  }
+
+  // Audio enters the renderer in presentation order, so a sample more than
+  // half queued already plays twice (RendererStatus::audio_double_enqueues).
+  // Appends overlapping audio already read, in a misaligned frame grid, count
+  // too; the harness's content has none.
+  void NoteAudioQueued(double start, double end) {
+    if (start + (end - start) / 2 < audio_stream_.queued_end) {
+      ++status_.audio_double_enqueues;
+    }
+    audio_stream_.queued_end = std::max(audio_stream_.queued_end, end);
   }
 
   // A video decoder that lost its state (requiresFlushToResumeDecoding) is
@@ -1709,7 +1745,27 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       [video_renderer_ enqueueSampleBuffer:entry.buffer];
       ++status_.redelivered;
     }
+    // WebKit's flushVideo: no frame is available until one decodes again, and
+    // the clock waits for it (updateAllRenderersHaveAvailableSamples). Only
+    // video's availability changes; audio's stays as it was.
+    video_reset_pending_ = true;
+    UpdateClock();
     NotifyNeedData(StreamType::kVideo);
+  }
+
+  // After a decoder reset, whether a frame decoded again: readyForDisplay on
+  // macOS 14.4+ (AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification
+  // runs UpdateClock). Earlier macOS posts nothing when a frame decodes, and a
+  // full queue under a stopped clock enqueues nothing more to look again, so
+  // there the clock doesn't wait.
+  bool VideoFrameAvailable() const {
+    if (!video_reset_pending_ || Complete(video_)) {
+      return true;
+    }
+    if (@available(macOS 14.4, *)) {
+      return layer_.readyForDisplay;
+    }
+    return true;
   }
 
   void OnKeysChanged() {
@@ -1875,7 +1931,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // The clock runs at the requested rate once HAVE_ENOUGH and the renderers
   // have samples, as WebKit's synchronizer runs while shouldBePlaying().
   void UpdateClock() {
-    const bool run = have_enough_ && renderers_have_samples_;
+    if (video_reset_pending_ && VideoFrameAvailable()) {
+      video_reset_pending_ = false;
+    }
+    const bool run = have_enough_ && renderers_have_samples_ && !video_reset_pending_;
     if (run != clock_held_) {
       return;
     }
@@ -2069,7 +2128,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
 
   void CheckRendererStatus() {
     RendererStatus status = GetStatus();
-    if (status.video == RenderingStatus::kFailed && !video_failure_reported_) {
+    // A renderer that must flush to resume decoding also reports Failed;
+    // ResumeVideoDecoding recovers it, so it isn't a decode error.
+    if (status.video == RenderingStatus::kFailed && !status.video_requires_flush &&
+        !video_failure_reported_) {
       video_failure_reported_ = true;
       client_->OnError(RendererError::kDecode, "video renderer failed: " + status.video_error);
     }
@@ -2127,6 +2189,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   bool have_enough_ = false;
   // See UpdateBuffering.
   bool renderers_have_samples_ = false;
+  // A decoder reset waits for a frame (VideoFrameAvailable).
+  bool video_reset_pending_ = false;
   // The clock waits for HAVE_ENOUGH and renderers with samples (start, seek
   // or stall).
   bool clock_held_ = true;

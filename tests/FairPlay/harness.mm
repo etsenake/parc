@@ -762,6 +762,9 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool 
 // Edits a scenario's configs before Initialize.
 using ConfigAdjust = std::function<void(std::optional<fp::VideoConfig>*, std::optional<fp::AudioConfig>*)>;
 
+// --muted: every audio renderer muted at volume 0, nothing out of the speakers.
+bool g_muted = false;
+
 class Player : public fp::FairPlayRendererClient {
  public:
   // Either stream may be null (single-stream codec checks).
@@ -791,6 +794,11 @@ class Player : public fp::FairPlayRendererClient {
     }
     result = renderer_.Initialize(vc, ac);
     Check(result.ok(), name_ + ": renderer Initialize", result.message);
+    if (g_muted && result.ok() && has_audio_) {
+      // Silent runs: AVFoundation still decodes and renders every sample.
+      renderer_.SetMuted(true);
+      renderer_.SetVolume(0);
+    }
     result = renderer_.SetCdm(cdm);
     Check(result.ok(), name_ + (cdm_first ? ": SetCdm with the same CDM after Initialize is a no-op"
                                           : ": SetCdm joins the display layer and audio renderer to the "
@@ -1558,6 +1566,8 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
             name + ": automatic audio flushes during the rate steps were re-delivered",
             Format("%llu automatic flushes, %llu samples re-delivered",
                    (unsigned long long)s.audio_automatic_flushes, (unsigned long long)s.redelivered));
+      Check(s.audio_double_enqueues == 0, name + ": no audio sample was ever enqueued twice",
+            Format("%llu", (unsigned long long)s.audio_double_enqueues));
       done();
     });
     steps.push_back([=](Done done) {
@@ -1565,8 +1575,8 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
       player()->renderer().SetMuted(true);
       fp::RendererStatus s = player()->renderer().GetStatus();
       Check(std::fabs(s.audio_volume - 0.25f) < 1e-6 && s.audio_muted, name + ": volume 0.25 and mute reach the audio renderer");
-      player()->renderer().SetMuted(false);
-      player()->renderer().SetVolume(1);
+      player()->renderer().SetMuted(g_muted);
+      player()->renderer().SetVolume(g_muted ? 0 : 1);
       done();
     });
   }
@@ -1957,6 +1967,8 @@ std::vector<Step> AudioDeviceSwitchScenario() {
         Check(flushes == 0 || redelivered > 0, "device-switch: an automatic audio flush is followed by re-delivery",
               counts);
       }
+      Check(s.audio_double_enqueues == 0, "device-switch: re-delivery never enqueues an audio sample twice",
+            Format("%llu", (unsigned long long)s.audio_double_enqueues));
       Check(w->player->underflows == 0, "device-switch: no HAVE_NOTHING across the switch",
             Format("%d", w->player->underflows));
       done();
@@ -4652,8 +4664,14 @@ int main(int argc, char** argv) {
     StartWatchdog();
     NSString* video_playlist = @"video-H264-720-2100k.m3u8";
     g_cache_dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"parc-fairplay-cache"];
-    for (int i = 1; i + 1 < argc; i += 2) {
+    for (int i = 1; i < argc; i += 2) {
       std::string flag = argv[i];
+      if (flag == "--muted") {
+        g_muted = true;
+        --i;  // Takes no value.
+        continue;
+      }
+      if (i + 1 >= argc) break;
       if (flag == "--cache") g_cache_dir = @(argv[i + 1]);
       else if (flag == "--video-playlist") video_playlist = @(argv[i + 1]);
       else if (flag == "--segments") world.segments = std::max(10, atoi(argv[i + 1]));

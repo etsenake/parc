@@ -12,7 +12,10 @@ The script compiles the core and the harness with clang only (C++20,
 `-Wall -Wextra -Werror`, macOS 13.0 target, ARC), then runs it. It needs
 network access and opens a visible window for about two minutes. Downloads
 are cached in `$PARC_FAIRPLAY_CACHE` (default `$TMPDIR/parc-fairplay-cache`).
-Exit status is the number of failed checks clamped to 1.
+Exit status is the number of failed checks clamped to 1. `--only <text>`
+keeps the scenario groups whose names contain it, and `--muted` mutes every
+audio renderer at volume 0 (decoding, flushes and re-delivery are unchanged),
+so nothing plays through the speakers.
 
 ## Content and license
 

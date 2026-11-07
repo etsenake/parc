@@ -83,6 +83,10 @@ struct RendererStatus {
   uint64_t audio_automatic_flushes = 0;
   uint64_t video_decoder_resets = 0;  // Flushes for requiresFlushToResumeDecoding.
   uint64_t redelivered = 0;  // Samples enqueued again after either.
+  // Audio samples enqueued while more than half of them was already in the
+  // renderer since its last flush, which plays them twice. 0 unless a page
+  // appends over audio already read in a misaligned frame grid.
+  uint64_t audio_double_enqueues = 0;
   float rate = 0;
   MediaTime time;
   // Media subtypes of the clear format description and of the protected one

@@ -297,17 +297,31 @@ so this forces the following on the Chromium integration.
 - **Automatic audio flushes.** `AVSampleBufferAudioRenderer` flushes itself
   when its output changes (a route or device switch) and reports the start of
   the first sample it dropped. The renderer keeps the audio it enqueued from
-  half a second behind the clock on, and enqueues everything from the flush
-  time again; otherwise the queued duration would play as silence while the
-  clock runs on. A flush time outside what was enqueued since the last Flush
-  (a late notice from the previous timeline) is ignored. Proven with a device switch during protected playback (one
-  flush, 107 samples re-delivered, no underflow).
+  half a second behind the clock on. As WebKit's `reenqueSamples`
+  (`NeedsFlush::Yes`), it flushes the audio renderer, then enqueues again, in
+  order, every kept sample from the one containing the clock; otherwise the
+  queued duration would play as silence while the clock runs on. The renderer
+  is empty when the first goes in, so each sample is in it once, including
+  any enqueued between AVFoundation's flush and its notice. A flush time
+  outside what was enqueued since the last Flush (a late notice from the
+  previous timeline) is ignored. Proven muted with a device switch during
+  protected playback (one flush, 42 samples re-delivered, no double enqueue,
+  no underflow) and the main scenario's rate steps (one flush, 33).
 - **Video decoder resets.** When `requiresFlushToResumeDecoding` turns on, the
   renderer flushes the video renderer and enqueues again from the last
   keyframe at or before the clock, marking frames already due
-  `DoNotDisplay`. No public trigger exists on macOS, so this path is untested.
+  `DoNotDisplay`. The clock then waits until a frame decodes again
+  (`readyForDisplay`, posted by
+  `AVSampleBufferDisplayLayerReadyForDisplayDidChangeNotification` on macOS
+  14.4+; earlier macOS has no signal and runs on), as WebKit's `flushVideo`
+  and `updateAllRenderersHaveAvailableSamples`; audio's availability is
+  untouched. The Failed status that comes with `requiresFlushToResumeDecoding`
+  isn't reported as a decode error. No public trigger exists on macOS, so this
+  path is untested.
 - `RendererStatus` counts both (`audio_automatic_flushes`,
-  `video_decoder_resets`, `redelivered`).
+  `video_decoder_resets`, `redelivered`), and `audio_double_enqueues` counts
+  audio samples enqueued while already in the renderer (0 unless a page
+  appends over audio already read in a misaligned frame grid).
 - Taking the display layer out of its tree for 3 s and putting it back (a
   page losing its compositor) doesn't interrupt decoding or set
   `requiresFlushToResumeDecoding` on this macOS: playback continues, no
