@@ -32,6 +32,10 @@ On a page that presents Safari's identity:
 - Safari's legacy prefixed EME exists (`WebKitMediaKeys`, its sessions,
   `webkitSetMediaKeys`, `webkitneedkey`); Netflix requires its capability
   probe (see "WebKitMediaKeys" below).
+- `MediaKeys` has no `getStatusForPolicy`, as in Safari (WebKit's
+  `MediaKeys.idl` has none), so a player that tests for it behaves as it
+  does there. A main-world script (`Engine/ParcRenderer/parc_safari_media_keys.h`),
+  run with the other Safari scripts, deletes it from `MediaKeys.prototype`.
 - Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
   rejects with `NotSupportedError` and Chromium's usual message, and
   `mediaCapabilities.decodingInfo` with a Widevine `keySystemConfiguration`
@@ -387,7 +391,9 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   (`WorkerOrWorkletScriptController::PrepareForEvaluation`), the
   `ManagedMediaSource` and `WebKitMediaKeys` scripts
   (`Engine/ParcRenderer/parc_managed_media_source.h`,
-  `parc_webkit_media_keys.h`), and the Widevine refusal in
+  `parc_webkit_media_keys.h`), the `getStatusForPolicy` removal
+  (`parc_safari_media_keys.h`), FairPlay's `sinf` and `skd` init data gate,
+  and the Widevine refusal in
   `requestMediaKeySystemAccess` and `decodingInfo`.
 - `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
   a hook that service and shared workers call as they start, and that worker
@@ -430,7 +436,8 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
   way, and it overrides `addEventListener` and the `mediaKeys` getter on
   `HTMLMediaElement.prototype`. Its legacy HLS key systems wait for native
   HLS (TELUS TV+'s Shaka setup and Disney+'s native client use
-  `com.apple.fps.1_0`).
+  `com.apple.fps.1_0`). `getStatusForPolicy` is removed by a main-world
+  script too, so isolated worlds (extensions) still see it.
 - FairPlay is offered to every page, Chrome identity included, as the decision
   asks. A multi-DRM player that lists FairPlay before Widevine and has a
   FairPlay license server could now choose FairPlay on a site that used

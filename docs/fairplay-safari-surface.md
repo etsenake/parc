@@ -52,7 +52,7 @@ WebKit: `Modules/encryptedmedia/*`, `platform/graphics/avfoundation/CDMFairPlayS
 | `load()` | persistent sessions | rejects NotSupportedError | missing (with session type) | fp-eme-modern |
 | `closed` | `Promise<undefined>` | `Promise<MediaKeySessionClosedReason>` | present (superset) | fp-eme-modern |
 | `expiration` | NaN | NaN | present | fp-eme-modern |
-| `MediaKeys.getStatusForPolicy` | absent (not in WebKit's IDL) | present, rejects NotSupportedError (`ContentDecryptionModule` default) | different | fp-eme-modern |
+| `MediaKeys.getStatusForPolicy` | absent (not in WebKit's IDL) | absent on Safari-identity pages: a main-world script deletes it from `MediaKeys.prototype` (`parc_safari_media_keys.h`); isolated worlds keep Chromium's | present | fp-eme-modern |
 | Robustness | `""` only | `""` only | present | fp-eme-modern |
 | distinctiveIdentifier / persistentState | not-allowed / optional | not-supported / requestable | present | fp-eme-modern |
 | encryptionScheme | `cbcs`, `cbcs-1-9` | `cbcs`, `cbcs-1-9` (Blink maps it to `cbcs`); `cenc` listed but cut | present | fp-eme-modern |

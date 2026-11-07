@@ -3,15 +3,19 @@
 // IsParcSafariIdentityUserAgent from Engine/ParcRenderer/parc_safari_identity.h
 // (over a stand-in WTF::String in blink_stub/), the real script constants, and
 // the user agent Parc sends for Safari's identity. A Safari-identity document
-// gets ManagedMediaSource and WebKitMediaKeys; Chrome's identity and other
-// browsers' user agents get neither. webkit_media_keys.mjs runs the script.
+// gets ManagedMediaSource, WebKitMediaKeys and Safari's MediaKeys (no
+// getStatusForPolicy); Chrome's identity and other browsers' user agents get
+// none of them. webkit_media_keys.mjs and safari_media_keys.mjs run the
+// scripts.
 // It also checks which EME init data types a document may name: FairPlay's
 // "sinf" and "skd" only under Safari's identity.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
+#include "parc_safari_media_keys.h"
 #include "parc_webkit_media_keys.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -36,7 +40,8 @@ std::vector<std::string> ScriptsFor(const std::string& user_agent) {
   std::vector<std::string> scripts;
   if (blink::IsParcSafariIdentityUserAgent(blink::String(user_agent))) {
     for (const char* source :
-         {blink::kParcManagedMediaSourceScript, blink::kParcWebKitMediaKeysScript}) {
+         {blink::kParcManagedMediaSourceScript, blink::kParcWebKitMediaKeysScript,
+          blink::kParcSafariMediaKeysScript}) {
       scripts.emplace_back(source);
     }
   }
@@ -75,11 +80,18 @@ int main() {
   for (const char* version : {"27.2", "26.0.1"}) {
     const std::vector<std::string> safari =
         ScriptsFor(parc::fairplay_identity::SafariUserAgent(version));
-    Check(safari.size() == 2, "a Safari-identity document gets both scripts");
+    Check(safari.size() == 3, "a Safari-identity document gets all three scripts");
     Check(Installs(safari, "WebKitMediaKeys"),
           "a Safari-identity document gets WebKitMediaKeys");
     Check(Installs(safari, "ManagedMediaSource"),
           "a Safari-identity document gets ManagedMediaSource");
+    Check(std::find_if(safari.begin(), safari.end(),
+                       [](const std::string& script) {
+                         return script.find(
+                                    "delete MediaKeysInterface.prototype."
+                                    "getStatusForPolicy") != std::string::npos;
+                       }) != safari.end(),
+          "a Safari-identity document loses MediaKeys.getStatusForPolicy");
   }
   for (const char* version : {"27.2", "26.0.1"}) {
     const std::string safari =
@@ -121,7 +133,7 @@ int main() {
   };
   for (const char* user_agent : not_safari) {
     Check(ScriptsFor(user_agent).empty(),
-          "documents not presenting Safari's identity get neither script");
+          "documents not presenting Safari's identity get none of the scripts");
     Check(!InitDataTypeRegistered(user_agent, "sinf") &&
               !InitDataTypeRegistered(user_agent, "skd"),
           "documents not presenting Safari's identity can't name sinf or skd");

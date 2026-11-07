@@ -21,16 +21,17 @@
  
 --- a/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
 +++ b/third_party/blink/renderer/bindings/core/v8/local_window_proxy.cc
-@@ -38,6 +38,8 @@
+@@ -38,6 +38,9 @@
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/single_sample_metrics.h"
  #include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_managed_media_source.h"
++#include "third_party/blink/renderer/bindings/core/v8/parc_safari_media_keys.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_media_keys.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_state_impl.h"
  #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
-@@ -45,6 +47,7 @@
+@@ -45,6 +48,7 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_html_document.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_initializer.h"
@@ -38,7 +39,7 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_page_popup_controller_binding.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
  #include "third_party/blink/renderer/core/execution_context/agent.h"
-@@ -52,6 +55,7 @@
+@@ -52,6 +56,7 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -46,7 +47,7 @@
  #include "third_party/blink/renderer/core/html/document_name_collection.h"
  #include "third_party/blink/renderer/core/html/html_document.h"
  #include "third_party/blink/renderer/core/html/html_iframe_element.h"
-@@ -61,6 +65,7 @@
+@@ -61,6 +66,7 @@
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -54,7 +55,7 @@
  #include "third_party/blink/renderer/core/script/modulator.h"
  #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
  #include "third_party/blink/renderer/platform/bindings/extensions_registry.h"
-@@ -72,12 +77,15 @@
+@@ -72,12 +78,15 @@
  #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
  #include "third_party/blink/renderer/platform/bindings/v8_set_return_value.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -70,7 +71,7 @@
  #include "v8/include/v8.h"
  
  namespace blink {
-@@ -240,6 +248,60 @@
+@@ -240,6 +249,62 @@
    lifecycle_ = next_status;
  }
  
@@ -97,14 +98,16 @@
 +
 +// Parc: the main world of a new context also gets Safari's
 +// ManagedMediaSource, which Chromium lacks (parc_managed_media_source.h),
-+// and its WebKitMediaKeys capability probe (parc_webkit_media_keys.h),
-+// before any script of the page runs, unless the document can't run
-+// scripts. Errors from them are reported unmuted, like the page's.
++// its WebKitMediaKeys capability probe (parc_webkit_media_keys.h) and its
++// MediaKeys without getStatusForPolicy (parc_safari_media_keys.h), before any
++// script of the page runs, unless the document can't run scripts. Errors
++// from them are reported unmuted, like the page's.
 +void InstallParcSafariScripts(ScriptState* script_state,
 +                              LocalDOMWindow* window) {
 +  if (window->CanExecuteScripts(kNotAboutToExecuteScript)) {
 +    for (const char* source :
-+         {kParcManagedMediaSourceScript, kParcWebKitMediaKeysScript}) {
++         {kParcManagedMediaSourceScript, kParcWebKitMediaKeysScript,
++          kParcSafariMediaKeysScript}) {
 +      ClassicScript::CreateUnspecifiedScript(
 +          String(source), ScriptSourceLocationType::kInternal,
 +          SanitizeScriptErrors::kDoNotSanitize)
@@ -131,7 +134,7 @@
  void LocalWindowProxy::Initialize() {
    TRACE_EVENT2("v8", "LocalWindowProxy::Initialize", "IsMainFrame",
                 GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +371,12 @@
+@@ -309,6 +374,12 @@
    }
  
    InstallConditionalFeatures();
@@ -144,7 +147,7 @@
  
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +620,25 @@
+@@ -552,6 +623,25 @@
      return;
    }
  
@@ -153,8 +156,8 @@
 +  // loses navigator.userAgentData here, in every world; a new context loses
 +  // it in Initialize(). No script runs here: the window's globals may hold
 +  // the previous document's getters, which must not run during the commit.
-+  // So its main world gets ManagedMediaSource and WebKitMediaKeys from a
-+  // microtask instead.
++  // So its main world gets ManagedMediaSource, WebKitMediaKeys and Safari's
++  // MediaKeys from a microtask instead.
 +  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
 +    ScriptState::Scope scope(script_state_);
 +    RemoveParcUserAgentData(script_state_);
