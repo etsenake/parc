@@ -1,0 +1,499 @@
+// Installed by the reviewed overlay at
+// //content/renderer/media/fairplay/native_hls_unittest.cc (content_unittests,
+// macOS). The render-process state mapping of Safari's native HLS route
+// (NATIVE_HLS.md "Media element state and events"): what the GPU AVPlayer
+// reports through media.mojom.FairPlayHlsPlayerClient becomes the pipeline's
+// metadata, duration, buffered ranges, buffering state, time, ended, waiting
+// and errors, and the pipeline's commands become the player's.
+
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include "base/run_loop.h"
+#include "base/test/mock_callback.h"
+#include "base/test/task_environment.h"
+#include "base/time/time.h"
+#include "base/unguessable_token.h"
+#include "content/renderer/media/fairplay/native_hls_demuxer.h"
+#include "content/renderer/media/fairplay/native_hls_renderer.h"
+#include "media/base/eme_constants.h"
+#include "media/base/media_util.h"
+#include "media/base/mock_demuxer_host.h"
+#include "media/base/mock_filters.h"
+#include "media/base/mock_video_renderer_sink.h"
+#include "media/base/renderer_factory.h"
+#include "media/base/test_helpers.h"
+#include "media/base/timestamp_constants.h"
+#include "media/base/video_frame.h"
+#include "media/mojo/mojom/renderer_extensions.mojom.h"
+#include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+
+namespace parc::fairplay {
+namespace {
+
+using ::testing::_;
+using ::testing::InSequence;
+using ::testing::NiceMock;
+using ::testing::StrictMock;
+
+constexpr char kPlaylist[] = "https://media.example/master.m3u8";
+
+// The GPU player: records commands and answers Initialize/Seek when told.
+class FakePlayer : public media::mojom::FairPlayHlsPlayer {
+ public:
+  void Initialize(const GURL& url,
+                  const std::string& mime_type,
+                  InitializeCallback callback) override {
+    url_ = url;
+    initialize_cb_ = std::move(callback);
+  }
+  void SetCdm(const base::UnguessableToken& cdm_id,
+              SetCdmCallback callback) override {
+    cdm_ids_.push_back(cdm_id);
+    std::move(callback).Run(true);
+  }
+  void Play(double rate) override { commands_.push_back(rate); }
+  void Pause() override { commands_.push_back(0); }
+  void Seek(base::TimeDelta time, SeekCallback callback) override {
+    seek_time_ = time;
+    seek_cb_ = std::move(callback);
+  }
+  void SetVolume(float volume) override { volume_ = volume; }
+  void SetMuted(bool muted) override {}
+  void SetPreservesPitch(bool preserves_pitch) override {
+    preserves_pitch_ = preserves_pitch;
+  }
+  void ProvideClearKey(const std::string& key_id,
+                       const std::vector<uint8_t>& key) override {}
+  void SelectAudioTrack(const std::string& id) override {}
+  void SelectTextTrack(const std::optional<std::string>& id) override {}
+  void Suspend() override {}
+  void Resume() override {}
+
+  GURL url_;
+  InitializeCallback initialize_cb_;
+  SeekCallback seek_cb_;
+  std::optional<base::TimeDelta> seek_time_;
+  std::vector<double> commands_;  // Play(rate) or 0 for Pause().
+  std::vector<base::UnguessableToken> cdm_ids_;
+  float volume_ = -1;
+  std::optional<bool> preserves_pitch_;
+};
+
+media::mojom::FairPlayHlsMetadataPtr Metadata(base::TimeDelta duration) {
+  auto metadata = media::mojom::FairPlayHlsMetadata::New();
+  metadata->has_audio = true;
+  metadata->has_video = true;
+  metadata->natural_size = gfx::Size(1920, 1080);
+  metadata->audio_codec = media::AudioCodec::kAAC;
+  metadata->video_codec = media::VideoCodec::kHEVC;
+  metadata->duration = duration;
+  metadata->buffered.push_back(media::mojom::FairPlayHlsTimeRange::New(
+      base::TimeDelta(), base::Seconds(12)));
+  return metadata;
+}
+
+class NativeHlsTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    mojo::PendingRemote<media::mojom::FairPlayHlsPlayer> player;
+    player_receiver_.Bind(player.InitWithNewPipeAndPassReceiver());
+    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client;
+    auto client_receiver = client.InitWithNewPipeAndPassReceiver();
+    client_.Bind(std::move(client));
+
+    media::ParcNativeHlsDemuxerParams params;
+    params.url = GURL(kPlaylist);
+    params.media_task_runner = task_environment_.GetMainThreadTaskRunner();
+    params.media_log = &media_log_;
+    params.encrypted_media_init_data_cb = encrypted_cb_.Get();
+    params.key_request_cb = key_request_cb_.Get();
+    params.start_load_cb = start_load_cb_.Get();
+    demuxer_ = std::make_unique<NativeHlsDemuxer>(
+        std::move(params), std::move(player), std::move(client_receiver));
+  }
+
+  void TearDown() override {
+    renderer_.reset();
+    demuxer_->Stop();
+    demuxer_.reset();
+    task_environment_.RunUntilIdle();
+  }
+
+  // Initializes the demuxer and answers with `metadata`.
+  media::PipelineStatus InitializeWith(
+      media::mojom::FairPlayHlsMetadataPtr metadata) {
+    std::optional<media::PipelineStatus> status;
+    demuxer_->Initialize(&host_,
+                         base::BindOnce(
+                             [](std::optional<media::PipelineStatus>* out,
+                                media::PipelineStatus s) { *out = s; },
+                             &status));
+    task_environment_.RunUntilIdle();
+    EXPECT_TRUE(player_.initialize_cb_);
+    const bool success = !metadata.is_null();
+    std::move(player_.initialize_cb_).Run(success, std::move(metadata));
+    task_environment_.RunUntilIdle();
+    EXPECT_TRUE(status);
+    return status.value_or(media::PipelineStatus(media::PIPELINE_OK));
+  }
+
+  void CreateRenderer() {
+    renderer_ = std::make_unique<NativeHlsRenderer>(
+        task_environment_.GetMainThreadTaskRunner(), &sink_);
+    base::MockCallback<media::PipelineStatusCallback> init_cb;
+    EXPECT_CALL(init_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
+    renderer_->Initialize(demuxer_.get(), &renderer_client_, init_cb.Get());
+  }
+
+  base::test::TaskEnvironment task_environment_;
+  media::NullMediaLog media_log_;
+  FakePlayer player_;
+  mojo::Receiver<media::mojom::FairPlayHlsPlayer> player_receiver_{&player_};
+  mojo::Remote<media::mojom::FairPlayHlsPlayerClient> client_;
+  base::MockCallback<media::Demuxer::EncryptedMediaInitDataCB> encrypted_cb_;
+  base::MockCallback<base::RepeatingCallback<void(const std::string&)>>
+      key_request_cb_;
+  base::MockCallback<NativeHlsDemuxer::StartLoadCallback> start_load_cb_;
+  NiceMock<media::MockDemuxerHost> host_;
+  NiceMock<media::MockRendererClient> renderer_client_;
+  NiceMock<media::MockVideoRendererSink> sink_;
+  std::unique_ptr<NativeHlsDemuxer> demuxer_;
+  std::unique_ptr<NativeHlsRenderer> renderer_;
+};
+
+TEST(NativeHlsTimeTest, Interpolates) {
+  const base::TimeTicks capture = base::TimeTicks() + base::Seconds(100);
+  const base::TimeDelta duration = base::Seconds(60);
+  // Paused: the reported time.
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), 0, capture,
+                                     capture + base::Seconds(3), duration),
+            base::Seconds(5));
+  // Playing at 1 and at 2.
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), 1, capture,
+                                     capture + base::Seconds(3), duration),
+            base::Seconds(8));
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), 2, capture,
+                                     capture + base::Seconds(3), duration),
+            base::Seconds(11));
+  // Never past the duration, unless the stream is live.
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(59), 1, capture,
+                                     capture + base::Seconds(3), duration),
+            duration);
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(59), 1, capture,
+                                     capture + base::Seconds(3),
+                                     media::kInfiniteDuration),
+            base::Seconds(62));
+  // A clock that hasn't reported yet doesn't advance; nothing goes negative.
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(1), 1, base::TimeTicks(),
+                                     capture, duration),
+            base::Seconds(1));
+  EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(-1), 0, capture, capture,
+                                     duration),
+            base::TimeDelta());
+}
+
+TEST(NativeHlsErrorTest, InitializeFailureStatus) {
+  // The item's own error (Safari's MEDIA_ERR_NETWORK, for example) wins.
+  EXPECT_EQ(NativeHlsDemuxer::InitializeFailureStatus(
+                media::PipelineStatus(media::PIPELINE_ERROR_NETWORK))
+                .code(),
+            media::PIPELINE_ERROR_NETWORK);
+  EXPECT_EQ(NativeHlsDemuxer::InitializeFailureStatus(std::nullopt).code(),
+            media::DEMUXER_ERROR_COULD_NOT_OPEN);
+}
+
+TEST_F(NativeHlsTest, MetadataBecomesStreamsDurationAndBuffered) {
+  EXPECT_CALL(host_, SetDuration(base::Seconds(60)));
+  EXPECT_CALL(host_, OnBufferedTimeRangesChanged(_))
+      .WillOnce([](const media::Ranges<base::TimeDelta>& ranges) {
+        ASSERT_EQ(ranges.size(), 1u);
+        EXPECT_EQ(ranges.end(0), base::Seconds(12));
+      });
+  EXPECT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  EXPECT_EQ(player_.url_, GURL(kPlaylist));
+
+  auto streams = demuxer_->GetAllStreams();
+  ASSERT_EQ(streams.size(), 2u);
+  EXPECT_EQ(streams[0]->type(), media::DemuxerStream::AUDIO);
+  EXPECT_EQ(streams[0]->audio_decoder_config().codec(),
+            media::AudioCodec::kAAC);
+  EXPECT_FALSE(streams[0]->audio_decoder_config().is_encrypted());
+  EXPECT_EQ(streams[1]->type(), media::DemuxerStream::VIDEO);
+  EXPECT_EQ(streams[1]->video_decoder_config().codec(),
+            media::VideoCodec::kHEVC);
+  EXPECT_EQ(streams[1]->video_decoder_config().natural_size(),
+            gfx::Size(1920, 1080));
+  EXPECT_FALSE(streams[1]->video_decoder_config().is_encrypted());
+  EXPECT_TRUE(demuxer_->IsSeekable());
+  EXPECT_EQ(demuxer_->GetParcNativeHlsSource(), demuxer_.get());
+  EXPECT_EQ(demuxer_->GetDemuxerType(), media::DemuxerType::kManifestDemuxer);
+}
+
+TEST_F(NativeHlsTest, TimelineFollowsThePlayer) {
+  auto metadata = Metadata(media::kInfiniteDuration);
+  metadata->seekable.push_back(media::mojom::FairPlayHlsTimeRange::New(
+      base::Seconds(10), media::kInfiniteDuration));
+  metadata->start_date = base::Time::FromSecondsSinceUnixEpoch(1700000000);
+  ASSERT_TRUE(InitializeWith(std::move(metadata)).is_ok());
+  std::optional<media::Demuxer::ParcNativeTimeline> timeline =
+      demuxer_->GetParcNativeTimeline();
+  ASSERT_TRUE(timeline);
+  ASSERT_EQ(timeline->seekable.size(), 1u);
+  EXPECT_EQ(timeline->seekable.start(0), base::Seconds(10));
+  EXPECT_EQ(timeline->seekable.end(0), media::kInfiniteDuration);
+  EXPECT_EQ(timeline->start_date,
+            base::Time::FromSecondsSinceUnixEpoch(1700000000));
+  EXPECT_EQ(demuxer_->GetTimelineOffset(),
+            base::Time::FromSecondsSinceUnixEpoch(1700000000));
+
+  std::vector<media::mojom::FairPlayHlsTimeRangePtr> window;
+  window.push_back(media::mojom::FairPlayHlsTimeRange::New(
+      base::Seconds(20), media::kInfiniteDuration));
+  client_->OnSeekableRangesChanged(std::move(window));
+  client_->OnStartDateChanged(std::nullopt);
+  task_environment_.RunUntilIdle();
+  timeline = demuxer_->GetParcNativeTimeline();
+  ASSERT_TRUE(timeline);
+  EXPECT_EQ(timeline->seekable.start(0), base::Seconds(20));
+  EXPECT_FALSE(timeline->start_date);
+}
+
+TEST_F(NativeHlsTest, LiveIsInfiniteAndNotSeekable) {
+  EXPECT_CALL(host_, SetDuration(media::kInfiniteDuration));
+  EXPECT_TRUE(InitializeWith(Metadata(media::kInfiniteDuration)).is_ok());
+  EXPECT_FALSE(demuxer_->IsSeekable());
+}
+
+TEST_F(NativeHlsTest, ItemErrorBeforeMetadataFailsInitialize) {
+  client_->OnError(media::PipelineStatus(media::PIPELINE_ERROR_NETWORK),
+                   "playlist 404");
+  EXPECT_EQ(InitializeWith(nullptr).code(), media::PIPELINE_ERROR_NETWORK);
+}
+
+TEST_F(NativeHlsTest, FailureWithoutErrorIsCouldNotOpen) {
+  EXPECT_EQ(InitializeWith(nullptr).code(),
+            media::DEMUXER_ERROR_COULD_NOT_OPEN);
+}
+
+TEST_F(NativeHlsTest, ErrorWithoutRendererGoesToHost) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  EXPECT_CALL(host_, OnDemuxerError(media::HasStatusCode(
+                         media::PIPELINE_ERROR_DECODE)));
+  client_->OnError(media::PipelineStatus(media::PIPELINE_ERROR_DECODE), "");
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, ErrorWithRendererGoesToRendererClient) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  EXPECT_CALL(host_, OnDemuxerError(_)).Times(0);
+  EXPECT_CALL(renderer_client_, OnError(media::HasStatusCode(
+                                    media::PIPELINE_ERROR_DECODE)));
+  client_->OnError(media::PipelineStatus(media::PIPELINE_ERROR_DECODE), "");
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, SkdKeyRequestRaisesEncrypted) {
+  const std::string uri = "skd://key-1";
+  EXPECT_CALL(encrypted_cb_,
+              Run(media::EmeInitDataType::SKD,
+                  std::vector<uint8_t>(uri.begin(), uri.end())));
+  client_->OnEncrypted("skd", std::vector<uint8_t>(uri.begin(), uri.end()));
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, LoadsGoToTheElementsLoader) {
+  EXPECT_CALL(start_load_cb_, Run(_, _, _))
+      .WillOnce([](media::mojom::FairPlayHlsRequestPtr request,
+                   mojo::PendingReceiver<media::mojom::FairPlayHlsLoad>,
+                   mojo::PendingRemote<media::mojom::FairPlayHlsLoadClient>) {
+        EXPECT_EQ(request->url, GURL("https://media.example/v/0.ts"));
+      });
+  mojo::PendingRemote<media::mojom::FairPlayHlsLoad> load;
+  mojo::PendingRemote<media::mojom::FairPlayHlsLoadClient> load_client;
+  auto load_client_receiver = load_client.InitWithNewPipeAndPassReceiver();
+  client_->StartLoad(media::mojom::FairPlayHlsRequest::New(
+                         GURL("https://media.example/v/0.ts"), "GET",
+                         base::flat_map<std::string, std::string>()),
+                     load.InitWithNewPipeAndPassReceiver(),
+                     std::move(load_client));
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, KeyRequestComesBeforeEncrypted) {
+  const std::string uri = "skd://key-1";
+  {
+    InSequence sequence;
+    EXPECT_CALL(key_request_cb_, Run(uri));
+    EXPECT_CALL(encrypted_cb_, Run(media::EmeInitDataType::SKD, _));
+  }
+  client_->OnKeyRequest(uri);
+  client_->OnEncrypted("skd", std::vector<uint8_t>(uri.begin(), uri.end()));
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, WaitingForKeyReachesALaterRenderer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(renderer_client_,
+              OnWaiting(media::WaitingReason::kNoDecryptionKey));
+  CreateRenderer();
+}
+
+TEST_F(NativeHlsTest, BufferingStateFollowsPlaybackStart) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  {
+    InSequence sequence;
+    EXPECT_CALL(renderer_client_,
+                OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
+                                       media::BUFFERING_CHANGE_REASON_UNKNOWN));
+    EXPECT_CALL(renderer_client_,
+                OnBufferingStateChange(media::BUFFERING_HAVE_NOTHING,
+                                       media::DEMUXER_UNDERFLOW));
+    EXPECT_CALL(renderer_client_,
+                OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
+                                       media::BUFFERING_CHANGE_REASON_UNKNOWN));
+  }
+  // playbackLikelyToKeepUp before the pipeline starts: held until then.
+  client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
+  task_environment_.RunUntilIdle();
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  // Repeats aren't reported again.
+  client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
+  client_->OnBufferingStateChange(media::BUFFERING_HAVE_NOTHING);
+  task_environment_.RunUntilIdle();
+  // A flush (seek) silences reports until playback starts again.
+  base::MockCallback<base::OnceClosure> flush_cb;
+  EXPECT_CALL(flush_cb, Run());
+  renderer_->Flush(flush_cb.Get());
+  client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
+  task_environment_.RunUntilIdle();
+  renderer_->StartPlayingFrom(base::Seconds(30));
+}
+
+TEST_F(NativeHlsTest, RateAndVolumeDriveThePlayer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  renderer_->SetPlaybackRate(1.5);
+  renderer_->SetPlaybackRate(0);
+  renderer_->SetVolume(0.25f);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.commands_, (std::vector<double>{1.5, 0}));
+  EXPECT_FLOAT_EQ(player_.volume_, 0.25f);
+  EXPECT_EQ(renderer_->GetRendererType(), media::RendererType::kFairPlayHls);
+}
+
+TEST_F(NativeHlsTest, VolumeAndPitchSetBeforeInitializeReachThePlayer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  // PipelineImpl::InitializeRenderer: a muted autoplay video is volume 0.
+  renderer_ = std::make_unique<NativeHlsRenderer>(
+      task_environment_.GetMainThreadTaskRunner(), &sink_);
+  renderer_->SetPreservesPitch(false);
+  renderer_->SetVolume(0);
+  base::MockCallback<media::PipelineStatusCallback> init_cb;
+  EXPECT_CALL(init_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
+  renderer_->Initialize(demuxer_.get(), &renderer_client_, init_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_FLOAT_EQ(player_.volume_, 0.f);
+  EXPECT_EQ(player_.preserves_pitch_, false);
+}
+
+TEST_F(NativeHlsTest, TimeComesFromThePlayersClock) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  client_->OnTimeUpdate(base::Seconds(7), 0, base::TimeTicks::Now());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(7));
+
+  // During a seek the target; after it, the target until the player reports.
+  base::MockCallback<media::PipelineStatusCallback> seek_cb;
+  EXPECT_CALL(seek_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
+  demuxer_->Seek(base::Seconds(40), seek_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.seek_time_, base::Seconds(40));
+  EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(40));
+  std::move(player_.seek_cb_).Run(true);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(40));
+}
+
+TEST_F(NativeHlsTest, EndedOncePerRun) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  CreateRenderer();
+  EXPECT_CALL(renderer_client_, OnEnded()).Times(1);
+  // Not before playback starts, then once.
+  client_->OnEnded();
+  task_environment_.RunUntilIdle();
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  client_->OnEnded();
+  client_->OnEnded();
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, LayerPaintsAHoleFrame) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  const base::UnguessableToken token = base::UnguessableToken::Create();
+  // Registered before the renderer exists: replayed when it attaches.
+  client_->OnLayerRegistered(token, gfx::Size(1920, 1080));
+  task_environment_.RunUntilIdle();
+  EXPECT_CALL(sink_, PaintSingleFrame(_, true))
+      .WillOnce([](scoped_refptr<media::VideoFrame> frame, bool) {
+        ASSERT_TRUE(frame);
+        EXPECT_EQ(frame->natural_size(), gfx::Size(1920, 1080));
+      });
+  CreateRenderer();
+  // A new size repaints after the element hears it.
+  {
+    InSequence sequence;
+    EXPECT_CALL(renderer_client_,
+                OnVideoNaturalSizeChange(gfx::Size(1280, 720)));
+    EXPECT_CALL(sink_, PaintSingleFrame(_, true));
+  }
+  client_->OnNaturalSizeChange(gfx::Size(1280, 720));
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(NativeHlsTest, CdmReachesThePlayerByIdOnce) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  NiceMock<media::MockCdmContext> cdm_context;
+  const base::UnguessableToken cdm_id = base::UnguessableToken::Create();
+  cdm_context.set_cdm_id(cdm_id);
+  demuxer_->SetCdmForNativePlayer(&cdm_context);
+  CreateRenderer();
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(true));
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.cdm_ids_, (std::vector<base::UnguessableToken>{cdm_id}));
+}
+
+TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  NiceMock<media::MockCdmContext> cdm_context;
+  const base::UnguessableToken cdm_id = base::UnguessableToken::Create();
+  cdm_context.set_cdm_id(cdm_id);
+  // PipelineImpl::InitializeRenderer sets the CDM first.
+  renderer_ = std::make_unique<NativeHlsRenderer>(
+      task_environment_.GetMainThreadTaskRunner(), &sink_);
+  base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
+  EXPECT_CALL(attached_cb, Run(true));
+  renderer_->SetCdm(&cdm_context, attached_cb.Get());
+  base::MockCallback<media::PipelineStatusCallback> init_cb;
+  EXPECT_CALL(init_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
+  renderer_->Initialize(demuxer_.get(), &renderer_client_, init_cb.Get());
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.cdm_ids_, (std::vector<base::UnguessableToken>{cdm_id}));
+}
+
+}  // namespace
+}  // namespace parc::fairplay

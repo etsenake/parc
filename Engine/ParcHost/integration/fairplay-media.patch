@@ -644,7 +644,7 @@
  
 --- a/content/renderer/BUILD.gn
 +++ b/content/renderer/BUILD.gn
-@@ -395,6 +395,16 @@
+@@ -395,6 +395,22 @@
      ]
    }
  
@@ -655,6 +655,12 @@
 +      "media/fairplay/fairplay_renderer_client.h",
 +      "media/fairplay/fairplay_renderer_client_factory.cc",
 +      "media/fairplay/fairplay_renderer_client_factory.h",
++      "media/fairplay/native_hls_demuxer.cc",
++      "media/fairplay/native_hls_demuxer.h",
++      "media/fairplay/native_hls_renderer.cc",
++      "media/fairplay/native_hls_renderer.h",
++      "media/fairplay/native_hls_renderer_factory.cc",
++      "media/fairplay/native_hls_renderer_factory.h",
 +    ]
 +  }
 +
@@ -663,18 +669,19 @@
    }
 --- a/content/renderer/media/media_factory.cc
 +++ b/content/renderer/media/media_factory.cc
-@@ -132,6 +132,10 @@
+@@ -132,6 +132,11 @@
  #include "media/mojo/mojom/speech_recognition_service.mojom.h"
  #endif  // BUILDFLAG(IS_WIN)
  
 +#if BUILDFLAG(IS_MAC)
 +#include "content/renderer/media/fairplay/fairplay_renderer_client_factory.h"
++#include "content/renderer/media/fairplay/native_hls_renderer_factory.h"
 +#endif  // BUILDFLAG(IS_MAC)
 +
  namespace {
  
  // This limit is much higher than it needs to be right now, because the logic
-@@ -658,6 +662,16 @@
+@@ -658,6 +663,24 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -686,6 +693,14 @@
 +      RendererType::kFairPlay,
 +      std::make_unique<media::FairPlayRendererClientFactory>(
 +          CreateMojoRendererFactory()));
++  // Parc: Safari's native HLS route. DemuxerManager asks this factory for its
++  // demuxer (an AVPlayer next to the frame's FairPlay CDMs) only while
++  // parc::fairplay::kNativeHlsEnabled is on, on pages presenting Safari's
++  // identity; PipelineImpl then takes its renderer.
++  factory_selector->AddFactory(
++      RendererType::kFairPlayHls,
++      std::make_unique<parc::fairplay::NativeHlsRendererFactory>(
++          GetMediaInterfaceFactory()));
 +#endif  // BUILDFLAG(IS_MAC)
 +
  #if BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID)
@@ -1232,22 +1247,22 @@
      SetDemuxer(std::move(demuxer));
      return std::move(on_demuxer_created)
          .Run(demuxer_.get(), suspended_mode, /*is_streaming=*/false,
-@@ -382,6 +397,14 @@
-     return !demuxer_->IsSeekable();
-   }
+@@ -384,6 +399,14 @@
    return false;
-+}
-+
+ }
+ 
 +std::optional<Demuxer::ParcNativeTimeline>
 +DemuxerManager::GetParcNativeTimeline() const {
 +  if (!demuxer_) {
 +    return std::nullopt;
 +  }
 +  return demuxer_->GetParcNativeTimeline();
- }
- 
++}
++
  bool DemuxerManager::IsManifestDemuxerURL() const {
-@@ -474,6 +497,53 @@
+ #if BUILDFLAG(ENABLE_HLS_DEMUXER)
+   return loaded_url_.path().ends_with(".m3u8");
+@@ -474,6 +497,62 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -1282,7 +1297,16 @@
 +          base::BindRepeating(&DemuxerManager::ParcAddInbandTextCues,
 +                              weak_factory_.GetWeakPtr())));
 +  params.track_manager = std::move(track_manager);
++  params.key_request_cb = base::BindPostTaskToCurrentDefault(
++      base::BindRepeating(&DemuxerManager::OnParcWebKitKeyRequest,
++                          weak_factory_.GetWeakPtr()));
 +  return client_->CreateParcNativeHlsDemuxer(std::move(params));
++}
++
++void DemuxerManager::OnParcWebKitKeyRequest(const std::string& key_uri) {
++  if (client_) {
++    client_->ParcWebKitKeyRequest(key_uri);
++  }
 +}
 +
 +void DemuxerManager::ParcSetInbandTextTracks(
@@ -1303,7 +1327,7 @@
  }
 --- a/media/filters/demuxer_manager.h
 +++ b/media/filters/demuxer_manager.h
-@@ -19,9 +19,14 @@
+@@ -19,10 +19,15 @@
  #include "media/base/media_log.h"
  #include "media/base/pipeline.h"
  #include "media/base/pipeline_status.h"
@@ -1311,14 +1335,15 @@
  #include "media/filters/chunk_demuxer.h"
  #include "net/storage_access_api/status.h"
  #include "url/origin.h"
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +#include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/threading/sequence_bound.h"
-@@ -81,6 +86,20 @@
+ #include "media/filters/hls_data_source_provider.h"
+@@ -81,6 +86,24 @@
  
      // Allows a seek triggered by a demuxer (mainly used for live content)
      virtual void DemuxerRequestsSeek(base::TimeDelta seek_time) = 0;
@@ -1335,11 +1360,15 @@
 +        ParcNativeHlsDemuxerParams params) {
 +      return nullptr;
 +    }
++
++    // Parc: a key request of that route's player (webkitneedkey, see
++    // ParcNativeHlsDemuxerParams::key_request_cb).
++    virtual void ParcWebKitKeyRequest(const std::string& key_uri) {}
 +#endif  // BUILDFLAG(IS_MAC)
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +130,8 @@
+@@ -111,6 +134,8 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
@@ -1348,7 +1377,7 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +161,9 @@
+@@ -140,6 +165,9 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -1358,7 +1387,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +178,16 @@
+@@ -154,6 +182,17 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -1366,6 +1395,7 @@
 +  // Parc: Safari's native HLS demuxer from the client, when the route is on
 +  // and the element presents Safari's identity; null otherwise.
 +  std::unique_ptr<Demuxer> MaybeCreateParcNativeHlsDemuxer();
++  void OnParcWebKitKeyRequest(const std::string& key_uri);
 +  // Parc: its in-band text tracks and cues, on to the client.
 +  void ParcSetInbandTextTracks(const std::vector<ParcInbandTextTrack>& tracks,
 +                               ParcInbandTextTrackModeCB set_mode);
@@ -1375,7 +1405,7 @@
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -209,6 +243,13 @@
+@@ -209,6 +248,13 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    bool hls_fallback_ = false;
@@ -2536,7 +2566,17 @@
    // 8.1 Let sanitized session ID be a validated and/or sanitized version of
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.cc
-@@ -121,6 +121,13 @@
+@@ -93,6 +93,9 @@
+ #include "third_party/blink/public/web/web_local_frame.h"
+ #include "third_party/blink/public/web/web_view.h"
+ #include "third_party/blink/renderer/platform/media/buffered_data_source_host_impl.h"
++#if BUILDFLAG(IS_MAC)
++#include "third_party/blink/renderer/platform/media/fairplay_hls_loader.h"
++#endif  // BUILDFLAG(IS_MAC)
+ #include "third_party/blink/renderer/platform/media/media_player_util.h"
+ #include "third_party/blink/renderer/platform/media/player_id_generator.h"
+ #include "third_party/blink/renderer/platform/media/power_status_helper.h"
+@@ -121,6 +124,13 @@
  #include "media/base/android/media_codec_util.h"
  #endif
  
@@ -2550,11 +2590,10 @@
  namespace blink {
  
  namespace {
-@@ -167,6 +174,47 @@
-   sink->SwitchOutputDevice(device_id,
+@@ -168,6 +178,47 @@
                             ConvertToBaseOnceCallback(std::move(callback)));
  }
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
 +// ones FairPlay's CdmInfo lists, and Dolby Vision profile 8, which it plays
@@ -2595,10 +2634,11 @@
 +  return true;
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  bool IsBackgroundSuspendEnabled(const WebMediaPlayerImpl* wmpi) {
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-@@ -356,7 +404,12 @@
+           switches::kDisableBackgroundMediaSuspend)) {
+@@ -356,7 +407,12 @@
  // AudioStreamMonitor (for audio indicator) when not using AudioService.
  // TODO(crbug.com/40104699): Support other RendererTypes.
  bool UsesAudioService(media::RendererType renderer_type) {
@@ -2612,7 +2652,7 @@
  }
  
  WebTimeRanges ConvertToWebTimeRanges(
-@@ -1423,6 +1476,24 @@
+@@ -1423,6 +1479,24 @@
    return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
  }
  
@@ -2637,12 +2677,10 @@
  base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
-@@ -1496,6 +1567,21 @@
- 
-   if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
+@@ -1498,6 +1572,21 @@
      return WebTimeRanges();
-+  }
-+
+   }
+ 
 +  // Parc: a native HLS demuxer's AVPlayer sets the window, live or not, as
 +  // WebKit's AVFoundation player does (NATIVE_HLS.md, Live and DVR).
 +  if (std::optional<media::Demuxer::ParcNativeTimeline> timeline =
@@ -2656,10 +2694,12 @@
 +                     : end.InSecondsF());
 +    }
 +    return ranges;
-   }
- 
++  }
++
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1695,6 +1781,58 @@
+     return WebTimeRanges();
+   }
+@@ -1695,6 +1784,58 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
  
@@ -2718,12 +2758,10 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1726,6 +1864,20 @@
- void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
-                                        media::MediaTrack::State state) {
+@@ -1728,6 +1869,20 @@
    client_->SetTrackState(track, state);
-+}
-+
+ }
+ 
 +void WebMediaPlayerImpl::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -2736,14 +2774,15 @@
 +    const std::vector<media::ParcInbandTextCue>& cues) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  client_->ParcAddInbandTextCues(key, cues);
- }
- 
++}
++
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -1776,6 +1928,26 @@
-           tick_clock_, main_task_runner_));
+ 
+ UrlData::CacheMode TranslateCacheMode(bool always_disable,
+@@ -1777,6 +1932,40 @@
  }
  #endif
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +bool WebMediaPlayerImpl::PresentsParcSafariIdentity() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -2757,16 +2796,31 @@
 +  // it makes later find their player there.
 +  media::RendererFactory* factory =
 +      renderer_factory_selector_->GetFactory(media::RendererType::kFairPlayHls);
-+  if (!factory) {
++  if (!factory || !url_index_) {
 +    return nullptr;
 +  }
++  // AVFoundation's loads go out as this element's media requests: its
++  // cookies, referrer, CORS mode and DevTools entries (NATIVE_HLS.md,
++  // Network). A demuxer made again (an HLS restart) gets a fresh loader.
++  parc_hls_loader_ = std::make_unique<FairPlayHlsLoader>(
++      url_index_->fetch_context(), static_cast<UrlData::CorsMode>(cors_mode_),
++      client_->IsAudioElement());
++  params.start_load_cb = parc_hls_loader_->GetStartLoadCallback();
 +  return factory->CreateParcNativeHlsDemuxer(std::move(params));
 +}
++
++void WebMediaPlayerImpl::ParcWebKitKeyRequest(const std::string& key_uri) {
++  DCHECK(main_task_runner_->BelongsToCurrentThread());
++  // webkitneedkey on a Safari-identity page, queued before any `encrypted`
++  // the same request raises (both come in the player's order).
++  encrypted_client_->ParcWebKitKeyRequest(key_uri);
++}
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -3018,11 +3190,29 @@
+   DCHECK(cdm);
+@@ -3018,11 +3207,29 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -2796,7 +2850,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +3228,14 @@
+@@ -3038,6 +3245,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -2811,7 +2865,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3153,6 +3351,14 @@
+@@ -3153,6 +3368,14 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -2826,7 +2880,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3793,6 +3999,29 @@
+@@ -3793,6 +4016,29 @@
      return false;
    }
  
@@ -2858,7 +2912,17 @@
    if (!HasVideo() || !HasAudio()) {
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.h
 +++ b/third_party/blink/renderer/platform/media/web_media_player_impl.h
-@@ -231,6 +231,7 @@
+@@ -89,6 +89,9 @@
+ namespace blink {
+ 
+ class BufferedDataSourceHostImpl;
++#if BUILDFLAG(IS_MAC)
++class FairPlayHlsLoader;
++#endif  // BUILDFLAG(IS_MAC)
+ class PowerStatusHelper;
+ class KURL;
+ class ThreadSafeBrowserInterfaceBrokerProxy;
+@@ -231,6 +234,7 @@
    bool Seeking() const override;
    double Duration() const override;
    virtual double timelineOffset() const;
@@ -2866,7 +2930,7 @@
    bool IsEnded() const override;
  
    // Shared between the WebMediaPlayer and DemuxerManager::Client interfaces.
-@@ -445,6 +446,9 @@
+@@ -445,6 +449,9 @@
    void OnProgress() override;
    void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data) override;
@@ -2876,7 +2940,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +459,17 @@
+@@ -455,6 +462,18 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -2884,6 +2948,7 @@
 +  bool PresentsParcSafariIdentity() override;
 +  std::unique_ptr<media::Demuxer> CreateParcNativeHlsDemuxer(
 +      media::ParcNativeHlsDemuxerParams params) override;
++  void ParcWebKitKeyRequest(const std::string& key_uri) override;
 +#endif  // BUILDFLAG(IS_MAC)
 +  void ParcSetInbandTextTracks(
 +      const std::vector<media::ParcInbandTextTrack>& tracks,
@@ -2894,6 +2959,19 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
+@@ -885,6 +904,12 @@
+ 
+   std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
+   raw_ptr<UrlIndex> url_index_ = nullptr;
++#if BUILDFLAG(IS_MAC)
++  // Parc: fetches the loads of Safari's native HLS player (its demuxer's
++  // FairPlayHlsPlayerClient.StartLoad) through `url_index_`'s fetch context;
++  // destroying it cancels them.
++  std::unique_ptr<FairPlayHlsLoader> parc_hls_loader_;
++#endif  // BUILDFLAG(IS_MAC)
+   scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
+ 
+   // Video rendering members.
 --- a/media/base/media_resource.h
 +++ b/media/base/media_resource.h
 @@ -8,9 +8,16 @@
@@ -2944,7 +3022,7 @@
  }  // namespace media
 --- a/media/base/renderer_factory.h
 +++ b/media/base/renderer_factory.h
-@@ -6,13 +6,18 @@
+@@ -6,24 +6,91 @@
  #define MEDIA_BASE_RENDERER_FACTORY_H_
  
  #include <memory>
@@ -2963,14 +3041,35 @@
  
  namespace base {
  class SequencedTaskRunner;
-@@ -22,7 +27,38 @@
+ class TaskRunner;
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++// Parc: the native HLS loader's types (media/mojo/mojom, which //media can't
++// include), named here only.
++namespace mojo {
++template <typename S>
++class StructPtr;
++template <typename Interface>
++class PendingReceiver;
++template <typename Interface>
++class PendingRemote;
++}  // namespace mojo
++
++namespace media::mojom {
++class FairPlayHlsRequest;
++class FairPlayHlsLoad;
++class FairPlayHlsLoadClient;
++}  // namespace media::mojom
++#endif  // BUILDFLAG(IS_MAC)
++
  namespace media {
  
  class AudioRendererSink;
 +class MediaLog;
 +class TrackManager;
  class VideoRendererSink;
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +// Parc: what the demuxer of Safari's native HLS route is made from
 +// (third_party/parc_fairplay NATIVE_HLS.md). DemuxerManager's HLS branch fills
@@ -2997,12 +3096,25 @@
 +  // in-band text tracks and cues; callable on the media thread, posts to the
 +  // main thread.
 +  std::unique_ptr<TrackManager> track_manager;
++  // Raises webkitneedkey for a key request of the player's resource loader
++  // (WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest), before any
++  // `encrypted` for it; posts to the main thread.
++  base::RepeatingCallback<void(const std::string& key_uri)> key_request_cb;
++  // Serves one load AVFoundation makes (FairPlayHlsPlayerClient.StartLoad)
++  // through the element's loader (blink::FairPlayHlsLoader); callable on the
++  // media thread. Without it every load fails.
++  using StartLoadCB = base::RepeatingCallback<void(
++      mojo::StructPtr<mojom::FairPlayHlsRequest> request,
++      mojo::PendingReceiver<mojom::FairPlayHlsLoad> load,
++      mojo::PendingRemote<mojom::FairPlayHlsLoadClient> client)>;
++  StartLoadCB start_load_cb;
 +};
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
  // A factory class for creating media::Renderer to be used by media pipeline.
  class MEDIA_EXPORT RendererFactory {
-@@ -46,6 +82,15 @@
+  public:
+@@ -46,6 +113,15 @@
        VideoRendererSink* video_renderer_sink,
        RequestOverlayInfoCB request_overlay_info_cb,
        const gfx::ColorSpace& target_color_space) = 0;
@@ -3718,3 +3830,15 @@
    deps = [
      ":media",
      "//base",
+--- a/content/test/BUILD.gn
++++ b/content/test/BUILD.gn
+@@ -3456,6 +3456,9 @@
+ 
+   if (is_mac) {
+     data_deps += [ "//device/fido/strings:fido_test_strings" ]
++
++    # Parc: Safari's native HLS route (content/renderer/media/fairplay).
++    sources += [ "../renderer/media/fairplay/native_hls_unittest.cc" ]
+   }
+ 
+   if (is_posix) {

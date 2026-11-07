@@ -118,6 +118,30 @@ DevTools attribution right.
 - `WebMediaPlayerImpl` treats `kFairPlayHls` as `kFairPlay`: audio isn't the
   audio service's, the player is never auto-suspended, and its video is never
   disabled while hidden.
+- `NativeHlsRendererFactory`, `NativeHlsDemuxer` and `NativeHlsRenderer`
+  (`content/renderer/media/fairplay`, tested by `native_hls_unittest.cc`)
+  implement it. The factory connects the player when it makes the demuxer
+  (main thread); the demuxer binds the pipes on the media thread and closes
+  them in `Stop`. The placeholder streams are clear (keys never pass a
+  decryptor here), so the pipeline never waits for a CDM. An item error before
+  the metadata fails `Initialize` with that status (otherwise
+  `DEMUXER_ERROR_COULD_NOT_OPEN`); later ones go to the facade's
+  `RendererClient`, or to the demuxer host while no facade exists. A lost GPU
+  connection is `PIPELINE_ERROR_DISCONNECTED`. `waitingforkey` and the display
+  layer arriving before a facade exists are replayed to it. The facade reports
+  buffering only between `StartPlayingFrom` and `Flush` (RendererImpl's
+  contract) and `ended` once per run to the end; its time is the player's last
+  `OnTimeUpdate` advanced at that rate within [0, duration], and the target
+  during a seek. `WebMediaPlayerImpl` makes the element's
+  `blink::FairPlayHlsLoader` with the demuxer and hands its
+  `GetStartLoadCallback()` over as `ParcNativeHlsDemuxerParams::start_load_cb`,
+  which the demuxer's `StartLoad` runs (Network). Tracks are `fp-hls-tracks`'
+  (`ParcNativeHlsDemuxerParams::track_manager`). The demuxer answers
+  `GetParcNativeTimeline()` from `OnSeekableRangesChanged` and
+  `OnStartDateChanged` under its time lock, and turns `OnKeyRequest` into
+  `WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest`
+  (`webkitneedkey`) through `DemuxerManager` on the main thread, posted in the
+  player's order so it precedes the request's `encrypted`.
 
 ## Mojo
 
