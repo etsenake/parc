@@ -77,7 +77,17 @@ DevTools attribution right.
   Safari's identity, it asks its client
   (`DemuxerManager::Client::CreateParcNativeHlsDemuxer`, default null) and
   uses that demuxer instead of `ManifestDemuxer`, with no data source.
-  `canPlayType` keeps answering "maybe". The request is a
+  `canPlayType` keeps answering "maybe". A `data:` URL whose type is an HLS
+  type (`application/vnd.apple.mpegurl`, `application/x-mpegurl`,
+  `audio/mpegurl`, `audio/x-mpegurl`) takes the branch too
+  (`DemuxerManager::ParcNativeHlsDataUrlMimeType`), and `WebMediaPlayerImpl`
+  starts the pipeline with it instead of decoding it into a memory data
+  source: Safari takes a data: URL's type from the URL, and AVFoundation
+  decodes the playlist itself, and data: playlists a playlist names too,
+  so only segment URIs go through the loader (harness `data-url`,
+  `data-url-video`). Spotify plays its generated playlists that way. The GPU
+  service leaves the scheme to the core. AVFoundation refuses a `blob:` playlist as an unsupported URL before
+  any load, so the core refuses one at `Load`. The request is a
   `media::ParcNativeHlsDemuxerParams` (`renderer_factory.h`): the playlist URL
   (after a sniffed load's redirects), the MIME type AVFoundation is told (as
   WebKit, only one not inferred from the extension: HLS's for a sniffed

@@ -465,8 +465,8 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
         PendingInitialize{url, mime_type, video_layer_size, video_layer_scale};
     return;
   }
-  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() ||
-      !fp::FairPlayHlsPlayer::IsSupported()) {
+  // The core decides which schemes play (http, https and data:).
+  if (!url.is_valid() || !fp::FairPlayHlsPlayer::IsSupported()) {
     errored_ = true;
     client_->OnInitialized(nullptr);
     return;

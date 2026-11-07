@@ -26,6 +26,11 @@ namespace media {
 namespace {
 
 constexpr char kPlaylist[] = "https://media.example/stream/master.m3u8";
+// A playlist in a data: URL, the way Spotify's player hands its generated
+// ones to the element (this one is empty).
+constexpr char kDataPlaylist[] =
+    "data:application/vnd.apple.mpegurl;base64,"
+    "I0VYVE0zVQojRVhULVgtRU5ETElTVAo=";
 
 class FakeClient : public DemuxerManager::Client {
  public:
@@ -73,15 +78,21 @@ class FakeClient : public DemuxerManager::Client {
 
 class ParcNativeHlsRoutingTest : public testing::Test {
  protected:
-  // Runs the HLS branch for `kPlaylist` and returns the demuxer it chose.
-  Demuxer* CreateDemuxer(FakeClient& client,
-                         DataSource::Preload preload = DataSource::AUTO,
-                         bool needs_first_frame = true) {
+  DemuxerManager& MakeManager(FakeClient& client, const char* url) {
     manager_ = std::make_unique<DemuxerManager>(
         &client, url::Origin::Create(GURL(kPlaylist)),
         task_environment_.GetMainThreadTaskRunner(), &media_log_,
         /*demuxer_override=*/nullptr);
-    manager_->SetLoadedUrl(GURL(kPlaylist));
+    manager_->SetLoadedUrl(GURL(url));
+    return *manager_;
+  }
+
+  // Runs the HLS branch for `url` and returns the demuxer it chose.
+  Demuxer* CreateDemuxer(FakeClient& client,
+                         DataSource::Preload preload = DataSource::AUTO,
+                         bool needs_first_frame = true,
+                         const char* url = kPlaylist) {
+    MakeManager(client, url);
     Demuxer* chosen = nullptr;
     PipelineStatus status = manager_->CreateDemuxer(
         /*load_media_source=*/false, preload, needs_first_frame,
@@ -187,6 +198,45 @@ TEST_F(ParcNativeHlsRoutingTest, NoNativeDemuxerFallsBackToManifestDemuxer) {
   EXPECT_TRUE(client.asked);
   EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);
   EXPECT_FALSE(manager_->HasParcNativeHlsDemuxer());
+}
+
+// Safari takes a data: URL's type from the URL and AVFoundation decodes the
+// playlist itself: the route gets the URL as it is, with that type.
+TEST_F(ParcNativeHlsRoutingTest, SafariIdentityPlaysHlsDataUrlNatively) {
+  FakeClient client(task_environment_.GetMainThreadTaskRunner());
+  client.safari_identity = true;
+  auto native = std::make_unique<testing::NiceMock<MockDemuxer>>();
+  Demuxer* native_ptr = native.get();
+  client.native_demuxer = std::move(native);
+
+  EXPECT_EQ(CreateDemuxer(client, DataSource::AUTO, /*needs_first_frame=*/true,
+                          kDataPlaylist),
+            native_ptr);
+  ASSERT_TRUE(client.last_params);
+  EXPECT_EQ(client.last_params->url, GURL(kDataPlaylist));
+  EXPECT_EQ(client.last_params->mime_type, "application/vnd.apple.mpegurl");
+  EXPECT_FALSE(manager_->HasDataSource());
+}
+
+TEST_F(ParcNativeHlsRoutingTest, OnlySafariIdentityHlsDataUrlsTakeTheRoute) {
+  FakeClient client(task_environment_.GetMainThreadTaskRunner());
+  EXPECT_EQ(MakeManager(client, kDataPlaylist).ParcNativeHlsDataUrlMimeType(),
+            "");
+  client.safari_identity = true;
+  EXPECT_EQ(MakeManager(client, kDataPlaylist).ParcNativeHlsDataUrlMimeType(),
+            "application/vnd.apple.mpegurl");
+  EXPECT_EQ(MakeManager(client, "data:Audio/X-MpegURL,%23EXTM3U")
+                .ParcNativeHlsDataUrlMimeType(),
+            "audio/x-mpegurl");
+  EXPECT_EQ(MakeManager(client,
+                        "data:application/vnd.apple.mpegurl;foo=bar;base64,"
+                        "I0VYVE0zVQo=")
+                .ParcNativeHlsDataUrlMimeType(),
+            "application/vnd.apple.mpegurl");
+  EXPECT_EQ(MakeManager(client, "data:audio/mp4;base64,AAAA")
+                .ParcNativeHlsDataUrlMimeType(),
+            "");
+  EXPECT_EQ(MakeManager(client, kPlaylist).ParcNativeHlsDataUrlMimeType(), "");
 }
 
 }  // namespace

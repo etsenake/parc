@@ -191,8 +191,8 @@ class FairPlayHlsPlayer {
   // URL session). Without it Load fails rather than let AVFoundation fetch.
   static bool IsSupported();
 
-  // Starts loading |url| (http or https). |mime_type| is the element's
-  // <source type>, or empty. OnMetadata or OnError follows. Same as
+  // Starts loading |url| (http, https or data). |mime_type| is the
+  // element's <source type>, a data: URL's type, or empty. OnMetadata or OnError follows. Same as
   // CreateAsset then Start.
   Result Load(const std::string& url, const std::string& mime_type);
   // The two halves of Load. CreateAsset makes the AVURLAsset and its loaders

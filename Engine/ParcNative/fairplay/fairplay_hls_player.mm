@@ -329,8 +329,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     NSString* url_string = NSStringOrNil(url);
     NSURL* ns_url = url_string ? [NSURL URLWithString:url_string] : nil;
     NSString* scheme = ns_url.scheme.lowercaseString;
-    if (!ns_url || !([scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"])) {
-      return Result::Error(Exception::kNotSupported, "not an http(s) URL");
+    // AVFoundation decodes a data: playlist itself, as for Safari (Spotify's
+    // generated playlists); it refuses blob: URLs before any load.
+    if (!ns_url || !([scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"] ||
+                     [scheme isEqualToString:@"data"])) {
+      return Result::Error(Exception::kNotSupported, "not an http(s) or data URL");
     }
     NSMutableDictionary* options = [NSMutableDictionary dictionary];
     options[ClientURLLoadingOnlyKey()] = @YES;

@@ -508,6 +508,19 @@ in, November 6, 2026):
   native HLS route: the HLS URL plays through AVPlayer, and its skd key
   requests reach the page as `webkitneedkey`.
 
+- **Spotify** (fetched November 7, 2026) asks for Widevine in Chrome's
+  identity, so Parc learns `spotify.com`. As Safari, its player sees
+  `WebKitMediaKeys`, replaces EME with its own layer over it and keeps only
+  `com.apple.fps.1_0`; it writes the track's HLS playlist itself and plays
+  `<source src="data:application/vnd.apple.mpegurl;base64,…">` (a `blob:`
+  URL only without `MediaSource`), keyed through `webkitneedkey`. Parc used
+  to refuse that data: URL; the native HLS route now plays it as Safari does
+  (NATIVE_HLS.md, Routing). AVFoundation refuses `blob:` playlists outright.
+- **Apple Music** and **Apple Podcasts** switch with `apple.com`. Their
+  MusicKit takes legacy `WebKitMediaKeys("com.apple.fps")` and sets the https
+  HLS asset as an `<audio>` element's `src`, which the native HLS route
+  already served.
+
 `scripts/test-fairplay-identity.sh` runs the script
 (`tests/FairPlayIdentity/webkit_media_keys.mjs`, with each service's check
 copied exactly). It also checks the renderer's gate with the real
@@ -709,7 +722,9 @@ while Parc is quit. On a fresh build, signed in to each service:
 6. **Private windows.** A private window plays Netflix as Safari right away
    (inherited). Learning a new site there doesn't change the file, and the
    site is forgotten after the last private window closes.
-7. **Native HLS.** On telustvplus.com (learned as Safari), play a live
+7. **Audio services.** Signed in, a Spotify track and an Apple Music song
+   play through `NativeHlsRenderer` (Spotify's with a data: URL).
+8. **Native HLS.** On telustvplus.com (learned as Safari), play a live
    channel: the player gets an HLS URL, `chrome://media-internals` shows the
    renderer `NativeHlsRenderer` (Safari's native HLS route, not
    `ManifestDemuxer`), each `skd://` key request raises `webkitneedkey` and

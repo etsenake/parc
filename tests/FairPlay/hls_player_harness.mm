@@ -632,6 +632,83 @@ void BadUrl() {
   Check(!rig.Load("file:///etc/hosts").ok(), "a file URL is refused");
   Rig rig2;
   Check(!rig2.Load(std::string("https://") + kFakeHost + "/\xff\xfe.m3u8").ok(), "a URL that isn't UTF-8 is refused");
+  Rig rig3;
+  Check(!rig3.Load("blob:https://parc-hls.invalid/0b5b0a5e-3f0e-4bd3-9a5e-6d1b8c1c2f11").ok(),
+        "a blob: URL is refused (AVFoundation reports it unsupported before any load)");
+}
+
+// A data: media playlist of byte ranges in one file, as Spotify's player
+// writes them: |ranges| are the init segment, then each 6 s segment.
+std::string DataPlaylist(const std::string& file, const std::vector<std::string>& ranges) {
+  std::string playlist = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n"
+                         "#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"" + file + "\",BYTERANGE=\"" + ranges[0] + "\"\n";
+  for (size_t i = 1; i < ranges.size(); ++i) {
+    playlist += "#EXTINF:5.99467,\n#EXT-X-BYTERANGE:" + ranges[i] + "\n" + file + "\n";
+  }
+  playlist += "#EXT-X-ENDLIST\n";
+  NSString* base64 = [[@(playlist.c_str()) dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
+  return std::string("data:application/vnd.apple.mpegurl;base64,") + base64.UTF8String;
+}
+
+constexpr const char* kBipbopFmp4 = "devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/";
+
+// Spotify's player under Safari's identity plays a FairPlay audio file as a
+// data: playlist of its byte ranges (a blob: URL only without MediaSource).
+void DataUrl() {
+  std::printf("-- a data: playlist of byte ranges in one audio file (Spotify's shape)\n");
+  std::string file = Fake((std::string(kBipbopFmp4) + "a1/main.mp4").c_str());
+  Rig rig;
+  fp::Result result;
+  OnOwner([&] {
+    result = rig.player->Load(DataPlaylist(file, {"616@0", "121090@616", "121201@121706"}),
+                              "application/vnd.apple.mpegurl");
+    rig.player->SetMuted(true);
+  });
+  Check(result.ok(), "Load accepts the data: URL");
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  Check(ready && rig.client.metadata && std::fabs(rig.client.metadata->duration - 11.99) < 0.1,
+        "metadata from the decoded playlist: two segments, about 12 s");
+  OnOwner([&] { rig.player->SetRate(1); });
+  Check(WaitFor([&] { return rig.Time() > 3; }, 20), "audio plays past 3 s");
+  bool only_segments = !rig.loader.urls_.empty();
+  for (const std::string& url : rig.loader.urls_) {
+    only_segments = only_segments && url == file;
+  }
+  Check(only_segments, "AVFoundation decoded the playlist; only the file's ranges went through HlsLoader");
+  Check(rig.loader.ranged_ > 0 && rig.loader.foreign_ == 0 && rig.client.errors == 0, "ranged loads, no error");
+}
+
+// Its video podcasts: a data: master playlist whose audio rendition and
+// variants are data: media playlists.
+void DataUrlVideo() {
+  std::printf("-- a data: master playlist of data: media playlists (Spotify's video)\n");
+  std::string audio = Fake((std::string(kBipbopFmp4) + "a1/main.mp4").c_str());
+  std::string video = Fake((std::string(kBipbopFmp4) + "v2/main.mp4").c_str());
+  std::string master = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",LANGUAGE=\"eng\",NAME=\"English\",AUTOSELECT=YES,URI=\"" +
+                       DataPlaylist(audio, {"616@0", "121090@616", "121201@121706"}) +
+                       "\"\n#EXT-X-STREAM-INF:BANDWIDTH=541052,RESOLUTION=480x270,CODECS=\"mp4a.40.2, avc1.640015\",AUDIO=\"audio\"\n" +
+                       DataPlaylist(video, {"719@0", "274201@719", "280451@274920"}) + "\n";
+  NSString* base64 = [[@(master.c_str()) dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
+  Rig rig;
+  fp::Result result;
+  OnOwner([&] {
+    result = rig.player->Load(std::string("data:application/vnd.apple.mpegurl;base64,") + base64.UTF8String,
+                              "application/vnd.apple.mpegurl");
+    rig.player->SetMuted(true);
+  });
+  Check(result.ok(), "Load accepts the data: master playlist");
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  Check(ready && rig.client.metadata && rig.client.metadata->has_video && rig.client.metadata->has_audio,
+        "metadata with video and audio: " + rig.client.error_message.substr(0, 160));
+  OnOwner([&] { rig.player->SetRate(1); });
+  Check(WaitFor([&] { return rig.Time() > 3; }, 20), "plays past 3 s");
+  Check(rig.client.width == 480 && rig.client.height == 270, "the variant's picture size");
+  bool only_files = !rig.loader.urls_.empty();
+  for (const std::string& url : rig.loader.urls_) {
+    only_files = only_files && (url == audio || url == video);
+  }
+  Check(only_files && rig.loader.foreign_ == 0 && rig.client.errors == 0,
+        "every playlist decoded by AVFoundation; only the two files' ranges loaded, no error");
 }
 
 void PlainHttp() {
@@ -1345,7 +1422,7 @@ int main(int argc, char** argv) {
     std::string only = argc > 1 ? argv[1] : "";
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
-        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
+        {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"data-url", DataUrl}, {"data-url-video", DataUrlVideo}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
         {"keys-session-failure", KeysSessionFailure}, {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute},
         {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
