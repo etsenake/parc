@@ -273,6 +273,26 @@ TEST_F(ParcMediaSourceTest, ChromeIsTypeSupportedNeedsCodecs) {
 
 // WebKit's SourceBufferParserAVFObjC::isContentTypeSupported: every type
 // AVStreamDataParser lists, with the codecs its family takes.
+TEST_F(ParcMediaSourceTest, PCMOnlyOnSafariMP4Pages) {
+  for (const char* agent : {kChromeUserAgent, kSafariUserAgent}) {
+    SetUserAgent(agent);
+    const bool safari = agent == kSafariUserAgent;
+    for (const char* type : {"Audio/MP4; codecs=\"ipcm\"",
+                             "audio/mp4; codecs=\"ipcm\"",
+                             "video/mp4; codecs=\"fpcm\"",
+                             "audio/x-m4a; codecs=\"ipcm.16\"",
+                             "video/3gpp; codecs=\"fpcm.abc\""})
+      EXPECT_EQ(MediaSource::isTypeSupported(Context(), type), safari) << type;
+    for (const char* type : {"audio/mp4; codecs=\"IPCM\"",
+                             "audio/mp4; codecs=\"ipcmXYZ\"",
+                             "video/quicktime; codecs=\"ipcm\"",
+                             "audio/x-quicktime; codecs=\"fpcm\"",
+                             "audio/mp4; codecs=\"ipcm,bogus\"",
+                             "audio/webm; codecs=\"fpcm\""})
+      EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
+  }
+}
+
 TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedSafariContainers) {
   SetUserAgent(kSafariUserAgent);
   for (const char* type :
@@ -310,6 +330,25 @@ TEST_F(ParcMediaSourceTest, ChromeIsTypeSupportedChromeContainers) {
     EXPECT_FALSE(MediaSource::isTypeSupported(Context(), type)) << type;
   }
   EXPECT_TRUE(MediaSource::isTypeSupported(Context(), "audio/mpeg"));
+}
+
+TEST_F(ParcMediaSourceTest, SafariPCMSourceBufferAndChangeType) {
+  SetUserAgent(kSafariUserAgent);
+  auto* source = OpenMediaSource();
+  DummyExceptionStateForTesting add_exception;
+  auto* buffer = source->addSourceBuffer("audio/mp4; codecs=\"ipcm\"", add_exception);
+  ASSERT_FALSE(add_exception.HadException());
+  ASSERT_TRUE(buffer);
+  EXPECT_EQ(engine_->data.added_codecs, "ipcm");
+  DummyExceptionStateForTesting change_exception;
+  buffer->changeType("audio/mp4; codecs=\"fpcm\"", change_exception);
+  EXPECT_FALSE(change_exception.HadException());
+  EXPECT_EQ(engine_->data.changed_codecs, "fpcm");
+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION) && BUILDFLAG(ENABLE_PLATFORM_HEVC)
+  DummyExceptionStateForTesting fairplay_exception;
+  buffer->changeType("video/mp4; codecs=\"dvh1.05.06,ipcm\"", fairplay_exception);
+  EXPECT_FALSE(fairplay_exception.HadException());
+#endif
 }
 
 TEST_F(ParcMediaSourceTest, SafariSourceBufferSafariContainer) {

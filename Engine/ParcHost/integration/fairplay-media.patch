@@ -1424,7 +1424,19 @@
  #include "base/task/bind_post_task.h"
  #include "base/trace_event/trace_event.h"
  #include "media/base/audio_decoder_config.h"
-@@ -142,6 +146,63 @@
+@@ -47,6 +51,11 @@
+     media::MediaLog* media_log) {
+   std::vector<std::string> parsed_codec_ids;
+   media::SplitCodecs(codecs, &parsed_codec_ids);
++  if (std::ranges::any_of(parsed_codec_ids, [](const std::string& codec) {
++        return codec == "ipcm" || codec.starts_with("ipcm.") ||
++               codec == "fpcm" || codec.starts_with("fpcm.");
++      }))
++    return nullptr;
+   return media::StreamParserFactory::Create(content_type, parsed_codec_ids,
+                                             media_log);
+ }
+@@ -142,6 +151,63 @@
    return true;
  }
  
@@ -1488,7 +1500,7 @@
  void ChunkDemuxerStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -231,6 +292,7 @@
+@@ -231,6 +297,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -1496,7 +1508,7 @@
      return true;
    }
  
-@@ -247,6 +309,7 @@
+@@ -247,6 +314,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
@@ -1504,7 +1516,7 @@
      return true;
    }
  
-@@ -529,6 +592,14 @@
+@@ -529,6 +597,14 @@
      return;
    }
  
@@ -1519,7 +1531,7 @@
    SeekAllSources(time);
    StartReturningData();
  
-@@ -634,6 +705,8 @@
+@@ -634,6 +710,8 @@
  
    AbortPendingReads_Locked();
    SeekAllSources(seek_time);
@@ -1528,7 +1540,7 @@
  
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -641,6 +714,43 @@
+@@ -641,6 +719,43 @@
    }
  
    RunSeekCB_Locked(PIPELINE_OK);
@@ -1572,7 +1584,7 @@
  }
  
  ChunkDemuxer::Status ChunkDemuxer::AddId(
-@@ -656,12 +766,13 @@
+@@ -656,12 +771,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -1588,7 +1600,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
                         std::nullopt);
  }
-@@ -679,12 +790,13 @@
+@@ -679,12 +795,13 @@
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
  
@@ -1604,7 +1616,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,17 +808,18 @@
+@@ -696,17 +813,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
  
@@ -1626,7 +1638,7 @@
    if (!stream_parser) {
      DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
               << " codecs=" << codecs;
-@@ -762,6 +875,11 @@
+@@ -762,6 +880,11 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
@@ -1638,7 +1650,7 @@
  
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -774,7 +892,17 @@
+@@ -774,7 +897,17 @@
  
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
                                      base::Unretained(this), id),
@@ -1657,7 +1669,7 @@
  
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
-@@ -802,7 +930,10 @@
+@@ -802,7 +935,10 @@
  void ChunkDemuxer::RemoveId(const std::string& id) {
    DVLOG(1) << __func__ << " id=" << id;
    base::AutoLock auto_lock(lock_);
@@ -1668,7 +1680,7 @@
  
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
-@@ -830,6 +961,7 @@
+@@ -830,6 +966,7 @@
      CHECK(stream_found);
    }
    id_to_streams_map_.erase(id);
@@ -1676,7 +1688,7 @@
  }
  
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
-@@ -870,6 +1002,7 @@
+@@ -870,6 +1007,7 @@
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
@@ -1684,7 +1696,7 @@
  
    ChunkDemuxerStream* enabled_stream = nullptr;
    if (track_id.has_value()) {
-@@ -891,12 +1024,160 @@
+@@ -891,12 +1029,160 @@
        stream->SetEnabled(false, curr_time);
      }
    }
@@ -1845,7 +1857,7 @@
  }
  
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
-@@ -913,7 +1194,21 @@
+@@ -913,7 +1199,21 @@
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
@@ -1868,7 +1880,7 @@
  }
  
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
-@@ -1013,6 +1308,7 @@
+@@ -1013,6 +1313,7 @@
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
@@ -1876,7 +1888,7 @@
  
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1075,6 +1371,7 @@
+@@ -1075,6 +1376,7 @@
          DVLOG(1) << "AppendChunks(): called in unexpected state " << state_;
          return false;
      }
@@ -1884,7 +1896,7 @@
  
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1102,6 +1399,7 @@
+@@ -1102,6 +1404,7 @@
    source_state_map_[id]->ResetParserState(append_window_start,
                                            append_window_end,
                                            timestamp_offset);
@@ -1892,7 +1904,7 @@
    // ResetParserState can possibly emit some buffers.
    // Need to check whether seeking can be completed.
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
-@@ -1136,8 +1434,87 @@
+@@ -1136,8 +1439,87 @@
    if (start == duration_)
      return;
  
@@ -1980,7 +1992,7 @@
  }
  
  bool ChunkDemuxer::CanChangeType(const std::string& id,
-@@ -1162,11 +1539,30 @@
+@@ -1162,11 +1544,30 @@
      return false;
    }
  
@@ -2012,7 +2024,7 @@
    return !!stream_parser;
  }
  
-@@ -1182,7 +1578,7 @@
+@@ -1182,7 +1583,7 @@
    DCHECK(IsValidId_Locked(id));
  
    std::unique_ptr<media::StreamParser> stream_parser(
@@ -2021,7 +2033,7 @@
    // Caller should query CanChangeType() first to protect from failing this.
    DCHECK(stream_parser);
    source_state_map_[id]->ChangeType(std::move(stream_parser),
-@@ -1244,6 +1640,7 @@
+@@ -1244,6 +1645,7 @@
    DCHECK(duration_td.is_positive());
  
    user_specified_duration_ = duration;
@@ -2029,7 +2041,7 @@
    duration_ = duration_td;
    host_->SetDuration(duration_);
  
-@@ -1251,6 +1648,7 @@
+@@ -1251,6 +1653,7 @@
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
@@ -2037,7 +2049,7 @@
  }
  
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
-@@ -1332,6 +1730,10 @@
+@@ -1332,6 +1735,10 @@
  
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
      RunSeekCB_Locked(PIPELINE_OK);
@@ -2048,7 +2060,7 @@
  }
  
  void ChunkDemuxer::UnmarkEndOfStream() {
-@@ -1440,6 +1842,10 @@
+@@ -1440,6 +1847,10 @@
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
@@ -2059,7 +2071,7 @@
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1488,6 +1894,45 @@
+@@ -1488,6 +1899,45 @@
    RunInitCB_Locked(PIPELINE_OK);
  }
  
@@ -2105,7 +2117,7 @@
  // static
  MediaTrack::Id ChunkDemuxer::GenerateMediaTrackId() {
    static unsigned g_track_count = 0;
-@@ -1525,6 +1970,7 @@
+@@ -1525,6 +1975,7 @@
    track_id_to_demux_stream_map_[media_track_id] = stream.get();
    id_to_streams_map_[source_id].push_back(stream.get());
    stream->SetEnabled(owning_vector->empty(), base::TimeDelta());
@@ -2113,7 +2125,7 @@
    owning_vector->push_back(std::move(stream));
    return owning_vector->back().get();
  }
-@@ -1598,6 +2044,13 @@
+@@ -1598,6 +2049,13 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -2127,7 +2139,7 @@
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
  
-@@ -1605,6 +2058,7 @@
+@@ -1605,6 +2063,7 @@
  }
  
  void ChunkDemuxer::StartReturningData() {
@@ -2135,7 +2147,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->StartReturningData();
-@@ -1612,6 +2066,7 @@
+@@ -1612,6 +2071,7 @@
  }
  
  void ChunkDemuxer::AbortPendingReads_Locked() {
@@ -2143,7 +2155,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +2074,7 @@
+@@ -1619,6 +2079,7 @@
  }
  
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
@@ -2151,7 +2163,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +2106,28 @@
+@@ -1650,6 +2111,28 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -2780,10 +2792,18 @@
    RCHECK(reader->ScanChildren() &&
           reader->ReadChild(&format) &&
           reader->ReadChild(&type));
-@@ -1590,8 +1598,46 @@
-   // Bytes 18-33 (hash of the unencoded audio data) are ignored here.
- 
+@@ -1592,6 +1600,54 @@
    return true;
+ }
+ 
++PCMConfiguration::PCMConfiguration() = default;
++PCMConfiguration::PCMConfiguration(const PCMConfiguration& other) = default;
++PCMConfiguration::~PCMConfiguration() = default;
++FourCC PCMConfiguration::BoxType() const { return FOURCC_PCMC; }
++bool PCMConfiguration::Parse(BoxReader* reader) {
++  RCHECK(reader->ReadFullBoxHeader());
++  RCHECK(reader->version() == 0 && reader->flags() == 0);
++  return reader->Read1(&format_flags) && reader->Read1(&sample_size);
 +}
 +
 +ALACSpecificBox::ALACSpecificBox() = default;
@@ -2794,8 +2814,8 @@
 +
 +FourCC ALACSpecificBox::BoxType() const {
 +  return FOURCC_ALAC;
- }
- 
++}
++
 +bool ALACSpecificBox::Parse(BoxReader* reader) {
 +  constexpr size_t kConfigSize = 24;
 +  RCHECK(reader->ReadFullBoxHeader());
@@ -2827,10 +2847,19 @@
  OpusSpecificBox::OpusSpecificBox()
      : seek_preroll(base::Milliseconds(80)), codec_delay_in_frames(0) {}
  
-@@ -1921,6 +1967,13 @@
-       if (!reader->ReadChild(&sinf))
-         return false;
+@@ -1923,6 +1979,24 @@
      }
+   }
+ 
++  const FourCC original_format =
++      format == FOURCC_ENCA ? sinf.format.format : format;
++  if (original_format == FOURCC_IPCM || original_format == FOURCC_FPCM) {
++    RCHECK(channelcount > 0);
++    RCHECK(reader->ReadChild(&pcm));
++    RCHECK(original_format == FOURCC_IPCM
++               ? (pcm.sample_size == 16 || pcm.sample_size == 24 ||
++                  pcm.sample_size == 32)
++               : (pcm.sample_size == 32 || pcm.sample_size == 64));
 +  }
 +
 +  // Parc: Apple Lossless keeps its config in an ALACSpecificBox.
@@ -2838,9 +2867,11 @@
 +      (format == FOURCC_ENCA && sinf.format.format == FOURCC_ALAC)) {
 +    RCHECK_MEDIA_LOGGED(reader->ReadChild(&alac), reader->media_log(),
 +                        "Failure parsing ALACSpecificBox (alac)");
-   }
- 
++  }
++
    if (format == FOURCC_OPUS ||
+       (format == FOURCC_ENCA && sinf.format.format == FOURCC_OPUS)) {
+     RCHECK_MEDIA_LOGGED(reader->ReadChild(&dops), reader->media_log(),
 --- a/media/formats/mp4/box_definitions.h
 +++ b/media/formats/mp4/box_definitions.h
 @@ -164,6 +164,9 @@
@@ -2865,13 +2896,21 @@
  };
  
  struct MEDIA_EXPORT Stereoscopic3DVideo : Box {
-@@ -439,6 +447,18 @@
+@@ -437,6 +445,24 @@
+   uint32_t sample_rate;
+   uint8_t channel_count;
    uint8_t bits_per_sample;
- };
- 
++};
++
 +// Parc: ALACSpecificBox, the 'alac' box inside an 'alac' sample entry
 +// (Apple's ALACMagicCookieDescription): version and flags 0, then the
 +// 24-byte ALACSpecificConfig, which AudioToolbox takes as the magic cookie.
++struct MEDIA_EXPORT PCMConfiguration : Box {
++  DECLARE_BOX_METHODS(PCMConfiguration);
++  uint8_t format_flags = 0;
++  uint8_t sample_size = 0;
++};
++
 +struct MEDIA_EXPORT ALACSpecificBox : Box {
 +  DECLARE_BOX_METHODS(ALACSpecificBox);
 +
@@ -2879,15 +2918,14 @@
 +  uint8_t bit_depth = 0;
 +  uint8_t channel_count = 0;
 +  uint32_t sample_rate = 0;
-+};
-+
+ };
+ 
  struct MEDIA_EXPORT OpusSpecificBox : Box {
-   DECLARE_BOX_METHODS(OpusSpecificBox);
-   std::vector<uint8_t> extradata;
-@@ -509,6 +529,7 @@
+@@ -509,6 +535,8 @@
    ElementaryStreamDescriptor esds;
    FlacSpecificBox dfla;
    OpusSpecificBox dops;
++  PCMConfiguration pcm;
 +  ALACSpecificBox alac;  // Parc.
  #if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
    DtsSpecificBox ddts;
@@ -2924,17 +2962,17 @@
  EncryptionScheme GetEncryptionScheme(const ProtectionSchemeInfo& sinf) {
    if (!sinf.HasSupportedScheme())
      return EncryptionScheme::kUnencrypted;
-@@ -172,6 +188,10 @@
-       num_sei_recovery_point_promotions_(0) {}
+@@ -173,6 +189,10 @@
  
  MP4StreamParser::~MP4StreamParser() = default;
-+
+ 
 +void MP4StreamParser::ParcIgnoreDeclaredCodecs() {
 +  parc_ignore_declared_codecs_ = true;
 +}
- 
++
  void MP4StreamParser::Init(
      InitCB init_cb,
+     NewConfigCB config_cb,
 @@ -455,6 +475,7 @@
    int detected_audio_track_count = 0;
    int detected_video_track_count = 0;
@@ -2943,7 +2981,7 @@
  
    for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
         track != moov_->tracks.end(); ++track) {
-@@ -497,8 +518,21 @@
+@@ -497,8 +518,22 @@
        FourCC audio_format = (entry.format == FOURCC_ENCA)
                                  ? entry.sinf.format.format
                                  : entry.format;
@@ -2961,11 +2999,12 @@
 +      }
  
        if (audio_format != FOURCC_OPUS && audio_format != FOURCC_FLAC &&
-+          audio_format != FOURCC_ALAC &&
++          audio_format != FOURCC_ALAC && audio_format != FOURCC_IPCM &&
++          audio_format != FOURCC_FPCM &&
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
            audio_format != FOURCC_AC3 && audio_format != FOURCC_EAC3 &&
  #endif
-@@ -545,7 +579,7 @@
+@@ -545,7 +580,7 @@
        } else if (audio_format == FOURCC_FLAC) {
          // FLAC-in-ISOBMFF does not use object type indication. |audio_format|
          // is sufficient for identifying FLAC codec.
@@ -2974,10 +3013,19 @@
            MEDIA_LOG(ERROR, media_log_) << "FLAC audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -556,11 +590,27 @@
+@@ -556,11 +591,36 @@
          channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
          sample_per_second = entry.samplerate;
          extra_data = entry.dfla.stream_info;
++      } else if (audio_format == FOURCC_IPCM || audio_format == FOURCC_FPCM) {
++        if (!parc_ignore_declared_codecs_)
++          return false;
++        if (entry.format == FOURCC_ENCA &&
++            (!(entry.pcm.format_flags & 1) || entry.pcm.sample_size == 64))
++          return false;
++        codec = AudioCodec::kPCM;
++        channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
++        sample_per_second = entry.samplerate;
 +      } else if (audio_format == FOURCC_ALAC) {
 +        // Parc: Apple Lossless, as Safari's Media Source plays it. Channels
 +        // and rate come from the ALACSpecificConfig (the sample entry's rate
@@ -3003,7 +3051,7 @@
            MEDIA_LOG(ERROR, media_log_) << "IAMF audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -618,7 +668,8 @@
+@@ -618,7 +678,8 @@
          }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
          DVLOG(1) << "audio_type 0x" << std::hex << static_cast<int>(audio_type);
@@ -3013,12 +3061,18 @@
            if (!strict_audio_object_types_->contains(audio_type)) {
              MEDIA_LOG(ERROR, media_log_)
                  << "audio object type 0x" << std::hex
-@@ -703,7 +754,13 @@
+@@ -703,7 +764,19 @@
        }
  
        SampleFormat sample_format;
 -      if (entry.samplesize == 8) {
-+      if (codec == AudioCodec::kALAC) {
++      if (audio_format == FOURCC_FPCM) {
++        sample_format = kSampleFormatF32;
++      } else if (audio_format == FOURCC_IPCM) {
++        sample_format = entry.pcm.sample_size == 16 ? kSampleFormatS16
++                        : entry.pcm.sample_size == 24 ? kSampleFormatS24
++                                                     : kSampleFormatS32;
++      } else if (codec == AudioCodec::kALAC) {
 +        // Parc: the ALACSpecificConfig's bit depth (16, 20, 24 or 32); a
 +        // sample entry may state 20, which the sizes below don't take.
 +        sample_format = entry.alac.bit_depth == 16   ? kSampleFormatS16
@@ -3028,7 +3082,7 @@
          sample_format = kSampleFormatU8;
        } else if (entry.samplesize == 16) {
          sample_format = kSampleFormatS16;
-@@ -774,6 +831,9 @@
+@@ -774,6 +847,9 @@
                                       << " in stsd box.";
          return false;
        }
@@ -3038,7 +3092,7 @@
  
        // TODO(strobe): Recover correct crop box
        gfx::Size coded_size(entry.width, entry.height);
-@@ -803,7 +863,31 @@
+@@ -803,7 +879,31 @@
        VideoCodec video_codec = entry.video_info.codec;
        VideoCodecProfile video_codec_profile = entry.video_info.profile;
        VideoCodecLevel video_codec_level = entry.video_info.level;
@@ -3071,7 +3125,7 @@
          DCHECK_EQ(entry.dv_info->codec_info.codec, VideoCodec::kDolbyVision);
          if (has_dv_) {
            video_codec = entry.dv_info->codec_info.codec;
-@@ -835,7 +919,7 @@
+@@ -835,7 +935,7 @@
        if (entry.video_color_space.IsSpecified())
          video_config.set_color_space_info(entry.video_color_space);
  
@@ -3080,7 +3134,7 @@
            entry.dv_info->color_space.IsSpecified()) {
          video_config.set_color_space_info(entry.dv_info->color_space);
        }
-@@ -888,6 +972,10 @@
+@@ -888,6 +988,10 @@
  
    if (!moov_->pssh.empty())
      OnEncryptedMediaInitData(moov_->pssh);
@@ -3091,6 +3145,44 @@
  
    RCHECK(config_cb_.Run(std::move(media_tracks)));
  
+@@ -1096,6 +1200,37 @@
+   // being put in a StreamParserBuffer. Prefer `heap_frame_buf` where possible.
+   std::vector<uint8_t> frame_buf;
+   base::HeapArray<uint8_t> heap_frame_buf;
++  if (buffer_type == DemuxerStream::AUDIO && parc_ignore_declared_codecs_) {
++    const auto& entry = runs_->audio_description();
++    const FourCC format = entry.format == FOURCC_ENCA
++                              ? entry.sinf.format.format : entry.format;
++    if (format == FOURCC_IPCM || format == FOURCC_FPCM) {
++      const size_t width = entry.pcm.sample_size / 8;
++      if (!width || !entry.channelcount ||
++          sample_size % (width * entry.channelcount) != 0)
++        return ParseResult::kError;
++      if (runs_->is_encrypted() &&
++          (!(entry.pcm.format_flags & 1) || width == 8))
++        return ParseResult::kError;
++      // Encrypted bytes must reach the CDM unchanged.
++      if (!runs_->is_encrypted()) {
++        frame_buf = base::ToVector(buf.first(sample_size));
++        if (!(entry.pcm.format_flags & 1)) {
++          for (size_t i = 0; i < frame_buf.size(); i += width)
++            std::reverse(frame_buf.begin() + i, frame_buf.begin() + i + width);
++        }
++        if (format == FOURCC_FPCM && width == 8) {
++          for (size_t i = 0; i < frame_buf.size() / 8; ++i) {
++            double value;
++            memcpy(&value, frame_buf.data() + i * 8, 8);
++            const float converted = static_cast<float>(value);
++            memcpy(frame_buf.data() + i * 4, &converted, 4);
++          }
++          frame_buf.resize(frame_buf.size() / 2);
++        }
++      }
++    }
++  }
+   if (buffer_type == DemuxerStream::VIDEO) {
+     if (runs_->video_description().video_info.codec == VideoCodec::kH264 ||
+         runs_->video_description().video_info.codec == VideoCodec::kHEVC ||
 --- a/media/cdm/supported_audio_codecs.cc
 +++ b/media/cdm/supported_audio_codecs.cc
 @@ -4,6 +4,7 @@
@@ -10178,11 +10270,14 @@
    if (is_posix) {
 --- a/media/formats/mp4/fourccs.h
 +++ b/media/formats/mp4/fourccs.h
-@@ -24,6 +24,8 @@
+@@ -24,6 +24,11 @@
    FOURCC_AC4 = 0x61632d34,   // "ac-4"
    FOURCC_DAC4 = 0x64616334,  // "dac4"
  #endif
 +  // Parc: Apple Lossless (Safari-only audio, decoded by AudioToolbox).
++  FOURCC_IPCM = 0x6970636d,
++  FOURCC_FPCM = 0x6670636d,
++  FOURCC_PCMC = 0x70636d43,
 +  FOURCC_ALAC = 0x616c6163,  // "alac"
    FOURCC_AV01 = 0x61763031,  // "av01"
    FOURCC_AV1C = 0x61763143,  // "av1C"
@@ -10228,8 +10323,21 @@
  #if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
  static const CodecInfo kIAMFCodecInfo1 = {"iamf", CodecInfo::AUDIO, nullptr,
                                            CodecInfo::HISTOGRAM_IAMF};
-@@ -313,6 +319,9 @@
+@@ -310,9 +316,22 @@
+                                           CodecInfo::HISTOGRAM_IAMF};
+ #endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
+ 
++static const CodecInfo kParcIPCM = {"ipcm", CodecInfo::AUDIO, nullptr,
++                                      CodecInfo::HISTOGRAM_UNKNOWN};
++static const CodecInfo kParcIPCMSuffix = {"ipcm.*", CodecInfo::AUDIO, nullptr,
++                                            CodecInfo::HISTOGRAM_UNKNOWN};
++static const CodecInfo kParcFPCM = {"fpcm", CodecInfo::AUDIO, nullptr,
++                                      CodecInfo::HISTOGRAM_UNKNOWN};
++static const CodecInfo kParcFPCMSuffix = {"fpcm.*", CodecInfo::AUDIO, nullptr,
++                                            CodecInfo::HISTOGRAM_UNKNOWN};
++
  static const auto kVideoMP4Codecs = std::to_array<const CodecInfo* const>({
++    &kParcIPCM, &kParcIPCMSuffix, &kParcFPCM, &kParcFPCMSuffix,
      &kMPEG4FLACCodecInfo,
      &kMPEG4FLACCodecInfo2,
 +#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
@@ -10238,8 +10346,11 @@
      &kOpusCodecInfo,
      &kOpusCodecInfo2,
      &kMPEG4VP09CodecInfo,
-@@ -379,6 +388,9 @@
+@@ -377,8 +396,12 @@
+ 
+ // clang-format off
  static const auto kAudioMP4Codecs = std::to_array<const CodecInfo* const>({
++    &kParcIPCM, &kParcIPCMSuffix, &kParcFPCM, &kParcFPCMSuffix,
      &kMPEG4FLACCodecInfo,
      &kMPEG4FLACCodecInfo2,
 +#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
@@ -10248,7 +10359,7 @@
      &kOpusCodecInfo,
      &kOpusCodecInfo2,
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
-@@ -442,10 +454,17 @@
+@@ -442,10 +465,17 @@
    // an encapsulation using MP4AudioSampleEntry with objectTypeIndication.
    bool has_iamf = false;
  
@@ -10266,7 +10377,7 @@
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
      } else if (base::MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern)) {
        audio_object_types.insert(mp4::kISO_13818_7_AAC_LC);
-@@ -515,8 +534,10 @@
+@@ -515,8 +545,10 @@
      }
    }
  
@@ -10279,7 +10390,7 @@
  }
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
-@@ -782,6 +803,76 @@
+@@ -782,6 +814,82 @@
  }
  
  // static
@@ -10322,6 +10433,12 @@
 +      {"audio/mp3", "audio/mpeg", "audio/mpeg3", "audio/mpg", "audio/x-mp3",
 +       "audio/x-mpeg", "audio/x-mpeg3", "audio/x-mpg"});
 +
++  for (const auto& codec : codecs) {
++    if ((codec == "ipcm" || codec.starts_with("ipcm.") ||
++         codec == "fpcm" || codec.starts_with("fpcm.")) &&
++        (type == "video/quicktime" || type == "audio/x-quicktime"))
++      return std::nullopt;
++  }
 +  ParcSafariType result{std::string(type),
 +                        std::vector<std::string>(codecs.begin(), codecs.end())};
 +#if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
@@ -10384,7 +10501,119 @@
  
  #include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
-@@ -516,8 +518,33 @@
+@@ -104,6 +106,8 @@
+   // If `capture_video_buffers` is true, then retain all parsed buffers from
+   // `video_track_id_` in `video_buffers_`.
+   bool capture_video_buffers_ = false;
++  bool capture_pcm_buffers_ = false;
++  std::vector<scoped_refptr<StreamParserBuffer>> pcm_buffers_;
+   std::vector<scoped_refptr<StreamParserBuffer>> video_buffers_;
+ 
+   // Note this is similar to a StreamParserTestBase method, so may benefit from
+@@ -202,6 +206,9 @@
+         // Ensure that track ids are properly assigned on all emitted buffers.
+         EXPECT_EQ(track_id, buf->track_id());
+ 
++        if (track_id == audio_track_id_ && capture_pcm_buffers_)
++          pcm_buffers_.push_back(buf);
++
+         if (track_id == video_track_id_ && capture_video_buffers_) {
+           video_buffers_.push_back(buf);
+         }
+@@ -495,6 +502,92 @@
+   ParseMP4File("bear-320x240-v-2fragments-open-gop_frag-cenc.mp4", 512);
+ }
+ 
++TEST_F(MP4StreamParserTest, ParcPCMInitNeedsSafariRules) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(testing::_)).Times(testing::AnyNumber());
++  for (bool safari : {false, true}) {
++    for (bool little_endian : {false, true}) {
++    for (bool floating : {false, true}) {
++      for (uint8_t bits : {16, 24, 32, 64}) {
++        if (floating ? bits < 32 : bits == 64)
++          continue;
++        auto original = ReadTestDataFile("bear-mpeg2-aac-only_frag.mp4");
++        std::vector<uint8_t> data(original->begin(), original->end());
++        auto find_box = [&data](const std::string& name) {
++          return std::search(data.begin(), data.end(), name.begin(), name.end())
++                 - data.begin();
++        };
++        const size_t entry = find_box("mp4a");
++        ASSERT_LT(entry + 4, data.size());
++        const std::string name = floating ? "fpcm" : "ipcm";
++        std::copy(name.begin(), name.end(), data.begin() + entry);
++        const size_t config = find_box("esds") - 4;
++        ASSERT_LT(config + 22, data.size());
++        const uint32_t size = (data[config] << 24) | (data[config+1] << 16) |
++                              (data[config+2] << 8) | data[config+3];
++        ASSERT_GE(size, 22u);
++        std::fill(data.begin() + config, data.begin() + config + size, 0);
++        data[config+3] = 14;
++        std::copy_n("pcmC", 4, data.begin() + config + 4);
++        data[config+12] = little_endian;
++        data[config+13] = bits;
++        const uint32_t padding = size - 14;
++        for (int i = 0; i < 4; ++i)
++          data[config+14+i] = (padding >> (24-i*8)) & 255;
++        std::copy_n("free", 4, data.begin() + config + 18);
++        data.resize(find_box("moof") - 4);
++        parser_ = std::make_unique<MP4StreamParser>(std::nullopt, false,
++                                                   false, false, false);
++        if (safari)
++          parser_->ParcIgnoreDeclaredCodecs();
++        auto params = GetDefaultInitParametersExpectations();
++        params.detected_video_track_count = 0;
++        lower_bound_ = kNoDecodeTimestamp;
++        InitializeParserWithInitParametersExpectations(params);
++        EXPECT_EQ(AppendAllDataThenParseInPieces(data, data.size()), safari);
++        if (safari) {
++          EXPECT_EQ(audio_decoder_config_.codec(), AudioCodec::kPCM);
++          EXPECT_EQ(audio_decoder_config_.sample_format(),
++                    floating ? kSampleFormatF32 : bits == 16 ? kSampleFormatS16
++                        : bits == 24 ? kSampleFormatS24 : kSampleFormatS32);
++          std::vector<uint8_t> fragment = {
++              0,0,0,92,'m','o','o','f',0,0,0,16,'m','f','h','d',0,0,0,0,0,0,0,1,
++              0,0,0,68,'t','r','a','f',0,0,0,16,'t','f','h','d',0,2,0,0,0,0,0,1,
++              0,0,0,16,'t','f','d','t',0,0,0,0,0,0,0,0,
++              0,0,0,28,'t','r','u','n',0,0,3,1,0,0,0,1,0,0,0,100,
++              0,0,0,1,0,0,0,48,0,0,0,56,'m','d','a','t'};
++          const size_t width = bits / 8;
++          std::vector<uint8_t> sample(width, 0);
++          if (floating) {
++            sample[width - 1] = bits == 64 ? 0x3f : 0x3f;
++            sample[width - 2] = bits == 64 ? 0xf0 : 0x80;
++          } else {
++            for (size_t i = 0; i < width; ++i)
++              sample[i] = i + 1;
++          }
++          std::vector<uint8_t> expected;
++          if (bits == 64)
++            expected = {0, 0, 0x80, 0x3f};
++          else
++            expected = sample;
++          if (!little_endian)
++            std::reverse(sample.begin(), sample.end());
++          for (size_t i = 0; i < 48 / width; ++i)
++            fragment.insert(fragment.end(), sample.begin(), sample.end());
++          pcm_buffers_.clear();
++          capture_pcm_buffers_ = true;
++          ASSERT_TRUE(AppendAllDataThenParseInPieces(fragment, fragment.size()));
++          ASSERT_EQ(pcm_buffers_.size(), 1u);
++          auto bytes = base::span(*pcm_buffers_[0]);
++          ASSERT_EQ(bytes.size(), bits == 64 ? 24u : 48u);
++          for (size_t i = 0; i < bytes.size(); ++i)
++            EXPECT_EQ(bytes[i], expected[i % expected.size()]);
++        }
++      }
++    }
++    }
++  }
++}
++
+ TEST_F(MP4StreamParserTest, MPEG2_AAC_LC) {
+   InSequence s;
+   base::flat_set<int> audio_object_types;
+@@ -516,6 +609,31 @@
    InitializeParserWithInitParametersExpectations(params);
    ParseMP4File("bear-mpeg2-aac-only_frag.mp4", 512);
    EXPECT_EQ(audio_decoder_config_.profile(), AudioCodecProfile::kUnknown);
@@ -10404,8 +10633,8 @@
 +  EXPECT_MEDIA_LOG(
 +      ErrorLog("does not match what is specified in the mimetype"));
 +  EXPECT_FALSE(AppendAllDataThenParseInPieces(*buffer, 512));
- }
- 
++}
++
 +TEST_F(MP4StreamParserTest, ParcIgnoresDeclaredAudioObjectTypes) {
 +  parser_.reset(new MP4StreamParser(base::flat_set<int>(), false, false,
 +                                    false, false));
@@ -10413,16 +10642,13 @@
 +  InitializeParser();
 +  ParseMP4File("bear-1280x720-av_frag.mp4", 512);
 +  EXPECT_EQ(audio_decoder_config_.codec(), AudioCodec::kAAC);
-+}
-+
+ }
+ 
  TEST_F(MP4StreamParserTest, MPEG4_XHE_AAC) {
-   InSequence s;  // The keyframeness sequence matters for this test.
-   base::flat_set<int> audio_object_types;
-@@ -850,8 +877,95 @@
-   EXPECT_EQ(VideoCodec::kHEVC, video_decoder_config_.codec());
+@@ -851,6 +969,93 @@
    EXPECT_EQ(HEVCPROFILE_MAIN10, video_decoder_config_.profile());
  #endif
-+}
+ }
 +
 +#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
 +// Parc: the profile 8.1 stream, its hvc1 sample entry now configured as
@@ -10491,8 +10717,8 @@
 +  ParseMP4File("iamf_alternating_sine_waves_stereo.mp4", 512);
 +  EXPECT_EQ(AudioCodec::kIAMF, audio_decoder_config_.codec());
 +  EXPECT_EQ(VideoCodec::kH264, video_decoder_config_.codec());
- }
- 
++}
++
 +// Parc: under Safari's init segment rules an IAMF track is left out, as
 +// AVStreamDataParser leaves it out of the init segment Safari's SourceBuffer
 +// gets; the video track plays on.
@@ -10510,10 +10736,9 @@
 +  EXPECT_EQ(VideoCodec::kH264, video_decoder_config_.codec());
 +}
 +#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
-+
+ 
  TEST_F(MP4StreamParserTest, DemuxingAC3) {
    base::flat_set<int> audio_object_types;
-   audio_object_types.insert(kAC3);
 --- a/media/filters/chunk_demuxer_unittest.cc
 +++ b/media/filters/chunk_demuxer_unittest.cc
 @@ -12,7 +12,9 @@
@@ -10699,7 +10924,7 @@
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
-@@ -3015,6 +3155,211 @@
+@@ -3015,6 +3155,226 @@
    }
  }
  
@@ -10776,6 +11001,21 @@
 +// Parc: Safari's other Media Source types (AVStreamDataParser's
 +// audiovisualMIMETypes) and their codecs, which ChunkDemuxer takes only under
 +// Safari's init segment rules (StreamParserFactory::ParcSafariMediaSourceType).
++TEST_F(ChunkDemuxerTest, ParcPCMNeedsSafariRules) {
++  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
++  demuxer_->Initialize(&host_,
++      base::BindOnce(&ChunkDemuxerTest::DemuxerInitialized, base::Unretained(this)));
++  for (bool safari : {false, true}) {
++    demuxer_->ParcSetSafariInitSegmentRules(safari);
++    for (const char* codec : {"ipcm", "fpcm", "ipcm.16", "fpcm.abc"}) {
++      EXPECT_EQ(AddId(kSourceId, "audio/mp4", codec),
++                safari ? ChunkDemuxer::kOk : ChunkDemuxer::kNotSupported);
++      if (safari)
++        demuxer_->RemoveId(kSourceId);
++    }
++  }
++}
++
 +TEST_F(ChunkDemuxerTest, ParcSafariContainerTypesNeedSafariRules) {
 +  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
 +  demuxer_->Initialize(&host_,
@@ -10911,7 +11151,7 @@
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
  
-@@ -3309,6 +3654,38 @@
+@@ -3309,6 +3669,38 @@
  namespace {
  const char* kMp2tMimeType = "video/mp2t";
  const char* kMp2tCodecs = "mp4a.40.2,avc1.640028";
@@ -10950,7 +11190,7 @@
  }
  
  TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
-@@ -3770,6 +4147,183 @@
+@@ -3770,6 +4162,183 @@
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
  }
  
@@ -11134,7 +11374,7 @@
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
    demuxer_->SetMemoryLimitsForTest(
-@@ -5073,4 +5627,52 @@
+@@ -5073,4 +5642,52 @@
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
  
@@ -12851,3 +13091,41 @@
  // Test tainting effects on Render().
  TEST_F(WebAudioSourceProviderImplTest, RenderTainted) {
    auto bus = media::AudioBus::Create(params_);
+--- a/media/formats/mp4/box_definitions_unittest.cc
++++ b/media/formats/mp4/box_definitions_unittest.cc
+@@ -27,6 +27,35 @@
+  protected:
+   StrictMock<MockMediaLog> media_log_;
+ };
++
++TEST_F(BoxDefinitionsTest, ParcPCMConfiguration) {
++  for (uint8_t endian : {0, 1}) {
++    for (uint8_t bits : {16, 24, 32, 64}) {
++      const uint8_t data[] = {0, 0, 0, 14, 'p', 'c', 'm', 'C',
++                              0, 0, 0, 0, endian, bits};
++      std::unique_ptr<BoxReader> reader(
++          BoxReader::ReadConcatentatedBoxes(data, &media_log_));
++      ASSERT_TRUE(reader->ScanChildren());
++      PCMConfiguration pcm;
++      ASSERT_TRUE(reader->ReadChild(&pcm));
++      EXPECT_EQ(pcm.format_flags, endian);
++      EXPECT_EQ(pcm.sample_size, bits);
++    }
++  }
++}
++
++TEST_F(BoxDefinitionsTest, ParcPCMConfigurationRejectsVersionAndTruncation) {
++  for (bool bad_version : {false, true}) {
++    const std::vector<uint8_t> data = bad_version
++        ? std::vector<uint8_t>{0,0,0,14,'p','c','m','C',1,0,0,0,1,16}
++        : std::vector<uint8_t>{0,0,0,13,'p','c','m','C',0,0,0,0,1};
++    std::unique_ptr<BoxReader> reader(
++        BoxReader::ReadConcatentatedBoxes(data, &media_log_));
++    ASSERT_TRUE(reader->ScanChildren());
++    PCMConfiguration pcm;
++    EXPECT_FALSE(reader->ReadChild(&pcm));
++  }
++}
+ 
+ TEST_F(BoxDefinitionsTest, Stereoscopic3DBoxParsing) {
+   // Box size = 13 bytes (0x0d), FourCC = 'st3d', Full box version = 0, flags =

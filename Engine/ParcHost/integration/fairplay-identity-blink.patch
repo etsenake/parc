@@ -1606,7 +1606,39 @@
            continue;
          }
        }
-@@ -660,6 +737,15 @@
+@@ -625,6 +702,31 @@
+     filtered_content_type = ContentType(String::FromUtf8(filtered_type));
+   }
+ #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
++
++  // AVStreamDataParser accepts PCM in MP4; mime_util has no PCM-in-MP4
++  // codec IDs. Remove just these from its query, after the FairPlay filter.
++  if (IsParcSafariIdentityUserAgent(context->UserAgent()) &&
++      (EqualIgnoringAsciiCase(mime_type, "video/mp4") ||
++       EqualIgnoringAsciiCase(mime_type, "audio/mp4"))) {
++    auto without_pcm = [](const String& value) {
++      String result;
++      for (const String& codec : value.Split(',')) {
++        const String id = codec.StripWhiteSpace();
++        if (id == "ipcm" || id.starts_with("ipcm.") ||
++            id == "fpcm" || id.starts_with("fpcm."))
++          continue;
++        if (!result.empty())
++          result = StrCat({result, ","});
++        result = StrCat({result, id});
++      }
++      return result;
++    };
++    codecs = without_pcm(codecs);
++    const String filtered = without_pcm(filtered_content_type.Parameter("codecs"));
++    filtered_content_type = ContentType(
++        filtered.empty() ? mime_type
++                         : StrCat({mime_type, "; codecs=\"", filtered, "\""}));
++  }
+ 
+   // Note: MediaSource.isTypeSupported() returning true implies that
+   // HTMLMediaElement.canPlayType() will return "maybe" or "probably" since it
+@@ -660,6 +762,15 @@
  
    bool result = supported == MIMETypeRegistry::kSupported;
  
@@ -1622,7 +1654,7 @@
    DVLOG(2) << __func__ << "(" << type << ", "
             << base::ToString(enforce_codec_specificity) << ") -> "
             << base::ToString(result);
-@@ -1015,6 +1101,23 @@
+@@ -1015,6 +1126,23 @@
    DCHECK_LE(highest_buffered_presentation_timestamp,
              std::isnan(old_duration) ? 0 : old_duration);
  
@@ -1646,21 +1678,21 @@
    // 3. Set old duration to the current value of duration.
    // Done for step 1 above, already.
    // 4. Update duration to new duration.
-@@ -1051,6 +1154,13 @@
+@@ -1050,6 +1178,13 @@
+     return;
  
    ready_state_ = state;
- 
++
 +  // Parc: for the media element's end of media (ParcMediaSourceEnded()).
 +  scoped_refptr<MediaSourceAttachmentSupplement> attachment;
 +  std::tie(attachment, std::ignore) = AttachmentAndTracer();
 +  if (attachment) {
 +    attachment->ParcSetMediaSourceEnded(state == ReadyState::kEnded);
 +  }
-+
+ 
    OnReadyStateChange(old_state, state);
  }
- 
-@@ -1326,11 +1436,21 @@
+@@ -1326,11 +1461,21 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);

@@ -57,7 +57,8 @@ inline bool IsParcSafariOnlyAudioCodecs(const String& codecs) {
         EqualIgnoringAsciiCase(id, "ec-3") ||
         EqualIgnoringAsciiCase(id, "mp4a.a5") ||
         EqualIgnoringAsciiCase(id, "mp4a.a6") ||
-        EqualIgnoringAsciiCase(id, "alac")) {
+        EqualIgnoringAsciiCase(id, "alac") || id == "ipcm" ||
+        id.starts_with("ipcm.") || id == "fpcm" || id.starts_with("fpcm.")) {
       return true;
     }
   }
