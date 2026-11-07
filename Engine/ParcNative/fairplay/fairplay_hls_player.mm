@@ -338,6 +338,11 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     player_.muted = muted_;
     observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
     [observer_ observePlayer:player_ item:item_];
+    // A rate set before the player existed (play() before the item) applies
+    // now, as volume, mute and pitch do.
+    if (rate_ > 0) {
+      SetRate(rate_);
+    }
     return Result::Ok();
   }
 

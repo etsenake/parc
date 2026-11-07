@@ -175,7 +175,8 @@ class FairPlayHlsPlayer {
   Result CreateAsset(const std::string& url, const std::string& mime_type);
   Result Start();
 
-  // 0 pauses. AVPlayer waits to minimize stalling, as in Safari.
+  // 0 pauses. AVPlayer waits to minimize stalling, as in Safari. Like
+  // volume, mute and pitch, a rate set before Start applies when it starts.
   void SetRate(double rate);
   // Seeks exactly (zero tolerance). |done| runs on the owner sequence with
   // whether the seek finished (false when a later seek interrupted it).
