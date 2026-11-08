@@ -44,7 +44,11 @@ final class MiniPlayerDeck: NSView {
     private let motion = MiniPlayerMotion()
     var onKeyViewsChanged: (() -> Void)?
     var palette: ThemeChromePalette? { didSet { rows.values.forEach { $0.palette = palette } } }
-    private let scroll = NSScrollView()
+    private let scroll = SidebarPagingScrollView()
+    var offerScroll: (NSEvent) -> Bool {
+        get { scroll.offerScroll }
+        set { scroll.offerScroll = newValue }
+    }
     private let expand = ActionButton("Show All Mini Players", symbol: "chevron.up")
     private let content = LayoutView()
     private var rows: [String: MiniPlayerRow] = [:]

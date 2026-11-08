@@ -24,6 +24,19 @@ assert "Timer(timeInterval: 1.0 / 120, repeats: true)" in source, \
 assert "timer?.invalidate(); timer = nil" in source, \
     "settle via place must still idle-stop the timer"
 
+#
+# every scroll view in it offers its scrolls to the pager first.
+sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
+for use in ("    private let scroll = SidebarPagingScrollView()\n",
+            "        scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }\n",
+            "        spacesHost.offerScroll = scroll.offerScroll\n",
+            "        miniPlayers.offerScroll = scroll.offerScroll\n"):
+    assert use in sidebar, f"SidebarView no longer routes a sidebar scroll view to the pager: {use}"
+assert "    private let scroll = SidebarPagingScrollView()\n" in (root / "Sources/ParcApp/MiniPlayerView.swift").read_text(), \
+    "the Mini Player list keeps sideways swipes from the pager again"
+assert "if overflows || !offerScroll(event) { super.scrollWheel(with: event) }" in \
+    (root / "Sources/ParcApp/SidebarDockStrip.swift").read_text(), "the Space strip no longer pages unless it overflows"
+
 with tempfile.TemporaryDirectory(prefix="parc-space-paging-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-target", "arm64-apple-macos13.0",

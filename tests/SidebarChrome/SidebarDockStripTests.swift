@@ -238,6 +238,24 @@ import AppKit
         hover(strip, 14); settle()
         check(abs(many[14].alphaValue - 0.7) < 0.001, "a visible compact item shows its icon while hovered")
         hover(strip, nil); settle()
+
+        //
+        // strip keeps it only while its Spaces overflow.
+        func sideways() -> NSEvent {
+            NSEvent(cgEvent: CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: -3, wheel3: 0)!)!
+        }
+        var offered = 0
+        strip.offerScroll = { _ in offered += 1; return true }
+        check(strip.overflows, "thirty Spaces overflow the strip")
+        let scrolled = clip.bounds.minX
+        strip.scrollWheel(with: sideways()); settle()
+        check(offered == 0 && clip.bounds.minX != scrolled, "an overflowing strip scrolls itself sideways")
+        strip.items = three; strip.layoutSubtreeIfNeeded(); settle()
+        check(!strip.overflows, "three Spaces fit")
+        let resting = clip.bounds.origin
+        strip.scrollWheel(with: sideways()); settle()
+        check(offered == 1 && clip.bounds.origin == resting, "a strip that fits hands the swipe to the pager")
+        strip.offerScroll = { _ in false }
         print("SidebarDockStrip: \(count) assertions passed")
     }
 }

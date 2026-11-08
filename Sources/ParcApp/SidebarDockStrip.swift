@@ -105,7 +105,20 @@ final class SidebarDockStrip: NSScrollView {
     override func mouseEntered(with event: NSEvent) { updateHover() }
     override func mouseMoved(with event: NSEvent) { updateHover() }
     override func mouseExited(with event: NSEvent) { updateHover() }
-    override func scrollWheel(with event: NSEvent) { super.scrollWheel(with: event); updateHover() }
+    ///
+    ///
+    /// Spaces overflow.
+    var offerScroll: (NSEvent) -> Bool = { _ in false }
+    var overflows: Bool {
+        let clip = contentView, size = clip.bounds.size
+        let low = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: -1e6, y: clip.bounds.minY), size: size)).minX
+        let high = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 1e6, y: clip.bounds.minY), size: size)).minX
+        return high - low > 0.5
+    }
+    override func scrollWheel(with event: NSEvent) {
+        if overflows || !offerScroll(event) { super.scrollWheel(with: event) }
+        updateHover()
+    }
     // A hidden view gets no mouseExited: hiding the sidebar clears the hover
     // and showing it again re-tests the pointer. ⌘S leaves the sidebar
     // unhidden off-screen, so SidebarView.isPresented reports it.

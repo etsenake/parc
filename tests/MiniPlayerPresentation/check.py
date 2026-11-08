@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-presentation-") as directory:
     (scratch / "Fixtures.swift").write_text("import AppKit\n" + fixture)
     executable = scratch / "checks"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
-                    str(root / "Sources/ParcApp/MiniPlayerView.swift"), str(root / "Sources/ParcApp/MiniPlayerMotion.swift"), str(root / "Sources/ParcApp/SidebarAccessibility.swift"),
+                    str(root / "Sources/ParcApp/MiniPlayerView.swift"), str(root / "Sources/ParcApp/SidebarSpacePaging.swift"), str(root / "Sources/ParcApp/MiniPlayerMotion.swift"), str(root / "Sources/ParcApp/SidebarAccessibility.swift"),
                     str(scratch / "ActionButton.swift"), str(root / "Sources/ParcApp/TranslucentButtonFace.swift"), str(root / "Sources/ParcApp/ReloadControl.swift"),
                     str(scratch / "Fixtures.swift"), str(Path(__file__).with_name("PresentationTests.swift")),
                     *map(str, tooltip_sources(root, scratch, ["ReloadControl.swift"])),

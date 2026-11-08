@@ -42,8 +42,7 @@ struct SidebarSpacePagingModel {
     /// A critically damped spring with the recovered response, from `from`
     /// toward 0 with an initial velocity, after `time` seconds.
     static func springValue(from: CGFloat, velocity: CGFloat, time: CGFloat) -> CGFloat {
-        let omega = 2 * CGFloat.pi / springResponse
-        return (from + (velocity + omega * from) * time) * exp(-omega * time)
+        SidebarSpring.displacement(from: from, velocity: velocity, time: time, response: springResponse, damping: 1).x
     }
 
     ///
@@ -113,6 +112,113 @@ struct SidebarSpacePagingModel {
     }
 }
 
+///
+///
+/// past the last page and drives the sidebar's trailing `EdgeFeedbackView`;
+///
+/// `WindowAction.spaces(.didTriggerCreateSpaceGesture)` when the ring was full.
+struct SidebarSpaceCreationGesture {
+    /// The edge slides in over 15 strip points and its ring fills over 22.5
+    ///
+    static let presentationDistance: CGFloat = 15
+    static let progressDistance: CGFloat = 22.5
+    /// A release creates a Space only once the ring has been full for more
+    ///
+    static let hold: CFTimeInterval = 0.1
+
+    /// The strip's position past the last page's origin, in strip points;
+    /// negative before it. `offset` is the strip's offset from the selected
+    /// page, as `SidebarSpacePager` draws it.
+    static func overscroll(selected: Int, offset: CGFloat, width: CGFloat, count: Int) -> CGFloat {
+        CGFloat(selected - (count - 1)) * width - offset
+    }
+    static func presentation(_ overscroll: CGFloat) -> CGFloat { min(1, max(0, overscroll / presentationDistance)) }
+    static func progress(_ overscroll: CGFloat) -> CGFloat { min(1, max(0, overscroll / progressDistance)) }
+
+    private(set) var isActivated = false
+    private var activatedAt: CFTimeInterval?
+
+    /// Feeds the ring's progress; returns true when it fills or empties,
+    ///
+    mutating func update(progress: CGFloat, now: CFTimeInterval) -> Bool {
+        let full = progress >= 1
+        if !full { activatedAt = nil } else if activatedAt == nil { activatedAt = now }
+        defer { isActivated = full }
+        return full != isActivated
+    }
+
+    /// Ends tracking; true when the release creates a Space.
+    mutating func release(now: CFTimeInterval) -> Bool {
+        defer { activatedAt = nil }
+        guard let activatedAt else { return false }
+        return now - activatedAt > Self.hold
+    }
+}
+
+/// A vertical list in the sidebar (the tablist, the Mini Players). It offers
+/// each scroll to the Space pager first, and a scroll the pager takes doesn't
+/// scroll the list.
+final class SidebarPagingScrollView: NSScrollView {
+    var offerScroll: (NSEvent) -> Bool = { _ in false }
+    override func scrollWheel(with event: NSEvent) {
+        if !offerScroll(event) { super.scrollWheel(with: event) }
+    }
+}
+
+///
+/// Motion springs are. It can be retargeted while moving.
+struct SidebarSpring {
+    let response: CGFloat
+    let damping: CGFloat
+    private var start: CFTimeInterval = 0
+    private var from: CGFloat = 0
+    private var velocity: CGFloat = 0
+    private var target: CGFloat = 0
+
+    init(response: CGFloat, damping: CGFloat) {
+        precondition(damping > 0 && damping <= 1, "an overdamped spring is not modelled")
+        self.response = response; self.damping = damping
+    }
+
+    mutating func place(_ value: CGFloat) {
+        from = value; target = value; velocity = 0
+    }
+
+    mutating func retarget(_ value: CGFloat, now: CFTimeInterval) {
+        let current = self.value(at: now), speed = self.speed(at: now)
+        start = now; from = current; velocity = speed; target = value
+    }
+
+    func value(at now: CFTimeInterval) -> CGFloat { target + displacement(at: now).x }
+    func speed(at now: CFTimeInterval) -> CGFloat { displacement(at: now).v }
+
+    func isSettled(at now: CFTimeInterval) -> Bool {
+        let d = displacement(at: now)
+        return abs(d.x) < 0.001 && abs(d.v) < 0.01
+    }
+
+    private func displacement(at now: CFTimeInterval) -> (x: CGFloat, v: CGFloat) {
+        Self.displacement(from: from - target, velocity: velocity, time: CGFloat(now - start), response: response, damping: damping)
+    }
+
+    /// Displacement from the target and its velocity `t` seconds after
+    /// starting `x0` from it at `v0`.
+    static func displacement(from x0: CGFloat, velocity v0: CGFloat, time t: CGFloat,
+                             response: CGFloat, damping: CGFloat) -> (x: CGFloat, v: CGFloat) {
+        let omega = 2 * .pi / response
+        if damping < 1 {
+            let decay = damping * omega, wd = omega * (1 - damping * damping).squareRoot()
+            let b = (v0 + decay * x0) / wd
+            let e = exp(-decay * t), c = cos(wd * t), s = sin(wd * t)
+            let x = e * (x0 * c + b * s)
+            return (x, -decay * x + e * (-x0 * wd * s + b * wd * c))
+        }
+        let b = v0 + omega * x0, e = exp(-omega * t)
+        let x = (x0 + b * t) * e
+        return (x, b * e - omega * x)
+    }
+}
+
 /// True no-op gate for Space-strip presentation. Spring ticks and `place`
 /// that would re-present the same strip offset skip `setOffset`; a changed
 /// offset still presents. The 120 Hz timer keeps running while the spring can
@@ -140,6 +246,8 @@ enum SidebarSpacePagingPresentationSkip {
     var select: (Page) -> Void = { _ in }
     /// Draws the strip at an offset in points (see the type comment).
     var setOffset: (CGFloat) -> Void = { _ in }
+    /// A tracked gesture was released (not cancelled), after its page was chosen.
+    var trackingEnded: () -> Void = {}
     /// The animation clock; replaceable for isolated checks.
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
 
@@ -254,6 +362,7 @@ enum SidebarSpacePagingPresentationSkip {
                 : SidebarSpacePagingModel.target(position: current.position, velocity: velocity, width: pageWidth(),
                                                  count: pages().count, begin: current.begin)
             settle(to: target, from: current, velocity: velocity)
+            if !phase.contains(.cancelled) { trackingEnded() }
             return true
         }
         return true

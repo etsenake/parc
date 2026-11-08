@@ -88,6 +88,7 @@ SidebarRowActionButton.swift
 SidebarRowAppearance.swift
 SidebarSpaceHeader.swift
 SidebarSpaceMenu.swift
+SidebarSpaceCreationFeedback.swift
 SidebarSpacePaging.swift
 SidebarSpeakerIcon.swift
 SidebarSplitCellLayout.swift

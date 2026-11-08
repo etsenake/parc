@@ -192,6 +192,145 @@ func run() {
     expect(!pager.slideIn(from: 0, to: 1) && pager.offset == 0, "Reduce Motion switches without a slide")
     SystemOverrides.reduceMotion = false
 
+    //
+    typealias G = SidebarSpaceCreationGesture
+    expect(G.overscroll(selected: 2, offset: -30, width: 240, count: 3) == 30, "the last page dragged left is past the end")
+    expect(G.overscroll(selected: 1, offset: -270, width: 240, count: 3) == 30, "a drag from the page before reaches past it too")
+    expect(G.overscroll(selected: 1, offset: 0, width: 240, count: 3) < 0 && G.overscroll(selected: 2, offset: 0, width: 240, count: 3) == 0,
+           "at rest nothing is past the end")
+    expect(G.presentation(7.5) == 0.5 && G.presentation(40) == 1 && G.presentation(-3) == 0, "the edge slides in over 15 points")
+    expect(G.progress(11.25) == 0.5 && G.progress(22.5) == 1 && G.progress(-3) == 0, "the ring fills over 22.5 points")
+    var gesture = G()
+    expect(!gesture.update(progress: 0.6, now: 10) && !gesture.isActivated, "a partial ring is not activated")
+    expect(gesture.update(progress: 1, now: 10.01) && gesture.isActivated, "filling the ring activates it, with a haptic")
+    expect(!gesture.update(progress: 1, now: 10.05), "staying full plays nothing more")
+    expect(!gesture.release(now: 10.1), "a release within 0.1 s of filling creates nothing")
+    expect(gesture.update(progress: 0.4, now: 10.2) && !gesture.isActivated, "emptying the ring deactivates it, with a haptic")
+    _ = gesture.update(progress: 1, now: 11)
+    _ = gesture.update(progress: 0.9, now: 11.05)
+    _ = gesture.update(progress: 1, now: 11.1)
+    expect(!gesture.release(now: 11.15), "dipping below full restarts the hold")
+    _ = gesture.update(progress: 1, now: 12)
+    expect(gesture.release(now: 12.2), "a release held full for over 0.1 s creates a Space")
+    expect(!gesture.release(now: 12.3), "and only once")
+
+    // The spring the create-Space edge slides on (response 0.4, damping 0.8).
+    var spring = SidebarSpring(response: 0.4, damping: 0.8)
+    spring.retarget(1, now: 0)
+    let before = spring.value(at: 0.1), speed = spring.speed(at: 0.1)
+    expect(before > 0 && before < 1 && speed > 0, "the edge springs toward its target")
+    spring.retarget(0.2, now: 0.1)
+    expect(abs(spring.value(at: 0.1) - before) < 1e-9 && abs(spring.speed(at: 0.1) - speed) < 1e-9,
+           "a new target continues from the same place and speed")
+    expect(!spring.isSettled(at: 0.2) && spring.isSettled(at: 2) && abs(spring.value(at: 2) - 0.2) < 0.001, "and settles there")
+    let omega = 2 * CGFloat.pi / 0.4
+    expect(abs(M.springValue(from: 1, velocity: 0, time: 0.3) - (1 + omega * 0.3) * exp(-omega * 0.3)) < 1e-12,
+           "the paging spring stays the critically damped one")
+
+    // The pager reports a tracked release after its page is chosen, and only then.
+    var ends: [UUID?] = []
+    pager.trackingEnded = { ends.append(selected) }
+    selected = ids[2].id; selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 30)
+    for k in 0..<6 { _ = pager.gesture(phase: .changed, momentum: false, dx: -15, dy: 0, time: 30.01 + Double(k) * 0.01) }
+    expect(G.overscroll(selected: 2, offset: pager.offset, width: 240, count: 3) == 45, "the strip follows past the last Space at half the finger distance")
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 30.2)
+    expect(selections.isEmpty && ends == [ids[2].id], "the release stays on the last Space and reports the end")
+    expect(G.overscroll(selected: 2, offset: pager.offset, width: 240, count: 3) == 45, "the end sees the strip where it was released")
+    clock += 2; pager.tick()
+    // From the page before, past the last one: the end sees the new page and the strip unmoved.
+    var endOverscroll: CGFloat?
+    pager.trackingEnded = {
+        ends.append(selected)
+        endOverscroll = G.overscroll(selected: ids.firstIndex { $0.id == selected }!, offset: pager.offset, width: 240, count: 3)
+    }
+    selected = ids[1].id
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 32)
+    for k in 0..<36 { _ = pager.gesture(phase: .changed, momentum: false, dx: -15, dy: 0, time: 32.01 + Double(k) * 0.01) }
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 32.4)
+    expect(ends.last == ids[2].id && endOverscroll == 30, "the release reports after selecting the last Space, still 30 points past it")
+    clock += 2; pager.tick()
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 33)
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -90, dy: 0, time: 33.01)
+    expect(pager.isTracking && G.overscroll(selected: 2, offset: pager.offset, width: 240, count: 3) == 45,
+           "a cancelled drag first tracks past the last Space")
+    _ = pager.gesture(phase: .cancelled, momentum: false, dx: 0, dy: 0, time: 33.3)
+    expect(ends.count == 2, "a cancelled gesture reports no release")
+    clock += 2; pager.tick()
+    _ = pager.gesture(phase: .mayBegin, momentum: false, dx: 0, dy: 0, time: 34)
+    _ = pager.gesture(phase: .began, momentum: false, dx: 0, dy: 5, time: 34.01)
+    expect(ends.count == 2, "a gesture that turns vertical reports no end")
+    pager.trackingEnded = {}
+
+    // The tablist hands the pager its scrolls first. A plain scroll view keeps
+    // a horizontal scroll it can't use instead of passing it to the sidebar,
+    // which is why swipes over the list never paged.
+    _ = NSApplication.shared
+    final class Sidebar: NSView {
+        var received = 0
+        override func scrollWheel(with event: NSEvent) { received += 1 }
+    }
+    final class Flipped: NSView { override var isFlipped: Bool { true } }
+    func scroll(_ dx: Int32, _ dy: Int32, phase: Int64?, at time: UInt64) -> NSEvent {
+        let units: CGScrollEventUnit = phase == nil ? .line : .pixel
+        let event = CGEvent(scrollWheelEvent2Source: nil, units: units, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)!
+        if let phase {
+            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+            event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        }
+        event.timestamp = time
+        return NSEvent(cgEvent: event)!
+    }
+    func list<V: NSScrollView>(_ view: V) -> (V, Sidebar, NSWindow) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 400), styleMask: [.borderless],
+                              backing: .buffered, defer: true)
+        let sidebar = Sidebar(frame: NSRect(x: 0, y: 0, width: 240, height: 400))
+        view.frame = sidebar.bounds
+        view.hasVerticalScroller = true; view.horizontalScrollElasticity = .none
+        view.documentView = Flipped(frame: NSRect(x: 0, y: 0, width: 240, height: 2000))
+        sidebar.addSubview(view); window.contentView = sidebar
+        return (view, sidebar, window)
+    }
+    let (plain, plainSidebar, plainWindow) = list(NSScrollView())
+    plain.scrollWheel(with: scroll(-3, 0, phase: nil, at: 1))
+    expect(plainSidebar.received == 0, "a plain scroll view keeps a horizontal scroll from the sidebar")
+    _ = plainWindow
+
+    let tablistPager = SidebarSpacePager()
+    var tablistSelected = ids[0].id
+    tablistPager.pages = { ids }
+    tablistPager.selectedID = { tablistSelected }
+    tablistPager.pageWidth = { 240 }
+    tablistPager.canBegin = { true }
+    tablistPager.canSelect = { _ in true }
+    tablistPager.select = { tablistSelected = $0.id }
+    tablistPager.now = { clock }
+    let (tablist, _, tablistWindow) = list(SidebarPagingScrollView())
+    var declined = 0
+    tablist.offerScroll = { event in
+        let used = tablistPager.scrollWheel(event)
+        if !used { declined += 1 }
+        return used
+    }
+    let second: UInt64 = 1_000_000_000
+    tablist.scrollWheel(with: scroll(0, 0, phase: 128, at: 40 * second))
+    tablist.scrollWheel(with: scroll(-4, 0, phase: 1, at: 40 * second + second / 100))
+    for k in 0..<12 { tablist.scrollWheel(with: scroll(-12, 0, phase: 2, at: 40 * second + UInt64(k + 2) * second / 100)) }
+    expect(tablistPager.isTracking && tablistPager.offset == -72, "a horizontal swipe over the list drags the Space strip")
+    expect(tablist.contentView.bounds.origin == .zero, "and doesn't scroll the list")
+    tablist.scrollWheel(with: scroll(0, 0, phase: 4, at: 41 * second))
+    expect(!tablistPager.isTracking, "the release ends the swipe")
+    clock += 2; tablistPager.tick()
+    expect(declined == 0, "every event of the swipe was the pager's")
+    tablist.scrollWheel(with: scroll(0, 0, phase: 128, at: 42 * second))
+    tablist.scrollWheel(with: scroll(0, -6, phase: 1, at: 42 * second + second / 100))
+    tablist.scrollWheel(with: scroll(0, -9, phase: 2, at: 42 * second + second / 50))
+    tablist.scrollWheel(with: scroll(0, 0, phase: 4, at: 42 * second + second / 20))
+    tablist.scrollWheel(with: scroll(0, -3, phase: nil, at: 43 * second))
+    expect(declined == 4 && !tablistPager.isTracking && tablistPager.offset == 0,
+           "a vertical swipe and a wheel go on to the list's own scrolling")
+    _ = tablistWindow
+
     print("SidebarSpacePaging: \(count) checks passed")
 }
 

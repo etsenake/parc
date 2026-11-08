@@ -1902,7 +1902,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -4))
     }
 
-    private let scroll = NSScrollView()
+    private let scroll = SidebarPagingScrollView()
     ///
     private let list = SidebarOutlineView()
     private let favoritesHost = NSView()
@@ -2040,6 +2040,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         super.init(frame: frameRect)
         wantsLayer = true
         registerForDraggedTypes([SidebarMoveSession.pasteboardType])
+        addSubview(spaceCreationFeedback)
         addSubview(contentSurface)
         for view in [favoritesHost, addressBackground, addressButton, shareQuote, copyQuote, pageActions, paymentAction, extensionToolbar, pageStrip, miniPlayers] { contentSurface.addSubview(view) }
         pageStrip.addSubview(spaceHeader); pageStrip.addSubview(scroll)
@@ -2221,6 +2222,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// from the Space it was created from.
     private var creationEnded = false
     private var neighborPaletteSource: (theme: SpaceTheme, appearance: NSAppearance.Name)?
+    ///
+    private let spaceCreationFeedback = SidebarSpaceCreationFeedbackView()
+    private var spaceCreationGesture = SidebarSpaceCreationGesture()
     /// The themes either side of the strip's position and the progress
     /// between them, which the window's theme surfaces draw; nil at rest.
     var onPagingTheme: ((ThemePagingTransition?) -> Void)?
@@ -2243,10 +2247,40 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         spacePager.canSelect = { [weak self] page in self?.canSelectSpace?(page.id, page.profileID) ?? false }
         spacePager.select = { [weak self] page in self?.onSelectSpace?(page.id, page.profileID) }
         spacePager.setOffset = { [weak self] offset in self?.showPageStrip(at: offset) }
+        spacePager.trackingEnded = { [weak self] in
+            guard let self, self.spaceCreationGesture.release(now: CACurrentMediaTime()) else { return }
+            self.onNewSpace?()
+        }
+        //
+        // takes a horizontal gesture over the sidebar before the list
+        //
+        // can't use, so they never reached the sidebar.
+        scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }
+        spacesHost.offerScroll = scroll.offerScroll
+        miniPlayers.offerScroll = scroll.offerScroll
+    }
+
+    ///
+    /// trailing edge in and fills its ring; filling or emptying it plays a
+    /// haptic. Only a window that can create Spaces shows it.
+    private func updateSpaceCreationFeedback(offset: CGFloat) {
+        let index = spaces.firstIndex { $0.id == activeSpaceID }
+        let overscroll = index.map {
+            SidebarSpaceCreationGesture.overscroll(selected: $0, offset: offset, width: bounds.width, count: spaces.count)
+        } ?? 0
+        let shown = !isPrivateBrowsing && onNewSpace != nil
+        let progress = shown ? SidebarSpaceCreationGesture.progress(overscroll) : 0
+        spaceCreationFeedback.presentation = shown ? SidebarSpaceCreationGesture.presentation(overscroll) : 0
+        spaceCreationFeedback.progress = progress
+        if spaceCreationGesture.update(progress: progress, now: CACurrentMediaTime()) {
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        }
+        spaceCreationFeedback.isActivated = spaceCreationGesture.isActivated
     }
 
     private func showPageStrip(at offset: CGFloat) {
         let width = bounds.width
+        updateSpaceCreationFeedback(offset: offset)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         pageStrip.layer?.sublayerTransform = CATransform3DMakeTranslation(offset, 0, 0)
         CATransaction.commit()
@@ -3519,6 +3553,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
         contentSurface.frame = bounds
         pageStrip.frame = bounds
+        spaceCreationFeedback.frame = NSRect(x: width - SidebarSpaceCreationFeedbackView.width, y: 0,
+                                             width: SidebarSpaceCreationFeedbackView.width, height: bounds.height)
         let creationTop = Chrome.headerTop + Chrome.navigationRowHeight
         creationScroll.frame = NSRect(x: 0, y: creationTop, width: width, height: max(0, bounds.height - creationTop - Chrome.dockHeight))
         creationView?.frame = NSRect(x: 0, y: 0, width: creationScroll.contentSize.width,
