@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **74**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **75**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -58,9 +58,9 @@ about 1 MB; a background tab frozen outside the cache lost a cast that
 connected after freezing: **fixed** b6d0a63e (casting players only). A cast
 still connecting 60 s after leaving is lost when Chromium evicts a page with
 an unfinished download, and Chrome's own HLS player's data sources aren't
-covered, and a 'cast this video' launch that fails outright leaves its
-remoting request set so a later tab cast shows the paused video
-(`cast_device_list_host.cc`, from 31735c02): **in progress** (CAST-6). Two
+covered, and a 'cast this video' launch that failed outright left its
+remoting request set: **fixed** dc01dff2. A TV session that never offers
+remoting keeps the request until the page runs (nothing visible): **left**. Two
 videos where the other starts casting first, or a backend switch, can drop
 a request before it plays, and on `no-store` pages Parc ends the cast where
 Safari's TV stays connected with nothing playing: **left** (rare). Media Source past its buffer can't feed a
@@ -84,6 +84,15 @@ them only without MediaSource). Spotify's Safari path excludes FLAC in MP4
 (lossless): **kept** (Josh, November 7: no Widevine, so Safari identity is
 the only way it plays). Apple Music and Apple Podcasts (MusicKit, https
 HLS) need no change. Not run against the signed-in service.
+
+### Mini Player cast (MINI-CAST)
+
+The Mini Player's last button is Cast on Chrome-identity media and AirPlay on
+Safari-identity media: **fixed** 65c8fd25. Cast SDK pages with a default
+presentation request (YouTube-style) don't get the button, and
+dc01dff2's `ParcStartCasting` had no review of its own: **in progress**
+(MINI-CAST-2). Chromium's chooser has no "this Mac" entry, so a cast ends
+with Stop casting: **left**.
 
 ## Reading log
 
