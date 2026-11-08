@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **95**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **96**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -255,8 +255,11 @@ ca8b6db6). The handoff holds the picture and pauses the sound for about
 preroll the FairPlay renderer and switch on the same clock). Left (rare): a
 switch needed while playing backward, mid-resume, after a CDM change or for
 codecs the FairPlay renderer can't play still restarts with one rebuffer. Dolby Vision alongside a track the FairPlay
-renderer can't play (VP9 before the switch, Vorbis) fails: **in progress**
-(FP-DV); `setSinkId` audio output selection wasn't wired:
+renderer couldn't play (VP9 before the switch, Vorbis) failed: **fixed**
+5cfd3491 (VP9 via VideoToolbox's supplemental decoder and Vorbis via
+AudioToolbox, as WebKit; `changeType` also accepts AV1). VP8 and MP3 still
+can't join the FairPlay renderer: **left** (no known service pairs them with
+Dolby Vision or FairPlay); `setSinkId` audio output selection wasn't wired:
 **fixed** 30970c11 (FairPlay Media Source and native HLS; Chrome-identity
 FairPlay pages follow it too, as Chrome moves all of an element's audio).
 Unplugging the chosen device stalled protected playback (Safari too) and
