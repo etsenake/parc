@@ -663,11 +663,6 @@ model in `Sources/ParcCore/FairPlayIdentity.swift`):
 - A shared worker that is already running when its site's identity changes
   keeps the old user agent until it ends. Service workers are stopped and
   restart with the new one.
-- A managed source opens without `disableRemotePlayback` or an AirPlay
-  source. Safari for macOS defers `sourceopen` until one is present
-  (`ManagedMediaSourceNeedsAirPlay`); WebKit built without wireless playback
-  targets opens at once, as Parc does: its Media Source plays to no AirPlay
-  device.
 - `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
   WebKit's engine policy (below). It is visible to a page that inspects it,
   for example through `Function.prototype.toString`. Isolated worlds and

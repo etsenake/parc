@@ -763,8 +763,31 @@ reaches a TV from Parc. Parc follows WebKit's split:
   `HAVE_METADATA`) and a different duration raises one `durationchange`. A
   file the native route can't open goes back to Chromium's pipeline at the
   same time and stops supporting a target, as WebKit turns the target down.
-  Media Source never moves: WebKit's player refuses a target, and Safari's
-  switch to a `<source>` alternative is `ManagedMediaSource`'s (AIRPLAY-3).
+  Media Source never moves: WebKit's player refuses a target.
+- Media Source (`checkPlaybackTargetCompatibility`): given the target, a Media
+  Source element says it plays there (`webkitCurrentPlaybackTargetIsWireless`
+  and its event), as WebKit's Media Source player does. Half a second after
+  any change, if its player can't play to the target and it loads from
+  `<source>` children with another candidate, it moves on to that one, usually
+  HLS, without a new load: the Media Source closes, the next `<source>` loads
+  in the native HLS player with the target, `paused` and the rate stay with
+  the element, and once that has future data the element seeks to the time it
+  had (`applyConfiguration`). Without a candidate it stops saying so and
+  plays here. The browser hears such an element can play to a target only
+  with a `<source>` alternative that isn't `blob:`
+  (`hasWirelessPlaybackTargetAlternative`), so its `video.remote` is AirPlay
+  and the Mini Player offers AirPlay; the Mini Player shows it connecting, not
+  connected, until the alternative plays on the device.
+- ManagedMediaSource (`ManagedMediaSourceNeedsAirPlay`, on for macOS): a
+  managed source attached to an element stays `closed`, without
+  `sourceopen`, until the element has `disableremoteplayback`,
+  `webkitwirelessvideoplaybackdisabled` or `x-webkit-airplay="deny"`, or a
+  `<source>` alternative that isn't `blob:` (checked at the attribute change
+  and as a `<source>` is added; `MediaSource::sourceOpen`,
+  `openIfDeferredOpen`). The element holds the opened Media Source until then
+  (`HTMLMediaElement::MediaSourceOpened`); the source script marks managed
+  sources for it (`MediaSourceAttachment::ParcManaged`), dedicated workers'
+  too.
 - GPU core: `FairPlayHlsPlayer::SetPlaybackTarget(id, should_play)` finds the
   context with `+[AVOutputContext outputContextForID:]` (an ID the media
   server doesn't know finds none) and sets `AVPlayer.outputContext` only

@@ -139,7 +139,7 @@ WebKit: `Modules/mediasource/ManagedMediaSource.*`, `ManagedSourceBuffer.*`,
 | `ManagedSourceBuffer` `bufferedchange`, `onbufferedchange`, `BufferedChangeEvent` | present (WebKit's timing: inside the operation, before `update`/`updateend`, with `updating` true and its guards; other changes as tasks) | fp-mms-presentation |
 | Dedicated workers, `handle`, `canConstructInDedicatedWorker` | present | fp-mms-presentation |
 | `src`/`<source>`/`srcObject` attachment | present | fp-mms-presentation |
-| Opening without `disableRemotePlayback` or an AirPlay source (`ManagedMediaSourceNeedsAirPlay`, on in Safari for macOS) | present: Parc opens at once, as WebKit built without wireless playback targets does (`deferredMediaSourceOpenCanProgress`); Parc's Media Source plays to no AirPlay device, so nothing waits for one | fp-mms-presentation |
+| Opening without `disableRemotePlayback` or an AirPlay source (`ManagedMediaSourceNeedsAirPlay`, on in Safari for macOS) | present: `sourceopen` waits, `readyState` staying `closed`, until the element disables AirPlay or has a `<source>` alternative that isn't `blob:` (`deferredMediaSourceOpenCanProgress`), which AirPlay switches to (NATIVE_HLS.md "AirPlay") | fp-mms-presentation |
 | Memory-pressure purge (`SourceBuffer::memoryPressure`: active SourceBuffers keep the playback window, inactive ones empty; `bufferedchange` and `startstreaming` follow) | present (engine purge with WebKit's windows, gap tolerances and ended-source behaviour; for a multi-track SourceBuffer WebKit's keyframe choice depends on its hash-map order, Parc takes the earliest) | fp-mms-presentation |
 
 ## Presentation and fullscreen
