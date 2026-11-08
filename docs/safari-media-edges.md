@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **82**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **83**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -107,6 +107,12 @@ at PiP size, repainted only when they change; lifted above the scrubber
 while the controls show, a Parc choice). A cross-origin iframe player
 scrolled out of view keeps updating its PiP captions (the paint runs outside
 the throttled lifecycle; guarded by a test in b8cf81a3): no difference.
+
+### Detached CDMs on native HLS (WMPI-5b)
+
+The native HLS player kept every detached CDM until the same one was
+reattached, so a page cycling MediaKeys held them all: **fixed** da0ef540
+(released once no request or queued SPC needs it; reattaching cancels).
 
 ## Reading log
 
