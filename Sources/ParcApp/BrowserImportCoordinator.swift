@@ -711,7 +711,8 @@ final class BrowserImportCoordinator {
         let token = UUID(); passwordRequestID = token; onChange?()
         passwordSession = PCNativeBrowserApplication.importPasswordFile(url,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window) { [weak self] result in
-            if let self, self.detached { self.startDeferredBackground() }
+            // A removable file's session still holds the Profile; nothing on screen can remove it now.
+            if let self, self.detached { self.passwordSession?.cancel(); self.passwordSession = nil; self.startDeferredBackground() }
             guard let self, self.isCurrent, self.stage == .safariPasswords, self.passwordRequestID == token else { return }
             self.importingPasswords = false; self.passwordResult = result
             if !destination.isCurrent(in: self.store.state) {

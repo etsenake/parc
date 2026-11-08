@@ -166,10 +166,19 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     following.continueSourceInline()
     expect(following.stage == .importing && PCNativeBrowserApplication.browserCompletions.count == 1,
            "A new import waits on the loading button while the last one is still finishing")
+    let abandoned = BrowserImportCoordinator(store: store, destination: destination, window: window, ownerIsCurrent: { current })
+    abandoned.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
+    abandoned.select(safari); abandoned.loadProfiles()
+    PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
+    abandoned.continueSourceInline(); abandoned.stopImport()
+    expect(abandoned.stage == .finished, "Stop Import ends a waiting import at once")
     PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
     expect(!closing.hasBackgroundWork, "The detached import is released when its history is in")
     expect(following.stage == .safariPasswords && following.passwordDestination?.profileID == destination.profileID,
            "The waiting import then starts by itself")
+    expect(abandoned.stage == .finished && PCNativeBrowserApplication.browserCompletions.isEmpty
+           && PCNativeBrowserApplication.passwordRequests.isEmpty, "A stopped waiting import never starts later")
+    abandoned.cancel()
     following.cancel()
     closing.cancel(); PCNativeBrowserApplication.acceptsBrowserImport = false
     checks += onboardingImportOrderChecks(store: store, destination: destination, window: window, safari: safari)
