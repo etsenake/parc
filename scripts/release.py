@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 import uuid
 
 import release_inputs
@@ -159,6 +160,14 @@ class Release:
         self.lock()
         if self.current.exists():
             prior = json.loads(self.current.read_text())
+            if prior.get("status") == "running":
+                # The release lock is held, so no other release process can still be running this.
+                # command_pid is kept: a crashed shipping-build still needs its process-group recovery.
+                prior.update(status="stopped",
+                             error=prior.get("error") or "The previous release process exited without stopping cleanly")
+                save(self.current, prior)
+                if prior.get("run"):
+                    save(Path(prior["run"]) / "state.json", prior)
             if prior.get("status") not in TERMINAL and prior["release_type"] != self.kind:
                 self.supersede(prior)
                 prior = json.loads(self.current.read_text())
@@ -234,7 +243,8 @@ class Release:
             raise Failure('Source refresh cannot change the saved release version')
         if self.git('ls-remote', 'origin', 'refs/tags/' + self.state['tag']):
             raise Failure('A published release tag is immutable; source refresh refused')
-        if (Path(self.state['run']) / 'package').exists() or Path(self.state['engine_seal_path']).exists():
+        seal = Path(self.state.get('engine_seal_path') or Path(self.state['run']) / 'engine-artifacts.json')
+        if (Path(self.state['run']) / 'package').exists() or seal.exists():
             raise Failure('Source refresh refused after sealing or packaging; existing artifacts were preserved')
         if not self.published(commit):
             raise Failure('Refreshed source must be published on origin/main')
@@ -525,7 +535,13 @@ class Release:
             self.finish()
             self.emit("Released " + self.state["tag"] + "; notarized assets and published Homebrew cask verified")
             return 0
-        except (Failure, RuntimeError, OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+        except Exception as error:
+            self.emit(str(error) if isinstance(error, (Failure, RuntimeError, OSError, ValueError, subprocess.SubprocessError))
+                      else "".join(traceback.format_exception(error)).strip())
+            if self.state:
+                self.checkpoint(status="stopped", error=str(error) or type(error).__name__)
+            return 1
+        except KeyboardInterrupt as error:
             self.emit(str(error))
             if self.state:
                 self.checkpoint(status="stopped", error=str(error))

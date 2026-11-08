@@ -99,12 +99,25 @@ class Repository(unittest.TestCase):
         with self.assertRaisesRegex(release.Failure, 'already published'):
             self.runner()
         self.git('push', 'origin', ':refs/tags/v1.0.1')
-        patch_run.state['pid'] = None
-        patch_run.checkpoint(status='running')
-        patch_run.state['pid'] = None
-        release.save(patch_run.current, dict(patch_run.state, pid=None))
-        with self.assertRaisesRegex(release.Failure, 'must resume'):
-            self.runner()
+        live = release.Release(self.root, 'patch'); live.start()
+        self.addCleanup(lambda: [item.close() for item in live.locks])
+        with self.assertRaisesRegex(release.Failure, 'already active'):
+            release.Release(self.root, 'minor').start()
+
+    def test_refresh_before_engine_seal_recorded_and_after_a_crash(self):
+        runner = self.runner()
+        runner.prepare()
+        runner.checkpoint(stage='engine', completed=['source'], command_pid=None)
+        for item in runner.locks: item.close()
+        self.assertEqual(json.loads(runner.current.read_text())['status'], 'running')
+        (self.root / 'Resources/icon').write_bytes(b'fixed source')
+        self.git('add', '.'); self.git('commit', '-m', 'Fix source'); self.git('push', 'origin', 'main')
+        refreshed = release.Release(self.root, 'minor', refresh_source=True)
+        refreshed.start()
+        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
+        refreshed.refresh_inputs()
+        self.assertEqual(refreshed.state['commit'], self.git('rev-parse', 'HEAD'))
+        self.assertEqual(refreshed.state['version'], {'version': '1.1.0', 'build': 2})
 
     def test_refresh_rejects_active_stage(self):
         runner = self.runner()
