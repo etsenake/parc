@@ -426,7 +426,7 @@ final class BrowserImportCoordinator {
         // Resolve/save once at the actual Import action, before native context
         // admission. Radio selection and name editing never create a Profile.
         do { activeDestination = try store.prepareImportDestination(destinationChoice, basedOn: originalDestination) }
-        catch { self.error = error.localizedDescription; onChange?(); return }
+        catch { stage = .profiles; self.error = error.localizedDescription; onChange?(); return }
         beginImport()
         passwordDestination = source.map(Self.isSafari) == true ? activeDestination : nil
         if passwordsOnly { activeDestination = nil; importNext(); return }
@@ -504,7 +504,8 @@ final class BrowserImportCoordinator {
             }
         } catch {
             // As Chrome's Import does, stay on the destination with the reason.
-            queue = []; queuedDestinations = [:]; stage = .destination; self.error = error.localizedDescription; onChange?(); return
+            // Back on the browser cards with the reason, as Chrome's start does.
+            queue = []; queuedDestinations = [:]; stage = .profiles; self.error = error.localizedDescription; onChange?(); return
         }
         importNext()
     }

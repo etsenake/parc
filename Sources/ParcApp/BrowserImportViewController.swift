@@ -11,6 +11,8 @@ final class BrowserImportViewController: NSViewController {
     var onChange: (() -> Void)?
     var onShowPasswordHelp: (() -> Void)?
     var onHidePasswordHelp: (() -> Void)?
+    /// Ad blockers the import adds after its presentation closed.
+    var onBackgroundAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?
     var selectionColor: NSColor = OnboardingSetupPalette.action { didSet { updateSourcePicker(); updateBookmarksPicker(); updatePasswordChoice() } }
     private var sourcePicker: NSHostingView<BrowserImportSourcePicker>?
     private var bookmarksPicker: NSHostingView<OnboardingImportBookmarksPicker>?
@@ -206,7 +208,10 @@ final class BrowserImportViewController: NSViewController {
         accessTimer?.invalidate(); accessTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
-        coordinator.onChange = nil; coordinator.cancel()
+        //
+        coordinator.onChange = nil
+        if coordinator.hasBackgroundWork { coordinator.detach(onAdBlockers: onBackgroundAdBlockers) } else { coordinator.cancel() }
+        onBackgroundAdBlockers = nil
         onboardingAccess?.actions.removeFromSuperview()
         onChange = nil; onClose = nil; onRequestRestart = nil
         onShowPasswordHelp = nil; onHidePasswordHelp = nil
@@ -238,7 +243,7 @@ final class BrowserImportViewController: NSViewController {
         }
         if !embedded {
             sourcePicker?.frame = NSRect(x: 314, y: 100, width: width - 336, height: height - 180)
-            bookmarksPicker?.frame = NSRect(x: 34, y: 100, width: width - 68, height: height - 180)
+            bookmarksPicker?.frame = NSRect(x: 34, y: 104, width: width - 68, height: height - 184)
         }
         // Dialogs footer: 28 points from the right and bottom, 8 between buttons;
         // each view extends past its 36-point body for the border and lip.
@@ -586,7 +591,7 @@ final class BrowserImportViewController: NSViewController {
                     self.coordinator.toggleBookmark(pageID: page.id, id: itemID, expansion: true)
                 })
         }
-        let content = OnboardingImportBookmarksPicker(pages: pages, selectionColor: selectionColor,
+        let content = OnboardingImportBookmarksPicker(pages: pages, selectionColor: embedded ? selectionColor : NSColor(parcHex: "5636F4"),
             messages: coordinator.warnings + (coordinator.error.map { [$0] } ?? []))
         if let bookmarksPicker { bookmarksPicker.rootView = content; bookmarksPicker.isHidden = false }
         else { let host = NSHostingView(rootView: content); bookmarksPicker = host; root.addSubview(host) }

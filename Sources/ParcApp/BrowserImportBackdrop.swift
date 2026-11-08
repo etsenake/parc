@@ -37,6 +37,8 @@ final class BrowserImportBackdrop: NSView {
     /// One wash per browser in order, and the chosen browser's index.
     func show(_ next: [BrowserImportWash], selected: Int?) {
         guard next != pages || selected != page else { return }
+        // Already leaving: the kept pages are fading out.
+        if next.isEmpty && selected == nil && page == nil { return }
         let animate = window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let now = CACurrentMediaTime()
         let hidden = visibility.value(at: now) < 0.01
@@ -49,8 +51,11 @@ final class BrowserImportBackdrop: NSView {
         if animate { visibility.retarget(selected == nil ? 0 : 1, now: now) } else { visibility.place(selected == nil ? 0 : 1) }
         guard animate else { settle(); return }
         if timer == nil {
-            let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.tick() }
+            let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
+                MainActor.assumeIsolated {
+                    guard let self else { timer.invalidate(); return }
+                    self.tick()
+                }
             }
             self.timer = timer
             RunLoop.main.add(timer, forMode: .common)

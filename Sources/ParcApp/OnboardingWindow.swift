@@ -770,6 +770,14 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         persistDraft()
     }
 
+    /// Extensions finish after setup moved on; their ad blockers still reach
+    /// the ad-blocker step while setup hasn't passed it.
+    private func adoptBackgroundAdBlockers(_ blockers: [OnboardingDraft.ImportedAdBlocker]) {
+        guard !isClosed, !isFinishing else { return }
+        draft.importedAdBlockers = blockers.filter { !ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
+        settleAdBlockerChoice(); persistDraft(); render()
+    }
+
     private func settleAdBlockerChoice() {
         if let kept = draft.adBlockerChoice?.keptIdentifier,
            !draft.importedAdBlockers.contains(where: { $0.identifier == kept }) {
@@ -838,6 +846,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         controller.onChange = { [weak self] in self?.render() }
         controller.onShowPasswordHelp = { [weak self] in self?.showPasswordHelp() }
         controller.onHidePasswordHelp = { [weak self] in self?.dismissPasswordHelp(remove: true) }
+        controller.onBackgroundAdBlockers = { [weak self] in self?.adoptBackgroundAdBlockers($0) }
         controller.onRequestRestart = { [weak self] intent, completion in
             guard let self, let restart = self.onRequestImportRestart else {
                 completion("Parc could not prepare to restart."); return
