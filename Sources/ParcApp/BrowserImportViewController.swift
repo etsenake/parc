@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 /// One import presentation retains its original window through source discovery,
 /// native permissions and final bookmark admission. Onboarding embeds this owner;
 /// the application menu wraps it in its dedicated import window.
+/// The dialog buttons and the password drop area draw their own fills.
+extension PArcDialogButton: BrowserImportInkOpaque {}
+extension OnboardingPasswordDropTarget: BrowserImportInkOpaque {}
+
 @MainActor
 final class BrowserImportViewController: NSViewController {
     var onClose: (() -> Void)?
@@ -46,12 +50,19 @@ final class BrowserImportViewController: NSViewController {
     var nextTitle: String { embedded ? "Next" : next.title }
     private(set) var canAdvance = false
     var isImporting: Bool { coordinator.stage == .importing }
+    ///
+    /// button spinner, the import's only loading presentation.
+    var isLoading: Bool {
+        switch coordinator.stage {
+        case .loading, .importing: return true
+        case .safariAccess: return coordinator.continueAfterSafariRefresh
+        default: return false
+        }
+    }
     var onRequestRestart: ((BrowserImportRestartIntent, @escaping (String?) -> Void) -> Void)?
     private let root = LayoutView()
     private let heading = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
-    private let scroll = NSScrollView()
-    private let rows = FlippedStackView()
     // ImportDialogButtonView's body is a Dialogs.DialogButtonView: primary for
     // Next/Import/Done, neutral for Maybe Later/Back, no hotkey badge.
     private let next = PArcDialogButton(title: "Next", primary: true, hint: false)
@@ -105,13 +116,6 @@ final class BrowserImportViewController: NSViewController {
         }
         heading.font = .systemFont(ofSize: 26, weight: .bold); heading.textColor = PArcDialogStyle.popoverTitle
         detail.font = .systemFont(ofSize: 13); detail.textColor = PArcDialogStyle.popoverMessage
-        rows.orientation = .vertical; rows.alignment = .leading; rows.spacing = 12
-        rows.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 12, right: 0)
-        rows.translatesAutoresizingMaskIntoConstraints = false
-        scroll.drawsBackground = false; scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
-        scroll.documentView = rows
-        rows.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
         logo.image = ParcBrandMark.image(.borderless) ?? NSApp.applicationIconImage
         logo.imageScaling = .scaleProportionallyUpOrDown; logo.setAccessibilityElement(false)
         closeControl.contentTintColor = PArcDialogStyle.popoverMessage
@@ -120,8 +124,9 @@ final class BrowserImportViewController: NSViewController {
         if !onboarding {
             root.addSubview(windowBackdrop)
             windowBackdrop.onShownChange = { [weak self] in self?.applyBackdropContrast($0) }
+            inkBackdrop = { [weak self] in self.map { ($0.windowBackdrop, PArcDialogStyle.popoverBackground) } }
         }
-        [heading, detail, scroll, next, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
+        [heading, detail, next, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
         next.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
         next.target = self; next.action = #selector(nextPressed)
@@ -224,7 +229,6 @@ final class BrowserImportViewController: NSViewController {
             bookmarksPicker?.frame = root.bounds
             passwordChoice?.frame = root.bounds
             onboardingAccess?.frame = root.bounds
-            scroll.frame = root.bounds.insetBy(dx: 24, dy: 16)
             accessView.frame = root.bounds; passwordsView.frame = root.bounds
             return
         }
@@ -235,11 +239,9 @@ final class BrowserImportViewController: NSViewController {
         if showsSourceCards || coordinator.stage == .loading {
             heading.frame = NSRect(x: 28, y: 106, width: 290, height: 26)
             detail.frame = NSRect(x: 28, y: 142, width: 260, height: 200)
-            scroll.frame = NSRect(x: 320, y: 164, width: width - 348, height: height - 235)
         } else {
             heading.frame = NSRect(x: 34, y: 36, width: width - 68, height: 66)
             detail.frame = NSRect(x: 34, y: 104, width: width - 68, height: 45)
-            scroll.frame = NSRect(x: 34, y: 158, width: width - 68, height: height - 225)
         }
         if !embedded {
             sourcePicker?.frame = NSRect(x: 314, y: 100, width: width - 336, height: height - 180)
@@ -256,10 +258,6 @@ final class BrowserImportViewController: NSViewController {
         else { cancelButton.frame = NSRect(x: 27.5, y: height - 64.5, width: cancelButton.bodyWidth + 1, height: 38.5) }
     }
 
-    private func add(_ view: NSView) {
-        rows.addArrangedSubview(view)
-        view.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
-    }
     ///
     /// and any result; only the cards' state changes.
     var showsSourceCards: Bool {
@@ -294,7 +292,6 @@ final class BrowserImportViewController: NSViewController {
         accessView.isHidden = !choosingAccess || embedded
         onboardingAccess?.isHidden = !choosingAccess
         heading.isHidden = choosingAccess || choosingPasswords
-        scroll.isHidden = cards || choosingAccess || choosingPasswords
         detail.isHidden = choosingAccess || choosingPasswords
         let requestedWidth: CGFloat = choosingAccess ? 790 : 580
         let requestedHeight: CGFloat = choosingAccess ? 630 : choosingPasswords ? 630 : 454
@@ -303,8 +300,6 @@ final class BrowserImportViewController: NSViewController {
             window.setContentSize(NSSize(width: requestedWidth, height: requestedHeight))
             window.setFrameOrigin(NSPoint(x: window.frame.minX, y: top - window.frame.height))
         }
-        let origin = scroll.contentView.bounds.origin
-        rows.arrangedSubviews.forEach { rows.removeArrangedSubview($0); $0.removeFromSuperview() }
         heading.stringValue = "Import from your old browser"
         bookmarksPicker?.isHidden = stage != .bookmarks
         passwordChoice?.isHidden = stage != .passwordChoice
@@ -320,10 +315,6 @@ final class BrowserImportViewController: NSViewController {
         }
         switch stage {
         case .loading:
-            if !cards {
-                let progress = NSProgressIndicator(); progress.style = .spinning
-                progress.controlSize = .regular; progress.startAnimation(nil); add(progress)
-            }
             next.isEnabled = false
         case .sources:
             if coordinator.sources.isEmpty { detail.stringValue = coordinator.message }
@@ -351,7 +342,6 @@ final class BrowserImportViewController: NSViewController {
         case .passwordChoice:
             heading.stringValue = "Autofill your passwords."
             detail.stringValue = "To log into sites without typing your passwords, we recommend you install Apple’s iCloud Passwords Extension.\n\nYou can also manually import your passwords from Safari to Parc, if you’d like!"
-            scroll.isHidden = true
             next.isEnabled = coordinator.canChoosePasswordMethod
             updatePasswordChoice()
         case .safariPasswords:
@@ -376,7 +366,6 @@ final class BrowserImportViewController: NSViewController {
             next.title = "Add to Parc"
             heading.stringValue = "Treat your bookmarks to an upgrade."
             detail.stringValue = ""
-            scroll.isHidden = true
             updateBookmarksPicker()
         case .finished:
             next.title = embedded ? "Next" : "Done"
@@ -391,13 +380,14 @@ final class BrowserImportViewController: NSViewController {
         cancelButton.isHidden = stage == .finished || choosingAccess || choosingPasswords
         closeControl.keyEquivalent = choosingAccess || choosingPasswords || stage == .finished ? "\u{1b}" : ""
         cancelButton.keyEquivalent = choosingAccess || choosingPasswords ? "" : "\u{1b}"
+        next.isLoading = isLoading
         canAdvance = !next.isHidden && next.isEnabled
         if embedded {
             [heading, detail, logo, closeControl, next, cancelButton].forEach { $0.isHidden = true }
         }
         reconcileAccessTimer()
         root.needsLayout = true; root.layoutSubtreeIfNeeded()
-        scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView)
+        if !embedded { applyWashInk(refreshingCards: false) }
         onChange?()
     }
 
@@ -491,11 +481,25 @@ final class BrowserImportViewController: NSViewController {
         windowBackdrop.show(value.pages, selected: value.selected)
     }
 
-    /// White text over the wash's colour; the cards keep their light fill.
+    /// The cards keep their light fill over the wash.
     private func applyBackdropContrast(_ shown: Bool) {
-        [heading, detail, closeControl].forEach { $0.appearance = shown ? NSAppearance(named: .darkAqua) : nil }
         sourcePicker?.appearance = shown ? NSAppearance(named: .aqua) : nil
         if coordinator?.error == nil { detail.textColor = detailColor }
+        applyWashInk()
+    }
+    /// The backdrop behind this import and the page it fades into: the
+    /// window's own, or setup's card.
+    var inkBackdrop: (() -> (BrowserImportBackdrop, NSColor)?)?
+    /// White text where it reads over the wash, the page's ink elsewhere;
+    /// call after layout. The cards' messages read the backdrop as they draw.
+    func applyWashInk(refreshingCards: Bool = true) {
+        guard !closed, let target = inkBackdrop?() else { return }
+        target.0.applyInk(under: embedded ? passwordsView : root, fill: target.1)
+        if refreshingCards { updateSourcePicker() }
+    }
+    private func whiteInkHolds(_ rect: CGRect, alpha: CGFloat) -> Bool {
+        guard let host = sourcePicker, let target = inkBackdrop?() else { return false }
+        return target.0.whiteInkHolds(over: rect, of: host, fill: target.1, alpha: alpha)
     }
     /// Over a backdrop the grey message loses contrast; the title ink holds it.
     private var detailColor: NSColor {
@@ -558,8 +562,7 @@ final class BrowserImportViewController: NSViewController {
                 selected: selected, choose: { [weak self, weak source] in
                     guard let self, let source, self.canChooseSource else { return }
                     self.skipSelected = false; self.coordinator.selectSourceInline(source)
-                }, profiles: profiles, busy: selected && (stage == .loading || stage == .importing),
-                options: options, messages: messages, choosePasswords: choosePasswords)
+                }, profiles: profiles, options: options, messages: messages, choosePasswords: choosePasswords)
         }
         let skip = embedded && (choosing || skipSelected) ? BrowserImportSourcePicker.Skip(selected: skipSelected, choose: { [weak self] in
             guard let self, self.canChooseSource else { return }
@@ -567,6 +570,7 @@ final class BrowserImportViewController: NSViewController {
         }) : nil
         let content = BrowserImportSourcePicker(layout: embedded ? .setup : .window, sources: choices, skip: skip,
             enabled: stage != .importing && stage != .finished,
+            whiteInk: { [weak self] in self?.whiteInkHolds($0, alpha: $1) ?? false },
             selectionColor: embedded ? selectionColor : NSColor(parcHex: "5636F4"))
         if let sourcePicker { sourcePicker.rootView = content; sourcePicker.isHidden = false }
         else { let host = NSHostingView(rootView: content); sourcePicker = host; root.addSubview(host) }

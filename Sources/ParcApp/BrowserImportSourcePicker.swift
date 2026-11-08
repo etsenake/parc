@@ -15,8 +15,6 @@ struct BrowserImportSourcePicker: View {
         let selected: Bool
         let choose: () -> Void
         var profiles: [Profile] = []
-        /// Profiles are loading, or this browser's data is importing.
-        var busy = false
         var options: [ImportOption] = []
         var messages: [String] = []
         var choosePasswords: (() -> Void)?
@@ -43,6 +41,8 @@ struct BrowserImportSourcePicker: View {
     let sources: [Source]
     var skip: Skip?
     var enabled = true
+    /// Whether white at an opacity reads over the backdrop at a rect in this view's space.
+    var whiteInk: ((CGRect, CGFloat) -> Bool)?
     let selectionColor: NSColor
     @Environment(\.colorScheme) private var colorScheme
 
@@ -63,6 +63,7 @@ struct BrowserImportSourcePicker: View {
             BrowserImportScaledToFit { stack(metrics[metrics.count - 1]) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout == .setup ? .center : .top)
+        .coordinateSpace(name: Self.space)
         //
         //
         .environment(\.colorScheme, layout == .setup ? .light : colorScheme)
@@ -76,7 +77,7 @@ struct BrowserImportSourcePicker: View {
             ForEach(sources) { source in
                 VStack(spacing: 0) {
                     BrowserImportSourceCard(layout: layout, title: source.title, icon: source.icon,
-                        iconBackground: source.iconBackground, selected: source.selected, busy: source.busy,
+                        iconBackground: source.iconBackground, selected: source.selected,
                         height: metrics.rowHeight, selectionColor: selectionColor, action: source.choose)
                         .opacity(enabled || source.selected ? 1 : 0.5)
                     if source.selected { details(source, metrics) }
@@ -102,10 +103,10 @@ struct BrowserImportSourcePicker: View {
         }
         if !source.options.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Extensions to bring with you").fontWeight(.medium)
+                Text("Extensions to bring with you").fontWeight(.medium).modifier(washInk(alpha: 1, base: .primary))
                 ForEach(source.options) { option in
                     Toggle(option.title, isOn: Binding(get: { option.selected }, set: { _ in option.toggle() }))
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.checkbox).modifier(washInk(alpha: 1, base: .primary))
                 }
             }
             .font(.system(size: 12)).padding(.top, 12)
@@ -113,15 +114,20 @@ struct BrowserImportSourcePicker: View {
         }
         ForEach(Array(source.messages.enumerated()), id: \.offset) { _, message in
             Text(message).font(.system(size: layout == .setup ? 12 : 11)).multilineTextAlignment(.center)
-                .foregroundColor(.primary.opacity(0.65))
                 .fixedSize(horizontal: false, vertical: true)
+                .modifier(washInk(alpha: 0.75, base: .primary.opacity(0.65)))
                 .padding(.top, 8)
         }
         if let choosePasswords = source.choosePasswords {
             Button("Import exported passwords instead…", action: choosePasswords)
-                .buttonStyle(.plain).font(.system(size: 12)).padding(.top, 12)
+                .buttonStyle(.plain).font(.system(size: 12)).modifier(washInk(alpha: 1, base: .primary)).padding(.top, 12)
         }
     }
+
+    private func washInk(alpha: CGFloat, base: Color) -> BrowserImportWashInk {
+        BrowserImportWashInk(whiteInk: whiteInk, alpha: alpha, base: base)
+    }
+    fileprivate static let space = "BrowserImportSourcePicker"
 
     /// Original BrowserSource colors; discovery's app identity supplies the key.
     /// Unknown Chromium-family sources keep a neutral background.
@@ -188,6 +194,31 @@ private struct BrowserImportProfiles: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Import profile")
     }
+}
+
+/// White text where it reads over the import's backdrop, `base` elsewhere;
+/// controls such as checkboxes take the dark scheme with it.
+private struct BrowserImportWashInk: ViewModifier {
+    let whiteInk: ((CGRect, CGFloat) -> Bool)?
+    let alpha: CGFloat
+    let base: Color
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var frame = CGRect.zero
+
+    func body(content: Content) -> some View {
+        let white = frame != .zero && whiteInk?(frame, alpha) == true
+        content
+            .foregroundColor(white ? .white.opacity(alpha) : base)
+            .environment(\.colorScheme, white ? .dark : colorScheme)
+            .background(GeometryReader {
+                Color.clear.preference(key: BrowserImportWashInkFrame.self, value: $0.frame(in: .named(BrowserImportSourcePicker.space)))
+            })
+            .onPreferenceChange(BrowserImportWashInkFrame.self) { frame = $0 }
+    }
+}
+private struct BrowserImportWashInkFrame: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
 /// Scales its content down uniformly to the offered height; never up.

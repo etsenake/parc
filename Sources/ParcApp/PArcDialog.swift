@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 ///
 ///
@@ -375,6 +376,24 @@ final class PArcDialogButton: NSButton {
     /// `ButtonHotkeyHint`: ESC for Cancel, return for the confirm button, none
     /// for an auxiliary button.
     let hint: Bool
+    /// The spinner replaces the label and hint over the enabled face, and the
+    /// button sends no action.
+    var isLoading = false {
+        didSet {
+            guard isLoading != oldValue else { return }
+            if isLoading, spinner == nil {
+                let host = NSHostingView(rootView: PArcButtonSpinner()); host.setAccessibilityElement(false)
+                // The spinner takes the label's colour: white on the primary face.
+                if primary { host.appearance = NSAppearance(named: .darkAqua) }
+                host.frame = body; host.autoresizingMask = [.width, .height]
+                addSubview(host); spinner = host
+            }
+            spinner?.isHidden = !isLoading
+            setAccessibilityValue(isLoading ? "Loading" : nil)
+            needsLayout = true; needsDisplay = true
+        }
+    }
+    private var spinner: NSHostingView<PArcButtonSpinner>?
     private var hovered = false
     private var tracking: NSTrackingArea?
 
@@ -413,9 +432,18 @@ final class PArcDialogButton: NSButton {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override var focusRingMaskBounds: NSRect { body }
     override func drawFocusRingMask() { PArcDialogStyle.continuousRect(body, radius: 6).fill() }
+    override func layout() {
+        super.layout()
+        spinner?.frame = body
+    }
+    override func isAccessibilityEnabled() -> Bool { super.isAccessibilityEnabled() && !isLoading }
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        isLoading ? false : super.sendAction(action, to: target)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        let pressed = cell?.isHighlighted == true
+        let pressed = cell?.isHighlighted == true && !isLoading
+        let hovered = self.hovered && !isLoading, isEnabled = self.isEnabled || isLoading
         let face: NSColor, foreground: NSColor, border: NSColor?, lip: NSColor
         let hintForeground: NSColor, hintBackground: NSColor, hintBorder: NSColor?
         if !primary {
@@ -445,6 +473,7 @@ final class PArcDialogButton: NSButton {
         let shape = PArcDialogStyle.continuousRect(body, radius: 6)
         face.setFill(); shape.fill()
         if let border { border.setStroke(); shape.lineWidth = 1; shape.stroke() }
+        guard !isLoading else { return }
         let attributes: [NSAttributedString.Key: Any] = [.font: PArcDialogStyle.buttonFont, .foregroundColor: foreground]
         let label = (title as NSString).size(withAttributes: attributes)
         (title as NSString).draw(at: NSPoint(x: body.minX + 12, y: body.midY - label.height / 2), withAttributes: attributes)

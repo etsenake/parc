@@ -13,7 +13,6 @@ struct BrowserImportSourceCard: View {
     var iconBackground: NSColor = .clear
     var uppercased = true
     let selected: Bool
-    var busy = false
     var height: CGFloat?
     let selectionColor: NSColor
     let action: () -> Void
@@ -25,10 +24,10 @@ struct BrowserImportSourceCard: View {
         Button(action: action) {
             switch layout {
             case .setup: BrowserImportSetupCardFace(title: uppercased ? title.uppercased() : title, icon: icon,
-                iconBackground: iconBackground, selected: selected, busy: busy, height: height ?? 92,
+                iconBackground: iconBackground, selected: selected, height: height ?? 92,
                 selectionColor: selectionColor)
             case .window: BrowserImportWindowCardFace(title: uppercased ? title.uppercased() : title, icon: icon,
-                selected: selected, busy: busy, height: height ?? 48, selectionColor: selectionColor)
+                selected: selected, height: height ?? 48, selectionColor: selectionColor)
             }
         }
         .buttonStyle(BrowserImportSourceCardStyle())
@@ -63,7 +62,6 @@ private struct BrowserImportSetupCardFace: View {
     let icon: NSImage?
     let iconBackground: NSColor
     let selected: Bool
-    let busy: Bool
     let height: CGFloat
     let selectionColor: NSColor
     @Environment(\.colorScheme) private var colorScheme
@@ -80,7 +78,6 @@ private struct BrowserImportSetupCardFace: View {
                     .kerning(-0.02)
                     .foregroundColor(Color(.sRGB, red: 118 / 255, green: 118 / 255, blue: 118 / 255))
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                if busy { ProgressView().controlSize(.small).accessibilityLabel("Importing") }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 24)
@@ -109,7 +106,6 @@ private struct BrowserImportWindowCardFace: View {
     let title: String
     let icon: NSImage?
     let selected: Bool
-    let busy: Bool
     let height: CGFloat
     let selectionColor: NSColor
     @Environment(\.colorScheme) private var colorScheme
@@ -121,13 +117,9 @@ private struct BrowserImportWindowCardFace: View {
         let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
         HStack(spacing: 0) {
             ZStack {
-                if busy {
-                    ProgressView().controlSize(.mini).accessibilityLabel("Importing")
-                } else {
-                    Circle().fill(.white)
-                    if !dark { Circle().strokeBorder(.black.opacity(0.25), lineWidth: 1) }
-                    if selected { Circle().fill(Color(nsColor: selectionColor)).padding(3) }
-                }
+                Circle().fill(.white)
+                if !dark { Circle().strokeBorder(.black.opacity(0.25), lineWidth: 1) }
+                if selected { Circle().fill(Color(nsColor: selectionColor)).padding(3) }
             }
             .frame(width: 14, height: 14).padding(.leading, 16).padding(.trailing, 14)
             Text(title)

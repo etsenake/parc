@@ -5,13 +5,15 @@ import SwiftUI
 ///
 struct OnboardingProgressionButtonStyle: ButtonStyle {
     let reduceMotion: Bool
+    /// A loading button takes no action but keeps its full face.
+    var loading = false
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         let scale = !isEnabled ? 1.0 : configuration.isPressed ? 0.98 : isHovered ? 1.02 : 1.0
         configuration.label
-            .opacity(isEnabled ? 1 : 0.5)
+            .opacity(isEnabled || loading ? 1 : 0.5)
             .scaleEffect(scale)
             .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.45, blendDuration: 0),
                        value: scale)
@@ -23,6 +25,7 @@ struct OnboardingProgressionButtonStyle: ButtonStyle {
 private final class OnboardingProgressionState: ObservableObject {
     @Published var title = "Next"
     @Published var enabled = true
+    @Published var loading = false
     @Published var reduceMotion = false
     @Published var background = OnboardingSetupPalette.action
     @Published var foreground = NSColor.white
@@ -37,7 +40,10 @@ private struct OnboardingSetupProgressionButton: View {
             // NewSetupView uses ProgressionButton with a Text label and no arrow.
             // Its label inherits the native SwiftUI font; no recovered font
             // override justifies the old semibold AppKit bezel treatment.
-            Text(state.title)
+            ZStack {
+                Text(state.title).opacity(state.loading ? 0 : 1)
+                if state.loading { PArcButtonSpinner() }
+            }
                 .foregroundColor(Color(nsColor: state.foreground))
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity)
@@ -46,11 +52,29 @@ private struct OnboardingSetupProgressionButton: View {
                     .fill(Color(nsColor: state.background)))
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(OnboardingProgressionButtonStyle(reduceMotion: state.reduceMotion))
-        .disabled(!state.enabled)
+        .buttonStyle(OnboardingProgressionButtonStyle(reduceMotion: state.reduceMotion, loading: state.loading))
+        .disabled(!state.enabled || state.loading)
         .keyboardShortcut(.defaultAction)
         .accessibilityLabel(state.title)
+        .accessibilityValue(state.loading ? "Loading" : "")
         .animation(state.reduceMotion ? nil : .easeInOut(duration: 0.12), value: state.enabled)
+    }
+}
+
+///
+///
+struct PArcButtonSpinner: View {
+    var body: some View {
+        ProgressView().progressViewStyle(.circular).scaleEffect(0.5).frame(width: 10, height: 10)
+            .accessibilityHidden(true)
+    }
+}
+
+extension NSColor {
+    /// Whether this ink is light enough that a spinner beside it needs the dark appearance.
+    var isLightInk: Bool {
+        guard let rgb = usingColorSpace(.sRGB) else { return false }
+        return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent > 0.5
     }
 }
 
@@ -67,6 +91,11 @@ final class OnboardingProgressionControl: NSView {
         set { state.title = newValue }
     }
     var isEnabled = true { didSet { updateAvailability() } }
+    /// The spinner replaces the title and the button takes no action.
+    var isLoading: Bool {
+        get { state.loading }
+        set { if state.loading != newValue { state.loading = newValue } }
+    }
     override var isHidden: Bool { didSet { updateAvailability() } }
 
     override init(frame: NSRect) {
@@ -91,6 +120,8 @@ final class OnboardingProgressionControl: NSView {
         state.background = background
         state.foreground = foreground
         state.reduceMotion = reduceMotion
+        // The system spinner takes its shade from the host's appearance.
+        host.appearance = NSAppearance(named: foreground.isLightInk ? .darkAqua : .aqua)
     }
 
     private func updateAvailability() { state.enabled = isEnabled && !isHidden }
@@ -98,7 +129,7 @@ final class OnboardingProgressionControl: NSView {
     private func activate() {
         // A retiring/hidden setup control must never compete with the welcome's
         // default action or consume Return during marked-text composition.
-        guard isEnabled, !isHiddenOrHasHiddenAncestor,
+        guard isEnabled, !isLoading, !isHiddenOrHasHiddenAncestor,
               let window, window.isKeyWindow, window.attachedSheet == nil else { return }
         if let text = window.firstResponder as? NSTextView, text.hasMarkedText() { return }
         actionBlock?()
