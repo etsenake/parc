@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **75**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **77**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -93,6 +93,15 @@ presentation request (YouTube-style) don't get the button, and
 dc01dff2's `ParcStartCasting` had no review of its own: **in progress**
 (MINI-CAST-2). Chromium's chooser has no "this Mac" entry, so a cast ends
 with Stop casting: **left**.
+
+### Captions in picture in picture (PIP-CAPTIONS)
+
+Captions never showed in Parc's PiP window, where Safari's shows WebVTT,
+Media Source, native HLS and FairPlay cues: **fixed** 5a730e1e (cues painted
+at PiP size, repainted only when they change; lifted above the scrubber
+while the controls show, a Parc choice). A cross-origin iframe player
+scrolled out of view stops updating its PiP captions: **in progress**
+(PIP-CAPTIONS-2).
 
 ## Reading log
 
@@ -467,9 +476,11 @@ controls, Remote Playback opening AirPlay, and
 `webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint for
 the placard glyph and button states **in progress**). A ManagedMediaSource element doesn't switch to its HLS
 `<source>` alternative when a target is picked, as Safari does: **queued**
-(AIRPLAY-3, after HME-1c). Clear `src=` files and clear Media Source don't
-AirPlay (Safari plays `src=` files through AVPlayer): **in progress** (AIRPLAY-4,
-about 400-700 lines). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
+(AIRPLAY-3, after HME-1c). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
+**fixed** 1c03b194 (they move to AVPlayer and back seamlessly; Safari never
+AirPlays Media Source, so neither does Parc). The user's chosen audio track
+doesn't carry to the TV, and a live stream's `currentTime` resets on the
+switch: **in progress** (AIRPLAY-4b). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
