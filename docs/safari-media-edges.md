@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **78**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **80**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -89,9 +89,14 @@ HLS) need no change. Not run against the signed-in service.
 
 The Mini Player's last button is Cast on Chrome-identity media and AirPlay on
 Safari-identity media: **fixed** 65c8fd25. Cast SDK pages with a default
-presentation request (YouTube-style) don't get the button, and
-dc01dff2's `ParcStartCasting` had no review of its own: **in progress**
-(MINI-CAST-2). Chromium's chooser has no "this Mac" entry, so a cast ends
+presentation request (YouTube-style) got no button, and a cast-menu launch
+finishing after navigation could cast the next page's video: **fixed**
+2c258379. The row can vanish if the site drops its media session while
+casting, and a cast launched just before leaving now ends where Chrome's
+carries on: **in progress** (MINI-CAST-3). A second tab of the same site
+shows Connecting during another tab's launch, and speaker-only receivers
+don't show the button on default-presentation pages: **left** (brief,
+cosmetic). Chromium's chooser has no "this Mac" entry, so a cast ends
 with Stop casting: **left**.
 
 ### Captions in picture in picture (PIP-CAPTIONS)
