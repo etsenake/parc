@@ -289,32 +289,20 @@ import Foundation
         let original = BrowserImportDestination(spaceID: chosenStore.activeSpace.id, profileID: chosenStore.activeSpace.profileID)
         let chosenID = chosenStore.createProfile(name: "Elsewhere")
         try chosenStore.save()
-        var existing = BrowserImportDestinationChoice()
-        existing.select(.existing(BrowserImportProfileTarget(profileID: chosenID, spaceID: nil)))
         let profilesBeforeChoice = chosenStore.state.profiles.count
         let intoExisting = try chosenStore.importArcSidebar(arc, profiles: [(profileOne, "Work Profile")],
-            standardProfileID: original.profileID, primary: profileOne, into: existing)
+            standardProfileID: original.profileID, primary: profileOne, into: chosenID)
         let workSpaces = arc.spaces.filter { $0.profile == profileOne }.count
         expect(intoExisting[profileOne]?.profileID == chosenID && chosenStore.state.profiles.count == profilesBeforeChoice
                && chosenStore.state.spaces.filter { $0.profileID == chosenID }.count == workSpaces,
-               "The chosen existing Profile takes the Arc Profile's Spaces; no Profile is created by name")
-        var fresh = BrowserImportDestinationChoice()
-        fresh.select(.new); fresh.newProfileName = "  From Parc "
-        let intoNew = try chosenStore.importArcSidebar(arc, profiles: [(.standard, "Personal")],
-            standardProfileID: original.profileID, primary: .standard, into: fresh)
-        let newProfile = require(chosenStore.state.profiles.first { $0.name == "From Arc" }, "A new Profile with the chosen name")
-        expect(intoNew[.standard]?.profileID == newProfile.id && chosenStore.state.profiles.count == profilesBeforeChoice + 1
-               && !chosenStore.state.spaces.contains { $0.profileID == original.profileID && $0.id != original.spaceID },
-               "A new Profile is created in the same write and takes the standard Profile instead of the original")
-        var unnamed = BrowserImportDestinationChoice()
-        unnamed.select(.new)
+               "The target Profile takes the Arc Profile's Spaces; no Profile is created by name")
         let refusedBefore = chosenStore.state
         do {
             _ = try chosenStore.importArcSidebar(arc, profiles: [(.standard, "Personal")], standardProfileID: original.profileID,
-                                                 primary: .standard, into: unnamed)
-            preconditionFailure("A destination that can't be submitted must refuse")
+                                                 primary: .standard, into: UUID())
+            preconditionFailure("A target Profile that doesn't exist must refuse")
         } catch { checks += 1 }
-        expect(chosenStore.state == refusedBefore, "A refused destination writes nothing")
+        expect(chosenStore.state == refusedBefore, "A refused target writes nothing")
 
         //
         // import was opened from; the next goes by name; standard stays behind.
@@ -322,11 +310,9 @@ import Foundation
         let opened = BrowserImportDestination(spaceID: customStore.activeSpace.id, profileID: customStore.activeSpace.profileID)
         let namesake = customStore.createProfile(name: "Work Profile")
         try customStore.save()
-        var openedChoice = BrowserImportDestinationChoice()
-        openedChoice.select(.existing(BrowserImportProfileTarget(profileID: opened.profileID, spaceID: opened.spaceID)))
         let customBefore = customStore.state
         let custom = try customStore.importArcSidebar(arc, profiles: [(profileOne, "Work Profile"), (profileTwo, "Side Projects")],
-            standardProfileID: opened.profileID, primary: profileOne, into: openedChoice)
+            standardProfileID: opened.profileID, primary: profileOne, into: opened.profileID)
         let customState = customStore.state
         let projectsProfile = require(customState.profiles.first { $0.name == "Side Projects" }, "A Parc Profile for the other Arc Profile")
         let customSpaces = Array(customState.spaces.dropFirst(customBefore.spaces.count))

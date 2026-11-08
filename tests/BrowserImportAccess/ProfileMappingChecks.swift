@@ -1,7 +1,5 @@
 import AppKit
 
-@MainActor private final class StageLog { var stages: [BrowserImportCoordinator.Stage] = [] }
-
 /// Every source profile starts ticked. The browser's main profile imports into
 /// the Parc Profile import was opened from; each other one into a Parc Profile
 /// of its name, made only when its turn comes. Neither flow has a destination step.
@@ -33,22 +31,20 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     let noPreferences = directory.appendingPathComponent("MappingNoArcPreferences.plist")
     func begin(_ name: String, onboarding: Bool, source: PCNativeImportSource, profiles: [PCNativeImportProfile],
                sidebar: URL? = nil, prepare: (BrowserStore) -> Void = { _ in }) throws
-        -> (BrowserStore, BrowserImportDestination, BrowserImportCoordinator, StageLog) {
+        -> (BrowserStore, BrowserImportDestination, BrowserImportCoordinator) {
         let store = try BrowserStore(directory: directory.appendingPathComponent(name))
         prepare(store)
         let original = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)
         let coordinator = BrowserImportCoordinator(store: store, destination: original, window: window,
             onboarding: onboarding, arcSidebarURL: sidebar ?? directory.appendingPathComponent("MappingNoArc/StorableSidebar.json"),
             arcPreferencesURL: noPreferences, ownerIsCurrent: { true })
-        let log = StageLog()
-        coordinator.onChange = { [unowned coordinator] in log.stages.append(coordinator.stage) }
         coordinator.discover()
         precondition(PCNativeBrowserApplication.sources.count == 1, "One source discovery is pending")
         PCNativeBrowserApplication.sources.removeFirst().complete([source])
         coordinator.selectSourceInline(source)
         precondition(PCNativeBrowserApplication.profiles.count == 1, "One profile discovery is pending")
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: profiles, access: .complete))
-        return (store, original, coordinator, log)
+        return (store, original, coordinator)
     }
 
     let chrome = PCNativeImportSource("Google Chrome", directory.appendingPathComponent("Mapping Chrome.app"))
@@ -58,7 +54,7 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     let three = [work, main, side]
 
     var existingSide: UUID?
-    let (store, original, windowImport, windowLog) = try begin("MappingWindow", onboarding: false, source: chrome,
+    let (store, original, windowImport) = try begin("MappingWindow", onboarding: false, source: chrome,
         profiles: three, prepare: { existingSide = $0.createProfile(name: "SIDE") })
     let reused = existingSide!
     let originalPath = store.independentEngineProfilePath(for: original.profileID)
@@ -95,10 +91,9 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     expect(windowImport.stage == .bookmarks && windowImport.bookmarkPages.map(\.destination.profileID) == [original.profileID, reused]
            && windowImport.bookmarkPages.first?.destination == original,
            "Each profile's bookmarks go to its own Parc Profile; the main profile's to the original Space")
-    expect(!windowLog.stages.contains(.destination), "The import window never shows a destination step")
     windowImport.cancel()
 
-    let (setupStore, setupOriginal, setup, setupLog) = try begin("MappingSetup", onboarding: true, source: chrome, profiles: three)
+    let (setupStore, setupOriginal, setup) = try begin("MappingSetup", onboarding: true, source: chrome, profiles: three)
     expect(setup.selectedProfiles == Set(three.map(\.identifier)), "Setup ticks every profile too")
     setup.selectProfile(work.identifier)
     expect(setup.selectedProfiles == [main.identifier, side.identifier], "One profile unticks on its own")
@@ -117,11 +112,10 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     expect(setup.stage == .finished && paths(work, since: setupStart).isEmpty
            && setupStore.state.profiles.count == setupProfiles + 1 && !setupStore.state.profiles.contains { $0.name == "Work" },
            "An unticked profile is left behind with no Parc Profile and no import")
-    expect(!setupLog.stages.contains(.destination), "Setup never shows a destination step")
     setup.cancel()
 
     let historyOnly = PCNativeImportProfile("chrome side history", [.history], .complete, name: "Side", directory: "Profile 2")
-    let (otherStore, otherOriginal, other, otherLog) = try begin("MappingNoDefault", onboarding: false, source: chrome,
+    let (otherStore, otherOriginal, other) = try begin("MappingNoDefault", onboarding: false, source: chrome,
         profiles: [work, main, historyOnly])
     other.selectProfile(main.identifier)
     let otherStart = requests.count
@@ -135,14 +129,14 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     expect(otherSide != nil && paths(historyOnly, since: otherStart) == [otherStore.independentEngineProfilePath(for: otherSide!.id)]
            && !otherStore.state.profiles.contains { $0.name == "Work" },
            "A profile with no bookmarks still gets its own Parc Profile; the original takes no Profile of the first one's name")
-    expect(other.stage == .finished && !otherLog.stages.contains(.destination), "No destination step without Default either")
+    expect(other.stage == .finished, "The import without Default finishes")
     other.cancel()
 
     let openedName = "Default"
     let workAgain = PCNativeImportProfile("chrome work again", [.history], .complete, name: "work", directory: "Profile 3")
     let namesake = PCNativeImportProfile("chrome namesake", [.history], .complete, name: openedName, directory: "Profile 4")
     let named = [main, work, workAgain, namesake]
-    let (namesStore, namesOriginal, names, _) = try begin("MappingNames", onboarding: false, source: chrome, profiles: named)
+    let (namesStore, namesOriginal, names) = try begin("MappingNames", onboarding: false, source: chrome, profiles: named)
     expect(namesStore.state.profiles.map(\.name) == [openedName], "The opened Profile has the name the namesake shares")
     let namesStart = requests.count
     names.continueSourceInline()
@@ -165,7 +159,7 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     let arcSide = PCNativeImportProfile("mapping arc side", [.history, .bookmarks], .complete, name: "Side", directory: "Profile 1")
     let arcProjects = PCNativeImportProfile("mapping arc projects", [.history, .bookmarks], .complete,
                                             name: "Side Projects", directory: "Profile 2")
-    let (arcStore, arcOriginal, arcSetup, arcLog) = try begin("MappingArc", onboarding: true, source: arc,
+    let (arcStore, arcOriginal, arcSetup) = try begin("MappingArc", onboarding: true, source: arc,
         profiles: [standard, arcSide, arcProjects], sidebar: sidebar)
     expect(arcSetup.selectedProfiles == [standard.identifier, arcSide.identifier, arcProjects.identifier],
            "Every Parc profile starts ticked")
@@ -194,8 +188,7 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     expect(paths(arcSide, since: arcStart) == [arcOriginalPath, arcOriginalPath]
            && paths(arcProjects, since: arcStart) == [projectsPath, projectsPath] && paths(standard, since: arcStart).isEmpty,
            "Each Arc profile's data imports into its own Parc Profile; the unticked one's not at all")
-    expect(arcSetup.bookmarkPages.first?.destination == arcOriginal && !arcLog.stages.contains(.destination),
-           "Arc's main bookmarks land in setup's Space, with no destination step")
+    expect(arcSetup.bookmarkPages.first?.destination == arcOriginal, "Arc's main bookmarks land in setup's Space")
     arcSetup.cancel()
     return checks
 }

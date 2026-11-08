@@ -4,7 +4,7 @@ import Combine
 /// Bookmarks are read first; remaining data keeps importing after results close.
 @MainActor
 final class BrowserImportCoordinator {
-    enum Stage { case sources, loading, profiles, safariAccess, destination, importing, passwordChoice, safariPasswords, bookmarks, finished }
+    enum Stage { case sources, loading, profiles, safariAccess, importing, passwordChoice, safariPasswords, bookmarks, finished }
     struct BookmarkPage {
         let id = UUID()
         let sourceName: String
@@ -31,9 +31,8 @@ final class BrowserImportCoordinator {
     private(set) var message = "Finding your browsers…"
     private(set) var warnings: [String] = []
     private(set) var error: String?
-    private(set) var destinationChoice = BrowserImportDestinationChoice()
-    private(set) var profileTargets: [BrowserImportProfileTarget] = []
-    private var skipExistingCookies = true
+    /// Every import keeps the existing cookies of the Parc Profile it lands in.
+    private let skipExistingCookies = true
     private(set) var safariAccessReady = false
     private var requiresSafariAccess = false
     private(set) var checkingSafariAccess = false
@@ -132,8 +131,6 @@ final class BrowserImportCoordinator {
                     self.passwordSession?.cancel()
                     self.passwordError = "The selected destination Profile is no longer available."
                     self.onChange?()
-                } else if self.stage == .destination {
-                    self.refreshDestinations()
                 } else if self.stage == .bookmarks {
                     self.onChange?()
                 }
@@ -162,7 +159,6 @@ final class BrowserImportCoordinator {
         passwordsOnly = false; passwordDestination = nil; passwordStageOffered = false
         wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
         safariAccessReady = false; requiresSafariAccess = false
-        destinationChoice = BrowserImportDestinationChoice(); profileTargets = []
         extensionBatch = nil
         stage = .loading; message = "Finding your browsers…"; error = nil; onChange?()
         discovery = PCNativeBrowserApplication.availableImportSources { [weak self] sources in
@@ -219,7 +215,7 @@ final class BrowserImportCoordinator {
     }
 
     var canContinueSourceInline: Bool {
-        stage == .profiles && isCurrent && (requiresSafariAccess || canChooseDestination)
+        stage == .profiles && isCurrent && (requiresSafariAccess || hasImportableSelection)
     }
 
     func continueSourceInline() {
@@ -313,32 +309,12 @@ final class BrowserImportCoordinator {
         onChange?()
     }
 
-    var canChooseDestination: Bool {
-        isCurrent && profiles.contains {
-            guard selectedProfiles.contains($0.identifier) else { return false }
-            var categories = $0.supportedCategories
-            if (selectedExtensions[$0.identifier] ?? []).isEmpty { categories.remove(.extensions) }
-            return categories.rawValue != 0
-        }
-    }
-    var canStart: Bool {
-        stage == .destination && isCurrent && (passwordsOnly || canChooseDestination) && destinationChoice.canSubmit(in: store.state)
-    }
+    /// Some chosen profile still has data or extensions to import.
+    var hasImportableSelection: Bool { isCurrent && !chosenProfiles.isEmpty }
 
+    /// An explicitly exported file does not require access to Safari's history store.
     var canChoosePasswordDestination: Bool {
         stage == .profiles && isCurrent && source.map(Self.isSafari) == true
-    }
-
-    /// An explicitly exported file does not require access to Safari's history
-    /// store. It still requires the same explicit durable destination choice.
-    func choosePasswordDestination() {
-        guard canChoosePasswordDestination else { return }
-        passwordsOnly = true; prepareDestinationChoice()
-    }
-
-    func chooseDestination() {
-        guard stage == .profiles, canChooseDestination else { return }
-        passwordsOnly = false; prepareDestinationChoice()
     }
 
     /// Both presentations import into the Space and Profile they were opened
@@ -346,44 +322,15 @@ final class BrowserImportCoordinator {
     /// selection elsewhere. Source discovery alone never submits data.
     func startInOriginalDestination(passwordsOnly: Bool = false) {
         guard stage == .profiles, isCurrent,
-              passwordsOnly ? canChoosePasswordDestination : canChooseDestination else { return }
+              passwordsOnly ? canChoosePasswordDestination : hasImportableSelection else { return }
         self.passwordsOnly = passwordsOnly
-        let target = BrowserImportProfileTarget(profileID: originalDestination.profileID,
-                                                spaceID: originalDestination.spaceID)
-        guard target.isCurrent(in: store.state) else { return }
-        profileTargets = [target]
-        destinationChoice = BrowserImportDestinationChoice()
-        destinationChoice.select(.existing(target))
-        stage = .destination
-        start()
-    }
-
-    private func prepareDestinationChoice() {
-        profileTargets = BrowserImportProfileTarget.choices(in: store.state, original: originalDestination)
-        if case .existing(let target) = destinationChoice.option, !profileTargets.contains(target) {
-            destinationChoice.invalidate()
-        }
-        destinationChoice.appeared(); stage = .destination; error = nil; onChange?()
-    }
-
-    func selectDestination(_ option: BrowserImportDestinationChoice.Option) {
-        guard stage == .destination, isCurrent else { return }
-        if case .existing(let target) = option, !profileTargets.contains(target) || !target.isCurrent(in: store.state) { return }
-        destinationChoice.select(option); error = nil; onChange?()
-    }
-
-    func setNewProfileName(_ name: String) {
-        guard stage == .destination, isCurrent, destinationChoice.isNew else { return }
-        destinationChoice.newProfileName = name
-        // The native field keeps its editor, marked text and selection.
-    }
-
-    private func refreshDestinations() {
-        let targets = BrowserImportProfileTarget.choices(in: store.state, original: originalDestination)
-        if case .existing(let target) = destinationChoice.option, !target.isCurrent(in: store.state) {
-            destinationChoice.invalidate(); error = "That destination is no longer available. Choose another Profile."
-        }
-        profileTargets = targets; onChange?()
+        let chosen = chosenProfiles
+        if isArcSource, !passwordsOnly, !chosen.isEmpty { startArc(chosen); return }
+        beginImport()
+        passwordDestination = source.map(Self.isSafari) == true ? originalDestination : nil
+        if passwordsOnly { importNext(); return }
+        queueProfiles(chosen, primaryDestination: originalDestination)
+        importNext()
     }
 
     func toggleExtension(_ id: String, profileID: String) {
@@ -409,8 +356,8 @@ final class BrowserImportCoordinator {
         onChange?()
     }
 
-    /// The browser's default profile goes to the chosen destination; each other
-    /// chosen profile goes to a Parc Profile of its own name.
+    /// The browser's default profile goes to the original destination; each
+    /// other chosen profile goes to a Parc Profile of its own name.
     private var chosenProfiles: [PCNativeImportProfile] {
         let chosen = profiles.filter { profile in
             guard selectedProfiles.contains(profile.identifier) else { return false }
@@ -422,22 +369,6 @@ final class BrowserImportCoordinator {
         return [primary] + chosen.filter { $0 !== primary }
     }
 
-    func start() {
-        guard canStart else { return }
-        skipExistingCookies = !destinationChoice.replaceExistingCookies
-        let chosen = chosenProfiles
-        if isArcSource, !passwordsOnly, !chosen.isEmpty { startArc(chosen); return }
-        // Resolve/save once at the actual Import action, before native context
-        // admission. Radio selection and name editing never create a Profile.
-        do { activeDestination = try store.prepareImportDestination(destinationChoice, basedOn: originalDestination) }
-        catch { stage = .profiles; self.error = error.localizedDescription; onChange?(); return }
-        beginImport()
-        passwordDestination = source.map(Self.isSafari) == true ? activeDestination : nil
-        if passwordsOnly { activeDestination = nil; importNext(); return }
-        queueProfiles(chosen, primaryDestination: activeDestination)
-        importNext()
-    }
-
     private func beginImport() {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
@@ -445,7 +376,7 @@ final class BrowserImportCoordinator {
         generation = UUID()
     }
 
-    /// `known` destinations win and the first profile takes the chosen one;
+    /// `known` destinations win and the first profile takes the primary one;
     /// the rest get theirs as they import.
     private func queueProfiles(_ chosen: [PCNativeImportProfile], primaryDestination: BrowserImportDestination?,
                                known: [String: BrowserImportDestination] = [:]) {
@@ -464,8 +395,7 @@ final class BrowserImportCoordinator {
                && !state.profileRemovals.contains { $0.profileID == profile.id }
                && profile.name.caseInsensitiveCompare(name) == .orderedSame }),
            let target = BrowserImportProfileTarget.choices(in: state, original: originalDestination).first(where: { $0.profileID == profile.id }) {
-            var choice = BrowserImportDestinationChoice(); choice.select(.existing(target))
-            return try store.prepareImportDestination(choice, basedOn: originalDestination)
+            return try store.prepareImportDestination(target, basedOn: originalDestination)
         }
         return try store.createImportDestination(name: name, basedOn: originalDestination)
     }
@@ -493,21 +423,17 @@ final class BrowserImportCoordinator {
             if case .success((var arc, let preferences)) = result {
                 arc.autoArchiveHours = ArcSidebarImport.autoArchiveHours(preferences: preferences, profiles: keyed.map(\.key))
                 let destinations = try store.importArcSidebar(arc, profiles: keyed.map { ($0.key, $0.profile.displayName) },
-                    standardProfileID: originalDestination.profileID, primary: keyed[0].key, into: destinationChoice)
+                    standardProfileID: originalDestination.profileID, primary: keyed[0].key, into: originalDestination.profileID)
                 var known: [String: BrowserImportDestination] = [:]
                 for item in keyed { known[item.profile.identifier] = destinations[item.key] }
-                // A chosen Space stays the destination, as it is for any browser.
-                if case .existing(let target) = destinationChoice.option, let spaceID = target.spaceID,
-                   target.isCurrent(in: store.state) {
-                    known[keyed[0].profile.identifier] = BrowserImportDestination(spaceID: spaceID, profileID: target.profileID)
-                }
+                // The opened Space stays the primary destination, as it is for any browser.
+                known[keyed[0].profile.identifier] = originalDestination
                 queueProfiles(chosen, primaryDestination: nil, known: known)
             } else {
                 //
-                queueProfiles(chosen, primaryDestination: try store.prepareImportDestination(destinationChoice, basedOn: originalDestination))
+                queueProfiles(chosen, primaryDestination: originalDestination)
             }
         } catch {
-            // As Chrome's Import does, stay on the destination with the reason.
             // Back on the browser cards with the reason, as Chrome's start does.
             queue = []; queuedDestinations = [:]; stage = .profiles; self.error = error.localizedDescription; onChange?(); return
         }

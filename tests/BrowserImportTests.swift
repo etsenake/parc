@@ -121,99 +121,63 @@ import Foundation
             try store.commitImportedBookmarks([loose], destination: stale)
             preconditionFailure("Wrong original Profile must refuse")
         } catch { checks += 1 }
-        var choice = BrowserImportDestinationChoice()
         let originalTarget = BrowserImportProfileTarget(profileID: target.profileID, spaceID: target.spaceID)
-        expect(choice.option == nil && !choice.canSubmit(in: store.state), "Destination starts unselected, not inferred from the front Profile")
-        expect(!choice.replaceExistingCookies, "Initial existing-cookie replacement is off")
         let unchanged = store.state
-        choice.select(.new)
-        expect(choice.replaceExistingCookies && !choice.canSubmit(in: store.state), "New destination requires a name and takes the imported cookies")
-        choice.newProfileName = "   "; expect(!choice.canSubmit(in: store.state), "Whitespace is not a new Profile name")
-        choice.newProfileName = "  Personal 名  "
-        expect(choice.canSubmit(in: store.state) && choice.profileName == "Personal 名", "Actual entered Unicode name is retained and trimmed")
-        expect(store.state.profiles == unchanged.profiles && store.state.spaces == unchanged.spaces,
-               "Editing destination choice never persists a Profile or Space")
-        choice.select(.existing(originalTarget))
-        expect(!choice.replaceExistingCookies, "Changing New to an existing Profile keeps that Profile's cookies")
-        choice.appeared()
-        expect(!choice.replaceExistingCookies, "Returning to destination keeps an existing Profile's cookies")
-        choice.select(.new); choice.appeared()
-        expect(choice.replaceExistingCookies && choice.newProfileName == "  Personal 名  ", "Returning preserves new name and forces replacement")
-        choice.select(.existing(originalTarget))
-        let existing = try store.prepareImportDestination(choice, basedOn: target)
+        let existing = try store.prepareImportDestination(originalTarget, basedOn: target)
         expect(existing == target, "Existing original Profile keeps the captured original Space")
         expect(store.state.spaces == unchanged.spaces && store.state.profiles == unchanged.profiles,
                "Existing destination does not create or rename records")
         expect(store.activeSpaceID == otherSpace, "Another active Space does not retarget destination")
         let choices = BrowserImportProfileTarget.choices(in: store.state, original: target)
         expect(choices.first { $0.profileID == target.profileID } == originalTarget,
-               "Original Profile's choice retains invocation Space despite other matching Spaces")
-        expect(choices.contains(.init(profileID: separate.profileID, spaceID: separate.spaceID)),
-               "Another actual Profile is selectable through its own captured Space")
-        choice.select(.existing(.init(profileID: separate.profileID, spaceID: separate.spaceID)))
-        let resolvedSeparate = try store.prepareImportDestination(choice, basedOn: target)
-        expect(resolvedSeparate == separate,
-               "Choosing another existing Profile preserves that exact Profile and Space")
+               "Original Profile's target retains invocation Space despite other matching Spaces")
+        let separateTarget = BrowserImportProfileTarget(profileID: separate.profileID, spaceID: separate.spaceID)
+        expect(choices.contains(separateTarget), "Another actual Profile is reachable through its own captured Space")
+        let resolvedSeparate = try store.prepareImportDestination(separateTarget, basedOn: target)
+        expect(resolvedSeparate == separate, "Another existing Profile keeps that exact Profile and Space")
 
         let unusedID = store.createProfile(name: "Unused")
         let unused = BrowserImportProfileTarget(profileID: unusedID, spaceID: nil)
         expect(BrowserImportProfileTarget.choices(in: store.state, original: target).contains(unused),
-               "A real unused Profile is offered without creating a Space early")
-        choice.select(.existing(unused))
+               "A real unused Profile is a target without creating a Space early")
         let profileCount = store.state.profiles.count, spacesBefore = store.state.spaces.count
-        let unusedDestination = try store.prepareImportDestination(choice, basedOn: target)
+        let unusedDestination = try store.prepareImportDestination(unused, basedOn: target)
         expect(unusedDestination.profileID == unusedID, "An unused Profile keeps its native identity")
         expect(store.state.profiles.count == profileCount && store.state.spaces.count == spacesBefore + 1,
                "Unused destination adds only its needed bookmark Space")
         expect(store.activeSpaceID == otherSpace, "Unused destination preparation does not focus its Space")
-        expect(!choice.canSubmit(in: store.state), "Issued no-Space choice expires after its Space is created")
+        expect(!unused.isCurrent(in: store.state), "An issued no-Space target expires after its Space is created")
         do {
-            _ = try store.prepareImportDestination(choice, basedOn: target)
+            _ = try store.prepareImportDestination(unused, basedOn: target)
             preconditionFailure("Stale unused target must not create duplicate Spaces")
         } catch { checks += 1 }
         let reloadedUnused = try BrowserStore(directory: directory)
         expect(unusedDestination.isCurrent(in: reloadedUnused.state),
                "Unused Profile destination persists before native admission")
-        choice.select(.new)
-        let made = try store.prepareImportDestination(choice, basedOn: target)
-        expect(made.profileID != unusedID && made.profileID != target.profileID, "New destination has its own Profile identity")
-        expect(store.state.profiles.first { $0.id == made.profileID }?.name == "Personal 名", "Only actual entered name is saved")
-        let reloadedMade = try BrowserStore(directory: directory)
-        expect(made.isCurrent(in: reloadedMade.state), "New Profile and Space are durable together")
-        expect(store.activeSpaceID == otherSpace, "New destination preserves active browsing selection")
 
         var retired = store.state
         retired.profileRemovals.append(.init(id: UUID(), profileID: separate.profileID, profileName: "Imported Work"))
-        let separateTarget = BrowserImportProfileTarget(profileID: separate.profileID, spaceID: separate.spaceID)
-        choice.select(.existing(separateTarget))
-        expect(!choice.canSubmit(in: retired), "Profile retirement invalidates an issued choice")
+        expect(!separateTarget.isCurrent(in: retired), "Profile retirement invalidates an issued target")
         expect(!BrowserImportProfileTarget.choices(in: retired, original: target).contains(separateTarget),
-               "Retiring Profiles are not offered")
+               "Retiring Profiles are not targets")
         var reassigned = store.state
         let movedIndex = reassigned.spaces.firstIndex { $0.id == separate.spaceID }!
         reassigned.spaces[movedIndex].profileID = target.profileID
-        expect(!choice.canSubmit(in: reassigned), "Reassigned Space never silently retargets native data")
-        choice.invalidate(); expect(!choice.canSubmit(in: store.state), "Invalidation requires a new explicit destination")
-        do {
-            _ = try store.prepareImportDestination(choice, basedOn: target)
-            preconditionFailure("Missing selection must refuse")
-        } catch { checks += 1 }
+        expect(!separateTarget.isCurrent(in: reassigned), "Reassigned Space never silently retargets native data")
 
         let failureProfile = store.createProfile(name: "Unused failure")
         try store.save()
         let beforeFailure = store.state
         try FileManager.default.moveItem(at: session, to: backup)
         try FileManager.default.createDirectory(at: session, withIntermediateDirectories: false)
-        choice.select(.existing(.init(profileID: failureProfile, spaceID: nil)))
         do {
-            _ = try store.prepareImportDestination(choice, basedOn: target)
+            _ = try store.prepareImportDestination(.init(profileID: failureProfile, spaceID: nil), basedOn: target)
             preconditionFailure("Existing unused destination write refusal must propagate")
         } catch { checks += 1 }
         expect(store.state.spaces == beforeFailure.spaces && store.state.profiles == beforeFailure.profiles,
                "Failed unused-destination save preserves both original collections")
-        choice.select(.new)
         do {
-            _ = try store.prepareImportDestination(choice, basedOn: target)
+            _ = try store.createImportDestination(name: "Personal", basedOn: target)
             preconditionFailure("New destination write refusal must propagate")
         } catch { checks += 1 }
         expect(store.state.spaces == beforeFailure.spaces && store.state.profiles == beforeFailure.profiles,

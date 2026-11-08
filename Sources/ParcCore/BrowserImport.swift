@@ -144,30 +144,3 @@ struct BrowserImportProfileTarget: Equatable {
         return !state.spaces.contains { $0.profileID == profileID }
     }
 }
-
-struct BrowserImportDestinationChoice: Equatable {
-    enum Option: Equatable { case existing(BrowserImportProfileTarget), new }
-    private(set) var option: Option?
-    var newProfileName = ""
-    private(set) var replaceExistingCookies = false
-
-    var profileName: String { newProfileName.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var isNew: Bool { option == .new }
-
-    /// A new Profile takes the imported cookies; an existing one keeps its own.
-    mutating func select(_ option: Option) {
-        self.option = option
-        replaceExistingCookies = option == .new
-    }
-
-    mutating func appeared() { replaceExistingCookies = isNew }
-    mutating func invalidate() { option = nil }
-
-    func canSubmit(in state: BrowserState) -> Bool {
-        switch option {
-        case .existing(let target): return target.isCurrent(in: state)
-        case .new: return !profileName.isEmpty
-        case nil: return false
-        }
-    }
-}

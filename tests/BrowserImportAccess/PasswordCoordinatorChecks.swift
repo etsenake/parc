@@ -24,25 +24,20 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     }
     let wrongSource = make(other)
     expect(!wrongSource.canChoosePasswordDestination, "A display name cannot expose Safari CSV guidance")
-    wrongSource.choosePasswordDestination()
+    wrongSource.startInOriginalDestination(passwordsOnly: true)
     expect(wrongSource.stage == .profiles, "An unrelated source cannot enter this password stage")
     wrongSource.cancel()
     let coordinator = make()
     let before = store.state
-    expect(coordinator.canChoosePasswordDestination && !coordinator.canChooseDestination,
+    expect(coordinator.canChoosePasswordDestination && !coordinator.hasImportableSelection,
            "Explicit exported credentials do not require Safari history/profile access")
-    coordinator.choosePasswordDestination()
-    expect(coordinator.passwordsOnly && coordinator.stage == .destination && !coordinator.canStart,
-           "The file route requires a separate explicit destination")
-    expect(!coordinator.destinationChoice.replaceExistingCookies, "The file route does not replace cookies")
-    guard let target = coordinator.profileTargets.first(where: { $0.profileID == destination.profileID }) else { fatalError("Missing fixture destination") }
-    coordinator.selectDestination(.existing(target))
-    expect(coordinator.canStart, "An original existing destination can admit the file stage")
+    current = false; coordinator.startInOriginalDestination(passwordsOnly: true)
+    expect(coordinator.stage == .profiles && !coordinator.passwordsOnly, "A retired owner cannot enter the file route")
+    current = true; coordinator.startInOriginalDestination(passwordsOnly: true)
+    expect(coordinator.passwordsOnly && coordinator.stage == .safariPasswords && coordinator.canImportPasswordFile,
+           "The file route goes straight to its own real password stage")
     expect(store.state.profiles == before.profiles && store.state.spaces == before.spaces,
-           "Choosing the existing destination writes no Profile or Space")
-    coordinator.start()
-    expect(coordinator.stage == .safariPasswords && coordinator.canImportPasswordFile,
-           "The file route has its own real password stage")
+           "The file route writes no Profile or Space")
     expect(coordinator.passwordDestination?.profileID == destination.profileID,
            "The password stage holds the explicit original destination identity")
     expect(PCNativeBrowserApplication.imports == 0 && PCNativeBrowserApplication.passwordRequests.isEmpty,
@@ -105,7 +100,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     expect(coordinator.stage == .finished, "A late callback cannot reopen the finished stage")
     coordinator.cancel()
 
-    let refused = make(); refused.choosePasswordDestination(); refused.selectDestination(.existing(target)); refused.start()
+    let refused = make(); refused.startInOriginalDestination(passwordsOnly: true)
     PCNativeBrowserApplication.rejectsPasswordImport = true
     refused.importPasswordFile(file)
     expect(!refused.importingPasswords && refused.passwordError != nil && refused.canImportPasswordFile,
@@ -121,7 +116,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     expect(losing.lease.cancelled && refused.stage == .finished && refused.passwordResult == nil,
            "Close cancels the original session and rejects later completion")
 
-    let skipped = make(); skipped.choosePasswordDestination(); skipped.selectDestination(.existing(target)); skipped.start()
+    let skipped = make(); skipped.startInOriginalDestination(passwordsOnly: true)
     skipped.continueAfterPasswords()
     expect(skipped.stage == .finished && PCNativeBrowserApplication.passwordRequests.isEmpty,
            "Skip needs no file access and never invokes native import")
@@ -133,20 +128,21 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     ordinary.select(safari); ordinary.loadProfiles()
     let profile = PCNativeImportProfile("original Safari", [.history], .complete)
     PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-    ordinary.chooseDestination(); ordinary.selectDestination(.existing(target))
-    PCNativeBrowserApplication.acceptsBrowserImport = true; ordinary.start()
+    PCNativeBrowserApplication.acceptsBrowserImport = true; ordinary.continueSourceInline()
     expect(ordinary.stage == .safariPasswords && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.isEmpty
-           && ordinary.passwordDestination?.profileID == target.profileID,
+           && ordinary.passwordDestination?.profileID == destination.profileID,
            "Safari offers its password file at once; its data waits so the file has the Profile to itself")
     let safariFile = URL(fileURLWithPath: "/fixture/Passwords.csv")
     ordinary.importPasswordFile(safariFile)
     let safariPasswords = PCNativeBrowserApplication.passwordRequests.removeFirst()
-    expect(safariPasswords.path == store.independentEngineProfilePath(for: target.profileID) && PCNativeBrowserApplication.browserCompletions.isEmpty,
+    expect(safariPasswords.path == store.independentEngineProfilePath(for: destination.profileID) && PCNativeBrowserApplication.browserCompletions.isEmpty,
            "The password file imports straight away, before Safari's history")
     safariPasswords.complete(.init(outcome: .completed, importedCount: 3))
     ordinary.continueAfterPasswords()
     expect(ordinary.stage == .finished && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
            "Leaving the password step starts Safari's history in the background")
+    expect(PCNativeBrowserApplication.browserRequests.last?.skipExistingCookies == true,
+           "Importing into the opened Profile keeps its existing cookies")
     PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
     expect(!ordinary.hasBackgroundWork && PCNativeBrowserApplication.passwordRequests.isEmpty,
            "History finishing ends the background import")
@@ -155,7 +151,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     closing.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
     closing.select(safari); closing.loadProfiles()
     PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-    closing.chooseDestination(); closing.selectDestination(.existing(target)); closing.start()
+    closing.continueSourceInline()
     closing.importPasswordFile(safariFile)
     let midFile = PCNativeBrowserApplication.passwordRequests.removeFirst()
     closing.detach(onAdBlockers: nil)
@@ -190,12 +186,7 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
         else { coordinator.select(safari); coordinator.loadProfiles() }
         let profile = PCNativeImportProfile("Safari setup", [.history, .bookmarks], .complete)
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-        if onboarding { coordinator.continueSourceInline() }
-        else {
-            coordinator.chooseDestination()
-            coordinator.selectDestination(.existing(.init(profileID: destination.profileID, spaceID: destination.spaceID)))
-            coordinator.start()
-        }
+        coordinator.continueSourceInline()
         expect(coordinator.stage == .importing, "Selection admits the original source through the real coordinator")
         return coordinator
     }

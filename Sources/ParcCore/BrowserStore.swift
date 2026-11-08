@@ -5486,29 +5486,17 @@ final class BrowserStore: ObservableObject {
     /// standard Profile maps to `standardProfileID`; a custom one to an unused
     /// live Profile with its name, else a new one. Each Profile in `profiles`
     /// gets a destination Space for its native data import. The active Space
-    /// does not change. A destination choice takes the `primary` Profile, as it
-    /// takes any browser's default profile; a new Profile is created in the
-    /// same write. The others map as above.
+    /// does not change. The `primary` Profile goes into `target`, as any
+    /// browser's default profile does. The others map as above.
     func importArcSidebar(_ arc: ArcSidebarImport, profiles: [(key: ArcSidebarImport.ProfileKey, name: String)],
                           standardProfileID: UUID, primary: ArcSidebarImport.ProfileKey? = nil,
-                          into choice: BrowserImportDestinationChoice? = nil) throws
+                          into target: UUID? = nil) throws
         -> [ArcSidebarImport.ProfileKey: BrowserImportDestination] {
         guard !isEphemeral else { throw CocoaError(.userCancelled) }
-        var base = state, target: UUID?
-        if let choice {
-            guard choice.canSubmit(in: state) else { throw CocoaError(.userCancelled) }
-            switch choice.option {
-            case .existing(let destination): target = destination.profileID
-            case .new:
-                let profile = BrowserProfile(id: UUID(), name: choice.profileName, autoArchiveHours: state.autoArchiveDefaultHours)
-                base.profiles.append(profile); target = profile.id
-            case nil: throw CocoaError(.userCancelled)
-            }
-        }
         let previous = state
         var chosen: (key: ArcSidebarImport.ProfileKey, profileID: UUID)?
         if let primary, let target { chosen = (primary, target) }
-        let result = try arc.inserting(into: base, profiles: profiles, standardProfileID: standardProfileID,
+        let result = try arc.inserting(into: state, profiles: profiles, standardProfileID: standardProfileID,
                                        target: chosen, at: clock())
         state = result.state
         do { try save() } catch { state = previous; throw error }
@@ -5536,34 +5524,28 @@ final class BrowserStore: ObservableObject {
         return BrowserImportDestination(spaceID: space.id, profileID: profile.id)
     }
 
-    /// Resolve only the chosen original Profile. An unused existing Profile
-    /// gets a sidebar Space without replacing its native context or identity.
-    func prepareImportDestination(_ choice: BrowserImportDestinationChoice,
+    /// Resolve an existing Profile target. An unused existing Profile gets a
+    /// sidebar Space without replacing its native context or identity.
+    func prepareImportDestination(_ target: BrowserImportProfileTarget,
                                   basedOn original: BrowserImportDestination) throws -> BrowserImportDestination {
-        guard !isEphemeral, original.isCurrent(in: state), choice.canSubmit(in: state) else {
+        guard !isEphemeral, original.isCurrent(in: state), target.isCurrent(in: state) else {
             throw CocoaError(.userCancelled)
         }
-        switch choice.option {
-        case .new:
-            return try createImportDestination(name: choice.profileName, basedOn: original)
-        case .existing(let target):
-            if let spaceID = target.spaceID {
-                return BrowserImportDestination(spaceID: spaceID, profileID: target.profileID)
-            }
-            guard let profile = state.profiles.first(where: { $0.id == target.profileID }),
-                  var space = state.spaces.first(where: { $0.id == original.spaceID }) else {
-                throw CocoaError(.userCancelled)
-            }
-            let previous = state
-            space.theme = savedTheme(of: space)
-            space.id = UUID(); space.name = profile.name; space.title = profile.name; space.symbol = "circle.fill"
-            space.profileID = profile.id
-            state.spaces.append(space)
-            do { try save() } catch { state = previous; throw error }
-            changed()
-            return BrowserImportDestination(spaceID: space.id, profileID: profile.id)
-        case nil: throw CocoaError(.userCancelled)
+        if let spaceID = target.spaceID {
+            return BrowserImportDestination(spaceID: spaceID, profileID: target.profileID)
         }
+        guard let profile = state.profiles.first(where: { $0.id == target.profileID }),
+              var space = state.spaces.first(where: { $0.id == original.spaceID }) else {
+            throw CocoaError(.userCancelled)
+        }
+        let previous = state
+        space.theme = savedTheme(of: space)
+        space.id = UUID(); space.name = profile.name; space.title = profile.name; space.symbol = "circle.fill"
+        space.profileID = profile.id
+        state.spaces.append(space)
+        do { try save() } catch { state = previous; throw error }
+        changed()
+        return BrowserImportDestination(spaceID: space.id, profileID: profile.id)
     }
 
     func importBookmarks(_ items: [(title: String, url: String)]) {

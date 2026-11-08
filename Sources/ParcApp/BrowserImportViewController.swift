@@ -336,7 +336,6 @@ final class BrowserImportViewController: NSViewController {
                     sourceName: name)
             }
         case .profiles: break
-        case .destination: break
         case .importing:
             next.isEnabled = false
         case .passwordChoice:
@@ -612,8 +611,6 @@ final class BrowserImportViewController: NSViewController {
         case .sources:
             if embedded && skipSelected { requestClose() }
         case .profiles: coordinator.continueSourceInline()
-        case .destination:
-            coordinator.start()
         case .bookmarks: coordinator.commitBookmarks()
         case .finished: requestClose()
         case .safariAccess:

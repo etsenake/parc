@@ -44,7 +44,6 @@ import AppKit
         selected.complete(restricted)
         expect(coordinator.stage == .safariAccess, "Restricted Safari appears before any destination selection")
         expect(!coordinator.safariAccessReady && !coordinator.beginSafariRestart(), "Unreadable history cannot enable Restart")
-        expect(coordinator.destinationChoice.option == nil, "Access guidance never picks a destination")
         coordinator.refreshSafariAccess(); coordinator.refreshSafariAccess()
         expect(PCNativeBrowserApplication.profiles.count == 1, "Repeated polling has only one outstanding discovery")
         let first = PCNativeBrowserApplication.profiles.removeFirst()
@@ -76,9 +75,8 @@ import AppKit
         continuation.complete(restricted)
         expect(coordinator.stage == .profiles && coordinator.selectedProfiles == [partial.identifier], "Continue keeps only the actual currently readable source profile")
         expect(coordinator.safariAccessError == nil && !coordinator.restarting, "Explicit Continue clears prior restart failure")
-        coordinator.chooseDestination()
-        expect(coordinator.stage == .destination && !coordinator.canStart, "Destination remains a separate explicit choice")
-        expect(PCNativeBrowserApplication.imports == 0, "No access, resume or destination-entry action imports any data")
+        expect(coordinator.stage == .profiles && coordinator.canContinueSourceInline, "Continue returns to the profile choice; only Next imports")
+        expect(PCNativeBrowserApplication.imports == 0, "No access or resume action imports any data")
         expect(store.state.profiles == original.profiles && store.state.spaces == original.spaces && store.state.tabs == original.tabs,
                "Guidance and restart preparation never write Profiles, Spaces or tabs")
 
@@ -149,7 +147,7 @@ import AppKit
         noAccess.continueSafariWithoutRestarting()
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [], access: .restricted,
             error: NSError(domain: "fixture", code: 2)))
-        expect(noAccess.stage == .profiles && !noAccess.canChooseDestination && noAccess.error != nil,
+        expect(noAccess.stage == .profiles && !noAccess.canContinueSourceInline && noAccess.error != nil,
                "Continue with no readable data exposes the actual failure without an import or fabricated profile")
         noAccess.cancel()
         expect(PCNativeBrowserApplication.imports == 0, "All checks stayed outside native import execution")
@@ -528,40 +526,28 @@ import AppKit
             PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [standard, side, empty], access: .complete))
             return (store, destination, coordinator)
         }
-        ///
-        func choose(_ coordinator: BrowserImportCoordinator, profileID: UUID?, newName: String? = nil) {
-            coordinator.chooseDestination()
-            if let newName {
-                coordinator.selectDestination(.new); coordinator.setNewProfileName(newName)
-            } else if let target = coordinator.profileTargets.first(where: { $0.profileID == profileID }) {
-                coordinator.selectDestination(.existing(target))
-            }
-            coordinator.start()
-        }
         PCNativeBrowserApplication.acceptsBrowserImport = true
         PCNativeBrowserApplication.browserCompletions = []
 
-        let (stopped, stoppedDestination, stopping) = try begin("ArcStopped", sidebar: sidebar)
+        let (stopped, _, stopping) = try begin("ArcStopped", sidebar: sidebar)
         expect(stopping.selectedProfiles == [standard.identifier, side.identifier], "Every readable Arc profile starts ticked, as Chrome's do")
         stopping.selectProfile(side.identifier)
         expect(stopping.selectedProfiles == [standard.identifier], "A profile unticks on its own")
         stopping.selectProfile(side.identifier); stopping.selectProfile(empty.identifier)
         expect(stopping.selectedProfiles == [standard.identifier, side.identifier], "An unreadable profile cannot be chosen")
         let spaces = stopped.state.spaces, requests = PCNativeBrowserApplication.browserRequests.count
-        stopping.chooseDestination()
-        expect(stopping.stage == .destination, "Parc goes through the same destination step as Chrome")
-        choose(stopping, profileID: stoppedDestination.profileID)
-        expect(stopping.stage == .importing, "Import starts from the destination step")
+        stopping.continueSourceInline()
+        expect(stopping.stage == .importing, "Next starts Arc's import straight from the profile choice, as Chrome's does")
         stopping.stopImport()
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         expect(stopping.stage == .finished && stopped.state.spaces == spaces, "Stop while Arc's sidebar is read adds nothing")
         expect(PCNativeBrowserApplication.browserRequests.count == requests, "A stopped Arc import starts no native import")
 
         let (store, destination, coordinator) = try begin("ArcImport", sidebar: sidebar)
-        choose(coordinator, profileID: destination.profileID)
+        coordinator.continueSourceInline()
         wait { PCNativeBrowserApplication.browserRequests.count > requests }
         let work = store.state.spaces.first { $0.title == "Work" }
-        expect(work?.profileID == destination.profileID, "The default Arc profile's Spaces join the chosen Profile")
+        expect(work?.profileID == destination.profileID, "The default Arc profile's Spaces join the opened Profile")
         expect(store.state.tabs.contains { $0.spaceID == work?.id && $0.kind == .pinned }, "Arc's pinned tabs come with their Space")
         expect(store.state.tabs.contains { $0.kind == .today && $0.savedURL == "https://example.test/today" }, "Arc's Today tabs come over")
         guard let sideProfile = store.state.profiles.first(where: { $0.name == "Side" }) else {
@@ -572,7 +558,7 @@ import AppKit
                == AutoArchiveInterval.twelveHours.rawValue, "Arc's archive age reaches only the Profile it was set for")
         expect(PCNativeBrowserApplication.browserRequests[requests].profile === standard
                && PCNativeBrowserApplication.browserRequests[requests].path == store.independentEngineProfilePath(for: destination.profileID),
-               "The default profile's browser data imports into the chosen Profile")
+               "The default profile's browser data imports into the opened Profile")
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed,
             bookmarks: [PCNativeImportedBookmark("arc bookmark", title: "Docs", url: URL(string: "https://example.test/docs"))],
             warnings: ["fixture warning"], error: nil))
@@ -585,38 +571,35 @@ import AppKit
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         expect(coordinator.stage == .bookmarks && coordinator.bookmarkPages.first?.destination == destination,
-               "Arc's data lands in the chosen Space, as Chrome's does")
+               "Arc's data lands in the opened Space, as Chrome's does")
         expect(coordinator.warnings == ["fixture warning"],
                "The import reports only the native importer's own warnings, as Chrome's does")
         coordinator.cancel()
 
-        let (newStore, _, newImport) = try begin("ArcNewProfile", sidebar: sidebar)
-        let newStart = PCNativeBrowserApplication.browserRequests.count
-        newImport.selectProfile(side.identifier)
-        choose(newImport, profileID: nil, newName: "From Arc")
-        wait { PCNativeBrowserApplication.browserRequests.count > newStart }
-        guard let created = newStore.state.profiles.first(where: { $0.name == "From Parc" }) else {
-            preconditionFailure("A new destination Profile is created")
-        }
-        expect(newStore.state.spaces.contains { $0.title == "Work" && $0.profileID == created.id }
-               && !newStore.state.spaces.contains { $0.profileID == created.id && $0.title == "From Parc" }
-               && !newStore.state.profiles.contains { $0.name == "Side" },
-               "A new Profile takes the Arc profile's Spaces without an extra empty Space; an unticked profile stays behind")
-        expect(PCNativeBrowserApplication.browserRequests[newStart].path == newStore.independentEngineProfilePath(for: created.id),
-               "The browser data imports into the new Profile")
+        let (onlyStore, onlyDestination, onlyImport) = try begin("ArcOnlyDefault", sidebar: sidebar)
+        let onlyStart = PCNativeBrowserApplication.browserRequests.count
+        let onlyProfiles = onlyStore.state.profiles.count
+        onlyImport.selectProfile(side.identifier)
+        onlyImport.continueSourceInline()
+        wait { PCNativeBrowserApplication.browserRequests.count > onlyStart }
+        expect(onlyStore.state.spaces.contains { $0.title == "Work" && $0.profileID == onlyDestination.profileID }
+               && onlyStore.state.profiles.count == onlyProfiles && !onlyStore.state.profiles.contains { $0.name == "Side" },
+               "The default profile's Spaces join the opened Profile; an unticked profile stays behind and no Profile is created")
+        expect(PCNativeBrowserApplication.browserRequests[onlyStart].path == onlyStore.independentEngineProfilePath(for: onlyDestination.profileID),
+               "The browser data imports into the opened Profile")
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
-        expect(newImport.stage == .finished && newImport.warnings.isEmpty, "A clean Arc import has nothing to report")
-        newImport.cancel()
+        expect(onlyImport.stage == .finished && onlyImport.warnings.isEmpty, "A clean Arc import has nothing to report")
+        onlyImport.cancel()
 
         let missing = directory.appendingPathComponent("NoArc/StorableSidebar.json")
         let (fallback, fallbackDestination, unreadable) = try begin("ArcUnreadable", sidebar: missing)
         let before = PCNativeBrowserApplication.browserRequests.count
-        choose(unreadable, profileID: fallbackDestination.profileID)
+        unreadable.continueSourceInline()
         wait { PCNativeBrowserApplication.browserRequests.count > before }
         expect(unreadable.warnings.isEmpty, "An unreadable sidebar is not reported; the browser data imports as Chrome's does")
         expect(PCNativeBrowserApplication.browserRequests[before].path == fallback.independentEngineProfilePath(for: fallbackDestination.profileID),
-               "Without the sidebar, the default profile's data still imports into the chosen Profile")
+               "Without the sidebar, the default profile's data still imports into the opened Profile")
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         let fallbackSide = fallback.state.profiles.first { $0.name == "Side" }
         expect(fallbackSide != nil && PCNativeBrowserApplication.browserRequests.last?.path == fallback.independentEngineProfilePath(for: fallbackSide!.id),
