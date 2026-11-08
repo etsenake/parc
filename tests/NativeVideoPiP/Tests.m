@@ -40,6 +40,9 @@ static BOOL Near(NSRect a, NSRect b) {
          fabs(NSWidth(a) - NSWidth(b)) < 0.01 &&
          fabs(NSHeight(a) - NSHeight(b)) < 0.01;
 }
+static BOOL Aspect(NSRect rect, CGFloat aspect) {
+  return fabs(NSWidth(rect) / NSHeight(rect) - aspect) / aspect < 0.01;
+}
 static void PlaceUnderCursor(NSPanel* panel) {
   NSPoint mouse = [NSEvent mouseLocation];
   NSRect frame = panel.frame;
@@ -265,7 +268,82 @@ int main(void) {
         }];
     [reentrant showInactive];
     EXPECT(reentrant == nil);
-    printf("NativeVideoPiP: %d assertions passed in 3 groups\n", count);
+    // The window follows every natural size, and the video keeps its own
+    // aspect inside whatever window it is in, letterboxed or pillarboxed.
+    __block int resized = 0;
+    NSView* fitted = [NSView new];
+    PCVideoPiPPresenter* fitting =
+        [[PCVideoPiPPresenter alloc] initWithVideoView:fitted
+                                           sourceFrame:NSZeroRect
+                                                action:^(PCVideoPiPAction a,
+                                                         double v) {
+                                                }
+                                               changed:^{
+                                                 ++resized;
+                                               }];
+    NSPanel* fitPanel = fitting.panel;
+    [fitting setNaturalSize:NSMakeSize(1920, 1080)];
+    EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
+    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    const NSRect corner = fitPanel.frame;
+    // A 2.39:1 film after a 16:9 intro: same width, same bottom-right corner.
+    [fitting setNaturalSize:NSMakeSize(1920, 804)];
+    EXPECT(Aspect(fitPanel.frame, 1920.0 / 804.0));
+    EXPECT(NSWidth(fitPanel.frame) == NSWidth(corner));
+    EXPECT(fabs(NSMaxX(fitPanel.frame) - NSMaxX(corner)) < 1);
+    EXPECT(fabs(NSMinY(fitPanel.frame) - NSMinY(corner)) < 1);
+    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    [fitting setNaturalSize:NSMakeSize(1440, 1080)];
+    EXPECT(Aspect(fitPanel.frame, 4.0 / 3.0));
+    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    // A window of another shape letterboxes or pillarboxes the video.
+    [fitPanel setContentSize:NSMakeSize(640, 360)];
+    EXPECT(Near(fitted.frame, NSMakeRect(80, 0, 480, 360)));
+    EXPECT(fitted.layer.cornerRadius == 0);
+    [fitting setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+    NSView* fitCaptions = nil;
+    for (NSView* child in fitPanel.contentView.subviews) {
+      if ([NSStringFromClass(child.class) isEqual:@"PCVideoPiPCaptions"]) {
+        fitCaptions = child;
+      }
+    }
+    EXPECT(Near(fitCaptions.frame, NSMakeRect(128, 36, 384, 36)));
+    [fitting setCaptions:nil bounds:NSZeroRect];
+    // A reused window (the next session) takes the next video's aspect.
+    [fitting hide];
+    [fitPanel setContentSize:NSMakeSize(640, 360)];
+    resized = 0;
+    [fitting setNaturalSize:NSMakeSize(1920, 800)];
+    [fitting showInactive];
+    EXPECT(Aspect(fitPanel.frame, 2.4));
+    EXPECT(NSWidth(fitPanel.frame) == 640);
+    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    EXPECT(resized > 0);
+    EXPECT(fitted.layer.cornerRadius == 16);
+    // Under a point of difference fills the window, with no hairline.
+    [fitPanel setContentSize:NSMakeSize(640, 266.4)];
+    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    // Invalid natural sizes are ignored.
+    [fitting setNaturalSize:NSMakeSize(0, 0)];
+    [fitting setNaturalSize:NSMakeSize(NAN, 1)];
+    EXPECT(Aspect(fitted.frame, 2.4));
+    [fitting invalidate];
+    // A refit whose resize releases the owner leaves nothing touched after.
+    __block PCVideoPiPPresenter* releasing;
+    releasing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+        sourceFrame:NSZeroRect
+        action:^(PCVideoPiPAction action, double value) {
+        }
+        changed:^{
+          if (releasing.panel.frame.size.width / releasing.panel.frame.size.height > 2) {
+            [releasing invalidate];
+            releasing = nil;
+          }
+        }];
+    [releasing setNaturalSize:NSMakeSize(1920, 1080)];
+    [releasing setNaturalSize:NSMakeSize(1920, 804)];
+    EXPECT(releasing == nil);
+    printf("NativeVideoPiP: %d assertions passed in 4 groups\n", count);
   }
   return 0;
 }

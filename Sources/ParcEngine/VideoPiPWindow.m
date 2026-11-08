@@ -31,32 +31,87 @@ static const CGFloat kPCVideoPiPChromeButton = 28;
 static const CGFloat kPCVideoPiPPlayButton = 56;
 static const NSTimeInterval kPCVideoPiPProgressInterval = 1.0 / 30.0;
 
-static NSRect PCVideoPiPFrameForNaturalSize(NSSize natural) {
-  NSScreen* screen = NSScreen.mainScreen ?: NSScreen.screens.firstObject;
-  NSRect work = screen ? screen.visibleFrame : NSMakeRect(0, 0, 1280, 800);
-  CGFloat width = kPCVideoPiPNormalWidth;
-  CGFloat height = width * 9.0 / 16.0;
-  if (natural.width > 0 && natural.height > 0 && isfinite(natural.width) &&
-      isfinite(natural.height)) {
-    const CGFloat aspect = natural.width / natural.height;
-    height = width / aspect;
-    if (height < kPCVideoPiPMinHeight) {
-      height = kPCVideoPiPMinHeight;
-      width = height * aspect;
-    }
-    if (width < kPCVideoPiPMinWidth) {
-      width = kPCVideoPiPMinWidth;
-      height = width / aspect;
-    }
-  } else {
-    width = fmax(width, kPCVideoPiPMinWidth);
-    height = fmax(height, kPCVideoPiPMinHeight);
+static BOOL PCVideoPiPValidSize(NSSize size) {
+  return size.width > 0 && size.height > 0 && isfinite(size.width) &&
+         isfinite(size.height);
+}
+
+static NSRect PCVideoPiPWorkArea(NSScreen* screen) {
+  screen = screen ?: NSScreen.mainScreen ?: NSScreen.screens.firstObject;
+  return screen ? screen.visibleFrame : NSMakeRect(0, 0, 1280, 800);
+}
+
+static NSSize PCVideoPiPSizeForAspect(CGFloat width, CGFloat aspect,
+                                      NSRect work) {
+  CGFloat height = width / aspect;
+  if (height < kPCVideoPiPMinHeight) {
+    height = kPCVideoPiPMinHeight;
+    width = height * aspect;
   }
-  const CGFloat unused_w = fmax(0, work.size.width - width);
-  const CGFloat unused_h = fmax(0, work.size.height - height);
+  if (width < kPCVideoPiPMinWidth) {
+    width = kPCVideoPiPMinWidth;
+    height = width / aspect;
+  }
+  if (height > NSHeight(work)) {
+    height = NSHeight(work);
+    width = height * aspect;
+  }
+  if (width > NSWidth(work)) {
+    width = NSWidth(work);
+    height = width / aspect;
+  }
+  return NSMakeSize(round(width), round(height));
+}
+
+static NSRect PCVideoPiPFrameForNaturalSize(NSSize natural) {
+  const NSRect work = PCVideoPiPWorkArea(nil);
+  const NSSize size =
+      PCVideoPiPValidSize(natural)
+          ? PCVideoPiPSizeForAspect(kPCVideoPiPNormalWidth,
+                                    natural.width / natural.height, work)
+          : NSMakeSize(kPCVideoPiPNormalWidth, kPCVideoPiPNormalWidth * 9 / 16);
+  const CGFloat unused_w = fmax(0, work.size.width - size.width);
+  const CGFloat unused_h = fmax(0, work.size.height - size.height);
   const CGFloat buffer = (unused_w + unused_h) / 2.0 * 0.02;
-  return NSMakeRect(NSMaxX(work) - width - buffer, NSMinY(work) + buffer, width,
-                    height);
+  return NSMakeRect(NSMaxX(work) - size.width - buffer, NSMinY(work) + buffer,
+                    size.width, size.height);
+}
+
+// A later natural size keeps the width and pins the corner nearest the
+// screen's, as Chromium's VideoOverlayWindowViews::
+// CalculateAndUpdateWindowBounds does by window quadrant.
+static NSRect PCVideoPiPFrameRefitted(NSRect frame, NSSize natural,
+                                      NSRect work) {
+  const NSSize size = PCVideoPiPSizeForAspect(
+      NSWidth(frame), natural.width / natural.height, work);
+  CGFloat x = NSMidX(frame) >= NSMidX(work) ? NSMaxX(frame) - size.width
+                                            : NSMinX(frame);
+  CGFloat y = NSMidY(frame) >= NSMidY(work) ? NSMaxY(frame) - size.height
+                                            : NSMinY(frame);
+  x = fmin(fmax(x, NSMinX(work)), NSMaxX(work) - size.width);
+  y = fmin(fmax(y, NSMinY(work)), NSMaxY(work) - size.height);
+  return NSMakeRect(x, y, size.width, size.height);
+}
+
+// The video surface stretches to fill its view, so the view keeps the
+// video's aspect inside the window, filling it when they differ by under a
+// point (Chromium's UpdateLayerBoundsWithLetterboxing).
+static NSRect PCVideoPiPVideoRect(NSRect bounds, NSSize natural) {
+  if (!PCVideoPiPValidSize(natural) || NSIsEmptyRect(bounds)) {
+    return bounds;
+  }
+  const CGFloat aspect = natural.width / natural.height;
+  CGFloat width = NSWidth(bounds);
+  CGFloat height = NSHeight(bounds);
+  if (width / height > aspect) {
+    width = height * aspect;
+  } else {
+    height = width / aspect;
+  }
+  width = NSWidth(bounds) - width < 1 ? NSWidth(bounds) : round(width);
+  height = NSHeight(bounds) - height < 1 ? NSHeight(bounds) : round(height);
+  return NSMakeRect(round(NSMidX(bounds) - width / 2),
+                    round(NSMidY(bounds) - height / 2), width, height);
 }
 
 static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
@@ -245,7 +300,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   id _localMonitor;
   id _globalMonitor;
   BOOL _invalidated;
-  BOOL _sized;
+  NSSize _naturalSize;
   BOOL _hovering;
   BOOL _controlsEnabled;
   BOOL _playing;
@@ -328,7 +383,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _videoView.layer.cornerRadius = kPCVideoPiPCornerRadius;
   _videoView.layer.cornerCurve = kCACornerCurveContinuous;
   _videoView.layer.masksToBounds = YES;
-  _videoView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [content addSubview:_videoView];
 
   _captions = [[PCVideoPiPCaptions alloc] initWithFrame:NSZeroRect];
@@ -467,6 +521,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 
   __weak PCVideoPiPPresenter* weakSelf = self;
   content.changed = ^{
+    [weakSelf layoutVideo];
     [weakSelf notifyChanged];
   };
   content.hoverChanged = ^(BOOL hovering) {
@@ -680,16 +735,42 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [_videoView removeFromSuperview];
 }
 - (void)setNaturalSize:(NSSize)size {
-  if (_invalidated || size.width <= 0 || size.height <= 0 ||
-      !isfinite(size.width) || !isfinite(size.height)) {
+  if (_invalidated || !PCVideoPiPValidSize(size) ||
+      NSEqualSizes(size, _naturalSize)) {
     return;
   }
+  const BOOL first = !PCVideoPiPValidSize(_naturalSize);
+  _naturalSize = size;
   _panel.contentAspectRatio = size;
-  if (!_sized) {
-    _sized = YES;
-    NSRect frame = PCVideoPiPFrameForNaturalSize(size);
-    [_panel setFrame:frame display:YES];
+  // Every change refits the window, as Chromium's UpdateNaturalSize does: a
+  // reused window or a new rendition can bring another aspect.
+  const NSRect frame =
+      first ? PCVideoPiPFrameForNaturalSize(size)
+            : PCVideoPiPFrameRefitted(_panel.frame, size,
+                                      PCVideoPiPWorkArea(_panel.screen));
+  // A resize lays out and notifies; observers can then release the owner.
+  __attribute__((objc_precise_lifetime)) PCVideoPiPPresenter* keep = self;
+  NSPanel* panel = _panel;
+  if (!NSEqualRects(frame, panel.frame)) {
+    [panel setFrame:frame display:YES];
   }
+  if (!keep->_invalidated && [keep layoutVideo]) {
+    [keep layoutCaptions];
+    [keep notifyChanged];
+  }
+}
+- (BOOL)layoutVideo {
+  const NSRect frame =
+      PCVideoPiPVideoRect(_panel.contentView.bounds, _naturalSize);
+  if (NSEqualRects(frame, _videoView.frame)) {
+    return NO;
+  }
+  _videoView.frame = frame;
+  // Rounded only where its corners are the window's; bars keep it square.
+  _videoView.layer.cornerRadius =
+      NSEqualRects(frame, _panel.contentView.bounds) ? kPCVideoPiPCornerRadius
+                                                     : 0;
+  return YES;
 }
 - (void)setAction:(PCVideoPiPAction)action visible:(BOOL)visible {
   NSButton* button = _buttons[@(action)];
@@ -760,12 +841,14 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (_captions.hidden) {
     return;
   }
-  // Bounds come from the page with the origin at the top left.
+  // Bounds come from the page relative to the video, origin at the top left.
   const NSRect content = _panel.contentView.bounds;
-  NSRect frame = NSMakeRect(NSWidth(content) * NSMinX(_captionBounds),
-                            NSHeight(content) * (1 - NSMaxY(_captionBounds)),
-                            NSWidth(content) * NSWidth(_captionBounds),
-                            NSHeight(content) * NSHeight(_captionBounds));
+  const NSRect video = _videoView.frame;
+  NSRect frame = NSMakeRect(
+      NSMinX(video) + NSWidth(video) * NSMinX(_captionBounds),
+      NSMinY(video) + NSHeight(video) * (1 - NSMaxY(_captionBounds)),
+      NSWidth(video) * NSWidth(_captionBounds),
+      NSHeight(video) * NSHeight(_captionBounds));
   // A shown scrubber would cover bottom cues; they rise above it meanwhile.
   if (!_position.hiddenOrHasHiddenAncestor) {
     [_chrome layoutSubtreeIfNeeded];
