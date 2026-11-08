@@ -70,6 +70,9 @@ constexpr double kStallArmSeconds = 0.25;
 constexpr double kAudioHandOffLeadSeconds = 0.25;
 // SetPlaybackRateAt: how far past its start a held clock may join the line.
 constexpr double kLateAnchorSeconds = 0.02;
+// Video presentation times kept for the upcoming lower bound (EnqueueVideo);
+// WebKit's TrackBuffer looks as far.
+constexpr size_t kUpcomingWindow = 16;
 
 class ScopedFormat {
  public:
@@ -527,6 +530,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     video_due_ = {};
     StopRequest(StreamType::kVideo);
     [video_renderer_ flush];
+    video_upcoming_.clear();
     [outgoing_video_renderer_ flush];
     RemoveSizeObservers();
     // A size not shown yet waits for the new track's first sample.
@@ -640,6 +644,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       host_ = [PCFairPlayVideoHost layer];
     }
     layer_ = [AVSampleBufferDisplayLayer layer];
+    video_upcoming_.clear();
     // What CARendererLayerTree::FillProtectedLayer gives a display layer it
     // places itself; it places the host instead. cc lays the video out at its
     // display aspect ratio, protected video is never captured, and the flip is
@@ -964,7 +969,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         if (entry.end <= now) {
           SetDoNotDisplay(entry.buffer);
         }
-        [video_renderer_ enqueueSampleBuffer:entry.buffer];
+        EnqueueVideo(entry.buffer);
         RequestVideoFrameAvailability(entry.buffer);
         ++status_.redelivered;
         ++video_replayed_;
@@ -1146,6 +1151,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       }
     }
     [CATransaction commit];
+    video_upcoming_.clear();
   }
 
   bool IsReadyForMoreData(StreamId stream) {
@@ -1439,6 +1445,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       [RendererFor(stream) flush];
       *StreamFor(stream) = Stream();
     }
+    video_upcoming_.clear();
     // Outgoing renderers play nothing more; a layer's picture stays until
     // its replacement has a frame at the new time.
     [outgoing_video_renderer_ flush];
@@ -2624,9 +2631,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         ++status_.protected_enqueued;
       }
     }
-    [RendererFor(stream) enqueueSampleBuffer:held.buffer];
     if (stream == StreamType::kVideo) {
+      EnqueueVideo(held.buffer);
       RequestVideoFrameAvailability(held.buffer);
+    } else {
+      [RendererFor(stream) enqueueSampleBuffer:held.buffer];
     }
     // A sample given again is counted, and its video due, from the first time.
     if (held.redelivered) {
@@ -2784,6 +2793,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     StopRequest(StreamType::kVideo);
     video_.armed = false;
     [video_renderer_ flush];
+    video_upcoming_.clear();
     ResetVideoFrameAvailability();
     ++status_.video_decoder_resets;
     const double now = GetMediaTime().InSeconds();
@@ -2804,7 +2814,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                                kCMSampleAttachmentKey_DoNotDisplay, kCFBooleanTrue);
         }
       }
-      [video_renderer_ enqueueSampleBuffer:entry.buffer];
+      EnqueueVideo(entry.buffer);
       RequestVideoFrameAvailability(entry.buffer);
       ++status_.redelivered;
     }
@@ -2917,6 +2927,37 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (attachments && CFArrayGetCount(attachments)) {
       CFDictionarySetValue((CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0),
                            kCMSampleAttachmentKey_DoNotDisplay, kCFBooleanTrue);
+    }
+  }
+
+  // As WebKit's SourceBufferPrivateAVFObjC::setMinimumUpcomingPresentationTime:
+  // without a lower bound on upcoming presentation times, AVFoundation holds
+  // and then skips pictures of reordered (B-frame) video. WebKit looks ahead;
+  // samples arrive here one at a time, so the bound is the (depth + 1)-th
+  // latest time enqueued, no later frame preceding more than the reorder depth
+  // of them, plus one for a depth still growing in the first group of
+  // pictures. Streams that never reorder get none. A flush resets it.
+  void EnqueueVideo(CMSampleBufferRef buffer) {
+    [video_renderer_ enqueueSampleBuffer:buffer];
+    const CMTime pts = CMSampleBufferGetPresentationTimeStamp(buffer);
+    size_t later = 0;
+    for (const CMTime& earlier : video_upcoming_) {
+      later += CMTimeCompare(earlier, pts) > 0;
+    }
+    video_reorder_depth_ = std::max(video_reorder_depth_, later);
+    video_upcoming_.push_back(pts);
+    if (video_upcoming_.size() > kUpcomingWindow) {
+      video_upcoming_.pop_front();
+    }
+    const size_t rank = video_reorder_depth_ + 1;
+    if (!video_reorder_depth_ || video_upcoming_.size() <= rank) {
+      return;
+    }
+    std::vector<CMTime> latest(video_upcoming_.begin(), video_upcoming_.end());
+    std::nth_element(latest.begin(), latest.begin() + rank, latest.end(),
+                     [](const CMTime& a, const CMTime& b) { return CMTimeCompare(a, b) > 0; });
+    if (@available(macOS 14.4, *)) {
+      [layer_.sampleBufferRenderer expectMinimumUpcomingSampleBufferPresentationTime:latest[rank]];
     }
   }
 
@@ -3435,6 +3476,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // each; re-deliveries aren't counted again) that the clock hasn't reached,
   // earliest first; Flush drops them.
   std::priority_queue<double, std::vector<double>, std::greater<double>> video_due_;
+  // Presentation times of the latest video samples since the renderer was
+  // last flushed, in decode order, and the most of them any one preceded in
+  // presentation order (EnqueueVideo).
+  std::deque<CMTime> video_upcoming_;
+  size_t video_reorder_depth_ = 0;
   uint64_t video_frames_passed_ = 0;
 };
 

@@ -5433,6 +5433,61 @@ std::vector<Step> QualitySwitchScenario() {
   return steps;
 }
 
+// Long protected playback with B-frames (P then three B-frames, as Netflix
+// encodes), audio, quality switches 720p -> 288p -> 720p, a pause and a
+// stretch at 1.25x: AVFoundation must show every picture. Without the
+// upcoming presentation time bound (FairPlayRenderer's EnqueueVideo) it skips
+// about two a second while the audio plays on. Appends and evictions never
+// reach the renderer (Chromium's SourceBuffer keeps the samples), so the
+// renderer sees them only as this stream of samples.
+std::vector<Step> SmoothPlaybackScenario() {
+  World* w = g_world;
+  std::vector<Step> steps;
+  steps.push_back(Section("smooth playback: B-frames, quality switches, pause, 1.25x (Chromium inputs, protected)"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("smooth", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host, false, true);
+    SegmentList video;
+    std::vector<const ft::TrackInfo*> tracks;
+    for (size_t i = 0; i < 7; ++i) {
+      const Media& rendition = i == 1 || i == 2 ? w->video_288 : w->video;
+      video.push_back(&rendition.segments[i]);
+      tracks.push_back(&rendition.info);
+    }
+    w->player->renderer().Flush([=] {
+      w->player->SetFeedsWithTracks(video, tracks, Segments(w->audio, 0, 7), {}, true);
+      auto go = Once(10, "smooth: HAVE_ENOUGH", [=](bool) {
+        w->player->renderer().SetPlaybackRate(1);
+        done();
+      });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  for (auto [seconds, rate, label] : {std::tuple{14.0, 1.0, "smooth: 14 s across both switches"},
+                                      std::tuple{1.0, 0.0, "smooth: paused"}, std::tuple{8.0, 1.25, "smooth: 1.25x"},
+                                      std::tuple{10.0, 1.0, "smooth: back at 1x"}}) {
+    steps.push_back([=](Done done) {
+      w->player->renderer().SetPlaybackRate(rate);
+      Run(w->player, seconds, rate, label)(done);
+    });
+  }
+  steps.push_back([=](Done done) {
+    CheckHealthy(*w->player, "smooth");
+    w->player->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
+      // A busy machine may drop the odd picture; skipping B-frame pictures
+      // drops one in about twelve.
+      Check(m.available && m.total_frames > 700 && m.corrupted_frames == 0 && m.dropped_frames <= 3,
+            "smooth: AVFoundation shows every picture of B-frame video through switches, pause and 1.25x",
+            Format("total %lld, displayed %lld, dropped %lld (limit 3), corrupted %lld", m.total_frames,
+                   m.total_frames - m.dropped_frames, m.dropped_frames, m.corrupted_frames));
+      w->player.reset();
+      done();
+    });
+  });
+  return steps;
+}
+
 // A new AudioSpecificConfig mid-stream (AAC-LC, then HE-AAC), which only
 // Reconfigure can signal.
 std::vector<Step> AudioReconfigureScenario() {
@@ -6006,6 +6061,7 @@ void RunAll() {
   add("ChromiumInputsScenario()", ChromiumInputsScenario());
   add("ProtectedInBandScenario()", ProtectedInBandScenario());
   add("QualitySwitchScenario()", QualitySwitchScenario());
+  add("SmoothPlaybackScenario()", SmoothPlaybackScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("LateStreamsScenario()", LateStreamsScenario());
   add("HandOffScenario()", HandOffScenario());
