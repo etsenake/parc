@@ -295,8 +295,13 @@ so this forces the following on the Chromium integration.
   silence. Volume, mute, audio focus and ducking must map to `SetVolume` and
   `SetMuted`; `setSinkId` maps to `SetAudioOutputDevice` (a Core Audio device
   UID). Empty keeps following the system default until a device is named;
-  after that it names the default device of the moment, since
-  `audioOutputDeviceUniqueID` throws on nil.
+  after that it pins the default device's UID and re-pins it whenever the
+  default changes, since `audioOutputDeviceUniqueID` throws on nil. A named
+  device that leaves Core Audio's device list (unplugged) moves every audio
+  renderer, outgoing ones too, to the default before AVFoundation fails them,
+  and the clock runs on, as Chromium's clear audio falls back; the native HLS
+  player sets nil there. Both listen for Core Audio's notifications only once
+  a device is named.
 - **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`,
   which may be called from any thread (it reads a retained `CMTimebase`). It
   runs once HAVE_ENOUGH (from the data given, keys or not, as WebKit's

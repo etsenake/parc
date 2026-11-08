@@ -1,6 +1,7 @@
 #include "fairplay_hls_player.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <CoreAudio/CoreAudio.h>
 #import <CoreMedia/CoreMedia.h>
 #import <Foundation/Foundation.h>
 #import <QuartzCore/QuartzCore.h>
@@ -135,6 +136,22 @@ std::vector<HlsTimeRange> Ranges(NSArray<NSValue*>* values) {
 NSString* NSStringOrNil(const std::string& value) {
   return [[NSString alloc] initWithBytes:value.data() length:value.size() encoding:NSUTF8StringEncoding];
 }
+
+// Whether Core Audio still has a device with |uid|: an unplugged headset or a
+// disconnected Bluetooth device leaves the list.
+bool AudioDeviceExists(NSString* uid) {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyTranslateUIDToDevice,
+                                        kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+  CFStringRef qualifier = (__bridge CFStringRef)uid;
+  AudioObjectID device = kAudioObjectUnknown;
+  UInt32 size = sizeof(device);
+  return AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(qualifier), &qualifier, &size,
+                                    &device) == noErr &&
+         device != kAudioObjectUnknown;
+}
+
+constexpr AudioObjectPropertyAddress kAudioDevicesAddress = {
+    kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 
 // A CMTime as WebKit's platformDuration tells them apart.
 HlsTime TimeOf(CMTime time) {
@@ -293,6 +310,12 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     shut_down_ = true;
     frame_stats_.reset();
     key_handler_ = nullptr;
+    if (audio_devices_listener_) {
+      AudioObjectRemovePropertyListenerBlock(kAudioObjectSystemObject, &kAudioDevicesAddress,
+                                             dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                                             audio_devices_listener_);
+      audio_devices_listener_ = nil;
+    }
     [observer_ stop];
     observer_ = nil;
     for (auto& [identifier, load] : loads_) {
@@ -774,6 +797,32 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   void SetAudioOutputDevice(const std::string& unique_id) {
     output_device_uid_ = unique_id.empty() ? nil : @(unique_id.c_str());
     player_.audioOutputDeviceUniqueID = output_device_uid_;
+    if (output_device_uid_ && !audio_devices_listener_ && !shut_down_) {
+      std::weak_ptr<Impl> weak = weak_from_this();
+      std::shared_ptr<const PostTask> poster = poster_;
+      audio_devices_listener_ = ^(UInt32, const AudioObjectPropertyAddress*) {
+        (*poster)([weak] {
+          if (auto impl = weak.lock()) {
+            impl->OnAudioDevicesChanged();
+          }
+        });
+      };
+      AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &kAudioDevicesAddress,
+                                          dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                                          audio_devices_listener_);
+    }
+    OnAudioDevicesChanged();  // The device may have gone already.
+  }
+
+  // A named device that went away pauses AVPlayer, which then never refills
+  // (WebKit leaves that to AVFoundation); the player follows the default
+  // device instead and plays on, as Chromium's audio output falls back to it.
+  void OnAudioDevicesChanged() {
+    if (!output_device_uid_ || AudioDeviceExists(output_device_uid_)) {
+      return;
+    }
+    output_device_uid_ = nil;
+    player_.audioOutputDeviceUniqueID = nil;
   }
 
   void SetPreservesPitch(bool preserves_pitch) {
@@ -1614,6 +1663,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   float volume_ = 1;
   bool muted_ = false;
   NSString* output_device_uid_ = nil;
+  AudioObjectPropertyListenerBlock audio_devices_listener_ = nil;
   // SetPlaybackTarget: the browser's context ID, the context it names (nil
   // when none or unknown), and whether to play to it.
   std::string target_id_;

@@ -2072,9 +2072,8 @@ struct DisposableOutputDevice {
 // AudioVideoRendererAVFObjC::setOutputDeviceId: a device named before there
 // is audio is kept for every audio renderer made later (a track joining, a
 // second one mixed in). WebKit leaves a device going away to AVFoundation,
-// which then stops the clock (not always restarting it on another device) or
-// fails the audio renderer (AudioVideoRendererAVFObjC::audioRendererDidReceiveError
-// makes that the element's decode error).
+// which fails the audio renderers and stops the clock; the renderer moves
+// them to the default device first, so playback goes on there.
 std::vector<Step> AudioOutputDeviceScenario() {
   World* w = g_world;
   auto device = std::make_shared<std::unique_ptr<DisposableOutputDevice>>();
@@ -2115,22 +2114,18 @@ std::vector<Step> AudioOutputDeviceScenario() {
           StatusName(s.audio) + std::string(" ") + s.audio_error);
     Log("sink: removing the device");
     device->reset();
-    After(2, done);
+    done();
   });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "sink with the device removed")(done); });
   steps.push_back([=](Done done) {
     fp::RendererStatus s = w->player->renderer().GetStatus();
-    const bool failed = !w->player->errors.empty();
-    Log("sink: 2s after removal t=%.3f audio %s %s%s", w->player->Time(), StatusName(s.audio), s.audio_error.c_str(),
-        failed ? " (AVFoundation failed the audio renderer)" : " (the clock stopped)");
-    fp::Result result = w->player->renderer().SetAudioOutputDevice("");
-    Check(result.ok(), "sink: back to the system default", result.message);
-    on_device("sink: every renderer names the default device again", DefaultOutputDeviceUid(), 2);
-    // Whether the stopped clock restarts there is AVFoundation's call, and
-    // varies from run to run.
-    After(2, [=] {
-      Log("sink: 2s on the default device t=%.3f", w->player->Time());
-      done();
-    });
+    Check(s.audio == fp::RenderingStatus::kRendering && w->player->errors.empty(),
+          "sink: the audio renderers play on, no error", StatusName(s.audio) + std::string(" ") + s.audio_error);
+    on_device("sink: every renderer moved to the default device", DefaultOutputDeviceUid(), 2);
+    fp::Result result = w->player->JoinAudio(w->audio, Segments(w->audio, 0, 8), track.get());
+    Check(result.ok(), "sink: a third audio track joins", result.message);
+    on_device("sink: an audio renderer made after the fallback plays to the default too", DefaultOutputDeviceUid(), 3);
+    Run(w->player, 1, 1, "sink with three tracks on the default")(done);
   });
   steps.push_back([=](Done done) {
     w->player.reset();

@@ -115,6 +115,25 @@ NSString* DefaultOutputDeviceUid() {
   return (__bridge_transfer NSString*)uid;
 }
 
+// Whether Core Audio still has a device with |uid|: an unplugged headset or a
+// disconnected Bluetooth device leaves the list.
+bool AudioDeviceExists(NSString* uid) {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyTranslateUIDToDevice,
+                                        kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+  CFStringRef qualifier = (__bridge CFStringRef)uid;
+  AudioObjectID device = kAudioObjectUnknown;
+  UInt32 size = sizeof(device);
+  return AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(qualifier), &qualifier, &size,
+                                    &device) == noErr &&
+         device != kAudioObjectUnknown;
+}
+
+// The system's device list and default output device.
+constexpr AudioObjectPropertyAddress kAudioDeviceChanges[] = {
+    {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain},
+    {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain},
+};
+
 NSData* ToNSData(const std::vector<uint8_t>& bytes) {
   return [NSData dataWithBytes:bytes.data() length:bytes.size()];
 }
@@ -314,6 +333,13 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       [[NSNotificationCenter defaultCenter] removeObserver:token];
     }
     notification_tokens_.clear();
+    if (audio_devices_listener_) {
+      for (const AudioObjectPropertyAddress& address : kAudioDeviceChanges) {
+        AudioObjectRemovePropertyListenerBlock(kAudioObjectSystemObject, &address, RequestQueue(),
+                                               audio_devices_listener_);
+      }
+      audio_devices_listener_ = nil;
+    }
     if (observer_) {
       for (auto& [object, key_path] : observed_) {
         [object removeObserver:observer_ forKeyPath:key_path];
@@ -1243,9 +1269,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     return renderers;
   }
-  // AVSampleBufferAudioRenderer throws on a nil device ID, so "the system
-  // default" is the default device's UID at the time of the call. Kept for
-  // audio renderers made later, as AudioVideoRendererAVFObjC::setOutputDeviceId
+  // AVSampleBufferAudioRenderer throws on a nil device ID, so once a device
+  // was named the renderers stay pinned to one, and "the system default" is
+  // the default device's UID, followed as it changes. Kept for audio
+  // renderers made later, as AudioVideoRendererAVFObjC::setOutputDeviceId
   // keeps m_audioOutputDeviceId.
   Result SetAudioOutputDevice(const std::string& unique_id) {
     if (unique_id.empty() && !output_device_uid_) {
@@ -1255,13 +1282,51 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     if (!uid.length) {
       return Result::Error(Exception::kNotSupported, "no default audio output device");
     }
-    // Once a device was named the renderers stay pinned to one, so every
-    // later "" names the default of that moment.
+    follows_default_output_ = unique_id.empty();
+    RouteAudio(uid);
+    WatchAudioDevices();
+    OnAudioDevicesChanged();  // The device may have gone already.
+    return Result::Ok();
+  }
+
+  void RouteAudio(NSString* uid) {
     output_device_uid_ = uid;
     for (AVSampleBufferAudioRenderer* renderer : AudioRenderers()) {
       renderer.audioOutputDeviceUniqueID = uid;
     }
-    return Result::Ok();
+  }
+
+  void WatchAudioDevices() {
+    if (audio_devices_listener_) {
+      return;
+    }
+    std::weak_ptr<Impl> weak = weak_from_this();
+    std::shared_ptr<const PostTask> poster = poster_;
+    audio_devices_listener_ = ^(UInt32, const AudioObjectPropertyAddress*) {
+      (*poster)([weak] {
+        if (auto impl = weak.lock()) {
+          impl->OnAudioDevicesChanged();
+        }
+      });
+    };
+    for (const AudioObjectPropertyAddress& address : kAudioDeviceChanges) {
+      AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &address, RequestQueue(), audio_devices_listener_);
+    }
+  }
+
+  // A named device that went away would stop the clock or fail the audio
+  // renderers (WebKit leaves that to AVFoundation); every audio renderer
+  // moves to the default device instead and plays on, as Chromium's audio
+  // output falls back to it, and then follows the default.
+  void OnAudioDevicesChanged() {
+    if (!output_device_uid_ || (!follows_default_output_ && AudioDeviceExists(output_device_uid_))) {
+      return;
+    }
+    follows_default_output_ = true;
+    NSString* uid = DefaultOutputDeviceUid();
+    if (uid.length && ![uid isEqualToString:output_device_uid_]) {
+      RouteAudio(uid);
+    }
   }
 
   void Flush(std::function<void()> done) {
@@ -3031,7 +3096,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   const std::shared_ptr<RequestGate> video_gate_ = std::make_shared<RequestGate>();
   ScopedFormat video_clear_format_;
   std::map<std::vector<uint8_t>, std::unique_ptr<ScopedFormat>> video_protected_formats_;
-  NSString* output_device_uid_ = nil;  // The device SetAudioOutputDevice named.
+  NSString* output_device_uid_ = nil;  // The device the audio renderers play to.
+  bool follows_default_output_ = false;
+  AudioObjectPropertyListenerBlock audio_devices_listener_ = nil;
   float volume_ = 1;
   bool muted_ = false;
   uint64_t initialize_attempt_ = 0;  // Bumped by every Initialize call.

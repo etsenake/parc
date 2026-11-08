@@ -422,12 +422,10 @@ OS or PiP/casting/background-tab runtime acceptance.
   WebKit's `AudioVideoRendererAVFObjC` flushes its video renderer for a new
   track. The background-tab optimization that turns video off is turned off
   for FairPlay players.
-- A `setSinkId` device that goes away (a headset unplugged) either stops
-  the clock, which another device named afterwards doesn't always restart,
-  or fails the audio renderer
-  (a decode error, as WebKit's `audioRendererDidReceiveError` makes it); on
-  the native HLS route AVPlayer pauses itself and its item stops buffering.
-  WebKit leaves all of it to AVFoundation, so Safari does the same.
+- A `setSinkId` device that goes away (a headset unplugged) plays on from
+  the system default, as clear media does in Chromium. Safari stalls there:
+  WebKit leaves it to AVFoundation, which fails the audio renderer (a decode
+  error, through `audioRendererDidReceiveError`) or pauses AVPlayer for good.
 - Two FairPlay players in one frame can lose the speaker icon: upstream's
   `AudibilityBypassTracker` hands any pending grant to whichever player
   claims first, so when one renderer goes, the other player's claimed grant

@@ -1471,7 +1471,8 @@ std::string DefaultOutputDeviceUid() {
 // HTMLMediaElement.setSinkId on the native HLS route, as WebKit's
 // MediaPlayerPrivateAVFoundationObjC: a device named before the player exists
 // is on it once made and empty follows the system default (nil). WebKit
-// leaves a device going away to AVFoundation, which pauses the player.
+// leaves a device going away to AVFoundation, which pauses the player for
+// good; the player follows the default device instead and plays on.
 void AudioOutput() {
   std::printf("-- audio output device (setSinkId)\n");
   // A private aggregate device over the default output, which this process
@@ -1503,17 +1504,15 @@ void AudioOutput() {
   OnOwner([&] { rig.player->SetRate(1); });
   Check(WaitFor([&] { return rig.Time() > 2; }, 20), "plays on the named device");
   AudioHardwareDestroyAggregateDevice(device);
+  const double removed_at = rig.Time();
   WaitFor([] { return false; }, 2);
-  // AVFoundation pauses the player and stops buffering its item for good
-  // (unlike a player following the default, which plays on); WebKit does
-  // nothing more, so Safari's element sits still while "playing".
-  OnOwner([&] {
-    AVPlayer* player = fp::HlsPlayerAVPlayer(rig.player->impl());
-    std::printf("  2s after the device went away: rate %.2f, time %.3f, %d errors\n", player.rate, rig.Time(),
-                rig.client.errors);
-  });
-  OnOwner([&] { rig.player->SetAudioOutputDevice(""); });
-  Check(output() == nil, "empty follows the system default again (nil)");
+  float rate = 0;
+  OnOwner([&] { rate = fp::HlsPlayerAVPlayer(rig.player->impl()).rate; });
+  std::printf("  2s after the device went away: rate %.2f, time %.3f -> %.3f, %d errors\n", rate, removed_at,
+              rig.Time(), rig.client.errors);
+  Check(rate == 1 && rig.Time() > removed_at + 1.5 && rig.client.errors == 0,
+        "the device going away leaves it playing, no error");
+  Check(output() == nil, "it follows the system default device then (nil)");
 }
 
 void Teardown() {
