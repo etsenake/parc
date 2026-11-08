@@ -165,7 +165,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
            "Once the file ends, the closed import still brings Safari's history in")
     PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
     expect(!closing.hasBackgroundWork, "The detached import is released when its history is in")
-    ordinary.cancel(); PCNativeBrowserApplication.acceptsBrowserImport = false
+    closing.cancel(); PCNativeBrowserApplication.acceptsBrowserImport = false
     checks += onboardingImportOrderChecks(store: store, destination: destination, window: window, safari: safari)
     return checks
 }
@@ -220,6 +220,8 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     setup.commitBookmarks()
     expect(setup.stage == .safariPasswords && setup.bookmarkPages[0].committed,
            "Accepting selected bookmarks advances to the separate password step")
+    expect(PCNativeBrowserApplication.browserCompletions.isEmpty && setup.hasBackgroundWork,
+           "Setup's history waits through bookmarks and the password step")
     let imported = store.state.tabs.filter { $0.url == selected.url!.absoluteString }
     expect(imported.count == 1 && imported[0].spaceID == destination.spaceID && imported[0].profileID == destination.profileID,
            "The accepted bookmark retains its original setup destination")
@@ -233,6 +235,7 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     setup.continueAfterPasswords()
     expect(setup.stage == .finished && store.state.tabs == acceptedTabs && PCNativeBrowserApplication.passwordRequests.isEmpty,
            "Skipping optional passwords finishes without reopening bookmarks or reading a file")
+    expect(PCNativeBrowserApplication.browserCompletions.count == 1, "Leaving setup's password step starts its history")
     setup.cancel()
 
     let empty = start(); complete([])
@@ -268,6 +271,7 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     choice.continuePasswordChoice()
     expect(choice.stage == .finished && choice.acceptedICloudPasswordsDestination == destination,
            "Next accepts only the captured original destination, despite the other active Space")
+    expect(PCNativeBrowserApplication.browserCompletions.count == 1, "Choosing iCloud passwords starts Safari's history")
     expect(choice.passwordDestination == nil && !choice.canImportPasswordFile,
            "Choosing the extension omits manual file import")
     choice.choosePasswordMethod(installExtension: false); choice.continuePasswordChoice()
