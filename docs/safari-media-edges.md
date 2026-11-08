@@ -504,8 +504,11 @@ switch drops the pending time; WebM doesn't switch; the alternative check
 skips WebKit's CSP check (all rare). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
 **fixed** 1c03b194 (they move to AVPlayer and back seamlessly; Safari never
 AirPlays Media Source, so neither does Parc). The user's chosen audio and video
-tracks now carry to the TV: **fixed** 0786af49 (live-stream `currentTime`
-continuity: see the AIRPLAY-4b report). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
+tracks now carry to the TV, and a live stream's `currentTime` stays
+continuous across the switch: **fixed** 0786af49. Left: a live stream
+reconnects on the TV (a short gap, restarting at the live point; one
+connection would need AVFoundation fed from Chromium's loader), and some
+files list more audio tracks to the page than Safari's first-group view. Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
