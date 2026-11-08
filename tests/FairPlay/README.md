@@ -94,6 +94,19 @@ arrive in decode order with presentation times only).
     parameter sets moved in-band), Dolby Vision profile 5, AV1 and xHE-AAC.
     HE-AAC and HE-AACv2 are encoded locally with AudioToolbox.
 12. Session remove and close.
+13. Keys after playback started (`HandOffScenario`): a clear lead played
+    without a CDM, then `SetCdm` during it, after it (over the frozen
+    picture), while paused, just before a seek and just before teardown; the
+    page's MediaKeys replaced during protected playback; clear Dolby Vision
+    without keys, then keys. Polled every 20 ms: a picture in the layer at
+    every poll, the clock never still longer than in plain playback (its
+    timebase reads back in steps of about 80 ms), no HAVE_NOTHING, and the
+    outgoing display layer gone once the new one has a frame (35-50 ms on
+    this Mac). Protected samples then play with the new keys.
+14. Video track switches (`VideoSwitchScenario`): protected to clear and
+    back, and the track turned off (end of stream) and on again, with audio
+    playing. The same display layer shows the new track; the clock waits for
+    its first frame (20-140 ms here), with no HAVE_NOTHING.
 
 ## Results
 

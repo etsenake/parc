@@ -171,8 +171,30 @@ void FairPlayRendererClient::OnTracksChanged(
         added.push_back(candidate);
       }
     }
-  } else if (stream && !plays(stream)) {
-    added.push_back(stream);
+  } else if (stream) {
+    // A video track switch, or the page's track coming back after it turned
+    // it off (meanwhile its stream answered end of stream): the GPU process
+    // plays it in place of the one it has, in the same display layer.
+    auto video = std::ranges::find_if(played_, [](const auto& entry) {
+      return entry.second.stream->type() == DemuxerStream::VIDEO;
+    });
+    if (video == played_.end() || video->second.stream != stream ||
+        video_turned_off_) {
+      if (video != played_.end()) {
+        // Read no more from now on (the re-enabled stream was sought to the
+        // current time, which the new one must read from). Its pipe stays
+        // open, as the GPU process keeps the stream.
+        renderer_extension_->RemoveStream(video->first);
+        if (video->second.proxy) {
+          retired_proxies_.push_back(std::move(video->second.proxy));
+        }
+        played_.erase(video);
+      }
+      added.push_back(stream);
+    }
+    video_turned_off_ = false;
+  } else {
+    video_turned_off_ = true;
   }
   base::RepeatingClosure done =
       base::BarrierClosure(added.size(), std::move(change_completed_cb));

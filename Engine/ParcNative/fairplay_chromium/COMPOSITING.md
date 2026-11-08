@@ -20,8 +20,14 @@ Mojo services).
 
 1. **GPU process, renderer side (`fairplay-media`).** The FairPlay
    `media::Renderer` creates a `base::UnguessableToken`, then calls
-   `ui::ProtectedLayerRegistry::Register(token, layer)` with its
-   `AVSampleBufferDisplayLayer` before the token leaves the process. The
+   `ui::ProtectedLayerRegistry::Register(token, layer)` with its display
+   layer host before the token leaves the process: a plain `CALayer` whose
+   `AVSampleBufferDisplayLayer` fills it, so the renderer can swap that layer
+   for one in a new key session without a new token or compositor frame
+   (`FairPlayRenderer::SetCdm`). The renderer gives its display layers what
+   step 8 gives an `AVSampleBufferDisplayLayer` placed directly
+   (`preventsCapture`, the Resize gravity and the flip); the compositor
+   places the host like any registered layer. The
    registry is thread-safe and retains the layer until `Unregister`. The
    native HLS player ([NATIVE_HLS.md](NATIVE_HLS.md), not built yet) will
    register its `AVPlayerLayer` the same way, and it is placed the same way,

@@ -805,7 +805,7 @@ class Player : public fp::FairPlayRendererClient {
                                           : ": SetCdm joins the display layer and audio renderer to the "
                                             "key system's AVContentKeySession as content key recipients"),
           result.message);
-    layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
+    layer_ = (__bridge CALayer*)renderer_.display_layer();
     if (has_video_) Check(layer_ != nil, name_ + ": display layer exists");
     AttachLayer();
     monitor_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
@@ -824,7 +824,7 @@ class Player : public fp::FairPlayRendererClient {
   }
 
   fp::FairPlayRenderer& renderer() { return renderer_; }
-  AVSampleBufferDisplayLayer* layer() const { return layer_; }
+  CALayer* layer() const { return layer_; }
   NSView* host() const { return host_; }
   const std::string& name() const { return name_; }
   bool has_video() const { return has_video_; }
@@ -850,6 +850,9 @@ class Player : public fp::FairPlayRendererClient {
   // Like a batched DemuxerStream read: keeps enqueuing behind a sample held
   // for a key, through end of stream, instead of waiting for readiness.
   bool batch_reads = false;
+  // As FairPlayRendererAdapter reads: on past a sample held for a key while
+  // the renderer takes more (its held window).
+  bool adapter_reads = false;
   int ends_sent = 0;
 
   double Time() { return renderer_.GetMediaTime().InSeconds(); }
@@ -902,7 +905,7 @@ class Player : public fp::FairPlayRendererClient {
     has_video_ = true;
     video_info_ = video.info;
     video_feed_ = Feed{std::move(segments), 0, 0, false, false, {}, nullptr};
-    layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
+    layer_ = (__bridge CALayer*)renderer_.display_layer();
     AttachLayer();
     return result;
   }
@@ -919,6 +922,14 @@ class Player : public fp::FairPlayRendererClient {
   void RemoveAudio(uint32_t track) {
     joined_audio_.erase(track);
     renderer_.RemoveAudio(track);
+  }
+  // A video track switch (FairPlayRenderer::ReplaceVideo), fed |segments|.
+  fp::Result SwitchVideo(const Media& video, SegmentList segments) {
+    fp::Result result = renderer_.ReplaceVideo(VideoConfigFor(video.info, framing_, chromium_inputs_));
+    if (!result.ok()) return result;
+    video_info_ = video.info;
+    video_feed_ = Feed{std::move(segments), 0, 0, false, false, {}, nullptr};
+    return result;
   }
 
   // media::RendererClient side.
@@ -1046,7 +1057,7 @@ class Player : public fp::FairPlayRendererClient {
       fp::EnqueueResult result = renderer_.Enqueue(stream, buffer);
       if (result == fp::EnqueueResult::kWaitingForKey) {
         ++waiting_results;
-        if (batch_reads) continue;
+        if (batch_reads || adapter_reads) continue;
         return;
       }
       if (result == fp::EnqueueResult::kRejected) {
@@ -1066,7 +1077,7 @@ class Player : public fp::FairPlayRendererClient {
   ft::TrackInfo audio_info_;
   fp::FairPlayRenderer renderer_;
   NSView* host_;
-  AVSampleBufferDisplayLayer* layer_ = nil;
+  CALayer* layer_ = nil;
   dispatch_source_t monitor_ = nil;
   Feed video_feed_;
   Feed audio_feed_;
@@ -2173,6 +2184,433 @@ std::vector<Step> LateStreamsScenario() {
     fp::RendererStatus s = w->player->renderer().GetStatus();
     Check(s.video_enqueued > 0 && s.audio == fp::RenderingStatus::kRendering && w->player->errors.empty(),
           "late-video: video and audio play together");
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// What someone watching a player sees, polled every 20 ms: polls with no
+// picture in its layer, the longest wall time the clock stood still while
+// it should run, and when a single display layer was left in it.
+struct Sight {
+  int polls = 0;
+  int blank = 0;
+  double longest_still = 0;
+  // The most the clock moved ahead of the wall clock between two polls, and
+  // whether it ever went back.
+  double largest_jump = 0;
+  bool went_back = false;
+  double back_by = 0;
+  double one_layer_after = -1;  // Wall seconds after watching started.
+  double started = 0;
+  double last_time = -1;
+  double last_wall = 0;
+  double still_since = -1;
+  dispatch_source_t timer = nil;
+};
+
+int DisplayLayers(CALayer* host) {
+  int count = 0;
+  for (CALayer* sublayer in host.sublayers) {
+    count += [sublayer isKindOfClass:[AVSampleBufferDisplayLayer class]];
+  }
+  return count;
+}
+
+bool HasPicture(CALayer* host) {
+  for (CALayer* sublayer in host.sublayers) {
+    if (![sublayer isKindOfClass:[AVSampleBufferDisplayLayer class]]) continue;
+    if (@available(macOS 14.4, *)) {
+      if (((AVSampleBufferDisplayLayer*)sublayer).readyForDisplay) return true;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::shared_ptr<Sight> Watch(std::shared_ptr<Player> player, bool clock_runs) {
+  auto sight = std::make_shared<Sight>();
+  sight->started = CFAbsoluteTimeGetCurrent();
+  sight->last_wall = sight->started;
+  sight->last_time = player->Time();
+  sight->timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+  dispatch_source_set_timer(sight->timer, DISPATCH_TIME_NOW, NSEC_PER_MSEC * 20, NSEC_PER_MSEC);
+  std::weak_ptr<Player> weak = player;
+  Sight* raw = sight.get();
+  dispatch_source_set_event_handler(sight->timer, ^{
+    auto p = weak.lock();
+    if (!p) return;
+    const double wall = CFAbsoluteTimeGetCurrent();
+    ++raw->polls;
+    if (p->has_video()) {
+      raw->blank += !HasPicture(p->layer());
+      if (raw->one_layer_after < 0 && DisplayLayers(p->layer()) == 1) raw->one_layer_after = wall - raw->started;
+    }
+    const double t = p->Time();
+    raw->went_back |= t < raw->last_time - 1e-4;
+    raw->back_by = std::max(raw->back_by, raw->last_time - t);
+    raw->largest_jump = std::max(raw->largest_jump, (t - raw->last_time) - (wall - raw->last_wall));
+    raw->last_wall = wall;
+    if (clock_runs && t <= raw->last_time + 1e-4) {
+      if (raw->still_since < 0) raw->still_since = wall;
+      raw->longest_still = std::max(raw->longest_still, wall - raw->still_since);
+    } else {
+      raw->still_since = -1;
+    }
+    raw->last_time = t;
+  });
+  dispatch_resume(sight->timer);
+  return sight;
+}
+
+void StopWatching(const std::shared_ptr<Sight>& sight) {
+  if (sight->timer) dispatch_source_cancel(sight->timer);
+  sight->timer = nil;
+}
+
+// The end of segment |segment| of |media|: the next one's first sample.
+double SegmentEnd(const Media& media, size_t segment) {
+  const auto& next = media.segments[segment + 1];
+  double first = std::numeric_limits<double>::infinity();
+  for (const ft::Sample& sample : next) first = std::min(first, double(sample.pts) / media.info.timescale);
+  return first;
+}
+
+// The segment of |media| holding |time|.
+size_t SegmentAt(const Media& media, double time) {
+  size_t segment = 0;
+  while (segment + 2 < media.segments.size() && SegmentEnd(media, segment) <= time) ++segment;
+  return segment;
+}
+
+// FairPlay keys reaching a renderer that already played without them (a
+// clear lead or a clear Dolby Vision start, then setMediaKeys), as Safari
+// takes them per sample: new renderers join the key session and take over on
+// the same clock (FairPlayRenderer::SetCdm), so the picture, the sound and
+// the clock carry on, with no HAVE_NOTHING (the page's waiting) and no
+// restart.
+std::vector<Step> HandOffScenario() {
+  World* w = g_world;
+  const double clear_end = SegmentEnd(w->video, 0);  // The same encode.
+  auto sight = std::make_shared<std::shared_ptr<Sight>>();
+  auto before = std::make_shared<fp::RendererStatus>();
+  auto underflows = std::make_shared<int>(0);
+  auto frames = std::make_shared<int64_t>(0);
+  // The longest the clock stands still between polls in plain playback: the
+  // synchronizer's timebase reads back in steps, up to about 85 ms here from
+  // run to run, so a hand-off may show that much plus a poll.
+  auto control = std::make_shared<double>(0.085);
+  std::vector<Step> steps;
+  auto start = [=](const std::string& name, size_t segments) -> Step {
+    return [=](Done done) {
+      w->player = std::make_shared<Player>(name, Framing::kChromium, &w->video, &w->audio, nullptr, w->host);
+      w->player->adapter_reads = true;
+      w->player->renderer().Flush([=] {
+        SegmentList video{&w->clear_video.segments[0]};
+        SegmentList audio{&w->clear_audio.segments[0]};
+        for (size_t i = 1; i < segments; ++i) {
+          video.push_back(&w->video.segments[i]);
+          audio.push_back(&w->audio.segments[i]);
+        }
+        w->player->SetFeeds(video, audio, false);
+        auto go = Once(10, name + ": HAVE_ENOUGH without a CDM", [=](bool) {
+          w->player->renderer().SetPlaybackRate(1);
+          done();
+        });
+        w->player->on_have_enough = [go] { go(true); };
+        w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+      });
+    };
+  };
+  // Attaches the keys, watching from just before.
+  auto attach = [=](const std::string& name, bool clock_runs) -> Step {
+    return [=](Done done) {
+      *before = w->player->renderer().GetStatus();
+      *underflows = w->player->underflows;
+      *sight = Watch(w->player, clock_runs);
+      CALayer* playing = w->player->layer().sublayers.firstObject;
+      fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+      Check(result.ok(), name + ": SetCdm after media was processed is taken in place", result.message);
+      // Below the playing one, which leaves once it has a frame (maybe at once).
+      CALayer* joined = w->player->layer().sublayers.firstObject;
+      Check(joined != playing && [joined isKindOfClass:[AVSampleBufferDisplayLayer class]],
+            name + ": a new display layer joins the key session in the same host");
+      done();
+    };
+  };
+  auto seen = [=](const std::string& name, double max_layer_seconds) -> Step {
+    return [=](Done done) {
+      StopWatching(*sight);
+      const Sight& v = **sight;
+      fp::RendererStatus s = w->player->renderer().GetStatus();
+      Check(v.blank == 0, name + ": a picture in the layer at every poll (no blank frame)",
+            Format("%d of %d polls blank", v.blank, v.polls));
+      Check(v.longest_still <= *control + 0.03, name + ": the clock never stops",
+            Format("longest still %.3fs over %d polls, %.3fs in plain playback", v.longest_still, v.polls,
+                   *control));
+      Check(!v.went_back && v.largest_jump < 0.1, name + ": the clock neither jumps nor goes back",
+            Format("largest jump %.3fs%s", v.largest_jump,
+                   v.went_back ? Format(", went back %.3fs", v.back_by).c_str() : ""));
+      Check(w->player->underflows == *underflows, name + ": no HAVE_NOTHING, so the page sees no waiting");
+      Check(v.one_layer_after >= 0 && v.one_layer_after < max_layer_seconds,
+            name + Format(": the outgoing display layer leaves once the new one has a frame (%.3fs)",
+                          v.one_layer_after));
+      // AVFoundation sometimes flushes an audio renderer by itself (seen also
+      // in plain playback here); the re-delivery mustn't queue twice.
+      Check(s.audio_renderers == 1 && s.audio_double_enqueues == before->audio_double_enqueues,
+            name + ": one audio renderer plays on, no sample queued twice",
+            Format("%zu renderers, double enqueues %llu -> %llu, automatic flushes %llu", s.audio_renderers,
+                   before->audio_double_enqueues, s.audio_double_enqueues, s.audio_automatic_flushes));
+      Log("%s: %d polls, longest still %.3fs, single layer after %.3fs", name.c_str(), v.polls, v.longest_still,
+          v.one_layer_after);
+      done();
+    };
+  };
+
+  steps.push_back(Section(Format("keys during the clear lead (ends %.3fs): new renderers take over seamlessly",
+                                 clear_end)));
+  steps.push_back(start("hand-off", 4));
+  // Control: the same watch over plain playback, for what the clock does
+  // without a hand-off.
+  steps.push_back([=](Done done) {
+    *sight = Watch(w->player, true);
+    Run(w->player, 2, 1, "hand-off clear lead")([=] {
+      StopWatching(*sight);
+      *control = std::max(*control, (*sight)->longest_still);
+      Log("hand-off control: %d polls, longest still %.3fs", (*sight)->polls, *control);
+      done();
+    });
+  });
+  steps.push_back([=](Done done) { Metrics(w->player, "hand-off before keys", 40, frames)(done); });
+  steps.push_back(attach("hand-off", true));
+  steps.push_back([=](Done done) {
+    const double wait = clear_end + 2 - w->player->Time();
+    Run(w->player, wait, 1, "hand-off across the protected boundary")(done);
+  });
+  steps.push_back(seen("hand-off", 1.5));
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.protected_enqueued > 0 && s.time.InSeconds() > clear_end + 1,
+          "hand-off: protected samples play past the clear lead",
+          Format("t=%.3f protected %llu", s.time.InSeconds(), s.protected_enqueued));
+    done();
+  });
+  steps.push_back([=](Done done) { Metrics(w->player, "hand-off after the swap", 40, frames)(done); });
+
+  steps.push_back(Section("seek while the new renderers take over"));
+  steps.push_back(start("hand-off-seek", 4));
+  steps.push_back([=](Done done) { Run(w->player, 1.5, 1, "hand-off-seek clear lead")(done); });
+  steps.push_back([=](Done done) {
+    fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+    Check(result.ok(), "hand-off-seek: SetCdm taken", result.message);
+    StartAt(w->player, &w->video, &w->audio, 2, 5, SegmentEnd(w->video, 1) + 1, 1, false)(done);
+  });
+  steps.push_back([=](Done done) {
+    After(1, [=] {
+      Check(DisplayLayers(w->player->layer()) == 1 && HasPicture(w->player->layer()),
+            "hand-off-seek: one display layer with a picture after the seek");
+      Run(w->player, 2, 1, "hand-off-seek after the seek")(done);
+    });
+  });
+
+  steps.push_back(Section("keys while paused"));
+  steps.push_back(start("hand-off-paused", 4));
+  steps.push_back([=](Done done) { Run(w->player, 1.5, 1, "hand-off-paused clear lead")(done); });
+  steps.push_back([=](Done done) {
+    w->player->renderer().SetPlaybackRate(0);
+    After(0.3, [=] { attach("hand-off-paused", false)(done); });
+  });
+  steps.push_back([=](Done done) { Run(w->player, 1, 0, "hand-off-paused paused")(done); });
+  steps.push_back([=](Done done) {
+    StopWatching(*sight);
+    Check((*sight)->blank == 0 && DisplayLayers(w->player->layer()) == 1,
+          "hand-off-paused: the new layer takes over while paused, never blank",
+          Format("%d blank, %d layers", (*sight)->blank, DisplayLayers(w->player->layer())));
+    w->player->renderer().SetPlaybackRate(1);
+    Run(w->player, 2, 1, "hand-off-paused resumed")(done);
+  });
+
+  steps.push_back(Section("keys after the clear lead ended, over a frozen picture (Safari freezes there too)"));
+  steps.push_back(start("hand-off-late", 4));
+  steps.push_back([=](Done done) {
+    Run(w->player, clear_end + 1 - w->player->Time(), 1, "hand-off-late past the clear lead")(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.protected_enqueued == 0, "hand-off-late: protected samples wait for keys");
+    attach("hand-off-late", true)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "hand-off-late after the keys")(done); });
+  steps.push_back(seen("hand-off-late", 1.5));
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.protected_enqueued > 0, "hand-off-late: the held protected samples play", Format("%llu", s.protected_enqueued));
+    done();
+  });
+
+  steps.push_back(Section("torn down mid hand-off"));
+  steps.push_back(start("hand-off-teardown", 3));
+  steps.push_back([=](Done done) { Run(w->player, 1, 1, "hand-off-teardown clear lead")(done); });
+  steps.push_back([=](Done done) {
+    fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+    w->player.reset();
+    After(0.5, [=] {
+      Check(result.ok(), "hand-off-teardown: destroyed while handing over, without a crash", result.message);
+      done();
+    });
+  });
+
+  // The page's MediaKeys replaced during playback (setMediaKeys with new
+  // ones, or a legacy session's): the new CDM's renderers take over the same
+  // way, and the old CDM's keys play what the outgoing ones hold.
+  auto other = std::make_shared<std::unique_ptr<KeySystem>>();
+  steps.push_back(Section("MediaKeys replaced during protected playback"));
+  steps.push_back([=](Done done) {
+    *other = MakeKeySystem("replaced");
+    AcquireLicense(other->get(), fp::InitDataType::kSkd, Bytes(std::string(kSkd)), "replaced", [=](bool ok) {
+      Check(ok, "replaced: the first MediaKeys get their license");
+      w->player = std::make_shared<Player>("replaced", Framing::kChromium, &w->video, &w->audio,
+                                           (*other)->cdm.get(), w->host);
+      w->player->adapter_reads = true;
+      StartAt(w->player, &w->video, &w->audio, 0, 4, 0, 1, false)(done);
+    });
+  });
+  steps.push_back([=](Done done) { Run(w->player, 2, 1, "replaced first MediaKeys")(done); });
+  steps.push_back([=](Done done) {
+    CALayer* playing = w->player->layer().sublayers.firstObject;
+    *before = w->player->renderer().GetStatus();
+    *underflows = w->player->underflows;
+    *sight = Watch(w->player, true);
+    fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+    Check(result.ok(), "replaced: another CDM is taken during playback", result.message);
+    Check(w->player->layer().sublayers.firstObject != playing, "replaced: a new display layer joins its key session");
+    Run(w->player, 2, 1, "replaced after the new MediaKeys")(done);
+  });
+  steps.push_back(seen("replaced", 1.5));
+  steps.push_back([=](Done done) {
+    // Only the new MediaKeys' keys are left; play past what was held.
+    *before = w->player->renderer().GetStatus();
+    (*other)->cdm->CloseSession((*other)->session, [=](const fp::Result& closed) {
+      Check(closed.ok(), "replaced: the old MediaKeys' session closes", closed.message);
+      Run(w->player, 5, 1, "replaced with the old keys gone")(done);
+    });
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.protected_enqueued > before->protected_enqueued + 100 && w->player->waiting_events == 0,
+          "replaced: protected samples play on with the new MediaKeys' keys, no wait for a key",
+          Format("%llu -> %llu, %d waits", before->protected_enqueued, s.protected_enqueued,
+                 w->player->waiting_events));
+    w->player->renderer().SetCdm(nullptr);
+    w->player.reset();
+    w->retired.push_back(std::move(*other));
+    done();
+  });
+
+  steps.push_back(Section("Dolby Vision played without keys, then keys"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("hand-off-dv", Framing::kChromium, &w->dolby_vision, nullptr, nullptr,
+                                         w->host, false, true);
+    StartAt(w->player, &w->dolby_vision, nullptr, 0, w->dolby_vision.segments.size(), 0, 1, true)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 1.5, 1, "hand-off-dv before keys")(done); });
+  steps.push_back([=](Done done) {
+    CALayer* playing = w->player->layer().sublayers.firstObject;
+    *before = w->player->renderer().GetStatus();
+    *underflows = w->player->underflows;
+    *sight = Watch(w->player, true);
+    fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
+    Check(result.ok(), "hand-off-dv: SetCdm taken in place", result.message);
+    Check(w->player->layer().sublayers.firstObject != playing, "hand-off-dv: a new display layer joins the key session");
+    Run(w->player, 2, 1, "hand-off-dv after the keys")(done);
+  });
+  steps.push_back([=](Done done) {
+    StopWatching(*sight);
+    const Sight& v = **sight;
+    Check(v.blank == 0 && v.longest_still <= *control + 0.03 && w->player->underflows == *underflows &&
+              v.one_layer_after >= 0 && v.one_layer_after < 1.5,
+          "hand-off-dv: Dolby Vision plays on through the hand-off",
+          Format("%d blank, still %.3fs, single layer after %.3fs", v.blank, v.longest_still, v.one_layer_after));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
+// A video track switch (the page's or the player's videoTracks): the same
+// layer decodes the new track from the keyframe before the current time and
+// the clock waits for its frame, as Safari's AudioVideoRendererAVFObjC
+// flushes its video renderer for a new track. The flush keeps the displayed
+// image (AVFoundation's flush, not flushAndRemoveImage), though
+// readyForDisplay turns false until the new frame, so the polls can't see the
+// picture; they count those polls.
+std::vector<Step> VideoSwitchScenario() {
+  World* w = g_world;
+  auto sight = std::make_shared<std::shared_ptr<Sight>>();
+  auto underflows = std::make_shared<int>(0);
+  auto layer = std::make_shared<CALayer*>(nil);
+  std::vector<Step> steps;
+  auto switch_to = [=](const std::string& name, const Media* media) -> Step {
+    return [=](Done done) {
+      *underflows = w->player->underflows;
+      *layer = w->player->layer();
+      const size_t segment = std::min(SegmentAt(w->video, w->player->Time()), media->segments.size() - 1);
+      *sight = Watch(w->player, true);
+      const uint64_t enqueued = w->player->renderer().GetStatus().video_enqueued;
+      fp::Result result = w->player->SwitchVideo(*media, Segments(*media, segment, segment + 3));
+      Check(result.ok(), name + ": the playing renderer takes the new track", result.message);
+      Run(w->player, 2.5, 1, name + " after the switch")([=] {
+        const uint64_t added = w->player->renderer().GetStatus().video_enqueued - enqueued;
+        Check(added > 40, name + ": the new track's frames play", Format("%llu enqueued", added));
+        done();
+      });
+    };
+  };
+  auto seen = [=](const std::string& name) -> Step {
+    return [=](Done done) {
+      StopWatching(*sight);
+      const Sight& v = **sight;
+      fp::RendererStatus s = w->player->renderer().GetStatus();
+      Check(w->player->layer() == *layer && s.video_ready_for_display,
+            name + ": the same display layer shows the new track");
+      Check(w->player->underflows == *underflows, name + ": no HAVE_NOTHING, so the page sees no waiting");
+      Check(v.longest_still < 0.5, name + Format(": the clock waits %.3fs for the new track's frame", v.longest_still));
+      Check(!v.went_back && v.largest_jump < 0.1, name + ": the clock neither jumps nor goes back",
+            Format("largest jump %.3fs", v.largest_jump));
+      Log("%s: %d polls, longest still %.3fs, %d polls without readyForDisplay", name.c_str(), v.polls,
+          v.longest_still, v.blank);
+      done();
+    };
+  };
+  steps.push_back(Section("video track switch: protected to clear and back, audio playing"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("video-switch", Framing::kChromium, &w->video, &w->audio,
+                                         w->main_keys->cdm.get(), w->host);
+    StartAt(w->player, &w->video, &w->audio, 0, 6, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 3, 1, "video-switch first track")(done); });
+  steps.push_back(switch_to("video-switch to clear", &w->clear_video));
+  steps.push_back(seen("video-switch to clear"));
+  steps.push_back(switch_to("video-switch back", &w->video));
+  steps.push_back(seen("video-switch back"));
+  // The page turns its video track off: the disabled stream answers end of
+  // stream, and audio and the clock play on. Turned back on, the track comes
+  // back at the current time in the same layer.
+  steps.push_back(Section("video track turned off, then back on"));
+  steps.push_back([=](Done done) {
+    *underflows = w->player->underflows;
+    w->player->renderer().SetEndOfStream(fp::StreamType::kVideo);
+    Run(w->player, 1.5, 1, "video-off audio on alone")([=] {
+      Check(!w->player->ended && w->player->underflows == *underflows,
+            "video-off: audio and the clock play on without video");
+      done();
+    });
+  });
+  steps.push_back(switch_to("video-on", &w->video));
+  steps.push_back(seen("video-on"));
+  steps.push_back([=](Done done) {
     w->player.reset();
     done();
   });
@@ -4553,7 +4991,7 @@ std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
   steps.push_back([=](Done done) {
     if (@available(macOS 14.4, *)) {
       AVSampleBufferVideoRenderer* renderer =
-          ((__bridge AVSampleBufferDisplayLayer*)w->player->renderer().display_layer()).sampleBufferRenderer;
+          ((AVSampleBufferDisplayLayer*)w->player->layer().sublayers.firstObject).sampleBufferRenderer;
       struct Tally {
         int passes = 0, checked = 0, wrong = 0, unreadable = 0, leading = 0, last_index = -1, still = 0;
         double last_time = -1;
@@ -4888,6 +5326,8 @@ void RunAll() {
   add("QualitySwitchScenario()", QualitySwitchScenario());
   add("UnderflowScenario()", UnderflowScenario());
   add("LateStreamsScenario()", LateStreamsScenario());
+  add("HandOffScenario()", HandOffScenario());
+  add("VideoSwitchScenario()", VideoSwitchScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
   add("LayerDetachScenario()", LayerDetachScenario());
   add("InitializeRetryScenario()", InitializeRetryScenario());

@@ -1,6 +1,5 @@
 #include "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.h"
 
-#import <AVFoundation/AVFoundation.h>
 #import <QuartzCore/QuartzCore.h>
 
 #include <utility>
@@ -219,20 +218,7 @@ FairPlayRendererAdapter::~FairPlayRendererAdapter() {
   if (!layer_token_.is_empty()) {
     // The compositor may still hold the layer until its next commit: remove
     // the displayed image first so nothing stale shows, then unregister.
-    AVSampleBufferDisplayLayer* layer =
-        (__bridge AVSampleBufferDisplayLayer*)core_->display_layer();
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    if (@available(macOS 14.0, *)) {
-      [layer.sampleBufferRenderer flushWithRemovalOfDisplayedImage:YES
-                                                 completionHandler:nil];
-    } else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-      [layer flushAndRemoveImage];
-#pragma clang diagnostic pop
-    }
-    [CATransaction commit];
+    core_->RemoveDisplayedImage();
     ui::ProtectedLayerRegistry::Unregister(layer_token_);
   }
   // Detaches the CDM, which MojoRendererService keeps alive until after this.
@@ -307,6 +293,7 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
 
   if (status.is_ok()) {
     core_initialized_ = true;
+    core_has_video_ = video.has_value();
     core_->SetVolume(volume_);
     core_->SetMuted(muted_ || awaiting_mute_state_);
     if (video) {
@@ -349,10 +336,6 @@ void FairPlayRendererAdapter::AddStream(uint32_t id, DemuxerStream* stream) {
   fp::Result result;
   fp::StreamId core{fp::StreamType::kVideo};
   if (stream->type() == DemuxerStream::VIDEO) {
-    if (HasVideo()) {
-      // The pipeline enables one video stream at a time.
-      return;
-    }
     std::optional<fp::VideoConfig> config =
         CoreConfigIfPlayable(stream->video_decoder_config());
     if (!config) {
@@ -361,11 +344,31 @@ void FairPlayRendererAdapter::AddStream(uint32_t id, DemuxerStream* stream) {
       ReportError(DECODER_ERROR_NOT_SUPPORTED);
       return;
     }
+    // The pipeline enables one video stream at a time: a video track switch,
+    // or the track the page turned off coming back. It replaces the one
+    // playing in the same display layer, from the current time.
+    if (core_has_video_) {
+      std::erase_if(streams_, [](const auto& entry) {
+        return entry.second.core.type == fp::StreamType::kVideo;
+      });
+      result = core_->ReplaceVideo(*config);
+      if (!result.ok()) {
+        LOG(ERROR) << "FairPlay renderer couldn't switch video: "
+                   << result.message;
+        ReportError(PIPELINE_ERROR_DECODE);
+        return;
+      }
+      streams_[id].demuxer_stream = stream;
+      client_->OnVideoConfigChange(stream->video_decoder_config());
+      MaybeFinishFlush();
+      return;
+    }
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     result = core_->AddVideo(*config);
     [CATransaction commit];
     if (result.ok()) {
+      core_has_video_ = true;
       natural_size_ = gfx::Size(config->natural_width, config->natural_height);
       if (!RegisterLayer()) {
         ReportError(PIPELINE_ERROR_DECODE);
@@ -408,13 +411,15 @@ bool FairPlayRendererAdapter::RemoveStream(uint32_t id) {
   if (it == streams_.end()) {
     return true;
   }
-  if (it->second.core.type != fp::StreamType::kAudio) {
-    return false;
+  // Video stops being read at once, before the track that replaces it comes
+  // (AddStream); its stream stays, as the display layer does.
+  const bool audio = it->second.core.type == fp::StreamType::kAudio;
+  if (audio) {
+    core_->RemoveAudio(it->second.core.audio_track);
   }
-  core_->RemoveAudio(it->second.core.audio_track);
   streams_.erase(it);
   MaybeFinishFlush();
-  return true;
+  return audio;
 }
 
 void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
@@ -429,30 +434,27 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
     core_->DetachCdm();
     success = true;
   } else if (cdm && cdm == attached_cdm_) {
-    // The same MediaKeys again: the held samples go on with its keys. A core
-    // that couldn't take it (below) still waits for the restart.
-    fp::Result result = core_->SetCdm(cdm);
-    success = result.ok() || result.exception == fp::Exception::kInvalidState;
-  } else if (cdm && !cdm_attached_) {
+    // The same MediaKeys again: the held samples go on with its keys.
+    success = core_->SetCdm(cdm).ok();
+  } else if (cdm) {
     // The core accepts the CDM before Initialize and joins its key session
-    // once the renderers exist, before any sample is enqueued.
+    // once the renderers exist. After it played without keys (a clear start,
+    // or clear Dolby Vision), or with other MediaKeys, new renderers join the
+    // key session and take over on the same clock, as Safari takes keys at
+    // any time; MojoRendererService keeps a replaced CDM for those they
+    // replace.
     fp::Result result = core_->SetCdm(cdm);
     success = result.ok();
-    if (result.exception == fp::Exception::kInvalidState) {
-      // The core already processed media (Dolby Vision started without
-      // keys), so its renderers can't join the key session any more:
-      // AVFoundation takes recipients only before. WebMediaPlayerImpl
-      // restarts the pipeline on this attach, and the new renderer gets the
-      // CDM before its first sample (ParcRestartIntoFairPlayIfNeeded), so
-      // accept it for that one. Protected samples wait here until then.
-      success = true;
-    }
-    LOG_IF(ERROR, !success) << "FairPlay SetCdm: " << result.message;
     if (success) {
       attached_cdm_ = cdm;
+    } else {
+      LOG(ERROR) << "FairPlay SetCdm: " << result.message;
+      // A failed hand-off leaves renderers that can't decrypt.
+      if (core_initialized_) {
+        ReportError(PIPELINE_ERROR_DECODE);
+      }
     }
   }
-  cdm_attached_ = cdm_attached_ || (success && cdm != nullptr);
   task_runner_->PostTask(FROM_HERE,
                          base::BindOnce(std::move(cdm_attached_cb), success));
 }
@@ -623,15 +625,6 @@ void FairPlayRendererAdapter::OnBufferingStateChange(bool have_enough) {
   client_->OnBufferingStateChange(
       have_enough ? BUFFERING_HAVE_ENOUGH : BUFFERING_HAVE_NOTHING,
       have_enough ? BUFFERING_CHANGE_REASON_UNKNOWN : DEMUXER_UNDERFLOW);
-}
-
-bool FairPlayRendererAdapter::HasVideo() const {
-  for (const auto& [id, stream] : streams_) {
-    if (stream.core.type == fp::StreamType::kVideo) {
-      return true;
-    }
-  }
-  return false;
 }
 
 void FairPlayRendererAdapter::ReadFromStream(uint32_t id) {

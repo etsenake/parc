@@ -156,7 +156,9 @@ EME's false, when there are none), other types reject with NotSupported.
    `tests/FairPlay/sandbox` switches protected AAC → clear E-AC-3 → protected
    AAC under protected H.264, and clear H.264 → HEVC → H.264, with no
    underflow.
-5. With video, the adapter registers the core's `AVSampleBufferDisplayLayer` in
+5. With video, the adapter registers the core's display layer host (a
+   `CALayer` holding its `AVSampleBufferDisplayLayer`, or two while a new one
+   takes over after `SetCdm`) in
    `ui::ProtectedLayerRegistry` under a new `UnguessableToken` and sends
    `OnLayerRegistered(token, natural_size)`. The client paints
    `VideoFrame::CreateVideoHoleFrame(token, natural_size)` through
@@ -195,8 +197,9 @@ EME's false, when there are none), other types reject with NotSupported.
    power-efficient count as well, or `decodingInfo` would start answering
    `powerEfficient: false` for FairPlay configs.
 8. `Flush` drops what is queued and waits for reads already in flight (the
-   demuxer aborts them before a seek). Teardown flushes the layer with
-   removal of the displayed image, unregisters it, then destroys the core,
+   demuxer aborts them before a seek). Teardown flushes the display layers
+   with removal of the displayed image, unregisters the host, then destroys
+   the core,
    which leaves the CDM's key session. `MojoRendererService` destroys the
    renderer before it drops the CDM reference.
 
@@ -368,24 +371,30 @@ OS or PiP/casting/background-tab runtime acceptance.
 
 ## Known gaps
 
-- FairPlay keys that arrive after playback started, and a switch into Dolby
+- FairPlay MediaKeys attached while Chromium's renderer plays (a clear start
+  in H.264, HEVC or AV1, such as a clear ad before encrypted content when the
+  page sets MediaKeys only then), and a SourceBuffer switching into Dolby
   Vision while Chromium's renderer plays, cost one rebuffer that Safari
-  doesn't have. Safari attaches each sample's key itself
-  (`AVSampleBufferAttachContentKey`), so keys can come at any time, but that
-  needs the private `com.apple.private.coremedia.allow-fps-attachment`
-  entitlement only WebKit's GPU process has. Parc's renderers join the key
-  session as recipients instead, which AVFoundation allows only before they
-  process media. So `WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded`
-  restarts the pipeline with a suspend/resume cycle, as Windows does for a
-  hardware context reset: when FairPlay keys attach to Chromium's renderer
-  (a clear start in H.264, HEVC, AV1 or Dolby Vision) or to a FairPlay
-  Renderer created without them, and when a SourceBuffer takes Dolby Vision
-  while Chromium's renderer plays. The new FairPlay Renderer gets the CDM
-  before its first sample. The page sees at most `waiting` and `playing`:
-  no `error` or `emptied`, and `currentTime`, `paused` and `playbackRate`
-  stay. A FairPlay Renderer that gets the keys before processing media
-  (setMediaKeys before or soon after the first append) attaches them in place
-  and restarts once anyway, before showing anything.
+  doesn't have: playback stops for a moment, with the spinner, and the
+  picture can go blank. Safari attaches each sample's key itself
+  (`AVSampleBufferAttachContentKey`), which needs the private
+  `com.apple.private.coremedia.allow-fps-attachment` entitlement only
+  WebKit's GPU process has; Parc's renderers join the key session as
+  recipients, which AVFoundation allows only before they process media, and
+  Chromium's renderer can't decrypt FairPlay at all. So
+  `WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded` restarts the
+  pipeline into the FairPlay Renderer with a suspend/resume cycle. The page
+  sees at most `waiting` and `playing`: no `error` or `emptied`, and
+  `currentTime`, `paused` and `playbackRate` stay. Making that seamless
+  needs the pipeline to run the FairPlay Renderer beside Chromium's until it
+  has a frame: a second read position in `ChunkDemuxer`'s buffered data, the
+  FairPlay clock started on Chromium's audio clock, the video hole frame
+  painted in place of Chromium's frames at a frame boundary, and the sound
+  switched between the audio service and the GPU process's audio renderer.
+  The FairPlay Renderer itself takes keys at any time (`SetCdm` after media,
+  in the core's README): after a clear start or clear Dolby Vision without
+  keys, and when the page replaces its MediaKeys, new renderers join the key
+  session and take over on the same clock with no rebuffer.
 - Dolby Vision with a track the FairPlay Renderer can't play fails where
   Safari plays it: VP9 video before a switch into Dolby Vision, Vorbis audio
   alongside it, or a `changeType()` from Dolby Vision to VP9 (which throws
@@ -394,10 +403,14 @@ OS or PiP/casting/background-tab runtime acceptance.
   audio; Safari's AVFoundation path decodes everything its Media Source
   offers. Such a switch into Dolby Vision gets no restart, and fails at the
   switch.
-- A page that turns its own video track off (`videoTracks`) ends video until
-  the next seek; a disabled `ChunkDemuxerStream` answers with end of stream.
-  The background-tab optimization that does the same is turned off for
-  FairPlay players.
+- A page that turns its own video track off (`videoTracks`) ends video, a
+  disabled `ChunkDemuxerStream` answering with end of stream, while audio
+  plays on; turned back on, or switched to another video track, the track
+  plays from the current time in the same display layer
+  (`FairPlayRenderer::ReplaceVideo`), the picture held while it decodes, as
+  WebKit's `AudioVideoRendererAVFObjC` flushes its video renderer for a new
+  track. The background-tab optimization that turns video off is turned off
+  for FairPlay players.
 - `setSinkId` isn't wired. The core has `SetAudioOutputDevice`, but
   `media::Renderer` has no sink switch, so it needs a client extension call.
 - Two FairPlay players in one frame can lose the speaker icon: upstream's
@@ -443,7 +456,8 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
 - Dolby Vision in Media Source follows Safari, whose
   `AVSampleBufferDisplayLayer` decodes it clear or encrypted, with keys set
   before, after or never. On a document presenting Safari's identity (with
-  one rebuffer where keys or Dolby Vision arrive late, see Known gaps):
+  one rebuffer where Dolby Vision or keys reach Chromium's renderer, see
+  Known gaps):
   - A clear Dolby Vision init segment (a plain `dvhe`/`dvh1` sample entry, no
     `encv` or `tenc`, as in a clear lead) is accepted in profiles 5 and 8,
     whatever the key timing. `WebMediaPlayerImpl` tells the demuxer when the

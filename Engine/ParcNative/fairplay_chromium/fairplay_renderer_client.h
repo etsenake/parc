@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
@@ -67,7 +68,8 @@ class FairPlayRendererClient final
   // pipeline enabled |stream| (a SourceBuffer's track added during playback,
   // or one the page turned on): it joins the GPU process's renderers, with
   // every other enabled audio stream they don't play. Audio streams now
-  // disabled leave.
+  // disabled leave; another video stream, or the video track turned back
+  // on, replaces the one they play.
   void OnTracksChanged(DemuxerStream::Type track_type,
                        DemuxerStream* stream,
                        base::OnceClosure change_completed_cb) override;
@@ -136,6 +138,11 @@ class FairPlayRendererClient final
   // By the ID the GPU process names them with: their index among Initialize's
   // streams, then FairPlayRendererExtension::AddStream's.
   std::map<uint32_t, Played> played_;
+  // The proxies of video streams a track switch replaced.
+  std::vector<std::unique_ptr<MojoDemuxerStreamImpl>> retired_proxies_;
+  // The page turned its video track off (a video track change with no
+  // stream).
+  bool video_turned_off_ = false;
   uint32_t next_stream_id_ = 0;
   mojo::Remote<mojom::FairPlayRendererExtension> renderer_extension_;
   // A track change from before |renderer_extension_| came (the pipeline

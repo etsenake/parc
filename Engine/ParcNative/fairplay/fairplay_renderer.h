@@ -163,18 +163,33 @@ class FairPlayRenderer {
   // when there is video already; AddAudio names the new track in |track|.
   Result AddVideo(const VideoConfig& config);
   Result AddAudio(const AudioConfig& config, uint32_t* track);
+  // Another video track replaces the one playing (a video track switch), fed
+  // from the keyframe before the current time. The picture stays until the
+  // new track's frame at the current time decodes, the clock waiting for it,
+  // as WebKit's AudioVideoRendererAVFObjC flushes its video renderer for a
+  // new track; the display layer, the audio and the buffering state stay.
+  Result ReplaceVideo(const VideoConfig& config);
   // Takes an audio track's renderer off the synchronizer, dropping what it
   // holds (AudioVideoRendererAVFObjC::removeAudioRenderer).
   void RemoveAudio(uint32_t track);
 
   // Joins the renderers to |cdm|'s AVContentKeySession as content key
   // recipients (borrowed; call SetCdm(nullptr) before destroying it); streams
-  // added later join it as they are created. May come before Initialize (Chromium's order when MediaKeys were set first; the
-  // CDM is attached when the renderers exist) or after it, but before the
-  // first Enqueue, and can't move to another CDM afterwards: AVFoundation
-  // allows recipients to join one session, before they process media, and
-  // SetCdm(nullptr) leaves them unable to decrypt. Setting the same CDM again
-  // is a no-op, except after DetachCdm, which it undoes.
+  // added later join it as they are created. May come before Initialize
+  // (Chromium's order when MediaKeys were set first; the CDM is attached when
+  // the renderers exist) or after it. AVFoundation takes recipients only
+  // before they process media, so once samples were enqueued new renderers
+  // join instead and take over on the same clock: they get the samples the
+  // others hold, the display layer with a frame from the keyframe before the
+  // current time, and each audio renderer from a sample a moment ahead, where
+  // the one it replaces leaves. The picture, the sound and the clock carry on
+  // as WebKit's per-sample keys let Safari's. Another CDM (MediaKeys replaced
+  // during playback) takes new renderers the same way, since a recipient
+  // can't move between key sessions: the outgoing ones keep the old CDM's
+  // keys until they leave, so it must outlive them (until this renderer is
+  // destroyed), and samples the new CDM has no key for are held.
+  // SetCdm(nullptr) leaves the recipients unable to decrypt. Setting the same
+  // CDM again is a no-op, except after DetachCdm, which it undoes.
   Result SetCdm(FairPlayCdm* cdm);
 
   // setMediaKeys(null) during playback, as WebKit's renderer takes it
@@ -187,9 +202,14 @@ class FairPlayRenderer {
   // CDM takes another renderer.
   void DetachCdm();
 
-  // The AVSampleBufferDisplayLayer to composite, borrowed. Nonnull once
-  // Initialize or AddVideo succeeded with a video config.
+  // The CALayer to composite, borrowed: it holds the
+  // AVSampleBufferDisplayLayer, which SetCdm may replace inside it, filling
+  // its bounds. Nonnull once Initialize or AddVideo succeeded with a video
+  // config.
   void* display_layer() const;
+  // Clears the picture, before the compositor may keep showing the layer
+  // until its next commit (teardown).
+  void RemoveDisplayedImage();
 
   bool IsReadyForMoreData(StreamId stream) const;
 

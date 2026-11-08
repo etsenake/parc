@@ -85,11 +85,15 @@ class FairPlayRendererAdapter final
   void SetExtension(std::unique_ptr<mojom::FairPlayRendererExtension> extension);
   // A stream the render process adds during playback (a SourceBuffer added
   // after the others), which joins the playing renderers without replacing
-  // them (FairPlayRenderer::AddVideo, AddAudio). Streams given to Initialize
-  // are named by their index there; |id| names this one, for RemoveStream.
+  // them (FairPlayRenderer::AddVideo, AddAudio). A video stream when there is
+  // one already is a video track switch, or the track turned back on: it
+  // replaces that one (FairPlayRenderer::ReplaceVideo). Streams given to
+  // Initialize are named by their index there; |id| names this one, for
+  // RemoveStream.
   void AddStream(uint32_t id, DemuxerStream* stream);
-  // An audio stream the page turned off: its renderer leaves. False when it
-  // isn't one the adapter can drop (no such audio stream), which then stays.
+  // A stream the page turned off or replaced, read no more: an audio stream's
+  // renderer leaves. False for video, whose stream then stays (the display
+  // layer does; AddStream's next video stream replaces it).
   bool RemoveStream(uint32_t id);
 
   // Called once the browser was asked for the mute state. Audio stays muted
@@ -119,7 +123,6 @@ class FairPlayRendererAdapter final
     bool end_of_stream = false;
   };
 
-  bool HasVideo() const;
   bool RegisterLayer();
   void ReadFromStream(uint32_t id);
   void OnBuffersRead(uint32_t id,
@@ -149,8 +152,8 @@ class FairPlayRendererAdapter final
 
   std::unique_ptr<parc::fairplay::FairPlayRenderer> core_;
   bool core_initialized_ = false;
-  bool cdm_attached_ = false;
-  // The CDM accepted, which MojoRendererService keeps alive for this
+  bool core_has_video_ = false;  // Its display layer exists.
+  // The CDM accepted last, which MojoRendererService keeps alive for this
   // renderer; only compared, when the page sets the same MediaKeys again.
   raw_ptr<parc::fairplay::FairPlayCdm> attached_cdm_ = nullptr;
   bool playing_ = false;

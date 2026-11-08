@@ -24,7 +24,8 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
   track (played mixed, as WebKit's `AudioVideoRendererAVFObjC` keeps one per
   enabled track) under an `AVSampleBufferRenderSynchronizer`. Streams added
   during playback (`AddVideo`, `AddAudio`) join the synchronizer; the clock
-  waits for their samples.
+  waits for their samples. Another video track (`ReplaceVideo`) plays in the
+  same display layer from the current time.
 - `fairplay_bitstream.{h,cc}`: Annex B and ADTS reframing, subsample
   bookkeeping, and the `tenc`/`sinf`/`esds` bytes.
 - `fairplay_key_session_internal.h`: content key recipient attachment for the
@@ -61,14 +62,14 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `LoadSession` / `UpdateSession` / `CloseSession` / `RemoveSession` | same names (`LoadSession` and `RemoveSession` as WebKit's `loadSession`/`removeSessionData`) |
 | `ContentDecryptionModuleClient` (`OnSessionMessage`, `OnSessionKeysChange`, `OnSessionClosed`) | `FairPlayCdmClient` |
 | `Renderer::Initialize` (decoder configs) | `FairPlayRenderer::Initialize(VideoConfig, AudioConfig)` |
-| `Renderer::SetCdm` | `SetCdm(FairPlayCdm*)` (joins the renderers to the CDM's key session) |
+| `Renderer::SetCdm` | `SetCdm(FairPlayCdm*)` (joins the renderers to the CDM's key session, or new ones that take over after media was processed) |
 | `DemuxerStream::Read` loop | `OnNeedData` + `IsReadyForMoreData` + `Enqueue(EncodedSample)` |
 | `DecoderBuffer` + `DecryptConfig` | `EncodedSample` + `DecryptInfo` |
 | `StartPlayingFrom` / `SetPlaybackRate` / `SetVolume` / `Flush` / `GetMediaTime` | same names (plus `SetMuted`); the rate picks the audio renderer's pitch algorithm as WebKit's `AudioVideoRendererAVFObjC` does (Spectral off 1x, else Varispeed) |
 | `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set; the GPU adapter has no call for it yet, as `media::mojom::Renderer` carries none) |
 | `RendererClient::OnWaiting(kNoDecryptionKey)` | `OnWaitingForKey` |
 | `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names; a later natural size is reported when the clock reaches its first sample (WebKit's `sizeWillChangeAtTime`) |
-| compositing (`ca_renderer_layer_tree.mm`) | `display_layer()` (`AVSampleBufferDisplayLayer*`) |
+| compositing (`ca_renderer_layer_tree.mm`) | `display_layer()` (a `CALayer` host filled by the `AVSampleBufferDisplayLayer`) |
 | `RendererClient::OnStatisticsUpdate` (frames decoded/dropped) | `LoadVideoMetrics`: AVFoundation's cumulative counts (macOS 14.4+) and `frames_passed`, the core's count of video samples the clock reached |
 
 Threading: every public method runs on one owner sequence, and every client
@@ -119,8 +120,17 @@ The core uses the public path WebKit used before adopting that API:
   enqueued without a key fails the renderer.
 - Each key ID gets its own protected format description, since that is what
   recipients match on.
-- Recipients must join before they process media and belong to one session,
-  so `SetCdm` comes before the first sample and can't move to another CDM.
+- Recipients must join before they process media and belong to one session.
+  So a `SetCdm` after the first sample, or with another CDM, makes new
+  renderers that join first and take over on the same synchronizer, as
+  WebKit's `stageVideoRenderer` swaps video renderers on one timeline: they
+  get what the outgoing ones hold (video from the keyframe before the clock,
+  hidden up to it; audio from a sample 0.25 s ahead, where the outgoing
+  renderer leaves the synchronizer, so nothing plays twice or not at all),
+  the new display layer sits under the outgoing one in `display_layer()`'s
+  host until it has a frame, and the outgoing renderers keep the old CDM's
+  keys until they leave. The clock never stops and nothing is reported to
+  the page. Samples the new CDM has no key for are held.
   `setMediaKeys(null)` is `DetachCdm`, as WebKit's renderer without a CDM:
   the renderers stay in the session, so samples already enqueued keep
   decrypting, and every later protected sample is held until `SetCdm` sets the
