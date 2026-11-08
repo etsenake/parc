@@ -91,10 +91,14 @@ import AppKit
         PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
         expect(missing.stage == .safariAccess, "Restricted Chromium-family sources use Full Disk Access guidance")
         let chromeURL = try app("Google Chrome", "com.google.Chrome")
-        let chrome = PCNativeImportSource("Google Chrome", chromeURL)
+        let chrome = PCNativeImportSource("com.google.Chrome", chromeURL)
         let chromeImport = BrowserImportCoordinator(store: store, destination: destination, window: window, ownerIsCurrent: { true })
         chromeImport.discover()
-        PCNativeBrowserApplication.sources.removeFirst().complete([chrome])
+        let arc = PCNativeImportSource(BrowserImportCoordinator.arcBundleIdentifier,
+                                       try app("Arc", BrowserImportCoordinator.arcBundleIdentifier))
+        PCNativeBrowserApplication.sources.removeFirst().complete([safari, chrome, impostor, arc])
+        expect(chromeImport.sources.map(\.identifier) == [arc, chrome, safari, impostor].map(\.identifier),
+               "Both import flows show Arc, then Chrome, then other browsers in discovery order")
         chromeImport.select(chrome); chromeImport.loadProfiles()
         PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
         expect(chromeImport.stage == .safariAccess && chromeImport.selectedProfiles == [partial.identifier],

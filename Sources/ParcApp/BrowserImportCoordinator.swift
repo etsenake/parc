@@ -163,7 +163,12 @@ final class BrowserImportCoordinator {
         stage = .loading; message = "Finding your browsers…"; error = nil; onChange?()
         discovery = PCNativeBrowserApplication.availableImportSources { [weak self] sources in
             guard let self, self.isCurrent, self.generation == token else { return }
-            self.discovery = nil; self.sources = sources; self.stage = .sources
+            let priorities = [Self.arcBundleIdentifier: 0, "com.google.Chrome": 1]
+            self.discovery = nil
+            self.sources = sources.enumerated().sorted {
+                (priorities[$0.element.identifier] ?? 2, $0.offset) < (priorities[$1.element.identifier] ?? 2, $1.offset)
+            }.map(\.element)
+            self.stage = .sources
             self.message = sources.isEmpty ? "No supported browsers were found." : "Bring your browsing with you."
             if let bundleID = resumingSourceBundleID {
                 guard let source = sources.first(where: {
