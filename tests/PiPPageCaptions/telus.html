@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- TELUS TV+'s captions, as main.c8ba1c06.js builds them: its own Shaka text
+     displayer mounts a fixed data-id="captions" list for each line and
+     unmounts it between lines; the controls show the current and end time. -->
+<link rel="stylesheet" href="style.css">
+<div class="sc-rF" style="width: 640px; height: 360px">
+  <video data-id="video-player"></video>
+  <div class="sc-player-controls controls" style="position: absolute; left: 0; right: 0; top: 0; color: white">
+    <button aria-label="Pause">❚❚</button>
+    <div><span class="current" id="clock">0:00</span> <span class="end">1:00:00</span></div>
+  </div>
+</div>
+<script src="player.js"></script>
+<script>
+const player = document.querySelector('.sc-rF');
+playCaptions(line => {
+  document.querySelector('[data-id=captions]')?.remove();
+  if (!line) return;
+  player.insertAdjacentHTML('beforeend', `<div class="sc-iF" data-id="captions" style="width: 640px; position: fixed; top: 290px; display: flex; flex-direction: column; align-items: center"><div class="sc-oF" style="font: 22px Helvetica, sans-serif; padding: 4px 12px; background-color: rgba(0, 0, 0, 0.8); color: #fff; text-align: center">${line}</div></div>`);
+}, document.getElementById('clock'));
+</script>

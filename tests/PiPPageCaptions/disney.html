@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Disney+'s timed-text-override-region, as dwp-Ba8nLNEi.js builds it: a
+     custom element whose shadow root holds the region the hive subtitle
+     renderer fills with cue boxes; beside it the aria-live skip overlay with
+     its button and the controls. -->
+<link rel="stylesheet" href="style.css">
+<div class="hive-video" style="position: relative; width: 640px; height: 360px">
+  <div><video></video></div>
+  <timed-text-override-region style="position: absolute; inset: 0; pointer-events: none"></timed-text-override-region>
+  <div class="skip-overlay controls" aria-live="assertive" style="position: absolute; right: 24px; bottom: 120px">
+    <button id="skip">SKIP INTRO</button>
+  </div>
+  <div class="controls-overlay controls" style="position: absolute; left: 0; right: 0; bottom: 0; color: white">
+    <button aria-label="Play">▶</button><span id="clock">0:00</span>
+  </div>
+</div>
+<script src="player.js"></script>
+<script>
+const host = document.querySelector('timed-text-override-region');
+host.attachShadow({mode: 'open'}).innerHTML = `<style>:host { direction: ltr } .timed-text-override-region { position: absolute; inset-block: 120px 40px; inset-inline: 0 }</style><div class="timed-text-override-region controls-decayed" aria-hidden="true"></div>`;
+const region = host.shadowRoot.querySelector('.timed-text-override-region');
+playCaptions(line => {
+  region.replaceChildren();
+  document.getElementById('skip').textContent = line ? 'SKIP RECAP' : 'SKIP INTRO';
+  if (!line) return;
+  region.innerHTML = `<div class="hive-subtitle-renderer-cue-positioning-box" style="position: absolute; left: 0; right: 0; bottom: 0; text-align: center"><span style="background: rgba(0, 0, 0, 0.75); color: #fff; font-size: 22px; padding: 2px 8px; font-family: Avenir, Helvetica, sans-serif">${line}</span></div>`;
+}, document.getElementById('clock'));
+</script>

@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- YouTube's caption window, as captions.js (player a5c2aafe) builds it: a
+     focusable caption-window holding captions-text, lines and segments, made
+     for each line; beside it the controls' time display and an ad countdown. -->
+<link rel="stylesheet" href="style.css">
+<div id="movie_player" class="html5-video-player" style="position: relative; width: 640px; height: 360px">
+  <div class="html5-video-container"><video class="video-stream html5-main-video"></video></div>
+  <div class="ytp-caption-window-container" id="ytp-caption-window-container" style="position: absolute; inset: 0; pointer-events: none"></div>
+  <div class="ytp-ad-player-overlay controls">
+    <div class="ytp-ad-text" style="position: absolute; left: 8px; bottom: 60px; color: white">Ad 0:05</div>
+    <button class="ytp-ad-skip-button" style="position: absolute; right: 8px; bottom: 60px">Skip</button>
+  </div>
+  <div class="ytp-chrome-bottom controls" style="position: absolute; left: 12px; right: 12px; bottom: 0; color: white">
+    <button class="ytp-play-button ytp-button" aria-label="Play">▶</button>
+    <div class="ytp-time-display" style="display: inline"><span class="ytp-time-current" id="clock">0:00</span><span> / 10:00</span></div>
+  </div>
+</div>
+<script src="player.js"></script>
+<script>
+const windows = document.getElementById('ytp-caption-window-container');
+playCaptions(line => {
+  windows.replaceChildren();
+  if (!line) return;
+  windows.innerHTML = `<div class="caption-window ytp-caption-window-bottom" id="caption-window-1" dir="ltr" tabindex="0" lang="en" style="position: absolute; left: 50%; bottom: 2%; width: 360px; margin-left: -180px; text-align: center; touch-action: none"><span class="captions-text" style="word-wrap: normal; display: block;"><span class="caption-visual-line" style="display: block;"><span class="ytp-caption-segment" style="display: inline-block; white-space: pre-wrap; background: rgba(8, 8, 8, 0.75); font-size: 20px; color: rgb(255, 255, 255); fill: rgb(255, 255, 255); font-family: 'YouTube Noto', Roboto, Arial, sans-serif; padding: 0 4px">${line}</span></span></span></div>`;
+}, document.getElementById('clock'));
+</script>

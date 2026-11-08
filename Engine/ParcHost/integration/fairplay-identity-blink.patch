@@ -7254,7 +7254,7 @@
                                                WrapWeakPersistent(&element),
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
-@@ -27,12 +27,15 @@
+@@ -27,12 +27,16 @@
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -7264,13 +7264,14 @@
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
  #include "third_party/blink/renderer/core/layout/layout_video.h"
 +#include "third_party/blink/renderer/core/page/chrome_client.h"
 +#include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture.h"
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture_event.h"
  #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_event.h"
-@@ -41,6 +44,9 @@
+@@ -41,6 +45,9 @@
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
  #include "third_party/blink/renderer/platform/widget/frame_widget.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -7280,7 +7281,7 @@
  #include "ui/gfx/geometry/point.h"
  
  namespace blink {
-@@ -131,7 +137,15 @@
+@@ -131,7 +138,15 @@
    if (!video_element.HasVideo())
      return Status::kVideoTrackNotAvailable;
  
@@ -7297,25 +7298,39 @@
      return Status::kDisabledByAttribute;
  
    if (video_element.IsInAutoPIP())
-@@ -274,6 +288,9 @@
+@@ -274,6 +289,11 @@
  
    picture_in_picture_element_ = element;
    picture_in_picture_element_->OnEnteredPictureInPicture();
 +  // The first update always goes out: a reused window may show old cues.
 +  showing_captions_ = true;
 +  OnTextTrackDisplayChanged();
++  page_captions_ = MakeGarbageCollected<ParcPageCaptions>(*element);
++  page_captions_timer_.StartRepeating(kPageCaptionsInterval, FROM_HERE);
  
    // Request that viz does not throttle our LayerTree's BeginFrame messages, in
    // case this page generates them as a side-effect of driving picture-in-
-@@ -616,8 +633,48 @@
+@@ -349,6 +369,11 @@
+ 
+     HTMLVideoElement* element = picture_in_picture_element_;
+     picture_in_picture_element_ = nullptr;
++    page_captions_timer_.Stop();
++    if (page_captions_) {
++      page_captions_->Clear();
++      page_captions_ = nullptr;
++    }
+ 
+     element->OnExitedPictureInPicture();
+     element->DispatchEvent(*PictureInPictureEvent::Create(
+@@ -616,6 +641,67 @@
      const gfx::Size& size) {
    if (picture_in_picture_window_)
      picture_in_picture_window_->OnResize(size);
 +  // WebKit lays the cues out again for the new window size
 +  // (MediaControlTextTrackContainerElement::textTrackRepresentationBoundsChanged).
 +  OnTextTrackDisplayChanged();
- }
- 
++}
++
 +void PictureInPictureControllerImpl::OnTextTrackDisplayChanged() {
 +  // Paints after the cue boxes are laid out, once however many cues changed.
 +  if (captions_update_pending_ || !picture_in_picture_session_.is_bound()) {
@@ -7346,6 +7361,17 @@
 +              .GetScreenInfo(*frame)
 +              .device_scale_factor,
 +          bounds);
++  // Pages that draw their own captions get them shown too.
++  if (captions.drawsNothing() && page_captions_) {
++    captions = page_captions_->Paint(
++        gfx::SizeF(picture_in_picture_window_->width(),
++                   picture_in_picture_window_->height()),
++        frame->GetPage()
++            ->GetChromeClient()
++            .GetScreenInfo(*frame)
++            .device_scale_factor,
++        bounds);
++  }
 +  if (captions.drawsNothing() && !showing_captions_) {
 +    return;
 +  }
@@ -7353,9 +7379,39 @@
 +  picture_in_picture_session_->UpdateCaptions(captions, bounds);
 +}
 +
- void PictureInPictureControllerImpl::OnStopped() {
-   OnExitedPictureInPicture(nullptr);
++void PictureInPictureControllerImpl::PageCaptionsTimerFired(TimerBase*) {
++  if (!GetSupplementable()->IsActive()) {
++    page_captions_timer_.Stop();
++    return;
++  }
++  if (page_captions_ && page_captions_->Update()) {
++    OnTextTrackDisplayChanged();
++  }
  }
+ 
+ void PictureInPictureControllerImpl::OnStopped() {
+@@ -639,6 +725,8 @@
+   visitor->Trace(document_picture_in_picture_window_);
+   visitor->Trace(document_picture_in_picture_owner_);
+   visitor->Trace(document_pip_context_observer_);
++  visitor->Trace(page_captions_);
++  visitor->Trace(page_captions_timer_);
+   visitor->Trace(picture_in_picture_element_);
+   visitor->Trace(picture_in_picture_window_);
+   visitor->Trace(session_observer_receiver_);
+@@ -654,7 +742,11 @@
+       ExecutionContextClient(document.GetExecutionContext()),
+       session_observer_receiver_(this, document.GetExecutionContext()),
+       picture_in_picture_service_(document.GetExecutionContext()),
+-      picture_in_picture_session_(document.GetExecutionContext()) {}
++      picture_in_picture_session_(document.GetExecutionContext()),
++      page_captions_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
++                           this,
++                           &PictureInPictureControllerImpl::
++                               PageCaptionsTimerFired) {}
+ 
+ bool PictureInPictureControllerImpl::EnsureService() {
+   if (picture_in_picture_service_.is_bound())
 --- a/third_party/blink/renderer/core/html/media/html_video_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_video_element.cc
 @@ -56,6 +56,7 @@

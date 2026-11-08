@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Netflix's player-timedtext, as cadmium-playercore-6.0065.004.911.js builds
+     it: a container over the player, emptied between lines, under the bottom
+     controls (buttons, title, time remaining). -->
+<link rel="stylesheet" href="style.css">
+<div class="watch-video" tabindex="0" style="position: relative; width: 640px; height: 360px">
+  <div class="watch-video--player-view" style="position: absolute; inset: 0">
+    <div><video></video></div>
+    <div class="player-timedtext" style="position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: block"></div>
+  </div>
+  <div class="watch-video--bottom-controls-container controls" style="position: absolute; left: 0; right: 0; bottom: 0; color: white">
+    <button aria-label="Play" data-uia="control-play-pause-play">▶</button>
+    <div data-uia="video-title" style="text-align: center"><h4 style="display: inline">Show</h4> <span>E1</span> <span>Pilot</span></div>
+    <span data-uia="controls-time-remaining" id="clock">0:00</span>
+    <button aria-label="Audio &amp; Subtitles" data-uia="control-audio-subtitle">Audio &amp; Subtitles</button>
+  </div>
+</div>
+<script src="player.js"></script>
+<script>
+const timedText = document.querySelector('.player-timedtext');
+playCaptions(line => {
+  timedText.replaceChildren();
+  if (!line) return;
+  timedText.innerHTML = `<div class="player-timedtext-text-container" style="position: absolute; left: 0; right: 0; bottom: 30px; text-align: center; white-space: nowrap"><span style="font-size: 24px; line-height: normal; font-weight: normal; color: #fff; text-shadow: #000 0 0 7px, #000 0 0 7px; font-family: 'Netflix Sans', Helvetica, Arial, sans-serif">${line}</span></div>`;
+}, document.getElementById('clock'));
+</script>

@@ -1,0 +1,5 @@
+body { margin: 0; background: #222; font-family: -apple-system, sans-serif; }
+video { display: block; width: 640px; height: 360px; background: #000; }
+button { font: inherit; }
+.render, .render body { background: transparent; }
+.render video, .render .controls { visibility: hidden; }

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 630,
+  "version": 631,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1673,6 +1673,16 @@
       "sha256": "97777f4a39fef3f6137056797ab5d10b8ec6e75c4709c9a395d394667fd26a01"
     },
     {
+      "source": "Engine/ParcRenderer/parc_page_captions.cc",
+      "target": "third_party/blink/renderer/core/html/media/parc_page_captions.cc",
+      "sha256": "8a45691e3018674fa32a39fc08ef7ff21f34199aecfc0db3c9df28eaf58b98d7"
+    },
+    {
+      "source": "Engine/ParcRenderer/parc_page_captions.h",
+      "target": "third_party/blink/renderer/core/html/media/parc_page_captions.h",
+      "sha256": "72aad061add5a8ed9775532f35e7f7309bef8ca73092ef9e05a91440f7cf7a98"
+    },
+    {
       "source": "Engine/ParcHost/integration/parc_worker_identity.h",
       "target": "content/public/browser/parc_worker_identity.h",
       "sha256": "842b905595f1ef4ed78eeab6057b6042f953f2231985aa57d3d2c260b0d4ae73"
@@ -3027,7 +3037,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-video-pip.patch",
-      "sha256": "8a8dd0a5503f228128516fef65d3c137a25a6cf6e0d88abbfbdbaa5a46b720ca",
+      "sha256": "921519b6623ba71f6aeed9f7af3c57c15cc7611e25df8eeff1719500af084468",
       "files": [
         {
           "target": "chrome/browser/chrome_content_browser_client.cc",
@@ -3077,22 +3087,47 @@
         {
           "target": "third_party/blink/renderer/core/html/track/text_track_container.cc",
           "before_sha256": "9a7c89f472ab8b980dc59ed19ebb01642ab3b603522982add495134ed7068229",
-          "after_sha256": "f4329b19d084e6aef5dac42f1a7d3f55ba55f993927e9a84304952e2197aafca"
+          "after_sha256": "3a5e644e0ad94f3b3bd7b3eeeb8aee9ebf4b56a4d4e799803b208c7e8d8cf634"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/text_track_container.h",
           "before_sha256": "b50157e72f77aaaa1ec4b11c99d01cc11c7cbb3e2eed9986227b1de2939ede8f",
-          "after_sha256": "287c624d783a2b58670288fa45540610090af3dcb2f412ebebaa1e95ca655a09"
+          "after_sha256": "3db6dc39a8f4c201f5125b93df9f4e1bb788991d551d081375f7b2ba7a575889"
         },
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h",
           "before_sha256": "bc18736804b7ad841075911b77129d5a411a3af13f334c15c37b668c3c641e6d",
-          "after_sha256": "8e604e1b2c324b177644e1457eac16c2eb98fa11266598e3994484c10b663701"
+          "after_sha256": "d61802709719c10b62acebdc65c0c99da9f29d657645b7b26af8cff66e70550c"
         },
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc",
           "before_sha256": "2922117f145946a2c24a3bd125f0464dde941254ba3e06d838a103227f15dd1b",
-          "after_sha256": "f144584d31074b4370ee08e368ac6d2c106199cf9af30c9e73b82165036e35c8"
+          "after_sha256": "8f2fed3abccf754c8b6e8db3e00f5f0b6bac8c99776d240d3776203e67f41858"
+        },
+        {
+          "target": "third_party/blink/renderer/core/dom/element.h",
+          "before_sha256": "4e345d1eb9e4e813de1ca0568a25070c0e10921329aa93847a16fb3f609e6641",
+          "after_sha256": "6abd9ab0e02f1a15f66ec830856ed01521832fcc707e795faecfef66bf636eec"
+        },
+        {
+          "target": "third_party/blink/renderer/core/dom/node_rare_data.h",
+          "before_sha256": "1cf7d054c88507419d0d959fe5ceaa61b9e9c80ddeb93e7a59c886165529aaad",
+          "after_sha256": "0eeca5d0550aa05862a18e0fe64d803a59df5363785b704558fd583fb8b5594d"
+        },
+        {
+          "target": "third_party/blink/renderer/core/css/resolver/style_adjuster.cc",
+          "before_sha256": "55df506be8e2e750ec085ef31413bc2f371c25e9b261032e32e56e14ec46ef9e",
+          "after_sha256": "60b67745fd9778748c8c8ef7280f6cc294c4f169c7d2aedd7ca6adb4ce577add"
+        },
+        {
+          "target": "third_party/blink/renderer/core/paint/paint_layer_painter.cc",
+          "before_sha256": "36799072a7ba7059c14d77ca244262873fe7b729a5de39103f75a1a5de6474a5",
+          "after_sha256": "2b78b966443fd0312ff32e7ab52a60cad2e4e3a7cfebd66817b854970e9535bf"
+        },
+        {
+          "target": "third_party/blink/renderer/core/animation/compositor_animations.cc",
+          "before_sha256": "0422f13a2da288a3305f3bd1d817f2a48606162730f7a591466c18485b698633",
+          "after_sha256": "03f8f86aa9d5545d58e725eba0c6331a4363160b8f83d89dfca71beb816ed9e1"
         }
       ]
     },
@@ -5453,7 +5488,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "d31299d6af79e17751e03533988bddcdf90b525633c6767419b8c8744f6696d4",
+      "sha256": "dc7aba5763dd93d6637f3ad6537280321570b84ab2b9cea679d76d8aa2b2eaf0",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -5608,7 +5643,7 @@
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc",
           "before_sha256": "510e5a4ce89d9ad940c4a85a6ba172e4fc92ed5e008fff18c06b4a44bb3bc26e",
-          "after_sha256": "f702714d2dd32919ac1d67c5bb06387a676419f4dbee83c003f1992962ae152f"
+          "after_sha256": "f62cd48b36c141bab97610afe505df9eeecafd298db9da09d60c484fa1bd1b74"
         },
         {
           "target": "third_party/blink/renderer/core/html/media/html_video_element.cc",
@@ -5945,7 +5980,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-tracks.patch",
-      "sha256": "9810b58c4ae3b20c64cdfc3bdafacd0980c0fb8cdb7641023eaaf56011a6b9cb",
+      "sha256": "78edbd656bc94438da194fd3917406126a504dcb14d0a1c32ce54ac713a861dd",
       "files": [
         {
           "target": "third_party/blink/renderer/core/html/track/text_track.idl",
@@ -6000,7 +6035,7 @@
         {
           "target": "third_party/blink/renderer/core/html/build.gni",
           "before_sha256": "17f1829b88eb284a036a1f8c9b10880331fbc1583da7a08cc64d006592236550",
-          "after_sha256": "ca8ac3353b3a90f31f50c1bb4053f87967e062d737a675ff4120133034b0141b"
+          "after_sha256": "24e2f220bd72e1bba18faaf149b9a934d56e058543bdb0122d23ebdcb9c3f4b8"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/audio_track.cc",

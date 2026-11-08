@@ -275,7 +275,7 @@
  
  namespace blink {
  
-@@ -146,6 +159,98 @@
+@@ -146,6 +159,130 @@
                           CSSPrimitiveValue::UnitType::kPixels);
  }
  
@@ -309,8 +309,27 @@
 +    }
 +  }
 +  cues.Intersect(gfx::RectF(container->AbsoluteBoundingBoxRect()));
++  // contain: paint makes the container a stacking context, so its layer
++  // paints exactly the cues.
++  return PaintLayersForPictureInPicture({container}, {cues}, *video,
++                                        window_size, device_scale_factor,
++                                        bounds);
++}
++
++SkBitmap TextTrackContainer::PaintLayersForPictureInPicture(
++    const HeapVector<Member<const LayoutBoxModelObject>>& containers,
++    const Vector<gfx::RectF>& areas,
++    const LayoutVideo& video,
++    const gfx::SizeF& window_size,
++    float device_scale_factor,
++    gfx::RectF& bounds) {
++  DCHECK_EQ(containers.size(), areas.size());
++  gfx::RectF cues;
++  for (const gfx::RectF& area : areas) {
++    cues.Union(area);
++  }
 +  const gfx::RectF video_rect(
-+      video->LocalToAbsoluteRect(video->ReplacedContentRect()));
++      video.LocalToAbsoluteRect(video.ReplacedContentRect()));
 +  if (cues.IsEmpty() || video_rect.IsEmpty()) {
 +    return SkBitmap();
 +  }
@@ -342,30 +361,43 @@
 +    return SkBitmap();
 +  }
 +  bitmap.eraseColor(SK_ColorTRANSPARENT);
-+
-+  // contain: paint makes the container a stacking context, so its layer
-+  // paints exactly the cues. Painting follows DraggedNodeImageBuilder.
-+  PaintLayer& layer = *container->Layer();
-+  gfx::RectF local = container->AbsoluteToLocalQuad(gfx::QuadF(cues))
-+                         .BoundingBox();
-+  if (local.IsEmpty()) {
-+    return SkBitmap();
-+  }
-+  local.Offset(gfx::Vector2dF(container->FirstFragment().PaintOffset()));
-+  OverriddenCullRectScope cull_rect_scope(
-+      layer, CullRect(gfx::ToEnclosingRect(local)), /*disable_expansion=*/true);
-+  PaintRecordBuilder builder;
-+  GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kInPaint);
-+  PaintLayerPainter(layer).Paint(builder.Context(),
-+                                 PaintFlag::kOmitCompositingInfo);
-+  GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kPaintClean);
-+  // `local` is the cue area in the layer's space, which a transform on the
-+  // player scales against the absolute `cues` the bitmap is sized from.
 +  cc::SkiaPaintCanvas canvas(bitmap);
-+  canvas.scale(size.width() / local.width(), size.height() / local.height());
-+  canvas.translate(-local.x(), -local.y());
-+  builder.EndRecording(
-+      canvas, container->FirstFragment().LocalBorderBoxProperties().Unalias());
++
++  // Each layer paints at its own place in the cue area. Painting follows
++  // DraggedNodeImageBuilder.
++  DocumentLifecycle& lifecycle = video.GetDocument().Lifecycle();
++  lifecycle.AdvanceTo(DocumentLifecycle::kInPaint);
++  for (wtf_size_t i = 0; i < containers.size(); ++i) {
++    const LayoutBoxModelObject& container = *containers[i];
++    const gfx::RectF& area = areas[i];
++    PaintLayer& layer = *container.Layer();
++    gfx::RectF local =
++        container.AbsoluteToLocalQuad(gfx::QuadF(area)).BoundingBox();
++    if (local.IsEmpty()) {
++      continue;
++    }
++    local.Offset(gfx::Vector2dF(container.FirstFragment().PaintOffset()));
++    OverriddenCullRectScope cull_rect_scope(
++        layer, CullRect(gfx::ToEnclosingRect(local)),
++        /*disable_expansion=*/true);
++    PaintRecordBuilder builder;
++    PaintLayerPainter(layer).Paint(builder.Context(),
++                                   PaintFlag::kOmitCompositingInfo);
++    // `local` is the area in the layer's space, which a transform on the
++    // player scales against the absolute `area` the bitmap is sized from.
++    // Its own effect isn't applied: a page's captions are transparent in the
++    // tab while the window shows them.
++    canvas.save();
++    canvas.translate((area.x() - cues.x()) * pixels,
++                     (area.y() - cues.y()) * pixels);
++    canvas.scale(area.width() * pixels / local.width(),
++                 area.height() * pixels / local.height());
++    canvas.translate(-local.x(), -local.y());
++    builder.EndRecording(
++        canvas, container.FirstFragment().LocalBorderBoxProperties().Unalias());
++    canvas.restore();
++  }
++  lifecycle.AdvanceTo(DocumentLifecycle::kPaintClean);
 +
 +  bounds = gfx::ScaleRect(placed, 1 / picture.width(), 1 / picture.height());
 +  return bitmap;
@@ -376,10 +408,13 @@
    if (!media_element.TextTracksVisible()) {
 --- a/third_party/blink/renderer/core/html/track/text_track_container.h
 +++ b/third_party/blink/renderer/core/html/track/text_track_container.h
-@@ -32,6 +32,12 @@
+@@ -31,11 +31,21 @@
+ #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_TRACK_TEXT_TRACK_CONTAINER_H_
  
  #include "third_party/blink/renderer/core/html/html_div_element.h"
++#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
  #include "third_party/blink/renderer/platform/wtf/casting.h"
++#include "third_party/blink/renderer/platform/wtf/vector.h"
 +#include "third_party/skia/include/core/SkBitmap.h"
 +
 +namespace gfx {
@@ -389,10 +424,17 @@
  
  namespace blink {
  
-@@ -57,6 +63,15 @@
+ class HTMLMediaElement;
++class LayoutBoxModelObject;
++class LayoutVideo;
+ 
+ class TextTrackContainer final : public HTMLDivElement {
+  public:
+@@ -56,6 +66,25 @@
+   };
    void UpdateDisplay(HTMLMediaElement&, ExposingControls);
    void UpdateDefaultFontSize(LayoutObject*);
- 
++
 +  // Parc: the displayed cues for a picture-in-picture window of
 +  // `window_size` DIPs, painted as WebKit's
 +  // MediaControlTextTrackContainerElement::createTextTrackRepresentationImage
@@ -401,13 +443,36 @@
 +  SkBitmap PaintForPictureInPicture(const gfx::SizeF& window_size,
 +                                    float device_scale_factor,
 +                                    gfx::RectF& bounds);
-+
++  // Paints each of `containers`' layers, stacking contexts, over its area
++  // (absolute) for that window, as PaintForPictureInPicture paints the cue
++  // container. `bounds` places them all.
++  static SkBitmap PaintLayersForPictureInPicture(
++      const HeapVector<Member<const LayoutBoxModelObject>>& containers,
++      const Vector<gfx::RectF>& areas,
++      const LayoutVideo& video,
++      const gfx::SizeF& window_size,
++      float device_scale_factor,
++      gfx::RectF& bounds);
+ 
    void Trace(Visitor*) const override;
  
-  private:
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
-@@ -109,6 +109,7 @@
+@@ -17,11 +17,13 @@
+ #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_window.h"
+ #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
+ #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
++#include "third_party/blink/renderer/platform/timer.h"
+ #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+ 
+ namespace blink {
+ 
+ class DocumentPictureInPictureOptions;
++class ParcPageCaptions;
+ class HTMLVideoElement;
+ class PictureInPictureWindow;
+ class ScriptState;
+@@ -109,6 +111,7 @@
    void OnMediaPositionStateChanged(
        const media_session::mojom::blink::MediaPositionPtr& media_position)
        override;
@@ -415,37 +480,58 @@
    Element* PictureInPictureElement() const override;
    Element* PictureInPictureElement(TreeScope&) const override;
    bool PictureInPictureEnabled() const override;
-@@ -171,6 +172,9 @@
+@@ -130,6 +133,12 @@
+ 
+   bool IsSessionObserverReceiverBoundForTesting() {
+     return session_observer_receiver_.is_bound();
++  }
++  ParcPageCaptions* PageCaptionsForTesting() const {
++    return page_captions_.Get();
++  }
++  bool IsPageCaptionsTimerActiveForTesting() const {
++    return page_captions_timer_.IsActive();
+   }
+ 
+  private:
+@@ -171,6 +180,14 @@
    // https://crbug.com/1232173
    void SetMayThrottleIfUndrawnFrames(bool may_throttle);
  
 +  // Parc: sends the displayed cues to the window.
 +  void UpdateCaptions();
++  // Parc: follows the captions the page draws itself, which nothing
++  // announces, as often as the cue timeline updates.
++  void PageCaptionsTimerFired(TimerBase*);
++  static constexpr base::TimeDelta kPageCaptionsInterval =
++      base::Milliseconds(250);
 +
    // Makes sure the `picture_in_picture_service_` is set. Returns whether it was
    // initialized successfully.
    bool EnsureService();
-@@ -241,6 +245,9 @@
+@@ -241,6 +258,11 @@
        picture_in_picture_session_;
  
    RequestToken picture_in_picture_request_token_;
 +
 +  bool captions_update_pending_ = false;
 +  bool showing_captions_ = false;
++  Member<ParcPageCaptions> page_captions_;
++  HeapTaskRunnerTimer<PictureInPictureControllerImpl> page_captions_timer_;
  };
  
  }  // namespace blink
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,8 @@
  #include <utility>
  
  #include "base/memory/raw_ptr.h"
++#include "base/functional/function_ref.h"
 +#include "base/run_loop.h"
  #include "media/mojo/mojom/media_player.mojom-blink.h"
  #include "mojo/public/cpp/bindings/pending_associated_remote.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -18,12 +19,17 @@
+@@ -18,12 +20,20 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -453,17 +539,20 @@
 +#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_mode.h"
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/events/event.h"
++#include "third_party/blink/renderer/core/dom/shadow_root.h"
  #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
 +#include "third_party/blink/renderer/core/frame/local_frame_view.h"
  #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
++#include "third_party/blink/renderer/core/html/html_div_element.h"
  #include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
 +#include "third_party/blink/renderer/core/html/track/text_track.h"
 +#include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
  #include "third_party/blink/renderer/core/layout/layout_image.h"
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
-@@ -140,6 +146,7 @@
+@@ -140,6 +150,7 @@
    MOCK_METHOD(void,
                UpdateMediaPosition,
                (media_session::mojom::blink::MediaPositionPtr));
@@ -471,7 +560,7 @@
  
   private:
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -373,6 +380,67 @@
+@@ -373,6 +384,501 @@
                           .PictureInPictureElement());
  }
  
@@ -536,6 +625,546 @@
 +  cleared.Run();
 +}
 +
++// Parc: pages that draw their own captions (ParcPageCaptions). Each player
++// copies the caption and controls markup its service's current scripts build
++// (fetched November 8, 2026); `show` changes the captions as the service does.
++class PictureInPicturePageCaptionsTest
++    : public PictureInPictureControllerTestWithWidget {
++ protected:
++  // Puts the video at #video-slot in `player` and enters picture in picture.
++  ParcPageCaptions& Enter(const char* player) {
++    GetWebView()->MainFrameViewWidget()->Resize(gfx::Size(640, 360));
++    GetDocument().body()->setAttribute(html_names::kStyleAttr,
++                                       AtomicString("margin: 0"));
++    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(player);
++    Video()->setAttribute(html_names::kStyleAttr,
++                          AtomicString("display: block; width: 640px; "
++                                       "height: 360px"));
++    Find("video-slot").AppendChild(Video());
++    Controller().EnterPictureInPicture(Video(), /*promise=*/nullptr);
++    MakeGarbageCollected<WaitForEvent>(
++        Video(), event_type_names::kEnterpictureinpicture);
++    Controller().OnWindowSizeChanged(gfx::Size(640, 360));
++    return *Controller().PageCaptionsForTesting();
++  }
++
++  PictureInPictureControllerImpl& Controller() {
++    return PictureInPictureControllerImpl::From(GetDocument());
++  }
++
++  Element& Find(const char* id) {
++    return *GetDocument().getElementById(AtomicString(id));
++  }
++
++  // Shows each line in turn, an empty one clearing the captions, while the
++  // player's clock ticks, and checks the window shows only captions, from
++  // the first line on when `at_once`; returns the first box shown after the
++  // last line.
++  Element* Play(ParcPageCaptions& page,
++                base::FunctionRef<void(const char*)> show,
++                Element* clock,
++                base::FunctionRef<bool(const Element&)> is_captions,
++                bool at_once = true) {
++    int second = 0;
++    for (const char* line : {"I never asked for this.", "", "Neither did I.",
++                             "Then why are we here?"}) {
++      show(line);
++      ++second;
++      if (clock) {
++        clock->setTextContent("0:0" + String::Number(second));
++      }
++      page.Update();
++      for (const Element* shown : page.Shown()) {
++        EXPECT_TRUE(is_captions(*shown));
++      }
++      if (at_once && second == 1) {
++        EXPECT_EQ(page.Shown().size(), 1u);
++      }
++    }
++    return page.Shown().empty() ? nullptr : page.Shown()[0].Get();
++  }
++
++  // The shown captions paint something, in the bottom of the window.
++  void ExpectPainted(ParcPageCaptions& page) {
++    gfx::RectF bounds;
++    const SkBitmap bitmap = page.Paint(gfx::SizeF(640, 360), 1, bounds);
++    ASSERT_FALSE(bitmap.drawsNothing());
++    EXPECT_TRUE(Painted(bitmap));
++    EXPECT_TRUE(gfx::RectF(0, 0, 1, 1).Contains(bounds));
++    EXPECT_GT(bounds.y(), 0.5);
++  }
++
++  static bool Painted(const SkBitmap& bitmap) {
++    for (int y = 0; y < bitmap.height(); ++y) {
++      for (int x = 0; x < bitmap.width(); ++x) {
++        if (SkColorGetA(bitmap.getColor(x, y))) {
++          return true;
++        }
++      }
++    }
++    return false;
++  }
++
++  static float Opacity(const Element& element) {
++    return element.GetComputedStyle()->Opacity();
++  }
++};
++
++// Netflix's player-timedtext (cadmium-playercore-6.0065.004.911.js): a
++// container over the player, emptied between lines, under the bottom
++// controls' buttons, title and time remaining. It shows from the first line,
++// hidden in the tab meanwhile, and comes back to the tab when picture in
++// picture ends.
++TEST_F(PictureInPicturePageCaptionsTest, NetflixTimedText) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div class="watch-video" tabindex="0"
++         style="position: relative; width: 640px; height: 360px">
++      <div class="watch-video--player-view"
++           style="position: absolute; inset: 0">
++        <div id="video-slot"></div>
++        <div class="player-timedtext" id="timedtext"
++             style="position: absolute; left: 0; top: 0; right: 0;
++                    bottom: 0; display: block"></div>
++      </div>
++      <div class="watch-video--bottom-controls-container"
++           style="position: absolute; left: 0; right: 0; bottom: 0">
++        <button aria-label="Play" data-uia="control-play-pause-play"></button>
++        <div data-uia="video-title" style="text-align: center">
++          <h4>Show</h4><span>E1</span><span>Pilot</span>
++        </div>
++        <span id="clock" data-uia="controls-time-remaining">0:00</span>
++        <button aria-label="Audio &amp; Subtitles"
++                data-uia="control-audio-subtitle">Audio &amp; Subtitles</button>
++      </div>
++    </div>)HTML");
++  Element& timed_text = Find("timedtext");
++  EXPECT_EQ(Play(
++                page,
++                [&](const char* line) {
++                  timed_text.SetInnerHTMLWithoutTrustedTypes(
++                      *line ? R"(<div class="player-timedtext-text-container"
++                                     style="position: absolute; left: 0;
++                                            right: 0; bottom: 30px;
++                                            text-align: center">
++                                  <span style="font-size: 24px; color: white;
++                                               text-shadow: black 0 0 7px">)" +
++                                  String(line) + "</span></div>"
++                            : String());
++                },
++                &Find("clock"),
++                [&](const Element& shown) { return shown == timed_text; }),
++            &timed_text);
++  EXPECT_TRUE(timed_text.IsParcPictureInPictureCaptions());
++  GetDocument().UpdateStyleAndLayoutTree();
++  EXPECT_EQ(Opacity(timed_text), 0);
++  ExpectPainted(page);
++
++  Controller().ExitPictureInPicture(Video(), nullptr);
++  MakeGarbageCollected<WaitForEvent>(Video(),
++                                     event_type_names::kLeavepictureinpicture);
++  EXPECT_FALSE(timed_text.IsParcPictureInPictureCaptions());
++  GetDocument().UpdateStyleAndLayoutTree();
++  EXPECT_EQ(Opacity(timed_text), 1);
++  // The look stops with picture in picture.
++  EXPECT_EQ(Controller().PageCaptionsForTesting(), nullptr);
++  EXPECT_FALSE(Controller().IsPageCaptionsTimerActiveForTesting());
++}
++
++// YouTube's caption window (captions.js, player a5c2aafe): focusable, so its
++// captions-text is painted; windows come and go with the lines. Its controls'
++// time display and an ad countdown in a corner change too.
++TEST_F(PictureInPicturePageCaptionsTest, YouTubeCaptionWindow) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div id="movie_player" class="html5-video-player"
++         style="position: relative; width: 640px; height: 360px">
++      <div class="html5-video-container"><div id="video-slot"></div></div>
++      <div class="ytp-caption-window-container"
++           id="ytp-caption-window-container"
++           style="position: absolute; inset: 0"></div>
++      <div class="ytp-ad-player-overlay">
++        <div id="countdown" class="ytp-ad-text"
++             style="position: absolute; left: 8px; bottom: 60px">Ad</div>
++        <button class="ytp-ad-skip-button">Skip</button>
++      </div>
++      <div class="ytp-chrome-bottom"
++           style="position: absolute; left: 12px; right: 12px; bottom: 0">
++        <button class="ytp-play-button ytp-button" aria-label="Play"></button>
++        <div class="ytp-time-display"><span id="clock"
++          class="ytp-time-current">0:00</span><span> / 10:00</span></div>
++      </div>
++    </div>)HTML");
++  Element& container = Find("ytp-caption-window-container");
++  auto is_captions = [](const Element& shown) {
++    return shown.getAttribute(html_names::kClassAttr) == "captions-text";
++  };
++  ASSERT_NE(Play(
++                page,
++                [&](const char* line) {
++                  Find("countdown").setTextContent(
++                      *line ? "Ad 0:0" + String::Number(strlen(line) % 10)
++                            : String());
++                  container.SetInnerHTMLWithoutTrustedTypes(
++                      *line ? R"(<div class="caption-window
++                                         ytp-caption-window-bottom"
++                                         id="caption-window-1" tabindex="0"
++                                         style="position: absolute; left: 0;
++                                                right: 0; bottom: 20px;
++                                                text-align: center">
++                                       <span class="captions-text"
++                                             style="display: block">
++                                         <span class="caption-visual-line"
++                                               style="display: block">
++                                           <span class="ytp-caption-segment"
++                                                 style="display: inline-block;
++                                                        background:
++                                                          rgba(8, 8, 8, .75);
++                                                        color: white;
++                                                        font-size: 20px">)" +
++                                  String(line) + "</span></span></span></div>"
++                            : String());
++                },
++                &Find("clock"), is_captions),
++            nullptr);
++  ExpectPainted(page);
++}
++
++// Disney+'s timed-text-override-region (dwp-Ba8nLNEi.js): the hive renderer's
++// cue boxes in a shadow root's region, beside an aria-live skip overlay
++// whose label is a button.
++TEST_F(PictureInPicturePageCaptionsTest, DisneyTimedTextRegion) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div class="hive-video"
++         style="position: relative; width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div id="region-host" style="position: absolute; inset: 0"></div>
++      <div class="skip-overlay" aria-live="assertive"
++           style="position: absolute; right: 24px; bottom: 120px">
++        <button id="skip">SKIP INTRO</button>
++      </div>
++      <div class="controls-overlay"
++           style="position: absolute; left: 0; right: 0; bottom: 0">
++        <button aria-label="Play"></button><span id="clock">0:00</span>
++      </div>
++    </div>)HTML");
++  Element& host = Find("region-host");
++  ShadowRoot& shadow = host.AttachShadowRootForTesting(ShadowRootMode::kOpen);
++  shadow.SetInnerHTMLWithoutTrustedTypes(R"HTML(
++    <div class="timed-text-override-region controls-decayed" aria-hidden="true"
++         style="position: absolute; inset: 120px 0 40px 0"></div>)HTML");
++  Element& region = *shadow.firstElementChild();
++  EXPECT_EQ(Play(
++                page,
++                [&](const char* line) {
++                  Find("skip").setTextContent(line);
++                  region.SetInnerHTMLWithoutTrustedTypes(
++                      *line ? R"(<div class="hive-subtitle-renderer-cue-positioning-box"
++                                          style="position: absolute; left: 0;
++                                                 right: 0; bottom: 0;
++                                                 text-align: center">
++                                       <span style="background:
++                                                      rgba(0, 0, 0, .75);
++                                                    color: white;
++                                                    font-size: 22px">)" +
++                                  String(line) + "</span></div>"
++                            : String());
++                },
++                &Find("clock"),
++                [&](const Element& shown) { return shown == host; }),
++            &host);
++  ExpectPainted(page);
++}
++
++// TELUS TV+'s captions (main.c8ba1c06.js): its own Shaka text displayer
++// mounts a fixed data-id="captions" list for each line and unmounts it
++// between lines.
++TEST_F(PictureInPicturePageCaptionsTest, TelusCaptionList) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div class="sc-rF" style="width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div class="sc-player-controls"
++           style="position: absolute; left: 0; right: 0; top: 0">
++        <button aria-label="Pause"></button>
++        <div><span class="current" id="clock">0:00</span>
++             <span class="end">1:00:00</span></div>
++      </div>
++    </div>)HTML");
++  Element& player = *Find("video-slot").parentElement();
++  auto is_captions = [](const Element& shown) {
++    return shown.getAttribute(AtomicString("data-id")) == "captions";
++  };
++  ASSERT_NE(Play(
++                page,
++                [&](const char* line) {
++                  if (Element* list = GetDocument().QuerySelector(
++                          AtomicString("[data-id=captions]"))) {
++                    list->remove();
++                  }
++                  if (*line) {
++                    auto* parsed =
++                        MakeGarbageCollected<HTMLDivElement>(GetDocument());
++                    parsed->SetInnerHTMLWithoutTrustedTypes(
++                        R"(<div class="sc-iF" data-id="captions"
++                                style="width: 100%; position: fixed;
++                                       bottom: 40px; display: flex;
++                                       flex-direction: column;
++                                       align-items: center">
++                             <div class="sc-oF"
++                                  style="font: 22px sans-serif;
++                                         padding: 4px 12px;
++                                         background-color: rgba(0, 0, 0, .8);
++                                         color: white">)" +
++                        String(line) + "</div></div>");
++                    player.AppendChild(parsed->firstElementChild());
++                  }
++                },
++                &Find("clock"), is_captions),
++            nullptr);
++  ExpectPainted(page);
++}
++
++// Boxes no caption names mark show once one has cleared and come back
++// different, centred below the middle; a corner badge's changing text never
++// does.
++TEST_F(PictureInPicturePageCaptionsTest, UnnamedCentredLines) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div style="position: relative; width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div id="lines" style="position: absolute; left: 0; right: 0;
++                             bottom: 20px; text-align: center;
++                             font-size: 20px; color: white"></div>
++      <span id="clock" class="badge"
++            style="position: absolute; left: 8px; top: 8px">0</span>
++    </div>)HTML");
++  Element& lines = Find("lines");
++  EXPECT_EQ(Play(
++                page, [&](const char* line) { lines.setTextContent(line); },
++                &Find("clock"),
++                [&](const Element& shown) { return shown == lines; },
++                /*at_once=*/false),
++            &lines);
++  ExpectPainted(page);
++}
++
++// Controls are never captions: a centred button and slider whose labels come
++// and go, a title that comes and goes, a corner badge and a centred bezel
++// that change and clear, and a running clock.
++TEST_F(PictureInPicturePageCaptionsTest, ControlsAreNotCaptions) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div style="position: relative; width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div style="position: absolute; left: 0; right: 0; bottom: 20px;
++                  text-align: center">
++        <button id="skip" style="font-size: 20px"></button>
++        <div id="title" class="title"></div>
++        <span id="slider" role="slider" aria-valuenow="0"></span>
++      </div>
++      <span id="badge" class="badge"
++            style="position: absolute; left: 8px; top: 8px"></span>
++      <div id="bezel" class="bezel"
++           style="position: absolute; left: 0; right: 0; top: 170px;
++                  text-align: center"></div>
++      <span id="clock" class="clock" style="position: absolute; left: 0;
++                                            right: 0; bottom: 60px;
++                                            text-align: center">0:00</span>
++    </div>)HTML");
++  EXPECT_EQ(Play(
++                page,
++                [&](const char* line) {
++                  Find("skip").setTextContent(line);
++                  Find("title").setTextContent(*line ? "Pilot" : "");
++                  Find("slider").setTextContent(line);
++                  Find("badge").setTextContent(line);
++                  Find("bezel").setTextContent(line);
++                },
++                &Find("clock"), [](const Element&) { return false; },
++                /*at_once=*/false),
++            nullptr);
++}
++
++// Two boxes at once, a speaker's positioned line at the top and the main
++// line at the bottom, each paint at their place.
++TEST_F(PictureInPicturePageCaptionsTest, SeveralBoxes) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div style="position: relative; width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div id="top" class="captions-top"
++           style="position: absolute; left: 0; right: 0; top: 30px;
++                  text-align: center; font-size: 20px">Up here!</div>
++      <div id="bottom" class="captions-bottom"
++           style="position: absolute; left: 0; right: 0; bottom: 30px;
++                  text-align: center; font-size: 20px">Down here.</div>
++    </div>)HTML");
++  page.Update();
++  ASSERT_EQ(page.Shown().size(), 2u);
++  EXPECT_TRUE(page.Shown().Contains(&Find("top")));
++  EXPECT_TRUE(page.Shown().Contains(&Find("bottom")));
++  GetDocument().UpdateStyleAndLayoutTree();
++  EXPECT_EQ(Opacity(Find("top")), 0);
++  gfx::RectF bounds;
++  const SkBitmap bitmap = page.Paint(gfx::SizeF(640, 360), 1, bounds);
++  ASSERT_FALSE(bitmap.drawsNothing());
++  EXPECT_TRUE(Painted(bitmap));
++  EXPECT_LT(bounds.y(), 0.3);
++  EXPECT_GT(bounds.bottom(), 0.8);
++  // Between the two lines the bitmap is clear.
++  bool middle = false;
++  for (int x = 0; x < bitmap.width(); ++x) {
++    middle |= SkColorGetA(bitmap.getColor(x, bitmap.height() / 2)) != 0;
++  }
++  EXPECT_FALSE(middle);
++
++  // A box that stops being captions shows in the tab again.
++  Find("top").SetInnerHTMLWithoutTrustedTypes("<button>Up here!</button>");
++  EXPECT_TRUE(page.Update());
++  EXPECT_FALSE(Find("top").IsParcPictureInPictureCaptions());
++  GetDocument().UpdateStyleAndLayoutTree();
++  EXPECT_EQ(Opacity(Find("top")), 1);
++  EXPECT_EQ(Opacity(Find("bottom")), 0);
++}
++
++// The video's own text tracks take over when they show, and the page's box
++// shows in the tab again.
++TEST_F(PictureInPicturePageCaptionsTest, TextTracksTakeOver) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div style="position: relative; width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div id="lines" class="subtitles"
++           style="position: absolute; left: 0; right: 0; bottom: 20px">
++        Hello.</div>
++    </div>)HTML");
++  EXPECT_TRUE(page.Update());
++  ASSERT_EQ(page.Shown().size(), 1u);
++  TextTrack* track =
++      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kCaptions),
++                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
++  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
++  EXPECT_TRUE(page.Update());
++  EXPECT_TRUE(page.Shown().empty());
++  EXPECT_FALSE(Find("lines").IsParcPictureInPictureCaptions());
++}
++
++// Between lines the look costs nothing: with the document unchanged it runs
++// no style or layout, though some is pending.
++TEST_F(PictureInPicturePageCaptionsTest, NoWorkWhileUnchanged) {
++  ParcPageCaptions& page = Enter(R"HTML(
++    <div style="position: relative; width: 640px; height: 360px">
++      <div id="video-slot"></div>
++      <div class="subtitles" style="position: absolute; left: 0; right: 0;
++                                    bottom: 20px">Hello.</div>
++    </div>)HTML");
++  EXPECT_TRUE(page.Update());
++  GetDocument().body()->SetInlineStyleProperty(CSSPropertyID::kColor, "red");
++  ASSERT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
++  EXPECT_FALSE(page.Update());
++  EXPECT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
++}
++
  TEST_F(PictureInPictureControllerTestWithWidget,
         FrameThrottlingIsSetProperlyWithoutSetup) {
    // This test assumes that it throttling is allowed by default.
+--- a/third_party/blink/renderer/core/dom/element.h
++++ b/third_party/blink/renderer/core/dom/element.h
+@@ -220,8 +220,9 @@
+   kIsEligibleForElementCapture = 1 << 6,
+   kHasCheckedElementCaptureEligibility = 1 << 7,
+   kIsUnboundedElementActive = 1 << 8,
+-
+-  kNumberOfElementFlags = 9,  // Size of bitfield used to store the flags.
++  kIsParcPictureInPictureCaptions = 1 << 9,
++
++  kNumberOfElementFlags = 10,  // Size of bitfield used to store the flags.
+ };
+ 
+ enum class ShadowRootMode;
+@@ -1169,6 +1170,15 @@
+     SetElementFlag(ElementFlags::kStyleAffectedByEmpty);
+   }
+ 
++  // Parc: the page's captions a picture in picture window shows
++  // (ParcPageCaptions), which style isolates so their layer paints only them.
++  bool IsParcPictureInPictureCaptions() const {
++    return HasElementFlag(ElementFlags::kIsParcPictureInPictureCaptions);
++  }
++  void SetIsParcPictureInPictureCaptions(bool value) {
++    SetElementFlag(ElementFlags::kIsParcPictureInPictureCaptions, value);
++  }
++
+   // Recursively sets the IsInCanvasSubtree bit for the element and its subtree.
+   void SetIsInCanvasSubtree(bool value);
+   // Is in the flat subtree of a canvas element, but not the canvas element
+--- a/third_party/blink/renderer/core/dom/node_rare_data.h
++++ b/third_party/blink/renderer/core/dom/node_rare_data.h
+@@ -138,7 +138,7 @@
+ 
+   enum {
+     kConnectedFrameCountBits = 10,  // Must fit Page::maxNumberOfFrames.
+-    kNumberOfElementFlags = 9,
++    kNumberOfElementFlags = 10,
+     kNumberOfDynamicRestyleFlags = 14
+   };
+ 
+@@ -800,7 +800,7 @@
+     // This is distinct from native passwords (<input type=password>).
+     unsigned has_been_heuristic_custom_password_css_ : 1 = false;
+ 
+-    // 1 free bit in the second word (9 free bits overall).
++    // 0 free bits in the second word (8 free bits overall).
+   };
+   static_assert(sizeof(Flags) <= 8, "Flags struct should not exceed 64 bits");
+ 
+--- a/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
++++ b/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
+@@ -1255,6 +1255,11 @@
+   if (element && element->CanvasForDrawing()) {
+     builder.SetIsolation(EIsolation::kIsolate);
+   }
++  // Parc: a page's captions picture in picture shows are hidden in the tab,
++  // their layout kept, and their layer paints only them (ParcPageCaptions).
++  if (element && element->IsParcPictureInPictureCaptions()) {
++    builder.SetOpacity(0);
++  }
+ 
+   // z-index is only applicable if positioned, or if a flex/grid/etc item.
+   if (builder.GetPosition() != EPosition::kStatic ||
+@@ -1562,6 +1567,11 @@
+   // Has special handling in a number of places (including depending on
+   // parents' IsContentDrawable() status).
+   if (element.IsCanvasOrInCanvasSubtree()) {
++    return {ElementType::kIsNotElement};
++  }
++
++  // Parc: isolated only while picture in picture shows it as captions.
++  if (element.IsParcPictureInPictureCaptions()) {
+     return {ElementType::kIsNotElement};
+   }
+ 
+--- a/third_party/blink/renderer/core/paint/paint_layer_painter.cc
++++ b/third_party/blink/renderer/core/paint/paint_layer_painter.cc
+@@ -421,7 +421,11 @@
+   PaintController& controller = context.GetPaintController();
+ 
+   std::optional<ScopedEffectivelyInvisible> effectively_invisible;
+-  if (PaintedOutputInvisible(object.StyleRef())) {
++  // Parc: picture in picture paints a page's captions, transparent in the
++  // tab, without their opacity (ParcPageCaptions).
++  const auto* element = DynamicTo<Element>(object.GetNode());
++  if (PaintedOutputInvisible(object.StyleRef()) &&
++      !(element && element->IsParcPictureInPictureCaptions())) {
+     effectively_invisible.emplace(controller);
+   }
+ 
+--- a/third_party/blink/renderer/core/animation/compositor_animations.cc
++++ b/third_party/blink/renderer/core/animation/compositor_animations.cc
+@@ -597,6 +597,12 @@
+   if (target_element.GetDocument().ShouldForceReduceMotion())
+     state.disposition |= kAcceleratedAnimationsDisabled;
+ 
++  // Parc: a page's captions picture in picture shows stay transparent in the
++  // tab, which only the main thread's style keeps (ParcPageCaptions).
++  if (target_element.IsParcPictureInPictureCaptions()) {
++    state.disposition |= kTargetHasInvalidCompositingState;
++  }
++
+   // Both of these checks are required. It is legal to enable the compositor
+   // thread but disable threaded animations, and there are situations where
+   // threaded animations are enabled globally but this particular LocalFrame
