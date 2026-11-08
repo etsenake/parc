@@ -56,6 +56,7 @@ final class BrowserImportViewController: NSViewController {
         switch coordinator.stage {
         case .loading, .importing: return true
         case .safariAccess: return coordinator.continueAfterSafariRefresh
+        case .safariPasswords: return coordinator.importingPasswords || coordinator.removingPasswordFile
         default: return false
         }
     }

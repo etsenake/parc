@@ -16,10 +16,9 @@ final class BrowserImportPasswordsView: NSView {
     private let choose = ActionButton("Choose Passwords.csv…")
     private let help = ActionButton("How do I find this?")
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let continueButton = ActionButton("Skip Passwords")
+    private let continueButton = PArcDialogButton(title: "Skip Passwords", primary: true)
     private let stop = ActionButton("Stop Import")
     private let remove = ActionButton("Move exported file to Trash…")
-    private let progress = NSProgressIndicator()
     private let dropTarget = OnboardingPasswordDropTarget(frame: .zero)
     private let instructions = (1...3).map { OnboardingPasswordInstructionRow(number: $0) }
     private let resultScroll = NSScrollView()
@@ -33,17 +32,16 @@ final class BrowserImportPasswordsView: NSView {
         detail.font = .systemFont(ofSize: 14); detail.textColor = PArcDialogStyle.popoverMessage
         destination.font = .systemFont(ofSize: 13, weight: .medium); destination.textColor = PArcDialogStyle.popoverTitle
         status.font = .systemFont(ofSize: 13); status.textColor = PArcDialogStyle.popoverMessage
-        for button in [choose, help, continueButton, stop, remove] {
+        for button in [choose, help, stop, remove] {
             button.isBordered = true; button.bezelStyle = .rounded
             button.contentTintColor = PArcDialogStyle.popoverTitle; button.focusRingType = .default
         }
         choose.actionBlock = { [weak self] in self?.onChooseFile?() }
         help.actionBlock = { [weak self] in self?.onHelp?() }
-        continueButton.actionBlock = { [weak self] in self?.onContinue?() }
+        continueButton.target = self; continueButton.action = #selector(continueClicked)
         stop.actionBlock = { [weak self] in self?.onStop?() }
         remove.actionBlock = { [weak self] in self?.onRemoveFile?() }
-        progress.style = .spinning; progress.controlSize = .small
-        [title, detail, destination, choose, help, status, continueButton, stop, remove, progress].forEach(addSubview)
+        [title, detail, destination, choose, help, status, continueButton, stop, remove].forEach(addSubview)
         dropTarget.onChoose = { [weak self] in self?.onChooseFile?() }
         dropTarget.onDrop = { [weak self] in self?.onDropFile?($0) }
         addSubview(dropTarget)
@@ -56,6 +54,7 @@ final class BrowserImportPasswordsView: NSView {
         setAccessibilityLabel("Import exported Safari passwords")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    @objc private func continueClicked() { onContinue?() }
     private func configurePresentation() {
         title.isHidden = usesSetupCard; detail.isHidden = usesSetupCard
         choose.isHidden = usesSetupCard; continueButton.isHidden = usesSetupCard
@@ -95,11 +94,9 @@ final class BrowserImportPasswordsView: NSView {
         destination.stringValue = "Destination: \(name)"
         choose.isEnabled = canImport; help.isEnabled = !busy && !removing
         stop.isHidden = !busy; stop.isEnabled = busy
-        continueButton.isEnabled = !busy && !removing
+        continueButton.isEnabled = !busy && !removing; continueButton.isLoading = busy || removing
         continueButton.title = result == nil ? "Skip Passwords" : "Continue"
         remove.isHidden = !canRemove; remove.isEnabled = canRemove && !removing
-        progress.isHidden = !busy && !removing
-        if progress.isHidden { progress.stopAnimation(nil) } else { progress.startAnimation(nil) }
         var lines: [String] = []
         if busy { lines.append("Importing \(fileName ?? "passwords")…") }
         else if removing { lines.append("Moving the exported file to Trash…") }
@@ -139,7 +136,6 @@ final class BrowserImportPasswordsView: NSView {
             help.frame = NSRect(x: left + 28, y: 127, width: 190, height: 22)
             instructions[2].frame = NSRect(x: left, y: 155, width: 460, height: 30)
             dropTarget.frame = NSRect(x: left, y: 210, width: 460, height: 200)
-            progress.frame = NSRect(x: left + 422, y: 376, width: 18, height: 18)
             resultScroll.frame = NSRect(x: left, y: 422, width: 460, height: 64)
             let textWidth = max(0, resultScroll.contentSize.width - 12)
             status.frame = NSRect(x: 0, y: 0, width: textWidth,
@@ -153,7 +149,6 @@ final class BrowserImportPasswordsView: NSView {
         destination.frame = NSRect(x: 34, y: 217, width: width - 68, height: 25)
         choose.frame = NSRect(x: 34, y: 260, width: 240, height: 42)
         help.frame = NSRect(x: 290, y: 266, width: 175, height: 30)
-        progress.frame = NSRect(x: width - 65, y: 270, width: 18, height: 18)
         status.frame = NSRect(x: 34, y: 325, width: width - 68, height: 160)
         remove.frame = NSRect(x: 34, y: bounds.height - 105, width: 260, height: 30)
         stop.frame = NSRect(x: 34, y: bounds.height - 65, width: 130, height: 36)
