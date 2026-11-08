@@ -3246,13 +3246,17 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 let move = moveMenu(for: .folder(folder.id), state: state)
                 for item in move.items { move.removeItem(item); menu.addItem(item) }
                 menu.addItem(.separator())
-                let deleteFolder = prepareFolderDeletion?(folder.id)
-                let delete = MenuAction.item("Delete") {
-                    if deleteFolder?() != true { NSSound.beep() }
+                // Rows survive live metadata updates. Capture the folder identity,
+                // then prepare consent/retirement against current owners on press.
+                let deleteFolder: () -> Bool = { [weak self] in
+                    self?.performFolderDeletion(folder.id, spaceID: folder.spaceID) == true
                 }
-                delete.isEnabled = deleteFolder != nil
+                let delete = MenuAction.item("Delete") {
+                    if !deleteFolder() { NSSound.beep() }
+                }
+                delete.isEnabled = !isPrivateBrowsing && prepareFolderDeletion != nil
                 menu.addItem(delete)
-                if let deleteFolder {
+                if delete.isEnabled {
                     button.setAccessibilityCustomActions((button.accessibilityCustomActions() ?? []) + [
                         NSAccessibilityCustomAction(name: "Delete Folder") { deleteFolder() }
                     ])
@@ -4103,6 +4107,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(selectAll(_:)) { return ownsSelectionFocus && !selectionOrder.isEmpty }
+        if item.action == #selector(delete(_:)) {
+            if case .folder = itemSelection.singleItem { return ownsSelectionFocus && !isPrivateBrowsing }
+            return false
+        }
         if item.action == #selector(copy(_:)) {
             return prepareSelectionCommand(.copyLinks) != nil
         }
@@ -4255,6 +4263,28 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if isSpaceManagement, itemSelection.items.isEmpty, itemSelection.singleItem == nil, itemSelection.focus == nil { onManagementCancel?() }
         else { clearItemSelection() }
     }
+    func performFolderDeletion(_ id: UUID, spaceID: UUID) -> Bool {
+        guard !isPrivateBrowsing, activeSpaceID == spaceID,
+              hierarchyState?.folders.contains(where: { $0.id == id && $0.spaceID == spaceID }) == true else { return false }
+        return prepareFolderDeletion?(id)?() == true
+    }
+
+    @objc func delete(_ sender: Any?) {
+        guard ownsSelectionFocus, case .folder(let id) = itemSelection.singleItem,
+              let spaceID = activeSpaceID else { return }
+        _ = performFolderDeletion(id, spaceID: spaceID)
+    }
+
+    @discardableResult
+    func handleFolderDeletionKey(_ event: NSEvent) -> Bool {
+        guard window?.isKeyWindow == true, window?.firstResponder === self, isPresented,
+              event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty,
+              [51, 117].contains(event.keyCode),
+              case .folder(let id) = itemSelection.singleItem, let spaceID = activeSpaceID else { return false }
+        _ = performFolderDeletion(id, spaceID: spaceID)
+        return true
+    }
+
     override func keyDown(with event: NSEvent) {
         guard window?.isKeyWindow == true, window?.firstResponder === self else { super.keyDown(with: event); return }
         let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
@@ -4283,8 +4313,11 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             if let row = hierarchyRows.first(where: { $0.0 == next })?.1 { row.scrollToVisible(row.bounds) }
             return
         }
-        if flags.isEmpty, [51, 117].contains(event.keyCode), !itemSelection.items.isEmpty {
-            _ = prepareSidebarClose?(itemSelection.items)?(); return
+        if flags.isEmpty, [51, 117].contains(event.keyCode) {
+            if handleFolderDeletionKey(event) { return }
+            if !itemSelection.items.isEmpty {
+                _ = prepareSidebarClose?(itemSelection.items)?(); return
+            }
         }
         super.keyDown(with: event)
     }

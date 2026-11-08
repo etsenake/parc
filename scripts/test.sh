@@ -6,6 +6,7 @@ core_sources=(
   "$repo_root/Sources/ParcCore/BrowserStore.swift"
   "$repo_root/Sources/ParcCore/SpaceManagement.swift"
   "$repo_root/Sources/ParcCore/BrowserImport.swift"
+  "$repo_root/Sources/ParcCore/ArcSidebarImport.swift"
   "$repo_root/Sources/ParcCore/FavoriteSplit.swift"
   "$repo_root/Sources/ParcCore/OriginalSplitDrop.swift"
   "$repo_root/Sources/ParcCore/InterProfileMove.swift"
@@ -134,6 +135,8 @@ compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
+
+python3 "$repo_root/tests/FolderDeletion/check.py"
 
 compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
