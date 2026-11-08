@@ -4460,6 +4460,37 @@ std::vector<Step> TransportStreamScenario() {
     Check(!ours.empty() && ours == apple, "ts: the ADTS frames' payloads are AVStreamDataParser's audio bytes",
           Format("%zu vs %zu bytes", ours.size(), apple.size()));
 
+    // The same implicit-SBR ASC (AOT 2) with a PMT declaring HE-AAC.
+    // Rewrite the registration type and the enclosing PMT's MPEG CRC.
+    auto he_ts = Bytes(audio_segments[0]);
+    for (size_t packet = 0; packet + 188 <= he_ts.size(); packet += 188) {
+      size_t payload = packet + 4;
+      if ((he_ts[packet + 3] & 0x20) != 0) payload += 1 + he_ts[payload];
+      if (payload >= packet + 188 || !(he_ts[packet + 1] & 0x40)) continue;
+      size_t section = payload + 1 + he_ts[payload];
+      if (section + 3 > packet + 188 || he_ts[section] != 2) continue;
+      size_t end = section + 3 + ((he_ts[section + 1] & 15) << 8) + he_ts[section + 2];
+      if (end > packet + 188) continue;
+      for (size_t j = section; j + 8 <= end - 4; ++j) {
+        if (std::equal(he_ts.begin() + j, he_ts.begin() + j + 8, "apadzaac")) {
+          he_ts[j + 6] = 'c';
+          he_ts[j + 7] = 'h';
+        }
+      }
+      uint32_t crc = 0xffffffff;
+      for (size_t j = section; j < end - 4; ++j) {
+        crc ^= uint32_t(he_ts[j]) << 24;
+        for (int bit = 0; bit < 8; ++bit) crc = (crc << 1) ^ ((crc & 0x80000000) ? 0x04c11db7 : 0);
+      }
+      for (int j = 0; j < 4; ++j) he_ts[end - 4 + j] = crc >> (24 - 8 * j);
+    }
+    PCTsReference* he_reference = [PCTsReference parse:[NSData dataWithBytes:he_ts.data() length:he_ts.size()]];
+    ft::TsElementaryStream he_stream;
+    Check(ft::ParseTransportStream(he_ts, false, &he_stream, &error) && he_reference.types.count &&
+              he_reference.types.firstObject.unsignedIntValue == fp::FourCC('z', 'a', 'c', 'h') &&
+              (ft::TsAudioSetupConfig(he_stream.descriptors)[0] >> 3) == 2,
+          "ts: AVStreamDataParser uses declared zach for an implicit-SBR AOT 2 config");
+
     // The other SAMPLE-AES audio types, as AVStreamDataParser names them
     // (AC-3, E-AC-3, HE-AAC and HE-AACv2 streams of crafted TS files on macOS
     // 27.2).
@@ -4468,7 +4499,7 @@ std::vector<Step> TransportStreamScenario() {
       const char* type;
     };
     for (Other other : {Other{&w->ac3, "zac3"}, Other{&w->eac3, "zec3"}, Other{&w->he_aac, "zach"},
-                        Other{&w->he_aac_v2, "zacp"}}) {
+                        Other{&w->he_aac_v2, "zacp"}, Other{audio.get(), "zach"}}) {
       struct NullClient : fp::FairPlayRendererClient {
         void OnNeedData(fp::StreamId) override {}
         void OnWaitingForKey() override {}
@@ -4480,6 +4511,11 @@ std::vector<Step> TransportStreamScenario() {
       fp::FairPlayRenderer renderer(&client, [](std::function<void()>) {});
       fp::AudioConfig ac = AudioConfigFor(other.media->info, Framing::kChromium, true);
       ac.encryption.scheme = fp::EncryptionScheme::kCbcs;
+      if (other.media == audio.get()) {
+        ac.ts_audio_type = ft::TsAudioSetupType(he_stream.descriptors);
+        Check(ac.ts_audio_type == he_reference.types.firstObject.unsignedIntValue,
+              "ts: config carries the PMT type Apple chose");
+      }
       std::vector<uint8_t> storage;
       fp::DecryptInfo unused;
       ft::Sample clear = other.media->segments[0][0];

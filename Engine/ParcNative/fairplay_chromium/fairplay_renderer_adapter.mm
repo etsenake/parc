@@ -187,6 +187,7 @@ fp::AudioConfig ToCoreConfig(const AudioDecoderConfig& config) {
   fp::AudioConfig audio;
   audio.codec = *ToAudioCodec(config.codec());
   audio.extra_data = config.extra_data();
+  audio.ts_audio_type = config.parc_ts_audio_type();
   // The core strips an ADTS header when one is present.
   audio.framing = audio.codec == fp::AudioCodec::kAAC ? fp::AudioFraming::kADTS
                                                       : fp::AudioFraming::kRaw;

@@ -143,6 +143,7 @@ struct VideoConfig {
 };
 
 struct AudioConfig {
+  uint32_t ts_audio_type = 0;  // PMT audio setup type, zero outside TS.
   AudioCodec codec = AudioCodec::kAAC;
   // AAC: AudioSpecificConfig (any object type; required). AC-3: 'dac3'
   // payload. E-AC-3: 'dec3' payload. For AC-3/E-AC-3 it may be empty, as

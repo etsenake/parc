@@ -185,6 +185,17 @@ bool ParseTransportStream(const std::vector<uint8_t>& data, bool video, TsElemen
   return !stream->samples.empty();
 }
 
+uint32_t TsAudioSetupType(const std::vector<uint8_t>& descriptors) {
+  for (size_t i = 0; i + 2 <= descriptors.size(); i += 2 + descriptors[i + 1]) {
+    const size_t length = descriptors[i + 1];
+    if (length < 12 || i + 2 + length > descriptors.size()) continue;
+    const uint8_t* d = descriptors.data() + i + 2;
+    if (descriptors[i] == 5 && std::string(d, d + 4) == "apad")
+      return uint32_t(d[4]) << 24 | uint32_t(d[5]) << 16 | uint32_t(d[6]) << 8 | d[7];
+  }
+  return 0;
+}
+
 std::vector<uint8_t> TsAudioSetupConfig(const std::vector<uint8_t>& descriptors) {
   for (size_t i = 0; i + 2 <= descriptors.size(); i += 2 + descriptors[i + 1]) {
     const uint8_t* d = descriptors.data() + i + 2;

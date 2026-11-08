@@ -325,6 +325,8 @@ uint32_t TransportStreamFormatType(VideoCodec codec) {
 }
 
 uint32_t TransportStreamFormatType(const AudioConfig& config) {
+  if (config.ts_audio_type)
+    return config.ts_audio_type;  // AVStreamDataParser uses the PMT declaration.
   switch (config.codec) {
     case AudioCodec::kAAC: {
       const int type = AacSignaledObjectType(config.extra_data);

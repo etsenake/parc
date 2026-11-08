@@ -28,6 +28,7 @@ bool ParseTransportStream(const std::vector<uint8_t>& data, bool video, TsElemen
 
 // The AudioSpecificConfig in a SAMPLE-AES stream's audio setup information
 // (the 'apad' registration descriptor), empty if there is none.
+uint32_t TsAudioSetupType(const std::vector<uint8_t>& descriptors);
 std::vector<uint8_t> TsAudioSetupConfig(const std::vector<uint8_t>& descriptors);
 
 }  // namespace parc::fairplay::test

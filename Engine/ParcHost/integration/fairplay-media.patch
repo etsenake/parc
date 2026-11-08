@@ -5667,7 +5667,15 @@
    // The |presentation_id| is used to find an already set-up RemotePlayback
 --- a/media/mojo/mojom/media_types.mojom
 +++ b/media/mojo/mojom/media_types.mojom
-@@ -255,6 +255,7 @@
+@@ -238,6 +238,7 @@
+ // This defines a mojo transport format for media::AudioDecoderConfig.
+ // See media/base/audio_decoder_config.h for descriptions.
+ struct AudioDecoderConfig {
++  uint32 parc_ts_audio_type;
+   AudioCodec codec;
+   SampleFormat sample_format;
+   ChannelLayoutConfig channel_layout_config;
+@@ -255,6 +256,7 @@
  // This defines a mojo transport format for media::VideoDecoderConfig.
  // See media/base/video_decoder_config.h for descriptions.
  struct VideoDecoderConfig {
@@ -5675,7 +5683,7 @@
    VideoCodec codec;
    VideoCodecProfile profile;
    uint32 level;
-@@ -680,6 +681,8 @@
+@@ -680,6 +682,8 @@
    kCastStreaming = 9,    // CastStreamingRendererFactory
    kContentEmbedderDefined = 10,  // Defined by the content embedder
    kTest= 11,             // Renderer implementations used in tests
@@ -18450,7 +18458,7 @@
  
    bool ShouldForceEncryptedParser();
    std::unique_ptr<EsParser> CreateEncryptedH264Parser(int pes_pid,
-@@ -163,6 +176,16 @@
+@@ -163,6 +176,17 @@
    // (mp4a.40.5 in the codecs parameter).
    bool sbr_in_mimetype_;
  
@@ -18460,6 +18468,7 @@
 +  // Parc: the HLS SAMPLE-AES streams taken under those rules, each with the
 +  // setup data its config takes (empty: the stream's own).
 +  std::map<int, std::vector<uint8_t>> parc_sample_aes_pids_;
++  std::map<int, uint32_t> parc_sample_aes_audio_types_;
 +  // Parc: the PIDs that reported "mpts" init data. AVStreamDataParser
 +  // reports each track once for its lifetime, aborts included.
 +  base::flat_set<int> parc_mpts_reported_pids_;
@@ -18498,7 +18507,7 @@
  namespace media {
  namespace mp2t {
  
-@@ -40,23 +47,49 @@
+@@ -40,24 +47,50 @@
  
  enum StreamType {
    // ISO-13818.1 / ITU H.222 Table 2.34 "Stream type assignments"
@@ -18530,7 +18539,7 @@
 -// const int64_t kSampleAESPrivateDataIndicatorEAC3 = 0x65633364;
 +constexpr uint32_t kParcSampleAESPrivateDataIndicatorAC3 = 0x61633364;
 +constexpr uint32_t kParcSampleAESPrivateDataIndicatorEAC3 = 0x65633364;
-+
+ 
 +// Parc: HLS SAMPLE-AES audio's setup information, a registration descriptor
 +// ('apad') holding audio_type, priming, version, setup_data_length and the
 +// codec's setup data.
@@ -18551,9 +18560,10 @@
 +      std::string(DecryptConfig::kDecryptionKeySize, '\0'), {},
 +      std::nullopt));
 +}
- 
++
  std::optional<base::flat_set<int>> MapAllowedStreamTypes(
      std::optional<base::span<const std::string>> allowed_codecs) {
+   if (!allowed_codecs.has_value()) {
 @@ -214,10 +247,10 @@
  
  Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
@@ -18567,30 +18577,31 @@
      video_config(video_cfg) {
  }
  
-@@ -274,6 +307,7 @@
+@@ -274,6 +307,8 @@
      pid_pair.second->Flush();
    }
    pids_.clear();
 +  parc_sample_aes_pids_.clear();
++  parc_sample_aes_audio_types_.clear();
  
    // Flush is invoked from SourceBuffer.abort/SourceState::ResetParserState, and
    // MSE spec prohibits emitting new configs in ResetParserState algorithm (see
-@@ -325,6 +359,14 @@
- 
-   // Deliver the remaining buffers to the SourceBufferState
+@@ -327,6 +362,14 @@
    EmitRemainingBuffers();
-+}
-+
+ }
+ 
 +// Parc: Safari's Media Source parses MPEG-2 TS with AVStreamDataParser
 +// (SourceBufferParserAVFObjC), which takes every elementary stream it
 +// recognizes without consulting the SourceBuffer's type.
 +void Mp2tStreamParser::ParcIgnoreDeclaredCodecs() {
 +  allowed_stream_types_.reset();
 +  parc_safari_streams_ = true;
- }
- 
++}
++
  bool Mp2tStreamParser::GetGenerateTimestampsFlag() const {
-@@ -414,10 +456,12 @@
+   return false;
+ }
+@@ -414,10 +457,12 @@
                 .insert(
                     std::make_pair(ts_packet->pid(), std::move(pat_pid_state)))
                 .first;
@@ -18604,10 +18615,12 @@
  
        it = pids_.insert(std::make_pair(TsSection::kPidCat, MakeCatPidState()))
                 .first;
-@@ -519,6 +563,109 @@
+@@ -517,6 +562,111 @@
+   return std::make_unique<EsParserMpeg1Audio>(on_audio_config_changed,
+                                               std::move(on_emit_audio_buffer),
                                                media_log_.get());
- }
- 
++}
++
 +std::unique_ptr<EsParser> Mp2tStreamParser::CreateParcMpegVideoParser(
 +    int pes_pid) {
 +  auto on_video_config_changed = base::BindRepeating(
@@ -18700,6 +18713,8 @@
 +              stream_type == kStreamTypeParcEAC3WithSampleAES
 +          ? setup_data
 +          : std::vector<uint8_t>();
++  if (!video)
++    parc_sample_aes_audio_types_[pes_pid] = format_type;
 +  if (parc_mpts_reported_pids_.insert(pes_pid).second) {
 +    const std::string init_data = base::StringPrintf(
 +        "{\n  \"cont\" : \"mpts\",\n  \"codc\" : %u,\n  \"mtyp\" : %u\n}",
@@ -18709,12 +18724,10 @@
 +        std::vector<uint8_t>(init_data.begin(), init_data.end()));
 +  }
 +  return es_parser;
-+}
-+
+ }
+ 
  bool Mp2tStreamParser::ShouldForceEncryptedParser() {
-   // If we expect to handle encrypted data later in the stream, then force the
-   // use of the encrypted parser variant so that the initial configuration
-@@ -612,7 +759,39 @@
+@@ -612,7 +762,39 @@
        es_parser = CreateMpeg1AudioParser(pes_pid);
        break;
  
@@ -18754,7 +18767,7 @@
        if (descriptors.HasPrivateDataIndicator(
                kSampleAESPrivateDataIndicatorAVC)) {
          is_audio = false;
-@@ -625,6 +804,11 @@
+@@ -625,6 +807,11 @@
        break;
  
      case kStreamTypeAACWithSampleAES:
@@ -18766,7 +18779,7 @@
        if (descriptors.HasPrivateDataIndicator(
                kSampleAESPrivateDataIndicatorAAC)) {
          es_parser =
-@@ -692,6 +876,11 @@
+@@ -692,6 +879,11 @@
    // Disable all the other audio and video PIDs.
    for (auto it = pids_.begin(); it != pids_.end(); ++it) {
      PidState* pid_state = it->second.get();
@@ -18778,7 +18791,7 @@
      if (it != lowest_audio_pid && it != lowest_video_pid &&
          (pid_state->pid_type() == PidState::kPidAudioPes ||
           pid_state->pid_type() == PidState::kPidVideoPes))
-@@ -716,7 +905,8 @@
+@@ -716,7 +908,8 @@
      BufferQueueWithConfig buffer_queue_with_config(
          false,
          buffer_queue_chain_.empty()
@@ -18788,7 +18801,7 @@
          video_decoder_config);
      buffer_queue_chain_.push_back(buffer_queue_with_config);
    }
-@@ -733,44 +923,53 @@
+@@ -733,44 +926,55 @@
  
  void Mp2tStreamParser::OnAudioConfigChanged(
      int pes_pid,
@@ -18808,6 +18821,8 @@
 +        it->second.empty() ? es_audio_decoder_config.extra_data() : it->second,
 +        EncryptionScheme::kCbcs, es_audio_decoder_config.seek_preroll(),
 +        es_audio_decoder_config.codec_delay());
++    audio_decoder_config.set_parc_ts_audio_type(
++        parc_sample_aes_audio_types_.at(pes_pid));
 +  }
 +  DCHECK(parc_safari_streams_ || pes_pid == selected_audio_pid_);
    DCHECK(audio_decoder_config.IsValidConfig());
@@ -18869,7 +18884,7 @@
                                  MediaTrack::Kind("main"), MediaTrack::Label(""),
                                  MediaTrack::Language(""));
    }
-@@ -794,15 +993,24 @@
+@@ -794,15 +998,24 @@
    // Wait for more data to come if one of the config is not available.
    BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
    if (selected_audio_pid_ > 0 &&
@@ -18879,7 +18894,7 @@
    if (selected_video_pid_ > 0 &&
        !queue_with_config.video_config.IsValidConfig())
      return true;
-+
+ 
 +  if (parc_safari_streams_) {
 +    for (const auto& [pid, state] : pids_) {
 +      if (state->pid_type() == PidState::kPidAudioPes &&
@@ -18888,7 +18903,7 @@
 +      }
 +    }
 +  }
- 
++
    // Pass the config before invoking the initialization callback.
    std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
 -      queue_with_config.audio_config, queue_with_config.video_config);
@@ -18896,7 +18911,7 @@
    RCHECK(config_cb_.Run(std::move(media_tracks)));
    queue_with_config.is_config_sent = true;
  
-@@ -813,7 +1021,7 @@
+@@ -813,7 +1026,7 @@
    // accurately here. Currently, capped at max 1 each for audio and video.
    InitParameters params(kInfiniteDuration);
    params.detected_audio_track_count =
@@ -18905,7 +18920,7 @@
    params.detected_video_track_count =
        queue_with_config.video_config.IsValidConfig() ? 1 : 0;
    std::move(init_cb_).Run(params);
-@@ -825,7 +1033,7 @@
+@@ -825,7 +1038,7 @@
  void Mp2tStreamParser::OnEmitAudioBuffer(
      int pes_pid,
      scoped_refptr<StreamParserBuffer> stream_parser_buffer) {
@@ -18914,7 +18929,7 @@
  
    DVLOG(LOG_LEVEL_ES)
        << "OnEmitAudioBuffer: " << " size=" << stream_parser_buffer->size()
-@@ -839,7 +1047,12 @@
+@@ -839,7 +1052,12 @@
      return;
    }
  
@@ -18928,7 +18943,7 @@
  }
  
  void Mp2tStreamParser::OnEmitVideoBuffer(
-@@ -859,6 +1072,9 @@
+@@ -859,6 +1077,9 @@
      NOTREACHED() << "Cannot provide buffers before configs";
    }
  
@@ -18938,7 +18953,7 @@
    buffer_queue_chain_.back().video_queue.push_back(stream_parser_buffer);
  }
  
-@@ -873,17 +1089,25 @@
+@@ -873,17 +1094,25 @@
      return true;
  
    // Keep track of the last audio and video config sent.
@@ -18967,7 +18982,7 @@
    // Buffer emission.
    while (!buffer_queue_chain_.empty()) {
      // Start a segment if needed.
-@@ -897,7 +1121,7 @@
+@@ -897,7 +1126,7 @@
      BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
      if (!queue_with_config.is_config_sent) {
        std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
@@ -18976,7 +18991,7 @@
        if (!config_cb_.Run(std::move(media_tracks))) {
          return false;
        }
-@@ -905,10 +1129,7 @@
+@@ -905,10 +1134,7 @@
      }
  
      // Add buffers.
@@ -18988,7 +19003,7 @@
      if (!queue_with_config.video_queue.empty())
        buffer_queue_map.insert(
            std::make_pair(kMp2tVideoTrackId, queue_with_config.video_queue));
-@@ -922,7 +1143,7 @@
+@@ -922,7 +1148,7 @@
    // Push an empty queue with the last audio/video config
    // so that buffers with the same config can be added later on.
    BufferQueueWithConfig queue_with_config(
@@ -19086,13 +19101,10 @@
  TEST_F(Mp2tStreamParserTest, NonStrictCodecChecking) {
    CreateNonStrictParser();
    InitializeParser();
-@@ -525,9 +581,138 @@
-   EXPECT_EQ(video_frame_count_, 82);
+@@ -528,6 +584,135 @@
+   EXPECT_EQ(config_count_, 1);
+ }
  
-   // There should be a single configuration, with no audio.
-+  EXPECT_EQ(config_count_, 1);
-+}
-+
 +// Parc: with ParcIgnoreDeclaredCodecs(), as on a document presenting Safari's
 +// identity (SourceBufferState::ParcSetSafariInitSegmentRules()), streams of
 +// codecs the type didn't name are parsed too.
@@ -19191,12 +19203,12 @@
 +  InitializeParser();
 +  ParseMpeg2TsFile("parc-bear-ac3.ts", 512);
 +  parser_->Flush();
-   EXPECT_EQ(config_count_, 1);
++  EXPECT_EQ(config_count_, 1);
 +  EXPECT_EQ(audio_frame_count_, 10);
 +  EXPECT_EQ(current_audio_config_.codec(), AudioCodec::kAC3);
 +  EXPECT_EQ(current_audio_config_.samples_per_second(), 44100);
- }
- 
++}
++
 +TEST_F(Mp2tStreamParserTest, ParcEac3StreamUnderSafariRules) {
 +  CreateNonStrictParser();
 +  parser_->ParcIgnoreDeclaredCodecs();
@@ -19225,7 +19237,7 @@
  TEST_F(Mp2tStreamParserTest, HLSSampleAES) {
    std::vector<std::string> decrypted_video_buffers;
    std::vector<std::string> decrypted_audio_buffers;
-@@ -577,6 +762,129 @@
+@@ -577,6 +762,130 @@
    }
  }
  
@@ -19269,6 +19281,7 @@
 +  EXPECT_EQ(init_data_, expected_init_data);
 +  EXPECT_EQ(current_video_config_.encryption_scheme(), EncryptionScheme::kCbcs);
 +  EXPECT_EQ(current_audio_config_.encryption_scheme(), EncryptionScheme::kCbcs);
++  EXPECT_EQ(current_audio_config_.parc_ts_audio_type(), 0x7a616163u);
 +  EXPECT_EQ(current_audio_config_.extra_data(),
 +            std::vector<uint8_t>({0x12, 0x10}));
 +  ASSERT_EQ(video_buffer_capture_.size(), chrome_video_buffers);
@@ -27088,3 +27101,83 @@
  // Translates a |url| into the appropriate URL scheme.
  PLATFORM_EXPORT media::mojom::blink::MediaURLScheme GetMediaURLScheme(
      const KURL& url);
+--- a/media/base/audio_decoder_config.h
++++ b/media/base/audio_decoder_config.h
+@@ -100,6 +100,9 @@
+   void set_profile(AudioCodecProfile profile) { profile_ = profile; }
+   AudioCodecProfile profile() const { return profile_; }
+ 
++  uint32_t parc_ts_audio_type() const { return parc_ts_audio_type_; }
++  void set_parc_ts_audio_type(uint32_t type) { parc_ts_audio_type_ = type; }
++
+   bool should_discard_decoder_delay() const {
+     return should_discard_decoder_delay_;
+   }
+@@ -153,6 +156,8 @@
+   // Optional parameters that can be set later:
+ 
+   AudioCodecProfile profile_ = AudioCodecProfile::kUnknown;
++  // PMT audio setup type for Safari SAMPLE-AES; zero for other streams.
++  uint32_t parc_ts_audio_type_ = 0;
+ 
+   // Layout of the output hardware. Optionally set. See setter comments.
+   ChannelLayoutConfig target_output_channel_layout_;
+--- a/media/base/audio_decoder_config.cc
++++ b/media/base/audio_decoder_config.cc
+@@ -43,6 +43,7 @@
+                                     EncryptionScheme encryption_scheme,
+                                     base::TimeDelta seek_preroll,
+                                     int codec_delay) {
++  parc_ts_audio_type_ = 0;
+   codec_ = codec;
+   channel_layout_config_ = channel_layout_config;
+   samples_per_second_ = samples_per_second;
+@@ -83,6 +84,7 @@
+       (seek_preroll() == config.seek_preroll()) &&
+       (codec_delay() == config.codec_delay()) &&
+       (profile() == config.profile()) &&
++      (parc_ts_audio_type() == config.parc_ts_audio_type()) &&
+       (should_discard_decoder_delay() ==
+        config.should_discard_decoder_delay()) &&
+       (target_output_channel_layout() ==
+@@ -93,6 +95,7 @@
+ std::string AudioDecoderConfig::AsHumanReadableString() const {
+   std::ostringstream s;
+   s << "codec: " << GetCodecName(codec())
++    << ", TS audio type: " << parc_ts_audio_type()
+     << ", profile: " << GetProfileName(profile())
+     << ", bytes_per_channel: " << bytes_per_channel()
+     << ", channel_layout: " << ChannelLayoutToString(channel_layout())
+--- a/media/mojo/mojom/audio_decoder_config_mojom_traits.h
++++ b/media/mojo/mojom/audio_decoder_config_mojom_traits.h
+@@ -14,6 +14,10 @@
+ template <>
+ struct StructTraits<media::mojom::AudioDecoderConfigDataView,
+                     media::AudioDecoderConfig> {
++  static uint32_t parc_ts_audio_type(const media::AudioDecoderConfig& input) {
++    return input.parc_ts_audio_type();
++  }
++
+   static media::AudioCodec codec(const media::AudioDecoderConfig& input) {
+     return input.codec();
+   }
+--- a/media/mojo/mojom/audio_decoder_config_mojom_traits.cc
++++ b/media/mojo/mojom/audio_decoder_config_mojom_traits.cc
+@@ -55,6 +55,7 @@
+                      input.samples_per_second(), std::move(extra_data),
+                      encryption_scheme, seek_preroll, input.codec_delay());
+   output->set_profile(profile);
++  output->set_parc_ts_audio_type(input.parc_ts_audio_type());
+   output->set_target_output_channel_layout(target_output_channel_layout);
+   output->set_target_output_sample_format(target_output_sample_format);
+ 
+--- a/media/mojo/mojom/audio_decoder_config_mojom_traits_unittest.cc
++++ b/media/mojo/mojom/audio_decoder_config_mojom_traits_unittest.cc
+@@ -62,6 +62,7 @@
+                    48000, EmptyExtraData(), EncryptionScheme::kUnencrypted,
+                    base::TimeDelta(), 0);
+   input.set_profile(AudioCodecProfile::kXHE_AAC);
++  input.set_parc_ts_audio_type(0x7a616368);
+   std::vector<uint8_t> data = mojom::AudioDecoderConfig::Serialize(&input);
+   AudioDecoderConfig output;
+   EXPECT_TRUE(mojom::AudioDecoderConfig::Deserialize(std::move(data), &output));
