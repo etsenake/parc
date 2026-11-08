@@ -18,8 +18,7 @@
    cast_controller_->AddObserver(this);
 @@ -105,7 +107,7 @@
  }
--
-+
+ 
  void CastDeviceListHost::SelectDevice(const std::string& device_id) {
 -  if (!cast_controller_) {
 +  if (!cast_controller_ || (native_guard_ && !native_guard_.Run())) {
@@ -28,16 +27,33 @@
    auto sink_it =
 @@ -171,7 +173,8 @@
  }
--
-+
+ 
  void CastDeviceListHost::OnCastingStarted() {
 -  hide_dialog_callback_.Run();
 +  if (!native_guard_ || native_guard_.Run())
 +    hide_dialog_callback_.Run();
  }
--
-+
+ 
  void CastDeviceListHost::StartCasting(const media_router::UIMediaSink& sink) {
+@@ -182,9 +185,16 @@
+     // valid.
+     return;
+   }
+-  cast_controller_->StartCasting(sink.id, cast_mode.value());
++  // Parc: requests remoting once the cast launched, as Remote Playback does
++  // on its connection (RemotePlayback::OnConnectionSuccess()), even if this
++  // dialog closed meanwhile. A launch that fails reaches no session, and the
++  // request it left would let a later tab cast put this video on the
++  // receiver.
+   if (cast_mode.value() == media_router::MediaCastMode::REMOTE_PLAYBACK) {
+-    media_remoting_callback_.Run();
++    cast_controller_->ParcStartCasting(sink.id, cast_mode.value(),
++                                       media_remoting_callback_);
++  } else {
++    cast_controller_->StartCasting(sink.id, cast_mode.value());
+   }
+   MediaItemUIMetrics::RecordStartCastingMetrics(sink.icon_type,
+                                                 cast_mode.value());
 --- a/chrome/browser/ui/global_media_controls/cast_device_list_host.h
 +++ b/chrome/browser/ui/global_media_controls/cast_device_list_host.h
 @@ -5,6 +5,7 @@
@@ -2002,3 +2018,203 @@
  // original profile's prefs, so it must observe that same profile.
  TEST_F(MediaDialogViewTest, LiveCaptionUpdatesInIncognito) {
 --- a/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
+--- a/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
++++ b/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
+@@ -24,6 +24,7 @@
+ using testing::_;
+ using testing::NiceMock;
+ using testing::Return;
++using testing::WithArg;
+ namespace mojom {
+ using global_media_controls::mojom::DeviceListClient;
+ }  // namespace mojom
+@@ -59,6 +60,11 @@
+               StartCasting,
+               (const std::string& sink_id,
+                media_router::MediaCastMode cast_mode));
++  MOCK_METHOD(void,
++              ParcStartCasting,
++              (const std::string& sink_id,
++               media_router::MediaCastMode cast_mode,
++               base::OnceClosure on_launched));
+   MOCK_METHOD(void, StopCasting, (const std::string& route_id));
+   MOCK_METHOD(void, ClearIssue, (const media_router::Issue::Id& issue_id));
+   MOCK_METHOD(void, FreezeRoute, (const std::string& route_id));
+@@ -147,11 +153,20 @@
+   UIMediaSink sink = CreateMediaSink();
+   sink.cast_modes = {media_router::MediaCastMode::REMOTE_PLAYBACK};
+   host_->OnModelUpdated({CreateModelWithSinks({sink})});
+-  EXPECT_CALL(
+-      *dialog_controller_,
+-      StartCasting(sink.id, media_router::MediaCastMode::REMOTE_PLAYBACK));
+-  EXPECT_CALL(*this, OnMediaRemotingRequested());
++  // Parc: remoting is requested once the cast launched, and only then.
++  base::OnceClosure on_launched;
++  EXPECT_CALL(*dialog_controller_,
++              ParcStartCasting(sink.id,
++                               media_router::MediaCastMode::REMOTE_PLAYBACK, _))
++      .WillOnce(WithArg<2>([&](base::OnceClosure closure) {
++        on_launched = std::move(closure);
++      }));
++  EXPECT_CALL(*this, OnMediaRemotingRequested()).Times(0);
+   host_->SelectDevice(sink.id);
++  testing::Mock::VerifyAndClearExpectations(this);
++
++  EXPECT_CALL(*this, OnMediaRemotingRequested());
++  std::move(on_launched).Run();
+ }
+ 
+ // TODO(crbug.com/1486680): Enable this on Chrome OS once stopping mirroring
+--- a/chrome/browser/ui/media_router/cast_dialog_controller.h
++++ b/chrome/browser/ui/media_router/cast_dialog_controller.h
+@@ -5,7 +5,7 @@
+ #ifndef CHROME_BROWSER_UI_MEDIA_ROUTER_CAST_DIALOG_CONTROLLER_H_
+ #define CHROME_BROWSER_UI_MEDIA_ROUTER_CAST_DIALOG_CONTROLLER_H_
+ 
+-#include "base/functional/callback_forward.h"
++#include "base/functional/callback.h"
+ #include "chrome/browser/ui/media_router/media_cast_mode.h"
+ #include "components/media_router/common/issue.h"
+ #include "components/media_router/common/media_route.h"
+@@ -46,6 +46,15 @@
+   virtual void StartCasting(const MediaSink::Id& sink_id,
+                             MediaCastMode cast_mode) = 0;
+ 
++  // Parc: StartCasting(), running `on_launched` once the cast launched, even
++  // if this controller is gone by then. A controller that can't tell drops
++  // it.
++  virtual void ParcStartCasting(const MediaSink::Id& sink_id,
++                                MediaCastMode cast_mode,
++                                base::OnceClosure on_launched) {
++    StartCasting(sink_id, cast_mode);
++  }
++
+   // Stops casting by terminating the route given by |route_id|. No-op if the ID
+   // is invalid.
+   virtual void StopCasting(const MediaRoute::Id& route_id) = 0;
+--- a/chrome/browser/ui/media_router/media_router_ui.h
++++ b/chrome/browser/ui/media_router/media_router_ui.h
+@@ -99,6 +99,9 @@
+   void RemoveObserver(CastDialogController::Observer* observer) override;
+   void StartCasting(const std::string& sink_id,
+                     MediaCastMode cast_mode) override;
++  void ParcStartCasting(const std::string& sink_id,
++                        MediaCastMode cast_mode,
++                        base::OnceClosure on_launched) override;
+   void StopCasting(const std::string& route_id) override;
+   void ClearIssue(const Issue::Id& issue_id) override;
+   void FreezeRoute(const std::string& route_id) override;
+@@ -113,9 +116,10 @@
+   // |cast_mode|, to the sink given by |sink_id|.
+   // Returns true if a route request is successfully submitted.
+   // |OnRouteResponseReceived()| will be invoked when the route request
+-  // completes.
++  // completes. Parc: and `on_launched`, if the route was created.
+   virtual bool CreateRoute(const MediaSink::Id& sink_id,
+-                           MediaCastMode cast_mode);
++                           MediaCastMode cast_mode,
++                           base::OnceClosure on_launched);
+ 
+   // Calls MediaRouter to terminate the given route.
+   void TerminateRoute(const MediaRoute::Id& route_id);
+--- a/chrome/browser/ui/media_router/media_router_ui.cc
++++ b/chrome/browser/ui/media_router/media_router_ui.cc
+@@ -178,9 +178,15 @@
+ 
+ void MediaRouterUI::StartCasting(const std::string& sink_id,
+                                  MediaCastMode cast_mode) {
+-  CreateRoute(sink_id, cast_mode);
++  CreateRoute(sink_id, cast_mode, base::OnceClosure());
+ }
+ 
++void MediaRouterUI::ParcStartCasting(const std::string& sink_id,
++                                     MediaCastMode cast_mode,
++                                     base::OnceClosure on_launched) {
++  CreateRoute(sink_id, cast_mode, std::move(on_launched));
++}
++
+ void MediaRouterUI::StopCasting(const std::string& route_id) {
+   terminating_route_id_ = route_id;
+   // |route_id| may become invalid after UpdateSinks(), so we cannot refer to
+@@ -229,7 +235,8 @@
+ }
+ 
+ bool MediaRouterUI::CreateRoute(const MediaSink::Id& sink_id,
+-                                MediaCastMode cast_mode) {
++                                MediaCastMode cast_mode,
++                                base::OnceClosure on_launched) {
+   logger_->LogInfo(mojom::LogCategory::kUi, kLoggerComponent,
+                    "CreateRoute requested by MediaRouterViewsUI.", sink_id, "",
+                    "");
+@@ -255,6 +262,15 @@
+   // when the desktop picker is shown.
+   params->route_result_callbacks.push_back(
+       base::BindOnce(&MaybeReportCastingSource, cast_mode));
++  if (on_launched) {
++    params->route_result_callbacks.push_back(base::BindOnce(
++        [](base::OnceClosure on_launched, const RouteRequestResult& result) {
++          if (result.result_code() == mojom::RouteRequestResultCode::OK) {
++            std::move(on_launched).Run();
++          }
++        },
++        std::move(on_launched)));
++  }
+ 
+   params->route_result_callbacks.push_back(base::BindOnce(
+       &MediaRouterUI::OnRouteResponseReceived, weak_factory_.GetWeakPtr(),
+--- a/chrome/browser/ui/media_router/media_router_ui_unittest.cc
++++ b/chrome/browser/ui/media_router/media_router_ui_unittest.cc
+@@ -12,6 +12,7 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/test/bind.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/media/router/chrome_media_router_factory.h"
+ #include "chrome/browser/media/router/media_router_feature.h"
+@@ -393,6 +394,45 @@
+ 
+ TEST_F(MediaRouterViewsUITest, StartCasting) {
+   StartTabCasting();
++}
++
++// Parc: a cast's launch callback runs once its route is created, even after
++// the dialog closed, and not for a launch that fails.
++TEST_F(MediaRouterViewsUITest, ParcStartCastingRunsLaunchCallback) {
++  MediaSource media_source = MediaSource::ForTab(
++      sessions::SessionTabHelper::IdForTab(web_contents()).id());
++  MediaSink sink{CreateCastSink(kSinkId, kSinkName)};
++  for (MediaSinksObserver* sinks_observer : media_sinks_observers_) {
++    sinks_observer->OnSinksUpdated({sink}, std::vector<url::Origin>());
++  }
++  MediaRouteResponseCallback launched_callback;
++  MediaRouteResponseCallback failed_callback;
++  EXPECT_CALL(*mock_router_, CreateRouteInternal(media_source.id(), kSinkId, _,
++                                                 web_contents(), _, _))
++      .WillOnce(SaveArgWithMove<4>(&launched_callback))
++      .WillOnce(SaveArgWithMove<4>(&failed_callback));
++  bool launched = false;
++  ui_->ParcStartCasting(kSinkId, MediaCastMode::TAB_MIRROR,
++                        base::BindLambdaForTesting([&] { launched = true; }));
++  bool failed_launched = false;
++  ui_->ParcStartCasting(
++      kSinkId, MediaCastMode::TAB_MIRROR,
++      base::BindLambdaForTesting([&] { failed_launched = true; }));
++  Mock::VerifyAndClearExpectations(mock_router_);
++  ui_.reset();
++
++  std::move(failed_callback)
++      .Run(nullptr,
++           *RouteRequestResult::FromError(
++               "failed", mojom::RouteRequestResultCode::ROUTE_NOT_FOUND));
++  EXPECT_FALSE(failed_launched);
++
++  MediaRoute route(MediaRoute::GetMediaRouteId("id", kSinkId, media_source),
++                   media_source, kSinkId, /* description */ std::string(),
++                   /* is_local */ true);
++  std::move(launched_callback)
++      .Run(nullptr, *RouteRequestResult::FromSuccess(route, "id"));
++  EXPECT_TRUE(launched);
+ }
+ 
+ TEST_F(MediaRouterViewsUITest, StopCasting) {
