@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **90**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **91**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -242,7 +242,12 @@ started, replaced MediaKeys, a switch into Dolby Vision, a protected late
 SourceBuffer, and a page switching or turning its video track off cost a
 rebuffer or froze the picture: **fixed** e2556dc9 and 098f5290 (renderers
 join on the same clock; Chromium's renderer hands off to the FairPlay
-renderer at a keyframe). Dolby Vision alongside a track the FairPlay
+renderer at a keyframe; a handoff asked for during a seek waits for it:
+ca8b6db6). The handoff holds the picture and pauses the sound for about
+40-65 ms where Safari plays straight through: **in progress** (FP-RESTART-3,
+preroll the FairPlay renderer and switch on the same clock). Left (rare): a
+switch needed while playing backward, mid-resume, after a CDM change or for
+codecs the FairPlay renderer can't play still restarts with one rebuffer. Dolby Vision alongside a track the FairPlay
 renderer can't play (VP9 before the switch, Vorbis) fails: **in progress**
 (FP-DV); `setSinkId` audio output selection wasn't wired:
 **fixed** 30970c11 (FairPlay Media Source and native HLS; Chrome-identity
