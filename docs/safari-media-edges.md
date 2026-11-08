@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **83**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **85**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -232,11 +232,13 @@ said `canplay` before keys and `seeked` before the picture: **fixed** 7597d287
 (WebKit's preroll signal, `SourceBufferPrivateAVFObjC.mm:1074-1107`; Parc's
 minimum is 13.0). Pre-existing FairPlay renderer gaps a user feels
 (`fairplay_chromium/README.md` Known gaps): keys arriving after playback
-started, or a switch into Dolby Vision, cost one rebuffer Safari doesn't have
-(**in progress**, FP-RESTART, a seamless renderer handoff); Dolby Vision alongside a track the FairPlay
-renderer can't play (VP9 before the switch, Vorbis) fails (**queued**, FP-DV);
-a page turning its own video track off ends video until the next seek
-(**queued**, FP-TRACK); `setSinkId` audio output selection wasn't wired:
+started, replaced MediaKeys, a switch into Dolby Vision, a protected late
+SourceBuffer, and a page switching or turning its video track off cost a
+rebuffer or froze the picture: **fixed** e2556dc9 and 098f5290 (renderers
+join on the same clock; Chromium's renderer hands off to the FairPlay
+renderer at a keyframe). Dolby Vision alongside a track the FairPlay
+renderer can't play (VP9 before the switch, Vorbis) fails: **in progress**
+(FP-DV); `setSinkId` audio output selection wasn't wired:
 **fixed** 30970c11 (FairPlay Media Source and native HLS; Chrome-identity
 FairPlay pages follow it too, as Chrome moves all of an element's audio).
 Unplugging the chosen device stalled protected playback (Safari too) and
@@ -651,9 +653,8 @@ FairPlay). Clear Media Source played only the first of two audio SourceBuffers,
 `audioTracks` toggles played only one track (`html_media_element.cc:4486`),
 and an encrypted late track on RendererImpl restarted (a rebuffer): **fixed**
 83554da3 (every enabled track mixed, as Safari); the merged-SourceBuffer race
-is closed too. Still: a late track needing the FairPlay renderer while
-RendererImpl plays restarts (a rebuffer): **in progress** with the seamless
-handoff (FP-RESTART); a turned-off first track keeps decoding silently (a
+is closed too. A late track needing the FairPlay renderer while RendererImpl plays
+restarted: **fixed** 098f5290; a turned-off first track keeps decoding silently (a
 little CPU, no audible effect: **left**); sync at rates other than 1 is
 within 30 ms by reasoning only (**unchecked**). Video track switches on FairPlay
 freeze the picture: **in progress** with the late-key handoff (FP-RESTART).
