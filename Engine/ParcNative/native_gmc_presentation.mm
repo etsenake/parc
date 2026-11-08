@@ -2,7 +2,9 @@
 #include "native_gmc_presentation.h"
 #import <AppKit/AppKit.h>
 #include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
@@ -24,8 +26,14 @@
 #include "chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h"
 #include "components/media_router/browser/media_router.h"
 #include "components/media_router/browser/media_router_factory.h"
+#include "components/media_router/browser/media_routes_observer.h"
+#include "components/media_router/browser/media_sinks_observer.h"
+#include "components/media_router/browser/presentation/web_contents_presentation_manager.h"
 #include "components/media_router/browser/presentation/start_presentation_context.h"
 #include "components/media_router/common/media_route.h"
+#include "components/media_router/common/media_source.h"
+#include "components/sessions/content/session_tab_helper.h"
+#include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/weak_document_ptr.h"
@@ -38,8 +46,15 @@
 #include "native_page_retirement.h"
 #include "native_profile_removal.h"
 #include "tab_transfer.h"
+#include "media/base/audio_codecs.h"
+#include "media/base/media_switches.h"
+#include "media/base/remoting_constants.h"
+#include "media/base/video_codecs.h"
+#include "media/remoting/device_capability_checker.h"
+#include "services/media_session/public/mojom/media_session.mojom.h"
 #include "third_party/blink/public/mojom/presentation/presentation.mojom.h"
 #include "ui/display/types/display_constants.h"
+#include "ui/gfx/mac/coordinate_conversion.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #import "window_security_reservation.h"
@@ -436,14 +451,296 @@ bool MaybeShowNativePresentation(
       weak_contents.get(), *weak_browser, std::move(context));
   return true;
 }
+
+// Safari-identity pages AirPlay instead (native_airplay.h).
+bool CastsAsChrome(content::WebContents* contents) {
+  PCNativePage* page = ExistingNativePage(contents);
+  return page && !page.closed && !page.usesSafariIdentity;
+}
+
+// The remote playback source Chrome's media controls cast |contents|' media
+// session with (MediaSessionNotificationItem::GetRemotePlaybackMetadata and
+// MediaNotificationService's ShouldInitializeWithRemotePlaybackSource): one
+// player whose page allows Remote Playback, unencrypted (no FairPlay or
+// Widevine), longer than 15 seconds, with codecs a receiver can be asked for,
+// and no default presentation request, which Chromium would cast instead.
+std::optional<media_router::MediaSource> CastSource(content::WebContents* contents) {
+  auto* session = content::MediaSession::GetIfExists(contents);
+  if (!CastsAsChrome(contents) || !session ||
+      !base::FeatureList::IsEnabled(media::kMediaRemotingWithoutFullscreen))
+    return std::nullopt;
+  const auto info = session->GetMediaSessionInfoSync();
+  if (!info || !info->remote_playback_metadata)
+    return std::nullopt;
+  const auto& metadata = info->remote_playback_metadata;
+  const auto position = session->GetMediaSessionPosition();
+  if (metadata->remote_playback_disabled || metadata->is_encrypted_media ||
+      (position && position->duration() <=
+                       base::Seconds(media::remoting::kMinRemotingMediaDurationInSec)))
+    return std::nullopt;
+  const auto video = media::remoting::ParseVideoCodec(metadata->video_codec);
+  const auto audio = media::remoting::ParseAudioCodec(metadata->audio_codec);
+  auto presentation = media_router::WebContentsPresentationManager::Get(contents);
+  if (video == media::VideoCodec::kUnknown || audio == media::AudioCodec::kUnknown ||
+      (presentation && presentation->HasDefaultPresentationRequest()))
+    return std::nullopt;
+  return media_router::MediaSource::ForRemotePlayback(
+      sessions::SessionTabHelper::IdForTab(contents).id(), video, audio);
+}
+
+// Watches the receivers for |contents|' cast source and its tab's route,
+// matched as GetSessionRoute() matches it in Chrome's media controls: the
+// session's remote playback, or mirroring the tab where Chromium falls back
+// to it, which the dialog also shows as casting.
+class MediaCastWatcher final
+    : public content::WebContentsUserData<MediaCastWatcher> {
+ public:
+  NativeMediaCastState State() {
+    Update();
+    if (!CastsAsChrome(&GetWebContents()))
+      return {};
+    if (route_) {
+      auto* session = content::MediaSession::GetIfExists(&GetWebContents());
+      const auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
+      const bool started = route_->media_source().IsTabMirroringSource() ||
+                           (info && info->remote_playback_metadata &&
+                            info->remote_playback_metadata->remote_playback_started);
+      return {static_cast<int>(started ? PCNativeCastStateConnected : PCNativeCastStateConnecting),
+              route_->media_sink_name()};
+    }
+    return {static_cast<int>(sinks_ && sinks_available_ ? PCNativeCastStateAvailable
+                                                        : PCNativeCastStateUnavailable), {}};
+  }
+
+ private:
+  friend class content::WebContentsUserData<MediaCastWatcher>;
+  class Sinks final : public media_router::MediaSinksObserver {
+   public:
+    Sinks(media_router::MediaRouter* router, const media_router::MediaSource& source,
+          const url::Origin& origin, MediaCastWatcher* owner)
+        : MediaSinksObserver(router, source, origin), owner_(owner) {}
+   private:
+    void OnSinksReceived(const std::vector<media_router::MediaSink>& sinks) override {
+      owner_->sinks_available_ = !sinks.empty();
+      NativeMediaCastChanged(&owner_->GetWebContents());
+    }
+    const raw_ptr<MediaCastWatcher> owner_;
+  };
+  class Routes final : public media_router::MediaRoutesObserver {
+   public:
+    Routes(media_router::MediaRouter* router, MediaCastWatcher* owner)
+        : MediaRoutesObserver(router), owner_(owner) {}
+    void OnRoutesUpdated(const std::vector<media_router::MediaRoute>& routes) override {
+      owner_->Match(routes);
+      NativeMediaCastChanged(&owner_->GetWebContents());
+    }
+   private:
+    const raw_ptr<MediaCastWatcher> owner_;
+  };
+
+  explicit MediaCastWatcher(content::WebContents* contents)
+      : content::WebContentsUserData<MediaCastWatcher>(*contents) {}
+  // Never from a router callback: it adds and removes router observers.
+  void Update() {
+    auto* contents = &GetWebContents();
+    auto* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+    auto* router = profile && !profile->ShutdownStarted() &&
+                           media_router::MediaRouterEnabled(profile)
+        ? media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(profile)
+        : nullptr;
+    if (!routes_ || routes_->router() != router) {
+      sinks_.reset();
+      routes_.reset();
+      route_.reset();
+      if (!router)
+        return;
+      routes_ = std::make_unique<Routes>(router, this);
+      Match(router->GetCurrentRoutes());
+    }
+    const auto source = CastSource(contents);
+    if (!source) {
+      sinks_.reset();
+    } else if (!sinks_ || sinks_->source() != *source) {
+      sinks_available_ = false;
+      sinks_ = std::make_unique<Sinks>(
+          router, *source, contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(), this);
+      sinks_->Init();
+    }
+  }
+  void Match(const std::vector<media_router::MediaRoute>& routes) {
+    const int tab = sessions::SessionTabHelper::IdForTab(&GetWebContents()).id();
+    route_.reset();
+    const bool mirroring =
+        base::FeatureList::IsEnabled(media_router::kFallbackToAudioTabMirroring);
+    for (const auto& route : routes) {
+      const auto& source = route.media_source();
+      if ((source.IsRemotePlaybackSource() && source.TabIdFromRemotePlaybackSource() == tab) ||
+          (mirroring && source.IsTabMirroringSource() && source.TabId() == tab)) {
+        route_ = route;
+        return;
+      }
+    }
+  }
+  std::unique_ptr<Routes> routes_;
+  std::unique_ptr<Sinks> sinks_;
+  bool sinks_available_ = false;
+  std::optional<media_router::MediaRoute> route_;
+  WEB_CONTENTS_USER_DATA_KEY_DECL();
+};
+WEB_CONTENTS_USER_DATA_KEY_IMPL(MediaCastWatcher);
+
+// The Mini Player's chooser: Chromium's media controls dialog for one page's
+// media session, at the row's Cast button in the presenting window, which may
+// show another tab. With no presentation request, the session's device list
+// starts Chromium's media session remote playback
+// (CreateCastDialogControllerForSession, then OnMediaRemotingRequested), and
+// a casting session shows "Stop casting".
+class MediaCastChooser final : public content::WebContentsObserver,
+                               public views::WidgetObserver {
+ public:
+  MediaCastChooser(content::WebContents* contents, NSWindow* host,
+                   base::RepeatingCallback<bool()> valid, void (^dismissed)(void))
+      : content::WebContentsObserver(contents), host_(host),
+        valid_(std::move(valid)), pending_dismissed_(dismissed) {}
+  ~MediaCastChooser() override { Close(); }
+
+  bool Show(NSView* view, NSRect rect) {
+    auto* contents = web_contents();
+    auto* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+    auto* service = profile && !profile->ShutdownStarted()
+        ? MediaNotificationServiceFactory::GetForProfile(profile) : nullptr;
+    if (!service || !Current() || !service->HasActiveNotificationsForWebContents(contents))
+      return Fail();
+    auto weak = weak_factory_.GetWeakPtr();
+    auto close = ^(NSNotification*) {
+      if (weak)
+        weak->Close();
+    };
+    for (NSNotificationName name in @[
+           NSWindowWillCloseNotification, NSWindowWillMiniaturizeNotification,
+           PCNativeWindowSecurityStateChanged
+         ]) {
+      [notifications_ addObject:[NSNotificationCenter.defaultCenter
+                                    addObserverForName:name object:host_
+                                                 queue:nil usingBlock:close]];
+    }
+    const NSRect screen = [view.window convertRectToScreen:[view convertRect:rect toView:nil]];
+    auto* widget = MediaDialogView::CreateDialogForNativePage(
+        gfx::NativeView(view), gfx::ScreenRectFromNSRect(screen), service, profile,
+        contents, base::UnguessableToken(),
+        base::BindRepeating([](base::WeakPtr<MediaCastChooser> self) {
+          return self && self->Current();
+        }, weak));
+    if (!weak || !widget || !MediaDialogView::IsNativeDialogCurrent(widget)) {
+      if (widget)
+        MediaDialogView::CloseNativeDialog(widget);
+      return weak ? Fail() : false;
+    }
+    widget_ = widget;
+    widget_observation_.Observe(widget_);
+    widget_->Show();
+    if (!weak || !widget_ || !widget_->IsVisible())
+      return weak ? Fail() : false;
+    dismissed_ = std::exchange(pending_dismissed_, nil);
+    return true;
+  }
+  bool IsFor(content::WebContents* contents) const { return web_contents() == contents; }
+  void Close() {
+    if (closed_)
+      return;
+    closed_ = true;
+    for (id token in notifications_)
+      [NSNotificationCenter.defaultCenter removeObserver:token];
+    [notifications_ removeAllObjects];
+    widget_observation_.Reset();
+    views::Widget* widget = widget_;
+    widget_ = nullptr;
+    if (widget)
+      MediaDialogView::CloseNativeDialog(widget);
+    Observe(nullptr);
+    if (auto dismissed = std::exchange(dismissed_, nil))
+      dismissed();
+  }
+
+  void OnWidgetDestroying(views::Widget* widget) override {
+    if (widget != widget_)
+      return;
+    widget_observation_.Reset();
+    widget_ = nullptr;
+    MediaDialogView::ForgetNativeDialogForDestroying(widget);
+    Close();
+  }
+  void PrimaryPageChanged(content::Page&) override { Close(); }
+  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override { Close(); }
+  void WebContentsDestroyed() override { Close(); }
+
+ private:
+  bool Current() const {
+    if (closed_ || !web_contents() || !host_ || !host_.visible || host_.miniaturized ||
+        !NSApp.active || !valid_.Run())
+      return false;
+    return host_.keyWindow ||
+           (widget_ && widget_->GetNativeWindow().GetNativeNSWindow().keyWindow);
+  }
+  bool Fail() {
+    Close();
+    return false;
+  }
+  __weak NSWindow* host_ = nil;
+  const base::RepeatingCallback<bool()> valid_;
+  // Runs on Close() only once Show() has succeeded.
+  void (^pending_dismissed_)(void) = nil;
+  void (^dismissed_)(void) = nil;
+  raw_ptr<views::Widget> widget_ = nullptr;
+  NSMutableArray* notifications_ = [[NSMutableArray alloc] init];
+  base::ScopedObservation<views::Widget, views::WidgetObserver> widget_observation_{this};
+  bool closed_ = false;
+  base::WeakPtrFactory<MediaCastChooser> weak_factory_{this};
+};
+std::unique_ptr<MediaCastChooser>& ActiveChooser() {
+  static base::NoDestructor<std::unique_ptr<MediaCastChooser>> chooser;
+  return *chooser;
+}
 }  // namespace
 bool CloseNativeGmcPresentationForPage(content::WebContents* contents) {
+  if (auto& chooser = ActiveChooser(); chooser && chooser->IsFor(contents))
+    chooser->Close();
   auto session = ActiveSession().lock();
   if (session && session->IsFor(contents)) {
     session->RequestClose();
     return !session->Busy();
   }
   return true;
+}
+NativeMediaCastState NativeMediaCastStateForContents(content::WebContents* contents) {
+  if (!contents || contents->IsBeingDestroyed())
+    return {};
+  MediaCastWatcher::CreateForWebContents(contents);
+  return MediaCastWatcher::FromWebContents(contents)->State();
+}
+bool ShowNativeMediaCastChooser(content::WebContents* contents,
+                                NSView* view,
+                                NSRect rect,
+                                base::RepeatingCallback<bool()> valid,
+                                void (^dismissed)(void)) {
+  if (!contents || !view.window ||
+      NativeMediaCastStateForContents(contents).state == PCNativeCastStateUnavailable)
+    return false;
+  // One media controls dialog at a time: a site's chooser, then this one.
+  if (auto session = ActiveSession().lock()) {
+    session->RequestClose();
+    if (session->Busy())
+      return false;
+  }
+  if (!CloseNativeCastForPage(contents))
+    return false;
+  auto previous = std::move(ActiveChooser());
+  previous.reset();
+  auto chooser = std::make_unique<MediaCastChooser>(contents, view.window,
+                                                    std::move(valid), dismissed);
+  auto* shown = chooser.get();
+  ActiveChooser() = std::move(chooser);
+  return shown->Show(view, rect);
 }
 void InstallNativeGmcPresentationHandler() {
   media_router::MediaRouterDialogControllerViews::SetNativePresentationHandler(

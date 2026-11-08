@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 591,
+  "version": 592,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -395,7 +395,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "5b51629b0cd5b14a9f8572c98686b6457c9fcc7cd49e0f1ae36750a7fc08a1ae"
+      "sha256": "989cd079120ed15455cde0402fdee9bb754e2578428e0f2ff00bfe7d1d1932a0"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1210,12 +1210,12 @@
     {
       "source": "Engine/ParcNative/native_media_notify.h",
       "target": "cef/libcef/browser/parc_native/native_media_notify.h",
-      "sha256": "076bd1d9fee966e965d0d8d4ae4cef65ae41abb31216232e0cdf41791712b260"
+      "sha256": "4e0026dee8887c9e3d319ad691bd0e28ff4e5f45b68138aaeb095327e2d46c2b"
     },
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "8187f29e5f42d3315d2d274d438cb6463578cbe79cdfbf010bb679b36fb72972"
+      "sha256": "3d51a2fa8f8ab9f2b7410d6a917c341738c653877c4aa2a336f66fd932cca0b7"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
@@ -1410,12 +1410,12 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.h",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.h",
-      "sha256": "b6f2d33981e12b8e54e284ed2a7865d393f3b6bef1c3f578753f8ef6c1d934dd"
+      "sha256": "2ed9c7342bfbd801d532d434074d16068bf8cb0fb7112edfa17faaae8875a229"
     },
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
-      "sha256": "b6b36a92b94909be2007d34b59b6b364dcf58c2e1182bf2f6935878e48e1bce1"
+      "sha256": "57f7f5caf8ad37d67cb0e84777c9b080aa1f9124f2ae448ea604b2c25bc83317"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
@@ -3722,7 +3722,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "e051f9eafd23793c5f3a1e881b564323233eb63509ac5e959c1242929149cf9e",
+      "sha256": "95a155216144c49cdaf061dfe8556bc5485ec9f445f4c79548b2ba04847a2672",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3777,12 +3777,12 @@
         {
           "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view.cc",
           "before_sha256": "48b24885ab9ed53978c4404653e6d7eb77efcd760bb93c229c9fcb3f2723b12c",
-          "after_sha256": "807e504eae0b11f9d71b1bd439804269de7bedf5ea355083a6ece87cfb375f1b"
+          "after_sha256": "282402474dd769154fcb33950f3a9b92c7f46eba040ff6ae75c041e102b6503a"
         },
         {
           "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view.h",
           "before_sha256": "72e621dff02a8bdfccb3ff17e340d139b02ff52bccb598b7bcc58b6a5a54997a",
-          "after_sha256": "fa1980add82d348741c1eca6bb97ca2f236e6f5739e720c8a879b8c34813f84e"
+          "after_sha256": "2b9e4dafe5cd4288ded9a5ad638b5ff2eae90430ac995a263f403f68c58b1571"
         },
         {
           "target": "chrome/browser/ui/views/global_media_controls/media_item_ui_helper.cc",
@@ -3833,6 +3833,11 @@
           "target": "components/global_media_controls/public/views/media_item_ui_updated_view.h",
           "before_sha256": "189d38c4984b7975863e2487a0939a291327caf2ace58fa6006271753a9f6ef1",
           "after_sha256": "56e5484ef36a52229a7d26c0fdd6a9496fb9b6f1dd30600c0122bf16a3da4215"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc",
+          "before_sha256": "3718a663f953400872717e0cb65c9e2cd7b2d31585e0422c46126ad0b2af4710",
+          "after_sha256": "8aab1fe30dfe37bf33d9fd700c71ab8cfe5e7c3b9dc2aa7419445f90253e2752"
         }
       ]
     },

@@ -460,6 +460,15 @@ typedef NS_ENUM(NSInteger, PCNativeAirPlayState) {
   PCNativeAirPlayStateConnecting,
   PCNativeAirPlayStateConnected,
 };
+// Chromium's Cast for the session's one player (native_gmc_presentation.h):
+// Chrome-identity pages only. Connecting while its remote playback route
+// waits for the receiver.
+typedef NS_ENUM(NSInteger, PCNativeCastState) {
+  PCNativeCastStateUnavailable = 0,
+  PCNativeCastStateAvailable,
+  PCNativeCastStateConnecting,
+  PCNativeCastStateConnected,
+};
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeMediaState : NSObject
@@ -483,6 +492,8 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly) BOOL cameraOn;
 @property(nonatomic, readonly) PCNativeAirPlayState airPlayState;
 @property(nonatomic, readonly, copy, nullable) NSString* airPlayDeviceName;
+@property(nonatomic, readonly) PCNativeCastState castState;
+@property(nonatomic, readonly, copy, nullable) NSString* castDeviceName;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end
@@ -1928,6 +1939,15 @@ NS_SWIFT_UI_ACTOR
                                 ofView:(NSView*)view
                               inWindow:(NSWindow*)window
                              dismissed:(void (^)(void))dismissed;
+// Opens Chromium's media controls chooser at |rect| in |view| (in |window|)
+// for the session's player: its Cast devices, or "Stop casting" while it
+// casts. |dismissed| runs once when it closes. NO when the state is stale,
+// the host can't act or the player can't cast.
+- (BOOL)showCastChooserForMediaState:(PCNativeMediaState*)state
+                      relativeToRect:(NSRect)rect
+                              ofView:(NSView*)view
+                            inWindow:(NSWindow*)window
+                           dismissed:(void (^)(void))dismissed;
 @end
 
 NS_SWIFT_UI_ACTOR

@@ -83,7 +83,7 @@ final class MiniPlayerDeck: NSView {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { self.motion.settle() }
-                self.rows.values.forEach { $0.updateAirPlayMotion() }
+                self.rows.values.forEach { $0.updateRouteMotion() }
             }
         }
     }
@@ -315,10 +315,12 @@ private final class MiniPlayerRow: NSView {
     private let mute = ActionButton("Mute Tab", symbol: "speaker.slash")
     private let microphone = ActionButton("Microphone", symbol: "mic.fill")
     private let camera = ActionButton("Camera", symbol: "video.fill")
-    private let airPlay = ActionButton("AirPlay", symbol: "airplayvideo")
-    private var airPlayListOpen = false
-    private let airPlayPulse = ViewDisplayFrameDriver()
-    private var airPlayPulseStart: CFTimeInterval = 0
+    /// The transport's last button: AirPlay on Safari-identity pages, Cast on
+    /// Chrome-identity ones, in one style with the same states.
+    private let route = ActionButton("AirPlay", symbol: "airplayvideo")
+    private var routeChooserOpen = false
+    private let routePulse = ViewDisplayFrameDriver()
+    private var routePulseStart: CFTimeInterval = 0
     private let volume = MiniPlayerVolumeSlider(value: 1, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let volumeValue = NSTextField(labelWithString: "100%")
     private let unavailable = NSTextField(labelWithString: "")
@@ -361,7 +363,7 @@ private final class MiniPlayerRow: NSView {
         next.actionBlock = { [weak self] in self?.perform(.nextTrack) }
         microphone.actionBlock = { [weak self] in self?.perform(.toggleMicrophone) }
         camera.actionBlock = { [weak self] in self?.perform(.toggleCamera) }
-        airPlay.actionBlock = { [weak self] in self?.showAirPlayPicker() }
+        route.actionBlock = { [weak self] in self?.showRouteChooser() }
         mute.actionBlock = { [weak self] in self?.perform(.toggleMuted) }
         volumeButton.actionBlock = { [weak self] in
             guard let self, self.isCurrent, let item = self.item else { return }
@@ -383,8 +385,8 @@ private final class MiniPlayerRow: NSView {
         volumeValue.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
         volumeValue.isHidden = true
         unavailable.font = .systemFont(ofSize: 10); unavailable.lineBreakMode = .byTruncatingTail
-        for view in [title, titleArtwork, marquee, pip, close, play, previous, next, volumeButton, airPlay, mute, microphone, camera, volume, volumeValue, unavailable] { addSubview(view) }
-        for button in [pip, close, play, previous, next, volumeButton, airPlay, mute, microphone, camera] {
+        for view in [title, titleArtwork, marquee, pip, close, play, previous, next, volumeButton, route, mute, microphone, camera, volume, volumeValue, unavailable] { addSubview(view) }
+        for button in [pip, close, play, previous, next, volumeButton, route, mute, microphone, camera] {
             LiveShortcutToolTip.set(button, button.title)
             SidebarAccessibility.label(button, button.title)
             button.title = ""; button.imagePosition = .imageOnly
@@ -402,7 +404,7 @@ private final class MiniPlayerRow: NSView {
         guard let state = item?.state else { return [] }
         return [state.canPlayPause, state.hasPreviousTrack, state.hasNextTrack,
                 state.canToggleCamera, state.canToggleMicrophone, state.canSetVolume,
-                state.airPlayState != .unavailable]
+                currentRoute != nil]
     }
     func update(_ item: MiniPlayerItem) {
         let previousCapabilities = keyCapabilities
@@ -435,7 +437,7 @@ private final class MiniPlayerRow: NSView {
         }
         updateVolumeAccessibility()
         updatePresentationVisibility()
-        updateAirPlay()
+        updateRoute()
         needsLayout = true
         if previousCapabilities != keyCapabilities { onKeyViewsChanged?() }
     }
@@ -452,55 +454,106 @@ private final class MiniPlayerRow: NSView {
         //
         volumeButton.showsSelectedFill = showsVolumeDrawer
     }
-    private func updateAirPlay() {
-        guard let state = item?.state else { return }
-        let device = state.airPlayDeviceName.flatMap { $0.isEmpty ? nil : $0 }
-        let connected = state.airPlayState == .connected, connecting = state.airPlayState == .connecting
-        if connected { name(airPlay, device.map { "Playing on \($0)" } ?? "AirPlay") }
-        else if connecting { name(airPlay, device.map { "Connecting to \($0)" } ?? "AirPlay") }
-        else { name(airPlay, "AirPlay") }
-        let value: String? = connected ? "Connected" : connecting ? "Connecting" : nil
-        airPlay.setAccessibilityValue(value); airPlay.cell?.setAccessibilityValue(value)
-        airPlay.setAccessibilitySelected(connected); airPlay.cell?.setAccessibilitySelected(connected)
-        airPlay.showsSelectedFill = airPlayListOpen
-        airPlay.contentTintColor = connected || connecting ? airPlayActiveColor : (palette?.title ?? .labelColor)
-        updateAirPlayMotion()
+    private enum RouteKind { case airPlay, cast }
+    private struct RouteStatus { let kind: RouteKind, connecting: Bool, connected: Bool, device: String? }
+    private var currentRoute: RouteStatus? {
+        guard let state = item?.state else { return nil }
+        if state.castState != .unavailable {
+            return RouteStatus(kind: .cast, connecting: state.castState == .connecting, connected: state.castState == .connected,
+                               device: state.castDeviceName.flatMap { $0.isEmpty ? nil : $0 })
+        }
+        if state.airPlayState != .unavailable {
+            return RouteStatus(kind: .airPlay, connecting: state.airPlayState == .connecting, connected: state.airPlayState == .connected,
+                               device: state.airPlayDeviceName.flatMap { $0.isEmpty ? nil : $0 })
+        }
+        return nil
     }
+    private func updateRoute() {
+        let status = currentRoute
+        let cast = status?.kind == .cast, connected = status?.connected == true, connecting = status?.connecting == true
+        let base = cast ? "Cast" : "AirPlay"
+        route.image = cast ? Self.castGlyph : Self.airPlayGlyph
+        if connected { name(route, status?.device.map { cast ? "Casting to \($0)" : "Playing on \($0)" } ?? base) }
+        else if connecting { name(route, status?.device.map { "Connecting to \($0)" } ?? base) }
+        else { name(route, base) }
+        let value: String? = connected ? "Connected" : connecting ? "Connecting" : nil
+        route.setAccessibilityValue(value); route.cell?.setAccessibilityValue(value)
+        route.setAccessibilitySelected(connected); route.cell?.setAccessibilitySelected(connected)
+        route.showsSelectedFill = routeChooserOpen
+        route.contentTintColor = connected || connecting ? routeActiveColor : (palette?.title ?? .labelColor)
+        updateRouteMotion()
+    }
+    private static let airPlayGlyph = NSImage(systemSymbolName: "airplayvideo", accessibilityDescription: nil)
+    /// Chromium's Cast icon (media_router_idle), the 24-unit Material "cast"
+    /// glyph, as a template in the AirPlay symbol's image, its ink as wide as
+    /// AirPlay's (13 points) so the two buttons match.
+    private static let castGlyph: NSImage = {
+        let size = airPlayGlyph?.size ?? NSSize(width: 17, height: 14)
+        let image = NSImage(size: size, flipped: true) { rect in
+            let scale: CGFloat = 13 / 22
+            let path = NSBezierPath()
+            func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x, y: y) }
+            path.move(to: p(21, 3)); path.line(to: p(3, 3)); path.curve(to: p(1, 5), controlPoint1: p(1.9, 3), controlPoint2: p(1, 3.9))
+            path.line(to: p(1, 8)); path.line(to: p(3, 8)); path.line(to: p(3, 5)); path.line(to: p(21, 5)); path.line(to: p(21, 19))
+            path.line(to: p(14, 19)); path.line(to: p(14, 21)); path.line(to: p(21, 21))
+            path.curve(to: p(23, 19), controlPoint1: p(22.1, 21), controlPoint2: p(23, 20.1)); path.line(to: p(23, 5))
+            path.curve(to: p(21, 3), controlPoint1: p(23, 3.9), controlPoint2: p(22.1, 3)); path.close()
+            path.move(to: p(1, 18)); path.line(to: p(1, 21)); path.line(to: p(4, 21))
+            path.curve(to: p(1, 18), controlPoint1: p(4, 19.34), controlPoint2: p(2.66, 18)); path.close()
+            path.move(to: p(1, 14)); path.line(to: p(1, 16)); path.curve(to: p(6, 21), controlPoint1: p(3.76, 16), controlPoint2: p(6, 18.24))
+            path.line(to: p(8, 21)); path.curve(to: p(1, 14), controlPoint1: p(8, 17.13), controlPoint2: p(4.87, 14)); path.close()
+            path.move(to: p(1, 10)); path.line(to: p(1, 12)); path.curve(to: p(10, 21), controlPoint1: p(5.97, 12), controlPoint2: p(10, 16.03))
+            path.line(to: p(12, 21)); path.curve(to: p(1, 10), controlPoint1: p(12, 14.92), controlPoint2: p(7.08, 10)); path.close()
+            var transform = AffineTransform(translationByX: rect.midX - 12 * scale, byY: rect.midY - 12 * scale)
+            transform.scale(scale)
+            path.transform(using: transform)
+            NSColor.black.setFill(); path.fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
     /// The theme's own hue in the luminance band farthest from the card:
     /// maxContrastColor (0 to 0.1) on light themes and foregroundSecondary
     /// (0.3 to 0.5) on dark ones. Either stays legible on backgroundExtra
     /// and distinct from the title-coloured neighbours.
-    private var airPlayActiveColor: NSColor {
+    private var routeActiveColor: NSColor {
         guard let palette else { return .controlAccentColor }
         return palette.isDark ? palette.foregroundSecondary : palette.maxContrastColor
     }
     /// Connecting pulses the glyph alone, drawn by the button's own cell, so
     /// its fill and focus ring stay put. Reduce Motion leaves it at 1, as
     ///
-    func updateAirPlayMotion() {
-        let pulses = item?.state.airPlayState == .connecting && window != nil && !airPlay.isHidden
+    func updateRouteMotion() {
+        let pulses = currentRoute?.connecting == true && window != nil && !route.isHidden
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard pulses else { airPlayPulse.stop(); airPlay.contentAlpha = 1; return }
-        guard !airPlayPulse.isRunning else { return }
-        airPlayPulseStart = CACurrentMediaTime()
-        airPlayPulse.start(in: airPlay) { [weak self] in
+        guard pulses else { routePulse.stop(); route.contentAlpha = 1; return }
+        guard !routePulse.isRunning else { return }
+        routePulseStart = CACurrentMediaTime()
+        routePulse.start(in: route) { [weak self] in
             guard let self else { return false }
-            self.airPlay.contentAlpha = MiniPlayerMotion.connectingOpacity(at: CACurrentMediaTime() - self.airPlayPulseStart)
+            self.route.contentAlpha = MiniPlayerMotion.connectingOpacity(at: CACurrentMediaTime() - self.routePulseStart)
             return true
         }
     }
-    private func showAirPlayPicker() {
-        guard !airPlayListOpen else { return }
+    /// AirPlay opens the system's route list; Cast opens Chromium's media
+    /// controls chooser with its devices, or Stop casting while it casts.
+    private func showRouteChooser() {
+        guard !routeChooserOpen, let kind = currentRoute?.kind else { return }
         guard isCurrent, let item, let host = item.host.window, host === window else { failure(); return }
-        airPlayListOpen = true
-        updateAirPlay()
-        let shown = item.page.showAirPlayPicker(for: item.state, relativeTo: airPlay.bounds, of: airPlay, in: host) { [weak self] in
-            self?.airPlayListOpen = false
-            self?.updateAirPlay()
+        routeChooserOpen = true
+        updateRoute()
+        let closed = { [weak self] in
+            guard let self else { return }
+            self.routeChooserOpen = false
+            self.updateRoute()
         }
+        let shown = kind == .cast
+            ? item.page.showCastChooser(for: item.state, relativeTo: route.bounds, of: route, in: host, dismissed: closed)
+            : item.page.showAirPlayPicker(for: item.state, relativeTo: route.bounds, of: route, in: host, dismissed: closed)
         if !shown {
-            airPlayListOpen = false
-            updateAirPlay()
+            routeChooserOpen = false
+            updateRoute()
             failure()
         }
     }
@@ -579,7 +632,7 @@ private final class MiniPlayerRow: NSView {
         }
     }
     override func mouseDown(with event: NSEvent) { reveal() }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateAirPlayMotion() }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateRouteMotion() }
     override func becomeFirstResponder() -> Bool { if !restoringVolumeFocus { onFocus?() }; return super.becomeFirstResponder() }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 9, yRadius: 9).fill() }
@@ -615,9 +668,9 @@ private final class MiniPlayerRow: NSView {
         camera.isHidden = !frontCard || !state.canToggleCamera
         mute.isHidden = true
         volumeButton.isHidden = !frontCard || !state.canSetVolume
-        airPlay.isHidden = !frontCard || state.airPlayState == .unavailable
+        route.isHidden = !frontCard || currentRoute == nil
         marquee.scrollingEnabled = frontCard && deckExpanded
-        updateAirPlayMotion()
+        updateRouteMotion()
     }
     override func layout() {
         super.layout()
@@ -627,7 +680,7 @@ private final class MiniPlayerRow: NSView {
         pip.frame = NSRect(x: bounds.width - 54, y: 4, width: 23, height: 24)
         close.frame = NSRect(x: bounds.width - 29, y: 4, width: 23, height: 24)
         let transportY = chrome
-        let controls = [previous, play, next, microphone, camera, volumeButton, airPlay].filter { !$0.isHidden }
+        let controls = [previous, play, next, microphone, camera, volumeButton, route].filter { !$0.isHidden }
         let slots = CGFloat(controls.count + (titleArtwork.isHidden ? 0 : 1))
         let available = max(0, bounds.width - 8)
         let slot = slots > 0 ? available / slots : 0
@@ -662,10 +715,10 @@ private final class MiniPlayerRow: NSView {
     private func applyPalette() {
         layer?.backgroundColor = (palette?.backgroundExtra ?? NSColor.white.withAlphaComponent(0.35)).cgColor
         layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-        for button in [title, pip, close, play, previous, next, volumeButton, airPlay, mute, microphone, camera] {
+        for button in [title, pip, close, play, previous, next, volumeButton, route, mute, microphone, camera] {
             button.contentTintColor = palette?.title ?? .labelColor
         }
-        updateAirPlay()
+        updateRoute()
         marquee.textColor = palette?.title ?? .labelColor
         volumeValue.textColor = palette?.title ?? .labelColor
         unavailable.textColor = palette?.title ?? .secondaryLabelColor

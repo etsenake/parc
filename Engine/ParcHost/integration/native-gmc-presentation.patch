@@ -1013,8 +1013,7 @@
 +    instance_->SetAnchorRect(bounds);
    return widget;
  }
--
-+
+ 
 @@ -129,15 +130,23 @@
    // Hide the previous instance if it exists, since there can only be one dialog
    // instance at a time.
@@ -1030,8 +1029,7 @@
 -    instance_->set_has_parent(false);
 +    dialog->set_has_parent(false);
    }
--
-+
+ 
    views::Widget* widget =
 -      views::BubbleDialogDelegateView::CreateBubble(instance_);
 +      views::BubbleDialogDelegateView::CreateBubble(dialog);
@@ -1041,14 +1039,12 @@
    widget->Show();
 +  if (!weak_widget || instance_ != dialog)
 +    return nullptr;
--
-+
+ 
    base::UmaHistogramBoolean("Media.GlobalMediaControls.RepeatUsage",
                              has_been_opened_);
 @@ -149,17 +158,76 @@
  }
--
-+
+ 
  // static
 +views::Widget* MediaDialogView::CreateDialogForNativePage(
 +    gfx::NativeView parent,
@@ -1063,7 +1059,7 @@
 +  DCHECK(contents);
 +  HideDialog();
 +  if (instance_ || !native_guard || !native_guard.Run() ||
-+      !service->PrepareNativeDialog(token))
++      (!token.is_empty() && !service->PrepareNativeDialog(token)))
 +    return nullptr;
 +  auto* dialog = new MediaDialogView(
 +      views::BubbleAnchor(), views::BubbleBorder::TOP_CENTER, service, profile,
@@ -1130,8 +1126,7 @@
 +  if (widget)
 +    widget->Close();
  }
--
-+
+ 
  // static
 @@ -170,9 +238,13 @@
  global_media_controls::MediaItemUI* MediaDialogView::ShowMediaItem(
@@ -1139,8 +1134,7 @@
      base::WeakPtr<media_message_center::MediaNotificationItem> item) {
 +  auto weak_this = weak_factory_.GetWeakPtr();
    global_media_controls::MediaItemUI* view_ptr;
--
-+
+ 
    auto view = BuildMediaItemUIUpdatedView(id, item);
 +  if (!weak_this)
 +    return nullptr;
@@ -1154,8 +1148,7 @@
    active_sessions_view_->ShowUpdatedItem(id, std::move(view));
 +  if (!weak_this || !items_.contains(id) || items_[id] != view_ptr)
 +    return nullptr;
--
-+
+ 
    view_ptr->AddObserver(this);
    UpdateBubbleSize();
    observers_.Notify(&MediaDialogViewObserver::OnMediaSessionShown);
@@ -1163,8 +1156,7 @@
 +    return nullptr;
    return view_ptr;
  }
--
-+
+ 
  void MediaDialogView::HideMediaItem(const std::string& id) {
 +  auto weak_this = weak_factory_.GetWeakPtr();
    active_sessions_view_->HideUpdatedItem(id);
@@ -1181,13 +1173,11 @@
 +  if (weak_this)
 +    observers_.Notify(&MediaDialogViewObserver::OnMediaSessionHidden);
  }
--
-+
+ 
  void MediaDialogView::RefreshMediaItem(
 @@ -212,10 +290,14 @@
        entry_point_ == GlobalMediaControlsEntryPoint::kPresentation;
--
-+
+ 
    items_[id]->UpdateFooterView(
 -      BuildFooter(id, item, profile_, media_color_theme_));
 -  items_[id]->UpdateDeviceSelectorView(
@@ -1201,21 +1191,18 @@
 +    items_[id]->UpdateDeviceSelectorView(
 +        BuildDeviceSelector(id, item, service_, service_, profile_, entry_point_,
 +                            media_color_theme_, show_devices));
--
-+
+ 
    UpdateBubbleSize();
  }
 @@ -225,7 +307,8 @@
  }
--
-+
+ 
  void MediaDialogView::Focus() {
 -  RequestFocus();
 +  if (MayNativeInteract())
 +    RequestFocus();
  }
--
-+
+ 
  void MediaDialogView::AddedToWidget() {
 @@ -235,6 +318,7 @@
    if (frame) {
@@ -1231,13 +1218,11 @@
    }
 -  speech::SodaInstaller::GetInstance()->AddObserver(this);
  }
--
-+
+ 
  gfx::Size MediaDialogView::CalculatePreferredSize(
 @@ -348,6 +431,8 @@
  }
--
-+
+ 
  void MediaDialogView::TargetLanguageChanged() {
 +  if (!MayNativeInteract())
 +    return;
@@ -1245,8 +1230,7 @@
        target_language_combobox_->GetModel())
        ->UpdateTargetLanguageIndex(
 @@ -431,13 +516,16 @@
--
-+
+ 
  void MediaDialogView::WindowClosing() {
    if (instance_ == this) {
 +    auto* service = service_.get();
@@ -1256,8 +1240,7 @@
 +    service->media_item_manager()->SetDialogDelegate(nullptr);
    }
  }
--
-+
+ 
  void MediaDialogView::OnLiveCaptionButtonPressed() {
 +  if (!MayNativeInteract())
 +    return;
@@ -1266,8 +1249,7 @@
    base::UmaHistogramBoolean(
 @@ -445,6 +533,8 @@
  }
--
-+
+ 
  void MediaDialogView::OnLiveTranslateButtonPressed() {
 +  if (!MayNativeInteract())
 +    return;
@@ -1276,8 +1258,7 @@
    profile_->GetPrefs()->SetBoolean(prefs::kLiveTranslateEnabled, enabled);
 @@ -453,6 +543,8 @@
  }
--
-+
+ 
  void MediaDialogView::OnSettingsButtonPressed() {
 +  if (!MayNativeInteract())
 +    return;
@@ -1293,16 +1274,14 @@
 +                          media_color_theme_, show_devices, native_guard_),
 +      BuildFooter(id, item, profile_, media_color_theme_, native_guard_));
  }
--
-+
+ 
  BEGIN_METADATA(MediaDialogView)
 --- a/chrome/browser/ui/views/global_media_controls/media_dialog_view.h
 +++ b/chrome/browser/ui/views/global_media_controls/media_dialog_view.h
 @@ -9,8 +9,11 @@
  #include <memory>
  #include <string>
--
-+
+ 
 +#include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/memory/weak_ptr.h"
@@ -1318,15 +1297,16 @@
 +#include "ui/gfx/native_ui_types.h"
  #include "ui/views/bubble/bubble_anchor.h"
  #include "ui/views/bubble/bubble_dialog_delegate_view.h"
--
-+
-@@ -74,6 +78,20 @@
+ 
+@@ -74,6 +78,22 @@
        Profile* profile,
        content::WebContents* contents,
        global_media_controls::GlobalMediaControlsEntryPoint entry_point);
 +
 +  // Create, but do not show, a presentation dialog parented to the exact
 +  // native page. The caller observes the returned widget before showing it.
++  // An empty token shows the page's media session without a presentation
++  // request; its device list then casts the session (the Mini Player's Cast).
 +  static views::Widget* CreateDialogForNativePage(
 +      gfx::NativeView parent,
 +      const gfx::Rect& bounds,
@@ -1338,33 +1318,28 @@
 +  static bool IsNativeDialogCurrent(views::Widget* widget);
 +  static void CloseNativeDialog(views::Widget* widget);
 +  static void ForgetNativeDialogForDestroying(views::Widget* widget);
--
-+
+ 
    static void HideDialog();
    static bool IsShowing();
-@@ -166,6 +184,11 @@
+@@ -166,6 +186,11 @@
        const std::string& id,
        base::WeakPtr<media_message_center::MediaNotificationItem> item);
--
-+
+ 
 +  bool MayNativeInteract() const {
 +    return !native_guard_ || native_guard_.Run();
 +  }
 +  base::RepeatingCallback<bool()> native_guard_;
 +
    const raw_ptr<MediaNotificationService> service_;
--
-+
+ 
    // Always the original (non-OTR) profile; all prefs are read, written and
-@@ -210,6 +233,7 @@
+@@ -210,6 +235,7 @@
    const global_media_controls::GlobalMediaControlsEntryPoint entry_point_;
--
-+
+ 
    media_message_center::MediaColorTheme media_color_theme_;
 +  base::WeakPtrFactory<MediaDialogView> weak_factory_{this};
  };
--
-+
+ 
  #endif  // CHROME_BROWSER_UI_VIEWS_GLOBAL_MEDIA_CONTROLS_MEDIA_DIALOG_VIEW_H_
 --- a/chrome/browser/ui/views/global_media_controls/media_item_ui_helper.cc
 +++ b/chrome/browser/ui/views/global_media_controls/media_item_ui_helper.cc
@@ -1987,3 +1962,43 @@
    MediaActionButton* CreateMediaActionButton(views::View* parent,
                                               int button_id,
                                               const gfx::VectorIcon& vector_icon,
+--- a/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
++++ b/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
+@@ -144,6 +144,9 @@
+   content::WebContents* web_contents() { return web_contents_.get(); }
+   media_router::MockMediaRouter* media_router() { return media_router_; }
+   MediaDialogView* view() { return view_; }
++  MediaNotificationService* notification_service() {
++    return notification_service_.get();
++  }
+ 
+  private:
+   base::test::ScopedFeatureList feature_list_;
+@@ -222,6 +225,26 @@
+   EXPECT_TRUE(media_item_ui_updated_view()->GetDeviceSelectorForTesting());
+ }
+ 
++// Parc: an empty token opens the page's media session dialog without a
++// presentation request (the Mini Player's Cast); any other token must be the
++// service's prepared native presentation.
++TEST_F(MediaDialogViewTest, ParcNativePageDialogWithoutPresentation) {
++  HideDialog();
++  auto create = [&](base::UnguessableToken token) {
++    return MediaDialogView::CreateDialogForNativePage(
++        anchor_widget()->GetNativeView(), gfx::Rect(10, 10, 0, 0),
++        notification_service(), profile(), web_contents(), token,
++        base::BindRepeating([] { return true; }));
++  };
++  views::Widget* widget = create(base::UnguessableToken());
++  ASSERT_TRUE(widget);
++  EXPECT_TRUE(MediaDialogView::IsNativeDialogCurrent(widget));
++  views::test::WidgetDestroyedWaiter destroyed(widget);
++  MediaDialogView::CloseNativeDialog(widget);
++  destroyed.Wait();
++  EXPECT_FALSE(create(base::UnguessableToken::Create()));
++}
++
+ // Regression test for crbug.com/468238180. The dialog reads and writes the
+ // original profile's prefs, so it must observe that same profile.
+ TEST_F(MediaDialogViewTest, LiveCaptionUpdatesInIncognito) {
+--- a/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc

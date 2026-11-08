@@ -43,6 +43,10 @@ struct NativeMediaNotifyState {
   // PCNativeAirPlayState raw value and the device's name (native_airplay.h).
   int airplay_state = 0;
   std::string airplay_device_name;
+  // PCNativeCastState raw value and the receiver's name
+  // (native_gmc_presentation.h).
+  int cast_state = 0;
+  std::string cast_device_name;
   bool off_the_record = false;
   std::u16string title;
   std::string source_url;
@@ -75,6 +79,8 @@ inline bool MediaNotifyPayloadChanged(const NativeMediaNotifyState& last,
          last.camera_on != current.camera_on ||
          last.airplay_state != current.airplay_state ||
          last.airplay_device_name != current.airplay_device_name ||
+         last.cast_state != current.cast_state ||
+         last.cast_device_name != current.cast_device_name ||
          last.off_the_record != current.off_the_record ||
          last.title != current.title || last.source_url != current.source_url ||
          last.artwork_present != current.artwork_present ||

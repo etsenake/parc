@@ -73,8 +73,48 @@ import AppKit
         let close = buttons.first { $0.parcTooltip?.label == "Close Mini Player" && $0.isDescendant(of: rows[1]) }!
         _ = window.makeFirstResponder(close); close.keyDown(with: key("\r", 36, window))
         check(revealed == ["a", "b"], "Return on a focused control still reaches its row (\(revealed))")
+        routeButton(window, host)
         window.close()
         print("Sidebar mini player focus checks: \(count) passed")
+    }
+    /// The transport's last button is Cast for a Chrome-identity page's
+    /// castable player and AirPlay for a Safari-identity page's, and opens the
+    /// matching chooser; it reads the session's state.
+    static func routeButton(_ window: NSWindow, _ host: NSView) {
+        let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
+        let page = PCNativePage(), state = PCNativeMediaState(identifier: "route")
+        page.mediaState = state
+        let item = MiniPlayerItem(page: page, state: state, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})
+        func transport() -> [ActionButton] {
+            deck.update([item]); deck.layoutSubtreeIfNeeded()
+            return descendants(of: deck).compactMap { $0 as? ActionButton }
+                .filter { button in
+                    !button.isHidden && !["Close Mini Player", "Open Picture in Picture", "Back to Tab", "Show All"]
+                        .contains { button.accessibilityLabel()?.hasPrefix($0) == true }
+                }.sorted { $0.frame.minX < $1.frame.minX }
+        }
+        check(transport().last?.accessibilityLabel() == "Adjust Tab Volume", "no route button without devices")
+        state.castState = .available
+        guard let cast = transport().last else { return check(false, "a transport row") }
+        check(cast.accessibilityLabel() == "Cast" && cast.image?.isTemplate == true, "Cast follows volume (\(cast.accessibilityLabel() ?? "?"))")
+        cast.performClick(nil)
+        check(page.chooserRequests == ["cast"] && cast.showsSelectedFill, "Cast opens Chromium's chooser and stays selected")
+        state.castState = .connecting; state.castDeviceName = "Living Room TV"
+        check(transport().last?.accessibilityLabel() == "Connecting to Living Room TV", "connecting names the receiver")
+        state.castState = .connected
+        let connected = transport().last
+        check(connected?.accessibilityLabel() == "Casting to Living Room TV" && connected?.accessibilityValue() as? String == "Connected",
+              "connected reads Casting to the receiver")
+        page.dismissChooser?()
+        check(!cast.showsSelectedFill, "closing the chooser releases the button")
+        let castImage = cast.image
+        state.castState = .unavailable; state.castDeviceName = nil; state.airPlayState = .available
+        guard let airPlay = transport().last else { return check(false, "a transport row") }
+        check(airPlay === cast && airPlay.accessibilityLabel() == "AirPlay" && airPlay.image !== castImage,
+              "a Safari-identity page's player keeps AirPlay in the same place")
+        airPlay.performClick(nil)
+        check(page.chooserRequests == ["cast", "airplay"], "AirPlay opens the route list (\(page.chooserRequests))")
+        deck.removeFromSuperview()
     }
     static func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
     static func key(_ characters: String, _ code: UInt16, _ window: NSWindow) -> NSEvent {
@@ -101,12 +141,14 @@ private class Flipped: NSView { override var isFlipped: Bool { true } }
 // Stand-ins for the engine's media types (native_appkit_bridge.h).
 enum PCNativeMediaAction { case play, pause, previousTrack, nextTrack, toggleMuted, toggleMicrophone, toggleCamera, enterPictureInPicture }
 enum PCNativeAirPlayState { case unavailable, available, connecting, connected }
+enum PCNativeCastState { case unavailable, available, connecting, connected }
 @MainActor final class PCNativeMediaState {
     let identifier: String, title = "Song", sourceURL = "https://example.test/"
     let playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false
     let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false
     let microphoneOn = false, cameraOn = false
-    let airPlayState = PCNativeAirPlayState.unavailable, airPlayDeviceName: String? = nil
+    var airPlayState = PCNativeAirPlayState.unavailable, airPlayDeviceName: String? = nil
+    var castState = PCNativeCastState.unavailable, castDeviceName: String? = nil
     init(identifier: String) { self.identifier = identifier }
 }
 @MainActor final class PCNativePage {
@@ -119,6 +161,10 @@ enum PCNativeAirPlayState { case unavailable, available, connecting, connected }
     func performMediaAction(_ action: PCNativeMediaAction, state: PCNativeMediaState, in window: NSWindow) -> Bool { onAction?(action); return true }
     func setMediaVolume(_ volume: Double, state: PCNativeMediaState, in window: NSWindow) -> Bool { true }
     func dismissMediaState(_ state: PCNativeMediaState, in window: NSWindow) -> Bool { true }
+    var chooserRequests: [String] = []
+    var dismissChooser: (() -> Void)?
     func showAirPlayPicker(for state: PCNativeMediaState, relativeTo rect: NSRect, of view: NSView, in window: NSWindow,
-                           dismissed: @escaping () -> Void) -> Bool { true }
+                           dismissed: @escaping () -> Void) -> Bool { chooserRequests.append("airplay"); dismissChooser = dismissed; return true }
+    func showCastChooser(for state: PCNativeMediaState, relativeTo rect: NSRect, of view: NSView, in window: NSWindow,
+                         dismissed: @escaping () -> Void) -> Bool { chooserRequests.append("cast"); dismissChooser = dismissed; return true }
 }

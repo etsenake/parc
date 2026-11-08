@@ -41,6 +41,7 @@
 #include "native_appkit_host.h"
 #include "native_background_picture_in_picture.h"
 #include "native_background_picture_in_picture_api.h"
+#include "native_gmc_presentation.h"
 #include "native_media_episode_store.h"
 #include "native_media_notify.h"
 #include "native_page_retirement.h"
@@ -301,7 +302,18 @@ class MediaState final : public content::WebContentsObserver,
     if (!host || view.window != host || !Validate(state, host)) return false;
     return ShowNativeAirPlayPicker(web_contents(), view, rect, dismissed);
   }
-  void AirPlayChanged() { Changed(); }
+  bool ShowCastChooser(PCNativeMediaState* state, NSView* view, NSRect rect, NSWindow* host,
+                       void (^dismissed)(void)) {
+    if (!host || view.window != host || !Validate(state, host)) return false;
+    __weak NSWindow* weak_host = host;
+    base::WeakPtr<MediaState> weak = weak_factory_.GetWeakPtr();
+    auto valid = base::BindRepeating(^bool {
+      NSWindow* window = weak_host;
+      return weak && window && weak->Validate(state, window);
+    });
+    return ShowNativeMediaCastChooser(web_contents(), view, rect, std::move(valid), dismissed);
+  }
+  void RouteChanged() { Changed(); }
   void Withdraw() {
     if (!active_ || dismissed_) return;
     Registry().Remove(this);
@@ -380,7 +392,8 @@ class MediaState final : public content::WebContentsObserver,
   void MediaSessionActionsChanged(const std::vector<Action>&) override { ReconcileEligibility(); Changed(); }
   void MediaSessionImagesChanged(const base::flat_map<media_session::mojom::MediaSessionImageType,
       std::vector<media_session::MediaImage>>&) override { Changed(); }
-  void MediaSessionPositionChanged(const std::optional<media_session::MediaPosition>&) override {}
+  // Cast needs more than 15 seconds of media (CastSource()).
+  void MediaSessionPositionChanged(const std::optional<media_session::MediaPosition>&) override { Changed(); }
  private:
   BackgroundPipVisibility CurrentShellVisibility() const {
     if (shell_visibility_) return *shell_visibility_;
@@ -639,6 +652,9 @@ class MediaState final : public content::WebContentsObserver,
     const NativeAirPlayState airplay = NativeAirPlayStateForContents(contents);
     state.airplay_state = airplay.state;
     state.airplay_device_name = airplay.device_name;
+    const NativeMediaCastState cast = NativeMediaCastStateForContents(contents);
+    state.cast_state = cast.state;
+    state.cast_device_name = cast.device_name;
     return state;
   }
   void Changed() {
@@ -714,7 +730,13 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
 
 void NativeMediaAirPlayChanged(content::WebContents* contents) {
   if (auto* state = contents ? MediaState::FromWebContents(contents) : nullptr) {
-    state->AirPlayChanged();
+    state->RouteChanged();
+  }
+}
+
+void NativeMediaCastChanged(content::WebContents* contents) {
+  if (auto* state = contents ? MediaState::FromWebContents(contents) : nullptr) {
+    state->RouteChanged();
   }
 }
 }  // namespace parc
@@ -746,6 +768,7 @@ void NativeMediaAirPlayChanged(content::WebContents* contents) {
 @synthesize canToggleMicrophone = _canToggleMicrophone, canToggleCamera = _canToggleCamera;
 @synthesize microphoneOn = _microphoneOn, cameraOn = _cameraOn;
 @synthesize airPlayState = _airPlayState, airPlayDeviceName = _airPlayDeviceName;
+@synthesize castState = _castState, castDeviceName = _castDeviceName;
 - (instancetype)initWithContents:(content::WebContents*)contents
                         browser:(BrowserWindowInterface*)browser identity:(NSString*)identity
               admissionSequence:(uint64_t)sequence {
@@ -779,6 +802,9 @@ void NativeMediaAirPlayChanged(content::WebContents* contents) {
     const parc::NativeAirPlayState airplay = parc::NativeAirPlayStateForContents(contents);
     _airPlayState = static_cast<PCNativeAirPlayState>(airplay.state);
     _airPlayDeviceName = airplay.device_name.empty() ? nil : base::SysUTF8ToNSString(airplay.device_name);
+    const parc::NativeMediaCastState cast = parc::NativeMediaCastStateForContents(contents);
+    _castState = static_cast<PCNativeCastState>(cast.state);
+    _castDeviceName = cast.device_name.empty() ? nil : base::SysUTF8ToNSString(cast.device_name);
   }
   return self;
 }
@@ -897,6 +923,15 @@ void NativeMediaAirPlayChanged(content::WebContents* contents) {
   CHECK(NSThread.isMainThread);
   auto* state = parc::State(self);
   return state && state->ShowAirPlayPicker(snapshot, view, rect, window, dismissed);
+}
+- (BOOL)showCastChooserForMediaState:(PCNativeMediaState*)snapshot
+                      relativeToRect:(NSRect)rect
+                              ofView:(NSView*)view
+                            inWindow:(NSWindow*)window
+                           dismissed:(void (^)(void))dismissed {
+  CHECK(NSThread.isMainThread);
+  auto* state = parc::State(self);
+  return state && state->ShowCastChooser(snapshot, view, rect, window, dismissed);
 }
 @end
 

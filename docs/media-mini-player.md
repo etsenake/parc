@@ -25,6 +25,28 @@ GrayA4 hover, GrayA5 pressed, `alwaysSelected` while the list is open, as the
 Connected tint it with the Space's contrasting hue (`maxContrastColor` on light
 button; the tooltip and label read "Playing on <device>". All row buttons now
 
+## Cast
+
+On Chrome-identity pages the same last button is Cast, with Chromium's Cast
+glyph (`media_router_idle`, drawn at AirPlay's 13-point ink width) and
+AirPlay's style and states: held selected while the chooser is open, the
+connecting pulse, the Space-contrast tint, "Connecting to <device>" and
+"Casting to <device>". It shows once a receiver answers the session's remote
+playback source and the media can be cast: one player, Remote Playback not
+disabled, known codecs, longer than 15 seconds, not encrypted (FairPlay and
+Widevine can't be cast) and no default presentation request. Pressing it opens Chromium's global
+media controls dialog for that page's session at the button, the dialog a
+page's Remote Playback prompt opens, even for a background tab. Choosing a
+device starts Chromium's media session remote playback, as Chrome's own
+media controls do (`CreateCastDialogControllerForSession`, then
+`RequestMediaRemoting`), so the cast takes the requested-remoting path
+that keeps it alive across navigation, the back/forward cache, background
+tabs and frozen pages. While it casts, the dialog offers Stop casting. The
+state follows the router's remote playback route for that tab and the
+player's `remote_playback_started`: Connecting until the receiver plays,
+Connected after (or at once when Chromium mirrors the tab instead), and back to available when the TV or the user ends it
+(`native_gmc_presentation.mm`).
+
 ## Volume adaptation
 
 
