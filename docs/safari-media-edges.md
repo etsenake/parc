@@ -497,7 +497,11 @@ the always-dark placard and scrim with at least 4.5:1, recolouring live:
 f339440b; the narrow-video overflow menu item on a light page **in
 progress**). A ManagedMediaSource element didn't switch to its HLS
 `<source>` alternative when a target is picked, as Safari does: **fixed**
-6bc1c789. Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
+6bc1c789, with Safari's rule that a managed source stays closed until
+`disableRemotePlayback` or a non-blob `<source>` is present (a Safari-identity
+site omitting both now never starts, as in Safari). Left: a `load()` after a
+switch drops the pending time; WebM doesn't switch; the alternative check
+skips WebKit's CSP check (all rare). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
 **fixed** 1c03b194 (they move to AVPlayer and back seamlessly; Safari never
 AirPlays Media Source, so neither does Parc). The user's chosen audio and video
 tracks now carry to the TV: **fixed** 0786af49 (live-stream `currentTime`
