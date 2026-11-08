@@ -338,13 +338,15 @@ class MediaState final : public content::WebContentsObserver,
   }
   void MediaSessionCreated(content::MediaSession* session) override { ObserveSession(session); Changed(); }
   void PrimaryPageChanged(content::Page&) override {
-    Registry().Remove(this);
-    active_ = false; dismissed_ = false;
+    auto* contents = web_contents();
+    if (!KeepMediaEpisodeAcrossPageChange(active_, dismissed_, [contents] { return Casting(contents); })) {
+      Registry().Remove(this);
+      identity_ = NSUUID.UUID.UUIDString;
+    }
     background_pip_ = BackgroundPipSessionState::kIdle;
     pending_enter_at_ = std::nullopt;
     silent_enter_retries_remaining_ = 0;
     shell_visibility_.reset();
-    identity_ = NSUUID.UUID.UUIDString;
     // A replacement document does not inherit a previous document's UI volume.
     if (content::MediaSession::GetIfExists(web_contents()))
       content::MediaSessionImpl::Get(web_contents())->SetUserVolumeMultiplier(1.0);

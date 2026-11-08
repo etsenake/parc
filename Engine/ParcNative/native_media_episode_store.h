@@ -71,6 +71,16 @@ bool MediaEpisodeHeld(bool session_eligible, bool admitted, Casting casting) {
   return session_eligible || (admitted && casting());
 }
 
+// A cast carries on from the back/forward cache and its route stays with the
+// tab, so a page change keeps the row showing it, with Stop casting, until
+// the cast ends. Any other episode, or a dismissed one, ends with its page.
+template <typename Casting>
+bool KeepMediaEpisodeAcrossPageChange(bool& active, bool& dismissed, Casting casting) {
+  if (active && !dismissed && casting()) return true;
+  active = false; dismissed = false;
+  return false;
+}
+
 // Source and Profile are weak handles with get(). Regular sources share one
 // pool; each live off-the-record Profile has its own pool. The returned weak
 // source is the oldest evicted entry, if any. No callback runs while the store

@@ -12,6 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/scoped_observation.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/media/router/media_router_feature.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,6 +28,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/views/global_media_controls/media_dialog_view.h"
 #include "chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/media_router/browser/media_router.h"
 #include "components/media_router/browser/media_router_factory.h"
 #include "components/media_router/browser/media_routes_observer.h"
@@ -57,11 +60,23 @@
 #include "media/remoting/device_capability_checker.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "third_party/blink/public/mojom/presentation/presentation.mojom.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #import "window_security_reservation.h"
+
+@interface PCNativeStopCastingTarget : NSObject
+@property(nonatomic, readonly) BOOL chosen;
+- (void)choose:(id)sender;
+@end
+@implementation PCNativeStopCastingTarget
+@synthesize chosen = _chosen;
+- (void)choose:(id)sender {
+  _chosen = YES;
+}
+@end
 
 namespace parc {
 namespace {
@@ -507,24 +522,39 @@ class MediaCastWatcher final
   }
   NativeMediaCastState State() {
     Update();
-    if (!CastsAsChrome(&GetWebContents()) || !routes_)
+    if (!routes_)
       return {};
+    // The tab's route shows on any page, as a cast carries on from a cached
+    // Chrome-identity page after the tab moves to a Safari-identity one.
     const auto route = MediaNotificationService::ParcCastRouteForWebContents(
         &GetWebContents(), routes_->router()->GetCurrentRoutes());
     if (route) {
       bool started = !route->is_connecting();
       if (route->media_source().IsRemotePlaybackSource()) {
+        auto* frame = GetWebContents().GetPrimaryMainFrame();
+        if (route_ != route->media_route_id()) {
+          route_ = route->media_route_id();
+          route_document_ = frame->GetWeakDocumentPtr();
+          route_started_ = false;
+          route_reported_ = false;
+        }
+        // Only the casting page's player reports the route, and a session
+        // that dropped it keeps the last report. Once that page has left, or
+        // if its player never reported, the route's own state shows.
         auto* session = content::MediaSession::GetIfExists(&GetWebContents());
         const auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
-        // A session that dropped its player keeps the route's last state.
-        if (info && info->remote_playback_metadata)
-          started_route_ = info->remote_playback_metadata->remote_playback_started
-                               ? route->media_route_id() : std::string();
-        started = started_route_ == route->media_route_id();
+        const bool casting_page = route_document_.AsRenderFrameHostIfValid() == frame;
+        if (casting_page && info && info->remote_playback_metadata) {
+          route_started_ = info->remote_playback_metadata->remote_playback_started;
+          route_reported_ = true;
+        }
+        started = (casting_page && route_reported_) ? route_started_ : (route_started_ || started);
       }
       return {static_cast<int>(started ? PCNativeCastStateConnected : PCNativeCastStateConnecting),
               route->media_sink_name()};
     }
+    if (!CastsAsChrome(&GetWebContents()))
+      return {};
     const bool available = std::ranges::any_of(
         sinks_, [](const auto& sinks) { return sinks->available(); });
     return {static_cast<int>(available ? PCNativeCastStateAvailable
@@ -619,7 +649,10 @@ class MediaCastWatcher final
   std::vector<media_router::MediaSource> sources_;
   url::Origin origin_;
   std::vector<std::unique_ptr<Sinks>> sinks_;
-  std::string started_route_;
+  std::string route_;
+  content::WeakDocumentPtr route_document_;
+  bool route_started_ = false;
+  bool route_reported_ = false;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 WEB_CONTENTS_USER_DATA_KEY_IMPL(MediaCastWatcher);
@@ -644,8 +677,10 @@ class MediaCastChooser final : public content::WebContentsObserver,
     auto* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
     auto* service = profile && !profile->ShutdownStarted()
         ? MediaNotificationServiceFactory::GetForProfile(profile) : nullptr;
-    if (!service || !Current() || !service->HasActiveNotificationsForWebContents(contents))
+    if (!service || !Current())
       return Fail();
+    if (!CastsAsChrome(contents) || !service->HasActiveNotificationsForWebContents(contents))
+      return OfferStopCasting(view, rect);
     auto weak = weak_factory_.GetWeakPtr();
     auto close = ^(NSNotification*) {
       if (weak)
@@ -688,6 +723,7 @@ class MediaCastChooser final : public content::WebContentsObserver,
       [NSNotificationCenter.defaultCenter removeObserver:token];
     [notifications_ removeAllObjects];
     widget_observation_.Reset();
+    [std::exchange(menu_, nil) cancelTracking];
     views::Widget* widget = widget_;
     widget_ = nullptr;
     if (widget)
@@ -721,6 +757,51 @@ class MediaCastChooser final : public content::WebContentsObserver,
     Close();
     return false;
   }
+  // A page whose session and presentation are gone leaves the dialog nothing
+  // to stop its cast from, and a Safari-identity page never casts from it, so
+  // the button offers the tab's route directly.
+  bool OfferStopCasting(NSView* view, NSRect rect) {
+    const auto route = Route();
+    if (!route)
+      return Fail();
+    PCNativeStopCastingTarget* target = [[PCNativeStopCastingTarget alloc] init];
+    NSMenuItem* item = [[NSMenuItem alloc]
+        initWithTitle:base::SysUTF16ToNSString(l10n_util::GetStringFUTF16(
+                          IDS_MEDIA_ROUTER_SINK_VIEW_STOP_GENERIC_ACCESSIBLE_NAME,
+                          base::UTF8ToUTF16(route->media_sink_name())))
+               action:@selector(choose:)
+        keyEquivalent:@""];
+    item.target = target;
+    NSMenu* menu = [[NSMenu alloc] init];
+    menu.autoenablesItems = NO;
+    [menu addItem:item];
+    menu_ = menu;
+    dismissed_ = std::exchange(pending_dismissed_, nil);
+    auto weak = weak_factory_.GetWeakPtr();
+    [menu popUpMenuPositioningItem:nil
+                        atLocation:NSMakePoint(NSMinX(rect), view.flipped ? NSMaxY(rect) : NSMinY(rect))
+                            inView:view];
+    if (!weak)
+      return true;
+    // The menu's loop ran tasks: the page, profile and route may have moved on.
+    const auto current = target.chosen && Current() ? Route() : std::nullopt;
+    if (current && current->media_route_id() == route->media_route_id())
+      Router()->TerminateRoute(route->media_route_id());
+    Close();
+    return true;
+  }
+  media_router::MediaRouter* Router() const {
+    auto* profile = Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+    return profile && !profile->ShutdownStarted()
+        ? media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(profile)
+        : nullptr;
+  }
+  std::optional<media_router::MediaRoute> Route() const {
+    auto* router = Router();
+    return router ? MediaNotificationService::ParcCastRouteForWebContents(
+                        web_contents(), router->GetCurrentRoutes())
+                  : std::nullopt;
+  }
   __weak NSWindow* host_ = nil;
   const base::RepeatingCallback<bool()> valid_;
   // Runs on Close() only once Show() has succeeded.
@@ -729,6 +810,7 @@ class MediaCastChooser final : public content::WebContentsObserver,
   raw_ptr<views::Widget> widget_ = nullptr;
   NSMutableArray* notifications_ = [[NSMutableArray alloc] init];
   base::ScopedObservation<views::Widget, views::WidgetObserver> widget_observation_{this};
+  NSMenu* __strong menu_ = nil;
   bool closed_ = false;
   base::WeakPtrFactory<MediaCastChooser> weak_factory_{this};
 };

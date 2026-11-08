@@ -2637,3 +2637,13 @@
    // Called by a Client when its ability to serve this source changes.
    void SetClientAvailable(Client* client, bool available);
  
+--- a/chrome/browser/ui/global_media_controls/BUILD.gn
++++ b/chrome/browser/ui/global_media_controls/BUILD.gn
+@@ -75,6 +75,7 @@
+     "//chrome/browser:browser_process",
+     "//chrome/browser/feature_engagement",
+     "//chrome/browser/glic",
++    "//chrome/browser/media",
+     "//chrome/browser/media/router:media_router_feature",
+     "//chrome/browser/ui/browser_window",
+     "//chrome/browser/ui/tabs:tab_strip",

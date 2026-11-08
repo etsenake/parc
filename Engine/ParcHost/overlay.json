@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 617,
+  "version": 618,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1195,7 +1195,7 @@
     {
       "source": "Engine/ParcNative/native_media_episode_store.h",
       "target": "cef/libcef/browser/parc_native/native_media_episode_store.h",
-      "sha256": "f63bf311bf0bfe17c98cd1fd0828e41060634da2b384673444902b2e59f84929"
+      "sha256": "f1be1e4abb409c9d7e6d72f66c3b56283bb47c7d697681f094da8279ed6a6de5"
     },
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture.h",
@@ -1215,7 +1215,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "fcf74307157a7f4f97ad2de1ca713ec37ec113ebe995e1e89043803ba4d83413"
+      "sha256": "f632f98e4fcfed806ec78bb37a7d184d684d2779c54cab2a88ecb77227706334"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
@@ -1415,7 +1415,7 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
-      "sha256": "459b7a470e3d535537838d3dba311cd2a77265d931e10e06519dfd09db010f78"
+      "sha256": "a9758ec00b1f5bd9de84541c25d96b24cb5e2765d105deef2b903b864424e935"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
@@ -3782,7 +3782,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "fb2e162c38cd4728d10ab6ea4172cff0f4f6427203861be5186aaab89ff85f8c",
+      "sha256": "2892353c3da2401efb40be3fb074ac2b16ba6be5a9db05ed9c861d39dc0057e0",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3948,6 +3948,11 @@
           "target": "chrome/browser/media/remoting_bridge.h",
           "before_sha256": "5a9f0772b8e2b24d51879eb648ab56dfad8821606f7b07abb61101d708a4cb17",
           "after_sha256": "da58291fbea706771cd87a0f09cc9810f58a31db815e3fc92688264ca5fcc03f"
+        },
+        {
+          "target": "chrome/browser/ui/global_media_controls/BUILD.gn",
+          "before_sha256": "e1780abb57780f779c9b582fc5ee840ab190ed4ffd4ffeccf710744bb5cde8c0",
+          "after_sha256": "29d28b7a5b559705d19c1b350d9016d0688a5ae443d435bec285f0f0deed8d18"
         }
       ]
     },

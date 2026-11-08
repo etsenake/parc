@@ -227,6 +227,20 @@ int main() {
   assert(parc::MediaEpisodeHeld(false, true, casting));
   assert(!parc::MediaEpisodeHeld(false, true, idle));
   assert(!parc::MediaEpisodeHeld(false, false, casting));
+  active = true; dismissed = false;
+  assert(parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, casting));
+  assert(active && !dismissed);
+  assert(!parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, idle));
+  assert(!active && !dismissed);
+  active = true; dismissed = true;
+  assert(!parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, casting));
+  assert(!active && !dismissed);
+  // Casting() creates the cast watcher, so it's asked only for a shown row.
+  auto unasked = [] { assert(false); return true; };
+  assert(!parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, unasked));
+  dismissed = true;
+  assert(!parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, unasked));
+  assert(!active && !dismissed);
   Store store;
   std::vector<std::shared_ptr<Source>> regular;
   for (int i = 0; i < 6; ++i) regular.push_back(std::make_shared<Source>());

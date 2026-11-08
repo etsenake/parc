@@ -75,7 +75,13 @@ plays: it keeps the page's title and icon, shows Connecting or Casting to
 <device>, and on a page with a default presentation its Cast button opens the
 dialog with the page's Cast item and Stop casting. A cast never
 adds a row, and the row goes once the cast ends with no session left
-(`MediaEpisodeHeld`).
+(`MediaEpisodeHeld`). The row also stays when the tab navigates while its
+cast carries on from the cached page (`KeepMediaEpisodeAcrossPageChange`),
+a Safari-identity page included; the new page's own player never reports that
+route, so it shows the route's state. When neither a session nor a
+presentation is left, or the page presents Safari, the dialog has nothing to
+stop, so the Cast button opens a one-item menu, Stop casting to <device>, that
+ends the tab's route.
 
 ## Volume adaptation
 
