@@ -65,6 +65,7 @@ final class BrowserImportViewController: NSViewController {
     private let accessView = BrowserImportAccessView()
     private let passwordsView = BrowserImportPasswordsView()
     private var passwordPanel: NSOpenPanel?
+    private var notesPanel: NSOpenPanel?
     private var promptedPasswordRequest: UUID?
     private let onboarding: Bool
     private var accessTimer: Timer?
@@ -82,7 +83,10 @@ final class BrowserImportViewController: NSViewController {
         super.init(nibName: nil, bundle: nil)
         view = root
         coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
-            onboarding: onboarding, ownerIsCurrent: ownerIsCurrent)
+            onboarding: onboarding, arcNoteConverter: { html in
+                let note = try ArcNoteHTML.convert(html)
+                return (note.title, note.body, note.droppedImages)
+            }, ownerIsCurrent: ownerIsCurrent)
         destinationScroll.drawsBackground = false; destinationScroll.borderType = .noBorder
         destinationScroll.hasVerticalScroller = true; destinationScroll.autohidesScrollers = true
         destinationScroll.documentView = destinationView
@@ -228,6 +232,7 @@ final class BrowserImportViewController: NSViewController {
         closed = true; restartRequest = nil
         onHidePasswordHelp?()
         passwordPanel?.cancel(nil); passwordPanel = nil
+        notesPanel?.cancel(nil); notesPanel = nil
         accessTimer?.invalidate(); accessTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
@@ -410,7 +415,7 @@ final class BrowserImportViewController: NSViewController {
                 add(row)
             }
             next.isEnabled = coordinator.canChooseDestination
-            if coordinator.isArcSource { next.title = "Import" }
+            if coordinator.isArcSource { next.title = "Import"; addArcNotesRow() }
         case .destination:
             heading.stringValue = "Which Parc Profile should we import to?"
             next.title = "Import"; next.isEnabled = coordinator.canStart
@@ -496,6 +501,10 @@ final class BrowserImportViewController: NSViewController {
         closeControl.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "\u{1b}" : ""
         cancelButton.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "" : "\u{1b}"
         if !choosingDestination && !choosingAccess && !choosingPasswords && coordinator.stage != .sources { coordinator.warnings.forEach { add(label($0, secondary: true)) } }
+        if coordinator.stage == .finished, coordinator.isArcSource {
+            if coordinator.importingArcNotes { add(label(coordinator.message, secondary: true)) }
+            addArcNotesRow()
+        }
         canAdvance = !next.isHidden && next.isEnabled
         canGoBack = !back.isHidden && !closed
         if embedded {
@@ -519,6 +528,42 @@ final class BrowserImportViewController: NSViewController {
             passwordChoice = host; root.addSubview(host)
         }
         passwordChoice?.isHidden = false; passwordChoice?.frame = root.bounds
+    }
+
+    ///
+    static let arcNotesPrompt = "Your Notes live in your Arc account. Export them in Arc (File → Export Arc Notes) before December 22, 2026, then add the file here to bring them over in full."
+
+    var arcNotesDescription: String {
+        coordinator.arcNotesExportURL.map { "Arc Notes: " + $0.lastPathComponent } ?? Self.arcNotesPrompt
+    }
+
+    private func addArcNotesRow() {
+        if coordinator.stage != .finished { add(label(arcNotesDescription, secondary: true)) }
+        guard coordinator.canChooseArcNotesExport else { return }
+        let button = PArcDialogButton(title: coordinator.arcNotesExportURL == nil ? "Add Arc Notes Export…" : "Change Arc Notes Export…",
+                                     primary: false, hint: false)
+        button.target = self; button.action = #selector(arcNotesPressed)
+        let row = NSView()
+        button.frame = NSRect(x: 0, y: 0, width: button.bodyWidth + 1, height: 38.5)
+        row.addSubview(button); row.heightAnchor.constraint(equalToConstant: 38.5).isActive = true
+        add(row)
+    }
+
+    @objc private func arcNotesPressed() { chooseArcNotesExport() }
+
+    func chooseArcNotesExport() {
+        guard !closed, coordinator.canChooseArcNotesExport, let window,
+              window.attachedSheet == nil, notesPanel == nil else { return }
+        let panel = NSOpenPanel(); notesPanel = panel
+        panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip, .folder]; panel.prompt = "Add Notes"
+        panel.message = "Choose the Arc Notes export (Arc-Notes-Export….zip) or the folder it unzips to."
+        panel.beginSheetModal(for: window) { [weak self, weak panel] response in
+            guard let self, !self.closed, self.notesPanel === panel else { return }
+            self.notesPanel = nil
+            guard response == .OK, let url = panel?.url else { return }
+            self.coordinator.chooseArcNotesExport(url)
+        }
     }
 
     private func choosePasswordFile() {
@@ -655,7 +700,12 @@ final class BrowserImportViewController: NSViewController {
                     guard let self, let source, self.canChooseInlineSource else { return }
                     self.freshStartSelected = false; self.coordinator.selectOnboardingSource(source)
                 }, profiles: profiles, loading: selected && coordinator.stage == .loading,
-                options: options, messages: messages, choosePasswords: choosePasswords)
+                options: options, messages: messages, choosePasswords: choosePasswords,
+                notesExport: selected && BrowserImportCoordinator.isArc(source) ? .init(description: arcNotesDescription,
+                    chosen: coordinator.arcNotesExportURL != nil, choose: { [weak self] in
+                        guard let self, self.canChooseInlineSource else { return }
+                        self.chooseArcNotesExport()
+                    }) : nil)
         }
         let content = OnboardingImportSourcePicker(sources: choices,
             freshStartSelected: freshStartSelected, selectionColor: selectionColor,

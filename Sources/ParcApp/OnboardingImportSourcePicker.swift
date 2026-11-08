@@ -17,6 +17,13 @@ struct OnboardingImportSourcePicker: View {
         var options: [ImportOption] = []
         var messages: [String] = []
         var choosePasswords: (() -> Void)?
+        var notesExport: NotesExport?
+    }
+    ///
+    struct NotesExport {
+        let description: String
+        let chosen: Bool
+        let choose: () -> Void
     }
     struct Profile: Identifiable {
         let id: String
@@ -74,6 +81,13 @@ struct OnboardingImportSourcePicker: View {
                                 if let choosePasswords = source.choosePasswords {
                                     Button("Import exported passwords instead…", action: choosePasswords)
                                         .buttonStyle(.plain).font(.system(size: 12)).padding(.top, 12)
+                                }
+                                if let notes = source.notesExport {
+                                    Text(notes.description).font(.system(size: 12)).multilineTextAlignment(.center)
+                                        .foregroundColor(Color(nsColor: OnboardingSetupPalette.message))
+                                        .fixedSize(horizontal: false, vertical: true).padding(.top, 12)
+                                    Button(notes.chosen ? "Change Arc Notes export…" : "Add your Arc Notes export…", action: notes.choose)
+                                        .buttonStyle(.plain).font(.system(size: 12, weight: .medium)).padding(.top, 8)
                                 }
                             }
                         }

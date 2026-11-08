@@ -60,6 +60,13 @@ final class BrowserImportCoordinator {
     private var activeDestination: BrowserImportDestination?
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
+    typealias ArcNoteConverter = @MainActor (String) throws -> (title: String?, body: NoteBody, droppedImages: Int)
+    private let arcNoteConverter: ArcNoteConverter?
+    ///
+    private(set) var arcNotesExportURL: URL?
+    private(set) var importingArcNotes = false
+    /// Notes already came over in this window, from an export.
+    private(set) var arcNotesImported = false
     private var queue: [PCNativeImportProfile] = []
     ///
     private var queuedDestinations: [String: BrowserImportDestination] = [:]
@@ -72,9 +79,11 @@ final class BrowserImportCoordinator {
             OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)),
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
+         arcNoteConverter: ArcNoteConverter? = nil,
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
         self.arcSidebarURL = arcSidebarURL; self.arcPreferencesURL = arcPreferencesURL
+        self.arcNoteConverter = arcNoteConverter
         self.onboarding = onboarding
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
@@ -127,6 +136,7 @@ final class BrowserImportCoordinator {
         wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
         safariAccessReady = false; requiresSafariAccess = false
         destinationChoice = BrowserImportDestinationChoice(); profileTargets = []
+        arcNotesExportURL = nil; arcNotesImported = false; importingArcNotes = false
         stage = .loading; message = "Finding your browsers…"; error = nil; onChange?()
         discovery = PCNativeBrowserApplication.availableImportSources { [weak self] sources in
             guard let self, self.isCurrent, self.generation == token else { return }
@@ -393,16 +403,96 @@ final class BrowserImportCoordinator {
         skipExistingCookies = true; queue = []; queuedDestinations = [:]
         generation = UUID(); let token = generation
         message = "Bringing over your Arc Spaces…"; onChange?()
-        let url = arcSidebarURL, preferencesURL = arcPreferencesURL
+        let url = arcSidebarURL, preferencesURL = arcPreferencesURL, notesURL = arcNotesExportURL
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try ArcSidebarSnapshot.read(url, preferences: preferencesURL) }
+            let notes = notesURL.map { url in Result { try ArcNotesExport.read(url) } }
             DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated { self?.importArcSidebar(result, profiles: selected, token: token) }
+                MainActor.assumeIsolated { self?.importArcSidebar(result, notes: notes, profiles: selected, token: token) }
             }
         }
     }
 
-    private func importArcSidebar(_ result: Result<(ArcSidebarImport, [String: Any]), Error>, profiles selected: [PCNativeImportProfile],
+    var canChooseArcNotesExport: Bool {
+        isCurrent && isArcSource && !importingArcNotes
+            && (stage == .profiles || isChoosingOnboardingSource || (stage == .finished && !arcNotesImported))
+    }
+
+    /// Before the import, the export joins it. After it, the Notes come over on their own.
+    func chooseArcNotesExport(_ url: URL) {
+        guard canChooseArcNotesExport else { return }
+        guard stage == .finished else { arcNotesExportURL = url; onChange?(); return }
+        arcNotesExportURL = url; importingArcNotes = true; generation = UUID(); let token = generation
+        message = "Bringing over your Arc Notes…"; onChange?()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let notes = Result { try ArcNotesExport.read(url) }
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == token else { return }
+                    guard self.isCurrent, self.stage == .finished else { self.importingArcNotes = false; self.onChange?(); return }
+                    self.warnings.removeAll { $0 == Self.arcNotesReminder }
+                    self.importArcNotes(notes, token: token) {
+                        self.importingArcNotes = false; self.message = "Your import has finished."; self.onChange?()
+                    }
+                }
+            }
+        }
+    }
+
+    static let arcNotesReminder = "Your Arc Notes weren’t imported. Export them in Arc (File → Export Arc Notes) before December 22, 2026, then add the file here to bring them over in full."
+    static let arcEaselsNote = "Easels stay in Arc. Arc keeps them on its servers and can only save each one as a picture."
+
+    /// One Note at a time on the main thread (AppKit reads HTML there), so
+    ///
+    private func importArcNotes(_ result: Result<[ArcNotesExport.Note], Error>, token: UUID, then finish: @escaping () -> Void) {
+        let notes: [ArcNotesExport.Note]
+        switch result {
+        case .success(let value): notes = value
+        case .failure(let failure):
+            warnings.append("Arc Notes: \(failure.localizedDescription)")
+            if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
+            finish(); return
+        }
+        guard let convert = arcNoteConverter,
+              let library = try? NoteStore.sharedStore(directory: store.notesDirectory(for: originalDestination.profileID)) else {
+            warnings.append("Arc Notes couldn’t be added to this Profile.")
+            if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
+            finish(); return
+        }
+        func stamp(_ title: String, _ date: Date) -> String { title + "\u{0}" + String(Int(date.timeIntervalSince1970.rounded())) }
+        var existing = Set(((try? library.list()) ?? []).map { stamp($0.title, $0.modifiedAt) })
+        var added = 0, repeated = 0, failed = 0, droppedImages = 0
+        func step(_ index: Int) {
+            guard isCurrent, generation == token else { return }
+            guard index < notes.count else {
+                if added > 0 { warnings.append(added == 1 ? "1 Arc Note came over from your export." : "\(added) Arc Notes came over from your export.") }
+                if repeated > 0 { warnings.append(repeated == 1 ? "1 Arc Note was already in Parc." : "\(repeated) Arc Notes were already in Parc.") }
+                if failed > 0 { warnings.append(failed == 1 ? "1 Arc Note couldn’t be read." : "\(failed) Arc Notes couldn’t be read.") }
+                if droppedImages > 0 {
+                    warnings.append(droppedImages == 1 ? "1 image in your Arc Notes was stored on Arc’s servers, so it couldn’t come over."
+                        : "\(droppedImages) images in your Arc Notes were stored on Arc’s servers, so they couldn’t come over.")
+                }
+                arcNotesImported = added + repeated > 0
+                if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
+                finish(); return
+            }
+            let note = notes[index]
+            do {
+                let converted = try convert(note.html)
+                let title = converted.title ?? note.title
+                if existing.insert(stamp(title, note.modifiedAt)).inserted {
+                    _ = try library.importDocument(title: title, body: converted.body, modifiedAt: note.modifiedAt)
+                    added += 1; droppedImages += converted.droppedImages
+                } else { repeated += 1 }
+            } catch { failed += 1 }
+            message = "Bringing over your Arc Notes (\(index + 1) of \(notes.count))…"; onChange?()
+            DispatchQueue.main.async { MainActor.assumeIsolated { step(index + 1) } }
+        }
+        step(0)
+    }
+
+    private func importArcSidebar(_ result: Result<(ArcSidebarImport, [String: Any]), Error>,
+                                  notes: Result<[ArcNotesExport.Note], Error>?, profiles selected: [PCNativeImportProfile],
                                   token: UUID) {
         guard isCurrent, generation == token, stage == .importing else { return }
         var keys: [ArcSidebarImport.ProfileKey: PCNativeImportProfile] = [:], named: [(key: ArcSidebarImport.ProfileKey, name: String)] = []
@@ -434,7 +524,15 @@ final class BrowserImportCoordinator {
             if let destination = destinations[key] { queuedDestinations[profile.identifier] = destination }
         }
         queue = selected.filter { queuedDestinations[$0.identifier] != nil }
-        importNext()
+        warnings.append(Self.arcEaselsNote)
+        guard let notes else {
+            warnings.append(Self.arcNotesReminder); importNext(); return
+        }
+        importingArcNotes = true
+        importArcNotes(notes, token: token) { [weak self] in
+            guard let self else { return }
+            self.importingArcNotes = false; self.importNext()
+        }
     }
 
     private func importNext() {
@@ -690,7 +788,7 @@ final class BrowserImportCoordinator {
         queue = []; queuedDestinations = [:]; passwordDestination = nil
         guard let session else {
             //
-            generation = UUID(); stage = .finished
+            generation = UUID(); stage = .finished; importingArcNotes = false
             message = "Import stopped. Data already imported has been kept."; onChange?(); return
         }
         session.cancel(); message = "Stopping import…"; onChange?()
@@ -703,7 +801,7 @@ final class BrowserImportCoordinator {
         session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []; queuedDestinations = [:]
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil
-        acceptedICloudPasswordsDestination = nil
+        acceptedICloudPasswordsDestination = nil; importingArcNotes = false
         stage = .finished; message = "Import stopped. Data already imported has been kept."; onChange?()
     }
 }

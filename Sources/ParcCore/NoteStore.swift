@@ -104,6 +104,11 @@ final class NoteStore {
         let document = NoteDocument(createdAt: now(), modifiedAt: now())
         try persist(document); let value = session(document); changes.send(); return value
     }
+    /// A Note brought over from another browser keeps its own last edit.
+    func importDocument(title: String, body: NoteBody, modifiedAt: Date) throws -> NoteDocument {
+        let document = NoteDocument(title: title, body: body, createdAt: modifiedAt, modifiedAt: modifiedAt)
+        try persist(document); changes.send(); return document
+    }
     func load(_ id: UUID) throws -> NoteSession {
         if let value = sessions[id]?.value {
             guard !value.document.deleted else { throw NoteError.deleted }; return value

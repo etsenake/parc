@@ -407,11 +407,20 @@ import AppKit
         try PropertyListSerialization.data(fromPropertyList: ["autoArchiveTimeThresholdsPerProfile":
             #"{"thresholds":[{"custom":{"_0":{"directoryBasename":"Profile 1","machineID":"M"}}},"thirtyDays"]}"#],
             format: .binary, options: 0).write(to: preferences)
+        let exportFolder = directory.appendingPathComponent("Arc-Notes-Export")
+        try FileManager.default.createDirectory(at: exportFolder, withIntermediateDirectories: true)
+        let noteDate = Date(timeIntervalSince1970: 1_785_000_000)
+        for name in ["Trip plan", "Groceries"] {
+            let file = exportFolder.appendingPathComponent(name + ".html")
+            try Data("<p>\(name)</p>".utf8).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: noteDate], ofItemAtPath: file.path)
+        }
+        let converter: BrowserImportCoordinator.ArcNoteConverter = { _ in (nil, NoteBody(), 0) }
         func begin(_ name: String, sidebar: URL) throws -> (BrowserStore, BrowserImportDestination, BrowserImportCoordinator) {
             let store = try BrowserStore(directory: directory.appendingPathComponent(name))
             let destination = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)
             let coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
-                arcSidebarURL: sidebar, arcPreferencesURL: preferences, ownerIsCurrent: { true })
+                arcSidebarURL: sidebar, arcPreferencesURL: preferences, arcNoteConverter: converter, ownerIsCurrent: { true })
             coordinator.discover()
             PCNativeBrowserApplication.sources.removeFirst().complete([arc])
             coordinator.select(arc); coordinator.loadProfiles()
@@ -460,7 +469,44 @@ import AppKit
         expect(coordinator.warnings.contains("fixture warning")
                && coordinator.warnings.contains("Favorites from a Profile that wasn't imported were left out."),
                "Native and sidebar warnings both reach the result")
+        expect(coordinator.warnings.contains(BrowserImportCoordinator.arcNotesReminder)
+               && coordinator.warnings.contains(BrowserImportCoordinator.arcEaselsNote),
+               "Without a Notes export the result says how to bring Notes over, and why Easels stay")
+        expect(coordinator.canChooseArcNotesExport, "The result offers the Notes export")
+        coordinator.chooseArcNotesExport(exportFolder)
+        wait { !coordinator.importingArcNotes }
+        let library = try NoteStore.sharedStore(directory: store.notesDirectory(for: destination.profileID)).list()
+        expect(Set(library.map(\.title)) == ["Trip plan", "Groceries"] && library.allSatisfy { $0.modifiedAt == noteDate },
+               "Notes from the export join the window's Profile with their last-edit dates")
+        expect(coordinator.warnings.contains("2 Arc Notes came over from your export.")
+               && !coordinator.warnings.contains(BrowserImportCoordinator.arcNotesReminder) && !coordinator.canChooseArcNotesExport,
+               "The result reports the Notes and drops the reminder")
         coordinator.cancel()
+
+        let (early, earlyDestination, earlyImport) = try begin("ArcNotesFirst", sidebar: sidebar)
+        let earlyStart = PCNativeBrowserApplication.browserRequests.count
+        earlyImport.chooseArcNotesExport(exportFolder)
+        expect(earlyImport.arcNotesExportURL == exportFolder, "The Arc profile step takes a Notes export")
+        earlyImport.chooseDestination()
+        wait { PCNativeBrowserApplication.browserRequests.count > earlyStart }
+        let earlyNotes = try NoteStore.sharedStore(directory: early.notesDirectory(for: earlyDestination.profileID)).list()
+        expect(earlyNotes.count == 2 && !earlyImport.warnings.contains(BrowserImportCoordinator.arcNotesReminder),
+               "A chosen export's Notes come over before the browser data")
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        expect(earlyImport.stage == .finished, "The import finishes after the Notes and both profiles")
+        earlyImport.cancel()
+        let (again, againDestination, againImport) = try begin("ArcNotesFirst", sidebar: sidebar)
+        againImport.chooseArcNotesExport(exportFolder)
+        let againStart = PCNativeBrowserApplication.browserRequests.count
+        againImport.chooseDestination()
+        wait { PCNativeBrowserApplication.browserRequests.count > againStart }
+        let againNotes = try NoteStore.sharedStore(directory: again.notesDirectory(for: againDestination.profileID)).list()
+        expect(againNotes.count == 2
+               && againImport.warnings.contains("2 Arc Notes were already in Parc."), "Importing the same export twice adds no copies")
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        againImport.cancel()
 
         let (removed, _, removing) = try begin("ArcRemoved", sidebar: sidebar)
         let removedStart = PCNativeBrowserApplication.browserRequests.count
