@@ -221,6 +221,12 @@ int main() {
   active = true; dismissed = false;
   assert(!parc::AdmitAfterPresentationRemoval(active, dismissed, accepted));
   assert(calls == 3 && active && !dismissed);
+  auto casting = [] { return true; };
+  auto idle = [] { return false; };
+  assert(parc::MediaEpisodeHeld(true, false, idle));
+  assert(parc::MediaEpisodeHeld(false, true, casting));
+  assert(!parc::MediaEpisodeHeld(false, true, idle));
+  assert(!parc::MediaEpisodeHeld(false, false, casting));
   Store store;
   std::vector<std::shared_ptr<Source>> regular;
   for (int i = 0; i < 6; ++i) regular.push_back(std::make_shared<Source>());

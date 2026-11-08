@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 611,
+  "version": 612,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1195,7 +1195,7 @@
     {
       "source": "Engine/ParcNative/native_media_episode_store.h",
       "target": "cef/libcef/browser/parc_native/native_media_episode_store.h",
-      "sha256": "a0d6005d729b9902f623d9078cbaefde46c1f279e8848b1b650de506c5080108"
+      "sha256": "f63bf311bf0bfe17c98cd1fd0828e41060634da2b384673444902b2e59f84929"
     },
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture.h",
@@ -1215,7 +1215,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "3d51a2fa8f8ab9f2b7410d6a917c341738c653877c4aa2a336f66fd932cca0b7"
+      "sha256": "fcf74307157a7f4f97ad2de1ca713ec37ec113ebe995e1e89043803ba4d83413"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
@@ -1415,7 +1415,7 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
-      "sha256": "be0d65e2ce35357169bcf088e0f26862edc942c7ada591e0b08a3896c3659ca7"
+      "sha256": "459b7a470e3d535537838d3dba311cd2a77265d931e10e06519dfd09db010f78"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
@@ -3772,32 +3772,32 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "8145a84a7b2cc3a023d83a2a940dca5a90c7f81d504b154079b0f0b162e4aac3",
+      "sha256": "f937af7efc4fd85681785a170382b72fb70ef3b395ad40ca90db426fa1fa5dc2",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
           "before_sha256": "0b436a3ead52929981a8b505e9111e103390c1b88383359f7a37b19b4281d99d",
-          "after_sha256": "4042a2394bee05170ee63ae5aab084952b7ce2eb219f8808326cf3818cd925ec"
+          "after_sha256": "c18bac53200fd1f3efd08f9e13b5bf6bbe791a0720ea6f7911ebea4581eafa9a"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.h",
           "before_sha256": "8c21375ac513e677105aa2ff6a8c3af71730187043e5c6a13166eed06c96fa47",
-          "after_sha256": "8a12a9fe3d8568192026574d89f168f90d50f7d7064efdfa48d877a040e04c87"
+          "after_sha256": "eeee07cab141dc0757b8506c4535b2f4b9e94413fd4a136ada88846044e5ed67"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.cc",
           "before_sha256": "b48fc7716a23f1cd594b84db1a9b3e7c62b9f15b8d5125af45dc62de4a4aef1f",
-          "after_sha256": "51d2955c83dca02ad13e5a62661891ed6d4bc940598fbe8ec2896285d51289c2"
+          "after_sha256": "209d7f6acd0bf36acd84590d071af1d98206acb0d44c142548a085bf0e1c976d"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.h",
           "before_sha256": "f54ed351b6ff7f5d519e51b9eb8a97db6239f8a0ed7355de627c341d75fd754f",
-          "after_sha256": "7173cb9cbab65f5e0bf6ff49e2150be12bce7f7f2921ff86214b5bc34d4a4315"
+          "after_sha256": "ff8cfae54f5e163f53672fc5e7d2d8ba5ae69e336c240f83272a0a971e34cb6a"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc",
           "before_sha256": "7386ce0b9e2267a443fbb2615fb3d8eb88b699dbd22bec448b5e46a0f1d9080f",
-          "after_sha256": "6718b82a099dabff0999c3cde542cfc4a567133c60981b439be164afc35dfd3a"
+          "after_sha256": "2f2298d8ad1f29fcf2126458959b241e556bb01bf4eb4ba554af532f2ca4e06f"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc",
@@ -3892,27 +3892,52 @@
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc",
           "before_sha256": "43c8caf7866bee5b7290b4f88a52a61c58c418d82881cbbc867637eb2850b2ca",
-          "after_sha256": "ee36acf7d78ced810a607ffe95a2a89e3d3104178380ed1a74741548736c24d4"
+          "after_sha256": "df1924d9c38015bfb483f32d5e92be2014aa095c8079cfb85bdbddc84b75d6ff"
         },
         {
           "target": "chrome/browser/ui/media_router/cast_dialog_controller.h",
           "before_sha256": "83905be9c23e350c6da7f152c3ada6d39e5f6e4bbce2f4808be43d89c8e40ad4",
-          "after_sha256": "db53b38d266de1cb986374eae937d098b8ffaa3f7597b0fdf3488ff1aca743c1"
+          "after_sha256": "cfa1d80c65e2678a507f8a406f1039c5bde710b9aa53e0916aebef0968c1ae05"
         },
         {
           "target": "chrome/browser/ui/media_router/media_router_ui.h",
           "before_sha256": "224a080270daa3ad52b0c284cce3eea02e48d314dce1bed6110081dde08d62a4",
-          "after_sha256": "182572ed4c1194d47869ab3411e1e3eaf5c66cecf838da4ecb7966cdffa0908e"
+          "after_sha256": "98b70ae7d727805733606d48b2ec68cbd89be2eed28ed8af40de14e36d8d704b"
         },
         {
           "target": "chrome/browser/ui/media_router/media_router_ui.cc",
           "before_sha256": "658bed71a7b515cbbd83df31a74fd6207bfeb359f27b1007fbd544485938db2a",
-          "after_sha256": "fd05627eb51bab9fb9b3db45bbced24fc806ed9821b7f2d40a7d4feecd8fb0eb"
+          "after_sha256": "bdd27e187c2fc5275591cb5eb1bf1f65a5cb900a30df48650a01f587ad08e18a"
         },
         {
           "target": "chrome/browser/ui/media_router/media_router_ui_unittest.cc",
           "before_sha256": "73062095addf85e076bc0b93571eeaa577b009e69107e1ef91038f23f29ab1be",
-          "after_sha256": "8d1c93264d7cc4f3eedb5145272b9b7f913591decac6796629c7b3cec33ef664"
+          "after_sha256": "f2ccbad85e2a30a518c5e1714c13c800bed0e18e7f1336854772bcc4d239b549"
+        },
+        {
+          "target": "chrome/browser/media/cast_remoting_connector.cc",
+          "before_sha256": "e44e25ab4c0fe66d6214cf69c851a9b67f696bedd1e706ab336792ccddc7ffde",
+          "after_sha256": "f58946a4429136b7c7d6ee9cf4eccf35727782a8eb2bc79362d79676e5f42aba"
+        },
+        {
+          "target": "chrome/browser/media/cast_remoting_connector.h",
+          "before_sha256": "c88d760bd8510478bd81bb9c1a170acf4bf61437d2d3de66d8bb8ee6320c1f8c",
+          "after_sha256": "3ec0c2a74083aa55cb95198a54b67ee659b790c4d4479c6c92ba1b4c7efb473d"
+        },
+        {
+          "target": "chrome/browser/media/cast_remoting_connector_unittest.cc",
+          "before_sha256": "1fb344a6cbc7159f88c3dfd6a1e866e6e5d875f89e296ef21608f1b03cead8b7",
+          "after_sha256": "5be347d2d685c94d781a47537378f9d03e5eed5a31edbabb3d5c50ee30c00425"
+        },
+        {
+          "target": "chrome/browser/media/remoting_bridge.cc",
+          "before_sha256": "e8266b8a722c7b0e9d68bb8781d5a9803897f5839dc759cc7eeef828e0125a2e",
+          "after_sha256": "9e1efc0b6d2090ce56cc74741f0a865d72198524c044954e3c47a9cc6c79f913"
+        },
+        {
+          "target": "chrome/browser/media/remoting_bridge.h",
+          "before_sha256": "5a9f0772b8e2b24d51879eb648ab56dfad8821606f7b07abb61101d708a4cb17",
+          "after_sha256": "da58291fbea706771cd87a0f09cc9810f58a31db815e3fc92688264ca5fcc03f"
         }
       ]
     },

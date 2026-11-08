@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 #include "base/functional/bind.h"
@@ -515,8 +516,11 @@ class MediaCastWatcher final
       if (route->media_source().IsRemotePlaybackSource()) {
         auto* session = content::MediaSession::GetIfExists(&GetWebContents());
         const auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
-        started = info && info->remote_playback_metadata &&
-                  info->remote_playback_metadata->remote_playback_started;
+        // A session that dropped its player keeps the route's last state.
+        if (info && info->remote_playback_metadata)
+          started_route_ = info->remote_playback_metadata->remote_playback_started
+                               ? route->media_route_id() : std::string();
+        started = started_route_ == route->media_route_id();
       }
       return {static_cast<int>(started ? PCNativeCastStateConnected : PCNativeCastStateConnecting),
               route->media_sink_name()};
@@ -615,6 +619,7 @@ class MediaCastWatcher final
   std::vector<media_router::MediaSource> sources_;
   url::Origin origin_;
   std::vector<std::unique_ptr<Sinks>> sinks_;
+  std::string started_route_;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 WEB_CONTENTS_USER_DATA_KEY_IMPL(MediaCastWatcher);

@@ -56,14 +56,26 @@ playback, as Chrome's own media controls do
 (`CreateCastDialogControllerForSession`, then `RequestMediaRemoting`), so the
 cast takes the requested-remoting path that keeps it alive across navigation,
 the back/forward cache, background tabs and frozen pages. Remoting is
-requested once the launch succeeds; if the page left meanwhile, the launch
-ends rather than casting the next page's video. While it casts, the dialog
-offers Stop casting. The state follows the router's remote playback
+requested from the session's one player at the pick, as Chrome does, so a
+page that enters the back/forward cache while the cast launches casts from
+there; no other page's video is asked. A launch that fails takes the request
+back through the tab's remoting sources, which reach a cached page too
+(`CastRemotingConnector::ParcDropRemotingRequests`), so a later tab cast isn't
+taken by that video; a launch whose page is gone ends. While it casts, the
+dialog offers Stop casting. The state follows the router's remote playback
 route for that tab and the player's `remote_playback_started`: Connecting
 until the receiver plays, Connected after (tab mirroring, where Chromium falls
 back to it, once its route connects), and back to available when the TV or
 the user ends it. `MediaNotificationService::ParcCastRouteForWebContents`
 picks the route for both kinds of page (`native_gmc_presentation.mm`).
+
+A row already shown stays while its tab's cast connects or casts, even after
+the page drops or ends its media session, as sites do once their receiver
+plays: it keeps the page's title and icon, shows Connecting or Casting to
+<device>, and on a page with a default presentation its Cast button opens the
+dialog with the page's Cast item and Stop casting. A cast never
+adds a row, and the row goes once the cast ends with no session left
+(`MediaEpisodeHeld`).
 
 ## Volume adaptation
 

@@ -1,8 +1,12 @@
 --- a/chrome/browser/ui/global_media_controls/cast_device_list_host.cc
 +++ b/chrome/browser/ui/global_media_controls/cast_device_list_host.cc
-@@ -82,12 +82,14 @@
+@@ -80,14 +80,17 @@
+ CastDeviceListHost::CastDeviceListHost(
+     std::unique_ptr<media_router::CastDialogController> dialog_controller,
      mojo::PendingRemote<global_media_controls::mojom::DeviceListClient> client,
-     base::RepeatingClosure media_remoting_callback,
+-    base::RepeatingClosure media_remoting_callback,
++    media_router::CastDialogController::ParcRemotingRequest
++        media_remoting_callback,
      base::RepeatingClosure hide_dialog_callback,
 -    base::RepeatingClosure on_sinks_discovered_callback)
 +    base::RepeatingClosure on_sinks_discovered_callback,
@@ -16,7 +20,7 @@
        initialization_time_(base::Time::Now()),
        id_(next_id_++) {
    cast_controller_->AddObserver(this);
-@@ -105,7 +107,7 @@
+@@ -105,7 +108,7 @@
  }
  
  void CastDeviceListHost::SelectDevice(const std::string& device_id) {
@@ -25,7 +29,7 @@
      return;
    }
    auto sink_it =
-@@ -171,7 +173,8 @@
+@@ -171,7 +174,8 @@
  }
  
  void CastDeviceListHost::OnCastingStarted() {
@@ -35,20 +39,20 @@
  }
  
  void CastDeviceListHost::StartCasting(const media_router::UIMediaSink& sink) {
-@@ -182,9 +185,16 @@
+@@ -182,9 +186,16 @@
      // valid.
      return;
    }
 -  cast_controller_->StartCasting(sink.id, cast_mode.value());
-+  // Parc: requests remoting once the cast launched, as Remote Playback does
-+  // on its connection (RemotePlayback::OnConnectionSuccess()), even if this
-+  // dialog closed meanwhile. A launch that fails reaches no session, and the
-+  // request it left would let a later tab cast put this video on the
-+  // receiver.
++  // Parc: requests remoting at the pick, as Chrome does, so the picked player
++  // casts even from the back/forward cache, and hands the launch's result to
++  // the request, even if this dialog closed meanwhile: a launch that fails
++  // takes it back, or a later tab cast would put this video on the receiver.
    if (cast_mode.value() == media_router::MediaCastMode::REMOTE_PLAYBACK) {
 -    media_remoting_callback_.Run();
++    auto launched = media_remoting_callback_.Run();
 +    cast_controller_->ParcStartCasting(sink.id, cast_mode.value(),
-+                                       media_remoting_callback_);
++                                       std::move(launched));
 +  } else {
 +    cast_controller_->StartCasting(sink.id, cast_mode.value());
    }
@@ -59,30 +63,38 @@
 @@ -5,6 +5,7 @@
  #ifndef CHROME_BROWSER_UI_GLOBAL_MEDIA_CONTROLS_CAST_DEVICE_LIST_HOST_H_
  #define CHROME_BROWSER_UI_GLOBAL_MEDIA_CONTROLS_CAST_DEVICE_LIST_HOST_H_
--
-+
+ 
 +#include "base/functional/callback.h"
  #include "chrome/browser/ui/media_router/cast_dialog_controller.h"
  #include "chrome/browser/ui/media_router/ui_media_sink.h"
  #include "components/global_media_controls/public/mojom/device_service.mojom.h"
-@@ -25,7 +26,8 @@
+@@ -23,9 +24,11 @@
+       std::unique_ptr<media_router::CastDialogController> dialog_controller,
+       mojo::PendingRemote<global_media_controls::mojom::DeviceListClient>
            observer,
-       base::RepeatingClosure media_remoting_callback,
+-      base::RepeatingClosure media_remoting_callback,
++      media_router::CastDialogController::ParcRemotingRequest
++          media_remoting_callback,
        base::RepeatingClosure hide_dialog_callback,
 -      base::RepeatingClosure on_sinks_discovered_callback);
 +      base::RepeatingClosure on_sinks_discovered_callback,
 +      base::RepeatingCallback<bool()> native_guard = {});
    ~CastDeviceListHost() override;
--
-+
+ 
    // mojom::DeviceListHost:
-@@ -54,6 +56,7 @@
+@@ -49,11 +52,13 @@
+   mojo::Remote<global_media_controls::mojom::DeviceListClient> client_;
+   std::vector<media_router::UIMediaSink> sinks_;
+   // Called whenever a Media Remoting session is starting.
+-  base::RepeatingClosure media_remoting_callback_;
++  media_router::CastDialogController::ParcRemotingRequest
++      media_remoting_callback_;
+   // Called whenever a tab mirroring session starts.
    base::RepeatingClosure hide_dialog_callback_;
    // Called whenever the sink is discovered.
    base::RepeatingClosure on_sinks_discovered_callback_;
 +  base::RepeatingCallback<bool()> native_guard_;
--
-+
+ 
    // Metrics
    base::Time initialization_time_;
 --- a/chrome/browser/ui/global_media_controls/media_notification_service.cc
@@ -100,15 +112,27 @@
  #include "base/unguessable_token.h"
  #include "chrome/browser/feature_engagement/tracker_factory.h"
  #include "chrome/browser/glic/host/guest_util.h"
-@@ -40,6 +42,7 @@
+@@ -40,13 +42,19 @@
  #include "content/public/browser/media_session.h"
  #include "content/public/browser/media_session_service.h"
  #include "content/public/browser/render_frame_host.h"
 +#include "content/public/browser/weak_document_ptr.h"
  #include "media/base/media_switches.h"
++#include "media/media_buildflags.h"
  #include "media/remoting/device_capability_checker.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
-@@ -280,6 +283,10 @@
+ #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+ #include "services/media_session/public/mojom/media_session.mojom.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_recorder.h"
++
++#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
++#include "chrome/browser/media/cast_remoting_connector.h"
++#endif
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/session/session_controller_impl.h"
+@@ -280,6 +288,10 @@
  
  void MediaNotificationService::Shutdown() {
    shutdown_has_started_ = true;
@@ -119,24 +143,50 @@
    // `cast_notification_producer_`,
    // `presentation_request_notification_producer_` and `host_receivers_`
    // depend on MediaRouter, which is another keyed service. So they must be
-@@ -334,6 +341,34 @@
+@@ -334,6 +346,61 @@
    if (web_contents && web_contents->GetLastCommittedURL().SchemeIsFile()) {
      feature_engagement::TrackerFactory::GetForBrowserContext(profile_)
          ->NotifyEvent("media_route_started_from_gmc");
 +  }
 +}
 +
-+void MediaNotificationService::ParcOnMediaRemotingLaunched(
-+    const std::string& item_id,
-+    content::WeakDocumentPtr document) {
++// static
++base::OnceCallback<void(bool)>
++MediaNotificationService::ParcRequestMediaRemoting(const std::string& item_id) {
 +  auto* web_contents =
 +      content::MediaSession::GetWebContentsFromRequestId(item_id);
 +  if (!web_contents) {
++    return {};
++  }
++  // The session's one player now, which only this page's can be.
++  content::MediaSession::Get(web_contents)->RequestMediaRemoting();
++  return base::BindOnce(
++      &MediaNotificationService::ParcOnMediaRemotingLaunched,
++      web_contents->GetWeakPtr(),
++      web_contents->GetPrimaryMainFrame()->GetWeakDocumentPtr());
++}
++
++// static
++void MediaNotificationService::ParcOnMediaRemotingLaunched(
++    base::WeakPtr<content::WebContents> web_contents,
++    content::WeakDocumentPtr document,
++    bool launched) {
++  if (!web_contents) {
 +    return;
 +  }
-+  if (document.AsRenderFrameHostIfValid() ==
-+      web_contents->GetPrimaryMainFrame()) {
-+    OnMediaRemotingRequested(item_id);
++  if (!launched) {
++#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
++    if (auto* connector = CastRemotingConnector::Get(web_contents.get())) {
++      connector->ParcDropRemotingRequests();
++    }
++#endif
++    return;
++  }
++  auto* frame = document.AsRenderFrameHostIfValid();
++  if (frame && (frame->IsActive() ||
++                frame->IsInLifecycleState(
++                    content::RenderFrameHost::LifecycleState::
++                        kInBackForwardCache))) {
 +    return;
 +  }
 +  auto* router =
@@ -145,7 +195,8 @@
 +  if (!router) {
 +    return;
 +  }
-+  const int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
++  const int tab_id =
++      sessions::SessionTabHelper::IdForTab(web_contents.get()).id();
 +  for (const auto& route : router->GetCurrentRoutes()) {
 +    if (route.media_source().IsRemotePlaybackSource() &&
 +        route.media_source().TabIdFromRemotePlaybackSource() == tab_id) {
@@ -154,7 +205,7 @@
    }
  }
  
-@@ -518,8 +553,228 @@
+@@ -518,8 +585,228 @@
               : false;
  }
  
@@ -383,7 +434,7 @@
    auto* web_contents = content::WebContents::FromRenderFrameHost(
        content::RenderFrameHost::FromID(
            context->presentation_request().render_frame_host_id));
-@@ -542,7 +797,24 @@
+@@ -542,7 +829,24 @@
        return;
      }
  
@@ -408,7 +459,7 @@
  
      // If there exists a media session notification associated with
      // |web_contents|, hold onto the context for later use.
-@@ -554,12 +826,11 @@
+@@ -554,12 +858,11 @@
      std::string item_id =
          GetActiveControllableSessionForWebContents(web_contents);
      context_item_id_ = item_id;
@@ -424,7 +475,7 @@
      }
  #endif
    } else if (presentation_request_notification_producer_) {
-@@ -577,6 +848,9 @@
+@@ -577,6 +880,9 @@
      const std::string& session_id,
      mojo::PendingReceiver<mojom::DeviceListHost> host_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote) {
@@ -434,7 +485,7 @@
    std::optional<std::string> remoting_session_id;
    // `remoting_session_id` is used to construct the MediaRemotingCallback for
    // CastDeviceListHost to request Media Remoting for a MediaSession. This is
-@@ -585,20 +859,54 @@
+@@ -585,20 +891,54 @@
    // presentation context), the Remote Playback API on the blink side handles
    // sending the Media Remoting request and there's no need for requesting Media
    // Remoting from MNS.
@@ -497,7 +548,7 @@
  }
  
  void MediaNotificationService::SetDevicePickerProvider(
-@@ -661,17 +969,28 @@
+@@ -661,7 +1001,12 @@
      std::unique_ptr<media_router::CastDialogController> dialog_controller,
      mojo::PendingReceiver<mojom::DeviceListHost> host_pending_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote,
@@ -511,26 +562,20 @@
    if (!dialog_controller) {
      // We discard the PendingReceiver/Remote here, and if they have disconnect
      // handlers set, those get called.
-     return;
-   }
-+  auto* remoting_contents =
-+      remoting_session_id.has_value()
-+          ? content::MediaSession::GetWebContentsFromRequestId(
-+                remoting_session_id.value())
-+          : nullptr;
+@@ -670,21 +1015,26 @@
    auto media_remoting_callback_ =
--      remoting_session_id.has_value()
-+      remoting_contents
+       remoting_session_id.has_value()
            ? base::BindRepeating(
 -                &MediaNotificationService::OnMediaRemotingRequested,
 -                weak_ptr_factory_.GetWeakPtr(), remoting_session_id.value())
-+                &MediaNotificationService::ParcOnMediaRemotingLaunched,
-+                weak_ptr_factory_.GetWeakPtr(), remoting_session_id.value(),
-+                remoting_contents->GetPrimaryMainFrame()->GetWeakDocumentPtr())
-           : base::DoNothing();
+-          : base::DoNothing();
++                &MediaNotificationService::ParcRequestMediaRemoting,
++                remoting_session_id.value())
++          : base::BindRepeating(
++                [] { return base::OnceCallback<void(bool)>(); });
    auto on_sinks_discovered_callback =
        remoting_session_id.has_value()
-@@ -679,12 +998,16 @@
+           ? base::BindRepeating(&MediaNotificationService::OnSinksDiscovered,
                                  weak_ptr_factory_.GetWeakPtr(),
                                  remoting_session_id.value())
            : base::DoNothing();
@@ -548,7 +593,7 @@
    int host_id = host->id();
    mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>
        host_receiver = mojo::MakeSelfOwnedReceiver(
-@@ -693,6 +1016,8 @@
+@@ -693,6 +1043,8 @@
        base::BindOnce(&MediaNotificationService::RemoveDeviceListHost,
                       weak_ptr_factory_.GetWeakPtr(), host_id));
    host_receivers_.emplace(host_id, std::move(host_receiver));
@@ -557,7 +602,7 @@
  }
  
  bool MediaNotificationService::HasPresentationContextForSession(
-@@ -713,16 +1038,16 @@
+@@ -713,16 +1065,16 @@
  }
  
  void MediaNotificationService::ResetPresentationContext() {
@@ -579,7 +624,7 @@
    }
  }
  
-@@ -793,6 +1118,7 @@
+@@ -793,6 +1145,7 @@
    // get destroyed soon anyways.
    if (!shutdown_has_started_) {
      host_receivers_.erase(host_id);
@@ -647,7 +692,7 @@
  
    // global_media_controls::mojom::DeviceService:
    void GetDeviceListHostForSession(
-@@ -163,6 +191,21 @@
+@@ -163,6 +191,28 @@
    friend class MediaToolbarButtonControllerTest;
    friend class ash::GlobalMediaControlsCastStartTest;
  
@@ -660,16 +705,23 @@
 +      base::UnguessableToken token,
 +      global_media_controls::SupplementalDevicePickerProducer::NativeLifecycleEvent event);
 +
-+  // Parc: the cast picked for `item_id`'s player launched. Its page left
-+  // (navigated, or entered the back/forward cache, which hides its players)
-+  // ends the launch instead of remoting the next page's player.
-+  void ParcOnMediaRemotingLaunched(const std::string& item_id,
-+                                   content::WeakDocumentPtr document);
++  // Parc: a cast was picked for `item_id`'s player. Requests its remoting
++  // now, and returns what the launch's result does with the request.
++  static base::OnceCallback<void(bool)> ParcRequestMediaRemoting(
++      const std::string& item_id);
++
++  // Parc: the cast picked for the player of `web_contents`' `document`
++  // launched, or failed and takes the request back. A launch whose page is
++  // gone (a cached page casts from the back/forward cache) ends.
++  static void ParcOnMediaRemotingLaunched(
++      base::WeakPtr<content::WebContents> web_contents,
++      content::WeakDocumentPtr document,
++      bool launched);
 +
    // Instantiates a MediaRouterViewsUI object associated with the Session with
    // the given |session_id|.
    std::unique_ptr<media_router::CastDialogController>
-@@ -180,7 +223,9 @@
+@@ -180,7 +230,9 @@
            host_receiver,
        mojo::PendingRemote<global_media_controls::mojom::DeviceListClient>
            client_remote,
@@ -680,7 +732,7 @@
  
    // True if there is a presentation context for the given session ID.
    bool HasPresentationContextForSession(const std::string& session_id);
-@@ -247,6 +292,15 @@
+@@ -247,6 +299,15 @@
        int,
        mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>>
        host_receivers_;
@@ -706,15 +758,17 @@
  #include "chrome/browser/ui/global_media_controls/cast_device_list_host.h"
  #include "chrome/browser/ui/global_media_controls/cast_media_notification_producer.h"
  #include "chrome/browser/ui/global_media_controls/test_helper.h"
-@@ -34,11 +35,15 @@
+@@ -34,11 +35,17 @@
  #include "components/media_message_center/media_notification_item.h"
  #include "components/media_message_center/media_notification_util.h"
  #include "components/media_router/browser/presentation/start_presentation_context.h"
 +#include "components/media_router/browser/media_router_factory.h"
  #include "components/media_router/browser/test/mock_media_router.h"
 +#include "components/sessions/content/session_tab_helper.h"
++#include "content/public/browser/back_forward_cache.h"
  #include "content/public/browser/media_session.h"
  #include "content/public/browser/web_contents.h"
++#include "content/public/test/back_forward_cache_util.h"
  #include "content/public/test/browser_task_environment.h"
 +#include "media/base/audio_codecs.h"
  #include "media/base/media_switches.h"
@@ -722,13 +776,13 @@
  #include "services/media_session/public/mojom/audio_focus.mojom.h"
  #include "services/media_session/public/mojom/media_session.mojom.h"
  #include "testing/gmock/include/gmock/gmock.h"
-@@ -254,6 +259,16 @@
+@@ -254,6 +261,16 @@
          .WillByDefault(Return(routes));
    }
  
-+  void ParcOnMediaRemotingLaunched(const std::string& item_id,
-+                                   content::WeakDocumentPtr document) {
-+    service()->ParcOnMediaRemotingLaunched(item_id, std::move(document));
++  base::OnceCallback<void(bool)> ParcRequestMediaRemoting(
++      const std::string& item_id) {
++    return MediaNotificationService::ParcRequestMediaRemoting(item_id);
 +  }
 +
 +  void SetDefaultPresentationRequest(
@@ -739,7 +793,7 @@
    base::WeakPtr<PresentationRequestNotificationItem>
    GetSupplementalNotification() {
      return service()
-@@ -750,6 +765,81 @@
+@@ -750,6 +767,83 @@
    service()->OnMediaRemotingRequested(id.ToString());
  }
  
@@ -791,14 +845,15 @@
 +  EXPECT_EQ("remote", route->media_route_id());
 +}
 +
-+// Parc: a cast picked for a session's player requests remoting once it
-+// launched only while that player's page is still shown. After the page left,
-+// the launch ends rather than casting the next page's video.
++// Parc: a cast picked for a session's player requests its remoting at the
++// pick. Once launched, it stays while the player's page does; after the page
++// is gone, the launch ends rather than waiting for a player.
 +TEST_F(MediaNotificationServiceCastTest, ParcRemotingLaunchedAfterNavigation) {
 +  NavigateAndCommit(GURL("https://example.test/"));
++  content::DisableBackForwardCacheForTesting(
++      web_contents(), content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
 +  CreateSessionServiceTabHelper(web_contents());
 +  auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-+  const auto document = main_rfh()->GetWeakDocumentPtr();
 +  auto* router = static_cast<media_router::MockMediaRouter*>(
 +      media_router::MediaRouterFactory::GetApiForBrowserContext(profile()));
 +  MediaRoute remote(
@@ -810,18 +865,19 @@
 +  ON_CALL(*router, GetCurrentRoutes())
 +      .WillByDefault(Return(std::vector<MediaRoute>{remote}));
 +  EXPECT_CALL(*router, TerminateRoute(_)).Times(0);
-+  ParcOnMediaRemotingLaunched(id.ToString(), document);
++  ParcRequestMediaRemoting(id.ToString()).Run(true);
 +  testing::Mock::VerifyAndClearExpectations(router);
 +
++  auto launched = ParcRequestMediaRemoting(id.ToString());
 +  NavigateAndCommit(GURL("https://other.test/"));
 +  EXPECT_CALL(*router, TerminateRoute("remote"));
-+  ParcOnMediaRemotingLaunched(id.ToString(), document);
++  std::move(launched).Run(true);
 +}
 +
  TEST_F(MediaNotificationServiceCastTest, OnSinksDiscoveredForLocalMedia) {
    // Playing the media.
    auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-@@ -792,6 +882,32 @@
+@@ -792,6 +886,32 @@
    // override is reset.
    auto dialog_controller = CreateCastDialogControllerForSession(id.ToString());
    EXPECT_FALSE(item->optional_presentation_request_origin().has_value());
@@ -2252,7 +2308,18 @@
 --- a/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
 --- a/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 +++ b/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
-@@ -24,6 +24,7 @@
+@@ -4,7 +4,10 @@
+ 
+ #include "chrome/browser/ui/global_media_controls/cast_device_list_host.h"
+ 
++#include <optional>
++
+ #include "base/memory/raw_ptr.h"
++#include "base/test/bind.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "chrome/browser/media/router/media_router_feature.h"
+ #include "chrome/browser/ui/media_router/cast_dialog_controller.h"
+@@ -24,6 +27,7 @@
  using testing::_;
  using testing::NiceMock;
  using testing::Return;
@@ -2260,7 +2327,7 @@
  namespace mojom {
  using global_media_controls::mojom::DeviceListClient;
  }  // namespace mojom
-@@ -59,6 +60,11 @@
+@@ -59,6 +63,11 @@
                StartCasting,
                (const std::string& sink_id,
                 media_router::MediaCastMode cast_mode));
@@ -2268,11 +2335,20 @@
 +              ParcStartCasting,
 +              (const std::string& sink_id,
 +               media_router::MediaCastMode cast_mode,
-+               base::OnceClosure on_launched));
++               base::OnceCallback<void(bool)> on_result));
    MOCK_METHOD(void, StopCasting, (const std::string& route_id));
    MOCK_METHOD(void, ClearIssue, (const media_router::Issue::Id& issue_id));
    MOCK_METHOD(void, FreezeRoute, (const std::string& route_id));
-@@ -147,11 +153,20 @@
+@@ -80,7 +89,7 @@
+     host_ = CreateHost(std::move(dialog_controller), mock_client_.PassRemote());
+   }
+ 
+-  MOCK_METHOD(void, OnMediaRemotingRequested, ());
++  MOCK_METHOD(base::OnceCallback<void(bool)>, OnMediaRemotingRequested, ());
+   MOCK_METHOD(void, HideMediaDialog, ());
+   MOCK_METHOD(void, OnSinksDiscoveredCallback, ());
+ 
+@@ -147,11 +156,25 @@
    UIMediaSink sink = CreateMediaSink();
    sink.cast_modes = {media_router::MediaCastMode::REMOTE_PLAYBACK};
    host_->OnModelUpdated({CreateModelWithSinks({sink})});
@@ -2280,20 +2356,25 @@
 -      *dialog_controller_,
 -      StartCasting(sink.id, media_router::MediaCastMode::REMOTE_PLAYBACK));
 -  EXPECT_CALL(*this, OnMediaRemotingRequested());
-+  // Parc: remoting is requested once the cast launched, and only then.
-+  base::OnceClosure on_launched;
++  // Parc: remoting is requested at the pick, as Chrome does, and the request
++  // learns whether the cast launched.
++  testing::InSequence sequence;
++  std::optional<bool> launched;
++  EXPECT_CALL(*this, OnMediaRemotingRequested())
++      .WillOnce(testing::Return(testing::ByMove(base::OnceCallback<void(bool)>(
++          base::BindLambdaForTesting([&](bool result) { launched = result; })))));
++  base::OnceCallback<void(bool)> on_result;
 +  EXPECT_CALL(*dialog_controller_,
 +              ParcStartCasting(sink.id,
 +                               media_router::MediaCastMode::REMOTE_PLAYBACK, _))
-+      .WillOnce(WithArg<2>([&](base::OnceClosure closure) {
-+        on_launched = std::move(closure);
++      .WillOnce(WithArg<2>([&](base::OnceCallback<void(bool)> callback) {
++        on_result = std::move(callback);
 +      }));
-+  EXPECT_CALL(*this, OnMediaRemotingRequested()).Times(0);
    host_->SelectDevice(sink.id);
-+  testing::Mock::VerifyAndClearExpectations(this);
++  EXPECT_FALSE(launched);
 +
-+  EXPECT_CALL(*this, OnMediaRemotingRequested());
-+  std::move(on_launched).Run();
++  std::move(on_result).Run(true);
++  EXPECT_EQ(true, launched);
  }
  
  // TODO(crbug.com/1486680): Enable this on Chrome OS once stopping mirroring
@@ -2308,16 +2389,22 @@
  #include "chrome/browser/ui/media_router/media_cast_mode.h"
  #include "components/media_router/common/issue.h"
  #include "components/media_router/common/media_route.h"
-@@ -46,6 +46,15 @@
+@@ -46,6 +46,21 @@
    virtual void StartCasting(const MediaSink::Id& sink_id,
                              MediaCastMode cast_mode) = 0;
  
-+  // Parc: StartCasting(), running `on_launched` once the cast launched, even
-+  // if this controller is gone by then. A controller that can't tell drops
-+  // it.
++  // Parc: requests remoting of a session's player and returns what to run
++  // with whether its cast launched.
++  using ParcRemotingRequest =
++      base::RepeatingCallback<base::OnceCallback<void(bool launched)>()>;
++
++  // Parc: StartCasting(), running `on_result` with whether the cast launched
++  // once it did or failed, even if this controller is gone by then. A
++  // controller that can't tell drops it, leaving a failed launch's remoting
++  // request in place, as Chrome does.
 +  virtual void ParcStartCasting(const MediaSink::Id& sink_id,
 +                                MediaCastMode cast_mode,
-+                                base::OnceClosure on_launched) {
++                                base::OnceCallback<void(bool)> on_result) {
 +    StartCasting(sink_id, cast_mode);
 +  }
 +
@@ -2332,7 +2419,7 @@
                      MediaCastMode cast_mode) override;
 +  void ParcStartCasting(const std::string& sink_id,
 +                        MediaCastMode cast_mode,
-+                        base::OnceClosure on_launched) override;
++                        base::OnceCallback<void(bool)> on_result) override;
    void StopCasting(const std::string& route_id) override;
    void ClearIssue(const Issue::Id& issue_id) override;
    void FreezeRoute(const std::string& route_id) override;
@@ -2341,40 +2428,38 @@
    // Returns true if a route request is successfully submitted.
    // |OnRouteResponseReceived()| will be invoked when the route request
 -  // completes.
-+  // completes. Parc: and `on_launched`, if the route was created.
++  // completes. Parc: and `on_result`, with whether the route was created.
    virtual bool CreateRoute(const MediaSink::Id& sink_id,
 -                           MediaCastMode cast_mode);
 +                           MediaCastMode cast_mode,
-+                           base::OnceClosure on_launched);
++                           base::OnceCallback<void(bool)> on_result);
  
    // Calls MediaRouter to terminate the given route.
    void TerminateRoute(const MediaRoute::Id& route_id);
 --- a/chrome/browser/ui/media_router/media_router_ui.cc
 +++ b/chrome/browser/ui/media_router/media_router_ui.cc
-@@ -178,9 +178,15 @@
+@@ -178,7 +178,13 @@
  
  void MediaRouterUI::StartCasting(const std::string& sink_id,
                                   MediaCastMode cast_mode) {
 -  CreateRoute(sink_id, cast_mode);
-+  CreateRoute(sink_id, cast_mode, base::OnceClosure());
- }
- 
-+void MediaRouterUI::ParcStartCasting(const std::string& sink_id,
-+                                     MediaCastMode cast_mode,
-+                                     base::OnceClosure on_launched) {
-+  CreateRoute(sink_id, cast_mode, std::move(on_launched));
++  CreateRoute(sink_id, cast_mode, base::OnceCallback<void(bool)>());
 +}
 +
++void MediaRouterUI::ParcStartCasting(const std::string& sink_id,
++                                     MediaCastMode cast_mode,
++                                     base::OnceCallback<void(bool)> on_result) {
++  CreateRoute(sink_id, cast_mode, std::move(on_result));
+ }
+ 
  void MediaRouterUI::StopCasting(const std::string& route_id) {
-   terminating_route_id_ = route_id;
-   // |route_id| may become invalid after UpdateSinks(), so we cannot refer to
 @@ -229,7 +235,8 @@
  }
  
  bool MediaRouterUI::CreateRoute(const MediaSink::Id& sink_id,
 -                                MediaCastMode cast_mode) {
 +                                MediaCastMode cast_mode,
-+                                base::OnceClosure on_launched) {
++                                base::OnceCallback<void(bool)> on_result) {
    logger_->LogInfo(mojom::LogCategory::kUi, kLoggerComponent,
                     "CreateRoute requested by MediaRouterViewsUI.", sink_id, "",
                     "");
@@ -2382,21 +2467,27 @@
    // when the desktop picker is shown.
    params->route_result_callbacks.push_back(
        base::BindOnce(&MaybeReportCastingSource, cast_mode));
-+  if (on_launched) {
++  if (on_result) {
 +    params->route_result_callbacks.push_back(base::BindOnce(
-+        [](base::OnceClosure on_launched, const RouteRequestResult& result) {
-+          if (result.result_code() == mojom::RouteRequestResultCode::OK) {
-+            std::move(on_launched).Run();
-+          }
++        [](base::OnceCallback<void(bool)> on_result,
++           const RouteRequestResult& result) {
++          std::move(on_result).Run(result.result_code() ==
++                                   mojom::RouteRequestResultCode::OK);
 +        },
-+        std::move(on_launched)));
++        std::move(on_result)));
 +  }
  
    params->route_result_callbacks.push_back(base::BindOnce(
        &MediaRouterUI::OnRouteResponseReceived, weak_factory_.GetWeakPtr(),
 --- a/chrome/browser/ui/media_router/media_router_ui_unittest.cc
 +++ b/chrome/browser/ui/media_router/media_router_ui_unittest.cc
-@@ -12,6 +12,7 @@
+@@ -7,11 +7,13 @@
+ #include <algorithm>
+ #include <initializer_list>
+ #include <memory>
++#include <optional>
+ #include <utility>
+ #include <vector>
  
  #include "base/memory/raw_ptr.h"
  #include "base/strings/utf_string_conversions.h"
@@ -2404,15 +2495,13 @@
  #include "build/build_config.h"
  #include "chrome/browser/media/router/chrome_media_router_factory.h"
  #include "chrome/browser/media/router/media_router_feature.h"
-@@ -393,6 +394,45 @@
- 
- TEST_F(MediaRouterViewsUITest, StartCasting) {
+@@ -395,6 +397,46 @@
    StartTabCasting();
-+}
-+
-+// Parc: a cast's launch callback runs once its route is created, even after
-+// the dialog closed, and not for a launch that fails.
-+TEST_F(MediaRouterViewsUITest, ParcStartCastingRunsLaunchCallback) {
+ }
+ 
++// Parc: a cast's result callback learns whether its route was created, even
++// after the dialog closed.
++TEST_F(MediaRouterViewsUITest, ParcStartCastingRunsResultCallback) {
 +  MediaSource media_source = MediaSource::ForTab(
 +      sessions::SessionTabHelper::IdForTab(web_contents()).id());
 +  MediaSink sink{CreateCastSink(kSinkId, kSinkName)};
@@ -2425,13 +2514,14 @@
 +                                                 web_contents(), _, _))
 +      .WillOnce(SaveArgWithMove<4>(&launched_callback))
 +      .WillOnce(SaveArgWithMove<4>(&failed_callback));
-+  bool launched = false;
-+  ui_->ParcStartCasting(kSinkId, MediaCastMode::TAB_MIRROR,
-+                        base::BindLambdaForTesting([&] { launched = true; }));
-+  bool failed_launched = false;
++  std::optional<bool> launched;
 +  ui_->ParcStartCasting(
 +      kSinkId, MediaCastMode::TAB_MIRROR,
-+      base::BindLambdaForTesting([&] { failed_launched = true; }));
++      base::BindLambdaForTesting([&](bool result) { launched = result; }));
++  std::optional<bool> failed_launched;
++  ui_->ParcStartCasting(
++      kSinkId, MediaCastMode::TAB_MIRROR,
++      base::BindLambdaForTesting([&](bool result) { failed_launched = result; }));
 +  Mock::VerifyAndClearExpectations(mock_router_);
 +  ui_.reset();
 +
@@ -2439,14 +2529,127 @@
 +      .Run(nullptr,
 +           *RouteRequestResult::FromError(
 +               "failed", mojom::RouteRequestResultCode::ROUTE_NOT_FOUND));
-+  EXPECT_FALSE(failed_launched);
++  EXPECT_EQ(false, failed_launched);
 +
 +  MediaRoute route(MediaRoute::GetMediaRouteId("id", kSinkId, media_source),
 +                   media_source, kSinkId, /* description */ std::string(),
 +                   /* is_local */ true);
 +  std::move(launched_callback)
 +      .Run(nullptr, *RouteRequestResult::FromSuccess(route, "id"));
-+  EXPECT_TRUE(launched);
++  EXPECT_EQ(true, launched);
++}
++
+ TEST_F(MediaRouterViewsUITest, StopCasting) {
+   EXPECT_CALL(*mock_router_, TerminateRoute(kRouteId));
+   ui_->StopCasting(kRouteId);
+--- a/chrome/browser/media/cast_remoting_connector.cc
++++ b/chrome/browser/media/cast_remoting_connector.cc
+@@ -97,6 +97,16 @@
+   remoting_allowed_ = GetRemotingAllowedUserPref();
  }
  
- TEST_F(MediaRouterViewsUITest, StopCasting) {
++void CastRemotingConnector::ParcDropRemotingRequests() {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  if (active_bridge_ || HasSinkMetadata()) {
++    return;
++  }
++  for (RemotingBridge* bridge : bridges_) {
++    bridge->ParcDropRemotingRequest(this);
++  }
++}
++
+ void CastRemotingConnector::ConnectWithMediaRemoter(
+     mojo::PendingRemote<media::mojom::Remoter> remoter,
+     mojo::PendingReceiver<media::mojom::RemotingSource> receiver) {
+--- a/chrome/browser/media/cast_remoting_connector.h
++++ b/chrome/browser/media/cast_remoting_connector.h
+@@ -102,6 +102,12 @@
+ 
+   // Called at the start of mirroring to reset the permission.
+   void ResetRemotingPermission();
++
++  // Parc: a cast picked for one of this tab's players failed to launch. The
++  // remoting request the pick sent that player must not take the tab's next
++  // session, so every source drops its request while no session runs. A
++  // source's RemotingSource reaches it in the back/forward cache too.
++  void ParcDropRemotingRequests();
+ 
+   // Used by Mirroring Service to connect the media remoter with this source.
+   void ConnectWithMediaRemoter(
+--- a/chrome/browser/media/cast_remoting_connector_unittest.cc
++++ b/chrome/browser/media/cast_remoting_connector_unittest.cc
+@@ -266,6 +266,28 @@
+   RunUntilIdle();
+ }
+ 
++// Parc: a cast that failed to launch takes back the remoting request its pick
++// sent, from each of the tab's sources while no session runs.
++TEST_F(CastRemotingConnectorTest, ParcDropsRemotingRequestsWithoutSession) {
++  MockRemotingSource source;
++  mojo::Remote<media::mojom::Remoter> remoter(CreateRemoter(&source));
++  RunUntilIdle();
++
++  EXPECT_CALL(source, OnStartFailed(RemotingStartFailReason::ROUTE_TERMINATED));
++  GetConnector()->ParcDropRemotingRequests();
++  RunUntilIdle();
++  testing::Mock::VerifyAndClearExpectations(&source);
++
++  std::unique_ptr<MockMediaRemoter> media_remoter =
++      std::make_unique<MockMediaRemoter>(GetConnector());
++  EXPECT_CALL(source, OnSinkAvailable(_));
++  media_remoter->OnSinkAvailable();
++  RunUntilIdle();
++  EXPECT_CALL(source, OnStartFailed(_)).Times(0);
++  GetConnector()->ParcDropRemotingRequests();
++  RunUntilIdle();
++}
++
+ TEST_F(CastRemotingConnectorTest, UserDisableRemoting) {
+   MockRemotingSource source1;
+   mojo::Remote<media::mojom::Remoter> remoter1(CreateRemoter(&source1));
+--- a/chrome/browser/media/remoting_bridge.cc
++++ b/chrome/browser/media/remoting_bridge.cc
+@@ -106,6 +106,14 @@
+   source_->OnStopped(reason);
+ }
+ 
++void RemotingBridge::ParcDropRemotingRequest(Client* client) {
++  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
++  if (active_client_ && client != active_client_) {
++    return;
++  }
++  source_->OnStartFailed(RemotingStartFailReason::ROUTE_TERMINATED);
++}
++
+ void RemotingBridge::OnClientDestroyed(Client* client) {
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+   GetEntry(client).Reset();
+--- a/chrome/browser/media/remoting_bridge.h
++++ b/chrome/browser/media/remoting_bridge.h
+@@ -94,6 +94,11 @@
+   // Called by the Client when it is being destroyed.
+   void OnClientDestroyed(Client* client);
+ 
++  // Parc: the browser took back a remoting request it sent the source's
++  // player (RendererController::OnStartFailed() drops it), unless another
++  // Client serves the source.
++  void ParcDropRemotingRequest(Client* client);
++
+   // Called by a Client when its ability to serve this source changes.
+   void SetClientAvailable(Client* client, bool available);
+ 
+--- a/chrome/browser/media/cast_remoting_connector.cc
+--- a/chrome/browser/media/cast_remoting_connector.h
+--- a/chrome/browser/media/cast_remoting_connector_unittest.cc
+--- a/chrome/browser/media/remoting_bridge.cc
+--- a/chrome/browser/media/remoting_bridge.h
+--- a/chrome/browser/media/cast_remoting_connector.cc
+--- a/chrome/browser/media/cast_remoting_connector.h
+--- a/chrome/browser/media/cast_remoting_connector_unittest.cc
+--- a/chrome/browser/media/remoting_bridge.cc
+--- a/chrome/browser/media/remoting_bridge.h
+--- a/chrome/browser/media/cast_remoting_connector.cc
+--- a/chrome/browser/media/cast_remoting_connector.h
+--- a/chrome/browser/media/cast_remoting_connector_unittest.cc
+--- a/chrome/browser/media/remoting_bridge.cc
+--- a/chrome/browser/media/remoting_bridge.h

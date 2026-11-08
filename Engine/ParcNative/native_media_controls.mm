@@ -121,6 +121,10 @@ bool Eligible(content::MediaSession* session) {
   return info && ((info->is_controllable && info->state != Info::SessionState::kInactive) ||
       Has(session, Action::kToggleMicrophone) || Has(session, Action::kToggleCamera));
 }
+bool Casting(content::WebContents* contents) {
+  const int state = NativeMediaCastStateForContents(contents).state;
+  return state == PCNativeCastStateConnecting || state == PCNativeCastStateConnected;
+}
 bool ValidHost(NSWindow* window, Profile* profile, bool action) {
   PCNativeBrowserWindow* binding = window ? [PCNativeBrowserApplication windowForNativeWindow:window] : nil;
   if (!binding || !profile) return false;
@@ -168,7 +172,7 @@ class MediaState final : public content::WebContentsObserver,
     // Presentation ownership can disappear temporarily during transfer or
     // window teardown. It is not a media-session transition and must not
     // resurrect a control that the user dismissed on the original page.
-    if (!Eligible(session)) { Registry().Remove(this); active_ = false; dismissed_ = false; return nil; }
+    if (!Held()) { Registry().Remove(this); active_ = false; dismissed_ = false; return nil; }
     if (!browser) return nil;
     if (dismissed_) return nil;
     if (!active_) {
@@ -221,7 +225,7 @@ class MediaState final : public content::WebContentsObserver,
         state->profile_ && state->profile_.get() == contents->GetBrowserContext() &&
         (!host || ValidHost(host, state->profile_.get(), action)) &&
         state->document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame() &&
-        Eligible(content::MediaSession::GetIfExists(contents));
+        Held();
   }
   bool CanContinueReveal(PCNativeMediaState* state, NSWindow* host) {
     if (!host || !Validate(state, host, false)) return false;
@@ -236,7 +240,8 @@ class MediaState final : public content::WebContentsObserver,
     if (!Validate(state, host)) return false;
     auto* contents = web_contents();
     auto* session = content::MediaSession::GetIfExists(contents);
-    const auto info = session->GetMediaSessionInfoSync();
+    if (!session && action != PCNativeMediaActionToggleMuted) return false;
+    const auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
     switch (action) {
       case PCNativeMediaActionPlay:
       case PCNativeMediaActionPause:
@@ -286,7 +291,7 @@ class MediaState final : public content::WebContentsObserver,
         Owner(contents, false) == lease->browser_.get() &&
         lease->document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame();
     if (!lease->fence_->Consume(suppression_fence_, valid)) return;
-    if (!Eligible(content::MediaSession::GetIfExists(contents))) {
+    if (!Held()) {
       Snapshot(true);  // Preserve the existing inactive-episode reset.
       return;
     }
@@ -322,7 +327,7 @@ class MediaState final : public content::WebContentsObserver,
   bool Volume(double value, PCNativeMediaState* state, NSWindow* host = nil) {
     if (!std::isfinite(value) || !Validate(state, host)) return false;
     auto* session = content::MediaSession::GetIfExists(web_contents());
-    auto info = session->GetMediaSessionInfoSync();
+    auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
     if (!info || !info->is_controllable || info->state == Info::SessionState::kInactive) return false;
     auto weak = weak_factory_.GetWeakPtr();
     auto* implementation = content::MediaSessionImpl::Get(web_contents());
@@ -542,7 +547,7 @@ class MediaState final : public content::WebContentsObserver,
     return active_ && !dismissed_ && contents && !contents->IsBeingDestroyed() && page && !page.closed &&
         !IsNativePageRetiring(page) && profile &&
         !IsNativeProfileRemovalBlocked(profile->GetOriginalProfile()->GetPath()) &&
-        Eligible(content::MediaSession::GetIfExists(contents));
+        Held();
   }
   void WithdrawAfterRemoval() {
     active_ = false;
@@ -550,8 +555,13 @@ class MediaState final : public content::WebContentsObserver,
     if (!contents || !Eligible(content::MediaSession::GetIfExists(contents))) dismissed_ = false;
     if (contents) Changed();
   }
+  bool Held() {
+    auto* contents = web_contents();
+    return contents && MediaEpisodeHeld(Eligible(content::MediaSession::GetIfExists(contents)),
+                                        active_ || dismissed_, [contents] { return Casting(contents); });
+  }
   void ReconcileEligibility() {
-    if (!Eligible(content::MediaSession::GetIfExists(web_contents()))) {
+    if (!Held()) {
       Registry().Remove(this);
       active_ = false; dismissed_ = false;
     }
@@ -571,7 +581,7 @@ class MediaState final : public content::WebContentsObserver,
       return state;
     }
     auto* session = content::MediaSession::GetIfExists(contents);
-    state.eligible = Eligible(session);
+    state.eligible = Held();
     state.active = active_;
     state.dismissed = dismissed_;
     if (identity_) {
@@ -597,6 +607,12 @@ class MediaState final : public content::WebContentsObserver,
             Profile::FromBrowserContext(contents->GetBrowserContext())) {
       state.off_the_record = profile->IsOffTheRecord();
     }
+    const NativeAirPlayState airplay = NativeAirPlayStateForContents(contents);
+    state.airplay_state = airplay.state;
+    state.airplay_device_name = airplay.device_name;
+    const NativeMediaCastState cast = NativeMediaCastStateForContents(contents);
+    state.cast_state = cast.state;
+    state.cast_device_name = cast.device_name;
     state.session_status =
         static_cast<uint8_t>(PCNativeMediaSessionStatusInactive);
     if (!session) {
@@ -649,12 +665,6 @@ class MediaState final : public content::WebContentsObserver,
         info->microphone_state == media_session::mojom::MicrophoneState::kUnmuted;
     state.camera_on =
         info->camera_state == media_session::mojom::CameraState::kTurnedOn;
-    const NativeAirPlayState airplay = NativeAirPlayStateForContents(contents);
-    state.airplay_state = airplay.state;
-    state.airplay_device_name = airplay.device_name;
-    const NativeMediaCastState cast = NativeMediaCastStateForContents(contents);
-    state.cast_state = cast.state;
-    state.cast_device_name = cast.device_name;
     return state;
   }
   void Changed() {
@@ -671,6 +681,8 @@ class MediaState final : public content::WebContentsObserver,
     }
     // ObserveSession so Mojo keeps delivering; same as Snapshot/Status reads.
     ObserveSession(content::MediaSession::GetIfExists(contents));
+    // A cast's end, reported by the router, drops a row only it kept.
+    ReconcileEligibility();
     NativeMediaNotifyState current = CurrentMediaNotifyState();
     if (!ShouldNotifyMediaPayloadChange(last_media_notify_, current)) {
       return;
@@ -787,14 +799,16 @@ void NativeMediaCastChanged(content::WebContents* contents) {
       if (favicon.valid && !favicon.image.IsEmpty()) _icon = [favicon.image.ToNSImage() copy];
     }
     auto* session = content::MediaSession::GetIfExists(contents);
-    auto info = session->GetMediaSessionInfoSync();
+    auto info = session ? session->GetMediaSessionInfoSync()
+                        : media_session::mojom::MediaSessionInfo::New();
     _playing = info->playback_state == media_session::mojom::MediaPlaybackState::kPlaying;
     _canPlayPause = info->is_controllable && info->state != parc::Info::SessionState::kInactive;
     _hasPreviousTrack = parc::Has(session, parc::Action::kPreviousTrack);
     _hasNextTrack = parc::Has(session, parc::Action::kNextTrack);
     _muted = contents->IsAudioMuted();
-    _volume = content::MediaSessionImpl::Get(contents)->user_volume_multiplier();
-    _canSetVolume = _canPlayPause && content::MediaSessionImpl::Get(contents)->has_user_volume_players();
+    auto* implementation = session ? content::MediaSessionImpl::Get(contents) : nullptr;
+    _volume = implementation ? implementation->user_volume_multiplier() : 1.0;
+    _canSetVolume = _canPlayPause && implementation && implementation->has_user_volume_players();
     _canToggleMicrophone = parc::Has(session, parc::Action::kToggleMicrophone);
     _canToggleCamera = parc::Has(session, parc::Action::kToggleCamera);
     _microphoneOn = info->microphone_state == media_session::mojom::MicrophoneState::kUnmuted;

@@ -63,6 +63,14 @@ bool AdmitAfterPresentationRemoval(bool& active, bool& dismissed, Admit admit) {
   return false;
 }
 
+// An episode's row outlives its session while the cast it shows lives, so it
+// keeps Casting to <device> and Stop casting after a site drops its session
+// for its receiver. A cast never admits a new episode.
+template <typename Casting>
+bool MediaEpisodeHeld(bool session_eligible, bool admitted, Casting casting) {
+  return session_eligible || (admitted && casting());
+}
+
 // Source and Profile are weak handles with get(). Regular sources share one
 // pool; each live off-the-record Profile has its own pool. The returned weak
 // source is the oldest evicted entry, if any. No callback runs while the store
