@@ -316,6 +316,35 @@ import Foundation
         } catch { checks += 1 }
         expect(chosenStore.state == refusedBefore, "A refused destination writes nothing")
 
+        //
+        // import was opened from; the next goes by name; standard stays behind.
+        let customStore = try BrowserStore(directory: directory.appendingPathComponent("CustomPrimary"))
+        let opened = BrowserImportDestination(spaceID: customStore.activeSpace.id, profileID: customStore.activeSpace.profileID)
+        let namesake = customStore.createProfile(name: "Work Profile")
+        try customStore.save()
+        var openedChoice = BrowserImportDestinationChoice()
+        openedChoice.select(.existing(BrowserImportProfileTarget(profileID: opened.profileID, spaceID: opened.spaceID)))
+        let customBefore = customStore.state
+        let custom = try customStore.importArcSidebar(arc, profiles: [(profileOne, "Work Profile"), (profileTwo, "Side Projects")],
+            standardProfileID: opened.profileID, primary: profileOne, into: openedChoice)
+        let customState = customStore.state
+        let projectsProfile = require(customState.profiles.first { $0.name == "Side Projects" }, "A Parc Profile for the other Arc Profile")
+        let customSpaces = Array(customState.spaces.dropFirst(customBefore.spaces.count))
+        expect(customSpaces.map(\.title) == ["Side", "Side Projects"]
+               && customSpaces.map(\.profileID) == [opened.profileID, projectsProfile.id],
+               "The primary's Spaces join the opened Profile; the other gets one Space of its name; standard's stay behind")
+        expect(custom[profileOne]?.profileID == opened.profileID && custom[profileTwo]?.profileID == projectsProfile.id
+               && custom[.standard] == nil, "Each chosen Arc Profile's destination is its mapped Parc Profile")
+        expect(customState.profiles.count == customBefore.profiles.count + 1
+               && !customState.spaces.contains { $0.profileID == namesake }
+               && customState.profiles.first { $0.id == opened.profileID }?.name
+                   == customBefore.profiles.first { $0.id == opened.profileID }?.name,
+               "A Parc Profile named like the primary is left alone, and the opened Profile keeps its name")
+        expect(customState.tabs.filter { $0.kind == .favorite && $0.profileID == projectsProfile.id }.map(\.savedURL)
+               == ["https://calendar.example.test/"]
+               && !customState.tabs.contains { $0.kind == .favorite && $0.profileID == opened.profileID },
+               "Favorites follow their own Arc Profile; the unchosen standard Profile's don't come")
+
         print("\(checks) Arc sidebar import parsing/store assertions passed; synthetic fixtures only.")
     }
 

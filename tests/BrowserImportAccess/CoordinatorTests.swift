@@ -267,6 +267,7 @@ import AppKit
         checks += try adBlockerCoordinatorChecks(directory: directory, window: window, source: impostor)
         checks += try backgroundCoordinatorChecks(directory: directory, source: impostor)
         checks += try arcCoordinatorChecks(directory: directory, window: window)
+        checks += try profileMappingChecks(directory: directory, window: window)
         PCNativeBrowserApplication.acceptsBrowserImport = false
         print("\(checks) import owner/access/password assertions passed; isolated source fixtures only.")
     }
