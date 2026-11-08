@@ -62,6 +62,10 @@ class FairPlayHlsKeyLoaderClient {
   // a URI: |url| is the request URL's absoluteString. Legacy pages hear it as
   // `webkitneedkey` (WebKit's keyNeeded in shouldWaitForLoadingOfResource).
   virtual void OnKeyLoadingRequest(const std::string& url) = 0;
+  // The detached CDM no longer owns any request this loader can answer.
+  // Posted after withdrawal and queued SPC work. Keep the CDM alive until
+  // this callback; reattaching it cancels the report.
+  virtual void OnDetachedCdmIdle(FairPlayCdm*) {}
 };
 
 // One per FairPlayHlsPlayer asset, on the CDM's and player's owner sequence:

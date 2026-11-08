@@ -368,6 +368,12 @@ class FairPlayHlsPlayerService::KeyLoaderClient final
   void OnKeyLoadingRequest(const std::string& url) override {
     service_->OnKeyLoadingRequest(url);
   }
+  void OnDetachedCdmIdle(fp::FairPlayCdm* cdm) override {
+    std::erase_if(service_->detached_cdm_context_refs_,
+                 [cdm](const std::unique_ptr<CdmContextRef>& ref) {
+                   return ref->GetCdmContext()->GetFairPlayCdm() == cdm;
+                 });
+  }
 
  private:
   const raw_ptr<FairPlayHlsPlayerService> service_;
@@ -584,7 +590,7 @@ void FairPlayHlsPlayerService::SetCdm(
       return;
     }
   }
-  // A CDM it replaces may still answer a request it took, as one detached.
+  // Keep the replaced CDM until the loader reports its withdrawal complete.
   if (key_loader_ && cdm_context_ref_ &&
       cdm_context_ref_->GetCdmContext() != cdm_context) {
     detached_cdm_context_refs_.push_back(std::move(cdm_context_ref_));
