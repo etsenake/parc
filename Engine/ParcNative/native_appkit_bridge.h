@@ -356,6 +356,8 @@ NS_SWIFT_UI_ACTOR
 NS_SWIFT_UI_ACTOR
 @protocol PCNativeAirPlayThemeSource <NSObject>
 - (nullable NSColor*)airPlayThemeTintColor;
+// The same on a light surface (the controls' overflow menu on a light page).
+- (nullable NSColor*)airPlayThemeTintColorOnLightSurface;
 @end
 #define PCNativeAirPlayThemeDidChangeNotification @"PCNativeAirPlayThemeDidChange"
 

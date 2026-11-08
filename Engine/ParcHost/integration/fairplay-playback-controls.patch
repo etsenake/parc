@@ -9,7 +9,7 @@
    // Requests the media player to start or resume media playback.
    RequestPlay(bool triggered_by_user);
  
-@@ -73,6 +75,23 @@
+@@ -73,6 +75,25 @@
  
    // Request the media player to save the current video frame.
    RequestSaveVideoFrame();
@@ -23,17 +23,19 @@
 +  // The browser's route picker AVOutputContext, by its UUID (empty for
 +  // none), the name of the device it routes to, and whether this element's
 +  // player plays to it (setWirelessPlaybackTarget and
-+  // setShouldPlayToPlaybackTarget); `tint_argb` is the window's Space tint
-+  // for AirPlay (the Mini Player's), 0 for none.
++  // setShouldPlayToPlaybackTarget); `tint_argb` and `tint_on_light_argb`
++  // are the window's Space tint for AirPlay on dark and on light surfaces,
++  // 0 for none.
 +  ParcSetPlaybackTarget(string output_context_id, string device_name,
-+                        bool should_play, uint32 tint_argb);
++                        bool should_play, uint32 tint_argb,
++                        uint32 tint_on_light_argb);
 +  // The route list this element opened closed without a choice
 +  // (playbackTargetPickerWasDismissed).
 +  ParcPlaybackTargetPickerDismissed();
  };
  
  // Implemented by the MediaWebContentsObserver. The remote lives in the renderer
-@@ -135,6 +154,19 @@
+@@ -135,6 +156,19 @@
  
    // Notifies the browser process of save video frame's availability.
    OnVideoFrameAvailabilityChanged(bool available);
@@ -526,7 +528,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {
      received_seek_to_time_ = seek_time;
      run_loop_->Quit();
-@@ -166,6 +175,12 @@
+@@ -166,6 +175,13 @@
  
    void RequestMediaRemoting() override {}
    void RequestSaveVideoFrame() override {}
@@ -534,12 +536,13 @@
 +  void ParcSetPlaybackTarget(const std::string& output_context_id,
 +                             const std::string& device_name,
 +                             bool should_play,
-+                             uint32_t tint_argb) override {}
++                             uint32_t tint_argb,
++                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
  
    void RequestVisibility(
        RequestVisibilityCallback request_visibility_callback) override {
-@@ -451,6 +466,19 @@
+@@ -451,6 +467,19 @@
    controller_.reset();
    EXPECT_FALSE(media_session()->IsActive());
    EXPECT_FALSE(media_session()->IsControllable());
@@ -571,7 +574,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -48,6 +51,12 @@
+@@ -48,6 +51,13 @@
        const media::PictureInPictureEventsInfo::AutoPipInfo&
            auto_picture_in_picture_info) override {}
    void RequestSaveVideoFrame() override {}
@@ -579,12 +582,13 @@
 +  void ParcSetPlaybackTarget(const std::string& output_context_id,
 +                             const std::string& device_name,
 +                             bool should_play,
-+                             uint32_t tint_argb) override {}
++                             uint32_t tint_argb,
++                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
  
   private:
    mojo::AssociatedReceiver<media::mojom::MediaPlayer> receiver_{this};
-@@ -519,5 +528,111 @@
+@@ -519,5 +529,111 @@
    EXPECT_FALSE(AudibilityBypassTracker::ClaimGrant(player_id));
  }
  
@@ -708,7 +712,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -191,6 +194,12 @@
+@@ -191,6 +194,13 @@
    void SuspendForFrameClosed() override {}
    void RequestMediaRemoting() override {}
    void RequestSaveVideoFrame() override {}
@@ -716,7 +720,8 @@
 +  void ParcSetPlaybackTarget(const std::string& output_context_id,
 +                             const std::string& device_name,
 +                             bool should_play,
-+                             uint32_t tint_argb) override {}
++                             uint32_t tint_argb,
++                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
    void RequestVisibility(
        RequestVisibilityCallback request_visibility_callback) override {}
@@ -733,7 +738,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -204,6 +207,12 @@
+@@ -204,6 +207,13 @@
        const media::PictureInPictureEventsInfo::AutoPipInfo&
            auto_picture_in_picture_info) override {}
    void RequestSaveVideoFrame() override {}
@@ -741,7 +746,8 @@
 +  void ParcSetPlaybackTarget(const String& output_context_id,
 +                             const String& device_name,
 +                             bool should_play,
-+                             uint32_t tint_argb) override {}
++                             uint32_t tint_argb,
++                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
  
    // BaseAudioContext override to enable UseCounter.

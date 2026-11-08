@@ -807,25 +807,46 @@ extension ThemeChromePalette {
     /// dark-appearance airPlayActiveColor, lightened toward white only as far
     /// as 4.5:1 needs against the placard's black and the controls' scrim at
     /// the button row (mediaControls.css's gradient at 64.7%, alpha 0.741,
-    /// over a white frame).
-    /// A dynamic colour (a themeless Space's) resolves in the dark appearance,
-    /// its alpha laid over black.
+    /// over a white frame), which also covers the dark overflow menu
+    /// (#3B3B3B).
     static func airPlayOnDarkSurfaceColor(theme: SpaceTheme) -> NSColor {
-        let tint = ThemeChromePalette(theme: theme, isDark: true).airPlayActiveColor
+        airPlaySurfaceTint(theme: theme, dark: true)
+    }
+
+    /// The tint for the controls' overflow menu on a light page (white): the
+    /// theme's light-appearance airPlayActiveColor, the Mini Player's rule on
+    /// a light card, darkened toward black only as far as 4.5:1 needs.
+    static func airPlayOnLightSurfaceColor(theme: SpaceTheme) -> NSColor {
+        airPlaySurfaceTint(theme: theme, dark: false)
+    }
+
+    /// A dynamic colour (a themeless Space's) resolves in the surface's
+    /// appearance, its alpha laid over the surface.
+    private static func airPlaySurfaceTint(theme: SpaceTheme, dark: Bool) -> NSColor {
+        let tint = ThemeChromePalette(theme: theme, isDark: dark).airPlayActiveColor
         var resolved: NSColor?
-        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance { resolved = tint.usingColorSpace(.sRGB) }
+        NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+            resolved = tint.usingColorSpace(.sRGB)
+        }
         guard let rgb = resolved else { return tint }
         func luminance(_ c: [CGFloat]) -> CGFloat {
             let l = c.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
             return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
         }
-        let scrim = luminance([1 - 0.741, 1 - 0.741, 1 - 0.741])
-        let base = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map { $0 * rgb.alphaComponent }
+        let surface: CGFloat = dark ? luminance([1 - 0.741, 1 - 0.741, 1 - 0.741]) : 1
+        let target: CGFloat = dark ? 1 : 0
+        let base = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map {
+            $0 * rgb.alphaComponent + (dark ? 0 : 1 - rgb.alphaComponent)
+        }
+        func contrast(_ c: [CGFloat]) -> CGFloat {
+            let tint = luminance(c)
+            return (max(tint, surface) + 0.05) / (min(tint, surface) + 0.05)
+        }
         var mix: CGFloat = 0
         var colour = base
-        while mix < 1 && (luminance(colour) + 0.05) / (scrim + 0.05) < 4.5 {
+        while mix < 1 && contrast(colour) < 4.5 {
             mix = min(1, mix + 0.01)
-            colour = base.map { $0 + (1 - $0) * mix }
+            colour = base.map { $0 + (target - $0) * mix }
         }
         return NSColor(srgbRed: colour[0], green: colour[1], blue: colour[2], alpha: 1)
     }

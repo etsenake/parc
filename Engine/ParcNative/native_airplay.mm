@@ -267,6 +267,7 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
     // The Space tint of the window it was last seen in (SpaceTint()), and
     // that window; a background tab's page is in no window.
     uint32_t tint = 0;
+    uint32_t tint_on_light = 0;
     __weak NSWindow* tint_window = nil;
   };
 
@@ -401,7 +402,8 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
           (player.state.plays_to_target || player_id == active_client_ ||
            player_id == picker_client)) {
         content::SetParcPlaybackTarget(player.contents.get(), player_id,
-                                       std::string(), std::string(), false, 0);
+                                       std::string(), std::string(), false, 0,
+                                       0);
         NativeMediaAirPlayChanged(player.contents.get());
       }
     }
@@ -419,21 +421,26 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
       TakeTint(player, WindowOf(player.contents.get()));
       content::SetParcPlaybackTarget(player.contents.get(), *client,
                                      context_id, DeviceName(), true,
-                                     player.tint);
+                                     player.tint, player.tint_on_light);
       NativeMediaAirPlayChanged(player.contents.get());
     }
   }
 
-  // The tint a window gives AirPlay (the Mini Player's), as ARGB in sRGB; 0
-  // when it has none.
-  static uint32_t SpaceTint(NSWindow* window) {
+  // The tint a window gives AirPlay on dark or light surfaces, as ARGB in
+  // sRGB; 0 when it has none.
+  static uint32_t SpaceTint(NSWindow* window, bool on_light_surface = false) {
     id delegate = window.delegate;
-    if (![delegate respondsToSelector:@selector(airPlayThemeTintColor)]) {
+    SEL selector = on_light_surface
+                       ? @selector(airPlayThemeTintColorOnLightSurface)
+                       : @selector(airPlayThemeTintColor);
+    if (![delegate respondsToSelector:selector]) {
       return 0;
     }
-    NSColor* color =
-        [[(id<PCNativeAirPlayThemeSource>)delegate airPlayThemeTintColor]
-            colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    id<PCNativeAirPlayThemeSource> source = delegate;
+    NSColor* tint = on_light_surface
+                        ? [source airPlayThemeTintColorOnLightSurface]
+                        : [source airPlayThemeTintColor];
+    NSColor* color = [tint colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
     if (!color) {
       return 0;
     }
@@ -454,6 +461,7 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
   static void TakeTint(Player& player, NSWindow* window) {
     if (const uint32_t tint = SpaceTint(window)) {
       player.tint = tint;
+      player.tint_on_light = SpaceTint(window, /*on_light_surface=*/true);
       player.tint_window = window;
     }
   }
@@ -472,15 +480,15 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
     if (!player.state.plays_to_target || !from_window) {
       return;
     }
-    const uint32_t previous = player.tint;
+    const std::pair previous = {player.tint, player.tint_on_light};
     TakeTint(player, window);
-    if (player.tint == previous) {
+    if (std::pair(player.tint, player.tint_on_light) == previous) {
       return;
     }
     content::SetParcPlaybackTarget(
         player.contents.get(), *active_client_,
         base::SysNSStringToUTF8(Read(context_, @"contextID") ?: @""),
-        DeviceName(), true, player.tint);
+        DeviceName(), true, player.tint, player.tint_on_light);
   }
 
  private:

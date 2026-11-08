@@ -16328,6 +16328,9 @@ extension BrowserWindowController: PCNativeAirPlayThemeSource {
     func airPlayThemeTintColor() -> NSColor? {
         ThemeChromePalette.airPlayOnDarkSurfaceColor(theme: rootView.paletteTheme)
     }
+    func airPlayThemeTintColorOnLightSurface() -> NSColor? {
+        ThemeChromePalette.airPlayOnLightSurfaceColor(theme: rootView.paletteTheme)
+    }
 }
 
 extension PCNativePage {
