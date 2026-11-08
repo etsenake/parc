@@ -57,6 +57,23 @@ class Recovery(unittest.TestCase):
         self.assertEqual(self.marker.read_bytes(),self.before)
         self.assertFalse((self.root/'evidence.json').exists())
 
+    def test_replaced_inputs_resume_only_when_superseded(self):
+        self.state['source_fingerprint']='new source'
+        with patch.object(release_recover.os,'killpg',side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(ValueError,'inputs changed'):self.recover()
+            self.assertEqual(self.marker.read_bytes(),self.before)
+            release_recover.recover(self.root,self.root,12345,self.root/'evidence.json',inputs_replaced=True)
+        receipt=json.loads(self.marker.read_text())
+        self.assertEqual(receipt['phase'],'build-failed'); self.assertIn('superseding',receipt['error'])
+        self.assertEqual((self.output/'compiled.o').read_bytes(),b'valuable compiled output')
+
+    def test_replaced_inputs_still_require_unchanged_arguments(self):
+        (self.output/'args.gn').write_bytes(b'changed recipe')
+        with patch.object(release_recover.os,'killpg',side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(ValueError,'GN arguments'):
+                release_recover.recover(self.root,self.root,12345,self.root/'evidence.json',inputs_replaced=True)
+        self.assertEqual(self.marker.read_bytes(),self.before)
+
     def test_built_receipt_needs_no_cancellation_recovery(self):
         self.receipt['phase']='built';self.marker.write_text(json.dumps(self.receipt))
         with patch.object(release_recover.os,'killpg') as signal:self.recover();signal.assert_not_called()

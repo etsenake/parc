@@ -228,6 +228,20 @@ class Release:
         self.emit("Abandoned the stopped, unpublished " + prior["release_type"] + " release " + prior.get("tag", prior["id"])
                   + " so a " + self.kind + " release can start; its run, source archive and engine objects were kept")
 
+    def superseded_shipping_build(self):
+        """The newest run this kind superseded whose shipping build was cancelled mid-operation."""
+        found = []
+        for path in self.base.glob('*/state.json'):
+            try:
+                state = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if (state.get('status') == 'abandoned' and state.get('superseded_by') == self.kind
+                    and not state.get('cancelled_build_recovered') and state.get('command_pid')
+                    and 'shipping-build' in state.get('command', [])):
+                found.append(state)
+        return max(found, key=lambda state: state.get('abandoned_utc', '')) if found else None
+
     def refresh_inputs(self):
         """Explicitly replace failed, unpublished build inputs; retain the old archive."""
         if self.git('status', '--porcelain'):
@@ -406,11 +420,20 @@ class Release:
                 workspace = workspace.with_name(workspace.name + '-' + sha(lock)[:12])
                 self.checkpoint(workspace=str(workspace))
                 self.command([sys.executable, script, 'sync', '--workspace', workspace], name='engine-sync')
+        if not self.state.get('interrupted_process_group'):
+            superseded = self.superseded_shipping_build()
+            if superseded:
+                self.checkpoint(interrupted_process_group=superseded['command_pid'],
+                                interrupted_inputs_replaced=superseded['id'])
         if self.state.get('interrupted_process_group'):
             self.command([sys.executable, self.root / 'scripts/release_recover.py', source, workspace,
-                          str(self.state['interrupted_process_group']), Path(self.state['run']) / 'cancelled-shipping-receipt.json'],
+                          str(self.state['interrupted_process_group']), Path(self.state['run']) / 'cancelled-shipping-receipt.json',
+                          *(['--inputs-replaced'] if self.state.get('interrupted_inputs_replaced') else [])],
                          name='recover-cancelled-engine')
-            self.checkpoint(interrupted_process_group=None)
+            if self.state.get('interrupted_inputs_replaced'):
+                retired = self.base / self.state['interrupted_inputs_replaced'] / 'state.json'
+                save(retired, dict(json.loads(retired.read_text()), cancelled_build_recovered=self.state['id']))
+            self.checkpoint(interrupted_process_group=None, interrupted_inputs_replaced=None)
         self.git("fetch", "origin", "main", retries=2)
         self.command([sys.executable, script, "overlay-check", "--workspace", workspace, "--manifest", overlay], name="overlay-check")
         current = json.loads((workspace / ".parc-engine-source.json").read_text())

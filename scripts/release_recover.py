@@ -7,7 +7,12 @@ from pathlib import Path
 import sys
 
 
-def recover(source, workspace, process_group, evidence):
+def recover(source, workspace, process_group, evidence, inputs_replaced=False):
+    """inputs_replaced: a superseding release replaced the cancelled run's source on purpose.
+
+    The source fingerprint and overlay may then differ; GN arguments must still match and
+    the incremental build recompiles whatever changed.
+    """
     spec = importlib.util.spec_from_file_location('parc_cancelled_engine', source / 'scripts/engine-source.py')
     engine = importlib.util.module_from_spec(spec); spec.loader.exec_module(engine)
     lock, identity = engine.load_lock()
@@ -29,9 +34,10 @@ def recover(source, workspace, process_group, evidence):
         arguments = engine.shipping_arguments(workspace, env)
         output = workspace / 'chromium/src/out' / engine.SHIPPING_CONFIGURATION
         if ((output / 'args.gn').read_bytes() != arguments
-                or receipt['args_sha256'] != engine.digest(arguments)
-                or receipt['source_fingerprint'] != state['source_fingerprint']
-                or receipt['overlay'] != state.get('overlay')):
+                or receipt['args_sha256'] != engine.digest(arguments)):
+            raise ValueError('Cancelled build inputs changed (GN arguments); receipt and objects preserved')
+        if not inputs_replaced and (receipt['source_fingerprint'] != state['source_fingerprint']
+                                    or receipt['overlay'] != state.get('overlay')):
             raise ValueError('Cancelled build inputs changed; receipt and objects preserved')
         # The previous bytes remain evidence. Only convert the verified cancelled
         # operation to a resumable failure; GN/Ninja still must actually succeed.
@@ -39,10 +45,13 @@ def recover(source, workspace, process_group, evidence):
         if not evidence.exists():
             evidence.write_bytes((workspace / engine.SHIPPING_MARKER).read_bytes())
         receipt.update(phase=receipt['phase'].replace('-in-progress', '-failed'),
-                       error='Owner cancelled process group ' + str(process_group) + '; unchanged inputs verified for incremental resume')
+                       error='Owner cancelled process group ' + str(process_group) + '; '
+                             + ('inputs replaced by a superseding release' if inputs_replaced
+                                else 'unchanged inputs verified') + ' for incremental resume')
         engine.write_marker(workspace, receipt, engine.SHIPPING_MARKER)
         print('Verified cancelled engine operation; preserved objects/cache and enabled incremental resume', flush=True)
 
 
 if __name__ == '__main__':
-    recover(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), Path(sys.argv[4]))
+    recover(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), Path(sys.argv[4]),
+            inputs_replaced='--inputs-replaced' in sys.argv[5:])

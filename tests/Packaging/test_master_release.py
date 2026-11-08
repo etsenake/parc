@@ -90,6 +90,19 @@ class Repository(unittest.TestCase):
         minor.prepare()
         self.assertEqual(minor.state['version'], {'version': '1.1.0', 'build': 3})
 
+    def test_superseding_release_finds_the_cancelled_shipping_build(self):
+        patch_run = release.Release(self.root, 'patch'); patch_run.start()
+        patch_run.prepare()
+        patch_run.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=999999,
+                             command=['python3', 'engine-source.py', 'shipping-build'])
+        for item in patch_run.locks: item.close()
+        with patch.object(release_lease, 'release'):
+            minor = self.runner()
+        self.assertEqual(minor.superseded_shipping_build()['id'], patch_run.state['id'])
+        retired = Path(patch_run.state['run']) / 'state.json'
+        release.save(retired, dict(json.loads(retired.read_text()), cancelled_build_recovered=minor.state['id']))
+        self.assertIsNone(minor.superseded_shipping_build())
+
     def test_other_type_refuses_published_or_live_release(self):
         patch_run = release.Release(self.root, 'patch'); patch_run.start()
         patch_run.prepare()
