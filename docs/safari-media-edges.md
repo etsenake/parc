@@ -484,8 +484,10 @@ included, now AirPlays from the page's button and the Mini Player through the
 system route list: **fixed** c3c53b1d (no device picker of Parc's own: listing
 devices needs Apple-only entitlements; Josh agreed). Josh approved the Mini
 controls, Remote Playback opening AirPlay, and
-`webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint for
-the placard glyph and button states **in progress**). A ManagedMediaSource element doesn't switch to its HLS
+`webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint, computed for
+the always-dark placard and scrim with at least 4.5:1, recolouring live:
+f339440b; the narrow-video overflow menu item on a light page **in
+progress**). A ManagedMediaSource element doesn't switch to its HLS
 `<source>` alternative when a target is picked, as Safari does: **in progress**
 (AIRPLAY-3). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
 **fixed** 1c03b194 (they move to AVPlayer and back seamlessly; Safari never
