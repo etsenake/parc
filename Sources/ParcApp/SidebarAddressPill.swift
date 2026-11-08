@@ -79,12 +79,16 @@ import QuartzCore
         applyFill(animated: animated)
     }
 
+    /// A theme-free shared-quote fill is a system colour that equals itself
+    /// across appearances, so `style` alone never re-resolves it.
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyFill(animated: false) }
+
     private func applyFill(animated: Bool) {
         guard let layer else { return }
         let color: CGColor
         switch style {
         case .urlBar: color = Self.fill(dark: dark, hovered: hovered, incognito: incognito).cgColor
-        case .sharedQuote(let fill): color = fill.cgColor
+        case .sharedQuote(let fill): color = fill.cgColor(in: effectiveAppearance)
         }
         guard layer.backgroundColor != color else { return }
         if animated, style == .urlBar, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {

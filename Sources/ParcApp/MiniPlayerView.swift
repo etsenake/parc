@@ -62,6 +62,7 @@ final class MiniPlayerDeck: NSView {
     private var focusObserver: NSObjectProtocol?
     private var motionObserver: NSObjectProtocol?
     override var isFlipped: Bool { true }
+    private static let shadowPad: CGFloat = 4
     var desiredHeight: CGFloat {
         guard !order.isEmpty else { return 0 }
         let controlsHeight: CGFloat = order.count > 1 ? 22 : 0
@@ -204,22 +205,29 @@ final class MiniPlayerDeck: NSView {
         expand.setAccessibilityExpanded(expanded)
         expand.cell?.setAccessibilityExpanded(expanded)
         expand.frame = NSRect(x: 0, y: 0, width: bounds.width, height: header)
-        scroll.frame = NSRect(x: 0, y: header, width: bounds.width, height: max(0, bounds.height - header))
+        // The clip view reaches past the cards by their shadow's radius, so it
+        // doesn't cut the shadow off; the overhang takes no clicks. A list
+        // scrolled past its cap keeps its vertical edges.
+        let pad = Self.shadowPad
+        let scrolls = expanded && order.reduce(0) { $0 + (rows[$1]?.desiredHeight ?? 0) + 5 } - 5 > 276
+        let vPad = scrolls ? 0 : pad
+        scroll.frame = NSRect(x: -pad, y: header - vPad, width: bounds.width + 2 * pad, height: max(0, bounds.height - header) + 2 * vPad)
+        let width = max(0, scroll.contentSize.width - 2 * pad)
         if expanded {
-            var y: CGFloat = 0
+            var y = vPad
             for id in order {
                 guard let row = rows[id] else { continue }
                 row.setPresentation(expanded: true, front: true)
                 row.isHidden = false
                 content.addSubview(row, positioned: .above, relativeTo: nil)
                 row.alphaValue = 1
-                row.frame = NSRect(x: 0, y: y, width: scroll.contentSize.width, height: row.desiredHeight)
+                row.frame = NSRect(x: pad, y: y, width: width, height: row.desiredHeight)
                 y += row.desiredHeight + 5
             }
-            content.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(0, y - 5))
+            content.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(2 * vPad, y - 5 + vPad))
         } else {
             let height = 33 + CGFloat(max(0, order.count - 1)) * 7
-            content.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: height)
+            content.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: height + 2 * pad)
             // Add the leading episode last in z-order: the other cards remain
             // visible behind it, but never intercept its controls.
             for (index, id) in order.enumerated().reversed() {
@@ -229,8 +237,8 @@ final class MiniPlayerDeck: NSView {
                 row.isHidden = false
                 content.addSubview(row, positioned: .above, relativeTo: nil)
                 row.alphaValue = max(0.4, 1 - CGFloat(index) * 0.2)
-                row.frame = NSRect(x: inset, y: height - 33 - CGFloat(index) * 7,
-                                   width: max(0, scroll.contentSize.width - 2 * inset), height: 33)
+                row.frame = NSRect(x: pad + inset, y: pad + height - 33 - CGFloat(index) * 7,
+                                   width: max(0, width - 2 * inset), height: 33)
             }
         }
     }
@@ -284,19 +292,21 @@ final class MiniPlayerDeck: NSView {
 @MainActor
 private final class MiniPlayerVolumeSlider: NSSlider {
     var allowsInteraction = false
-    var onHover: ((Bool) -> Void)?
-    private var tracking: NSTrackingArea?
     override func hitTest(_ point: NSPoint) -> NSView? {
         allowsInteraction ? super.hitTest(point) : nil
     }
-    override func updateTrackingAreas() {
-        if let tracking { removeTrackingArea(tracking) }
-        tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
-        addTrackingArea(tracking!)
-        super.updateTrackingAreas()
+}
+
+///
+/// falls outside it, so the clip lives here and the shadow on the row. The
+/// row stays the click and focus target for the card's own area.
+@MainActor
+private final class MiniPlayerSurface: NSView {
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
     }
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
 }
 
 @MainActor
@@ -328,10 +338,10 @@ private final class MiniPlayerRow: NSView {
     private let volume = MiniPlayerVolumeSlider(value: 1, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let volumeValue = NSTextField(labelWithString: "100%")
     private let unavailable = NSTextField(labelWithString: "")
+    private let surface = MiniPlayerSurface()
     private var volumeExpanded = false
-    private var volumePinned = false
-    private var volumeHover = false
-    private var volumeHoverOff: DispatchWorkItem?
+    private var volumeOpen = false
+    private var volumeDismissal: [Any] = []
     private var restoringVolumeFocus = false
     private var deckExpanded = true
     private var frontCard = true
@@ -357,8 +367,11 @@ private final class MiniPlayerRow: NSView {
         return state
     }
     override init(frame: NSRect) {
-        super.init(frame: frame); wantsLayer = true; layer?.cornerRadius = 8
-        layer?.borderWidth = 1; layer?.masksToBounds = true
+        super.init(frame: frame); wantsLayer = true
+        layer?.shadowRadius = 4; layer?.shadowOffset = .zero; layer?.shadowOpacity = 1
+        surface.wantsLayer = true; surface.layer?.cornerRadius = 8; surface.layer?.cornerCurve = .continuous
+        surface.layer?.masksToBounds = true
+        addSubview(surface)
         setAccessibilityElement(false)
         title.alignment = .left; title.font = .systemFont(ofSize: 12, weight: .medium)
         title.imagePosition = .noImage
@@ -383,11 +396,8 @@ private final class MiniPlayerRow: NSView {
                 self.perform(.toggleMuted)
                 return
             }
-            self.volumePinned.toggle()
-            self.applyVolumeExpansion()
+            self.setVolumeOpen(!self.volumeOpen)
         }
-        volumeButton.onHover = { [weak self] hovering in self?.setVolumeHover(hovering) }
-        volume.onHover = { [weak self] hovering in self?.setVolumeHover(hovering) }
         updateVolumeAccessibility()
         volume.wantsLayer = true; volumeValue.wantsLayer = true
         volume.target = self; volume.action = #selector(volumeChanged); volume.isContinuous = true
@@ -397,7 +407,7 @@ private final class MiniPlayerRow: NSView {
         volumeValue.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
         volumeValue.isHidden = true
         unavailable.font = .systemFont(ofSize: 10); unavailable.lineBreakMode = .byTruncatingTail
-        for view in [title, titleArtwork, marquee, pip, close, play, previous, next, volumeButton, route, mute, microphone, camera, volume, volumeValue, unavailable] { addSubview(view) }
+        for view in [title, titleArtwork, marquee, pip, close, play, previous, next, volumeButton, route, mute, microphone, camera, volume, volumeValue, unavailable] { surface.addSubview(view) }
         for button in [pip, close, play, previous, next, volumeButton, route, mute, microphone, camera] {
             LiveShortcutToolTip.set(button, button.title)
             SidebarAccessibility.label(button, button.title)
@@ -444,10 +454,7 @@ private final class MiniPlayerRow: NSView {
         name(mute, state.muted ? "Unmute Tab" : "Mute Tab")
         name(volumeButton, state.muted ? "Unmute Tab" : "Adjust Tab Volume")
         volumeButton.isHidden = !frontCard || !state.canSetVolume
-        if !state.canSetVolume && (volumeExpanded || volumePinned || volumeHover) {
-            volumePinned = false; volumeHover = false
-            applyVolumeExpansion()
-        }
+        if !state.canSetVolume && (volumeExpanded || volumeOpen) { setVolumeOpen(false) }
         updateVolumeAccessibility()
         updatePresentationVisibility()
         updateRoute()
@@ -561,29 +568,49 @@ private final class MiniPlayerRow: NSView {
         if !shown { routeChooserOpen = false }
         refresh()
     }
-    private func setVolumeHover(_ hovering: Bool) {
-        volumeHoverOff?.cancel(); volumeHoverOff = nil
-        if hovering {
-            volumeHover = true
-            applyVolumeExpansion()
-            return
-        }
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.volumeHoverOff = nil
-            self.volumeHover = false
-            self.applyVolumeExpansion()
-        }
-        volumeHoverOff = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
-    }
-    func collapseVolume() {
-        volumeHoverOff?.cancel(); volumeHoverOff = nil
-        volumePinned = false; volumeHover = false
+    ///
+    /// opens it on hover. A click anywhere else, or Escape, closes it.
+    private func setVolumeOpen(_ open: Bool) {
+        volumeOpen = open && deckExpanded && item?.state.canSetVolume == true
+        if !volumeOpen { endVolumeDismissal() } else if volumeDismissal.isEmpty { watchVolumeDismissal() }
         applyVolumeExpansion()
     }
+    func collapseVolume() { setVolumeOpen(false) }
+    private func watchVolumeDismissal() {
+        let clicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.closeVolume(clickedBy: event) }
+            return event
+        }
+        let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.closeVolume(escape: event) == true } ? nil : event
+        }
+        volumeDismissal = [clicks, escape].compactMap { $0 }
+    }
+    private func endVolumeDismissal() {
+        volumeDismissal.forEach(NSEvent.removeMonitor)
+        volumeDismissal = []
+    }
+    /// The button's own action toggles the drawer, and the slider is inside
+    /// it. Closing shrinks the deck, so it waits until the click has reached
+    /// what it was aimed at, outside any control's tracking loop.
+    private func closeVolume(clickedBy event: NSEvent) {
+        if event.window === window, [volumeButton, volume].contains(where: {
+            $0.bounds.contains($0.convert(event.locationInWindow, from: nil))
+        }) { return }
+        volumeOpen = false; endVolumeDismissal()
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            MainActor.assumeIsolated { self?.applyVolumeExpansion() }
+        }
+    }
+    /// Escape still reaches the page unless the focus is in this card.
+    private func closeVolume(escape event: NSEvent) -> Bool {
+        guard event.keyCode == 53, event.window === window else { return false }
+        let focused = focusedControl != nil || window?.firstResponder === self
+        setVolumeOpen(false)
+        return focused
+    }
     private func applyVolumeExpansion() {
-        let next = deckExpanded && item?.state.canSetVolume == true && (volumePinned || volumeHover)
+        let next = deckExpanded && item?.state.canSetVolume == true && volumeOpen
         guard volumeExpanded != next else {
             updateVolumeAccessibility()
             return
@@ -640,6 +667,15 @@ private final class MiniPlayerRow: NSView {
     }
     override func mouseDown(with event: NSEvent) { reveal() }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateRouteMotion() }
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window, volumeOpen {
+            volumeOpen = false; volumeExpanded = false; endVolumeDismissal()
+            updateVolumeAccessibility(); needsLayout = true
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyPalette() }
+    deinit { volumeDismissal.forEach(NSEvent.removeMonitor) }
     /// AppKit gives a clicked view that accepts first responder the focus, and
     /// with it this card's ring. A click reveals the page instead; only the key
     /// view loop (Tab) focuses the card.
@@ -660,10 +696,9 @@ private final class MiniPlayerRow: NSView {
         let focus = focusedControl
         deckExpanded = expanded; frontCard = front
         if !deckExpanded {
-            volumeHoverOff?.cancel(); volumeHoverOff = nil
-            volumePinned = false; volumeHover = false; volumeExpanded = false
+            volumeOpen = false; volumeExpanded = false; endVolumeDismissal()
         } else {
-            volumeExpanded = item?.state.canSetVolume == true && (volumePinned || volumeHover)
+            volumeExpanded = item?.state.canSetVolume == true && volumeOpen
         }
         updatePresentationVisibility()
         updateVolumeAccessibility()
@@ -707,6 +742,7 @@ private final class MiniPlayerRow: NSView {
     }
     override func layout() {
         super.layout()
+        surface.frame = bounds
         let chrome: CGFloat = deckExpanded ? 33 : 0
         title.frame = NSRect(x: 4, y: 0, width: max(0, bounds.width - 62), height: 33)
         marquee.frame = NSRect(x: 10, y: 7, width: max(0, bounds.width - 68), height: 19)
@@ -745,9 +781,16 @@ private final class MiniPlayerRow: NSView {
         unavailable.frame = NSRect(x: 9, y: desiredHeight - 25, width: max(0, bounds.width - 18), height: 20)
         unavailable.isHidden = !deckExpanded || unavailable.stringValue.isEmpty
     }
+    ///
+    /// backgroundExtra, and a 0.5-point white 10% border only in a dark
+    ///
+    /// 0.2 in dark with radius 4, read as the card's shadow.
     private func applyPalette() {
-        layer?.backgroundColor = (palette?.backgroundExtra ?? NSColor.white.withAlphaComponent(0.35)).cgColor
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        let dark = palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+        surface.layer?.backgroundColor = palette.map { $0.backgroundExtra.cgColor(in: $0.contentAppearance) } ?? NSColor.white.withAlphaComponent(0.35).cgColor
+        surface.layer?.borderWidth = dark ? 0.5 : 0
+        surface.layer?.borderColor = NSColor.white.withAlphaComponent(0.1).cgColor
+        layer?.shadowColor = NSColor.black.withAlphaComponent(dark ? 0.2 : 0.08).cgColor
         for button in [title, pip, close, play, previous, next, volumeButton, route, mute, microphone, camera] {
             button.contentTintColor = palette?.title ?? .labelColor
         }

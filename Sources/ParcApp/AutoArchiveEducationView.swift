@@ -94,7 +94,7 @@ final class AutoArchiveEducationView: NSView, NSTextViewDelegate {
 
     private func refreshColors() {
         let dark = palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
-        layer?.backgroundColor = (palette?.backgroundExtra ?? NSColor.windowBackgroundColor).cgColor
+        layer?.backgroundColor = (palette?.backgroundExtra ?? .windowBackgroundColor).cgColor(in: palette?.contentAppearance ?? effectiveAppearance)
         title.textColor = (dark ? NSColor.white : .black).withAlphaComponent(0.8)
         let bodyColor = NSColor(named: "ForegroundSecondary") ?? .secondaryLabelColor
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
@@ -110,7 +110,7 @@ final class AutoArchiveEducationView: NSView, NSTextViewDelegate {
             .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .light),
             .foregroundColor: dark ? NSColor.white : NSColor.black
         ])
-        dismiss.layer?.backgroundColor = (palette?.focus ?? NSColor.controlBackgroundColor).cgColor
+        dismiss.layer?.backgroundColor = (palette?.focus ?? .controlBackgroundColor).cgColor(in: palette?.contentAppearance ?? effectiveAppearance)
         needsDisplay = true
     }
 

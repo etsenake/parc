@@ -4144,7 +4144,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             }
             view.wantsLayer = true
             view.layer?.borderWidth = selected ? 2 : (focused ? 1 : 0)
-            view.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(selected ? 0.8 : 0.4).cgColor
+            view.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(selected ? 0.8 : 0.4).cgColor(in: view.effectiveAppearance)
             view.layer?.cornerRadius = 7
         }
         list.select(itemSelection.items, single: itemSelection.singleItem, active: selectionActive)

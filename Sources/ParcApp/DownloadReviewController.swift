@@ -184,7 +184,7 @@ final class DownloadReviewController: NSWindowController, NSTextFieldDelegate, N
             self?.justificationLabel.textColor = palette.foregroundPrimary
             self?.justificationCount.textColor = palette.foregroundSecondary
             title?.textColor = palette.foregroundPrimary
-            identity?.layer?.backgroundColor = palette.backgroundExtra.cgColor
+            identity?.layer?.backgroundColor = palette.backgroundExtra.cgColor(in: palette.contentAppearance)
         }
         root.onPaletteChange?(root.palette)
         update(review)

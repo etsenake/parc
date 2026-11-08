@@ -202,8 +202,10 @@ final class FavoritesEmptyStateView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(!animates)
         CATransaction.setAnimationDuration(0.18); CATransaction.setAnimationTimingFunction(easeOut)
-        card.backgroundColor = colors.backgroundExtra.withAlphaComponent(dragging ? 0.3 : 0.15).cgColor
-        innerBorder.colors = [tint.withAlphaComponent(0.2).cgColor, tint.withAlphaComponent(0.8).cgColor]
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            card.backgroundColor = colors.backgroundExtra.withAlphaComponent(dragging ? 0.3 : 0.15).cgColor
+            innerBorder.colors = [tint.withAlphaComponent(0.2).cgColor, tint.withAlphaComponent(0.8).cgColor]
+        }
         outerBorder.strokeColor = colors.maxContrast.withAlphaComponent(0.3).cgColor
         outerBorder.lineDashPattern = dragging ? nil : [5]
         CATransaction.commit()

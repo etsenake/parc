@@ -2,6 +2,18 @@ import AppKit
 import MetalKit
 import simd
 
+extension NSColor {
+    /// A layer's fixed colour, resolved in the appearance it is shown in. A
+    /// system colour's `cgColor` otherwise resolves in AppKit's current
+    /// drawing appearance, which during an appearance switch is still the old one.
+    func cgColor(in appearance: NSAppearance?) -> CGColor {
+        guard let appearance else { return cgColor }
+        var resolved: CGColor?
+        appearance.performAsCurrentDrawingAppearance { resolved = cgColor }
+        return resolved ?? cgColor
+    }
+}
+
 /// Source-owned implementation of the installed WindowTheme renderer's measured
 /// color math. The evidence and remaining parity limits live in the theme
 ///

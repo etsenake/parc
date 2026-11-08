@@ -141,10 +141,10 @@ final class ShortcutRecorderView: NSView {
             (explicitDark ? NSColor.white.withAlphaComponent(0.8) : gray(light: 0.523, dark: 0.494, isDark: dark))
         CATransaction.begin(); CATransaction.setDisableActions(true)
         borderLayer.frame = bounds; borderLayer.cornerRadius = 6; borderLayer.cornerCurve = .continuous
-        borderLayer.borderWidth = 1; borderLayer.borderColor = outline.cgColor
-        borderLayer.backgroundColor = background.cgColor
+        borderLayer.borderWidth = 1; borderLayer.borderColor = outline.cgColor(in: effectiveAppearance)
+        borderLayer.backgroundColor = background.cgColor(in: effectiveAppearance)
         focusBorderLayer.frame = bounds; focusBorderLayer.cornerRadius = 6; focusBorderLayer.cornerCurve = .continuous
-        focusBorderLayer.borderColor = tint?.cgColor; focusBorderLayer.borderWidth = focused ? 1 : 0
+        focusBorderLayer.borderColor = tint?.cgColor(in: effectiveAppearance); focusBorderLayer.borderWidth = focused ? 1 : 0
         focusBorderLayer.opacity = 0
         label.stringValue = isRecording && !pendingSymbols.isEmpty ? pendingSymbols.joined() : (shortcut?.display ?? "---")
         label.textColor = ink

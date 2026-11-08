@@ -183,20 +183,24 @@ final class SidebarFolderIconView: NSView {
             custom.contents = image?.layerContents(forContentsScale: scale)
         } else {
             custom.contents = nil; custom.mask = image == nil ? nil : customMask
-            custom.backgroundColor = image == nil ? nil : strokeColor.cgColor
+            custom.backgroundColor = image == nil ? nil : strokeColor.cgColor(in: effectiveAppearance)
             customMask.contentsScale = scale
             customMask.contents = image?.layerContents(forContentsScale: scale)
         }
         applyState(animated: false)
     }
 
+    /// A system colour equals itself across appearances, so the colour
+    /// setters alone never re-resolve it.
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyColors() }
+
     private func applyColors() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        back.strokeColor = strokeColor.cgColor; back.fillColor = backFillColor.cgColor
-        frontPath.strokeColor = strokeColor.cgColor; frontPath.fillColor = frontFillColor.cgColor
-        ellipsis.backgroundColor = strokeColor.cgColor
-        if custom.mask != nil { custom.backgroundColor = strokeColor.cgColor }
+        back.strokeColor = strokeColor.cgColor(in: effectiveAppearance); back.fillColor = backFillColor.cgColor(in: effectiveAppearance)
+        frontPath.strokeColor = strokeColor.cgColor(in: effectiveAppearance); frontPath.fillColor = frontFillColor.cgColor(in: effectiveAppearance)
+        ellipsis.backgroundColor = strokeColor.cgColor(in: effectiveAppearance)
+        if custom.mask != nil { custom.backgroundColor = strokeColor.cgColor(in: effectiveAppearance) }
     }
 
     private static let ellipsisImage = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: nil)?

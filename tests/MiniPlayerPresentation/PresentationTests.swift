@@ -167,12 +167,77 @@ import AppKit
         let onlySlider = descendants(onlyRow).compactMap { $0 as? NSSlider }.first!
         onlyVolume.actionBlock?(); deck.frame.size.height = deck.desiredHeight; deck.layoutSubtreeIfNeeded()
         check(deck.desiredHeight == 99 && onlySlider.alphaValue == 1, "volume slider stays inside the hovered card")
+        check(onlyVolume.onHover == nil, "hovering the volume button does not open it")
+        func deliver(_ event: NSEvent) {
+            NSApp.postEvent(event, atStart: false)
+            while let next = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) { NSApp.sendEvent(next) }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+            deck.frame.size.height = deck.desiredHeight; deck.layoutSubtreeIfNeeded()
+        }
+        func click(_ view: NSView) {
+            let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                deliver(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                           context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+            }
+        }
+        func escape() {
+            deliver(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                     context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!)
+        }
+        click(onlySlider)
+        check(deck.desiredHeight == 99, "a click on the slider keeps the volume open")
+        click(onlyVolume)
+        check(deck.desiredHeight == 99, "a click on the volume button is left to its own toggle")
+        let onlyTitle = descendants(onlyRow).compactMap { $0 as? ActionButton }.first { $0.parcTooltip?.label == "Back to Tab" }!
+        let titlePoint = onlyTitle.convert(NSPoint(x: onlyTitle.bounds.midX, y: onlyTitle.bounds.midY), to: nil)
+        NSApp.sendEvent(NSEvent.mouseEvent(with: .leftMouseDown, location: titlePoint, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                           context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+        check(deck.desiredHeight == 99, "the deck keeps its frames while the click that closes the volume is dispatched")
+        click(onlyTitle)
+        check(deck.desiredHeight == 66 && onlySlider.alphaValue == 0, "a click elsewhere closes the volume")
+        onlyVolume.actionBlock?(); deck.frame.size.height = deck.desiredHeight; deck.layoutSubtreeIfNeeded()
+        check(deck.desiredHeight == 99, "volume reopens by click")
+        escape()
+        check(deck.desiredHeight == 66 && onlySlider.alphaValue == 0, "Escape closes the volume")
+        onlyVolume.actionBlock?(); deck.frame.size.height = deck.desiredHeight; deck.layoutSubtreeIfNeeded()
         _ = window.makeFirstResponder(nil)
         deck.updateHover(false)
         RunLoop.current.run(until: Date(timeIntervalSinceNow: MiniPlayerMotion.hoverOffDelay + 0.1))
         deck.layoutSubtreeIfNeeded()
         check(deck.desiredHeight == 33 && onlySlider.alphaValue == 0, "hover-off returns to compact transport")
         window.close()
+        checkAppearanceSwitch()
         print("Mini Player presentation checks passed")
+    }
+    /// The window's root rebuilds a theme-free palette inside its appearance
+    /// callback, where AppKit still draws in the old appearance.
+    final class Root: NSView {
+        var onSwitch: (() -> Void)?
+        override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); onSwitch?() }
+    }
+    static func checkAppearanceSwitch() {
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 240, height: 100),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let root = Root(frame: NSRect(x: 0, y: 0, width: 240, height: 100)), deck = MiniPlayerDeck(frame: NSRect(x: 0, y: 0, width: 212, height: 33))
+        root.addSubview(deck); window.contentView = root
+        func palette() -> ThemeChromePalette { ThemeChromePalette(theme: SpaceTheme(), appearance: root.effectiveAppearance) }
+        root.onSwitch = { deck.palette = palette() }
+        deck.palette = palette()
+        let page = PCNativePage(), state = PCNativeMediaState(identifier: "switch")
+        page.mediaState = state
+        deck.update([MiniPlayerItem(page: page, state: state, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})])
+        deck.layoutSubtreeIfNeeded()
+        let surface = descendants(deck).first { String(describing: type(of: $0)) == "MiniPlayerSurface" }!
+        func luminance() -> CGFloat {
+            surface.layer?.backgroundColor?.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)?.components?.first ?? -1
+        }
+        check(luminance() > 0.9, "a theme-free card starts light in light mode")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        check(luminance() < 0.3, "a theme-free card turns dark when the app switches to dark mode")
+        NSApp.appearance = nil
+        window.close()
     }
 }

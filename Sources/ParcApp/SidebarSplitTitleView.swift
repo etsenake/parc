@@ -95,7 +95,7 @@ final class SidebarSplitTitleView: NSView {
         titleLabel.textColor = title; titleField.textColor = title
         countLabel.textColor = countText ?? secondary
         //
-        countIcon.layer?.backgroundColor = countBackground?.withAlphaComponent(SidebarSplitCellLayout.countBackgroundAlpha).cgColor
+        countIcon.layer?.backgroundColor = countBackground?.withAlphaComponent(SidebarSplitCellLayout.countBackgroundAlpha).cgColor(in: effectiveAppearance)
         iconView.contentTintColor = SidebarSplitCellLayout.customIconTint(dark: dark)
     }
     @discardableResult func begin(title: String, finished: @escaping (String?) -> Void) -> Bool {

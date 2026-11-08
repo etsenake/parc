@@ -336,7 +336,7 @@ final class SidebarRowBackgroundView: NSView {
         fillLayer.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
         ringLayer.isHidden = !state.highlighted
         ringLayer.borderWidth = SidebarRowAppearance.ringWidth
-        ringLayer.borderColor = ringColor.cgColor
+        ringLayer.borderColor = ringColor.cgColor(in: effectiveAppearance)
         paintedBounds = bounds
     }
 }

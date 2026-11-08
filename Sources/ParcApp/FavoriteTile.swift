@@ -465,7 +465,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         cell.icon.contents = cell.custom.map { FavoriteTileCell.tinted($0, color: glyphColor) } ?? cell.favicon
         cell.glyph.string = cell.icon.contents == nil ? cell.monogram : ""
-        cell.glyph.foregroundColor = glyphColor.cgColor
+        cell.glyph.foregroundColor = glyphColor.cgColor(in: effectiveAppearance)
         CATransaction.commit()
         cell.layoutGlyph(in: cell.fill.bounds.size, single: cells.count == 1)
     }
