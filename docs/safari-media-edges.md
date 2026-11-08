@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **92**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **93**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -724,7 +724,8 @@ H.264, AAC, AC-3 and E-AC-3 in TS failed to play: **fixed** bea69854 (mpts init 
 `TransportStreamIdentifier` key ID as WebKit; AC-3/E-AC-3 decryption
 **unchecked**, no licensed content). An HE-AAC stream declared in the PMT but
 only implied by its config is named plain AAC (possibly losing the high
-band): **in progress** (SBS-2c2). One `encrypted` event for a SourceBuffer
+band): **fixed** d5889317 (the PMT's declared type is kept, as Apple's
+parser). One `encrypted` event for a SourceBuffer
 holding video and audio (one key serves both, as WebKit), and rare
 descriptor-order and type-mismatch cases: **left**. MPEG-1/2 video in TS played black: **fixed** 9f8ba00d (a TS
 elementary-stream parser with Safari's types, key frames, timestamps and pixel
