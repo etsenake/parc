@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 642,
+  "version": 643,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1355,7 +1355,7 @@
     {
       "source": "Engine/ParcNative/native_import_session.mm",
       "target": "cef/libcef/browser/parc_native/native_import_session.mm",
-      "sha256": "33936109411855fd494e9bfbaf8825ede2644a25900724ab246fd58183dc8deb"
+      "sha256": "b5a1f79b36ef95506fe7871614732197f508be931958376756b5f97054afb4c0"
     },
     {
       "source": "Engine/ParcNative/native_import_writer.mm",

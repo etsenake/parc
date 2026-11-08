@@ -1,8 +1,7 @@
 import AppKit
 import Combine
 
-/// The chooser owns one native import at a time. Each continuation is tied to
-/// the original window, source profile and durable local destination.
+/// Bookmarks are read first; remaining data keeps importing after results close.
 @MainActor
 final class BrowserImportCoordinator {
     enum Stage { case sources, loading, profiles, safariAccess, destination, importing, passwordChoice, safariPasswords, bookmarks, finished }
@@ -57,12 +56,40 @@ final class BrowserImportCoordinator {
     private var generation = UUID()
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
+    private static var detachedImports: [BrowserImportCoordinator] = []
+    private var detached = false
+    private var onDetachedAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?
+    private(set) var hasBackgroundWork = false
+    private var backgroundProfiles: [(profile: PCNativeImportProfile, destination: BrowserImportDestination)] = []
+    private var backgroundSessions: [UUID: PCNativeImportSession] = [:]
+    private var backgroundPending = Set<UUID>()
+    private var startingBackground = false
+
+    func detach(onAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?) {
+        guard hasBackgroundWork, !cancelled else { cancel(); return }
+        onChange = nil
+        onDetachedAdBlockers = onAdBlockers
+        if !detached { detached = true; Self.detachedImports.append(self) }
+    }
+
+    private func reportBackgroundWarnings(_ lines: [String]) {
+        warnings += lines
+        if detached { ImportedBrowserDataFailures.add(lines) }
+    }
+
+    private func finishBackground() {
+        hasBackgroundWork = false
+        if detached {
+            onDetachedAdBlockers?(importedAdBlockers)
+            onDetachedAdBlockers = nil
+            Self.detachedImports.removeAll { $0 === self }
+        }
+    }
     private var activeDestination: BrowserImportDestination?
     /// Each profile's extensions install after the last profile's data.
     private var pendingExtensions: [(profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>)] = []
     private var extensionInstall: PCNativeImportSession?
     private var extensionBatch: UUID?
-    private var stopRequested = false
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
     private var queue: [PCNativeImportProfile] = []
@@ -111,7 +138,7 @@ final class BrowserImportCoordinator {
     }
 
     private var isCurrent: Bool {
-        !cancelled && window != nil && ownerIsCurrent() && !store.isEphemeral
+        !cancelled && (detached || (window != nil && ownerIsCurrent())) && !store.isEphemeral
             && originalDestination.isCurrent(in: store.state)
     }
 
@@ -124,7 +151,7 @@ final class BrowserImportCoordinator {
 
     func discover(resumingSourceBundleID: String? = nil) {
         guard isCurrent else { return }
-        guard stage != .importing && stage != .bookmarks && stage != .passwordChoice && stage != .safariPasswords && !restarting else { return }
+        guard !hasBackgroundWork, stage != .importing && stage != .bookmarks && stage != .passwordChoice && stage != .safariPasswords && !restarting else { return }
         discovery?.cancel(); generation = UUID(); let token = generation
         checkingSafariAccess = false; continueAfterSafariRefresh = false; safariAccessError = nil
         source = nil; sources = []; profiles = []; selectedProfiles = []; selectedExtensions = [:]
@@ -190,7 +217,11 @@ final class BrowserImportCoordinator {
         guard canContinueSourceInline else { return }
         if requiresSafariAccess {
             stage = .safariAccess; onChange?()
-        } else if onboarding { startInOriginalDestination() } else { chooseDestination() }
+        } else {
+            // The browser's main profile goes into the Parc Profile import was
+            // opened from; there is no destination to choose.
+            startInOriginalDestination()
+        }
     }
 
     /// An inline choice waits for Next before Safari's access step.
@@ -301,9 +332,9 @@ final class BrowserImportCoordinator {
         passwordsOnly = false; prepareDestinationChoice()
     }
 
-    /// Setup already owns its first Space and Profile. Unlike the menu wizard,
-    /// its Import action must not create a second destination or follow the
-    /// currently selected Space. Source discovery alone never submits data.
+    /// Both presentations import into the Space and Profile they were opened
+    /// from: setup's first one, or the window's. Import must not follow a later
+    /// selection elsewhere. Source discovery alone never submits data.
     func startInOriginalDestination(passwordsOnly: Bool = false) {
         guard stage == .profiles, isCurrent,
               passwordsOnly ? canChoosePasswordDestination : canChooseDestination else { return }
@@ -400,7 +431,7 @@ final class BrowserImportCoordinator {
 
     private func beginImport() {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
-        pendingExtensions = []; stopRequested = false; extensionBatch = nil; passwordStageOffered = false
+        pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
         queue = []; queuedDestinations = [:]; usedProfiles = []
         generation = UUID()
     }
@@ -476,7 +507,7 @@ final class BrowserImportCoordinator {
     private func importNext() {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
-            if !pendingExtensions.isEmpty { installExtensions(); return }
+            startBackground(in: window)
             // Setup accepts bookmarks before offering the separate Safari
             // password step. The menu keeps its existing import sequence.
             if !(onboarding && hasPendingBookmarks), presentPasswordStageIfNeeded() {
@@ -509,7 +540,9 @@ final class BrowserImportCoordinator {
             finishSourceFailure("The selected destination is no longer available."); return
         }
         if !extensions.isEmpty { pendingExtensions.append((profile, destination, extensions)) }
-        guard categories.rawValue != 0 else { activeDestination = nil; completed += 1; importNext(); return }
+        backgroundProfiles.append((profile, destination))
+        guard categories.contains(.bookmarks) else { activeDestination = nil; completed += 1; importNext(); return }
+        categories = [.bookmarks]
         message = "Importing \(profile.displayName)…"; onChange?()
         session = PCNativeBrowserApplication.importBrowserData(from: profile,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window,
@@ -534,14 +567,14 @@ final class BrowserImportCoordinator {
                 do {
                     if !result.bookmarks.isEmpty {
                         let selection = try BrowserImportSelection(roots: Self.bookmarks(result.bookmarks),
-                            historyVisitCounts: self.onboarding ? result.historyVisitCounts.mapValues(\.intValue) : nil)
+                            expandsTopFolders: self.onboarding)
                         self.bookmarkPages.append(BookmarkPage(sourceName: profile.displayName,
                                                               destination: destination, selection: selection))
                     }
                 } catch { self.warnings.append("Bookmarks: \(error.localizedDescription)") }
                 self.completed += 1
                 if result.outcome == .cancelled {
-                    self.queue = []; self.pendingExtensions = []; self.passwordDestination = nil
+                    self.queue = []; self.pendingExtensions = []; self.backgroundProfiles = []; self.passwordDestination = nil
                     self.message = "Import stopped. Data already imported has been kept."
                     self.stage = self.bookmarkPages.isEmpty ? .finished : .bookmarks; self.onChange?()
                 } else { self.importNext() }
@@ -550,6 +583,50 @@ final class BrowserImportCoordinator {
             activeDestination = nil; queue = []
             finishSourceFailure("Parc could not begin the import from \(profile.displayName).")
         }
+    }
+
+    private func startBackground(in window: NSWindow) {
+        let pending = backgroundProfiles; backgroundProfiles = []
+        hasBackgroundWork = true; startingBackground = true
+        let token = generation
+        for item in pending {
+            var categories = item.profile.supportedCategories
+            categories.remove(.bookmarks); categories.remove(.extensions)
+            guard categories.rawValue != 0 else { continue }
+            guard item.destination.isCurrent(in: store.state) else {
+                reportBackgroundWarnings(["\(item.profile.displayName): its destination was removed, so this import stopped."])
+                continue
+            }
+            let id = UUID()
+            backgroundPending.insert(id)
+            let lease = PCNativeBrowserApplication.importBrowserData(from: item.profile,
+                toProfilePath: store.independentEngineProfilePath(for: item.destination.profileID), in: window,
+                categories: categories, skipExistingCookies: skipExistingCookies,
+                progress: { _ in }, completion: { [weak self] result in
+                    guard let self, self.generation == token, !self.cancelled,
+                          self.backgroundPending.remove(id) != nil else { return }
+                    self.backgroundSessions[id] = nil
+                    self.reportBackgroundWarnings(result.warnings)
+                    if let error = result.error { self.reportBackgroundWarnings(["\(item.profile.displayName): \(error.localizedDescription)"]) }
+                    else if result.outcome == .failed { self.reportBackgroundWarnings(["\(item.profile.displayName) could not be imported."]) }
+                    self.onChange?()
+                    self.backgroundDataFinished()
+                })
+            if backgroundPending.contains(id) {
+                if let lease { backgroundSessions[id] = lease }
+                else {
+                    backgroundPending.remove(id)
+                    reportBackgroundWarnings(["Parc could not begin the import from \(item.profile.displayName)."])
+                }
+            }
+        }
+        startingBackground = false
+        backgroundDataFinished()
+    }
+
+    private func backgroundDataFinished() {
+        guard hasBackgroundWork, !startingBackground, backgroundPending.isEmpty else { return }
+        installExtensions()
     }
 
     ///
@@ -567,10 +644,10 @@ final class BrowserImportCoordinator {
             requests.append(PCNativeImportExtensionRequest(source: item.profile, profilePath: path, extensionIDs: ids))
             items += chosen.filter { ids.contains($0.identifier) }
         }
-        guard !requests.isEmpty else { importNext(); return }
+        guard !requests.isEmpty else { finishBackground(); return }
         let token = generation, batch = UUID()
         extensionBatch = batch
-        message = "Adding your extensions…"; onChange?()
+
         extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, completion: { [weak self] result in
             guard let self, self.isCurrent, self.generation == token else { return }
             self.extensionInstall = nil
@@ -582,23 +659,21 @@ final class BrowserImportCoordinator {
                 && !self.importedAdBlockers.contains(where: { $0.identifier == item.identifier }) {
                 self.importedAdBlockers.append(.init(identifier: item.identifier, displayName: item.displayName))
             }
-            if self.stopRequested {
-                self.passwordDestination = nil
-                self.message = "Import stopped. Data already imported has been kept."
-                self.stage = self.hasPendingBookmarks ? .bookmarks : .finished; self.onChange?()
-            } else { self.importNext() }
+            self.onChange?()
+            self.finishBackground()
         }, backgroundFailures: { [weak self] names in
             ImportedExtensionFailures.recordFailed(items.filter { names.contains($0.displayName) }.map(\.identifier))
             self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
             // Results still on screen list it; otherwise a browser window does.
-            if let self, self.isCurrent, self.extensionBatch == batch {
+            if let self, !self.detached, self.isCurrent, self.extensionBatch == batch {
                 self.reportFailedExtensions(names); self.onChange?()
             } else { ImportedExtensionFailures.add(names) }
         })
-        if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName)); importNext() }
+        if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName)); finishBackground() }
     }
 
     private func reportFailedExtensions(_ names: [String]) {
+        if detached { ImportedExtensionFailures.add(names) }
         for name in names {
             let line = "\(name) couldn’t be added."
             if !warnings.contains(line) { warnings.append(line) }
@@ -708,7 +783,7 @@ final class BrowserImportCoordinator {
     private func finishSourceFailure(_ failure: String) {
         queue = []; passwordDestination = nil; warnings.append(failure); error = nil
         // Profiles that already imported still get their extensions.
-        if !pendingExtensions.isEmpty { importNext(); return }
+        if !pendingExtensions.isEmpty || !backgroundProfiles.isEmpty { importNext(); return }
         stage = bookmarkPages.isEmpty ? .finished : .bookmarks
         message = bookmarkPages.isEmpty ? "Import stopped. Data already imported has been kept." :
             "Choose the bookmarks already read from your other profiles."
@@ -773,10 +848,7 @@ final class BrowserImportCoordinator {
 
     func stopImport() {
         guard stage == .importing else { return }
-        queue = []; queuedDestinations = [:]; passwordDestination = nil; pendingExtensions = []
-        if let extensionInstall {
-            stopRequested = true; extensionInstall.cancel(); message = "Stopping import…"; onChange?(); return
-        }
+        queue = []; queuedDestinations = [:]; passwordDestination = nil; pendingExtensions = []; backgroundProfiles = []
         guard let session else {
             //
             generation = UUID(); stage = .finished
@@ -790,12 +862,28 @@ final class BrowserImportCoordinator {
         cancelled = true; generation = UUID(); discovery?.cancel(); discovery = nil
         checkingSafariAccess = false; restarting = false; continueAfterSafariRefresh = false
         session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []; queuedDestinations = [:]
+        backgroundSessions.values.forEach { $0.cancel() }
+        backgroundSessions = [:]; backgroundPending = []; backgroundProfiles = []
         extensionInstall?.cancel(); extensionInstall = nil; pendingExtensions = []
+        onDetachedAdBlockers = nil; finishBackground()
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil
         acceptedICloudPasswordsDestination = nil
         stage = .finished; message = "Import stopped. Data already imported has been kept."; onChange?()
     }
+}
+
+/// Data failures outlive a detached import so a browser window can report them.
+@MainActor
+enum ImportedBrowserDataFailures {
+    static let didFail = Notification.Name("ParcImportedBrowserDataDidFail")
+    private(set) static var pending: [String] = []
+    static func add(_ lines: [String]) {
+        guard !lines.isEmpty else { return }
+        for line in lines where !pending.contains(line) { pending.append(line) }
+        NotificationCenter.default.post(name: didFail, object: nil)
+    }
+    static func take() -> [String] { defer { pending = [] }; return pending }
 }
 
 /// Imported extensions that failed in the background after their import's

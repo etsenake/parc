@@ -135,8 +135,8 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
     ordinary.chooseDestination(); ordinary.selectDestination(.existing(target))
     PCNativeBrowserApplication.acceptsBrowserImport = true; ordinary.start()
-    expect(ordinary.stage == .importing && PCNativeBrowserApplication.browserCompletions.count == 1,
-           "An ordinary readable source retains the actual native direct-import stage")
+    expect(ordinary.stage == .safariPasswords && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
+           "A source without bookmarks offers passwords while data imports in the background")
     PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
     expect(ordinary.stage == .safariPasswords && ordinary.passwordDestination?.profileID == target.profileID,
            "Actual source completion then offers optional exported passwords to the same durable destination")
@@ -178,6 +178,9 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     }
     func complete(_ bookmarks: [PCNativeImportedBookmark], outcome: PCNativeImportOutcome = .completed) {
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: outcome, bookmarks: bookmarks, warnings: [], error: nil))
+        while !PCNativeBrowserApplication.browserCompletions.isEmpty {
+            PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        }
     }
 
     let setup = start(), initialTabs = store.state.tabs
@@ -187,8 +190,8 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
            "Showing either choice imports no bookmarks or credentials automatically")
     setup.continueAfterPasswords()
     expect(setup.stage == .bookmarks, "A stale password action cannot skip unaccepted bookmarks")
-    expect(setup.bookmarkPages[0].selection.selected.isEmpty, "Absent source history leaves setup bookmarks unselected")
-    setup.toggleBookmark(pageID: setup.bookmarkPages[0].id, id: selected.identifier)
+    expect(setup.bookmarkPages[0].selection.allSelected, "Setup's bookmarks all start ticked")
+    setup.toggleBookmark(pageID: setup.bookmarkPages[0].id, id: omitted.identifier)
     let otherSpace = store.createSpace(name: "Another active window")
     store.selectSpace(otherSpace)
     setup.commitBookmarks()

@@ -200,14 +200,12 @@ class Session final : public ProfileObserver,
  public:
   Session(std::shared_ptr<const ProfileData> source,
           NSString* path,
-          NSWindow* window,
           NSUInteger categories,
           bool skip,
           Progress progress,
           Completion completion)
       : source_(std::move(source)),
         path_([path copy]),
-        window_(window),
         requested_(categories),
         remaining_(categories),
         skip_(skip),
@@ -224,18 +222,12 @@ class Session final : public ProfileObserver,
     lifetime_ = shared_from_this();
     return true;
   }
+  //
+  // that started it closes; only Cancel or the Profile going away stop it.
   void Start() {
     if (finished_ || cancelled_)
       return;
     std::weak_ptr<Session> weak = shared_from_this();
-    close_observer_ = [NSNotificationCenter.defaultCenter
-        addObserverForName:NSWindowWillCloseNotification
-                    object:window_
-                     queue:nil
-                usingBlock:^(NSNotification*) {
-                  if (auto session = weak.lock())
-                    session->Cancel();
-                }];
     WithNativeProfile(
         path_,
         base::BindOnce(
@@ -298,8 +290,7 @@ class Session final : public ProfileObserver,
 
  private:
   bool Valid() const {
-    return !finished_ && !cancelled_ && window_ && window_.visible &&
-           profile_ && !profile_->IsOffTheRecord() &&
+    return !finished_ && !cancelled_ && profile_ && !profile_->IsOffTheRecord() &&
            !profile_->ShutdownStarted() &&
            NativeContextForProfile(*profile_) == context_;
   }
@@ -577,10 +568,6 @@ class Session final : public ProfileObserver,
     writer_.reset();
     std::fill(key_.begin(), key_.end(), 0);
     key_.clear();
-    if (close_observer_) {
-      [NSNotificationCenter.defaultCenter removeObserver:close_observer_];
-      close_observer_ = nil;
-    }
     if (observing_ && profile_)
       profile_->RemoveObserver(this);
     observing_ = false;
@@ -598,14 +585,12 @@ class Session final : public ProfileObserver,
   std::shared_ptr<Session> lifetime_;
   std::shared_ptr<const ProfileData> source_;
   NSString* __strong path_;
-  NSWindow* __weak window_;
   NSUInteger requested_, remaining_, active_ = 0, completed_ = 0, failed_ = 0;
   bool written_any_ = false;
   bool skip_, cancelled_ = false, finished_ = false, observing_ = false;
   NSError* __strong failure_;
   Progress __strong progress_;
   Completion __strong completion_;
-  id __strong close_observer_;
   NSArray<PCNativeImportedBookmark*>* __strong bookmarks_ = @[];
   NSMutableDictionary<NSString*, NSNumber*>* __strong history_visit_counts_ =
       [NSMutableDictionary dictionary];
@@ -652,7 +637,7 @@ class Session final : public ProfileObserver,
       (categories & PCNativeImportCategoryExtensions))
     return nil;
   auto session = std::make_shared<parc::importer::Session>(
-      data, profilePath, window, categories, skip, progress, completion);
+      data, profilePath, categories, skip, progress, completion);
   if (!session->Reserve())
     return nil;
   auto lease = [[PCNativeImportSession alloc] initWithCancel:^{

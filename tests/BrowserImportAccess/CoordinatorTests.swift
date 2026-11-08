@@ -261,6 +261,7 @@ import AppKit
         expect(inline.stage == .finished, "A cancelled inline owner stays retired after native completion")
         checks += try bookmarkCoordinatorChecks(directory: directory, window: window, source: impostor)
         checks += try adBlockerCoordinatorChecks(directory: directory, window: window, source: impostor)
+        checks += try backgroundCoordinatorChecks(directory: directory, source: impostor)
         checks += try arcCoordinatorChecks(directory: directory, window: window)
         PCNativeBrowserApplication.acceptsBrowserImport = false
         print("\(checks) import owner/access/password assertions passed; isolated source fixtures only.")
@@ -291,21 +292,18 @@ import AppKit
             PCNativeImportedBookmark("first", title: "Same title", url: URL(string: "https://example.org/first")),
             PCNativeImportedBookmark("second", title: "Same title", url: URL(string: "https://example.org/second"))])
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed,
-            bookmarks: [folder], warnings: [], error: nil,
-            historyVisitCounts: ["https://example.org/first": 12]))
+            bookmarks: [folder], warnings: [], error: nil))
         expect(coordinator.stage == .bookmarks && coordinator.bookmarkPages.count == 1, "The native result reaches the actual bookmark stage")
         let pageID = coordinator.bookmarkPages[0].id
         let initial = coordinator.bookmarkPages[0].selection.selected
-        expect(initial == ["first"] && !coordinator.bookmarkPages[0].selection.allSelected,
-               "The actual source history reaches setup's bookmark recommendation")
+        expect(coordinator.bookmarkPages[0].selection.allSelected && initial == ["folder", "first", "second"],
+               "Every imported bookmark starts ticked")
         expect(coordinator.bookmarkPages[0].sourceName == profile.displayName, "The list section keeps the actual source profile name")
         coordinator.toggleBookmark(pageID: pageID, id: "folder", expansion: true)
         expect(coordinator.bookmarkPages[0].selection.expanded.isEmpty, "The initial top-level folder can collapse independently")
         coordinator.toggleBookmark(pageID: pageID, id: "folder", expansion: true)
         expect(coordinator.bookmarkPages[0].selection.expanded == ["folder"], "The folder label expands the original folder")
         expect(coordinator.bookmarkPages[0].selection.selected == initial, "Expanding cannot select or deselect a subtree")
-        coordinator.toggleBookmark(pageID: pageID, id: "folder")
-        expect(coordinator.bookmarkPages[0].selection.allSelected, "The folder circle selects all descendants after a partial recommendation")
         coordinator.toggleBookmark(pageID: pageID, id: "folder")
         expect(coordinator.bookmarkPages[0].selection.selected.isEmpty, "The folder circle deselects the complete source subtree")
         expect(coordinator.bookmarkPages[0].selection.expanded == ["folder"], "Selection leaves expansion alone")
@@ -386,7 +384,7 @@ import AppKit
         expect(failing.requests.count == 1 && failing.requests[0].source === profile
                && failing.requests[0].extensionIDs == [known.identifier, unknown.identifier]
                && failing.requests[0].profilePath == store.independentEngineProfilePath(for: destination.profileID)
-               && coordinator.stage == .importing,
+               && coordinator.stage == .finished && coordinator.hasBackgroundWork,
                "Every selected extension, including known ad blockers, installs even when other data failed")
         failing.complete(.init(outcome: .failed, failedNames: ["uBlock Origin", "Extension"]))
         expect(coordinator.stage == .finished && coordinator.importedAdBlockers.isEmpty
@@ -397,9 +395,9 @@ import AppKit
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         coordinator.stopImport()
         let stopped = PCNativeBrowserApplication.extensionInstalls.removeFirst()
-        expect(stopped.lease.cancelled, "Stop during a running download withdraws the lookups still pending")
+        expect(!stopped.lease.cancelled, "Foreground Stop cannot cancel background extension work")
         stopped.complete(.init(outcome: .cancelled, installingIdentifiers: [known.identifier]))
-        expect(coordinator.stage == .finished && coordinator.message == "Import stopped. Data already imported has been kept."
+        expect(coordinator.stage == .finished && !coordinator.hasBackgroundWork
                && !coordinator.warnings.contains { $0.hasSuffix("couldn’t be added.") },
                "Stop during a running download ends the import at once and reports nothing as failed")
         run()
@@ -436,6 +434,61 @@ import AppKit
         expect(ImportedExtensionFailures.take() == ["uBlock Origin"] && ImportedExtensionFailures.pending.isEmpty,
                "Shown once, it is gone")
         ImportedExtensionFailures.present = nil
+        return checks
+    }
+
+    @MainActor private static func backgroundCoordinatorChecks(directory: URL, source: PCNativeImportSource) throws -> Int {
+        var checks = 0
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            checks += 1; precondition(condition(), message)
+        }
+        let store = try BrowserStore(directory: directory.appendingPathComponent("Background"))
+        let destination = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)
+        var window: NSWindow? = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
+        var current = true
+        var coordinator: BrowserImportCoordinator? = BrowserImportCoordinator(store: store, destination: destination,
+            window: window!, onboarding: true, ownerIsCurrent: { current })
+        weak let retained = coordinator
+        let blocker = PCNativeImportExtension(identifier: "cjpalhdlnbpafiamejdnhcphjbkeiagm", displayName: "uBlock Origin")
+        let first = PCNativeImportProfile("background default", [.bookmarks, .history, .extensions], .complete, directory: "Default")
+        first.extensions = [blocker]
+        let second = PCNativeImportProfile("background second", [.bookmarks, .history], .complete, name: "Other")
+        coordinator!.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([source])
+        coordinator!.selectSourceInline(source)
+        PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [first, second], access: .complete))
+        let start = PCNativeBrowserApplication.browserRequests.count
+        coordinator!.continueSourceInline()
+        expect(PCNativeBrowserApplication.browserRequests[start].categories == [.bookmarks]
+               && !store.state.profiles.contains { $0.name == "Other" }, "Bookmarks start first and other destinations are lazy")
+        let result = PCNativeImportResult(outcome: .completed, bookmarks: [PCNativeImportedBookmark()], warnings: [], error: nil)
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(result)
+        expect(PCNativeBrowserApplication.browserRequests.count == start + 2
+               && PCNativeBrowserApplication.browserRequests.last!.categories == [.bookmarks], "Every bookmark pass precedes background data")
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(result)
+        let requests = Array(PCNativeBrowserApplication.browserRequests.suffix(2))
+        expect(coordinator!.stage == .bookmarks && coordinator!.hasBackgroundWork
+               && PCNativeBrowserApplication.browserCompletions.count == 2
+               && requests.allSatisfy { $0.categories == [.history] } && requests[0].path != requests[1].path,
+               "Results appear with both profiles importing concurrently into distinct paths")
+        var changes = 0, delivered: [OnboardingDraft.ImportedAdBlocker] = []
+        coordinator!.onChange = { changes += 1 }
+        coordinator!.detach { delivered = $0 }
+        current = false; window = nil; coordinator = nil
+        expect(retained != nil, "Detached work retains its coordinator after its owner closes")
+        let firstCompletion = PCNativeBrowserApplication.browserCompletions.removeFirst()
+        let secondCompletion = PCNativeBrowserApplication.browserCompletions.removeFirst()
+        secondCompletion(.init(outcome: .failed, bookmarks: [], warnings: ["Some data was unavailable."], error: nil))
+        expect(PCNativeBrowserApplication.extensionInstalls.isEmpty && retained!.hasBackgroundWork,
+               "Extensions wait for every background profile, regardless of completion order")
+        firstCompletion(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        let install = PCNativeBrowserApplication.extensionInstalls.removeFirst()
+        expect(retained!.hasBackgroundWork && changes == 0, "Detached extension installation keeps ownership without updating closed views")
+        install.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier], failedNames: ["Broken"]))
+        expect(retained == nil && delivered == [.init(identifier: blocker.identifier, displayName: blocker.displayName)]
+               && ImportedExtensionFailures.take() == ["Broken"]
+               && ImportedBrowserDataFailures.take() == ["Some data was unavailable.", "Other could not be imported."], "Completion reports detached blockers and failures and releases the coordinator")
+        install.background([blocker.displayName])
+        expect(ImportedExtensionFailures.take() == [blocker.displayName], "Failures arriving after detachment reach the browser window")
         return checks
     }
 
@@ -518,10 +571,13 @@ import AppKit
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed,
             bookmarks: [PCNativeImportedBookmark("arc bookmark", title: "Docs", url: URL(string: "https://example.test/docs"))],
             warnings: ["fixture warning"], error: nil))
-        expect(PCNativeBrowserApplication.browserRequests.count == requests + 2
-               && PCNativeBrowserApplication.browserRequests[requests + 1].profile === side
-               && PCNativeBrowserApplication.browserRequests[requests + 1].path == store.independentEngineProfilePath(for: sideProfile.id),
+        expect(PCNativeBrowserApplication.browserRequests.count == requests + 3
+               && PCNativeBrowserApplication.browserRequests[requests].categories == [.bookmarks]
+               && PCNativeBrowserApplication.browserRequests[requests + 1].profile === standard
+               && PCNativeBrowserApplication.browserRequests[requests + 2].profile === side
+               && PCNativeBrowserApplication.browserRequests[requests + 2].path == store.independentEngineProfilePath(for: sideProfile.id),
                "Each other profile's data imports into its own Parc Profile")
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         expect(coordinator.stage == .bookmarks && coordinator.bookmarkPages.first?.destination == destination,
                "Arc's data lands in the chosen Space, as Chrome's does")
@@ -544,6 +600,7 @@ import AppKit
         expect(PCNativeBrowserApplication.browserRequests[newStart].path == newStore.independentEngineProfilePath(for: created.id),
                "The browser data imports into the new Profile")
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         expect(newImport.stage == .finished && newImport.warnings.isEmpty, "A clean Arc import has nothing to report")
         newImport.cancel()
 
@@ -559,6 +616,7 @@ import AppKit
         let fallbackSide = fallback.state.profiles.first { $0.name == "Side" }
         expect(fallbackSide != nil && PCNativeBrowserApplication.browserRequests.last?.path == fallback.independentEngineProfilePath(for: fallbackSide!.id),
                "Without the sidebar, another profile still gets its own Parc Profile")
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         expect(unreadable.stage == .finished, "The fallback import finishes")
         unreadable.cancel()
@@ -607,7 +665,7 @@ import AppKit
                && together.requests[1].source === onlyExtensions
                && together.requests[1].extensionIDs == [blocker.identifier, helper.identifier]
                && together.requests[1].profilePath == extensionStore.independentEngineProfilePath(for: sideID!)
-               && setup.message == "Adding your extensions…",
+               && setup.stage == .finished && setup.hasBackgroundWork,
                "One install covers every Arc profile's extensions, each into its own Parc Profile")
         together.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier, helper.identifier],
                                 failedNames: ["Broken"]))
