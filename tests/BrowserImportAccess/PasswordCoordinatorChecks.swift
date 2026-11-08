@@ -23,13 +23,13 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
         return coordinator
     }
     let wrongSource = make(other)
-    expect(!wrongSource.canChoosePasswordDestination, "A display name cannot expose Safari CSV guidance")
+    expect(!wrongSource.canImportPasswordsOnly, "A display name cannot expose Safari CSV guidance")
     wrongSource.startInOriginalDestination(passwordsOnly: true)
     expect(wrongSource.stage == .profiles, "An unrelated source cannot enter this password stage")
     wrongSource.cancel()
     let coordinator = make()
     let before = store.state
-    expect(coordinator.canChoosePasswordDestination && !coordinator.hasImportableSelection,
+    expect(coordinator.canImportPasswordsOnly && !coordinator.hasImportableSelection,
            "Explicit exported credentials do not require Safari history/profile access")
     current = false; coordinator.startInOriginalDestination(passwordsOnly: true)
     expect(coordinator.stage == .profiles && !coordinator.passwordsOnly, "A retired owner cannot enter the file route")

@@ -16,7 +16,7 @@ final class BrowserImportPasswordsView: NSView {
     private let choose = ActionButton("Choose Passwords.csv…")
     private let help = ActionButton("How do I find this?")
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let continueButton = PArcDialogButton(title: "Skip Passwords", primary: true)
+    private let continueButton = PArcDialogButton(title: "Skip Passwords", primary: true, hint: false)
     private let stop = ActionButton("Stop Import")
     private let remove = ActionButton("Move exported file to Trash…")
     private let dropTarget = OnboardingPasswordDropTarget(frame: .zero)
@@ -58,6 +58,7 @@ final class BrowserImportPasswordsView: NSView {
     private func configurePresentation() {
         title.isHidden = usesSetupCard; detail.isHidden = usesSetupCard
         choose.isHidden = usesSetupCard; continueButton.isHidden = usesSetupCard
+        continueButton.keyEquivalent = usesSetupCard ? "" : "\r"
         dropTarget.isHidden = !usesSetupCard; resultScroll.isHidden = !usesSetupCard
         instructions.forEach { $0.isHidden = !usesSetupCard }
         if usesSetupCard {
@@ -95,7 +96,8 @@ final class BrowserImportPasswordsView: NSView {
         choose.isEnabled = canImport; help.isEnabled = !busy && !removing
         stop.isHidden = !busy; stop.isEnabled = busy
         continueButton.isEnabled = !busy && !removing; continueButton.isLoading = busy || removing
-        continueButton.title = result == nil ? "Skip Passwords" : "Continue"
+        let continueTitle = result == nil ? "Skip Passwords" : "Continue"
+        if continueButton.title != continueTitle { continueButton.title = continueTitle; needsLayout = true }
         remove.isHidden = !canRemove; remove.isEnabled = canRemove && !removing
         var lines: [String] = []
         if busy { lines.append("Importing \(fileName ?? "passwords")…") }
@@ -152,7 +154,8 @@ final class BrowserImportPasswordsView: NSView {
         status.frame = NSRect(x: 34, y: 325, width: width - 68, height: 160)
         remove.frame = NSRect(x: 34, y: bounds.height - 105, width: 260, height: 30)
         stop.frame = NSRect(x: 34, y: bounds.height - 65, width: 130, height: 36)
-        continueButton.frame = NSRect(x: width - 174, y: bounds.height - 65, width: 140, height: 36)
+        continueButton.frame = NSRect(x: width - 28 - continueButton.bodyWidth - 0.5, y: bounds.height - 64.5,
+                                      width: continueButton.bodyWidth + 1, height: 38.5)
     }
     private func file(from sender: NSDraggingInfo) -> URL? {
         guard permitsFile, let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],

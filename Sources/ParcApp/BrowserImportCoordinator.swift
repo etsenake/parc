@@ -313,7 +313,7 @@ final class BrowserImportCoordinator {
     var hasImportableSelection: Bool { isCurrent && !chosenProfiles.isEmpty }
 
     /// An explicitly exported file does not require access to Safari's history store.
-    var canChoosePasswordDestination: Bool {
+    var canImportPasswordsOnly: Bool {
         stage == .profiles && isCurrent && source.map(Self.isSafari) == true
     }
 
@@ -322,7 +322,7 @@ final class BrowserImportCoordinator {
     /// selection elsewhere. Source discovery alone never submits data.
     func startInOriginalDestination(passwordsOnly: Bool = false) {
         guard stage == .profiles, isCurrent,
-              passwordsOnly ? canChoosePasswordDestination : hasImportableSelection else { return }
+              passwordsOnly ? canImportPasswordsOnly : hasImportableSelection else { return }
         self.passwordsOnly = passwordsOnly
         let chosen = chosenProfiles
         if isArcSource, !passwordsOnly, !chosen.isEmpty { startArc(chosen); return }

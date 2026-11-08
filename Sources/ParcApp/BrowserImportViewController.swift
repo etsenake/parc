@@ -552,7 +552,7 @@ final class BrowserImportViewController: NSViewController {
                 messages = coordinator.warnings + (profile?.constraints ?? []) + (embedded ? coordinator.error.map { [$0] } ?? [] : [])
                 if stage == .profiles, coordinator.profiles.isEmpty, coordinator.error == nil { messages.append(coordinator.message) }
             }
-            let choosePasswords: (() -> Void)? = listsProfiles && coordinator.canChoosePasswordDestination ? { [weak self, weak source] in
+            let choosePasswords: (() -> Void)? = listsProfiles && coordinator.canImportPasswordsOnly ? { [weak self, weak source] in
                 guard let self, let source, self.canChooseSource, self.coordinator.source === source else { return }
                 self.coordinator.startInOriginalDestination(passwordsOnly: true)
             } : nil
