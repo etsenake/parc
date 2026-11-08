@@ -4927,7 +4927,61 @@
  
    UpdateVideoVisibilityTracker();
  }
-@@ -4581,6 +6636,22 @@
+@@ -4514,34 +6569,25 @@
+ // static
+ void HTMLMediaElement::AssertShadowRootChildren(ShadowRoot& shadow_root) {
+ #if DCHECK_IS_ON()
+-  // There can be up to three children: an interstitial (media remoting or
+-  // picture in picture), text track container, and media controls. The media
+-  // controls has to be the last child if present, and has to be the next
+-  // sibling of the text track container if both present. When present, media
+-  // remoting interstitial has to be the first child.
+-  unsigned number_of_children = shadow_root.CountChildren();
+-  DCHECK_LE(number_of_children, 3u);
+-  Node* first_child = shadow_root.firstChild();
+-  Node* last_child = shadow_root.lastChild();
+-  if (number_of_children == 1) {
+-    DCHECK(first_child->IsTextTrackContainer() ||
+-           first_child->IsMediaControls() ||
+-           first_child->IsMediaRemotingInterstitial() ||
+-           first_child->IsPictureInPictureInterstitial());
+-  } else if (number_of_children == 2) {
+-    DCHECK(first_child->IsTextTrackContainer() ||
+-           first_child->IsMediaRemotingInterstitial() ||
+-           first_child->IsPictureInPictureInterstitial());
+-    DCHECK(last_child->IsTextTrackContainer() || last_child->IsMediaControls());
+-    if (first_child->IsTextTrackContainer())
+-      DCHECK(last_child->IsMediaControls());
+-  } else if (number_of_children == 3) {
+-    Node* second_child = first_child->nextSibling();
+-    DCHECK(first_child->IsMediaRemotingInterstitial() ||
+-           first_child->IsPictureInPictureInterstitial());
+-    DCHECK(second_child->IsTextTrackContainer());
+-    DCHECK(last_child->IsMediaControls());
+-  }
++  // The children, each optional, in order: an interstitial (media remoting or
++  // picture in picture), the text track container, the picture in picture
++  // interstitial of a Safari-identity page (HTMLVideoElement places it over
++  // the cues) and the media controls.
++  Node* child = shadow_root.firstChild();
++  if (child && (child->IsMediaRemotingInterstitial() ||
++                child->IsPictureInPictureInterstitial())) {
++    child = child->nextSibling();
++  }
++  if (child && child->IsTextTrackContainer()) {
++    child = child->nextSibling();
++    if (child && child->IsPictureInPictureInterstitial()) {
++      child = child->nextSibling();
++    }
++  }
++  if (child && child->IsMediaControls()) {
++    child = child->nextSibling();
++  }
++  DCHECK(!child);
+ #endif
+ }
+ 
+@@ -4581,6 +6627,22 @@
  
    EnsureTextTrackContainer().UpdateDisplay(
        *this, TextTrackContainer::kDidNotStartExposingControls);
@@ -4950,7 +5004,7 @@
  }
  
  
-@@ -4806,6 +6877,15 @@
+@@ -4806,6 +6868,15 @@
  void HTMLMediaElement::MediaSourceOpened(
      std::unique_ptr<WebMediaSource> web_media_source) {
    SetShouldDelayLoadEvent(false);
@@ -4966,7 +5020,7 @@
    media_source_attachment_->CompleteAttachingToMediaElement(
        media_source_tracer_, std::move(web_media_source));
  }
-@@ -4839,12 +6919,16 @@
+@@ -4839,12 +6910,16 @@
    visitor->Trace(removed_from_document_timer_);
    visitor->Trace(played_time_ranges_);
    visitor->Trace(async_event_queue_);
@@ -4983,7 +5037,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4865,6 +6949,7 @@
+@@ -4865,6 +6940,7 @@
    visitor->Trace(media_player_receiver_set_);
    visitor->Trace(opener_document_);
    visitor->Trace(opener_context_observer_);
@@ -4991,7 +5045,7 @@
    Supplementable<HTMLMediaElement>::Trace(visitor);
    HTMLElement::Trace(visitor);
    ExecutionContextLifecycleStateObserver::Trace(visitor);
-@@ -4873,7 +6958,8 @@
+@@ -4873,7 +6949,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -5001,7 +5055,7 @@
      AddTrack(media::MediaTrack::CreateAudioTrack(
          "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
    }
-@@ -4991,6 +7077,10 @@
+@@ -4991,6 +7068,10 @@
      RejectPlayPromisesInternal(
          DOMExceptionCode::kNotSupportedError,
          "Failed to load because no supported source was found.");
@@ -5012,7 +5066,7 @@
      return;
    }
  
-@@ -5032,6 +7122,7 @@
+@@ -5032,6 +7113,7 @@
            "media-playback-while-not-visible permission policy";
        break;
      case PlayPromiseError::kNotSupported:
@@ -5020,7 +5074,7 @@
        NOTREACHED();
    }
    RejectPlayPromisesInternal(DOMExceptionCode::kAbortError,
-@@ -5056,8 +7147,11 @@
+@@ -5056,8 +7138,11 @@
    DCHECK(code == DOMExceptionCode::kAbortError ||
           code == DOMExceptionCode::kNotSupportedError ||
           code == DOMExceptionCode::kNotAllowedError);
@@ -5033,7 +5087,7 @@
  
    play_promise_reject_list_.clear();
  }
-@@ -5070,10 +7164,25 @@
+@@ -5070,10 +7155,25 @@
      return;
    }
  
@@ -5061,7 +5115,7 @@
  }
  
  void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
-@@ -5212,6 +7321,21 @@
+@@ -5212,6 +7312,21 @@
    }
  
    OnRemotePlaybackMetadataChange();
@@ -5083,7 +5137,7 @@
  }
  
  void HTMLMediaElement::DidPlayerMediaPositionStateChange(
-@@ -5299,6 +7423,9 @@
+@@ -5299,6 +7414,9 @@
  }
  
  String HTMLMediaElement::GetPlayErrorMessage(DOMExceptionCode code) const {
@@ -5093,7 +5147,7 @@
    switch (code) {
      case DOMExceptionCode::kNotAllowedError:
        return autoplay_policy_->GetPlayErrorMessage();
-@@ -5324,6 +7451,46 @@
+@@ -5324,6 +7442,46 @@
    return *media_player_host_remote_->Value().get();
  }
  
@@ -5140,7 +5194,7 @@
  mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
  HTMLMediaElement::AddMediaPlayerObserverAndPassReceiver() {
    mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayerObserver>
-@@ -5360,22 +7527,103 @@
+@@ -5360,22 +7518,103 @@
    PauseInternal(triggered_by_user
                      ? WebMediaPlayer::PauseReason::kPauseRequestedByUser
                      : WebMediaPlayer::PauseReason::kPauseRequestedInternally);
@@ -5244,7 +5298,7 @@
  }
  
  void HTMLMediaElement::RequestMute(bool mute) {
-@@ -5487,7 +7735,30 @@
+@@ -5487,7 +7726,30 @@
  }
  
  void HTMLMediaElement::OpenerContextObserver::ContextDestroyed() {
@@ -7312,7 +7366,15 @@
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -1056,14 +1057,21 @@
+@@ -66,6 +67,7 @@
+ #include "third_party/blink/renderer/core/html/media/video_frame_callback_requester.h"
+ #include "third_party/blink/renderer/core/html/media/video_wake_lock.h"
+ #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
++#include "third_party/blink/renderer/core/html/track/text_track_container.h"
+ #include "third_party/blink/renderer/core/html_names.h"
+ #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
+@@ -1056,14 +1058,21 @@
    is_remote_rendering_ = true;
    remote_device_friendly_name_ = remote_device_friendly_name;
    OnRemotePlaybackMetadataChange();
@@ -7335,7 +7397,7 @@
  }
  
  void HTMLVideoElement::MediaRemotingStopped(int error_code) {
-@@ -1133,9 +1141,17 @@
+@@ -1133,12 +1142,25 @@
  }
  
  void HTMLVideoElement::OnEnteredPictureInPicture() {
@@ -7351,9 +7413,19 @@
 +  }
 +  if (!picture_in_picture_interstitial_->parentNode()) {
      ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
-     shadow_root.InsertBefore(picture_in_picture_interstitial_,
-                              shadow_root.firstChild());
-@@ -1153,12 +1169,14 @@
+-    shadow_root.InsertBefore(picture_in_picture_interstitial_,
+-                             shadow_root.firstChild());
++    // Parc: WebKit's placard covers the cues, which its media controls place
++    // before themselves (media-controller.js), so Safari's page shows no cues
++    // while picture in picture shows them.
++    Node* before = PresentsParcSafariIdentity()
++                       ? EnsureTextTrackContainer().nextSibling()
++                       : shadow_root.firstChild();
++    shadow_root.InsertBefore(picture_in_picture_interstitial_, before);
+     HTMLMediaElement::AssertShadowRootChildren(shadow_root);
+   }
+   picture_in_picture_interstitial_->Show();
+@@ -1153,12 +1175,14 @@
    if (picture_in_picture_interstitial_) {
      picture_in_picture_interstitial_->Hide();
    }
@@ -7368,7 +7440,7 @@
  }
  
  void HTMLVideoElement::SetIsEffectivelyFullscreen(
-@@ -1280,6 +1298,49 @@
+@@ -1280,6 +1304,49 @@
    UpdateVideoFrameAvailability();
  }
  
@@ -7418,21 +7490,21 @@
  void HTMLVideoElement::RecordVideoOcclusionState(
      std::string_view occlusion_state) const {
    if (auto* wmp = GetWebMediaPlayer()) {
-@@ -1301,6 +1362,14 @@
-     return;
-   }
+@@ -1298,6 +1365,14 @@
+   UpdatePictureInPictureAvailability();
  
+   if (params.new_value.IsNull()) {
++    return;
++  }
++
 +  // Parc: WebKit never checks disablePictureInPicture, so setting it leaves
 +  // a Safari-identity document's video in picture in picture
 +  // (parc_safari_identity.h).
 +  if (const ExecutionContext* context = GetDocument().GetExecutionContext();
 +      context && IsParcSafariIdentityUserAgent(context->UserAgent())) {
-+    return;
-+  }
-+
-   PictureInPictureController& controller =
-       PictureInPictureController::From(GetDocument());
-   if (controller.PictureInPictureElement(GetTreeScope()) == *this) {
+     return;
+   }
+ 
 --- a/base/memory/memory_pressure_listener.h
 +++ b/base/memory/memory_pressure_listener.h
 @@ -102,6 +102,9 @@
@@ -7934,7 +8006,7 @@
  void MediaControlsImpl::OnPlaying() {
 --- a/third_party/blink/renderer/core/html/media/html_media_element_test.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element_test.cc
-@@ -3,32 +3,48 @@
+@@ -3,32 +3,51 @@
  // found in the LICENSE file.
  
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
@@ -7964,12 +8036,15 @@
 +#include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
 +#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 +#include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_kind.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_mode.h"
  #include "third_party/blink/renderer/core/css/css_default_style_sheets.h"
 +#include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/dom_implementation.h"
  #include "third_party/blink/renderer/core/dom/element.h"
 +#include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
++#include "third_party/blink/renderer/core/dom/shadow_root.h"
 +#include "third_party/blink/renderer/core/execution_context/agent.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -7983,7 +8058,7 @@
  #include "third_party/blink/renderer/core/html/media/html_audio_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
  #include "third_party/blink/renderer/core/html/media/media_error.h"
-@@ -39,6 +55,7 @@
+@@ -39,6 +58,7 @@
  #include "third_party/blink/renderer/core/html/track/text_track.h"
  #include "third_party/blink/renderer/core/html/track/text_track_list.h"
  #include "third_party/blink/renderer/core/html/track/video_track_list.h"
@@ -7991,7 +8066,7 @@
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
  #include "third_party/blink/renderer/platform/bindings/exception_state.h"
-@@ -46,6 +63,7 @@
+@@ -46,6 +66,7 @@
  #include "third_party/blink/renderer/platform/heap/thread_state_scopes.h"
  #include "third_party/blink/renderer/platform/mediastream/media_stream_descriptor.h"
  #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
@@ -7999,7 +8074,7 @@
  #include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
  #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
  #include "third_party/blink/renderer/platform/testing/task_environment.h"
-@@ -128,6 +146,44 @@
+@@ -128,6 +149,44 @@
    void OnElementContextDestroyed() override {}
  };
  
@@ -8044,7 +8119,7 @@
  class MockWebMediaPlayer : public EmptyWebMediaPlayer {
   public:
    MOCK_METHOD0(Play, void());
-@@ -136,7 +192,12 @@
+@@ -136,7 +195,12 @@
    MOCK_METHOD0(OnTimeUpdate, void());
    MOCK_CONST_METHOD0(Paused, bool());
    MOCK_CONST_METHOD0(Seekable, WebTimeRanges());
@@ -8057,7 +8132,7 @@
    MOCK_CONST_METHOD0(HasAudio, bool());
    MOCK_CONST_METHOD0(HasVideo, bool());
    MOCK_CONST_METHOD0(Duration, double());
-@@ -150,6 +211,8 @@
+@@ -150,6 +214,8 @@
    MOCK_METHOD1(SetWasPlayedWithUserActivationAndHighMediaEngagement,
                 void(bool));
    MOCK_METHOD1(EnabledAudioTracksChanged, void(std::optional<TrackId>));
@@ -8066,7 +8141,7 @@
    MOCK_METHOD1(SelectedVideoTrackChanged, void(std::optional<TrackId>));
    MOCK_METHOD4(
        Load,
-@@ -163,6 +226,18 @@
+@@ -163,6 +229,18 @@
  
    MOCK_CONST_METHOD0(HasAvailableVideoFrame, bool());
    MOCK_CONST_METHOD0(HasReadableVideoFrame, bool());
@@ -8085,7 +8160,7 @@
  };
  
  class WebMediaStubLocalFrameClient : public EmptyLocalFrameClient {
-@@ -178,8 +253,20 @@
+@@ -178,8 +256,20 @@
      return std::move(player_);
    }
  
@@ -8106,7 +8181,7 @@
  };
  
  class FullscreenMockChromeClient : public EmptyChromeClient {
-@@ -313,6 +400,38 @@
+@@ -313,6 +403,38 @@
      }
    }
  
@@ -8145,7 +8220,7 @@
    void WaitForVideoFrameAvailability() {
      if (received_video_frame_availability_.has_value()) {
        return;
-@@ -366,6 +485,8 @@
+@@ -366,6 +488,8 @@
    gfx::Size received_media_size_{0, 0};
    std::optional<bool> received_uses_audio_service_;
    std::optional<bool> received_video_frame_availability_;
@@ -8154,7 +8229,7 @@
    media_session::mojom::blink::RemotePlaybackMetadataPtr
        received_remote_playback_metadata_;
  };
-@@ -377,28 +498,52 @@
+@@ -377,28 +501,52 @@
    // media::mojom::MediaPlayerHost
    void OnMediaPlayerAdded(
        mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
@@ -8208,7 +8283,7 @@
   protected:
    void SetUp() override {
      // Sniff the media player pointer to facilitate mocking.
-@@ -456,6 +601,11 @@
+@@ -456,6 +604,11 @@
    }
  
    HTMLMediaElement* Media() const { return media_.Get(); }
@@ -8220,7 +8295,7 @@
    void SetCurrentSrc(const AtomicString& src) {
      KURL url(src);
      Media()->current_src_.SetSource(
-@@ -470,7 +620,26 @@
+@@ -470,7 +623,26 @@
  
    bool PotentiallyPlaying() { return Media()->PotentiallyPlaying(); }
  
@@ -8247,7 +8322,7 @@
  
    void SetNetworkState(WebMediaPlayer::NetworkState state) {
      Media()->SetNetworkState(state);
-@@ -484,9 +653,22 @@
+@@ -484,9 +656,22 @@
  
    void ReadyStateChanged() { Media()->ReadyStateChanged(); }
  
@@ -8270,7 +8345,7 @@
  
    bool MediaIsPlaying() const { return Media()->playing_; }
  
-@@ -525,6 +707,10 @@
+@@ -525,6 +710,10 @@
             decltype(Media()->lazy_media_load_state_)::kNone;
    }
  
@@ -8281,7 +8356,7 @@
    bool ControlsVisible() const { return Media()->ShouldShowControls(); }
  
    bool MediaShouldShowAllControls() const {
-@@ -535,11 +721,49 @@
+@@ -535,11 +724,49 @@
      return dummy_page_holder_->GetFrame().DomWindow();
    }
  
@@ -8331,7 +8406,7 @@
  
    void ContextDestroyed() { Media()->ContextDestroyed(); }
  
-@@ -589,10 +813,78 @@
+@@ -589,10 +816,78 @@
  
    void CallProgressEventTimerFired() { Media()->ProgressEventTimerFired(); }
  
@@ -8410,7 +8485,7 @@
  
   protected:
    KURL SelectNextSourceChild(String* content_type,
-@@ -729,6 +1021,16 @@
+@@ -729,6 +1024,16 @@
      return dummy_page_holder;
    }
  
@@ -8427,7 +8502,7 @@
    // Set the security origin of our window.
    void SetSecurityOrigin(const char* origin) {
      Media()
-@@ -788,6 +1090,36 @@
+@@ -788,6 +1093,36 @@
      // and make sure that the player is retained.
      original_document.adoptNode(Media(), ASSERT_NO_EXCEPTION);
      EXPECT_FALSE(WasPlayerDestroyed());
@@ -8464,7 +8539,7 @@
    }
  
    bool HasEventListenerRegistered(EventTarget& target,
-@@ -2191,17 +2523,6 @@
+@@ -2191,17 +2526,6 @@
    EXPECT_NE(old_frame, Media()->LocalFrameForPlayer());
  }
  
@@ -8482,7 +8557,7 @@
  // A document move that doesn't keep the player (same-origin without
  // kDocumentPictureInPictureAPI) re-runs the load algorithm. The HTML spec
  // does not treat a cross-document move as a pause trigger, so the element
-@@ -2310,6 +2631,462 @@
+@@ -2310,6 +2634,462 @@
  
    EXPECT_TRUE(Media()->paused());
    EXPECT_EQ(play_listener->count(), 0);
@@ -8945,7 +9020,7 @@
  }
  
  TEST_P(HTMLMediaElementTest, PlayedWithoutUserActivation) {
-@@ -3594,4 +4371,4522 @@
+@@ -3594,4 +4374,4568 @@
    EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
  }
  
@@ -9018,6 +9093,52 @@
 +                  testing::Optional(WebMediaPlayer::TrackId("audio1"))));
 +  second->setEnabled(true);
 +  test::RunPendingTasks();
++}
++
++// Enters picture in picture with captions showing and tells whether the
++// picture in picture interstitial follows the cues in the shadow root, which
++// paints it over them.
++bool ParcPictureInPictureCardFollowsCues(HTMLMediaElement& media) {
++  media.SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
++  test::RunPendingTasks();
++  TextTrack* track =
++      media.addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kCaptions),
++                         g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
++  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
++  test::RunPendingTasks();
++  To<HTMLVideoElement>(media).OnEnteredPictureInPicture();
++  bool cues = false;
++  for (Node* child = media.UserAgentShadowRoot()->firstChild(); child;
++       child = child->nextSibling()) {
++    if (child->IsPictureInPictureInterstitial()) {
++      Node* next = child->nextSibling();
++      EXPECT_TRUE(cues || (next && next->IsTextTrackContainer()));
++      return cues;
++    }
++    cues |= child->IsTextTrackContainer();
++  }
++  ADD_FAILURE() << "No picture in picture interstitial";
++  return false;
++}
++
++// Parc: WebKit's placard covers Safari's inline cues while picture in picture
++// shows them (media-controller.js puts the cues before the controls, which
++// hold the placard).
++TEST_P(HTMLMediaElementTest, ParcSafariPictureInPictureCardCoversCues) {
++  if (GetParam() != MediaTestParam::kVideo) {
++    return;
++  }
++  SetUserAgent(kParcSafariUserAgent);
++  EXPECT_TRUE(ParcPictureInPictureCardFollowsCues(*Media()));
++}
++
++// Parc: Chrome's cues stay over its interstitial.
++TEST_P(HTMLMediaElementTest, ParcChromePictureInPictureCuesOverCard) {
++  if (GetParam() != MediaTestParam::kVideo) {
++    return;
++  }
++  SetUserAgent(kParcChromeUserAgent);
++  EXPECT_FALSE(ParcPictureInPictureCardFollowsCues(*Media()));
 +}
 +
 +TEST_P(HTMLMediaElementTest, ParcChromeCurrentTimeHeldUntilMicrotask) {

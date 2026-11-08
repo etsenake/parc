@@ -207,7 +207,7 @@
  import "ui/gfx/geometry/mojom/geometry.mojom";
  
  // PictureInPictureSessionObserver is associated to a PictureInPictureSession at
-@@ -41,6 +42,12 @@
+@@ -41,6 +42,13 @@
    // Notifies the session that the associated player's position has been
    // updated.
    UpdateMediaPosition(media_session.mojom.MediaPosition media_position);
@@ -215,7 +215,8 @@
 +  // Parc: the video's displayed text track cues, painted for the window, as
 +  // WebKit sends Safari's (VideoPresentationManager::
 +  // updateTextTrackRepresentationForVideoElement). `bounds` places them as a
-+  // fraction of the window; a null `captions` removes them.
++  // fraction of the video frame the window shows; a null `captions` removes
++  // them.
 +  UpdateCaptions(skia.mojom.BitmapN32? captions, gfx.mojom.RectF bounds);
  };
  
@@ -274,12 +275,10 @@
  
  namespace blink {
  
-@@ -144,6 +157,101 @@
-     return;
-   SetInlineStyleProperty(CSSPropertyID::kFontSize, default_font_size_,
+@@ -146,6 +159,98 @@
                           CSSPrimitiveValue::UnitType::kPixels);
-+}
-+
+ }
+ 
 +SkBitmap TextTrackContainer::PaintForPictureInPicture(
 +    const gfx::SizeF& window_size,
 +    float device_scale_factor,
@@ -316,25 +315,23 @@
 +    return SkBitmap();
 +  }
 +
-+  // The window shows the video frame, so cues keep their place and size
-+  // relative to it, as WebKit lays them out over the window's video layer.
-+  // Cues in the element's letterbox move inside the window.
++  // The window shows the video frame, fitted inside it, so cues keep their
++  // place and size relative to the frame, as WebKit lays them out over the
++  // window's video layer. Cues in the element's letterbox move onto the frame.
 +  const float scale = std::min(window_size.width() / video_rect.width(),
 +                               window_size.height() / video_rect.height());
-+  const gfx::Vector2dF letterbox(
-+      (window_size.width() - video_rect.width() * scale) / 2,
-+      (window_size.height() - video_rect.height() * scale) / 2);
-+  gfx::RectF placed((cues.x() - video_rect.x()) * scale + letterbox.x(),
-+                    (cues.y() - video_rect.y()) * scale + letterbox.y(),
-+                    cues.width() * scale, cues.height() * scale);
-+  const float fit = std::min({1.f, window_size.width() / placed.width(),
-+                              window_size.height() / placed.height()});
++  const gfx::SizeF picture = gfx::ScaleSize(video_rect.size(), scale);
++  gfx::RectF placed((cues.x() - video_rect.x()) * scale,
++                    (cues.y() - video_rect.y()) * scale, cues.width() * scale,
++                    cues.height() * scale);
++  const float fit = std::min({1.f, picture.width() / placed.width(),
++                              picture.height() / placed.height()});
 +  placed.ClampToCenteredSize(gfx::ScaleSize(placed.size(), fit));
 +  placed.set_origin(gfx::PointF(
 +      std::clamp(placed.x(), 0.f,
-+                 std::max(0.f, window_size.width() - placed.width())),
++                 std::max(0.f, picture.width() - placed.width())),
 +      std::clamp(placed.y(), 0.f,
-+                 std::max(0.f, window_size.height() - placed.height()))));
++                 std::max(0.f, picture.height() - placed.height()))));
 +  const float pixels = scale * fit * device_scale_factor;
 +  const gfx::Size size = gfx::ToCeiledSize(gfx::ScaleSize(cues.size(), pixels));
 +  constexpr int kMaxDimension = 8192;
@@ -370,28 +367,28 @@
 +  builder.EndRecording(
 +      canvas, container->FirstFragment().LocalBorderBoxProperties().Unalias());
 +
-+  bounds = gfx::ScaleRect(placed, 1 / window_size.width(),
-+                          1 / window_size.height());
++  bounds = gfx::ScaleRect(placed, 1 / picture.width(), 1 / picture.height());
 +  return bitmap;
- }
- 
++}
++
  void TextTrackContainer::UpdateDisplay(HTMLMediaElement& media_element,
+                                        ExposingControls exposing_controls) {
+   if (!media_element.TextTracksVisible()) {
 --- a/third_party/blink/renderer/core/html/track/text_track_container.h
 +++ b/third_party/blink/renderer/core/html/track/text_track_container.h
-@@ -32,7 +32,13 @@
+@@ -32,6 +32,12 @@
  
  #include "third_party/blink/renderer/core/html/html_div_element.h"
  #include "third_party/blink/renderer/platform/wtf/casting.h"
 +#include "third_party/skia/include/core/SkBitmap.h"
- 
++
 +namespace gfx {
 +class RectF;
 +class SizeF;
 +}  // namespace gfx
-+
+ 
  namespace blink {
  
- class HTMLMediaElement;
 @@ -57,6 +63,15 @@
    void UpdateDisplay(HTMLMediaElement&, ExposingControls);
    void UpdateDefaultFontSize(LayoutObject*);
@@ -400,7 +397,7 @@
 +  // `window_size` DIPs, painted as WebKit's
 +  // MediaControlTextTrackContainerElement::createTextTrackRepresentationImage
 +  // paints Safari's. `bounds` receives where they go, as a fraction of the
-+  // window. Empty when no cue shows.
++  // video frame the window shows. Empty when no cue shows.
 +  SkBitmap PaintForPictureInPicture(const gfx::SizeF& window_size,
 +                                    float device_scale_factor,
 +                                    gfx::RectF& bounds);
@@ -474,11 +471,10 @@
  
   private:
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -372,7 +379,65 @@
-   EXPECT_NE(nullptr, PictureInPictureControllerImpl::From(GetDocument())
+@@ -373,6 +380,67 @@
                           .PictureInPictureElement());
  }
-+
+ 
 +// Parc: the window shows the displayed cues, as Safari's does, and drops them
 +// when the track stops showing.
 +TEST_F(PictureInPictureControllerTestWithWidget, CaptionsReachWindow) {
@@ -491,7 +487,7 @@
 +  // Playback leaves the poster state, so the cue becomes active.
 +  Video()->Play();
 +  test::RunPendingTasks();
- 
++
 +  // Entry clears whatever the window showed; the mock's window has no size
 +  // yet, so that first update carries no cues.
 +  EXPECT_CALL(Service().Session(), UpdateCaptions(_, _))
@@ -513,9 +509,12 @@
 +                               }
 +                               return false;
 +                             }),
++                             // The 2:1 video fills the window's width, so
++                             // its bottom line ends near the frame's bottom,
++                             // not 40 DIPs above the 4:3 window's.
 +                             testing::Truly([](const gfx::RectF& bounds) {
 +                               return gfx::RectF(0, 0, 1, 1).Contains(bounds) &&
-+                                      bounds.y() > 0.5;
++                                      bounds.y() > 0.5 && bounds.bottom() > 0.9;
 +                             })))
 +      .WillOnce(testing::InvokeWithoutArgs([&] { painted.Quit(); }))
 +      .RetiresOnSaturation();

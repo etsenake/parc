@@ -827,7 +827,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _favicon.image = image;
 }
 - (void)setCaptions:(NSImage*)image bounds:(NSRect)bounds {
-  // The page supplies the bounds, so they stay within the window.
+  // The page supplies the bounds, so they stay within the video picture.
   const BOOL finite = isfinite(NSMinX(bounds)) && isfinite(NSMinY(bounds)) &&
                       isfinite(NSWidth(bounds)) && isfinite(NSHeight(bounds));
   _captionBounds =
