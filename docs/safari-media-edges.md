@@ -715,8 +715,13 @@ through Chromium's MP3 decoder; measured against this Mac's
 user-felt: several audio streams in one TS showed as one track, so a
 language or commentary menu did nothing, and E-AC-3 7.1 frames split across
 packets lost their extra channels: **fixed** ffa89f7f. FairPlay SAMPLE-AES
-H.264, AAC, AC-3 and E-AC-3 in TS failed to play: **fixed** bea69854 (was SBS-2c, about
-600-900 lines); MPEG-1/2 video in TS played black: **fixed** 9f8ba00d (a TS
+H.264, AAC, AC-3 and E-AC-3 in TS failed to play: **fixed** bea69854 (mpts init data and the single
+`TransportStreamIdentifier` key ID as WebKit; AC-3/E-AC-3 decryption
+**unchecked**, no licensed content). An HE-AAC stream declared in the PMT but
+only implied by its config is named plain AAC (possibly losing the high
+band): **in progress** (SBS-2c2). One `encrypted` event for a SourceBuffer
+holding video and audio (one key serves both, as WebKit), and rare
+descriptor-order and type-mismatch cases: **left**. MPEG-1/2 video in TS played black: **fixed** 9f8ba00d (a TS
 elementary-stream parser with Safari's types, key frames, timestamps and pixel
 aspect, decoded by VideoToolbox in the GPU process). Left: `videoWidth`/
 `videoHeight` for non-square pixels follow Chromium's model for every codec
