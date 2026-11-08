@@ -189,6 +189,8 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void ParcSetPlaybackTarget(const std::string& output_context_id,
                              bool should_play) override;
   void ParcSetWirelessVideoPlaybackDisabled(bool disabled) override;
+  // A clear file's track choices: kept for the player, as the target.
+  void ParcSelectFileTracks(const ParcFileTracks& tracks) override;
 
   // NativeHlsSource.
   void SetClient(NativeHlsSource::Client* client) override;
@@ -274,6 +276,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void SetTextTrackMode(const std::string& key,
                         media::ParcInbandTextTrackMode mode);
   void SetAudioTrackEnabled(const std::string& key, bool enabled);
+  void SendFileTracks();
   // Sends the player the CDM ID `cdm_context` names unless it was the last one
   // sent; an offer of that one waits for the player's answer to it.
   void SendCdm(media::CdmContext* cdm_context,
@@ -308,6 +311,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   std::string playback_target_id_;
   bool should_play_to_playback_target_;
   bool wireless_video_playback_disabled_;
+  std::optional<ParcFileTracks> file_tracks_;
   const StartLoadCallback start_load_cb_;
   // The element's tracks; posts to the main thread. Null in unit tests.
   const std::unique_ptr<media::TrackManager> track_manager_;

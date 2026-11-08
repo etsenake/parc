@@ -160,6 +160,11 @@ void FairPlayHlsTrackBridge::SetTextTrackMode(
   selection_.SetTextTrackMode(key, FromMojo(mode));
 }
 
+void FairPlayHlsTrackBridge::SelectFileTracks(
+    parc::fairplay::HlsFileTracks tracks) {
+  selection_.SelectFileTracks(std::move(tracks));
+}
+
 void FairPlayHlsTrackBridge::WillSeek() {
   ++pending_seeks_;
   selection_.BeginSeeking();

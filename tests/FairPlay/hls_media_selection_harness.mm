@@ -25,6 +25,11 @@
 
 namespace fp = parc::fairplay;
 
+// The SPI the selection uses to find an option's asset track.
+@interface AVMediaSelectionOption (HlsTracksHarness)
+- (AVAssetTrack*)track;
+@end
+
 // The synchronous media selection accessors, as the selection itself uses.
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
@@ -504,6 +509,172 @@ void ClosedCaptionScenario() {
   Check(after_seek, "captions resume after the seek");
 }
 
+// Chromium's bbb-320x240-2video-2audio.mp4 (video 1, audio 2, video 3,
+// audio 4) rewritten as a multi-language file is muxed: with `grouped`, the
+// audio tracks share alternate group 1 and the video tracks group 2, the
+// second of each disabled; without, no groups and every track enabled.
+// Returns a file URL, or nil.
+NSURL* MultiTrackFile(bool grouped) {
+  NSData* source = [NSData dataWithContentsOfURL:
+      [NSURL URLWithString:@"https://raw.githubusercontent.com/chromium/chromium/main/media/test/data/"
+                           @"bbb-320x240-2video-2audio.mp4"]];
+  if (!source) {
+    return nil;
+  }
+  NSMutableData* data = [source mutableCopy];
+  uint8_t* bytes = static_cast<uint8_t*>(data.mutableBytes);
+  auto be32 = [&](size_t at) {
+    return uint32_t(bytes[at]) << 24 | uint32_t(bytes[at + 1]) << 16 | uint32_t(bytes[at + 2]) << 8 | bytes[at + 3];
+  };
+  std::function<void(size_t, size_t)> walk = [&](size_t at, size_t end) {
+    while (at + 8 <= end) {
+      size_t size = be32(at);
+      if (size < 8 || at + size > end) {
+        return;
+      }
+      std::string type(reinterpret_cast<char*>(bytes + at + 4), 4);
+      if (type == "moov" || type == "trak") {
+        walk(at + 8, at + size);
+      } else if (type == "tkhd") {
+        bool v1 = bytes[at + 8] == 1;
+        uint32_t id = be32(at + 12 + (v1 ? 16 : 8));
+        bool audio = id % 2 == 0;
+        bool second = id > 2;
+        bytes[at + 11] = grouped && second ? 0x2 : 0x3;  // track_enabled | in_movie
+        size_t alternate_group = at + 12 + (v1 ? 32 : 20) + 8 + 2;
+        bytes[alternate_group] = 0;
+        bytes[alternate_group + 1] = grouped ? (audio ? 1 : 2) : 0;
+      }
+      at += size;
+    }
+  };
+  walk(0, data.length);
+  NSURL* url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:
+                                          grouped ? @"parc-tracks-grouped.mp4" : @"parc-tracks-ungrouped.mp4"]];
+  return [data writeToURL:url atomically:YES] ? url : nil;
+}
+
+// A clear file played for AirPlay (NATIVE_HLS.md, AirPlay): the element's
+// track choices reach the item, by position, whatever AVFoundation enabled,
+// and stay when the tracks change.
+void FileTracks(bool grouped) {
+  std::printf("-- %s\n", grouped ? "audio and video in alternate groups, the second of each disabled"
+                                  : "no alternate groups, every track enabled");
+  NSURL* url = MultiTrackFile(grouped);
+  Check(url != nil, "the test file");
+  if (!url) {
+    return;
+  }
+  Session session(url.absoluteString);
+  Recorder& r = session.recorder;
+  bool listed = WaitFor([&] { return r.Count(fp::HlsTrackType::kAudio) == 2; }, 30);
+  OnOwner([&] { r.Dump(); });
+  Check(listed, "two audio tracks reported");
+  if (!listed) {
+    return;
+  }
+  // Which of the item's audio or video tracks play: the selected option of
+  // its group, else the enabled item tracks.
+  auto playing = [&](AVMediaType type, AVMediaCharacteristic characteristic) {
+    std::vector<bool> on;
+    AVMediaSelectionGroup* group = [session.item.asset mediaSelectionGroupForMediaCharacteristic:characteristic];
+    AVMediaSelectionOption* selected = group ? [session.item selectedMediaOptionInMediaSelectionGroup:group] : nil;
+    for (AVPlayerItemTrack* track in session.item.tracks) {
+      if ([track.assetTrack.mediaType isEqualToString:type]) {
+        on.push_back(group ? [[selected track] isEqual:track.assetTrack] : bool(track.enabled));
+      }
+    }
+    return on;
+  };
+  auto print = [&](const char* when) {
+    OnOwner([&] {
+      std::printf("  %s: audio", when);
+      for (bool on : playing(AVMediaTypeAudio, AVMediaCharacteristicAudible)) {
+        std::printf(" %d", on);
+      }
+      std::printf(", video");
+      for (bool on : playing(AVMediaTypeVideo, AVMediaCharacteristicVisual)) {
+        std::printf(" %d", on);
+      }
+      std::printf("\n");
+    });
+  };
+  print("AVFoundation's default");
+  auto plays = [&](std::vector<bool> audio, std::vector<bool> video) {
+    return WaitFor(
+        [&] {
+          return playing(AVMediaTypeAudio, AVMediaCharacteristicAudible) == audio &&
+                 playing(AVMediaTypeVideo, AVMediaCharacteristicVisual) == video;
+        },
+        10);
+  };
+  auto reported = [&](std::vector<bool> audio) {
+    return WaitFor(
+        [&] {
+          std::vector<bool> on;
+          for (const auto& track : r.tracks_) {
+            if (track.type == fp::HlsTrackType::kAudio) {
+              on.push_back(track.enabled);
+            }
+          }
+          return on == audio;
+        },
+        10);
+  };
+
+  OnOwner([&] { session.selection->SelectFileTracks({2, {1}, 2, 1}); });
+  Check(plays({false, true}, {false, true}), "the second audio and video tracks play, alone");
+  Check(reported({false, true}), "the list reports the second audio track enabled");
+  print("second chosen");
+
+  OnOwner([&] { session.selection->SelectFileTracks({2, {0}, 2, 0}); });
+  Check(plays({true, false}, {true, false}), "back to the first audio and video tracks");
+  Check(reported({true, false}), "the list follows");
+
+  // A group plays one option: the first chosen, as Chromium's pipeline does.
+  // Choosing again what plays changes nothing.
+  if (grouped) {
+    OnOwner([&] { session.selection->SelectFileTracks({2, {0, 1}, 2, 0}); });
+    Check(plays({true, false}, {true, false}), "a group plays the first chosen audio track");
+    int reports = 0;
+    OnOwner([&] { reports = r.track_reports_; });
+    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.0]];
+    int settled = 0;
+    OnOwner([&] { settled = r.track_reports_; });
+    Check(settled == reports, "applying the same choice settles");
+    OnOwner([&] { session.selection->SelectFileTracks({2, {}, 2, std::nullopt}); });
+    Check(plays({false, false}, {false, false}), "none chosen selects no option in either group");
+    OnOwner([&] { session.selection->SelectFileTracks({1, {0}, 2, 1}); });
+    Check(plays({false, false}, {false, true}), "unmatched audio stays as it is; video follows");
+  }
+  if (!grouped) {
+    OnOwner([&] { session.selection->SelectFileTracks({2, {0, 1}, 2, 0}); });
+    Check(plays({true, true}, {true, false}), "every enabled audio track plays, as Safari's");
+    OnOwner([&] { session.selection->SelectFileTracks({2, {0}, 2, 0}); });
+    // A track enabled behind the choice (a tracks change) is turned off.
+    OnOwner([&] {
+      for (AVPlayerItemTrack* track in session.item.tracks) {
+        if ([track.assetTrack.mediaType isEqualToString:AVMediaTypeAudio] && !track.enabled) {
+          track.enabled = YES;
+        }
+      }
+    });
+    Check(plays({true, false}, {true, false}), "a track enabled outside the choice goes off again");
+    OnOwner([&] { session.selection->SelectFileTracks({2, {}, 2, std::nullopt}); });
+    Check(plays({false, false}, {false, false}), "none enabled or selected plays none");
+    // A list that doesn't match the item's (a track Chromium's demuxer
+    // couldn't read) leaves AVFoundation's choice for that type.
+    OnOwner([&] { session.selection->SelectFileTracks({1, {0}, 2, 1}); });
+    Check(plays({false, false}, {false, true}), "unmatched audio stays as it is; video follows");
+  }
+}
+
+void FileScenario() {
+  std::printf("== file: a clear MP4 with two audio and two video tracks\n");
+  FileTracks(/*grouped=*/true);
+  FileTracks(/*grouped=*/false);
+}
+
 void TeardownScenario() {
   std::printf("== teardown\n");
   {
@@ -530,6 +701,9 @@ int main(int argc, char** argv) {
     }
     if (only.empty() || only == "cea608") {
       ClosedCaptionScenario();
+    }
+    if (only.empty() || only == "file") {
+      FileScenario();
     }
     if (only.empty() || only == "teardown") {
       TeardownScenario();

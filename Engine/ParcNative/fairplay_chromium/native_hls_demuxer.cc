@@ -215,6 +215,9 @@ void NativeHlsDemuxer::Initialize(media::DemuxerHost* host,
   if (wireless_video_playback_disabled_) {
     player_->SetWirelessVideoPlaybackDisabled(true);
   }
+  if (file_tracks_) {
+    SendFileTracks();
+  }
   // The answer is OnInitialized, on the client's pipe, after any OnError
   // about the item.
   player_->Initialize(url_, mime_type_, video_layer_size_, video_layer_scale_);
@@ -350,6 +353,20 @@ void NativeHlsDemuxer::ParcSetWirelessVideoPlaybackDisabled(bool disabled) {
   if (player_.is_bound()) {
     player_->SetWirelessVideoPlaybackDisabled(disabled);
   }
+}
+
+void NativeHlsDemuxer::ParcSelectFileTracks(const ParcFileTracks& tracks) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  file_tracks_ = tracks;
+  if (player_.is_bound()) {
+    SendFileTracks();
+  }
+}
+
+void NativeHlsDemuxer::SendFileTracks() {
+  player_->SelectFileTracks(media::mojom::FairPlayHlsFileTracks::New(
+      file_tracks_->audio_count, file_tracks_->audio,
+      file_tracks_->video_count, file_tracks_->video));
 }
 
 void NativeHlsDemuxer::FollowMuteStateHandoff(

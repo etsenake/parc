@@ -107,6 +107,10 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void SetWirelessVideoPlaybackDisabled(bool disabled) override {
     wireless_disabled_.push_back(disabled);
   }
+  void SelectFileTracks(
+      media::mojom::FairPlayHlsFileTracksPtr tracks) override {
+    file_tracks_.push_back({std::move(tracks), initialized_});
+  }
   void FollowMuteStateHandoff(const base::UnguessableToken& handoff) override {
     mute_state_handoffs_.push_back(handoff);
   }
@@ -118,6 +122,11 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   };
   std::vector<Target> targets_;
   std::vector<bool> wireless_disabled_;
+  struct FileTracks {
+    media::mojom::FairPlayHlsFileTracksPtr tracks;
+    bool after_initialize;
+  };
+  std::vector<FileTracks> file_tracks_;
   GURL url_;
   gfx::SizeF video_layer_size_;
   float video_layer_scale_ = 0;
@@ -534,6 +543,32 @@ TEST_F(NativeHlsTest, AirPlayTargetChangesReachThePlayer) {
   EXPECT_FALSE(player_.targets_[1].should_play);
   EXPECT_TRUE(player_.targets_[1].after_initialize);
   EXPECT_EQ(player_.wireless_disabled_, std::vector<bool>{true});
+}
+
+// A clear file's track choices (NATIVE_HLS.md, AirPlay): one made before the
+// pipe is bound goes with the load, before Initialize; later ones at once.
+TEST_F(NativeHlsTest, FileTrackChoicesReachThePlayer) {
+  demuxer_->ParcSelectFileTracks({.audio_count = 2,
+                                  .audio = {1},
+                                  .video_count = 1,
+                                  .video = 0});
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  demuxer_->ParcSelectFileTracks({.audio_count = 2, .audio = {0, 1}});
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(player_.file_tracks_.size(), 2u);
+  const media::mojom::FairPlayHlsFileTracks& before =
+      *player_.file_tracks_[0].tracks;
+  EXPECT_EQ(before.audio_count, 2u);
+  EXPECT_EQ(before.audio, std::vector<uint32_t>{1});
+  EXPECT_EQ(before.video_count, 1u);
+  EXPECT_EQ(before.video, 0u);
+  EXPECT_FALSE(player_.file_tracks_[0].after_initialize);
+  const media::mojom::FairPlayHlsFileTracks& after =
+      *player_.file_tracks_[1].tracks;
+  EXPECT_EQ(after.audio, (std::vector<uint32_t>{0, 1}));
+  EXPECT_EQ(after.video_count, 0u);
+  EXPECT_EQ(after.video, std::nullopt);
+  EXPECT_TRUE(player_.file_tracks_[1].after_initialize);
 }
 
 TEST_F(NativeHlsTest, WirelessStateReachesTheElement) {

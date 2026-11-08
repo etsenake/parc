@@ -502,6 +502,9 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
   init_pending_ = true;
   fp::PostTask post_task = fp::PostTaskTo(task_runner_);
   tracks_ = std::make_unique<FairPlayHlsTrackBridge>(client_.get(), post_task);
+  if (file_tracks_) {
+    tracks_->SelectFileTracks(*file_tracks_);
+  }
   player_ = std::make_unique<fp::FairPlayHlsPlayer>(this, this, post_task);
   player_->SetVolume(volume_);
   player_->SetPreservesPitch(preserves_pitch_);
@@ -740,6 +743,16 @@ void FairPlayHlsPlayerService::SetWirelessVideoPlaybackDisabled(
   wireless_video_disabled_ = disabled;
   if (player_) {
     player_->SetWirelessVideoPlaybackDisabled(disabled);
+  }
+}
+
+void FairPlayHlsPlayerService::SelectFileTracks(
+    mojom::FairPlayHlsFileTracksPtr tracks) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  file_tracks_ = fp::HlsFileTracks{tracks->audio_count, tracks->audio,
+                                   tracks->video_count, tracks->video};
+  if (tracks_) {
+    tracks_->SelectFileTracks(*file_tracks_);
   }
 }
 

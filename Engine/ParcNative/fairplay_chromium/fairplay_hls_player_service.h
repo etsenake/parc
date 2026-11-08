@@ -54,6 +54,7 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/parc_fairplay/core/fairplay_hls_media_selection.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_player.h"
 
 namespace parc::fairplay {
@@ -148,6 +149,7 @@ class FairPlayHlsPlayerService final
   void SetPlaybackTarget(const std::string& output_context_id,
                          bool should_play) override;
   void SetWirelessVideoPlaybackDisabled(bool disabled) override;
+  void SelectFileTracks(mojom::FairPlayHlsFileTracksPtr tracks) override;
   void FollowMuteStateHandoff(const base::UnguessableToken& handoff) override;
 
   // parc::fairplay::HlsPlayerClient:
@@ -242,6 +244,8 @@ class FairPlayHlsPlayerService final
   std::string playback_target_id_;
   bool should_play_to_target_ = false;
   bool wireless_video_disabled_ = false;
+  // SelectFileTracks before Initialize makes the bridge.
+  std::optional<parc::fairplay::HlsFileTracks> file_tracks_;
   bool page_muted_ = false;
   bool tab_muted_ = false;
   bool awaiting_mute_state_ = false;

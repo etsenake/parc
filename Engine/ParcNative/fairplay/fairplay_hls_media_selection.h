@@ -84,6 +84,18 @@ struct HlsTrack {
   bool operator==(const HlsTrack&) const = default;
 };
 
+// A clear file played for AirPlay (NATIVE_HLS.md, AirPlay): the audio tracks
+// the element has enabled and the video track it has selected (none for
+// nullopt), by position among the item's audio tracks (in the reported order)
+// and its video tracks. A type whose count differs from the item's can't be
+// matched and keeps AVFoundation's choice.
+struct HlsFileTracks {
+  uint32_t audio_count = 0;
+  std::vector<uint32_t> audio;
+  uint32_t video_count = 0;
+  std::optional<uint32_t> video;
+};
+
 // GenericCueData::Alignment.
 enum class HlsCueAlign { kNone, kStart, kMiddle, kEnd };
 
@@ -206,6 +218,9 @@ class HlsMediaSelection {
   // audible group (or enables the item track); disabling the selected option
   // selects none. Stops WebKit's automatic choice for good.
   void SetAudioTrackEnabled(const std::string& key, bool enabled);
+  // A clear file played here for AirPlay: the element's track choices,
+  // applied now and whenever the tracks change, overriding AVFoundation's.
+  void SelectFileTracks(HlsFileTracks tracks);
   // TextTrack.mode, set by the page or the element's automatic selection.
   // The legible output serves the first showing track, else the last hidden
   // one, else none (configureInbandTracks).

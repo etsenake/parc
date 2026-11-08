@@ -8,7 +8,8 @@
 //   its AVPlayer and item: bridge_->Attach(player.impl()); earlier (after
 //   CreateAsset only) it does nothing and never attaches;
 //   Initialize reply: metadata->tracks = bridge_->TakeTracksForInitialize();
-//   SetAudioTrackEnabled / SetTextTrackMode: forward to the bridge;
+//   SetAudioTrackEnabled / SetTextTrackMode / SelectFileTracks: forward to
+//   the bridge;
 //   around each FairPlayHlsPlayer::Seek: WillSeek() before, DidSeek() in its
 //   done callback, whatever the result.
 // Lists the selection reports before the Initialize reply are folded into
@@ -50,6 +51,8 @@ class FairPlayHlsTrackBridge final
   void SetAudioTrackEnabled(const std::string& key, bool enabled);
   void SetTextTrackMode(const std::string& key,
                         mojom::FairPlayHlsTextTrackMode mode);
+
+  void SelectFileTracks(parc::fairplay::HlsFileTracks tracks);
 
   void WillSeek();
   void DidSeek();

@@ -760,8 +760,17 @@ reaches a TV from Parc. Parc follows WebKit's split:
   route has seeked, the element keeps its time (as a seek's target), duration
   and readyState, and the tracks Chromium listed stay (the route's own track
   reports are dropped); then the route's readyState applies (never lowered to
-  `HAVE_METADATA`) and a different duration raises one `durationchange`. A
-  file the native route can't open goes back to Chromium's pipeline at the
+  `HAVE_METADATA`) and a different duration raises one `durationchange`.
+  The element's enabled audio tracks and selected video track go to AVPlayer
+  (`FairPlayHlsPlayer.SelectFileTracks`, `HlsMediaSelection::SelectFileTracks`)
+  by position among each type, as Safari's `AudioTrack.enabled` and
+  `VideoTrack.selected` set the option in the item's group or the item track;
+  they are applied again whenever the item's tracks change, and a type whose
+  track count differs from Chromium's keeps AVFoundation's choice. A live
+  stream reconnects, its new connection's time starting over; the element's
+  time, buffered and seekable ranges, seeks and frame times are offset by the
+  difference (`parc_live_time_offset_`), so its timeline goes on as Safari's
+  single connection's does. A file the native route can't open goes back to Chromium's pipeline at the
   same time and stops supporting a target, as WebKit turns the target down.
   Media Source never moves: WebKit's player refuses a target.
 - Media Source (`checkPlaybackTargetCompatibility`): given the target, a Media
@@ -816,7 +825,10 @@ should-play off or an unknown ID, the disabled flag, local playback goes on
 with no device in the context) and `file` (a clear MP4 served as
 `application/octet-stream` and an MP3 play through the loader in byte ranges
 with the target set and the container's type, from a seek to the element's
-time); `tests/FairPlay/sandbox` plays native HLS and
+time), and `tests/FairPlay/hls_media_selection_harness.mm` `file` (a
+two-audio, two-video MP4 muxed with and without alternate groups plays only
+the element's tracks, by position, and keeps them when AVFoundation enables
+another); `tests/FairPlay/sandbox` plays native HLS and
 FairPlay under the new rules. Needs an AirPlay receiver, unchecked: playback
 moving to the TV, `externalPlaybackActive`, the device name, FairPlay keys on
 the device, and the AirPlay services the GPU sandbox needs.

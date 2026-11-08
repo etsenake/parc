@@ -3,8 +3,8 @@
 # (Engine/ParcNative/fairplay/fairplay_hls_media_selection.mm). Compiles the
 # selection with tests/FairPlay/hls_media_selection_harness.mm using clang
 # only and plays Apple's public multi-audio, multi-subtitle and CEA-608 test
-# streams. Needs network access. Optional argument: one scenario (webvtt,
-# cea608, teardown).
+# streams and a clear MP4 with two audio and two video tracks. Needs network
+# access. Optional argument: one scenario (webvtt, cea608, file, teardown).
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-fairplay-hls-tracks.XXXXXX")"

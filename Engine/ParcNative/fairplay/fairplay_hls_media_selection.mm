@@ -1101,6 +1101,7 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
         ProcessMediaSelectionOptions();
       }
     }
+    ApplyFileTracks();
     ReportTracks();
   }
 
@@ -1117,6 +1118,12 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     } else if (track->option && audible_group_) {
       SetOptionSelected(track->option, enabled);
     }
+    ReportTracks();
+  }
+
+  void SelectFileTracks(HlsFileTracks tracks) {
+    file_tracks_ = std::move(tracks);
+    ApplyFileTracks();
     ReportTracks();
   }
 
@@ -1945,11 +1952,10 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
     });
   }
 
-  // The DOM lists: audio by index (AudioTrackList::append inserts after
-  // equal indexes), text in in-band order.
-  void ReportTracks() {
-    std::vector<HlsTrack> tracks;
-    std::vector<const AudioTrack*> audio;
+  // Audio tracks in the DOM list's order: by index (AudioTrackList::append
+  // inserts after equal indexes).
+  std::vector<AudioTrack*> SortedAudioTracks() const {
+    std::vector<AudioTrack*> audio;
     for (auto& track : audio_tracks_) {
       audio.push_back(track.get());
     }
@@ -1957,6 +1963,92 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
       return static_cast<uint64_t>(static_cast<size_t>(a->info.index)) <
              static_cast<uint64_t>(static_cast<size_t>(b->info.index));
     });
+    return audio;
+  }
+
+  // The element's choices for a clear file (SelectFileTracks), each time the
+  // tracks change, as Safari's AudioTrack.enabled and VideoTrack.selected set
+  // them on AVPlayer (AudioTrackPrivateAVFObjC::setEnabled,
+  // VideoTrackPrivateAVFObjC::setSelected): the item tracks, or one option of
+  // a group, the first chosen, as Chromium's pipeline plays only the first.
+  // Only a change is written, so the tracks change it causes settles.
+  void ApplyFileTracks() {
+    if (!file_tracks_ || !item_ || !cached_tracks_) {
+      return;
+    }
+    std::vector<AudioTrack*> audio = SortedAudioTracks();
+    if (audio.size() == file_tracks_->audio_count) {
+      auto chosen = [this](uint32_t index) {
+        const std::vector<uint32_t>& list = file_tracks_->audio;
+        return std::find(list.begin(), list.end(), index) != list.end();
+      };
+      if (audible_group_) {
+        AVMediaSelectionOption* option = nil;
+        for (uint32_t i = 0; i < audio.size() && !option; ++i) {
+          if (chosen(i)) {
+            option = audio[i]->option;
+          }
+        }
+        SetGroupSelectedOption(*audible_group_, option);
+      } else {
+        for (uint32_t i = 0; i < audio.size(); ++i) {
+          AVPlayerItemTrack* item_track = audio[i]->item_track;
+          if (item_track && item_track.enabled != chosen(i)) {
+            item_track.enabled = chosen(i);
+          }
+        }
+      }
+      for (AudioTrack* track : audio) {
+        ResetPropertiesFromTrack(*track);
+      }
+    }
+    std::vector<AVPlayerItemTrack*> video;
+    for (AVPlayerItemTrack* track in cached_tracks_) {
+      if ([track.assetTrack.mediaType isEqualToString:AVMediaTypeVideo]) {
+        video.push_back(track);
+      }
+    }
+    if (video.size() != file_tracks_->video_count) {
+      return;
+    }
+    AVMediaSelectionGroup* visual_group = VisualGroup();
+    if (!visual_group) {
+      for (uint32_t i = 0; i < video.size(); ++i) {
+        bool selected = file_tracks_->video == i;
+        if (video[i].enabled != selected) {
+          video[i].enabled = selected;
+        }
+      }
+      return;
+    }
+    // The positions come from the render process.
+    AVMediaSelectionOption* option = nil;
+    if (file_tracks_->video) {
+      if (*file_tracks_->video >= video.size()) {
+        return;
+      }
+      for (AVMediaSelectionOption* candidate in visual_group.options) {
+        if ([AssetTrackForOption(candidate) isEqual:video[*file_tracks_->video].assetTrack]) {
+          option = candidate;
+        }
+      }
+      // A track outside the group leaves the group as it is.
+      if (!option) {
+        return;
+      }
+    }
+    // A group fetched again can give other objects for the same options.
+    AVMediaSelectionOption* current =
+        [item_.currentMediaSelection selectedMediaOptionInMediaSelectionGroup:visual_group];
+    if (option != current && ![option isEqual:current]) {
+      [item_ selectMediaOption:option inMediaSelectionGroup:visual_group];
+    }
+  }
+
+  // The DOM lists: audio by index, text in in-band order.
+  void ReportTracks() {
+    std::vector<HlsTrack> tracks;
+    std::vector<AudioTrack*> audio = SortedAudioTracks();
     for (const AudioTrack* track : audio) {
       HlsTrack info = track->info;
       info.enabled = track->enabled;
@@ -2334,6 +2426,7 @@ class HlsMediaSelection::Impl : public std::enable_shared_from_this<HlsMediaSele
   uint64_t next_audio_key_ = 0;
   uint64_t last_cue_id_ = 0;
   std::vector<HlsTrack> reported_;
+  std::optional<HlsFileTracks> file_tracks_;
 };
 
 HlsMediaSelection::HlsMediaSelection(HlsMediaSelectionClient* client, PostTask post_task)
@@ -2345,6 +2438,10 @@ HlsMediaSelection::~HlsMediaSelection() {
 
 void HlsMediaSelection::SetAudioTrackEnabled(const std::string& key, bool enabled) {
   impl_->SetAudioTrackEnabled(key, enabled);
+}
+
+void HlsMediaSelection::SelectFileTracks(HlsFileTracks tracks) {
+  impl_->SelectFileTracks(std::move(tracks));
 }
 
 void HlsMediaSelection::SetTextTrackMode(const std::string& key, HlsTextTrackMode mode) {
