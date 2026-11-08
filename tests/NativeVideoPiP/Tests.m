@@ -48,6 +48,13 @@ static BOOL gLiveResize;
 static BOOL LiveResize(id self, SEL _cmd) {
   return gLiveResize;
 }
+// What the window server shows, which ignores a background app's cursor
+// unless it is allowed to set one; this test process is never frontmost.
+static BOOL Shows(NSCursor* cursor) {
+  [[NSRunLoop currentRunLoop]
+      runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  return NSEqualPoints(NSCursor.currentSystemCursor.hotSpot, cursor.hotSpot);
+}
 static NSView* Host(NSButton* button) {
   if (@available(macOS 26.0, *)) {
     for (NSView* host = button; host; host = host.superview) {
@@ -244,14 +251,18 @@ int main(void) {
     EXPECT(play.alphaValue == 1);
     EXPECT(Host(play).layer.transform.m11 > 1.09);
     EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+    EXPECT(!NSApp.active);
+    EXPECT(Shows(NSCursor.pointingHandCursor));
     EXPECT(!presenter.panel.keyWindow);
     [presenter setControlsVisible:NO];
     EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
+    EXPECT(Shows(NSCursor.arrowCursor));
     EXPECT(play.alphaValue < 1);
     EXPECT(Host(play).layer.transform.m11 == 1);
     [presenter setControlsVisible:YES];
     EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
     EXPECT(play.alphaValue == 1);
+    EXPECT(Shows(NSCursor.pointingHandCursor));
     // Off every button: the arrow, and no button hovered.
     NSRect off = presenter.panel.frame;
     off.origin.x += 60;
@@ -261,6 +272,15 @@ int main(void) {
     EXPECT(play.alphaValue < 1);
     Hover(presenter);
     EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+    // Another window's control (the Meet bar) entered before this one's
+    // exit keeps the hand until it leaves too.
+    PCPictureInPicturePointAtControl(YES);
+    [presenter setControlsVisible:NO];
+    EXPECT(Shows(NSCursor.pointingHandCursor));
+    PCPictureInPicturePointAtControl(NO);
+    EXPECT(Shows(NSCursor.arrowCursor));
+    [presenter setControlsVisible:YES];
+    EXPECT(Shows(NSCursor.pointingHandCursor));
     // Every top chip is a full disc of the same size, minus included.
     for (NSNumber* tag in @[ @(PCVideoPiPReturn), @(PCVideoPiPMinimize),
                              @(PCVideoPiPClose) ]) {

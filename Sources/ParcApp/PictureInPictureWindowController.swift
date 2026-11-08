@@ -213,6 +213,8 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
     func windowWillClose(_ notification: Notification) {
         guard notification.object as? NSWindow === window, !closed else { return }
         closed = true
+        // A click on Close or Back to Tab closes the panel under the pointer.
+        topBar.endHover()
         if let page { releasePage(page) }
         container.onAttach = nil
         motion.stop()
@@ -368,6 +370,10 @@ private final class DocumentPictureInPictureTopBar: NSView {
         super.setFrameSize(newSize)
         layoutControls()
     }
+    func endHover() {
+        back.setHovering(false)
+        close.setHovering(false)
+    }
     private func layoutControls() {
         let pill = back.fittingSize
         back.frame = NSRect(x: Self.backInset, y: ((bounds.height - pill.height) / 2).rounded(),
@@ -400,8 +406,8 @@ private final class DocumentPictureInPictureTopBar: NSView {
 // A bar control under the pointer: full opacity instead of 92.5%, 70% while
 //
 // and BackToTabButtonStyle). The panel is rarely key, so hover is tracked
-// always and the cursor set on entering and leaving rather than left to
-// cursor rects, which apply only in the key window.
+// always and the cursor set on entering and leaving, also behind another
+// app, rather than left to cursor rects, which apply only in the key window.
 @MainActor
 private class PictureInPictureBarControl: NSButton {
     static let easing = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
@@ -441,7 +447,7 @@ private class PictureInPictureBarControl: NSButton {
         super.mouseDown(with: event)
         alphaValue = hovering ? 1 : 0.925
     }
-    // Hidden or closed under the pointer, no exit comes.
+    // Hidden or removed under the pointer, no exit comes.
     override func viewDidHide() {
         super.viewDidHide()
         setHovering(false)
@@ -454,7 +460,7 @@ private class PictureInPictureBarControl: NSButton {
     func setHovering(_ hovering: Bool) {
         guard hovering != self.hovering else { return }
         self.hovering = hovering
-        (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
+        PCPictureInPicturePointAtControl(hovering)
         alphaValue = hovering ? 1 : 0.925
         hoverChanged()
     }

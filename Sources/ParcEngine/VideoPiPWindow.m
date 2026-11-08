@@ -2,6 +2,7 @@
 #import "VideoPiPWindow.h"
 
 #import <QuartzCore/QuartzCore.h>
+#include <dlfcn.h>
 #include <math.h>
 
 //
@@ -112,6 +113,43 @@ static NSRect PCVideoPiPVideoRect(NSRect bounds, NSSize natural) {
   height = NSHeight(bounds) - height < 1 ? NSHeight(bounds) : round(height);
   return NSMakeRect(round(NSMidX(bounds) - width / 2),
                     round(NSMidY(bounds) - height / 2), width, height);
+}
+
+// The window server ignores a background app's cursor unless its connection
+// "SetsCursorInBackground", and a PiP floats over another app most of the
+// time. That is switched on only while the pointer is on a control, so Parc's
+// other windows behind the frontmost app keep leaving the cursor alone. The
+// arrow goes back before it is switched off: AppKit skips setting the cursor
+// it believes is current, even if the window server ignored it.
+typedef int PCCGSConnection;
+static void PCSetsCursorInBackground(BOOL on) {
+  static PCCGSConnection (*connection)(void);
+  static int (*set)(PCCGSConnection, PCCGSConnection, CFStringRef, CFTypeRef);
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    connection = (PCCGSConnection(*)(void))dlsym(RTLD_DEFAULT,
+                                                 "CGSMainConnectionID");
+    set = (int (*)(PCCGSConnection, PCCGSConnection, CFStringRef,
+                   CFTypeRef))dlsym(RTLD_DEFAULT, "CGSSetConnectionProperty");
+  });
+  if (connection && set) {
+    set(connection(), connection(), CFSTR("SetsCursorInBackground"),
+        on ? kCFBooleanTrue : kCFBooleanFalse);
+  }
+}
+// Counted: the video window and the Meet bar can each have a control under
+// the pointer while one's exit and the other's entry cross.
+void PCPictureInPicturePointAtControl(BOOL control) {
+  static NSInteger pointing;
+  if (control) {
+    if (pointing++ == 0) {
+      PCSetsCursorInBackground(YES);
+    }
+    [NSCursor.pointingHandCursor set];
+  } else if (pointing > 0 && --pointing == 0) {
+    [NSCursor.arrowCursor set];
+    PCSetsCursorInBackground(NO);
+  }
 }
 
 static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
@@ -631,9 +669,9 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 
 // The panel never becomes key, and macOS applies a window's cursor rects
 // only in the key window, so the button under the pointer is found on every
-// mouse event the monitors see and the cursor set here: a hand over a
-// button, the arrow again on leaving one. Chrome shown under a still pointer
-// counts at once.
+// mouse event the monitors see, the global one while another app is
+// frontmost, and the cursor set here: a hand over a button, the arrow again
+// on leaving one. Chrome shown under a still pointer counts at once.
 - (void)refreshPointer {
   PCVideoPiPChromeButton* button = nil;
   if (!_invalidated && _panel.visible && !_chrome.hidden) {
@@ -656,17 +694,21 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [self pointAt:button];
 }
 - (void)pointAt:(PCVideoPiPChromeButton*)button {
-  if (button) {
-    [NSCursor.pointingHandCursor set];
-  }
   PCVideoPiPChromeButton* previous = _pointed;
+  if (button) {
+    // Every move: the glass or a cursor rect may have changed it meanwhile.
+    if (previous) {
+      [NSCursor.pointingHandCursor set];
+    } else {
+      PCPictureInPicturePointAtControl(YES);
+    }
+  } else if (previous) {
+    PCPictureInPicturePointAtControl(NO);
+  }
   if (button == previous) {
     return;
   }
   previous.hovered = NO;
-  if (previous && !button) {
-    [NSCursor.arrowCursor set];
-  }
   _pointed = button;
   button.hovered = YES;
 }

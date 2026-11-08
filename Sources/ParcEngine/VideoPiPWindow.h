@@ -11,6 +11,10 @@ NS_ASSUME_NONNULL_BEGIN
 //
 //
 // corner radius 16; bottom-right placement follows Chromium's 2% buffer.
+// The pointing hand over a picture-in-picture control (YES), the arrow on
+// leaving one (NO), also while another app is frontmost. Each YES needs its NO.
+void PCPictureInPicturePointAtControl(BOOL control);
+
 NS_SWIFT_UI_ACTOR
 @interface PCVideoPiPPresenter
     : NSObject <NSWindowDelegate, PCNativeVideoPiPWindow>
