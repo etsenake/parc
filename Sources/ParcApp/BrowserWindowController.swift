@@ -132,7 +132,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     private weak var sidebarMoveToast: PArcToastPresentation?
-    private weak var fullScreenExitToast: PArcToastPresentation?
     private var sidebarPreviews: SidebarPreviewController?
     /// The pending move of focus to newly selected content (`focusSelectedContent`).
     private var contentFocusRequest: ContentFocusRequest?
@@ -681,12 +680,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         // ToastType.didEnterFullScreen (case 44) carries the live binding of
         //
         //
+        //
         // unbound Exit does not leave full screen in Parc, so it names the live
-        // Toggle Full Screen binding instead. Page full screen gets no hint.
-        guard !isPopupWindow, nativeFullscreenTabID == nil,
+        // Toggle Full Screen binding instead.
+        guard !isPopupWindow,
               let exit = KeyboardShortcuts.shared.activeShortcut(for: "exit:")
                 ?? KeyboardShortcuts.shared.activeShortcut(for: "toggleFullScreen:") else { return }
-        fullScreenExitToast = showToast(.fullScreenExit(shortcut: exit.display), at: .window)
+        showToast(.fullScreenExit(shortcut: exit.display), at: .window)
     }
     func windowWillExitFullScreen(_ notification: Notification) { setFullscreenPhase(.exiting) }
     func windowDidFailToExitFullScreen(_ window: NSWindow) {
@@ -4897,6 +4897,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebarResizeRegion.isHidden = false
         }
         libraryView?.isHidden = nativeFullscreenTabID != nil
+        // A page in full screen fills the screen edge to edge.
+        pageHost.layer?.cornerRadius = nativeFullscreenTabID == nil ? PageCard.cornerRadius : 0
         libraryView?.frame = frames.library
         popupChrome.isHidden = frames.popupChrome.height == 0
         popupChrome.frame = frames.popupChrome
@@ -9017,8 +9019,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, setTabFullscreenPage page: PCNativePage?) -> Bool {
         guard browser === nativeBinding, !wholeWindowClose, !isClosing else { return false }
         guard let page else { restoreNativeFullscreenPresentation(); render(store.state); return true }
-        // The window's exit hint is not for page full screen, whichever arrives first.
-        fullScreenExitToast?.dismiss(animated: false)
         //
         //
         // same source-owned promotion as Expand supplies its provenance,

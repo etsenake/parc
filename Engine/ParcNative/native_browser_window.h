@@ -103,16 +103,9 @@ class NativeBrowserWindowHost {
   enum class FullscreenRequestResult { kAccepted, kRejected };
   virtual void RequestFullscreen(
       bool enter,
-      const url::Origin& origin,
-      ExclusiveAccessBubbleType bubble,
       FullscreenTabParams tab_params,
       base::OnceCallback<void(FullscreenRequestResult)> result) = 0;
   virtual void UpdateUIForTabFullscreen() = 0;
-  virtual void UpdateExclusiveAccessBubble(
-      const ExclusiveAccessBubbleParams& params,
-      ExclusiveAccessBubbleHideCallback first_hide_callback) = 0;
-  virtual bool IsExclusiveAccessBubbleDisplayed() const = 0;
-  virtual void OnExclusiveAccessUserInput() = 0;
   virtual bool CanUserEnterFullscreen() const = 0;
   virtual bool CanUserExitFullscreen() const = 0;
 };

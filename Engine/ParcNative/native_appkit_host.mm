@@ -234,6 +234,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     // exist, and this service is installed before any content/API exposure.
     side_panel_ = std::make_unique<NativeExtensionSidePanel>(browser_, *this);
     InstallAppActivityObservers();
+    // Browser/tab transitions and tab exits post this without a native
+    // window transition or another UpdateUIForTabFullscreen.
+    fullscreen_changed_ = ExclusiveAccessManager::From(&browser_)
+                              ->fullscreen_controller()
+                              ->RegisterOnFullscreenStateChanged(
+                                  base::BindRepeating(
+                                      &AppKitBrowserHost::UpdateUIForTabFullscreen,
+                                      weak_factory_.GetWeakPtr()));
     Synchronize();
   }
   void DidDetachWindow(gfx::NativeWindow window) override {
@@ -300,11 +308,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!weak) {
       return;
     }
-    ++exclusive_generation_;
-    exclusive_.reset();
-    if (!weak) {
-      return;
-    }
+    fullscreen_changed_ = {};
     DetachAllPages();
     if (!weak) {
       return;
@@ -368,7 +372,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     CloseExtensionsMenu();
     actions_->Shutdown();
     autofill_->BeginTeardown();
-    exclusive_.reset();
+    fullscreen_changed_ = {};
     DetachAllPages();
     pane_compositors_.reset();
     UnregisterAppKitBrowser(binding_, browser_);
@@ -559,8 +563,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   void HandleDragEnded() override { Synchronize(); }
   void RequestFullscreen(
       bool enter,
-      const url::Origin& origin,
-      ExclusiveAccessBubbleType type,
       FullscreenTabParams params,
       base::OnceCallback<void(FullscreenRequestResult)> callback) override {
     auto weak = weak_factory_.GetWeakPtr();
@@ -587,52 +589,18 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!weak) {
       return;
     }
-    if (enter) {
-      ExclusiveAccessBubbleParams warning;
-      warning.origin = origin;
-      warning.type = type;
-      UpdateExclusiveAccessBubble(warning, {});
-    }
     std::move(callback).Run(FullscreenRequestResult::kAccepted);
   }
   void UpdateUIForTabFullscreen() override {
-    auto* controller =
-        ExclusiveAccessManager::From(&browser_)->fullscreen_controller();
-    PCNativePage* page =
-        controller->IsTabFullscreen()
-            ? ExistingNativePage(
-                  browser_.GetTabStripModel()->GetActiveWebContents())
-            : nil;
-    [binding_.client nativeBrowser:binding_ setTabFullscreenPage:page];
-  }
-  void UpdateExclusiveAccessBubble(
-      const ExclusiveAccessBubbleParams& params,
-      ExclusiveAccessBubbleHideCallback callback) override {
-    auto weak = weak_factory_.GetWeakPtr();
-    const uint64_t generation = ++exclusive_generation_;
-    auto previous = std::move(exclusive_);
-    previous.reset();
-    if (!weak || tearing_down_ || draining_ ||
-        generation != exclusive_generation_) {
-      if (callback) {
-        std::move(callback).Run(ExclusiveAccessBubbleHideReason::kNotShown);
-      }
-      return;
-    }
-    auto next = NativeExclusiveAccess::Replace(nullptr, window_, params,
-                                               std::move(callback));
-    if (weak && !tearing_down_ && !draining_ &&
-        generation == exclusive_generation_) {
-      exclusive_ = std::move(next);
-    }
-  }
-  bool IsExclusiveAccessBubbleDisplayed() const override {
-    return exclusive_ && exclusive_->visible();
-  }
-  void OnExclusiveAccessUserInput() override {
-    if (exclusive_) {
-      exclusive_->OnUserInput();
-    }
+    if (tearing_down_) return;
+    // Entry calls this before tab_fullscreen_ is set; the exclusive-access
+    // tab is already the requesting page and is cleared on every exit.
+    content::WebContents* contents = ExclusiveAccessManager::From(&browser_)
+                                         ->fullscreen_controller()
+                                         ->exclusive_access_tab();
+    [binding_.client nativeBrowser:binding_
+              setTabFullscreenPage:contents ? ExistingNativePage(contents)
+                                            : nil];
   }
   bool CanUserEnterFullscreen() const override {
     return selected() && window_ && !window_.attachedSheet &&
@@ -1910,7 +1878,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   std::unique_ptr<NativePaymentEntry> payment_entry_;
   std::unique_ptr<NativeExtensionContextMenu> context_menu_;
   std::unique_ptr<NativeExtensionSidePanel> side_panel_;
-  std::unique_ptr<NativeExclusiveAccess> exclusive_;
+  base::CallbackListSubscription fullscreen_changed_;
   struct DecisionLease {
     PCNativeHostDecision* __strong value;
   };
@@ -1927,7 +1895,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   bool window_occluded_ = false;
   bool displays_asleep_ = false;
   NSInteger attention_ = 0;
-  uint64_t exclusive_generation_ = 0;
   bool selected_ = false;
   bool was_attached_ = false;
   bool tearing_down_ = false;

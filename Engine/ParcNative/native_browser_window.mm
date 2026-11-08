@@ -98,33 +98,31 @@ class NativeBrowserWindow::Impl final
     void UpdateUIForTabFullscreen() override {
       impl_.host_->UpdateUIForTabFullscreen();
     }
-    void EnterFullscreen(const url::Origin& origin,
-                         ExclusiveAccessBubbleType type,
+    void EnterFullscreen(const url::Origin&,
+                         ExclusiveAccessBubbleType,
                          FullscreenTabParams params) override {
       //
       // Unlike its bit-only compatibility method, the native presenter here
-      // must actually handle the request, origin and display parameters.
+      // must actually handle the request and its display.
       fullscreen_ = true;
-      impl_.RequestFullscreen(true, origin, type, params);
+      impl_.RequestFullscreen(true, params);
     }
     void ExitFullscreen() override {
       fullscreen_ = false;
-      impl_.RequestFullscreen(false, url::Origin(),
-                              EXCLUSIVE_ACCESS_BUBBLE_TYPE_NONE, {});
+      impl_.RequestFullscreen(false, {});
     }
     void UpdateExclusiveAccessBubble(
-        const ExclusiveAccessBubbleParams& params,
+        const ExclusiveAccessBubbleParams&,
         ExclusiveAccessBubbleHideCallback callback) override {
-      // No fabricated kTimeout: the native presenter owns truthful display,
-      // interruption and first-hide completion for this actual request.
-      impl_.host_->UpdateExclusiveAccessBubble(params, std::move(callback));
+      //
+      //
+      // pointer relock for a warning nobody saw.
+      if (callback) {
+        std::move(callback).Run(ExclusiveAccessBubbleHideReason::kNotShown);
+      }
     }
-    bool IsExclusiveAccessBubbleDisplayed() const override {
-      return impl_.host_->IsExclusiveAccessBubbleDisplayed();
-    }
-    void OnExclusiveAccessUserInput() override {
-      impl_.host_->OnExclusiveAccessUserInput();
-    }
+    bool IsExclusiveAccessBubbleDisplayed() const override { return false; }
+    void OnExclusiveAccessUserInput() override {}
     content::WebContents* GetWebContentsForExclusiveAccess() override {
       return impl_.ActiveContents();
     }
@@ -459,13 +457,10 @@ class NativeBrowserWindow::Impl final
     modal_.NotifyPositionRequiresUpdate();
   }
 
-  void RequestFullscreen(bool enter,
-                         const url::Origin& origin,
-                         ExclusiveAccessBubbleType type,
-                         FullscreenTabParams params) {
+  void RequestFullscreen(bool enter, FullscreenTabParams params) {
     RequireUIThread();
     const uint64_t request = ++fullscreen_request_;
-    host_->RequestFullscreen(enter, origin, type, params,
+    host_->RequestFullscreen(enter, params,
                              base::BindPostTaskToCurrentDefault(base::BindOnce(
                                  &Impl::OnFullscreenRequestResult,
                                  weak_factory_.GetWeakPtr(), request)));

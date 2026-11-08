@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 631,
+  "version": 632,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -150,12 +150,12 @@
     {
       "source": "Engine/ParcNative/native_browser_window.h",
       "target": "cef/libcef/browser/parc_native/native_browser_window.h",
-      "sha256": "1f987462d44781a750b9f4797837784894e72633c9c1a75eec0326fdec6448fa"
+      "sha256": "6a8ff446fd5947493e3df13f86a229700a9c618fbd1ea8d74f919830a5e29f63"
     },
     {
       "source": "Engine/ParcNative/native_browser_window.mm",
       "target": "cef/libcef/browser/parc_native/native_browser_window.mm",
-      "sha256": "97628f3a013d7f070441eb44300d8aa1657c707344c0d096d436424e2eab6aa0"
+      "sha256": "db104c43a60b37df2906f896741454a1cfabe242e2a223813a22510402b9acda"
     },
     {
       "source": "Engine/ParcNative/focus_manager.h",
@@ -405,7 +405,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "20bbe1ca3f194de0ba6ab0ec89514702bd1d398c615ecda10d3e3e3255b1b00f"
+      "sha256": "a863d5b7a54755bfbf475531625fcf892440767ad508a2e9b9f431238cc20eb3"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -440,12 +440,12 @@
     {
       "source": "Engine/ParcNative/native_exclusive_access.h",
       "target": "cef/libcef/browser/parc_native/native_exclusive_access.h",
-      "sha256": "844ea5bfa4cbc90778c43f0fe91c9eb3e2b6f98c677aaec6589b7efeba69318f"
+      "sha256": "fb2308c3bb15f3c5513c10aaa923d8b9ba56dfb73bb97d4974f27d82164c0372"
     },
     {
       "source": "Engine/ParcNative/native_exclusive_access.mm",
       "target": "cef/libcef/browser/parc_native/native_exclusive_access.mm",
-      "sha256": "d9793c4c086f20600bcdfee313c6bc72144abd49616f6930b84f45eb2828cbab"
+      "sha256": "46d8102b4285ea438ce839f5441f3fc1f676bca5efcc756413916fef6db290e1"
     },
     {
       "source": "Engine/ParcNative/native_host_route.cc",
