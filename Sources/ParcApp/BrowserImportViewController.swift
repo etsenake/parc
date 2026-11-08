@@ -363,7 +363,7 @@ final class BrowserImportViewController: NSViewController {
             }
             next.isHidden = !embedded
             next.title = coordinator.passwordResult == nil ? "Skip Passwords" : "Continue"
-            next.isEnabled = (!coordinator.importingPasswords || coordinator.passwordFileWaiting) && !coordinator.removingPasswordFile
+            next.isEnabled = !coordinator.importingPasswords && !coordinator.removingPasswordFile
             let name = coordinator.store.state.profiles.first { $0.id == coordinator.passwordDestination?.profileID }?.name ?? "Unavailable Profile"
             passwordsView.update(destination: name, canImport: coordinator.canImportPasswordFile,
                 busy: coordinator.importingPasswords, removing: coordinator.removingPasswordFile,

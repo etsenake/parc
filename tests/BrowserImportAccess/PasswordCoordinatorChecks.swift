@@ -135,22 +135,36 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
     ordinary.chooseDestination(); ordinary.selectDestination(.existing(target))
     PCNativeBrowserApplication.acceptsBrowserImport = true; ordinary.start()
-    expect(ordinary.stage == .safariPasswords && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
-           "A source without bookmarks offers passwords while data imports in the background")
-    let waitingFile = URL(fileURLWithPath: "/fixture/Passwords.csv")
-    ordinary.importPasswordFile(waitingFile)
-    expect(ordinary.passwordFileWaiting && ordinary.importingPasswords && PCNativeBrowserApplication.passwordRequests.isEmpty,
-           "A password file waits while its Profile's history still imports")
+    expect(ordinary.stage == .safariPasswords && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.isEmpty
+           && ordinary.passwordDestination?.profileID == target.profileID,
+           "Safari offers its password file at once; its data waits so the file has the Profile to itself")
+    let safariFile = URL(fileURLWithPath: "/fixture/Passwords.csv")
+    ordinary.importPasswordFile(safariFile)
+    let safariPasswords = PCNativeBrowserApplication.passwordRequests.removeFirst()
+    expect(safariPasswords.path == store.independentEngineProfilePath(for: target.profileID) && PCNativeBrowserApplication.browserCompletions.isEmpty,
+           "The password file imports straight away, before Safari's history")
+    safariPasswords.complete(.init(outcome: .completed, importedCount: 3))
     ordinary.continueAfterPasswords()
-    expect(ordinary.stage == .finished && ordinary.hasBackgroundWork,
-           "Next moves on; the waiting file is still background work")
+    expect(ordinary.stage == .finished && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
+           "Leaving the password step starts Safari's history in the background")
     PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
-    let waited = PCNativeBrowserApplication.passwordRequests.removeFirst()
-    expect(waited.url == waitingFile && waited.path == store.independentEngineProfilePath(for: target.profileID)
-           && ordinary.hasBackgroundWork && !ordinary.passwordFileWaiting,
-           "Once history is in, the file imports into the same Profile and keeps the import alive")
-    waited.complete(.init(outcome: .completed, importedCount: 3))
-    expect(!ordinary.hasBackgroundWork, "The finished file releases the background import")
+    expect(!ordinary.hasBackgroundWork && PCNativeBrowserApplication.passwordRequests.isEmpty,
+           "History finishing ends the background import")
+    ordinary.cancel()
+    let closing = BrowserImportCoordinator(store: store, destination: destination, window: window, ownerIsCurrent: { current })
+    closing.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
+    closing.select(safari); closing.loadProfiles()
+    PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
+    closing.chooseDestination(); closing.selectDestination(.existing(target)); closing.start()
+    closing.importPasswordFile(safariFile)
+    let midFile = PCNativeBrowserApplication.passwordRequests.removeFirst()
+    closing.detach(onAdBlockers: nil)
+    expect(PCNativeBrowserApplication.browserCompletions.isEmpty, "Closing mid-file leaves history waiting for the file")
+    midFile.complete(.init(outcome: .cancelled, importedCount: 0))
+    expect(PCNativeBrowserApplication.browserCompletions.count == 1 && closing.hasBackgroundWork,
+           "Once the file ends, the closed import still brings Safari's history in")
+    PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+    expect(!closing.hasBackgroundWork, "The detached import is released when its history is in")
     ordinary.cancel(); PCNativeBrowserApplication.acceptsBrowserImport = false
     checks += onboardingImportOrderChecks(store: store, destination: destination, window: window, safari: safari)
     return checks
@@ -170,6 +184,7 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     func start(onboarding: Bool = true, iCloudSupported: Bool = false) -> BrowserImportCoordinator {
         let coordinator = BrowserImportCoordinator(store: store, destination: destination,
             window: window, onboarding: onboarding, supportsICloudPasswords: iCloudSupported, ownerIsCurrent: { true })
+        PCNativeBrowserApplication.browserCompletions.removeAll()
         coordinator.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
         if onboarding { coordinator.selectSourceInline(safari) }
         else { coordinator.select(safari); coordinator.loadProfiles() }
