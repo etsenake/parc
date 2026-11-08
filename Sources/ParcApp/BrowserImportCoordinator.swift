@@ -58,7 +58,7 @@ final class BrowserImportCoordinator {
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
     private var activeDestination: BrowserImportDestination?
-    /// Each profile's extensions wait for one consent after its data imports.
+    /// Each profile's extensions install after the last profile's data.
     private var pendingExtensions: [(profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>)] = []
     private var extensionInstall: PCNativeImportSession?
     private var stopRequested = false
@@ -643,7 +643,7 @@ final class BrowserImportCoordinator {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
             queuedDestinations = [:]
-            if !pendingExtensions.isEmpty { installExtensions(in: window); return }
+            if !pendingExtensions.isEmpty { installExtensions(); return }
             // Setup accepts bookmarks before offering the separate Safari
             // password step. The menu keeps its existing import sequence.
             if !(onboarding && hasPendingBookmarks), presentPasswordStageIfNeeded() {
@@ -717,8 +717,8 @@ final class BrowserImportCoordinator {
         }
     }
 
-    /// One consent covers the extensions of every imported profile.
-    private func installExtensions(in window: NSWindow) {
+    ///
+    private func installExtensions() {
         let pending = pendingExtensions; pendingExtensions = []
         var requests: [PCNativeImportExtensionRequest] = [], requested: [String: Set<String>] = [:]
         var items: [PCNativeImportExtension] = []
@@ -735,7 +735,7 @@ final class BrowserImportCoordinator {
         guard !requests.isEmpty else { importNext(); return }
         let token = generation
         message = "Adding your extensions…"; onChange?()
-        extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, in: window) { [weak self] result in
+        extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests) { [weak self] result in
             guard let self, self.isCurrent, self.generation == token else { return }
             self.extensionInstall = nil
             self.reportFailedExtensions(result.failedNames)
@@ -859,7 +859,7 @@ final class BrowserImportCoordinator {
 
     private func finishSourceFailure(_ failure: String) {
         queue = []; passwordDestination = nil; warnings.append(failure); error = nil
-        // Profiles that already imported still offer their extensions.
+        // Profiles that already imported still get their extensions.
         if !pendingExtensions.isEmpty { importNext(); return }
         stage = bookmarkPages.isEmpty ? .finished : .bookmarks
         message = bookmarkPages.isEmpty ? "Import stopped. Data already imported has been kept." :

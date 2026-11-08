@@ -380,23 +380,24 @@ import AppKit
         coordinator.continueOnboardingSource()
         expect(PCNativeBrowserApplication.browserRequests.last?.categories.contains(.extensions) == false
                && PCNativeBrowserApplication.extensionInstalls.isEmpty,
-               "Extensions wait for their consent until the profile's data has imported")
+               "Extensions wait until the profile's data has imported")
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .failed, bookmarks: [], warnings: [], error: nil))
-        let skipped = PCNativeBrowserApplication.extensionInstalls.removeFirst()
-        expect(skipped.requests.count == 1 && skipped.requests[0].source === profile
-               && skipped.requests[0].extensionIDs == [known.identifier, unknown.identifier]
-               && skipped.requests[0].profilePath == store.independentEngineProfilePath(for: destination.profileID)
+        let failing = PCNativeBrowserApplication.extensionInstalls.removeFirst()
+        expect(failing.requests.count == 1 && failing.requests[0].source === profile
+               && failing.requests[0].extensionIDs == [known.identifier, unknown.identifier]
+               && failing.requests[0].profilePath == store.independentEngineProfilePath(for: destination.profileID)
                && coordinator.stage == .importing,
-               "Every selected extension, including known ad blockers, is offered in one consent")
-        skipped.complete(.init(outcome: .cancelled))
+               "Every selected extension, including known ad blockers, installs even when other data failed")
+        failing.complete(.init(outcome: .failed, failedNames: ["uBlock Origin", "Extension"]))
         expect(coordinator.stage == .finished && coordinator.importedAdBlockers.isEmpty
-               && !coordinator.warnings.contains { $0.hasSuffix("couldn’t be added.") },
-               "Skipping the consent adds nothing and reports no failure")
+               && coordinator.warnings.contains("uBlock Origin couldn’t be added.")
+               && coordinator.warnings.contains("Extension couldn’t be added."),
+               "Extensions that fail are listed and none reaches the ad-blocker step")
         run()
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         coordinator.stopImport()
         let stopped = PCNativeBrowserApplication.extensionInstalls.removeFirst()
-        expect(stopped.lease.cancelled, "Stop withdraws a pending extension consent")
+        expect(stopped.lease.cancelled, "Stop withdraws extensions not yet installing")
         stopped.complete(.init(outcome: .cancelled))
         expect(coordinator.stage == .finished && coordinator.message == "Import stopped. Data already imported has been kept.",
                "A stopped extension install ends the import like any other stop")
@@ -653,16 +654,16 @@ import AppKit
         let sideID = extensionStore.state.profiles.first { $0.name == "Side" }?.id
         expect(PCNativeBrowserApplication.browserRequests.count == extensionStart + 1
                && PCNativeBrowserApplication.extensionInstalls.count == installsBefore + 1 && sideID != nil,
-               "A profile with only extensions needs no data import, and one consent follows the last profile")
+               "A profile with only extensions needs no data import, and one install follows the last profile")
         let together = PCNativeBrowserApplication.extensionInstalls.removeLast()
-        expect(together.window === window && together.requests.count == 2
+        expect(together.requests.count == 2
                && together.requests[0].source === withExtensions
                && together.requests[0].extensionIDs == [blocker.identifier, broken.identifier]
                && together.requests[1].source === onlyExtensions
                && together.requests[1].extensionIDs == [blocker.identifier, helper.identifier]
                && together.requests[1].profilePath == extensionStore.independentEngineProfilePath(for: sideID!)
                && setup.message == "Adding your extensions…",
-               "One consent covers every Arc profile's extensions, each into its own Parc Profile")
+               "One install covers every Arc profile's extensions, each into its own Parc Profile")
         together.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier, helper.identifier],
                                 failedNames: ["Broken"]))
         expect(setup.stage == .finished && setup.warnings.contains("Broken couldn’t be added.")

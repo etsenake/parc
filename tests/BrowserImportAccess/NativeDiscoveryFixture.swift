@@ -116,16 +116,16 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
         browserCompletions.append(completion); return PCNativeImportSession()
     }
     struct ExtensionInstall {
-        let requests: [PCNativeImportExtensionRequest], window: NSWindow, lease: PCNativeImportSession
+        let requests: [PCNativeImportExtensionRequest], lease: PCNativeImportSession
         let complete: (PCNativeImportExtensionResult) -> Void
     }
     static var extensionInstalls: [ExtensionInstall] = []
     static var rejectsExtensionInstall = false
-    static func installImportedExtensions(_ requests: [PCNativeImportExtensionRequest], in window: NSWindow,
+    static func installImportedExtensions(_ requests: [PCNativeImportExtensionRequest],
         completion: @escaping (PCNativeImportExtensionResult) -> Void) -> PCNativeImportSession? {
         guard !rejectsExtensionInstall else { return nil }
         let lease = PCNativeImportSession()
-        extensionInstalls.append(.init(requests: requests, window: window, lease: lease, complete: completion))
+        extensionInstalls.append(.init(requests: requests, lease: lease, complete: completion))
         return lease
     }
 }

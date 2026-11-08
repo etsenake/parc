@@ -7,10 +7,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/extensions/extension_install_native_host.h"
 #include "chrome/browser/extensions/webstore_install_with_prompt.h"
-#include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/common/importer/parc_import.mojom.h"
@@ -18,13 +17,8 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #import "native_appkit_host.h"
 #import "native_import_internal.h"
-#import "extension_install_presenter.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/install_prompt_data.h"
-#include "extensions/common/extension.h"
-#include "ui/gfx/image/image.h"
-#include "ui/gfx/mac/coordinate_conversion.h"
-#import "window_security_reservation.h"
 
 @interface PCNativeImportExtensionRequest ()
 @property(nonatomic, readonly) PCNativeImportProfile* source;
@@ -67,109 +61,51 @@
 
 namespace parc::importer {
 namespace {
-using Result = extensions::ExtensionInstallPromptClient::Result;
-using Payload = extensions::ExtensionInstallPromptClient::DoneCallbackPayload;
-using Done = extensions::ExtensionInstallPromptClient::DoneCallback;
 constexpr uint32_t kExtensionCategory = PCNativeImportCategoryExtensions;
 class Batch;
-// Holds one prepared Web Store install at its prompt until the batch decides.
-class Consent final : public extensions::ExtensionInstallNativeBinding,
-                      public std::enable_shared_from_this<Consent> {
- public:
-  Consent(std::weak_ptr<Batch> batch, Profile& profile, size_t item)
-      : batch_(std::move(batch)), profile_(profile.GetWeakPtr()), item_(item) {}
-  ~Consent() override { Cancel(); }
-  bool Begin(const extensions::Extension* extension, Done done) override {
-    if (done_) {
-      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-          FROM_HERE, base::BindOnce(std::move(done), Payload(Result::ABORTED)));
-      return false;
-    }
-    extension_ = extension;
-    done_ = std::move(done);
-    if (!CanContinue()) {
-      Complete(Result::ABORTED);
-      return false;
-    }
-    return true;
-  }
-  bool CanContinue() const override;
-  void Show(std::unique_ptr<extensions::InstallPromptData> prompt) override;
-  bool authorized() const { return authorized_; }
-  void Opened() {
-    if (prompt_ && !opened_)
-      prompt_->OnDialogOpened();
-    opened_ = true;
-  }
-  void Decide(Result result) { Complete(result); }
-  void Cancel() override {
-    cancelled_ = true;
-    Complete(Result::ABORTED);
-  }
-  void ShowParentApproval(const extensions::Extension*,
-                          const gfx::ImageSkia&,
-                          Done done) override {
-    // A parent reauthentication cannot be replaced by import consent.
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(std::move(done), Payload(Result::ABORTED)));
-  }
-  void InstallationFinished(const extensions::Extension*,
-                            bool,
-                            const std::u16string&,
-                            const SkBitmap*,
-                            bool) override {}
-
- private:
-  void Complete(Result result);
-  std::weak_ptr<Batch> batch_;
-  base::WeakPtr<Profile> profile_;
-  size_t item_;
-  bool cancelled_ = false;
-  bool authorized_ = false;
-  bool opened_ = false;
-  Done done_;
-  scoped_refptr<const extensions::Extension> extension_;
-  std::unique_ptr<extensions::InstallPromptData> prompt_;
-};
+//
+// metadata, policy, blocklist and CRX checks still run.
 class Installer final : public extensions::WebstoreInstallWithPrompt {
  public:
-  Installer(const std::string& id,
+  Installer(std::weak_ptr<Batch> batch,
+            size_t item,
+            const std::string& id,
             Profile& profile,
-            NSWindow* window,
-            std::shared_ptr<Consent> consent,
             Callback callback)
       : WebstoreInstallWithPrompt(id,
                                   &profile,
-                                  gfx::NativeWindow(window),
+                                  gfx::NativeWindow(),
                                   std::move(callback)),
-        window_(window),
-        consent_(std::move(consent)) {
+        batch_(std::move(batch)),
+        item_(item),
+        profile_(profile.GetWeakPtr()) {
     set_show_post_install_ui(false);
   }
-  // False means installation has already been authorized; keep its genuine
-  // completion callback and wait rather than claiming to undo that operation.
+  // False once Chromium is installing; its real result follows.
   bool CancelBeforeInstall() {
-    if (consent_->authorized())
+    if (installing_)
       return false;
-    consent_->Cancel();
     AbortInstall();
     return true;
   }
 
  protected:
   ~Installer() override = default;
-  std::unique_ptr<ExtensionInstallPrompt> CreateInstallUI(
-      std::unique_ptr<extensions::InstallPromptData> prompt) override {
-    return std::make_unique<ExtensionInstallPrompt>(
-        profile(), gfx::NativeWindow(window_), std::move(prompt), consent_);
+  bool CheckRequestorAlive() const override;
+  std::unique_ptr<extensions::InstallPromptData> CreateInstallPrompt()
+      const override {
+    return nullptr;
   }
+  void OnManifestParsed() override;
 
  private:
-  NSWindow* __weak window_;
-  std::shared_ptr<Consent> consent_;
+  std::weak_ptr<Batch> batch_;
+  size_t item_;
+  base::WeakPtr<Profile> profile_;
+  bool installing_ = false;
 };
-// Every request's extensions are prepared up to their prompts, then one sheet
-// decides for all of them.
+// Every request's extensions are read back from their source, then installed
+// side by side; one failure never stops the others.
 class Batch final : public ProfileObserver,
                     public std::enable_shared_from_this<Batch> {
  public:
@@ -183,9 +119,8 @@ class Batch final : public ProfileObserver,
     mojo::Remote<mojom::Reader> reader;
     bool loaded = false, observing = false;
   };
-  Batch(std::vector<Group> groups, NSWindow* window, Completion completion)
+  Batch(std::vector<Group> groups, Completion completion)
       : groups_(std::move(groups)),
-        window_(window),
         completion_([completion copy]),
         loading_(groups_.size()) {}
   ~Batch() override { Stop(); }
@@ -205,79 +140,46 @@ class Batch final : public ProfileObserver,
   void Start() {
     if (finished_)
       return;
-    if (!window_) {
-      Cancel();
-      return;
-    }
-    std::weak_ptr<Batch> weak = shared_from_this();
-    close_observer_ = [NSNotificationCenter.defaultCenter
-        addObserverForName:NSWindowWillCloseNotification
-                    object:window_
-                     queue:nil
-                usingBlock:^(NSNotification*) {
-                  if (auto self = weak.lock())
-                    self->Cancel();
-                }];
-    deadline_.Start(FROM_HERE, base::Seconds(30),
-                    base::BindOnce(&Batch::PreparationTimedOut,
-                                   base::Unretained(this)));
+    started_ = base::TimeTicks::Now();
+    ticker_.Start(FROM_HERE, base::Seconds(1),
+                  base::BindRepeating(&Batch::Tick, base::Unretained(this)));
     for (size_t i = 0; i < groups_.size(); ++i)
       Load(i);
-    MaybePresent();
+    MaybeFinish();
   }
-  bool CanContinue() const {
-    NSWindow* window = window_;
-    return !finished_ && !cancelled_ && window && window.visible &&
-           !window.miniaturized &&
-           (!window.attachedSheet || window.attachedSheet == presenter_.sheet) &&
-           (reservation_ ? reservation_.isOnlyReservation
-                         : !PCNativeWindowHasSecurityReservation(window));
-  }
-  // Preparing needs no usable window; the decision waits for one.
-  bool CanPrepare() const { return !finished_ && !cancelled_ && window_; }
-  bool CanDeliver() const {
-    return CanContinue() && !PCNativeWindowHasSecurityReservation(window_);
-  }
-  void Ready(size_t index,
-             const std::string& name,
-             NSImage* icon,
-             NSArray<NSString*>* permissions,
-             NSArray<NSString*>* details) {
-    auto& item = items_[index];
-    if (item.state != Item::kPreparing)
-      return;
-    item.state = Item::kReady;
-    if (!name.empty())
-      item.name = name;
-    item.icon = icon;
-    item.permissions = permissions;
-    item.details = details;
+  bool Stopped() const { return cancelled_ || finished_; }
+  // The Web Store answered; past this point Chromium owns the install.
+  bool Proceed(size_t index) {
+    if (Stopped() || items_[index].state != Item::kPreparing)
+      return false;
+    items_[index].state = Item::kInstalling;
     --preparing_;
-    MaybePresent();
+    StartQueuedLater();
+    return true;
   }
   void Cancel() {
     if (finished_)
       return;
     cancelled_ = true;
-    [presenter_ invalidate];
-    presenter_ = nil;
-    [reservation_ invalidate];
-    reservation_ = nil;
-    for (auto& group : groups_)
-      group.reader.reset();
-    deadline_.Stop();
+    ticker_.Stop();
+    for (size_t i = 0; i < groups_.size(); ++i)
+      Loaded(i, {});
+    // Installs Chromium already owns finish on their own; Stop doesn't wait.
     for (auto& item : items_) {
-      if (Pending(item) && Abort(item)) {
-        if (item.state == Item::kAccepted)
-          --installing_;
+      if (item.state == Item::kPreparing && !Abort(item))
+        continue;
+      if (item.state == Item::kQueued || item.state == Item::kInstalling)
+        --pending_;
+      if (Pending(item)) {
         item.state = Item::kDeclined;
+        item.installer = nullptr;
       }
     }
-    if (!installing_)
-      Finish();
+    MaybeFinish();
   }
   // The installer observes its Profile and aborts itself; only that Profile's
-  // extensions fail.
+  // extensions fail. Our reference goes first so the installer can't outlive
+  // the Profile.
   void OnProfileWillBeDestroyed(Profile* profile) override {
     profile->RemoveObserver(this);
     for (auto& item : items_) {
@@ -285,10 +187,8 @@ class Batch final : public ProfileObserver,
         continue;
       if (item.state == Item::kPreparing)
         --preparing_;
-      if (item.state == Item::kAccepted)
-        --installing_;
       item.state = Item::kFailed;
-      item.consent->Cancel();
+      --pending_;
       item.installer = nullptr;
     }
     for (auto& group : groups_)
@@ -296,34 +196,37 @@ class Batch final : public ProfileObserver,
         group.profile.reset();
         group.observing = false;
       }
+    StartQueued();
     MaybeFinish();
-    MaybePresent();
   }
 
  private:
   struct Item {
-    enum State { kPreparing, kReady, kAccepted, kDeclined, kInstalled, kFailed };
+    enum State {
+      kQueued,
+      kPreparing,
+      kInstalling,
+      kDeclined,
+      kInstalled,
+      kFailed
+    };
     size_t group;
     std::string id, name;
-    State state = kPreparing;
-    std::shared_ptr<Consent> consent;
+    State state = kQueued;
     scoped_refptr<Installer> installer;
-    NSImage* __strong icon;
-    NSArray<NSString*>* __strong permissions;
-    NSArray<NSString*>* __strong details;
+    base::TimeTicks started;
   };
   static bool Pending(const Item& item) {
-    return item.installer && (item.state == Item::kPreparing ||
-                              item.state == Item::kReady ||
-                              item.state == Item::kAccepted);
+    return item.state == Item::kQueued || item.state == Item::kPreparing ||
+           item.state == Item::kInstalling;
   }
-  // False once Chromium holds an authorized install; its real result follows.
-  // Otherwise the installer is released with its abort so that no late
-  // callback can reach it.
-  static bool Abort(Item& item) {
-    if (!item.installer->CancelBeforeInstall())
+  // Released with its abort so that no late callback can reach it.
+  bool Abort(Item& item) {
+    if (!item.installer || !item.installer->CancelBeforeInstall())
       return false;
     item.installer = nullptr;
+    --pending_;
+    --preparing_;
     return true;
   }
   void Load(size_t index) {
@@ -410,44 +313,57 @@ class Batch final : public ProfileObserver,
           name = pair.second;
       items_.push_back({index, id, name});
       auto& item = items_.back();
+      // A supervised Profile's parent approval can't come from an import.
       if (cancelled_) {
         item.state = Item::kDeclined;
       } else if (!confirmed.contains(id) || !group.profile ||
-                 group.profile->ShutdownStarted()) {
+                 group.profile->ShutdownStarted() || group.profile->IsChild()) {
         item.state = Item::kFailed;
       } else if (extensions::ExtensionRegistry::Get(group.profile.get())
-                     ->GetInstalledExtension(id)) {
+                     ->enabled_extensions()
+                     .Contains(id)) {
         item.state = Item::kInstalled;
       } else {
-        Prepare(items_.size() - 1);
+        ++pending_;
       }
     }
     --loading_;
-    if (!loading_ && preparing_)
-      deadline_.Start(FROM_HERE, base::Seconds(30),
-                      base::BindOnce(&Batch::PreparationTimedOut,
-                                     base::Unretained(this)));
-    MaybePresent();
+    StartQueued();
+    MaybeFinish();
   }
-  void PreparationTimedOut() {
-    for (size_t i = 0; i < groups_.size(); ++i)
-      Loaded(i, {});
-    for (auto& item : items_)
-      if (item.state == Item::kPreparing && Pending(item) && Abort(item)) {
+  // A few Web Store requests at a time, each with its own time limit.
+  void StartQueued() {
+    for (size_t index = 0; index < items_.size() && preparing_ < 4; ++index) {
+      auto& item = items_[index];
+      if (Stopped() || item.state != Item::kQueued)
+        continue;
+      auto& profile = groups_[item.group].profile;
+      if (profile && !profile->ShutdownStarted()) {
+        Install(index);
+      } else {
         item.state = Item::kFailed;
-        --preparing_;
+        --pending_;
       }
-    deadline_.Stop();
-    MaybePresent();
+    }
   }
-  void Prepare(size_t index) {
+  void StartQueuedLater() {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(
+                       [](std::weak_ptr<Batch> weak) {
+                         if (auto self = weak.lock()) {
+                           self->StartQueued();
+                           self->MaybeFinish();
+                         }
+                       },
+                       weak_from_this()));
+  }
+  void Install(size_t index) {
     auto& item = items_[index];
-    Profile& profile = *groups_[item.group].profile;
+    item.state = Item::kPreparing;
+    item.started = base::TimeTicks::Now();
     ++preparing_;
-    item.consent =
-        std::make_shared<Consent>(weak_from_this(), profile, index);
     item.installer = base::MakeRefCounted<Installer>(
-        item.id, profile, window_, item.consent,
+        weak_from_this(), index, item.id, *groups_[item.group].profile,
         base::BindOnce(
             [](std::weak_ptr<Batch> weak, size_t index, bool success,
                const std::string&, extensions::webstore_install::Result) {
@@ -457,141 +373,38 @@ class Batch final : public ProfileObserver,
             weak_from_this(), index));
     item.installer->BeginInstall();
   }
+  // Runs inside Chromium's completion, which still holds its own reference.
   void Installed(size_t index, bool success) {
     auto& item = items_[index];
-    switch (item.state) {
-      case Item::kPreparing:
-        item.state = Item::kFailed;
+    if (Pending(item)) {
+      if (item.state == Item::kPreparing) {
         --preparing_;
-        MaybePresent();
-        break;
-      case Item::kReady:
-        item.state = Item::kFailed;
-        break;
-      case Item::kAccepted:
-        item.state = success ? Item::kInstalled : Item::kFailed;
-        --installing_;
-        MaybeFinish();
-        break;
-      default:
-        break;
-    }
-  }
-  void MaybePresent() {
-    if (finished_ || cancelled_ || decided_ || presenter_ || loading_ ||
-        preparing_)
-      return;
-    if (!window_) {
-      Cancel();
-      return;
-    }
-    presented_ = true;
-    NSMutableArray<PCExtensionInstallItem*>* list = [NSMutableArray array];
-    std::set<std::string> listed;
-    for (const auto& item : items_) {
-      if (item.state != Item::kReady || !listed.insert(item.id).second)
-        continue;
-      [list addObject:[[PCExtensionInstallItem alloc]
-                          initWithName:base::SysUTF8ToNSString(item.name)
-                                                              icon:item.icon
-                                                       permissions:item.permissions
-                                                           details:item.details]];
-    }
-    if (!list.count) {
-      MaybeFinish();
-      return;
-    }
-    if (CanContinue())
-      reservation_ = [PCNativeWindowSecurityReservation acquireForWindow:window_];
-    if (!reservation_.active || !CanContinue()) {
-      [reservation_ invalidate];
-      reservation_ = nil;
-      PresentLater();
-      return;
-    }
-    for (auto& item : items_)
-      if (item.state == Item::kReady)
-        item.consent->Opened();
-    std::weak_ptr<Batch> weak = shared_from_this();
-    presenter_ = [[PCExtensionInstallPresenter alloc] initWithWindow:window_
-        title:@"Extensions"
-        icon:nil
-        heading:@""
-        permissions:@[]
-        details:@[]
-        acceptLabel:@"Add All"
-        cancelLabel:@"Skip"
-        checkboxLabel:nil
-        validate:^BOOL {
-          auto self = weak.lock();
-          return self && self->CanContinue();
-        }
-        inputAllowed:^BOOL(NSWindow* sheet) {
-          // As for any extension prompt: never under a picture in picture.
-          auto bounds = PictureInPictureWindowManager::GetInstance()
-                            ->GetPictureInPictureWindowBoundsInScreen();
-          return sheet && (!bounds || !bounds->Intersects(
-                                          gfx::ScreenRectFromNSRect(sheet.frame)));
-        }
-        result:^(PCExtensionInstallChoice choice, BOOL) {
-          auto self = weak.lock();
-          if (self && !self->cancelled_ && !self->finished_)
-            self->Decide(choice);
-        }];
-    [presenter_ configureImportedExtensions:list];
-    [presenter_ start];
-  }
-  // A minimized, hidden or busy window keeps the prepared installs waiting.
-  void PresentLater() {
-    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
-        FROM_HERE,
-        base::BindOnce(
-            [](std::weak_ptr<Batch> weak) {
-              if (auto self = weak.lock())
-                self->MaybePresent();
-            },
-            weak_from_this()),
-        base::Milliseconds(500));
-  }
-  void Decide(PCExtensionInstallChoice choice) {
-    presenter_ = nil;
-    [reservation_ invalidate];
-    reservation_ = nil;
-    if (choice == PCExtensionInstallInterrupted) {
-      PresentLater();
-      return;
-    }
-    decided_ = true;
-    skipped_ = choice == PCExtensionInstallCancel;
-    const Result result =
-        skipped_ ? Result::USER_CANCELED : Result::ACCEPTED;
-    std::vector<std::shared_ptr<Consent>> decided;
-    for (auto& item : items_) {
-      if (item.state != Item::kReady)
-        continue;
-      if (result == Result::ACCEPTED) {
-        item.state = Item::kAccepted;
-        ++installing_;
-      } else {
-        item.state = Item::kDeclined;
+        StartQueuedLater();
       }
-      decided.push_back(item.consent);
+      item.state = success ? Item::kInstalled : Item::kFailed;
+      --pending_;
     }
-    for (auto& consent : decided)
-      consent->Decide(result);
+    item.installer = nullptr;
+    MaybeFinish();
+  }
+  // One stalled Web Store answer can't hold up the rest.
+  void Tick() {
+    const auto now = base::TimeTicks::Now();
+    if (now - started_ > base::Seconds(30))
+      for (size_t i = 0; i < groups_.size(); ++i)
+        Loaded(i, {});
+    for (auto& item : items_)
+      if (item.state == Item::kPreparing && now - item.started > base::Seconds(30) &&
+          Abort(item))
+        item.state = Item::kFailed;
+    StartQueued();
     MaybeFinish();
   }
   void MaybeFinish() {
-    if (!presented_ || installing_ ||
-        (!decided_ && std::any_of(items_.begin(), items_.end(), [](const Item& item) {
-          return item.state == Item::kReady;
-        })))
-      return;
-    Finish();
+    if (!finished_ && !loading_ && !pending_)
+      Finish();
   }
   void Finish() {
-    if (finished_)
-      return;
     auto keep = shared_from_this();
     finished_ = true;
     NSMutableSet<NSString*>* installed = [NSMutableSet set];
@@ -603,14 +416,14 @@ class Batch final : public ProfileObserver,
       else if (item.state == Item::kFailed && ![failed containsObject:name])
         [failed addObject:name];
     }
-    // Stopping is the user's choice. Skipped ones are declined, not failed.
+    // Stopping is the user's choice; nothing to report as failed.
     if (cancelled_)
       [failed removeAllObjects];
     const PCNativeImportOutcome outcome =
-        cancelled_ || skipped_ ? PCNativeImportOutcomeCancelled
-        : !failed.count        ? PCNativeImportOutcomeCompleted
-        : installed.count      ? PCNativeImportOutcomePartial
-                               : PCNativeImportOutcomeFailed;
+        cancelled_        ? PCNativeImportOutcomeCancelled
+        : !failed.count   ? PCNativeImportOutcomeCompleted
+        : installed.count ? PCNativeImportOutcomePartial
+                          : PCNativeImportOutcomeFailed;
     auto result =
         [[PCNativeImportExtensionResult alloc] initWithOutcome:outcome
                                                      installed:installed
@@ -618,13 +431,11 @@ class Batch final : public ProfileObserver,
     auto completion = completion_;
     completion_ = nil;
     Stop();
-    // Installers are released outside Chromium's own completion stack.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
                        [](std::shared_ptr<Batch> self,
                           PCNativeImportExtensionResult* result,
                           Completion completion) {
-                         self->items_.clear();
                          self->lifetime_.reset();
                          if (completion)
                            completion(result);
@@ -632,15 +443,7 @@ class Batch final : public ProfileObserver,
                        keep, result, completion));
   }
   void Stop() {
-    [presenter_ invalidate];
-    presenter_ = nil;
-    [reservation_ invalidate];
-    reservation_ = nil;
-    if (close_observer_) {
-      [NSNotificationCenter.defaultCenter removeObserver:close_observer_];
-      close_observer_ = nil;
-    }
-    deadline_.Stop();
+    ticker_.Stop();
     for (auto& group : groups_) {
       group.reader.reset();
       if (group.profile && group.observing)
@@ -656,79 +459,26 @@ class Batch final : public ProfileObserver,
   std::vector<Group> groups_;
   std::vector<Item> items_;
   NSMutableArray<NSString*>* __strong reserved_ = [NSMutableArray array];
-  NSWindow* __weak window_;
   Completion __strong completion_;
-  id __strong close_observer_;
-  PCExtensionInstallPresenter* __strong presenter_;
-  PCNativeWindowSecurityReservation* __strong reservation_;
   std::shared_ptr<Batch> lifetime_;
-  base::OneShotTimer deadline_;
-  size_t loading_, preparing_ = 0, installing_ = 0;
-  bool presented_ = false, decided_ = false, skipped_ = false,
-       cancelled_ = false, finished_ = false;
+  base::RepeatingTimer ticker_;
+  base::TimeTicks started_;
+  size_t loading_, pending_ = 0, preparing_ = 0;
+  bool cancelled_ = false, finished_ = false;
 };
-bool Consent::CanContinue() const {
+bool Installer::CheckRequestorAlive() const {
   auto batch = batch_.lock();
-  return !cancelled_ && batch && batch->CanPrepare() && profile_ &&
+  return batch && (installing_ || !batch->Stopped()) && profile_ &&
          !profile_->ShutdownStarted();
 }
-void Consent::Show(std::unique_ptr<extensions::InstallPromptData> prompt) {
-  auto keep = shared_from_this();
-  if (!CanContinue() || !done_ ||
-      prompt->type() != extensions::InstallPromptData::INSTALL_PROMPT ||
-      prompt->extension() != extension_.get()) {
-    Complete(Result::ABORTED);
+void Installer::OnManifestParsed() {
+  auto batch = batch_.lock();
+  if (!batch || !batch->Proceed(item_)) {
+    CompleteInstall(extensions::webstore_install::ABORTED, std::string());
     return;
   }
-  auto permissions = prompt->GetPermissions();
-  if (permissions.permissions.size() != permissions.details.size()) {
-    Complete(Result::ABORTED);
-    return;
-  }
-  NSMutableArray* messages = [NSMutableArray array];
-  NSMutableArray* details = [NSMutableArray array];
-  for (size_t i = 0; i < permissions.permissions.size(); ++i) {
-    [messages addObject:base::SysUTF16ToNSString(permissions.permissions[i])];
-    [details addObject:base::SysUTF16ToNSString(permissions.details[i])];
-  }
-  NSImage* icon = prompt->icon().IsEmpty() ? nil : prompt->icon().ToNSImage();
-  const std::string name = prompt->extension()->name();
-  prompt_ = std::move(prompt);
-  batch_.lock()->Ready(item_, name, icon, messages, details);
-}
-void Consent::Complete(Result result) {
-  if (!done_)
-    return;
-  std::weak_ptr<Consent> weak = weak_from_this();
-  auto done = std::move(done_);
-  auto prompt = std::move(prompt_);
-  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](std::weak_ptr<Consent> weak,
-             std::unique_ptr<extensions::InstallPromptData> prompt, Done done,
-             Result result) {
-            auto self = weak.lock();
-            auto valid = [&] {
-              auto batch = self ? self->batch_.lock() : nullptr;
-              return self && !self->cancelled_ && batch && batch->CanDeliver() &&
-                     self->profile_ && !self->profile_->ShutdownStarted();
-            };
-            if (result == Result::ACCEPTED && !valid())
-              result = Result::ABORTED;
-            if (prompt) {
-              if (result == Result::ACCEPTED)
-                prompt->OnDialogAccepted();
-              else
-                prompt->OnDialogCanceled();
-            }
-            if (result == Result::ACCEPTED && !valid())
-              result = Result::ABORTED;
-            if (result == Result::ACCEPTED)
-              self->authorized_ = true;
-            std::move(done).Run(Payload(result));
-          },
-          weak, std::move(prompt), std::move(done), result));
+  installing_ = true;
+  ProceedWithInstallPrompt();
 }
 }  // namespace
 }  // namespace parc::importer
@@ -736,12 +486,11 @@ void Consent::Complete(Result result) {
 @implementation PCNativeBrowserApplication (ImportedExtensions)
 + (PCNativeImportSession*)installImportedExtensions:
                               (NSArray<PCNativeImportExtensionRequest*>*)requests
-                                           inWindow:(NSWindow*)window
                                          completion:
                                              (void (^)(PCNativeImportExtensionResult*))
                                                  completion {
   CHECK(NSThread.isMainThread);
-  if (!requests.count || !window || !window.visible || !completion)
+  if (!requests.count || !completion)
     return nil;
   std::vector<parc::importer::Batch::Group> groups;
   std::map<std::string, std::set<std::string>> requested;
@@ -770,8 +519,8 @@ void Consent::Complete(Result result) {
     if (!group.ids.empty())
       groups.push_back(std::move(group));
   }
-  auto batch = std::make_shared<parc::importer::Batch>(std::move(groups),
-                                                       window, completion);
+  auto batch =
+      std::make_shared<parc::importer::Batch>(std::move(groups), completion);
   if (!batch->Reserve())
     return nil;
   auto lease = [[PCNativeImportSession alloc] initWithCancel:^{

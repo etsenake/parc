@@ -2263,7 +2263,7 @@ __attribute__((visibility("default")))
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeImportExtensionResult : NSObject
-// Cancelled when the user skipped or the install was stopped before consent.
+// Cancelled when the import was stopped.
 @property(nonatomic, readonly) PCNativeImportOutcome outcome;
 // Requested identifiers now in their destination, including ones already there.
 @property(nonatomic, readonly, copy) NSSet<NSString*>* installedIdentifiers;
@@ -2273,15 +2273,14 @@ __attribute__((visibility("default")))
 @end
 NS_SWIFT_UI_ACTOR
 @interface PCNativeBrowserApplication (ImportedExtensions)
-// Every request's extensions are read back from its source, prepared from the
-// Web Store and shown in one consent sheet on window; none installs without
-// it. One failure never stops the others. A nil return is immediate rejection
-// and never calls completion; otherwise completion runs once on main.
+// Every request's extensions are read back from its source and installed from
+//
+// the choice. One failure never stops the others. A nil return is immediate
+// rejection and never calls completion; otherwise completion runs once on main.
 + (nullable PCNativeImportSession*)installImportedExtensions:
     (NSArray<PCNativeImportExtensionRequest*>*)requests
-    inWindow:(NSWindow*)window
     completion:(void (^)(PCNativeImportExtensionResult*))completion
-    NS_SWIFT_NAME(installImportedExtensions(_:in:completion:));
+    NS_SWIFT_NAME(installImportedExtensions(_:completion:));
 @end
 
 // Explicit, user-selected CSV import into one original regular Profile. Only

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 640,
+  "version": 641,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -395,7 +395,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "52688a0a414a4a2499f3c8ac34c72a172c81b2cfa7b9f9f4d173b99ddbe0f0bf"
+      "sha256": "abf63110919d6b7b1371b5934f1d272d678f299cfc15ebd007db93cb441b0285"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -540,12 +540,12 @@
     {
       "source": "Engine/ParcNative/extension_install_presenter.h",
       "target": "cef/libcef/browser/parc_native/extension_install_presenter.h",
-      "sha256": "4eff293a5fad79e78f1afcb9859b9b03fd86961568c90599be30ed32516c1751"
+      "sha256": "f8d5da4d9bd5d60b2881a7051d4f84ecc0f8d0fe01323b18590e31c3f12c5364"
     },
     {
       "source": "Engine/ParcNative/extension_install_presenter.mm",
       "target": "cef/libcef/browser/parc_native/extension_install_presenter.mm",
-      "sha256": "29ffc28de2a5fb9084a307d12b870ff203fe49d6173c63ff266bab4aec1f4fd6"
+      "sha256": "f4dcabde67f7ee49228c8f9da9d883859d5efe755d722ee62085c33355c51222"
     },
     {
       "source": "Engine/ParcNative/tab_transfer.h",
@@ -1370,7 +1370,7 @@
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",
       "target": "cef/libcef/browser/parc_native/native_import_extensions.mm",
-      "sha256": "77ac91355e346ff0dbb0eac6a51804712222670f2af85ad1ba321fa5b5b4d27d"
+      "sha256": "04646d8d1f8ee8b68f3dac88af21d4d9a8f72a6969fbf2162a99216b92789e78"
     },
     {
       "source": "Engine/ParcNative/native_import_internal.h",

@@ -7,17 +7,6 @@ typedef NS_ENUM(NSInteger, PCExtensionInstallChoice) {
   PCExtensionInstallCancel,
   PCExtensionInstallInterrupted,
 };
-// One extension in an import's single consent.
-@interface PCExtensionInstallItem : NSObject
-- (instancetype)initWithName:(NSString*)name
-                        icon:(nullable NSImage*)icon
-                 permissions:(NSArray<NSString*>*)permissions
-                     details:(NSArray<NSString*>*)details;
-@property(nonatomic, readonly, copy) NSString* name;
-@property(nonatomic, readonly, nullable) NSImage* icon;
-@property(nonatomic, readonly, copy) NSArray<NSString*>* permissions;
-@property(nonatomic, readonly, copy) NSArray<NSString*>* details;
-@end
 @interface PCExtensionInstallPresenter : NSObject
 - (instancetype)initWithWindow:(NSWindow*)window
                          title:(NSString*)title
@@ -41,8 +30,6 @@ typedef NS_ENUM(NSInteger, PCExtensionInstallChoice) {
 // Ordinary installation education uses the real extension name/icon/permissions.
 // Special policy, parent, repair and permission requests retain their own copy.
 - (void)configureInstallationEducationWithName:(NSString*)name;
-//
-- (void)configureImportedExtensions:(NSArray<PCExtensionInstallItem*>*)items;
 - (void)start;
 - (void)invalidate;
 // Enterprise requests use the same consent owner, but return a justification
