@@ -94,7 +94,7 @@ struct TrackEncryption {
 enum class VideoCodec { kH264, kHEVC, kDolbyVision, kAV1 };
 // kAAC covers every AudioSpecificConfig object type: LC, HE-AAC (5),
 // HE-AACv2 (29) and xHE-AAC/USAC (42).
-enum class AudioCodec { kAAC, kAC3, kEAC3, kFLAC, kOpus, kALAC };
+enum class AudioCodec { kAAC, kAC3, kEAC3, kFLAC, kOpus, kALAC, kPCM };
 
 // How video access units are framed. ISO-BMFF samples are length-prefixed;
 // Chromium's MP4 parser converts H.264, HEVC and Dolby Vision (not profile
@@ -147,10 +147,15 @@ struct AudioConfig {
   // Opus: the OpusHead Chromium builds from 'dOps' (required).
   // ALAC: the 24-byte ALACSpecificConfig (Chromium's, from the 'alac' box), or
   // Apple's magic cookie with its 'alac' atom (FFmpeg's); required.
+  // PCM: none (see pcm_bits).
   std::vector<uint8_t> extra_data;
   AudioFraming framing = AudioFraming::kRaw;
   int32_t sample_rate = 0;
   int32_t channels = 0;
+  // PCM: interleaved little-endian samples of 16, 24 or 32 bits, or 32-bit
+  // float, as Chromium's MP4 parser gives ISO 23003-5 'ipcm' and 'fpcm'.
+  int32_t pcm_bits = 0;
+  bool pcm_float = false;
   TrackEncryption encryption;
 };
 

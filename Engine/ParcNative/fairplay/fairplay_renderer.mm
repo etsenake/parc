@@ -1809,6 +1809,21 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
         children.push_back(MakeBox(FourCC('a', 'l', 'a', 'c'), *alac));
         break;
       }
+      case AudioCodec::kPCM: {
+        // ISO 23003-5 'ipcm' or 'fpcm' with its 'pcmC' (little-endian), which
+        // CoreMedia makes 'lpcm', as AVStreamDataParser does. Protected, it
+        // stays 'enca': CoreAudio has no protected PCM decoder, so it fails at
+        // the first enqueue, as it does in Safari.
+        if (config.channels <= 0 ||
+            (config.pcm_float ? config.pcm_bits != 32
+                              : config.pcm_bits != 16 && config.pcm_bits != 24 && config.pcm_bits != 32)) {
+          return Result::Error(Exception::kTypeError, "PCM config needs channels and a 16, 24 or 32-bit sample");
+        }
+        entry_type = config.pcm_float ? FourCC('f', 'p', 'c', 'm') : FourCC('i', 'p', 'c', 'm');
+        children.push_back(MakeBox(FourCC('p', 'c', 'm', 'C'),
+                                   {0, 0, 0, 0, 1, static_cast<uint8_t>(config.pcm_bits)}));
+        break;
+      }
     }
     // Opus in ISO-BMFF states 48 kHz in the sample entry whatever the input
     // rate ('dOps' carries that).

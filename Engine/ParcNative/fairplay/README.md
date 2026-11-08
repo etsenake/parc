@@ -244,6 +244,13 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
   Apple's magic cookie with its `alac` atom, FFmpeg's form). The core builds
   Apple's `alac` sample entry with that config in its ALACSpecificBox;
   protected ALAC becomes `qlac`.
+- PCM (`AudioCodec::kPCM`, Chromium's from ISO 23003-5 `ipcm`/`fpcm`) comes as
+  interleaved little-endian samples of `pcm_bits` (16, 24 or 32, or 32-bit
+  float). The core builds the `ipcm` or `fpcm` entry with its `pcmC`, which
+  CoreMedia makes `lpcm` exactly as AVStreamDataParser does, and enqueues each
+  sample as one buffer, as Safari does. Protected PCM stays `enca`: CoreAudio
+  has no protected PCM decoder, so AVSampleBufferAudioRenderer fails at the
+  first enqueue (-11800, `fmt?`), in Safari too.
 
 ## M1 constraints from key delivery
 

@@ -60,6 +60,11 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
+#include "third_party/blink/public/platform/web_content_decryption_module_access.h"
+#include "third_party/blink/public/platform/web_media_key_system_configuration.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_media_key_system_configuration.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_media_key_system_media_capability.h"
+#include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.h"
 
 namespace blink {
 namespace {
@@ -461,6 +466,56 @@ TEST_F(ParcMediaSourceTest, ChromeSourceBufferRefusesAmrAndH263) {
   EXPECT_EQ(add_exception.CodeAs<DOMExceptionCode>(),
             DOMExceptionCode::kNotSupportedError);
   EXPECT_EQ(engine_->data.add_source_buffer_calls, 0);
+}
+
+// What requestMediaKeySystemAccess() gives Chromium's key system selector.
+class ParcKeySystemRequest final : public MediaKeySystemAccessInitializerBase {
+ public:
+  using MediaKeySystemAccessInitializerBase::
+      MediaKeySystemAccessInitializerBase;
+  void RequestSucceeded(
+      std::unique_ptr<WebContentDecryptionModuleAccess>) override {}
+  void RequestNotSupported(const WebString&) override {}
+};
+
+// WebKit's FairPlay takes 'ipcm' and 'fpcm' where AVFoundation's
+// isPlayableExtendedMIMEType does, as it does for them on this Mac; Chromium's
+// codecs name no PCM, so a Safari-identity page's PCM is left to AVFoundation
+// (MediaKeySystemAccessInitializer). A Chrome page's stays refused.
+TEST_F(ParcMediaSourceTest, FairPlayPCMCapabilitiesOnlyOnSafariPages) {
+  for (const char* agent : {kChromeUserAgent, kSafariUserAgent}) {
+    SetUserAgent(agent);
+    const bool safari = agent == kSafariUserAgent;
+    auto capability = [](const char* type) {
+      auto* result = MediaKeySystemMediaCapability::Create();
+      result->setContentType(type);
+      return result;
+    };
+    auto* config = MediaKeySystemConfiguration::Create();
+    config->setInitDataTypes({"cenc"});
+    config->setAudioCapabilities({capability("audio/mp4; codecs=\"ipcm\""),
+                                  capability("audio/mp4; codecs=\"fpcm.32\""),
+                                  capability("audio/mp4; codecs=\"IPCM\"")});
+    config->setVideoCapabilities(
+        {capability("video/mp4; codecs=\"avc1.42E01E,fpcm\"")});
+    auto* request = MakeGarbageCollected<ParcKeySystemRequest>(
+        Context(), nullptr, "com.apple.fps",
+        HeapVector<Member<MediaKeySystemConfiguration>>{config},
+        /*is_from_media_capabilities=*/false);
+    const WebMediaKeySystemConfiguration& given =
+        request->SupportedConfigurations()[0];
+    ASSERT_EQ(given.audio_capabilities.size(), 3u);
+    for (size_t i : {0u, 1u}) {
+      EXPECT_EQ(given.audio_capabilities[i].mime_type, "audio/mp4");
+      EXPECT_EQ(given.audio_capabilities[i].codecs,
+                safari ? "mp4a.40.2" : "parc.safari-only")
+          << i;
+    }
+    EXPECT_EQ(given.audio_capabilities[2].codecs, "IPCM");
+    ASSERT_EQ(given.video_capabilities.size(), 1u);
+    EXPECT_EQ(given.video_capabilities[0].codecs,
+              safari ? "avc1.42E01E" : "avc1.42E01E,fpcm");
+  }
 }
 
 TEST_F(ParcMediaSourceTest, SafariIsTypeSupportedSafariContainers) {

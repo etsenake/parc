@@ -114,6 +114,7 @@ under the same key ID fails visibly.
 | FLAC (`fLaC`, Chromium's `bear-flac_frag.mp4`) as Chromium delivers it (STREAMINFO only) | `qflc` | clear: 27/27 frames as `flac`, `OnEnded` at 2.740 s, no decoder errors; protected: 27/27, no decoder errors; wrong key: 328 decoder errors (`ACFLACDecoder`) |
 | Opus (`Opus`, Chromium's `bear-opus.mp4`) as Chromium delivers it (an OpusHead) | none | clear: 137/137 packets as `opus`, `OnEnded` at 2.741 s, no decoder errors |
 | ALAC (`alac`, 3 s stereo 16-bit from Apple's encoder) as the ALACSpecificConfig | `qlac` | clear: 33/33 packets as `alac`, played to `OnEnded`, no decoder errors; protected: 33/33, no decoder errors; wrong key: 3 decoder errors (`ACCPEDecoderWrapper`) |
+| PCM `ipcm` 16/24-bit and `fpcm` 32-bit float (2 s stereo, 1024-frame samples) with `pcmC`, as Chromium delivers it | none (`enca`) | clear: 87/87 samples as `lpcm`, `OnEnded` at 2.000 s, no decoder errors; protected: fails at the first enqueue with -11800 (`fmt?`), as in Safari (`--only PCM --muted`, 2026-11-07) |
 
 FLAC, Opus and ALAC were run with `--muted` (2026-11-07): every audio renderer muted
 at volume 0, which still decodes each packet and logs decoder errors, so
@@ -167,6 +168,10 @@ Platform behaviour (checked to fail, so a change would show up):
 - Opus has no protected type: CoreAudio's decoders include `qflc` (FLAC) and
   `qlac` (ALAC) but no protected Opus one, so protected Opus is refused at
   the first enqueue.
+- PCM has no protected type either: protected `ipcm` and `fpcm` stay `enca`
+  and AVSampleBufferAudioRenderer fails at the first enqueue after the key is
+  usable (-11800, `fmt?`), as Safari's AVStreamDataParser output does on this
+  Mac. Clear `ipcm` (16, 24 bits) and `fpcm` (32-bit float) play as `lpcm`.
 - AV1 has no cenc protected type (the description stays `encv`, -12167).
   Encrypted AV1 frame headers fail ("fail to parse av1 header"). Video
   protected with every block encrypted (pattern 0:0) fails about half its

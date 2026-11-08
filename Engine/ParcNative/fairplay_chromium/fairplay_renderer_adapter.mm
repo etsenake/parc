@@ -18,6 +18,7 @@
 #include "media/base/encryption_scheme.h"
 #include "media/base/media_resource.h"
 #include "media/base/renderer_client.h"
+#include "media/base/sample_format.h"
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_codecs.h"
 #include "media/base/waiting.h"
@@ -101,6 +102,8 @@ std::optional<fp::AudioCodec> ToAudioCodec(AudioCodec codec) {
       return fp::AudioCodec::kOpus;
     case AudioCodec::kALAC:
       return fp::AudioCodec::kALAC;
+    case AudioCodec::kPCM:
+      return fp::AudioCodec::kPCM;
     default:
       return std::nullopt;
   }
@@ -189,13 +192,27 @@ fp::AudioConfig ToCoreConfig(const AudioDecoderConfig& config) {
                                                       : fp::AudioFraming::kRaw;
   audio.sample_rate = config.samples_per_second();
   audio.channels = config.channels();
+  if (audio.codec == fp::AudioCodec::kPCM) {
+    // Chromium's S24 PCM buffers are packed 3-byte samples (FFmpeg's
+    // pcm_s24le), though SampleFormatToBitsPerChannel() counts 32.
+    audio.pcm_bits = config.sample_format() == kSampleFormatS16   ? 16
+                     : config.sample_format() == kSampleFormatS24 ? 24
+                                                                  : 32;
+    audio.pcm_float = config.sample_format() == kSampleFormatF32;
+  }
   audio.encryption.scheme = ToScheme(config.encryption_scheme());
   return audio;
 }
 
+// PCM as Chromium's MP4 parser gives 'ipcm' and 'fpcm'.
 std::optional<fp::AudioConfig> CoreConfigIfPlayable(
     const AudioDecoderConfig& config) {
-  if (!ToAudioCodec(config.codec())) {
+  if (!ToAudioCodec(config.codec()) ||
+      (config.codec() == AudioCodec::kPCM &&
+       config.sample_format() != kSampleFormatS16 &&
+       config.sample_format() != kSampleFormatS24 &&
+       config.sample_format() != kSampleFormatS32 &&
+       config.sample_format() != kSampleFormatF32)) {
     return std::nullopt;
   }
   return ToCoreConfig(config);

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
@@ -317,6 +318,41 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
     return false;
   }
   return true;
+}
+
+// ISO 23003-5 PCM as Chromium's MP4 parser hands it over: 'ipcm' (16, 24 or
+// 32-bit integer) or 'fpcm' (32-bit float), little-endian interleaved 44.1 kHz
+// stereo tones in 1024-frame samples, the 'pcmC' payload as the config.
+void MakePcm(bool floating, int bits, double seconds, Media* media) {
+  const int64_t total = int64_t(seconds * 44100);
+  for (int64_t pts = 0; pts < total; pts += 1024) {
+    const int64_t frames = std::min<int64_t>(1024, total - pts);
+    ft::Sample sample;
+    for (int64_t i = pts; i < pts + frames; ++i) {
+      for (double hz : {440.0, 660.0}) {
+        const double value = 0.3 * std::sin(2 * M_PI * hz * double(i) / 44100);
+        uint32_t word;
+        if (floating) {
+          const float f = float(value);
+          memcpy(&word, &f, 4);
+        } else {
+          word = uint32_t(int32_t(std::lround(value * double((int64_t(1) << (bits - 1)) - 1))));
+        }
+        for (int byte = 0; byte < bits / 8; ++byte) sample.data.push_back(uint8_t(word >> (8 * byte)));
+      }
+    }
+    sample.pts = sample.dts = pts;
+    sample.duration = frames;
+    sample.is_keyframe = true;
+    media->samples.push_back(std::move(sample));
+  }
+  media->info.is_video = false;
+  media->info.timescale = 44100;
+  media->info.sample_entry = media->info.original_format =
+      floating ? fp::FourCC('f', 'p', 'c', 'm') : fp::FourCC('i', 'p', 'c', 'm');
+  media->info.channels = 2;
+  media->info.sample_rate = 44100;
+  media->info.codec_config = {0, 0, 0, 0, 1, uint8_t(bits)};
 }
 
 double EndSeconds(const Media& media) {
@@ -865,6 +901,13 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
       ac.channels = c[4 + 9];
       ac.sample_rate = int32_t(uint32_t(c[24]) << 24 | uint32_t(c[25]) << 16 | uint32_t(c[26]) << 8 | c[27]);
     }
+  } else if (f == fp::FourCC('i', 'p', 'c', 'm') || f == fp::FourCC('f', 'p', 'c', 'm')) {
+    // fairplay-media.patch: kPCM, the sample format from 'pcmC'.
+    ac.codec = fp::AudioCodec::kPCM;
+    ac.extra_data.clear();
+    ac.channels = info.channels;
+    ac.pcm_bits = c.size() >= 6 ? c[5] : 0;
+    ac.pcm_float = f == fp::FourCC('f', 'p', 'c', 'm');
   } else if (f == fp::FourCC('O', 'p', 'u', 's')) {
     // OpusSpecificBox::Parse: "OpusHead" and the 'dOps' fields, little-endian.
     ac.codec = fp::AudioCodec::kOpus;
@@ -970,7 +1013,7 @@ class Player : public fp::FairPlayRendererClient {
         s.decode_failures, s.video_error.c_str(), s.audio_error.c_str());
   }
 
-  void OnNeedData(fp::StreamType) override { Pump(); }
+  void OnNeedData(fp::StreamId) override { Pump(); }
   void OnWaitingForKey() override {
     ++waiting_events;
     Log("%s: waiting for key", name_.c_str());
@@ -1051,6 +1094,9 @@ enum class Expect {
               // or healthy playback proves nothing for this codec.
   kFails,     // Documented platform behaviour: must not play correctly.
   kReport,    // Reported only (a control whose result is information).
+  kDecodeError,  // Safari's outcome: AVFoundation takes the protected format
+                 // (expected_types) and fails the renderer once the key is
+                 // usable, which a page sees as MEDIA_ERR_DECODE.
 };
 
 struct Clip {
@@ -1082,7 +1128,8 @@ struct World {
   std::vector<ClipResult> results;
   // Loaded media.
   Media h264, h264_cbcs_ref, hevc, dv5_dvh1, dv5_dvhe, av1_ref, av1, av1_10bit_ref, av1_10bit, xhe_aac, ac3, eac3,
-      eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus, alac;
+      eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus, alac, ipcm16,
+      ipcm24, fpcm32;
   // The Dolby Vision dvhe test file's own cenc layout (dv5_dvhe holds it
   // decrypted).
   std::vector<std::vector<fp::SubsampleEntry>> dv5_dvhe_layout;
@@ -1227,6 +1274,18 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
       } else if (clip->expect == Expect::kFails) {
         Check(!healthy, clip->label + ": doesn't play, as documented", evidence);
         w->results.push_back({clip->label, healthy ? "FAIL" : "OK", "fails as documented: " + evidence});
+      } else if (clip->expect == Expect::kDecodeError) {
+        // -11800 over 'fmt?' (kAudioFormatUnsupportedFormatError, 1718449215):
+        // no decoder for the format, after the protected samples went in.
+        const bool as_safari = type_ok && status == fp::RenderingStatus::kFailed && s.protected_enqueued > 0 &&
+                               apple_error.find("-11800") != std::string::npos &&
+                               apple_error.find("1718449215") != std::string::npos &&
+                               !w->player->errors.empty() && w->player->errors.front().rfind("decode: ", 0) == 0;
+        Check(as_safari,
+              clip->label + ": protected format '" + clip->expected_types +
+                  "', then AVFoundation's renderer fails with a decode error, as in Safari",
+              evidence);
+        w->results.push_back({clip->label, as_safari ? "OK" : "FAIL", "decode error: " + evidence});
       } else if (clip->expect == Expect::kReport) {
         Log("%s: %s", clip->label.c_str(), healthy ? "looks healthy" : "fails");
         w->results.push_back({clip->label, "INFO", std::string(healthy ? "looks healthy: " : "fails: ") + evidence});
@@ -1682,6 +1741,14 @@ void RunAll() {
   add_loaded("ALAC alac clear", w->alac, "alac", Expect::kPlays);
   AddClip("ALAC alac cbcs, whole sample", w->alac, audio, "qlac");
   AddClip("ALAC alac cbcs, wrong key (control)", w->alac, audio, "qlac", Expect::kGarbage, 0x5a);
+  // PCM, as Safari's AVStreamDataParser makes 'ipcm' and 'fpcm': clear as
+  // 'lpcm'; protected the format stays 'enca' (CoreAudio has no protected PCM
+  // decoder) and AVSampleBufferAudioRenderer fails with -11800.
+  add_loaded("PCM ipcm 16-bit clear", w->ipcm16, "lpcm", Expect::kPlays);
+  add_loaded("PCM ipcm 24-bit clear", w->ipcm24, "lpcm", Expect::kPlays);
+  add_loaded("PCM fpcm 32-bit float clear", w->fpcm32, "lpcm", Expect::kPlays);
+  AddClip("PCM ipcm 16-bit cbcs, whole sample", w->ipcm16, audio, "enca", Expect::kDecodeError);
+  AddClip("PCM fpcm 32-bit float cbcs, whole sample", w->fpcm32, audio, "enca", Expect::kDecodeError);
 
   std::vector<Step> steps;
   steps.push_back(Section("FairPlay license for Axinom's published key"));
@@ -1741,6 +1808,9 @@ bool LoadAll(World* w, std::string* error) {
       !EncodeAac(kAudioFormatAppleLossless, 3, &w->alac, error)) {
     return false;
   }
+  MakePcm(false, 16, 2, &w->ipcm16);
+  MakePcm(false, 24, 2, &w->ipcm24);
+  MakePcm(true, 32, 2, &w->fpcm32);
   // Chromium's cenc test files decrypted with its test key: the AV1 ones
   // must equal Chromium's clear files (SelfTests) and give Shaka's layout;
   // the Dolby Vision dvhe one is the only dvhe stream in the test data.

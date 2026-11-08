@@ -5948,10 +5948,19 @@
  #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
  
  namespace blink {
-@@ -74,6 +79,104 @@
+@@ -74,6 +79,114 @@
    return result;
  }
  
++// Parc: ISO 23003-5 PCM ('ipcm', 'fpcm'), which the FairPlay Renderer plays
++// clear; protected it fails as in Safari, where CoreAudio has no protected PCM
++// decoder either. No key system's codecs name it, so AVFoundation's answer
++// alone decides.
++bool IsParcPCMCodec(const String& codec) {
++  return codec == "ipcm" || codec.starts_with("ipcm.") || codec == "fpcm" ||
++         codec.starts_with("fpcm.");
++}
++
 +// Parc: whether FairPlay plays `codec` (its CdmCapability in
 +// fairplay-media.patch): AAC, AC-3, E-AC-3, FLAC, Opus and ALAC audio; H.264,
 +// HEVC and Dolby Vision profile 5 video.
@@ -5996,7 +6005,8 @@
 +// - The codecs may include those of the other media type that FairPlay
 +//   plays, as AVFoundation plays muxed media; they are checked here and the
 +//   rest by the selector. With only those, the type is judged as the
-+//   container with a FairPlay codec of its own kind.
++//   container with a FairPlay codec of its own kind. PCM counts as one of
++//   those in either list.
 +void ParcApplySafariFairPlayContentType(
 +    WebMediaKeySystemMediaCapability& capability,
 +    bool video) {
@@ -6036,7 +6046,7 @@
 +  StringBuilder own_codecs;
 +  for (const String& entry : codecs.Split(',')) {
 +    const String codec = entry.StripWhiteSpace();
-+    if (IsParcFairPlayCodec(codec, !video)) {
++    if (IsParcFairPlayCodec(codec, !video) || IsParcPCMCodec(codec)) {
 +      continue;
 +    }
 +    if (!own_codecs.empty()) {
@@ -6053,7 +6063,7 @@
  static std::vector<WebEncryptedMediaSessionType> ConvertSessionTypes(
      const Vector<String>& session_types) {
    std::vector<WebEncryptedMediaSessionType> result(session_types.size());
-@@ -96,21 +199,109 @@
+@@ -96,21 +209,109 @@
        key_system_(key_system),
        supported_configurations_(supported_configurations.size()),
        is_from_media_capabilities_(is_from_media_capabilities) {
@@ -6163,7 +6173,7 @@
      DCHECK(config->hasDistinctiveIdentifier());
      web_config.distinctive_identifier =
          EncryptedMediaUtils::ConvertToMediaKeysRequirement(
-@@ -123,6 +314,17 @@
+@@ -123,6 +324,17 @@
  
      if (config->hasSessionTypes()) {
        web_config.session_types = ConvertSessionTypes(config->sessionTypes());
@@ -6181,7 +6191,7 @@
      } else {
        // From the spec
        // (http://w3c.github.io/encrypted-media/#idl-def-mediakeysystemconfiguration):
-@@ -137,6 +339,9 @@
+@@ -137,6 +349,9 @@
  
      // If |label| is not present, it will be a null string.
      web_config.label = config->label();
