@@ -159,9 +159,10 @@ class Release:
         self.lock()
         if self.current.exists():
             prior = json.loads(self.current.read_text())
+            if prior.get("status") not in TERMINAL and prior["release_type"] != self.kind:
+                self.supersede(prior)
+                prior = json.loads(self.current.read_text())
             if prior.get("status") not in TERMINAL:
-                if prior["release_type"] != self.kind:
-                    raise Failure("An unfinished " + prior["release_type"] + " release must resume before another bump")
                 if self.refresh_source and (prior.get('status') != 'stopped'
                         or prior.get('stage') != 'engine'
                         or prior.get('completed') != ['source']
@@ -181,6 +182,42 @@ class Release:
             self.state = {"schema_version": 1, "id": run.name, "run": str(run), "release_type": self.kind,
                           "started_utc": now(), "status": "running", "stage": "preflight", "completed": []}
         self.checkpoint(status="running", error=None)
+
+    def supersede(self, prior):
+        """Retire a stopped, never-published release of another type so a new bump can start.
+
+        Its run directory, frozen source and compiled engine objects stay in place.
+        """
+        unfinished = "An unfinished " + prior["release_type"] + " release must resume before another bump"
+        if prior.get("status") != "stopped" or prior.get("lease_release_started"):
+            raise Failure(unfinished)
+        for key in ("pid", "command_pid"):
+            pid = prior.get(key)
+            if pid and pid != os.getpid():
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    continue
+                except PermissionError:
+                    pass
+                raise Failure(unfinished + "; its process " + str(pid) + " is still alive")
+        if prior.get("tag"):
+            # No self.git here: its checkpoint would overwrite current.json before the state is known.
+            remote = subprocess.run(["git", "ls-remote", "origin", "refs/tags/" + prior["tag"]], cwd=self.root,
+                                    env=self.env, capture_output=True, text=True)
+            if remote.returncode:
+                raise Failure(unfinished + "; could not check whether " + prior["tag"] + " is published")
+            if remote.stdout.strip():
+                raise Failure(unfinished + "; " + prior["tag"] + " is already published")
+        if prior.get("lease"):
+            release_lease.release(prior["lease"])
+        retired = dict(prior, status="abandoned", lease=None, superseded_by=self.kind,
+                       abandoned_utc=now(), updated_utc=now())
+        if prior.get("run"):
+            save(Path(prior["run"]) / "state.json", retired)
+        save(self.current, retired)
+        self.emit("Abandoned the stopped, unpublished " + prior["release_type"] + " release " + prior.get("tag", prior["id"])
+                  + " so a " + self.kind + " release can start; its run, source archive and engine objects were kept")
 
     def refresh_inputs(self):
         """Explicitly replace failed, unpublished build inputs; retain the old archive."""

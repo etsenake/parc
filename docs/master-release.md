@@ -14,7 +14,11 @@ The earlier one-night wait was coordination, not a feature of this command.
 
 A minor release after 1.0.0 is 1.1.0; the Apple bundle build increases
 independently. Rerun the same command after interruption. It resumes the saved
-version and frozen inputs instead of bumping twice.
+version and frozen inputs instead of bumping twice. Asking for a different
+release type while a run is stopped and its tag was never published marks that
+run abandoned (its run directory, source archive and engine objects are kept),
+releases its lease and starts the new release from the current version. A
+running run or a published tag still refuses.
 
 ## Pipeline
 

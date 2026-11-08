@@ -73,6 +73,39 @@ class Repository(unittest.TestCase):
         with self.assertRaisesRegex(release.Failure, 'immutable'):
             refreshed.refresh_inputs()
 
+    def test_other_type_supersedes_stopped_unpublished_release(self):
+        patch_run = release.Release(self.root, 'patch'); patch_run.start()
+        patch_run.prepare()
+        patch_run.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None,
+                             lease='patch-lease', error='Release interrupted by signal 15')
+        for item in patch_run.locks: item.close()
+        patch_dir = Path(patch_run.state['run'])
+        with patch.object(release_lease, 'release') as released:
+            minor = self.runner()
+        released.assert_called_once_with('patch-lease')
+        old = json.loads((patch_dir / 'state.json').read_text())
+        self.assertEqual((old['status'], old['superseded_by'], old['lease']), ('abandoned', 'minor', None))
+        self.assertTrue(Path(old['source']).exists())
+        self.assertNotEqual(minor.state['run'], str(patch_dir))
+        minor.prepare()
+        self.assertEqual(minor.state['version'], {'version': '1.1.0', 'build': 3})
+
+    def test_other_type_refuses_published_or_live_release(self):
+        patch_run = release.Release(self.root, 'patch'); patch_run.start()
+        patch_run.prepare()
+        patch_run.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None)
+        for item in patch_run.locks: item.close()
+        self.git('tag', 'v1.0.1'); self.git('push', 'origin', 'v1.0.1')
+        with self.assertRaisesRegex(release.Failure, 'already published'):
+            self.runner()
+        self.git('push', 'origin', ':refs/tags/v1.0.1')
+        patch_run.state['pid'] = None
+        patch_run.checkpoint(status='running')
+        patch_run.state['pid'] = None
+        release.save(patch_run.current, dict(patch_run.state, pid=None))
+        with self.assertRaisesRegex(release.Failure, 'must resume'):
+            self.runner()
+
     def test_refresh_rejects_active_stage(self):
         runner = self.runner()
         for item in runner.locks: item.close()
