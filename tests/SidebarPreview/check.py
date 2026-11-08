@@ -36,6 +36,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-") as directory:
         str(root / "Sources/ParcCore/SidebarPreviewTitles.swift"),
         str(root / "Sources/ParcCore/SidebarPreviewActivation.swift"),
         *[str(scratch / name) for name in slices],
+        str(root / "Sources/ParcApp/PopoverBackgroundView.swift"),
         str(root / "Sources/ParcApp/SidebarPreviewPresentation.swift"),
         str(root / "Sources/ParcApp/SidebarPreviewCard.swift"),
         str(root / "Sources/ParcApp/TranslucentButtonFace.swift"),

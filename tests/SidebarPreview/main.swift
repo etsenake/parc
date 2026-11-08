@@ -99,12 +99,11 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     sessionRow.removeFromSuperview()
     c.expect(!SidebarPreviewMotion.keepsSessionTarget(windowPoint: stayed, anchor: sessionRow),
              "a detached anchor cannot keep the session")
-    let palette = ThemeChromePalette(theme: SpaceTheme(), isDark: false)
     let rows = (0..<12).map {
         SidebarPreviewRow(id: "\($0)", tabID: UUID(), title: "Page \($0)", url: URL(string: "https://example.com/\($0)")!,
                           visitedAt: nil)
     }
-    let folder = SidebarPreviewCard(title: "Docs", domain: nil, providerURL: nil, palette: palette)
+    let folder = SidebarPreviewCard(title: "Docs", domain: nil, providerURL: nil)
     var actions: [(String, SidebarPreviewAction)] = [], escapes = 0
     var held: NSEvent.ModifierFlags = []
     folder.modifierFlags = { held }
@@ -134,6 +133,23 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     // geometry-flipped superlayer is what makes a positive offset fall down.
     c.expect(folder.layer?.superlayer?.isGeometryFlipped == true, "shadow falls 5 pt downward in the flipped root")
     c.expect(folder.fill == nil, "folder card is material only")
+    //
+    // window, with PopoverBackgroundView's wash and decorative rings.
+    c.expect(folder.appearance == nil, "the card follows the window's appearance")
+    let popover = all(folder, PopoverBackgroundView.self).first
+    c.expect(popover?.translucency.blendingMode == .withinWindow, "the preview's popover blends within the window")
+    for (name, white, wash) in [(NSAppearance.Name.darkAqua, CGFloat(1), CGFloat(0.065)), (.aqua, 0, 1)] {
+        host.appearance = NSAppearance(named: name)
+        folder.layoutSubtreeIfNeeded(); popover?.updateLayer()
+        let washColor = popover?.wash.layer?.backgroundColor.flatMap { NSColor(cgColor: $0)?.usingColorSpace(.sRGB) }
+        c.expect(washColor.map { near($0.redComponent, wash) && near($0.alphaComponent, 0.7) } == true, "\(name.rawValue) wash")
+        var title: NSColor?
+        NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+            title = all(folder, SidebarPreviewItemView.self).first?.titleLabel.textColor?.usingColorSpace(.sRGB)
+        }
+        c.expect(title.map { near($0.redComponent, white) && near($0.alphaComponent, 1) } == true, "\(name.rawValue) titles are BasePrimary")
+    }
+    host.appearance = nil
 
     //
     folder.updateTrackingAreas()
@@ -227,7 +243,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
 
     // Recents: header, CTA, gear and per-provider empty state; no loading card or search.
     let provider = URL(string: "https://www.notion.so/team/doc")!
-    let recents = SidebarPreviewCard(title: "Notion", domain: .notion, providerURL: provider, palette: palette)
+    let recents = SidebarPreviewCard(title: "Notion", domain: .notion, providerURL: provider)
     var requested: [URL] = [], created: [URL] = [], settings = 0
     recents.requestFavicon = { url, done in requested.append(url); done(nil) }
     recents.modifierFlags = { [.option] }
@@ -244,6 +260,11 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     buttons.forEach { $0.performClick(nil) }
     c.expect(created == [URL(string: "https://notion.so/new")!] && settings == 1, "CTA and gear actions")
     c.expect(recents.fill != nil, "recents content background")
+    var fill: NSColor?
+    NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { fill = recents.fill?.usingColorSpace(.sRGB) }
+    c.expect(fill.map { near($0.redComponent, 0.129) && near($0.blueComponent, 0.133) } == true, "dark recents fill is PreviewBackgroundColor")
+    c.expect(all(folder, SidebarPreviewDivider.self).count == 1 && all(recents, SidebarPreviewDivider.self).isEmpty,
+             "only the folder card has the rule under its search row")
     c.expect(SidebarRecentDomain.allCases.map(\.createTitle) == ["New Page", "New File", "New Issue", "New Page"]
              && SidebarRecentDomain.allCases.map(\.createURL.absoluteString)
                 == ["https://notion.so/new", "https://figma.com/new", "https://linear.app/new", "https://confluence.new"],
@@ -290,7 +311,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     //
     //
     func rightClickMenu(_ domain: SidebarRecentDomain?, _ row: SidebarPreviewRow) -> (NSMenu?, SidebarPreviewCard) {
-        let card = SidebarPreviewCard(title: "Menu", domain: domain, providerURL: nil, palette: palette)
+        let card = SidebarPreviewCard(title: "Menu", domain: domain, providerURL: nil)
         card.placement = right; host.addSubview(card); card.place(); card.setRows([row])
         host.layoutSubtreeIfNeeded(); card.layoutSubtreeIfNeeded()
         defer { card.removeFromSuperview() }

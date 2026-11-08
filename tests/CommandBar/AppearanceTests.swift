@@ -34,6 +34,12 @@ import AppKit
         let theme = SpaceTheme.singleColor(ThemeColor(red: Double(pink.redComponent), green: Double(pink.greenComponent),
                                                       blue: Double(pink.blueComponent), colorSpace: .displayP3)!)
         let palette = CommandBarPalette(theme: theme)
+        // A light Space in a dark-mode app: the centred bar and a bar with a
+        // query follow the app; only the empty sidebar bar takes the Space's.
+        expect(CommandBarPalette.panelAppearance(inlineEmpty: false, space: light, window: nil) == nil, "the centred bar follows the app")
+        expect(CommandBarPalette.panelAppearance(inlineEmpty: false, space: light, window: dark) === dark, "a dark window keeps its bar dark")
+        expect(CommandBarPalette.panelAppearance(inlineEmpty: true, space: light, window: dark) === light, "the empty sidebar bar takes the Space's")
+        expect(CommandBarPalette.panelAppearance(inlineEmpty: true, space: nil, window: dark) === dark, "a Space without one leaves the window's")
         expect(near(rgba(palette.selected, dark), SIMD4(0.801, 0.080, 0.444, 0.8075)), "dark selection is the theme's semantic focus")
         expect(near(rgba(palette.selected, light), SIMD4(0.877, 0.428, 0.654, 1)), "light selection is the light focus")
         expect(near(rgba(palette.inputSelection, dark), SIMD4(1.019 * 0.5, 0.903 * 0.5, 0.951 * 0.5, 1)),
@@ -71,7 +77,7 @@ import AppKit
 
         // Surface: popover material, wash and decorative rings in each appearance.
         let window = NSWindow(contentRect: NSRect(x: -30000, y: -30000, width: 900, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
-        let surface = CommandBarSurface()
+        let surface = PopoverBackgroundView(blending: .behindWindow)
         window.contentView = surface
         let host = surface
         for (appearance, isDark) in [(dark, true), (light, false)] {

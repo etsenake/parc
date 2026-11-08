@@ -1131,7 +1131,7 @@ enum LibraryFlyoutCaptureDeletion {
         let bounds = layer.bounds, dockHeight = min(self.dockHeight, bounds.height)
         //
         // its flipped content view).
-        let flipped = host.contentsAreFlipped()
+        let flipped = view?.isFlipped ?? true
         dock.frame = CGRect(x: 0, y: flipped ? bounds.height - dockHeight : 0, width: bounds.width, height: dockHeight)
         band.frame = CGRect(x: 0, y: flipped ? 0 : dockHeight, width: bounds.width, height: bounds.height - dockHeight)
         band.startPoint = CGPoint(x: 0.5, y: flipped ? 1 : 0); band.endPoint = CGPoint(x: 0.5, y: flipped ? 0 : 1)

@@ -221,8 +221,8 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     /// BaseAssets: sRGB black or white at 0.45). The icon takes the header's
     /// tint, ViewState headerTintColor, else ForegroundTertiary (black or
     ///
-    /// effective appearance, as in the dock; the header takes the matching
-    /// appearance so AppKit's placeholder colour follows it too [I]. The edit
+    /// effective appearance, as in the dock. The header and the Space menu it
+    ///
     ///
     /// 1.170's catalog: sRGB black at 0.565, white at 0.592) and its hover
     /// fills with GrayA4 (`SidebarRowAppearance.controlFill`).
@@ -230,7 +230,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         self.dark = dark
         profileButton.dark = dark
         incognitoIndicator.dark = dark
-        appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let white: CGFloat = dark ? 1 : 0
         nameField.textColor = NSColor(srgbRed: white, green: white, blue: white, alpha: 0.45)
         symbolView.contentTintColor = tint ?? NSColor(srgbRed: white, green: white, blue: white, alpha: 0.3)

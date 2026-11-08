@@ -209,7 +209,8 @@ compile_and_run command-bar-appearance CommandBar/AppearanceTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultRowView.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
-  "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
+  "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PopoverBackgroundView.swift" "${tooltip_sources[@]}"
 
 #
 compile_and_run command-bar-site-color CommandBar/SiteColorTests \

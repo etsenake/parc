@@ -157,7 +157,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private let table = CommandResultsTable()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "Search or Enter URL…")
-    private let container = CommandBarSurface()
+    private let container = PopoverBackgroundView(blending: .behindWindow)
     private let shadowWindow = CommandBarShadowWindow()
     private var showsShadow = true
     private var splashWindow: CommandBarSplashWindow?
@@ -265,7 +265,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         let panel = CommandPanel(contentRect: NSRect(x: 0, y: 0, width: 765, height: 330),
                                  styleMask: [.borderless], backing: .buffered, defer: false)
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
-        panel.appearance = contentAppearance ?? parent.appearance
+        panel.appearance = CommandBarPalette.panelAppearance(inlineEmpty: sidebarAnchor != nil, space: contentAppearance, window: parent.appearance)
         panel.level = .normal; panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = true; panel.animationBehavior = .none
         super.init(window: panel)
@@ -443,6 +443,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     }
     private func position() {
         guard let parent, window != nil else { return }
+        applyAppearance()
         let available = parent.screen?.visibleFrame ?? parent.frame
         if let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
             let anchorRect = parent.convertToScreen(anchor.convert(anchor.bounds, to: nil))
@@ -492,10 +493,13 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         if shadowWindow.parent == nil { parent.addChildWindow(shadowWindow, ordered: .above) }
         shadowWindow.order(.below, relativeTo: window.windowNumber)
     }
-    ///
-    ///
-    var contentAppearance: NSAppearance? {
-        didSet { window?.appearance = contentAppearance ?? parent?.appearance }
+    /// The Space's content appearance, which only the empty sidebar bar takes.
+    var contentAppearance: NSAppearance? { didSet { applyAppearance() } }
+    private func applyAppearance() {
+        // A hidden sidebar lays the bar out centred, so it takes the window's too.
+        let inline = sidebarAnchor.map { $0.window === parent && !$0.isHiddenOrHasHiddenAncestor } ?? false
+        let appearance = CommandBarPalette.panelAppearance(inlineEmpty: inline && sidebarBrowsing, space: contentAppearance, window: parent?.appearance)
+        if window?.appearance != appearance { window?.appearance = appearance }
     }
     /// CustomSelectionColorTextField puts its colour on the current editor when
     ///

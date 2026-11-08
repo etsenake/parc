@@ -174,8 +174,6 @@ final class SidebarOutlineView: NSStackView {
     func animateDisclosure(from previous: [AnyHashable: NSRect], duration: CFTimeInterval = 0.25) {
         guard window != nil, !previous.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         layoutSubtreeIfNeeded()
-        // Translation runs in the list layer's space, top-down when flipped.
-        let down = layer?.contentsAreFlipped() ?? true
         let timing = CAMediaTimingFunction(name: .easeInEaseOut)
         for row in rows {
             row.wantsLayer = true
@@ -184,7 +182,7 @@ final class SidebarOutlineView: NSStackView {
                 let delta = old.minY - row.frame.minY
                 guard abs(delta) > 0.5 else { continue }
                 let slide = CABasicAnimation(keyPath: "transform.translation.y")
-                slide.fromValue = down ? delta : -delta; slide.toValue = 0
+                slide.fromValue = delta; slide.toValue = 0
                 slide.isAdditive = true; slide.duration = duration; slide.timingFunction = timing
                 layer.add(slide, forKey: "parc.disclosure.slide")
             } else if row.disclosingRow != nil {

@@ -19,10 +19,11 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private let create = ActionButton("New Page", symbol: "plus")
     private let settings = ActionButton("Previews Settings", symbol: "gearshape")
     private let search = NSTextField()
+    ///
+    private let divider = SidebarPreviewDivider()
     private let message = NSTextField(wrappingLabelWithString: "")
     private let scroll = NSScrollView()
     private let table = SidebarPreviewTable()
-    private let palette: ThemeChromePalette?
     private var rows: [SidebarPreviewRow] = []
     private var filtered: [SidebarPreviewRow] = []
     private var icons: [URL: NSImage] = [:]
@@ -32,14 +33,11 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private var trackedMenu: NSMenu?
 
     ///
-    init(title: String, domain: SidebarRecentDomain?, providerURL: URL?, palette: ThemeChromePalette?) {
-        self.domain = domain; self.providerURL = providerURL; self.palette = palette
+    init(title: String, domain: SidebarRecentDomain?, providerURL: URL?) {
+        self.domain = domain; self.providerURL = providerURL
         super.init(frame: .zero)
-        if let palette { appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua) }
-        border = (palette?.title ?? .labelColor).withAlphaComponent(0.1)
-        // Parc has no PreviewBackgroundColor asset; the palette's content surface stands in.
-        if domain != nil { fill = palette?.backgroundExtra ?? .controlBackgroundColor }
-        let primary = palette?.title ?? .labelColor, secondary = palette?.subtitle ?? .secondaryLabelColor
+        if domain != nil { fill = SidebarPreviewColors.background }
+        let primary = SidebarPreviewColors.primary(1), secondary = SidebarPreviewColors.primary(0.5)
         if let domain {
             icon.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
             icon.imageScaling = .scaleProportionallyUpOrDown; icon.contentTintColor = secondary
@@ -70,13 +68,15 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             search.focusRingType = .none; search.usesSingleLineMode = true
             search.cell?.isScrollable = true; search.cell?.wraps = false
             search.font = .systemFont(ofSize: 13); search.textColor = primary
+            // The custom field's text colours were not recovered; AppKit's placeholder colour stands in.
             search.placeholderAttributedString = NSAttributedString(string: placeholder,
-                attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: secondary])
+                attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.placeholderTextColor])
             search.setAccessibilityLabel(placeholder)
             search.delegate = self
-            for view in [icon, search] as [NSView] { content.addSubview(view) }
+            divider.wantsLayer = true
+            for view in [icon, search, divider] as [NSView] { content.addSubview(view) }
         }
-        message.font = .systemFont(ofSize: 13); message.textColor = secondary; message.alignment = .center
+        message.font = .systemFont(ofSize: 13); message.textColor = .secondaryLabelColor; message.alignment = .center
         let column = NSTableColumn(identifier: .init("page")); column.resizingMask = .autoresizingMask
         table.addTableColumn(column); table.headerView = nil
         table.rowHeight = SidebarPreviewItemView.height; table.intercellSpacing = NSSize(width: 0, height: 1)
@@ -123,6 +123,8 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             icon.frame = NSRect(x: 13, y: (header - 16) / 2, width: 14, height: 16)
             search.frame = NSRect(x: icon.frame.maxX + 9, y: (header - 20) / 2,
                                   width: max(0, width - icon.frame.maxX - 17), height: 20)
+            // Inside the border rings, which it would otherwise cover.
+            divider.frame = NSRect(x: 1, y: header - 1, width: max(0, width - 2), height: 1)
         }
         scroll.frame = NSRect(x: 4, y: header, width: max(0, width - 8), height: max(0, bounds.height - header - 4))
         table.tableColumns.first?.width = scroll.contentSize.width
@@ -192,7 +194,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let view = SidebarPreviewRowView()
-        view.highlight = (palette?.title ?? .labelColor).withAlphaComponent(1)
+        view.highlight = SidebarPreviewColors.primary(1)
         return view
     }
     func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
@@ -203,8 +205,8 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard filtered.indices.contains(row) else { return nil }
         let value = filtered[row]
-        let cell = SidebarPreviewItemView(row: value, title: palette?.title ?? .labelColor,
-                                          secondary: palette?.subtitle ?? .secondaryLabelColor)
+        let cell = SidebarPreviewItemView(row: value, title: SidebarPreviewColors.primary(1),
+                                          secondary: SidebarPreviewColors.primary(0.5))
         cell.image = icons[value.url]
         if value.hasIcon, !requestedIcons.contains(value.url) {
             requestedIcons.insert(value.url)
@@ -319,5 +321,25 @@ private final class SidebarPreviewTable: NSTableView {
         guard index >= 0 else { return nil }
         selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         return makeMenu?(index)
+    }
+}
+
+///
+/// BasePrimary and FullOpacityForegroundPrimary are black, or white in Dark
+/// Aqua; PreviewBackgroundColor is white, or sRGB 0.129, 0.133, 0.133.
+enum SidebarPreviewColors {
+    static func primary(_ alpha: CGFloat) -> NSColor {
+        NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .white.withAlphaComponent(alpha) : .black.withAlphaComponent(alpha) }
+    }
+    static let background = NSColor(name: nil) {
+        $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(srgbRed: 0.129, green: 0.133, blue: 0.133, alpha: 1) : .white
+    }
+}
+
+///
+final class SidebarPreviewDivider: NSView {
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = SidebarPreviewColors.primary(0.13).cgColor }
     }
 }

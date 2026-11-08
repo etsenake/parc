@@ -58,18 +58,18 @@ enum SidebarPreviewHighlight {
     }
 }
 
-/// PreviewBackgroundView: an unclipped shadow owner around clipped popover
-/// material, with EaselUI ToolTipAnimations' anchored scale and fade.
-/// There is no Reduce Motion branch in the original helpers.
+/// PreviewBackgroundView: an unclipped shadow owner around a clipped
+/// PopoverBackgroundView, with EaselUI ToolTipAnimations' anchored scale and
+/// fade. It takes the window's appearance, not the Space's: nothing in the
+/// preview sets one. There is no Reduce Motion branch in the original helpers.
 @MainActor
 class SidebarPreviewSurface: NSView {
     var placement = SidebarPreviewPlacement(row: .zero, location: .right)
     var onHover: ((Bool) -> Void)?
-    var border: NSColor = .separatorColor { didSet { updateColors() } }
     var fill: NSColor? { didSet { updateColors() } }
     let content: NSView = SidebarPreviewClipView()
     private(set) var isRetired = false
-    private let material = NSVisualEffectView()
+    private let popover = PopoverBackgroundView(blending: .withinWindow)
     private let background = NSView()
     private var hoverArea: NSTrackingArea?
     private var motionAnchor: NSPoint?
@@ -93,25 +93,26 @@ class SidebarPreviewSurface: NSView {
         shadow.shadowOffset = NSSize(width: 0, height: 5)
         self.shadow = shadow
         content.wantsLayer = true
-        content.layer?.cornerRadius = SidebarPreviewMetrics.cornerRadius; content.layer?.masksToBounds = true
-        content.layer?.borderWidth = 0.5
-        material.material = .popover; material.blendingMode = .withinWindow; material.state = .followsWindowActiveState
+        content.layer?.cornerRadius = SidebarPreviewMetrics.cornerRadius; content.layer?.cornerCurve = .continuous
+        content.layer?.masksToBounds = true
+        popover.cornerRadius = SidebarPreviewMetrics.cornerRadius
         background.wantsLayer = true
-        content.addSubview(material); content.addSubview(background); addSubview(content)
+        // The fill sits under the border rings, which are the popover's sublayers.
+        content.addSubview(popover); popover.addSubview(background, positioned: .above, relativeTo: popover.wash)
+        addSubview(content)
         updateColors()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layout() {
         super.layout()
-        content.frame = bounds; material.frame = content.bounds; background.frame = content.bounds
+        content.frame = bounds; popover.frame = content.bounds; background.frame = popover.bounds
         let radius = SidebarPreviewMetrics.cornerRadius
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateColors() }
     private func updateColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            content.layer?.borderColor = border.cgColor
             background.layer?.backgroundColor = fill?.cgColor
         }
     }

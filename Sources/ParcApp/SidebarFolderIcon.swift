@@ -118,9 +118,10 @@ final class SidebarFolderIconView: NSView {
         guard let host = layer else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        //
+        // AppKit lays a flipped view's sublayers out top-down, as it does its
+        // subviews. Guessing a flip from contentsAreFlipped() drew the icon
+        // upside down in the sidebar.
         root.frame = host.bounds
-        root.isGeometryFlipped = !host.contentsAreFlipped()
         let w = bounds.width, h = bounds.height
         func pixel(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
         let radius = (w / 7).rounded()

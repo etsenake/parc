@@ -424,7 +424,7 @@ final class SidebarPreviewController {
     }
     private func present(_ value: SidebarPreviewSource, rows: [SidebarPreviewRow], token: UInt64) {
         guard generation == token, card == nil, current == value, valid(value), let host else { return }
-        let card = SidebarPreviewCard(title: value.title, domain: value.domain, providerURL: value.originalURL, palette: sidebar?.palette)
+        let card = SidebarPreviewCard(title: value.title, domain: value.domain, providerURL: value.originalURL)
         card.placement = SidebarPreviewPlacement(row: anchor, location: location(value.target))
         // The session's live source: a folder card's rows may refresh in place.
         let live: () -> SidebarPreviewSource? = { [weak self] in
