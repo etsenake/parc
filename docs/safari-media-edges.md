@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **87**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **88**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -789,8 +789,11 @@ where Safari is silent; headers re-sent after `abort()` aren't decoded as
 garbage; a mid-page `abort()` drops the partial page; checksum-failed pages
 are skipped; the final FLAC frame's duration follows its header; a mixed
 Ogg-plus-video `decodingInfo` query says no;
-PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected
-PCM needs a FairPlay decoder change, **queued** MS-4c2); Dolby Vision 10 (`dav1`), 20, 8.x in `hvc1`
+PCM in MP4 failed: **fixed** bde68ac0 for clear streams (FairPlay-protected PCM
+can't play on macOS in Safari either: CoreAudio has no protected PCM decoder,
+so it fails with a decode error in both. The real gap, the FairPlay
+renderer refusing even clear PCM and EME refusing `ipcm`/`fpcm`, is
+**fixed** 49594abf); Dolby Vision 10 (`dav1`), 20, 8.x in `hvc1`
 and HLG tagging differed: **fixed** d8f9bace (measured against this Mac's
 AVStreamDataParser and AVSampleBufferDisplayLayer). Profiles 4 and 7: Safari
 fails to decode them (and refuses them in `isTypeSupported`), Parc plays the
