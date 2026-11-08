@@ -8,6 +8,8 @@
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
+#include "third_party/blink/renderer/core/dom/node_traversal.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -279,15 +281,23 @@ gfx::RectF CaptionRegion(const gfx::RectF& video) {
 
 ParcPageCaptions::ParcPageCaptions(HTMLVideoElement& video) : video_(video) {}
 
-bool ParcPageCaptions::Update() {
-  // The video's own text tracks are its captions when they show.
-  if (video_->TextTracksVisible()) {
-    const bool shown = !shown_.empty();
-    Show(HeapVector<Member<Element>>());
-    shown_text_ = String();
-    shown_areas_.clear();
-    return shown;
+bool ParcPageCaptions::VideoShowsCues() const {
+  if (!video_->TextTracksVisible()) {
+    return false;
   }
+  ShadowRoot* root = video_->UserAgentShadowRoot();
+  if (!root) {
+    return false;
+  }
+  for (Node& child : NodeTraversal::ChildrenOf(*root)) {
+    if (const auto* container = DynamicTo<TextTrackContainer>(child)) {
+      return container->ShowsCues();
+    }
+  }
+  return false;
+}
+
+bool ParcPageCaptions::Update() {
   Document& document = video_->GetDocument();
   // Captions change the document's nodes or style; between lines there is
   // nothing to do.
@@ -302,6 +312,15 @@ bool ParcPageCaptions::Update() {
     return false;
   }
   dom_tree_version_ = document.DomTreeVersion();
+  // The video's own text tracks are its captions when a viewer sees them.
+  if (VideoShowsCues()) {
+    const bool shown = !shown_.empty();
+    Show(HeapVector<Member<Element>>());
+    style_version_ = document.StyleVersion();
+    shown_text_ = String();
+    shown_areas_.clear();
+    return shown;
+  }
   ++looks_;
   const gfx::RectF video = VideoBox(*video_);
   const gfx::RectF region = CaptionRegion(video);

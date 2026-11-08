@@ -6,12 +6,16 @@
 
 #import <QuartzCore/QuartzCore.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <string>
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "cef/libcef/browser/chrome/browser_delegate.h"
@@ -23,16 +27,23 @@
 #include "components/tabs/public/tab_interface.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/context_factory.h"
+#include "content/public/browser/manifest_icon_downloader.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/overlay_window.h"
+#include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/video_picture_in_picture_window_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "services/media_session/public/cpp/media_image_manager.h"
+#include "net/base/mime_util.h"
+#include "services/media_session/public/cpp/media_image.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "third_party/blink/public/common/manifest/manifest.h"
+#include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
+#include "third_party/blink/public/mojom/favicon/favicon_url.mojom.h"
+#include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -43,6 +54,7 @@
 #include "ui/compositor/recyclable_compositor_mac.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
+#include "ui/gfx/favicon_size.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -52,6 +64,9 @@
 
 namespace parc {
 namespace {
+// VideoPiPWindow's icon beside the scrubber.
+constexpr CGFloat kFaviconPoints = 18;
+
 // Favicon downloads can arrive as non-N32; CreateFrom1xBitmap CHECKs kN32.
 // Match chrome/browser/ui/views/overlay/video_overlay_window_views.cc.
 gfx::ImageSkia ImageSkiaFromFaviconBitmap(const SkBitmap& bitmap) {
@@ -400,17 +415,75 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   void SetSourceTitle(const std::u16string& title) override {
     [presenter_ setSourceTitle:base::SysUTF16ToNSString(title)];
   }
-  void SetFaviconImages(
-      const std::vector<media_session::MediaImage>& images) override {
+  // The page's favicons reach the media session sized for Chrome's 16 DIP
+  // icon, without its sized-less touch icons or its manifest's icons. The
+  // window's icon instead takes the page's best for its size at the screen's
+  // scale from all of them, drawn pixel for pixel.
+  void SetFaviconImages(const std::vector<media_session::MediaImage>&) override {
     const uint64_t generation = ++image_generation_;
     [presenter_ setFavicon:nil];
-    media_session::MediaImageManager image_manager(16, 32);
-    auto image = image_manager.SelectImage(images);
-    if (!image || !controller_) {
+    if (!controller_) {
       return;
     }
-    controller_->GetMediaImage(
-        *image, 16, 32,
+    std::vector<blink::Manifest::ImageResource> icons;
+    for (const auto& favicon : web_contents()->GetFaviconURLs()) {
+      if (!favicon->icon_url.is_valid()) {
+        continue;
+      }
+      blink::Manifest::ImageResource icon;
+      icon.src = favicon->icon_url;
+      icon.sizes = favicon->icon_sizes;
+      icon.purpose = {blink::mojom::ManifestImageResource_Purpose::ANY};
+      // The selector skips icons its extension names no type for; a favicon's
+      // format is sniffed when it downloads.
+      std::string type;
+      if (!net::GetWellKnownMimeTypeFromFile(
+              base::FilePath::FromASCII(icon.src.ExtractFileName()), &type)) {
+        icon.type = u"image/png";
+      }
+      // Unsized favicons are 16 pixels, and touch icons Apple's 180.
+      if (icon.sizes.empty()) {
+        const int size =
+            favicon->icon_type == blink::mojom::FaviconIconType::kFavicon
+                ? gfx::kFaviconSize
+                : 180;
+        icon.sizes.emplace_back(size, size);
+      }
+      icons.push_back(std::move(icon));
+    }
+    web_contents()->GetPrimaryPage().GetManifest(base::BindOnce(
+        &NativeVideoOverlayWindow::SelectFavicon, weak_factory_.GetWeakPtr(),
+        generation, std::move(icons)));
+  }
+  void SelectFavicon(uint64_t generation,
+                     std::vector<blink::Manifest::ImageResource> icons,
+                     blink::mojom::ManifestRequestResult,
+                     const GURL&,
+                     blink::mojom::ManifestPtr manifest) {
+    if (generation != image_generation_ || !controller_) {
+      return;
+    }
+    if (manifest) {
+      icons.insert(icons.end(), manifest->icons.begin(),
+                   manifest->icons.end());
+    }
+    // Sharp on every screen the window may move to.
+    float scale = 1;
+    for (const display::Display& display :
+         display::Screen::Get()->GetAllDisplays()) {
+      scale = std::max(scale, display.device_scale_factor());
+    }
+    blink::ManifestIconSelectorParams params;
+    params.ideal_icon_size_in_px = base::ClampCeil(kFaviconPoints * scale);
+    const auto icon =
+        blink::ManifestIconSelector::FindBestMatchingIcon(icons, params);
+    if (!icon) {
+      return;
+    }
+    content::ManifestIconDownloader::Download(
+        web_contents(), icon->icon_url, params.ideal_icon_size_in_px,
+        /*minimum_icon_size_in_px=*/0,
+        /*maximum_icon_size_in_px=*/0,
         base::BindOnce(
             [](base::WeakPtr<NativeVideoOverlayWindow> self,
                uint64_t generation, const SkBitmap& bitmap) {
@@ -421,10 +494,17 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
               if (image.isNull()) {
                 return;
               }
-              [self->presenter_
-                  setFavicon:gfx::Image(image).AsNSImage()];
+              // Fits the icon's square, its pixels at the screen's scale.
+              NSImage* favicon = gfx::Image(image).AsNSImage();
+              const CGFloat side = std::max(bitmap.width(), bitmap.height());
+              favicon.size =
+                  NSMakeSize(kFaviconPoints * bitmap.width() / side,
+                             kFaviconPoints * bitmap.height() / side);
+              [self->presenter_ setFavicon:favicon];
             },
-            weak_factory_.GetWeakPtr(), generation));
+            weak_factory_.GetWeakPtr(), generation),
+        /*square_only=*/false, content::GlobalRenderFrameHostId(),
+        /*suppress_warnings=*/true);
   }
   void SetPlaybackControlsVisibility(bool visible) override {
     [presenter_ setControlsVisible:visible];

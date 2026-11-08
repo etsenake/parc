@@ -246,7 +246,7 @@
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
 --- a/third_party/blink/renderer/core/html/track/text_track_container.cc
 +++ b/third_party/blink/renderer/core/html/track/text_track_container.cc
-@@ -29,15 +29,28 @@
+@@ -29,15 +29,30 @@
  
  #include "third_party/blink/renderer/core/html/track/text_track_container.h"
  
@@ -254,6 +254,8 @@
 +
 +#include "cc/paint/skia_paint_canvas.h"
 +#include "third_party/blink/renderer/core/dom/element_traversal.h"
++#include "third_party/blink/renderer/core/dom/node_traversal.h"
++#include "third_party/blink/renderer/core/dom/text.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
 +#include "third_party/blink/renderer/core/frame/local_frame_view.h"
  #include "third_party/blink/renderer/core/html/media/html_audio_element.h"
@@ -275,7 +277,7 @@
  
  namespace blink {
  
-@@ -146,6 +159,130 @@
+@@ -146,6 +161,154 @@
                           CSSPrimitiveValue::UnitType::kPixels);
  }
  
@@ -297,7 +299,7 @@
 +  }
 +  const LayoutBox* container = GetLayoutBox();
 +  const auto* video = DynamicTo<LayoutVideo>(media_element_->GetLayoutObject());
-+  if (!container || !container->HasLayer() || !video) {
++  if (!container || !container->HasLayer() || !video || !ShowsCues()) {
 +    return SkBitmap();
 +  }
 +
@@ -314,6 +316,30 @@
 +  return PaintLayersForPictureInPicture({container}, {cues}, *video,
 +                                        window_size, device_scale_factor,
 +                                        bounds);
++}
++
++bool TextTrackContainer::ShowsCues() const {
++  const LayoutObject* container = GetLayoutObject();
++  if (!container) {
++    return false;
++  }
++  for (const Node& node : NodeTraversal::DescendantsOf(*this)) {
++    const auto* text = DynamicTo<Text>(node);
++    const LayoutObject* layout = text ? text->GetLayoutObject() : nullptr;
++    if (!layout || layout->StyleRef().Visibility() != EVisibility::kVisible ||
++        text->data().ContainsOnlyWhitespaceOrEmpty()) {
++      continue;
++    }
++    bool transparent = false;
++    for (const LayoutObject* above = layout->Parent(); above && !transparent;
++         above = above == container ? nullptr : above->Parent()) {
++      transparent = above->StyleRef().Opacity() == 0;
++    }
++    if (!transparent) {
++      return true;
++    }
++  }
++  return false;
 +}
 +
 +SkBitmap TextTrackContainer::PaintLayersForPictureInPicture(
@@ -430,7 +456,7 @@
  
  class TextTrackContainer final : public HTMLDivElement {
   public:
-@@ -56,6 +66,25 @@
+@@ -56,6 +66,29 @@
    };
    void UpdateDisplay(HTMLMediaElement&, ExposingControls);
    void UpdateDefaultFontSize(LayoutObject*);
@@ -443,6 +469,10 @@
 +  SkBitmap PaintForPictureInPicture(const gfx::SizeF& window_size,
 +                                    float device_scale_factor,
 +                                    gfx::RectF& bounds);
++  // Parc: whether a viewer sees any of the cues. A page may hide them and
++  // draw its own: TELUS TV+ hides ::-webkit-media-text-track-container while
++  // its player shows the track for picture in picture.
++  bool ShowsCues() const;
 +  // Paints each of `containers`' layers, stacking contexts, over its area
 +  // (absolute) for that window, as PaintForPictureInPicture paints the cue
 +  // container. `bounds` places them all.
@@ -531,7 +561,7 @@
  #include "media/mojo/mojom/media_player.mojom-blink.h"
  #include "mojo/public/cpp/bindings/pending_associated_remote.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -18,12 +20,20 @@
+@@ -18,12 +20,21 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -542,6 +572,7 @@
 +#include "third_party/blink/renderer/core/dom/shadow_root.h"
  #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
 +#include "third_party/blink/renderer/core/frame/local_frame_view.h"
++#include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 +#include "third_party/blink/renderer/core/html/html_div_element.h"
  #include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
@@ -552,7 +583,7 @@
  #include "third_party/blink/renderer/core/layout/layout_image.h"
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
-@@ -140,6 +150,7 @@
+@@ -140,6 +151,7 @@
    MOCK_METHOD(void,
                UpdateMediaPosition,
                (media_session::mojom::blink::MediaPositionPtr));
@@ -560,7 +591,7 @@
  
   private:
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -373,6 +384,501 @@
+@@ -373,6 +385,553 @@
                           .PictureInPictureElement());
  }
  
@@ -623,6 +654,41 @@
 +      .WillOnce(testing::InvokeWithoutArgs([&] { cleared.Quit(); }));
 +  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kHidden));
 +  cleared.Run();
++}
++
++// Parc: a caption style change, as System Settings' reaches pages, repaints
++// the cues the window shows (WebKit's
++// MediaControlTextTrackContainerElement::captionPreferencesChanged).
++TEST_F(PictureInPictureControllerTestWithWidget, CaptionStyleReachesWindow) {
++  TextTrack* track =
++      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kCaptions),
++                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
++  track->addCue(
++      MakeGarbageCollected<VTTCue>(GetDocument(), 0, 10, "Caption text"));
++  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
++  Video()->Play();
++  test::RunPendingTasks();
++
++  EXPECT_CALL(Service().Session(), UpdateCaptions(_, _))
++      .Times(testing::AnyNumber());
++  PictureInPictureControllerImpl::From(GetDocument())
++      .EnterPictureInPicture(Video(), /*promise=*/nullptr);
++  MakeGarbageCollected<WaitForEvent>(Video(),
++                                     event_type_names::kEnterpictureinpicture);
++  PictureInPictureControllerImpl::From(GetDocument())
++      .OnWindowSizeChanged(gfx::Size(320, 240));
++  test::RunPendingTasks();
++
++  base::RunLoop repainted;
++  EXPECT_CALL(Service().Session(),
++              UpdateCaptions(testing::Truly([](const SkBitmap& captions) {
++                               return !captions.drawsNothing();
++                             }),
++                             _))
++      .WillOnce(testing::InvokeWithoutArgs([&] { repainted.Quit(); }))
++      .RetiresOnSaturation();
++  GetDocument().GetSettings()->SetTextTrackTextColor("rgb(255, 255, 0)");
++  repainted.Run();
 +}
 +
 +// Parc: pages that draw their own captions (ParcPageCaptions). Each player
@@ -876,9 +942,12 @@
 +
 +// TELUS TV+'s captions (main.c8ba1c06.js): its own Shaka text displayer
 +// mounts a fixed data-id="captions" list for each line and unmounts it
-+// between lines.
++// between lines. On entering picture in picture Shaka shows the native track
++// its lines come from, whose cues the page's stylesheet (main.75dba21b.css)
++// hides, so the window shows the page's lines.
 +TEST_F(PictureInPicturePageCaptionsTest, TelusCaptionList) {
 +  ParcPageCaptions& page = Enter(R"HTML(
++    <style>video::-webkit-media-text-track-container{visibility:hidden}</style>
 +    <div class="sc-rF" style="width: 640px; height: 360px">
 +      <div id="video-slot"></div>
 +      <div class="sc-player-controls"
@@ -888,6 +957,20 @@
 +             <span class="end">1:00:00</span></div>
 +      </div>
 +    </div>)HTML");
++  TextTrack* track =
++      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles),
++                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
++  track->addCue(
++      MakeGarbageCollected<VTTCue>(GetDocument(), 0, 100, "Hidden line"));
++  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
++  Video()->Play();
++  test::RunPendingTasks();
++  ASSERT_TRUE(Video()->TextTracksVisible());
++  gfx::RectF cue_bounds;
++  EXPECT_TRUE(Video()
++                  ->PaintTextTracksForPictureInPicture(gfx::SizeF(640, 360), 1,
++                                                       cue_bounds)
++                  .drawsNothing());
 +  Element& player = *Find("video-slot").parentElement();
 +  auto is_captions = [](const Element& shown) {
 +    return shown.getAttribute(AtomicString("data-id")) == "captions";

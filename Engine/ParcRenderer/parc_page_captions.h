@@ -10,7 +10,7 @@
 // too, once it has shown two lines with a gap between, centred above or below
 // the middle of the video. Each is painted alone, at its place, as the cue
 // container is (TextTrackContainer::PaintForPictureInPicture). The video's
-// own text tracks take their place when they show.
+// own text tracks take their place when a viewer sees them.
 // Installed at third_party/blink/renderer/core/html/media/parc_page_captions.h.
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_PARC_PAGE_CAPTIONS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_PARC_PAGE_CAPTIONS_H_
@@ -72,6 +72,9 @@ class CORE_EXPORT ParcPageCaptions final
   };
 
   void Show(const HeapVector<Member<Element>>&);
+  // Whether the video's own cues show where a viewer sees them; a page that
+  // hides them draws its own.
+  bool VideoShowsCues() const;
 
   Member<HTMLVideoElement> video_;
   HeapVector<Member<Element>> shown_;

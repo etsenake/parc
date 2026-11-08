@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 633,
+  "version": 634,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -835,7 +835,7 @@
     {
       "source": "Engine/ParcNative/video_overlay_window.mm",
       "target": "cef/libcef/browser/parc_native/video_overlay_window.mm",
-      "sha256": "534247ec4c474c49696bf6f4737a235433f8f6d8168790e9f7ffac2b2e8d70b7"
+      "sha256": "ffc878f9bc3f3f342758026a537f788c591e401fc52216ad3b71c5c4630c14a0"
     },
     {
       "source": "Sources/ParcEngine/VideoPiPWindow.h",
@@ -1675,12 +1675,12 @@
     {
       "source": "Engine/ParcRenderer/parc_page_captions.cc",
       "target": "third_party/blink/renderer/core/html/media/parc_page_captions.cc",
-      "sha256": "8a45691e3018674fa32a39fc08ef7ff21f34199aecfc0db3c9df28eaf58b98d7"
+      "sha256": "5c7c5eb50fbf385049037a46e30f131b34ddf55ff8f62e0a0050caac7a63cb9f"
     },
     {
       "source": "Engine/ParcRenderer/parc_page_captions.h",
       "target": "third_party/blink/renderer/core/html/media/parc_page_captions.h",
-      "sha256": "72aad061add5a8ed9775532f35e7f7309bef8ca73092ef9e05a91440f7cf7a98"
+      "sha256": "4d81d04673ee0c8ded137f644b05b0b2749d1c8c83d60692b0a829833595e1f7"
     },
     {
       "source": "Engine/ParcHost/integration/parc_worker_identity.h",
@@ -3037,7 +3037,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-video-pip.patch",
-      "sha256": "921519b6623ba71f6aeed9f7af3c57c15cc7611e25df8eeff1719500af084468",
+      "sha256": "1789adfc0e9427689ee1504d32efcf47ee04d6957b8795723308b945e22a620a",
       "files": [
         {
           "target": "chrome/browser/chrome_content_browser_client.cc",
@@ -3087,12 +3087,12 @@
         {
           "target": "third_party/blink/renderer/core/html/track/text_track_container.cc",
           "before_sha256": "9a7c89f472ab8b980dc59ed19ebb01642ab3b603522982add495134ed7068229",
-          "after_sha256": "3a5e644e0ad94f3b3bd7b3eeeb8aee9ebf4b56a4d4e799803b208c7e8d8cf634"
+          "after_sha256": "fe15eb7b7949f3bdb717cf479cb798886af4fe2e07ea77f0f74471035195072a"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/text_track_container.h",
           "before_sha256": "b50157e72f77aaaa1ec4b11c99d01cc11c7cbb3e2eed9986227b1de2939ede8f",
-          "after_sha256": "3db6dc39a8f4c201f5125b93df9f4e1bb788991d551d081375f7b2ba7a575889"
+          "after_sha256": "8ae0fc79ef4ff1fa8b3e83e4e28e9b2f8cfea3a6546d5ef9446014f292d34527"
         },
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h",
@@ -3102,7 +3102,7 @@
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc",
           "before_sha256": "2922117f145946a2c24a3bd125f0464dde941254ba3e06d838a103227f15dd1b",
-          "after_sha256": "8f2fed3abccf754c8b6e8db3e00f5f0b6bac8c99776d240d3776203e67f41858"
+          "after_sha256": "f6c53035c581ca9300292d8ba7992a6c5f57ff2924130663cd839c5f31353f5b"
         },
         {
           "target": "third_party/blink/renderer/core/dom/element.h",
@@ -5488,7 +5488,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "dc7aba5763dd93d6637f3ad6537280321570b84ab2b9cea679d76d8aa2b2eaf0",
+      "sha256": "6f1dd1d7d95bc70ba5eda9e723dd15b963b7351f97302495390417e9a660f38e",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -5868,7 +5868,7 @@
         {
           "target": "third_party/blink/renderer/core/page/page.cc",
           "before_sha256": "201f928b9f3be8d23dc1dbe0374ebf916f6852aa0e713f0bef60bd9e94ab9880",
-          "after_sha256": "8b9a33f72729a258fd1a1c2fbb6939082be1738a0da6cc4395d82fbb6cfdd53d"
+          "after_sha256": "23c97aa1d1df027b0bbe5870c99fabede21e1709125e2e94570abe917bbf690b"
         },
         {
           "target": "third_party/blink/renderer/core/page/page_visibility_observer.h",

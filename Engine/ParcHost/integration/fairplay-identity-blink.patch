@@ -14461,7 +14461,15 @@
                              const SessionStorageNamespaceId&) const override;
 --- a/third_party/blink/renderer/core/page/page.cc
 +++ b/third_party/blink/renderer/core/page/page.cc
-@@ -806,6 +806,16 @@
+@@ -54,6 +54,7 @@
+ #include "third_party/blink/renderer/core/frame/navigator.h"
+ #include "third_party/blink/renderer/core/frame/page_scale_constraints.h"
+ #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
++#include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+ #include "third_party/blink/renderer/core/frame/remote_frame.h"
+ #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+@@ -806,6 +807,16 @@
    }
  }
  
@@ -14478,6 +14486,27 @@
  void Page::SetVisibilityState(
      mojom::blink::PageVisibilityState visibility_state,
      bool is_initial_state) {
+@@ -1205,6 +1216,20 @@
+     case ChangeType::kTextTrackStyle:
+       CSSDefaultStyleSheets::Instance().ResetTextTrackStyleSheet();
+       UAStyleChanged();
++      // Parc: picture in picture shows the cues in the new caption style, as
++      // WebKit's MediaControlTextTrackContainerElement::captionPreferencesChanged
++      // does.
++      for (Frame* frame = MainFrame(); frame;
++           frame = frame->Tree().TraverseNext()) {
++        auto* local_frame = DynamicTo<LocalFrame>(frame);
++        Document* document = local_frame ? local_frame->GetDocument() : nullptr;
++        if (auto* controller =
++                document ? Supplement<Document>::From<
++                               PictureInPictureController>(*document)
++                         : nullptr) {
++          controller->OnTextTrackDisplayChanged();
++        }
++      }
+       break;
+   }
+ }
 --- a/third_party/blink/renderer/core/page/page_visibility_observer.h
 +++ b/third_party/blink/renderer/core/page/page_visibility_observer.h
 @@ -38,6 +38,7 @@
