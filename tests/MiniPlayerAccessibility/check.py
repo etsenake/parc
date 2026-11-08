@@ -25,8 +25,6 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-ax-") as directory:
     fixture = fixture.replace('let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false',
                               'var volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false')
     fixture = fixture.replace('let microphoneOn = false, cameraOn = false', 'var microphoneOn = false, cameraOn = false')
-    fixture = fixture.replace('var onAction: ((PCNativeMediaAction) -> Void)?', 'var onAction: ((PCNativeMediaAction) -> Void)?\n    var acceptsAction = true')
-    fixture = fixture.replace('onAction?(action); return true', 'onAction?(action); return acceptsAction')
     (scratch / "Fixtures.swift").write_text("import AppKit\n" + fixture)
     executable = scratch / "checks"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",

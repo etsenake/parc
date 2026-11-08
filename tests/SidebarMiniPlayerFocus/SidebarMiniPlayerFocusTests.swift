@@ -74,6 +74,7 @@ import AppKit
         _ = window.makeFirstResponder(close); close.keyDown(with: key("\r", 36, window))
         check(revealed == ["a", "b"], "Return on a focused control still reaches its row (\(revealed))")
         routeButton(window, host)
+        unavailableMessage(window, host)
         window.close()
         print("Sidebar mini player focus checks: \(count) passed")
     }
@@ -116,6 +117,46 @@ import AppKit
         check(page.chooserRequests == ["cast", "airplay"], "AirPlay opens the route list (\(page.chooserRequests))")
         deck.removeFromSuperview()
     }
+    /// "This media is no longer available." means the row's episode is gone:
+    /// the row acts on the page's current snapshot of it, a refusal while it
+    /// plays shows nothing, and the message clears once the episode is back.
+    static func unavailableMessage(_ window: NSWindow, _ host: NSView) {
+        let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
+        let page = PCNativePage(), published = PCNativeMediaState(identifier: "episode")
+        published.airPlayState = .available
+        var played: [String] = []
+        page.onAction = { played.append("\($0)") }
+        let item = MiniPlayerItem(page: page, state: published, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})
+        deck.update([item]); deck.layoutSubtreeIfNeeded()
+        func button(_ label: String) -> ActionButton? {
+            descendants(of: deck).compactMap { $0 as? ActionButton }.first { !$0.isHidden && $0.accessibilityLabel() == label }
+        }
+        func message() -> Bool {
+            deck.layoutSubtreeIfNeeded()
+            return descendants(of: deck).contains { ($0 as? NSTextField)?.stringValue == "This media is no longer available." && !$0.isHidden }
+        }
+        // The cast's page changed under the same episode without a publish.
+        let replaced = PCNativeMediaState(identifier: "episode"); replaced.airPlayState = .available
+        page.mediaState = replaced
+        button("Pause")?.performClick(nil)
+        check(played == ["pause"] && !message(), "an action uses the page's current snapshot of the episode (\(played))")
+        page.refuses = true
+        button("Pause")?.performClick(nil); button("AirPlay")?.performClick(nil)
+        check(!message(), "a refusal while the episode plays shows no error")
+        page.mediaState = nil
+        button("Pause")?.performClick(nil)
+        check(message(), "a press after the episode ended shows the error")
+        let withError = deck.desiredHeight
+        page.refuses = false; page.mediaState = replaced
+        deck.update([item])
+        check(!message() && deck.desiredHeight < withError, "the error and its space clear when the episode is current again")
+        page.mediaState = nil; button("Pause")?.performClick(nil)
+        check(message(), "the error returns when the episode ends again")
+        page.mediaState = replaced
+        button("AirPlay")?.performClick(nil)
+        check(page.chooserRequests == ["airplay"] && !message(), "opening the route list clears the error (\(page.chooserRequests))")
+        deck.removeFromSuperview()
+    }
     static func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
     static func key(_ characters: String, _ code: UInt16, _ window: NSWindow) -> NSEvent {
         NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
@@ -155,16 +196,25 @@ enum PCNativeCastState { case unavailable, available, connecting, connected }
     var isClosed = false
     var mediaState: PCNativeMediaState?
     var onAction: ((PCNativeMediaAction) -> Void)?
-    func performMediaAction(_ action: PCNativeMediaAction, state: PCNativeMediaState) -> Bool { onAction?(action); return true }
-    func setMediaVolume(_ volume: Double, state: PCNativeMediaState) -> Bool { true }
-    func dismissMediaState(_ state: PCNativeMediaState) -> Bool { true }
-    func performMediaAction(_ action: PCNativeMediaAction, state: PCNativeMediaState, in window: NSWindow) -> Bool { onAction?(action); return true }
-    func setMediaVolume(_ volume: Double, state: PCNativeMediaState, in window: NSWindow) -> Bool { true }
-    func dismissMediaState(_ state: PCNativeMediaState, in window: NSWindow) -> Bool { true }
+    /// As the engine's validation: only the page's current snapshot acts.
+    var refuses = false
+    private func accepts(_ state: PCNativeMediaState) -> Bool { !refuses && state === mediaState }
+    func performMediaAction(_ action: PCNativeMediaAction, state: PCNativeMediaState, in window: NSWindow) -> Bool {
+        guard accepts(state) else { return false }
+        onAction?(action); return true
+    }
+    func setMediaVolume(_ volume: Double, state: PCNativeMediaState, in window: NSWindow) -> Bool { accepts(state) }
+    func dismissMediaState(_ state: PCNativeMediaState, in window: NSWindow) -> Bool { accepts(state) }
     var chooserRequests: [String] = []
     var dismissChooser: (() -> Void)?
     func showAirPlayPicker(for state: PCNativeMediaState, relativeTo rect: NSRect, of view: NSView, in window: NSWindow,
-                           dismissed: @escaping () -> Void) -> Bool { chooserRequests.append("airplay"); dismissChooser = dismissed; return true }
+                           dismissed: @escaping () -> Void) -> Bool {
+        guard accepts(state) else { return false }
+        chooserRequests.append("airplay"); dismissChooser = dismissed; return true
+    }
     func showCastChooser(for state: PCNativeMediaState, relativeTo rect: NSRect, of view: NSView, in window: NSWindow,
-                         dismissed: @escaping () -> Void) -> Bool { chooserRequests.append("cast"); dismissChooser = dismissed; return true }
+                         dismissed: @escaping () -> Void) -> Bool {
+        guard accepts(state) else { return false }
+        chooserRequests.append("cast"); dismissChooser = dismissed; return true
+    }
 }

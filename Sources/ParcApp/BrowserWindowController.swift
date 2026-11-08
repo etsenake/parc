@@ -4422,13 +4422,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       view.window === self.window, !page.isClosed,
                       self.ownership.canUse(id, owner: self.presentationID),
                       !self.transferringTabIDs.contains(id), !self.closingTabIDs.contains(id),
-                      !self.modelRetirementIDs.contains(id), page.mediaState?.identifier == episodeID,
-                      page.canPresentMediaState(state, in: hostWindow) else { return false }
+                      !self.modelRetirementIDs.contains(id), let current = page.mediaState,
+                      current.identifier == episodeID,
+                      page.canPresentMediaState(current, in: hostWindow) else { return false }
                 return true
             }
             items.append(MiniPlayerItem(page: page, state: state, icon: state.icon, host: hostLease,
                 valid: valid, reveal: { [weak self, weak page, weak hostWindow] in
-                    guard valid(), let self, let page, let hostWindow, hostWindow.isKeyWindow,
+                    guard valid(), let self, let page, let state = page.mediaState, let hostWindow, hostWindow.isKeyWindow,
                           PCNativeBrowserApplication.canPresentTabSwitcher(in: hostWindow),
                           page.canRevealMediaState(state, in: hostWindow), let window = self.window else { return }
                     if window.isMiniaturized { window.deminiaturize(nil) }
@@ -4471,13 +4472,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       !self.modelRetirementIDs.contains(peek.parentTabID),
                       !self.peekRetirementParents.contains(peek.parentTabID),
                       !self.transferringTabIDs.contains(peek.parentTabID),
-                      peek.page.mediaState?.identifier == episodeID,
-                      peek.page.canPresentMediaState(state, in: hostWindow) else { return false }
+                      let current = peek.page.mediaState, current.identifier == episodeID,
+                      peek.page.canPresentMediaState(current, in: hostWindow) else { return false }
                 return true
             }
             items.append(MiniPlayerItem(page: peek.page, state: state, icon: state.icon, host: hostLease,
                 valid: valid, reveal: { [weak self, weak peek, weak hostWindow] in
-                    guard valid(), let self, let peek, let hostWindow, hostWindow.isKeyWindow,
+                    guard valid(), let self, let peek, let state = peek.page.mediaState, let hostWindow, hostWindow.isKeyWindow,
                           PCNativeBrowserApplication.canPresentTabSwitcher(in: hostWindow),
                           peek.page.canRevealMediaState(state, in: hostWindow), let window = self.window else { return }
                     if window.isMiniaturized { window.deminiaturize(nil) }

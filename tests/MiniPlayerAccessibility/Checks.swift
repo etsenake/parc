@@ -68,10 +68,11 @@ import AppKit
             .filter { $0.accessibilityLabel() == "Unmute Tab" && !$0.isHidden }
         check(unmuteControls.count == 1, "muted volume control describes the unmute action")
         unmuteControls.forEach { checkName($0, "Unmute Tab") }
-        // A failed action in a collapsed stack expands and exposes feedback;
-        // this calls only an inert stand-in page, with no native input events.
+        // An action after its media ended, in a collapsed stack, expands and
+        // exposes feedback; this calls only an inert stand-in page, with no
+        // native input events.
         expand.actionBlock?(); deck.layoutSubtreeIfNeeded()
-        state.playing = true; page.acceptsAction = false
+        state.playing = true; page.mediaState = nil
         deck.update([first, second]); deck.layoutSubtreeIfNeeded()
         let row = descendants(deck).first { view in
             String(describing: type(of: view)) == "MiniPlayerRow" && descendants(view).contains {
@@ -86,13 +87,15 @@ import AppKit
         check(error != nil && error?.isHidden == false && error?.isHiddenOrHasHiddenAncestor == false,
               "failed collapsed action exposes its error")
         check(expand.accessibilityLabel() == "Collapse Mini Players", "failed action expands the deck")
-        page.acceptsAction = true; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
-        page.acceptsAction = false; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
+        page.mediaState = state; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
+        check(error?.isHidden == true, "an action on media that is back clears its error")
+        page.mediaState = nil; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
         check(error?.isHidden == false && error?.isHiddenOrHasHiddenAncestor == false,
               "failed action in expanded deck exposes its error")
         deck.update([first]); deck.layoutSubtreeIfNeeded()
-        page.acceptsAction = true; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
-        page.acceptsAction = false; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
+        page.mediaState = state; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
+        check(error?.isHidden == true, "an action on media that is back clears its error")
+        page.mediaState = nil; firstPause.actionBlock?(); deck.layoutSubtreeIfNeeded()
         check(error?.isHidden == false && error?.isHiddenOrHasHiddenAncestor == false,
               "failed action in a single player exposes its error")
         window.close()

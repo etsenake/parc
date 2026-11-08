@@ -343,7 +343,15 @@ private final class MiniPlayerRow: NSView {
     private var showsVolumeDrawer: Bool {
         volumeExpanded && deckExpanded && item?.state.canSetVolume == true
     }
-    var isCurrent: Bool { item.map { $0.valid() && !$0.page.isClosed && $0.page.mediaState?.identifier == $0.id } ?? false }
+    var isCurrent: Bool { current != nil }
+    /// The page's snapshot of this row's episode now. The row's own snapshot
+    /// can be older than its episode: a cast keeps the episode across a page
+    /// change, and the engine validates every action against its document.
+    private var current: PCNativeMediaState? {
+        guard let item, item.valid(), !item.page.isClosed,
+              let state = item.page.mediaState, state.identifier == item.id else { return nil }
+        return state
+    }
     override init(frame: NSRect) {
         super.init(frame: frame); wantsLayer = true; layer?.cornerRadius = 8
         layer?.borderWidth = 1; layer?.masksToBounds = true
@@ -356,8 +364,8 @@ private final class MiniPlayerRow: NSView {
         close.actionBlock = { [weak self] in self?.onClose?() }
         pip.actionBlock = { [weak self] in self?.perform(.enterPictureInPicture) }
         play.actionBlock = { [weak self] in
-            guard let self, let item = self.item else { return }
-            self.perform(item.state.playing ? .pause : .play)
+            guard let self, let state = self.current ?? self.item?.state else { return }
+            self.perform(state.playing ? .pause : .play)
         }
         previous.actionBlock = { [weak self] in self?.perform(.previousTrack) }
         next.actionBlock = { [weak self] in self?.perform(.nextTrack) }
@@ -366,8 +374,8 @@ private final class MiniPlayerRow: NSView {
         route.actionBlock = { [weak self] in self?.showRouteChooser() }
         mute.actionBlock = { [weak self] in self?.perform(.toggleMuted) }
         volumeButton.actionBlock = { [weak self] in
-            guard let self, self.isCurrent, let item = self.item else { return }
-            if item.state.muted || NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+            guard let self, let state = self.current else { return }
+            if state.muted || NSApp.currentEvent?.modifierFlags.contains(.option) == true {
                 self.perform(.toggleMuted)
                 return
             }
@@ -410,6 +418,7 @@ private final class MiniPlayerRow: NSView {
         let previousCapabilities = keyCapabilities
         self.item = item
         let state = item.state
+        if isCurrent { unavailable.stringValue = "" }
         let displayTitle = state.title.isEmpty ? (URL(string: state.sourceURL)?.host ?? "Playing media") : state.title
         marquee.text = displayTitle
         titleArtwork.image = item.icon ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
@@ -533,7 +542,7 @@ private final class MiniPlayerRow: NSView {
     /// controls chooser with its devices, or Stop casting while it casts.
     private func showRouteChooser() {
         guard !routeChooserOpen, let kind = currentRoute?.kind else { return }
-        guard isCurrent, let item, let host = item.host.window, host === window else { failure(); return }
+        guard let item, let state = current, let host = item.host.window, host === window else { refresh(); return }
         routeChooserOpen = true
         updateRoute()
         let closed = { [weak self] in
@@ -542,13 +551,10 @@ private final class MiniPlayerRow: NSView {
             self.updateRoute()
         }
         let shown = kind == .cast
-            ? item.page.showCastChooser(for: item.state, relativeTo: route.bounds, of: route, in: host, dismissed: closed)
-            : item.page.showAirPlayPicker(for: item.state, relativeTo: route.bounds, of: route, in: host, dismissed: closed)
-        if !shown {
-            routeChooserOpen = false
-            updateRoute()
-            failure()
-        }
+            ? item.page.showCastChooser(for: state, relativeTo: route.bounds, of: route, in: host, dismissed: closed)
+            : item.page.showAirPlayPicker(for: state, relativeTo: route.bounds, of: route, in: host, dismissed: closed)
+        if !shown { routeChooserOpen = false }
+        refresh()
     }
     private func setVolumeHover(_ hovering: Bool) {
         volumeHoverOff?.cancel(); volumeHoverOff = nil
@@ -582,31 +588,34 @@ private final class MiniPlayerRow: NSView {
         needsLayout = true
         onHeightChanged?()
     }
+    // A refused action whose episode is still there (the window wasn't key,
+    // a chooser had nothing to offer yet) only refreshes the row.
     private func perform(_ action: PCNativeMediaAction) {
-        guard isCurrent, let item else { failure(); return }
-        guard let host = item.host.window, host === window else { failure(); return }
-        if !item.page.performMediaAction(action, state: item.state, in: host) { failure() }
-        else { refresh() }
+        if let item, let state = current, let host = item.host.window, host === window {
+            _ = item.page.performMediaAction(action, state: state, in: host)
+        }
+        refresh()
     }
     @objc private func volumeChanged() {
         guard showsVolumeDrawer else { return }
-        guard isCurrent, let item, let host = item.host.window, host === window,
-              item.page.setMediaVolume(volume.doubleValue, state: item.state, in: host) else { failure(); return }
+        if let item, let state = current, let host = item.host.window, host === window {
+            _ = item.page.setMediaVolume(volume.doubleValue, state: state, in: host)
+        }
         refresh()
     }
     private func refresh() {
-        guard let item, item.valid(), let state = item.page.mediaState, state.identifier == item.id else { failure(); return }
-        let oldHeight = desiredHeight; unavailable.stringValue = ""
+        guard let item, let state = current else { showUnavailable(); return }
+        let oldHeight = desiredHeight
         update(MiniPlayerItem(page: item.page, state: state, icon: item.icon, host: item.host, valid: item.valid, reveal: item.reveal))
         if oldHeight != desiredHeight { onHeightChanged?() }
     }
     func dismiss() -> Bool {
-        guard isCurrent, let item, let host = item.host.window, host === window,
-              item.page.dismissMediaState(item.state, in: host) else { failure(); return false }
+        guard let item, let state = current, let host = item.host.window, host === window,
+              item.page.dismissMediaState(state, in: host) else { refresh(); return false }
         return true
     }
     private func reveal() { guard isCurrent, let item else { return }; item.reveal() }
-    private func failure() {
+    private func showUnavailable() {
         unavailable.stringValue = "This media is no longer available."
         // The collapsed card clips the error. Expand first and let the owning
         // sidebar lay it out before exposing or announcing the message.
@@ -631,7 +640,7 @@ private final class MiniPlayerRow: NSView {
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 9, yRadius: 9).fill() }
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 { reveal() }
-        else if event.keyCode == 49, item?.state.canPlayPause == true { perform(item!.state.playing ? .pause : .play) }
+        else if event.keyCode == 49, let state = current ?? item?.state, state.canPlayPause { perform(state.playing ? .pause : .play) }
         else { super.keyDown(with: event) }
     }
     func setPresentation(expanded: Bool, front: Bool) {

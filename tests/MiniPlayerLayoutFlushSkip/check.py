@@ -36,9 +36,9 @@ assert re.search(
     "resize must not unconditionally layoutSubtree after onHeightChanged"
 
 failure = re.search(
-    r"private func failure\(\) \{(?P<body>.*?)\n    \}\n    override func mouseDown",
+    r"private func showUnavailable\(\) \{(?P<body>.*?)\n    \}\n    override func mouseDown",
     view, re.S)
-assert failure, "MiniPlayerRow.failure not found"
+assert failure, "MiniPlayerRow.showUnavailable not found"
 fb = failure.group("body")
 assert 'unavailable.stringValue = "This media is no longer available."' in fb, \
     "failure must still set the unavailable message"
