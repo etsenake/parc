@@ -16321,6 +16321,11 @@ extension BrowserWindowController: PCNativeStatusTextThemeSource {
     }
 }
 
+/// The page's own AirPlay button and placard take the Mini Player's tint.
+extension BrowserWindowController: PCNativeAirPlayThemeSource {
+    func airPlayThemeTintColor() -> NSColor? { rootView.palette.airPlayActiveColor }
+}
+
 extension PCNativePage {
     ///
     ///

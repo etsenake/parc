@@ -18140,7 +18140,7 @@
  
    auto* audio_stream_monitor =
        media_web_contents_observer_->web_contents_impl()->audio_stream_monitor();
-@@ -686,6 +713,98 @@
+@@ -686,6 +713,99 @@
      OnVideoFrameAvailabilityChanged(bool available) {
    media_web_contents_observer_->session_controllers_manager()
        ->OnVideoFrameAvailabilityChanged(media_player_id_, available);
@@ -18171,14 +18171,15 @@
 +                           const MediaPlayerId& player,
 +                           const std::string& output_context_id,
 +                           const std::string& device_name,
-+                           bool should_play) {
++                           bool should_play,
++                           uint32_t tint_argb) {
 +  MediaWebContentsObserver* observer =
 +      web_contents ? static_cast<WebContentsImpl*>(web_contents)
 +                         ->media_web_contents_observer()
 +                   : nullptr;
 +  if (observer && observer->IsMediaPlayerRemoteAvailable(player)) {
 +    observer->GetMediaPlayerRemote(player)->ParcSetPlaybackTarget(
-+        output_context_id, device_name, should_play);
++        output_context_id, device_name, should_play, tint_argb);
 +  }
 +}
 +
@@ -18239,7 +18240,7 @@
  }
  
  bool MediaWebContentsObserver::IsMediaPlayerRemoteAvailable(
-@@ -793,6 +912,7 @@
+@@ -793,6 +913,7 @@
            observer->fullscreen_player_.reset();
          }
          observer->web_contents_impl()->MediaDestroyed(player_id);
@@ -18247,7 +18248,7 @@
        },
        base::Unretained(this), player_id));
  
-@@ -839,10 +959,12 @@
+@@ -839,10 +960,12 @@
      RenderFrameHost* rfh) {
    if (rfh) {
      auto* tracker = GetOrCreateForCurrentDocument(rfh);
@@ -18263,7 +18264,7 @@
    }
    return ScopedGrant();
  }
-@@ -857,6 +979,27 @@
+@@ -857,6 +980,27 @@
    if (tracker && tracker->active_grants_.contains(id)) {
      return true;
    }
@@ -18291,7 +18292,7 @@
    if (tracker && !tracker->pending_grants_.empty()) {
      int grant_id = *tracker->pending_grants_.begin();
      tracker->pending_grants_.erase(tracker->pending_grants_.begin());
-@@ -873,15 +1016,36 @@
+@@ -873,15 +1017,36 @@
      return;
    }
    auto* tracker = GetForCurrentDocument(rfh);
@@ -18334,7 +18335,7 @@
    if (!rfh) {
      return;
    }
-@@ -903,9 +1067,20 @@
+@@ -903,9 +1068,20 @@
          web_contents->media_web_contents_observer()->OnAudibilityBypassRevoked(
              id);
        }

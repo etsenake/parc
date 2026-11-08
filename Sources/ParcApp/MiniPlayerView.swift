@@ -513,14 +513,7 @@ private final class MiniPlayerRow: NSView {
         image.isTemplate = true
         return image
     }()
-    /// The theme's own hue in the luminance band farthest from the card:
-    /// maxContrastColor (0 to 0.1) on light themes and foregroundSecondary
-    /// (0.3 to 0.5) on dark ones. Either stays legible on backgroundExtra
-    /// and distinct from the title-coloured neighbours.
-    private var routeActiveColor: NSColor {
-        guard let palette else { return .controlAccentColor }
-        return palette.isDark ? palette.foregroundSecondary : palette.maxContrastColor
-    }
+    private var routeActiveColor: NSColor { palette?.airPlayActiveColor ?? .controlAccentColor }
     /// Connecting pulses the glyph alone, drawn by the button's own cell, so
     /// its fill and focus ring stay put. Reduce Motion leaves it at 1, as
     ///
@@ -799,4 +792,13 @@ private final class MiniPlayerMarquee: NSView {
         animation.repeatCount = .infinity
         strip.layer?.add(animation, forKey: "marquee")
     }
+}
+
+extension ThemeChromePalette {
+    /// AirPlay's connecting and connected tint, the theme's own hue in the
+    /// luminance band farthest from the card: maxContrastColor (0 to 0.1) on
+    /// light themes and foregroundSecondary (0.3 to 0.5) on dark ones. Either
+    /// stays legible on backgroundExtra and distinct from the title-coloured
+    /// neighbours. Pages' own AirPlay button and placard take it too.
+    var airPlayActiveColor: NSColor { isDark ? foregroundSecondary : maxContrastColor }
 }

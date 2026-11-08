@@ -5,6 +5,8 @@
 #import <AVKit/AVKit.h>
 #include <dlfcn.h>
 
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <optional>
 #include <string>
@@ -262,6 +264,9 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
     // device it was given.
     bool was_wireless = false;
     std::string given_device;
+    // The Space tint of the window it was last seen in (SpaceTint()); a
+    // background tab's page is in no window.
+    uint32_t tint = 0;
   };
 
   NativeAirPlay() {
@@ -348,6 +353,9 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
       TellPickerDismissed();
     }
     picker_client_ = player_id;
+    if (const uint32_t tint = SpaceTint(view.window)) {
+      players_[player_id].tint = tint;
+    }
     ++presentation_;
     route_at_show_ = Route();
     dismissed_ = dismissed;
@@ -389,7 +397,7 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
           (player.state.plays_to_target || player_id == active_client_ ||
            player_id == picker_client)) {
         content::SetParcPlaybackTarget(player.contents.get(), player_id,
-                                       std::string(), std::string(), false);
+                                       std::string(), std::string(), false, 0);
         NativeMediaAirPlayChanged(player.contents.get());
       }
     }
@@ -404,10 +412,42 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
         player.was_wireless = false;
         player.given_device = device;
       }
+      if (const uint32_t tint = SpaceTint(player.contents.get())) {
+        player.tint = tint;
+      }
       content::SetParcPlaybackTarget(player.contents.get(), *client,
-                                     context_id, DeviceName(), true);
+                                     context_id, DeviceName(), true,
+                                     player.tint);
       NativeMediaAirPlayChanged(player.contents.get());
     }
+  }
+
+  // The tint a window gives AirPlay (the Mini Player's), as ARGB in sRGB; 0
+  // when it has none.
+  static uint32_t SpaceTint(NSWindow* window) {
+    id delegate = window.delegate;
+    if (![delegate respondsToSelector:@selector(airPlayThemeTintColor)]) {
+      return 0;
+    }
+    NSColor* color =
+        [[(id<PCNativeAirPlayThemeSource>)delegate airPlayThemeTintColor]
+            colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    if (!color) {
+      return 0;
+    }
+    auto channel = [](CGFloat value) {
+      return static_cast<uint32_t>(
+          std::lround(std::clamp(value, 0.0, 1.0) * 255));
+    };
+    return channel(color.alphaComponent) << 24 |
+           channel(color.redComponent) << 16 |
+           channel(color.greenComponent) << 8 | channel(color.blueComponent);
+  }
+  static uint32_t SpaceTint(content::WebContents* contents) {
+    content::RenderWidgetHostView* rwhv =
+        contents ? contents->GetRenderWidgetHostView() : nullptr;
+    NSView* view = rwhv ? rwhv->GetNativeView().GetNativeNSView() : nil;
+    return SpaceTint(view.window);
   }
 
   void TellPickerDismissed() {

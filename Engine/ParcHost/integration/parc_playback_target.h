@@ -10,6 +10,7 @@
 #ifndef CONTENT_PUBLIC_BROWSER_PARC_PLAYBACK_TARGET_H_
 #define CONTENT_PUBLIC_BROWSER_PARC_PLAYBACK_TARGET_H_
 
+#include <cstdint>
 #include <string>
 
 #include "content/common/content_export.h"
@@ -68,12 +69,14 @@ CONTENT_EXPORT void SetParcPlaybackTargetAvailability(
     const MediaPlayerId& player,
     bool available);
 // The route picker's AVOutputContext by its UUID (empty for none), the name
-// of the device it routes to, and whether the player plays to it.
+// of the device it routes to, whether the player plays to it, and the
+// window's Space tint for AirPlay as ARGB (0 for none).
 CONTENT_EXPORT void SetParcPlaybackTarget(WebContents* web_contents,
                                           const MediaPlayerId& player,
                                           const std::string& output_context_id,
                                           const std::string& device_name,
-                                          bool should_play);
+                                          bool should_play,
+                                          uint32_t tint_argb);
 // The route list the player's element opened closed without a choice.
 CONTENT_EXPORT void SetParcPlaybackTargetPickerDismissed(
     WebContents* web_contents,
