@@ -74,6 +74,10 @@ CONTENT_EXPORT void SetParcPlaybackTarget(WebContents* web_contents,
                                           const std::string& output_context_id,
                                           const std::string& device_name,
                                           bool should_play);
+// The route list the player's element opened closed without a choice.
+CONTENT_EXPORT void SetParcPlaybackTargetPickerDismissed(
+    WebContents* web_contents,
+    const MediaPlayerId& player);
 
 }  // namespace content
 

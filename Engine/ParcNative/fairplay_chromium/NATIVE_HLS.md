@@ -717,6 +717,27 @@ reaches a TV from Parc. Parc follows WebKit's split:
   `webkitwirelessvideoplaybackdisabled` and `disableremoteplayback` disable it
   (`isWirelessPlaybackTargetDisabledChanged`). The element keeps its target
   across loads (`mediaEngineUpdated`).
+- Remote Playback, controls and placard (Safari-identity pages, for an
+  element whose player plays to a target): `video.remote` is AirPlay, as
+  WebKit's `RemotePlayback` on macOS (`RemotePlaybackController`'s Parc
+  hooks): `prompt()` rejects before `HAVE_METADATA` or without devices while
+  disconnected (`NotSupportedError`), else opens the route list; a pick
+  resolves it and the state goes connecting, then connected when AVPlayer is
+  external, disconnected when the route ends; a list closed without a choice
+  rejects it with `NotAllowedError` (`ParcPlaybackTargetPickerDismissed`, sent
+  a second after the list closes unchanged). Availability callbacks follow the
+  AirPlay devices. The controls' cast button becomes Safari's AirPlay button
+  in the bar after the volume, shown once the media has played, with the
+  Mini Player's glyph and states (accent while connecting and connected,
+  pulsing while connecting unless motion is reduced) and no overlay button;
+  where Remote Playback stays Cast it stays in the overflow menu. While
+  `webkitCurrentPlaybackTargetIsWireless`, the video's remoting interstitial
+  is WebKit's AirPlay placard: "AirPlay" over "This video is playing on
+  “<device>”." ("Apple TV" without a name) on black, icon, title and
+  description by Placard's size thresholds. `webkitWirelessVideoPlaybackDisabled`
+  is the attribute, `disableremoteplayback`, or no player
+  (`MediaElementSession::wirelessVideoPlaybackDisabled`); setting it sets the
+  attribute.
 - Player: `WebMediaPlayer::ParcSetPlaybackTarget` and
   `ParcSetWirelessVideoPlaybackDisabled` reach the native HLS demuxer
   (`ParcNativeHlsDemuxerParams` for the one a load makes, then

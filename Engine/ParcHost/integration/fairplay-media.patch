@@ -16832,7 +16832,7 @@
  
    auto* audio_stream_monitor =
        media_web_contents_observer_->web_contents_impl()->audio_stream_monitor();
-@@ -686,6 +713,87 @@
+@@ -686,6 +713,98 @@
      OnVideoFrameAvailabilityChanged(bool available) {
    media_web_contents_observer_->session_controllers_manager()
        ->OnVideoFrameAvailabilityChanged(media_player_id_, available);
@@ -16871,6 +16871,17 @@
 +  if (observer && observer->IsMediaPlayerRemoteAvailable(player)) {
 +    observer->GetMediaPlayerRemote(player)->ParcSetPlaybackTarget(
 +        output_context_id, device_name, should_play);
++  }
++}
++
++void SetParcPlaybackTargetPickerDismissed(WebContents* web_contents,
++                                          const MediaPlayerId& player) {
++  MediaWebContentsObserver* observer =
++      web_contents ? static_cast<WebContentsImpl*>(web_contents)
++                         ->media_web_contents_observer()
++                   : nullptr;
++  if (observer && observer->IsMediaPlayerRemoteAvailable(player)) {
++    observer->GetMediaPlayerRemote(player)->ParcPlaybackTargetPickerDismissed();
 +  }
 +}
 +
@@ -16920,7 +16931,7 @@
  }
  
  bool MediaWebContentsObserver::IsMediaPlayerRemoteAvailable(
-@@ -793,6 +901,7 @@
+@@ -793,6 +912,7 @@
            observer->fullscreen_player_.reset();
          }
          observer->web_contents_impl()->MediaDestroyed(player_id);
@@ -16928,7 +16939,7 @@
        },
        base::Unretained(this), player_id));
  
-@@ -839,10 +948,12 @@
+@@ -839,10 +959,12 @@
      RenderFrameHost* rfh) {
    if (rfh) {
      auto* tracker = GetOrCreateForCurrentDocument(rfh);
@@ -16944,7 +16955,7 @@
    }
    return ScopedGrant();
  }
-@@ -857,6 +968,27 @@
+@@ -857,6 +979,27 @@
    if (tracker && tracker->active_grants_.contains(id)) {
      return true;
    }
@@ -16972,7 +16983,7 @@
    if (tracker && !tracker->pending_grants_.empty()) {
      int grant_id = *tracker->pending_grants_.begin();
      tracker->pending_grants_.erase(tracker->pending_grants_.begin());
-@@ -873,15 +1005,36 @@
+@@ -873,15 +1016,36 @@
      return;
    }
    auto* tracker = GetForCurrentDocument(rfh);
@@ -17015,7 +17026,7 @@
    if (!rfh) {
      return;
    }
-@@ -903,9 +1056,20 @@
+@@ -903,9 +1067,20 @@
          web_contents->media_web_contents_observer()->OnAudibilityBypassRevoked(
              id);
        }
@@ -20824,7 +20835,17 @@
    for (const auto& connection : connections_) {
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
-@@ -130,6 +130,7 @@
+@@ -110,6 +110,9 @@
+   bool CancelWatchAvailabilityInternal(int id);
+ 
+   mojom::blink::PresentationConnectionState GetState() const { return state_; }
++  // Parc: the element's Remote Playback is AirPlay (ParcUsesAirPlay() in
++  // remote_playback.cc).
++  bool ParcUsesAirPlay() const;
+ 
+   // PresentationAvailabilityObserver implementation.
+   void AvailabilityChanged(mojom::blink::ScreenAvailability) override;
+@@ -130,6 +133,7 @@
    bool RemotePlaybackAvailable() const override;
    void SourceChanged(const KURL&, bool is_source_supported) override;
    String GetPresentationId() override;
@@ -20832,7 +20853,16 @@
    void MediaMetadataChanged(
        std::optional<media::VideoCodec> video_codec,
        std::optional<media::AudioCodec> audio_codec) override;
-@@ -144,7 +145,7 @@
+@@ -139,12 +143,16 @@
+   void RemoveObserver(RemotePlaybackObserver*) override;
+   void AvailabilityChangedForTesting(bool screen_is_available) override;
+   void StateChangedForTesting(bool is_connected) override;
++  void ParcAirPlayAvailabilityChanged() override;
++  void ParcShouldPlayToRemoteTargetChanged(bool should_play) override;
++  void ParcPlayingToRemoteTargetChanged(bool playing) override;
++  void ParcPlaybackTargetPickerDismissed() override;
+ 
+   // ScriptWrappable implementation.
    bool HasPendingActivity() const final;
  
    // ExecutionContextLifecycleObserver implementation.
@@ -20841,10 +20871,11 @@
  
    // Adjusts the internal state of |this| after a playback state change.
    void StateChanged(mojom::blink::PresentationConnectionState);
-@@ -180,6 +181,14 @@
+@@ -179,6 +187,20 @@
+ 
    // Clears bindings after remote playback stops.
    void CleanupConnections();
- 
++
 +  // Parc: availability, prompt() and the events go through the frame of the
 +  // element's document from now on, unless a prompt or session is in
 +  // progress: it stays with the frame that started it until it ends.
@@ -20852,11 +20883,16 @@
 +  void ParcMoveToElementContext();
 +  // The frame that started a session went first, its routes with it.
 +  void ParcEndSessionOfGoneFrame();
-+
++  // Parc: AirPlay as Remote Playback (RemotePlaybackController), WebKit's
++  // RemotePlayback on macOS.
++  bool ParcRemotePlaybackDisabled() const;
++  void ParcPromptAirPlay(ExceptionState&);
++  void ParcSettlePrompts(bool resolve);
++  void ParcSetAirPlayState(mojom::blink::PresentationConnectionState);
+ 
    mojom::blink::PresentationConnectionState state_;
    mojom::blink::ScreenAvailability availability_;
-   HeapHashMap<int, Member<AvailabilityCallbackWrapper>> availability_callbacks_;
-@@ -187,6 +196,11 @@
+@@ -187,6 +209,18 @@
    Member<ScriptPromiseResolver<IDLUndefined>> prompt_promise_resolver_;
    Vector<KURL> availability_urls_;
    bool is_listening_;
@@ -20865,10 +20901,17 @@
 +  bool remoting_requested_while_frozen_ = false;
 +  // Parc: ParcDidMoveToDocument() came: this follows the element's document.
 +  bool parc_follows_element_ = false;
++  // Parc: the availability the callbacks last heard, and whether state_
++  // follows an AirPlay route.
++  bool parc_reported_availability_ = false;
++  bool parc_airplay_connection_ = false;
++  // Parc: the prompt() promises waiting for the AirPlay route list, settled
++  // together (RemotePlayback::m_promptPromises).
++  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> parc_prompt_resolvers_;
    bool is_background_availability_monitoring_disabled_for_testing_ = false;
  
    String presentation_id_;
-@@ -196,9 +210,14 @@
+@@ -196,9 +230,14 @@
    std::optional<media::VideoCodec> video_codec_ = std::nullopt;
    std::optional<media::AudioCodec> audio_codec_ = std::nullopt;
  
@@ -20887,7 +20930,72 @@
    HeapHashSet<Member<RemotePlaybackObserver>> observers_;
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
-@@ -290,10 +290,11 @@
+@@ -143,8 +143,7 @@
+     ScriptState* script_state,
+     V8RemotePlaybackAvailabilityCallback* callback,
+     ExceptionState& exception_state) {
+-  if (media_element_->FastHasAttribute(
+-          html_names::kDisableremoteplaybackAttr)) {
++  if (ParcRemotePlaybackDisabled()) {
+     exception_state.ThrowDOMException(
+         DOMExceptionCode::kInvalidStateError,
+         "disableRemotePlayback attribute is present.");
+@@ -177,8 +176,7 @@
+     ScriptState* script_state,
+     int id,
+     ExceptionState& exception_state) {
+-  if (media_element_->FastHasAttribute(
+-          html_names::kDisableremoteplaybackAttr)) {
++  if (ParcRemotePlaybackDisabled()) {
+     exception_state.ThrowDOMException(
+         DOMExceptionCode::kInvalidStateError,
+         "disableRemotePlayback attribute is present.");
+@@ -198,8 +196,7 @@
+ ScriptPromise<IDLUndefined> RemotePlayback::cancelWatchAvailability(
+     ScriptState* script_state,
+     ExceptionState& exception_state) {
+-  if (media_element_->FastHasAttribute(
+-          html_names::kDisableremoteplaybackAttr)) {
++  if (ParcRemotePlaybackDisabled()) {
+     exception_state.ThrowDOMException(
+         DOMExceptionCode::kInvalidStateError,
+         "disableRemotePlayback attribute is present.");
+@@ -214,6 +211,18 @@
+ ScriptPromise<IDLUndefined> RemotePlayback::prompt(
+     ScriptState* script_state,
+     ExceptionState& exception_state) {
++  if (ParcUsesAirPlay()) {
++    ParcPromptAirPlay(exception_state);
++    if (exception_state.HadException()) {
++      return EmptyPromise();
++    }
++    auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(
++        script_state, exception_state.GetContext());
++    parc_prompt_resolvers_.push_back(resolver);
++    media_element_->webkitShowPlaybackTargetPicker();
++    return resolver->Promise();
++  }
++
+   if (media_element_->FastHasAttribute(
+           html_names::kDisableremoteplaybackAttr)) {
+     exception_state.ThrowDOMException(
+@@ -280,20 +289,26 @@
+ 
+ bool RemotePlayback::HasPendingActivity() const {
+   return HasEventListeners() || !availability_callbacks_.empty() ||
+-         prompt_promise_resolver_;
++         prompt_promise_resolver_ || !parc_prompt_resolvers_.empty();
+ }
+ 
+ void RemotePlayback::PromptInternal() {
+   if (!GetExecutionContext())
+     return;
++
++  if (ParcUsesAirPlay()) {
++    media_element_->webkitShowPlaybackTargetPicker();
++    return;
++  }
+ 
    PresentationController* controller =
        PresentationController::FromContext(GetExecutionContext());
    if (controller && !availability_urls_.empty()) {
@@ -20903,19 +21011,20 @@
    } else {
      // TODO(yuryu): Wrapping PromptCancelled with base::OnceClosure as
      // InspectorInstrumentation requires a globally unique pointer to track
-@@ -396,8 +397,10 @@
+@@ -396,8 +411,10 @@
    }
    prompt_promise_resolver_ = nullptr;
  
 -  if (state_ == state)
+-    return;
 +  if (state_ == state) {
 +    ParcMaybeMoveToElementContext();
-     return;
++    return;
 +  }
  
    state_ = state;
    if (state_ == mojom::blink::PresentationConnectionState::CONNECTING) {
-@@ -421,6 +424,7 @@
+@@ -421,6 +438,7 @@
  
    for (auto observer : observers_)
      observer->OnRemotePlaybackStateChanged(state_);
@@ -20923,7 +21032,7 @@
  }
  
  void RemotePlayback::PromptCancelled() {
-@@ -439,6 +443,7 @@
+@@ -439,6 +457,7 @@
        prompt_promise_resolver_->GetScriptState()->GetIsolate(),
        DOMExceptionCode::kNotAllowedError, "The prompt was dismissed."));
    prompt_promise_resolver_ = nullptr;
@@ -20931,10 +21040,33 @@
  }
  
  void RemotePlayback::SourceChanged(const KURL& source,
-@@ -568,6 +573,55 @@
-   presentation_connection_receiver_.reset();
+@@ -530,6 +549,10 @@
  }
  
+ bool RemotePlayback::RemotePlaybackAvailable() const {
++  if (ParcUsesAirPlay()) {
++    return media_element_->ParcPlaybackTargetsAvailable();
++  }
++
+   if (IsBackgroundAvailabilityMonitoringDisabled() &&
+       RuntimeEnabledFeatures::RemotePlaybackBackendEnabled() &&
+       !media_element_->currentSrc().IsEmpty()) {
+@@ -552,7 +575,8 @@
+   StopListeningForAvailability();
+ 
+   if (state_ == mojom::blink::PresentationConnectionState::CLOSED ||
+-      state_ == mojom::blink::PresentationConnectionState::TERMINATED) {
++      state_ == mojom::blink::PresentationConnectionState::TERMINATED ||
++      parc_airplay_connection_) {
+     return;
+   }
+ 
+@@ -566,6 +590,59 @@
+ void RemotePlayback::CleanupConnections() {
+   target_presentation_connection_.reset();
+   presentation_connection_receiver_.reset();
++}
++
 +void RemotePlayback::ContextDestroyed() {
 +  CleanupConnections();
 +  ExecutionContext* element_context = media_element_->GetExecutionContext();
@@ -20981,13 +21113,23 @@
 +
 +void RemotePlayback::ParcEndSessionOfGoneFrame() {
 +  ParcMoveToElementContext();
++  // An AirPlay route stays with the element, wherever it is.
++  if (parc_airplay_connection_) {
++    return;
++  }
 +  StateChanged(mojom::blink::PresentationConnectionState::CLOSED);
-+}
-+
+ }
+ 
  void RemotePlayback::AvailabilityChanged(
-     mojom::blink::ScreenAvailability availability) {
-   DCHECK(is_listening_ ||
-@@ -613,7 +667,11 @@
+@@ -583,6 +660,7 @@
+   bool new_availability = RemotePlaybackAvailable();
+   if (new_availability == old_availability)
+     return;
++  parc_reported_availability_ = new_availability;
+ 
+   // Copy the callbacks to a temporary vector to prevent iterator invalidations,
+   // in case the JS callbacks invoke watchAvailability().
+@@ -613,7 +691,11 @@
  
  #if !BUILDFLAG(IS_ANDROID)
    media_element_->Play();
@@ -21000,7 +21142,7 @@
  #endif
  
    // Note: Messages on |connection_receiver| are ignored.
-@@ -651,6 +709,27 @@
+@@ -651,6 +733,27 @@
  void RemotePlayback::HandlePresentationResponse(
      mojom::blink::PresentationConnectionResultPtr result,
      mojom::blink::PresentationErrorPtr error) {
@@ -21028,6 +21170,160 @@
    if (result) {
      OnConnectionSuccess(std::move(result));
    } else {
+@@ -708,9 +811,153 @@
+   is_listening_ = true;
+ }
+ 
++// Parc: an element whose player plays to AirPlay targets on a
++// Safari-identity page offers AirPlay through Remote Playback, as WebKit's
++// RemotePlayback does on macOS: prompt() opens the AirPlay route list and the
++// state follows the element's route (NATIVE_HLS.md "AirPlay").
++bool RemotePlayback::ParcUsesAirPlay() const {
++  return media_element_ && media_element_->ParcPlaysToPlaybackTargets();
++}
++
++// isWirelessPlaybackTargetDisabled for AirPlay.
++bool RemotePlayback::ParcRemotePlaybackDisabled() const {
++  return media_element_->FastHasAttribute(
++             html_names::kDisableremoteplaybackAttr) ||
++         (ParcUsesAirPlay() &&
++          media_element_->ParcWirelessPlaybackTargetDisabled());
++}
++
++// RemotePlayback::prompt()'s checks, in WebKit's order; a prompt while
++// another waits joins it.
++void RemotePlayback::ParcPromptAirPlay(ExceptionState& exception_state) {
++  if (ParcRemotePlaybackDisabled()) {
++    exception_state.ThrowDOMException(
++        DOMExceptionCode::kInvalidStateError,
++        "disableRemotePlayback attribute is present.");
++    return;
++  }
++  LocalDOMWindow* window = media_element_->DomWindow();
++  if (!window) {
++    exception_state.ThrowDOMException(
++        DOMExceptionCode::kInvalidAccessError,
++        "RemotePlayback::prompt() does not work in a detached window.");
++    return;
++  }
++  if (media_element_->getReadyState() < HTMLMediaElement::kHaveMetadata) {
++    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
++                                      "The media element has no metadata.");
++    return;
++  }
++  if (!LocalFrame::HasTransientUserActivation(window->GetFrame())) {
++    exception_state.ThrowDOMException(
++        DOMExceptionCode::kInvalidAccessError,
++        "RemotePlayback::prompt() requires user gesture.");
++    return;
++  }
++  if (state_ == mojom::blink::PresentationConnectionState::CLOSED &&
++      !RemotePlaybackAvailable()) {
++    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
++                                      "No remote playback devices found.");
++  }
++}
++
++// A pick (or the route leaving) resolves the waiting prompts; a list closed
++// without a choice rejects them with NotAllowedError.
++void RemotePlayback::ParcSettlePrompts(bool resolve) {
++  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> resolvers;
++  resolvers.swap(parc_prompt_resolvers_);
++  for (auto& resolver : resolvers) {
++    if (!IsInParallelAlgorithmRunnable(resolver->GetExecutionContext(),
++                                       resolver->GetScriptState())) {
++      continue;
++    }
++    ScriptState::Scope script_state_scope(resolver->GetScriptState());
++    if (resolve) {
++      resolver->Resolve();
++    } else {
++      resolver->Reject(V8ThrowDOMException::CreateOrDie(
++          resolver->GetScriptState()->GetIsolate(),
++          DOMExceptionCode::kNotAllowedError, "The prompt was dismissed."));
++    }
++  }
++}
++
++// setState: the event in a media element task.
++void RemotePlayback::ParcSetAirPlayState(
++    mojom::blink::PresentationConnectionState state) {
++  if (state_ == state) {
++    return;
++  }
++  state_ = state;
++  parc_airplay_connection_ =
++      state != mojom::blink::PresentationConnectionState::CLOSED;
++  const AtomicString& type =
++      state == mojom::blink::PresentationConnectionState::CONNECTING
++          ? event_type_names::kConnecting
++      : state == mojom::blink::PresentationConnectionState::CONNECTED
++          ? event_type_names::kConnect
++          : event_type_names::kDisconnect;
++  EnqueueEvent(*Event::Create(type), TaskType::kMediaElementEvent);
++  for (auto observer : observers_) {
++    observer->OnRemotePlaybackStateChanged(state_);
++  }
++  ParcMaybeMoveToElementContext();
++}
++
++// availabilityChanged.
++void RemotePlayback::ParcAirPlayAvailabilityChanged() {
++  // A new player that can't play to a target ends the wait for its list.
++  if (!ParcUsesAirPlay()) {
++    ParcSettlePrompts(/*resolve=*/false);
++  }
++  const bool available = RemotePlaybackAvailable();
++  if (available == parc_reported_availability_) {
++    return;
++  }
++  parc_reported_availability_ = available;
++  HeapVector<Member<AvailabilityCallbackWrapper>> callbacks(
++      availability_callbacks_.Values());
++  for (auto& callback : callbacks) {
++    callback->Run(this, available);
++  }
++}
++
++// shouldPlayToRemoteTargetChanged: a pick settles the prompt and connects;
++// leaving the route disconnects.
++void RemotePlayback::ParcShouldPlayToRemoteTargetChanged(bool should_play) {
++  if (!ParcUsesAirPlay() && !parc_airplay_connection_) {
++    return;
++  }
++  ParcSettlePrompts(/*resolve=*/true);
++  if (should_play) {
++    if (state_ == mojom::blink::PresentationConnectionState::CLOSED) {
++      ParcSetAirPlayState(
++          mojom::blink::PresentationConnectionState::CONNECTING);
++    }
++  } else if (parc_airplay_connection_) {
++    ParcSetAirPlayState(mojom::blink::PresentationConnectionState::CLOSED);
++  }
++}
++
++// isPlayingToRemoteTargetChanged.
++void RemotePlayback::ParcPlayingToRemoteTargetChanged(bool playing) {
++  if (!ParcUsesAirPlay() && !parc_airplay_connection_) {
++    return;
++  }
++  ParcSetAirPlayState(
++      playing ? mojom::blink::PresentationConnectionState::CONNECTED
++              : mojom::blink::PresentationConnectionState::CLOSED);
++}
++
++// playbackTargetPickerWasDismissed: NotAllowedError.
++void RemotePlayback::ParcPlaybackTargetPickerDismissed() {
++  ParcSettlePrompts(/*resolve=*/false);
++}
++
+ void RemotePlayback::Trace(Visitor* visitor) const {
+   visitor->Trace(availability_callbacks_);
+   visitor->Trace(prompt_promise_resolver_);
++  visitor->Trace(parc_prompt_resolvers_);
+   visitor->Trace(media_element_);
+   visitor->Trace(presentation_connection_receiver_);
+   visitor->Trace(target_presentation_connection_);
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback_test.cc
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback_test.cc
 @@ -4,24 +4,35 @@
@@ -22728,3 +23024,28 @@
  
  TEST(VideoDecoderConfigStructTraitsTest, ConvertVideoDecoderConfig_Normal) {
    const uint8_t kExtraData[] = "config extra data";
+--- a/third_party/blink/renderer/core/html/media/remote_playback_controller.h
++++ b/third_party/blink/renderer/core/html/media/remote_playback_controller.h
+@@ -30,6 +30,22 @@
+   virtual void AvailabilityChangedForTesting(bool screen_is_available) = 0;
+   virtual void StateChangedForTesting(bool is_connected) = 0;
+ 
++  // Parc: an element whose player plays to AirPlay targets on a
++  // Safari-identity page (HTMLMediaElement::ParcPlaysToPlaybackTargets())
++  // runs its Remote Playback as AirPlay, as WebKit's RemotePlayback does.
++  // Whether it can offer AirPlay may have changed: devices nearby
++  // (wirelessRoutesAvailableDidChange), disabled, or a new player.
++  virtual void ParcAirPlayAvailabilityChanged() = 0;
++  // The element was given the route's target, or taken off it
++  // (shouldPlayToRemoteTargetChanged).
++  virtual void ParcShouldPlayToRemoteTargetChanged(bool should_play) = 0;
++  // Its player plays to the device now, or stopped
++  // (isPlayingToRemoteTargetChanged).
++  virtual void ParcPlayingToRemoteTargetChanged(bool playing) = 0;
++  // The route list closed without a choice
++  // (playbackTargetPickerWasDismissed).
++  virtual void ParcPlaybackTargetPickerDismissed() = 0;
++
+   void Trace(Visitor*) const override;
+ 
+  protected:

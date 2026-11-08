@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 593,
+  "version": 594,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1900,12 +1900,12 @@
     {
       "source": "Engine/ParcNative/native_airplay.mm",
       "target": "cef/libcef/browser/parc_native/native_airplay.mm",
-      "sha256": "ec452a08caa61f25e3e0dd779412a737bfe60d6658a3bb73bf8e87d5a1f12d31"
+      "sha256": "99c593e57a2dd2d0c6460e3e8cebefb896e0fe500a7709d57d2aed0e63cac10c"
     },
     {
       "source": "Engine/ParcHost/integration/parc_playback_target.h",
       "target": "content/public/browser/parc_playback_target.h",
-      "sha256": "74b08dc9e6196ff1a03da6a2e91c4c237485ae289c5f040a007db29cabfac613"
+      "sha256": "2d743d43fa380a2fa97ed6ebb56da03c7f44fd0b973c3a9fc03ca2432a77919f"
     },
     {
       "source": "Engine/ParcRenderer/parc_webkit_playback_target.h",
@@ -4357,7 +4357,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "54d5a3e78af12468e30127969c6b07f29e04d3a970a3f0128c3c1bc9c7b4036e",
+      "sha256": "8542f42ba347642242eaf3771734567aaf9e06d72845c490c5c95b1c9402ccad",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4947,7 +4947,7 @@
         {
           "target": "content/browser/media/media_web_contents_observer.cc",
           "before_sha256": "28ec2033b17901278ecd73f5a09ac8f1956ab49eeec1582f716ec085d01196b8",
-          "after_sha256": "f85387a598420b8688a2bbe12dd2da425cce3d8bd725d624fc20e75e996a4e6b"
+          "after_sha256": "2c8f6183a8fb2cc4a7948c30f0c8aeff622e0c5980c5349b0ad9437c35715944"
         },
         {
           "target": "third_party/blink/public/platform/web_audio_source_provider_impl.h",
@@ -5107,12 +5107,12 @@
         {
           "target": "third_party/blink/renderer/modules/remoteplayback/remote_playback.h",
           "before_sha256": "eba273d312dde3e604a29732b143a52a45be86f648dc46a292da3acf34350812",
-          "after_sha256": "f254eb2a4949e3d589e2b515382364ee0b2d23907e04b3e0a7f04dc111d6f0fd"
+          "after_sha256": "970f5eafec315f5019ef6b44828daec52b8753f873f258ae0fad167be7770990"
         },
         {
           "target": "third_party/blink/renderer/modules/remoteplayback/remote_playback.cc",
           "before_sha256": "51bfee1eccea5acf05b7eeae9aabe9d15369942aa0150c00f7a4f0d315d3d07d",
-          "after_sha256": "ae40465033ddbbe8caff439a006be2a5a2fb10053e962430bb412c8237c4abc4"
+          "after_sha256": "0f807ff0adb1987b5897d73ff415a7362f666d7eb9f69efd0bb253b7963392b8"
         },
         {
           "target": "third_party/blink/renderer/modules/remoteplayback/remote_playback_test.cc",
@@ -5303,12 +5303,17 @@
           "target": "media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc",
           "before_sha256": "bae88c28a37e5675189df9b55a29bfdfffe2bb787bd80e00beb51c7daacf8972",
           "after_sha256": "8c2dd5fbc63908e4d6fa5e87a8752623731c11f328cb2b19f7eb4fab65aa429e"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/media/remote_playback_controller.h",
+          "before_sha256": "c923fa5881277ab3d0610724cfbd1b701a37b1c03f6030c66c4e907c9ae8248c",
+          "after_sha256": "3877e67d4293ac344720b88b329597e6564ba926b777ab655775bf2371de58fd"
         }
       ]
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "7fc8e1229b9271624f4c9eb81a2cf1c0bffbd7e3c5e6c3762e828098ec49c12a",
+      "sha256": "ba6528702be55589269ff5c0784f6bbb0b2d833b717a7d94b0f7fccbd7c895a4",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -5343,7 +5348,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.cc",
           "before_sha256": "cbe10ab50ec054bd72cd04df8dfcdb84d11ae88a6ffcc073c0555c3010429bc0",
-          "after_sha256": "5606fa601bd265d3b1902bb461beb5675bf9e4aa637bf84063287ab09add33d8"
+          "after_sha256": "ca76098961d61f5d7bb7f610607835ee25ca5b39016f468f99298c38b85ee600"
         },
         {
           "target": "third_party/blink/renderer/core/dom/events/event_queue.h",
@@ -5358,7 +5363,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element.h",
           "before_sha256": "6c6fe284d5cb150545f9d649227d86c96b201138c226e3bcdb0173a2c07c0a34",
-          "after_sha256": "6081d655d9afb49de4e47ed159923c9961e3020d821bcf4b587bc0f6e6894ea2"
+          "after_sha256": "456d3a4c93be500e80553a02502324ee6e42294f6581d2e0e13bc65ad74cb338"
         },
         {
           "target": "third_party/blink/renderer/platform/media/media_player_client.h",
@@ -5468,7 +5473,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_video_element.cc",
           "before_sha256": "c99190ade522dcb959327abf510223bbd6ad137afeb7d6f4d39185ad7f5b6699",
-          "after_sha256": "df1550002d8a860b1b44e0bc0a7a37d18544deafda7438692b610f9bae28d748"
+          "after_sha256": "13f0a3d017fccf482695e251bf5f1d8d3320fb77ce2f90425efc2e12560c470f"
         },
         {
           "target": "base/memory/memory_pressure_listener.h",
@@ -5578,12 +5583,12 @@
         {
           "target": "third_party/blink/renderer/modules/media_controls/media_controls_impl.cc",
           "before_sha256": "078ec4280915daff8349c864634687ec335afb516a32cdd873592d3c3ae203c9",
-          "after_sha256": "96db3f82216dc105c80751dfdd4ce17721c76211af6c24068e5da19f7cf562e6"
+          "after_sha256": "3a1224ab664afbde1d2f3a32e83d6ba5cf7f997d3d6ba5dc45bd14f84031cd0e"
         },
         {
           "target": "third_party/blink/renderer/core/html/media/html_media_element_test.cc",
           "before_sha256": "10bf01e97e98cc4ad176a4ec1f3fccc307960f79a9231fe361cf1b8ca272b88f",
-          "after_sha256": "00453b319912f8f5a9250519fb15c1f220c5f7bf4281ba7bbbe0cf9b9183f293"
+          "after_sha256": "62abfd89e0212a63ec0e1aab505a62f54e4fd01d9fc4ed3f09b2450804f4efc0"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/cue_timeline.cc",
@@ -5673,7 +5678,7 @@
         {
           "target": "third_party/blink/renderer/core/html/media/html_video_element.h",
           "before_sha256": "2ee9e0465bc1fe252258e3e71792c3f2692b7affd19a6620d5e12177a592b0ac",
-          "after_sha256": "7aaa32d56f9d6a47f8a4700c132d891324d3db35bd5fc3c9beabdb32a301ee30"
+          "after_sha256": "ee7045fdbc702404717002bca7fe9606c22d457f13434a1bf9493c9341bc8e62"
         },
         {
           "target": "third_party/blink/renderer/modules/modules_initializer.cc",
@@ -5709,6 +5714,56 @@
           "target": "third_party/blink/renderer/core/frame/local_frame_client_impl.h",
           "before_sha256": "2621c8b9f3c8cf25d03db44f3c55154864895675434819ae1714b0fdcfb39331",
           "after_sha256": "84a4153511cdf395c63ccbe21bcd105291194d9f044715cb11698d9b577de7d3"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/media/html_video_element.idl",
+          "before_sha256": "6520f406108ab08c2eafaff05f555d87a327b3e102be0af3ccd11297b0de1eb4",
+          "after_sha256": "cb761c228b61fa5469a57e84c65ba89a5d7757bd7f56054150cc12b8b667af56"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/media/media_remoting_interstitial.cc",
+          "before_sha256": "041a4ccf4696160b3bf772dbc0c46d1f3f842fac1f1a7e750e74772ccd6637a2",
+          "after_sha256": "c971e3baa268331b6b052ed92967f334f63840b4c330c9d1e6d78e47787c627f"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/media/media_remoting_interstitial.h",
+          "before_sha256": "867a7eb5850b85fa34439eb909b00b7f341cbffb7ca758cd4ef832e12ff680c3",
+          "after_sha256": "f15ce9f89272299337b252649b3b05125a2bead0cb127cbbb18c024dde8446ac"
+        },
+        {
+          "target": "third_party/blink/renderer/core/html/resources/html.css",
+          "before_sha256": "94064b3cd35d9ef63818fdf981d77d3cb43e7e3c40823c1c0943e7f143eb4284",
+          "after_sha256": "0760610ac9307fdca2b533e1ba2b86022e2252d4351db86bbcfa4e14047493df"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_controls/elements/media_control_cast_button_element.cc",
+          "before_sha256": "9b67e552dd168b2272259aaf61a975e65e23b096afe520d5cf88c70a4b496d81",
+          "after_sha256": "687f41858ef3cd524141323a9016ce751432695340a4a6166a80768737185fb0"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_controls/elements/media_control_cast_button_element.h",
+          "before_sha256": "68b59d701c05dfe98dc57010ab38cfa60a39f8ee1d6aa64a346e5b0794c07dc2",
+          "after_sha256": "707f8fb4eb2c0d8acc35aef0f3f2a6a5c538558e09b9d2b6466f454df6374767"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_controls/elements/media_control_input_element.h",
+          "before_sha256": "7c6cbff8f3e8b78017817038bd40c4ff0677b964f94e0c091b9e8e6a8f75837c",
+          "after_sha256": "bab9497b56546ab335e39c92b9a6ba12efa5f84423c3b6f684884cf22d89c5d2"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc",
+          "before_sha256": "f5f575d2b272592a61070bfa97d9855f9332ff9be4e511b38111ebd1d4b0c198",
+          "after_sha256": "bab886a0b35523f2b8c5176c7f219df27229cb86a68ada6423749c7e0e4073c8"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_controls/resources/mediaControls.css",
+          "before_sha256": "37bd56e8db482c3e0e0682a209d5a1a55e7e1189a3a199cf2aaf567853ab6c63",
+          "after_sha256": "1034cf85e08584ed33039b005ce23e229a0b087eb5a78241a0e53b2ef6e8466b"
+        },
+        {
+          "target": "third_party/blink/renderer/modules/media_controls/resources/mediaInterstitials.css",
+          "before_sha256": "ffceff1a0a8bd97f09d4b65eca08e0cf1a5d4d7ffc2cd98e4cfbba7062661baf",
+          "after_sha256": "859aa1fa7db04987a6293ea2ebfe872f9cb3802582a3afcdc934525b982e13a4"
         }
       ]
     },
@@ -5863,12 +5918,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-playback-controls.patch",
-      "sha256": "35dd131602f679c4373b95f94d77c74bd581a8c570ef1550302201ac5558e062",
+      "sha256": "6796da1f6aa1654c0cea3646c9f0884c64aa5f98ac63e3189aab062982b9c7c9",
       "files": [
         {
           "target": "media/mojo/mojom/media_player.mojom",
           "before_sha256": "31627f3cbc7dec555e55298ef9d505a7238437277f590cee8262c4fd3fe0cc57",
-          "after_sha256": "e7e6a965459d8734b5cba79e5e463f2a8bf5ede060fac8a7f3b870b5959e8294"
+          "after_sha256": "b6d7822c82503c846fd20f7811e1a25ae8fe158a8121332a910f1bb3db73cce1"
         },
         {
           "target": "services/media_session/public/mojom/media_session.mojom",
@@ -5958,22 +6013,22 @@
         {
           "target": "content/browser/media/session/media_session_controller_unittest.cc",
           "before_sha256": "0f6b4d6ad40c24f6037f5ad69304288c729e4285cfc359696770993f879fa78e",
-          "after_sha256": "d27b9f82b77343a3ba1b7b8c460eff487111a78278b7a708c13a6155caf8dbf2"
+          "after_sha256": "65abf59bf3655989117c9584e0a7eeee3107558265ba0aa05944e1e58b5588fb"
         },
         {
           "target": "content/browser/media/media_web_contents_observer_unittest.cc",
           "before_sha256": "73b55a0ff672ae769270b3047ac1d00634fdcd629260ab09cf38ec1030a83ef1",
-          "after_sha256": "6182d6b031f457dcb9fff05d434079f01a37c06abf0e49ea119a29b7944c2a94"
+          "after_sha256": "a01fc8d711dd334364633f9c3d6b73007e84ed6b3b4bc5ed584f694332846a06"
         },
         {
           "target": "content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc",
           "before_sha256": "c1f1c0b4ea02553285d38c6746576c4d0901df1eb7b0105b5a13a03f9f99c4f8",
-          "after_sha256": "b934116eada0e3848e0762a2b1869737b7a6c8e7af1fc3b2da27065ef729ecf4"
+          "after_sha256": "391f4d1b9e7dc5f11685f29d11a32edeeb7e0e1a96fc5922572775716832df82"
         },
         {
           "target": "third_party/blink/renderer/modules/webaudio/audio_context.h",
           "before_sha256": "479cb55d41e1c12f3ed41fa2cbeaadead9d28e90f2ad213f9d3404f20090a044",
-          "after_sha256": "7237ff3509a79cde9ee7ceecd30dd21f4667a220552d12b2363125c732417fab"
+          "after_sha256": "117d98de496afe5e891aa075ba1a14fc356bfcf9a68f90ae6d77ab027bb52665"
         },
         {
           "target": "components/global_media_controls/public/views/media_progress_view.cc",

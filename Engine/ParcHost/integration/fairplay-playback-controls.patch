@@ -9,7 +9,7 @@
    // Requests the media player to start or resume media playback.
    RequestPlay(bool triggered_by_user);
  
-@@ -73,6 +75,19 @@
+@@ -73,6 +75,22 @@
  
    // Request the media player to save the current video frame.
    RequestSaveVideoFrame();
@@ -26,10 +26,13 @@
 +  // setShouldPlayToPlaybackTarget).
 +  ParcSetPlaybackTarget(string output_context_id, string device_name,
 +                        bool should_play);
++  // The route list this element opened closed without a choice
++  // (playbackTargetPickerWasDismissed).
++  ParcPlaybackTargetPickerDismissed();
  };
  
  // Implemented by the MediaWebContentsObserver. The remote lives in the renderer
-@@ -135,6 +150,19 @@
+@@ -135,6 +153,19 @@
  
    // Notifies the browser process of save video frame's availability.
    OnVideoFrameAvailabilityChanged(bool available);
@@ -474,7 +477,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {
      received_seek_to_time_ = seek_time;
      run_loop_->Quit();
-@@ -166,6 +175,10 @@
+@@ -166,6 +175,11 @@
  
    void RequestMediaRemoting() override {}
    void RequestSaveVideoFrame() override {}
@@ -482,10 +485,11 @@
 +  void ParcSetPlaybackTarget(const std::string& output_context_id,
 +                             const std::string& device_name,
 +                             bool should_play) override {}
++  void ParcPlaybackTargetPickerDismissed() override {}
  
    void RequestVisibility(
        RequestVisibilityCallback request_visibility_callback) override {
-@@ -451,6 +464,19 @@
+@@ -451,6 +465,19 @@
    controller_.reset();
    EXPECT_FALSE(media_session()->IsActive());
    EXPECT_FALSE(media_session()->IsControllable());
@@ -517,7 +521,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -48,6 +51,10 @@
+@@ -48,6 +51,11 @@
        const media::PictureInPictureEventsInfo::AutoPipInfo&
            auto_picture_in_picture_info) override {}
    void RequestSaveVideoFrame() override {}
@@ -525,10 +529,11 @@
 +  void ParcSetPlaybackTarget(const std::string& output_context_id,
 +                             const std::string& device_name,
 +                             bool should_play) override {}
++  void ParcPlaybackTargetPickerDismissed() override {}
  
   private:
    mojo::AssociatedReceiver<media::mojom::MediaPlayer> receiver_{this};
-@@ -519,5 +526,111 @@
+@@ -519,5 +527,111 @@
    EXPECT_FALSE(AudibilityBypassTracker::ClaimGrant(player_id));
  }
  
@@ -652,7 +657,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -191,6 +194,10 @@
+@@ -191,6 +194,11 @@
    void SuspendForFrameClosed() override {}
    void RequestMediaRemoting() override {}
    void RequestSaveVideoFrame() override {}
@@ -660,6 +665,7 @@
 +  void ParcSetPlaybackTarget(const std::string& output_context_id,
 +                             const std::string& device_name,
 +                             bool should_play) override {}
++  void ParcPlaybackTargetPickerDismissed() override {}
    void RequestVisibility(
        RequestVisibilityCallback request_visibility_callback) override {}
    void RecordAutoPictureInPictureInfo(
@@ -675,7 +681,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {}
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -204,6 +207,10 @@
+@@ -204,6 +207,11 @@
        const media::PictureInPictureEventsInfo::AutoPipInfo&
            auto_picture_in_picture_info) override {}
    void RequestSaveVideoFrame() override {}
@@ -683,6 +689,7 @@
 +  void ParcSetPlaybackTarget(const String& output_context_id,
 +                             const String& device_name,
 +                             bool should_play) override {}
++  void ParcPlaybackTargetPickerDismissed() override {}
  
    // BaseAudioContext override to enable UseCounter.
    // https://webaudio.github.io/web-audio-api/#BaseAudioContext

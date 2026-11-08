@@ -117,14 +117,18 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
         contents ? contents->GetRenderWidgetHostView() : nullptr;
     NSView* view = rwhv ? rwhv->GetNativeView().GetNativeNSView() : nil;
     // Only the page the user sees: its window key in the active app.
+    // A list that can't open is dismissed at once.
     if (!view || !players_.contains(player_id) || !NSApp.active ||
         !view.window.keyWindow ||
         contents->GetVisibility() != content::Visibility::VISIBLE) {
+      content::SetParcPlaybackTargetPickerDismissed(contents, player_id);
       return;
     }
     const CGFloat y =
         view.isFlipped ? position.y() : NSHeight(view.bounds) - position.y();
-    Show(player_id, view, NSMakeRect(position.x(), y, 1, 1), nil);
+    if (!Show(player_id, view, NSMakeRect(position.x(), y, 1, 1), nil)) {
+      content::SetParcPlaybackTargetPickerDismissed(contents, player_id);
+    }
   }
 
   void OnPlaybackTargetPlayerGone(content::WebContents* contents,
@@ -234,12 +238,13 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
       return;
     }
     // Closed without a change: the request lapses, after the moment the
-    // choice's own device change may still take to arrive.
+    // choice's own device change may still take to arrive, and its element
+    // hears the list was dismissed (playbackTargetPickerWasDismissed).
     const uint64_t presentation = presentation_;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
                      if (presentation_ == presentation) {
-                       picker_client_.reset();
+                       TellPickerDismissed();
                      }
                    });
   }
@@ -339,6 +344,9 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
       dismissed_ = nil;
       previous();
     }
+    if (picker_client_ != player_id) {
+      TellPickerDismissed();
+    }
     picker_client_ = player_id;
     ++presentation_;
     route_at_show_ = Route();
@@ -359,8 +367,9 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
 
   // WebMediaSessionManager::configurePlaybackTargetClients: with a route, the
   // element that opened the list plays to it (its request is then spent),
-  // else the one already playing; every other element holding the target
-  // stops. Without a route none plays to it.
+  // else the one already playing; every other element holding the target,
+  // and the one that opened the list, stops. Without a route none plays to
+  // it.
   void ConfigureClients() {
     std::optional<content::MediaPlayerId> client;
     if (HasActiveRoute()) {
@@ -370,13 +379,15 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
         client = active_client_;
       }
     }
+    const std::optional<content::MediaPlayerId> picker_client = picker_client_;
     picker_client_.reset();
     const std::string context_id =
         client ? base::SysNSStringToUTF8(Read(context_, @"contextID") ?: @"")
                : std::string();
     for (auto& [player_id, player] : players_) {
       if (player.contents && player_id != client &&
-          (player.state.plays_to_target || player_id == active_client_)) {
+          (player.state.plays_to_target || player_id == active_client_ ||
+           player_id == picker_client)) {
         content::SetParcPlaybackTarget(player.contents.get(), player_id,
                                        std::string(), std::string(), false);
         NativeMediaAirPlayChanged(player.contents.get());
@@ -397,6 +408,14 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
                                      context_id, DeviceName(), true);
       NativeMediaAirPlayChanged(player.contents.get());
     }
+  }
+
+  void TellPickerDismissed() {
+    if (picker_client_ && Alive(*picker_client_)) {
+      content::SetParcPlaybackTargetPickerDismissed(
+          players_[*picker_client_].contents.get(), *picker_client_);
+    }
+    picker_client_.reset();
   }
 
   bool Alive(const content::MediaPlayerId& player_id) {
