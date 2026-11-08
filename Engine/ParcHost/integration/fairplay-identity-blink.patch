@@ -14107,7 +14107,7 @@
  void AutoplayPolicy::Trace(Visitor* visitor) const {
 --- a/third_party/blink/public/common/web_preferences/web_preferences.h
 +++ b/third_party/blink/public/common/web_preferences/web_preferences.h
-@@ -488,6 +488,10 @@
+@@ -491,6 +491,10 @@
  
    // Set if this is in a WebView for chrome/browser/indigo/onboarding/.
    // Consumed only in chrome/renderer/ (not by Blink).
@@ -14120,7 +14120,7 @@
    // True if the user dismissed the XSLT deprecation warning banner with the
 --- a/third_party/blink/public/common/web_preferences/web_preferences_mojom_traits.h
 +++ b/third_party/blink/public/common/web_preferences/web_preferences_mojom_traits.h
-@@ -856,6 +856,16 @@
+@@ -861,6 +861,16 @@
    }
  #endif  // BUILDFLAG(IS_MAC)
  

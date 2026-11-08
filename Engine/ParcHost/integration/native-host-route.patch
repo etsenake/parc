@@ -1881,7 +1881,7 @@
    return prefs;
  }
  
-@@ -6948,6 +6957,22 @@
+@@ -6967,6 +6976,22 @@
    if (delegate_) {
      delegate_->ResizeDueToAutoResize(this, new_size);
    }
