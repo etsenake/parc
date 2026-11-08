@@ -416,11 +416,15 @@ import AppKit
             try FileManager.default.setAttributes([.modificationDate: noteDate], ofItemAtPath: file.path)
         }
         let converter: BrowserImportCoordinator.ArcNoteConverter = { _ in (nil, NoteBody(), 0) }
-        func begin(_ name: String, sidebar: URL) throws -> (BrowserStore, BrowserImportDestination, BrowserImportCoordinator) {
+        let noCache = directory.appendingPathComponent("NoFirestore")
+        let cachedConverter: BrowserImportCoordinator.ArcCachedNoteConverter = { _ in (nil, NoteBody(), 0) }
+        func begin(_ name: String, sidebar: URL, cache: URL? = nil) throws -> (BrowserStore, BrowserImportDestination, BrowserImportCoordinator) {
             let store = try BrowserStore(directory: directory.appendingPathComponent(name))
             let destination = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)
             let coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
-                arcSidebarURL: sidebar, arcPreferencesURL: preferences, arcNoteConverter: converter, ownerIsCurrent: { true })
+                arcSidebarURL: sidebar, arcPreferencesURL: preferences, arcNoteConverter: converter,
+                arcCachedNoteConverter: cachedConverter, arcNotesCacheURL: cache ?? noCache,
+                arcAuthStateURL: directory.appendingPathComponent("NoAuthState.json"), ownerIsCurrent: { true })
             coordinator.discover()
             PCNativeBrowserApplication.sources.removeFirst().complete([arc])
             coordinator.select(arc); coordinator.loadProfiles()
@@ -507,6 +511,47 @@ import AppKit
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         againImport.cancel()
+
+        let firestore = directory.appendingPathComponent("Firestore")
+        try FileManager.default.createDirectory(at: firestore, withIntermediateDirectories: true)
+        let cachedFields: [String: FirestoreCache.Value] = ["id": .string("N9"), "creatorID": .string("me"),
+            "title": .map(["value": .string("Cached"), "lastUpdatedAt": .timestamp(noteDate)]),
+            "data": .map(["scratchpad": .map(["rootBlocks": .array([.string("B")]), "blocks": .map(["B": .map([
+                "text": .string("hello"), "properties": .array([]), "lastUpdatedAt": .timestamp(noteDate)])])])])]
+        let older = noteDate.addingTimeInterval(-3600)
+        var olderTrip = cachedFields
+        olderTrip["id"] = .string("N8"); olderTrip["title"] = .map(["value": .string("Trip plan"), "lastUpdatedAt": .timestamp(older)])
+        olderTrip["data"] = .map(["scratchpad": .map(["rootBlocks": .array([.string("B")]), "blocks": .map(["B": .map([
+            "text": .string("old"), "properties": .array([]), "lastUpdatedAt": .timestamp(older)])])])])
+        try FirestoreFixture.log([(1, [("doc/N9", FirestoreFixture.document("documents/N9", cachedFields, updated: noteDate)),
+                                       ("doc/N8", FirestoreFixture.document("documents/N8", olderTrip, updated: older))])])
+            .write(to: firestore.appendingPathComponent("000001.log"))
+        let (cachedStore, cachedDestination, cachedImport) = try begin("ArcCache", sidebar: sidebar, cache: firestore)
+        let cachedStart = PCNativeBrowserApplication.browserRequests.count
+        cachedImport.chooseDestination()
+        wait { PCNativeBrowserApplication.browserRequests.count > cachedStart }
+        let cachedNotes = try NoteStore.sharedStore(directory: cachedStore.notesDirectory(for: cachedDestination.profileID)).list()
+        expect(Set(cachedNotes.map(\.title)) == ["Cached", "Trip plan"] && cachedNotes.first { $0.title == "Cached" }?.modifiedAt == noteDate,
+               "Without an export, Notes come from Arc's offline copy")
+        expect(cachedImport.warnings.contains { $0.hasPrefix("2 Arc Notes came from the copy Arc keeps on this Mac,")
+               && $0.hasSuffix(BrowserImportCoordinator.arcNotesAdvice) }
+               && !cachedImport.warnings.contains(BrowserImportCoordinator.arcNotesReminder),
+               "The result says the Notes came from the offline copy and how to bring them all over")
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        expect(cachedImport.canChooseArcNotesExport, "An export can still be added after Notes came from the offline copy")
+        cachedImport.chooseArcNotesExport(exportFolder)
+        wait { !cachedImport.importingArcNotes }
+        let afterExport = try NoteStore.sharedStore(directory: cachedStore.notesDirectory(for: cachedDestination.profileID)).list()
+        expect(cachedImport.warnings.contains("2 Arc Notes came from the copy Arc keeps on this Mac,"
+               + " which can miss Notes this Mac never opened and recent edits made elsewhere.")
+               && cachedImport.warnings.contains("1 Arc Note came over from your export.")
+               && cachedImport.warnings.contains("1 Arc Note was updated from your export."),
+               "The export's Notes join, an older offline copy is updated, and the advice to make an export goes")
+        expect(afterExport.count == 3 && afterExport.filter { $0.title == "Trip plan" }.count == 1
+               && afterExport.first { $0.title == "Trip plan" }?.modifiedAt == noteDate,
+               "An offline copy and its exported version don't become two Notes")
+        cachedImport.cancel()
 
         let (removed, _, removing) = try begin("ArcRemoved", sidebar: sidebar)
         let removedStart = PCNativeBrowserApplication.browserRequests.count

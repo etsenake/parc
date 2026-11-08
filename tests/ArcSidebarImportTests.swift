@@ -293,6 +293,68 @@ import Foundation
                && legacyResult.state.arcImportedSpaces.count == 4,
                "An import from before the record matches its Spaces by name and pinned pages and records them")
 
+        //
+        expect(FirestoreCache.crc32c(Array("123456789".utf8)) == 0xE3069283, "CRC-32C matches its published check value")
+        let snappy = try FirestoreCache.snappy(Data([8, 0x0C] + Array("abcd".utf8) + [0x01, 4]))
+        expect(snappy == Data("abcdabcd".utf8),
+               "Snappy literals and copies decode")
+        let cache = directory.appendingPathComponent("FirestoreCache")
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let early = Date(timeIntervalSince1970: 1_700_000_000), late = Date(timeIntervalSince1970: 1_710_000_000)
+        func arcNote(_ id: String, title: String, text: String, creator: String,
+                     properties: [FirestoreCache.Value]) -> [String: FirestoreCache.Value] {
+            ["id": .string(id), "creatorID": .string(creator), "createdAt": .timestamp(early),
+             "title": .map(["value": .string(title), "lastUpdatedAt": .timestamp(early)]),
+             "data": .map(["scratchpad": .map(["rootBlocks": .array([.string("B")]), "blocks": .map(["B": .map([
+                "id": .string("B"), "text": .string(text), "type": .map(["fullBlob": .bool(true)]), "version": .integer(1),
+                "content": .array([]), "lastUpdatedAt": .timestamp(late), "properties": .array(properties)])])])])]
+        }
+        func format(_ location: Int64, _ length: Int64, _ value: FirestoreCache.Value) -> FirestoreCache.Value {
+            .map(["richText": .map(["range": .array([.integer(location), .integer(length)]), "value": value])])
+        }
+        let mine = arcNote("N1", title: "Trip", text: "\t●\tPack\n\t●\tGo", creator: "me", properties: [
+            format(0, 13, .map(["unorderedList": .map(["level": .integer(1)])])), format(3, 4, .map(["bold": .map([:])])),
+            format(11, 2, .map(["formattedHyperlink": .map(["url": .string("https://example.test/")])])),
+            format(0, 1, .map(["unknownKind": .map([:])])), format(10, 9, .map(["bold": .map([:])]))])
+        let stale = arcNote("N1", title: "Trip (old)", text: "old", creator: "me", properties: [])
+        let theirs = arcNote("N2", title: "Shared", text: "x", creator: "someone else", properties: [])
+        try FirestoreFixture.log([
+            (1, [("doc/N1", FirestoreFixture.document("documents/N1", stale, updated: early)),
+                 ("doc/N3", FirestoreFixture.document("documents/N3", arcNote("N3", title: "Gone", text: "", creator: "me", properties: []), updated: early))]),
+            (5, [("doc/N1", FirestoreFixture.document("documents/N1", mine, updated: late)),
+                 ("doc/N2", FirestoreFixture.document("documents/N2", theirs, updated: late)),
+                 ("doc/E1", FirestoreFixture.document("easels/E1", ["title": .string("Board")], updated: late)),
+                 ("raw:mutation/N4", FirestoreFixture.document("documents/N4", arcNote("N4", title: "Pending", text: "", creator: "me", properties: []), updated: late)),
+                 ("doc/N3", nil)])
+        ]).write(to: cache.appendingPathComponent("000003.log"))
+        // A record whose checksum fails and a fragment without its start are torn writes.
+        let torn = FirestoreFixture.batch(9, [("doc/N1", FirestoreFixture.document("documents/N1", theirs, updated: late))])
+        var tail = Data(FirestoreFixture.fragment(1, torn, corrupt: true))
+        tail.append(contentsOf: FirestoreFixture.fragment(4, torn))
+        try tail.write(to: cache.appendingPathComponent("000004.log"))
+        let documents = try FirestoreCache.documents(in: cache, collection: "documents")
+        expect(documents.map(\.path) == ["documents/N1", "documents/N2"], "The newest version of each cached Note counts; a deletion removes one; other tables are ignored")
+        let auth = directory.appendingPathComponent("StorableAuthState.json")
+        try Data(#"{"session":{"user":{"id":"me"}},"version":1}"#.utf8).write(to: auth)
+        func cacheCopies() throws -> Int {
+            try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)
+                .filter { $0.hasPrefix("ParcArcNotesCache-") }.count
+        }
+        let copiesBefore = try cacheCopies()
+        let contents = try ArcNotesCache.read(cache: cache, authState: auth)
+        expect(contents.othersSkipped == 1 && contents.notes.count == 1, "Only the user's own cached Notes come over")
+        let cached = contents.notes[0]
+        expect(cached.title == "Trip" && cached.text == "\t●\tPack\n\t●\tGo" && cached.modifiedAt == late,
+               "A cached Note keeps its title, text and newest edit")
+        expect(cached.formats == [.init(location: 0, length: 13, kind: .bulleted(level: 1)), .init(location: 3, length: 4, kind: .bold),
+                                  .init(location: 11, length: 2, kind: .link("https://example.test/"))],
+               "the format ranges map to their kinds; an unknown kind or a range past the text is left out")
+        let unsigned = try ArcNotesCache.read(cache: cache, authState: directory.appendingPathComponent("missing.json"))
+        expect(unsigned.notes.count == 2,
+               "Without Arc's sign-in record every cached Note comes over")
+        let copiesAfter = try cacheCopies()
+        expect(copiesAfter == copiesBefore, "The private copy of the cache is removed")
+
         print("\(checks) Arc sidebar import parsing/store assertions passed; synthetic fixtures only.")
     }
 

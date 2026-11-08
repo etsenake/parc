@@ -86,6 +86,9 @@ final class BrowserImportViewController: NSViewController {
             onboarding: onboarding, arcNoteConverter: { html in
                 let note = try ArcNoteHTML.convert(html)
                 return (note.title, note.body, note.droppedImages)
+            }, arcCachedNoteConverter: { cached in
+                let note = try ArcNoteHTML.convert(cached: cached)
+                return (note.title, note.body, note.droppedImages)
             }, ownerIsCurrent: ownerIsCurrent)
         destinationScroll.drawsBackground = false; destinationScroll.borderType = .noBorder
         destinationScroll.hasVerticalScroller = true; destinationScroll.autohidesScrollers = true

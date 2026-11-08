@@ -74,6 +74,28 @@ import AppKit
         expect(((style("red")[.foregroundColor] as? NSColor)?.usingColorSpace(.sRGB)?.redComponent ?? 0) > 0.6
                && style("marked")[.backgroundColor] != nil, "Text colours and highlights stay")
 
+        let cachedNote = ArcNotesCache.Note(id: "N1", title: "Trip", text: "\t●\tPack\n\t●\tSocks\n\t●\tGo\nPlain", formats: [
+            .init(location: 0, length: 22, kind: .bulleted(level: 1)), .init(location: 8, length: 8, kind: .bulleted(level: 2)),
+            .init(location: 3, length: 4, kind: .bold), .init(location: 20, length: 2, kind: .link("https://example.test/")),
+            .init(location: 23, length: 5, kind: .strikethrough), .init(location: 0, length: 1, kind: .image)],
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let fromCache = try ArcNoteHTML.convert(cached: cachedNote)
+        let cacheText = fromCache.body.text as NSString, cacheValue = NoteDocumentAppearance.attributedBody(fromCache.body)
+        func cacheAttributes(_ word: String) -> [NSAttributedString.Key: Any] {
+            cacheValue.attributes(at: cacheText.range(of: word).location, effectiveRange: nil)
+        }
+        expect(!fromCache.body.text.contains("●") && cacheText.range(of: "\t•\tPack").location != NSNotFound,
+               "Arc's own list markers give way to the Notes list format")
+        expect((cacheAttributes("Socks")[.paragraphStyle] as? NSParagraphStyle)?.textLists.count == 2
+               && (cacheAttributes("Go")[.paragraphStyle] as? NSParagraphStyle)?.textLists.count == 1
+               && (cacheAttributes("Plain")[.paragraphStyle] as? NSParagraphStyle)?.textLists.isEmpty != false,
+               "A nested cached list item keeps its depth; plain text stays plain")
+        expect((cacheAttributes("Pack")[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true
+               && cacheAttributes("Go")[.link] as? String == "https://example.test/"
+               && (cacheAttributes("Plain")[.strikethroughStyle] as? Int ?? 0) != 0,
+               "Bold, links and strikethrough land on the same words after the markers move")
+        expect(fromCache.title == "Trip" && fromCache.droppedImages == 1, "A cached image without its bytes is counted")
+
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let folder = directory.appendingPathComponent("Arc-Notes-Export-2026-11-08")
@@ -110,6 +132,14 @@ import AppKit
         let reopened = try NoteStore(directory: directory.appendingPathComponent("Notes"), diskSaveDelay: 0).list()
         expect(reopened == [note] && note.modifiedAt == older && note.createdAt == older,
                "An imported Note is saved with its own last-edit date")
+        expect(note.importedUnedited == true, "An imported Note is marked as an unedited import")
+        let latest = Date(timeIntervalSince1970: 1_795_000_000)
+        try store.reimport(note.id, expectedRevision: note.revision, title: "Trip plan", body: converted.body, modifiedAt: latest)
+        let session = try store.load(note.id)
+        expect(session.document.importedUnedited == true && session.document.modifiedAt == latest,
+               "A newer import of it keeps the mark and takes the newer date")
+        try session.updateTitle("Trip plan (mine)", replacing: "Trip plan")
+        expect(session.document.importedUnedited == nil, "An edit makes it the user's own Note")
         print("\(checks) Arc Notes import assertions passed; synthetic export only.")
     }
 }

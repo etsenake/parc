@@ -60,8 +60,12 @@ final class BrowserImportCoordinator {
     private var activeDestination: BrowserImportDestination?
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
-    typealias ArcNoteConverter = @MainActor (String) throws -> (title: String?, body: NoteBody, droppedImages: Int)
+    typealias ArcNoteConversion = (title: String?, body: NoteBody, droppedImages: Int)
+    typealias ArcNoteConverter = @MainActor (String) throws -> ArcNoteConversion
+    typealias ArcCachedNoteConverter = @MainActor (ArcNotesCache.Note) throws -> ArcNoteConversion
     private let arcNoteConverter: ArcNoteConverter?
+    private let arcCachedNoteConverter: ArcCachedNoteConverter?
+    private let arcNotesCacheURL: URL, arcAuthStateURL: URL
     ///
     private(set) var arcNotesExportURL: URL?
     private(set) var importingArcNotes = false
@@ -80,10 +84,14 @@ final class BrowserImportCoordinator {
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
          arcNoteConverter: ArcNoteConverter? = nil,
+         arcCachedNoteConverter: ArcCachedNoteConverter? = nil,
+         arcNotesCacheURL: URL = ArcNotesCache.defaultURL,
+         arcAuthStateURL: URL = ArcNotesCache.authStateURL,
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
         self.arcSidebarURL = arcSidebarURL; self.arcPreferencesURL = arcPreferencesURL
-        self.arcNoteConverter = arcNoteConverter
+        self.arcNoteConverter = arcNoteConverter; self.arcCachedNoteConverter = arcCachedNoteConverter
+        self.arcNotesCacheURL = arcNotesCacheURL; self.arcAuthStateURL = arcAuthStateURL
         self.onboarding = onboarding
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
@@ -404,11 +412,15 @@ final class BrowserImportCoordinator {
         generation = UUID(); let token = generation
         message = "Bringing over your Arc Spaces…"; onChange?()
         let url = arcSidebarURL, preferencesURL = arcPreferencesURL, notesURL = arcNotesExportURL
+        let cacheURL = arcNotesCacheURL, authURL = arcAuthStateURL
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try ArcSidebarSnapshot.read(url, preferences: preferencesURL) }
             let notes = notesURL.map { url in Result { try ArcNotesExport.read(url) } }
+            //
+            let cache = notesURL == nil && FileManager.default.fileExists(atPath: cacheURL.path)
+                ? try? ArcNotesCache.read(cache: cacheURL, authState: authURL) : nil
             DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated { self?.importArcSidebar(result, notes: notes, profiles: selected, token: token) }
+                MainActor.assumeIsolated { self?.importArcSidebar(result, notes: notes, cache: cache, profiles: selected, token: token) }
             }
         }
     }
@@ -430,8 +442,13 @@ final class BrowserImportCoordinator {
                 MainActor.assumeIsolated {
                     guard let self, self.generation == token else { return }
                     guard self.isCurrent, self.stage == .finished else { self.importingArcNotes = false; self.onChange?(); return }
-                    self.warnings.removeAll { $0 == Self.arcNotesReminder }
-                    self.importArcNotes(notes, token: token) {
+                    // The export supersedes the advice to make one.
+                    self.warnings = self.warnings.compactMap { line in
+                        guard line.hasSuffix(Self.arcNotesAdvice) else { return line }
+                        let head = line.dropLast(Self.arcNotesAdvice.count).trimmingCharacters(in: .whitespaces)
+                        return head == Self.arcNotesMissing || head.hasPrefix("The copy of your Notes") ? nil : head
+                    }
+                    self.importArcNotes(notes.map(self.exportBatch), token: token) {
                         self.importingArcNotes = false; self.message = "Your import has finished."; self.onChange?()
                     }
                 }
@@ -439,60 +456,124 @@ final class BrowserImportCoordinator {
         }
     }
 
-    static let arcNotesReminder = "Your Arc Notes weren’t imported. Export them in Arc (File → Export Arc Notes) before December 22, 2026, then add the file here to bring them over in full."
+    static let arcNotesAdvice = "Export them in Arc (File → Export Arc Notes) before December 22, 2026, then add the file here to bring them over in full."
+    static let arcNotesMissing = "Your Arc Notes weren’t imported."
+    static var arcNotesReminder: String { arcNotesMissing + " " + arcNotesAdvice }
     static let arcEaselsNote = "Easels stay in Arc. Arc keeps them on its servers and can only save each one as a picture."
+
+    private struct ArcNotesBatch {
+        struct Pending {
+            let title: String
+            let modifiedAt: Date
+            let convert: @MainActor () throws -> ArcNoteConversion
+        }
+        let fromCache: Bool
+        let notes: [Pending]
+        var othersSkipped = 0
+    }
+
+    private func exportBatch(_ notes: [ArcNotesExport.Note]) -> ArcNotesBatch {
+        let converter = arcNoteConverter
+        return ArcNotesBatch(fromCache: false, notes: notes.map { note in
+            .init(title: note.title, modifiedAt: note.modifiedAt) {
+                guard let converter else { throw ArcNotesExport.Failure.unreadable }
+                return try converter(note.html)
+            }
+        })
+    }
+
+    private func cacheBatch(_ contents: ArcNotesCache.Contents) -> ArcNotesBatch {
+        let converter = arcCachedNoteConverter
+        return ArcNotesBatch(fromCache: true, notes: contents.notes.map { note in
+            .init(title: note.title.isEmpty ? "Untitled Note" : note.title, modifiedAt: note.modifiedAt) {
+                guard let converter else { throw ArcNotesExport.Failure.unreadable }
+                return try converter(note)
+            }
+        }, othersSkipped: contents.othersSkipped)
+    }
 
     /// One Note at a time on the main thread (AppKit reads HTML there), so
     ///
-    private func importArcNotes(_ result: Result<[ArcNotesExport.Note], Error>, token: UUID, then finish: @escaping () -> Void) {
-        let notes: [ArcNotesExport.Note]
+    private func importArcNotes(_ result: Result<ArcNotesBatch, Error>, token: UUID, then finish: @escaping () -> Void) {
+        let batch: ArcNotesBatch
         switch result {
-        case .success(let value): notes = value
+        case .success(let value): batch = value
         case .failure(let failure):
             warnings.append("Arc Notes: \(failure.localizedDescription)")
             if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
             finish(); return
         }
-        guard let convert = arcNoteConverter,
-              let library = try? NoteStore.sharedStore(directory: store.notesDirectory(for: originalDestination.profileID)) else {
+        guard let library = try? NoteStore.sharedStore(directory: store.notesDirectory(for: originalDestination.profileID)) else {
             warnings.append("Arc Notes couldn’t be added to this Profile.")
             if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
             finish(); return
         }
         func stamp(_ title: String, _ date: Date) -> String { title + "\u{0}" + String(Int(date.timeIntervalSince1970.rounded())) }
-        var existing = Set(((try? library.list()) ?? []).map { stamp($0.title, $0.modifiedAt) })
-        var added = 0, repeated = 0, failed = 0, droppedImages = 0
+        let current = (try? library.list()) ?? []
+        var existing = Set(current.map { stamp($0.title, $0.modifiedAt) })
+        // Notes an earlier import made and nobody has edited since. The two
+        // sources date a Note differently, so these are matched by title.
+        var unedited = Dictionary(grouping: current.filter { $0.importedUnedited == true }, by: \.title)
+        var added = 0, repeated = 0, updated = 0, failed = 0, droppedImages = 0
+        func plural(_ count: Int, _ one: String, _ many: String) -> String { count == 1 ? one : many }
         func step(_ index: Int) {
             guard isCurrent, generation == token else { return }
-            guard index < notes.count else {
-                if added > 0 { warnings.append(added == 1 ? "1 Arc Note came over from your export." : "\(added) Arc Notes came over from your export.") }
-                if repeated > 0 { warnings.append(repeated == 1 ? "1 Arc Note was already in Parc." : "\(repeated) Arc Notes were already in Parc.") }
-                if failed > 0 { warnings.append(failed == 1 ? "1 Arc Note couldn’t be read." : "\(failed) Arc Notes couldn’t be read.") }
-                if droppedImages > 0 {
-                    warnings.append(droppedImages == 1 ? "1 image in your Arc Notes was stored on Arc’s servers, so it couldn’t come over."
-                        : "\(droppedImages) images in your Arc Notes were stored on Arc’s servers, so they couldn’t come over.")
+            guard index < batch.notes.count else {
+                let caveat = "can miss Notes this Mac never opened and recent edits made elsewhere. " + Self.arcNotesAdvice
+                if batch.fromCache, added > 0 {
+                    warnings.append(plural(added, "1 Arc Note came from the copy Arc keeps on this Mac,",
+                        "\(added) Arc Notes came from the copy Arc keeps on this Mac,") + " which " + caveat)
+                } else if batch.fromCache, repeated > 0 {
+                    warnings.append("The copy of your Notes Arc keeps on this Mac " + caveat)
+                } else if added > 0 {
+                    warnings.append(plural(added, "1 Arc Note came over from your export.", "\(added) Arc Notes came over from your export."))
                 }
-                arcNotesImported = added + repeated > 0
-                if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
+                if updated > 0 {
+                    warnings.append(plural(updated, "1 Arc Note was updated from your export.", "\(updated) Arc Notes were updated from your export."))
+                }
+                if repeated > 0 { warnings.append(plural(repeated, "1 Arc Note was already in Parc.", "\(repeated) Arc Notes were already in Parc.")) }
+                if failed > 0 { warnings.append(plural(failed, "1 Arc Note couldn’t be read.", "\(failed) Arc Notes couldn’t be read.")) }
+                if batch.othersSkipped > 0 {
+                    warnings.append(plural(batch.othersSkipped, "1 Note someone shared with you in Arc was left out.",
+                        "\(batch.othersSkipped) Notes others shared with you in Arc were left out."))
+                }
+                if droppedImages > 0 {
+                    warnings.append(plural(droppedImages, "1 image in your Arc Notes was stored on Arc’s servers, so it couldn’t come over.",
+                        "\(droppedImages) images in your Arc Notes were stored on Arc’s servers, so they couldn’t come over."))
+                }
+                if !batch.fromCache { arcNotesImported = added + repeated + updated > 0 }
+                if added + repeated + updated == 0 && !arcNotesImported { warnings.append(Self.arcNotesReminder) }
                 finish(); return
             }
-            let note = notes[index]
+            let note = batch.notes[index]
             do {
-                let converted = try convert(note.html)
+                let converted = try note.convert()
                 let title = converted.title ?? note.title
-                if existing.insert(stamp(title, note.modifiedAt)).inserted {
+                if !existing.insert(stamp(title, note.modifiedAt)).inserted {
+                    repeated += 1
+                } else if let earlier = unedited[title]?.first {
+                    unedited[title]?.removeFirst()
+                    // The offline copy never overrides; an export updates an older copy.
+                    if batch.fromCache || earlier.modifiedAt > note.modifiedAt { repeated += 1 }
+                    else {
+                        try library.reimport(earlier.id, expectedRevision: earlier.revision, title: title,
+                                             body: converted.body, modifiedAt: note.modifiedAt)
+                        updated += 1; droppedImages += converted.droppedImages
+                    }
+                } else {
                     _ = try library.importDocument(title: title, body: converted.body, modifiedAt: note.modifiedAt)
                     added += 1; droppedImages += converted.droppedImages
-                } else { repeated += 1 }
+                }
             } catch { failed += 1 }
-            message = "Bringing over your Arc Notes (\(index + 1) of \(notes.count))…"; onChange?()
+            message = "Bringing over your Arc Notes (\(index + 1) of \(batch.notes.count))…"; onChange?()
             DispatchQueue.main.async { MainActor.assumeIsolated { step(index + 1) } }
         }
         step(0)
     }
 
     private func importArcSidebar(_ result: Result<(ArcSidebarImport, [String: Any]), Error>,
-                                  notes: Result<[ArcNotesExport.Note], Error>?, profiles selected: [PCNativeImportProfile],
+                                  notes: Result<[ArcNotesExport.Note], Error>?, cache: ArcNotesCache.Contents?,
+                                  profiles selected: [PCNativeImportProfile],
                                   token: UUID) {
         guard isCurrent, generation == token, stage == .importing else { return }
         var keys: [ArcSidebarImport.ProfileKey: PCNativeImportProfile] = [:], named: [(key: ArcSidebarImport.ProfileKey, name: String)] = []
@@ -525,11 +606,12 @@ final class BrowserImportCoordinator {
         }
         queue = selected.filter { queuedDestinations[$0.identifier] != nil }
         warnings.append(Self.arcEaselsNote)
-        guard let notes else {
-            warnings.append(Self.arcNotesReminder); importNext(); return
-        }
+        let batch: Result<ArcNotesBatch, Error>
+        if let notes { batch = notes.map(exportBatch) }
+        else if let cache, !cache.notes.isEmpty || cache.othersSkipped > 0 { batch = .success(cacheBatch(cache)) }
+        else { warnings.append(Self.arcNotesReminder); importNext(); return }
         importingArcNotes = true
-        importArcNotes(notes, token: token) { [weak self] in
+        importArcNotes(batch, token: token) { [weak self] in
             guard let self else { return }
             self.importingArcNotes = false; self.importNext()
         }

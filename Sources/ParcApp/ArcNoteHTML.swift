@@ -175,8 +175,13 @@ enum ArcNoteHTML {
         while result.length > 0, (result.string as NSString).substring(from: result.length - 1).rangeOfCharacter(from: .newlines) != nil {
             result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
         }
-        var value: NSAttributedString = result
-        // Later paragraphs first, so a marker never shifts one still to format.
+        return (paragraphs(result, formats), failedImages)
+    }
+
+    /// Later paragraphs first, so a marker never shifts one still to format.
+    private static func paragraphs(_ result: NSAttributedString,
+                                   _ formats: [(range: NSRange, kind: EaselParagraphEditing.Kind, depth: Int)]) -> NSAttributedString {
+        var value = result
         for format in formats.reversed() where format.range.location < value.length {
             let selection = NSRange(location: format.range.location, length: 0)
             value = EaselParagraphEditing.apply(format.kind, to: value, selection: selection, typing: NoteDocumentAppearance.bodyAttributes,
@@ -188,6 +193,72 @@ enum ArcNoteHTML {
                 value = nested.text
             }
         }
-        return (value, failedImages)
+        return value
+    }
+
+    ///
+    ///
+    /// replaced by the Notes list format; an image's bytes aren't cached.
+    static func convert(cached note: ArcNotesCache.Note) throws -> Converted {
+        let source = note.text as NSString
+        let result = NSMutableAttributedString(string: note.text, attributes: NoteDocumentAppearance.bodyAttributes)
+        var droppedImages = 0
+        for format in note.formats {
+            let range = NSRange(location: format.location, length: format.length)
+            guard NSMaxRange(range) <= result.length else { continue }
+            switch format.kind {
+            case .bold, .italic:
+                result.enumerateAttribute(.font, in: range) { value, part, _ in
+                    let font = (value as? NSFont) ?? NoteDocumentAppearance.bodyFont
+                    result.addAttribute(.font, value: NSFontManager.shared.convert(font,
+                        toHaveTrait: format.kind == .bold ? .boldFontMask : .italicFontMask), range: part)
+                }
+            case .underline: result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            case .strikethrough: result.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            case .link(let address):
+                let link = address ?? source.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+                if EaselRichText.validLink(link) { result.addAttribute(.link, value: link, range: range) }
+            case .image: droppedImages += 1
+            case .heading, .bulleted, .numbered: continue
+            }
+        }
+        var formats: [(range: NSRange, kind: EaselParagraphEditing.Kind, depth: Int)] = []
+        var markers: [NSRange] = [], removed = 0, position = 0
+        while position < source.length {
+            let paragraph = source.paragraphRange(for: NSRange(location: position, length: 0))
+            position = NSMaxRange(paragraph)
+            let covering = note.formats.filter {
+                NSLocationInRange(paragraph.location, NSRange(location: $0.location, length: max(1, $0.length)))
+            }
+            //
+            let lists = covering.compactMap { format -> (kind: EaselParagraphEditing.Kind, level: Int)? in
+                switch format.kind {
+                case .bulleted(let level): return (.bullets, level)
+                case .numbered(let level): return (.numbers, level)
+                default: return nil
+                }
+            }
+            let headings = covering.compactMap { format -> Int? in if case .heading(let level) = format.kind { return level } else { return nil } }
+            var kind = EaselParagraphEditing.Kind.text, depth = 1
+            if let list = lists.max(by: { $0.level < $1.level }) { kind = list.kind; depth = list.level }
+            else if let level = headings.min() { kind = [.heading1, .heading2, .heading3][max(1, min(3, level)) - 1] }
+            var marker = NSRange(location: paragraph.location, length: 0)
+            if kind == .bullets || kind == .numbers,
+               let found = source.substring(with: paragraph).range(of: "^\\t[^\\t\\r\\n]{1,8}\\t", options: .regularExpression) {
+                marker.length = (String(source.substring(with: paragraph)[found]) as NSString).length
+                markers.append(marker)
+            }
+            if kind != .text {
+                formats.append((NSRange(location: paragraph.location - removed, length: paragraph.length - marker.length), kind, depth))
+            }
+            removed += marker.length
+        }
+        for marker in markers.reversed() { result.deleteCharacters(in: marker) }
+        while result.length > 0, (result.string as NSString).substring(from: result.length - 1).rangeOfCharacter(from: .newlines) != nil {
+            result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
+        }
+        let value = paragraphs(result, formats)
+        return Converted(title: note.title.isEmpty ? nil : note.title,
+                         body: NoteBody(text: value.string, richText: try EaselRichTextCodec.snapshot(value)), droppedImages: droppedImages)
     }
 }

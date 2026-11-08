@@ -8,6 +8,8 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/ArcNotesExport.swift" \
+  "$repo_root/Sources/ParcCore/ArcNotesCache.swift" \
+  "$repo_root/Sources/ParcCore/FirestoreCache.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \

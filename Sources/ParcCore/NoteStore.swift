@@ -18,6 +18,8 @@ struct NoteDocument: Codable, Equatable, Identifiable {
     var createdAt: Date
     var modifiedAt: Date
     var deleted = false
+    /// Brought over by an import and not edited since; any edit clears it.
+    var importedUnedited: Bool?
 }
 enum NoteError: Error, LocalizedError {
     case invalid, missing, deleted, changed
@@ -106,8 +108,17 @@ final class NoteStore {
     }
     /// A Note brought over from another browser keeps its own last edit.
     func importDocument(title: String, body: NoteBody, modifiedAt: Date) throws -> NoteDocument {
-        let document = NoteDocument(title: title, body: body, createdAt: modifiedAt, modifiedAt: modifiedAt)
+        var document = NoteDocument(title: title, body: body, createdAt: modifiedAt, modifiedAt: modifiedAt)
+        document.importedUnedited = true
         try persist(document); changes.send(); return document
+    }
+    /// A newer copy of an imported Note that hasn't been edited replaces it in
+    /// place, so open tabs keep their Note; it keeps that copy's last edit.
+    func reimport(_ id: UUID, expectedRevision: UInt64, title: String, body: NoteBody, modifiedAt: Date) throws {
+        let value = try load(id)
+        guard value.document.revision == expectedRevision else { throw NoteError.changed }
+        try flushDelayedDiskSave(id)
+        try value.replace(persistImmediately: true, modifiedAt: modifiedAt) { $0.title = title; $0.body = body; $0.importedUnedited = true }
     }
     func load(_ id: UUID) throws -> NoteSession {
         if let value = sessions[id]?.value {
@@ -412,13 +423,13 @@ final class NoteSession {
         guard title != expectedTitle || body != expectedBody else { return }
         try replace { $0.title = title; $0.body = body }
     }
-    fileprivate func replace(persistImmediately: Bool = false, _ edit: (inout NoteDocument) -> Void) throws {
+    fileprivate func replace(persistImmediately: Bool = false, modifiedAt: Date? = nil, _ edit: (inout NoteDocument) -> Void) throws {
         guard !document.deleted else { throw NoteError.deleted }
         guard !closed else { throw NoteError.changed }
-        var next = document; edit(&next)
+        var next = document; next.importedUnedited = nil; edit(&next)
         guard !closed else { throw NoteError.changed }
         guard next.revision < UInt64.max else { throw NoteError.invalid }
-        next.revision += 1; next.modifiedAt = store.timestamp()
+        next.revision += 1; next.modifiedAt = modifiedAt ?? store.timestamp()
         let libraryVisible = next.title != document.title || next.deleted != document.deleted
         if persistImmediately || store.diskSaveDelay <= 0 {
             try store.flushDelayedDiskSave(document.id)
