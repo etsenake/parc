@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 622,
+  "version": 623,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1853,31 +1853,6 @@
       "sha256": "deee14d23875571ac92f6101c50b0d411724d1957f05524d17d67723d653826f"
     },
     {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-bear-ac3.ts",
-      "target": "media/test/data/parc-bear-ac3.ts",
-      "sha256": "b58bcca6c3f0465c54b4c18956b2e0628b4d19a2e0665a21302b617fa1e838e5"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-bear-eac3.ts",
-      "target": "media/test/data/parc-bear-eac3.ts",
-      "sha256": "e94a94352b0afc66effe533a4acca0253ec1f56b37c25b686bb837356d2e6709"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-bear-eac3-sample-aes.ts",
-      "target": "media/test/data/parc-bear-eac3-sample-aes.ts",
-      "sha256": "dcfede34f0646d578235487eb637ebedbd18ea78216d29a10c369842a7a0396e"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-bear-ac3-sample-aes.ts",
-      "target": "media/test/data/parc-bear-ac3-sample-aes.ts",
-      "sha256": "96cadff1c0010cba66abcccb81c23a94a3054ab26501ea4534c5087d74a6298f"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-two-audio.ts",
-      "target": "media/test/data/parc-two-audio.ts",
-      "sha256": "85f24d72f49a6cd997316666d58114f861db983e2fa1890ab9110c53d7202187"
-    },
-    {
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_h263_decoder.h",
       "target": "media/gpu/mac/parc_video_toolbox_h263_decoder.h",
       "sha256": "1d5d7a28a11613dd8f2567d667fad44ceefab3e106bbd3466268a4183bdcd275"
@@ -1891,11 +1866,6 @@
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_h263_decoder_unittest.cc",
       "target": "media/gpu/mac/parc_video_toolbox_h263_decoder_unittest.cc",
       "sha256": "01040aaad8e467c1e4899b46ba14a08969df4193d36a3cc3f470014d107f5ae2"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-h263-amr.3gp",
-      "target": "media/test/data/parc-h263-amr.3gp",
-      "sha256": "9fe245efe4eaab91f1cd9ff053fb57152240afbad97a80bd9faf92dc7f6ceae2"
     },
     {
       "source": "Engine/ParcRenderer/parc_av1_support.h",
@@ -1966,16 +1936,6 @@
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_mpeg_video_decoder_unittest.cc",
       "target": "media/gpu/mac/parc_video_toolbox_mpeg_video_decoder_unittest.cc",
       "sha256": "c90bbe16f3b20dee7e5f0a48609551ab3fac61a9d75fb81083637e3428b64519"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-mpeg2-video.ts",
-      "target": "media/test/data/parc-mpeg2-video.ts",
-      "sha256": "fe1bfbdf98570f08649e73386eb7af608e2a1586ae8fd9040615064d203283ad"
-    },
-    {
-      "source": "Engine/ParcNative/fairplay_chromium/testdata/parc-mpeg2-video-shared-pes.ts",
-      "target": "media/test/data/parc-mpeg2-video-shared-pes.ts",
-      "sha256": "17d2f8e97d7f3f838bba58efe2d1e169a5605c148399f35813ff4a4736f6d61d"
     }
   ],
   "patches": [

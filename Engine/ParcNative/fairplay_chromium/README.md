@@ -685,3 +685,12 @@ Nothing here builds the engine. For each increment:
 
 Unverified until Josh builds: compilation of the files above, mojom
 generation, `gn check`, the GPU sandbox rules, and all runtime behaviour.
+
+## Binary test data
+
+The engine overlay accepts only reviewable UTF-8 text, so the small TS and
+3GP clips in `testdata/` are not overlay files. Media unit tests that open
+`media/test/data/parc-*.ts` or `parc-h263-amr.3gp` (the MPEG-2 video,
+SAMPLE-AES, AC-3/E-AC-3, two-audio and H.263/AMR parser and decoder tests) need
+those clips copied into `media/test/data/` before running `media_unittests`.
+Shipping builds don't build those tests.
