@@ -1433,10 +1433,11 @@
   private:
    enum class State {
      kCreated,
-@@ -278,6 +287,29 @@
+@@ -277,6 +286,30 @@
+   // Uses |default_renderer_| as the Renderer or asynchronously creates a new
    // one by calling back to PipelineImpl. Fires |done_cb| with the result.
    void CreateRendererInternal(PipelineStatusCallback done_cb);
- 
++
 +  // Parc: a file renderer plays backward in its own mode (Renderer::
 +  // ParcStartPlayingBackwardFrom()); turning between directions flushes it,
 +  // which the page doesn't see as a seek.
@@ -1452,6 +1453,7 @@
 +  void ParcOnIncomingInitialized(PipelineStatus status);
 +  void ParcOnSplit(base::TimeDelta time);
 +  void ParcSwap();
++  void ParcFollowPlayingClock();
 +  // A seek completes a split hand-off at once (the playing renderer can't go
 +  // on past the split) and ends an earlier one, which the caller restarts. A
 +  // turn or CDM change ends it too (ParcAbortHandOff(true)), and the caller
@@ -1459,11 +1461,10 @@
 +  // changes wait for it (OnTracksChanged()).
 +  void ParcSettleHandOff();
 +  void ParcAbortHandOff(bool restart);
-+
+ 
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
-   const std::unique_ptr<MediaLog> media_log_;
-@@ -297,6 +329,9 @@
+@@ -297,6 +330,9 @@
    std::optional<base::TimeDelta> latency_hint_;
    bool render_muted_audio_ = false;
    raw_ptr<CdmContext, DanglingUntriaged> cdm_context_ = nullptr;
@@ -1473,11 +1474,10 @@
  
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
-@@ -327,10 +362,312 @@
- 
+@@ -328,9 +364,331 @@
    // Called from non-media threads when an error occurs.
    RepeatingPipelineStatusCallback error_cb_;
-+
+ 
 +  // Parc: the renderer plays backward, or `parc_turn_` is turning it.
 +  bool parc_backward_ = false;
 +  std::unique_ptr<SerialRunner> parc_turn_;
@@ -1499,7 +1499,7 @@
 +  base::OnceCallback<void(bool)> parc_handoff_done_;
 +  bool parc_handoff_split_ = false;
 +  bool parc_handed_off_ = false;
- 
++
 +  // CDM acceptance survives Stop so the next load keeps accepted keys.
 +  base::WeakPtrFactory<RendererWrapper> cdm_weak_factory_{this};
 +  // Parc: for one hand-off's steps (ParcHandOff()).
@@ -1514,6 +1514,8 @@
 +    : public RendererClient {
 + public:
 +  explicit ParcIncomingClient(RendererWrapper* wrapper) : wrapper_(wrapper) {}
++
++  bool have_enough() const { return have_enough_; }
 +
 +  void TakeOver() {
 +    taken_over_ = true;
@@ -1588,6 +1590,7 @@
 +    have_enough_ = state == BUFFERING_HAVE_ENOUGH;
 +    if (have_enough_) {
 +      waiting_.reset();
++      wrapper_->ParcFollowPlayingClock();
 +    }
 +  }
 +  void OnWaiting(WaitingReason reason) final {
@@ -1726,7 +1729,24 @@
 +  }
 +  parc_handoff_split_ = true;
 +  parc_incoming_->StartPlayingFrom(time);
-+  parc_incoming_->SetPlaybackRate(0);
++}
++
++// Prerolled, the incoming renderer runs on the playing renderer's clock: at
++// its rate from where it is now, or stopped there while it doesn't play. At
++// the split the playing renderer's last frame and sound end where the
++// incoming renderer's begin, as Safari's one renderer plays straight on.
++void PipelineImpl::RendererWrapper::ParcFollowPlayingClock() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  if (!parc_handoff_split_ || !parc_incoming_client_->have_enough()) {
++    return;
++  }
++  Renderer* playing = shared_state_.media().renderer.get();
++  const double rate = state_ == State::kPlaying && !parc_turn_ &&
++                              parc_buffering_state_ == BUFFERING_HAVE_ENOUGH
++                          ? ParcRendererRate()
++                          : 0;
++  parc_incoming_->ParcSetPlaybackRateAt(rate, playing->GetMediaTime(),
++                                        base::TimeTicks::Now());
 +}
 +
 +// The playing renderer ended its part (OnEnded()), or a seek, suspend or
@@ -1786,7 +1806,7 @@
  PipelineImpl::RendererWrapper::RendererWrapper(
      scoped_refptr<base::SequencedTaskRunner> media_task_runner,
      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-@@ -380,6 +717,12 @@
+@@ -380,6 +738,12 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
  
@@ -1799,7 +1819,7 @@
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -430,6 +773,21 @@
+@@ -430,6 +794,21 @@
    // the pipeline is stopped before it had a chance to complete outstanding
    // tasks.
    pending_callbacks_.reset();
@@ -1821,7 +1841,7 @@
    weak_factory_.InvalidateWeakPtrs();
  
    DestroyRenderer();
-@@ -449,6 +807,14 @@
+@@ -449,6 +828,14 @@
  void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1836,7 +1856,7 @@
    // Suppress seeking if we're not fully started.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -461,6 +827,9 @@
+@@ -461,6 +848,9 @@
  
    SetState(State::kSeeking);
    renderer_ended_ = false;
@@ -1846,7 +1866,7 @@
  
    // Queue asynchronous actions required to start.
    DCHECK(!pending_callbacks_);
-@@ -490,6 +859,14 @@
+@@ -490,6 +880,14 @@
  void PipelineImpl::RendererWrapper::Suspend() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1861,7 +1881,7 @@
    // Suppress suspending if we're not playing.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -500,6 +877,11 @@
+@@ -500,6 +898,11 @@
    DCHECK(!pending_callbacks_.get());
  
    SetState(State::kSuspending);
@@ -1873,7 +1893,7 @@
  
    // Freeze playback and record the media time before destroying the renderer.
    shared_state_.media().renderer->SetPlaybackRate(0.0);
-@@ -546,6 +928,8 @@
+@@ -546,6 +949,8 @@
  
    default_renderer_ = std::move(default_renderer);
    renderer_ended_ = false;
@@ -1882,7 +1902,7 @@
    base::TimeDelta start_timestamp =
        std::max(timestamp, demuxer_->GetStartTime());
  
-@@ -576,9 +960,16 @@
+@@ -576,9 +981,17 @@
  void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1897,11 +1917,12 @@
 -    shared_state_.media().renderer->SetPlaybackRate(playback_rate_);
 +  if (state_ == State::kPlaying && !parc_turn_) {
 +    shared_state_.media().renderer->SetPlaybackRate(ParcRendererRate());
++    ParcFollowPlayingClock();
 +    ParcTurnIfNeeded();
    }
  
    if (state_ != State::kCreated && state_ != State::kStopping &&
-@@ -595,6 +986,9 @@
+@@ -595,6 +1008,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetVolume(volume_);
    }
@@ -1911,7 +1932,7 @@
  }
  
  void PipelineImpl::RendererWrapper::SetLatencyHint(
-@@ -608,6 +1002,9 @@
+@@ -608,6 +1024,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetLatencyHint(latency_hint_);
    }
@@ -1921,28 +1942,29 @@
  }
  
  void PipelineImpl::RendererWrapper::SetPreservesPitch(bool preserves_pitch) {
-@@ -619,7 +1016,20 @@
-   preserves_pitch_ = preserves_pitch;
+@@ -620,8 +1039,21 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetPreservesPitch(preserves_pitch_);
-+  }
+   }
 +  if (parc_incoming_) {
 +    parc_incoming_->SetPreservesPitch(preserves_pitch_);
 +  }
-+}
-+
+ }
+ 
 +void PipelineImpl::RendererWrapper::ParcOnAudioOutputDeviceChanged() {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 +  if (shared_state_.media().renderer) {
 +    shared_state_.media().renderer->ParcOnAudioOutputDeviceChanged();
-   }
++  }
 +  if (parc_incoming_) {
 +    parc_incoming_->ParcOnAudioOutputDeviceChanged();
 +  }
- }
- 
++}
++
  void PipelineImpl::RendererWrapper::SetRenderMutedAudio(
-@@ -634,6 +1044,9 @@
+     bool render_muted_audio) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
+@@ -634,6 +1066,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetRenderMutedAudio(render_muted_audio_);
    }
@@ -1952,7 +1974,7 @@
  }
  
  void PipelineImpl::RendererWrapper::
-@@ -689,8 +1102,51 @@
+@@ -689,8 +1124,51 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
@@ -2004,7 +2026,7 @@
    // If there's already a renderer, set the CDM on the renderer directly.
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetCdm(
-@@ -700,9 +1156,27 @@
+@@ -700,9 +1178,27 @@
      return;
    }
  
@@ -2032,11 +2054,10 @@
    std::move(cdm_attached_cb).Run(true);
  
    // Continue Renderer creation if it's waiting for the CDM to be set.
-@@ -733,6 +1207,28 @@
-     }
+@@ -734,6 +1230,28 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a FairPlay CDM's keys reach only the FairPlay Renderer hosted next
 +  // to it in the GPU process.
@@ -2058,10 +2079,11 @@
 +    renderer_type = RendererType::kFairPlayHls;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
-@@ -828,6 +1324,11 @@
+   if (!default_renderer_ ||
+@@ -828,6 +1346,11 @@
    if (state_ != State::kPlaying) {
      return;
    }
@@ -2073,10 +2095,13 @@
  
    DCHECK(!renderer_ended_);
    renderer_ended_ = true;
-@@ -895,6 +1396,22 @@
-     std::move(change_completed_cb).Run();
-     return;
-   }
+@@ -892,9 +1415,25 @@
+   // Track status notifications might be delivered asynchronously. If we receive
+   // a notification when pipeline is stopped/shut down, it's safe to ignore it.
+   if (state_ == State::kStopping || state_ == State::kStopped) {
++    std::move(change_completed_cb).Run();
++    return;
++  }
 +
 +  // Parc: backward, audio is silent and the video renderer has its own
 +  // stream position, so the tracks change once playback goes forward; during
@@ -2086,9 +2111,9 @@
 +    parc_deferred_track_changes_.push_back(base::BindOnce(
 +        &RendererWrapper::OnTracksChanged, weak_factory_.GetWeakPtr(),
 +        track_type, std::move(enabled_track_id), base::DoNothing()));
-+    std::move(change_completed_cb).Run();
-+    return;
-+  }
+     std::move(change_completed_cb).Run();
+     return;
+   }
 +  ++parc_track_changes_;
 +  change_completed_cb = base::BindOnce(&RendererWrapper::ParcOnTrackChangeDone,
 +                                       weak_factory_.GetWeakPtr(),
@@ -2096,13 +2121,14 @@
  
    demuxer_->OnTracksChanged(
        track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
-@@ -1008,6 +1525,13 @@
+@@ -1008,6 +1547,14 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
    DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
  
 +  const bool parc_repeated = parc_turned_ && state == parc_buffering_state_;
 +  parc_turned_ = false;
 +  parc_buffering_state_ = state;
++  ParcFollowPlayingClock();
 +  if (parc_repeated) {
 +    return;
 +  }
@@ -2110,7 +2136,7 @@
    main_task_runner_->PostTask(
        FROM_HERE, base::BindOnce(&PipelineImpl::OnBufferingStateChange,
                                  weak_pipeline_, state, reason));
-@@ -1099,8 +1623,13 @@
+@@ -1099,8 +1646,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -2125,7 +2151,7 @@
    std::move(cdm_attached_cb).Run(success);
  }
  
-@@ -1116,7 +1645,8 @@
+@@ -1116,7 +1668,8 @@
      return;
  
    main_task_runner_->PostTask(
@@ -2135,7 +2161,7 @@
  }
  
  void PipelineImpl::RendererWrapper::SetState(State next_state) {
-@@ -1146,6 +1676,12 @@
+@@ -1146,6 +1699,12 @@
      return;
    }
  
@@ -2148,7 +2174,7 @@
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1153,14 +1689,134 @@
+@@ -1153,14 +1712,134 @@
      shared_state_.mutable_media().suspend_timestamp = kNoTimestamp;
    }
  
@@ -2284,7 +2310,7 @@
  void PipelineImpl::RendererWrapper::CompleteSuspend(PipelineStatus status) {
    DVLOG(1) << __func__ << ": status=" << status;
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-@@ -1244,7 +1900,7 @@
+@@ -1244,7 +1923,7 @@
      return;
    }
  
@@ -2293,11 +2319,10 @@
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
  
    if (latency_hint_)
-@@ -1285,6 +1941,15 @@
-   {
+@@ -1286,6 +1965,15 @@
      base::AutoLock auto_lock(shared_state_.lock());
      renderer.swap(shared_state_.mutable_media().renderer);
-+  }
+   }
 +  // Parc: a renderer that took over read the demuxer's hand-off streams.
 +  if (parc_handed_off_) {
 +    renderer.reset();
@@ -2306,10 +2331,11 @@
 +    if (demuxer_) {
 +      demuxer_->ParcEndHandOff();
 +    }
-   }
++  }
  }
  
-@@ -1398,6 +2063,7 @@
+ void PipelineImpl::RendererWrapper::ReportMetadata(StartType start_type) {
+@@ -1398,6 +2086,7 @@
    DCHECK(!client_);
    DCHECK(!seek_cb_);
    client_ = client;
@@ -2317,7 +2343,7 @@
    seek_cb_ = std::move(seek_cb);
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
-@@ -1529,10 +2195,9 @@
+@@ -1529,10 +2218,9 @@
  
    // Not checking IsRunning() so we can set the playback rate before Start().
  
@@ -2331,7 +2357,7 @@
  
    playback_rate_ = playback_rate;
    media_task_runner_->PostTask(
-@@ -1589,6 +2254,14 @@
+@@ -1589,6 +2277,14 @@
                                  preserves_pitch));
  }
  
@@ -2346,7 +2372,7 @@
  void PipelineImpl::SetRenderMutedAudio(bool render_muted_audio) {
    DCHECK(thread_checker_.CalledOnValidThread());
  
-@@ -1630,7 +2303,7 @@
+@@ -1630,7 +2326,7 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
@@ -2355,7 +2381,7 @@
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1641,6 +2314,20 @@
+@@ -1641,6 +2337,20 @@
    return last_media_time_;
  }
  
@@ -2376,7 +2402,7 @@
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
    DCHECK(thread_checker_.CalledOnValidThread());
    return renderer_wrapper_->GetBufferedTimeRanges();
-@@ -1665,7 +2352,8 @@
+@@ -1665,7 +2375,8 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -2386,7 +2412,7 @@
    DCHECK(cdm_attached_cb);
  
    // Not checking IsRunning() so we can set the CDM before Start().
-@@ -1714,11 +2402,16 @@
+@@ -1714,11 +2425,16 @@
    client_->OnFallback(std::move(status).AddHere());
  }
  
@@ -2438,7 +2464,7 @@
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
-@@ -131,6 +134,24 @@
+@@ -131,6 +134,31 @@
    // enforce RendererType registration for all Renderer implementations.
    // Note: New implementation should update RendererType.
    virtual RendererType GetRendererType() = 0;
@@ -2460,6 +2486,13 @@
 +  // ParcHandOffToFairPlay()) shows nothing until it does: the FairPlay
 +  // Renderer paints its video hole frame only when shown.
 +  virtual void ParcSetHidden(bool hidden) {}
++
++  // Parc: while hidden, runs at `playback_rate` on the playing renderer's
++  // clock, which reads `time` at `host_time`, so it takes over at the split
++  // without a gap. Only the FairPlay Renderer does.
++  virtual void ParcSetPlaybackRateAt(double playback_rate,
++                                     base::TimeDelta time,
++                                     base::TimeTicks host_time) {}
  };
  
  }  // namespace media
@@ -5730,12 +5763,10 @@
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
  // This allows the Browser side to call back into the Renderer side.
-@@ -22,8 +27,401 @@
-   // play state (e.g. when another phone play/pauses a cast device on the same
-   // network).
+@@ -24,6 +29,404 @@
    OnRemotePlayStateChange(MediaStatusState state);
-+};
-+
+ };
+ 
 +// The element's readyState as WebKit's AVFoundation player reports it
 +// (MediaPlayerPrivateAVFoundation::updateStates).
 +[EnableIf=is_mac]
@@ -5782,6 +5813,11 @@
 +  // the frame's origin; empty or "default" for the system default). The GPU
 +  // process asks the browser for its Core Audio device.
 +  SetAudioOutputDevice(string sink_id);
++  // Taking over from the render process's renderer without a gap: the
++  // clock reads `time` at `host_time` and runs at `rate` along that line
++  // (FairPlayRenderer::SetPlaybackRateAt).
++  SetPlaybackRateAt(double rate, mojo_base.mojom.TimeDelta time,
++                    mojo_base.mojom.TimeTicks host_time);
 +};
 +
 +// Parc: Safari's native HLS route. An AVPlayer in the GPU process's media
@@ -5946,8 +5982,8 @@
 +  uint32? background_color;
 +  uint32? highlight_color;
 +  bool prevent_line_wrapping;
- };
- 
++};
++
 +// A DataCue's value (the FairPlay core's HlsDataCueValue: what WebKit keeps
 +// of a timed metadata item).
 +[EnableIf=is_mac]
@@ -6155,7 +6191,7 @@
  #include "media/base/audio_decoder.h"
  #include "media/base/offloading_audio_encoder.h"
  #include "media/filters/mac/audio_toolbox_audio_decoder.h"
-@@ -13,14 +14,226 @@
+@@ -13,14 +14,232 @@
  #include "media/gpu/mac/video_toolbox_video_decoder.h"
  #include "media/mojo/services/gpu_mojo_media_client.h"
  
@@ -6280,6 +6316,12 @@
 +    set_audio_output_device_.Run(sink_id);
 +  }
 +
++  void SetPlaybackRateAt(double rate,
++                         base::TimeDelta time,
++                         base::TimeTicks host_time) final {
++    renderer_->SetPlaybackRateAt(rate, time, host_time);
++  }
++
 + private:
 +  void OnStreamReady(uint32_t id, AddStreamCallback callback) {
 +    renderer_->AddStream(id, streams_[id].get());
@@ -6382,7 +6424,7 @@
   protected:
    std::unique_ptr<VideoDecoder> CreatePlatformVideoDecoder(
        VideoDecoderTraits& traits) final {
-@@ -63,6 +276,17 @@
+@@ -63,6 +282,17 @@
    VideoDecoderType GetPlatformDecoderImplementationType() final {
      return VideoDecoderType::kVideoToolbox;
    }
@@ -18303,7 +18345,7 @@
    // Valid settings should work.
    pipeline_->SetPlaybackRate(1.0);
    EXPECT_EQ(1.0f, pipeline_->GetPlaybackRate());
-@@ -528,8 +567,213 @@
+@@ -528,8 +567,250 @@
    StartPipelineAndExpect(PIPELINE_OK);
    EXPECT_TRUE(metadata_.has_audio);
    EXPECT_TRUE(metadata_.has_video);
@@ -18366,8 +18408,8 @@
 +  CreateAudioStream();
 +  SetDemuxerExpectations();
 +  StartPipelineAndExpect(PIPELINE_OK);
-+}
-+
+ }
+ 
 +// Parc: Chromium's renderer hands over to the FairPlay Renderer without a
 +// restart: the FairPlay Renderer reads the demuxer's hand-off streams,
 +// prerolls paused at the split, and takes over when the playing renderer
@@ -18401,11 +18443,48 @@
 +  EXPECT_FALSE(handed_off);
 +
 +  EXPECT_CALL(*fairplay, StartPlayingFrom(base::Seconds(1)));
-+  EXPECT_CALL(*fairplay, SetPlaybackRate(0.0));
 +  std::move(demuxer_->split).Run(base::Seconds(1));
 +  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(*renderer_, SetPlaybackRate(1.0));
++  EXPECT_CALL(*demuxer_, SetPlaybackRate(1.0));
++  pipeline_->SetPlaybackRate(1.0);
++  base::RunLoop().RunUntilIdle();
++
++  // Prerolled, it runs on the playing renderer's clock, so the two meet at
++  // the split: at that renderer's rate, and stopped while it is.
++  EXPECT_CALL(*renderer_, GetMediaTime())
++      .WillRepeatedly(Return(base::Milliseconds(700)));
++  EXPECT_CALL(*fairplay,
++              ParcSetPlaybackRateAt(1.0, base::Milliseconds(700), _));
 +  fairplay_client->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
 +                                          BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(*renderer_, SetPlaybackRate(0.0));
++  EXPECT_CALL(*demuxer_, SetPlaybackRate(0.0));
++  EXPECT_CALL(*renderer_, GetMediaTime())
++      .WillRepeatedly(Return(base::Milliseconds(750)));
++  EXPECT_CALL(*fairplay,
++              ParcSetPlaybackRateAt(0.0, base::Milliseconds(750), _));
++  pipeline_->SetPlaybackRate(0.0);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(*renderer_, SetPlaybackRate(1.0));
++  EXPECT_CALL(*demuxer_, SetPlaybackRate(1.0));
++  EXPECT_CALL(*fairplay,
++              ParcSetPlaybackRateAt(1.0, base::Milliseconds(750), _));
++  pipeline_->SetPlaybackRate(1.0);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(callbacks_, OnBufferingStateChange(BUFFERING_HAVE_NOTHING, _));
++  EXPECT_CALL(*fairplay,
++              ParcSetPlaybackRateAt(0.0, base::Milliseconds(750), _));
++  renderer_client_->OnBufferingStateChange(BUFFERING_HAVE_NOTHING,
++                                           BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_CALL(callbacks_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
++  EXPECT_CALL(*fairplay,
++              ParcSetPlaybackRateAt(1.0, base::Milliseconds(750), _));
++  renderer_client_->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH,
++                                           BUFFERING_CHANGE_REASON_UNKNOWN);
++  base::RunLoop().RunUntilIdle();
 +
 +  EXPECT_CALL(callbacks_, OnEnded()).Times(0);
 +  EXPECT_CALL(callbacks_, OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, _));
@@ -18491,8 +18570,8 @@
 +  pipeline_->SetCdm(&second, base::BindOnce(&CallbackHelper::OnCdmAttached,
 +                                            base::Unretained(&callbacks_)));
 +  base::RunLoop().RunUntilIdle();
- }
- 
++}
++
 +// Parc: a renderer that can't take another CDM (Chromium's, while
 +// WebMediaPlayerImpl restarts it into the FairPlay Renderer) leaves a
 +// replacement FairPlay CDM for the next renderer.
@@ -18517,10 +18596,12 @@
  TEST_F(PipelineImplTest, EncryptedStream_SetCdmBeforeStart) {
    CreateEncryptedVideoStream();
    SetDemuxerExpectations();
-@@ -900,6 +1144,110 @@
+@@ -898,8 +1179,112 @@
+   EXPECT_CALL(*renderer_, GetMediaTime())
+       .WillRepeatedly(Return(base::Seconds(1)));
    EXPECT_EQ(kMediaTime, pipeline_->GetMediaTime());
- }
- 
++}
++
 +// Parc: a player's real jump back (Safari's native HLS route) passes the clamp
 +// once.
 +TEST_F(PipelineImplTest, ParcResetMediaTimeClampLetsTimeGoBackOnce) {
@@ -18540,8 +18621,8 @@
 +  EXPECT_CALL(*renderer_, GetMediaTime())
 +      .WillRepeatedly(Return(base::Milliseconds(500)));
 +  EXPECT_EQ(base::Seconds(1), pipeline_->GetMediaTime());
-+}
-+
+ }
+ 
 +// Parc: a negative rate turns a file's renderer backward through a flush the
 +// page doesn't hear as a seek; the demuxer seeks backward playback asks for
 +// stay in the pipeline, and a rate of 0 or more turns it forward again from
@@ -22624,7 +22705,7 @@
  };
  
  class MockRenderer : public Renderer {
-@@ -543,6 +551,10 @@
+@@ -543,6 +551,14 @@
    MOCK_METHOD2(OnSelectedAudioTracksChanged,
                 void(std::vector<raw_ptr<DemuxerStream>>, base::OnceClosure));
    RendererType GetRendererType() override { return renderer_type_; }
@@ -22632,6 +22713,10 @@
 +               void(base::TimeDelta time,
 +                    double playback_rate,
 +                    ParcSeekDemuxerCB seek_demuxer_cb));
++  MOCK_METHOD3(ParcSetPlaybackRateAt,
++               void(double playback_rate,
++                    base::TimeDelta time,
++                    base::TimeTicks host_time));
  
    base::WeakPtr<MockRenderer> AsWeakPtr() {
      return weak_ptr_factory_.GetWeakPtr();

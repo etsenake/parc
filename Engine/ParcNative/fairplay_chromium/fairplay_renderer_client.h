@@ -84,6 +84,11 @@ class FairPlayRendererClient final
   // Taking over from Chromium's renderer (Pipeline::ParcHandOffToFairPlay()),
   // the video hole frame is painted only once shown.
   void ParcSetHidden(bool hidden) override;
+  // Through FairPlayRendererExtension.SetPlaybackRateAt; dropped before the
+  // GPU process sent the extension (the pipeline then starts it at the swap).
+  void ParcSetPlaybackRateAt(double playback_rate,
+                             base::TimeDelta time,
+                             base::TimeTicks host_time) override;
 
   // RendererClient implementation, forwarded to the pipeline's client.
   void OnError(PipelineStatus status) override;

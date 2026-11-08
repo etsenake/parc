@@ -72,6 +72,11 @@ class FairPlayRendererAdapter final
   void Flush(base::OnceClosure flush_cb) override;
   void StartPlayingFrom(base::TimeDelta time) override;
   void SetPlaybackRate(double playback_rate) override;
+  // FairPlayRendererExtension.SetPlaybackRateAt
+  // (FairPlayRenderer::SetPlaybackRateAt).
+  void SetPlaybackRateAt(double playback_rate,
+                         base::TimeDelta time,
+                         base::TimeTicks host_time);
   void SetVolume(float volume) override;
   base::TimeDelta GetMediaTime() override;
   RendererType GetRendererType() override;

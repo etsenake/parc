@@ -229,6 +229,16 @@ class FairPlayRenderer {
   // before |time| are decoded but not displayed.
   void StartPlayingFrom(MediaTime time);
   void SetPlaybackRate(double rate);
+  // SetPlaybackRate on another renderer's clock, to take over from it
+  // without a gap: the clock reads |time| at |host_time_us| (mach absolute
+  // time in microseconds, base::TimeTicks' clock on macOS), in the past or
+  // the future, and runs at |rate| along that line. Held, like any rate,
+  // until HAVE_ENOUGH; a line the clock can no longer meet at its start time
+  // before it first ran starts it from there instead. SetPlaybackRate,
+  // StartPlayingFrom, Flush and a stall drop the line. Ignored (false) after
+  // Flush or SetPlaybackRate until StartPlayingFrom, as one sent before them
+  // may arrive late.
+  bool SetPlaybackRateAt(double rate, MediaTime time, int64_t host_time_us);
   // HTMLMediaElement.preservesPitch (true until set): with the rate, picks
   // the audio renderer's pitch algorithm as WebKit does.
   void SetPreservesPitch(bool preserves_pitch);

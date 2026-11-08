@@ -2823,50 +2823,166 @@ std::vector<Step> VideoSwitchScenario() {
   return steps;
 }
 
+// The host clock (mach absolute time) in microseconds, base::TimeTicks'.
+int64_t HostNowUs() {
+  return CMTimeConvertScale(CMClockGetTime(CMClockGetHostTimeClock()), 1000000,
+                            kCMTimeRoundingMethod_RoundTowardZero)
+      .value;
+}
+
 // Taking over from Chromium's renderer (PipelineImpl's hand-off), the
-// FairPlay Renderer is prerolled paused at the split and set playing when
-// the other reaches it: how long its clock takes to move then is the gap
-// someone hears and sees at the swap.
+// FairPlay Renderer prerolls paused at the split while the other plays up to
+// it. How far its clock trails the other's line once past the split is the
+// gap someone sees (the last frame held) and hears (silence) at the swap.
+// Set playing only once the other reaches the split, as the pipeline did
+// before, it trails by its start (40-65 ms here); on the other's clock
+// (SetPlaybackRateAt) it must not.
 std::vector<Step> HandOffStartScenario() {
   World* w = g_world;
-  auto latencies = std::make_shared<std::vector<double>>();
+  const double frame = double(w->video.segments[0][0].duration) / w->video.info.timescale;
+  enum class Mode { kSetPlaying, kOnClock, kOnClockBeforeReady, kOnClockPaused, kLate };
+  struct Round {
+    Mode mode;
+    const char* name;
+  };
+  const Round rounds[] = {
+      {Mode::kSetPlaying, "set playing at the split"},
+      {Mode::kOnClock, "on the other's clock"},
+      {Mode::kOnClock, "on the other's clock, again"},
+      {Mode::kOnClockBeforeReady, "on the other's clock, given before HAVE_ENOUGH"},
+      {Mode::kOnClockPaused, "on the other's clock, paused on the way"},
+      {Mode::kLate, "on a line already past the split before HAVE_ENOUGH"},
+  };
   std::vector<Step> steps;
-  steps.push_back(Section("prerolled paused at a split, then set playing: the swap's gap"));
-  for (int round = 0; round < 3; ++round) {
-    const double split = 10 + 5 * round;
+  steps.push_back(Section("prerolled paused at a split, then taking over: the swap's gap"));
+  for (size_t round = 0; round < std::size(rounds); ++round) {
+    const Mode mode = rounds[round].mode;
+    const std::string label = Format("hand-off-start (%s)", rounds[round].name);
+    const double split = 10 + 5 * double(round);
     steps.push_back([=](Done done) {
       w->player = std::make_shared<Player>("hand-off-start", Framing::kChromium, &w->video, &w->audio,
                                            w->main_keys->cdm.get(), w->host);
       w->player->renderer().Flush([=] {
         const size_t first = SegmentAt(w->video, split);
         w->player->SetFeeds(Segments(w->video, first, first + 2), Segments(w->audio, first, first + 2), false);
-        auto ready = Once(10, "hand-off-start: HAVE_ENOUGH paused at the split", [=](bool) {
-          // Paused there, as until the playing renderer ends its part.
-          After(0.5, [=] {
-            const double at = w->player->Time();
-            const double wall = CFAbsoluteTimeGetCurrent();
-            w->player->renderer().SetPlaybackRate(1);
-            WaitUntil(2, [=] { return w->player->Time() > at + 0.001; }, [=](bool moved) {
-              const double latency = CFAbsoluteTimeGetCurrent() - wall;
-              Check(moved && std::fabs(at - split) < 0.05,
-                    Format("hand-off-start: the clock leaves the split (%.3fs) once playing", at));
-              latencies->push_back(latency);
-              Log("hand-off-start: clock moved %.3fs after the rate was set", latency);
-              done();
-            });
-          });
+        // The other renderer reaches the split at host time *reach (µs).
+        auto reach = std::make_shared<int64_t>(0);
+        auto follow = [=](double rate, int64_t at) {
+          const int64_t now = HostNowUs();
+          const double time = split - double(at - now) * 1e-6;
+          w->player->renderer().SetPlaybackRateAt(rate, fp::MediaTime::FromMicroseconds(int64_t(time * 1e6)), now);
+        };
+        // Samples the clock against the other's line until 0.6 s past the
+        // split: from it on (a clock held there, then caught up, counts the
+        // hold), and before it once the clock is past the split (early).
+        auto measure = [=](Done measured) {
+          auto lags = std::make_shared<std::vector<double>>();
+          auto sample = std::make_shared<std::function<void()>>();
+          *sample = [=, weak = std::weak_ptr<std::function<void()>>(sample)] {
+            const double t = w->player->Time();
+            const int64_t host = HostNowUs();
+            const double line = split + double(host - *reach) * 1e-6;
+            if (host >= *reach || t > split) {
+              lags->push_back(line - t);
+            }
+            if (host <= *reach + 600000) {
+              // The pending call owns the sampler; it holds itself weakly.
+              if (auto next = weak.lock()) {
+                After(0.004, [next] { (*next)(); });
+              }
+              return;
+            }
+            std::vector<double> sorted = *lags;
+            std::sort(sorted.begin(), sorted.end());
+            const double worst = sorted.empty() ? 1 : std::max(std::fabs(sorted.front()), std::fabs(sorted.back()));
+            const double median = sorted.empty() ? 1 : sorted[sorted.size() / 2];
+            Log("%s: clock trails the other's line by %.1f ms (median, %zu samples; worst %.1f ms)", label.c_str(),
+                median * 1e3, sorted.size(), worst * 1e3);
+            if (mode == Mode::kSetPlaying) {
+              Log("%s: as before taking over on the clock, the swap held the picture and paused the sound %.1f ms",
+                  label.c_str(), worst * 1e3);
+            } else {
+              Check(sorted.size() >= 50, Format("%s: the switch sampled", label.c_str()),
+                    Format("%zu samples", sorted.size()));
+              Check(worst < frame,
+                    Format("%s: the picture carries on within a frame (%.1f ms) of the other's last", label.c_str(),
+                           frame * 1e3),
+                    Format("worst %.1f ms", worst * 1e3));
+              // The synchronizer's clock, which AVFoundation plays the audio by.
+              Check(worst < 0.005, Format("%s: the clock is within 5 ms of the other's, so no silence at the switch",
+                                          label.c_str()),
+                    Format("worst %.1f ms", worst * 1e3));
+            }
+            measured();
+          };
+          (*sample)();
+        };
+        auto ready = Once(10, label + ": HAVE_ENOUGH paused at the split", [=](bool) {
+          if (mode == Mode::kOnClockBeforeReady) {
+            // Already on the line, before the split.
+            Check(HostNowUs() < *reach && w->player->Time() <= split + 0.002,
+                  Format("%s: prerolled before the other reaches the split (%.3fs)", label.c_str(),
+                         w->player->Time()));
+          } else {
+            Check(std::fabs(w->player->Time() - split) < 0.05,
+                  Format("%s: prerolled at the split (%.3fs)", label.c_str(), w->player->Time()));
+          }
+          switch (mode) {
+            case Mode::kSetPlaying:
+              *reach = HostNowUs() + 300000;
+              After(0.3, [=] { w->player->renderer().SetPlaybackRate(1); });
+              measure(done);
+              break;
+            case Mode::kOnClock:
+              *reach = HostNowUs() + 300000;
+              follow(1, *reach);
+              measure(done);
+              break;
+            case Mode::kOnClockBeforeReady:
+              measure(done);
+              break;
+            case Mode::kOnClockPaused:
+              *reach = HostNowUs() + 300000;
+              follow(1, *reach);
+              // The other pauses about 0.2 s before the split for 0.25 s,
+              // then plays on from where it paused.
+              After(0.1, [=] {
+                follow(0, *reach);
+                const double paused = w->player->Time();
+                After(0.25, [=] {
+                  const double held = w->player->Time();
+                  Check(paused < split - 0.1 && std::fabs(held - paused) < 0.003,
+                        Format("%s: paused with the other (%.3fs, then %.3fs)", label.c_str(), paused, held));
+                  *reach = HostNowUs() + int64_t((split - held) * 1e6);
+                  follow(1, *reach);
+                  measure(done);
+                });
+              });
+              break;
+            case Mode::kLate:
+              // The other passed the split long before: it plays from there.
+              WaitUntil(1, [=] { return w->player->Time() > split + 0.05; }, [=](bool moved) {
+                Check(moved && w->player->Time() < split + 0.3,
+                      Format("%s: plays from the split (%.3fs)", label.c_str(), w->player->Time()));
+                done();
+              });
+              break;
+          }
         });
         w->player->on_have_enough = [ready] { ready(true); };
+        // Paused (rate 0) at the split, as PipelineImpl's ParcOnSplit leaves it.
         w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(int64_t(split * 1e6)));
-        w->player->renderer().SetPlaybackRate(0);
+        if (mode == Mode::kOnClockBeforeReady) {
+          *reach = HostNowUs() + 700000;
+          follow(1, *reach);
+        } else if (mode == Mode::kLate) {
+          *reach = HostNowUs() - 1000000;
+          follow(1, *reach);
+        }
       });
     });
   }
   steps.push_back([=](Done done) {
-    double worst = 0;
-    for (double latency : *latencies) worst = std::max(worst, latency);
-    Check(latencies->size() == 3 && worst < 0.1,
-          Format("hand-off-start: the FairPlay Renderer starts within %.3fs of being set playing", worst));
     w->player.reset();
     done();
   });

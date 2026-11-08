@@ -397,12 +397,19 @@ OS or PiP/casting/background-tab runtime acceptance.
   reaches end of stream there, the FairPlay Renderer prerolls paused from
   it, and at that end the pipeline swaps them, painting the video hole frame
   and setting the FairPlay Renderer playing. The page sees nothing: no
-  `waiting`, `playing` or `ended`. What someone notices at the switch is the
-  FairPlay Renderer's start: its clock moves 40 to 65 ms after it is set
-  playing on this Mac (`HandOffStartScenario`, an upper bound, as its
-  timebase reads back in steps), so the picture holds and the sound pauses
-  that long at the keyframe, where Safari plays straight through; casting,
-  picture in picture and background tabs see the same. A seek during the
+  `waiting`, `playing` or `ended`. Once prerolled, the FairPlay Renderer runs
+  hidden on Chromium's renderer's clock
+  (`RendererWrapper::ParcFollowPlayingClock`, the core's
+  `SetPlaybackRateAt`, as WebKit's `setRateAtHostTime`): from that clock's
+  time now, at its rate, and stopped while it pauses or stalls. So at the
+  split the last old frame and sound end where the first new ones begin:
+  `HandOffStartScenario` measures its clock within 2 ms of the other's line
+  (set playing only at the swap, as before, it trailed by 40 to 95 ms, which
+  someone saw as a held picture and heard as a pause). The video hole frame
+  then replaces Chromium's last frame on the compositor's next frame, which
+  that frame waits for. A FairPlay Renderer prerolled too late to
+  meet the split starts from it at the swap, as before. Casting, picture in
+  picture and background tabs see the same. A seek during the
   hand-off completes it at once (before the split it ends it, and the
   pipeline restarts as before); a suspend ends it, the resume making the
   FairPlay Renderer; a CDM change or turning backward ends it and restarts;

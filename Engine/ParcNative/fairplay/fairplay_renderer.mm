@@ -68,6 +68,8 @@ constexpr double kStallArmSeconds = 0.25;
 // How far ahead of the clock an audio renderer replacing another starts: its
 // first sample must reach it before the clock does (ReplaceRenderers).
 constexpr double kAudioHandOffLeadSeconds = 0.25;
+// SetPlaybackRateAt: how far past its start a held clock may join the line.
+constexpr double kLateAnchorSeconds = 0.02;
 
 class ScopedFormat {
  public:
@@ -1238,6 +1240,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // rate is kept and applied then.
   void StartPlayingFrom(MediaTime time) {
     start_time_ = time;
+    anchor_.reset();
+    follows_ = true;
+    clock_ran_ = false;
     ended_ = false;
     have_enough_ = false;
     renderers_have_samples_ = false;
@@ -1263,10 +1268,51 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   }
 
   void SetPlaybackRate(double rate) {
+    anchor_.reset();
+    // Playing by itself: a SetPlaybackRateAt still on its way from before
+    // (another pipe) no longer applies.
+    follows_ = false;
+    SetRate(rate);
+  }
+
+  // WebKit's AudioVideoRendererAVFObjC::setRateAtHostTime: the synchronizer
+  // is set so its clock reads |time| at the host time, as another renderer's
+  // does, starting early or catching up as needed.
+  bool SetPlaybackRateAt(double rate, MediaTime time, int64_t host_time_us) {
+    if (!follows_) {
+      return false;
+    }
+    anchor_ = Anchor{ToCMTime(time), CMTimeMake(host_time_us, 1000000)};
+    SetRate(rate);
+    return true;
+  }
+
+  void SetRate(double rate) {
     status_.rate = static_cast<float>(rate);
     UpdatePitchAlgorithm();
     if (!clock_held_) {
-      synchronizer_.rate = static_cast<float>(rate);
+      RunClock();
+    }
+  }
+
+  // The requested rate, on the anchored line if one is pending. Before the
+  // clock first ran, a line already past the start time (ready too late to
+  // take over on that clock) is left: the renderer plays from its start.
+  void RunClock() {
+    std::optional<Anchor> anchor = std::exchange(anchor_, std::nullopt);
+    if (anchor && !clock_ran_ && status_.rate > 0) {
+      const double now = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()));
+      const double at = CMTimeGetSeconds(anchor->time) +
+                        (now - CMTimeGetSeconds(anchor->host_time)) * status_.rate;
+      if (at > start_time_.InSeconds() + kLateAnchorSeconds) {
+        anchor.reset();
+      }
+    }
+    clock_ran_ |= status_.rate > 0;
+    if (anchor) {
+      [synchronizer_ setRate:status_.rate time:anchor->time atHostTime:anchor->host_time];
+    } else if (synchronizer_.rate != status_.rate) {
+      synchronizer_.rate = status_.rate;
     }
   }
 
@@ -1382,6 +1428,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     video_due_ = {};
     synchronizer_.rate = 0;
     status_.rate = 0;
+    anchor_.reset();
+    follows_ = false;
     RemoveEndObserver();
     // A size not shown yet waits for the next sample queued.
     RemoveSizeObservers();
@@ -3060,7 +3108,11 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return;
     }
     clock_held_ = !run;
-    synchronizer_.rate = run ? status_.rate : 0;
+    if (run) {
+      RunClock();
+    } else {
+      synchronizer_.rate = 0;
+    }
   }
 
   // From the clock observer (every 0.1 s of media time while it runs).
@@ -3171,6 +3223,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     RemoveStallObserver();
     have_enough_ = false;
     clock_held_ = true;
+    anchor_.reset();
     // Never back before where playback started or seeked to.
     if (start_time_.IsValid()) {
       stall = std::max(stall, start_time_.InSeconds());
@@ -3350,6 +3403,15 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // The clock waits for HAVE_ENOUGH and renderers with samples (start, seek
   // or stall).
   bool clock_held_ = true;
+  // SetPlaybackRateAt's line, until the clock runs on it.
+  struct Anchor {
+    CMTime time;
+    CMTime host_time;
+  };
+  std::optional<Anchor> anchor_;
+  // SetPlaybackRateAt applies from StartPlayingFrom until SetPlaybackRate.
+  bool follows_ = false;
+  bool clock_ran_ = false;  // At a rate above 0 since StartPlayingFrom.
   bool awaiting_video_config_ = false;  // Record comes from the next keyframe.
   std::vector<std::vector<uint8_t>> parameter_sets_;  // Behind the current record.
   std::vector<uint8_t> av1_sequence_header_;
@@ -3446,6 +3508,10 @@ void FairPlayRenderer::StartPlayingFrom(MediaTime time) {
 
 void FairPlayRenderer::SetPlaybackRate(double rate) {
   impl_->SetPlaybackRate(rate);
+}
+
+bool FairPlayRenderer::SetPlaybackRateAt(double rate, MediaTime time, int64_t host_time_us) {
+  return impl_->SetPlaybackRateAt(rate, time, host_time_us);
 }
 
 void FairPlayRenderer::SetPreservesPitch(bool preserves_pitch) {

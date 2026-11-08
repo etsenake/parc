@@ -275,6 +275,15 @@ void FairPlayRendererClient::ParcSetHidden(bool hidden) {
   PaintHoleFrame();
 }
 
+void FairPlayRendererClient::ParcSetPlaybackRateAt(double playback_rate,
+                                                   base::TimeDelta time,
+                                                   base::TimeTicks host_time) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (renderer_extension_) {
+    renderer_extension_->SetPlaybackRateAt(playback_rate, time, host_time);
+  }
+}
+
 void FairPlayRendererClient::OnError(PipelineStatus status) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   client_->OnError(std::move(status));

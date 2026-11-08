@@ -66,6 +66,7 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `DemuxerStream::Read` loop | `OnNeedData` + `IsReadyForMoreData` + `Enqueue(EncodedSample)` |
 | `DecoderBuffer` + `DecryptConfig` | `EncodedSample` + `DecryptInfo` |
 | `StartPlayingFrom` / `SetPlaybackRate` / `SetVolume` / `Flush` / `GetMediaTime` | same names (plus `SetMuted`); the rate picks the audio renderer's pitch algorithm as WebKit's `AudioVideoRendererAVFObjC` does (Spectral off 1x, else Varispeed) |
+| `Renderer::ParcSetPlaybackRateAt` (Parc) | `SetPlaybackRateAt`: the rate on another renderer's clock (a time at a host time), as WebKit's `setRateAtHostTime`, so a hand-off from Chromium's renderer has no gap |
 | `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set; the GPU adapter has no call for it yet, as `media::mojom::Renderer` carries none) |
 | `RendererClient::OnWaiting(kNoDecryptionKey)` | `OnWaitingForKey` |
 | `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names; a later natural size is reported when the clock reaches its first sample (WebKit's `sizeWillChangeAtTime`) |

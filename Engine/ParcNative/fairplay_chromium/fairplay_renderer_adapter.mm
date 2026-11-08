@@ -555,6 +555,19 @@ void FairPlayRendererAdapter::SetPlaybackRate(double playback_rate) {
   UpdateStatisticsTimer();
 }
 
+void FairPlayRendererAdapter::SetPlaybackRateAt(double playback_rate,
+                                                base::TimeDelta time,
+                                                base::TimeTicks host_time) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // base::TimeTicks counts mach absolute time on macOS.
+  if (core_initialized_ &&
+      core_->SetPlaybackRateAt(playback_rate, ToMediaTime(time),
+                               host_time.since_origin().InMicroseconds())) {
+    playback_rate_ = playback_rate;
+    UpdateStatisticsTimer();
+  }
+}
+
 void FairPlayRendererAdapter::SetVolume(float volume) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // The pipeline sets the volume before Initialize, when the core has no
