@@ -402,12 +402,15 @@ OS or PiP/casting/background-tab runtime acceptance.
   playing on this Mac (`HandOffStartScenario`, an upper bound, as its
   timebase reads back in steps), so the picture holds and the sound pauses
   that long at the keyframe, where Safari plays straight through; casting,
-  picture in picture and background tabs see the same. A seek, suspend,
-  CDM or track change during the hand-off completes it at once, or before
-  the split ends it, and the pipeline restarts as before. It also restarts,
-  with one rebuffer, where no hand-off is possible: while suspended or
-  seeking, playing backward, outside Safari's Media Source, or when the
-  FairPlay Renderer can't play the current codecs (below). The FairPlay
+  picture in picture and background tabs see the same. A seek during the
+  hand-off completes it at once (before the split it ends it, and the
+  pipeline restarts as before); a suspend ends it, the resume making the
+  FairPlay Renderer; a CDM change or turning backward ends it and restarts;
+  track changes wait for it; one asked for during a seek starts once the
+  seek is done. It also restarts, with one rebuffer, where no hand-off is
+  possible: while playing backward, during a resume or track switch, outside
+  Safari's Media Source, or when the FairPlay Renderer can't play the
+  current codecs (below). The FairPlay
   Renderer itself takes keys at any time (`SetCdm` after media, in the
   core's README): after a clear start or clear Dolby Vision without keys,
   and when the page replaces its MediaKeys, new renderers join the key
