@@ -651,6 +651,15 @@ import AppKit
                   "Only the departing pane leaves the arranged list")
         try check(second.superview === live && second.frame.width > 0,
                   "A departing pane stays on screen where it was until its owner parks it")
+        let heldWidth = second.frame.width, heldHeight = second.frame.height, areaWidth = live.bounds.width
+        second.autoresizingMask = [.width, .height, .minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+        live.setFrameSize(NSSize(width: live.frame.width + 200, height: live.frame.height + 100))
+        try check(abs(second.frame.width - (heldWidth + 200 * heldWidth / areaWidth)) < 1 && second.frame.height > heldHeight,
+                  "A pane held outside the arrangement follows the page area's size by its share")
+        second.autoresizingMask = []
+        let released = second.frame
+        live.setFrameSize(NSSize(width: live.frame.width - 200, height: live.frame.height - 100))
+        try check(second.frame == released, "A released pane keeps its frame until it is parked")
         print("PASS: \(count) original native divider/store checks (no browser)")
     }
 }

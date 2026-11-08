@@ -4022,8 +4022,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let arriving = wanted.filter { view in !previous.contains { $0 === view } }.compactMap { $0 as? BrowserPane }
         let drawing = displayed.compactMap { tab in drawsReportedFrame(tab) ? panes[tab.id] : nil }
         let leavingPanes = leaving.compactMap { $0 as? BrowserPane }
-        let parking = switchHold.rearrange(leaving: leavingPanes, arriving: arriving,
-                                           drawing: drawing, canHold: canHoldPageSwitch)
+        let hold = switchHold.hold
+        let parking = switchHold.rearrange(leaving: leavingPanes, arriving: arriving, drawing: drawing,
+                                           canHold: canHoldPageSwitch, now: ProcessInfo.processInfo.systemUptime)
         for case let pane as BrowserPane in wanted { pane.heldOverSwitch = false }
         retirePages(leavingPanes)
         for pane in switchHold.held { pane.heldOverSwitch = true }
@@ -4034,7 +4035,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     if let page = pane.browser?.nativePage { binding.reportNextFrame(of: page) }
                 }
             }
-            scheduleSwitchHoldCap()
+            if switchHold.hold != hold { scheduleSwitchHoldCap() }
         }
         for (id, pane) in panes {
             pane.contentResize.mode = displayedIDs.contains(id) ? contentResizeReasons.mode : .intrinsic
@@ -7863,11 +7864,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               page.responds(to: #selector(getter: PCNativePage.pageBackgroundColor)) else { return false }
         return page.pageBackgroundColor != nil
     }
+    /// One timer per hold, for the time left until its deadline; switching
+    /// again while it is up never extends it.
     private func scheduleSwitchHoldCap() {
-        let generation = switchHold.generation
-        DispatchQueue.main.asyncAfter(deadline: .now() + PageSwitchHold<BrowserPane>.cap) { [weak self] in
-            guard let self else { return }
-            self.finishPageSwitch(self.switchHold.expire(generation))
+        guard let deadline = switchHold.deadline else { return }
+        let hold = switchHold.hold
+        let remaining = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+        DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
+            guard let self, self.switchHold.hold == hold, self.switchHold.isHolding else { return }
+            let ended = self.switchHold.expire(at: ProcessInfo.processInfo.systemUptime)
+            if ended.isEmpty { self.scheduleSwitchHoldCap() } else { self.finishPageSwitch(ended) }
         }
     }
     private func finishPageSwitch(_ ended: [BrowserPane]) {
@@ -16049,7 +16055,7 @@ private final class BrowserPane: NSView {
     var heldOverSwitch = false {
         didSet {
             guard heldOverSwitch != oldValue else { return }
-            wantsLayer = true; layer?.zPosition = heldOverSwitch ? 1 : 0
+            HeldPaneLayout.apply(heldOverSwitch, to: self)
         }
     }
     override func hitTest(_ point: NSPoint) -> NSView? { heldOverSwitch ? nil : super.hitTest(point) }

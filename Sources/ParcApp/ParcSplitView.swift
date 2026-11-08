@@ -873,6 +873,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if !isApplyingLayout, dropReservation?.isCurrent == false { retireDropReservation() }
         if isTrackingDivider, resize?.bounds != bounds { finishDividerResize(commit: false) }
         else if !isTrackingDivider { applySavedFrames() }
+        guard bounds.size != oldSize else { return }
+        // A view kept here outside the arrangement (a pane held over a tab
+        // switch) follows the page area by its autoresizing mask.
+        for view in subviews where !arrangedSubviews.contains(where: { $0 === view }) && !view.autoresizingMask.isEmpty {
+            view.resize(withOldSuperviewSize: oldSize)
+        }
     }
     func adjustSubviews() {
         if !isTrackingDivider { applySavedFrames() }
