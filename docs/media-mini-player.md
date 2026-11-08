@@ -31,21 +31,39 @@ On Chrome-identity pages the same last button is Cast, with Chromium's Cast
 glyph (`media_router_idle`, drawn at AirPlay's 13-point ink width) and
 AirPlay's style and states: held selected while the chooser is open, the
 connecting pulse, the Space-contrast tint, "Connecting to <device>" and
-"Casting to <device>". It shows once a receiver answers the session's remote
-playback source and the media can be cast: one player, Remote Playback not
-disabled, known codecs, longer than 15 seconds, not encrypted (FairPlay and
-Widevine can't be cast) and no default presentation request. Pressing it opens Chromium's global
-media controls dialog for that page's session at the button, the dialog a
-page's Remote Playback prompt opens, even for a background tab. Choosing a
-device starts Chromium's media session remote playback, as Chrome's own
-media controls do (`CreateCastDialogControllerForSession`, then
-`RequestMediaRemoting`), so the cast takes the requested-remoting path
-that keeps it alive across navigation, the back/forward cache, background
-tabs and frozen pages. While it casts, the dialog offers Stop casting. The
-state follows the router's remote playback route for that tab and the
-player's `remote_playback_started`: Connecting until the receiver plays,
-Connected after (or at once when Chromium mirrors the tab instead), and back to available when the TV or the user ends it
-(`native_gmc_presentation.mm`).
+"Casting to <device>".
+
+A page with a default presentation request, as Cast SDK sites such as
+YouTube set, casts that presentation, as Chrome's media controls and toolbar
+do (`CreateWithDefaultMediaSource`), so the site's own receiver app plays it.
+The button shows once a receiver answers one of the request's presentation
+URLs. Choosing a device starts the presentation, and the page receives its
+connection (`OnPresentationResponse`). The state follows the router's route:
+Connecting while a local route for one of those URLs launches (the page only
+learns its route once it connects, so a second tab of the same site shows
+Connecting for that moment too), then Casting while the route the page started
+lives, and back to available when the TV, the site or Stop casting ends it.
+While it casts, the dialog shows the page's Cast item with Stop casting.
+
+Any other page casts its media session's remote playback source. The button
+shows once a receiver answers that source and the media can be cast: one
+player, Remote Playback not disabled, known codecs, longer than 15 seconds,
+not encrypted (FairPlay and Widevine can't be cast). Pressing it opens
+Chromium's global media controls dialog for that page's session at the
+button, the dialog a page's Remote Playback prompt opens, even for a
+background tab. Choosing a device starts Chromium's media session remote
+playback, as Chrome's own media controls do
+(`CreateCastDialogControllerForSession`, then `RequestMediaRemoting`), so the
+cast takes the requested-remoting path that keeps it alive across navigation,
+the back/forward cache, background tabs and frozen pages. Remoting is
+requested once the launch succeeds; if the page left meanwhile, the launch
+ends rather than casting the next page's video. While it casts, the dialog
+offers Stop casting. The state follows the router's remote playback
+route for that tab and the player's `remote_playback_started`: Connecting
+until the receiver plays, Connected after (tab mirroring, where Chromium falls
+back to it, once its route connects), and back to available when the TV or
+the user ends it. `MediaNotificationService::ParcCastRouteForWebContents`
+picks the route for both kinds of page (`native_gmc_presentation.mm`).
 
 ## Volume adaptation
 

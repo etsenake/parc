@@ -1,6 +1,7 @@
 // Copyright 2026 Parc contributors.
 #include "native_gmc_presentation.h"
 #import <AppKit/AppKit.h>
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -35,6 +36,8 @@
 #include "components/sessions/content/session_tab_helper.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/presentation_observer.h"
+#include "content/public/browser/presentation_request.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
@@ -488,28 +491,40 @@ std::optional<media_router::MediaSource> CastSource(content::WebContents* conten
       sessions::SessionTabHelper::IdForTab(contents).id(), video, audio);
 }
 
-// Watches the receivers for |contents|' cast source and its tab's route,
-// matched as GetSessionRoute() matches it in Chrome's media controls: the
-// session's remote playback, or mirroring the tab where Chromium falls back
-// to it, which the dialog also shows as casting.
+// Watches the receivers for |contents|' cast and the route casting it
+// (MediaNotificationService::ParcCastRouteForWebContents()). A page with a
+// default presentation request casts it, as Chrome's media controls and
+// toolbar do (CreateWithDefaultMediaSource()), so the site's own receiver app
+// plays; any other page casts its session's remote playback source.
 class MediaCastWatcher final
-    : public content::WebContentsUserData<MediaCastWatcher> {
+    : public content::WebContentsUserData<MediaCastWatcher>,
+      public content::PresentationObserver {
  public:
+  ~MediaCastWatcher() override {
+    if (presentations_)
+      presentations_->RemoveObserver(this);
+  }
   NativeMediaCastState State() {
     Update();
-    if (!CastsAsChrome(&GetWebContents()))
+    if (!CastsAsChrome(&GetWebContents()) || !routes_)
       return {};
-    if (route_) {
-      auto* session = content::MediaSession::GetIfExists(&GetWebContents());
-      const auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
-      const bool started = route_->media_source().IsTabMirroringSource() ||
-                           (info && info->remote_playback_metadata &&
-                            info->remote_playback_metadata->remote_playback_started);
+    const auto route = MediaNotificationService::ParcCastRouteForWebContents(
+        &GetWebContents(), routes_->router()->GetCurrentRoutes());
+    if (route) {
+      bool started = !route->is_connecting();
+      if (route->media_source().IsRemotePlaybackSource()) {
+        auto* session = content::MediaSession::GetIfExists(&GetWebContents());
+        const auto info = session ? session->GetMediaSessionInfoSync() : nullptr;
+        started = info && info->remote_playback_metadata &&
+                  info->remote_playback_metadata->remote_playback_started;
+      }
       return {static_cast<int>(started ? PCNativeCastStateConnected : PCNativeCastStateConnecting),
-              route_->media_sink_name()};
+              route->media_sink_name()};
     }
-    return {static_cast<int>(sinks_ && sinks_available_ ? PCNativeCastStateAvailable
-                                                        : PCNativeCastStateUnavailable), {}};
+    const bool available = std::ranges::any_of(
+        sinks_, [](const auto& sinks) { return sinks->available(); });
+    return {static_cast<int>(available ? PCNativeCastStateAvailable
+                                       : PCNativeCastStateUnavailable), {}};
   }
 
  private:
@@ -519,19 +534,20 @@ class MediaCastWatcher final
     Sinks(media_router::MediaRouter* router, const media_router::MediaSource& source,
           const url::Origin& origin, MediaCastWatcher* owner)
         : MediaSinksObserver(router, source, origin), owner_(owner) {}
+    bool available() const { return available_; }
    private:
     void OnSinksReceived(const std::vector<media_router::MediaSink>& sinks) override {
-      owner_->sinks_available_ = !sinks.empty();
+      available_ = !sinks.empty();
       NativeMediaCastChanged(&owner_->GetWebContents());
     }
     const raw_ptr<MediaCastWatcher> owner_;
+    bool available_ = false;
   };
   class Routes final : public media_router::MediaRoutesObserver {
    public:
     Routes(media_router::MediaRouter* router, MediaCastWatcher* owner)
         : MediaRoutesObserver(router), owner_(owner) {}
-    void OnRoutesUpdated(const std::vector<media_router::MediaRoute>& routes) override {
-      owner_->Match(routes);
+    void OnRoutesUpdated(const std::vector<media_router::MediaRoute>&) override {
       NativeMediaCastChanged(&owner_->GetWebContents());
     }
    private:
@@ -540,6 +556,12 @@ class MediaCastWatcher final
 
   explicit MediaCastWatcher(content::WebContents* contents)
       : content::WebContentsUserData<MediaCastWatcher>(*contents) {}
+  void OnPresentationsChanged(bool) override {
+    NativeMediaCastChanged(&GetWebContents());
+  }
+  void OnDefaultPresentationChanged(const content::PresentationRequest*) override {
+    NativeMediaCastChanged(&GetWebContents());
+  }
   // Never from a router callback: it adds and removes router observers.
   void Update() {
     auto* contents = &GetWebContents();
@@ -549,52 +571,60 @@ class MediaCastWatcher final
         ? media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(profile)
         : nullptr;
     if (!routes_ || routes_->router() != router) {
-      sinks_.reset();
+      sinks_.clear();
+      sources_.clear();
       routes_.reset();
-      route_.reset();
       if (!router)
         return;
       routes_ = std::make_unique<Routes>(router, this);
-      Match(router->GetCurrentRoutes());
     }
-    const auto source = CastSource(contents);
-    if (!source) {
-      sinks_.reset();
-    } else if (!sinks_ || sinks_->source() != *source) {
-      sinks_available_ = false;
-      sinks_ = std::make_unique<Sinks>(
-          router, *source, contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(), this);
-      sinks_->Init();
+    if (!CastsAsChrome(contents)) {
+      sinks_.clear();
+      sources_.clear();
+      return;
+    }
+    // Only with a router: the presentation manager creates its own.
+    if (!presentations_) {
+      presentations_ = media_router::WebContentsPresentationManager::Get(contents);
+      if (presentations_)
+        presentations_->AddObserver(this);
+    }
+    std::vector<media_router::MediaSource> sources;
+    url::Origin origin;
+    if (presentations_ && presentations_->HasDefaultPresentationRequest()) {
+      const auto& request = presentations_->GetDefaultPresentationRequest();
+      for (const auto& url : request.presentation_urls)
+        sources.push_back(media_router::MediaSource::ForPresentationUrl(url));
+      origin = request.frame_origin;
+    } else if (const auto source = CastSource(contents)) {
+      sources.push_back(*source);
+      origin = contents->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+    }
+    if (sources == sources_ && origin == origin_)
+      return;
+    sinks_.clear();
+    sources_ = sources;
+    origin_ = origin;
+    for (const auto& source : sources_) {
+      sinks_.push_back(std::make_unique<Sinks>(router, source, origin_, this));
+      sinks_.back()->Init();
     }
   }
-  void Match(const std::vector<media_router::MediaRoute>& routes) {
-    const int tab = sessions::SessionTabHelper::IdForTab(&GetWebContents()).id();
-    route_.reset();
-    const bool mirroring =
-        base::FeatureList::IsEnabled(media_router::kFallbackToAudioTabMirroring);
-    for (const auto& route : routes) {
-      const auto& source = route.media_source();
-      if ((source.IsRemotePlaybackSource() && source.TabIdFromRemotePlaybackSource() == tab) ||
-          (mirroring && source.IsTabMirroringSource() && source.TabId() == tab)) {
-        route_ = route;
-        return;
-      }
-    }
-  }
+  base::WeakPtr<media_router::WebContentsPresentationManager> presentations_;
   std::unique_ptr<Routes> routes_;
-  std::unique_ptr<Sinks> sinks_;
-  bool sinks_available_ = false;
-  std::optional<media_router::MediaRoute> route_;
+  std::vector<media_router::MediaSource> sources_;
+  url::Origin origin_;
+  std::vector<std::unique_ptr<Sinks>> sinks_;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 WEB_CONTENTS_USER_DATA_KEY_IMPL(MediaCastWatcher);
 
 // The Mini Player's chooser: Chromium's media controls dialog for one page's
 // media session, at the row's Cast button in the presenting window, which may
-// show another tab. With no presentation request, the session's device list
-// starts Chromium's media session remote playback
+// show another tab. The session's device list starts the page's default
+// presentation, or with none Chromium's media session remote playback
 // (CreateCastDialogControllerForSession, then OnMediaRemotingRequested), and
-// a casting session shows "Stop casting".
+// a casting page shows "Stop casting".
 class MediaCastChooser final : public content::WebContentsObserver,
                                public views::WidgetObserver {
  public:

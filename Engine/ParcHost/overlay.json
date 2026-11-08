@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 601,
+  "version": 602,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1410,12 +1410,12 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.h",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.h",
-      "sha256": "2ed9c7342bfbd801d532d434074d16068bf8cb0fb7112edfa17faaae8875a229"
+      "sha256": "f48ed0eafca7f52d7dad52a9c5b2735ba01e059234e12520f7e8af33059c077d"
     },
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
-      "sha256": "57f7f5caf8ad37d67cb0e84777c9b080aa1f9124f2ae448ea604b2c25bc83317"
+      "sha256": "be0d65e2ce35357169bcf088e0f26862edc942c7ada591e0b08a3896c3659ca7"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
@@ -3772,7 +3772,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "3096f01430f26424f29feb0fe3454958c5aa9fb362d323d120b321fdff580442",
+      "sha256": "8145a84a7b2cc3a023d83a2a940dca5a90c7f81d504b154079b0f0b162e4aac3",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3787,17 +3787,17 @@
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.cc",
           "before_sha256": "b48fc7716a23f1cd594b84db1a9b3e7c62b9f15b8d5125af45dc62de4a4aef1f",
-          "after_sha256": "b28c1e267b72e9613d380d196bcb4cdae327cdf1be479e8959641d7ff6b0cee7"
+          "after_sha256": "51d2955c83dca02ad13e5a62661891ed6d4bc940598fbe8ec2896285d51289c2"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.h",
           "before_sha256": "f54ed351b6ff7f5d519e51b9eb8a97db6239f8a0ed7355de627c341d75fd754f",
-          "after_sha256": "414c0eb094a1e6e9e68abb2f7fce08d5ef6a4535264e72957149faa544907d9c"
+          "after_sha256": "7173cb9cbab65f5e0bf6ff49e2150be12bce7f7f2921ff86214b5bc34d4a4315"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc",
           "before_sha256": "7386ce0b9e2267a443fbb2615fb3d8eb88b699dbd22bec448b5e46a0f1d9080f",
-          "after_sha256": "f45972367af6b1ca19c481540e6021a9d4608b717ce8651e6bec7dfe8118ce79"
+          "after_sha256": "6718b82a099dabff0999c3cde542cfc4a567133c60981b439be164afc35dfd3a"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc",

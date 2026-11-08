@@ -10,9 +10,9 @@ void InstallNativeGmcPresentationHandler();
 bool CloseNativeGmcPresentationForPage(content::WebContents* contents);
 
 // What the Mini Player shows for |contents|' Cast: PCNativeCastState's raw
-// value and the receiver's name. Chromium's remote playback of a media
-// session's one player, as Chrome's own media controls cast it, on
-// Chrome-identity pages.
+// value and the receiver's name. The page's default presentation, or else
+// Chromium's remote playback of its media session's one player, as Chrome's
+// own media controls cast them, on Chrome-identity pages.
 struct NativeMediaCastState {
   int state = 0;
   std::string device_name;
