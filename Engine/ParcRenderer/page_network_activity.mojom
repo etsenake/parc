@@ -1,0 +1,15 @@
+// Copyright 2026 Parc contributors.
+module parc.mojom;
+
+// Whether an ordinary page's main document has requests in flight, for the
+// browser's page-loading indicator. The browser binds the renderer's agent on
+// the main frame's associated channel and passes its observer.
+interface PageNetworkActivityObserver {
+  // Sent when the count of counted requests in flight leaves or returns to 0,
+  // and once on SetObserver.
+  DidChangeNetworkBusy(bool busy);
+};
+
+interface PageNetworkActivityAgent {
+  SetObserver(pending_associated_remote<PageNetworkActivityObserver> observer);
+};

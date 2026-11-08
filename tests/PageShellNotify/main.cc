@@ -1,4 +1,5 @@
 #include "native_page_shell_notify.h"
+#include "page_network_activity_count.h"
 
 #include <cassert>
 #include <iostream>
@@ -210,7 +211,8 @@ int main() {
   assert(!ShouldNotifyShellPayloadChange(published_capture, same_capture));
 
   // A cross-document load is held past its main document's end until the
-  // main frame is network-quiet and has painted, never past the cap.
+  // main document has had nothing in flight for the quiet window and the
+  // page has painted, never past the cap.
   using parc::LoadingHold;
   LoadingHold hold;
   assert(hold.Update(true, false, 0));
@@ -218,22 +220,26 @@ int main() {
   assert(hold.Update(true, false, 200));
   assert(hold.Update(false, false, 1000) && hold.holding());
   assert(hold.Remaining(false, 1000) == LoadingHold::kCapMs);
-  hold.Activity(1200);
+  hold.NetworkBusy(true, 1100);
+  hold.NetworkBusy(false, 1200);
   assert(hold.Update(false, true, 1600));
   assert(hold.Remaining(true, 1600) == 100);
   assert(!hold.Update(false, true, 1700) && !hold.holding());
-  hold.Activity(1800);
+  hold.NetworkBusy(true, 1800);
   assert(!hold.Update(false, true, 1800));
-  // Without a paint, or with a page that keeps fetching, the cap ends it.
+  hold.NetworkBusy(false, 1900);
+  // Without a paint, or with a page that is never idle, the cap ends it.
   hold.Committed(0);
+  hold.NetworkBusy(true, 0);
   assert(hold.Update(false, false, 0));
   for (int64_t t = 0; t < LoadingHold::kCapMs; t += 100) {
-    hold.Activity(t);
     assert(hold.Update(false, true, t));
+    assert(hold.Remaining(true, t) == LoadingHold::kCapMs - t);
   }
   assert(!hold.Update(false, true, LoadingHold::kCapMs));
+  hold.NetworkBusy(false, LoadingHold::kCapMs);
   // Already quiet and painted when the load ends: a quiet window after the
-  // last resource, not after the end.
+  // last request, not after the end.
   hold.Committed(0);
   assert(!hold.Update(false, true, 600));
   // Same-document loads are never held; a new load supersedes a hold.
@@ -246,9 +252,81 @@ int main() {
   hold.Cancel();
   assert(!hold.Update(false, false, 200));
 
+  // The renderer's count drives the hold: a slow request still downloading
+  // after a fast one finishes keeps the page loading until it ends.
+  using parc::page_network::InFlightRequests;
+  using parc::page_network::kLongLivedMs;
+  InFlightRequests count;
+  auto report = [&](int64_t now) {
+    hold.NetworkBusy(count.BusyUntil(now).has_value(), now);
+  };
+  hold.Committed(0);
+  assert(hold.Update(true, false, 50));
+  count.Start(1, 100);
+  count.Start(2, 100);
+  report(100);
+  assert(hold.Update(false, true, 1000));
+  count.Finish(1);
+  report(1100);
+  assert(hold.Update(false, true, 1700) && hold.Update(false, true, 2500));
+  assert(hold.Remaining(true, 2500) == 1000 + LoadingHold::kCapMs - 2500);
+  count.Finish(2);
+  report(2600);
+  assert(hold.Update(false, true, 3000));
+  assert(hold.Remaining(true, 3000) == 100);
+  assert(!hold.Update(false, true, 3100));
+  // Finishing an unknown or already finished request changes nothing.
+  count.Finish(2);
+  count.Finish(7);
+  assert(!count.BusyUntil(3100));
+
+  // A navigation that keeps its renderer frame commits while the old
+  // document still looks busy; the renderer's reset at commit ends it, and
+  // without that report the cap does.
+  hold.NetworkBusy(true, 0);
+  hold.Committed(100);
+  assert(hold.Update(false, true, 200));
+  hold.NetworkBusy(false, 300);
+  assert(hold.Update(false, true, 799));
+  assert(!hold.Update(false, true, 800));
+  hold.NetworkBusy(true, 900);
+  hold.Committed(1000);
+  assert(hold.Update(false, true, 1100));
+  assert(hold.Update(false, true, 1100 + LoadingHold::kCapMs - 1));
+  assert(!hold.Update(false, true, 1100 + LoadingHold::kCapMs));
+  hold.NetworkBusy(false, 1100 + LoadingHold::kCapMs);
+
+  // A long-poll stops counting kLongLivedMs after it starts, so a page whose
+  // main document is slow ends its hold on quiet, not at the cap.
+  count.Reset();
+  hold.Committed(0);
+  count.Start(3, 0);
+  assert(count.BusyUntil(0) == kLongLivedMs);
+  report(0);
+  assert(hold.Update(true, true, 3000));
+  assert(hold.Update(false, true, 3000));
+  assert(count.BusyUntil(kLongLivedMs - 1) == kLongLivedMs);
+  report(kLongLivedMs - 1);
+  assert(hold.Update(false, true, kLongLivedMs - 1));
+  assert(!count.BusyUntil(kLongLivedMs));
+  report(kLongLivedMs);
+  assert(hold.Update(false, true, kLongLivedMs + 499));
+  assert(!hold.Update(false, true, kLongLivedMs + 500));
+  // Its late finish is not a new request; the count stays empty.
+  count.Finish(3);
+  assert(!count.BusyUntil(kLongLivedMs + 600));
+  // Busy lasts until the last open request expires, and a new document
+  // starts from nothing.
+  count.Start(4, 0);
+  count.Start(5, 1000);
+  assert(count.BusyUntil(500) == 1000 + kLongLivedMs);
+  assert(count.BusyUntil(kLongLivedMs) == 1000 + kLongLivedMs);
+  count.Reset();
+  assert(!count.BusyUntil(kLongLivedMs));
+
   std::cout << "Passed native page-shell finished-navigation, loading, "
-               "title/theme/security, reader, capture, page-colour and top-band "
-               "notify "
+               "title/theme/security, reader, capture, page-colour, top-band and "
+               "page-network-activity notify "
                "filters; "
                "no browser execution.\n";
 }

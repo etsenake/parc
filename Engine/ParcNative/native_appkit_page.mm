@@ -106,6 +106,7 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/parc/top_band_color_sampling.h"
+#include "third_party/blink/public/mojom/parc/page_network_activity.mojom.h"
 #include "third_party/blink/public/mojom/parc/top_band_color.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/accessibility/ax_tree_id.h"
@@ -465,6 +466,54 @@ class TopBandColorSampler final : public mojom::TopBandColorObserver {
   base::WeakPtrFactory<TopBandColorSampler> weak_factory_{this};
 };
 
+// Whether the primary main document has requests in flight, from the
+// renderer's PageNetworkActivity on the main frame's associated channel.
+class PageNetworkActivityWatcher final
+    : public mojom::PageNetworkActivityObserver {
+ public:
+  explicit PageNetworkActivityWatcher(base::RepeatingClosure changed)
+      : changed_(std::move(changed)) {}
+
+  // As TopBandColorSampler::Bind: the renderer's count lives as long as its
+  // LocalFrame, so only a new renderer frame needs a new channel.
+  void Bind(content::RenderFrameHost* frame, bool rebind) {
+    const auto id =
+        frame ? frame->GetGlobalId() : content::GlobalRenderFrameHostId();
+    if (!rebind && id == frame_ && agent_.is_bound()) {
+      return;
+    }
+    receiver_.reset();
+    agent_.reset();
+    frame_ = id;
+    // The new frame's agent answers SetObserver with its count.
+    Set(false);
+    if (!frame || !frame->IsRenderFrameLive()) {
+      return;
+    }
+    frame->GetRemoteAssociatedInterfaces()->GetInterface(&agent_);
+    agent_->SetObserver(receiver_.BindNewEndpointAndPassRemote());
+    receiver_.set_disconnect_handler(base::BindOnce(
+        &PageNetworkActivityWatcher::Set, base::Unretained(this), false));
+  }
+  bool busy() const { return busy_; }
+
+ private:
+  void DidChangeNetworkBusy(bool busy) override { Set(busy); }
+  void Set(bool busy) {
+    if (busy == busy_) {
+      return;
+    }
+    busy_ = busy;
+    changed_.Run();
+  }
+
+  base::RepeatingClosure changed_;
+  content::GlobalRenderFrameHostId frame_;
+  mojo::AssociatedRemote<mojom::PageNetworkActivityAgent> agent_;
+  mojo::AssociatedReceiver<mojom::PageNetworkActivityObserver> receiver_{this};
+  bool busy_ = false;
+};
+
 // Tells the shell about a profile's history deletions (Clear Browsing Data,
 // history removal), so caches keyed by site, such as the top bar's colours,
 // forget them, and the shell's own visits follow Chromium's history: the
@@ -595,6 +644,10 @@ class NativePageState final
     top_band_ = std::make_unique<TopBandColorSampler>(base::BindRepeating(
         &NativePageState::TopBandColorChanged, base::Unretained(this)));
     top_band_->Bind(contents.GetPrimaryMainFrame(), /*rebind=*/true);
+    network_activity_ = std::make_unique<PageNetworkActivityWatcher>(
+        base::BindRepeating(&NativePageState::NetworkActivityChanged,
+                            base::Unretained(this)));
+    network_activity_->Bind(contents.GetPrimaryMainFrame(), /*rebind=*/true);
     if (auto* profile = Profile::FromBrowserContext(contents.GetBrowserContext())) {
       HistoryDeletionNotifier::EnsureFor(*profile);
     }
@@ -1183,6 +1236,7 @@ class NativePageState final
   void PrimaryPageChanged(content::Page& page) override {
     [status_text_ reset];
     top_band_->Bind(&page.GetMainDocument(), /*rebind=*/false);
+    network_activity_->Bind(&page.GetMainDocument(), /*rebind=*/false);
     ResendVisualProperties(page);
   }
   // RenderWidgetHostImpl::SynchronizeVisualProperties drops size updates
@@ -1205,12 +1259,14 @@ class NativePageState final
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
       top_band_->Bind(frame, /*rebind=*/true);
+      network_activity_->Bind(frame, /*rebind=*/true);
     }
   }
   void RenderFrameHostChanged(content::RenderFrameHost*,
                               content::RenderFrameHost* frame) override {
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
       top_band_->Bind(frame, /*rebind=*/true);
+      network_activity_->Bind(frame, /*rebind=*/true);
     }
   }
   void TopBandColorChanged() {
@@ -1259,14 +1315,8 @@ class NativePageState final
   // navigation starting while one does, change ShouldShowLoadingUI without
   // DidStop/DidStartLoading; the main frame's progress update follows both.
   void LoadProgressChanged(double) override { LoadingChanged(); }
-  void ResourceLoadComplete(content::RenderFrameHost* frame,
-                            const content::GlobalRequestID&,
-                            const GURL&,
-                            const blink::mojom::ResourceLoadInfo&) override {
-    if (!contents_ || frame != contents_->GetPrimaryMainFrame()) {
-      return;
-    }
-    loading_hold_.Activity(NowMs());
+  void NetworkActivityChanged() {
+    loading_hold_.NetworkBusy(network_activity_->busy(), NowMs());
     if (loading_hold_.holding()) {
       LoadingChanged();
     }
@@ -1488,6 +1538,8 @@ class NativePageState final
   LoadingHold loading_hold_;
   base::WeakPtr<content::Page> painted_page_;
   base::OneShotTimer loading_hold_timer_;
+  // After loading_hold_, which its reports update.
+  std::unique_ptr<PageNetworkActivityWatcher> network_activity_;
   NativePageShellNotifyState last_shell_notify_;
 };
 void MarkNativePageEmbedded(PCNativePage* page) {

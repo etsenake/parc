@@ -121,10 +121,11 @@ inline bool ShouldNotifyShellPayloadChange(
 
 //
 // end of loading), the shell keeps showing it loading while the page fills
-// itself in: until the main frame's own resources (fetch/XHR included) have
-// been quiet for Blink's network-quiet window and the page has had its first
-// contentful paint, never longer than Chromium waits for new content to
-// render. Same-document navigations are never held.
+// itself in: until the main document has had no request in flight (fetch/XHR
+// included; the renderer's PageNetworkActivity count) for Blink's
+// network-quiet window and the page has had its first contentful paint,
+// never longer than Chromium waits for new content to render. Same-document
+// navigations are never held.
 class LoadingHold {
  public:
   static constexpr int64_t kQuietMs = 500;   // Blink NetworkQuietTimeout.
@@ -134,10 +135,12 @@ class LoadingHold {
   void Committed(int64_t now) {
     armed_ = true;
     holding_ = false;
-    last_activity_ = now;
+    quiet_since_ = now;
   }
-  void Activity(int64_t now) {
-    if (armed_ || holding_) last_activity_ = now;
+  // The renderer's count leaving or returning to zero.
+  void NetworkBusy(bool busy, int64_t now) {
+    if (network_busy_ && !busy) quiet_since_ = now;
+    network_busy_ = busy;
   }
   void Cancel() { armed_ = holding_ = false; }
   // `main_loading` is ShouldShowLoadingUI. Returns what the shell shows.
@@ -152,23 +155,27 @@ class LoadingHold {
       finished_ = now;
     }
     if (holding_ && (now - finished_ >= kCapMs ||
-                     (painted && now - last_activity_ >= kQuietMs))) {
+                     (painted && !network_busy_ &&
+                      now - quiet_since_ >= kQuietMs))) {
       holding_ = false;
     }
     return holding_;
   }
-  // Milliseconds until Update can next end the hold.
+  // Milliseconds until Update can next end the hold without a new event.
   int64_t Remaining(bool painted, int64_t now) const {
     int64_t due = finished_ + kCapMs;
-    if (painted && last_activity_ + kQuietMs < due) due = last_activity_ + kQuietMs;
+    if (painted && !network_busy_ && quiet_since_ + kQuietMs < due) {
+      due = quiet_since_ + kQuietMs;
+    }
     return due > now ? due - now : 0;
   }
 
  private:
   bool armed_ = false;
   bool holding_ = false;
+  bool network_busy_ = false;
   int64_t finished_ = 0;
-  int64_t last_activity_ = 0;
+  int64_t quiet_since_ = 0;
 };
 
 inline bool ShouldNotifyLoadingChange(
