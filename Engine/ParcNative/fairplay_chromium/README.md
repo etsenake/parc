@@ -384,27 +384,32 @@ OS or PiP/casting/background-tab runtime acceptance.
 
 - FairPlay MediaKeys attached while Chromium's renderer plays (a clear start
   in H.264, HEVC or AV1, such as a clear ad before encrypted content when the
-  page sets MediaKeys only then), and a SourceBuffer switching into Dolby
-  Vision while Chromium's renderer plays, cost one rebuffer that Safari
-  doesn't have: playback stops for a moment, with the spinner, and the
-  picture can go blank. Safari attaches each sample's key itself
-  (`AVSampleBufferAttachContentKey`), which needs the private
-  `com.apple.private.coremedia.allow-fps-attachment` entitlement only
-  WebKit's GPU process has; Parc's renderers join the key session as
-  recipients, which AVFoundation allows only before they process media, and
-  Chromium's renderer can't decrypt FairPlay at all. So
-  `WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded` restarts the
-  pipeline into the FairPlay Renderer with a suspend/resume cycle. The page
-  sees at most `waiting` and `playing`: no `error` or `emptied`, and
-  `currentTime`, `paused` and `playbackRate` stay. Making that seamless
-  needs the pipeline to run the FairPlay Renderer beside Chromium's until it
-  has a frame: a second read position in `ChunkDemuxer`'s buffered data, the
-  FairPlay clock started on Chromium's audio clock, the video hole frame
-  painted in place of Chromium's frames at a frame boundary, and the sound
-  switched between the audio service and the GPU process's audio renderer.
-  The FairPlay Renderer itself takes keys at any time (`SetCdm` after media,
-  in the core's README): after a clear start or clear Dolby Vision without
-  keys, and when the page replaces its MediaKeys, new renderers join the key
+  page sets MediaKeys only then), a late SourceBuffer whose track needs them,
+  and a SourceBuffer switching into Dolby Vision while Chromium's renderer
+  plays move playback to the FairPlay Renderer without stopping it: Safari
+  attaches each sample's key itself (`AVSampleBufferAttachContentKey`, a
+  private entitlement only WebKit's GPU process has), and Chromium's renderer
+  can't decrypt FairPlay. `PipelineImpl::ParcHandOffToFairPlay` makes the
+  FairPlay Renderer beside Chromium's, hidden, and `ChunkDemuxer` splits
+  every stream at one video keyframe at least half a second ahead
+  (`Demuxer::ParcSplitForHandOff`): Chromium's renderer plays up to it and
+  reaches end of stream there, the FairPlay Renderer prerolls paused from
+  it, and at that end the pipeline swaps them, painting the video hole frame
+  and setting the FairPlay Renderer playing. The page sees nothing: no
+  `waiting`, `playing` or `ended`. What someone notices at the switch is the
+  FairPlay Renderer's start: its clock moves 40 to 65 ms after it is set
+  playing on this Mac (`HandOffStartScenario`, an upper bound, as its
+  timebase reads back in steps), so the picture holds and the sound pauses
+  that long at the keyframe, where Safari plays straight through; casting,
+  picture in picture and background tabs see the same. A seek, suspend,
+  CDM or track change during the hand-off completes it at once, or before
+  the split ends it, and the pipeline restarts as before. It also restarts,
+  with one rebuffer, where no hand-off is possible: while suspended or
+  seeking, playing backward, outside Safari's Media Source, or when the
+  FairPlay Renderer can't play the current codecs (below). The FairPlay
+  Renderer itself takes keys at any time (`SetCdm` after media, in the
+  core's README): after a clear start or clear Dolby Vision without keys,
+  and when the page replaces its MediaKeys, new renderers join the key
   session and take over on the same clock with no rebuffer.
 - Dolby Vision with a track the FairPlay Renderer can't play fails where
   Safari plays it: VP9 video before a switch into Dolby Vision, Vorbis audio
@@ -469,7 +474,7 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
 - Dolby Vision in Media Source follows Safari, whose
   `AVSampleBufferDisplayLayer` decodes it clear or encrypted, with keys set
   before, after or never. On a document presenting Safari's identity (with
-  one rebuffer where Dolby Vision or keys reach Chromium's renderer, see
+  a short hold where Dolby Vision or keys reach Chromium's renderer, see
   Known gaps):
   - A clear Dolby Vision init segment (a plain `dvhe`/`dvh1` sample entry, no
     `encv` or `tenc`, as in a clear lead) is accepted in profiles 5 and 8,

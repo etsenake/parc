@@ -201,8 +201,8 @@ class FairPlayHlsPlayerService final
 
   // The frame's CDM after SetCdm(), held while the key loader may use it.
   std::unique_ptr<CdmContextRef> cdm_context_ref_;
-  // Detached CDMs stay alive until the loader reports withdrawal complete.
-  // Reattaching one cancels that report and removes it from this list.
+  // The CDMs SetCdm(null) detached once the key loader existed, which may
+  // still answer a request they took; one attached again leaves the list.
   std::vector<std::unique_ptr<CdmContextRef>> detached_cdm_context_refs_;
 
   // Created by Initialize(). The destructor resets them tracks, player, key

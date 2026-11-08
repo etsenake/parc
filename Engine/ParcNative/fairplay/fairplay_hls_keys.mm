@@ -34,7 +34,6 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
     std::shared_ptr<FairPlayCdm::Impl> core = cdm ? cdm->weak_impl().lock() : nullptr;
     if (core && AttachAsset(core.get(), this, asset_).ok()) {
       cdm_ = core;
-      cdm_identity_ = cdm;
     }
   }
 
@@ -110,31 +109,9 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
       }
     }
     if (current) {
-      DetachAsset(current.get(), this);
-      // DetachAsset abandons every request it took: they stay pending in
-      // AVFoundation but can no longer be answered by this CDM. Held
-      // requests belong to the loader and will use the next attached CDM.
-      // Drain already posted SPC work before releasing the owner's ref.
-      FairPlayCdm* detached = cdm_identity_;
-      auto ticket = std::make_shared<int>(0);
-      detached_[detached] = ticket;
-      std::weak_ptr<Impl> weak = weak_from_this();
-      (*poster_)([weak, detached, ticket] {
-        auto impl = weak.lock();
-        if (!impl) {
-          return;
-        }
-        auto it = impl->detached_.find(detached);
-        if (it == impl->detached_.end() || it->second != ticket) {
-          return;
-        }
-        impl->detached_.erase(it);
-        impl->client_->OnDetachedCdmIdle(detached);
-      });
+      DetachAsset(current.get(), this);  // Its unanswered requests stay pending.
     }
     cdm_ = next;
-    cdm_identity_ = cdm;
-    detached_.erase(cdm);
     if (!next) {
       return Result::Ok();
     }
@@ -232,8 +209,6 @@ class FairPlayHlsKeyLoader::Impl : public AssetKeyClient,
   FairPlayHlsKeyLoaderClient* const client_;
   const std::shared_ptr<const PostTask> poster_;
   std::weak_ptr<FairPlayCdm::Impl> cdm_;
-  FairPlayCdm* cdm_identity_ = nullptr;
-  std::map<FairPlayCdm*, std::shared_ptr<int>> detached_;
   bool output_obscured_ = false;
   // skd loading requests not yet answered, oldest first, by URI. Only the
   // first of a URI is reported; the next is when a session takes it.

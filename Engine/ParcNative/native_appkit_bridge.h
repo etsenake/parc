@@ -350,14 +350,11 @@ NS_SWIFT_UI_ACTOR
 // Optional source on a page window's delegate: the tint the window's Space
 // gives AirPlay's connecting and connected states (the Mini Player's AirPlay
 // button), for the page's own AirPlay button and placard (native_airplay.mm).
-// Read when a page is given an AirPlay target, and again when the window
-// posts PCNativeAirPlayThemeDidChangeNotification (object: the window) on the
-// main thread after its Space or theme changed.
+// Read when a page is given an AirPlay target.
 NS_SWIFT_UI_ACTOR
 @protocol PCNativeAirPlayThemeSource <NSObject>
 - (nullable NSColor*)airPlayThemeTintColor;
 @end
-#define PCNativeAirPlayThemeDidChangeNotification @"PCNativeAirPlayThemeDidChange"
 
 NS_SWIFT_UI_ACTOR
 @protocol PCNativePageObserver <NSObject>

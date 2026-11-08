@@ -81,6 +81,9 @@ class FairPlayRendererClient final
   // The GPU process's audio renderers play to the device the pipeline's
   // audio sink names, from Initialize on.
   void ParcOnAudioOutputDeviceChanged() override;
+  // Taking over from Chromium's renderer (Pipeline::ParcHandOffToFairPlay()),
+  // the video hole frame is painted only once shown.
+  void ParcSetHidden(bool hidden) override;
 
   // RendererClient implementation, forwarded to the pipeline's client.
   void OnError(PipelineStatus status) override;
@@ -161,6 +164,7 @@ class FairPlayRendererClient final
   base::OnceClosure pending_track_change_;
   std::optional<base::UnguessableToken> layer_token_;
   gfx::Size natural_size_;
+  bool hidden_ = false;
   // One from before |renderer_extension_| came.
   std::optional<base::UnguessableToken> pending_mute_state_handoff_;
   uint64_t mute_state_handoff_order_ = 0;

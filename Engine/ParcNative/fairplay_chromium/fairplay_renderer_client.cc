@@ -173,6 +173,16 @@ void FairPlayRendererClient::OnTracksChanged(
         std::move(change_completed_cb));
     return;
   }
+  // A renderer that took over from another reads its resource's streams,
+  // not the demuxer's the pipeline names (DemuxerStream::ParcHandOffSource()).
+  if (stream) {
+    for (DemuxerStream* own : media_resource_->GetAllStreams()) {
+      if (own->ParcHandOffSource() == stream->ParcHandOffSource()) {
+        stream = own;
+        break;
+      }
+    }
+  }
   // AudioVideoRendererAVFObjC::removeTrack for an audio track turned off.
   for (auto it = played_.begin(); it != played_.end();) {
     if (track_type == DemuxerStream::AUDIO &&
@@ -241,6 +251,12 @@ void FairPlayRendererClient::OnTracksChanged(
 
 RendererType FairPlayRendererClient::GetRendererType() {
   return RendererType::kFairPlay;
+}
+
+void FairPlayRendererClient::ParcSetHidden(bool hidden) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  hidden_ = hidden;
+  PaintHoleFrame();
 }
 
 void FairPlayRendererClient::OnError(PipelineStatus status) {
@@ -364,7 +380,7 @@ void FairPlayRendererClient::FollowMuteStateHandoff(
 }
 
 void FairPlayRendererClient::PaintHoleFrame() {
-  if (!layer_token_ || natural_size_.IsEmpty()) {
+  if (hidden_ || !layer_token_ || natural_size_.IsEmpty()) {
     return;
   }
   // cc turns this into a VideoHoleDrawQuad naming the token, and the GPU

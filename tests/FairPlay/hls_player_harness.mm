@@ -11,7 +11,6 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -952,17 +951,12 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
     }
   }
 
-  void OnDetachedCdmIdle(fp::FairPlayCdm* detached) override {
-    if (on_idle) on_idle(detached);
-  }
-
   bool Is(const std::string& key_id, fp::KeyStatus status) const {
     auto it = statuses.find(key_id);
     return it != statuses.end() && it->second == status;
   }
   bool Usable(const std::string& key_id) const { return Is(key_id, fp::KeyStatus::kUsable); }
 
-  std::function<void(fp::FairPlayCdm*)> on_idle;
   std::unique_ptr<fp::FairPlayCdm> cdm;
   std::function<void(const std::string&)> on_need;  // The encrypted handler.
   std::function<void(const std::string&)> on_loading_request;  // webkitneedkey.
@@ -1027,56 +1021,6 @@ struct KeyRig {
   std::unique_ptr<fp::FairPlayHlsKeyLoader> keys;
   fp::FairPlayHlsKeyLoaderClient* client;
 };
-
-// Mirror the service's retained CdmContextRefs without network or licenses.
-void KeysDetachLifetime() {
-  KeyPage page(kSingleKeyToken);
-  OnOwner([&] {
-    std::vector<std::function<void()>> tasks;
-    fp::PostTask post = [&](std::function<void()> task) { tasks.push_back(std::move(task)); };
-    auto drain = [&] {
-      while (!tasks.empty()) {
-        auto pending = std::move(tasks);
-        tasks.clear();
-        for (auto& task : pending) task();
-      }
-    };
-    std::vector<std::unique_ptr<fp::FairPlayCdm>> retained;
-    int idle = 0;
-    page.on_idle = [&](fp::FairPlayCdm* cdm) {
-      ++idle;
-      std::erase_if(retained, [cdm](const auto& ref) { return ref.get() == cdm; });
-    };
-    AVURLAsset* asset = [AVURLAsset URLAssetWithURL:[NSURL URLWithString:@"https://parc.invalid/a.m3u8"]
-                                         options:nil];
-    fp::FairPlayHlsKeyLoader loader(asset, nullptr, &page, post);
-    for (int i = 0; i < 32; ++i) {
-      retained.push_back(std::make_unique<fp::FairPlayCdm>(&page, post));
-      auto* cdm = retained.back().get();
-      auto weak = cdm->weak_impl();
-      Check(loader.SetCdm(cdm).ok(), "attach a fresh CDM");
-      drain();
-      Check(idle == i, "attached CDM is never reported idle");
-      Check(loader.SetCdm(nullptr).ok(), "detach the CDM");
-      Check(!weak.expired(), "owner retains CDM until withdrawal report");
-      // Reattach before delivery, then detach again: the old queued report
-      // must not release a newer lease for the same CDM.
-      Check(loader.SetCdm(cdm).ok(), "reattach the same CDM before idle delivery");
-      drain();
-      Check(idle == i && !weak.expired(), "reattachment cancels stale idle report");
-      Check(loader.SetCdm(nullptr).ok(), "detach reattached CDM");
-      Check(loader.SetCdm(cdm).ok(), "reattach with an idle report queued");
-      Check(loader.SetCdm(nullptr).ok(), "detach again before either report runs");
-      auto stale = std::move(tasks.front());
-      tasks.erase(tasks.begin());
-      stale();
-      Check(idle == i && !weak.expired(), "old detach ticket cannot release the newer lease");
-      drain();
-      Check(idle == i + 1 && retained.empty() && weak.expired(),
-            "detached CDM is released while the player stays alive");
-    }
-  });
-}
 
 // Force the system factory to fail, without adding a production test hook.
 IMP g_session_factory = nullptr;
@@ -1593,7 +1537,7 @@ int main(int argc, char** argv) {
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
     std::vector<std::pair<std::string, void (*)()>> scenarios = {
         {"timeline", Timeline}, {"ts", VodTs}, {"fmp4", VodFmp4}, {"live", Live}, {"missing", Missing}, {"http", PlainHttp}, {"bad-url", BadUrl}, {"data-url", DataUrl}, {"data-url-video", DataUrlVideo}, {"skd", Skd}, {"skd-handler", SkdHandler}, {"teardown", Teardown},
-        {"keys-detach-lifetime", KeysDetachLifetime}, {"keys-session-failure", KeysSessionFailure}, {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute},
+        {"keys-session-failure", KeysSessionFailure}, {"keys-first", KeysMediaKeysFirst}, {"keys-loader", KeysLoaderRoute},
         {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
         {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},

@@ -2730,6 +2730,56 @@ std::vector<Step> VideoSwitchScenario() {
   return steps;
 }
 
+// Taking over from Chromium's renderer (PipelineImpl's hand-off), the
+// FairPlay Renderer is prerolled paused at the split and set playing when
+// the other reaches it: how long its clock takes to move then is the gap
+// someone hears and sees at the swap.
+std::vector<Step> HandOffStartScenario() {
+  World* w = g_world;
+  auto latencies = std::make_shared<std::vector<double>>();
+  std::vector<Step> steps;
+  steps.push_back(Section("prerolled paused at a split, then set playing: the swap's gap"));
+  for (int round = 0; round < 3; ++round) {
+    const double split = 10 + 5 * round;
+    steps.push_back([=](Done done) {
+      w->player = std::make_shared<Player>("hand-off-start", Framing::kChromium, &w->video, &w->audio,
+                                           w->main_keys->cdm.get(), w->host);
+      w->player->renderer().Flush([=] {
+        const size_t first = SegmentAt(w->video, split);
+        w->player->SetFeeds(Segments(w->video, first, first + 2), Segments(w->audio, first, first + 2), false);
+        auto ready = Once(10, "hand-off-start: HAVE_ENOUGH paused at the split", [=](bool) {
+          // Paused there, as until the playing renderer ends its part.
+          After(0.5, [=] {
+            const double at = w->player->Time();
+            const double wall = CFAbsoluteTimeGetCurrent();
+            w->player->renderer().SetPlaybackRate(1);
+            WaitUntil(2, [=] { return w->player->Time() > at + 0.001; }, [=](bool moved) {
+              const double latency = CFAbsoluteTimeGetCurrent() - wall;
+              Check(moved && std::fabs(at - split) < 0.05,
+                    Format("hand-off-start: the clock leaves the split (%.3fs) once playing", at));
+              latencies->push_back(latency);
+              Log("hand-off-start: clock moved %.3fs after the rate was set", latency);
+              done();
+            });
+          });
+        });
+        w->player->on_have_enough = [ready] { ready(true); };
+        w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(int64_t(split * 1e6)));
+        w->player->renderer().SetPlaybackRate(0);
+      });
+    });
+  }
+  steps.push_back([=](Done done) {
+    double worst = 0;
+    for (double latency : *latencies) worst = std::max(worst, latency);
+    Check(latencies->size() == 3 && worst < 0.1,
+          Format("hand-off-start: the FairPlay Renderer starts within %.3fs of being set playing", worst));
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 std::vector<Step> UnderflowScenario() {
   World* w = g_world;
   auto stalled_at = std::make_shared<double>(0);
@@ -5451,6 +5501,7 @@ void RunAll() {
   add("LateStreamsScenario()", LateStreamsScenario());
   add("HandOffScenario()", HandOffScenario());
   add("VideoSwitchScenario()", VideoSwitchScenario());
+  add("HandOffStartScenario()", HandOffStartScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
   add("AudioOutputDeviceScenario()", AudioOutputDeviceScenario());
   add("LayerDetachScenario()", LayerDetachScenario());

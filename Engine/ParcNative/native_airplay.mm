@@ -264,19 +264,13 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
     // device it was given.
     bool was_wireless = false;
     std::string given_device;
-    // The Space tint of the window it was last seen in (SpaceTint()), and
-    // that window; a background tab's page is in no window.
+    // The Space tint of the window it was last seen in (SpaceTint()); a
+    // background tab's page is in no window.
     uint32_t tint = 0;
-    __weak NSWindow* tint_window = nil;
   };
 
   NativeAirPlay() {
     observer_ = [[PCAirPlayObserver alloc] initWithOwner:this];
-    [NSNotificationCenter.defaultCenter
-        addObserver:observer_
-           selector:@selector(themeChanged:)
-               name:PCNativeAirPlayThemeDidChangeNotification
-             object:nil];
     content::SetParcPlaybackTargetHandler(this);
   }
 
@@ -359,7 +353,9 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
       TellPickerDismissed();
     }
     picker_client_ = player_id;
-    TakeTint(players_[player_id], view.window);
+    if (const uint32_t tint = SpaceTint(view.window)) {
+      players_[player_id].tint = tint;
+    }
     ++presentation_;
     route_at_show_ = Route();
     dismissed_ = dismissed;
@@ -416,7 +412,9 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
         player.was_wireless = false;
         player.given_device = device;
       }
-      TakeTint(player, WindowOf(player.contents.get()));
+      if (const uint32_t tint = SpaceTint(player.contents.get())) {
+        player.tint = tint;
+      }
       content::SetParcPlaybackTarget(player.contents.get(), *client,
                                      context_id, DeviceName(), true,
                                      player.tint);
@@ -445,45 +443,12 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
            channel(color.redComponent) << 16 |
            channel(color.greenComponent) << 8 | channel(color.blueComponent);
   }
-  static NSWindow* WindowOf(content::WebContents* contents) {
+  static uint32_t SpaceTint(content::WebContents* contents) {
     content::RenderWidgetHostView* rwhv =
         contents ? contents->GetRenderWidgetHostView() : nullptr;
-    return rwhv ? rwhv->GetNativeView().GetNativeNSView().window : nil;
+    NSView* view = rwhv ? rwhv->GetNativeView().GetNativeNSView() : nil;
+    return SpaceTint(view.window);
   }
-  // A window without a tint (or none) leaves the last one.
-  static void TakeTint(Player& player, NSWindow* window) {
-    if (const uint32_t tint = SpaceTint(window)) {
-      player.tint = tint;
-      player.tint_window = window;
-    }
-  }
-
- public:
-  // The window's Space or theme changed: the element playing to the route
-  // from it is given the route again in the new tint.
-  void ThemeChanged(NSWindow* window) {
-    if (!window || !active_client_ || !Alive(*active_client_)) {
-      return;
-    }
-    Player& player = players_[*active_client_];
-    NSWindow* page_window = WindowOf(player.contents.get());
-    const bool from_window =
-        page_window ? page_window == window : player.tint_window == window;
-    if (!player.state.plays_to_target || !from_window) {
-      return;
-    }
-    const uint32_t previous = player.tint;
-    TakeTint(player, window);
-    if (player.tint == previous) {
-      return;
-    }
-    content::SetParcPlaybackTarget(
-        player.contents.get(), *active_client_,
-        base::SysNSStringToUTF8(Read(context_, @"contextID") ?: @""),
-        DeviceName(), true, player.tint);
-  }
-
- private:
 
   void TellPickerDismissed() {
     if (picker_client_ && Alive(*picker_client_)) {
@@ -582,13 +547,6 @@ bool ShowNativeAirPlayPicker(content::WebContents* contents,
   dispatch_async(dispatch_get_main_queue(), ^{
     self->_owner->DevicesChanged();
   });
-}
-
-// Posted by the window on the main thread.
-- (void)themeChanged:(NSNotification*)notification {
-  if ([notification.object isKindOfClass:NSWindow.class]) {
-    _owner->ThemeChanged(notification.object);
-  }
 }
 
 // At once on the main thread, so a list shown again in the meantime can't

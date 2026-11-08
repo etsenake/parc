@@ -799,34 +799,6 @@ extension ThemeChromePalette {
     /// luminance band farthest from the card: maxContrastColor (0 to 0.1) on
     /// light themes and foregroundSecondary (0.3 to 0.5) on dark ones. Either
     /// stays legible on backgroundExtra and distinct from the title-coloured
-    /// neighbours.
+    /// neighbours. Pages' own AirPlay button and placard take it too.
     var airPlayActiveColor: NSColor { isDark ? foregroundSecondary : maxContrastColor }
-
-    /// The same tint for the always-dark surfaces of a page's own AirPlay
-    /// button and placard, whatever the window's appearance: the theme's
-    /// dark-appearance airPlayActiveColor, lightened toward white only as far
-    /// as 4.5:1 needs against the placard's black and the controls' scrim at
-    /// the button row (mediaControls.css's gradient at 64.7%, alpha 0.741,
-    /// over a white frame).
-    /// A dynamic colour (a themeless Space's) resolves in the dark appearance,
-    /// its alpha laid over black.
-    static func airPlayOnDarkSurfaceColor(theme: SpaceTheme) -> NSColor {
-        let tint = ThemeChromePalette(theme: theme, isDark: true).airPlayActiveColor
-        var resolved: NSColor?
-        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance { resolved = tint.usingColorSpace(.sRGB) }
-        guard let rgb = resolved else { return tint }
-        func luminance(_ c: [CGFloat]) -> CGFloat {
-            let l = c.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
-            return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
-        }
-        let scrim = luminance([1 - 0.741, 1 - 0.741, 1 - 0.741])
-        let base = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map { $0 * rgb.alphaComponent }
-        var mix: CGFloat = 0
-        var colour = base
-        while mix < 1 && (luminance(colour) + 0.05) / (scrim + 0.05) < 4.5 {
-            mix = min(1, mix + 0.01)
-            colour = base.map { $0 + (1 - $0) * mix }
-        }
-        return NSColor(srgbRed: colour[0], green: colour[1], blue: colour[2], alpha: 1)
-    }
 }
