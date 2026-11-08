@@ -54,12 +54,16 @@ PROOF_FILES = (
     "cef/LICENSE.txt", "LICENSE", "cef/include/cef_application_mac.h",
     "ui/gl/features.gni", "ui/gl/BUILD.gn",
 )
+# Chromium writes a usage description into its own bundle for every privacy-gated
+# macOS API it can reach; macOS terminates an app that reaches one without it.
+CHROMIUM_USAGE_DESCRIPTIONS = "chrome/tools/build/mac/infoplist_strings_util.cc"
 # The only upstream files packaging reads besides the engine itself. A release
 # engine build takes them from the source lock's commits in a workspace's Git
 # objects, never from a working tree an engine build may be changing.
 PINNED_INPUTS = (("chromium", "LICENSE"), ("cef", "cef/LICENSE.txt"),
                  ("cef", "cef/include/cef_application_mac.h"),
-                 ("chromium", "chrome/app/app-entitlements.plist"))
+                 ("chromium", "chrome/app/app-entitlements.plist"),
+                 ("chromium", CHROMIUM_USAGE_DESCRIPTIONS))
 RELEASE_FRAMEWORK = "Parc.app/Contents/Frameworks/" + FRAMEWORK
 LOAD_COMMANDS = {"LC_LOAD_DYLIB", "LC_LOAD_WEAK_DYLIB", "LC_REEXPORT_DYLIB",
                  "LC_LOAD_UPWARD_DYLIB", "LC_LAZY_LOAD_DYLIB"}
@@ -1083,11 +1087,18 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     NSLocationUsageDescription="Allow location access for websites you choose.",
                     NSLocationWhenInUseUsageDescription="Allow location access for websites you choose.",
                     NSWebBrowserPublicKeyCredentialUsageDescription="Sign in to websites with passkeys saved in iCloud Keychain or your password manager.",
+                    NSAudioCaptureUsageDescription="Websites you allow can share this Mac's audio, for example when casting a tab.",
+                    NSLocalNetworkUsageDescription="Find Chromecast and other devices on your network to cast to.",
                     NSDesktopFolderUsageDescription="Show images and videos from Desktop in your Media Library.",
                     NSDocumentsFolderUsageDescription="Show images and videos from Documents in your Media Library.",
                     NSDownloadsFolderUsageDescription="Show images and videos from Downloads in your Media Library.")
         if bundle_note:
             info["ParcLocalTestBuild"] = bundle_note
+        chromium_usage = re.findall(r'"(NS\w+UsageDescription)"',
+                                    (source / CHROMIUM_USAGE_DESCRIPTIONS).read_text())
+        missing_usage = sorted(set(chromium_usage) - info.keys())
+        if missing_usage:
+            raise Refusal("Info.plist lacks usage descriptions Chromium declares: " + ", ".join(missing_usage))
         plist(contents / "Info.plist", info)
         # Device capabilities follow the pinned Chromium main-app entitlement
         # input. Do not copy Chrome accounts, keychain groups or provisioning.

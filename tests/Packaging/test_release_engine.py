@@ -143,7 +143,8 @@ class ReleaseEngineTests(unittest.TestCase):
         chromium = workspace / "chromium/src"
         chromium.mkdir(parents=True)
         pinned_chromium = commit(chromium, {"LICENSE": "chromium license",
-                                            "chrome/app/app-entitlements.plist": "entitlements"})
+                                            "chrome/app/app-entitlements.plist": "entitlements",
+                                            "chrome/tools/build/mac/infoplist_strings_util.cc": "usage"})
         cef = chromium / "cef"
         pinned_cef = commit(cef, {"LICENSE.txt": "cef license", "include/cef_application_mac.h": "header"})
         # Later working-tree and history changes must not reach the package.
@@ -159,6 +160,7 @@ class ReleaseEngineTests(unittest.TestCase):
         self.assertEqual((source / "cef/LICENSE.txt").read_text(), "cef license")
         self.assertEqual((source / "LICENSE").read_text(), "chromium license")
         self.assertEqual((source / "chrome/app/app-entitlements.plist").read_text(), "entitlements")
+        self.assertEqual((source / "chrome/tools/build/mac/infoplist_strings_util.cc").read_text(), "usage")
 
     def test_pinned_source_refuses_overlay_patched_inputs_and_missing_commits(self):
         workspace = self.pinned_workspace()

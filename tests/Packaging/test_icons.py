@@ -54,6 +54,14 @@ class PackagingIconTests(unittest.TestCase):
         entitlements = source / "chrome/app/app-entitlements.plist"
         entitlements.parent.mkdir(parents=True)
         entitlements.write_bytes(plistlib.dumps({"com.apple.security.device.camera": True}))
+        # The pinned Chromium's own list, as chrome/tools/build/mac/infoplist_strings_util.cc writes it.
+        self.chromium_usage = source / "chrome/tools/build/mac/infoplist_strings_util.cc"
+        self.chromium_usage.parent.mkdir(parents=True)
+        self.chromium_usage.write_text("".join(f'        {{"{key}", permission_reason}},\n' for key in (
+            "NSAudioCaptureUsageDescription", "NSBluetoothAlwaysUsageDescription",
+            "NSBluetoothPeripheralUsageDescription", "NSCameraUsageDescription",
+            "NSLocalNetworkUsageDescription", "NSLocationUsageDescription",
+            "NSMicrophoneUsageDescription", "NSWebBrowserPublicKeyCredentialUsageDescription")))
         self.manifest = {"source_lock_sha256": "fixture-lock", "overlay": {"identity": "fixture-overlay"},
                          "engine_build_flags": {"target_cpu": "arm64", "is_component_build": True,
                                                 "is_official_build": False, "is_debug": False,
@@ -124,11 +132,12 @@ class PackagingIconTests(unittest.TestCase):
             for folder in ("Desktop", "Documents", "Downloads"):
                 self.assertIn(folder, info[f"NS{folder}FolderUsageDescription"])
             # Without these, macOS terminates Parc the moment a page touches Bluetooth
-            # (a passkey from a phone), location or a platform passkey.
-            for key in ("NSBluetoothAlwaysUsageDescription", "NSBluetoothPeripheralUsageDescription",
-                        "NSLocationUsageDescription", "NSLocationWhenInUseUsageDescription",
-                        "NSWebBrowserPublicKeyCredentialUsageDescription",
-                        "NSCameraUsageDescription", "NSMicrophoneUsageDescription"):
+            # (a passkey from a phone), location, a platform passkey or cast audio.
+            for key in ("NSAudioCaptureUsageDescription", "NSBluetoothAlwaysUsageDescription",
+                        "NSBluetoothPeripheralUsageDescription", "NSCameraUsageDescription",
+                        "NSLocalNetworkUsageDescription", "NSLocationUsageDescription",
+                        "NSLocationWhenInUseUsageDescription", "NSMicrophoneUsageDescription",
+                        "NSWebBrowserPublicKeyCredentialUsageDescription"):
                 self.assertTrue(info[key].strip(), key)
             plugin = app / "Contents/PlugIns" / info["NSDockTilePlugIn"]
             plugin_info = plistlib.loads((plugin / "Contents/Info.plist").read_bytes())
@@ -269,6 +278,14 @@ class PackagingIconTests(unittest.TestCase):
         workspace_verify.assert_not_called()
         self.assertEqual(len(verified), 2)
         self.assertEqual(report["engine_release"], {"tag": "fixture"})
+
+    def test_usage_description_chromium_declares_but_parc_lacks_refuses_packaging(self):
+        with self.chromium_usage.open("a") as text:
+            text.write('        {"NSFutureSensorUsageDescription", permission_reason},\n')
+        with self.fixture_tools(), \
+                self.assertRaisesRegex(pkg.Refusal, "lacks usage descriptions Chromium declares: "
+                                                    "NSFutureSensorUsageDescription$"):
+            pkg.build_app(self.repo, self.engine, self.manifest, self.root / "development", "-")
 
     def test_widevine_signatures_precede_apple_signing_and_are_rechecked_after(self):
         flags = {**self.manifest["engine_build_flags"], "is_component_build": False}
