@@ -12,13 +12,17 @@
 #include <utility>
 #include <vector>
 
+#include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/mock_callback.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "content/renderer/media/fairplay/native_hls_demuxer.h"
 #include "content/renderer/media/fairplay/native_hls_renderer.h"
+#include "media/base/audio_renderer_sink.h"
 #include "media/base/eme_constants.h"
 #include "media/base/media_util.h"
 #include "media/base/mock_demuxer_host.h"
@@ -83,6 +87,9 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   void SetPreservesPitch(bool preserves_pitch) override {
     preserves_pitch_ = preserves_pitch;
   }
+  void SetAudioOutputDevice(const std::string& sink_id) override {
+    audio_output_devices_.push_back(sink_id);
+  }
   void ProvideClearKey(const std::string& key_id,
                        const std::vector<uint8_t>& key) override {
     clear_keys_.emplace_back(key_id, key);
@@ -129,6 +136,36 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   float volume_ = -1;
   std::optional<bool> preserves_pitch_;
   std::vector<base::UnguessableToken> mute_state_handoffs_;
+  std::vector<std::string> audio_output_devices_;
+};
+
+// The element's audio sink (WebAudioSourceProviderImpl), which only names
+// the output device setSinkId switched it to.
+class FakeAudioSink : public media::AudioRendererSink {
+ public:
+  void Initialize(const media::AudioParameters& params,
+                  RenderCallback* callback) override {}
+  void Start() override {}
+  void Stop() override {}
+  void Pause() override {}
+  void Play() override {}
+  void Flush() override {}
+  bool SetVolume(double volume) override { return true; }
+  media::OutputDeviceInfo GetOutputDeviceInfo() override {
+    return media::OutputDeviceInfo(device_id_, media::OUTPUT_DEVICE_STATUS_OK,
+                                   media::AudioParameters());
+  }
+  void GetOutputDeviceInfoAsync(OutputDeviceInfoCB info_cb) override {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(info_cb), GetOutputDeviceInfo()));
+  }
+  bool IsOptimizedForHardwareParameters() override { return false; }
+  bool CurrentThreadIsRenderingThread() override { return false; }
+
+  std::string device_id_;
+
+ private:
+  ~FakeAudioSink() override = default;
 };
 
 media::mojom::FairPlayHlsMetadataPtr Metadata(base::TimeDelta duration) {
@@ -201,7 +238,8 @@ class NativeHlsTest : public testing::Test {
 
   void CreateRenderer() {
     renderer_ = std::make_unique<NativeHlsRenderer>(
-        task_environment_.GetMainThreadTaskRunner(), &sink_);
+        task_environment_.GetMainThreadTaskRunner(), &sink_,
+        audio_sink_.get());
     base::MockCallback<media::PipelineStatusCallback> init_cb;
     EXPECT_CALL(init_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
     renderer_->Initialize(demuxer_.get(), &renderer_client_, init_cb.Get());
@@ -225,6 +263,8 @@ class NativeHlsTest : public testing::Test {
   NiceMock<media::MockDemuxerHost> host_;
   NiceMock<media::MockRendererClient> renderer_client_;
   NiceMock<media::MockVideoRendererSink> sink_;
+  scoped_refptr<FakeAudioSink> audio_sink_ =
+      base::MakeRefCounted<FakeAudioSink>();
   std::unique_ptr<NativeHlsDemuxer> demuxer_;
   std::unique_ptr<NativeHlsRenderer> renderer_;
 };
@@ -762,7 +802,7 @@ TEST_F(NativeHlsTest, VolumeAndPitchSetBeforeInitializeReachThePlayer) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   // PipelineImpl::InitializeRenderer: a muted autoplay video is volume 0.
   renderer_ = std::make_unique<NativeHlsRenderer>(
-      task_environment_.GetMainThreadTaskRunner(), &sink_);
+      task_environment_.GetMainThreadTaskRunner(), &sink_, audio_sink_.get());
   renderer_->SetPreservesPitch(false);
   renderer_->SetVolume(0);
   base::MockCallback<media::PipelineStatusCallback> init_cb;
@@ -771,6 +811,35 @@ TEST_F(NativeHlsTest, VolumeAndPitchSetBeforeInitializeReachThePlayer) {
   task_environment_.RunUntilIdle();
   EXPECT_FLOAT_EQ(player_.volume_, 0.f);
   EXPECT_EQ(player_.preserves_pitch_, false);
+}
+
+// HTMLMediaElement.setSinkId: the player plays to the device the sink names
+// when the facade is made (a sink ID set before playback, or kept across a
+// suspension) and to each one it switches to, as WebKit's
+// MediaPlayerPrivateAVFoundationObjC::audioOutputDeviceChanged.
+TEST_F(NativeHlsTest, AudioOutputFollowsTheSinksDevice) {
+  ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
+  audio_sink_->device_id_ = "hashed-headphones";
+  CreateRenderer();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.audio_output_devices_,
+            (std::vector<std::string>{"hashed-headphones"}));
+
+  // Only the device of the last switch counts.
+  audio_sink_->device_id_ = "hashed-speakers";
+  renderer_->ParcOnAudioOutputDeviceChanged();
+  audio_sink_->device_id_ = "";
+  renderer_->ParcOnAudioOutputDeviceChanged();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.audio_output_devices_,
+            (std::vector<std::string>{"hashed-headphones", ""}));
+
+  // A facade made again after a suspension names it again.
+  renderer_.reset();
+  audio_sink_->device_id_ = "hashed-speakers";
+  CreateRenderer();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(player_.audio_output_devices_.back(), "hashed-speakers");
 }
 
 TEST_F(NativeHlsTest, TimeComesFromThePlayersClock) {
@@ -1051,7 +1120,7 @@ TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
   cdm_context.set_cdm_id(cdm_id);
   // PipelineImpl::InitializeRenderer sets the CDM first.
   renderer_ = std::make_unique<NativeHlsRenderer>(
-      task_environment_.GetMainThreadTaskRunner(), &sink_);
+      task_environment_.GetMainThreadTaskRunner(), &sink_, audio_sink_.get());
   base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
   EXPECT_CALL(attached_cb, Run(true));
   renderer_->SetCdm(&cdm_context, attached_cb.Get());

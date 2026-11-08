@@ -244,6 +244,9 @@ class FairPlayHlsPlayer {
             std::function<void(bool finished)> done);
   void SetVolume(float volume);
   void SetMuted(bool muted);
+  // Core Audio device UID for the audio output (HTMLMediaElement.setSinkId),
+  // kept for the player made later; empty follows the system default.
+  void SetAudioOutputDevice(const std::string& unique_id);
   // HTMLMediaElement.preservesPitch (default true): at rates other than 0 and
   // 1, true keeps pitch (Spectral), false lets it follow the rate
   // (Varispeed), WebKit's choice of audioTimePitchAlgorithm.

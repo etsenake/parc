@@ -7,6 +7,7 @@
 // AVFoundation tried to fetch by itself would fail, so playing proves that
 // every load went through HlsLoader.
 #import <AVFoundation/AVFoundation.h>
+#import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
@@ -1447,6 +1448,74 @@ void File() {
            /*has_video=*/false);
 }
 
+// The default output device's Core Audio UID.
+std::string DefaultOutputDeviceUid() {
+  AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+                                        kAudioObjectPropertyElementMain};
+  AudioDeviceID device = kAudioObjectUnknown;
+  UInt32 size = sizeof(device);
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr, &size, &device) != noErr) {
+    return "";
+  }
+  address.mSelector = kAudioDevicePropertyDeviceUID;
+  CFStringRef uid = nullptr;
+  size = sizeof(uid);
+  if (AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &uid) != noErr || !uid) {
+    return "";
+  }
+  std::string result = ((__bridge NSString*)uid).UTF8String;
+  CFRelease(uid);
+  return result;
+}
+
+// HTMLMediaElement.setSinkId on the native HLS route, as WebKit's
+// MediaPlayerPrivateAVFoundationObjC: a device named before the player exists
+// is on it once made and empty follows the system default (nil). WebKit
+// leaves a device going away to AVFoundation, which pauses the player.
+void AudioOutput() {
+  std::printf("-- audio output device (setSinkId)\n");
+  // A private aggregate device over the default output, which this process
+  // alone sees and can make disappear, as an unplugged headset does.
+  const std::string main_uid = DefaultOutputDeviceUid();
+  const std::string uid = "parc.fairplay.hls-harness." + std::to_string(getpid());
+  NSDictionary* description = @{
+    @kAudioAggregateDeviceUIDKey : @(uid.c_str()),
+    @kAudioAggregateDeviceNameKey : @"Parc harness output",
+    @kAudioAggregateDeviceIsPrivateKey : @1,
+    @kAudioAggregateDeviceMainSubDeviceKey : @(main_uid.c_str()),
+    @kAudioAggregateDeviceSubDeviceListKey : @[ @{@kAudioSubDeviceUIDKey : @(main_uid.c_str())} ],
+  };
+  AudioObjectID device = kAudioObjectUnknown;
+  Check(!main_uid.empty() &&
+            AudioHardwareCreateAggregateDevice((__bridge CFDictionaryRef)description, &device) == noErr,
+        "a private output device to route to");
+  Rig rig;
+  OnOwner([&] { rig.player->SetAudioOutputDevice(uid); });
+  Check(rig.Load(Fake("media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/manifest.m3u8")).ok(), "Load");
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  Check(ready && rig.client.metadata, "metadata");
+  auto output = [&] {
+    NSString* result = nil;
+    OnOwner([&] { result = fp::HlsPlayerAVPlayer(rig.player->impl()).audioOutputDeviceUniqueID; });
+    return result;
+  };
+  Check([output() isEqualToString:@(uid.c_str())], "a device named before the player is on it once made");
+  OnOwner([&] { rig.player->SetRate(1); });
+  Check(WaitFor([&] { return rig.Time() > 2; }, 20), "plays on the named device");
+  AudioHardwareDestroyAggregateDevice(device);
+  WaitFor([] { return false; }, 2);
+  // AVFoundation pauses the player and stops buffering its item for good
+  // (unlike a player following the default, which plays on); WebKit does
+  // nothing more, so Safari's element sits still while "playing".
+  OnOwner([&] {
+    AVPlayer* player = fp::HlsPlayerAVPlayer(rig.player->impl());
+    std::printf("  2s after the device went away: rate %.2f, time %.3f, %d errors\n", player.rate, rig.Time(),
+                rig.client.errors);
+  });
+  OnOwner([&] { rig.player->SetAudioOutputDevice(""); });
+  Check(output() == nil, "empty follows the system default again (nil)");
+}
+
 void Teardown() {
   std::printf("-- teardown with loads in flight\n");
   {
@@ -1473,7 +1542,7 @@ int main(int argc, char** argv) {
         {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
         {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},
-        {"keys-legacy-order", KeysLegacyOrder}, {"airplay", AirPlay}, {"file", File}};
+        {"keys-legacy-order", KeysLegacyOrder}, {"airplay", AirPlay}, {"file", File}, {"audio-output", AudioOutput}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

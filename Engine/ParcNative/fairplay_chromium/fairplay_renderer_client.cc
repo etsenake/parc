@@ -7,6 +7,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "media/base/audio_renderer_sink.h"
 #include "media/base/media_resource.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
@@ -40,11 +41,13 @@ FairPlayRendererClient::FairPlayRendererClient(
     std::unique_ptr<MojoRenderer> mojo_renderer,
     mojo::PendingReceiver<mojom::FairPlayRendererClientExtension>
         client_extension_receiver,
-    VideoRendererSink* sink)
+    VideoRendererSink* sink,
+    AudioRendererSink* audio_sink)
     : media_task_runner_(std::move(media_task_runner)),
       mojo_renderer_(std::move(mojo_renderer)),
       pending_client_extension_receiver_(std::move(client_extension_receiver)),
-      sink_(sink) {
+      sink_(sink),
+      audio_sink_(audio_sink) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
 
@@ -89,6 +92,7 @@ void FairPlayRendererClient::Initialize(MediaResource* media_resource,
   // The MojoRenderer reports to this object, which passes everything on to
   // |client_| and paints the hole frame on natural size changes.
   mojo_renderer_->Initialize(initial_streams_.get(), this, std::move(init_cb));
+  ParcOnAudioOutputDeviceChanged();
 }
 
 void FairPlayRendererClient::SetCdm(CdmContext* cdm_context,
@@ -121,6 +125,30 @@ void FairPlayRendererClient::SetPlaybackRate(double playback_rate) {
 void FairPlayRendererClient::SetVolume(float volume) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   mojo_renderer_->SetVolume(volume);
+}
+
+void FairPlayRendererClient::ParcOnAudioOutputDeviceChanged() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!audio_sink_) {
+    return;
+  }
+  audio_sink_->GetOutputDeviceInfoAsync(
+      base::BindOnce(&FairPlayRendererClient::OnAudioOutputDeviceInfo,
+                     weak_factory_.GetWeakPtr(), ++audio_output_device_queries_));
+}
+
+void FairPlayRendererClient::OnAudioOutputDeviceInfo(uint64_t query,
+                                                     OutputDeviceInfo info) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (query != audio_output_device_queries_ ||
+      info.device_status() != OUTPUT_DEVICE_STATUS_OK) {
+    return;
+  }
+  if (!renderer_extension_) {
+    pending_audio_output_device_ = info.device_id();
+    return;
+  }
+  renderer_extension_->SetAudioOutputDevice(info.device_id());
 }
 
 base::TimeDelta FairPlayRendererClient::GetMediaTime() {
@@ -306,6 +334,10 @@ void FairPlayRendererClient::OnRendererExtension(
   if (pending_mute_state_handoff_) {
     renderer_extension_->FollowMuteStateHandoff(
         *std::exchange(pending_mute_state_handoff_, std::nullopt));
+  }
+  if (pending_audio_output_device_) {
+    renderer_extension_->SetAudioOutputDevice(
+        *std::exchange(pending_audio_output_device_, std::nullopt));
   }
   if (pending_track_change_) {
     std::move(pending_track_change_).Run();

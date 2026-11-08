@@ -23,12 +23,12 @@ FairPlayRendererClientFactory::~FairPlayRendererClientFactory() = default;
 std::unique_ptr<Renderer> FairPlayRendererClientFactory::CreateRenderer(
     const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
     const scoped_refptr<base::TaskRunner>& /*worker_task_runner*/,
-    AudioRendererSink* /*audio_renderer_sink*/,
+    AudioRendererSink* audio_renderer_sink,
     VideoRendererSink* video_renderer_sink,
     RequestOverlayInfoCB /*request_overlay_info_cb*/,
     const gfx::ColorSpace& /*target_color_space*/) {
   // Audio plays through AVSampleBufferAudioRenderer in the GPU process, not
-  // through |audio_renderer_sink|.
+  // through |audio_renderer_sink|, which only names its output device.
   mojo::PendingRemote<mojom::FairPlayRendererClientExtension>
       client_extension_remote;
   auto client_extension_receiver =
@@ -39,7 +39,8 @@ std::unique_ptr<Renderer> FairPlayRendererClientFactory::CreateRenderer(
           video_renderer_sink);
   auto renderer = std::make_unique<FairPlayRendererClient>(
       media_task_runner, std::move(mojo_renderer),
-      std::move(client_extension_receiver), video_renderer_sink);
+      std::move(client_extension_receiver), video_renderer_sink,
+      audio_renderer_sink);
   media_task_runner_ = media_task_runner;
   renderer_ = renderer->GetWeakPtr();
   return renderer;

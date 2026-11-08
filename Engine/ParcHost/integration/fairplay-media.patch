@@ -378,7 +378,7 @@
  namespace content {
  
  namespace {
-@@ -198,7 +266,81 @@
+@@ -198,7 +266,90 @@
  #endif
    }
  
@@ -454,6 +454,15 @@
 +            },
 +            std::move(callback)));
 +  }
++
++  // As MediaWebContentsObserver translates a player's audio output sink.
++  void GetFairPlayAudioOutputDeviceUid(
++      const std::string& hashed_device_id,
++      GetFairPlayAudioOutputDeviceUidCallback callback) override {
++    GetRawDeviceIdFromHMAC(render_frame_host_->GetGlobalId(), hashed_device_id,
++                           blink::mojom::MediaDeviceType::kMediaAudioOutput,
++                           std::move(callback));
++  }
 +#endif  // BUILDFLAG(IS_MAC)
 +
 +#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
@@ -461,7 +470,7 @@
    void RegisterMuteStateObserver(
        mojo::PendingRemote<media::mojom::MuteStateObserver> observer) override {
      auto remote_id = site_mute_observers_.Add(std::move(observer));
-@@ -206,7 +348,9 @@
+@@ -206,7 +357,9 @@
      site_mute_observers_.Get(remote_id)->OnMuteStateChange(
          WebContents::FromRenderFrameHost(render_frame_host_)->IsAudioMuted());
    }
@@ -471,7 +480,7 @@
    void CreateDCOMPSurfaceRegistry(
        mojo::PendingReceiver<media::mojom::DCOMPSurfaceRegistry> receiver)
        override {
-@@ -283,21 +427,23 @@
+@@ -283,21 +436,23 @@
          render_frame_host_, std::move(receiver));
    }
  
@@ -498,7 +507,7 @@
    // `has_value()` indicates `ContentProtectionWindow::Create()` has been
    // attempted. The inner pointer is null if creation failed. This prevents
    // retrying creation (and re-recording the UMA) on every call.
-@@ -350,6 +496,56 @@
+@@ -350,6 +505,56 @@
  };
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -555,7 +564,7 @@
  }  // namespace
  
  MediaInterfaceProxy::MediaInterfaceProxy(RenderFrameHost* render_frame_host)
-@@ -365,10 +561,22 @@
+@@ -365,10 +570,22 @@
  
    auto frame_factory_getter = base::BindRepeating(
        &MediaInterfaceProxy::GetFrameServices, base::Unretained(this), cdm_type);
@@ -563,14 +572,14 @@
 +  // Parc: its frames may use each other's CDMs (MojoCdmServiceContext).
 +  const int render_process_id =
 +      render_frame_host->GetProcess()->GetDeprecatedID();
-+  media_interface_factory_ptr_ = std::make_unique<MediaInterfaceFactoryHolder>(
+   media_interface_factory_ptr_ = std::make_unique<MediaInterfaceFactoryHolder>(
 +      base::BindRepeating(&GetMediaService), frame_factory_getter,
 +      render_process_id);
 +  secondary_interface_factory_ = std::make_unique<MediaInterfaceFactoryHolder>(
 +      base::BindRepeating(&GetSecondaryMediaService), frame_factory_getter,
 +      render_process_id);
 +#else
-   media_interface_factory_ptr_ = std::make_unique<MediaInterfaceFactoryHolder>(
++  media_interface_factory_ptr_ = std::make_unique<MediaInterfaceFactoryHolder>(
        base::BindRepeating(&GetMediaService), frame_factory_getter);
    secondary_interface_factory_ = std::make_unique<MediaInterfaceFactoryHolder>(
        base::BindRepeating(&GetSecondaryMediaService), frame_factory_getter);
@@ -578,10 +587,11 @@
  
    // |cdm_factory_map_| will be lazily connected in GetCdmFactory().
  }
-@@ -523,11 +731,139 @@
+@@ -522,12 +739,140 @@
+   }
  }
  #endif  // BUILDFLAG(IS_WIN)
- 
++
 +#if BUILDFLAG(IS_MAC)
 +void MediaInterfaceProxy::CreateFairPlayRenderer(
 +    mojo::PendingReceiver<media::mojom::Renderer> receiver,
@@ -622,7 +632,7 @@
 +    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client,
 +    mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime) {
 +  CHECK(thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M160);
-+
+ 
 +  // The player lives in the same media service as the frame's FairPlay CDMs
 +  // (see CreateCdm), so its SetCdm() finds them.
 +  InterfaceFactory* factory = media_interface_factory_ptr_->Get();
@@ -1360,7 +1370,15 @@
  
  #include "base/command_line.h"
  #include "base/dcheck_is_on.h"
-@@ -278,6 +279,17 @@
+@@ -96,6 +97,7 @@
+   void SetVolume(float volume);
+   void SetLatencyHint(std::optional<base::TimeDelta> latency_hint);
+   void SetPreservesPitch(bool preserves_pitch);
++  void ParcOnAudioOutputDeviceChanged();
+   void SetRenderMutedAudio(bool render_muted_audio);
+   void SetWasPlayedWithUserActivationAndHighMediaEngagement(
+       bool was_played_with_user_activation_and_high_media_engagement);
+@@ -278,6 +280,17 @@
    // one by calling back to PipelineImpl. Fires |done_cb| with the result.
    void CreateRendererInternal(PipelineStatusCallback done_cb);
  
@@ -1378,7 +1396,7 @@
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
    const std::unique_ptr<MediaLog> media_log_;
-@@ -297,6 +309,9 @@
+@@ -297,6 +310,9 @@
    std::optional<base::TimeDelta> latency_hint_;
    bool render_muted_audio_ = false;
    raw_ptr<CdmContext, DanglingUntriaged> cdm_context_ = nullptr;
@@ -1388,10 +1406,11 @@
  
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
-@@ -328,6 +343,22 @@
+@@ -327,7 +343,23 @@
+ 
    // Called from non-media threads when an error occurs.
    RepeatingPipelineStatusCallback error_cb_;
- 
++
 +  // Parc: the renderer plays backward, or `parc_turn_` is turning it.
 +  bool parc_backward_ = false;
 +  std::unique_ptr<SerialRunner> parc_turn_;
@@ -1405,13 +1424,13 @@
 +  // turn repeats it.
 +  BufferingState parc_buffering_state_ = BUFFERING_HAVE_NOTHING;
 +  bool parc_turned_ = false;
-+
+ 
 +  // CDM acceptance survives Stop so the next load keeps accepted keys.
 +  base::WeakPtrFactory<RendererWrapper> cdm_weak_factory_{this};
    base::WeakPtrFactory<RendererWrapper> weak_factory_{this};
  };
  
-@@ -380,6 +411,12 @@
+@@ -380,6 +412,12 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
  
@@ -1424,7 +1443,7 @@
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -430,6 +467,14 @@
+@@ -430,6 +468,14 @@
    // the pipeline is stopped before it had a chance to complete outstanding
    // tasks.
    pending_callbacks_.reset();
@@ -1439,7 +1458,7 @@
    weak_factory_.InvalidateWeakPtrs();
  
    DestroyRenderer();
-@@ -449,6 +494,12 @@
+@@ -449,6 +495,12 @@
  void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1452,7 +1471,7 @@
    // Suppress seeking if we're not fully started.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -461,6 +512,9 @@
+@@ -461,6 +513,9 @@
  
    SetState(State::kSeeking);
    renderer_ended_ = false;
@@ -1462,7 +1481,7 @@
  
    // Queue asynchronous actions required to start.
    DCHECK(!pending_callbacks_);
-@@ -490,6 +544,12 @@
+@@ -490,6 +545,12 @@
  void PipelineImpl::RendererWrapper::Suspend() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1475,7 +1494,7 @@
    // Suppress suspending if we're not playing.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -500,6 +560,11 @@
+@@ -500,6 +561,11 @@
    DCHECK(!pending_callbacks_.get());
  
    SetState(State::kSuspending);
@@ -1487,7 +1506,7 @@
  
    // Freeze playback and record the media time before destroying the renderer.
    shared_state_.media().renderer->SetPlaybackRate(0.0);
-@@ -546,6 +611,8 @@
+@@ -546,6 +612,8 @@
  
    default_renderer_ = std::move(default_renderer);
    renderer_ended_ = false;
@@ -1496,7 +1515,7 @@
    base::TimeDelta start_timestamp =
        std::max(timestamp, demuxer_->GetStartTime());
  
-@@ -576,9 +643,15 @@
+@@ -576,9 +644,15 @@
  void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1514,7 +1533,21 @@
    }
  
    if (state_ != State::kCreated && state_ != State::kStopping &&
-@@ -689,8 +762,50 @@
+@@ -622,6 +696,13 @@
+   }
+ }
+ 
++void PipelineImpl::RendererWrapper::ParcOnAudioOutputDeviceChanged() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
++  if (shared_state_.media().renderer) {
++    shared_state_.media().renderer->ParcOnAudioOutputDeviceChanged();
++  }
++}
++
+ void PipelineImpl::RendererWrapper::SetRenderMutedAudio(
+     bool render_muted_audio) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
+@@ -689,8 +770,50 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
@@ -1565,7 +1598,7 @@
    // If there's already a renderer, set the CDM on the renderer directly.
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetCdm(
-@@ -700,9 +815,27 @@
+@@ -700,9 +823,27 @@
      return;
    }
  
@@ -1593,7 +1626,7 @@
    std::move(cdm_attached_cb).Run(true);
  
    // Continue Renderer creation if it's waiting for the CDM to be set.
-@@ -734,6 +867,28 @@
+@@ -734,6 +875,28 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -1622,7 +1655,7 @@
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
    if (!default_renderer_ ||
-@@ -895,6 +1050,21 @@
+@@ -895,6 +1058,21 @@
      std::move(change_completed_cb).Run();
      return;
    }
@@ -1644,7 +1677,7 @@
  
    demuxer_->OnTracksChanged(
        track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
-@@ -1008,6 +1178,13 @@
+@@ -1008,6 +1186,13 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
    DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
  
@@ -1658,7 +1691,7 @@
    main_task_runner_->PostTask(
        FROM_HERE, base::BindOnce(&PipelineImpl::OnBufferingStateChange,
                                  weak_pipeline_, state, reason));
-@@ -1099,8 +1276,13 @@
+@@ -1099,8 +1284,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1673,7 +1706,7 @@
    std::move(cdm_attached_cb).Run(success);
  }
  
-@@ -1116,7 +1298,8 @@
+@@ -1116,7 +1306,8 @@
      return;
  
    main_task_runner_->PostTask(
@@ -1683,7 +1716,7 @@
  }
  
  void PipelineImpl::RendererWrapper::SetState(State next_state) {
-@@ -1146,6 +1329,12 @@
+@@ -1146,6 +1337,12 @@
      return;
    }
  
@@ -1696,7 +1729,7 @@
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1153,14 +1342,134 @@
+@@ -1153,14 +1350,134 @@
      shared_state_.mutable_media().suspend_timestamp = kNoTimestamp;
    }
  
@@ -1832,7 +1865,7 @@
  void PipelineImpl::RendererWrapper::CompleteSuspend(PipelineStatus status) {
    DVLOG(1) << __func__ << ": status=" << status;
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-@@ -1244,7 +1553,7 @@
+@@ -1244,7 +1561,7 @@
      return;
    }
  
@@ -1841,7 +1874,7 @@
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
  
    if (latency_hint_)
-@@ -1398,6 +1707,7 @@
+@@ -1398,6 +1715,7 @@
    DCHECK(!client_);
    DCHECK(!seek_cb_);
    client_ = client;
@@ -1849,7 +1882,7 @@
    seek_cb_ = std::move(seek_cb);
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
-@@ -1529,10 +1839,9 @@
+@@ -1529,10 +1847,9 @@
  
    // Not checking IsRunning() so we can set the playback rate before Start().
  
@@ -1863,7 +1896,22 @@
  
    playback_rate_ = playback_rate;
    media_task_runner_->PostTask(
-@@ -1630,7 +1939,7 @@
+@@ -1587,6 +1904,14 @@
+       FROM_HERE, base::BindOnce(&RendererWrapper::SetPreservesPitch,
+                                 base::Unretained(renderer_wrapper_.get()),
+                                 preserves_pitch));
++}
++
++void PipelineImpl::ParcOnAudioOutputDeviceChanged() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  media_task_runner_->PostTask(
++      FROM_HERE,
++      base::BindOnce(&RendererWrapper::ParcOnAudioOutputDeviceChanged,
++                     base::Unretained(renderer_wrapper_.get())));
+ }
+ 
+ void PipelineImpl::SetRenderMutedAudio(bool render_muted_audio) {
+@@ -1630,7 +1955,7 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
@@ -1872,19 +1920,19 @@
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1639,6 +1948,11 @@
-   DVLOG(3) << __func__ << ": " << media_time.InMilliseconds() << " ms";
-   last_media_time_ = media_time;
+@@ -1641,6 +1966,11 @@
    return last_media_time_;
-+}
-+
+ }
+ 
 +void PipelineImpl::ParcResetMediaTimeClamp() {
 +  DCHECK(thread_checker_.CalledOnValidThread());
 +  last_media_time_ = base::TimeDelta();
- }
- 
++}
++
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
-@@ -1665,7 +1979,8 @@
+   DCHECK(thread_checker_.CalledOnValidThread());
+   return renderer_wrapper_->GetBufferedTimeRanges();
+@@ -1665,7 +1995,8 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -1894,7 +1942,7 @@
    DCHECK(cdm_attached_cb);
  
    // Not checking IsRunning() so we can set the CDM before Start().
-@@ -1714,11 +2029,16 @@
+@@ -1714,11 +2045,16 @@
    client_->OnFallback(std::move(status).AddHere());
  }
  
@@ -1946,7 +1994,7 @@
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
-@@ -131,6 +134,14 @@
+@@ -131,6 +134,19 @@
    // enforce RendererType registration for all Renderer implementations.
    // Note: New implementation should update RendererType.
    virtual RendererType GetRendererType() = 0;
@@ -1958,6 +2006,11 @@
 +                                            double playback_rate,
 +                                            ParcSeekDemuxerCB seek_demuxer_cb) {
 +  }
++
++  // Parc: the pipeline's audio sink switched to another output device
++  // (HTMLMediaElement.setSinkId). Renderers whose audio bypasses the sink
++  // (FairPlay, native HLS) move theirs to the device the sink now names.
++  virtual void ParcOnAudioOutputDeviceChanged() {}
  };
  
  }  // namespace media
@@ -4501,11 +4554,10 @@
    RegisterMuteStateObserver(
        pending_remote<MuteStateObserver> site_mute_observer);
  
-@@ -54,6 +58,28 @@
-   // Gets the origin of the frame associated with the CDM.
+@@ -55,6 +59,36 @@
    [Sync]
    GetCdmOrigin() => (url.mojom.Origin cdm_origin);
-+
+ 
 +  // Parc: the directory where the frame's FairPlay CDM keeps AVFoundation's
 +  // expired-session reports (Safari's persistent-usage-record sessions), as
 +  // WebKit's MediaKeys storage: one per Profile, top-level origin and origin,
@@ -4527,9 +4579,18 @@
 +  // its URLs.
 +  [EnableIf=is_mac]
 +  IsFairPlayEphemeralSession() => (bool ephemeral);
- 
++
++  // Parc: the Core Audio device UID of the audio output `hashed_device_id`
++  // names for the frame (HTMLMediaElement.setSinkId), for a FairPlay
++  // Renderer or native HLS player, whose audio bypasses the audio service.
++  // Null when no such device is there.
++  [EnableIf=is_mac]
++  GetFairPlayAudioOutputDeviceUid(string hashed_device_id)
++      => (string? unique_id);
++
    // Gets the screen rect of the frame in physical pixels.
    // Used for Media Foundation GPU adapter selection.
+   [EnableIf=is_win]
 --- a/media/mojo/mojom/interface_factory.mojom
 +++ b/media/mojo/mojom/interface_factory.mojom
 @@ -83,6 +83,31 @@
@@ -4621,7 +4682,7 @@
  // Extension of the mojo::RendererClient communication layer for media flinging,
  // a.k.a RemotePlayback, when playing media on a remote Cast device.
  // This allows the Browser side to call back into the Renderer side.
-@@ -24,6 +29,378 @@
+@@ -24,6 +29,384 @@
    OnRemotePlayStateChange(MediaStatusState state);
  };
  
@@ -4667,6 +4728,10 @@
 +  // to, instead of the one the Renderer was made in: `handoff` is what that
 +  // frame's InterfaceFactory.CreateMuteStateHandoff() answered.
 +  FollowMuteStateHandoff(mojo_base.mojom.UnguessableToken handoff);
++  // HTMLMediaElement.setSinkId: `sink_id` as the page named it (hashed for
++  // the frame's origin; empty or "default" for the system default). The GPU
++  // process asks the browser for its Core Audio device.
++  SetAudioOutputDevice(string sink_id);
 +};
 +
 +// Parc: Safari's native HLS route. An AVPlayer in the GPU process's media
@@ -4912,6 +4977,8 @@
 +  SetVolume(float volume);
 +  SetMuted(bool muted);
 +  SetPreservesPitch(bool preserves_pitch);
++  // As FairPlayRendererExtension.SetAudioOutputDevice.
++  SetAudioOutputDevice(string sink_id);
 +  // Legacy clear key: the key for a held clearkey:// request's key ID (the
 +  // page's WebKitMediaKeys session took it).
 +  ProvideClearKey(string key_id, array<uint8> key);
@@ -5023,15 +5090,19 @@
  #include "media/base/audio_decoder.h"
  #include "media/base/offloading_audio_encoder.h"
  #include "media/filters/mac/audio_toolbox_audio_decoder.h"
-@@ -13,14 +14,168 @@
+@@ -13,14 +14,226 @@
  #include "media/gpu/mac/video_toolbox_video_decoder.h"
  #include "media/mojo/services/gpu_mojo_media_client.h"
  
 +#if BUILDFLAG(IS_MAC)
 +#include <map>
++#include <optional>
++#include <string>
 +
 +#include "base/functional/bind.h"
 +#include "base/functional/callback_helpers.h"
++#include "base/memory/ref_counted.h"
++#include "media/audio/audio_device_description.h"
 +#include "media/base/cdm_factory.h"
 +#include "media/base/renderer.h"
 +#include "media/mojo/mojom/frame_interface_factory.mojom.h"
@@ -5048,6 +5119,48 @@
  namespace media {
  
 +#if BUILDFLAG(IS_MAC)
++namespace {
++
++// Parc: HTMLMediaElement.setSinkId for a player whose audio bypasses the
++// audio service. Runs `set_unique_id` with the Core Audio device each sink ID
++// names (empty for the system default), as the browser resolves the page's
++// hashed ID; an answer a later ID overtook is dropped, and a device the
++// browser doesn't find leaves the output as it is.
++base::RepeatingCallback<void(const std::string&)>
++FairPlayAudioOutputDeviceSetter(
++    mojom::FrameInterfaceFactory* frame_interfaces,
++    base::RepeatingCallback<void(const std::string&)> set_unique_id) {
++  using Setter = base::RepeatingCallback<void(const std::string&)>;
++  using Requests = base::RefCountedData<uint64_t>;
++  return base::BindRepeating(
++      [](mojom::FrameInterfaceFactory* frame_interfaces, const Setter& set,
++         const scoped_refptr<Requests>& requests, const std::string& sink_id) {
++        const uint64_t request = ++requests->data;
++        if (AudioDeviceDescription::IsDefaultDevice(sink_id)) {
++          set.Run(std::string());
++          return;
++        }
++        if (!frame_interfaces) {
++          return;
++        }
++        frame_interfaces->GetFairPlayAudioOutputDeviceUid(
++            sink_id,
++            base::BindOnce(
++                [](Setter set, scoped_refptr<Requests> requests,
++                   uint64_t request,
++                   const std::optional<std::string>& unique_id) {
++                  if (unique_id && request == requests->data) {
++                    set.Run(*unique_id);
++                  }
++                },
++                set, requests, request));
++      },
++      frame_interfaces, std::move(set_unique_id),
++      base::MakeRefCounted<Requests>(0));
++}
++
++}  // namespace
++
 +// Parc: streams the render process adds to a playing FairPlay Renderer reach
 +// it once their config arrived. Owned by the renderer, with the streams.
 +class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
@@ -5055,10 +5168,14 @@
 +  FairPlayRendererStreams(
 +      FairPlayRendererAdapter* renderer,
 +      mojo::PendingReceiver<mojom::FairPlayRendererExtension> receiver,
-+      MojoMediaClient::MuteStateHandoffTaker take_mute_state_handoff)
++      MojoMediaClient::MuteStateHandoffTaker take_mute_state_handoff,
++      mojom::FrameInterfaceFactory* frame_interfaces)
 +      : renderer_(renderer),
 +        receiver_(this, std::move(receiver)),
-+        take_mute_state_handoff_(std::move(take_mute_state_handoff)) {}
++        take_mute_state_handoff_(std::move(take_mute_state_handoff)),
++        set_audio_output_device_(FairPlayAudioOutputDeviceSetter(
++            frame_interfaces,
++            renderer->GetAudioOutputDeviceCallback())) {}
 +  ~FairPlayRendererStreams() final = default;
 +
 +  void AddStream(uint32_t id,
@@ -5094,6 +5211,10 @@
 +    }
 +  }
 +
++  void SetAudioOutputDevice(const std::string& sink_id) final {
++    set_audio_output_device_.Run(sink_id);
++  }
++
 + private:
 +  void OnStreamReady(uint32_t id, AddStreamCallback callback) {
 +    renderer_->AddStream(id, streams_[id].get());
@@ -5103,6 +5224,8 @@
 +  const raw_ptr<FairPlayRendererAdapter> renderer_;
 +  mojo::Receiver<mojom::FairPlayRendererExtension> receiver_;
 +  const MojoMediaClient::MuteStateHandoffTaker take_mute_state_handoff_;
++  const base::RepeatingCallback<void(const std::string&)>
++      set_audio_output_device_;
 +  std::map<uint32_t, std::unique_ptr<MojoDemuxerStreamAdapter>> streams_;
 +  base::WeakPtrFactory<FairPlayRendererStreams> weak_factory_{this};
 +};
@@ -5142,7 +5265,7 @@
 +    mojo::PendingRemote<mojom::FairPlayRendererExtension> extension;
 +    renderer->SetExtension(std::make_unique<FairPlayRendererStreams>(
 +        renderer.get(), extension.InitWithNewPipeAndPassReceiver(),
-+        std::move(take_mute_state_handoff)));
++        std::move(take_mute_state_handoff), frame_interfaces));
 +    (*client_remote)->OnRendererExtension(std::move(extension));
 +    if (frame_interfaces) {
 +      // The frame's tab mute, the way MediaFoundationRendererWrapper gets it:
@@ -5171,6 +5294,8 @@
 +        std::move(task_runner), std::move(get_cdm_context), std::move(client),
 +        std::move(lifetime));
 +    player->SetMuteStateHandoffTaker(std::move(take_mute_state_handoff));
++    player->SetAudioOutputDeviceSetter(FairPlayAudioOutputDeviceSetter(
++        frame_interfaces, player->GetAudioOutputDeviceCallback()));
 +    if (frame_interfaces) {
 +      // As for the FairPlay Renderer: the browser answers at once, and the
 +      // observer closes with the player.
@@ -5192,7 +5317,7 @@
   protected:
    std::unique_ptr<VideoDecoder> CreatePlatformVideoDecoder(
        VideoDecoderTraits& traits) final {
-@@ -63,6 +218,17 @@
+@@ -63,6 +276,17 @@
    VideoDecoderType GetPlatformDecoderImplementationType() final {
      return VideoDecoderType::kVideoToolbox;
    }
@@ -5663,7 +5788,7 @@
    void CreateDCOMPSurfaceRegistry(
        mojo::PendingReceiver<mojom::DCOMPSurfaceRegistry> receiver) override {}
    void GetFrameScreenRect(GetFrameScreenRectCallback callback) override {
-@@ -90,6 +93,20 @@
+@@ -90,6 +93,25 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
    void GetCdmOrigin(GetCdmOriginCallback callback) override {}
@@ -5679,6 +5804,11 @@
 +  void IsFairPlayEphemeralSession(
 +      IsFairPlayEphemeralSessionCallback callback) override {
 +    std::move(callback).Run(false);
++  }
++  void GetFairPlayAudioOutputDeviceUid(
++      const std::string& hashed_device_id,
++      GetFairPlayAudioOutputDeviceUidCallback callback) override {
++    std::move(callback).Run(std::nullopt);
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
    void BindEmbedderReceiver(mojo::GenericPendingReceiver) override {}
@@ -6519,7 +6649,25 @@
  
    MaybeUpdateBufferSizesForPlayback();
  }
-@@ -1348,7 +1694,28 @@
+@@ -1303,6 +1649,17 @@
+ 
+   media::OutputDeviceStatusCB callback =
+       ConvertToOutputDeviceStatusCB(std::move(completion_callback));
++  // Parc: FairPlay and native HLS renderers play their audio themselves and
++  // move it once the sink has switched; other renderers ignore the call.
++  callback = base::BindPostTaskToCurrentDefault(blink::BindOnce(
++      [](base::WeakPtr<WebMediaPlayerImpl> player,
++         media::OutputDeviceStatusCB done, media::OutputDeviceStatus status) {
++        if (player && status == media::OUTPUT_DEVICE_STATUS_OK) {
++          player->pipeline_controller_->ParcOnAudioOutputDeviceChanged();
++        }
++        std::move(done).Run(status);
++      },
++      weak_this_, std::move(callback)));
+   auto sink_id_utf8 = sink_id.Utf8();
+   PostCrossThreadTask(
+       *media_task_runner_, FROM_HERE,
+@@ -1348,15 +1705,39 @@
    media_metrics_provider_->SetHasTrackChange();
    auto media_track_id = ConvertTrackType(std::move(enabled_track_id));
    media_log_->AddEvent<MediaLogEvent::kAudioTrackChange>(media_track_id);
@@ -6527,8 +6675,8 @@
 +  parc_audio_track_choice_ = media_track_id;
 +#endif  // BUILDFLAG(IS_MAC)
    pipeline_controller_->OnEnabledAudioTracksChanged(media_track_id);
-+}
-+
+ }
+ 
 +// Parc: Safari's Media Source plays every enabled audio track; the
 +// pipeline's change enables them all in the demuxer, and the renderer plays
 +// each one it enables.
@@ -6545,10 +6693,11 @@
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
 +  WebMediaPlayer::ParcEnabledAudioTracksChanged(enabled_track_ids);
- }
- 
++}
++
  void WebMediaPlayerImpl::SelectedVideoTrackChanged(
-@@ -1357,6 +1724,9 @@
+     std::optional<WebMediaPlayer::TrackId> selected_track_id) {
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
    media_metrics_provider_->SetHasTrackChange();
    auto media_track_id = ConvertTrackType(std::move(selected_track_id));
    media_log_->AddEvent<MediaLogEvent::kVideoTrackChange>(media_track_id);
@@ -6558,7 +6707,7 @@
    pipeline_controller_->OnSelectedVideoTrackChanged(media_track_id);
  }
  
-@@ -1401,6 +1771,12 @@
+@@ -1401,6 +1782,12 @@
    if (ready_state_ == WebMediaPlayer::kReadyStateHaveNothing)
      return std::numeric_limits<double>::quiet_NaN();
  
@@ -6571,10 +6720,12 @@
    // Some demuxer's might have more accurate duration information than the
    // pipeline, so check that first.
    std::optional<double> duration = demuxer_manager_->GetDemuxerDuration();
-@@ -1423,6 +1799,24 @@
-   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
- }
+@@ -1421,6 +1808,24 @@
+     return std::numeric_limits<double>::quiet_NaN();
  
+   return pipeline_metadata_.timeline_offset.InMillisecondsFSinceUnixEpoch();
++}
++
 +double WebMediaPlayerImpl::ParcStartDate() const {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +
@@ -6591,12 +6742,10 @@
 +    return std::numeric_limits<double>::quiet_NaN();
 +  }
 +  return timeline->start_date->InMillisecondsFSinceUnixEpoch();
-+}
-+
- base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
-   DCHECK(main_task_runner_->BelongsToCurrentThread());
+ }
  
-@@ -1496,6 +1890,21 @@
+ base::TimeDelta WebMediaPlayerImpl::GetCurrentTimeInternal() const {
+@@ -1496,6 +1901,21 @@
  
    if (ready_state_ < WebMediaPlayer::kReadyStateHaveMetadata) {
      return WebTimeRanges();
@@ -6618,10 +6767,11 @@
    }
  
    if (demuxer_manager_->IsLiveContent()) {
-@@ -1665,6 +2074,35 @@
+@@ -1664,6 +2084,35 @@
+     WebContentDecryptionModuleResult result) {
    DVLOG(1) << __func__ << ": cdm = " << cdm;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
- 
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a Safari-identity page clearing or replacing FairPlay MediaKeys,
 +  // which WebKit's setMediaKeys allows during playback (Blink clears the old
@@ -6650,15 +6800,13 @@
 +    return;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // Once the CDM is set it can't be cleared as there may be frames being
    // decrypted on other threads. So fail this request.
-   // http://crbug.com/40407494#comment8.
-@@ -1694,7 +2132,117 @@
-     media::EmeInitDataType init_data_type,
+@@ -1695,6 +2144,116 @@
      const std::vector<uint8_t>& init_data) {
    DCHECK(init_data_type != media::EmeInitDataType::UNKNOWN);
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: native HLS reports each key request no session asked for as "skd"
 +  // init data (the key URI), just before its stall for one made with no CDM
@@ -6708,7 +6856,7 @@
 +  for (const auto& [id, key] : parc_source_keys_)
 +    ParcCheckSourceKey(id);
 +}
- 
++
 +void WebMediaPlayerImpl::ParcCheckSourceKey(const std::string& id) {
 +  auto& key = parc_source_keys_.at(id);
 +  const uint64_t check = key.check = ++parc_source_key_check_;
@@ -6772,7 +6920,7 @@
    RecordEncryptedEvent(true);
  
    // Recreate the watch time reporter if necessary.
-@@ -1715,19 +2263,83 @@
+@@ -1715,19 +2274,83 @@
    encrypted_client_->Encrypted(init_data_type, init_data);
  }
  
@@ -6856,7 +7004,7 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  
  UrlData::CacheMode TranslateCacheMode(bool always_disable,
-@@ -1764,19 +2376,518 @@
+@@ -1764,19 +2387,518 @@
    // these things when they change, for example when CORS mode changes from
    // untainted to tainted. Using a NullMediaLog here prevents the unnecessary
    // spamming.
@@ -6988,7 +7136,7 @@
 +  }
 +  ParcSwitchRoute(native);
 +}
-+
+ 
 +// The element sees no change while the pipeline moves: its time is the
 +// seek's target (seeking_ without a seek of its own), its duration and
 +// readyState are held until the new route has seeked there
@@ -7252,7 +7400,7 @@
 +  constexpr base::TimeDelta kFutureDataThreshold = base::Microseconds(41708);
 +  constexpr base::TimeDelta kHaveEnoughDataThreshold = base::Seconds(3);
 +  const media::Ranges<base::TimeDelta>& buffered = source->buffered;
- 
++
 +  // PlatformTimeRanges::nearest; |ranges| isn't empty.
 +  auto nearest = [](const media::Ranges<base::TimeDelta>& ranges,
 +                    base::TimeDelta time) {
@@ -7384,7 +7532,7 @@
  void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK(cdm);
-@@ -1820,11 +2931,192 @@
+@@ -1820,11 +2942,192 @@
    // Keep the reference to the CDM, as it shouldn't be destroyed until
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
@@ -7398,8 +7546,8 @@
    pipeline_controller_->SetCdm(
        cdm_context,
        blink::BindOnce(&WebMediaPlayerImpl::OnCdmAttached, weak_this_));
- }
- 
++}
++
 +#if BUILDFLAG(IS_MAC)
 +void WebMediaPlayerImpl::ParcRestartIntoFairPlayIfNeeded() {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -7558,8 +7706,8 @@
 +  } else {
 +    ScheduleRestart();
 +  }
-+}
-+
+ }
+ 
 +// static
 +void WebMediaPlayerImpl::ParcAddStreams(const media::PipelineMetadata& added,
 +                                        media::PipelineMetadata* metadata) {
@@ -7577,7 +7725,7 @@
  void WebMediaPlayerImpl::OnCdmAttached(bool success) {
    DVLOG(1) << __func__ << ": success = " << success;
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -1835,17 +3127,70 @@
+@@ -1835,17 +3138,70 @@
    // If the CDM is set from the constructor there is no promise
    // (`set_cdm_result_`) to fulfill.
    if (success) {
@@ -7648,7 +7796,7 @@
    if (set_cdm_result_) {
      set_cdm_result_->CompleteWithError(
          kWebContentDecryptionModuleExceptionNotSupportedError, 0,
-@@ -1859,6 +3204,12 @@
+@@ -1859,6 +3215,12 @@
                 seek_time_.InSecondsF(), "id", media_player_id_);
    seeking_ = false;
    seek_time_ = base::TimeDelta();
@@ -7661,7 +7809,7 @@
  
    if (paused_) {
      paused_time_ = pipeline_controller_->GetMediaTime();
-@@ -1900,8 +3251,116 @@
+@@ -1900,8 +3262,116 @@
    }
  
    attempting_suspended_start_ = false;
@@ -7778,7 +7926,7 @@
  void WebMediaPlayerImpl::OnPipelineStarted(media::PipelineStatus status) {
    media_metrics_provider_->OnStarted(status);
  }
-@@ -1911,6 +3370,7 @@
+@@ -1911,6 +3381,7 @@
    media_log_->AddEvent<MediaLogEvent::kSuspended>();
  
    pending_oneshot_suspend_ = false;
@@ -7786,7 +7934,7 @@
  
    if (attempting_suspended_start_) {
      DCHECK(pipeline_controller_->IsSuspended());
-@@ -1988,6 +3448,27 @@
+@@ -1988,6 +3459,27 @@
  
  void WebMediaPlayerImpl::OnChunkDemuxerOpened(media::ChunkDemuxer* demuxer) {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -7814,7 +7962,7 @@
    client_->MediaSourceOpened(std::make_unique<WebMediaSourceImpl>(demuxer));
  }
  
-@@ -2018,6 +3499,8 @@
+@@ -2018,6 +3510,8 @@
  void WebMediaPlayerImpl::RestartForHls() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
@@ -7823,7 +7971,7 @@
    if (observer_) {
      observer_->OnHlsManifestDetected();
    }
-@@ -2036,6 +3519,20 @@
+@@ -2036,6 +3530,20 @@
    if (suppress_destruction_errors_)
      return;
  
@@ -7844,7 +7992,7 @@
  #if BUILDFLAG(IS_WIN)
    // An error or another hardware context reset (HCR) occurred within a very
    // short media time window from the previous HCR and the video is not paused
-@@ -2107,8 +3604,20 @@
+@@ -2107,8 +3615,20 @@
    if (!pipeline_controller_->IsStable())
      return;
  
@@ -7866,7 +8014,7 @@
      client_->TimeChanged();
    }
  
-@@ -2135,20 +3644,41 @@
+@@ -2135,20 +3655,41 @@
  
    MaybeSetContainerNameForMetrics();
  
@@ -7915,7 +8063,7 @@
  
      if (overlay_enabled_) {
        // SurfaceView doesn't support rotated video, so transition back if
-@@ -2197,6 +3727,14 @@
+@@ -2197,6 +3738,14 @@
    // needs to use the new ReadyState in its calculations.
    SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
    UpdatePlayState();
@@ -7930,7 +8078,7 @@
  }
  
  void WebMediaPlayerImpl::ActivateSurfaceLayerForVideo() {
-@@ -2210,6 +3748,9 @@
+@@ -2210,6 +3759,9 @@
    bridge_ = std::move(create_bridge_callback_)
                  .Run(this, compositor_->GetUpdateSubmissionStateCallback());
    bridge_->CreateSurfaceLayer();
@@ -7940,7 +8088,7 @@
  
    // TODO(tmathmeyer) does this need support for the reflection transformation
    // as well?
-@@ -2238,6 +3779,16 @@
+@@ -2238,6 +3790,16 @@
  void WebMediaPlayerImpl::OnBufferingStateChange(
      media::BufferingState state,
      media::BufferingStateChangeReason reason) {
@@ -7957,7 +8105,7 @@
    OnBufferingStateChangeInternal(state, reason, false);
  }
  
-@@ -2283,7 +3834,7 @@
+@@ -2283,7 +3845,7 @@
        pipeline_metadata_.natural_size, cdm_config_,
        frame_->GetTaskRunner(TaskType::kInternalMedia));
  
@@ -7966,7 +8114,7 @@
      video_decode_stats_reporter_->OnHidden();
    } else {
      video_decode_stats_reporter_->OnShown();
-@@ -2312,9 +3863,11 @@
+@@ -2312,9 +3874,11 @@
      delegate_->ClearStaleFlag(delegate_id_);
      UpdatePlayState();
    } else if (ready_state_ == ReadyState::kReadyStateHaveFutureData &&
@@ -7979,7 +8127,7 @@
  }
  
  bool WebMediaPlayerImpl::CanPlayThrough() {
-@@ -2339,7 +3892,7 @@
+@@ -2339,7 +3903,7 @@
  
    return buffered_data_source_host_->CanPlayThrough(
        base::Seconds(CurrentTime()), base::Seconds(Duration()),
@@ -7988,7 +8136,7 @@
  }
  
  void WebMediaPlayerImpl::OnBufferingStateChangeInternal(
-@@ -2361,10 +3914,42 @@
+@@ -2361,10 +3925,42 @@
  
    if (state == media::BUFFERING_HAVE_ENOUGH && !for_suspended_start)
      media_metrics_provider_->SetHaveEnough();
@@ -8031,7 +8179,7 @@
      // The SetReadyState() call below may clear
      // `skip_metrics_due_to_startup_suspend_` so report this first.
      if (!have_reported_time_to_play_ready_ &&
-@@ -2379,8 +3964,11 @@
+@@ -2379,8 +3975,11 @@
      }
  
      // Warning: This call may be re-entrant.
@@ -8045,7 +8193,7 @@
  
      // Let the DataSource know we have enough data -- this is the only function
      // during which we advance to (or past) the kReadyStateHaveEnoughData state.
-@@ -2396,8 +3984,11 @@
+@@ -2396,8 +3995,11 @@
        }
      }
  
@@ -8059,7 +8207,7 @@
        should_notify_time_changed_ = false;
        client_->TimeChanged();
      }
-@@ -2434,8 +4025,11 @@
+@@ -2434,8 +4036,11 @@
  
      // It shouldn't be possible to underflow if we've not advanced past
      // HAVE_CURRENT_DATA.
@@ -8073,7 +8221,7 @@
    }
  
    UpdatePlayState();
-@@ -2446,6 +4040,12 @@
+@@ -2446,6 +4051,12 @@
  
    if (ready_state_ == WebMediaPlayer::kReadyStateHaveNothing)
      return;
@@ -8086,7 +8234,7 @@
  
    client_->DurationChanged();
    DidMediaMetadataChange();
-@@ -2453,6 +4053,7 @@
+@@ -2453,6 +4064,7 @@
  
    if (watch_time_reporter_)
      watch_time_reporter_->OnDurationChanged(GetPipelineMediaDuration());
@@ -8094,7 +8242,7 @@
  }
  
  void WebMediaPlayerImpl::OnWaiting(media::WaitingReason reason) {
-@@ -2462,6 +4063,23 @@
+@@ -2462,6 +4074,23 @@
    switch (reason) {
      case media::WaitingReason::kNoCdm:
      case media::WaitingReason::kNoDecryptionKey:
@@ -8118,7 +8266,7 @@
        has_waiting_for_key_ = true;
        media_metrics_provider_->SetHasWaitingForKey();
        encrypted_client_->DidBlockPlaybackWaitingForKey();
-@@ -2575,6 +4193,12 @@
+@@ -2575,6 +4204,12 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    DCHECK_NE(ready_state_, WebMediaPlayer::kReadyStateHaveNothing);
  
@@ -8131,10 +8279,12 @@
    const bool codec_change =
        pipeline_metadata_.video_decoder_config.codec() != config.codec();
    const bool codec_profile_change =
-@@ -2640,9 +4264,97 @@
-   UpdateSecondaryProperties();
- }
+@@ -2638,11 +4273,99 @@
+     return;
  
+   UpdateSecondaryProperties();
++}
++
 +void WebMediaPlayerImpl::ParcSetPageHidden(
 +    std::optional<bool> is_page_hidden) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -8211,8 +8361,8 @@
 +        media_position_state_.duration(), media_position_state_.GetPosition(),
 +        media_position_state_.end_of_media());
 +  }
-+}
-+
+ }
+ 
  void WebMediaPlayerImpl::OnPageHidden() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  // Parc: the delegate tells the page of the frame that made the player, which
@@ -8229,7 +8379,7 @@
    // Backgrounding a video requires a user gesture to resume playback.
    if (IsPageHidden()) {
      allow_background_video_playback_ = false;
-@@ -2679,6 +4391,14 @@
+@@ -2679,6 +4402,14 @@
  
  void WebMediaPlayerImpl::OnPageShown() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -8244,7 +8394,7 @@
    background_pause_timer_.Stop();
  
    // Foreground videos don't require user gesture to continue playback.
-@@ -2825,6 +4545,39 @@
+@@ -2825,6 +4556,39 @@
    }
  }
  
@@ -8284,7 +8434,7 @@
  #if BUILDFLAG(IS_ANDROID)
  void WebMediaPlayerImpl::FlingingStarted() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-@@ -2890,6 +4643,9 @@
+@@ -2890,6 +4654,9 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
    if (!success) {
@@ -8294,7 +8444,7 @@
      SetNetworkState(WebMediaPlayer::kNetworkStateFormatError);
      media_metrics_provider_->OnError(media::PIPELINE_ERROR_NETWORK);
  
-@@ -3018,11 +4774,45 @@
+@@ -3018,11 +4785,45 @@
    bool old_uses_audio_service = UsesAudioService(renderer_type_);
    const auto old_renderer_type = renderer_type_;
    renderer_type_ = renderer_factory_selector_->GetCurrentRendererType();
@@ -8340,7 +8490,7 @@
  
    bool new_uses_audio_service = UsesAudioService(renderer_type_);
    if (new_uses_audio_service != old_uses_audio_service)
-@@ -3038,6 +4828,14 @@
+@@ -3038,6 +4839,14 @@
      CreateWatchTimeReporter();
    }
  
@@ -8355,7 +8505,7 @@
    return renderer_factory_selector_->GetCurrentFactory()->CreateRenderer(
        media_task_runner_, worker_task_runner_, audio_source_provider_.get(),
        compositor_.get(), std::move(request_overlay_info_cb),
-@@ -3068,6 +4866,14 @@
+@@ -3068,6 +4877,14 @@
    media_metrics_provider_->SetDemuxerType(demuxer->GetDemuxerType());
    pipeline_controller_->Start(start_type, demuxer, this, is_streaming,
                                is_static);
@@ -8370,21 +8520,21 @@
    return media::OkStatus();
  }
  
-@@ -3105,6 +4911,13 @@
- void WebMediaPlayerImpl::SetReadyState(WebMediaPlayer::ReadyState state) {
+@@ -3106,6 +4923,13 @@
    DVLOG(1) << __func__ << "(" << state << ")";
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  if (parc_route_switch_) {
 +    parc_route_switch_->ready_state = state;
 +    return;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    if (state == WebMediaPlayer::kReadyStateHaveEnoughData &&
        demuxer_manager_->DataSourceFullyBuffered() &&
-@@ -3153,6 +4966,28 @@
+       network_state_ == WebMediaPlayer::kNetworkStateLoading) {
+@@ -3153,6 +4977,28 @@
  void WebMediaPlayerImpl::UpdatePlayState() {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    bool can_auto_suspend = !disable_pipeline_auto_suspend_;
@@ -8413,7 +8563,7 @@
    // For streaming videos, we only allow suspending at the very beginning of the
    // video, and only if we know the length of the video. (If we don't know
    // the length, it might be a dynamically generated video, and suspending
-@@ -3170,6 +5005,11 @@
+@@ -3170,6 +5016,11 @@
    PlayState state = UpdatePlayState_ComputePlayState(
        is_flinging_, can_auto_suspend, is_suspended, is_backgrounded,
        IsInVideoPictureInPicture());
@@ -8425,7 +8575,7 @@
    SetDelegateState(state.delegate_state, state.is_idle);
    SetMemoryReportingState(state.is_memory_reporting_enabled);
    SetSuspendState(state.is_suspended || pending_suspend_resume_cycle_);
-@@ -3182,6 +5022,11 @@
+@@ -3182,6 +5033,11 @@
  }
  
  void WebMediaPlayerImpl::OnTimeUpdate() {
@@ -8437,7 +8587,7 @@
    // When seeking the current time can go beyond the duration so we should
    // cap the current time at the duration.
    base::TimeDelta duration = GetPipelineMediaDuration();
-@@ -3189,9 +5034,17 @@
+@@ -3189,9 +5045,17 @@
    if (current_time > duration)
      current_time = duration;
  
@@ -8457,7 +8607,7 @@
  
    media_session::MediaPosition new_position(effective_playback_rate, duration,
                                              current_time, ended_);
-@@ -3293,8 +5146,11 @@
+@@ -3293,8 +5157,11 @@
      bool is_in_picture_in_picture) {
    PlayState result;
  
@@ -8471,7 +8621,7 @@
    bool is_stale = delegate_->IsStale(delegate_id_);
  
    if (stale_state_override_for_testing_.has_value() &&
-@@ -3330,8 +5186,22 @@
+@@ -3330,9 +5197,23 @@
    // to kReadyStateHaveMetadata, we require `is_stale` to remain suspended.
    // `is_stale` will be cleared when we receive data which may take us to
    // kReadyStateHaveMetadata.
@@ -8481,7 +8631,7 @@
 -                            paused_ && !seeking_ && !needs_first_frame_;
 +                            paused_ && !seeking_ && !needs_first_frame_ &&
 +                            !is_remote_rendering_;
-+
+ 
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: WebKit's readyState rises with a late SourceBuffer's data, paused or
 +  // hidden; here the buffering of the renderer made with its streams raises
@@ -8492,10 +8642,11 @@
 +    can_stay_suspended = false;
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
- 
++
    // Combined suspend state.
    result.is_suspended = must_suspend || idle_suspended ||
-@@ -3530,6 +5400,12 @@
+                         background_suspended || can_stay_suspended;
+@@ -3530,6 +5411,12 @@
      return;
    }
  
@@ -8508,7 +8659,7 @@
    // Only schedule the pause timer if we're not paused or paused but going to
    // resume when foregrounded, and are suspended and have audio.
    if ((paused_ && !IsPausedBecausePageHidden()) ||
-@@ -3585,7 +5461,7 @@
+@@ -3585,7 +5472,7 @@
    watch_time_reporter_->OnDominantVisibleContentChanged(
        is_dominant_visible_content_);
  
@@ -8517,7 +8668,7 @@
      watch_time_reporter_->OnHidden();
    } else {
      watch_time_reporter_->OnShown();
-@@ -3635,6 +5511,9 @@
+@@ -3635,6 +5522,9 @@
  
  bool WebMediaPlayerImpl::IsPageHidden() const {
    DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -8527,7 +8678,7 @@
    return delegate_->IsPageHidden();
  }
  
-@@ -3770,6 +5649,13 @@
+@@ -3770,6 +5660,13 @@
    if (!is_background_video_playback_enabled_)
      return true;
  
@@ -8541,10 +8692,13 @@
    if (is_flinging_)
      return false;
  
-@@ -3793,6 +5679,36 @@
-     return false;
-   }
+@@ -3790,8 +5687,38 @@
+   DCHECK(main_task_runner_->BelongsToCurrentThread());
  
+   if (!is_background_video_track_optimization_supported_) {
++    return false;
++  }
++
 +  // WebKit's MediaPlayerPrivateAVFoundation::setPageIsVisible and
 +  // MediaPlayerPrivateMediaSourceAVFObjC::updateRendererVisibility change
 +  // presentation without deselecting the video track.
@@ -8571,14 +8725,13 @@
 +    }
 +  }
 +  if (is_encrypted_ && !cdm_context_ref_) {
-+    return false;
-+  }
+     return false;
+   }
 +#endif  // BUILDFLAG(IS_MAC)
-+
+ 
    // Only disable the video track on audio + video playbacks, otherwise they
    // should be paused or left alone.
-   if (!HasVideo() || !HasAudio()) {
-@@ -3930,7 +5846,7 @@
+@@ -3930,7 +5857,7 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
  
    DCHECK(!is_remote_rendering_);
@@ -8587,7 +8740,7 @@
  
    DCHECK(!disable_pipeline_auto_suspend_);
    disable_pipeline_auto_suspend_ = true;
-@@ -3952,7 +5868,7 @@
+@@ -3952,7 +5879,7 @@
    DCHECK(main_task_runner_->BelongsToCurrentThread());
    if (!is_remote_rendering_)
      return;  // Is currently with local renderer.
@@ -8596,7 +8749,7 @@
  
    DCHECK(disable_pipeline_auto_suspend_);
    disable_pipeline_auto_suspend_ = false;
-@@ -4157,6 +6073,10 @@
+@@ -4157,6 +6084,10 @@
      const viz::FrameSinkId& new_parent_frame_sink_id) {
    if (bridge_) {
      bridge_->ReparentFrameSinkHierarchy(new_parent_frame_sink_id);
@@ -16094,28 +16247,32 @@
    // itself an error in hls media playback. This function may return null if
 --- a/media/base/pipeline.h
 +++ b/media/base/pipeline.h
-@@ -244,6 +244,10 @@
-   // Returns the current media playback time, which progresses from 0 until
+@@ -245,6 +245,13 @@
    // GetMediaDuration().
    virtual base::TimeDelta GetMediaTime() const = 0;
-+
+ 
 +  // Parc: GetMediaTime() may go back once, to a time the player really went
 +  // back to outside a seek (Safari's native HLS route).
 +  virtual void ParcResetMediaTimeClamp() {}
- 
++
++  // Parc: see Renderer::ParcOnAudioOutputDeviceChanged().
++  virtual void ParcOnAudioOutputDeviceChanged() {}
++
    // Get approximate time ranges of buffered media.
    virtual Ranges<base::TimeDelta> GetBufferedTimeRanges() const = 0;
+ 
 --- a/media/base/pipeline_impl.h
 +++ b/media/base/pipeline_impl.h
-@@ -115,6 +115,7 @@
+@@ -115,6 +115,8 @@
    void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement) override;
    base::TimeDelta GetMediaTime() const override;
 +  void ParcResetMediaTimeClamp() override;
++  void ParcOnAudioOutputDeviceChanged() override;
    Ranges<base::TimeDelta> GetBufferedTimeRanges() const override;
    base::TimeDelta GetMediaDuration() const override;
    bool DidLoadingProgress() override;
-@@ -147,7 +148,7 @@
+@@ -147,7 +149,7 @@
    // Notifications from RendererWrapper.
    void OnError(PipelineStatus error);
    void OnFallback(PipelineStatus fallback);
@@ -16124,7 +16281,7 @@
    void OnMetadata(const PipelineMetadata& metadata);
    void OnBufferingStateChange(BufferingState state,
                                BufferingStateChangeReason reason);
-@@ -188,6 +189,7 @@
+@@ -188,6 +190,7 @@
    // SetPlaybackRate() and a task is dispatched on the task runner to notify
    // the filters.
    double playback_rate_;
@@ -16134,12 +16291,16 @@
    // via SetVolume() and a task is dispatched on the task runner to notify the
 --- a/media/filters/pipeline_controller.h
 +++ b/media/filters/pipeline_controller.h
-@@ -142,6 +142,8 @@
+@@ -142,6 +142,12 @@
    void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement);
    base::TimeDelta GetMediaTime() const;
 +  // Parc: see Pipeline::ParcResetMediaTimeClamp().
 +  void ParcResetMediaTimeClamp() { pipeline_->ParcResetMediaTimeClamp(); }
++  // Parc: see Pipeline::ParcOnAudioOutputDeviceChanged().
++  void ParcOnAudioOutputDeviceChanged() {
++    pipeline_->ParcOnAudioOutputDeviceChanged();
++  }
    Ranges<base::TimeDelta> GetBufferedTimeRanges() const;
    base::TimeDelta GetMediaDuration() const;
    bool DidLoadingProgress();

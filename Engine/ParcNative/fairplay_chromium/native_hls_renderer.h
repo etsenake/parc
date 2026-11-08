@@ -29,6 +29,8 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace media {
+class AudioRendererSink;
+class OutputDeviceInfo;
 class RendererClient;
 class VideoRendererSink;
 }  // namespace media
@@ -41,7 +43,8 @@ class NativeHlsRenderer final : public media::Renderer,
   // Made on the main thread; every other call is on `media_task_runner`,
   // except GetMediaTime().
   NativeHlsRenderer(scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-                    media::VideoRendererSink* sink);
+                    media::VideoRendererSink* sink,
+                    media::AudioRendererSink* audio_sink);
   NativeHlsRenderer(const NativeHlsRenderer&) = delete;
   NativeHlsRenderer& operator=(const NativeHlsRenderer&) = delete;
   ~NativeHlsRenderer() override;
@@ -60,6 +63,9 @@ class NativeHlsRenderer final : public media::Renderer,
   void SetVolume(float volume) override;
   base::TimeDelta GetMediaTime() override;
   media::RendererType GetRendererType() override;
+  // The player plays to the device the pipeline's audio sink names, from
+  // Initialize() on.
+  void ParcOnAudioOutputDeviceChanged() override;
 
   // NativeHlsSource::Client.
   void OnSourceBufferingStateChange(media::BufferingState state) override;
@@ -81,9 +87,15 @@ class NativeHlsRenderer final : public media::Renderer,
   // `start`, reported in the task after it.
   void ReportStartState(uint64_t start);
   void PaintHoleFrame();
+  void OnAudioOutputDeviceInfo(uint64_t query, media::OutputDeviceInfo info);
 
   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   const raw_ptr<media::VideoRendererSink> sink_;
+  // HTMLMediaElement.setSinkId's sink, which names the device (hashed for
+  // the frame's origin) but never plays.
+  const scoped_refptr<media::AudioRendererSink> audio_sink_;
+  // Answers to all but the last device query are dropped.
+  uint64_t audio_output_device_queries_ = 0;
 
   raw_ptr<media::RendererClient> client_ = nullptr;
   base::WeakPtr<NativeHlsSource> source_;

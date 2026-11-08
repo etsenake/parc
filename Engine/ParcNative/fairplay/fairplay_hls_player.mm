@@ -541,6 +541,8 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
     player_.allowsExternalPlayback = !wireless_video_disabled_;
     player_.volume = volume_;
     player_.muted = muted_;
+    // createAVPlayer's audioOutputDeviceIdOverride.
+    player_.audioOutputDeviceUniqueID = output_device_uid_;
     observer_ = [[PCHlsObserver alloc] initWithImpl:weak poster:poster_];
     [observer_ observePlayer:player_ item:item_];
     // createAVPlayer's pending setShouldPlayToPlaybackTarget(true).
@@ -765,6 +767,13 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   void SetMuted(bool muted) {
     muted_ = muted;
     player_.muted = muted;
+  }
+
+  // MediaPlayerPrivateAVFoundationObjC::audioOutputDeviceChanged: nil
+  // follows the system default.
+  void SetAudioOutputDevice(const std::string& unique_id) {
+    output_device_uid_ = unique_id.empty() ? nil : @(unique_id.c_str());
+    player_.audioOutputDeviceUniqueID = output_device_uid_;
   }
 
   void SetPreservesPitch(bool preserves_pitch) {
@@ -1604,6 +1613,7 @@ class FairPlayHlsPlayer::Impl : public std::enable_shared_from_this<FairPlayHlsP
   double rate_ = 0;
   float volume_ = 1;
   bool muted_ = false;
+  NSString* output_device_uid_ = nil;
   // SetPlaybackTarget: the browser's context ID, the context it names (nil
   // when none or unknown), and whether to play to it.
   std::string target_id_;
@@ -2310,6 +2320,10 @@ void FairPlayHlsPlayer::SetVolume(float volume) {
 
 void FairPlayHlsPlayer::SetMuted(bool muted) {
   impl_->SetMuted(muted);
+}
+
+void FairPlayHlsPlayer::SetAudioOutputDevice(const std::string& unique_id) {
+  impl_->SetAudioOutputDevice(unique_id);
 }
 
 void FairPlayHlsPlayer::SetPlaybackTarget(const std::string& output_context_id, bool should_play) {

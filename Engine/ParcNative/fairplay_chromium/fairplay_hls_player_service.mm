@@ -431,6 +431,28 @@ void FairPlayHlsPlayerService::SetMuteStateHandoffTaker(
   take_mute_state_handoff_ = std::move(take_mute_state_handoff);
 }
 
+base::RepeatingCallback<void(const std::string&)>
+FairPlayHlsPlayerService::GetAudioOutputDeviceCallback() {
+  return base::BindRepeating(
+      [](base::WeakPtr<FairPlayHlsPlayerService> service,
+         const std::string& unique_id) {
+        if (!service) {
+          return;
+        }
+        service->audio_output_device_ = unique_id;
+        if (service->player_) {
+          service->player_->SetAudioOutputDevice(unique_id);
+        }
+      },
+      weak_factory_.GetWeakPtr());
+}
+
+void FairPlayHlsPlayerService::SetAudioOutputDeviceSetter(
+    base::RepeatingCallback<void(const std::string&)> setter) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  set_audio_output_device_ = std::move(setter);
+}
+
 base::OnceCallback<void(bool)>
 FairPlayHlsPlayerService::GetEphemeralSessionCallback() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -477,6 +499,7 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
   player_ = std::make_unique<fp::FairPlayHlsPlayer>(this, this, post_task);
   player_->SetVolume(volume_);
   player_->SetPreservesPitch(preserves_pitch_);
+  player_->SetAudioOutputDevice(audio_output_device_);
   player_->SetPlaybackTarget(playback_target_id_, should_play_to_target_);
   player_->SetWirelessVideoPlaybackDisabled(wireless_video_disabled_);
   if (rate_ != 0) {
@@ -644,6 +667,13 @@ void FairPlayHlsPlayerService::SetMuted(bool muted) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   page_muted_ = muted;
   ApplyMuted();
+}
+
+void FairPlayHlsPlayerService::SetAudioOutputDevice(const std::string& sink_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (set_audio_output_device_) {
+    set_audio_output_device_.Run(sink_id);
+  }
 }
 
 void FairPlayHlsPlayerService::SetPreservesPitch(bool preserves_pitch) {

@@ -2042,6 +2042,103 @@ std::vector<Step> AudioDeviceSwitchScenario() {
   return steps;
 }
 
+// A private aggregate device over the default output, which this process
+// alone sees and can make disappear, as an unplugged headset does.
+struct DisposableOutputDevice {
+  DisposableOutputDevice() {
+    const std::string main = DefaultOutputDeviceUid();
+    if (main.empty()) return;
+    uid = Format("parc.fairplay.harness.%d", getpid());
+    NSDictionary* description = @{
+      @kAudioAggregateDeviceUIDKey : @(uid.c_str()),
+      @kAudioAggregateDeviceNameKey : @"Parc harness output",
+      @kAudioAggregateDeviceIsPrivateKey : @1,
+      @kAudioAggregateDeviceMainSubDeviceKey : @(main.c_str()),
+      @kAudioAggregateDeviceSubDeviceListKey : @[ @{@kAudioSubDeviceUIDKey : @(main.c_str())} ],
+    };
+    if (AudioHardwareCreateAggregateDevice((__bridge CFDictionaryRef)description, &device) != noErr) {
+      device = kAudioObjectUnknown;
+      uid.clear();
+    }
+  }
+  ~DisposableOutputDevice() {
+    if (device != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(device);
+  }
+  AudioObjectID device = kAudioObjectUnknown;
+  std::string uid;
+};
+
+// HTMLMediaElement.setSinkId on Media Source, as WebKit's
+// AudioVideoRendererAVFObjC::setOutputDeviceId: a device named before there
+// is audio is kept for every audio renderer made later (a track joining, a
+// second one mixed in). WebKit leaves a device going away to AVFoundation,
+// which then stops the clock (not always restarting it on another device) or
+// fails the audio renderer (AudioVideoRendererAVFObjC::audioRendererDidReceiveError
+// makes that the element's decode error).
+std::vector<Step> AudioOutputDeviceScenario() {
+  World* w = g_world;
+  auto device = std::make_shared<std::unique_ptr<DisposableOutputDevice>>();
+  auto track = std::make_shared<uint32_t>(0);
+  auto on_device = [=](const std::string& label, const std::string& uid, size_t renderers) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    std::string devices;
+    for (const std::string& d : s.audio_output_devices) devices += (devices.empty() ? "" : ", ") + d;
+    Check(s.audio_output_devices.size() == renderers &&
+              std::all_of(s.audio_output_devices.begin(), s.audio_output_devices.end(),
+                          [&](const std::string& d) { return d == uid; }),
+          label, devices);
+  };
+  std::vector<Step> steps;
+  steps.push_back(Section("audio output device: kept from before audio, on joined and mixed tracks, device removed"));
+  steps.push_back([=](Done done) {
+    *device = std::make_unique<DisposableOutputDevice>();
+    Check(!(*device)->uid.empty(), "sink: a private output device to route to");
+    w->player = std::make_shared<Player>("sink", Framing::kChromium, &w->video, nullptr, w->main_keys->cdm.get(),
+                                         w->host);
+    fp::Result result = w->player->renderer().SetAudioOutputDevice((*device)->uid);
+    Check(result.ok(), "sink: a device named while there is no audio is accepted", result.message);
+    StartAt(w->player, &w->video, nullptr, 0, 8, 0, 1, false)(done);
+  });
+  steps.push_back([=](Done done) { Run(w->player, 1, 1, "sink video alone")(done); });
+  steps.push_back([=](Done done) {
+    fp::Result result = w->player->JoinAudio(w->audio, Segments(w->audio, 0, 8), track.get());
+    Check(result.ok(), "sink: audio joins", result.message);
+    on_device("sink: the joined audio renderer plays to the device named before it", (*device)->uid, 1);
+    result = w->player->JoinAudio(w->audio, Segments(w->audio, 0, 8), track.get());
+    Check(result.ok(), "sink: a second audio track joins", result.message);
+    on_device("sink: the mixed second renderer plays to it too", (*device)->uid, 2);
+    Run(w->player, 2, 1, "sink on the named device")(done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(s.audio == fp::RenderingStatus::kRendering, "sink: audio renders",
+          StatusName(s.audio) + std::string(" ") + s.audio_error);
+    Log("sink: removing the device");
+    device->reset();
+    After(2, done);
+  });
+  steps.push_back([=](Done done) {
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    const bool failed = !w->player->errors.empty();
+    Log("sink: 2s after removal t=%.3f audio %s %s%s", w->player->Time(), StatusName(s.audio), s.audio_error.c_str(),
+        failed ? " (AVFoundation failed the audio renderer)" : " (the clock stopped)");
+    fp::Result result = w->player->renderer().SetAudioOutputDevice("");
+    Check(result.ok(), "sink: back to the system default", result.message);
+    on_device("sink: every renderer names the default device again", DefaultOutputDeviceUid(), 2);
+    // Whether the stopped clock restarts there is AVFoundation's call, and
+    // varies from run to run.
+    After(2, [=] {
+      Log("sink: 2s on the default device t=%.3f", w->player->Time());
+      done();
+    });
+  });
+  steps.push_back([=](Done done) {
+    w->player.reset();
+    done();
+  });
+  return steps;
+}
+
 // Streams joining a playing renderer, as a SourceBuffer added after the
 // others does in Safari (AudioVideoRendererAVFObjC::addTrack): the display
 // layer and the other renderers stay, the clock waits for the new stream's
@@ -2302,11 +2399,18 @@ std::vector<Step> HandOffScenario() {
   // synchronizer's timebase reads back in steps, up to about 85 ms here from
   // run to run, so a hand-off may show that much plus a poll.
   auto control = std::make_shared<double>(0.085);
+  auto device = std::make_shared<std::string>();
   std::vector<Step> steps;
   auto start = [=](const std::string& name, size_t segments) -> Step {
     return [=](Done done) {
       w->player = std::make_shared<Player>(name, Framing::kChromium, &w->video, &w->audio, nullptr, w->host);
       w->player->adapter_reads = true;
+      if (name == "hand-off") {
+        // setSinkId before playback: the renderers taking over keep the device.
+        *device = DefaultOutputDeviceUid();
+        fp::Result named = w->player->renderer().SetAudioOutputDevice(*device);
+        Check(named.ok(), name + ": an output device named before playback", named.message);
+      }
       w->player->renderer().Flush([=] {
         SegmentList video{&w->clear_video.segments[0]};
         SegmentList audio{&w->clear_audio.segments[0]};
@@ -2363,6 +2467,11 @@ std::vector<Step> HandOffScenario() {
             name + ": one audio renderer plays on, no sample queued twice",
             Format("%zu renderers, double enqueues %llu -> %llu, automatic flushes %llu", s.audio_renderers,
                    before->audio_double_enqueues, s.audio_double_enqueues, s.audio_automatic_flushes));
+      if (name == "hand-off" || name == "replaced") {
+        Check(s.audio_output_devices == std::vector<std::string>{*device},
+              name + ": the audio renderer taking over plays to the device named",
+              s.audio_output_devices.empty() ? "" : s.audio_output_devices.front());
+      }
       Log("%s: %d polls, longest still %.3fs, single layer after %.3fs", name.c_str(), v.polls, v.longest_still,
           v.one_layer_after);
       done();
@@ -2486,6 +2595,15 @@ std::vector<Step> HandOffScenario() {
     fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
     Check(result.ok(), "replaced: another CDM is taken during playback", result.message);
     Check(w->player->layer().sublayers.firstObject != playing, "replaced: a new display layer joins its key session");
+    // setSinkId mid hand-off: the outgoing renderer, still playing, moves too.
+    *device = DefaultOutputDeviceUid();
+    fp::Result named = w->player->renderer().SetAudioOutputDevice(*device);
+    fp::RendererStatus s = w->player->renderer().GetStatus();
+    Check(named.ok() && s.audio_output_devices.size() == 2 &&
+              std::all_of(s.audio_output_devices.begin(), s.audio_output_devices.end(),
+                          [&](const std::string& d) { return d == *device; }),
+          "replaced: a device named during the hand-off reaches the outgoing renderer too",
+          Format("%zu renderers", s.audio_output_devices.size()));
     Run(w->player, 2, 1, "replaced after the new MediaKeys")(done);
   });
   steps.push_back(seen("replaced", 1.5));
@@ -5339,6 +5457,7 @@ void RunAll() {
   add("HandOffScenario()", HandOffScenario());
   add("VideoSwitchScenario()", VideoSwitchScenario());
   add("AudioDeviceSwitchScenario()", AudioDeviceSwitchScenario());
+  add("AudioOutputDeviceScenario()", AudioOutputDeviceScenario());
   add("LayerDetachScenario()", LayerDetachScenario());
   add("InitializeRetryScenario()", InitializeRetryScenario());
   if (g_audio_unavailable) add("AudioUnavailableScenario()", AudioUnavailableScenario());

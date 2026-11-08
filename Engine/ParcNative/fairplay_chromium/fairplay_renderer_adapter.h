@@ -80,6 +80,10 @@ class FairPlayRendererAdapter final
   // service, so the browser's MuteStateObserver feeds this; it is bound to a
   // weak pointer and may outlive the adapter.
   base::RepeatingCallback<void(bool)> GetMuteStateCallback();
+  // HTMLMediaElement.setSinkId's Core Audio device UID (empty for the system
+  // default), as the browser resolved it; bound to a weak pointer.
+  base::RepeatingCallback<void(const std::string&)>
+  GetAudioOutputDeviceCallback();
   // The render process's FairPlayRendererExtension, kept for the adapter's
   // lifetime; it owns the streams it adds.
   void SetExtension(std::unique_ptr<mojom::FairPlayRendererExtension> extension);
@@ -135,6 +139,7 @@ class FairPlayRendererAdapter final
   void MaybeFinishFlush();
   void ReportError(PipelineStatus status);
   void SetMuted(bool muted);
+  void SetAudioOutputDevice(const std::string& unique_id);
   void UpdateStatisticsTimer();
   void PollStatistics();
   void RequestVideoMetrics();

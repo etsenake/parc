@@ -6,6 +6,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "media/base/audio_renderer_sink.h"
 #include "media/base/media_resource.h"
 #include "media/base/renderer_client.h"
 #include "media/base/video_frame.h"
@@ -15,8 +16,11 @@ namespace parc::fairplay {
 
 NativeHlsRenderer::NativeHlsRenderer(
     scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-    media::VideoRendererSink* sink)
-    : media_task_runner_(std::move(media_task_runner)), sink_(sink) {
+    media::VideoRendererSink* sink,
+    media::AudioRendererSink* audio_sink)
+    : media_task_runner_(std::move(media_task_runner)),
+      sink_(sink),
+      audio_sink_(audio_sink) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
 
@@ -59,6 +63,7 @@ void NativeHlsRenderer::Initialize(media::MediaResource* media_resource,
   // The source replays the display layer it already has, so a facade made
   // again after a suspension paints at once.
   source->SetClient(this);
+  ParcOnAudioOutputDeviceChanged();
   std::move(init_cb).Run(media::PIPELINE_OK);
 }
 
@@ -161,6 +166,25 @@ base::TimeDelta NativeHlsRenderer::GetMediaTime() {
 
 media::RendererType NativeHlsRenderer::GetRendererType() {
   return media::RendererType::kFairPlayHls;
+}
+
+void NativeHlsRenderer::ParcOnAudioOutputDeviceChanged() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!audio_sink_ || !source_) {
+    return;
+  }
+  audio_sink_->GetOutputDeviceInfoAsync(
+      base::BindOnce(&NativeHlsRenderer::OnAudioOutputDeviceInfo,
+                     weak_factory_.GetWeakPtr(), ++audio_output_device_queries_));
+}
+
+void NativeHlsRenderer::OnAudioOutputDeviceInfo(uint64_t query,
+                                                media::OutputDeviceInfo info) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (query == audio_output_device_queries_ && source_ &&
+      info.device_status() == media::OUTPUT_DEVICE_STATUS_OK) {
+    source_->SetAudioOutputDevice(info.device_id());
+  }
 }
 
 void NativeHlsRenderer::OnSourceBufferingStateChange(

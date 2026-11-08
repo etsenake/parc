@@ -217,9 +217,9 @@ EME's false, when there are none), other types reject with NotSupported.
   layer only from the GPU main thread, and only its placement.
 - Audio goes from `AVSampleBufferAudioRenderer` straight to CoreAudio from the
   GPU process, never through Chromium's audio service. Web Audio's
-  `createMediaElementSource` and `setSinkId` don't see it. Tab mute and the
-  tab's audio indicator do, the way MediaFoundation's renderer gets them on
-  Windows:
+  `createMediaElementSource` doesn't see it. Tab mute, the tab's audio
+  indicator and `setSinkId` do, the first two the way MediaFoundation's
+  renderer gets them on Windows:
   - Mute: `GpuMojoMediaClientMac::CreateFairPlayRenderer` registers a
     `mojom::MuteStateObserver` with the frame's `FrameInterfaceFactory`
     (enabled on macOS too). The browser answers with the tab's state at once
@@ -234,6 +234,17 @@ EME's false, when there are none), other types reject with NotSupported.
     `MediaWebContentsObserver` claims the grant while the player is audible
     and registers it with `AudioStreamMonitor`. A frame gets the grant only
     after it asked `CreateCdm` for a registered FairPlay key system.
+  - Output device (`setSinkId`): the element's audio sink still switches
+    and checks the device, so the promise settles as for clear media. Once
+    it has, `WebMediaPlayerImpl` tells the pipeline
+    (`Renderer::ParcOnAudioOutputDeviceChanged`), and the render-process
+    client sends the hashed ID its sink names, as at `Initialize`, over
+    `FairPlayRendererExtension` (or `FairPlayHlsPlayer`). The GPU process asks
+    the browser for its Core Audio UID
+    (`FrameInterfaceFactory.GetFairPlayAudioOutputDeviceUid`), so the page
+    never sees one, and the core puts every audio renderer, later and mixed
+    ones too, on it (`AVPlayer` for native HLS), as WebKit's
+    `setOutputDeviceId` does.
   - The layer token (`OnLayerRegistered`) goes through that proxy on the
     browser's UI thread, so a busy UI thread delays the first video frame's
     hole; the render-process client paints the hole whenever it arrives.
@@ -411,8 +422,12 @@ OS or PiP/casting/background-tab runtime acceptance.
   WebKit's `AudioVideoRendererAVFObjC` flushes its video renderer for a new
   track. The background-tab optimization that turns video off is turned off
   for FairPlay players.
-- `setSinkId` isn't wired. The core has `SetAudioOutputDevice`, but
-  `media::Renderer` has no sink switch, so it needs a client extension call.
+- A `setSinkId` device that goes away (a headset unplugged) either stops
+  the clock, which another device named afterwards doesn't always restart,
+  or fails the audio renderer
+  (a decode error, as WebKit's `audioRendererDidReceiveError` makes it); on
+  the native HLS route AVPlayer pauses itself and its item stops buffering.
+  WebKit leaves all of it to AVFoundation, so Safari does the same.
 - Two FairPlay players in one frame can lose the speaker icon: upstream's
   `AudibilityBypassTracker` hands any pending grant to whichever player
   claims first, so when one renderer goes, the other player's claimed grant

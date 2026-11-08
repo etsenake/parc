@@ -108,6 +108,14 @@ class FairPlayHlsPlayerService final
       base::RepeatingCallback<mojo::PendingReceiver<mojom::MuteStateObserver>(
           const base::UnguessableToken& handoff)>;
   void SetMuteStateHandoffTaker(MuteStateHandoffTaker take_mute_state_handoff);
+  // HTMLMediaElement.setSinkId's Core Audio device UID (empty for the system
+  // default), as the browser resolved it. Bound to a weak pointer.
+  base::RepeatingCallback<void(const std::string&)>
+  GetAudioOutputDeviceCallback();
+  // Resolves SetAudioOutputDevice()'s sink IDs and answers through
+  // GetAudioOutputDeviceCallback().
+  void SetAudioOutputDeviceSetter(
+      base::RepeatingCallback<void(const std::string& sink_id)> setter);
   // WebKit's ephemeral session for the frame, which the browser answers
   // (FrameInterfaceFactory.IsFairPlayEphemeralSession): once this was asked
   // for, Initialize waits for it. Bound to a weak pointer.
@@ -129,6 +137,7 @@ class FairPlayHlsPlayerService final
   void SetVolume(float volume) override;
   void SetMuted(bool muted) override;
   void SetPreservesPitch(bool preserves_pitch) override;
+  void SetAudioOutputDevice(const std::string& sink_id) override;
   void ProvideClearKey(const std::string& key_id,
                        const std::vector<uint8_t>& key) override;
   void SetAudioTrackEnabled(const std::string& key, bool enabled) override;
@@ -225,6 +234,9 @@ class FairPlayHlsPlayerService final
 
   float volume_ = 1;
   bool preserves_pitch_ = true;
+  // For the player Initialize makes.
+  std::string audio_output_device_;
+  base::RepeatingCallback<void(const std::string&)> set_audio_output_device_;
   // SetPlaybackTarget and SetWirelessVideoPlaybackDisabled, for the player
   // Initialize makes.
   std::string playback_target_id_;

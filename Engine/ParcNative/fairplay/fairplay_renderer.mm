@@ -1244,11 +1244,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return renderers;
   }
   // AVSampleBufferAudioRenderer throws on a nil device ID, so "the system
-  // default" is the default device's UID at the time of the call.
+  // default" is the default device's UID at the time of the call. Kept for
+  // audio renderers made later, as AudioVideoRendererAVFObjC::setOutputDeviceId
+  // keeps m_audioOutputDeviceId.
   Result SetAudioOutputDevice(const std::string& unique_id) {
-    if (audio_.empty()) {
-      return Result::Error(Exception::kInvalidState, "no audio stream");
-    }
     if (unique_id.empty() && !output_device_uid_) {
       return Result::Ok();  // Still following the system default.
     }
@@ -1259,8 +1258,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     // Once a device was named the renderers stay pinned to one, so every
     // later "" names the default of that moment.
     output_device_uid_ = uid;
-    for (auto& [track, audio] : audio_) {
-      audio.renderer.audioOutputDeviceUniqueID = uid;
+    for (AVSampleBufferAudioRenderer* renderer : AudioRenderers()) {
+      renderer.audioOutputDeviceUniqueID = uid;
     }
     return Result::Ok();
   }
@@ -1348,6 +1347,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       status.video_has_enough = video_renderer_.hasSufficientMediaDataForReliablePlaybackStart;
     }
     status.audio_renderers = audio_.size();
+    for (AVSampleBufferAudioRenderer* renderer : AudioRenderers()) {
+      NSString* uid = renderer.audioOutputDeviceUniqueID;
+      status.audio_output_devices.push_back(uid ? uid.UTF8String : "");
+    }
     if (!audio_.empty()) {
       const AudioTrack& audio = audio_.begin()->second;
       status.audio_format = subtype(audio.clear_format.get());

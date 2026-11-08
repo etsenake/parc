@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
@@ -31,9 +32,11 @@
 
 namespace media {
 
+class AudioRendererSink;
 class MediaResource;
 class MojoDemuxerStreamImpl;
 class MojoRenderer;
+class OutputDeviceInfo;
 class VideoRendererSink;
 
 class FairPlayRendererClient final
@@ -48,7 +51,8 @@ class FairPlayRendererClient final
       std::unique_ptr<MojoRenderer> mojo_renderer,
       mojo::PendingReceiver<mojom::FairPlayRendererClientExtension>
           client_extension_receiver,
-      VideoRendererSink* sink);
+      VideoRendererSink* sink,
+      AudioRendererSink* audio_sink);
   FairPlayRendererClient(const FairPlayRendererClient&) = delete;
   FairPlayRendererClient& operator=(const FairPlayRendererClient&) = delete;
   ~FairPlayRendererClient() override;
@@ -74,6 +78,9 @@ class FairPlayRendererClient final
                        DemuxerStream* stream,
                        base::OnceClosure change_completed_cb) override;
   RendererType GetRendererType() override;
+  // The GPU process's audio renderers play to the device the pipeline's
+  // audio sink names, from Initialize on.
+  void ParcOnAudioOutputDeviceChanged() override;
 
   // RendererClient implementation, forwarded to the pipeline's client.
   void OnError(PipelineStatus status) override;
@@ -121,6 +128,7 @@ class FairPlayRendererClient final
   };
 
   void PaintHoleFrame();
+  void OnAudioOutputDeviceInfo(uint64_t query, OutputDeviceInfo info);
 
   const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   // Outlives |mojo_renderer_|, which points at it.
@@ -132,6 +140,9 @@ class FairPlayRendererClient final
   mojo::Receiver<mojom::FairPlayRendererClientExtension>
       client_extension_receiver_{this};
   const raw_ptr<VideoRendererSink> sink_;
+  // HTMLMediaElement.setSinkId's sink, which names the device (hashed for
+  // the frame's origin) but never plays.
+  const scoped_refptr<AudioRendererSink> audio_sink_;
 
   raw_ptr<RendererClient> client_ = nullptr;
   raw_ptr<MediaResource> media_resource_ = nullptr;
@@ -153,6 +164,10 @@ class FairPlayRendererClient final
   // One from before |renderer_extension_| came.
   std::optional<base::UnguessableToken> pending_mute_state_handoff_;
   uint64_t mute_state_handoff_order_ = 0;
+  // Answers to all but the last device query are dropped.
+  uint64_t audio_output_device_queries_ = 0;
+  // One from before |renderer_extension_| came.
+  std::optional<std::string> pending_audio_output_device_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   base::WeakPtrFactory<FairPlayRendererClient> weak_factory_{this};

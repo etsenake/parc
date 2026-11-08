@@ -86,6 +86,9 @@ class NativeHlsSource {
   virtual void Pause() = 0;
   virtual void SetVolume(float volume) = 0;
   virtual void SetPreservesPitch(bool preserves_pitch) = 0;
+  // HTMLMediaElement.setSinkId's device, as its sink names it (hashed for the
+  // frame's origin; empty or "default" for the system default).
+  virtual void SetAudioOutputDevice(const std::string& sink_id) = 0;
   // Hands the player the frame's CDM `cdm_context` names (its CDM ID).
   // `cdm_attached_cb` answers whether the player took it.
   using CdmAttachedCB = base::OnceCallback<void(bool)>;
@@ -193,6 +196,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void Pause() override;
   void SetVolume(float volume) override;
   void SetPreservesPitch(bool preserves_pitch) override;
+  void SetAudioOutputDevice(const std::string& sink_id) override;
   void SetCdm(media::CdmContext* cdm_context,
               NativeHlsSource::CdmAttachedCB cdm_attached_cb) override;
   media::BufferingState GetBufferingState() const override;

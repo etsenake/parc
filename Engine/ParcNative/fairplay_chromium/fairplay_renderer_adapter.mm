@@ -548,6 +548,23 @@ FairPlayRendererAdapter::GetMuteStateCallback() {
                              weak_factory_.GetWeakPtr());
 }
 
+base::RepeatingCallback<void(const std::string&)>
+FairPlayRendererAdapter::GetAudioOutputDeviceCallback() {
+  return base::BindRepeating(&FairPlayRendererAdapter::SetAudioOutputDevice,
+                             weak_factory_.GetWeakPtr());
+}
+
+void FairPlayRendererAdapter::SetAudioOutputDevice(
+    const std::string& unique_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // The core keeps it for audio renderers it makes later, before Initialize
+  // too.
+  if (fp::Result result = core_->SetAudioOutputDevice(unique_id);
+      !result.ok()) {
+    LOG(ERROR) << "FairPlay audio output device: " << result.message;
+  }
+}
+
 void FairPlayRendererAdapter::SetMuteStateObserverCloser(
     base::ScopedClosureRunner closer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

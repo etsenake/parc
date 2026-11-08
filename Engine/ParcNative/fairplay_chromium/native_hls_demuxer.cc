@@ -551,6 +551,13 @@ void NativeHlsDemuxer::SetVolume(float volume) {
   }
 }
 
+void NativeHlsDemuxer::SetAudioOutputDevice(const std::string& sink_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (player_.is_bound()) {
+    player_->SetAudioOutputDevice(sink_id);
+  }
+}
+
 void NativeHlsDemuxer::SetPreservesPitch(bool preserves_pitch) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (player_.is_bound()) {

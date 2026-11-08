@@ -29,14 +29,15 @@ void NativeHlsRendererFactory::ParcSetInterfaceFactory(
 std::unique_ptr<media::Renderer> NativeHlsRendererFactory::CreateRenderer(
     const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
     const scoped_refptr<base::TaskRunner>& /*worker_task_runner*/,
-    media::AudioRendererSink* /*audio_renderer_sink*/,
+    media::AudioRendererSink* audio_renderer_sink,
     media::VideoRendererSink* video_renderer_sink,
     media::RequestOverlayInfoCB /*request_overlay_info_cb*/,
     const gfx::ColorSpace& /*target_color_space*/) {
-  // Audio and video play through AVPlayer in the GPU process; the sink only
-  // shows the hole frame naming its layer.
-  return std::make_unique<NativeHlsRenderer>(media_task_runner,
-                                             video_renderer_sink);
+  // Audio and video play through AVPlayer in the GPU process; the video sink
+  // only shows the hole frame naming its layer, and the audio sink only names
+  // the output device.
+  return std::make_unique<NativeHlsRenderer>(
+      media_task_runner, video_renderer_sink, audio_renderer_sink);
 }
 
 std::unique_ptr<media::Demuxer>

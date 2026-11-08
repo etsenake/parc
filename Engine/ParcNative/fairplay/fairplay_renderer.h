@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "fairplay_types.h"
 
@@ -93,6 +94,9 @@ struct RendererStatus {
   bool audio_has_enough = false;
   float audio_volume = 1;
   bool audio_muted = false;
+  // The audioOutputDeviceUniqueID of every audio renderer still playing,
+  // outgoing ones included; empty while one follows the system default.
+  std::vector<std::string> audio_output_devices;
   uint64_t video_enqueued = 0;
   uint64_t audio_enqueued = 0;
   uint64_t protected_enqueued = 0;

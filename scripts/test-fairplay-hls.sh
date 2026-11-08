@@ -9,7 +9,7 @@
 # data-url, data-url-video, skd, skd-handler, teardown, keys-first, keys-loader,
 # keys-attach-at-request, keys-multikey,
 # keys-await, keys-early, keys-close, keys-legacy, metadata-first,
-# keys-legacy-order, airplay, file). The keys
+# keys-legacy-order, airplay, file, audio-output). The keys
 # scenarios license Axinom's FairPlay HLS vectors from its public test
 # license service.
 set -euo pipefail
@@ -25,7 +25,7 @@ for name in fairplay_hls_frame_stats fairplay_hls_player fairplay_hls_player_lay
   xcrun clang++ "${flags[@]}" -c "$core/$name.mm" -o "$output/$name.o"
 done
 xcrun clang++ "${flags[@]}" -c "$tests/hls_player_harness.mm" -o "$output/hls_player_harness.o"
-xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreGraphics -framework CoreMedia \
+xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreAudio -framework CoreGraphics -framework CoreMedia \
   -framework Foundation -framework QuartzCore -o "$output/hls-player-proof"
 # The harness bounds each wait itself; this caps the whole run. The cap's
 # sleep is its own process: stopping the cap must stop it too, or it would
