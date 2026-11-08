@@ -288,8 +288,8 @@
 +  if (!frame || !frame->View() || !HasChildren() || window_size.IsEmpty()) {
 +    return SkBitmap();
 +  }
-+  // A throttled frame (say a cross-origin player scrolled away) keeps its
-+  // lifecycle, so its cues can't be painted until it updates again.
++  // Throttling applies only inside a frame update, so this also brings a
++  // throttled frame (say a cross-origin player scrolled away) up to date.
 +  if (!frame->View()->UpdateAllLifecyclePhasesExceptPaint(
 +          DocumentUpdateReason::kOverlay) ||
 +      GetDocument().Lifecycle().GetState() !=
@@ -448,7 +448,7 @@
  #include "media/mojo/mojom/media_player.mojom-blink.h"
  #include "mojo/public/cpp/bindings/pending_associated_remote.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -18,12 +19,16 @@
+@@ -18,12 +19,17 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -457,6 +457,7 @@
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
++#include "third_party/blink/renderer/core/frame/local_frame_view.h"
  #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
  #include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
@@ -465,7 +466,7 @@
  #include "third_party/blink/renderer/core/layout/layout_image.h"
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
-@@ -140,6 +145,7 @@
+@@ -140,6 +146,7 @@
    MOCK_METHOD(void,
                UpdateMediaPosition,
                (media_session::mojom::blink::MediaPositionPtr));
@@ -473,7 +474,7 @@
  
   private:
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -372,7 +378,62 @@
+@@ -372,7 +379,65 @@
    EXPECT_NE(nullptr, PictureInPictureControllerImpl::From(GetDocument())
                           .PictureInPictureElement());
  }
@@ -518,6 +519,9 @@
 +                             })))
 +      .WillOnce(testing::InvokeWithoutArgs([&] { painted.Quit(); }))
 +      .RetiresOnSaturation();
++  // A cross-origin player scrolled out of view throttles its frame; its cues
++  // still reach the window.
++  GetDocument().View()->SetLifecycleUpdatesThrottledForTesting();
 +  PictureInPictureControllerImpl::From(GetDocument())
 +      .OnWindowSizeChanged(gfx::Size(320, 240));
 +  painted.Run();

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 598,
+  "version": 599,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3052,7 +3052,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-video-pip.patch",
-      "sha256": "e642226b7247e51a15e556a6c9a48a09ae0527522072fe70dd4b0b963380f99d",
+      "sha256": "896d90d4f2a13f36c3b021a1926e8585f81759483cd0e1790b561fc93c606b42",
       "files": [
         {
           "target": "chrome/browser/chrome_content_browser_client.cc",
@@ -3102,7 +3102,7 @@
         {
           "target": "third_party/blink/renderer/core/html/track/text_track_container.cc",
           "before_sha256": "9a7c89f472ab8b980dc59ed19ebb01642ab3b603522982add495134ed7068229",
-          "after_sha256": "af192ef38c1424dbc24b690567969c601499e55cbe11b7059dd851bad909cc8f"
+          "after_sha256": "d196ffd036a618f796a921a9672c75f3b2a338349554812e943c140873ad1293"
         },
         {
           "target": "third_party/blink/renderer/core/html/track/text_track_container.h",
@@ -3117,7 +3117,7 @@
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc",
           "before_sha256": "2922117f145946a2c24a3bd125f0464dde941254ba3e06d838a103227f15dd1b",
-          "after_sha256": "24c7b59fac840f4922f4fdc6b936d37f2a8fc6ba7e758912a36adcabd7cbef1c"
+          "after_sha256": "54653ef950e3cecfd5af12f7d5ff63a492f6f19c4b4786be8d94ef28f70dc60b"
         }
       ]
     },
