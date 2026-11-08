@@ -56,6 +56,10 @@ final class BrowserImportCoordinator {
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
     private static var detachedImports: [BrowserImportCoordinator] = []
+    /// Native import holds each Profile for one session, so a new import
+    /// waits for any earlier one still finishing in the background.
+    private static var waitingStarts: [() -> Void] = []
+    private static var earlierImportRunning: Bool { detachedImports.contains { $0.hasBackgroundWork } }
     private var detached = false
     private var onDetachedAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?
     private(set) var hasBackgroundWork = false
@@ -86,6 +90,10 @@ final class BrowserImportCoordinator {
             onDetachedAdBlockers?(importedAdBlockers)
             onDetachedAdBlockers = nil
             Self.detachedImports.removeAll { $0 === self }
+            if !Self.earlierImportRunning {
+                let starts = Self.waitingStarts; Self.waitingStarts = []
+                starts.forEach { $0() }
+            }
         }
     }
     private var activeDestination: BrowserImportDestination?
@@ -323,6 +331,15 @@ final class BrowserImportCoordinator {
     func startInOriginalDestination(passwordsOnly: Bool = false) {
         guard stage == .profiles, isCurrent,
               passwordsOnly ? canImportPasswordsOnly : hasImportableSelection else { return }
+        if Self.earlierImportRunning {
+            generation = UUID(); let token = generation
+            stage = .importing; error = nil; message = "Finishing your last import…"; onChange?()
+            Self.waitingStarts.append { [weak self] in
+                guard let self, self.isCurrent, self.generation == token, self.stage == .importing else { return }
+                self.stage = .profiles; self.startInOriginalDestination(passwordsOnly: passwordsOnly)
+            }
+            return
+        }
         self.passwordsOnly = passwordsOnly
         let chosen = chosenProfiles
         if isArcSource, !passwordsOnly, !chosen.isEmpty { startArc(chosen); return }
