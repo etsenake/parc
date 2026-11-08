@@ -9,7 +9,7 @@ enum PCNativeCastState { case unavailable, available, connecting, connected }
     let identifier: String, title = "Song", sourceURL = "https://example.test/"
     let playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false
     let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false
-    let microphoneOn = false, cameraOn = false
+    let microphoneOn = false, cameraOn = false, canEnterPictureInPicture = true
     let airPlayState = PCNativeAirPlayState.unavailable, airPlayDeviceName: String? = nil
     let castState = PCNativeCastState.unavailable, castDeviceName: String? = nil
     init(identifier: String) { self.identifier = identifier }
