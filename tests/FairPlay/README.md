@@ -92,7 +92,10 @@ arrive in decode order with presentation times only).
     played to `OnEnded`, each followed by a check of its protected format type.
     Media comes from Chromium's `media/test/data`: `hev1` (also with its
     parameter sets moved in-band), Dolby Vision profile 5, AV1 and xHE-AAC.
-    HE-AAC and HE-AACv2 are encoded locally with AudioToolbox.
+    HE-AAC and HE-AACv2 are encoded locally with AudioToolbox. VP9 and Vorbis
+    come from its WebM files (`webm_parser.cc`): VP9 alone, Vorbis alone and
+    under Dolby Vision, and VP9 → Dolby Vision → VP9 through Reconfigure
+    (`CodecSwitchScenario`), each video one showing a picture at the end.
 12. FairPlay SAMPLE-AES in MPEG-2 TS: Axinom's "HLS H264 SingleKey" (H.264
     `0xdb`, AAC `0xcf`), split as Chromium's TS parser splits it
     (`ts_parser.cc`) and marked with the mpts key ID. `AVStreamDataParser`'s

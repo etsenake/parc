@@ -103,7 +103,7 @@ def compile_all(output):
     link(PROBE_NAME, ["probe_main", "fmp4_parser", "fairplay_bitstream"], [])
     link("fpsbhelper", ["probe_helper"], ["-framework", "Foundation"])
     frameworks = []
-    for f in ("Foundation", "AVFoundation", "AudioToolbox", "CoreAudio", "CoreGraphics", "CoreMedia", "QuartzCore"):
+    for f in ("Foundation", "AVFoundation", "AudioToolbox", "CoreAudio", "CoreGraphics", "CoreMedia", "QuartzCore", "VideoToolbox"):
         frameworks += ["-framework", f]
     link("libfpsbplayer.dylib", ["probe_player", "fmp4_parser", "fairplay_bitstream", "fairplay_init_data",
                                  "fairplay_key_session", "fairplay_renderer", "fairplay_hls_player",

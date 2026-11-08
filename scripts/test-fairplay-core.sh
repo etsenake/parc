@@ -20,6 +20,7 @@ for name in fairplay_init_data fairplay_key_session fairplay_renderer; do
 done
 xcrun clang++ "${flags[@]}" -c "$tests/fmp4_parser.cc" -o "$output/fmp4_parser.o"
 xcrun clang++ "${flags[@]}" -c "$tests/ts_parser.cc" -o "$output/ts_parser.o"
+xcrun clang++ "${flags[@]}" -c "$tests/webm_parser.cc" -o "$output/webm_parser.o"
 xcrun clang++ "${flags[@]}" -fobjc-arc -c "$tests/harness.mm" -o "$output/harness.o"
 xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation -framework AudioToolbox \
   -framework CoreAudio -framework CoreMedia -framework CoreVideo -framework QuartzCore -framework VideoToolbox -o "$output/fairplay-proof"

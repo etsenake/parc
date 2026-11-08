@@ -57,6 +57,7 @@ source_set("core") {
     "Foundation.framework",
     "MediaAccessibility.framework",
     "QuartzCore.framework",
+    "VideoToolbox.framework",
   ]
 }
 

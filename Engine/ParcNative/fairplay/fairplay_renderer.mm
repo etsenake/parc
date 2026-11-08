@@ -4,6 +4,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/CoreAudio.h>
 #import <CoreMedia/CoreMedia.h>
+#import <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
 #include <limits>
@@ -177,6 +178,8 @@ uint32_t DefaultSampleEntry(VideoCodec codec) {
       return FourCC('d', 'v', 'h', '1');
     case VideoCodec::kAV1:
       return FourCC('a', 'v', '0', '1');
+    case VideoCodec::kVP9:
+      return FourCC('v', 'p', '0', '9');
   }
   return 0;
 }
@@ -191,6 +194,8 @@ bool SampleEntryMatches(VideoCodec codec, uint32_t entry) {
       return entry == FourCC('d', 'v', 'h', '1') || entry == FourCC('d', 'v', 'h', 'e');
     case VideoCodec::kAV1:
       return entry == FourCC('a', 'v', '0', '1') || entry == FourCC('d', 'a', 'v', '1');
+    case VideoCodec::kVP9:
+      return entry == FourCC('v', 'p', '0', '9');
   }
   return false;
 }
@@ -208,11 +213,11 @@ uint32_t DecodableSampleEntry(uint32_t entry) {
   return entry;
 }
 
-// Whether a decoder configuration record carries the parameter sets
-// VideoToolbox needs (SPS for avcC; VPS, SPS and PPS for hvcC).
+// Whether a decoder configuration record carries what VideoToolbox needs
+// (SPS for avcC; VPS, SPS and PPS for hvcC; any av1C or vpcC).
 bool RecordHasParameterSets(VideoCodec codec, const std::vector<uint8_t>& record) {
-  if (codec == VideoCodec::kAV1) {
-    return true;
+  if (codec == VideoCodec::kAV1 || codec == VideoCodec::kVP9) {
+    return !record.empty();
   }
   if (codec == VideoCodec::kH264) {
     return record.size() >= 7 && (record[5] & 0x1f) > 0;
@@ -303,6 +308,8 @@ uint32_t ConfigBox(VideoCodec codec) {
       return FourCC('h', 'v', 'c', 'C');
     case VideoCodec::kAV1:
       return FourCC('a', 'v', '1', 'C');
+    case VideoCodec::kVP9:
+      return FourCC('v', 'p', 'c', 'C');
   }
   return 0;
 }
@@ -1773,8 +1780,19 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return Result::Error(Exception::kTypeError, "sample entry type doesn't match the codec");
     }
     const uint32_t entry_type = DecodableSampleEntry(declared);
-    if (config.codec == VideoCodec::kAV1 && config.format == BitstreamFormat::kAnnexB) {
-      return Result::Error(Exception::kTypeError, "AV1 samples are never Annex B");
+    if ((config.codec == VideoCodec::kAV1 || config.codec == VideoCodec::kVP9) &&
+        config.format == BitstreamFormat::kAnnexB) {
+      return Result::Error(Exception::kTypeError, "AV1 and VP9 samples are never Annex B");
+    }
+    if (config.codec == VideoCodec::kVP9) {
+      if (encryption) {
+        return Result::Error(Exception::kNotSupported, "VP9 is never protected");
+      }
+      // AVSampleBufferDisplayLayer decodes VP9 only once VideoToolbox's
+      // supplemental decoder is registered in the process, as WebKit's GPU
+      // process does (registerSupplementalVP9Decoder).
+      static std::once_flag vp9_decoder;
+      std::call_once(vp9_decoder, [] { VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9); });
     }
     std::vector<std::vector<uint8_t>> children{MakeBox(ConfigBox(config.codec), config.extra_data)};
     if (config.dolby_vision_config.size() >= 3) {
@@ -1802,6 +1820,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   static Result CreateAudioFormat(const AudioConfig& config,
                                   const TrackEncryption* encryption,
                                   CMFormatDescriptionRef* out) {
+    if (config.codec == AudioCodec::kVorbis) {
+      return CreateVorbisFormat(config, encryption, out);
+    }
     uint32_t entry_type = 0;
     std::vector<std::vector<uint8_t>> children;
     switch (config.codec) {
@@ -1864,6 +1885,8 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
                                    {0, 0, 0, 0, 1, static_cast<uint8_t>(config.pcm_bits)}));
         break;
       }
+      case AudioCodec::kVorbis:
+        break;
     }
     // Opus in ISO-BMFF states 48 kHz in the sample entry whatever the input
     // rate ('dOps' carries that).
@@ -1938,6 +1961,33 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
+  // Vorbis has no ISO sample entry. WebKit hands AVSampleBufferAudioRenderer
+  // the Xiph-laced headers as the magic cookie of a 'vorb' description
+  // (cookieFromVorbisCodecPrivate), which AudioToolbox decodes on macOS
+  // without any registration.
+  static Result CreateVorbisFormat(const AudioConfig& config,
+                                   const TrackEncryption* encryption,
+                                   CMFormatDescriptionRef* out) {
+    if (encryption) {
+      return Result::Error(Exception::kNotSupported, "Vorbis is never protected");
+    }
+    if (config.extra_data.empty() || config.sample_rate <= 0 || config.channels <= 0) {
+      return Result::Error(Exception::kTypeError, "Vorbis config needs its headers, rate and channels");
+    }
+    AudioStreamBasicDescription description = {};
+    description.mSampleRate = config.sample_rate;
+    description.mFormatID = FourCC('v', 'o', 'r', 'b');
+    description.mChannelsPerFrame = static_cast<UInt32>(config.channels);
+    OSStatus status =
+        CMAudioFormatDescriptionCreate(kCFAllocatorDefault, &description, 0, nullptr, config.extra_data.size(),
+                                       config.extra_data.data(), nullptr, out);
+    if (status != noErr || !*out) {
+      return Result::Error(Exception::kNotSupported, "CMAudioFormatDescriptionCreate failed",
+                           static_cast<uint32_t>(status));
+    }
+    return Result::Ok();
+  }
+
   // (Re)creates the clear video format and drops the protected ones, which
   // are rebuilt per key ID; one is built up front when the key ID is known.
   Result CreateVideoFormats(std::string* error) {
@@ -2002,12 +2052,10 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     av1_sequence_header_.clear();
     video_clear_format_.Reset(nullptr);
     video_protected_formats_.clear();
-    const bool complete = config.codec == VideoCodec::kAV1
-                              ? !config.extra_data.empty()
-                              : RecordHasParameterSets(config.codec, config.extra_data);
+    const bool complete = RecordHasParameterSets(config.codec, config.extra_data);
     awaiting_video_config_ = !complete;
     if (complete) {
-      if (config.codec != VideoCodec::kAV1) {
+      if (config.codec != VideoCodec::kAV1 && config.codec != VideoCodec::kVP9) {
         parameter_sets_ = ParameterSetsInRecord(config.codec, config.extra_data);
       }
       if (Result result = CreateVideoFormats(error); !result.ok()) {
@@ -2105,6 +2153,26 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
   // previous record, sets and formats in place.
   bool UpdateVideoConfigFromKeyframe(const uint8_t* data, size_t size, std::string* error) {
     const VideoCodec codec = video_config_->codec;
+    if (codec == VideoCodec::kVP9) {
+      std::optional<std::vector<uint8_t>> record =
+          Vp9CodecConfigurationRecord(data, size, video_config_->color);
+      if (!record) {
+        *error = "no VP9 keyframe header before the first frame";
+        return !awaiting_video_config_;
+      }
+      if (!awaiting_video_config_ && *record == video_config_->extra_data) {
+        return true;
+      }
+      std::vector<uint8_t> previous = std::move(video_config_->extra_data);
+      video_config_->extra_data = *record;
+      if (Result result = CreateVideoFormats(error); !result.ok()) {
+        video_config_->extra_data = std::move(previous);
+        *error = result.message;
+        return false;
+      }
+      awaiting_video_config_ = false;
+      return true;
+    }
     if (codec == VideoCodec::kAV1) {
       std::optional<std::vector<uint8_t>> obu = Av1SequenceHeaderObu(data, size);
       if (!obu) {

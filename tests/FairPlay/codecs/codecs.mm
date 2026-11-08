@@ -28,6 +28,7 @@
 #include "fairplay_renderer.h"
 #include "fmp4_parser.h"
 #include "sample_encryptor.h"
+#include "webm_parser.h"
 
 #if !__has_feature(objc_arc)
 #error "This file requires ARC."
@@ -212,6 +213,15 @@ bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
   NSData* data = CachedGet([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
                            [@"chromium_" stringByAppendingString:name], true, error);
   return data && ParseFile(data, name.UTF8String, media, error);
+}
+
+// The first track of one of Chromium's WebM test files.
+bool LoadChromiumWebm(NSString* name, Media* media, std::string* error) {
+  NSData* data = CachedGet([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
+                           [@"chromium_" stringByAppendingString:name], true, error);
+  if (data && ft::ParseWebmFile(Bytes(data), &media->info, &media->samples, error)) return true;
+  *error = std::string(name.UTF8String) + ": " + *error;
+  return false;
 }
 
 struct EncodeState {
@@ -855,6 +865,9 @@ fp::VideoConfig ChromiumVideoConfig(const ft::TrackInfo& info) {
     vc.codec = fp::VideoCodec::kDolbyVision;
   } else if (f == fp::FourCC('a', 'v', '0', '1')) {
     vc.codec = fp::VideoCodec::kAV1;
+  } else if (f == fp::FourCC('v', 'p', '0', '9')) {
+    vc.codec = fp::VideoCodec::kVP9;
+    vc.color = {1, 1, 1};  // WebMVideoClient's without a Colour element.
   } else {
     vc.codec = fp::VideoCodec::kH264;
   }
@@ -864,7 +877,8 @@ fp::VideoConfig ChromiumVideoConfig(const ft::TrackInfo& info) {
     vc.dolby_vision_profile = dv[2] >> 1;
     vc.dolby_vision_level = ((dv[2] & 1) << 5) | (dv[3] >> 3);
   }
-  vc.format = vc.codec == fp::VideoCodec::kAV1 ? fp::BitstreamFormat::kLengthPrefixed : fp::BitstreamFormat::kAnnexB;
+  vc.format = vc.codec == fp::VideoCodec::kAV1 || vc.codec == fp::VideoCodec::kVP9 ? fp::BitstreamFormat::kLengthPrefixed
+                                                                                  : fp::BitstreamFormat::kAnnexB;
   vc.coded_width = info.width;
   vc.coded_height = info.height;
   vc.encryption.scheme = info.encryption.scheme;
@@ -919,6 +933,11 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
       ac.channels = c[1];
       ac.sample_rate = int32_t(uint32_t(c[4]) << 24 | uint32_t(c[5]) << 16 | uint32_t(c[6]) << 8 | c[7]);
     }
+  } else if (f == fp::FourCC('v', 'o', 'r', 'b')) {
+    // WebMAudioClient: CodecPrivate as it is.
+    ac.codec = fp::AudioCodec::kVorbis;
+    ac.extra_data = c;
+    ac.channels = info.channels;
   }
   ac.encryption.scheme = info.encryption.scheme;
   return ac;
@@ -945,7 +964,7 @@ class Player : public fp::FairPlayRendererClient {
       renderer_.SetVolume(0);
     }
     initialized_ = result.ok();
-    layer_ = (__bridge AVSampleBufferDisplayLayer*)renderer_.display_layer();
+    layer_ = (__bridge CALayer*)renderer_.display_layer();
     if (layer_) {
       [CATransaction begin];
       [CATransaction setDisableActions:YES];
@@ -976,7 +995,12 @@ class Player : public fp::FairPlayRendererClient {
   // protected output), and its size and pixel format.
   std::string DisplayedFrame() {
     if (@available(macOS 14.4, *)) {
-      CVPixelBufferRef frame = layer_ ? [layer_.sampleBufferRenderer copyDisplayedPixelBuffer] : nullptr;
+      // The renderer's layer hosts its AVSampleBufferDisplayLayer.
+      AVSampleBufferDisplayLayer* display = nil;
+      for (CALayer* sublayer in layer_.sublayers) {
+        if ([sublayer isKindOfClass:[AVSampleBufferDisplayLayer class]]) display = (AVSampleBufferDisplayLayer*)sublayer;
+      }
+      CVPixelBufferRef frame = display ? [display.sampleBufferRenderer copyDisplayedPixelBuffer] : nullptr;
       if (!frame) return "no displayed pixel buffer";
       std::string text = Format("displayed frame %zux%zu '%s'", CVPixelBufferGetWidth(frame),
                                 CVPixelBufferGetHeight(frame),
@@ -1077,7 +1101,7 @@ class Player : public fp::FairPlayRendererClient {
   bool initialized_ = false;
   fp::FairPlayRenderer renderer_;
   NSView* host_;
-  AVSampleBufferDisplayLayer* layer_ = nil;
+  CALayer* layer_ = nil;
   dispatch_source_t monitor_ = nil;
   size_t index_ = 0;
   bool end_sent_ = false;
@@ -1129,7 +1153,7 @@ struct World {
   // Loaded media.
   Media h264, h264_cbcs_ref, hevc, dv5_dvh1, dv5_dvhe, av1_ref, av1, av1_10bit_ref, av1_10bit, xhe_aac, ac3, eac3,
       eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus, alac, ipcm16,
-      ipcm24, fpcm32;
+      ipcm24, fpcm32, vp9, vorbis, vorbis_damaged;
   // The Dolby Vision dvhe test file's own cenc layout (dv5_dvhe holds it
   // decrypted).
   std::vector<std::vector<fp::SubsampleEntry>> dv5_dvhe_layout;
@@ -1749,6 +1773,11 @@ void RunAll() {
   add_loaded("PCM fpcm 32-bit float clear", w->fpcm32, "lpcm", Expect::kPlays);
   AddClip("PCM ipcm 16-bit cbcs, whole sample", w->ipcm16, audio, "enca", Expect::kDecodeError);
   AddClip("PCM fpcm 32-bit float cbcs, whole sample", w->fpcm32, audio, "enca", Expect::kDecodeError);
+  // VP9 and Vorbis as Chromium's WebM parser gives them, which Safari's Media
+  // Source plays through the same renderers. FairPlay protects neither.
+  add_loaded("VP9 vp09 clear", w->vp9, "vp09", Expect::kPlays);
+  add_loaded("Vorbis clear", w->vorbis, "vorb", Expect::kPlays);
+  add_loaded("Vorbis clear, damaged setup header (control)", w->vorbis_damaged, "vorb", Expect::kGarbage);
 
   std::vector<Step> steps;
   steps.push_back(Section("FairPlay license for Axinom's published key"));
@@ -1805,12 +1834,19 @@ bool LoadAll(World* w, std::string* error) {
       !EncodeAac(kAudioFormatMPEG4AAC, 3, &w->aac_lc, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC_HE, 3, &w->he_aac, error) ||
       !EncodeAac(kAudioFormatMPEG4AAC_HE_V2, 3, &w->he_aac_v2, error) ||
-      !EncodeAac(kAudioFormatAppleLossless, 3, &w->alac, error)) {
+      !EncodeAac(kAudioFormatAppleLossless, 3, &w->alac, error) ||
+      !LoadChromiumWebm(@"bear-vp9.webm", &w->vp9, error) ||
+      !LoadChromiumWebm(@"bear-320x240-audio-only.webm", &w->vorbis, error)) {
     return false;
   }
   MakePcm(false, 16, 2, &w->ipcm16);
   MakePcm(false, 24, 2, &w->ipcm24);
   MakePcm(true, 32, 2, &w->fpcm32);
+  // The setup header (the last of the three) flipped, past what the
+  // identification header gives CoreMedia.
+  w->vorbis_damaged = w->vorbis;
+  std::vector<uint8_t>& headers = w->vorbis_damaged.info.codec_config;
+  for (size_t k = headers.size() / 2; k < headers.size(); ++k) headers[k] ^= 0x5a;
   // Chromium's cenc test files decrypted with its test key: the AV1 ones
   // must equal Chromium's clear files (SelfTests) and give Shaka's layout;
   // the Dolby Vision dvhe one is the only dvhe stream in the test data.

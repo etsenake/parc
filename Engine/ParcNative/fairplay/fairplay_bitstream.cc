@@ -618,6 +618,61 @@ std::optional<std::vector<uint8_t>> Av1CodecConfigurationRecord(
   return record;
 }
 
+std::optional<std::vector<uint8_t>> Vp9CodecConfigurationRecord(const uint8_t* data, size_t size,
+                                                                const VideoColor& container) {
+  BitReader r(data, size);
+  // uncompressed_header() (VP9 spec 6.2) through color_config().
+  if (r.Get(2) != 2) {  // frame_marker
+    return std::nullopt;
+  }
+  const int profile_low = static_cast<int>(r.Get(1));
+  const int profile = (static_cast<int>(r.Get(1)) << 1) | profile_low;
+  if (profile == 3) {
+    r.Get(1);  // reserved_zero
+  }
+  if (r.Get(1) || r.Get(1)) {  // show_existing_frame; frame_type 1 is a non-key frame
+    return std::nullopt;
+  }
+  r.Get(2);  // show_frame, error_resilient_mode
+  if (r.Get(24) != 0x498342) {  // frame_sync_code
+    return std::nullopt;
+  }
+  int bit_depth = 8;
+  if (profile >= 2) {
+    bit_depth = r.Get(1) ? 12 : 10;
+  }
+  const int color_space = static_cast<int>(r.Get(3));
+  int full_range = 1;
+  int subsampling_x = 0, subsampling_y = 0;
+  if (color_space != 7) {  // CS_RGB
+    full_range = static_cast<int>(r.Get(1));
+    subsampling_x = subsampling_y = 1;
+    if (profile == 1 || profile == 3) {
+      subsampling_x = static_cast<int>(r.Get(1));
+      subsampling_y = static_cast<int>(r.Get(1));
+    }
+  }
+  if (r.failed()) {
+    return std::nullopt;
+  }
+  // vpcC chromaSubsampling: 1 is 4:2:0 co-sited with luma, 2 is 4:2:2, 3 is
+  // 4:4:4; 4:4:0 has no code and is written as 4:2:0, as WebKit does.
+  const uint8_t chroma = subsampling_x && !subsampling_y ? 2 : !subsampling_x && !subsampling_y ? 3 : 1;
+  // The matrix each VP9 color_space names (ISO/IEC 23091-4 code points).
+  static constexpr uint8_t kMatrix[8] = {2, 6, 1, 6, 7, 9, 2, 0};
+  std::vector<uint8_t> record{
+      1, 0, 0, 0,  // version 1, flags
+      static_cast<uint8_t>(profile),
+      10,  // level 1: CoreMedia doesn't read it (WebKit writes the same)
+      static_cast<uint8_t>((bit_depth << 4) | (chroma << 1) | full_range),
+      container.primaries,
+      container.transfer,
+      container.matrix != 2 ? container.matrix : kMatrix[color_space],
+      0, 0,  // codecInitializationDataSize
+  };
+  return record;
+}
+
 std::vector<uint8_t> DolbyVisionConfigurationRecord(int profile, int level, int compatibility_id) {
   std::vector<uint8_t> record(24, 0);
   record[0] = 1;  // dv_version_major

@@ -83,6 +83,8 @@ std::optional<fp::VideoCodec> ToVideoCodec(VideoCodec codec) {
       return fp::VideoCodec::kDolbyVision;
     case VideoCodec::kAV1:
       return fp::VideoCodec::kAV1;
+    case VideoCodec::kVP9:
+      return fp::VideoCodec::kVP9;
     default:
       return std::nullopt;
   }
@@ -104,6 +106,8 @@ std::optional<fp::AudioCodec> ToAudioCodec(AudioCodec codec) {
       return fp::AudioCodec::kALAC;
     case AudioCodec::kPCM:
       return fp::AudioCodec::kPCM;
+    case AudioCodec::kVorbis:
+      return fp::AudioCodec::kVorbis;
     default:
       return std::nullopt;
   }
@@ -145,6 +149,9 @@ int DolbyVisionCompatibilityId(const VideoDecoderConfig& config) {
 // empty and hands H.264, HEVC and Dolby Vision over as Annex B with parameter
 // sets before keyframes, AV1 as stored, and AAC with ADTS headers; it keeps
 // only the profile and level of Dolby Vision's dvcC/dvvC and no dac3/dec3.
+// WebM hands VP9 over as stored with the container's color (BT.709 without a
+// Colour element), which the core's 'vpcC' takes, and Vorbis with its
+// CodecPrivate.
 // Encryption is the scheme only: the core takes key IDs, patterns and IVs
 // from each sample's DecryptInfo.
 fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
@@ -160,7 +167,14 @@ fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
       video.sample_entry = 0x64617631;  // 'dav1'
     }
   }
-  video.format = video.codec == fp::VideoCodec::kAV1
+  if (video.codec == fp::VideoCodec::kVP9) {
+    const VideoColorSpace& color = config.color_space_info();
+    video.color = {static_cast<uint8_t>(color.primaries()),
+                   static_cast<uint8_t>(color.transfer()),
+                   static_cast<uint8_t>(color.matrix())};
+  }
+  video.format = video.codec == fp::VideoCodec::kAV1 ||
+                         video.codec == fp::VideoCodec::kVP9
                      ? fp::BitstreamFormat::kLengthPrefixed
                      : fp::BitstreamFormat::kAnnexB;
   video.coded_width = config.coded_size().width();
@@ -171,13 +185,17 @@ fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
   return video;
 }
 
-// The core's config for what it plays: H.264, HEVC, AV1 and the Dolby Vision
-// profiles above.
+// The core's config for what it plays: H.264, HEVC, AV1, the Dolby Vision
+// profiles above and VP9 profiles 0 and 2, the ones VideoToolbox decodes
+// (WebKit's isVP9CodecConfigurationRecordSupported).
 std::optional<fp::VideoConfig> CoreConfigIfPlayable(
     const VideoDecoderConfig& config) {
   if (!ToVideoCodec(config.codec()) ||
       (config.codec() == VideoCodec::kDolbyVision &&
-       DolbyVisionProfileNumber(config.profile()) < 0)) {
+       DolbyVisionProfileNumber(config.profile()) < 0) ||
+      (config.codec() == VideoCodec::kVP9 &&
+       config.profile() != VP9PROFILE_PROFILE0 &&
+       config.profile() != VP9PROFILE_PROFILE2)) {
     return std::nullopt;
   }
   return ToCoreConfig(config);

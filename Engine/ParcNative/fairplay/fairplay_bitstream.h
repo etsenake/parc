@@ -94,6 +94,16 @@ std::optional<std::vector<uint8_t>> Av1SequenceHeaderObu(const uint8_t* data, si
 // chroma fields parsed from it, then the OBU as configOBUs.
 std::optional<std::vector<uint8_t>> Av1CodecConfigurationRecord(const std::vector<uint8_t>& sequence_header_obu);
 
+// 'vpcC' FullBox payload (version 1 VPCodecConfigurationRecord) from the
+// uncompressed header of the VP9 keyframe at the start of |data| (also the
+// first frame of a superframe): profile, bit depth, chroma subsampling and
+// range from the header, primaries and transfer from |container|, and the
+// matrix from |container| unless unspecified, else from the header's
+// color_space, as WebKit's createVideoInfoFromVP9HeaderParser lets the
+// container override the frame. nullopt for anything but a keyframe.
+std::optional<std::vector<uint8_t>> Vp9CodecConfigurationRecord(const uint8_t* data, size_t size,
+                                                                const VideoColor& container);
+
 // DOVIDecoderConfigurationRecord ('dvcC'/'dvvC' payload, 24 bytes) for a
 // single-layer stream: RPU and base layer present, no enhancement layer.
 // Profile 5 has compatibility ID 0.

@@ -96,34 +96,44 @@ struct TrackEncryption {
   std::vector<uint8_t> default_constant_iv;
 };
 
-enum class VideoCodec { kH264, kHEVC, kDolbyVision, kAV1 };
+enum class VideoCodec { kH264, kHEVC, kDolbyVision, kAV1, kVP9 };
 // kAAC covers every AudioSpecificConfig object type: LC, HE-AAC (5),
 // HE-AACv2 (29) and xHE-AAC/USAC (42).
-enum class AudioCodec { kAAC, kAC3, kEAC3, kFLAC, kOpus, kALAC, kPCM };
+enum class AudioCodec { kAAC, kAC3, kEAC3, kFLAC, kOpus, kALAC, kPCM, kVorbis };
 
 // How video access units are framed. ISO-BMFF samples are length-prefixed;
 // Chromium's MP4 parser converts H.264, HEVC and Dolby Vision (not profile
 // 10) to Annex B and re-inserts parameter sets on keyframes before handing
-// buffers to a renderer. AV1 stays as stored (kLengthPrefixed).
+// buffers to a renderer. AV1 and VP9 stay as stored (kLengthPrefixed).
 enum class BitstreamFormat { kLengthPrefixed, kAnnexB };
 
 // Chromium's MP4 parser prepends a 7-byte ADTS header to AAC samples whose
 // config fits ADTS (not xHE-AAC). With kADTS a header is stripped when present.
 enum class AudioFraming { kRaw, kADTS };
 
+// Color as ISO/IEC 23091-4 code points (2 is unspecified).
+struct VideoColor {
+  uint8_t primaries = 2;
+  uint8_t transfer = 2;
+  uint8_t matrix = 2;
+};
+
 struct VideoConfig {
   VideoCodec codec = VideoCodec::kH264;
-  // ISO sample entry type: 0 picks avc1, hvc1, dvh1 or av01. Pass avc3, hev1
+  // ISO sample entry type: 0 picks avc1, hvc1, dvh1, av01 or vp09. Pass avc3, hev1
   // or dvhe for streams whose parameter sets travel in-band; the renderer
   // presents them as avc1, hvc1 and dvh1 (VideoToolbox configures only from
   // the record), so their protected types are qavc, qhvc and qdh1.
   uint32_t sample_entry = 0;
   // AVCDecoderConfigurationRecord ('avcC' payload), HEVCDecoderConfigurationRecord
-  // ('hvcC', also for Dolby Vision) or AV1CodecConfigurationRecord ('av1C').
-  // May be empty, as Chromium's MP4 parser always leaves it: the renderer then
-  // builds it from the first keyframe (in-band SPS/PPS/VPS, or AV1's sequence
-  // header OBU), and rebuilds it whenever a keyframe brings different ones.
+  // ('hvcC', also for Dolby Vision), AV1CodecConfigurationRecord ('av1C') or
+  // the 'vpcC' FullBox payload. May be empty, as Chromium's parsers leave it:
+  // the renderer then builds it from the first keyframe (in-band SPS/PPS/VPS,
+  // AV1's sequence header OBU, VP9's uncompressed header), and rebuilds it
+  // whenever a keyframe brings different ones.
   std::vector<uint8_t> extra_data;
+  // VP9: the container's color, which a 'vpcC' built from a keyframe takes.
+  VideoColor color;
   // Dolby Vision: DOVIDecoderConfigurationRecord, carried as 'dvcC' for
   // profiles up to 7 and 'dvvC' from 8. Profile 10 is kAV1 with sample entry
   // 'dav1'. When empty and dolby_vision_profile
@@ -154,6 +164,8 @@ struct AudioConfig {
   // ALAC: the 24-byte ALACSpecificConfig (Chromium's, from the 'alac' box), or
   // Apple's magic cookie with its 'alac' atom (FFmpeg's); required.
   // PCM: none (see pcm_bits).
+  // Vorbis: the three headers, Xiph-laced as WebM's CodecPrivate carries them
+  // (Chromium's form from WebM and Ogg alike); required, clear only.
   std::vector<uint8_t> extra_data;
   AudioFraming framing = AudioFraming::kRaw;
   int32_t sample_rate = 0;

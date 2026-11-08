@@ -30,6 +30,7 @@
 #include "fairplay_renderer.h"
 #include "fmp4_parser.h"
 #include "ts_parser.h"
+#include "webm_parser.h"
 
 #if !__has_feature(objc_arc)
 #error "This file requires ARC."
@@ -313,8 +314,7 @@ NSString* const kChromiumTestData =
 
 // A whole MP4 (fragmented or progressive) from |url|, cached as |cache_name|;
 // |base64| for Gitiles' ?format=TEXT.
-bool LoadMp4File(NSString* url, NSString* cache_name, bool base64, Media* media, std::string* error) {
-  NSString* name = cache_name;
+NSData* CachedFile(NSString* url, NSString* cache_name, bool base64, std::string* error) {
   NSString* path = [g_cache_dir stringByAppendingPathComponent:cache_name];
   NSData* data = [NSData dataWithContentsOfFile:path];
   if (!data) {
@@ -324,11 +324,18 @@ bool LoadMp4File(NSString* url, NSString* cache_name, bool base64, Media* media,
                                                             options:NSDataBase64DecodingIgnoreUnknownCharacters]
                               : http.body;
     if (!data) {
-      *error = Format("GET %s -> %ld", name.UTF8String, http.status);
-      return false;
+      *error = Format("GET %s -> %ld", cache_name.UTF8String, http.status);
+      return nil;
     }
     [data writeToFile:path atomically:YES];
   }
+  return data;
+}
+
+bool LoadMp4File(NSString* url, NSString* cache_name, bool base64, Media* media, std::string* error) {
+  NSString* name = cache_name;
+  NSData* data = CachedFile(url, cache_name, base64, error);
+  if (!data) return false;
   std::vector<ft::Sample> samples;
   if (!ft::ParseInitSegment(Bytes(data), &media->info, error) ||
       !ft::ParseMediaSegment(Bytes(data), media->info, &samples, error) ||
@@ -343,6 +350,19 @@ bool LoadMp4File(NSString* url, NSString* cache_name, bool base64, Media* media,
 bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
   return LoadMp4File([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
                      [@"chromium_" stringByAppendingString:name], true, media, error);
+}
+
+// The first track of one of Chromium's WebM test files.
+bool LoadChromiumWebm(NSString* name, Media* media, std::string* error) {
+  NSData* data = CachedFile([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
+                            [@"chromium_" stringByAppendingString:name], true, error);
+  std::vector<ft::Sample> samples;
+  if (!data || !ft::ParseWebmFile(Bytes(data), &media->info, &samples, error)) {
+    *error = std::string(name.UTF8String) + ": " + *error;
+    return false;
+  }
+  media->segments.push_back(std::move(samples));
+  return true;
 }
 
 // DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator):
@@ -774,14 +794,16 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool 
     vc.codec = fp::VideoCodec::kDolbyVision;
   } else if (f == fp::FourCC('a', 'v', '0', '1') || f == fp::FourCC('d', 'a', 'v', '1')) {
     vc.codec = fp::VideoCodec::kAV1;
+  } else if (f == fp::FourCC('v', 'p', '0', '9')) {
+    vc.codec = fp::VideoCodec::kVP9;
   } else {
     vc.codec = fp::VideoCodec::kH264;
   }
   vc.sample_entry = f;
   vc.extra_data = info.codec_config;
   vc.dolby_vision_config = info.dolby_vision_config;
-  // Chromium hands AV1 over as stored, everything else as Annex B.
-  vc.format = framing == Framing::kChromium && vc.codec != fp::VideoCodec::kAV1
+  // Chromium hands AV1 and VP9 over as stored, everything else as Annex B.
+  vc.format = framing == Framing::kChromium && vc.codec != fp::VideoCodec::kAV1 && vc.codec != fp::VideoCodec::kVP9
                   ? fp::BitstreamFormat::kAnnexB
                   : fp::BitstreamFormat::kLengthPrefixed;
   vc.coded_width = info.width;
@@ -797,6 +819,8 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool 
     }
     vc.dolby_vision_config.clear();
     vc.encryption = fp::TrackEncryption{info.encryption.scheme, {}, {}, 0, {}};
+    // WebMVideoClient's color without a Colour element: BT.709.
+    if (vc.codec == fp::VideoCodec::kVP9) vc.color = {1, 1, 1};
   }
   return vc;
 }
@@ -805,10 +829,14 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool 
   fp::AudioConfig ac;
   const uint32_t f = info.original_format;
   const bool aac = f == fp::FourCC('m', 'p', '4', 'a');
-  ac.codec = aac ? fp::AudioCodec::kAAC
-                 : f == fp::FourCC('e', 'c', '-', '3') ? fp::AudioCodec::kEAC3 : fp::AudioCodec::kAC3;
+  const bool vorbis = f == fp::FourCC('v', 'o', 'r', 'b');
+  ac.codec = aac      ? fp::AudioCodec::kAAC
+             : vorbis ? fp::AudioCodec::kVorbis
+             : f == fp::FourCC('e', 'c', '-', '3') ? fp::AudioCodec::kEAC3
+                                                   : fp::AudioCodec::kAC3;
   ac.extra_data = info.codec_config;
-  if (chromium_inputs && !aac) ac.extra_data.clear();
+  // Chromium keeps no dac3/dec3; Vorbis keeps its CodecPrivate.
+  if (chromium_inputs && !aac && !vorbis) ac.extra_data.clear();
   ac.framing = framing == Framing::kChromium && aac && ft::AacObjectType(info.codec_config, true) <= 4
                    ? fp::AudioFraming::kADTS
                    : fp::AudioFraming::kRaw;
@@ -1095,13 +1123,15 @@ class Player : public fp::FairPlayRendererClient {
       }
       const ft::TrackInfo& info = feed.tracks.empty() ? default_info : *feed.tracks[feed.segment];
       if (!feed.tracks.empty() && feed.current && feed.current != &info) {
-        // A different track: audio needs Reconfigure; video signals itself
-        // in-band (and gets Reconfigure too when full configs are in use).
+        // A different track: audio needs Reconfigure; video of the same
+        // codec signals itself in-band (and gets Reconfigure too when full
+        // configs are in use), a new codec is a config change in Chromium.
+        const bool in_band = chromium_inputs_ && info.original_format == feed.current->original_format;
         fp::Result result = stream.type == fp::StreamType::kAudio
                                 ? renderer_.Reconfigure(AudioConfigFor(info, framing_, chromium_inputs_),
                                                         stream.audio_track)
-                                : (chromium_inputs_ ? fp::Result::Ok()
-                                                    : renderer_.Reconfigure(VideoConfigFor(info, framing_, false)));
+                                : (in_band ? fp::Result::Ok()
+                                           : renderer_.Reconfigure(VideoConfigFor(info, framing_, chromium_inputs_)));
         ++reconfigures;
         if (!result.ok()) errors.push_back("Reconfigure: " + result.message);
       }
@@ -1571,6 +1601,9 @@ struct World {
   Media eac3_71;  // First 5 s of kDdp71.
   Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, dolby_vision_10, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
       he_aac_after_clear, avc_bframes;
+  // VP9 and Vorbis from Chromium's WebM files; Dolby Vision and VP9 again
+  // after the VP9 clip, for a codec switch each way.
+  Media vp9, vorbis, dolby_vision_after_vp9, vp9_after_dolby_vision;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
   std::vector<std::unique_ptr<KeySystem>> retired;
@@ -4733,7 +4766,7 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
   const Media* media = video ? video : audio;
-  double end = EndSeconds(*media);
+  double end = std::max(video ? EndSeconds(*video) : 0, audio ? EndSeconds(*audio) : 0);
   std::vector<Step> steps;
   steps.push_back(Section(label + " (clear path, Chromium framing, played to the end)"));
   steps.push_back([=](Done done) {
@@ -4762,6 +4795,7 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
         Check(std::fabs(t - end) < 0.3, label + Format(": ended at the clip's end (t=%.3f, end %.3f)", t, end));
       }
       CheckHealthy(*w->player, label);
+      if (video) Check(HasPicture(w->player->layer()), label + ": the display layer shows a picture");
       fp::RendererStatus s = w->player->renderer().GetStatus();
       Log("%s: formats video '%s' audio '%s'", label.c_str(), ft::FourCCString(s.video_format).c_str(),
           ft::FourCCString(s.audio_format).c_str());
@@ -4847,6 +4881,55 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
                                         layers.find(protected_type.substr(5)) != std::string::npos);
     Check(ok, label + ": protected format description is Apple's '" + protected_type + "'",
           result.ok() ? "'" + type + "'" + (layers.empty() ? "" : " layers " + layers) : result.message);
+    done();
+  });
+  return steps;
+}
+
+// Safari's Media Source plays VP9 and Vorbis next to Dolby Vision in the one
+// AVFoundation renderer (AVSampleBufferDisplayLayer decodes VP9 once
+// VideoToolbox's supplemental decoder is registered; AudioToolbox decodes
+// Vorbis), and switches between them with changeType(): VP9, then Dolby
+// Vision, then VP9 again through Reconfigure, Chromium's config changes.
+std::vector<Step> CodecSwitchScenario() {
+  World* w = g_world;
+  auto frames = std::make_shared<int64_t>(0);
+  const double end = EndSeconds(w->vp9_after_dolby_vision);
+  const size_t count = 2 * SampleCount(w->vp9) + SampleCount(w->dolby_vision);
+  std::vector<Step> steps;
+  steps.push_back(Section("codec switch VP9 -> Dolby Vision -> VP9 (Chromium inputs, clear)"));
+  steps.push_back([=](Done done) {
+    w->player = std::make_shared<Player>("codec-switch", Framing::kChromium, &w->vp9, nullptr, nullptr, w->host,
+                                         false, true);
+    w->player->renderer().Flush([=] {
+      w->player->SetFeedsWithTracks(
+          {&w->vp9.segments[0], &w->dolby_vision_after_vp9.segments[0], &w->vp9_after_dolby_vision.segments[0]},
+          {&w->vp9.info, &w->dolby_vision_after_vp9.info, &w->vp9_after_dolby_vision.info}, {}, {}, true);
+      auto go = Once(10, "codec-switch: HAVE_ENOUGH", [=](bool) {
+        w->player->renderer().SetPlaybackRate(1);
+        done();
+      });
+      w->player->on_have_enough = [go] { go(true); };
+      w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
+    });
+  });
+  steps.push_back([=](Done done) {
+    auto finish = Once(end + 8, "codec-switch: OnEnded", [=](bool ok) {
+      if (ok) {
+        Check(std::fabs(w->player->Time() - end) < 0.3,
+              Format("codec-switch: ended at the end (t=%.3f, end %.3f)", w->player->Time(), end));
+      }
+      Check(w->player->reconfigures == 2, Format("codec-switch: two Reconfigures (%d)", w->player->reconfigures));
+      CheckHealthy(*w->player, "codec-switch");
+      Check(HasPicture(w->player->layer()), "codec-switch: the display layer shows a picture");
+      done();
+    });
+    if (w->player->ended) finish(true);
+    else w->player->on_ended = [finish] { finish(true); };
+  });
+  steps.push_back([=](Done done) { Metrics(w->player, "codec-switch", int64_t(count * 9 / 10), frames)(done); });
+  steps.push_back([=](Done done) {
+    w->player.reset();
     done();
   });
   return steps;
@@ -5895,6 +5978,11 @@ void RunAll() {
   add("CodecScenario(E-AC-3 config box)",
       CodecScenario("E-AC-3 with dec3 from rate and channels", nullptr, &w->eac3, "", {from_config(true)}));
   add("AudioReconfigureScenario()", AudioReconfigureScenario());
+  add("CodecScenario(VP9)", CodecScenario("VP9 (vp09, from WebM)", &w->vp9, nullptr, ""));
+  add("CodecScenario(Vorbis)", CodecScenario("Vorbis (from WebM)", nullptr, &w->vorbis, ""));
+  add("CodecScenario(Dolby Vision with Vorbis)",
+      CodecScenario("Dolby Vision profile 5 with Vorbis audio", &w->dolby_vision, &w->vorbis, ""));
+  add("CodecSwitchScenario()", CodecSwitchScenario());
   add("ReorderScenario(H.264)", ReorderScenario("H.264 with B-frames", &w->avc_bframes));
   add("ReorderScenario(HEVC)", ReorderScenario("HEVC with B-frames", &w->hev1));
   add("CloseScenario()", CloseScenario());
@@ -5978,7 +6066,9 @@ int main(int argc, char** argv) {
                 LoadChromiumFile(@"bear-ac3-only-frag.mp4", &world.ac3, &error) &&
                 LoadChromiumFile(@"bear-eac3-only-frag.mp4", &world.eac3, &error) &&
                 LoadMp4File(kDdp71, @"dashif_ChID_voices_71_768_ddp_A.mp4", false, &world.eac3_71, &error) &&
-                LoadMedia(kProtectedBase, @"video-H264-288-400k.m3u8", 3, &world.video_288, &error);
+                LoadMedia(kProtectedBase, @"video-H264-288-400k.m3u8", 3, &world.video_288, &error) &&
+                LoadChromiumWebm(@"bear-vp9.webm", &world.vp9, &error) &&
+                LoadChromiumWebm(@"bear-320x240-audio-only.webm", &world.vorbis, &error);
       dispatch_async(dispatch_get_main_queue(), ^{
         if (!Check(ok, "download and parse the Axinom vector", error)) Finish();
         g_certificate = Bytes(certificate);
@@ -6005,6 +6095,17 @@ int main(int argc, char** argv) {
             sample.pts += shift;
             sample.dts += shift;
           }
+          auto after = [](const Media& media, double seconds) {
+            Media shifted = media;
+            const int64_t ticks = int64_t(seconds * media.info.timescale + 0.5);
+            for (ft::Sample& sample : shifted.segments[0]) {
+              sample.pts += ticks;
+              sample.dts += ticks;
+            }
+            return shifted;
+          };
+          world.dolby_vision_after_vp9 = after(world.dolby_vision, EndSeconds(world.vp9));
+          world.vp9_after_dolby_vision = after(world.vp9, EndSeconds(world.dolby_vision_after_vp9));
         }
         Log("certificate %zu bytes; video %zu segments, audio %zu segments", g_certificate.size(),
             world.video.segments.size(), world.audio.segments.size());

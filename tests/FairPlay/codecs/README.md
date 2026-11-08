@@ -115,6 +115,8 @@ under the same key ID fails visibly.
 | Opus (`Opus`, Chromium's `bear-opus.mp4`) as Chromium delivers it (an OpusHead) | none | clear: 137/137 packets as `opus`, `OnEnded` at 2.741 s, no decoder errors |
 | ALAC (`alac`, 3 s stereo 16-bit from Apple's encoder) as the ALACSpecificConfig | `qlac` | clear: 33/33 packets as `alac`, played to `OnEnded`, no decoder errors; protected: 33/33, no decoder errors; wrong key: 3 decoder errors (`ACCPEDecoderWrapper`) |
 | PCM `ipcm` 16/24-bit and `fpcm` 32-bit float (2 s stereo, 1024-frame samples) with `pcmC`, as Chromium delivers it | none (`enca`) | clear: 87/87 samples as `lpcm`, `OnEnded` at 2.000 s, no decoder errors; protected: fails at the first enqueue with -11800 (`fmt?`), as in Safari (`--only PCM --muted`, 2026-11-07) |
+| VP9 (`vp09`, Chromium's `bear-vp9.webm`) as Chromium's WebM parser delivers it (frames as stored, no `vpcC`) | none | clear: 82/82 frames as `vp09`, 0 corrupted, a 320x240 frame displayed, `OnEnded` at 2.737 s, no decoder errors (`--only VP9 --muted`, 2026-11-07) |
+| Vorbis (`vorb`, Chromium's `bear-320x240-audio-only.webm`) with its CodecPrivate as the cookie | none | clear: 166/166 packets as `vorb`, `OnEnded` at 2.767 s, no decoder errors; damaged setup header (control): never ends (`--only Vorbis --muted`, 2026-11-07) |
 
 FLAC, Opus and ALAC were run with `--muted` (2026-11-07): every audio renderer muted
 at volume 0, which still decodes each packet and logs decoder errors, so

@@ -7,8 +7,10 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "media/base/audio_decoder_config.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/media_resource.h"
+#include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/mojo/clients/mojo_demuxer_stream_impl.h"
@@ -84,6 +86,20 @@ void FairPlayRendererClient::Initialize(MediaResource* media_resource,
         streams.push_back(stream);
       }
     }
+  }
+  // The FairPlay Renderer plays VP9 and Vorbis as Safari's renderer does,
+  // which Chrome-identity pages, whose Media Source isn't Safari's, never
+  // met: there it refuses them, as before.
+  if (!media_resource->ParcMayAddStreams() &&
+      std::ranges::any_of(streams, [](DemuxerStream* stream) {
+        return stream->type() == DemuxerStream::VIDEO
+                   ? stream->video_decoder_config().codec() == VideoCodec::kVP9
+                   : stream->audio_decoder_config().codec() == AudioCodec::kVorbis;
+      })) {
+    media_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(std::move(init_cb),
+                                  PipelineStatus(DECODER_ERROR_NOT_SUPPORTED)));
+    return;
   }
   for (DemuxerStream* stream : streams) {
     played_[next_stream_id_++].stream = stream;

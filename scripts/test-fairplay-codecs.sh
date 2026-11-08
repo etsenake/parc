@@ -16,10 +16,11 @@ for name in fairplay_init_data fairplay_key_session fairplay_renderer; do
   xcrun clang++ "${flags[@]}" -fobjc-arc -c "$core/$name.mm" -o "$output/$name.o"
 done
 xcrun clang++ "${flags[@]}" -c "$tests/fmp4_parser.cc" -o "$output/fmp4_parser.o"
+xcrun clang++ "${flags[@]}" -c "$tests/webm_parser.cc" -o "$output/webm_parser.o"
 xcrun clang++ "${flags[@]}" -c "$tests/codecs/sample_encryptor.cc" -o "$output/sample_encryptor.o"
 xcrun clang++ "${flags[@]}" -fobjc-arc -c "$tests/codecs/codecs.mm" -o "$output/codecs.o"
 xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation -framework AudioToolbox -framework CoreAudio \
-  -framework CoreMedia -framework OSLog -framework QuartzCore -o "$output/fairplay-codecs"
+  -framework CoreMedia -framework OSLog -framework QuartzCore -framework VideoToolbox -o "$output/fairplay-codecs"
 # The program exits by itself on a stalled main thread (sampling its stack)
 # or after --time-limit seconds (default 600); this cap backs that up.
 "$output/fairplay-codecs" --cache "${PARC_FAIRPLAY_CACHE:-${TMPDIR:-/tmp}/parc-fairplay-cache}" "$@" &

@@ -254,6 +254,17 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
   Apple's magic cookie with its `alac` atom, FFmpeg's form). The core builds
   Apple's `alac` sample entry with that config in its ALACSpecificBox;
   protected ALAC becomes `qlac`.
+- VP9 (`VideoCodec::kVP9`) and Vorbis (`AudioCodec::kVorbis`) come from
+  Chromium's WebM parser, as Safari's Media Source plays them through the same
+  AVFoundation renderers. VP9 frames go as stored in a `vp09` entry whose
+  `vpcC` the core builds from the keyframe's uncompressed header (profile, bit
+  depth, chroma, range) and the container's color; AVSampleBufferDisplayLayer
+  decodes it only after `VTRegisterSupplementalVideoDecoderIfAvailable`, which
+  the core calls once, as WebKit's GPU process does (without it every frame
+  fails with -12906). Vorbis has no ISO entry: its Xiph-laced headers are the
+  magic cookie of a `vorb` description, as WebKit's
+  `cookieFromVorbisCodecPrivate` builds it, which AudioToolbox decodes as it
+  is. FairPlay protects neither.
 - PCM (`AudioCodec::kPCM`, Chromium's from ISO 23003-5 `ipcm`/`fpcm`) comes as
   interleaved little-endian samples of `pcm_bits` (16, 24 or 32, or 32-bit
   float). The core builds the `ipcm` or `fpcm` entry with its `pcmC`, which
