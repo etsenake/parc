@@ -209,6 +209,43 @@ int main() {
   same_capture.published = false;
   assert(!ShouldNotifyShellPayloadChange(published_capture, same_capture));
 
+  // A cross-document load is held past its main document's end until the
+  // main frame is network-quiet and has painted, never past the cap.
+  using parc::LoadingHold;
+  LoadingHold hold;
+  assert(hold.Update(true, false, 0));
+  hold.Committed(100);
+  assert(hold.Update(true, false, 200));
+  assert(hold.Update(false, false, 1000) && hold.holding());
+  assert(hold.Remaining(false, 1000) == LoadingHold::kCapMs);
+  hold.Activity(1200);
+  assert(hold.Update(false, true, 1600));
+  assert(hold.Remaining(true, 1600) == 100);
+  assert(!hold.Update(false, true, 1700) && !hold.holding());
+  hold.Activity(1800);
+  assert(!hold.Update(false, true, 1800));
+  // Without a paint, or with a page that keeps fetching, the cap ends it.
+  hold.Committed(0);
+  assert(hold.Update(false, false, 0));
+  for (int64_t t = 0; t < LoadingHold::kCapMs; t += 100) {
+    hold.Activity(t);
+    assert(hold.Update(false, true, t));
+  }
+  assert(!hold.Update(false, true, LoadingHold::kCapMs));
+  // Already quiet and painted when the load ends: a quiet window after the
+  // last resource, not after the end.
+  hold.Committed(0);
+  assert(!hold.Update(false, true, 600));
+  // Same-document loads are never held; a new load supersedes a hold.
+  assert(!hold.Update(false, true, 700));
+  hold.Committed(0);
+  assert(hold.Update(false, false, 100));
+  assert(hold.Update(true, false, 200) && !hold.holding());
+  hold.Committed(0);
+  assert(hold.Update(false, false, 100));
+  hold.Cancel();
+  assert(!hold.Update(false, false, 200));
+
   std::cout << "Passed native page-shell finished-navigation, loading, "
                "title/theme/security, reader, capture, page-colour and top-band "
                "notify "

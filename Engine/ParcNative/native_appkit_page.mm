@@ -39,6 +39,8 @@
 #include "base/supports_user_data.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/devtools/devtools_window.h"
@@ -734,6 +736,19 @@ class NativePageState final
   NSString* identifier() const { return identifier_; }
   NSString* path() const { return profile_path_; }
   bool embedded() const { return embedded_; }
+  //
+  // (BrowserUiController::UpdateWindowForLoadingStateChanged) follow
+  // ShouldShowLoadingUI, the main document loading; frames that load on
+  // their own afterwards don't count. LoadingHold extends it past the load.
+  bool ShellLoading() const {
+    auto* contents = contents_.get();
+    return contents &&
+           (contents->ShouldShowLoadingUI() || loading_hold_.holding());
+  }
+  void CancelLoadingHold() {
+    loading_hold_.Cancel();
+    LoadingChanged();
+  }
   void MarkEmbedded() {
     CHECK(!embedded_);
     embedded_ = true;
@@ -793,7 +808,7 @@ class NativePageState final
         reader_ ? reader_->DisplayURL() : contents->GetVisibleURL();
     state.url = PublicInternalURL(visible).spec();
     state.title = contents->GetTitle();
-    state.loading = contents->IsLoading();
+    state.loading = ShellLoading();
     state.can_go_back = contents->GetController().CanGoBack();
     state.can_go_forward = contents->GetController().CanGoForward();
     state.top_bar_color = TopBarPageColor(contents->GetThemeColor(),
@@ -1238,14 +1253,52 @@ class NativePageState final
     }
     Notify();
   }
-  void DidStopLoading() override {
-    if (!ShouldNotifyLoadingChange(last_shell_notify_,
-                                   CurrentShellNotifyState())) {
+  void DidStopLoading() override { LoadingChanged(); }
+  void DidStartLoading() override { LoadingChanged(); }
+  // The main document finishing while subframes still load, and a main
+  // navigation starting while one does, change ShouldShowLoadingUI without
+  // DidStop/DidStartLoading; the main frame's progress update follows both.
+  void LoadProgressChanged(double) override { LoadingChanged(); }
+  void ResourceLoadComplete(content::RenderFrameHost* frame,
+                            const content::GlobalRequestID&,
+                            const GURL&,
+                            const blink::mojom::ResourceLoadInfo&) override {
+    if (!contents_ || frame != contents_->GetPrimaryMainFrame()) {
       return;
     }
-    Notify();
+    loading_hold_.Activity(NowMs());
+    if (loading_hold_.holding()) {
+      LoadingChanged();
+    }
   }
-  void DidStartLoading() override {
+  void OnFirstContentfulPaintInPrimaryMainFrame(base::TimeTicks) override {
+    if (!contents_) {
+      return;
+    }
+    painted_page_ = contents_->GetPrimaryPage().GetWeakPtr();
+    if (loading_hold_.holding()) {
+      LoadingChanged();
+    }
+  }
+  static int64_t NowMs() {
+    return (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
+  }
+  void LoadingChanged() {
+    auto* contents = contents_.get();
+    if (!contents) {
+      return;
+    }
+    const int64_t now = NowMs();
+    const bool painted =
+        painted_page_ && painted_page_.get() == &contents->GetPrimaryPage();
+    loading_hold_.Update(contents->ShouldShowLoadingUI(), painted, now);
+    loading_hold_timer_.Stop();
+    if (loading_hold_.holding()) {
+      loading_hold_timer_.Start(
+          FROM_HERE, base::Milliseconds(loading_hold_.Remaining(painted, now)),
+          base::BindOnce(&NativePageState::LoadingChanged,
+                         base::Unretained(this)));
+    }
     if (!ShouldNotifyLoadingChange(last_shell_notify_,
                                    CurrentShellNotifyState())) {
       return;
@@ -1255,6 +1308,13 @@ class NativePageState final
   void DidFinishNavigation(content::NavigationHandle* navigation) override {
     if (!navigation) {
       return;
+    }
+    // A restored or prerendered page arrives loaded and painted, and
+    // about:blank never paints content.
+    if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted() &&
+        !navigation->IsSameDocument() && !navigation->IsPageActivation() &&
+        !navigation->GetURL().IsAboutBlank()) {
+      loading_hold_.Committed(NowMs());
     }
     const bool favicon_already = favicon_observation_.IsObserving();
     ObserveFavicon();
@@ -1425,6 +1485,9 @@ class NativePageState final
   bool closing_ = false;
   bool clearing_site_data_ = false;
   uint64_t event_generation_ = 0;
+  LoadingHold loading_hold_;
+  base::WeakPtr<content::Page> painted_page_;
+  base::OneShotTimer loading_hold_timer_;
   NativePageShellNotifyState last_shell_notify_;
 };
 void MarkNativePageEmbedded(PCNativePage* page) {
@@ -1556,8 +1619,7 @@ void SetNativePageClosedCallback(PCNativePage* page,
   return _state->StopCapture(snapshot, sharing);
 }
 - (BOOL)loading {
-  auto* contents = _state->contents();
-  return contents && contents->IsLoading();
+  return _state->ShellLoading();
 }
 - (BOOL)canGoBack {
   auto* contents = _state->contents();
@@ -1998,6 +2060,9 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
   CHECK(NSThread.isMainThread);
   auto* browser = NavigationBrowser(self, false);
   const int command = NavigationCommand(action);
+  // Chrome enables IDC_STOP only while the main document loads; Stop also
+  // ends this page's loading hold.
+  if (browser && action == PCNativeNavigationActionStop) return _state->ShellLoading();
   if (!browser || !command || !chrome::IsCommandEnabled(browser, command)) return NO;
   auto* contents = parc::ContentsForNativePage(self);
   switch (action) {
@@ -2005,7 +2070,7 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
     case PCNativeNavigationActionForward: return contents->GetController().CanGoForward();
     case PCNativeNavigationActionReload:
     case PCNativeNavigationActionReloadBypassingCache: return chrome::CanReload(browser);
-    case PCNativeNavigationActionStop: return contents->IsLoading();
+    case PCNativeNavigationActionStop: return NO;
   }
   return NO;
 }
@@ -2029,7 +2094,12 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
     case PCNativeNavigationActionReload: chrome::Reload(browser, disposition); break;
     case PCNativeNavigationActionReloadBypassingCache:
       chrome::ReloadBypassingCache(browser, disposition); break;
-    case PCNativeNavigationActionStop: chrome::Stop(browser); break;
+    case PCNativeNavigationActionStop:
+      // After the main document, Stop only ends the hold; Chrome never
+      // cancels a finished page's own fetches.
+      _state->CancelLoadingHold();
+      if (source->ShouldShowLoadingUI()) source->Stop();
+      break;
   }
   //
   // Reload in a new tab passes a nil strategy with the window's active item.

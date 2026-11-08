@@ -119,6 +119,58 @@ inline bool ShouldNotifyShellPayloadChange(
   return ShellNotifyPayloadChanged(last, current);
 }
 
+//
+// end of loading), the shell keeps showing it loading while the page fills
+// itself in: until the main frame's own resources (fetch/XHR included) have
+// been quiet for Blink's network-quiet window and the page has had its first
+// contentful paint, never longer than Chromium waits for new content to
+// render. Same-document navigations are never held.
+class LoadingHold {
+ public:
+  static constexpr int64_t kQuietMs = 500;   // Blink NetworkQuietTimeout.
+  static constexpr int64_t kCapMs = 4000;    // blink::kNewContentRenderingDelay.
+
+  bool holding() const { return holding_; }
+  void Committed(int64_t now) {
+    armed_ = true;
+    holding_ = false;
+    last_activity_ = now;
+  }
+  void Activity(int64_t now) {
+    if (armed_ || holding_) last_activity_ = now;
+  }
+  void Cancel() { armed_ = holding_ = false; }
+  // `main_loading` is ShouldShowLoadingUI. Returns what the shell shows.
+  bool Update(bool main_loading, bool painted, int64_t now) {
+    if (main_loading) {
+      holding_ = false;
+      return true;
+    }
+    if (armed_) {
+      armed_ = false;
+      holding_ = true;
+      finished_ = now;
+    }
+    if (holding_ && (now - finished_ >= kCapMs ||
+                     (painted && now - last_activity_ >= kQuietMs))) {
+      holding_ = false;
+    }
+    return holding_;
+  }
+  // Milliseconds until Update can next end the hold.
+  int64_t Remaining(bool painted, int64_t now) const {
+    int64_t due = finished_ + kCapMs;
+    if (painted && last_activity_ + kQuietMs < due) due = last_activity_ + kQuietMs;
+    return due > now ? due - now : 0;
+  }
+
+ private:
+  bool armed_ = false;
+  bool holding_ = false;
+  int64_t finished_ = 0;
+  int64_t last_activity_ = 0;
+};
+
 inline bool ShouldNotifyLoadingChange(
     const NativePageShellNotifyState& last,
     const NativePageShellNotifyState& current) {
