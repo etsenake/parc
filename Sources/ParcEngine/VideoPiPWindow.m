@@ -397,7 +397,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _chrome.hidden = YES;
   [content addSubview:_chrome];
 
-  _backButton = [self makeChromeButton:@"arrow.up.left.and.arrow.down.right"
+  _backButton = [self makeChromeButton:@"arrow.up.left"
                                 action:PCVideoPiPReturn
                                  label:@"Return to Tab"
                                   size:kPCVideoPiPChromeButton];

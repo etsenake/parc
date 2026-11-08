@@ -343,7 +343,7 @@ private final class DocumentPictureInPictureTopBar: NSView {
     var showsReturnToTab = true {
         didSet { back.isHidden = !showsReturnToTab }
     }
-    private let back = PictureInPictureBarButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Back to Tab")
+    private let back = PictureInPictureBarButton(symbol: "arrow.up.left", label: "Back to Tab")
     private let close = PictureInPictureBarButton(symbol: "xmark", label: "Close")
     private let hairline = NSView()
 
