@@ -1076,6 +1076,13 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     NSUserActivityTypes=["NSUserActivityTypeBrowsingWeb"],
                     NSCameraUsageDescription="Allow camera access for websites you choose.",
                     NSMicrophoneUsageDescription="Allow microphone access for websites you choose.",
+                    # macOS kills an app that touches these without a description: passkeys from a
+                    # phone or tablet use Bluetooth, and Web Bluetooth and geolocation reach them too.
+                    NSBluetoothAlwaysUsageDescription="Websites you allow can use Bluetooth, for example to sign in with a passkey on your phone.",
+                    NSBluetoothPeripheralUsageDescription="Websites you allow can use Bluetooth, for example to sign in with a passkey on your phone.",
+                    NSLocationUsageDescription="Allow location access for websites you choose.",
+                    NSLocationWhenInUseUsageDescription="Allow location access for websites you choose.",
+                    NSWebBrowserPublicKeyCredentialUsageDescription="Sign in to websites with passkeys saved in iCloud Keychain or your password manager.",
                     NSDesktopFolderUsageDescription="Show images and videos from Desktop in your Media Library.",
                     NSDocumentsFolderUsageDescription="Show images and videos from Documents in your Media Library.",
                     NSDownloadsFolderUsageDescription="Show images and videos from Downloads in your Media Library.")

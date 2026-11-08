@@ -123,6 +123,13 @@ class PackagingIconTests(unittest.TestCase):
                                 for document in info["CFBundleDocumentTypes"]))
             for folder in ("Desktop", "Documents", "Downloads"):
                 self.assertIn(folder, info[f"NS{folder}FolderUsageDescription"])
+            # Without these, macOS terminates Parc the moment a page touches Bluetooth
+            # (a passkey from a phone), location or a platform passkey.
+            for key in ("NSBluetoothAlwaysUsageDescription", "NSBluetoothPeripheralUsageDescription",
+                        "NSLocationUsageDescription", "NSLocationWhenInUseUsageDescription",
+                        "NSWebBrowserPublicKeyCredentialUsageDescription",
+                        "NSCameraUsageDescription", "NSMicrophoneUsageDescription"):
+                self.assertTrue(info[key].strip(), key)
             plugin = app / "Contents/PlugIns" / info["NSDockTilePlugIn"]
             plugin_info = plistlib.loads((plugin / "Contents/Info.plist").read_bytes())
             self.assertEqual(plugin_info["CFBundlePackageType"], "BNDL")
