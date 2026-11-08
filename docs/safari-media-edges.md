@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **93**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **94**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -95,8 +95,13 @@ finishing after navigation could cast the next page's video: **fixed**
 casting, and a cast launched just before leaving ending where Chrome's
 carries on: **fixed** 5a160e58 (remoting is requested at the pick again, as
 Chrome, and withdrawn on a failed launch). Stop casting from the row after the
-page navigates away, or when the session is fully gone: **in progress**
-(MINI-CAST-4). A second tab of the same site
+page navigates away, or when the session is fully gone: **fixed** 77ed3660
+(the row is kept across navigation while the tab casts; a direct Stop
+casting menu). When the new page has its own media, the Cast button opens
+that page's dialog instead of Stop casting for the old cast: **in progress**.
+Left: a mirrored Safari-identity tab shows Cast in place of AirPlay while
+mirroring; a brief false Connecting when another tab connects to the same
+Cast app. A second tab of the same site
 shows Connecting during another tab's launch, and speaker-only receivers
 don't show the button on default-presentation pages: **left** (brief,
 cosmetic). Chromium's chooser has no "this Mac" entry, so a cast ends
