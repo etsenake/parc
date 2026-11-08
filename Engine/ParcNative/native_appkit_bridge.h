@@ -2267,6 +2267,8 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly) PCNativeImportOutcome outcome;
 // Requested identifiers now in their destination, including ones already there.
 @property(nonatomic, readonly, copy) NSSet<NSString*>* installedIdentifiers;
+// Still downloading; they finish in the background.
+@property(nonatomic, readonly, copy) NSSet<NSString*>* installingIdentifiers;
 @property(nonatomic, readonly, copy) NSArray<NSString*>* failedNames;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
@@ -2276,11 +2278,15 @@ NS_SWIFT_UI_ACTOR
 // Every request's extensions are read back from its source and installed from
 //
 // the choice. One failure never stops the others. A nil return is immediate
-// rejection and never calls completion; otherwise completion runs once on main.
+// rejection and calls nothing. Otherwise completion runs once on main as soon
+// as no Web Store lookup is pending; cancelling the lease after that leaves
+// running downloads alone. backgroundFailures then runs once, after the last
+// of those downloads, only if any of them failed.
 + (nullable PCNativeImportSession*)installImportedExtensions:
     (NSArray<PCNativeImportExtensionRequest*>*)requests
     completion:(void (^)(PCNativeImportExtensionResult*))completion
-    NS_SWIFT_NAME(installImportedExtensions(_:completion:));
+    backgroundFailures:(void (^)(NSArray<NSString*>*))backgroundFailures
+    NS_SWIFT_NAME(installImportedExtensions(_:completion:backgroundFailures:));
 @end
 
 // Explicit, user-selected CSV import into one original regular Profile. Only

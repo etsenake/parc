@@ -705,6 +705,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         lastActivatedAt = Date()
         guard presentation.isReady else { return }
         onActivateWindow?()
+        showImportedExtensionFailures()
         for id in awaitedPeekRetries where selectedTabIDs.contains(id) {
             DispatchQueue.main.async { [weak self] in self?.openAwaitedPeek(over: id) }
         }
@@ -12396,6 +12397,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// pane, else the focused content (a presented Peek's card, else the focused
     /// pane); `.window` is the window's top right.
     private enum ToastLocation { case content(UUID?), window }
+    func showImportedExtensionFailures() {
+        guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow,
+              !ImportedExtensionFailures.pending.isEmpty else { return }
+        let names = ImportedExtensionFailures.take()
+        if showToast(.extensionsNotAdded(names), at: .window) == nil { ImportedExtensionFailures.restore(names) }
+    }
+
     @discardableResult
     private func showToast(_ content: PArcToastContent, at location: ToastLocation = .content(nil),
                            onTap: (() -> Void)? = nil, onRetire: (() -> Void)? = nil) -> PArcToastPresentation? {

@@ -42,17 +42,21 @@
 @interface PCNativeImportExtensionResult ()
 - (instancetype)initWithOutcome:(PCNativeImportOutcome)outcome
                       installed:(NSSet<NSString*>*)installed
+                     installing:(NSSet<NSString*>*)installing
                          failed:(NSArray<NSString*>*)failed;
 @end
 @implementation PCNativeImportExtensionResult
 @synthesize outcome = _outcome, installedIdentifiers = _installedIdentifiers,
+            installingIdentifiers = _installingIdentifiers,
             failedNames = _failedNames;
 - (instancetype)initWithOutcome:(PCNativeImportOutcome)outcome
                       installed:(NSSet<NSString*>*)installed
+                     installing:(NSSet<NSString*>*)installing
                          failed:(NSArray<NSString*>*)failed {
   if ((self = [super init])) {
     _outcome = outcome;
     _installedIdentifiers = [installed copy];
+    _installingIdentifiers = [installing copy];
     _failedNames = [failed copy];
   }
   return self;
@@ -110,6 +114,7 @@ class Batch final : public ProfileObserver,
                     public std::enable_shared_from_this<Batch> {
  public:
   using Completion = void (^)(PCNativeImportExtensionResult*);
+  using Failures = void (^)(NSArray<NSString*>*);
   struct Group {
     std::shared_ptr<const ProfileData> source;
     NSString* __strong path;
@@ -119,9 +124,10 @@ class Batch final : public ProfileObserver,
     mojo::Remote<mojom::Reader> reader;
     bool loaded = false, observing = false;
   };
-  Batch(std::vector<Group> groups, Completion completion)
+  Batch(std::vector<Group> groups, Completion completion, Failures background)
       : groups_(std::move(groups)),
         completion_([completion copy]),
+        background_([background copy]),
         loading_(groups_.size()) {}
   ~Batch() override { Stop(); }
   bool Reserve() {
@@ -157,14 +163,14 @@ class Batch final : public ProfileObserver,
     StartQueuedLater();
     return true;
   }
+  // Stop reaches only lookups; downloads Chromium already owns carry on.
   void Cancel() {
-    if (finished_)
+    if (finished_ || reported_)
       return;
     cancelled_ = true;
     ticker_.Stop();
     for (size_t i = 0; i < groups_.size(); ++i)
       Loaded(i, {});
-    // Installs Chromium already owns finish on their own; Stop doesn't wait.
     for (auto& item : items_) {
       if (item.state == Item::kPreparing && !Abort(item))
         continue;
@@ -187,7 +193,8 @@ class Batch final : public ProfileObserver,
         continue;
       if (item.state == Item::kPreparing)
         --preparing_;
-      item.state = Item::kFailed;
+      // A Profile removed after the results has nothing left to report.
+      item.state = reported_ ? Item::kDeclined : Item::kFailed;
       --pending_;
       item.installer = nullptr;
     }
@@ -215,6 +222,7 @@ class Batch final : public ProfileObserver,
     State state = kQueued;
     scoped_refptr<Installer> installer;
     base::TimeTicks started;
+    bool background = false, elsewhere = false;
   };
   static bool Pending(const Item& item) {
     return item.state == Item::kQueued || item.state == Item::kPreparing ||
@@ -366,22 +374,28 @@ class Batch final : public ProfileObserver,
         weak_from_this(), index, item.id, *groups_[item.group].profile,
         base::BindOnce(
             [](std::weak_ptr<Batch> weak, size_t index, bool success,
-               const std::string&, extensions::webstore_install::Result) {
+               const std::string&, extensions::webstore_install::Result result) {
               if (auto self = weak.lock())
-                self->Installed(index, success);
+                self->Installed(index, success, result);
             },
             weak_from_this(), index));
     item.installer->BeginInstall();
   }
   // Runs inside Chromium's completion, which still holds its own reference.
-  void Installed(size_t index, bool success) {
+  void Installed(size_t index,
+                 bool success,
+                 extensions::webstore_install::Result result) {
     auto& item = items_[index];
     if (Pending(item)) {
       if (item.state == Item::kPreparing) {
         --preparing_;
         StartQueuedLater();
       }
-      item.state = success ? Item::kInstalled : Item::kFailed;
+      // An earlier import is still downloading it; that one reports it.
+      item.elsewhere = result == extensions::webstore_install::INSTALL_IN_PROGRESS;
+      item.state = success          ? Item::kInstalled
+                   : item.elsewhere ? Item::kDeclined
+                                    : Item::kFailed;
       --pending_;
     }
     item.installer = nullptr;
@@ -401,20 +415,34 @@ class Batch final : public ProfileObserver,
     MaybeFinish();
   }
   void MaybeFinish() {
-    if (!finished_ && !loading_ && !pending_)
+    if (finished_ || loading_)
+      return;
+    if (!reported_ &&
+        std::none_of(items_.begin(), items_.end(), [](const Item& item) {
+          return item.state == Item::kQueued || item.state == Item::kPreparing;
+        }))
+      Report();
+    if (!pending_)
       Finish();
   }
-  void Finish() {
-    auto keep = shared_from_this();
-    finished_ = true;
+  // The import's results never wait on downloads; Chromium finishes those in
+  //
+  void Report() {
+    reported_ = true;
+    ticker_.Stop();
+    ReleaseDestinations();
     NSMutableSet<NSString*>* installed = [NSMutableSet set];
+    NSMutableSet<NSString*>* installing = [NSMutableSet set];
     NSMutableArray<NSString*>* failed = [NSMutableArray array];
-    for (const auto& item : items_) {
+    for (auto& item : items_) {
       NSString* name = base::SysUTF8ToNSString(item.name);
       if (item.state == Item::kInstalled)
         [installed addObject:base::SysUTF8ToNSString(item.id)];
+      else if (item.state == Item::kInstalling || item.elsewhere)
+        [installing addObject:base::SysUTF8ToNSString(item.id)];
       else if (item.state == Item::kFailed && ![failed containsObject:name])
         [failed addObject:name];
+      item.background = item.state == Item::kInstalling;
     }
     // Stopping is the user's choice; nothing to report as failed.
     if (cancelled_)
@@ -422,25 +450,54 @@ class Batch final : public ProfileObserver,
     const PCNativeImportOutcome outcome =
         cancelled_        ? PCNativeImportOutcomeCancelled
         : !failed.count   ? PCNativeImportOutcomeCompleted
-        : installed.count ? PCNativeImportOutcomePartial
-                          : PCNativeImportOutcomeFailed;
+        : installed.count || installing.count ? PCNativeImportOutcomePartial
+                                              : PCNativeImportOutcomeFailed;
     auto result =
         [[PCNativeImportExtensionResult alloc] initWithOutcome:outcome
                                                      installed:installed
+                                                    installing:installing
                                                         failed:failed];
     auto completion = completion_;
     completion_ = nil;
-    Stop();
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
-                       [](std::shared_ptr<Batch> self,
-                          PCNativeImportExtensionResult* result,
+                       [](PCNativeImportExtensionResult* result,
                           Completion completion) {
-                         self->lifetime_.reset();
                          if (completion)
                            completion(result);
                        },
-                       keep, result, completion));
+                       result, completion));
+  }
+  // Downloads still running at Report end here, once, with any failures.
+  void Finish() {
+    auto keep = shared_from_this();
+    finished_ = true;
+    NSMutableArray<NSString*>* failed = [NSMutableArray array];
+    for (const auto& item : items_) {
+      NSString* name = base::SysUTF8ToNSString(item.name);
+      if (item.background && item.state == Item::kFailed &&
+          ![failed containsObject:name])
+        [failed addObject:name];
+    }
+    Failures background = nil;
+    if (failed.count)
+      background = background_;
+    background_ = nil;
+    Stop();
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(
+                       [](std::shared_ptr<Batch> self, NSArray<NSString*>* failed,
+                          Failures background) {
+                         self->lifetime_.reset();
+                         if (background)
+                           background(failed);
+                       },
+                       keep, failed, background));
+  }
+  void ReleaseDestinations() {
+    for (NSString* path in reserved_)
+      ReleaseImportDestination(path, this);
+    [reserved_ removeAllObjects];
   }
   void Stop() {
     ticker_.Stop();
@@ -452,19 +509,18 @@ class Batch final : public ProfileObserver,
       group.profile.reset();
       group.context = nullptr;
     }
-    for (NSString* path in reserved_)
-      ReleaseImportDestination(path, this);
-    [reserved_ removeAllObjects];
+    ReleaseDestinations();
   }
   std::vector<Group> groups_;
   std::vector<Item> items_;
   NSMutableArray<NSString*>* __strong reserved_ = [NSMutableArray array];
   Completion __strong completion_;
+  Failures __strong background_;
   std::shared_ptr<Batch> lifetime_;
   base::RepeatingTimer ticker_;
   base::TimeTicks started_;
   size_t loading_, pending_ = 0, preparing_ = 0;
-  bool cancelled_ = false, finished_ = false;
+  bool cancelled_ = false, reported_ = false, finished_ = false;
 };
 bool Installer::CheckRequestorAlive() const {
   auto batch = batch_.lock();
@@ -488,9 +544,11 @@ void Installer::OnManifestParsed() {
                               (NSArray<PCNativeImportExtensionRequest*>*)requests
                                          completion:
                                              (void (^)(PCNativeImportExtensionResult*))
-                                                 completion {
+                                                 completion
+                                 backgroundFailures:
+                                     (void (^)(NSArray<NSString*>*))backgroundFailures {
   CHECK(NSThread.isMainThread);
-  if (!requests.count || !completion)
+  if (!requests.count || !completion || !backgroundFailures)
     return nil;
   std::vector<parc::importer::Batch::Group> groups;
   std::map<std::string, std::set<std::string>> requested;
@@ -520,7 +578,8 @@ void Installer::OnManifestParsed() {
       groups.push_back(std::move(group));
   }
   auto batch =
-      std::make_shared<parc::importer::Batch>(std::move(groups), completion);
+      std::make_shared<parc::importer::Batch>(std::move(groups), completion,
+                                              backgroundFailures);
   if (!batch->Reserve())
     return nil;
   auto lease = [[PCNativeImportSession alloc] initWithCancel:^{

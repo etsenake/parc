@@ -68,6 +68,7 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
 @MainActor struct PCNativeImportExtensionResult {
     var outcome: PCNativeImportOutcome
     var installedIdentifiers: Set<String> = []
+    var installingIdentifiers: Set<String> = []
     var failedNames: [String] = []
 }
 @MainActor enum PCNativeBrowserApplication {
@@ -118,14 +119,16 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
     struct ExtensionInstall {
         let requests: [PCNativeImportExtensionRequest], lease: PCNativeImportSession
         let complete: (PCNativeImportExtensionResult) -> Void
+        let background: ([String]) -> Void
     }
     static var extensionInstalls: [ExtensionInstall] = []
     static var rejectsExtensionInstall = false
     static func installImportedExtensions(_ requests: [PCNativeImportExtensionRequest],
-        completion: @escaping (PCNativeImportExtensionResult) -> Void) -> PCNativeImportSession? {
+        completion: @escaping (PCNativeImportExtensionResult) -> Void,
+        backgroundFailures: @escaping ([String]) -> Void) -> PCNativeImportSession? {
         guard !rejectsExtensionInstall else { return nil }
         let lease = PCNativeImportSession()
-        extensionInstalls.append(.init(requests: requests, lease: lease, complete: completion))
+        extensionInstalls.append(.init(requests: requests, lease: lease, complete: completion, background: backgroundFailures))
         return lease
     }
 }

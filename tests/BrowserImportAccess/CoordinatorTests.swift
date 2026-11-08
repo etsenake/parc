@@ -397,16 +397,28 @@ import AppKit
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         coordinator.stopImport()
         let stopped = PCNativeBrowserApplication.extensionInstalls.removeFirst()
-        expect(stopped.lease.cancelled, "Stop withdraws extensions not yet installing")
-        stopped.complete(.init(outcome: .cancelled))
-        expect(coordinator.stage == .finished && coordinator.message == "Import stopped. Data already imported has been kept.",
-               "A stopped extension install ends the import like any other stop")
+        expect(stopped.lease.cancelled, "Stop during a running download withdraws the lookups still pending")
+        stopped.complete(.init(outcome: .cancelled, installingIdentifiers: [known.identifier]))
+        expect(coordinator.stage == .finished && coordinator.message == "Import stopped. Data already imported has been kept."
+               && !coordinator.warnings.contains { $0.hasSuffix("couldn’t be added.") },
+               "Stop during a running download ends the import at once and reports nothing as failed")
         run()
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
-        PCNativeBrowserApplication.extensionInstalls.removeFirst().complete(.init(outcome: .completed,
-            installedIdentifiers: [known.identifier, unknown.identifier]))
-        expect(coordinator.importedAdBlockers == [.init(identifier: known.identifier, displayName: known.displayName)],
-               "Only known ad blockers that were actually installed continue into setup")
+        let downloading = PCNativeBrowserApplication.extensionInstalls.removeFirst()
+        downloading.complete(.init(outcome: .completed, installedIdentifiers: [unknown.identifier],
+                                   installingIdentifiers: [known.identifier]))
+        expect(coordinator.stage == .finished
+               && coordinator.importedAdBlockers == [.init(identifier: known.identifier, displayName: known.displayName)],
+               "Results appear while a download is still running, and only known ad blockers carry on into setup")
+        downloading.background(["uBlock Origin"])
+        expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1
+               && ImportedExtensionFailures.pending.isEmpty,
+               "A later failure joins the open results once")
+        expect(coordinator.importedAdBlockers.isEmpty && ImportedExtensionFailures.failedIdentifiers.contains(known.identifier),
+               "An ad blocker whose download failed isn't offered in setup")
+        downloading.background(["uBlock Origin"])
+        expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1,
+               "The same failure is never listed twice")
         run()
         PCNativeBrowserApplication.rejectsExtensionInstall = true
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
@@ -415,6 +427,15 @@ import AppKit
                && coordinator.warnings.contains("Extension couldn’t be added."),
                "An install that can't begin lists each extension as a failure")
         coordinator.cancel()
+        var presented = 0
+        ImportedExtensionFailures.present = { presented += 1 }
+        downloading.background(["uBlock Origin"])
+        ImportedExtensionFailures.add(["uBlock Origin"])
+        expect(ImportedExtensionFailures.pending == ["uBlock Origin"] && presented == 2,
+               "After the import has closed, a later failure waits for a browser window, once")
+        expect(ImportedExtensionFailures.take() == ["uBlock Origin"] && ImportedExtensionFailures.pending.isEmpty,
+               "Shown once, it is gone")
+        ImportedExtensionFailures.present = nil
         return checks
     }
 

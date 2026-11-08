@@ -22,6 +22,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private var scheduledAdvance: DispatchWorkItem?
     private var musicPlayer: AVAudioPlayer?
     private var accessibilityObserver: NSObjectProtocol?
+    private var extensionFailureObserver: NSObjectProtocol?
     private var musicPolicyObservers: [NSObjectProtocol] = []
     private var welcome: NSHostingView<OnboardingWelcomeView>?
     private let welcomeBackdrop = OnboardingBackdrop()
@@ -170,6 +171,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                     self.render()
                 }
             }
+        extensionFailureObserver = NotificationCenter.default.addObserver(
+            forName: ImportedExtensionFailures.didFail, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.dropFailedAdBlockers() }
+            }
         render()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -253,6 +258,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         closeBrowserImport(); suspend(); isClosed = true; defaultBrowserRequest = nil
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
         accessibilityObserver = nil
+        if let extensionFailureObserver { NotificationCenter.default.removeObserver(extensionFailureObserver) }
+        extensionFailureObserver = nil
         for observer in musicPolicyObservers { NotificationCenter.default.removeObserver(observer) }
         musicPolicyObservers = []
         onCancel?()
@@ -729,6 +736,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             if !isReplay { try? OnboardingDraft.remove(directory: store.directory) }
             if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
             accessibilityObserver = nil
+            if let extensionFailureObserver { NotificationCenter.default.removeObserver(extensionFailureObserver) }
+            extensionFailureObserver = nil
             for observer in musicPolicyObservers { NotificationCenter.default.removeObserver(observer) }
             musicPolicyObservers = []
             welcome?.removeFromSuperview(); welcome = nil
@@ -758,16 +767,33 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             draft.iCloudPasswordsProfileID = profileID
         }
         if importer.importReachedCompletion {
-            draft.importedAdBlockers = importer.importedAdBlockers
-            if let kept = draft.adBlockerChoice?.keptIdentifier,
-               !draft.importedAdBlockers.contains(where: { $0.identifier == kept }) {
-                draft.adBlockerChoice = nil
+            draft.importedAdBlockers = importer.importedAdBlockers.filter {
+                !ImportedExtensionFailures.failedIdentifiers.contains($0.identifier)
             }
-            if draft.adBlockerChoice == nil, let first = draft.importedAdBlockers.first {
-                draft.adBlockerChoice = .keep(first.identifier)
-            }
+            settleAdBlockerChoice()
         }
         persistDraft()
+    }
+
+    private func settleAdBlockerChoice() {
+        if let kept = draft.adBlockerChoice?.keptIdentifier,
+           !draft.importedAdBlockers.contains(where: { $0.identifier == kept }) {
+            draft.adBlockerChoice = nil
+        }
+        if draft.adBlockerChoice == nil, let first = draft.importedAdBlockers.first {
+            draft.adBlockerChoice = .keep(first.identifier)
+        }
+    }
+
+    /// An imported ad blocker whose download later failed isn't offered.
+    private func dropFailedAdBlockers() {
+        guard !isClosed, !isFinishing else { return }
+        let before = draft.importedAdBlockers.count
+        draft.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
+        guard draft.importedAdBlockers.count != before else { return }
+        settleAdBlockerChoice()
+        persistDraft()
+        if draft.stage == .adBlockers { adBlockerHost?.rootView = adBlockerChoices() }
     }
 
     func closeBrowserImport() {

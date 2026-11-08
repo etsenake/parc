@@ -54,6 +54,11 @@ struct PArcToastContent: Equatable {
     }
     ///
     static let archiveCleared = standard("Archive Cleared")
+    /// Parc's: an imported extension that failed after the import finished,
+    /// worded like Parc's other "Couldn’t add …" toasts.
+    static func extensionsNotAdded(_ names: [String]) -> PArcToastContent {
+        standard(names.count == 1 ? "Couldn’t add " + names[0] : "Couldn’t add \(names.count) extensions")
+    }
     ///
     ///
     static func tabRestored(to location: String, selected: Bool) -> PArcToastContent {

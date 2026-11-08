@@ -61,6 +61,7 @@ final class BrowserImportCoordinator {
     /// Each profile's extensions install after the last profile's data.
     private var pendingExtensions: [(profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>)] = []
     private var extensionInstall: PCNativeImportSession?
+    private var extensionBatch: UUID?
     private var stopRequested = false
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
@@ -148,7 +149,7 @@ final class BrowserImportCoordinator {
         wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
         safariAccessReady = false; requiresSafariAccess = false
         destinationChoice = BrowserImportDestinationChoice(); profileTargets = []
-        arcNotesExportURL = nil; arcNotesImported = false; importingArcNotes = false
+        arcNotesExportURL = nil; arcNotesImported = false; importingArcNotes = false; extensionBatch = nil
         stage = .loading; message = "Finding your browsers…"; error = nil; onChange?()
         discovery = PCNativeBrowserApplication.availableImportSources { [weak self] sources in
             guard let self, self.isCurrent, self.generation == token else { return }
@@ -414,7 +415,7 @@ final class BrowserImportCoordinator {
         skipExistingCookies = !destinationChoice.replaceExistingCookies
         queue = profiles.filter { selectedProfiles.contains($0.identifier) && $0.supportedCategories.rawValue != 0 }
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
-        pendingExtensions = []; stopRequested = false
+        pendingExtensions = []; stopRequested = false; extensionBatch = nil
         generation = UUID()
         passwordDestination = source.map(Self.isSafari) == true ? activeDestination : nil
         passwordStageOffered = false
@@ -428,7 +429,7 @@ final class BrowserImportCoordinator {
         guard stage == .profiles, isArcSource, canChooseDestination else { return }
         let selected = profiles.filter { selectedProfiles.contains($0.identifier) }
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
-        pendingExtensions = []; stopRequested = false
+        pendingExtensions = []; stopRequested = false; extensionBatch = nil
         passwordsOnly = false; passwordDestination = nil; passwordStageOffered = false
         skipExistingCookies = true; queue = []; queuedDestinations = [:]
         generation = UUID(); let token = generation
@@ -733,13 +734,17 @@ final class BrowserImportCoordinator {
             items += chosen.filter { ids.contains($0.identifier) }
         }
         guard !requests.isEmpty else { importNext(); return }
-        let token = generation
+        let token = generation, batch = UUID()
+        extensionBatch = batch
         message = "Adding your extensions…"; onChange?()
-        extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests) { [weak self] result in
+        extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, completion: { [weak self] result in
             guard let self, self.isCurrent, self.generation == token else { return }
             self.extensionInstall = nil
             self.reportFailedExtensions(result.failedNames)
-            for item in items where result.installedIdentifiers.contains(item.identifier) && OnboardingAdBlocker.isKnown(item.identifier)
+            ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
+            let added = result.installedIdentifiers.union(result.installingIdentifiers)
+                .subtracting(ImportedExtensionFailures.failedIdentifiers)
+            for item in items where added.contains(item.identifier) && OnboardingAdBlocker.isKnown(item.identifier)
                 && !self.importedAdBlockers.contains(where: { $0.identifier == item.identifier }) {
                 self.importedAdBlockers.append(.init(identifier: item.identifier, displayName: item.displayName))
             }
@@ -748,13 +753,22 @@ final class BrowserImportCoordinator {
                 self.message = "Import stopped. Data already imported has been kept."
                 self.stage = self.hasPendingBookmarks ? .bookmarks : .finished; self.onChange?()
             } else { self.importNext() }
-        }
+        }, backgroundFailures: { [weak self] names in
+            ImportedExtensionFailures.recordFailed(items.filter { names.contains($0.displayName) }.map(\.identifier))
+            self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
+            // Results still on screen list it; otherwise a browser window does.
+            if let self, self.isCurrent, self.extensionBatch == batch {
+                self.reportFailedExtensions(names); self.onChange?()
+            } else { ImportedExtensionFailures.add(names) }
+        })
         if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName)); importNext() }
     }
 
     private func reportFailedExtensions(_ names: [String]) {
-        var seen = Set<String>()
-        for name in names where seen.insert(name).inserted { warnings.append("\(name) couldn’t be added.") }
+        for name in names {
+            let line = "\(name) couldn’t be added."
+            if !warnings.contains(line) { warnings.append(line) }
+        }
     }
 
     private var hasPendingBookmarks: Bool {
@@ -948,6 +962,29 @@ final class BrowserImportCoordinator {
         acceptedICloudPasswordsDestination = nil; importingArcNotes = false
         stage = .finished; message = "Import stopped. Data already imported has been kept."; onChange?()
     }
+}
+
+/// Imported extensions that failed in the background after their import's
+/// results closed, waiting for a browser window to say so.
+@MainActor
+enum ImportedExtensionFailures {
+    static let didFail = Notification.Name("ParcImportedExtensionsDidFail")
+    private(set) static var pending: [String] = []
+    /// Setup's ad-blocker step leaves these out.
+    private(set) static var failedIdentifiers = Set<String>()
+    static var present: (() -> Void)?
+    static func clearFailed(_ identifiers: Set<String>) { failedIdentifiers.subtract(identifiers) }
+    static func recordFailed(_ identifiers: [String]) {
+        failedIdentifiers.formUnion(identifiers)
+        NotificationCenter.default.post(name: didFail, object: nil)
+    }
+    static func add(_ names: [String]) {
+        for name in names where !pending.contains(name) { pending.append(name) }
+        present?()
+    }
+    static func take() -> [String] { defer { pending = [] }; return pending }
+    /// Kept for the next window when this one couldn't show them.
+    static func restore(_ names: [String]) { pending = names + pending.filter { !names.contains($0) } }
 }
 
 ///
