@@ -545,14 +545,10 @@ class Writer final : public ImportWriter,
 };
 }  // namespace
 std::shared_ptr<ImportWriter> WriteImportBatch(Profile& profile,
-                                               NSWindow* window,
                                                int family,
                                                mojom::BatchPtr batch,
                                                bool skip,
                                                WriteReply reply) {
-  if (batch->category == 32)
-    return InstallImportedExtensions(
-        profile, window, std::move(batch->extensions), std::move(reply));
   auto writer = std::make_shared<Writer>(profile, family, std::move(reply));
   writer->Start(std::move(batch), skip);
   return writer;

@@ -25,14 +25,8 @@ class ImportWriter {
   virtual void OnProfileDestroyed() { Cancel(); }
 };
 std::shared_ptr<ImportWriter> WriteImportBatch(Profile&,
-                                               NSWindow*,
                                                int family,
                                                mojom::BatchPtr,
                                                bool skip_existing_cookies,
                                                WriteReply);
-std::shared_ptr<ImportWriter> InstallImportedExtensions(
-    Profile&,
-    NSWindow*,
-    std::vector<mojom::ExtensionPtr>,
-    WriteReply);
 }  // namespace parc::importer

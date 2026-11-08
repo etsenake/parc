@@ -183,8 +183,8 @@ import AppKit
                "The source descriptor and consent window stay with the original setup owner")
         expect(setupRequest.path == firstLaunchStore.independentEngineProfilePath(for: firstLaunchDestination.profileID),
                "Import cannot follow the unrelated active Profile")
-        expect(setupRequest.skipExistingCookies && setupRequest.extensionIDs.isEmpty,
-               "Setup preserves existing cookies and does not silently approve extensions")
+        expect(setupRequest.skipExistingCookies && !setupRequest.categories.contains(.extensions),
+               "Setup preserves existing cookies and never installs extensions with the profile data")
         expect(firstLaunchStore.state.profiles == stateBeforeImport.profiles && firstLaunchStore.state.spaces == stateBeforeImport.spaces,
                "First-launch import creates no extra destination Profile or Space")
         setup.startInOriginalDestination()
@@ -234,9 +234,11 @@ import AppKit
         firstProfile.extensions = [PCNativeImportExtension()]
         let secondProfile = PCNativeImportProfile("Second", [.bookmarks], .complete)
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [firstProfile, secondProfile], access: .complete))
-        expect(inline.selectedProfiles == [firstProfile.identifier] && inline.selectedExtensions.isEmpty,
-               "Profile discovery selects one readable profile without extension consent")
-        inline.toggleExtension("extension", profileID: firstProfile.identifier)
+        expect(inline.selectedProfiles == [firstProfile.identifier]
+               && inline.selectedExtensions[firstProfile.identifier] == ["extension"],
+               "Profile discovery selects one readable profile and every extension found")
+        inline.toggleExtension("extension")
+        expect(inline.selectedExtensions[firstProfile.identifier]?.isEmpty == true, "Setup can untick an extension")
         inline.selectProfile(secondProfile.identifier)
         expect(inline.selectedProfiles == [secondProfile.identifier], "Inline radios select exactly one real profile")
         let beforeInlineImport = PCNativeBrowserApplication.imports
@@ -249,7 +251,7 @@ import AppKit
         let inlineRequest = PCNativeBrowserApplication.browserRequests.last!
         expect(PCNativeBrowserApplication.imports == beforeInlineImport + 1 && inlineRequest.profile === secondProfile,
                "Next submits only the profile selected inside the original source card")
-        expect(inlineRequest.extensionIDs.isEmpty && inlineRequest.window === window &&
+        expect(!inlineRequest.categories.contains(.extensions) && inlineRequest.window === window &&
                inlineRequest.path == firstLaunchStore.independentEngineProfilePath(for: firstLaunchDestination.profileID),
                "Another profile's extension choice and another window's destination cannot leak into setup import")
         inline.selectOnboardingSource(safari); inline.clearOnboardingSource()
@@ -364,25 +366,53 @@ import AppKit
         let unknown = PCNativeImportExtension()
         let profile = PCNativeImportProfile("Extensions", [.history, .extensions], .complete)
         profile.extensions = [known, unknown]
+        func run() {
+            coordinator.discover()
+            PCNativeBrowserApplication.sources.removeFirst().complete([source])
+            coordinator.selectOnboardingSource(source)
+            PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
+            coordinator.continueOnboardingSource()
+        }
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-        coordinator.toggleExtension(known.identifier, profileID: profile.identifier)
-        coordinator.toggleExtension(unknown.identifier, profileID: profile.identifier)
+        expect(coordinator.selectedExtensions[profile.identifier] == [known.identifier, unknown.identifier],
+               "Every extension found starts selected")
         PCNativeBrowserApplication.acceptsBrowserImport = true
         coordinator.continueOnboardingSource()
-        expect(PCNativeBrowserApplication.browserRequests.last?.extensionIDs == Set([known.identifier, unknown.identifier]),
-               "Selected extensions, including known ad blockers, reach the native import")
+        expect(PCNativeBrowserApplication.browserRequests.last?.categories.contains(.extensions) == false
+               && PCNativeBrowserApplication.extensionInstalls.isEmpty,
+               "Extensions wait for their consent until the profile's data has imported")
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .failed, bookmarks: [], warnings: [], error: nil))
-        expect(coordinator.importedAdBlockers.isEmpty, "A failed native import cannot invent an ad-blocker setup step")
-        coordinator.discover()
-        PCNativeBrowserApplication.sources.removeFirst().complete([source])
-        coordinator.selectOnboardingSource(source)
-        PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-        coordinator.toggleExtension(known.identifier, profileID: profile.identifier)
-        coordinator.toggleExtension(unknown.identifier, profileID: profile.identifier)
-        coordinator.continueOnboardingSource()
+        let skipped = PCNativeBrowserApplication.extensionInstalls.removeFirst()
+        expect(skipped.requests.count == 1 && skipped.requests[0].source === profile
+               && skipped.requests[0].extensionIDs == [known.identifier, unknown.identifier]
+               && skipped.requests[0].profilePath == store.independentEngineProfilePath(for: destination.profileID)
+               && coordinator.stage == .importing,
+               "Every selected extension, including known ad blockers, is offered in one consent")
+        skipped.complete(.init(outcome: .cancelled))
+        expect(coordinator.stage == .finished && coordinator.importedAdBlockers.isEmpty
+               && !coordinator.warnings.contains { $0.hasSuffix("couldn’t be added.") },
+               "Skipping the consent adds nothing and reports no failure")
+        run()
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        coordinator.stopImport()
+        let stopped = PCNativeBrowserApplication.extensionInstalls.removeFirst()
+        expect(stopped.lease.cancelled, "Stop withdraws a pending extension consent")
+        stopped.complete(.init(outcome: .cancelled))
+        expect(coordinator.stage == .finished && coordinator.message == "Import stopped. Data already imported has been kept.",
+               "A stopped extension install ends the import like any other stop")
+        run()
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        PCNativeBrowserApplication.extensionInstalls.removeFirst().complete(.init(outcome: .completed,
+            installedIdentifiers: [known.identifier, unknown.identifier]))
         expect(coordinator.importedAdBlockers == [.init(identifier: known.identifier, displayName: known.displayName)],
-               "Only known ad blockers that were actually submitted continue into setup")
+               "Only known ad blockers that were actually installed continue into setup")
+        run()
+        PCNativeBrowserApplication.rejectsExtensionInstall = true
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        PCNativeBrowserApplication.rejectsExtensionInstall = false
+        expect(coordinator.stage == .finished && coordinator.warnings.contains("uBlock Origin couldn’t be added.")
+               && coordinator.warnings.contains("Extension couldn’t be added."),
+               "An install that can't begin lists each extension as a failure")
         coordinator.cancel()
         return checks
     }
@@ -584,6 +614,61 @@ import AppKit
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         expect(unreadable.stage == .finished, "The fallback import finishes")
         unreadable.cancel()
+
+        let blocker = PCNativeImportExtension(identifier: "cjpalhdlnbpafiamejdnhcphjbkeiagm", displayName: "uBlock Origin")
+        let broken = PCNativeImportExtension(identifier: "broken", displayName: "Broken")
+        let helper = PCNativeImportExtension(identifier: "helper", displayName: "Helper")
+        let withExtensions = PCNativeImportProfile("arc ext standard", [.history, .extensions], .complete,
+                                                   name: "Person 1", directory: "Default")
+        withExtensions.extensions = [blocker, broken]
+        let onlyExtensions = PCNativeImportProfile("arc ext side", [.extensions], .complete, name: "Side", directory: "Profile 1")
+        onlyExtensions.extensions = [blocker, helper]
+        let extensionStore = try BrowserStore(directory: directory.appendingPathComponent("ArcExtensions"))
+        let extensionDestination = BrowserImportDestination(spaceID: extensionStore.activeSpace.id,
+                                                            profileID: extensionStore.activeSpace.profileID)
+        let setup = BrowserImportCoordinator(store: extensionStore, destination: extensionDestination, window: window,
+            onboarding: true, arcSidebarURL: sidebar, arcPreferencesURL: preferences, arcNoteConverter: converter,
+            arcCachedNoteConverter: cachedConverter, arcNotesCacheURL: noCache,
+            arcAuthStateURL: directory.appendingPathComponent("NoAuthState.json"), ownerIsCurrent: { true })
+        setup.discover()
+        PCNativeBrowserApplication.sources.removeFirst().complete([arc])
+        setup.selectOnboardingSource(arc)
+        PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [withExtensions, onlyExtensions], access: .complete))
+        expect(setup.selectedExtensions[withExtensions.identifier] == [blocker.identifier, broken.identifier]
+               && setup.selectedExtensions[onlyExtensions.identifier] == [blocker.identifier, helper.identifier],
+               "Setup selects every extension of every Parc profile")
+        setup.toggleExtension(blocker.identifier)
+        expect(setup.selectedExtensions.values.allSatisfy { !$0.contains(blocker.identifier) },
+               "An extension listed once unticks in every profile that has it")
+        setup.selectProfile(onlyExtensions.identifier)
+        setup.toggleExtension(blocker.identifier)
+        setup.selectProfile(onlyExtensions.identifier)
+        expect(setup.selectedExtensions.values.allSatisfy { $0.contains(blocker.identifier) },
+               "A profile switched off and on again keeps the choice made meanwhile")
+        let extensionStart = PCNativeBrowserApplication.browserRequests.count
+        let installsBefore = PCNativeBrowserApplication.extensionInstalls.count
+        setup.continueOnboardingSource()
+        wait { PCNativeBrowserApplication.browserRequests.count > extensionStart }
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        let sideID = extensionStore.state.profiles.first { $0.name == "Side" }?.id
+        expect(PCNativeBrowserApplication.browserRequests.count == extensionStart + 1
+               && PCNativeBrowserApplication.extensionInstalls.count == installsBefore + 1 && sideID != nil,
+               "A profile with only extensions needs no data import, and one consent follows the last profile")
+        let together = PCNativeBrowserApplication.extensionInstalls.removeLast()
+        expect(together.window === window && together.requests.count == 2
+               && together.requests[0].source === withExtensions
+               && together.requests[0].extensionIDs == [blocker.identifier, broken.identifier]
+               && together.requests[1].source === onlyExtensions
+               && together.requests[1].extensionIDs == [blocker.identifier, helper.identifier]
+               && together.requests[1].profilePath == extensionStore.independentEngineProfilePath(for: sideID!)
+               && setup.message == "Adding your extensions…",
+               "One consent covers every Arc profile's extensions, each into its own Parc Profile")
+        together.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier, helper.identifier],
+                                failedNames: ["Broken"]))
+        expect(setup.stage == .finished && setup.warnings.contains("Broken couldn’t be added.")
+               && setup.importedAdBlockers == [.init(identifier: blocker.identifier, displayName: blocker.displayName)],
+               "A failure among several is listed with the import's other failures and the rest are added")
+        setup.cancel()
         PCNativeBrowserApplication.acceptsBrowserImport = false
         return checks
     }

@@ -58,6 +58,10 @@ final class BrowserImportCoordinator {
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
     private var activeDestination: BrowserImportDestination?
+    /// Each profile's extensions wait for one consent after its data imports.
+    private var pendingExtensions: [(profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>)] = []
+    private var extensionInstall: PCNativeImportSession?
+    private var stopRequested = false
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
     typealias ArcNoteConversion = (title: String?, body: NoteBody, droppedImages: Int)
@@ -226,7 +230,10 @@ final class BrowserImportCoordinator {
             let readable = result.profiles.first { $0.supportedCategories.rawValue != 0 } ?? result.profiles.first
             selectedProfiles = Set(readable.map { [$0.identifier] } ?? [])
         }
-        selectedExtensions.removeAll(); error = result.error?.localizedDescription
+        // Every extension found comes along unless the user unticks it.
+        selectedExtensions = Dictionary(result.profiles.map { ($0.identifier, Set($0.extensions.map(\.identifier))) },
+                                        uniquingKeysWith: { $0.union($1) })
+        error = result.error?.localizedDescription
         message = result.profiles.isEmpty ? "No readable profiles were found." :
             isArcSource ? "Choose the Arc profiles to bring over with their Spaces, pinned tabs and Favorites." :
             "Choose the profile to bring into Parc."
@@ -380,6 +387,19 @@ final class BrowserImportCoordinator {
         onChange?()
     }
 
+    /// Setup lists each extension once; its choice holds in every profile.
+    func toggleExtension(_ id: String) {
+        guard stage == .profiles, isCurrent else { return }
+        let owners = profiles.filter { $0.extensions.contains { $0.identifier == id } }
+        guard !owners.isEmpty else { return }
+        let selected = owners.allSatisfy { selectedExtensions[$0.identifier]?.contains(id) == true }
+        for owner in owners {
+            if selected { selectedExtensions[owner.identifier]?.remove(id) }
+            else { selectedExtensions[owner.identifier, default: []].insert(id) }
+        }
+        onChange?()
+    }
+
     func back() {
         guard stage == .profiles, !restarting else { return }
         stage = .sources; profiles = []; selectedProfiles = []; warnings = []; error = nil; onChange?()
@@ -394,6 +414,7 @@ final class BrowserImportCoordinator {
         skipExistingCookies = !destinationChoice.replaceExistingCookies
         queue = profiles.filter { selectedProfiles.contains($0.identifier) && $0.supportedCategories.rawValue != 0 }
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
+        pendingExtensions = []; stopRequested = false
         generation = UUID()
         passwordDestination = source.map(Self.isSafari) == true ? activeDestination : nil
         passwordStageOffered = false
@@ -407,6 +428,7 @@ final class BrowserImportCoordinator {
         guard stage == .profiles, isArcSource, canChooseDestination else { return }
         let selected = profiles.filter { selectedProfiles.contains($0.identifier) }
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
+        pendingExtensions = []; stopRequested = false
         passwordsOnly = false; passwordDestination = nil; passwordStageOffered = false
         skipExistingCookies = true; queue = []; queuedDestinations = [:]
         generation = UUID(); let token = generation
@@ -621,6 +643,7 @@ final class BrowserImportCoordinator {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
             queuedDestinations = [:]
+            if !pendingExtensions.isEmpty { installExtensions(in: window); return }
             // Setup accepts bookmarks before offering the separate Safari
             // password step. The menu keeps its existing import sequence.
             if !(onboarding && hasPendingBookmarks), presentPasswordStageIfNeeded() {
@@ -633,13 +656,9 @@ final class BrowserImportCoordinator {
         let profile = queue.removeFirst(), token = generation
         if let target = queuedDestinations.removeValue(forKey: profile.identifier) { activeDestination = target }
         var categories = profile.supportedCategories
+        categories.remove(.extensions)
         let extensions = Set(profile.extensions.map(\.identifier)).intersection(selectedExtensions[profile.identifier] ?? [])
-        let submittedAdBlockers = profile.extensions.compactMap { item -> OnboardingDraft.ImportedAdBlocker? in
-            guard extensions.contains(item.identifier), OnboardingAdBlocker.isKnown(item.identifier) else { return nil }
-            return .init(identifier: item.identifier, displayName: item.displayName)
-        }
-        if extensions.isEmpty { categories.remove(.extensions) }
-        guard categories.rawValue != 0 else {
+        guard categories.rawValue != 0 || !extensions.isEmpty else {
             warnings.append("No data was selected for \(profile.displayName).")
             completed += 1; importNext(); return
         }
@@ -651,10 +670,12 @@ final class BrowserImportCoordinator {
             }
             finishSourceFailure("The selected destination is no longer available."); return
         }
+        if !extensions.isEmpty { pendingExtensions.append((profile, destination, extensions)) }
+        guard categories.rawValue != 0 else { activeDestination = nil; completed += 1; importNext(); return }
         message = "Importing \(profile.displayName)…"; onChange?()
         session = PCNativeBrowserApplication.importBrowserData(from: profile,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window,
-            categories: categories, allowedExtensionIDs: extensions, skipExistingCookies: skipExistingCookies,
+            categories: categories, skipExistingCookies: skipExistingCookies,
             progress: { [weak self] event in
                 guard let self, self.isCurrent, self.generation == token,
                       destination.isCurrent(in: self.store.state) else { return }
@@ -675,11 +696,6 @@ final class BrowserImportCoordinator {
                 if result.outcome == .failed && result.error == nil {
                     self.warnings.append("\(profile.displayName) could not be imported.")
                 }
-                if result.outcome != .failed {
-                    for item in submittedAdBlockers where !self.importedAdBlockers.contains(where: { $0.identifier == item.identifier }) {
-                        self.importedAdBlockers.append(item)
-                    }
-                }
                 do {
                     if !result.bookmarks.isEmpty {
                         let selection = try BrowserImportSelection(roots: Self.bookmarks(result.bookmarks),
@@ -690,7 +706,7 @@ final class BrowserImportCoordinator {
                 } catch { self.warnings.append("Bookmarks: \(error.localizedDescription)") }
                 self.completed += 1
                 if result.outcome == .cancelled {
-                    self.queue = []; self.passwordDestination = nil
+                    self.queue = []; self.pendingExtensions = []; self.passwordDestination = nil
                     self.message = "Import stopped. Data already imported has been kept."
                     self.stage = self.bookmarkPages.isEmpty ? .finished : .bookmarks; self.onChange?()
                 } else { self.importNext() }
@@ -699,6 +715,46 @@ final class BrowserImportCoordinator {
             activeDestination = nil; queue = []
             finishSourceFailure("Parc could not begin the import from \(profile.displayName).")
         }
+    }
+
+    /// One consent covers the extensions of every imported profile.
+    private func installExtensions(in window: NSWindow) {
+        let pending = pendingExtensions; pendingExtensions = []
+        var requests: [PCNativeImportExtensionRequest] = [], requested: [String: Set<String>] = [:]
+        var items: [PCNativeImportExtension] = []
+        for item in pending {
+            let chosen = item.profile.extensions.filter { item.ids.contains($0.identifier) }
+            guard item.destination.isCurrent(in: store.state) else { reportFailedExtensions(chosen.map(\.displayName)); continue }
+            let path = store.independentEngineProfilePath(for: item.destination.profileID)
+            let ids = item.ids.subtracting(requested[path] ?? [])
+            guard !ids.isEmpty else { continue }
+            requested[path, default: []].formUnion(ids)
+            requests.append(PCNativeImportExtensionRequest(source: item.profile, profilePath: path, extensionIDs: ids))
+            items += chosen.filter { ids.contains($0.identifier) }
+        }
+        guard !requests.isEmpty else { importNext(); return }
+        let token = generation
+        message = "Adding your extensions…"; onChange?()
+        extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, in: window) { [weak self] result in
+            guard let self, self.isCurrent, self.generation == token else { return }
+            self.extensionInstall = nil
+            self.reportFailedExtensions(result.failedNames)
+            for item in items where result.installedIdentifiers.contains(item.identifier) && OnboardingAdBlocker.isKnown(item.identifier)
+                && !self.importedAdBlockers.contains(where: { $0.identifier == item.identifier }) {
+                self.importedAdBlockers.append(.init(identifier: item.identifier, displayName: item.displayName))
+            }
+            if self.stopRequested {
+                self.passwordDestination = nil
+                self.message = "Import stopped. Data already imported has been kept."
+                self.stage = self.hasPendingBookmarks ? .bookmarks : .finished; self.onChange?()
+            } else { self.importNext() }
+        }
+        if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName)); importNext() }
+    }
+
+    private func reportFailedExtensions(_ names: [String]) {
+        var seen = Set<String>()
+        for name in names where seen.insert(name).inserted { warnings.append("\(name) couldn’t be added.") }
     }
 
     private var hasPendingBookmarks: Bool {
@@ -803,6 +859,8 @@ final class BrowserImportCoordinator {
 
     private func finishSourceFailure(_ failure: String) {
         queue = []; passwordDestination = nil; warnings.append(failure); error = nil
+        // Profiles that already imported still offer their extensions.
+        if !pendingExtensions.isEmpty { importNext(); return }
         stage = bookmarkPages.isEmpty ? .finished : .bookmarks
         message = bookmarkPages.isEmpty ? "Import stopped. Data already imported has been kept." :
             "Choose the bookmarks already read from your other profiles."
@@ -867,7 +925,10 @@ final class BrowserImportCoordinator {
 
     func stopImport() {
         guard stage == .importing else { return }
-        queue = []; queuedDestinations = [:]; passwordDestination = nil
+        queue = []; queuedDestinations = [:]; passwordDestination = nil; pendingExtensions = []
+        if let extensionInstall {
+            stopRequested = true; extensionInstall.cancel(); message = "Stopping import…"; onChange?(); return
+        }
         guard let session else {
             //
             generation = UUID(); stage = .finished; importingArcNotes = false
@@ -881,6 +942,7 @@ final class BrowserImportCoordinator {
         cancelled = true; generation = UUID(); discovery?.cancel(); discovery = nil
         checkingSafariAccess = false; restarting = false; continueAfterSafariRefresh = false
         session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []; queuedDestinations = [:]
+        extensionInstall?.cancel(); extensionInstall = nil; pendingExtensions = []
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil
         acceptedICloudPasswordsDestination = nil; importingArcNotes = false

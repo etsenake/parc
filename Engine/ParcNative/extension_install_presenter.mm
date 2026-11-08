@@ -28,6 +28,7 @@
   NSProgressIndicator* _parentProgress;
   BOOL _parentPending;
   BOOL _installationEducation;
+  NSArray<PCExtensionInstallItem*>* _items;
   BOOL (^_validate)(void);
   BOOL (^_inputAllowed)(NSWindow*);
   void (^_result)(PCExtensionInstallChoice, BOOL);
@@ -452,8 +453,11 @@ NSFont* DialogHintFont() {
   self.needsDisplay = YES;
 }
 @end
+@protocol PCDialogDocument
+- (CGFloat)layOutForWidth:(CGFloat)width;
+@end
 // The heading and Dialogs.ExplainerTextWithBullet rows in a leading LazyVStack.
-@interface PCDialogExplainerDocument : PCDialogFlippedView
+@interface PCDialogExplainerDocument : PCDialogFlippedView <PCDialogDocument>
 - (instancetype)initWithHeading:(NSString*)heading
                     permissions:(NSArray<NSString*>*)permissions
                         details:(NSArray<NSString*>*)details;
@@ -508,6 +512,72 @@ NSFont* DialogHintFont() {
   return y;
 }
 @end
+// Each imported extension's icon and name over its ExplainerTextWithBullet rows.
+@interface PCDialogExtensionList : PCDialogFlippedView <PCDialogDocument>
+- (instancetype)initWithItems:(NSArray<PCExtensionInstallItem*>*)items;
+@end
+@implementation PCDialogExtensionList {
+  NSArray<NSImageView*>* _icons;
+  NSArray<NSTextField*>* _names;
+  NSArray<NSArray<NSTextField*>*>* _rows;
+  CGFloat _bulletWidth;
+}
+- (instancetype)initWithItems:(NSArray<PCExtensionInstallItem*>*)items {
+  if ((self = [super initWithFrame:NSZeroRect])) {
+    NSFont* font = [NSFont systemFontOfSize:14];
+    _bulletWidth = [@"•" sizeWithAttributes:@{NSFontAttributeName : font}].width;
+    NSMutableArray* icons = [NSMutableArray array];
+    NSMutableArray* names = [NSMutableArray array];
+    NSMutableArray* rows = [NSMutableArray array];
+    for (PCExtensionInstallItem* item in items) {
+      NSImageView* icon = [NSImageView imageViewWithImage:item.icon ?:
+          [NSImage imageWithSystemSymbolName:@"puzzlepiece.extension.fill"
+                    accessibilityDescription:nil]];
+      icon.imageScaling = NSImageScaleProportionallyUpOrDown;
+      if (!item.icon) icon.contentTintColor = PopoverTitle();
+      [icon setAccessibilityElement:NO];
+      NSTextField* name = DialogLabel(item.name, [NSFont systemFontOfSize:14 weight:NSFontWeightMedium],
+                                      PopoverTitle(), 1);
+      NSMutableArray* labels = [NSMutableArray array];
+      for (NSUInteger i = 0; i < item.permissions.count; ++i) {
+        NSTextField* bullet = DialogLabel(@"•", font, PopoverMessage(), 1);
+        [bullet setAccessibilityElement:NO];
+        NSTextField* detail = DialogLabel(item.details[i], font, PopoverMessage(), 1);
+        detail.hidden = !item.details[i].length;
+        [labels addObjectsFromArray:@[ bullet, DialogLabel(item.permissions[i], font, PopoverMessage(), 1),
+                                       detail ]];
+      }
+      for (NSView* view in [@[ icon, name ] arrayByAddingObjectsFromArray:labels]) [self addSubview:view];
+      [icons addObject:icon];
+      [names addObject:name];
+      [rows addObject:labels];
+    }
+    _icons = icons;
+    _names = names;
+    _rows = rows;
+  }
+  return self;
+}
+- (CGFloat)layOutForWidth:(CGFloat)width {
+  const CGFloat rowSpacing = 8.66, nameX = 24, textX = nameX + 3 + _bulletWidth + 3 + 8;
+  CGFloat y = 1;
+  for (NSUInteger item = 0; item < _names.count; ++item) {
+    if (item) y += 16;
+    const CGFloat height = PlaceLabel(_names[item], nameX, y, width - nameX);
+    _icons[item].frame = NSMakeRect(0, y + std::floor((height - 18) / 2), 18, 18);
+    y += height;
+    NSArray<NSTextField*>* labels = _rows[item];
+    for (NSUInteger i = 0; i + 2 < labels.count; i += 3) {
+      y += rowSpacing + 1;
+      PlaceLabel(labels[i], nameX + 3, y, _bulletWidth);
+      y += PlaceLabel(labels[i + 1], textX, y, width - textX);
+      if (!labels[i + 2].hidden) y += 1 + PlaceLabel(labels[i + 2], textX, y + 1, width - textX);
+    }
+  }
+  self.frame = NSMakeRect(0, 0, width, y);
+  return y;
+}
+@end
 @interface PCDialogExplainerScroll : NSScrollView
 @property(nonatomic, weak) NSView* fade;
 @end
@@ -515,7 +585,7 @@ NSFont* DialogHintFont() {
 @synthesize fade = _fade;
 - (void)tile {
   [super tile];
-  PCDialogExplainerDocument* document = self.documentView;
+  NSView<PCDialogDocument>* document = self.documentView;
   const CGFloat width = NSWidth(self.contentView.bounds);
   if (document && std::abs(NSWidth(document.frame) - width) > .5) {
     [document layOutForWidth:width];
@@ -528,6 +598,22 @@ NSFont* DialogHintFont() {
 }
 - (void)updateFade {
   _fade.hidden = NSMaxY(self.contentView.bounds) >= NSHeight(self.documentView.frame) - .5;
+}
+@end
+@implementation PCExtensionInstallItem
+@synthesize name = _name, icon = _icon, permissions = _permissions, details = _details;
+- (instancetype)initWithName:(NSString*)name
+                        icon:(NSImage*)icon
+                 permissions:(NSArray<NSString*>*)permissions
+                     details:(NSArray<NSString*>*)details {
+  NSParameterAssert(name.length && permissions.count == details.count);
+  if ((self = [super init])) {
+    _name = [name copy];
+    _icon = icon;
+    _permissions = [permissions copy];
+    _details = [details copy];
+  }
+  return self;
 }
 @end
 @implementation PCExtensionInstallPresenter
@@ -616,6 +702,21 @@ NSFont* DialogHintFont() {
                                : @"This extension requires no special permissions.";
   _acceptLabel = @"Add Extension";
   _cancelLabel = @"Cancel";
+}
+- (void)configureImportedExtensions:(NSArray<PCExtensionInstallItem*>*)items {
+  NSParameterAssert(!_started && items.count && !_parentAccounts);
+  if (items.count == 1) {
+    _icon = items[0].icon;
+    _permissions = items[0].permissions;
+    _details = items[0].details;
+    [self configureInstallationEducationWithName:items[0].name];
+  } else {
+    _installationEducation = YES;
+    _items = [items copy];
+    _title = [NSString stringWithFormat:@"Add %lu extensions to Parc?", (unsigned long)items.count];
+    _acceptLabel = @"Add All";
+  }
+  _cancelLabel = @"Skip";
 }
 - (void)controlTextDidChange:(NSNotification*)notification {
   if (notification.object == _parentPassword)
@@ -722,17 +823,20 @@ NSFont* DialogHintFont() {
   y += 17 + PlaceLabel(title, inset, y + 17, width) + 8;
 
   NSFont* body = [NSFont systemFontOfSize:14];
-  if (_permissions.count) {
-    PCDialogExplainerDocument* document =
-        [[PCDialogExplainerDocument alloc] initWithHeading:_heading
-                                               permissions:_permissions
-                                                   details:_details];
+  if (_items.count || _permissions.count) {
+    //
+    const CGFloat maxHeight = _items.count ? 260 : 113;
+    NSView<PCDialogDocument>* document =
+        _items.count ? [[PCDialogExtensionList alloc] initWithItems:_items]
+                     : [[PCDialogExplainerDocument alloc] initWithHeading:_heading
+                                                              permissions:_permissions
+                                                                  details:_details];
     CGFloat contentHeight = [document layOutForWidth:width];
-    if (contentHeight > 113 && NSScroller.preferredScrollerStyle == NSScrollerStyleLegacy) {
+    if (contentHeight > maxHeight && NSScroller.preferredScrollerStyle == NSScrollerStyleLegacy) {
       contentHeight = [document layOutForWidth:width - [NSScroller
           scrollerWidthForControlSize:NSControlSizeRegular scrollerStyle:NSScrollerStyleLegacy]];
     }
-    const CGFloat visibleHeight = std::min<CGFloat>(contentHeight, 113);
+    const CGFloat visibleHeight = std::min<CGFloat>(contentHeight, maxHeight);
     PCDialogExplainerScroll* scroll =
         [[PCDialogExplainerScroll alloc] initWithFrame:NSMakeRect(inset, y, width, visibleHeight)];
     scroll.drawsBackground = NO;

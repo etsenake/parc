@@ -492,6 +492,47 @@ int main() {
     [p invalidate];
     Pump();
     EXPECT(results == 12 && choice == PCExtensionInstallInterrupted);
+    //
+    NSImage* artwork = [NSImage imageWithSystemSymbolName:@"star.fill" accessibilityDescription:nil];
+    NSArray<PCExtensionInstallItem*>* items = @[
+      [[PCExtensionInstallItem alloc] initWithName:@"uBlock Origin" icon:artwork
+          permissions:@[ @"Read and change all your data on all websites" ] details:@[ @"" ]],
+      [[PCExtensionInstallItem alloc] initWithName:@"Dark Reader" icon:nil permissions:@[] details:@[]],
+      [[PCExtensionInstallItem alloc] initWithName:@"1Password" icon:artwork
+          permissions:@[ @"Read and change all your data on all websites", @"Display notifications" ]
+              details:@[ @"", @"" ]],
+    ];
+    auto imported = ^(NSArray<PCExtensionInstallItem*>* list) {
+      auto* presenter = [[PCExtensionInstallPresenter alloc] initWithWindow:w
+          title:@"Extensions" icon:nil heading:@"" permissions:@[] details:@[]
+          acceptLabel:@"Add All" cancelLabel:@"Skip" checkboxLabel:nil
+          validate:^BOOL { return YES; }
+          inputAllowed:^BOOL(NSWindow*) { return YES; } result:result];
+      [presenter configureImportedExtensions:list];
+      [presenter start];
+      Pump();
+      return presenter;
+    };
+    p = imported(items);
+    EXPECT(Text(p.sheet.contentView, @"Add 3 extensions to Parc?"));
+    for (PCExtensionInstallItem* item in items) EXPECT(Text(p.sheet.contentView, item.name));
+    EXPECT(Text(p.sheet.contentView, @"Display notifications") && !Text(p.sheet.contentView, @"It can:"));
+    EXPECT(Button(p.sheet.contentView, @"Add All") && Button(p.sheet.contentView, @"Skip"));
+    scroll = Scroll(p.sheet.contentView);
+    EXPECT(scroll.frame.size.height > 113 && scroll.frame.size.height <= 260);
+    [p.sheet cancelOperation:nil];
+    Pump();
+    EXPECT(results == 13 && choice == PCExtensionInstallCancel);
+    //
+    p = imported(@[ items[0] ]);
+    EXPECT(Text(p.sheet.contentView, @"Add the “uBlock Origin” extension to Parc?"));
+    EXPECT(Text(p.sheet.contentView, @"It can:") && Button(p.sheet.contentView, @"Skip"));
+    add = Button(p.sheet.contentView, @"Add Extension");
+    Pump(.5);
+    EXPECT(add.enabled);
+    [add performClick:nil];
+    Pump();
+    EXPECT(results == 14 && choice == PCExtensionInstallAccept && !p.sheet);
     [w close];
     printf("PASS %d native extension-install AppKit assertions\n", assertions);
   }

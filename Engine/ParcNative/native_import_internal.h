@@ -75,6 +75,10 @@ bool SourceReady(const ProfileData& source, std::string& error);
                            count:(NSUInteger)count
                          message:(nullable NSString*)message;
 @end
+@interface PCNativeImportSession (Private)
+// Cancel is the only operation; the block keeps its owner alive.
+- (instancetype)initWithCancel:(void (^)(void))cancel;
+@end
 @interface PCNativeImportResult (Private)
 - (instancetype)initWithOutcome:(PCNativeImportOutcome)outcome
                       completed:(NSUInteger)completed

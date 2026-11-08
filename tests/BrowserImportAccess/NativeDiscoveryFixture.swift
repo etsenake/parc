@@ -55,7 +55,21 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
     private(set) var cancelled = false
     func cancel() { cancelled = true }
 }
-@MainActor final class PCNativeImportSession { func cancel() {} }
+@MainActor final class PCNativeImportSession {
+    private(set) var cancelled = false
+    func cancel() { cancelled = true }
+}
+@MainActor final class PCNativeImportExtensionRequest {
+    let source: PCNativeImportProfile, profilePath: String, extensionIDs: Set<String>
+    init(source: PCNativeImportProfile, profilePath: String, extensionIDs: Set<String>) {
+        self.source = source; self.profilePath = profilePath; self.extensionIDs = extensionIDs
+    }
+}
+@MainActor struct PCNativeImportExtensionResult {
+    var outcome: PCNativeImportOutcome
+    var installedIdentifiers: Set<String> = []
+    var failedNames: [String] = []
+}
 @MainActor enum PCNativeBrowserApplication {
     struct SourceRequest { let lease: PCNativeImportDiscovery; let complete: ([PCNativeImportSource]) -> Void }
     struct ProfileRequest {
@@ -65,7 +79,7 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
     static var sources: [SourceRequest] = [], profiles: [ProfileRequest] = []
     struct BrowserRequest {
         let profile: PCNativeImportProfile, path: String, window: NSWindow
-        let skipExistingCookies: Bool, extensionIDs: Set<String>
+        let skipExistingCookies: Bool, categories: PCNativeImportCategories
     }
     static var browserRequests: [BrowserRequest] = []
     static var imports = 0
@@ -92,14 +106,27 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
         let lease = PCNativeImportDiscovery(); profiles.append(.init(source: source, lease: lease, complete: completion)); return lease
     }
     static func importBrowserData(from: PCNativeImportProfile, toProfilePath: String, in window: NSWindow,
-        categories: PCNativeImportCategories, allowedExtensionIDs: Set<String>, skipExistingCookies: Bool,
+        categories: PCNativeImportCategories, skipExistingCookies: Bool,
         progress: @escaping (PCNativeImportEvent) -> Void,
         completion: @escaping (PCNativeImportResult) -> Void) -> PCNativeImportSession? {
         imports += 1
         browserRequests.append(.init(profile: from, path: toProfilePath, window: window,
-            skipExistingCookies: skipExistingCookies, extensionIDs: allowedExtensionIDs))
+            skipExistingCookies: skipExistingCookies, categories: categories))
         guard acceptsBrowserImport else { return nil }
         browserCompletions.append(completion); return PCNativeImportSession()
+    }
+    struct ExtensionInstall {
+        let requests: [PCNativeImportExtensionRequest], window: NSWindow, lease: PCNativeImportSession
+        let complete: (PCNativeImportExtensionResult) -> Void
+    }
+    static var extensionInstalls: [ExtensionInstall] = []
+    static var rejectsExtensionInstall = false
+    static func installImportedExtensions(_ requests: [PCNativeImportExtensionRequest], in window: NSWindow,
+        completion: @escaping (PCNativeImportExtensionResult) -> Void) -> PCNativeImportSession? {
+        guard !rejectsExtensionInstall else { return nil }
+        let lease = PCNativeImportSession()
+        extensionInstalls.append(.init(requests: requests, window: window, lease: lease, complete: completion))
+        return lease
     }
 }
 

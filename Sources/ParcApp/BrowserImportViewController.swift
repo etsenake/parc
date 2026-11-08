@@ -674,19 +674,23 @@ final class BrowserImportViewController: NSViewController {
                         self.coordinator.selectProfile(profile.identifier)
                     })
             } : []
-            let profile = selected ? coordinator.profiles.first(where: { coordinator.selectedProfiles.contains($0.identifier) }) : nil
-            let options = profile.map { profile in
-                profile.extensions.map { item in
+            let chosen = selected ? coordinator.profiles.filter { coordinator.selectedProfiles.contains($0.identifier) } : []
+            let profile = chosen.first
+            var listed = Set<String>()
+            let options = chosen.flatMap { profile in
+                profile.extensions.filter { listed.insert($0.identifier).inserted }.map { item in
                     OnboardingImportSourcePicker.ImportOption(id: item.identifier, title: item.displayName,
-                        selected: coordinator.selectedExtensions[profile.identifier]?.contains(item.identifier) == true,
-                        toggle: { [weak self, weak source, weak profile] in
-                            guard let self, let source, let profile, self.canChooseInlineSource,
-                                  self.coordinator.source === source,
-                                  self.coordinator.profiles.contains(where: { $0 === profile }) else { return }
-                            self.coordinator.toggleExtension(item.identifier, profileID: profile.identifier)
+                        selected: chosen.allSatisfy { owner in
+                            !owner.extensions.contains { $0.identifier == item.identifier }
+                                || coordinator.selectedExtensions[owner.identifier]?.contains(item.identifier) == true
+                        },
+                        toggle: { [weak self, weak source] in
+                            guard let self, let source, self.canChooseInlineSource,
+                                  self.coordinator.source === source else { return }
+                            self.coordinator.toggleExtension(item.identifier)
                         })
                 }
-            } ?? []
+            }
             var messages = selected ? coordinator.warnings + (profile?.constraints ?? []) + (coordinator.error.map { [$0] } ?? []) : []
             if selected, coordinator.stage == .profiles, coordinator.profiles.isEmpty, coordinator.error == nil {
                 messages.append(coordinator.message)

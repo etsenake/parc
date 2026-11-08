@@ -202,7 +202,6 @@ class Session final : public ProfileObserver,
           NSString* path,
           NSWindow* window,
           NSUInteger categories,
-          NSSet<NSString*>* ids,
           bool skip,
           Progress progress,
           Completion completion)
@@ -213,10 +212,7 @@ class Session final : public ProfileObserver,
         remaining_(categories),
         skip_(skip),
         progress_([progress copy]),
-        completion_([completion copy]) {
-    for (NSString* id in ids)
-      extension_ids_.push_back(base::SysNSStringToUTF8(id));
-  }
+        completion_([completion copy]) {}
   ~Session() override { Stop(); }
   bool Reserve() {
     const auto key = base::SysNSStringToUTF8(path_);
@@ -422,7 +418,6 @@ class Session final : public ProfileObserver,
     source->profile_path = source_->path.value();
     source->app_path = source_->source->app_path.value();
     source->source_key = key_;
-    source->extension_ids = extension_ids_;
     deadline_.Start(FROM_HERE, base::Minutes(5),
                     base::BindOnce(
                         [](std::weak_ptr<Session> weak) {
@@ -524,7 +519,7 @@ class Session final : public ProfileObserver,
     }
     Event(active_, PCNativeImportPhaseWriting, 0, nil);
     writer_ = WriteImportBatch(
-        *profile_, window_, source_->source->family, std::move(batch), skip_,
+        *profile_, source_->source->family, std::move(batch), skip_,
         base::BindOnce(
             [](std::weak_ptr<Session> weak, WriteResult result) {
               if (auto self = weak.lock()) {
@@ -618,29 +613,23 @@ class Session final : public ProfileObserver,
   base::WeakPtr<Profile> profile_;
   CefRefPtr<CefRequestContext> context_;
   std::vector<uint8_t> key_;
-  std::vector<std::string> extension_ids_;
   mojo::Remote<mojom::Reader> reader_;
   std::shared_ptr<ImportWriter> writer_;
   base::OneShotTimer deadline_;
 };
 }  // namespace
 }  // namespace parc::importer
-@interface PCNativeImportSession ()
-- (instancetype)initWithSession:
-    (std::shared_ptr<parc::importer::Session>)session;
-@end
 @implementation PCNativeImportSession {
-  std::shared_ptr<parc::importer::Session> _session;
+  void (^_cancel)(void);
 }
-- (instancetype)initWithSession:
-    (std::shared_ptr<parc::importer::Session>)session {
+- (instancetype)initWithCancel:(void (^)(void))cancel {
   if ((self = [super init]))
-    _session = std::move(session);
+    _cancel = [cancel copy];
   return self;
 }
 - (void)cancel {
-  if (_session)
-    _session->Cancel();
+  if (_cancel)
+    _cancel();
 }
 - (void)dealloc {
   [self cancel];
@@ -652,7 +641,6 @@ class Session final : public ProfileObserver,
                    toProfilePath:(NSString*)profilePath
                         inWindow:(NSWindow*)window
                       categories:(PCNativeImportCategories)categories
-             allowedExtensionIDs:(NSSet<NSString*>*)extensionIDs
              skipExistingCookies:(BOOL)skip
                         progress:(void (^)(PCNativeImportEvent*))progress
                       completion:(void (^)(PCNativeImportResult*))completion {
@@ -660,23 +648,16 @@ class Session final : public ProfileObserver,
   auto data = [source profileData];
   if (!data || !window || !window.visible || !profilePath.isAbsolutePath ||
       ![profilePath isEqual:profilePath.stringByStandardizingPath] ||
-      !categories || (categories & ~data->categories))
+      !categories || (categories & ~data->categories) ||
+      (categories & PCNativeImportCategoryExtensions))
     return nil;
-  std::set<std::string> eligible;
-  for (const auto& pair : data->extensions)
-    eligible.insert(pair.first);
-  for (NSString* id in extensionIDs)
-    if (!eligible.contains(base::SysNSStringToUTF8(id)))
-      return nil;
-  if (extensionIDs.count == 0)
-    categories = static_cast<PCNativeImportCategories>(
-        categories & ~PCNativeImportCategoryExtensions);
   auto session = std::make_shared<parc::importer::Session>(
-      data, profilePath, window, categories, extensionIDs, skip, progress,
-      completion);
+      data, profilePath, window, categories, skip, progress, completion);
   if (!session->Reserve())
     return nil;
-  auto lease = [[PCNativeImportSession alloc] initWithSession:session];
+  auto lease = [[PCNativeImportSession alloc] initWithCancel:^{
+    session->Cancel();
+  }];
   dispatch_async(dispatch_get_main_queue(), ^{
     session->Start();
   });

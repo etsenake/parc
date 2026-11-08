@@ -2239,16 +2239,49 @@ NS_SWIFT_UI_ACTOR
 // new target context is allowed, but an off-the-record target is not.
 // A nil return is immediate rejection and never calls completion. Accepted
 // sessions complete once asynchronously on main, including early cancellation.
-// Extensions require explicit selected identifiers; an empty set installs none.
+// Extensions are installed separately, below.
 + (nullable PCNativeImportSession*)importBrowserDataFromProfile:(PCNativeImportProfile*)source
     toProfilePath:(NSString*)profilePath
     inWindow:(NSWindow*)window
     categories:(PCNativeImportCategories)categories
-    allowedExtensionIDs:(NSSet<NSString*>*)extensionIDs
     skipExistingCookies:(BOOL)skipExistingCookies
     progress:(void (^)(PCNativeImportEvent*))progress
     completion:(void (^)(PCNativeImportResult*))completion
-    NS_SWIFT_NAME(importBrowserData(from:toProfilePath:in:categories:allowedExtensionIDs:skipExistingCookies:progress:completion:));
+    NS_SWIFT_NAME(importBrowserData(from:toProfilePath:in:categories:skipExistingCookies:progress:completion:));
+@end
+NS_SWIFT_UI_ACTOR
+__attribute__((visibility("default")))
+@interface PCNativeImportExtensionRequest : NSObject
+// Identifiers must come from source.extensions.
+- (instancetype)initWithSource:(PCNativeImportProfile*)source
+    profilePath:(NSString*)profilePath
+    extensionIDs:(NSSet<NSString*>*)extensionIDs
+    NS_SWIFT_NAME(init(source:profilePath:extensionIDs:));
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+@end
+NS_SWIFT_UI_ACTOR
+__attribute__((visibility("default")))
+@interface PCNativeImportExtensionResult : NSObject
+// Cancelled when the user skipped or the install was stopped before consent.
+@property(nonatomic, readonly) PCNativeImportOutcome outcome;
+// Requested identifiers now in their destination, including ones already there.
+@property(nonatomic, readonly, copy) NSSet<NSString*>* installedIdentifiers;
+@property(nonatomic, readonly, copy) NSArray<NSString*>* failedNames;
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+@end
+NS_SWIFT_UI_ACTOR
+@interface PCNativeBrowserApplication (ImportedExtensions)
+// Every request's extensions are read back from its source, prepared from the
+// Web Store and shown in one consent sheet on window; none installs without
+// it. One failure never stops the others. A nil return is immediate rejection
+// and never calls completion; otherwise completion runs once on main.
++ (nullable PCNativeImportSession*)installImportedExtensions:
+    (NSArray<PCNativeImportExtensionRequest*>*)requests
+    inWindow:(NSWindow*)window
+    completion:(void (^)(PCNativeImportExtensionResult*))completion
+    NS_SWIFT_NAME(installImportedExtensions(_:in:completion:));
 @end
 
 // Explicit, user-selected CSV import into one original regular Profile. Only
