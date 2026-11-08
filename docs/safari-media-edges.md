@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **70**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **74**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -454,10 +454,9 @@ video can't be cast (Safari uses AirPlay). Native HLS video, FairPlay
 included, now AirPlays from the page's button and the Mini Player through the
 system route list: **fixed** c3c53b1d (no device picker of Parc's own: listing
 devices needs Apple-only entitlements; Josh agreed). Josh approved the Mini
-"playing on <TV>" placard over the video, no AirPlay button in Parc's in-page
-controls, the standard Remote Playback API opens Chrome's Cast dialog where
-Safari opens AirPlay, and `webkitWirelessVideoPlaybackDisabled` is missing:
-**queued** (AIRPLAY-2). A ManagedMediaSource element doesn't switch to its HLS
+controls, Remote Playback opening AirPlay, and
+`webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint for
+the placard glyph and button states **in progress**). A ManagedMediaSource element doesn't switch to its HLS
 `<source>` alternative when a target is picked, as Safari does: **queued**
 (AIRPLAY-3, after HME-1c). Clear `src=` files and clear Media Source don't
 AirPlay (Safari plays `src=` files through AVPlayer): **in progress** (AIRPLAY-4,
