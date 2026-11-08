@@ -161,14 +161,12 @@ import Foundation
         expect(created[0].customIcon == .icon(.planet) && created[0].theme == arc.spaces[0].theme, "Icon and theme are applied")
         expect(created[4].theme == BrowserSpace(id: UUID(), name: "", symbol: "", color: "B9B5D4", profileID: standardID).theme,
                "An unreadable theme becomes a new Space's default")
-        expect(result.destinations[.standard] == .init(spaceID: created[0].id, profileID: standardID)
-               && result.destinations[profileOne] == .init(spaceID: created[2].id, profileID: existingID)
-               && result.destinations[profileTwo] == .init(spaceID: created[5].id, profileID: sideProjects.id)
-               && result.destinations[profileThree] == .init(spaceID: created[6].id, profileID: empty.id),
+        expect(result[.standard] == .init(spaceID: created[0].id, profileID: standardID)
+               && result[profileOne] == .init(spaceID: created[2].id, profileID: existingID)
+               && result[profileTwo] == .init(spaceID: created[5].id, profileID: sideProjects.id)
+               && result[profileThree] == .init(spaceID: created[6].id, profileID: empty.id),
                "Each Arc Profile's destination is the first Space created for it")
-        expect(result.destinations.values.allSatisfy { $0.isCurrent(in: state) }, "Destinations are current")
-        expect(result.warnings == ["1 Favorite from Personal wasn't added: Favorites are limited to 12.",
-                                   "9 Parc sidebar items couldn't be brought over."], "Warnings report the cap and skipped items")
+        expect(result.values.allSatisfy { $0.isCurrent(in: state) }, "Destinations are current")
 
         let workID = created[0].id
         let root = SidebarHierarchy.children(in: .init(spaceID: workID, folderID: nil, section: .pinned), state: state)
@@ -219,22 +217,15 @@ import Foundation
                "The import is durable")
 
         let again = try store.importArcSidebar(arc, profiles: [(.standard, "Personal")], standardProfileID: standardID)
-        expect(again.warnings.first == "1 Arc Space belongs to a Profile that wasn't imported.",
-               "Spaces of Profiles left out of the import are reported")
-        expect(again.warnings.contains("Favorites from a Profile that wasn't imported were left out."),
-               "Favorites of Profiles left out are reported")
-        expect(again.warnings.contains("1 Favorite from Personal wasn't added: Favorites are limited to 12."),
-               "A full Favorites row takes nothing new; duplicate tabs and splits are passed over and the twelfth tab is reported")
         let standardSpaces = arc.spaces.filter { $0.profile == .standard }
-        expect(standardSpaces.count == 4 && again.warnings.contains("4 Arc Spaces were already in Parc, so they weren't added again.")
-               && store.state.spaces.count == state.spaces.count && store.state.tabs.count == state.tabs.count,
-               "Importing the same Arc Spaces again adds no copies, including Spaces with nothing pinned")
-        expect(again.destinations[.standard] == result.destinations[.standard], "A repeated Space stays the destination")
+        expect(standardSpaces.count == 4 && store.state.spaces.count == state.spaces.count && store.state.tabs.count == state.tabs.count,
+               "Importing the same Arc Spaces again adds no copies, including Spaces with nothing pinned; a full Favorites row takes nothing new")
+        expect(again[.standard] == result[.standard], "A repeated Space stays the destination")
         let spacesBeforeReuse = store.state.spaces.count
         let secondReuse = try store.importArcSidebar(arc, profiles: [(profileOne, "work profile"), (profileTwo, "Side Projects")],
                                                      standardProfileID: standardID)
-        expect(secondReuse.destinations[profileOne]?.profileID == existingID, "The same Parc Profile is reused on a later import")
-        expect(store.state.spaces.count == spacesBeforeReuse && secondReuse.destinations[profileTwo]?.spaceID
+        expect(secondReuse[profileOne]?.profileID == existingID, "The same Parc Profile is reused on a later import")
+        expect(store.state.spaces.count == spacesBeforeReuse && secondReuse[profileTwo]?.spaceID
                == state.spaces.first { $0.title == "Side Projects" }?.id,
                "A Profile without Arc Spaces imports into its existing Space instead of a new empty one")
 
@@ -294,66 +285,36 @@ import Foundation
                "An import from before the record matches its Spaces by name and pinned pages and records them")
 
         //
-        expect(FirestoreCache.crc32c(Array("123456789".utf8)) == 0xE3069283, "CRC-32C matches its published check value")
-        let snappy = try FirestoreCache.snappy(Data([8, 0x0C] + Array("abcd".utf8) + [0x01, 4]))
-        expect(snappy == Data("abcdabcd".utf8),
-               "Snappy literals and copies decode")
-        let cache = directory.appendingPathComponent("FirestoreCache")
-        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        let early = Date(timeIntervalSince1970: 1_700_000_000), late = Date(timeIntervalSince1970: 1_710_000_000)
-        func arcNote(_ id: String, title: String, text: String, creator: String,
-                     properties: [FirestoreCache.Value]) -> [String: FirestoreCache.Value] {
-            ["id": .string(id), "creatorID": .string(creator), "createdAt": .timestamp(early),
-             "title": .map(["value": .string(title), "lastUpdatedAt": .timestamp(early)]),
-             "data": .map(["scratchpad": .map(["rootBlocks": .array([.string("B")]), "blocks": .map(["B": .map([
-                "id": .string("B"), "text": .string(text), "type": .map(["fullBlob": .bool(true)]), "version": .integer(1),
-                "content": .array([]), "lastUpdatedAt": .timestamp(late), "properties": .array(properties)])])])])]
-        }
-        func format(_ location: Int64, _ length: Int64, _ value: FirestoreCache.Value) -> FirestoreCache.Value {
-            .map(["richText": .map(["range": .array([.integer(location), .integer(length)]), "value": value])])
-        }
-        let mine = arcNote("N1", title: "Trip", text: "\t●\tPack\n\t●\tGo", creator: "me", properties: [
-            format(0, 13, .map(["unorderedList": .map(["level": .integer(1)])])), format(3, 4, .map(["bold": .map([:])])),
-            format(11, 2, .map(["formattedHyperlink": .map(["url": .string("https://example.test/")])])),
-            format(0, 1, .map(["unknownKind": .map([:])])), format(10, 9, .map(["bold": .map([:])]))])
-        let stale = arcNote("N1", title: "Trip (old)", text: "old", creator: "me", properties: [])
-        let theirs = arcNote("N2", title: "Shared", text: "x", creator: "someone else", properties: [])
-        try FirestoreFixture.log([
-            (1, [("doc/N1", FirestoreFixture.document("documents/N1", stale, updated: early)),
-                 ("doc/N3", FirestoreFixture.document("documents/N3", arcNote("N3", title: "Gone", text: "", creator: "me", properties: []), updated: early))]),
-            (5, [("doc/N1", FirestoreFixture.document("documents/N1", mine, updated: late)),
-                 ("doc/N2", FirestoreFixture.document("documents/N2", theirs, updated: late)),
-                 ("doc/E1", FirestoreFixture.document("easels/E1", ["title": .string("Board")], updated: late)),
-                 ("raw:mutation/N4", FirestoreFixture.document("documents/N4", arcNote("N4", title: "Pending", text: "", creator: "me", properties: []), updated: late)),
-                 ("doc/N3", nil)])
-        ]).write(to: cache.appendingPathComponent("000003.log"))
-        // A record whose checksum fails and a fragment without its start are torn writes.
-        let torn = FirestoreFixture.batch(9, [("doc/N1", FirestoreFixture.document("documents/N1", theirs, updated: late))])
-        var tail = Data(FirestoreFixture.fragment(1, torn, corrupt: true))
-        tail.append(contentsOf: FirestoreFixture.fragment(4, torn))
-        try tail.write(to: cache.appendingPathComponent("000004.log"))
-        let documents = try FirestoreCache.documents(in: cache, collection: "documents")
-        expect(documents.map(\.path) == ["documents/N1", "documents/N2"], "The newest version of each cached Note counts; a deletion removes one; other tables are ignored")
-        let auth = directory.appendingPathComponent("StorableAuthState.json")
-        try Data(#"{"session":{"user":{"id":"me"}},"version":1}"#.utf8).write(to: auth)
-        func cacheCopies() throws -> Int {
-            try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)
-                .filter { $0.hasPrefix("ParcArcNotesCache-") }.count
-        }
-        let copiesBefore = try cacheCopies()
-        let contents = try ArcNotesCache.read(cache: cache, authState: auth)
-        expect(contents.othersSkipped == 1 && contents.notes.count == 1, "Only the user's own cached Notes come over")
-        let cached = contents.notes[0]
-        expect(cached.title == "Trip" && cached.text == "\t●\tPack\n\t●\tGo" && cached.modifiedAt == late,
-               "A cached Note keeps its title, text and newest edit")
-        expect(cached.formats == [.init(location: 0, length: 13, kind: .bulleted(level: 1)), .init(location: 3, length: 4, kind: .bold),
-                                  .init(location: 11, length: 2, kind: .link("https://example.test/"))],
-               "the format ranges map to their kinds; an unknown kind or a range past the text is left out")
-        let unsigned = try ArcNotesCache.read(cache: cache, authState: directory.appendingPathComponent("missing.json"))
-        expect(unsigned.notes.count == 2,
-               "Without Arc's sign-in record every cached Note comes over")
-        let copiesAfter = try cacheCopies()
-        expect(copiesAfter == copiesBefore, "The private copy of the cache is removed")
+        let chosenStore = try BrowserStore(directory: directory.appendingPathComponent("Chosen"))
+        let original = BrowserImportDestination(spaceID: chosenStore.activeSpace.id, profileID: chosenStore.activeSpace.profileID)
+        let chosenID = chosenStore.createProfile(name: "Elsewhere")
+        try chosenStore.save()
+        var existing = BrowserImportDestinationChoice()
+        existing.select(.existing(BrowserImportProfileTarget(profileID: chosenID, spaceID: nil)))
+        let profilesBeforeChoice = chosenStore.state.profiles.count
+        let intoExisting = try chosenStore.importArcSidebar(arc, profiles: [(profileOne, "Work Profile")],
+            standardProfileID: original.profileID, primary: profileOne, into: existing)
+        let workSpaces = arc.spaces.filter { $0.profile == profileOne }.count
+        expect(intoExisting[profileOne]?.profileID == chosenID && chosenStore.state.profiles.count == profilesBeforeChoice
+               && chosenStore.state.spaces.filter { $0.profileID == chosenID }.count == workSpaces,
+               "The chosen existing Profile takes the Arc Profile's Spaces; no Profile is created by name")
+        var fresh = BrowserImportDestinationChoice()
+        fresh.select(.new); fresh.newProfileName = "  From Parc "
+        let intoNew = try chosenStore.importArcSidebar(arc, profiles: [(.standard, "Personal")],
+            standardProfileID: original.profileID, primary: .standard, into: fresh)
+        let newProfile = require(chosenStore.state.profiles.first { $0.name == "From Arc" }, "A new Profile with the chosen name")
+        expect(intoNew[.standard]?.profileID == newProfile.id && chosenStore.state.profiles.count == profilesBeforeChoice + 1
+               && !chosenStore.state.spaces.contains { $0.profileID == original.profileID && $0.id != original.spaceID },
+               "A new Profile is created in the same write and takes the standard Profile instead of the original")
+        var unnamed = BrowserImportDestinationChoice()
+        unnamed.select(.new)
+        let refusedBefore = chosenStore.state
+        do {
+            _ = try chosenStore.importArcSidebar(arc, profiles: [(.standard, "Personal")], standardProfileID: original.profileID,
+                                                 primary: .standard, into: unnamed)
+            preconditionFailure("A destination that can't be submitted must refuse")
+        } catch { checks += 1 }
+        expect(chosenStore.state == refusedBefore, "A refused destination writes nothing")
 
         print("\(checks) Arc sidebar import parsing/store assertions passed; synthetic fixtures only.")
     }

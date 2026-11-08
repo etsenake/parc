@@ -181,23 +181,19 @@ final class OnboardingSetupCard: NSView {
     let borders = Borders()
     let heading = NSTextField(wrappingLabelWithString: "")
     let message = NSTextField(wrappingLabelWithString: "")
-    private let sunset = BrowserImportSunsetHeader()
-    ///
-    /// title turns white over its deep blue end.
-    var showsSunset = false {
-        didSet {
-            guard showsSunset != oldValue else { return }
-            sunset.reveal(showsSunset)
-            if window?.isVisible == true, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                let animation = CATransition()
-                animation.type = .fade; animation.duration = 0.25
-                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                heading.layer?.add(animation, forKey: "sunset")
-            }
-            heading.textColor = titleColor
-        }
-    }
-    var titleColor: NSColor { showsSunset ? .white : OnboardingSetupPalette.title }
+    /// The browser-choice step's backdrop; text takes its dominant theme's
+    /// content appearance, as content over a Space theme does.
+    let backdrop = BrowserImportBackdrop()
+    var onBackdropChange: (() -> Void)?
+    /// Ink over the backdrop. A theme's tinted ink loses contrast over a vivid
+    /// wash, so its content appearance picks black or white; the sunset is
+    /// white over its colour, and the page's own grey below it.
+    private var backdropInk: NSColor?
+    private var backdropFillsPage = false
+    var titleColor: NSColor { backdropInk ?? OnboardingSetupPalette.title }
+    var messageColor: NSColor { backdropInk?.withAlphaComponent(0.75) ?? OnboardingSetupPalette.message }
+    /// Skip, Back and the step count sit low on the card, below the sunset.
+    var chromeColor: NSColor { backdropFillsPage ? messageColor : OnboardingSetupPalette.message }
     var themeBackground: NSColor? { didSet { updateColors() } }
     /// The chosen Space theme's texture, drawn as the sidebar's theme renderer
     /// draws it. No theme, or one without colour, draws none.
@@ -221,8 +217,8 @@ final class OnboardingSetupCard: NSView {
         layer?.shadowRadius = 17
         layer?.shadowOffset = CGSize(width: 0, height: 14)
         layer?.backgroundColor = nil
-        sunset.alphaValue = 0
-        chrome.addSubview(sunset)
+        chrome.addSubview(backdrop)
+        backdrop.onDominantChange = { [weak self] in self?.applyBackdrop($0) }
         addSubview(chrome)
         addSubview(instructions)
         addSubview(content)
@@ -234,6 +230,19 @@ final class OnboardingSetupCard: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateColors()
+        if backdropInk != nil { applyBackdrop(backdrop.dominant) }
+    }
+
+    private func applyBackdrop(_ page: BrowserImportBackdrop.Page?) {
+        switch page {
+        case .theme(let theme)? where theme.primaryColor != nil:
+            let dark = ThemeChromePalette(theme: theme, appearance: effectiveAppearance).isDark
+            backdropInk = dark ? .white : .black; backdropFillsPage = true
+        case .sunset?: backdropInk = .white; backdropFillsPage = false
+        default: backdropInk = nil; backdropFillsPage = false
+        }
+        heading.textColor = titleColor; message.textColor = messageColor
+        onBackdropChange?()
     }
 
     override func viewDidChangeBackingProperties() {
@@ -287,7 +296,7 @@ final class OnboardingSetupCard: NSView {
         progress.setAccessibilityRole(.staticText)
         setAccessibilityLabel(title)
         message.font = .systemFont(ofSize: 14)
-        message.textColor = OnboardingSetupPalette.message
+        message.textColor = messageColor
         for view in controls where view.superview !== instructions { instructions.addSubview(view) }
         instructions.onLayout = { [weak self, weak back, weak next, weak skip, weak progress, weak accessory] in
             guard let self else { return }
@@ -311,7 +320,7 @@ final class OnboardingSetupCard: NSView {
     override func layout() {
         super.layout()
         chrome.frame = bounds
-        sunset.frame = NSRect(x: 0, y: 0, width: bounds.width, height: BrowserImportSunsetHeader.height)
+        backdrop.frame = bounds
         borders.frame = bounds
         chrome.needsLayout = true
         borders.needsLayout = true

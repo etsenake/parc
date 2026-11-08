@@ -5,6 +5,5 @@ mkdir -p "$repo_root/build/tests"
 xcrun swiftc -parse-as-library -warnings-as-errors \
   "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/tests/ArcSidebarImportTests.swift" \
-  "$repo_root/tests/Fixtures/FirestoreFixture.swift" \
   -o "$repo_root/build/tests/arc-sidebar-import"
 "$repo_root/build/tests/arc-sidebar-import"

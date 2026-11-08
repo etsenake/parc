@@ -65,20 +65,11 @@ final class BrowserImportCoordinator {
     private var stopRequested = false
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
-    typealias ArcNoteConversion = (title: String?, body: NoteBody, droppedImages: Int)
-    typealias ArcNoteConverter = @MainActor (String) throws -> ArcNoteConversion
-    typealias ArcCachedNoteConverter = @MainActor (ArcNotesCache.Note) throws -> ArcNoteConversion
-    private let arcNoteConverter: ArcNoteConverter?
-    private let arcCachedNoteConverter: ArcCachedNoteConverter?
-    private let arcNotesCacheURL: URL, arcAuthStateURL: URL
-    ///
-    private(set) var arcNotesExportURL: URL?
-    private(set) var importingArcNotes = false
-    /// Notes already came over in this window, from an export.
-    private(set) var arcNotesImported = false
     private var queue: [PCNativeImportProfile] = []
-    ///
+    /// Chosen profiles' known Parc destinations; any other gets a Parc Profile
+    /// of its name when its turn comes, never one it might not use.
     private var queuedDestinations: [String: BrowserImportDestination] = [:]
+    private var usedProfiles = Set<UUID>()
     private var completed = 0
     private var cancelled = false
     private var subscription: AnyCancellable?
@@ -88,15 +79,9 @@ final class BrowserImportCoordinator {
             OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)),
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
-         arcNoteConverter: ArcNoteConverter? = nil,
-         arcCachedNoteConverter: ArcCachedNoteConverter? = nil,
-         arcNotesCacheURL: URL = ArcNotesCache.defaultURL,
-         arcAuthStateURL: URL = ArcNotesCache.authStateURL,
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
         self.arcSidebarURL = arcSidebarURL; self.arcPreferencesURL = arcPreferencesURL
-        self.arcNoteConverter = arcNoteConverter; self.arcCachedNoteConverter = arcCachedNoteConverter
-        self.arcNotesCacheURL = arcNotesCacheURL; self.arcAuthStateURL = arcAuthStateURL
         self.onboarding = onboarding
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
@@ -108,11 +93,9 @@ final class BrowserImportCoordinator {
                 } else if self.activeDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
                     // Let the accepted native session drain and complete; its
                     // lost destination must not erase earlier bookmark results.
-                    //
-                    if !self.isArcSource { self.queue = [] }
+                    self.queue = []
                     self.session?.cancel()
-                    self.message = self.isArcSource ? "Skipping a profile whose destination was removed…"
-                        : "Stopping import because its destination was removed…"
+                    self.message = "Stopping import because its destination was removed…"
                     self.onChange?()
                 } else if self.passwordDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
                     self.passwordSession?.cancel()
@@ -149,7 +132,7 @@ final class BrowserImportCoordinator {
         wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
         safariAccessReady = false; requiresSafariAccess = false
         destinationChoice = BrowserImportDestinationChoice(); profileTargets = []
-        arcNotesExportURL = nil; arcNotesImported = false; importingArcNotes = false; extensionBatch = nil
+        extensionBatch = nil
         stage = .loading; message = "Finding your browsers…"; error = nil; onChange?()
         discovery = PCNativeBrowserApplication.availableImportSources { [weak self] sources in
             guard let self, self.isCurrent, self.generation == token else { return }
@@ -172,24 +155,25 @@ final class BrowserImportCoordinator {
         self.source = source; error = nil; onChange?()
     }
 
-    /// Setup keeps profile choices below the selected browser. Discovery may
-    /// change while this screen stays visible; old native leases must not win.
-    var isChoosingOnboardingSource: Bool {
-        onboarding && (stage == .sources || stage == .profiles || (stage == .loading && source != nil))
+    /// BrowserSelection keeps profile choices below the selected browser, in
+    /// setup and the import window alike. Discovery may change while this
+    /// screen stays visible; old native leases must not win.
+    var isChoosingSourceInline: Bool {
+        stage == .sources || stage == .profiles || (stage == .loading && source != nil)
     }
 
-    func selectOnboardingSource(_ source: PCNativeImportSource) {
-        guard isChoosingOnboardingSource, isCurrent, sources.contains(where: { $0 === source }) else { return }
+    func selectSourceInline(_ source: PCNativeImportSource) {
+        guard isChoosingSourceInline, isCurrent, sources.contains(where: { $0 === source }) else { return }
         if self.source === source && (stage == .loading || (stage == .profiles && error == nil)) { return }
-        clearOnboardingSource(notify: false)
+        clearSourceInline(notify: false)
         self.source = source
-        loadProfiles()
+        loadProfiles(inline: true)
     }
 
-    func clearOnboardingSource() { clearOnboardingSource(notify: true) }
+    func clearSourceInline() { clearSourceInline(notify: true) }
 
-    private func clearOnboardingSource(notify: Bool) {
-        guard isChoosingOnboardingSource, isCurrent else { return }
+    private func clearSourceInline(notify: Bool) {
+        guard isChoosingSourceInline, isCurrent else { return }
         generation = UUID(); discovery?.cancel(); discovery = nil
         source = nil; profiles = []; selectedProfiles = []; selectedExtensions = [:]
         requiresSafariAccess = false; safariAccessReady = false
@@ -198,18 +182,19 @@ final class BrowserImportCoordinator {
         if notify { onChange?() }
     }
 
-    var canContinueOnboardingSource: Bool {
-        onboarding && stage == .profiles && isCurrent && (requiresSafariAccess || canChooseDestination)
+    var canContinueSourceInline: Bool {
+        stage == .profiles && isCurrent && (requiresSafariAccess || canChooseDestination)
     }
 
-    func continueOnboardingSource() {
-        guard canContinueOnboardingSource else { return }
+    func continueSourceInline() {
+        guard canContinueSourceInline else { return }
         if requiresSafariAccess {
             stage = .safariAccess; onChange?()
-        } else if isArcSource { startArc() } else { startInOriginalDestination() }
+        } else if onboarding { startInOriginalDestination() } else { chooseDestination() }
     }
 
-    func loadProfiles() {
+    /// An inline choice waits for Next before Safari's access step.
+    func loadProfiles(inline: Bool = false) {
         guard stage == .sources, let source, isCurrent else { return }
         generation = UUID(); let token = generation
         stage = .loading; message = "Finding your \(source.displayName) profiles…"; onChange?()
@@ -217,27 +202,22 @@ final class BrowserImportCoordinator {
             guard let self, self.isCurrent, self.generation == token, self.source === source else { return }
             self.discovery = nil; self.applyProfiles(result)
             self.requiresSafariAccess = result.access == .restricted
-            self.stage = self.requiresSafariAccess && !self.onboarding ? .safariAccess : .profiles
+            self.stage = self.requiresSafariAccess && !self.onboarding && !inline ? .safariAccess : .profiles
             self.onChange?()
         }
     }
 
     private func applyProfiles(_ result: PCNativeImportProfileResult) {
         profiles = result.profiles; warnings = result.constraints
-        if isArcSource {
-            //
-            selectedProfiles = Set(result.profiles.filter { $0.supportedCategories.rawValue != 0 }.map(\.identifier))
-        } else {
-            let readable = result.profiles.first { $0.supportedCategories.rawValue != 0 } ?? result.profiles.first
-            selectedProfiles = Set(readable.map { [$0.identifier] } ?? [])
-        }
+        // Every readable profile comes along unless the user unticks it.
+        // An unreadable one stays chosen so Full Disk Access can follow.
+        let readable = result.profiles.filter { $0.supportedCategories.rawValue != 0 }
+        selectedProfiles = Set((readable.isEmpty ? Array(result.profiles.prefix(1)) : readable).map(\.identifier))
         // Every extension found comes along unless the user unticks it.
         selectedExtensions = Dictionary(result.profiles.map { ($0.identifier, Set($0.extensions.map(\.identifier))) },
                                         uniquingKeysWith: { $0.union($1) })
         error = result.error?.localizedDescription
-        message = result.profiles.isEmpty ? "No readable profiles were found." :
-            isArcSource ? "Choose the Arc profiles to bring over with their Spaces, pinned tabs and Favorites." :
-            "Choose the profile to bring into Parc."
+        message = result.profiles.isEmpty ? "No readable profiles were found." : "Choose the profile to bring into Parc."
         // This describes selected-source readability, never a fabricated TCC
         // grant. Missing history or an incomplete result cannot enable Restart.
         safariAccessReady = result.error == nil && result.access == .complete && result.profiles.contains {
@@ -289,17 +269,12 @@ final class BrowserImportCoordinator {
     func selectProfile(_ id: String) {
         guard stage == .profiles, isCurrent,
               profiles.contains(where: { $0.identifier == id && $0.supportedCategories.rawValue != 0 }) else { return }
-        if isArcSource {
-            if selectedProfiles.remove(id) == nil { selectedProfiles.insert(id) }
-        } else {
-            // The parent wizard submits exactly one immutable source descriptor.
-            selectedProfiles = [id]
-        }
+        if selectedProfiles.remove(id) == nil { selectedProfiles.insert(id) }
         onChange?()
     }
 
     var canChooseDestination: Bool {
-        isCurrent && (selectedProfiles.count == 1 || (isArcSource && !selectedProfiles.isEmpty)) && profiles.contains {
+        isCurrent && profiles.contains {
             guard selectedProfiles.contains($0.identifier) else { return false }
             var categories = $0.supportedCategories
             if (selectedExtensions[$0.identifier] ?? []).isEmpty { categories.remove(.extensions) }
@@ -323,8 +298,6 @@ final class BrowserImportCoordinator {
 
     func chooseDestination() {
         guard stage == .profiles, canChooseDestination else { return }
-        //
-        if isArcSource { startArc(); return }
         passwordsOnly = false; prepareDestinationChoice()
     }
 
@@ -365,11 +338,6 @@ final class BrowserImportCoordinator {
         // The native field keeps its editor, marked text and selection.
     }
 
-    func toggleCookieReplacement() {
-        guard stage == .destination, isCurrent, !passwordsOnly else { return }
-        destinationChoice.toggleCookieReplacement(); onChange?()
-    }
-
     private func refreshDestinations() {
         let targets = BrowserImportProfileTarget.choices(in: store.state, original: originalDestination)
         if case .existing(let target) = destinationChoice.option, !target.isCurrent(in: store.state) {
@@ -401,249 +369,113 @@ final class BrowserImportCoordinator {
         onChange?()
     }
 
-    func back() {
-        guard stage == .profiles, !restarting else { return }
-        stage = .sources; profiles = []; selectedProfiles = []; warnings = []; error = nil; onChange?()
+    /// The browser's default profile goes to the chosen destination; each other
+    /// chosen profile goes to a Parc Profile of its own name.
+    private var chosenProfiles: [PCNativeImportProfile] {
+        let chosen = profiles.filter { profile in
+            guard selectedProfiles.contains(profile.identifier) else { return false }
+            var categories = profile.supportedCategories
+            if (selectedExtensions[profile.identifier] ?? []).isEmpty { categories.remove(.extensions) }
+            return categories.rawValue != 0
+        }
+        guard let primary = chosen.first(where: { $0.directoryName == "Default" }) ?? chosen.first else { return [] }
+        return [primary] + chosen.filter { $0 !== primary }
     }
 
     func start() {
         guard canStart else { return }
+        skipExistingCookies = !destinationChoice.replaceExistingCookies
+        let chosen = chosenProfiles
+        if isArcSource, !passwordsOnly, !chosen.isEmpty { startArc(chosen); return }
         // Resolve/save once at the actual Import action, before native context
         // admission. Radio selection and name editing never create a Profile.
         do { activeDestination = try store.prepareImportDestination(destinationChoice, basedOn: originalDestination) }
         catch { self.error = error.localizedDescription; onChange?(); return }
-        skipExistingCookies = !destinationChoice.replaceExistingCookies
-        queue = profiles.filter { selectedProfiles.contains($0.identifier) && $0.supportedCategories.rawValue != 0 }
-        stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
-        pendingExtensions = []; stopRequested = false; extensionBatch = nil
-        generation = UUID()
+        beginImport()
         passwordDestination = source.map(Self.isSafari) == true ? activeDestination : nil
-        passwordStageOffered = false
-        if passwordsOnly { queue = []; activeDestination = nil }
+        if passwordsOnly { activeDestination = nil; importNext(); return }
+        queueProfiles(chosen, primaryDestination: activeDestination)
         importNext()
     }
 
-    ///
-    /// Space; the browser data of each profile then imports into that Profile.
-    private func startArc() {
-        guard stage == .profiles, isArcSource, canChooseDestination else { return }
-        let selected = profiles.filter { selectedProfiles.contains($0.identifier) }
+    private func beginImport() {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
-        pendingExtensions = []; stopRequested = false; extensionBatch = nil
-        passwordsOnly = false; passwordDestination = nil; passwordStageOffered = false
-        skipExistingCookies = true; queue = []; queuedDestinations = [:]
-        generation = UUID(); let token = generation
-        message = "Bringing over your Arc Spaces…"; onChange?()
-        let url = arcSidebarURL, preferencesURL = arcPreferencesURL, notesURL = arcNotesExportURL
-        let cacheURL = arcNotesCacheURL, authURL = arcAuthStateURL
+        pendingExtensions = []; stopRequested = false; extensionBatch = nil; passwordStageOffered = false
+        queue = []; queuedDestinations = [:]; usedProfiles = []
+        generation = UUID()
+    }
+
+    /// `known` destinations win and the first profile takes the chosen one;
+    /// the rest get theirs as they import.
+    private func queueProfiles(_ chosen: [PCNativeImportProfile], primaryDestination: BrowserImportDestination?,
+                               known: [String: BrowserImportDestination] = [:]) {
+        for (index, profile) in chosen.enumerated() {
+            guard let destination = known[profile.identifier] ?? (index == 0 ? primaryDestination : nil) else { continue }
+            queuedDestinations[profile.identifier] = destination; usedProfiles.insert(destination.profileID)
+        }
+        queue = chosen
+    }
+
+    /// A chosen profile without a known destination reuses an unused Parc
+    /// Profile of its name, else gets a new one.
+    private func destination(named name: String, excluding used: Set<UUID>) throws -> BrowserImportDestination {
+        let state = store.state
+        if let profile = state.profiles.first(where: { profile in !used.contains(profile.id)
+               && !state.profileRemovals.contains { $0.profileID == profile.id }
+               && profile.name.caseInsensitiveCompare(name) == .orderedSame }),
+           let target = BrowserImportProfileTarget.choices(in: state, original: originalDestination).first(where: { $0.profileID == profile.id }) {
+            var choice = BrowserImportDestinationChoice(); choice.select(.existing(target))
+            return try store.prepareImportDestination(choice, basedOn: originalDestination)
+        }
+        return try store.createImportDestination(name: name, basedOn: originalDestination)
+    }
+
+    ///
+    /// Profile first; its browser data then imports there as any browser's does.
+    private func startArc(_ chosen: [PCNativeImportProfile]) {
+        beginImport(); passwordDestination = nil
+        let token = generation
+        message = "Importing \(chosen[0].displayName)…"; onChange?()
+        let url = arcSidebarURL, preferencesURL = arcPreferencesURL
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try ArcSidebarSnapshot.read(url, preferences: preferencesURL) }
-            let notes = notesURL.map { url in Result { try ArcNotesExport.read(url) } }
-            //
-            let cache = notesURL == nil && FileManager.default.fileExists(atPath: cacheURL.path)
-                ? try? ArcNotesCache.read(cache: cacheURL, authState: authURL) : nil
             DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated { self?.importArcSidebar(result, notes: notes, cache: cache, profiles: selected, token: token) }
+                MainActor.assumeIsolated { self?.importArcSidebar(result, profiles: chosen, token: token) }
             }
         }
-    }
-
-    var canChooseArcNotesExport: Bool {
-        isCurrent && isArcSource && !importingArcNotes
-            && (stage == .profiles || isChoosingOnboardingSource || (stage == .finished && !arcNotesImported))
-    }
-
-    /// Before the import, the export joins it. After it, the Notes come over on their own.
-    func chooseArcNotesExport(_ url: URL) {
-        guard canChooseArcNotesExport else { return }
-        guard stage == .finished else { arcNotesExportURL = url; onChange?(); return }
-        arcNotesExportURL = url; importingArcNotes = true; generation = UUID(); let token = generation
-        message = "Bringing over your Arc Notes…"; onChange?()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let notes = Result { try ArcNotesExport.read(url) }
-            DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, self.generation == token else { return }
-                    guard self.isCurrent, self.stage == .finished else { self.importingArcNotes = false; self.onChange?(); return }
-                    // The export supersedes the advice to make one.
-                    self.warnings = self.warnings.compactMap { line in
-                        guard line.hasSuffix(Self.arcNotesAdvice) else { return line }
-                        let head = line.dropLast(Self.arcNotesAdvice.count).trimmingCharacters(in: .whitespaces)
-                        return head == Self.arcNotesMissing || head.hasPrefix("The copy of your Notes") ? nil : head
-                    }
-                    self.importArcNotes(notes.map(self.exportBatch), token: token) {
-                        self.importingArcNotes = false; self.message = "Your import has finished."; self.onChange?()
-                    }
-                }
-            }
-        }
-    }
-
-    static let arcNotesAdvice = "Export them in Arc (File → Export Arc Notes) before December 22, 2026, then add the file here to bring them over in full."
-    static let arcNotesMissing = "Your Arc Notes weren’t imported."
-    static var arcNotesReminder: String { arcNotesMissing + " " + arcNotesAdvice }
-    static let arcEaselsNote = "Easels stay in Arc. Arc keeps them on its servers and can only save each one as a picture."
-
-    private struct ArcNotesBatch {
-        struct Pending {
-            let title: String
-            let modifiedAt: Date
-            let convert: @MainActor () throws -> ArcNoteConversion
-        }
-        let fromCache: Bool
-        let notes: [Pending]
-        var othersSkipped = 0
-    }
-
-    private func exportBatch(_ notes: [ArcNotesExport.Note]) -> ArcNotesBatch {
-        let converter = arcNoteConverter
-        return ArcNotesBatch(fromCache: false, notes: notes.map { note in
-            .init(title: note.title, modifiedAt: note.modifiedAt) {
-                guard let converter else { throw ArcNotesExport.Failure.unreadable }
-                return try converter(note.html)
-            }
-        })
-    }
-
-    private func cacheBatch(_ contents: ArcNotesCache.Contents) -> ArcNotesBatch {
-        let converter = arcCachedNoteConverter
-        return ArcNotesBatch(fromCache: true, notes: contents.notes.map { note in
-            .init(title: note.title.isEmpty ? "Untitled Note" : note.title, modifiedAt: note.modifiedAt) {
-                guard let converter else { throw ArcNotesExport.Failure.unreadable }
-                return try converter(note)
-            }
-        }, othersSkipped: contents.othersSkipped)
-    }
-
-    /// One Note at a time on the main thread (AppKit reads HTML there), so
-    ///
-    private func importArcNotes(_ result: Result<ArcNotesBatch, Error>, token: UUID, then finish: @escaping () -> Void) {
-        let batch: ArcNotesBatch
-        switch result {
-        case .success(let value): batch = value
-        case .failure(let failure):
-            warnings.append("Arc Notes: \(failure.localizedDescription)")
-            if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
-            finish(); return
-        }
-        guard let library = try? NoteStore.sharedStore(directory: store.notesDirectory(for: originalDestination.profileID)) else {
-            warnings.append("Arc Notes couldn’t be added to this Profile.")
-            if !arcNotesImported { warnings.append(Self.arcNotesReminder) }
-            finish(); return
-        }
-        func stamp(_ title: String, _ date: Date) -> String { title + "\u{0}" + String(Int(date.timeIntervalSince1970.rounded())) }
-        let current = (try? library.list()) ?? []
-        var existing = Set(current.map { stamp($0.title, $0.modifiedAt) })
-        // Notes an earlier import made and nobody has edited since. The two
-        // sources date a Note differently, so these are matched by title.
-        var unedited = Dictionary(grouping: current.filter { $0.importedUnedited == true }, by: \.title)
-        var added = 0, repeated = 0, updated = 0, failed = 0, droppedImages = 0
-        func plural(_ count: Int, _ one: String, _ many: String) -> String { count == 1 ? one : many }
-        func step(_ index: Int) {
-            guard isCurrent, generation == token else { return }
-            guard index < batch.notes.count else {
-                let caveat = "can miss Notes this Mac never opened and recent edits made elsewhere. " + Self.arcNotesAdvice
-                if batch.fromCache, added > 0 {
-                    warnings.append(plural(added, "1 Arc Note came from the copy Arc keeps on this Mac,",
-                        "\(added) Arc Notes came from the copy Arc keeps on this Mac,") + " which " + caveat)
-                } else if batch.fromCache, repeated > 0 {
-                    warnings.append("The copy of your Notes Arc keeps on this Mac " + caveat)
-                } else if added > 0 {
-                    warnings.append(plural(added, "1 Arc Note came over from your export.", "\(added) Arc Notes came over from your export."))
-                }
-                if updated > 0 {
-                    warnings.append(plural(updated, "1 Arc Note was updated from your export.", "\(updated) Arc Notes were updated from your export."))
-                }
-                if repeated > 0 { warnings.append(plural(repeated, "1 Arc Note was already in Parc.", "\(repeated) Arc Notes were already in Parc.")) }
-                if failed > 0 { warnings.append(plural(failed, "1 Arc Note couldn’t be read.", "\(failed) Arc Notes couldn’t be read.")) }
-                if batch.othersSkipped > 0 {
-                    warnings.append(plural(batch.othersSkipped, "1 Note someone shared with you in Arc was left out.",
-                        "\(batch.othersSkipped) Notes others shared with you in Arc were left out."))
-                }
-                if droppedImages > 0 {
-                    warnings.append(plural(droppedImages, "1 image in your Arc Notes was stored on Arc’s servers, so it couldn’t come over.",
-                        "\(droppedImages) images in your Arc Notes were stored on Arc’s servers, so they couldn’t come over."))
-                }
-                if !batch.fromCache { arcNotesImported = added + repeated + updated > 0 }
-                if added + repeated + updated == 0 && !arcNotesImported { warnings.append(Self.arcNotesReminder) }
-                finish(); return
-            }
-            let note = batch.notes[index]
-            do {
-                let converted = try note.convert()
-                let title = converted.title ?? note.title
-                if !existing.insert(stamp(title, note.modifiedAt)).inserted {
-                    repeated += 1
-                } else if let earlier = unedited[title]?.first {
-                    unedited[title]?.removeFirst()
-                    // The offline copy never overrides; an export updates an older copy.
-                    if batch.fromCache || earlier.modifiedAt > note.modifiedAt { repeated += 1 }
-                    else {
-                        try library.reimport(earlier.id, expectedRevision: earlier.revision, title: title,
-                                             body: converted.body, modifiedAt: note.modifiedAt)
-                        updated += 1; droppedImages += converted.droppedImages
-                    }
-                } else {
-                    _ = try library.importDocument(title: title, body: converted.body, modifiedAt: note.modifiedAt)
-                    added += 1; droppedImages += converted.droppedImages
-                }
-            } catch { failed += 1 }
-            message = "Bringing over your Arc Notes (\(index + 1) of \(batch.notes.count))…"; onChange?()
-            DispatchQueue.main.async { MainActor.assumeIsolated { step(index + 1) } }
-        }
-        step(0)
     }
 
     private func importArcSidebar(_ result: Result<(ArcSidebarImport, [String: Any]), Error>,
-                                  notes: Result<[ArcNotesExport.Note], Error>?, cache: ArcNotesCache.Contents?,
-                                  profiles selected: [PCNativeImportProfile],
-                                  token: UUID) {
+                                  profiles chosen: [PCNativeImportProfile], token: UUID) {
         guard isCurrent, generation == token, stage == .importing else { return }
-        var keys: [ArcSidebarImport.ProfileKey: PCNativeImportProfile] = [:], named: [(key: ArcSidebarImport.ProfileKey, name: String)] = []
-        for profile in selected {
-            let key = ArcSidebarImport.profileKey(directory: profile.directoryName)
-            guard keys[key] == nil else { continue }
-            keys[key] = profile; named.append((key, profile.displayName))
-        }
-        var destinations: [ArcSidebarImport.ProfileKey: BrowserImportDestination] = [:]
-        switch result {
-        case .success(let read):
-            var arc = read.0
-            arc.autoArchiveHours = ArcSidebarImport.autoArchiveHours(preferences: read.1, profiles: named.map(\.key))
-            do {
-                let imported = try store.importArcSidebar(arc, profiles: named, standardProfileID: originalDestination.profileID)
-                destinations = imported.destinations; warnings += imported.warnings
-            } catch {
-                finishSourceFailure("Arc’s Spaces couldn’t be added: \(error.localizedDescription)"); return
+        let keyed = chosen.map { (profile: $0, key: ArcSidebarImport.profileKey(directory: $0.directoryName)) }
+        do {
+            if case .success((var arc, let preferences)) = result {
+                arc.autoArchiveHours = ArcSidebarImport.autoArchiveHours(preferences: preferences, profiles: keyed.map(\.key))
+                let destinations = try store.importArcSidebar(arc, profiles: keyed.map { ($0.key, $0.profile.displayName) },
+                    standardProfileID: originalDestination.profileID, primary: keyed[0].key, into: destinationChoice)
+                var known: [String: BrowserImportDestination] = [:]
+                for item in keyed { known[item.profile.identifier] = destinations[item.key] }
+                // A chosen Space stays the destination, as it is for any browser.
+                if case .existing(let target) = destinationChoice.option, let spaceID = target.spaceID,
+                   target.isCurrent(in: store.state) {
+                    known[keyed[0].profile.identifier] = BrowserImportDestination(spaceID: spaceID, profileID: target.profileID)
+                }
+                queueProfiles(chosen, primaryDestination: nil, known: known)
+            } else {
+                //
+                queueProfiles(chosen, primaryDestination: try store.prepareImportDestination(destinationChoice, basedOn: originalDestination))
             }
-        case .failure(let failure):
-            warnings.append("Arc’s Spaces couldn’t be read, so only its browsing data was imported: \(failure.localizedDescription)")
-            for (key, name) in named {
-                if key == .standard { destinations[key] = originalDestination; continue }
-                do { destinations[key] = try store.createImportDestination(name: name, basedOn: originalDestination) }
-                catch { warnings.append("\(name) couldn’t be imported: \(error.localizedDescription)") }
-            }
+        } catch {
+            // As Chrome's Import does, stay on the destination with the reason.
+            queue = []; queuedDestinations = [:]; stage = .destination; self.error = error.localizedDescription; onChange?(); return
         }
-        for (key, profile) in keys where profile.supportedCategories.rawValue != 0 {
-            if let destination = destinations[key] { queuedDestinations[profile.identifier] = destination }
-        }
-        queue = selected.filter { queuedDestinations[$0.identifier] != nil }
-        warnings.append(Self.arcEaselsNote)
-        let batch: Result<ArcNotesBatch, Error>
-        if let notes { batch = notes.map(exportBatch) }
-        else if let cache, !cache.notes.isEmpty || cache.othersSkipped > 0 { batch = .success(cacheBatch(cache)) }
-        else { warnings.append(Self.arcNotesReminder); importNext(); return }
-        importingArcNotes = true
-        importArcNotes(batch, token: token) { [weak self] in
-            guard let self else { return }
-            self.importingArcNotes = false; self.importNext()
-        }
+        importNext()
     }
 
     private func importNext() {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
-            queuedDestinations = [:]
             if !pendingExtensions.isEmpty { installExtensions(); return }
             // Setup accepts bookmarks before offering the separate Safari
             // password step. The menu keeps its existing import sequence.
@@ -655,20 +487,25 @@ final class BrowserImportCoordinator {
             onChange?(); return
         }
         let profile = queue.removeFirst(), token = generation
-        if let target = queuedDestinations.removeValue(forKey: profile.identifier) { activeDestination = target }
+        if let known = queuedDestinations.removeValue(forKey: profile.identifier) {
+            activeDestination = known
+        } else {
+            do {
+                activeDestination = try destination(named: profile.displayName, excluding: usedProfiles)
+                usedProfiles.insert(activeDestination!.profileID)
+            } catch {
+                activeDestination = nil; warnings.append("\(profile.displayName) could not be imported.")
+                completed += 1; importNext(); return
+            }
+        }
         var categories = profile.supportedCategories
         categories.remove(.extensions)
         let extensions = Set(profile.extensions.map(\.identifier)).intersection(selectedExtensions[profile.identifier] ?? [])
         guard categories.rawValue != 0 || !extensions.isEmpty else {
             warnings.append("No data was selected for \(profile.displayName).")
-            completed += 1; importNext(); return
+            activeDestination = nil; completed += 1; importNext(); return
         }
         guard let destination = activeDestination, destination.isCurrent(in: store.state) else {
-            if isArcSource {
-                activeDestination = nil; completed += 1
-                warnings.append("\(profile.displayName): its Parc Space or Profile was removed, so it wasn’t imported.")
-                importNext(); return
-            }
             finishSourceFailure("The selected destination is no longer available."); return
         }
         if !extensions.isEmpty { pendingExtensions.append((profile, destination, extensions)) }
@@ -686,10 +523,7 @@ final class BrowserImportCoordinator {
                 guard let self, self.isCurrent, self.generation == token else { return }
                 self.session = nil; self.activeDestination = nil
                 guard destination.isCurrent(in: self.store.state) else {
-                    let failure = "\(profile.displayName): its destination was removed, so this import stopped."
-                    if self.isArcSource {
-                        self.warnings.append(failure); self.completed += 1; self.importNext()
-                    } else { self.finishSourceFailure(failure) }
+                    self.finishSourceFailure("\(profile.displayName): its destination was removed, so this import stopped.")
                     return
                 }
                 self.warnings += result.warnings
@@ -945,7 +779,7 @@ final class BrowserImportCoordinator {
         }
         guard let session else {
             //
-            generation = UUID(); stage = .finished; importingArcNotes = false
+            generation = UUID(); stage = .finished
             message = "Import stopped. Data already imported has been kept."; onChange?(); return
         }
         session.cancel(); message = "Stopping import…"; onChange?()
@@ -959,7 +793,7 @@ final class BrowserImportCoordinator {
         extensionInstall?.cancel(); extensionInstall = nil; pendingExtensions = []
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil
-        acceptedICloudPasswordsDestination = nil; importingArcNotes = false
+        acceptedICloudPasswordsDestination = nil
         stage = .finished; message = "Import stopped. Data already imported has been kept."; onChange?()
     }
 }

@@ -36,7 +36,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private let store: BrowserStore
     private var browserImport: BrowserImportViewController?
     private var passwordHelp: OnboardingPasswordHelp?
-    private var bookmarkPanel: NSOpenPanel?
     var onCancelImportRestart: (() -> Void)?
     var hasActiveBrowserImport: Bool { browserImport != nil && !isClosed && !isFinishing }
     var onRequestImportRestart: ((BrowserImportRestartIntent, @escaping (String?) -> Void) -> Void)?
@@ -140,10 +139,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         back.actionBlock = { [weak self] in
             guard let self, !self.isFinishing, self.defaultBrowserRequest == nil,
                   self.window?.attachedSheet == nil, self.passwordHelp?.isPresented != true else { return }
-            if let browserImport = self.browserImport { browserImport.goBack(); return }
+            guard self.browserImport == nil else { return }
             if let stage = self.draft.previousStage() { self.transition(to: stage) }
         }
         skip.actionBlock = { [weak self] in self?.skipStep() }
+        setupCard.onBackdropChange = { [weak self] in self?.applySetupPalette() }
         progress.font = .systemFont(ofSize: 10, weight: .medium); progress.textColor = OnboardingSetupPalette.message; progress.alignment = .center
         persistenceStatus.font = .systemFont(ofSize: 11)
         persistenceStatus.textColor = .systemRed
@@ -454,11 +454,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             let importBrowser = ActionButton("Import from another browser…", symbol: "arrow.down.to.line") { [weak self] in self?.beginBrowserImport() }
             importBrowser.isBordered = true; importBrowser.bezelStyle = .rounded
             importBrowser.isEnabled = browserImport == nil
-            let choose = ActionButton(draft.bookmarkFileName == nil ? "Choose bookmarks file…" : "Choose a different file…", symbol: "folder") { [weak self] in self?.chooseBookmarks() }
-            choose.isBordered = true; choose.bezelStyle = .rounded
-            let status = NSTextField(wrappingLabelWithString: draft.bookmarkFileName.map { "\($0)\n\(draft.bookmarks.count) bookmarks ready to import" } ?? "Only the file you choose is read. Existing browsers stay unchanged.")
-            status.font = .systemFont(ofSize: 12); status.textColor = .parcInk.withAlphaComponent(0.65); status.alignment = .center
-            lower = [importBrowser, choose, status]
+            lower = [importBrowser]
         }
         lower.forEach { body.addSubview($0) }
         let current = stage
@@ -480,9 +476,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 lower[0].frame = NSRect(x: (width - 339) / 2, y: (height - hostHeight) / 2,
                     width: 339, height: hostHeight)
             } else if current == .bookmarks {
-                lower[0].frame = NSRect(x: width / 2 - 150, y: height / 2 - 96, width: 300, height: 36)
-                lower[1].frame = NSRect(x: width / 2 - 150, y: height / 2 - 48, width: 300, height: 36)
-                lower[2].frame = NSRect(x: 45, y: height / 2 + 16, width: width - 90, height: 84)
+                lower[0].frame = NSRect(x: width / 2 - 150, y: height / 2 - 18, width: 300, height: 36)
             } else {
                 lower[0].frame = self.body.bounds
             }
@@ -619,8 +613,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             ? palette.backgroundExtra : nil
         setupCard.grainTheme = selectedTheme
         setupCard.grainIsActive = ThemeWindowActivity.isActive(window)
-        setupCard.showsSunset = draft.stage == .bookmarks && browserImport?.showsArcSunset == true
-        progress.textColor = OnboardingSetupPalette.message
+        let backdrop = draft.stage == .bookmarks ? browserImport?.backdrop : nil
+        setupCard.backdrop.show(backdrop?.pages ?? [], selected: backdrop?.selected)
+        progress.textColor = setupCard.chromeColor
         persistenceStatus.textColor = draft.stage.isWelcome ? .white : .systemRed
         // ProgressionButton's theme getters select maxContrastColor (+0x70)
         // and backgroundExtra (+0xb0). Unthemed setup uses AuthFeature assets.
@@ -629,11 +624,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                        foreground: hasTheme ? palette.backgroundExtra : .white,
                        reduceMotion: reduceMotion)
         spaceName.updateColors()
-        for button in [back, skip] { button.contentTintColor = OnboardingSetupPalette.message }
+        for button in [back, skip] { button.contentTintColor = setupCard.chromeColor }
         for view in body.subviews + setupCard.instructions.subviews {
             if let label = view as? NSTextField, label !== spaceField {
-                label.textColor = label === setupCard.heading ? setupCard.titleColor : (label.font?.pointSize ?? 14) >= 17
-                    ? OnboardingSetupPalette.title : OnboardingSetupPalette.message
+                label.textColor = label === setupCard.heading ? setupCard.titleColor : label === setupCard.message
+                    ? setupCard.messageColor : (label.font?.pointSize ?? 14) >= 17 ? OnboardingSetupPalette.title : setupCard.chromeColor
             } else if let button = view as? ActionButton {
                 button.contentTintColor = OnboardingSetupPalette.title
             }
@@ -798,10 +793,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
 
     func closeBrowserImport() {
         dismissPasswordHelp(remove: true)
-        bookmarkPanel?.cancel(nil); bookmarkPanel = nil
         let importer = browserImport; browserImport = nil
         importer?.cancel(); importer?.view.removeFromSuperview()
-        setupCard.showsSunset = false
+        setupCard.backdrop.show([], selected: nil)
         onCancelImportRestart?()
     }
 
@@ -844,7 +838,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         controller.onChange = { [weak self] in self?.render() }
         controller.onShowPasswordHelp = { [weak self] in self?.showPasswordHelp() }
         controller.onHidePasswordHelp = { [weak self] in self?.dismissPasswordHelp(remove: true) }
-        controller.onChooseBookmarks = { [weak self] in self?.chooseBookmarks() }
         controller.onRequestRestart = { [weak self] intent, completion in
             guard let self, let restart = self.onRequestImportRestart else {
                 completion("Parc could not prepare to restart."); return
@@ -882,15 +875,15 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private func renderBrowserImport(_ importer: BrowserImportViewController) {
         let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
         importer.selectionColor = selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor
-        importer.importedFileDescription = draft.bookmarkFileName.map { "\($0) · \(draft.bookmarks.count) bookmarks ready to add" }
         next.title = importer.nextTitle; next.isEnabled = importer.canAdvance
-        back.isHidden = !importer.canGoBack; back.isEnabled = importer.canGoBack
+        back.isHidden = true
         skip.title = importer.isImporting ? "Stop Import" : "Skip for now"
-        skip.isHidden = importer.isSafariPasswords; skip.isEnabled = true
+        //
+        skip.isHidden = importer.isSafariPasswords || importer.isChoosingSource; skip.isEnabled = true
         progress.stringValue = (isReplay ? "Replay · " : "") + "1 of \(draft.displayedSetupCount())"
-        progress.isHidden = false; next.isHidden = !importer.canAdvance && importer.isImporting
+        progress.isHidden = false; next.isHidden = false
         setupCard.isHidden = false
-        setupCard.configure(title: importer.isChoosingSource ? "Get us up\nto speed." : importer.headingText,
+        setupCard.configure(title: importer.showsSourceCards ? "Get us up\nto speed." : importer.headingText,
             subtitle: importer.message,
             font: NSFontManager.shared.convert(OnboardingArtwork.headlineFont, toSize: 35),
             back: back, next: next, skip: skip, progress: progress, accessory: importer.setupAccessory,
@@ -898,69 +891,13 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         if importer.view.superview !== body { body.addSubview(importer.view) }
         body.onLayout = { [weak self, weak importer] in
             guard let self, let importer else { return }
-            importer.view.frame = importer.usesFullSetupColumn ? self.body.bounds :
-                NSRect(x: (self.body.bounds.width - 384) / 2,
-                    y: (self.body.bounds.height - 430) / 2, width: 384, height: 430)
+            let bounds = self.body.bounds
+            importer.view.frame = importer.usesFullSetupColumn ? bounds
+                : importer.showsSourceCards ? NSRect(x: (bounds.width - 384) / 2, y: 0, width: 384, height: bounds.height)
+                : NSRect(x: (bounds.width - 384) / 2, y: (bounds.height - 430) / 2, width: 384, height: 430)
         }
         applySetupPalette()
         root.needsLayout = true; body.needsLayout = true
         lastStage = draft.stage
-    }
-
-    private func chooseBookmarks() {
-        guard !isClosed, !isFinishing, draft.stage == .bookmarks,
-              let window, window.isKeyWindow, window.attachedSheet == nil,
-              bookmarkPanel == nil, browserImport?.isChoosingSource == true else { return }
-        let importOwner = browserImport
-        let panel = NSOpenPanel(); bookmarkPanel = panel
-        panel.title = "Choose exported bookmarks"
-        panel.allowedContentTypes = [.html]
-        panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
-        panel.beginSheetModal(for: window) { [weak self, weak panel, weak window, weak importOwner] result in
-            guard let self, self.bookmarkPanel === panel else { return }
-            self.bookmarkPanel = nil
-            guard result == .OK, let url = panel?.url, !self.isClosed, !self.isFinishing,
-                  self.window === window, self.draft.stage == .bookmarks,
-                  self.browserImport === importOwner,
-                  importOwner?.isChoosingSource == true else { return }
-            do {
-                let values = try url.resourceValues(forKeys: [.fileSizeKey])
-                guard (values.fileSize ?? 0) <= 10 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
-                let html = try String(contentsOf: url, encoding: .utf8)
-                let bookmarks = try Self.parseBookmarks(html)
-                guard bookmarks.count <= 50_000 else { throw CocoaError(.fileReadTooLarge) }
-                self.draft.bookmarks = bookmarks.map { .init(title: $0.title, url: $0.url) }
-                self.draft.bookmarkFileName = url.lastPathComponent
-                self.persistDraft()
-                self.browserImport?.didChooseBookmarksFile()
-                self.render()
-            } catch {
-                let alert = NSAlert(error: error)
-                alert.messageText = "The bookmarks file couldn’t be read."
-                if let window { alert.beginSheetModal(for: window) }
-            }
-        }
-    }
-    private static func parseBookmarks(_ html: String) throws -> [(title: String, url: String)] {
-        let expression = try NSRegularExpression(pattern: #"<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>(.*?)</a>"#, options: [.caseInsensitive, .dotMatchesLineSeparators])
-        var seen = Set<String>()
-        return expression.matches(in: html, range: NSRange(html.startIndex..., in: html)).compactMap { match in
-            guard let urlRange = Range(match.range(at: 2), in: html), let titleRange = Range(match.range(at: 3), in: html) else { return nil }
-            let rawURL = decodeEntities(String(html[urlRange]))
-            guard let url = URL(string: rawURL), ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil, seen.insert(url.absoluteString).inserted else { return nil }
-            let title = decodeEntities(String(html[titleRange]).replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-            return (title.isEmpty ? url.host ?? "Bookmark" : title, url.absoluteString)
-        }
-    }
-    private static func decodeEntities(_ value: String) -> String {
-        var text = value.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&apos;", with: "'").replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">")
-        if let regex = try? NSRegularExpression(pattern: "&#(x[0-9a-fA-F]+|[0-9]+);") {
-            for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
-                guard let range = Range(match.range(at: 1), in: text), let entire = Range(match.range, in: text) else { continue }
-                let digits = String(text[range]); let number = digits.hasPrefix("x") ? UInt32(digits.dropFirst(), radix: 16) : UInt32(digits)
-                if let number, let scalar = UnicodeScalar(number) { text.replaceSubrange(entire, with: String(scalar)) }
-            }
-        }
-        return text.replacingOccurrences(of: "&amp;", with: "&")
     }
 }

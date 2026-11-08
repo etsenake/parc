@@ -9,12 +9,10 @@ import UniformTypeIdentifiers
 final class BrowserImportViewController: NSViewController {
     var onClose: (() -> Void)?
     var onChange: (() -> Void)?
-    var onChooseBookmarks: (() -> Void)?
     var onShowPasswordHelp: (() -> Void)?
     var onHidePasswordHelp: (() -> Void)?
-    var importedFileDescription: String? { didSet { if oldValue != importedFileDescription { updateSourcePicker() } } }
     var selectionColor: NSColor = OnboardingSetupPalette.action { didSet { updateSourcePicker(); updateBookmarksPicker(); updatePasswordChoice() } }
-    private var sourcePicker: NSHostingView<OnboardingImportSourcePicker>?
+    private var sourcePicker: NSHostingView<BrowserImportSourcePicker>?
     private var bookmarksPicker: NSHostingView<OnboardingImportBookmarksPicker>?
     private var passwordChoice: NSHostingView<OnboardingPasswordChoice>?
     var acceptedICloudPasswordsDestination: BrowserImportDestination? {
@@ -29,8 +27,9 @@ final class BrowserImportViewController: NSViewController {
         }
     }
     private var onboardingAccess: OnboardingSafariAccessView?
-    private var freshStartSelected = false
-    var isChoosingSource: Bool { coordinator.stage == .sources || coordinator.isChoosingOnboardingSource }
+    /// Setup's “No, I want to type in all my passwords again.” card.
+    private var skipSelected = false
+    var isChoosingSource: Bool { coordinator.isChoosingSourceInline }
     private weak var window: NSWindow?
     var embedded: Bool { onboarding }
     var isSafariAccess: Bool { coordinator.stage == .safariAccess }
@@ -44,7 +43,6 @@ final class BrowserImportViewController: NSViewController {
     // menu-wizard labels do not replace that progression control.
     var nextTitle: String { embedded ? "Next" : next.title }
     private(set) var canAdvance = false
-    private(set) var canGoBack = false
     var isImporting: Bool { coordinator.stage == .importing }
     var onRequestRestart: ((BrowserImportRestartIntent, @escaping (String?) -> Void) -> Void)?
     private let root = LayoutView()
@@ -55,17 +53,14 @@ final class BrowserImportViewController: NSViewController {
     // ImportDialogButtonView's body is a Dialogs.DialogButtonView: primary for
     // Next/Import/Done, neutral for Maybe Later/Back, no hotkey badge.
     private let next = PArcDialogButton(title: "Next", primary: true, hint: false)
-    private let back = PArcDialogButton(title: "Back", primary: false, hint: false)
     private let cancelButton = PArcDialogButton(title: "Maybe Later", primary: false, hint: false)
-    private var sourceList: NSHostingView<BrowserImportSourceList>?
-    private let sunset = BrowserImportSunsetHeader()
+    private let windowBackdrop = BrowserImportBackdrop()
     private let closeControl = ActionButton("", symbol: "xmark")
     private let logo = NSImageView()
     private let destinationView = BrowserImportDestinationView()
     private let accessView = BrowserImportAccessView()
     private let passwordsView = BrowserImportPasswordsView()
     private var passwordPanel: NSOpenPanel?
-    private var notesPanel: NSOpenPanel?
     private var promptedPasswordRequest: UUID?
     private let onboarding: Bool
     private var accessTimer: Timer?
@@ -83,13 +78,7 @@ final class BrowserImportViewController: NSViewController {
         super.init(nibName: nil, bundle: nil)
         view = root
         coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
-            onboarding: onboarding, arcNoteConverter: { html in
-                let note = try ArcNoteHTML.convert(html)
-                return (note.title, note.body, note.droppedImages)
-            }, arcCachedNoteConverter: { cached in
-                let note = try ArcNoteHTML.convert(cached: cached)
-                return (note.title, note.body, note.droppedImages)
-            }, ownerIsCurrent: ownerIsCurrent)
+            onboarding: onboarding, ownerIsCurrent: ownerIsCurrent)
         destinationScroll.drawsBackground = false; destinationScroll.borderType = .noBorder
         destinationScroll.hasVerticalScroller = true; destinationScroll.autohidesScrollers = true
         destinationScroll.documentView = destinationView
@@ -118,7 +107,6 @@ final class BrowserImportViewController: NSViewController {
             MainActor.assumeIsolated { self?.refreshSafariAccessIfVisible() }
         }
         destinationView.onSelect = { [weak self] in self?.coordinator.selectDestination($0) }
-        destinationView.onToggleCookies = { [weak self] in self?.coordinator.toggleCookieReplacement() }
         destinationView.onNameChange = { [weak self] name in
             guard let self else { return }
             self.coordinator.setNewProfileName(name)
@@ -138,13 +126,14 @@ final class BrowserImportViewController: NSViewController {
         closeControl.contentTintColor = PArcDialogStyle.popoverMessage
         closeControl.setAccessibilityLabel("Close Import")
         closeControl.actionBlock = { [weak self] in self?.requestClose() }
-        sunset.alphaValue = 0
-        if !onboarding { root.addSubview(sunset) }
-        [heading, detail, scroll, destinationScroll, next, back, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
+        if !onboarding {
+            root.addSubview(windowBackdrop)
+            windowBackdrop.onDominantChange = { [weak self] in self?.applyBackdropContrast($0) }
+        }
+        [heading, detail, scroll, destinationScroll, next, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
         next.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
         next.target = self; next.action = #selector(nextPressed)
-        back.target = self; back.action = #selector(backPressed)
         cancelButton.target = self; cancelButton.action = #selector(cancelPressed)
         root.onLayout = { [weak self] in self?.layout() }
         render()
@@ -152,11 +141,6 @@ final class BrowserImportViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @objc private func nextPressed() { advance() }
-    @objc private func backPressed() { coordinator.back() }
-    @objc private func passwordsInsteadPressed() {
-        if embedded { coordinator.startInOriginalDestination(passwordsOnly: true) }
-        else { coordinator.choosePasswordDestination() }
-    }
     @objc private func cancelPressed() {
         if coordinator.stage == .importing { coordinator.stopImport() } else { requestClose() }
     }
@@ -167,12 +151,7 @@ final class BrowserImportViewController: NSViewController {
         reconcileAccessTimer()
     }
 
-    func goBack() { freshStartSelected = false; coordinator.back() }
     func stopImport() { coordinator.stopImport() }
-    func didChooseBookmarksFile() {
-        guard embedded, !closed, isChoosingSource else { return }
-        freshStartSelected = true; coordinator.clearOnboardingSource()
-    }
     func requestClose() { guard !closed else { return }; onClose?() }
 
     /// A persisted restart intent never contains source/profile leases. Obtain
@@ -235,7 +214,6 @@ final class BrowserImportViewController: NSViewController {
         closed = true; restartRequest = nil
         onHidePasswordHelp?()
         passwordPanel?.cancel(nil); passwordPanel = nil
-        notesPanel?.cancel(nil); notesPanel = nil
         accessTimer?.invalidate(); accessTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
@@ -257,7 +235,7 @@ final class BrowserImportViewController: NSViewController {
             return
         }
         accessView.frame = root.bounds; passwordsView.frame = root.bounds
-        sunset.frame = NSRect(x: 0, y: 0, width: width, height: BrowserImportSunsetHeader.windowHeight)
+        windowBackdrop.frame = root.bounds
         closeControl.frame = NSRect(x: width - 48, y: 24, width: 24, height: 24)
         logo.frame = NSRect(x: 30, y: 34, width: 54, height: 47)
         if coordinator.stage == .destination {
@@ -265,7 +243,7 @@ final class BrowserImportViewController: NSViewController {
             destinationScroll.frame = NSRect(x: 28, y: 106, width: width - 56, height: height - 106)
             destinationView.frame = NSRect(x: 0, y: 0, width: destinationScroll.contentSize.width,
                                            height: destinationView.desiredHeight)
-        } else if coordinator.stage == .sources {
+        } else if showsSourceCards || coordinator.stage == .loading {
             heading.frame = NSRect(x: 28, y: 106, width: 290, height: 26)
             detail.frame = NSRect(x: 28, y: 142, width: 260, height: 200)
             scroll.frame = NSRect(x: 320, y: 164, width: width - 348, height: height - 235)
@@ -274,16 +252,15 @@ final class BrowserImportViewController: NSViewController {
             detail.frame = NSRect(x: 34, y: 104, width: width - 68, height: 45)
             scroll.frame = NSRect(x: 34, y: 158, width: width - 68, height: height - 225)
         }
-        sourceList?.frame = scroll.frame.insetBy(dx: -6, dy: -4)
+        if !embedded { sourcePicker?.frame = NSRect(x: 314, y: 100, width: width - 336, height: height - 180) }
         // Dialogs footer: 28 points from the right and bottom, 8 between buttons;
         // each view extends past its 36-point body for the border and lip.
         func place(_ button: PArcDialogButton, right: CGFloat) -> CGFloat {
             button.frame = NSRect(x: right - button.bodyWidth - 0.5, y: height - 64.5, width: button.bodyWidth + 1, height: 38.5)
             return button.isHidden ? right : right - button.bodyWidth - 8
         }
-        var right = place(next, right: width - 28)
-        right = place(back, right: right)
-        if coordinator.stage == .sources { _ = place(cancelButton, right: right) }
+        let right = place(next, right: width - 28)
+        if showsSourceCards && coordinator.stage != .finished { _ = place(cancelButton, right: right) }
         else { cancelButton.frame = NSRect(x: 27.5, y: height - 64.5, width: cancelButton.bodyWidth + 1, height: 38.5) }
     }
 
@@ -306,11 +283,24 @@ final class BrowserImportViewController: NSViewController {
         return button
     }
 
+    ///
+    /// and any result; only the cards' state changes.
+    var showsSourceCards: Bool {
+        switch coordinator.stage {
+        case .sources, .profiles, .importing: return true
+        case .loading: return coordinator.source != nil
+        case .finished: return !coordinator.warnings.isEmpty || coordinator.error != nil
+        default: return false
+        }
+    }
+    static let windowIntro = "Import everything you need from your old browser to hit the ground running with Parc."
+    static let setupIntro = "It’s a bold new internet. Hit the ground running and bring your most important tabs, passwords, history, and bookmarks with you."
+
     private func render() {
         guard !closed else { return }
-        if embedded, coordinator.stage == .finished, coordinator.warnings.isEmpty, coordinator.error == nil {
-            // The menu has a results page; setup continues to its next real
-            // step. Leave the view update stack before releasing this owner.
+        if coordinator.stage == .finished, coordinator.warnings.isEmpty, coordinator.error == nil {
+            // A clean import has no results page: setup continues to its next
+            // step and the window closes. Leave the view update stack first.
             guard !queuedSetupCompletion else { return }
             queuedSetupCompletion = true
             DispatchQueue.main.async { [weak self] in
@@ -319,9 +309,11 @@ final class BrowserImportViewController: NSViewController {
             }
             return
         }
-        let choosingDestination = coordinator.stage == .destination
-        let choosingAccess = coordinator.stage == .safariAccess
-        let choosingPasswords = coordinator.stage == .safariPasswords
+        let stage = coordinator.stage
+        let choosingDestination = stage == .destination
+        let choosingAccess = stage == .safariAccess
+        let choosingPasswords = stage == .safariPasswords
+        let cards = showsSourceCards
         passwordsView.isHidden = !choosingPasswords
         accessView.isHidden = !choosingAccess || embedded
         onboardingAccess?.isHidden = !choosingAccess
@@ -332,10 +324,9 @@ final class BrowserImportViewController: NSViewController {
                 "My Existing Parc Profile" : profile.name
             return .init(target: target, title: title)
         }
-        destinationView.update(profiles: destinationProfiles, choice: coordinator.destinationChoice, error: coordinator.error,
-                               showsCookieReplacement: !coordinator.passwordsOnly)
+        destinationView.update(profiles: destinationProfiles, choice: coordinator.destinationChoice, error: coordinator.error)
         destinationScroll.isHidden = !choosingDestination
-        scroll.isHidden = choosingDestination || choosingAccess || choosingPasswords
+        scroll.isHidden = cards || choosingDestination || choosingAccess || choosingPasswords
         detail.isHidden = choosingDestination || choosingAccess || choosingPasswords
         let requestedWidth: CGFloat = choosingAccess ? 790 : 580
         let requestedHeight: CGFloat = choosingAccess ? 630 : choosingPasswords ? 630 : choosingDestination ? min(640, max(335, 106 + destinationView.desiredHeight)) : 454
@@ -347,32 +338,27 @@ final class BrowserImportViewController: NSViewController {
         let origin = scroll.contentView.bounds.origin
         rows.arrangedSubviews.forEach { rows.removeArrangedSubview($0); $0.removeFromSuperview() }
         heading.stringValue = "Import from your old browser"
-        let choosingSource = isChoosingSource
-        sourcePicker?.isHidden = !choosingSource || !embedded
-        sourceList?.isHidden = coordinator.stage != .sources || embedded
-        bookmarksPicker?.isHidden = coordinator.stage != .bookmarks || !embedded
-        passwordChoice?.isHidden = coordinator.stage != .passwordChoice
-        logo.isHidden = !choosingSource
-        heading.font = .systemFont(ofSize: choosingSource || choosingDestination ? 17 : 26, weight: .bold)
-        detail.font = .systemFont(ofSize: choosingSource ? 16 : 13)
+        bookmarksPicker?.isHidden = stage != .bookmarks || !embedded
+        passwordChoice?.isHidden = stage != .passwordChoice
+        logo.isHidden = !(cards || stage == .loading)
+        heading.font = .systemFont(ofSize: cards || stage == .loading || choosingDestination ? 17 : 26, weight: .bold)
+        detail.font = .systemFont(ofSize: cards || stage == .loading ? 16 : 13)
         detail.stringValue = coordinator.error ?? coordinator.message
-        detail.textColor = coordinator.error == nil ? PArcDialogStyle.popoverMessage : .systemRed
-        back.isHidden = coordinator.stage != .profiles
+        detail.textColor = coordinator.error == nil ? detailColor : .systemRed
         next.isHidden = false; next.isEnabled = true; next.title = "Next"
-        cancelButton.title = coordinator.stage == .importing ? "Stop Import" : "Maybe Later"
-        switch coordinator.stage {
+        cancelButton.title = stage == .importing ? "Stop Import" : "Maybe Later"
+        if cards || stage == .loading {
+            detail.stringValue = coordinator.error ?? (embedded ? Self.setupIntro : Self.windowIntro)
+        }
+        switch stage {
         case .loading:
-            let progress = NSProgressIndicator(); progress.style = .spinning
-            progress.controlSize = .regular; progress.startAnimation(nil); add(progress)
+            if !cards {
+                let progress = NSProgressIndicator(); progress.style = .spinning
+                progress.controlSize = .regular; progress.startAnimation(nil); add(progress)
+            }
             next.isEnabled = false
         case .sources:
-            scroll.isHidden = true
-            if !embedded { updateSourceList() }
-            if let source = coordinator.source, !freshStartSelected {
-                detail.stringValue = embedded ? "Bring your bookmarks and browsing data from \(source.displayName). You’ll choose what to keep." :
-                    "Import what you need from your old browser to get started with Parc.\n\nContinue to choose your \(source.displayName) profiles and see the data they can import."
-            }
-            next.isEnabled = coordinator.source != nil || (embedded && freshStartSelected)
+            if coordinator.sources.isEmpty { detail.stringValue = coordinator.message }
         case .safariAccess:
             let name = coordinator.source?.displayName ?? "this browser"
             if embedded {
@@ -390,43 +376,13 @@ final class BrowserImportViewController: NSViewController {
                     restartAvailable: onRequestRestart != nil, error: coordinator.safariAccessError ?? coordinator.error,
                     sourceName: name)
             }
-        case .profiles:
-            if embedded { break }
-            heading.stringValue = "Make yourself at home"
-            for profile in coordinator.profiles {
-                let check = checkbox(profile.displayName, selected: coordinator.selectedProfiles.contains(profile.identifier)) { [weak self] in
-                    self?.coordinator.selectProfile(profile.identifier)
-                }
-                check.setButtonType(coordinator.isArcSource ? .switch : .radio)
-                check.isEnabled = profile.supportedCategories.rawValue != 0; add(check)
-                add(label(Self.categories(profile.supportedCategories), secondary: true))
-                profile.constraints.forEach { add(label($0, secondary: true)) }
-                if coordinator.selectedProfiles.contains(profile.identifier) {
-                    for item in profile.extensions {
-                        add(checkbox("Add \(item.displayName)", selected: coordinator.selectedExtensions[profile.identifier]?.contains(item.identifier) == true) { [weak self] in
-                            self?.coordinator.toggleExtension(item.identifier, profileID: profile.identifier)
-                        })
-                    }
-                }
-            }
-            if coordinator.canChoosePasswordDestination {
-                let passwords = PArcDialogButton(title: "Import exported passwords instead…", primary: false, hint: false)
-                passwords.target = self; passwords.action = #selector(passwordsInsteadPressed)
-                let row = NSView()
-                passwords.frame = NSRect(x: 0, y: 0, width: passwords.bodyWidth + 1, height: 38.5)
-                row.addSubview(passwords); row.heightAnchor.constraint(equalToConstant: 38.5).isActive = true
-                add(row)
-            }
-            next.isEnabled = coordinator.canChooseDestination
-            if coordinator.isArcSource { next.title = "Import"; addArcNotesRow() }
+        case .profiles: break
         case .destination:
             heading.stringValue = "Which Parc Profile should we import to?"
             next.title = "Import"; next.isEnabled = coordinator.canStart
+            importIfOnlyOneProfile()
         case .importing:
-            heading.stringValue = "Bringing your browser over"
-            add(label("You can approve access and extension permissions here while your data imports.", secondary: true))
-            let progress = NSProgressIndicator(); progress.style = .bar; progress.isIndeterminate = true
-            progress.startAnimation(nil); add(progress); next.isHidden = true
+            next.isEnabled = false
         case .passwordChoice:
             heading.stringValue = "Autofill your passwords."
             detail.stringValue = "To log into sites without typing your passwords, we recommend you install Apple’s iCloud Passwords Extension.\n\nYou can also manually import your passwords from Safari to Parc, if you’d like!"
@@ -451,14 +407,16 @@ final class BrowserImportViewController: NSViewController {
                 error: coordinator.passwordError)
             schedulePasswordFileConsent()
         case .bookmarks:
-            heading.stringValue = embedded ? "Treat your bookmarks to an upgrade." : "Treat your bookmarks to an upgrade"
             next.title = "Add to Parc"
             if embedded {
+                heading.stringValue = "Treat your bookmarks to an upgrade."
                 detail.stringValue = "We recommend bringing 5 bookmarks to start—it’s easy to import the rest later."
                 scroll.isHidden = true
                 updateBookmarksPicker()
                 break
             }
+            heading.stringValue = "Treat your bookmarks to an upgrade."
+            detail.stringValue = ""
             for (index, page) in coordinator.bookmarkPages.enumerated() {
                 let available = !page.discarded && page.destination.isCurrent(in: coordinator.store.state)
                 add(label(page.sourceName + (page.committed ? " · Added" : available ? "" : " · Destination no longer available")))
@@ -471,7 +429,7 @@ final class BrowserImportViewController: NSViewController {
                             let disclosure = ActionButton(page.selection.expanded.contains(item.id) ? "▾" : "▸") { [weak self] in
                                 self?.coordinator.toggleBookmark(page: index, id: item.id, expansion: true)
                             }
-                            disclosure.contentTintColor = embedded ? OnboardingSetupPalette.title : PArcDialogStyle.popoverTitle; disclosure.setAccessibilityLabel("Expand \(item.title)")
+                            disclosure.contentTintColor = PArcDialogStyle.popoverTitle; disclosure.setAccessibilityLabel("Expand \(item.title)")
                             disclosure.isEnabled = available && !page.committed
                             disclosure.widthAnchor.constraint(equalToConstant: 15).isActive = true
                             row.addArrangedSubview(disclosure)
@@ -485,38 +443,42 @@ final class BrowserImportViewController: NSViewController {
                 }
                 append(page.selection.roots, depth: 0)
             }
+            coordinator.warnings.forEach { add(label($0, secondary: true)) }
         case .finished:
-            heading.stringValue = coordinator.warnings.isEmpty && coordinator.error == nil ? "Welcome home." : "Import results"
-            next.title = "Done"; cancelButton.isHidden = true
+            next.title = embedded ? "Next" : "Done"
         }
-        if embedded && choosingSource {
+        if isChoosingSource {
             // Source cards remain in place while their real profile request is
-            // pending or a profile is selected. Next alone starts the import.
-            scroll.isHidden = true; back.isHidden = true; next.title = "Next"
-            next.isEnabled = freshStartSelected || coordinator.canContinueOnboardingSource
-            if coordinator.error == nil {
-                detail.stringValue = "It’s a bold new internet. Hit the ground running and bring your most important tabs, passwords, history, and bookmarks with you."
-            }
-            updateSourcePicker()
+            // pending or a profile is selected. Next alone moves on.
+            next.isEnabled = (embedded && skipSelected) || coordinator.canContinueSourceInline
         }
-        updateSunset()
-        cancelButton.isHidden = coordinator.stage == .finished || choosingDestination || choosingAccess || choosingPasswords
-        closeControl.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "\u{1b}" : ""
+        if cards { updateSourcePicker() } else { sourcePicker?.isHidden = true }
+        updateBackdrop()
+        cancelButton.isHidden = stage == .finished || choosingDestination || choosingAccess || choosingPasswords
+        closeControl.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords || stage == .finished ? "\u{1b}" : ""
         cancelButton.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "" : "\u{1b}"
-        if !choosingDestination && !choosingAccess && !choosingPasswords && coordinator.stage != .sources { coordinator.warnings.forEach { add(label($0, secondary: true)) } }
-        if coordinator.stage == .finished, coordinator.isArcSource {
-            if coordinator.importingArcNotes { add(label(coordinator.message, secondary: true)) }
-            addArcNotesRow()
-        }
         canAdvance = !next.isHidden && next.isEnabled
-        canGoBack = !back.isHidden && !closed
         if embedded {
-            [heading, detail, logo, closeControl, next, back, cancelButton].forEach { $0.isHidden = true }
+            [heading, detail, logo, closeControl, next, cancelButton].forEach { $0.isHidden = true }
         }
         reconcileAccessTimer()
         root.needsLayout = true; root.layoutSubtreeIfNeeded()
         scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView)
         onChange?()
+    }
+
+    /// With one Parc Profile there is nothing to choose: the import goes
+    /// there, as setup's does.
+    private func importIfOnlyOneProfile() {
+        guard coordinator.profileTargets.count == 1, coordinator.error == nil,
+              coordinator.destinationChoice.option == nil else { return }
+        let target = coordinator.profileTargets[0]
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.closed, self.coordinator.stage == .destination,
+                  self.coordinator.profileTargets == [target], self.coordinator.destinationChoice.option == nil else { return }
+            self.coordinator.selectDestination(.existing(target))
+            self.coordinator.start()
+        }
     }
 
     private func updatePasswordChoice() {
@@ -531,42 +493,6 @@ final class BrowserImportViewController: NSViewController {
             passwordChoice = host; root.addSubview(host)
         }
         passwordChoice?.isHidden = false; passwordChoice?.frame = root.bounds
-    }
-
-    ///
-    static let arcNotesPrompt = "Your Notes live in your Arc account. Export them in Arc (File → Export Arc Notes) before December 22, 2026, then add the file here to bring them over in full."
-
-    var arcNotesDescription: String {
-        coordinator.arcNotesExportURL.map { "Arc Notes: " + $0.lastPathComponent } ?? Self.arcNotesPrompt
-    }
-
-    private func addArcNotesRow() {
-        if coordinator.stage != .finished { add(label(arcNotesDescription, secondary: true)) }
-        guard coordinator.canChooseArcNotesExport else { return }
-        let button = PArcDialogButton(title: coordinator.arcNotesExportURL == nil ? "Add Arc Notes Export…" : "Change Arc Notes Export…",
-                                     primary: false, hint: false)
-        button.target = self; button.action = #selector(arcNotesPressed)
-        let row = NSView()
-        button.frame = NSRect(x: 0, y: 0, width: button.bodyWidth + 1, height: 38.5)
-        row.addSubview(button); row.heightAnchor.constraint(equalToConstant: 38.5).isActive = true
-        add(row)
-    }
-
-    @objc private func arcNotesPressed() { chooseArcNotesExport() }
-
-    func chooseArcNotesExport() {
-        guard !closed, coordinator.canChooseArcNotesExport, let window,
-              window.attachedSheet == nil, notesPanel == nil else { return }
-        let panel = NSOpenPanel(); notesPanel = panel
-        panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.zip, .folder]; panel.prompt = "Add Notes"
-        panel.message = "Choose the Arc Notes export (Arc-Notes-Export….zip) or the folder it unzips to."
-        panel.beginSheetModal(for: window) { [weak self, weak panel] response in
-            guard let self, !self.closed, self.notesPanel === panel else { return }
-            self.notesPanel = nil
-            guard response == .OK, let url = panel?.url else { return }
-            self.coordinator.chooseArcNotesExport(url)
-        }
     }
 
     private func choosePasswordFile() {
@@ -629,104 +555,114 @@ final class BrowserImportViewController: NSViewController {
         }
     }
 
-    ///
-    /// Setup draws it across its own card; the menu window draws it here.
-    var showsArcSunset: Bool {
-        guard !closed, coordinator.isArcSource else { return false }
-        return embedded ? isChoosingSource && !freshStartSelected : coordinator.stage == .sources
+    /// The browser-choice page's backdrop: every discovered browser's theme
+    /// in order, and the chosen one. Setup draws it across its own card; the
+    /// menu window draws it here.
+    var backdrop: (pages: [BrowserImportBackdrop.Page], selected: Int?) {
+        guard !closed, coordinator != nil else { return ([], nil) }
+        let pages = coordinator.sources.map { source in BrowserImportTheme.page(for: source, icon: Self.icon(source)) }
+        let chosen = showsSourceCards && !skipSelected ? coordinator.sources.firstIndex { $0 === coordinator.source } : nil
+        return (pages, chosen)
     }
 
-    private func updateSunset() {
-        sunset.reveal(!embedded && showsArcSunset)
+    private func updateBackdrop() {
+        guard !embedded else { return }
+        let value = backdrop
+        windowBackdrop.show(value.pages, selected: value.selected)
+    }
+
+    /// Text over the backdrop takes its contrast: a theme's content appearance
+    /// across the page, or white over the sunset's colour with light cards.
+    private func applyBackdropContrast(_ page: BrowserImportBackdrop.Page?) {
+        var text: NSAppearance?, cards: NSAppearance?
+        switch page {
+        case .theme(let theme)? where theme.primaryColor != nil:
+            text = ThemeChromePalette(theme: theme, appearance: root.effectiveAppearance).contentAppearance; cards = text
+        case .sunset?: text = NSAppearance(named: .darkAqua); cards = NSAppearance(named: .aqua)
+        default: break
+        }
+        [heading, detail, closeControl].forEach { $0.appearance = text }
+        sourcePicker?.appearance = cards
+        if coordinator?.error == nil { detail.textColor = detailColor }
+    }
+    /// Over a backdrop the grey message loses contrast; the title ink holds it.
+    private var detailColor: NSColor {
+        windowBackdrop.dominant == nil ? PArcDialogStyle.popoverMessage : PArcDialogStyle.popoverTitle.withAlphaComponent(0.75)
     }
 
     private static func icon(_ source: PCNativeImportSource) -> NSImage {
-        BrowserImportCoordinator.isArc(source) ? BrowserImportArcMark.icon(appURL: source.appURL)
+        BrowserImportCoordinator.isArc(source) ? BrowserImportArcIcon.icon(appURL: source.appURL)
             : NSWorkspace.shared.icon(forFile: source.appURL.path)
     }
 
-    private func updateSourceList() {
-        let choices = coordinator.sources.map { source in
-            BrowserImportSourceList.Choice(id: source.identifier, title: source.displayName,
-                icon: Self.icon(source), selected: coordinator.source === source,
-                choose: { [weak self, weak source] in
-                    guard let self, let source, !self.closed else { return }
-                    self.coordinator.select(source)
-                })
-        }
-        let content = BrowserImportSourceList(choices: choices, messages: coordinator.warnings)
-        if let sourceList { sourceList.rootView = content }
-        else { let host = NSHostingView(rootView: content); sourceList = host; root.addSubview(host) }
-        sourceList?.isHidden = false
-    }
-
     private func updateSourcePicker() {
-        guard embedded, coordinator != nil, isChoosingSource, !closed else { return }
-        let choices = coordinator.sources.map { source in
-            let selected = !freshStartSelected && coordinator.source === source
-            let profiles = selected ? coordinator.profiles.map { profile in
-                OnboardingImportSourcePicker.Profile(id: profile.identifier, title: profile.displayName,
+        guard coordinator != nil, showsSourceCards, !closed else { return }
+        let stage = coordinator.stage
+        let choosing = isChoosingSource
+        // Once a browser is chosen beyond setup's inline step, only its card stays.
+        let shown = choosing ? coordinator.sources : coordinator.sources.filter { $0 === coordinator.source }
+        let choices = shown.map { source in
+            let selected = !skipSelected && coordinator.source === source
+            let listsProfiles = selected && choosing
+            let profiles = listsProfiles ? coordinator.profiles.map { profile in
+                BrowserImportSourcePicker.Profile(id: profile.identifier, title: profile.displayName,
                     selected: coordinator.selectedProfiles.contains(profile.identifier),
                     enabled: profile.supportedCategories.rawValue != 0, choose: { [weak self, weak source] in
-                        guard let self, let source, self.canChooseInlineSource,
+                        guard let self, let source, self.canChooseSource,
                               self.coordinator.source === source,
                               self.coordinator.profiles.contains(where: { $0 === profile }) else { return }
                         self.coordinator.selectProfile(profile.identifier)
                     })
             } : []
-            let chosen = selected ? coordinator.profiles.filter { coordinator.selectedProfiles.contains($0.identifier) } : []
+            let chosen = listsProfiles ? coordinator.profiles.filter { coordinator.selectedProfiles.contains($0.identifier) } : []
             let profile = chosen.first
             var listed = Set<String>()
             let options = chosen.flatMap { profile in
                 profile.extensions.filter { listed.insert($0.identifier).inserted }.map { item in
-                    OnboardingImportSourcePicker.ImportOption(id: item.identifier, title: item.displayName,
+                    BrowserImportSourcePicker.ImportOption(id: item.identifier, title: item.displayName,
                         selected: chosen.allSatisfy { owner in
                             !owner.extensions.contains { $0.identifier == item.identifier }
                                 || coordinator.selectedExtensions[owner.identifier]?.contains(item.identifier) == true
                         },
                         toggle: { [weak self, weak source] in
-                            guard let self, let source, self.canChooseInlineSource,
+                            guard let self, let source, self.canChooseSource,
                                   self.coordinator.source === source else { return }
                             self.coordinator.toggleExtension(item.identifier)
                         })
                 }
             }
-            var messages = selected ? coordinator.warnings + (profile?.constraints ?? []) + (coordinator.error.map { [$0] } ?? []) : []
-            if selected, coordinator.stage == .profiles, coordinator.profiles.isEmpty, coordinator.error == nil {
-                messages.append(coordinator.message)
+            var messages: [String] = []
+            if selected && (listsProfiles || stage == .finished) {
+                messages = coordinator.warnings + (profile?.constraints ?? []) + (embedded ? coordinator.error.map { [$0] } ?? [] : [])
+                if stage == .profiles, coordinator.profiles.isEmpty, coordinator.error == nil { messages.append(coordinator.message) }
             }
-            let choosePasswords: (() -> Void)? = selected && coordinator.canChoosePasswordDestination ? { [weak self, weak source] in
-                guard let self, let source, self.canChooseInlineSource,
-                      self.coordinator.source === source else { return }
-                self.coordinator.startInOriginalDestination(passwordsOnly: true)
+            let choosePasswords: (() -> Void)? = listsProfiles && coordinator.canChoosePasswordDestination ? { [weak self, weak source] in
+                guard let self, let source, self.canChooseSource, self.coordinator.source === source else { return }
+                if self.embedded { self.coordinator.startInOriginalDestination(passwordsOnly: true) }
+                else { self.coordinator.choosePasswordDestination() }
             } : nil
-            return OnboardingImportSourcePicker.Source(id: source.identifier, title: source.displayName,
+            return BrowserImportSourcePicker.Source(id: source.identifier, title: source.displayName,
                 icon: Self.icon(source),
-                iconBackground: OnboardingImportSourcePicker.iconBackground(bundleIdentifier: source.identifier),
+                iconBackground: BrowserImportSourcePicker.iconBackground(bundleIdentifier: source.identifier),
                 selected: selected, choose: { [weak self, weak source] in
-                    guard let self, let source, self.canChooseInlineSource else { return }
-                    self.freshStartSelected = false; self.coordinator.selectOnboardingSource(source)
-                }, profiles: profiles, loading: selected && coordinator.stage == .loading,
-                options: options, messages: messages, choosePasswords: choosePasswords,
-                notesExport: selected && BrowserImportCoordinator.isArc(source) ? .init(description: arcNotesDescription,
-                    chosen: coordinator.arcNotesExportURL != nil, choose: { [weak self] in
-                        guard let self, self.canChooseInlineSource else { return }
-                        self.chooseArcNotesExport()
-                    }) : nil)
+                    guard let self, let source, self.canChooseSource else { return }
+                    self.skipSelected = false; self.coordinator.selectSourceInline(source)
+                }, profiles: profiles, busy: selected && (stage == .loading || stage == .importing),
+                options: options, messages: messages, choosePasswords: choosePasswords)
         }
-        let content = OnboardingImportSourcePicker(sources: choices,
-            freshStartSelected: freshStartSelected, selectionColor: selectionColor,
-            chooseFreshStart: { [weak self] in
-                guard let self, self.canChooseInlineSource else { return }
-                self.freshStartSelected = true; self.coordinator.clearOnboardingSource()
-            }, chooseFile: { [weak self] in self?.onChooseBookmarks?() }, fileDescription: importedFileDescription)
+        let skip = embedded && (choosing || skipSelected) ? BrowserImportSourcePicker.Skip(selected: skipSelected, choose: { [weak self] in
+            guard let self, self.canChooseSource else { return }
+            self.skipSelected = true; self.coordinator.clearSourceInline()
+        }) : nil
+        let content = BrowserImportSourcePicker(layout: embedded ? .setup : .window, sources: choices, skip: skip,
+            enabled: stage != .importing && stage != .finished,
+            selectionColor: embedded ? selectionColor : NSColor(parcHex: "5636F4"))
         if let sourcePicker { sourcePicker.rootView = content; sourcePicker.isHidden = false }
         else { let host = NSHostingView(rootView: content); sourcePicker = host; root.addSubview(host) }
     }
 
-    private var canChooseInlineSource: Bool {
-        embedded && !closed && coordinator.isChoosingOnboardingSource
-            && window?.isKeyWindow == true && window?.attachedSheet == nil
+    private var canChooseSource: Bool {
+        !closed && coordinator.isChoosingSourceInline && window?.isKeyWindow == true && window?.attachedSheet == nil
     }
 
     private func updateBookmarksPicker() {
@@ -759,11 +695,8 @@ final class BrowserImportViewController: NSViewController {
         guard !closed, window?.attachedSheet == nil else { return }
         switch coordinator.stage {
         case .sources:
-            if embedded && freshStartSelected { requestClose() }
-            else { coordinator.loadProfiles() }
-        case .profiles:
-            if embedded { coordinator.continueOnboardingSource() }
-            else { coordinator.chooseDestination() }
+            if embedded && skipSelected { requestClose() }
+        case .profiles: coordinator.continueSourceInline()
         case .destination:
             guard !destinationView.hasMarkedText else { return }
             coordinator.start()
@@ -775,11 +708,5 @@ final class BrowserImportViewController: NSViewController {
         case .passwordChoice: coordinator.continuePasswordChoice()
         case .loading, .importing: break
         }
-    }
-    private static func categories(_ value: PCNativeImportCategories) -> String {
-        [(1, "History"), (2, "Bookmarks"), (4, "Cookies"), (8, "Passwords"),
-         (16, "Autofill"), (32, "Extensions")].compactMap { bit, title in
-            value.rawValue & UInt(bit) != 0 ? title : nil
-        }.joined(separator: " · ")
     }
 }

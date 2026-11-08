@@ -34,8 +34,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     coordinator.choosePasswordDestination()
     expect(coordinator.passwordsOnly && coordinator.stage == .destination && !coordinator.canStart,
            "The file route requires a separate explicit destination")
-    coordinator.toggleCookieReplacement()
-    expect(!coordinator.destinationChoice.replaceExistingCookies, "The file route does not offer unrelated cookie replacement")
+    expect(!coordinator.destinationChoice.replaceExistingCookies, "The file route does not replace cookies")
     guard let target = coordinator.profileTargets.first(where: { $0.profileID == destination.profileID }) else { fatalError("Missing fixture destination") }
     coordinator.selectDestination(.existing(target))
     expect(coordinator.canStart, "An original existing destination can admit the file stage")
@@ -164,11 +163,11 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
         let coordinator = BrowserImportCoordinator(store: store, destination: destination,
             window: window, onboarding: onboarding, supportsICloudPasswords: iCloudSupported, ownerIsCurrent: { true })
         coordinator.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
-        if onboarding { coordinator.selectOnboardingSource(safari) }
+        if onboarding { coordinator.selectSourceInline(safari) }
         else { coordinator.select(safari); coordinator.loadProfiles() }
         let profile = PCNativeImportProfile("Safari setup", [.history, .bookmarks], .complete)
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-        if onboarding { coordinator.continueOnboardingSource() }
+        if onboarding { coordinator.continueSourceInline() }
         else {
             coordinator.chooseDestination()
             coordinator.selectDestination(.existing(.init(profileID: destination.profileID, spaceID: destination.spaceID)))

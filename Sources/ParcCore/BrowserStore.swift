@@ -5486,17 +5486,34 @@ final class BrowserStore: ObservableObject {
     /// standard Profile maps to `standardProfileID`; a custom one to an unused
     /// live Profile with its name, else a new one. Each Profile in `profiles`
     /// gets a destination Space for its native data import. The active Space
-    /// does not change.
+    /// does not change. A destination choice takes the `primary` Profile, as it
+    /// takes any browser's default profile; a new Profile is created in the
+    /// same write. The others map as above.
     func importArcSidebar(_ arc: ArcSidebarImport, profiles: [(key: ArcSidebarImport.ProfileKey, name: String)],
-                          standardProfileID: UUID) throws
-        -> (destinations: [ArcSidebarImport.ProfileKey: BrowserImportDestination], warnings: [String]) {
+                          standardProfileID: UUID, primary: ArcSidebarImport.ProfileKey? = nil,
+                          into choice: BrowserImportDestinationChoice? = nil) throws
+        -> [ArcSidebarImport.ProfileKey: BrowserImportDestination] {
         guard !isEphemeral else { throw CocoaError(.userCancelled) }
+        var base = state, target: UUID?
+        if let choice {
+            guard choice.canSubmit(in: state) else { throw CocoaError(.userCancelled) }
+            switch choice.option {
+            case .existing(let destination): target = destination.profileID
+            case .new:
+                let profile = BrowserProfile(id: UUID(), name: choice.profileName, autoArchiveHours: state.autoArchiveDefaultHours)
+                base.profiles.append(profile); target = profile.id
+            case nil: throw CocoaError(.userCancelled)
+            }
+        }
         let previous = state
-        let result = try arc.inserting(into: state, profiles: profiles, standardProfileID: standardProfileID, at: clock())
+        var chosen: (key: ArcSidebarImport.ProfileKey, profileID: UUID)?
+        if let primary, let target { chosen = (primary, target) }
+        let result = try arc.inserting(into: base, profiles: profiles, standardProfileID: standardProfileID,
+                                       target: chosen, at: clock())
         state = result.state
         do { try save() } catch { state = previous; throw error }
         changed()
-        return (result.destinations, result.warnings)
+        return result.destinations
     }
 
     /// Create a distinct local destination before the native profile service is

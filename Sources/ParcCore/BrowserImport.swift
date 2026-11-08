@@ -205,16 +205,13 @@ struct BrowserImportDestinationChoice: Equatable {
     var profileName: String { newProfileName.trimmingCharacters(in: .whitespacesAndNewlines) }
     var isNew: Bool { option == .new }
 
+    /// A new Profile takes the imported cookies; an existing one keeps its own.
     mutating func select(_ option: Option) {
         self.option = option
-        if option == .new { replaceExistingCookies = true }
+        replaceExistingCookies = option == .new
     }
 
     mutating func appeared() { replaceExistingCookies = isNew }
-    mutating func toggleCookieReplacement() {
-        guard !isNew else { return }
-        replaceExistingCookies.toggle()
-    }
     mutating func invalidate() { option = nil }
 
     func canSubmit(in state: BrowserState) -> Bool {

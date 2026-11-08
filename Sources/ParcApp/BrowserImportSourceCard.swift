@@ -11,23 +11,28 @@ struct BrowserImportSourceCard: View {
     let title: String
     let icon: NSImage?
     var iconBackground: NSColor = .clear
+    var uppercased = true
     let selected: Bool
+    var busy = false
+    var height: CGFloat?
     let selectionColor: NSColor
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var enabled
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
             switch layout {
-            case .setup: BrowserImportSetupCardFace(title: title, icon: icon, iconBackground: iconBackground,
-                                                    selected: selected, selectionColor: selectionColor)
-            case .window: BrowserImportWindowCardFace(title: title, icon: icon, selected: selected,
-                                                      selectionColor: selectionColor)
+            case .setup: BrowserImportSetupCardFace(title: uppercased ? title.uppercased() : title, icon: icon,
+                iconBackground: iconBackground, selected: selected, busy: busy, height: height ?? 92,
+                selectionColor: selectionColor)
+            case .window: BrowserImportWindowCardFace(title: uppercased ? title.uppercased() : title, icon: icon,
+                selected: selected, busy: busy, height: height ?? 48, selectionColor: selectionColor)
             }
         }
         .buttonStyle(BrowserImportSourceCardStyle())
-        .scaleEffect(hovered && !reduceMotion ? 1.04 : 1)
+        .scaleEffect(hovered && enabled && !reduceMotion ? 1.04 : 1)
         .animation(reduceMotion ? nil : .spring(response: 0.18, dampingFraction: 0.8), value: hovered)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selected)
         .onHover { hovered = $0 }
@@ -58,6 +63,8 @@ private struct BrowserImportSetupCardFace: View {
     let icon: NSImage?
     let iconBackground: NSColor
     let selected: Bool
+    let busy: Bool
+    let height: CGFloat
     let selectionColor: NSColor
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.browserImportCardPressed) private var pressed
@@ -67,22 +74,27 @@ private struct BrowserImportSetupCardFace: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Text(title.uppercased())
-                .font(.system(size: 13, weight: .semibold))
-                .kerning(-0.02)
-                .foregroundColor(Color(.sRGB, red: 118 / 255, green: 118 / 255, blue: 118 / 255))
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .kerning(-0.02)
+                    .foregroundColor(Color(.sRGB, red: 118 / 255, green: 118 / 255, blue: 118 / 255))
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                if busy { ProgressView().controlSize(.small).accessibilityLabel("Importing") }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
             if let icon {
                 ZStack {
                     Rectangle().fill(Color(nsColor: iconBackground))
-                    Image(nsImage: icon).resizable().frame(width: 50, height: 50)
+                    Image(nsImage: icon).resizable().interpolation(.high)
+                        .frame(width: min(50, height - 24), height: min(50, height - 24))
                 }
-                .frame(width: 92, height: 92)
+                .frame(width: height, height: height)
                 .accessibilityHidden(true)
             }
         }
-        .frame(width: 278, height: 92)
+        .frame(width: 278, height: height)
         .background(Color.white.opacity(colorScheme == .dark ? 0.1 : 1))
         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -97,6 +109,8 @@ private struct BrowserImportWindowCardFace: View {
     let title: String
     let icon: NSImage?
     let selected: Bool
+    let busy: Bool
+    let height: CGFloat
     let selectionColor: NSColor
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.browserImportCardPressed) private var pressed
@@ -107,62 +121,31 @@ private struct BrowserImportWindowCardFace: View {
         let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
         HStack(spacing: 0) {
             ZStack {
-                Circle().fill(.white)
-                if !dark { Circle().strokeBorder(.black.opacity(0.25), lineWidth: 1) }
-                if selected { Circle().fill(Color(nsColor: selectionColor)).padding(3) }
+                if busy {
+                    ProgressView().controlSize(.mini).accessibilityLabel("Importing")
+                } else {
+                    Circle().fill(.white)
+                    if !dark { Circle().strokeBorder(.black.opacity(0.25), lineWidth: 1) }
+                    if selected { Circle().fill(Color(nsColor: selectionColor)).padding(3) }
+                }
             }
             .frame(width: 14, height: 14).padding(.leading, 16).padding(.trailing, 14)
-            .accessibilityHidden(true)
-            Text(title.uppercased())
+            Text(title)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(dark ? .white.opacity(0.7) : Color(nsColor: NSColor(parcHex: "767676")))
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Rectangle().fill(line).frame(width: 1).padding(.vertical, 1)
             Group {
-                if let icon { Image(nsImage: icon).resizable() } else { Color.clear }
+                if let icon { Image(nsImage: icon).resizable().interpolation(.high) } else { Color.clear }
             }
-            .frame(width: 24, height: 24).padding(.horizontal, 12)
+            .frame(width: min(24, height - 16), height: min(24, height - 16)).padding(.horizontal, 12)
             .accessibilityHidden(true)
         }
-        .frame(height: 48)
+        .frame(height: height)
         .frame(maxWidth: .infinity)
         .background(shape.fill(dark ? Color.white.opacity(pressed ? 0.22 : 0.12)
                                     : Color.white.opacity(pressed ? 0.85 : 1)))
         .overlay(shape.strokeBorder(selected ? Color(nsColor: selectionColor) : line, lineWidth: selected ? 2 : 1))
-    }
-}
-
-/// The import window's source column. Discovery owns the choices; this is
-/// presentation only.
-struct BrowserImportSourceList: View {
-    struct Choice: Identifiable {
-        let id: String
-        let title: String
-        let icon: NSImage
-        let selected: Bool
-        let choose: () -> Void
-    }
-    let choices: [Choice]
-    var messages: [String] = []
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(choices) { choice in
-                    BrowserImportSourceCard(layout: .window, title: choice.title, icon: choice.icon,
-                        selected: choice.selected, selectionColor: NSColor(parcHex: "5636F4"), action: choice.choose)
-                }
-                ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
-                    Text(message).font(.system(size: 11))
-                        .foregroundColor(Color(nsColor: PArcDialogStyle.popoverMessage))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            // Room for the hover scale inside the scroll view's clip.
-            .padding(.horizontal, 6).padding(.vertical, 4)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Choose your previous browser")
     }
 }

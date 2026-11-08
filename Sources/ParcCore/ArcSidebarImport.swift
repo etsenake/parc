@@ -338,25 +338,30 @@ extension ArcSidebarImport {
     struct Result {
         var state: BrowserState
         var destinations: [ProfileKey: BrowserImportDestination]
-        var warnings: [String]
     }
 
-    /// The pure state transform behind `BrowserStore.importArcSidebar`.
+    /// The pure state transform behind `BrowserStore.importArcSidebar`. A
+    ///
     func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
-                   standardProfileID: UUID, at date: Date) throws -> Result {
+                   standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil, at date: Date) throws -> Result {
         func live(_ id: UUID) -> Bool {
             state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }
         }
-        guard live(standardProfileID) else { throw CocoaError(.userCancelled) }
-        var next = state, warnings: [String] = []
+        guard live(standardProfileID), target.map({ live($0.profileID) }) != false else { throw CocoaError(.userCancelled) }
+        var next = state
         var mapped: [ProfileKey: UUID] = [:], names: [ProfileKey: String] = [:]
         //
         for (key, rawName) in profiles where mapped[key] == nil {
             let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
             names[key] = name.isEmpty ? "Imported Profile" : name
-            if key == .standard { mapped[key] = standardProfileID; continue }
+            if let target, target.key == key {
+                mapped[key] = target.profileID
+                names[key] = next.profiles.first { $0.id == target.profileID }?.name ?? names[key]
+                continue
+            }
+            if key == .standard && target == nil { mapped[key] = standardProfileID; continue }
             if let existing = next.profiles.first(where: { profile in live(profile.id)
-                && profile.id != standardProfileID && !mapped.values.contains(profile.id)
+                && profile.id != standardProfileID && profile.id != target?.profileID && !mapped.values.contains(profile.id)
                 && profile.name.caseInsensitiveCompare(names[key]!) == .orderedSame }) {
                 mapped[key] = existing.id
             } else {
@@ -453,11 +458,9 @@ extension ArcSidebarImport {
             }
         }
 
-        var unmapped = 0, repeated = 0
         for space in spaces {
-            guard let profileID = mapped[space.profile] else { unmapped += 1; continue }
+            guard let profileID = mapped[space.profile] else { continue }
             if let existing = alreadyImported(space, profileID: profileID) {
-                repeated += 1
                 if let arcID = space.id { next.arcImportedSpaces[arcID] = existing.id }
                 if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: existing.id, profileID: profileID) }
                 continue
@@ -488,21 +491,9 @@ extension ArcSidebarImport {
                 ?? appendSpace(title: names[key], icon: nil, theme: nil, profileID: profileID)
             destinations[key] = .init(spaceID: spaceID, profileID: profileID)
         }
-        if unmapped > 0 {
-            warnings.append(unmapped == 1 ? "1 Arc Space belongs to a Profile that wasn't imported."
-                                          : "\(unmapped) Arc Spaces belong to Profiles that weren't imported.")
-        }
-        if repeated > 0 {
-            warnings.append(repeated == 1 ? "1 Arc Space was already in Parc, so it wasn't added again."
-                                          : "\(repeated) Arc Spaces were already in Parc, so they weren't added again.")
-        }
-
         for key in self.profiles {
             guard let items = favorites[key], !items.isEmpty else { continue }
-            guard let destination = destinations[key] else {
-                warnings.append("Favorites from a Profile that wasn't imported were left out.")
-                continue
-            }
+            guard let destination = destinations[key] else { continue }
             let profileID = destination.profileID
             let location = SidebarContainerLocation(spaceID: destination.spaceID, folderID: nil, section: .favorite,
                                                     profileID: profileID)
@@ -514,12 +505,11 @@ extension ArcSidebarImport {
             }
             var existing = Set(next.tabs.filter { $0.profileID == profileID && $0.kind == .favorite && $0.archivedAt == nil }
                 .map { SavedTabURLComparison.key($0.savedURL) })
-            var skipped = 0
             for item in items {
                 if case .tab(let tab) = item, existing.contains(SavedTabURLComparison.key(tab.url)) { continue }
                 if case .split(_, _, let tabs, _, _) = item,
                    tabs.allSatisfy({ existing.contains(SavedTabURLComparison.key($0.url)) }) { continue }
-                guard order.count < 12 else { skipped += 1; continue }
+                guard order.count < 12 else { continue }
                 switch item {
                 case .tab(let tab):
                     existing.insert(SavedTabURLComparison.key(tab.url))
@@ -535,20 +525,11 @@ extension ArcSidebarImport {
                         order.append(makeSplit(title: title, icon: icon, tabs: fresh.map { tabs[$0] }, orientation: orientation,
                             factors: widths, spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil))
                     }
-                case .folder: skipped += 1
+                case .folder: break
                 }
             }
             next.sidebarItemOrder[location.key] = order
-            if skipped > 0 {
-                let name = names[key] ?? "Profile"
-                warnings.append(skipped == 1 ? "1 Favorite from \(name) wasn't added: Favorites are limited to 12."
-                                             : "\(skipped) Favorites from \(name) weren't added: Favorites are limited to 12.")
-            }
         }
-        if skippedItemCount > 0 {
-            warnings.append(skippedItemCount == 1 ? "1 Parc sidebar item couldn't be brought over."
-                                                  : "\(skippedItemCount) Parc sidebar items couldn't be brought over.")
-        }
-        return Result(state: next, destinations: destinations, warnings: warnings)
+        return Result(state: next, destinations: destinations)
     }
 }
