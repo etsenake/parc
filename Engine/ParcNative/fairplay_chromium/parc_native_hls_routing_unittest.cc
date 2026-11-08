@@ -2,7 +2,8 @@
 // //media/filters/parc_native_hls_routing_unittest.cc (media_unittests, macOS).
 // Safari's native HLS route (NATIVE_HLS.md): DemuxerManager's HLS branch asks
 // its client for the route's demuxer when Safari's identity is presented, and
-// keeps Chromium's ManifestDemuxer otherwise.
+// keeps Chromium's ManifestDemuxer otherwise. A clear file playing to an
+// AirPlay target takes the same route (ParcSetNativeRoute).
 
 #include <memory>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/task_environment.h"
@@ -26,6 +28,7 @@ namespace media {
 namespace {
 
 constexpr char kPlaylist[] = "https://media.example/stream/master.m3u8";
+constexpr char kFile[] = "https://media.example/episode";
 // A playlist in a data: URL, the way Spotify's player hands its generated
 // ones to the element (this one is empty).
 constexpr char kDataPlaylist[] =
@@ -93,9 +96,17 @@ class ParcNativeHlsRoutingTest : public testing::Test {
                          bool needs_first_frame = true,
                          const char* url = kPlaylist) {
     MakeManager(client, url);
+    return CreateDemuxerWith(/*load_media_source=*/false, preload,
+                             needs_first_frame);
+  }
+
+  // The demuxer `manager_` chooses next.
+  Demuxer* CreateDemuxerWith(bool load_media_source,
+                             DataSource::Preload preload = DataSource::AUTO,
+                             bool needs_first_frame = true) {
     Demuxer* chosen = nullptr;
     PipelineStatus status = manager_->CreateDemuxer(
-        /*load_media_source=*/false, preload, needs_first_frame,
+        load_media_source, preload, needs_first_frame,
         base::BindOnce(
             [](Demuxer** out, Pipeline::StartType* type_out, Demuxer* demuxer,
                Pipeline::StartType start_type, bool /*is_streaming*/,
@@ -187,6 +198,54 @@ TEST_F(ParcNativeHlsRoutingTest, ManifestDemuxerKeepsSuspendedStart) {
   EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kManifestDemuxer);
   EXPECT_EQ(start_type_, Pipeline::StartType::kSuspendAfterMetadata);
   EXPECT_FALSE(manager_->HasParcNativeHlsDemuxer());
+}
+
+// Played to an AirPlay target, a clear file takes the route with its
+// container's type, which AVFoundation is told as WebKit tells it.
+TEST_F(ParcNativeHlsRoutingTest, FileOnNativeRouteTakesNativeDemuxer) {
+  FakeClient client(task_environment_.GetMainThreadTaskRunner());
+  client.safari_identity = true;
+  auto native = std::make_unique<testing::NiceMock<MockDemuxer>>();
+  Demuxer* native_ptr = native.get();
+  client.native_demuxer = std::move(native);
+  MakeManager(client, kFile).ParcSetNativeRoute("video/mp4",
+                                                base::DoNothing());
+
+  EXPECT_EQ(CreateDemuxerWith(/*load_media_source=*/false,
+                              DataSource::METADATA,
+                              /*needs_first_frame=*/false),
+            native_ptr);
+  ASSERT_TRUE(client.last_params);
+  EXPECT_EQ(client.last_params->url, GURL(kFile));
+  EXPECT_EQ(client.last_params->mime_type, "video/mp4");
+  EXPECT_EQ(start_type_, Pipeline::StartType::kNormal);
+  EXPECT_TRUE(manager_->HasParcNativeHlsDemuxer());
+  EXPECT_FALSE(manager_->HasDataSource());
+
+  // Back to Chromium's pipeline: the native demuxer is gone before the client
+  // restarts.
+  bool done = false;
+  manager_->ParcSetNativeRoute(
+      std::nullopt, base::BindOnce([](bool* done) { *done = true; }, &done));
+  EXPECT_FALSE(manager_->HasParcNativeHlsDemuxer());
+  EXPECT_FALSE(done);
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(done);
+  EXPECT_FALSE(manager_->HasDemuxer());
+}
+
+// Media Source never moves: WebKit's Media Source player refuses a target.
+TEST_F(ParcNativeHlsRoutingTest, MediaSourceIgnoresNativeRoute) {
+  FakeClient client(task_environment_.GetMainThreadTaskRunner());
+  client.safari_identity = true;
+  client.native_demuxer = std::make_unique<testing::NiceMock<MockDemuxer>>();
+  MakeManager(client, kFile).ParcSetNativeRoute("video/mp4",
+                                                base::DoNothing());
+
+  Demuxer* chosen = CreateDemuxerWith(/*load_media_source=*/true);
+  ASSERT_TRUE(chosen);
+  EXPECT_EQ(chosen->GetDemuxerType(), DemuxerType::kChunkDemuxer);
+  EXPECT_FALSE(client.asked);
 }
 
 TEST_F(ParcNativeHlsRoutingTest, NoNativeDemuxerFallsBackToManifestDemuxer) {

@@ -744,7 +744,27 @@ reaches a TV from Parc. Parc follows WebKit's split:
   `Demuxer::ParcSetPlaybackTarget` on the media thread) and
   `FairPlayHlsPlayer.SetPlaybackTarget` / `SetWirelessVideoPlaybackDisabled`
   before `Initialize`. Only this route plays to a target, as only WebKit's
-  AVFoundation player does (its Media Source and WebM players refuse one).
+  AVFoundation player does (its Media Source and WebM players refuse one,
+  `supportsTypeAndCodecs` and `checkPlaybackTargetCompatibility`).
+- Clear files: Safari plays a src= file in AVPlayer, so it AirPlays. Here a
+  clear HTTP(S) file Chromium's FFmpeg demuxer opened whose container
+  AVFoundation plays (MP4/MOV/3GP, MPEG-2 TS, MP3, AAC, AC-3, E-AC-3, AIFF,
+  AMR, CAF, FLAC, WAV; not WebM or Ogg) supports a target from
+  `HAVE_METADATA` (`WebMediaPlayerImpl::ParcSupportsPlaybackTarget`, so the
+  browser monitors routes and the Mini Player offers AirPlay). Played to one,
+  `WebMediaPlayerImpl::ParcSwitchRoute` stops the pipeline and restarts it on
+  this route (`DemuxerManager::ParcSetNativeRoute`, AVFoundation told the
+  container's type), seeking to the element's time; given back the target
+  (this Mac, or the route ended) it restarts on a new `MultiBufferDataSource`
+  the same way. Rate, pause and volume stay with the pipeline. Until the new
+  route has seeked, the element keeps its time (as a seek's target), duration
+  and readyState, and the tracks Chromium listed stay (the route's own track
+  reports are dropped); then the route's readyState applies (never lowered to
+  `HAVE_METADATA`) and a different duration raises one `durationchange`. A
+  file the native route can't open goes back to Chromium's pipeline at the
+  same time and stops supporting a target, as WebKit turns the target down.
+  Media Source never moves: WebKit's player refuses a target, and Safari's
+  switch to a `<source>` alternative is `ManagedMediaSource`'s (AIRPLAY-3).
 - GPU core: `FairPlayHlsPlayer::SetPlaybackTarget(id, should_play)` finds the
   context with `+[AVOutputContext outputContextForID:]` (an ID the media
   server doesn't know finds none) and sets `AVPlayer.outputContext` only
@@ -770,7 +790,10 @@ ends playback on the device.
 Checked on this Mac: `tests/FairPlay/hls_player_harness.mm` `airplay` (the
 context reaches AVPlayer before and after it is made, comes off with
 should-play off or an unknown ID, the disabled flag, local playback goes on
-with no device in the context); `tests/FairPlay/sandbox` plays native HLS and
+with no device in the context) and `file` (a clear MP4 served as
+`application/octet-stream` and an MP3 play through the loader in byte ranges
+with the target set and the container's type, from a seek to the element's
+time); `tests/FairPlay/sandbox` plays native HLS and
 FairPlay under the new rules. Needs an AirPlay receiver, unchecked: playback
 moving to the TV, `externalPlaybackActive`, the device name, FairPlay keys on
 the device, and the AirPlay services the GPU sandbox needs.

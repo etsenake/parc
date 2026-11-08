@@ -229,6 +229,11 @@ class Loader : public fp::HlsLoader {
           r.mime_type = response.MIMEType.UTF8String ?: "";
           r.content_length = response.expectedContentLength;
           r.final_url = ToFake(response.URL.absoluteString.UTF8String ?: "");
+          // As Parc's loader: a ranged load's Content-Range tells AVFoundation
+          // the file's size.
+          for (NSString* name in response.allHeaderFields) {
+            r.headers.emplace_back(name.UTF8String, [response.allHeaderFields[name] UTF8String]);
+          }
           dispatch_async(Owner(), ^{
             if (*alive) {
               client->OnResponse(r);
@@ -1401,6 +1406,47 @@ void AirPlay() {
   Check(rig.client.errors == 0 && rig.client.wireless_changes.empty(), "no error, never wireless");
 }
 
+// A clear file moved onto the player to play to an AirPlay target
+// (NATIVE_HLS.md, AirPlay): the target and the type from its container before
+// Load, then the element's time as a seek and its rate.
+void PlayFile(const char* real_without_scheme, const char* mime_type, bool has_video) {
+  id context = [NSClassFromString(@"AVOutputContext") valueForKey:@"iTunesAudioContext"];
+  NSString* context_id = [context valueForKey:@"contextID"];
+  Rig rig;
+  OnOwner([&] {
+    rig.player->SetPlaybackTarget(context_id.UTF8String ?: "", true);
+    Check(rig.player->Load(Fake(real_without_scheme), mime_type).ok(), "Load with the container's type");
+    rig.player->SetMuted(true);
+  });
+  bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
+  Check(ready && rig.client.metadata && rig.client.errors == 0, "metadata");
+  if (!rig.client.metadata) {
+    return;
+  }
+  Check(rig.client.metadata->has_video == has_video && rig.client.metadata->has_audio,
+        "media types from the file's tracks");
+  Check(rig.client.metadata->duration > 1.5 && !rig.client.metadata->is_live, "a finite duration");
+  // The pipeline's seek to the element's time follows the metadata.
+  std::atomic<bool> seeked{false};
+  OnOwner([&] { rig.player->Seek(1.0, [&](bool finished) { seeked = finished; }); });
+  Check(WaitFor([&] { return seeked.load(); }, 20), "the seek to the element's time finishes");
+  Check(std::fabs(rig.Time() - 1.0) < 0.05, "at the element's time");
+  OnOwner([&] { rig.player->SetRate(1); });
+  Check(WaitFor([&] { return rig.Time() > 1.4; }, 20), "plays on from there");
+  Check(rig.loader.ranged_ > 0, "loads byte ranges through the loader");
+  Check(rig.loader.foreign_ == 0, "no load outside the loader");
+  Check(rig.client.errors == 0, "no error");
+}
+
+void File() {
+  std::printf("-- clear MP4 video served as application/octet-stream\n");
+  PlayFile("raw.githubusercontent.com/chromium/chromium/main/media/test/data/bear-1280x720.mp4", "video/mp4",
+           /*has_video=*/true);
+  std::printf("-- clear MP3 audio\n");
+  PlayFile("raw.githubusercontent.com/chromium/chromium/main/media/test/data/bear-audio-10s-CBR-has-TOC.mp3", "audio/mpeg",
+           /*has_video=*/false);
+}
+
 void Teardown() {
   std::printf("-- teardown with loads in flight\n");
   {
@@ -1427,7 +1473,7 @@ int main(int argc, char** argv) {
         {"keys-attach-at-request", KeysAttachAtRequest}, {"keys-multikey", KeysMultiKey},
         {"keys-await", KeysAwait}, {"keys-early", KeysEarlySession},
         {"keys-close", KeysClose}, {"keys-legacy", KeysLegacy}, {"metadata-first", MetadataFirst},
-        {"keys-legacy-order", KeysLegacyOrder}, {"airplay", AirPlay}};
+        {"keys-legacy-order", KeysLegacyOrder}, {"airplay", AirPlay}, {"file", File}};
     for (auto& [name, run] : scenarios) {
       if (only.empty() || only == name) {
         run();

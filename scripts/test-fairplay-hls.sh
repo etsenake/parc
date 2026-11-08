@@ -9,7 +9,7 @@
 # data-url, data-url-video, skd, skd-handler, teardown, keys-first, keys-loader,
 # keys-attach-at-request, keys-multikey,
 # keys-await, keys-early, keys-close, keys-legacy, metadata-first,
-# keys-legacy-order, airplay). The keys
+# keys-legacy-order, airplay, file). The keys
 # scenarios license Axinom's FairPlay HLS vectors from its public test
 # license service.
 set -euo pipefail
