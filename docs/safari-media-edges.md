@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **88**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **90**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -91,9 +91,12 @@ The Mini Player's last button is Cast on Chrome-identity media and AirPlay on
 Safari-identity media: **fixed** 65c8fd25. Cast SDK pages with a default
 presentation request (YouTube-style) got no button, and a cast-menu launch
 finishing after navigation could cast the next page's video: **fixed**
-2c258379. The row can vanish if the site drops its media session while
-casting, and a cast launched just before leaving now ends where Chrome's
-carries on: **in progress** (MINI-CAST-3). A second tab of the same site
+2c258379. The row vanishing when the site drops its media session while
+casting, and a cast launched just before leaving ending where Chrome's
+carries on: **fixed** 5a160e58 (remoting is requested at the pick again, as
+Chrome, and withdrawn on a failed launch). Stop casting from the row after the
+page navigates away, or when the session is fully gone: **in progress**
+(MINI-CAST-4). A second tab of the same site
 shows Connecting during another tab's launch, and speaker-only receivers
 don't show the button on default-presentation pages: **left** (brief,
 cosmetic). Chromium's chooser has no "this Mac" entry, so a cast ends
@@ -711,8 +714,8 @@ through Chromium's MP3 decoder; measured against this Mac's
 `AVStreamDataParser`, which ignores HEVC in TS). Still different, all
 user-felt: several audio streams in one TS showed as one track, so a
 language or commentary menu did nothing, and E-AC-3 7.1 frames split across
-packets lost their extra channels: **fixed** ffa89f7f. Still FairPlay SAMPLE-AES
-H.264, AAC, AC-3 and E-AC-3 in TS fail to play (**in progress**, SBS-2c, about
+packets lost their extra channels: **fixed** ffa89f7f. FairPlay SAMPLE-AES
+H.264, AAC, AC-3 and E-AC-3 in TS failed to play: **fixed** bea69854 (was SBS-2c, about
 600-900 lines); MPEG-1/2 video in TS played black: **fixed** 9f8ba00d (a TS
 elementary-stream parser with Safari's types, key frames, timestamps and pixel
 aspect, decoded by VideoToolbox in the GPU process). Left: `videoWidth`/
