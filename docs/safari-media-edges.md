@@ -78,7 +78,9 @@ player takes its Safari path: legacy `WebKitMediaKeys` with
 `com.apple.fps.1_0`, and a page-built HLS playlist (`data:`, or `blob:`)
 naming byte ranges of one audio file plus an `skd://` key, played through
 native HLS. Parc's native HLS route accepted only http(s) playlists, so no
-song played: **fixed** 7419cea8. Spotify's Safari path excludes FLAC in MP4
+song played: **fixed** 7419cea8 (nested `data:` playlists too, so video
+podcasts; `blob:` playlists AVFoundation itself rejects, and Spotify uses
+them only without MediaSource). Spotify's Safari path excludes FLAC in MP4
 (lossless): **kept** (Josh, November 7: no Widevine, so Safari identity is
 the only way it plays). Apple Music and Apple Podcasts (MusicKit, https
 HLS) need no change. Not run against the signed-in service.
@@ -661,7 +663,7 @@ through Chromium's MP3 decoder; measured against this Mac's
 user-felt: several audio streams in one TS showed as one track, so a
 language or commentary menu did nothing, and E-AC-3 7.1 frames split across
 packets lost their extra channels: **fixed** ffa89f7f. Still FairPlay SAMPLE-AES
-H.264, AAC, AC-3 and E-AC-3 in TS fail to play (**queued**, SBS-2c, about
+H.264, AAC, AC-3 and E-AC-3 in TS fail to play (**in progress**, SBS-2c, about
 600-900 lines); MPEG-1/2 video in TS played black: **fixed** 9f8ba00d (a TS
 elementary-stream parser with Safari's types, key frames, timestamps and pixel
 aspect, decoded by VideoToolbox in the GPU process). Left: `videoWidth`/
