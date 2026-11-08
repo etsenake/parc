@@ -79,9 +79,10 @@ adds a row, and the row goes once the cast ends with no session left
 cast carries on from the cached page (`KeepMediaEpisodeAcrossPageChange`),
 a Safari-identity page included; the new page's own player never reports that
 route, so it shows the route's state. When neither a session nor a
-presentation is left, or the page presents Safari, the dialog has nothing to
-stop, so the Cast button opens a one-item menu, Stop casting to <device>, that
-ends the tab's route.
+presentation is left, the page presents Safari, or the cast plays from a page
+the tab has left, the dialog can't stop it, so the Cast button opens a menu
+whose first item, Stop casting to <device>, ends the tab's route; when the
+current page has media of its own, Cast... below it opens the dialog.
 
 ## Volume adaptation
 

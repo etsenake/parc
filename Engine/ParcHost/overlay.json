@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 619,
+  "version": 620,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1415,7 +1415,7 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
-      "sha256": "a9758ec00b1f5bd9de84541c25d96b24cb5e2765d105deef2b903b864424e935"
+      "sha256": "84497c8c1ae5cecc4a6633e891bd94f86f1185e3791e833ec8b1cc9671289dd2"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
