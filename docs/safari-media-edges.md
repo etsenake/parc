@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **81**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **82**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -233,9 +233,11 @@ a page turning its own video track off ends video until the next seek
 (**queued**, FP-TRACK); `setSinkId` audio output selection wasn't wired:
 **fixed** 30970c11 (FairPlay Media Source and native HLS; Chrome-identity
 FairPlay pages follow it too, as Chrome moves all of an element's audio).
-Unplugging the chosen device stalls protected playback (Safari too) and
-'default' pins the current default on Media Source: **in progress**
-(FP-SINK-2, fall back to the default device).
+Unplugging the chosen device stalled protected playback (Safari too) and
+'default' pinned the current default on Media Source: **fixed** 7b5f48ab
+(audio falls back to the system default and keeps playing; Parc better than
+Safari). Following a later default change is checked by reasoning only
+(**unchecked** at runtime).
 
 **HME-8. Seek steps run synchronously.** Chromium
 `html_media_element.cc:2656-2735` clamps to the duration, the earliest
