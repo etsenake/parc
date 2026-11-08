@@ -100,8 +100,8 @@ Captions never showed in Parc's PiP window, where Safari's shows WebVTT,
 Media Source, native HLS and FairPlay cues: **fixed** 5a730e1e (cues painted
 at PiP size, repainted only when they change; lifted above the scrubber
 while the controls show, a Parc choice). A cross-origin iframe player
-scrolled out of view stops updating its PiP captions: **in progress**
-(PIP-CAPTIONS-2).
+scrolled out of view keeps updating its PiP captions (the paint runs outside
+the throttled lifecycle; guarded by a test in b8cf81a3): no difference.
 
 ## Reading log
 
@@ -475,8 +475,8 @@ devices needs Apple-only entitlements; Josh agreed). Josh approved the Mini
 controls, Remote Playback opening AirPlay, and
 `webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint for
 the placard glyph and button states **in progress**). A ManagedMediaSource element doesn't switch to its HLS
-`<source>` alternative when a target is picked, as Safari does: **queued**
-(AIRPLAY-3, after HME-1c). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
+`<source>` alternative when a target is picked, as Safari does: **in progress**
+(AIRPLAY-3). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
 **fixed** 1c03b194 (they move to AVPlayer and back seamlessly; Safari never
 AirPlays Media Source, so neither does Parc). The user's chosen audio track
 doesn't carry to the TV, and a live stream's `currentTime` resets on the
