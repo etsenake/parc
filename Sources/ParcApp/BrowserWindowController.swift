@@ -845,6 +845,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.commandBar?.contentAppearance = palette.contentAppearance
             }
             self?.popupChrome.palette = palette
+            // Pages AirPlaying from this window recolour their button and placard.
+            NotificationCenter.default.post(name: NSNotification.Name(PCNativeAirPlayThemeDidChangeNotification), object: self?.window)
             self?.pageHost.refreshDropAppearance()
             self?.splitDropView?.refreshAppearance(); self?.foreignSplitDropView?.refreshAppearance()
             self?.refreshSplitPaneHighlights()
@@ -16323,7 +16325,9 @@ extension BrowserWindowController: PCNativeStatusTextThemeSource {
 
 /// The page's own AirPlay button and placard take the Mini Player's tint.
 extension BrowserWindowController: PCNativeAirPlayThemeSource {
-    func airPlayThemeTintColor() -> NSColor? { rootView.palette.airPlayActiveColor }
+    func airPlayThemeTintColor() -> NSColor? {
+        ThemeChromePalette.airPlayOnDarkSurfaceColor(theme: rootView.paletteTheme)
+    }
 }
 
 extension PCNativePage {
