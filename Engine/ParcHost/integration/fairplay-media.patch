@@ -4140,7 +4140,16 @@
            video_codec = entry.dv_info->codec_info.codec;
            video_codec_profile = entry.dv_info->codec_info.profile;
            video_codec_level = entry.dv_info->codec_info.level;
-@@ -835,9 +959,21 @@
+@@ -831,13 +955,30 @@
+ 
+       video_config.set_aspect_ratio(aspect_ratio);
+       video_config.set_level(video_codec_level);
++      video_config.set_parc_dolby_vision_sdr(
++          parc_dolby_vision && entry.dv_info &&
++          (entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE8 ||
++           entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE10) &&
++          entry.dv_info->parc_compatibility_id == 2);
+ 
        if (entry.video_color_space.IsSpecified())
          video_config.set_color_space_info(entry.video_color_space);
  
@@ -4165,7 +4174,7 @@
        }
  
        if (!entry.hdr_metadata.IsEmpty() && entry.hdr_metadata.IsValid()) {
-@@ -888,6 +1024,10 @@
+@@ -888,6 +1029,10 @@
  
    if (!moov_->pssh.empty())
      OnEncryptedMediaInitData(moov_->pssh);
@@ -4176,7 +4185,7 @@
  
    RCHECK(config_cb_.Run(std::move(media_tracks)));
  
-@@ -1096,6 +1236,37 @@
+@@ -1096,6 +1241,37 @@
    // being put in a StreamParserBuffer. Prefer `heap_frame_buf` where possible.
    std::vector<uint8_t> frame_buf;
    base::HeapArray<uint8_t> heap_frame_buf;
@@ -4505,7 +4514,15 @@
    // The |presentation_id| is used to find an already set-up RemotePlayback
 --- a/media/mojo/mojom/media_types.mojom
 +++ b/media/mojo/mojom/media_types.mojom
-@@ -680,6 +680,8 @@
+@@ -255,6 +255,7 @@
+ // This defines a mojo transport format for media::VideoDecoderConfig.
+ // See media/base/video_decoder_config.h for descriptions.
+ struct VideoDecoderConfig {
++  bool parc_dolby_vision_sdr = false;
+   VideoCodec codec;
+   VideoCodecProfile profile;
+   uint32 level;
+@@ -680,6 +681,8 @@
    kCastStreaming = 9,    // CastStreamingRendererFactory
    kContentEmbedderDefined = 10,  // Defined by the content embedder
    kTest= 11,             // Renderer implementations used in tests
@@ -13444,7 +13461,7 @@
  }
  
  TEST_F(MP4StreamParserTest, MPEG4_XHE_AAC) {
-@@ -851,6 +1105,189 @@
+@@ -851,6 +1105,214 @@
    EXPECT_EQ(HEVCPROFILE_MAIN10, video_decoder_config_.profile());
  #endif
  }
@@ -13527,6 +13544,20 @@
 +            video_decoder_config_.color_space_info().transfer());
 +}
 +
++TEST_F(MP4StreamParserParcDVTest, OnlySafariMarksProfile8SDRBaseLayer) {
++  for (bool safari : {false, true}) {
++    auto buffer = ReadTestDataFile("glass-blowing2-dolby-vision-profile-8-1-frag.mp4");
++    auto bytes = buffer->writable_span();
++    const std::array<uint8_t, 4> box = {'d', 'v', 'v', 'C'};
++    auto it = std::ranges::search(bytes, box).begin();
++    ASSERT_NE(it, bytes.end());
++    *(it + 8) = 0x20;  // dv_bl_signal_compatibility_id = 2 (SDR).
++    ParseDolbyVision(buffer, safari);
++    EXPECT_EQ(safari, video_decoder_config_.parc_dolby_vision_sdr());
++    EXPECT_EQ(VideoColorSpace::REC709(), video_decoder_config_.color_space_info());
++  }
++}
++
 +TEST_F(MP4StreamParserParcDVTest, Profile8InHvc1StaysHevcOutsideSafariRules) {
 +  ParseDolbyVision(
 +      ReadTestDataFile("glass-blowing2-dolby-vision-profile-8-1-frag.mp4"),
@@ -13594,6 +13625,17 @@
 +  EXPECT_EQ(DOLBYVISION_PROFILE10, video_decoder_config_.profile());
 +  EXPECT_EQ(VideoColorSpace::TransferID::ARIB_STD_B67,
 +            video_decoder_config_.color_space_info().transfer());
++}
++
++TEST_F(MP4StreamParserParcDVTest, OnlySafariMarksProfile10SDRBaseLayer) {
++  for (bool safari : {false, true}) {
++    ParseDolbyVision(ReadParcDVProfile10InDav1(/*compatibility_id=*/2),
++                     safari, /*has_dv=*/false, /*live=*/true);
++    EXPECT_EQ(safari, video_decoder_config_.parc_dolby_vision_sdr());
++    if (safari) {
++      EXPECT_EQ(VideoColorSpace::REC709(), video_decoder_config_.color_space_info());
++    }
++  }
 +}
 +
 +TEST_F(MP4StreamParserParcDVTest, Profile10InDav1StaysAv1OutsideSafariRules) {
@@ -22598,3 +22640,91 @@
  };
  
  }  // namespace blink
+--- a/media/base/video_decoder_config.h
++++ b/media/base/video_decoder_config.h
+@@ -83,6 +83,11 @@
+ 
+   std::string GetHumanReadableCodecName() const;
+ 
++  // Safari MSE's SDR-compatible Dolby Vision base layer. Carried through
++  // Mojo so the FairPlay adapter preserves ID 2 only for Safari pages.
++  bool parc_dolby_vision_sdr() const { return parc_dolby_vision_sdr_; }
++  void set_parc_dolby_vision_sdr(bool value) { parc_dolby_vision_sdr_ = value; }
++
+   VideoCodec codec() const { return codec_; }
+   VideoCodecProfile profile() const { return profile_; }
+   void set_profile(VideoCodecProfile profile) { profile_ = profile; }
+@@ -172,6 +177,7 @@
+   const VideoSpatialFormat& spatial_format() const { return spatial_format_; }
+ 
+  private:
++  bool parc_dolby_vision_sdr_ = false;
+   VideoCodec codec_ = VideoCodec::kUnknown;
+   VideoCodecProfile profile_ = VIDEO_CODEC_PROFILE_UNKNOWN;
+ 
+--- a/media/base/video_decoder_config.cc
++++ b/media/base/video_decoder_config.cc
+@@ -64,6 +64,7 @@
+                                     const gfx::Size& natural_size,
+                                     const std::vector<uint8_t>& extra_data,
+                                     EncryptionScheme encryption_scheme) {
++  parc_dolby_vision_sdr_ = false;
+   codec_ = codec;
+   profile_ = profile;
+   alpha_mode_ = alpha_mode;
+@@ -95,7 +96,8 @@
+          encryption_scheme() == config.encryption_scheme() &&
+          color_space_info() == config.color_space_info() &&
+          hdr_metadata() == config.hdr_metadata() && level() == config.level() &&
+-         spatial_format() == config.spatial_format();
++         spatial_format() == config.spatial_format() &&
++         parc_dolby_vision_sdr() == config.parc_dolby_vision_sdr();
+ }
+ 
+ std::string VideoDecoderConfig::AsHumanReadableString() const {
+--- a/media/mojo/mojom/video_decoder_config_mojom_traits.h
++++ b/media/mojo/mojom/video_decoder_config_mojom_traits.h
+@@ -22,6 +22,9 @@
+ template <>
+ struct StructTraits<media::mojom::VideoDecoderConfigDataView,
+                     media::VideoDecoderConfig> {
++  static bool parc_dolby_vision_sdr(const media::VideoDecoderConfig& input) {
++    return input.parc_dolby_vision_sdr();
++  }
+   static media::VideoCodec codec(const media::VideoDecoderConfig& input) {
+     return input.codec();
+   }
+--- a/media/mojo/mojom/video_decoder_config_mojom_traits.cc
++++ b/media/mojo/mojom/video_decoder_config_mojom_traits.cc
+@@ -68,6 +68,7 @@
+                      color_space, transformation, coded_size, visible_rect,
+                      natural_size, extra_data, encryption_scheme);
+ 
++  output->set_parc_dolby_vision_sdr(input.parc_dolby_vision_sdr());
+   output->set_level(input.level());
+   output->set_aspect_ratio(aspect_ratio);
+   output->set_hdr_metadata(hdr_metadata);
+--- a/media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc
++++ b/media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc
+@@ -20,6 +20,21 @@
+ static const gfx::Size kNaturalSize(320, 240);
+ 
+ }  // namespace
++
++TEST(VideoDecoderConfigStructTraitsTest, SafariDolbyVisionSDRSurvivesMojo) {
++  for (bool safari_sdr : {false, true}) {
++    VideoDecoderConfig input(VideoCodec::kDolbyVision, DOLBYVISION_PROFILE8,
++        VideoDecoderConfig::AlphaMode::kIsOpaque, VideoColorSpace::REC709(),
++        kNoTransformation, kCodedSize, kVisibleRect, kNaturalSize,
++        EmptyExtraData(), EncryptionScheme::kUnencrypted);
++    input.set_parc_dolby_vision_sdr(safari_sdr);
++    auto data = media::mojom::VideoDecoderConfig::Serialize(&input);
++    VideoDecoderConfig output;
++    ASSERT_TRUE(media::mojom::VideoDecoderConfig::Deserialize(std::move(data), &output));
++    EXPECT_EQ(safari_sdr, output.parc_dolby_vision_sdr());
++    EXPECT_TRUE(output.Matches(input));
++  }
++}
+ 
+ TEST(VideoDecoderConfigStructTraitsTest, ConvertVideoDecoderConfig_Normal) {
+   const uint8_t kExtraData[] = "config extra data";

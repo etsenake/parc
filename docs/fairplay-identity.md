@@ -124,7 +124,14 @@ On a page that presents Safari's identity:
   windows and dedicated workers
   (`content/browser/media/parc_video_toolbox_decoding.mm`), since a renderer
   can't ask from its sandbox. Other video codecs keep Chromium's answers in
-  WebKit's result shape, without the spatial audio check.
+  WebKit's result shape, without the spatial audio check. Media Source
+  queries for `dav1.10` (AV1 hardware required) and `dvh1.20`/`dvhe.20`
+  retain the support advertised by `MediaSource.isTypeSupported`; missing
+  VideoToolbox Dolby Vision profile/level facts make them neither smooth nor
+  power efficient, rather than hiding the rendition. Profile 8 capability
+  queries retain their existing answer. SDR-compatible Dolby Vision 8.2 and
+  10.2 base layers preserve compatibility ID 2 through the FairPlay renderer
+  and are tagged BT.709 instead of PQ on Safari-identity pages.
 - FairPlay takes WebKit's init data types `sinf`, `skd` and `mpts` (MPEG-2
   TS, macOS) besides `cenc`: `requestMediaKeySystemAccess` keeps them in a
   FairPlay configuration and `generateRequest` accepts them. Every other page

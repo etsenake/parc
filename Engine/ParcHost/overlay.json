@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 592,
+  "version": 593,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1680,7 +1680,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_adapter.mm",
       "target": "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.mm",
-      "sha256": "a7ff7978271bfd6c594d551b9f19e75ad1331c373cea7e62924bf792237d8b04"
+      "sha256": "9b2323694384539cb349f13b73b75516ffa06ec2a5713ecc062d0ced32ffcc17"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_hls_player_service.h",
@@ -1830,7 +1830,7 @@
     {
       "source": "Engine/ParcRenderer/parc_media_source_test.cc",
       "target": "third_party/blink/renderer/modules/mediasource/parc_media_source_test.cc",
-      "sha256": "5837b9aa7b7f9aa83c457357afc3b03a45ae0aaa4916b26765e72a1f7e2f0064"
+      "sha256": "d6a697f5fcfd3b8f45a4a034c48abef954f92a92224dad26929444160e73b653"
     },
     {
       "source": "Engine/ParcRenderer/parc_media_source_error_test.cc",
@@ -4357,7 +4357,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "008b056b93314fe6f2c8ded087fa8e82dd592f874ff637bc7893531e02651bb3",
+      "sha256": "54d5a3e78af12468e30127969c6b07f29e04d3a970a3f0128c3c1bc9c7b4036e",
       "files": [
         {
           "target": "components/cdm/renderer/BUILD.gn",
@@ -4512,7 +4512,7 @@
         {
           "target": "media/formats/mp4/mp4_stream_parser.cc",
           "before_sha256": "35b11330ae2b15b92660c9ee4d82fc86a1cdc2f30ab5315d663b439dac2a4ec6",
-          "after_sha256": "3735a2d09a4aaa48f4bde1cd175d45dfbdb5f7e55b259a78395886e010cbf34f"
+          "after_sha256": "3f05719cbb7098cecd0f378caa5c383821fa2ed0186017890892135e574f649d"
         },
         {
           "target": "media/cdm/supported_audio_codecs.cc",
@@ -4557,7 +4557,7 @@
         {
           "target": "media/mojo/mojom/media_types.mojom",
           "before_sha256": "ae98d906c67958600407123c74fe0fbf938f31010ae46570e2771b25381af9de",
-          "after_sha256": "eae39706273303508eafe85d38af3d4ddb01c2373386501bad0894181142e02e"
+          "after_sha256": "25f7ab9d66cf79180f20cd7c26b7f9df85acd1cda75dcae882cf677e4eed5837"
         },
         {
           "target": "media/mojo/mojom/media_types_enum_mojom_traits.h",
@@ -4847,7 +4847,7 @@
         {
           "target": "media/formats/mp4/mp4_stream_parser_unittest.cc",
           "before_sha256": "8e620049a220c5cd98e9b1ad791a44ef96098e9a8c811f3299ffa533be0b7660",
-          "after_sha256": "53326641521937db12b479dbce700ecf7c5a978336a49b1bec1a788e6058c868"
+          "after_sha256": "8a913c498f4550b8abd17f6f46ca05fd23baf755ebb89aa607cb4e6b360545f9"
         },
         {
           "target": "media/filters/chunk_demuxer_unittest.cc",
@@ -5278,12 +5278,37 @@
           "target": "third_party/blink/renderer/platform/media/remote_playback_client.h",
           "before_sha256": "4c0bb4f267af8033a83e80547fb6035bb03ace821c36879cbd715e42fccd7d13",
           "after_sha256": "79b94fa23c251dd18cfa54418e4d89010400f015618f8522882fd2beefd4dfa2"
+        },
+        {
+          "target": "media/base/video_decoder_config.h",
+          "before_sha256": "7a975ae82e1133ae3b91f5229dc00be6a16f93b7e11ea514ce8f874423f60943",
+          "after_sha256": "d6e9787173a87a184626c29aba69d62840800125f22c6bd291118d8a613742e0"
+        },
+        {
+          "target": "media/base/video_decoder_config.cc",
+          "before_sha256": "e36adf92b75a80e9089bfc6ee10eb20f40d7a3adef079f1235034377f2af93ea",
+          "after_sha256": "ea7ff844a501f4487b0ed87509f6a338cb7a03a740fd4c39e67971284734760f"
+        },
+        {
+          "target": "media/mojo/mojom/video_decoder_config_mojom_traits.h",
+          "before_sha256": "76d3aa0bcf34d2038153bd064c2101d480aaf8f6a734b86010ce07e017fb2efb",
+          "after_sha256": "78ed187feb558900d339d1735c2900b5ade5b9839b6a8c0cc5aea3f94b1e9cc7"
+        },
+        {
+          "target": "media/mojo/mojom/video_decoder_config_mojom_traits.cc",
+          "before_sha256": "d26466d8ffb353048d85de7624c9930c752bba4781cdf4ffaaea6a25550c0833",
+          "after_sha256": "61fe83114afcb818b8854b77beddf2eabbc2902493c6b1d482f3c8918b8c1bbb"
+        },
+        {
+          "target": "media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc",
+          "before_sha256": "bae88c28a37e5675189df9b55a29bfdfffe2bb787bd80e00beb51c7daacf8972",
+          "after_sha256": "8c2dd5fbc63908e4d6fa5e87a8752623731c11f328cb2b19f7eb4fab65aa429e"
         }
       ]
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink.patch",
-      "sha256": "82b335bd7cb34804a3c6d251b84be91a03cbb456fdaa7956484cc172ee1c926f",
+      "sha256": "7fc8e1229b9271624f4c9eb81a2cf1c0bffbd7e3c5e6c3762e828098ec49c12a",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -5308,7 +5333,7 @@
         {
           "target": "third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc",
           "before_sha256": "31deb598eb56995fafbe96c1eebd1376a0eae40c6376a21632ce3506e9986b71",
-          "after_sha256": "44bff4eb12b5501e162b1d8b719f9ebe109c3ed1d3a447a66e20edc88edf1f3f"
+          "after_sha256": "79e769260d07a8697c569abd3be856e5f69cab65bd1325b9f5390c8636cb97c1"
         },
         {
           "target": "third_party/blink/renderer/modules/mediasource/media_source.cc",

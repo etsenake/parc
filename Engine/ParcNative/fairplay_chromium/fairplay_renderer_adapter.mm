@@ -125,10 +125,12 @@ int DolbyVisionProfileNumber(VideoCodecProfile profile) {
 
 // MP4StreamParser keeps a Dolby Vision track's
 // dv_bl_signal_compatibility_id only as its color space
-// (mp4::ParseDolbyVisionColorSpace), so only HLG (4) is told apart: it makes
-// AVFoundation tag frames HLG, where the core's defaults (1 for profile 8, 0
-// for 10) tag them PQ.
+// (mp4::ParseDolbyVisionColorSpace). Safari MSE also marks SDR (2)
+// explicitly, so Chrome-identity pages keep their existing answer.
 int DolbyVisionCompatibilityId(const VideoDecoderConfig& config) {
+  if (config.parc_dolby_vision_sdr()) {
+    return 2;
+  }
   if (config.profile() != DOLBYVISION_PROFILE5 &&
       config.color_space_info().transfer() ==
           VideoColorSpace::TransferID::ARIB_STD_B67) {

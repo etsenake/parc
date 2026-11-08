@@ -694,7 +694,12 @@
  
  #include "base/feature_list.h"
  #include "base/metrics/field_trial_params.h"
-@@ -25,6 +29,7 @@
+@@ -21,10 +25,12 @@
+ #include "media/base/supported_types.h"
+ #include "media/base/supported_video_decoder_config.h"
+ #include "media/base/video_decoder_config.h"
++#include "media/base/video_codec_string_parsers.h"
+ #include "media/filters/stream_parser_factory.h"
  #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
  #include "media/mojo/mojom/media_types.mojom-blink.h"
  #include "media/video/gpu_video_accelerator_factories.h"
@@ -702,7 +707,7 @@
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
  #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
  #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
-@@ -50,6 +55,10 @@
+@@ -50,6 +56,10 @@
  #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -713,17 +718,16 @@
  #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
-@@ -146,13 +155,21 @@
-   info->setPowerEfficient(value);
+@@ -147,12 +157,20 @@
    return info;
  }
-+
+ 
 +MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
 +    MediaCapabilitiesDecodingInfo* info,
 +    ExecutionContext* context,
 +    const MediaDecodingConfiguration* config,
 +    MediaKeySystemAccess* access);
- 
++
  ScriptPromise<MediaCapabilitiesDecodingInfo>
  CreateResolvedPromiseToDecodingInfoWith(
      bool value,
@@ -736,7 +740,7 @@
    return ToResolvedPromise<MediaCapabilitiesDecodingInfo>(script_state, info);
  }
  
-@@ -652,7 +669,11 @@
+@@ -652,7 +670,11 @@
                                     /*allow_ambiguous_matches=*/false);
    DCHECK(audio_type);
  
@@ -749,7 +753,7 @@
      audio_type->spatial_rendering = audio_config->spatialRendering();
  
    return media::IsDecoderSupportedAudioType(*audio_type);
-@@ -731,8 +752,428 @@
+@@ -731,6 +753,451 @@
    *mime_type = parsed_content_type.MimeType().ToAsciiLower();
    *codec = parsed_content_type.ParameterValueForName(kCodecsMimeTypeParam);
    return true;
@@ -829,7 +833,8 @@
 +bool IsParcSafariFairPlayVideoCodec(const String& codec) {
 +  return codec.starts_with("avc1") || codec.starts_with("avc3") ||
 +         codec.starts_with("hvc1") || codec.starts_with("hev1") ||
-+         codec.starts_with("dvh1") || codec.starts_with("dvhe");
++         codec.starts_with("dvh1") || codec.starts_with("dvhe") ||
++         codec.starts_with("dav1.10.");
 +}
 +
 +// Parc: WebKit's parseInteger (StringToIntegerConversion.h) for unsigned
@@ -961,8 +966,19 @@
 +  if (pieces.empty()) {
 +    return std::nullopt;
 +  }
++  if (codec.starts_with("dav1.10.") || codec.starts_with("dvh1.20.") ||
++      codec.starts_with("dvhe.20.")) {
++    const auto parsed = media::ParseDolbyVisionCodecId(codec);
++    if (!parsed) {
++      return std::nullopt;
++    }
++    return ParcDoViParameters{
++        static_cast<uint8_t>(pieces[0] == "dav1" ? 10 : 20),
++        static_cast<uint8_t>(parsed->level)};
++  }
 +  const bool avc = pieces[0] == "dva1" || pieces[0] == "dvav";
-+  if (!avc && pieces[0] != "dvh1" && pieces[0] != "dvhe") {
++  if (!avc && pieces[0] != "dvh1" && pieces[0] != "dvhe" &&
++      pieces[0] != "dav1") {
 +    return std::nullopt;
 +  }
 +  if (pieces.size() < 2) {
@@ -1009,7 +1025,9 @@
 +    default:
 +      return std::nullopt;
 +  }
-+  if ((parameters.profile == 9) != avc || pieces.size() < 3) {
++  if ((parameters.profile == 9) != avc ||
++      ((parameters.profile == 10) != (pieces[0] == "dav1")) ||
++      pieces.size() < 3) {
 +    return std::nullopt;
 +  }
 +  const std::optional<uint8_t> level = ParcParseUnsigned<uint8_t>(pieces[2]);
@@ -1039,12 +1057,16 @@
 +    return false;
 +  }
 +  if (mime_type == "video/mp4" &&
-+      (codec.starts_with("dvh1.") || codec.starts_with("dvhe."))) {
++      (codec.starts_with("dvh1.") || codec.starts_with("dvhe.") ||
++       codec.starts_with("dav1.10."))) {
 +    const std::optional<ParcDoViParameters> parameters =
 +        codec.ContainsOnlyAsciiOrEmpty()
 +            ? ParcParseDoVi(codec.Ascii())
 +            : std::nullopt;
-+    if (parameters && parameters->profile == 5) {
++    if (parameters &&
++        (parameters->profile == 5 ||
++         (config->type() == V8MediaDecodingType::Enum::kMediaSource &&
++          (parameters->profile == 10 || parameters->profile == 20)))) {
 +      return true;
 +    }
 +  }
@@ -1062,14 +1084,15 @@
 +  }
 +  return HTMLMediaElement::GetSupportsType(ContentType(content_type)) ==
 +         MIMETypeRegistry::kSupported;
- }
- 
++}
++
 +// Parc: computeMediaCapabilitiesInfo (WebKit's
 +// PlatformMediaEngineConfigurationFactoryCocoa.cpp) for the codecs FairPlay
 +// plays, with VideoToolbox's facts read by the browser
 +// (content/browser/media/parc_video_toolbox_decoding.h; null when they
 +// couldn't be had, which WebKit reads as VideoToolbox lacking them). Dolby
-+// Vision answers for profile 5 only, the profile Parc's FairPlay offers.
++// Vision keeps profile 5 and also answers the profile 10 and 20 MSE types
++// accepted by Safari-identity MediaSource.
 +std::optional<ParcDecodingAnswer> ParcSafariAnswer(
 +    const MediaDecodingConfiguration* config,
 +    const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts) {
@@ -1134,22 +1157,28 @@
 +      }
 +      answer.smooth = profile->has_max_playback_level &&
 +                      parameters->level_idc <= profile->max_playback_level;
-+    } else if (codec.starts_with("dvh1") || codec.starts_with("dvhe")) {
++    } else if (codec.starts_with("dvh1") || codec.starts_with("dvhe") ||
++               codec.starts_with("dav1.10.")) {
 +      // validateDoViParameters (HEVCUtilitiesCocoa.mm).
 +      const std::optional<ParcDoViParameters> parameters = ParcParseDoVi(ascii);
-+      if (!parameters || parameters->profile != 5 || alpha || !facts ||
-+          !facts->hevc_decoder || !facts->dolby_vision_profiles ||
-+          !facts->dolby_vision_levels) {
++      const bool extended_mse =
++          config->type() == V8MediaDecodingType::Enum::kMediaSource &&
++          parameters && (parameters->profile == 10 || parameters->profile == 20);
++      if (!parameters || (parameters->profile != 5 && !extended_mse) ||
++          (hdr && parameters->profile != 5) || alpha) {
 +        return std::nullopt;
 +      }
-+      // Profile 5 is HEVC Main10, so HDR fields don't refuse it.
-+      if (!std::ranges::contains(*facts->dolby_vision_profiles,
-+                          parameters->profile) ||
-+          !std::ranges::contains(*facts->dolby_vision_levels, parameters->level)) {
++      const bool vt_supported = facts && facts->hevc_decoder &&
++          facts->dolby_vision_profiles && facts->dolby_vision_levels &&
++          std::ranges::contains(*facts->dolby_vision_profiles, parameters->profile) &&
++          std::ranges::contains(*facts->dolby_vision_levels, parameters->level);
++      if (!extended_mse && !vt_supported) {
 +        return std::nullopt;
 +      }
-+      answer.smooth = true;
-+      answer.power_efficient = facts->dolby_vision_hardware;
++      // MSE accepts these new types independently of VT's Dolby profile list.
++      // VT still determines smoothness and hardware efficiency.
++      answer.smooth = vt_supported;
++      answer.power_efficient = vt_supported && facts->dolby_vision_hardware;
 +    } else {
 +      // H.264: no alpha or HDR; VTIsHardwareDecodeSupported.
 +      if (alpha || hdr) {
@@ -1173,12 +1202,10 @@
 +    answer.supported = true;
 +  }
 +  return answer;
-+}
-+
+ }
+ 
  #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
- bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
-   return video_codec_str.starts_with("dvh1.") ||
-@@ -782,11 +1223,13 @@
+@@ -782,11 +1249,13 @@
  MediaCapabilities::MediaCapabilities(NavigatorBase& navigator)
      : Supplement<NavigatorBase>(navigator),
        decode_history_service_(navigator.GetExecutionContext()),
@@ -1193,7 +1220,7 @@
    visitor->Trace(pending_cb_map_);
    ScriptWrappable::Trace(visitor);
    Supplement<NavigatorBase>::Trace(visitor);
-@@ -805,6 +1248,7 @@
+@@ -805,6 +1274,7 @@
  void MediaCapabilities::PendingCallbackState::Trace(
      blink::Visitor* visitor) const {
    visitor->Trace(key_system_access);
@@ -1201,7 +1228,7 @@
    visitor->Trace(resolver);
  }
  
-@@ -820,6 +1264,24 @@
+@@ -820,6 +1290,24 @@
          WebFeature::kMediaCapabilitiesDecodingInfoWithKeySystemConfig);
    }
  
@@ -1226,7 +1253,7 @@
    const bool is_webrtc = config->type() == V8MediaDecodingType::Enum::kWebrtc;
    String message;
    if (!IsValidMediaDecodingConfiguration(config, is_webrtc, &message)) {
-@@ -847,6 +1309,7 @@
+@@ -847,6 +1335,7 @@
                              : WebrtcDecodingInfoHandler::Instance()) {
        const int callback_id = InsertCallbackAndScheduleTimeout(
            resolver, nullptr, request_time, QueryType::kWebrtcDecoding);
@@ -1234,7 +1261,7 @@
  
        std::optional<webrtc::SdpAudioFormat> sdp_audio_format =
            config->hasAudio()
-@@ -898,9 +1361,25 @@
+@@ -898,9 +1387,25 @@
      // happens.
      DCHECK(false);
      DVLOG(2) << __func__ << " Could not get DecodingInfoHandler.";
@@ -1261,10 +1288,12 @@
    }
  
    String audio_mime_str;
-@@ -921,6 +1400,21 @@
+@@ -919,6 +1424,21 @@
+     bool valid_content_type = ParseContentType(
+         config->video()->contentType(), &video_mime_str, &video_codec_str);
      DCHECK(valid_content_type);
-   }
- 
++  }
++
 +  if (parc_safari && ParcSafariAV1Unavailable(video_codec_str)) {
 +    return CreateResolvedPromiseToDecodingInfoWith(false, script_state, config);
 +  }
@@ -1278,12 +1307,10 @@
 +      return CreateResolvedPromiseToDecodingInfoWith(false, script_state,
 +                                                     config);
 +    }
-+  }
-+
+   }
+ 
    // MSE support is cheap to check (regex matching). Do it first. Also, note
-   // that MSE support is not implied by EME support, so do it irrespective of
-   // whether we have a KeySystem configuration.
-@@ -931,10 +1425,9 @@
+@@ -931,10 +1451,9 @@
           !CheckMseSupport(video_mime_str, video_codec_str))) {
        // Unsupported EME queries should resolve with a null
        // MediaKeySystemAccess.
@@ -1297,10 +1324,12 @@
      }
    }
  
-@@ -1163,6 +1656,107 @@
+@@ -1161,6 +1680,107 @@
+   MediaCapabilitiesInfo* info = CreateEncodingInfoWith(false);
+   resolver->Resolve(info);
    return promise;
- }
- 
++}
++
 +ScriptPromise<MediaCapabilitiesDecodingInfo>
 +MediaCapabilities::ParcSafariDecodingInfo(
 +    ScriptState* script_state,
@@ -1400,12 +1429,10 @@
 +  execution_context->GetBrowserInterfaceBroker().GetInterface(
 +      parc_video_toolbox_.BindNewPipeAndPassReceiver(
 +          execution_context->GetTaskRunner(TaskType::kMediaElementEvent)));
-+}
-+
+ }
+ 
  bool MediaCapabilities::EnsurePerfHistoryService(
-     ExecutionContext* execution_context) {
-   if (decode_history_service_.is_bound())
-@@ -1353,6 +1947,15 @@
+@@ -1353,6 +1973,15 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
  
@@ -1421,7 +1448,7 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
-@@ -1374,8 +1977,9 @@
+@@ -1374,8 +2003,9 @@
  
    if (!decoding_config->hasVideo()) {
      // Audio-only is always smooth and power efficient.
@@ -1433,7 +1460,7 @@
      resolver->Resolve(info);
      return;
    }
-@@ -1393,13 +1997,16 @@
+@@ -1393,13 +2023,16 @@
    }
  
    if (!EnsurePerfHistoryService(execution_context)) {
@@ -1451,7 +1478,7 @@
  
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1520,7 +2127,8 @@
+@@ -1520,7 +2153,8 @@
  
    auto* info = MediaCapabilitiesDecodingInfo::Create();
    info->setSupported(true);
@@ -1461,7 +1488,7 @@
  
    if (UseGpuFactoriesForPowerEfficient(execution_context,
                                         pending_cb->key_system_access)) {
-@@ -1675,7 +2283,10 @@
+@@ -1675,7 +2309,10 @@
      pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(info);
    } else {
      CHECK_EQ(pending_cb->query_type, QueryType::kWebrtcDecoding);
@@ -1473,7 +1500,7 @@
      info->setSupported(is_supported);
      info->setPowerEfficient(is_power_efficient);
      info->setSmooth(is_smooth);
-@@ -1716,8 +2327,9 @@
+@@ -1716,8 +2353,9 @@
    }
  
    CHECK_EQ(pending_cb->query_type, QueryType::kDecoding);

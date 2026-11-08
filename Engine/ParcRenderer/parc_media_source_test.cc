@@ -666,6 +666,95 @@ TEST_F(ParcMediaSourceTest, ChromeSourceBufferRefusesSafariContainer) {
     BUILDFLAG(ENABLE_PLATFORM_HEVC)
 // WebKit's MediaSource::addSourceBuffer runs isTypeSupported, which refuses
 // Dolby Vision profile 7; profiles 5 and 8 play through the FairPlay Renderer.
+class DolbyVisionToolbox final : public media::mojom::blink::ParcVideoToolboxDecoding {
+ public:
+  DolbyVisionToolbox(bool support, bool hardware) : support_(support), hardware_(hardware) {}
+  void GetFacts(GetFactsCallback callback) override {
+    auto facts = media::mojom::blink::ParcVideoToolboxDecodingFacts::New();
+    facts->hevc_decoder = support_;
+    facts->dolby_vision_profiles = Vector<uint16_t>{5, 10, 20};
+    facts->dolby_vision_levels = Vector<uint16_t>{6};
+    facts->dolby_vision_hardware = hardware_;
+    if (!support_) {
+      facts->dolby_vision_profiles.reset();
+      facts->dolby_vision_levels.reset();
+    }
+    std::move(callback).Run(std::move(facts));
+  }
+  void GetSpatialAudioSources(bool, GetSpatialAudioSourcesCallback callback) override {
+    std::move(callback).Run({});
+  }
+  void CanPlayAVFoundationType(const String&, CanPlayAVFoundationTypeCallback callback) override {
+    std::move(callback).Run(false);
+  }
+  void IsPlayableExtendedMIMEType(const String&, IsPlayableExtendedMIMETypeCallback callback) override {
+    std::move(callback).Run(false);
+  }
+ private:
+  bool support_;
+  bool hardware_;
+};
+
+class ParcDolbyVisionCapabilitiesTest : public ParcMediaSourceTest {
+ protected:
+ void CheckCapabilities(bool vt_support, bool vt_hardware) {
+  auto* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ScriptState::Scope scope(script_state);
+  ASSERT_TRUE(Context()->GetBrowserInterfaceBroker().SetBinderForTesting(
+      media::mojom::blink::ParcVideoToolboxDecoding::Name_,
+      base::BindRepeating([](bool support, bool hardware, mojo::ScopedMessagePipeHandle pipe) {
+        mojo::MakeSelfOwnedReceiver(std::make_unique<DolbyVisionToolbox>(support, hardware),
+            mojo::PendingReceiver<media::mojom::blink::ParcVideoToolboxDecoding>(std::move(pipe)));
+      }, vt_support, vt_hardware)));
+  for (bool hardware : {false, true}) {
+    base::test::ScopedCommandLine command_line;
+    command_line.GetProcessCommandLine()->AppendSwitchASCII(
+        media::kParcAV1HardwareDecoder, hardware ? "1" : "0");
+    for (const char* agent : {kSafariUserAgent, kChromeUserAgent}) {
+      SetUserAgent(agent);
+      for (const char* codec : {"dav1.10.06", "dvh1.20.06", "dvhe.20.06", "dvh1.08.06", "dvh1.20.6",
+                                "dvh1.20.06.extra", "dav1.10.06.extra"}) {
+        auto* config = MediaDecodingConfiguration::Create();
+        config->setType(V8MediaDecodingType::Enum::kMediaSource);
+        auto* video = VideoConfiguration::Create();
+        video->setContentType(String("video/mp4; codecs=\"") + codec + "\"");
+        video->setWidth(1920);
+        video->setHeight(1080);
+        video->setBitrate(4000000);
+        video->setFramerate(60);
+        config->setVideo(video);
+        DummyExceptionStateForTesting exception;
+        auto* capabilities = MediaCapabilities::mediaCapabilities(*GetFrame().DomWindow()->navigator());
+        ScriptPromiseTester tester(script_state, capabilities->decodingInfo(script_state, config, exception));
+        tester.WaitUntilSettled();
+        ASSERT_TRUE(tester.IsFulfilled());
+        auto* info = NativeValueTraits<MediaCapabilitiesDecodingInfo>::NativeValue(
+            script_state->GetIsolate(), tester.Value().V8Value(), exception);
+        ASSERT_TRUE(info);
+        const bool expected = agent == kSafariUserAgent &&
+            (String(codec) == "dvh1.20.06" || String(codec) == "dvhe.20.06" ||
+             (String(codec) == "dav1.10.06" && hardware));
+        EXPECT_EQ(expected, info->supported()) << codec;
+        EXPECT_EQ(expected && vt_support, info->smooth()) << codec;
+        EXPECT_EQ(expected && vt_support && vt_hardware, info->powerEfficient()) << codec;
+      }
+    }
+  }
+  Context()->GetBrowserInterfaceBroker().SetBinderForTesting(
+      media::mojom::blink::ParcVideoToolboxDecoding::Name_, {});
+ }
+};
+
+TEST_F(ParcDolbyVisionCapabilitiesTest, MatchesMediaSourceWithHardwareFacts) {
+  CheckCapabilities(true, true);
+}
+TEST_F(ParcDolbyVisionCapabilitiesTest, SupportedWithoutDolbyVisionFacts) {
+  CheckCapabilities(false, false);
+}
+TEST_F(ParcDolbyVisionCapabilitiesTest, SoftwareFactsAreSmoothButNotPowerEfficient) {
+  CheckCapabilities(true, false);
+}
+
 TEST_F(ParcMediaSourceTest, SafariSourceBufferDolbyVisionProfiles) {
   SetUserAgent(kSafariUserAgent);
   MediaSource* media_source = OpenMediaSource();
