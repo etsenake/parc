@@ -63,12 +63,18 @@ final class BrowserImportCoordinator {
     private var backgroundProfiles: [(profile: PCNativeImportProfile, destination: BrowserImportDestination)] = []
     private var backgroundSessions: [UUID: PCNativeImportSession] = [:]
     private var backgroundPending = Set<UUID>()
+    /// Each running background session's Parc Profile.
+    private var backgroundTargets: [UUID: UUID] = [:]
+    /// A chosen password file waits for its Profile's background data.
+    private var waitingPasswordFile: (url: URL, destination: BrowserImportDestination, token: UUID)?
     private var startingBackground = false
     /// Background work outlives later choices on screen; only cancel stops it.
     private var backgroundToken = UUID()
 
     func detach(onAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?) {
         guard hasBackgroundWork, !cancelled else { cancel(); return }
+        if let waiting = waitingPasswordFile { passwordFileInBackground = waiting.token }
+        else if importingPasswords, let token = passwordRequestID { passwordFileInBackground = token }
         onChange = nil
         onDetachedAdBlockers = onAdBlockers
         if !detached { detached = true; Self.detachedImports.append(self) }
@@ -79,7 +85,13 @@ final class BrowserImportCoordinator {
         if detached { ImportedBrowserDataFailures.add(lines) }
     }
 
+    /// A password file left to import after Next is background work too.
+    private var passwordFileInBackground: UUID?
+    private var backgroundDataDone = false
+
     private func finishBackground() {
+        backgroundDataDone = true
+        guard passwordFileInBackground == nil else { return }
         hasBackgroundWork = false
         if detached {
             onDetachedAdBlockers?(importedAdBlockers)
@@ -548,13 +560,9 @@ final class BrowserImportCoordinator {
             finishSourceFailure("The selected destination is no longer available."); return
         }
         if !extensions.isEmpty { pendingExtensions.append((profile, destination, extensions)) }
-        // Safari's history is quick and its password file needs the same
-        // destination next, so Safari imports whole in the foreground.
-        if source.map(Self.isSafari) != true {
-            backgroundProfiles.append((profile, destination))
-            guard categories.contains(.bookmarks) else { activeDestination = nil; completed += 1; importNext(); return }
-            categories = [.bookmarks]
-        }
+        backgroundProfiles.append((profile, destination))
+        guard categories.contains(.bookmarks) else { activeDestination = nil; completed += 1; importNext(); return }
+        categories = [.bookmarks]
         message = "Importing \(profile.displayName)…"; onChange?()
         session = PCNativeBrowserApplication.importBrowserData(from: profile,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window,
@@ -599,7 +607,7 @@ final class BrowserImportCoordinator {
 
     private func startBackground(in window: NSWindow) {
         let pending = backgroundProfiles; backgroundProfiles = []
-        hasBackgroundWork = true; startingBackground = true
+        hasBackgroundWork = true; startingBackground = true; backgroundDataDone = false
         backgroundToken = UUID(); let token = backgroundToken
         for item in pending {
             var categories = item.profile.supportedCategories
@@ -610,14 +618,15 @@ final class BrowserImportCoordinator {
                 continue
             }
             let id = UUID()
-            backgroundPending.insert(id)
+            backgroundPending.insert(id); backgroundTargets[id] = item.destination.profileID
             let lease = PCNativeBrowserApplication.importBrowserData(from: item.profile,
                 toProfilePath: store.independentEngineProfilePath(for: item.destination.profileID), in: window,
                 categories: categories, skipExistingCookies: skipExistingCookies,
                 progress: { _ in }, completion: { [weak self] result in
                     guard let self, self.backgroundToken == token, !self.cancelled,
                           self.backgroundPending.remove(id) != nil else { return }
-                    self.backgroundSessions[id] = nil
+                    self.backgroundSessions[id] = nil; self.backgroundTargets[id] = nil
+                    self.startWaitingPasswordFile()
                     self.reportBackgroundWarnings(result.warnings)
                     if let error = result.error { self.reportBackgroundWarnings(["\(item.profile.displayName): \(error.localizedDescription)"]) }
                     else if result.outcome == .failed { self.reportBackgroundWarnings(["\(item.profile.displayName) could not be imported."]) }
@@ -627,7 +636,7 @@ final class BrowserImportCoordinator {
             if backgroundPending.contains(id) {
                 if let lease { backgroundSessions[id] = lease }
                 else {
-                    backgroundPending.remove(id)
+                    backgroundPending.remove(id); backgroundTargets[id] = nil
                     reportBackgroundWarnings(["Parc could not begin the import from \(item.profile.displayName)."])
                 }
             }
@@ -752,9 +761,50 @@ final class BrowserImportCoordinator {
         passwordSession?.cancel(); passwordResult = nil; passwordFileRemoved = false; passwordError = nil
         passwordFileName = url.lastPathComponent; importingPasswords = true
         let token = UUID(); passwordRequestID = token; onChange?()
+        // Native import admits one session per Profile; history may still be running there.
+        if backgroundTargets.values.contains(destination.profileID) {
+            waitingPasswordFile = (url, destination, token); return
+        }
+        beginPasswordFile(url, destination: destination, token: token, in: window)
+    }
+
+    /// Next moves on; the file then imports once that Profile's data is in.
+    var passwordFileWaiting: Bool { waitingPasswordFile != nil }
+
+    private func startWaitingPasswordFile() {
+        guard let waiting = waitingPasswordFile, !backgroundTargets.values.contains(waiting.destination.profileID) else { return }
+        waitingPasswordFile = nil
+        // A closed import window leaves the import running; any visible window hosts the file.
+        guard waiting.destination.isCurrent(in: store.state),
+              let host = (window?.isVisible == true ? window : nil) ?? NSApp.windows.first(where: { $0.isVisible }) ?? window else {
+            importingPasswords = false
+            passwordError = "The destination closed. Nothing was imported from this file."
+            if passwordFileInBackground == waiting.token {
+                ImportedBrowserDataFailures.add(["Passwords from \(waiting.url.lastPathComponent) weren’t imported."])
+            }
+            finishPasswordFileInBackground(waiting.token)
+            onChange?(); return
+        }
+        beginPasswordFile(waiting.url, destination: waiting.destination, token: waiting.token, in: host)
+    }
+
+    private func finishPasswordFileInBackground(_ token: UUID) {
+        guard passwordFileInBackground == token else { return }
+        passwordFileInBackground = nil
+        if backgroundDataDone { finishBackground() }
+    }
+
+    private func beginPasswordFile(_ url: URL, destination: BrowserImportDestination, token: UUID, in window: NSWindow) {
         passwordSession = PCNativeBrowserApplication.importPasswordFile(url,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window) { [weak self] result in
-            guard let self, self.isCurrent, self.stage == .safariPasswords, self.passwordRequestID == token else { return }
+            guard let self else { return }
+            if self.passwordFileInBackground == token {
+                // Setup moved on or the window closed; a browser window reports failures.
+                if result.error != nil { ImportedBrowserDataFailures.add(["Passwords from \(url.lastPathComponent) weren’t imported."]) }
+                if self.passwordRequestID != token { self.passwordSession = nil }
+                self.finishPasswordFileInBackground(token)
+            }
+            guard self.isCurrent, self.stage == .safariPasswords, self.passwordRequestID == token else { return }
             self.importingPasswords = false; self.passwordResult = result
             if !destination.isCurrent(in: self.store.state) {
                 self.passwordSession?.cancel(); self.passwordSession = nil
@@ -765,12 +815,18 @@ final class BrowserImportCoordinator {
         if passwordSession == nil {
             importingPasswords = false
             passwordError = "Another import may be active, or this file or destination is unavailable. Nothing was imported."
+            if passwordFileInBackground == token { ImportedBrowserDataFailures.add(["Passwords from \(url.lastPathComponent) weren’t imported."]) }
+            finishPasswordFileInBackground(token)
             onChange?()
         }
     }
 
     func stopPasswordImport() {
         guard stage == .safariPasswords, importingPasswords else { return }
+        if waitingPasswordFile != nil {
+            waitingPasswordFile = nil; passwordRequestID = nil; importingPasswords = false
+            passwordError = "Nothing was imported from this file."; onChange?(); return
+        }
         passwordSession?.cancel(); passwordError = "Stopping import. Already saved passwords will be kept."; onChange?()
     }
 
@@ -785,8 +841,9 @@ final class BrowserImportCoordinator {
     }
 
     func continueAfterPasswords() {
-        guard stage == .safariPasswords, isCurrent, !importingPasswords, !removingPasswordFile else { return }
-        passwordSession?.cancel(); passwordSession = nil; passwordDestination = nil
+        guard stage == .safariPasswords, isCurrent, !importingPasswords || passwordFileWaiting, !removingPasswordFile else { return }
+        if let waiting = waitingPasswordFile { passwordFileInBackground = waiting.token } else { passwordSession?.cancel(); passwordSession = nil }
+        importingPasswords = false; passwordDestination = nil
         passwordRequestID = nil
         stage = hasPendingBookmarks ? .bookmarks : .finished
         message = hasPendingBookmarks ? "Choose the bookmarks to keep in your sidebar." : "Your import has finished."
@@ -876,9 +933,10 @@ final class BrowserImportCoordinator {
         checkingSafariAccess = false; restarting = false; continueAfterSafariRefresh = false
         session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []; queuedDestinations = [:]
         backgroundSessions.values.forEach { $0.cancel() }
-        backgroundSessions = [:]; backgroundPending = []; backgroundProfiles = []
+        backgroundSessions = [:]; backgroundPending = []; backgroundProfiles = []; backgroundTargets = [:]
+        waitingPasswordFile = nil
         extensionInstall?.cancel(); extensionInstall = nil; pendingExtensions = []
-        onDetachedAdBlockers = nil; finishBackground()
+        onDetachedAdBlockers = nil; passwordFileInBackground = nil; finishBackground()
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil
         acceptedICloudPasswordsDestination = nil
