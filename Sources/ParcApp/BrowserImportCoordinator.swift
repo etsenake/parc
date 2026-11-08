@@ -58,7 +58,10 @@ final class BrowserImportCoordinator {
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
     private var activeDestination: BrowserImportDestination?
+    private let arcSidebarURL: URL
     private var queue: [PCNativeImportProfile] = []
+    ///
+    private var queuedDestinations: [String: BrowserImportDestination] = [:]
     private var completed = 0
     private var cancelled = false
     private var subscription: AnyCancellable?
@@ -66,8 +69,10 @@ final class BrowserImportCoordinator {
     init(store: BrowserStore, destination: BrowserImportDestination, window: NSWindow, onboarding: Bool = false,
          supportsICloudPasswords: Bool = ProcessInfo.processInfo.isOperatingSystemAtLeast(
             OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)),
+         arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
+        self.arcSidebarURL = arcSidebarURL
         self.onboarding = onboarding
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
@@ -79,8 +84,12 @@ final class BrowserImportCoordinator {
                 } else if self.activeDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
                     // Let the accepted native session drain and complete; its
                     // lost destination must not erase earlier bookmark results.
-                    self.queue = []; self.session?.cancel()
-                    self.message = "Stopping import because its destination was removed…"; self.onChange?()
+                    //
+                    if !self.isArcSource { self.queue = [] }
+                    self.session?.cancel()
+                    self.message = self.isArcSource ? "Skipping a profile whose destination was removed…"
+                        : "Stopping import because its destination was removed…"
+                    self.onChange?()
                 } else if self.passwordDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
                     self.passwordSession?.cancel()
                     self.passwordError = "The selected destination Profile is no longer available."
@@ -102,6 +111,9 @@ final class BrowserImportCoordinator {
     static func isSafari(_ source: PCNativeImportSource) -> Bool {
         Bundle(url: source.appURL)?.bundleIdentifier == "com.apple.Safari"
     }
+    static let arcBundleIdentifier = "company.thebrowser.Browser"
+    static func isArc(_ source: PCNativeImportSource) -> Bool { source.identifier == arcBundleIdentifier }
+    var isArcSource: Bool { source.map(Self.isArc) == true }
 
     func discover(resumingSourceBundleID: String? = nil) {
         guard isCurrent else { return }
@@ -120,7 +132,7 @@ final class BrowserImportCoordinator {
             self.message = sources.isEmpty ? "No supported browsers were found." : "Bring your browsing with you."
             if let bundleID = resumingSourceBundleID {
                 guard let source = sources.first(where: {
-                    Bundle(url: $0.appURL)?.bundleIdentifier == bundleID
+                    Bundle(url: $0.appURL)?.bundleIdentifier == bundleID || (Self.isArc($0) && bundleID == Self.arcBundleIdentifier)
                 }) else {
                     self.error = "The selected browser is no longer available. Choose an installed browser to continue."
                     self.onChange?(); return
@@ -169,7 +181,7 @@ final class BrowserImportCoordinator {
         guard canContinueOnboardingSource else { return }
         if requiresSafariAccess {
             stage = .safariAccess; onChange?()
-        } else { startInOriginalDestination() }
+        } else if isArcSource { startArc() } else { startInOriginalDestination() }
     }
 
     func loadProfiles() {
@@ -187,10 +199,17 @@ final class BrowserImportCoordinator {
 
     private func applyProfiles(_ result: PCNativeImportProfileResult) {
         profiles = result.profiles; warnings = result.constraints
-        let readable = result.profiles.first { $0.supportedCategories.rawValue != 0 } ?? result.profiles.first
-        selectedProfiles = Set(readable.map { [$0.identifier] } ?? [])
+        if isArcSource {
+            //
+            selectedProfiles = Set(result.profiles.filter { $0.supportedCategories.rawValue != 0 }.map(\.identifier))
+        } else {
+            let readable = result.profiles.first { $0.supportedCategories.rawValue != 0 } ?? result.profiles.first
+            selectedProfiles = Set(readable.map { [$0.identifier] } ?? [])
+        }
         selectedExtensions.removeAll(); error = result.error?.localizedDescription
-        message = result.profiles.isEmpty ? "No readable profiles were found." : "Choose the profile to bring into Parc."
+        message = result.profiles.isEmpty ? "No readable profiles were found." :
+            isArcSource ? "Choose the Arc profiles to bring over with their Spaces, pinned tabs and Favorites." :
+            "Choose the profile to bring into Parc."
         // This describes selected-source readability, never a fabricated TCC
         // grant. Missing history or an incomplete result cannot enable Restart.
         safariAccessReady = result.error == nil && result.access == .complete && result.profiles.contains {
@@ -242,12 +261,17 @@ final class BrowserImportCoordinator {
     func selectProfile(_ id: String) {
         guard stage == .profiles, isCurrent,
               profiles.contains(where: { $0.identifier == id && $0.supportedCategories.rawValue != 0 }) else { return }
-        // The parent wizard submits exactly one immutable source descriptor.
-        selectedProfiles = [id]; onChange?()
+        if isArcSource {
+            if selectedProfiles.remove(id) == nil { selectedProfiles.insert(id) }
+        } else {
+            // The parent wizard submits exactly one immutable source descriptor.
+            selectedProfiles = [id]
+        }
+        onChange?()
     }
 
     var canChooseDestination: Bool {
-        isCurrent && selectedProfiles.count == 1 && profiles.contains {
+        isCurrent && (selectedProfiles.count == 1 || (isArcSource && !selectedProfiles.isEmpty)) && profiles.contains {
             guard selectedProfiles.contains($0.identifier) else { return false }
             var categories = $0.supportedCategories
             if (selectedExtensions[$0.identifier] ?? []).isEmpty { categories.remove(.extensions) }
@@ -271,6 +295,8 @@ final class BrowserImportCoordinator {
 
     func chooseDestination() {
         guard stage == .profiles, canChooseDestination else { return }
+        //
+        if isArcSource { startArc(); return }
         passwordsOnly = false; prepareDestinationChoice()
     }
 
@@ -355,9 +381,62 @@ final class BrowserImportCoordinator {
         importNext()
     }
 
+    ///
+    /// Space; the browser data of each profile then imports into that Profile.
+    private func startArc() {
+        guard stage == .profiles, isArcSource, canChooseDestination else { return }
+        let selected = profiles.filter { selectedProfiles.contains($0.identifier) }
+        stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
+        passwordsOnly = false; passwordDestination = nil; passwordStageOffered = false
+        skipExistingCookies = true; queue = []; queuedDestinations = [:]
+        generation = UUID(); let token = generation
+        message = "Bringing over your Arc Spaces…"; onChange?()
+        let url = arcSidebarURL
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try ArcSidebarSnapshot.read(url) }
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.importArcSidebar(result, profiles: selected, token: token) }
+            }
+        }
+    }
+
+    private func importArcSidebar(_ result: Result<ArcSidebarImport, Error>, profiles selected: [PCNativeImportProfile],
+                                  token: UUID) {
+        guard isCurrent, generation == token, stage == .importing else { return }
+        var keys: [ArcSidebarImport.ProfileKey: PCNativeImportProfile] = [:], named: [(key: ArcSidebarImport.ProfileKey, name: String)] = []
+        for profile in selected {
+            let key = ArcSidebarImport.profileKey(directory: profile.directoryName)
+            guard keys[key] == nil else { continue }
+            keys[key] = profile; named.append((key, profile.displayName))
+        }
+        var destinations: [ArcSidebarImport.ProfileKey: BrowserImportDestination] = [:]
+        switch result {
+        case .success(let arc):
+            do {
+                let imported = try store.importArcSidebar(arc, profiles: named, standardProfileID: originalDestination.profileID)
+                destinations = imported.destinations; warnings += imported.warnings
+            } catch {
+                finishSourceFailure("Arc’s Spaces couldn’t be added: \(error.localizedDescription)"); return
+            }
+        case .failure(let failure):
+            warnings.append("Arc’s Spaces couldn’t be read, so only its browsing data was imported: \(failure.localizedDescription)")
+            for (key, name) in named {
+                if key == .standard { destinations[key] = originalDestination; continue }
+                do { destinations[key] = try store.createImportDestination(name: name, basedOn: originalDestination) }
+                catch { warnings.append("\(name) couldn’t be imported: \(error.localizedDescription)") }
+            }
+        }
+        for (key, profile) in keys where profile.supportedCategories.rawValue != 0 {
+            if let destination = destinations[key] { queuedDestinations[profile.identifier] = destination }
+        }
+        queue = selected.filter { queuedDestinations[$0.identifier] != nil }
+        importNext()
+    }
+
     private func importNext() {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
+            queuedDestinations = [:]
             // Setup accepts bookmarks before offering the separate Safari
             // password step. The menu keeps its existing import sequence.
             if !(onboarding && hasPendingBookmarks), presentPasswordStageIfNeeded() {
@@ -368,6 +447,7 @@ final class BrowserImportCoordinator {
             onChange?(); return
         }
         let profile = queue.removeFirst(), token = generation
+        if let target = queuedDestinations.removeValue(forKey: profile.identifier) { activeDestination = target }
         var categories = profile.supportedCategories
         let extensions = Set(profile.extensions.map(\.identifier)).intersection(selectedExtensions[profile.identifier] ?? [])
         let submittedAdBlockers = profile.extensions.compactMap { item -> OnboardingDraft.ImportedAdBlocker? in
@@ -380,6 +460,11 @@ final class BrowserImportCoordinator {
             completed += 1; importNext(); return
         }
         guard let destination = activeDestination, destination.isCurrent(in: store.state) else {
+            if isArcSource {
+                activeDestination = nil; completed += 1
+                warnings.append("\(profile.displayName): its Parc Space or Profile was removed, so it wasn’t imported.")
+                importNext(); return
+            }
             finishSourceFailure("The selected destination is no longer available."); return
         }
         message = "Importing \(profile.displayName)…"; onChange?()
@@ -395,7 +480,10 @@ final class BrowserImportCoordinator {
                 guard let self, self.isCurrent, self.generation == token else { return }
                 self.session = nil; self.activeDestination = nil
                 guard destination.isCurrent(in: self.store.state) else {
-                    self.finishSourceFailure("\(profile.displayName): its destination was removed, so this import stopped.")
+                    let failure = "\(profile.displayName): its destination was removed, so this import stopped."
+                    if self.isArcSource {
+                        self.warnings.append(failure); self.completed += 1; self.importNext()
+                    } else { self.finishSourceFailure(failure) }
                     return
                 }
                 self.warnings += result.warnings
@@ -595,18 +683,56 @@ final class BrowserImportCoordinator {
 
     func stopImport() {
         guard stage == .importing else { return }
-        queue = []; passwordDestination = nil
-        session?.cancel(); message = "Stopping import…"; onChange?()
+        queue = []; queuedDestinations = [:]; passwordDestination = nil
+        guard let session else {
+            //
+            generation = UUID(); stage = .finished
+            message = "Import stopped. Data already imported has been kept."; onChange?(); return
+        }
+        session.cancel(); message = "Stopping import…"; onChange?()
     }
 
     func cancel() {
         guard !cancelled else { return }
         cancelled = true; generation = UUID(); discovery?.cancel(); discovery = nil
         checkingSafariAccess = false; restarting = false; continueAfterSafariRefresh = false
-        session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []
+        session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []; queuedDestinations = [:]
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil
         acceptedICloudPasswordsDestination = nil
         stage = .finished; message = "Import stopped. Data already imported has been kept."; onChange?()
+    }
+}
+
+///
+///
+enum ArcSidebarSnapshot {
+    static var defaultURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
+    }
+    static let maximumSize = 64 * 1024 * 1024
+
+    static func read(_ source: URL) throws -> ArcSidebarImport {
+        let files = FileManager.default
+        let directory = files.temporaryDirectory.appendingPathComponent("ParcArcImport-\(UUID().uuidString)", isDirectory: true)
+        try files.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? files.removeItem(at: directory) }
+        let copy = directory.appendingPathComponent("StorableSidebar.json")
+        func stamp() throws -> [FileAttributeKey: AnyHashable] {
+            let attributes = try files.attributesOfItem(atPath: source.path)
+            guard (attributes[.size] as? Int ?? .max) <= maximumSize else { throw CocoaError(.fileReadTooLarge) }
+            return attributes.filter { [.size, .modificationDate, .systemFileNumber].contains($0.key) }
+                .compactMapValues { $0 as? AnyHashable }
+        }
+        for attempt in 0..<5 {
+            if attempt > 0 { Thread.sleep(forTimeInterval: 0.2) }
+            let before = try stamp()
+            try? files.removeItem(at: copy)
+            try files.copyItem(at: source, to: copy)
+            guard try stamp() == before else { continue }
+            return try ArcSidebarImport(data: Data(contentsOf: copy))
+        }
+        throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Arc kept changing its sidebar. Try again in a moment."])
     }
 }

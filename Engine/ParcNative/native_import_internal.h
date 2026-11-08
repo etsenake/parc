@@ -1,6 +1,8 @@
 // Copyright 2026 Parc contributors.
 #pragma once
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,10 +10,24 @@
 #import "native_appkit_bridge.h"
 NS_ASSUME_NONNULL_BEGIN
 namespace parc::importer {
+struct SourceKey {
+  SourceKey() = default;
+  SourceKey(const SourceKey&) {}
+  SourceKey& operator=(const SourceKey&) { return *this; }
+  ~SourceKey() {
+    volatile uint8_t* data = bytes.data();
+    for (size_t i = 0; i < bytes.size(); ++i)
+      data[i] = 0;
+  }
+  std::vector<uint8_t> bytes;
+};
 struct Installation {
   int family;
   std::string bundle_id, name, root_relative, key_service, key_account;
   base::FilePath app_path;
+  // Main thread only. One Keychain authorization serves every profile of
+  // this discovered source; copies of the descriptor never carry it.
+  mutable SourceKey key;
 };
 struct ProfileData {
   std::shared_ptr<const Installation> source;

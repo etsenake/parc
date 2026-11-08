@@ -5479,6 +5479,23 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
+    ///
+    /// standard Profile maps to `standardProfileID`; a custom one to an unused
+    /// live Profile with its name, else a new one. Each Profile in `profiles`
+    /// gets a destination Space for its native data import. The active Space
+    /// does not change.
+    func importArcSidebar(_ arc: ArcSidebarImport, profiles: [(key: ArcSidebarImport.ProfileKey, name: String)],
+                          standardProfileID: UUID) throws
+        -> (destinations: [ArcSidebarImport.ProfileKey: BrowserImportDestination], warnings: [String]) {
+        guard !isEphemeral else { throw CocoaError(.userCancelled) }
+        let previous = state
+        let result = try arc.inserting(into: state, profiles: profiles, standardProfileID: standardProfileID, at: clock())
+        state = result.state
+        do { try save() } catch { state = previous; throw error }
+        changed()
+        return (result.destinations, result.warnings)
+    }
+
     /// Create a distinct local destination before the native profile service is
     /// acquired. Does not change the active Space or any existing page owner.
     func createImportDestination(name: String, basedOn original: BrowserImportDestination) throws -> BrowserImportDestination {

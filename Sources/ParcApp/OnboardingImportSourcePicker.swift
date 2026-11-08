@@ -111,6 +111,7 @@ struct OnboardingImportSourcePicker: View {
         case "com.operasoftware.OperaGX": return NSColor(parcHex: "FECDD8")
         case "com.apple.Safari": return NSColor(red: 0.82, green: 0.87, blue: 1, alpha: 0.3)
         case "com.vivaldi.Vivaldi": return NSColor(parcHex: "FCD7D7")
+        case BrowserImportCoordinator.arcBundleIdentifier: return NSColor(parcHex: "E3E6FC")
         default: return .white
         }
     }

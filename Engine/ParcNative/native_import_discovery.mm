@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cerrno>
 #include <map>
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -24,8 +25,10 @@ bool SourceReady(const ProfileData& profile, std::string& error) {
   NSBundle* bundle = [NSBundle
       bundleWithPath:base::SysUTF8ToNSString(source.app_path.value())];
   struct stat directory{};
-  if (![bundle.bundleIdentifier
-          isEqualToString:base::SysUTF8ToNSString(source.bundle_id)] ||
+  //
+  const bool bundled = source.app_path.MatchesExtension(".app");
+  if ((bundled && ![bundle.bundleIdentifier
+                       isEqualToString:base::SysUTF8ToNSString(source.bundle_id)]) ||
       stat(profile.path.value().c_str(), &directory) != 0 ||
       !S_ISDIR(directory.st_mode) ||
       static_cast<uint64_t>(directory.st_dev) != profile.device ||
@@ -36,6 +39,17 @@ bool SourceReady(const ProfileData& profile, std::string& error) {
   return true;
 }
 namespace {
+constexpr char kArcBundleID[] = "company.thebrowser.Browser";
+constexpr char kArcData[] = "Library/Application Support/Arc";
+//
+// A path macOS refuses to stat still exists; reading it asks for access later.
+bool ArcDataExists(const base::FilePath& home) {
+  struct stat info{};
+  const auto sidebar =
+      home.Append(kArcData).AppendASCII("StorableSidebar.json");
+  return stat(sidebar.value().c_str(), &info) == 0 || errno == EPERM ||
+         errno == EACCES;
+}
 std::optional<base::DictValue> JSON(const base::FilePath& path) {
   std::string data;
   if (!base::ReadFileToStringWithMaxSize(path, &data, 64 * 1024 * 1024))
@@ -184,6 +198,10 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     };
     if (blocked(root) || blocked(root.AppendASCII("Local State")))
       result.restricted = true;
+    //
+    if (source->bundle_id == kArcBundleID &&
+        blocked(root.DirName().AppendASCII("StorableSidebar.json")))
+      result.restricted = true;
   } else if (source->family == 1) {
     AddProfile(result, source, root, "Safari");
     result.constraints.push_back(
@@ -279,7 +297,7 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
   std::shared_ptr<const parc::importer::ProfileData> _data;
 }
 @synthesize identifier = _identifier, source = _source,
-            displayName = _displayName,
+            displayName = _displayName, directoryName = _directoryName,
             supportedCategories = _supportedCategories,
             extensions = _extensions, access = _access,
             constraints = _constraints;
@@ -291,6 +309,7 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     _source = source;
     _identifier = base::SysUTF8ToNSString(_data->identifier);
     _displayName = base::SysUTF8ToNSString(_data->name);
+    _directoryName = base::SysUTF8ToNSString(_data->path.BaseName().value());
     _supportedCategories =
         static_cast<PCNativeImportCategories>(_data->categories);
     _access = _data->restricted ? PCNativeImportAccessRestricted
@@ -403,6 +422,13 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
          "Opera Safe Storage",
          "Opera",
          {}},
+        {0,
+         parc::importer::kArcBundleID,
+         "Arc",
+         "Library/Application Support/Arc/User Data",
+         "Arc Safe Storage",
+         "Arc",
+         {}},
         {1, "com.apple.Safari", "Safari", "Library/Safari", "", "", {}},
         {2,
          "org.mozilla.firefox",
@@ -411,10 +437,20 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
          "",
          "",
          {}}};
+    const base::FilePath home(base::SysNSStringToUTF8(NSHomeDirectory()));
     for (auto candidate : candidates) {
       NSURL* url = [NSWorkspace.sharedWorkspace
           URLForApplicationWithBundleIdentifier:base::SysUTF8ToNSString(
                                                     candidate.bundle_id)];
+      if (candidate.bundle_id == parc::importer::kArcBundleID) {
+        if (!parc::importer::ArcDataExists(home))
+          continue;
+        if (!url)
+          url = [NSURL fileURLWithPath:base::SysUTF8ToNSString(
+                                           home.Append(parc::importer::kArcData)
+                                               .value())
+                           isDirectory:YES];
+      }
       if (!url)
         continue;
       candidate.app_path = base::FilePath(base::SysNSStringToUTF8(url.path));

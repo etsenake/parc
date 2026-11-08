@@ -181,6 +181,23 @@ final class OnboardingSetupCard: NSView {
     let borders = Borders()
     let heading = NSTextField(wrappingLabelWithString: "")
     let message = NSTextField(wrappingLabelWithString: "")
+    private let sunset = BrowserImportSunsetHeader()
+    ///
+    /// title turns white over its deep blue end.
+    var showsSunset = false {
+        didSet {
+            guard showsSunset != oldValue else { return }
+            sunset.reveal(showsSunset)
+            if window?.isVisible == true, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                let animation = CATransition()
+                animation.type = .fade; animation.duration = 0.25
+                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                heading.layer?.add(animation, forKey: "sunset")
+            }
+            heading.textColor = titleColor
+        }
+    }
+    var titleColor: NSColor { showsSunset ? .white : OnboardingSetupPalette.title }
     var themeBackground: NSColor? { didSet { updateColors() } }
     /// The chosen Space theme's texture, drawn as the sidebar's theme renderer
     /// draws it. No theme, or one without colour, draws none.
@@ -204,6 +221,8 @@ final class OnboardingSetupCard: NSView {
         layer?.shadowRadius = 17
         layer?.shadowOffset = CGSize(width: 0, height: 14)
         layer?.backgroundColor = nil
+        sunset.alphaValue = 0
+        chrome.addSubview(sunset)
         addSubview(chrome)
         addSubview(instructions)
         addSubview(content)
@@ -258,7 +277,7 @@ final class OnboardingSetupCard: NSView {
         paragraph.maximumLineHeight = 36
         paragraph.lineBreakMode = .byWordWrapping
         heading.attributedStringValue = NSAttributedString(string: title, attributes: [
-            .font: font, .foregroundColor: OnboardingSetupPalette.title,
+            .font: font, .foregroundColor: titleColor,
             .kern: -1.3, .paragraphStyle: paragraph
         ])
         heading.setAccessibilityRole(NSAccessibility.Role(rawValue: "AXHeading"))
@@ -292,6 +311,7 @@ final class OnboardingSetupCard: NSView {
     override func layout() {
         super.layout()
         chrome.frame = bounds
+        sunset.frame = NSRect(x: 0, y: 0, width: bounds.width, height: BrowserImportSunsetHeader.height)
         borders.frame = bounds
         chrome.needsLayout = true
         borders.needsLayout = true

@@ -612,6 +612,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             ? palette.backgroundExtra : nil
         setupCard.grainTheme = selectedTheme
         setupCard.grainIsActive = ThemeWindowActivity.isActive(window)
+        setupCard.showsSunset = draft.stage == .bookmarks && browserImport?.showsArcSunset == true
         progress.textColor = OnboardingSetupPalette.message
         persistenceStatus.textColor = draft.stage.isWelcome ? .white : .systemRed
         // ProgressionButton's theme getters select maxContrastColor (+0x70)
@@ -624,7 +625,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         for button in [back, skip] { button.contentTintColor = OnboardingSetupPalette.message }
         for view in body.subviews + setupCard.instructions.subviews {
             if let label = view as? NSTextField, label !== spaceField {
-                label.textColor = (label.font?.pointSize ?? 14) >= 17
+                label.textColor = label === setupCard.heading ? setupCard.titleColor : (label.font?.pointSize ?? 14) >= 17
                     ? OnboardingSetupPalette.title : OnboardingSetupPalette.message
             } else if let button = view as? ActionButton {
                 button.contentTintColor = OnboardingSetupPalette.title
@@ -774,6 +775,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         bookmarkPanel?.cancel(nil); bookmarkPanel = nil
         let importer = browserImport; browserImport = nil
         importer?.cancel(); importer?.view.removeFromSuperview()
+        setupCard.showsSunset = false
         onCancelImportRestart?()
     }
 

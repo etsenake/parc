@@ -323,7 +323,11 @@ class Session final : public ProfileObserver,
              ImportError(@"A Profile cannot be imported into itself."));
       return;
     }
-    if (source_->source->family == 0 && (requested_ & (4 | 8 | 16))) {
+    if (source_->source->family == 0 && (requested_ & (4 | 8 | 16)) &&
+        !source_->source->key.bytes.empty()) {
+      key_ = source_->source->key.bytes;
+      Launch();
+    } else if (source_->source->family == 0 && (requested_ & (4 | 8 | 16))) {
       base::ThreadPool::PostTaskAndReplyWithResult(
           FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
           base::BindOnce(&ReadKey, *source_->source),
@@ -331,6 +335,8 @@ class Session final : public ProfileObserver,
               [](std::weak_ptr<Session> weak, KeyResult key) {
                 if (auto self = weak.lock()) {
                   if (!self->finished_) {
+                    if (!key.bytes.empty())
+                      self->source_->source->key.bytes = key.bytes;
                     self->key_ = std::move(key.bytes);
                     if (!key.error.empty())
                       [self->warnings_

@@ -21,12 +21,14 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
     }
 }
 @MainActor final class PCNativeImportProfile {
-    let identifier: String, displayName: String
+    let identifier: String, displayName: String, directoryName: String
     let supportedCategories: PCNativeImportCategories, access: PCNativeImportAccess
     var extensions: [PCNativeImportExtension] = []
     let constraints: [String] = []
-    init(_ id: String, _ categories: PCNativeImportCategories, _ access: PCNativeImportAccess) {
-        identifier = id; displayName = id; supportedCategories = categories; self.access = access
+    init(_ id: String, _ categories: PCNativeImportCategories, _ access: PCNativeImportAccess,
+         name: String? = nil, directory: String? = nil) {
+        identifier = id; displayName = name ?? id; directoryName = directory ?? id
+        supportedCategories = categories; self.access = access
     }
 }
 @MainActor struct PCNativeImportProfileResult {

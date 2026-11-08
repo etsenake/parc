@@ -58,6 +58,7 @@ final class BrowserImportViewController: NSViewController {
     private let back = PArcDialogButton(title: "Back", primary: false, hint: false)
     private let cancelButton = PArcDialogButton(title: "Maybe Later", primary: false, hint: false)
     private var sourceList: NSHostingView<BrowserImportSourceList>?
+    private let sunset = BrowserImportSunsetHeader()
     private let closeControl = ActionButton("", symbol: "xmark")
     private let logo = NSImageView()
     private let destinationView = BrowserImportDestinationView()
@@ -130,6 +131,8 @@ final class BrowserImportViewController: NSViewController {
         closeControl.contentTintColor = PArcDialogStyle.popoverMessage
         closeControl.setAccessibilityLabel("Close Import")
         closeControl.actionBlock = { [weak self] in self?.requestClose() }
+        sunset.alphaValue = 0
+        if !onboarding { root.addSubview(sunset) }
         [heading, detail, scroll, destinationScroll, next, back, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
         next.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
@@ -175,7 +178,7 @@ final class BrowserImportViewController: NSViewController {
     private func requestSafariRestart() {
         guard !closed, let onRequestRestart,
               let source = coordinator.source,
-              let bundleID = Bundle(url: source.appURL)?.bundleIdentifier,
+              let bundleID = BrowserImportCoordinator.isArc(source) ? source.identifier : Bundle(url: source.appURL)?.bundleIdentifier,
               coordinator.beginSafariRestart() else { return }
         let token = UUID(); restartRequest = token
         let intent = BrowserImportRestartIntent(destination: coordinator.originalDestination, onboarding: onboarding,
@@ -246,6 +249,7 @@ final class BrowserImportViewController: NSViewController {
             return
         }
         accessView.frame = root.bounds; passwordsView.frame = root.bounds
+        sunset.frame = NSRect(x: 0, y: 0, width: width, height: BrowserImportSunsetHeader.windowHeight)
         closeControl.frame = NSRect(x: width - 48, y: 24, width: 24, height: 24)
         logo.frame = NSRect(x: 30, y: 34, width: 54, height: 47)
         if coordinator.stage == .destination {
@@ -385,7 +389,7 @@ final class BrowserImportViewController: NSViewController {
                 let check = checkbox(profile.displayName, selected: coordinator.selectedProfiles.contains(profile.identifier)) { [weak self] in
                     self?.coordinator.selectProfile(profile.identifier)
                 }
-                check.setButtonType(.radio)
+                check.setButtonType(coordinator.isArcSource ? .switch : .radio)
                 check.isEnabled = profile.supportedCategories.rawValue != 0; add(check)
                 add(label(Self.categories(profile.supportedCategories), secondary: true))
                 profile.constraints.forEach { add(label($0, secondary: true)) }
@@ -406,6 +410,7 @@ final class BrowserImportViewController: NSViewController {
                 add(row)
             }
             next.isEnabled = coordinator.canChooseDestination
+            if coordinator.isArcSource { next.title = "Import" }
         case .destination:
             heading.stringValue = "Which Parc Profile should we import to?"
             next.title = "Import"; next.isEnabled = coordinator.canStart
@@ -486,6 +491,7 @@ final class BrowserImportViewController: NSViewController {
             }
             updateSourcePicker()
         }
+        updateSunset()
         cancelButton.isHidden = coordinator.stage == .finished || choosingDestination || choosingAccess || choosingPasswords
         closeControl.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "\u{1b}" : ""
         cancelButton.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "" : "\u{1b}"
@@ -575,10 +581,26 @@ final class BrowserImportViewController: NSViewController {
         }
     }
 
+    ///
+    /// Setup draws it across its own card; the menu window draws it here.
+    var showsArcSunset: Bool {
+        guard !closed, coordinator.isArcSource else { return false }
+        return embedded ? isChoosingSource && !freshStartSelected : coordinator.stage == .sources
+    }
+
+    private func updateSunset() {
+        sunset.reveal(!embedded && showsArcSunset)
+    }
+
+    private static func icon(_ source: PCNativeImportSource) -> NSImage {
+        BrowserImportCoordinator.isArc(source) ? BrowserImportArcMark.icon(appURL: source.appURL)
+            : NSWorkspace.shared.icon(forFile: source.appURL.path)
+    }
+
     private func updateSourceList() {
         let choices = coordinator.sources.map { source in
             BrowserImportSourceList.Choice(id: source.identifier, title: source.displayName,
-                icon: NSWorkspace.shared.icon(forFile: source.appURL.path), selected: coordinator.source === source,
+                icon: Self.icon(source), selected: coordinator.source === source,
                 choose: { [weak self, weak source] in
                     guard let self, let source, !self.closed else { return }
                     self.coordinator.select(source)
@@ -627,8 +649,8 @@ final class BrowserImportViewController: NSViewController {
                 self.coordinator.startInOriginalDestination(passwordsOnly: true)
             } : nil
             return OnboardingImportSourcePicker.Source(id: source.identifier, title: source.displayName,
-                icon: NSWorkspace.shared.icon(forFile: source.appURL.path),
-                iconBackground: OnboardingImportSourcePicker.iconBackground(bundleIdentifier: Bundle(url: source.appURL)?.bundleIdentifier),
+                icon: Self.icon(source),
+                iconBackground: OnboardingImportSourcePicker.iconBackground(bundleIdentifier: source.identifier),
                 selected: selected, choose: { [weak self, weak source] in
                     guard let self, let source, self.canChooseInlineSource else { return }
                     self.freshStartSelected = false; self.coordinator.selectOnboardingSource(source)

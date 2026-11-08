@@ -2139,6 +2139,9 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly, copy) NSString* identifier;
 @property(nonatomic, readonly) PCNativeImportSource* source;
 @property(nonatomic, readonly, copy) NSString* displayName;
+//
+// sidebar names a Space's profile by it.
+@property(nonatomic, readonly, copy) NSString* directoryName;
 @property(nonatomic, readonly) PCNativeImportCategories supportedCategories;
 @property(nonatomic, readonly, copy) NSArray<PCNativeImportExtension*>* extensions;
 @property(nonatomic, readonly) PCNativeImportAccess access;
