@@ -28,11 +28,11 @@ final class BrowserImportDestinationView: NSView, NSTextFieldDelegate {
     override init(frame: NSRect) {
         super.init(frame: frame)
         name.placeholderString = "Personal"; name.font = .systemFont(ofSize: 14)
-        name.textColor = .white; name.drawsBackground = false
+        name.textColor = PArcDialogStyle.popoverTitle; name.drawsBackground = false
         name.isBezeled = false; name.focusRingType = .default; name.delegate = self
         name.setAccessibilityLabel("New Profile name")
-        help.font = .systemFont(ofSize: 13); help.textColor = .white.withAlphaComponent(0.65)
-        cookieHelp.font = .systemFont(ofSize: 12); cookieHelp.textColor = .white.withAlphaComponent(0.5)
+        help.font = .systemFont(ofSize: 13); help.textColor = PArcDialogStyle.popoverMessage
+        cookieHelp.font = .systemFont(ofSize: 12); cookieHelp.textColor = PArcDialogStyle.popoverMessage
         cookies.font = .systemFont(ofSize: 13, weight: .medium)
         cookies.target = self; cookies.action = #selector(toggleCookies)
         error.font = .systemFont(ofSize: 12); error.textColor = .systemRed
@@ -57,12 +57,15 @@ final class BrowserImportDestinationView: NSView, NSTextFieldDelegate {
                 addSubview(button); return button
             }
         }
-        for (button, profile) in zip(buttons, profiles) {
-            button.state = choice.option == .existing(profile.target) ? .on : .off
-            button.needsDisplay = true
+        func select(_ button: ImportProfileButton, _ on: Bool) {
+            let state: NSControl.StateValue = on ? .on : .off
+            guard button.state != state else { return }
+            button.state = state; button.needsDisplay = true
+            NSAccessibility.post(element: button, notification: .valueChanged)
         }
+        for (button, profile) in zip(buttons, profiles) { select(button, choice.option == .existing(profile.target)) }
         selectedNew = choice.isNew
-        newButton.state = selectedNew ? .on : .off
+        select(newButton, selectedNew)
         newButton.title = selectedNew ? "New Profile:" : "Create a New Profile"
         newButton.needsDisplay = true
         name.isHidden = !selectedNew; help.isHidden = selectedNew
@@ -92,7 +95,7 @@ final class BrowserImportDestinationView: NSView, NSTextFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         if selectedNew {
-            NSColor.black.setFill()
+            Self.fieldFill.setFill()
             NSBezierPath(roundedRect: NSRect(x: 166, y: CGFloat(buttons.count) * 62 + 15,
                 width: max(0, bounds.width - 197), height: 48), xRadius: 12, yRadius: 12).fill()
         }
@@ -103,6 +106,7 @@ final class BrowserImportDestinationView: NSView, NSTextFieldDelegate {
         onNameChange?(name.stringValue)
     }
     @objc private func toggleCookies() { onToggleCookies?() }
+    private static let fieldFill = PArcDialogStyle.color(0x000000, 0.06, 0x000000, 1)
 }
 
 @MainActor
@@ -112,25 +116,32 @@ private final class ImportProfileButton: NSButton {
     var multiline = false
     init(_ title: String) {
         super.init(frame: .zero)
-        self.title = title; setButtonType(.radio); isBordered = false
+        // A radio-type button only tracks clicks on its dot and title text;
+        // the whole drawn row must select, so state is set by the owner.
+        self.title = title; setButtonType(.momentaryChange); isBordered = false
         focusRingType = .default; target = self; action = #selector(choose)
     }
+    override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
+    override func accessibilityValue() -> Any? { state == .on ? 1 : 0 }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     @objc private func choose() { activate?() }
     override func draw(_ dirtyRect: NSRect) {
         let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
-        if isHighlighted { NSColor.white.withAlphaComponent(0.08).setFill(); shape.fill() }
-        NSColor.white.withAlphaComponent(0.7).setStroke(); shape.lineWidth = 1; shape.stroke()
+        if isHighlighted { Self.pressedFill.setFill(); shape.fill() }
+        Self.stroke.setStroke(); shape.lineWidth = 1; shape.stroke()
         let centerY: CGFloat = multiline ? 26 : bounds.height / 2
         let circle = NSRect(x: 18, y: centerY - 8, width: 16, height: 16)
         NSColor.white.setFill(); NSBezierPath(ovalIn: circle).fill()
+        if state != .on { Self.stroke.setStroke(); NSBezierPath(ovalIn: circle.insetBy(dx: 0.5, dy: 0.5)).stroke() }
         if state == .on {
             NSColor(parcHex: "684AF5").setFill(); NSBezierPath(ovalIn: circle.insetBy(dx: 2, dy: 2)).fill()
             NSColor.white.setFill(); NSBezierPath(ovalIn: circle.insetBy(dx: 5, dy: 5)).fill()
         }
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.85)]
+            .foregroundColor: PArcDialogStyle.popoverTitle]
         let text = title as NSString, height = text.size(withAttributes: attributes).height
         text.draw(in: NSRect(x: 59, y: centerY - height / 2, width: bounds.width - 77, height: height), withAttributes: attributes)
     }
+    private static let stroke = PArcDialogStyle.color(0x000000, 0.2, 0xFFFFFF, 0.7)
+    private static let pressedFill = PArcDialogStyle.color(0x000000, 0.04, 0xFFFFFF, 0.08)
 }

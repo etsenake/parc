@@ -21,8 +21,9 @@ final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
         window.title = "Import from Another Browser"; window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true; window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = true; window.tabbingMode = .disallowed
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.backgroundColor = NSColor(parcHex: "151D2F")
+        // ImportDialogView sits in a Dialogs sheet: PopoverBackground, which
+        // follows the system appearance (the navy seen in dark mode).
+        window.backgroundColor = PArcDialogStyle.popoverBackground
         for kind: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             window.standardWindowButton(kind)?.isHidden = true
         }

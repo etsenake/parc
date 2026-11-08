@@ -18,11 +18,11 @@ final class BrowserImportAccessView: LayoutView {
     private let instructions = NSTextField(wrappingLabelWithString:
         "1. Open System Settings → Privacy & Security → Full Disk Access.\n\n2. Click + and add this copy of Parc.\n\n3. Turn on access for Parc, then return here.")
     private let appPath = NSTextField(wrappingLabelWithString: Bundle.main.bundleURL.path)
-    private let openSettings = ActionButton("Open System Settings…")
-    private let revealApplication = ActionButton("Show Parc in Finder")
+    private let openSettings = PArcDialogButton(title: "Open System Settings…", primary: false, hint: false)
+    private let revealApplication = PArcDialogButton(title: "Show Parc in Finder", primary: false, hint: false)
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let continueButton = ActionButton("Continue without restarting")
-    private let restartButton = ActionButton("Restart Parc")
+    private let continueButton = PArcDialogButton(title: "Continue without restarting", primary: false, hint: false)
+    private let restartButton = PArcDialogButton(title: "Restart Parc", primary: true, hint: false)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -34,31 +34,39 @@ final class BrowserImportAccessView: LayoutView {
             settingsIcon.image = NSWorkspace.shared.icon(forFile: settings.path)
         } else { settingsIcon.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil) }
         settingsIcon.imageScaling = .scaleProportionallyUpOrDown; settingsIcon.setAccessibilityElement(false)
-        heading.font = .systemFont(ofSize: 18, weight: .bold); heading.textColor = .white
-        explanation.font = .systemFont(ofSize: 16); explanation.textColor = NSColor.white.withAlphaComponent(0.82)
+        heading.font = .systemFont(ofSize: 18, weight: .bold); heading.textColor = PArcDialogStyle.popoverTitle
+        explanation.font = .systemFont(ofSize: 16); explanation.textColor = PArcDialogStyle.popoverMessage
         card.wantsLayer = true; card.layer?.cornerRadius = 16
-        card.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
-        cardTitle.font = .systemFont(ofSize: 19, weight: .semibold); cardTitle.textColor = .white
-        instructions.font = .systemFont(ofSize: 14); instructions.textColor = NSColor.white.withAlphaComponent(0.86)
-        appPath.font = .systemFont(ofSize: 11); appPath.textColor = NSColor.white.withAlphaComponent(0.7)
+        cardTitle.font = .systemFont(ofSize: 19, weight: .semibold); cardTitle.textColor = PArcDialogStyle.popoverTitle
+        instructions.font = .systemFont(ofSize: 14); instructions.textColor = PArcDialogStyle.popoverTitle
+        appPath.font = .systemFont(ofSize: 11); appPath.textColor = PArcDialogStyle.popoverMessage
         appPath.isSelectable = true; appPath.setAccessibilityLabel("Parc application path")
         status.font = .systemFont(ofSize: 12)
         [logo, heading, explanation, card, status, continueButton, restartButton].forEach(addSubview)
         [settingsIcon, cardTitle, instructions, appPath, openSettings, revealApplication].forEach(card.addSubview)
-        for button in [openSettings, revealApplication, continueButton, restartButton] {
-            button.font = .systemFont(ofSize: 13, weight: .medium)
-            button.isBordered = true; button.bezelStyle = .rounded
-            button.contentTintColor = .white; button.focusRingType = .default
+        for (button, action) in [(openSettings, #selector(openSettingsPressed)), (revealApplication, #selector(revealPressed)),
+                                 (continueButton, #selector(continuePressed)), (restartButton, #selector(restartPressed))] {
+            button.target = self; button.action = action
         }
-        continueButton.bezelColor = NSColor(parcHex: "584C92")
-        restartButton.bezelColor = NSColor(parcHex: "8370E9")
-        continueButton.actionBlock = { [weak self] in self?.onContinue?() }
-        restartButton.actionBlock = { [weak self] in self?.onRestart?() }
-        openSettings.actionBlock = { [weak self] in self?.onOpenSettings?() }
-        revealApplication.actionBlock = { [weak self] in self?.onRevealApplication?() }
+        updateCardColor()
         setAccessibilityLabel("Full Disk Access guidance")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func openSettingsPressed() { onOpenSettings?() }
+    @objc private func revealPressed() { onRevealApplication?() }
+    @objc private func continuePressed() { onContinue?() }
+    @objc private func restartPressed() { onRestart?() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateCardColor()
+    }
+    private func updateCardColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            card.layer?.backgroundColor = PArcDialogStyle.color(0x000000, 0.04, 0xFFFFFF, 0.07).cgColor
+        }
+    }
 
     func update(ready: Bool, checking: Bool, continuing: Bool, restarting: Bool,
                 restartAvailable: Bool, error: String?, sourceName: String = "this browser") {
@@ -71,7 +79,8 @@ final class BrowserImportAccessView: LayoutView {
         continueButton.title = continuing ? "Checking access…" : "Continue without restarting"
         status.stringValue = error ?? (restarting ? "Preparing to restart Parc…" : ready ?
             "\(sourceName) can now be read." : "You can continue with the data \(sourceName) currently makes available.")
-        status.textColor = error == nil ? NSColor.white.withAlphaComponent(0.7) : .systemOrange
+        status.textColor = error == nil ? PArcDialogStyle.popoverMessage : .systemOrange
+        needsLayout = true
     }
 
     override func layout() {
@@ -84,10 +93,12 @@ final class BrowserImportAccessView: LayoutView {
         cardTitle.frame = NSRect(x: 83, y: 34, width: card.bounds.width - 100, height: 27)
         instructions.frame = NSRect(x: 24, y: 90, width: card.bounds.width - 48, height: 169)
         appPath.frame = NSRect(x: 24, y: 255, width: card.bounds.width - 48, height: 57)
-        openSettings.frame = NSRect(x: 20, y: 319, width: card.bounds.width - 40, height: 32)
-        revealApplication.frame = NSRect(x: 20, y: 357, width: card.bounds.width - 40, height: 30)
+        openSettings.frame = NSRect(x: 20, y: 315, width: openSettings.bodyWidth + 1, height: 38.5)
+        revealApplication.frame = NSRect(x: 20, y: 357, width: revealApplication.bodyWidth + 1, height: 38.5)
         status.frame = NSRect(x: 28, y: bounds.height - 110, width: bounds.width - 56, height: 35)
-        continueButton.frame = NSRect(x: bounds.width - 319, y: bounds.height - 64, width: 191, height: 38)
-        restartButton.frame = NSRect(x: bounds.width - 120, y: bounds.height - 64, width: 92, height: 38)
+        restartButton.frame = NSRect(x: bounds.width - 28 - restartButton.bodyWidth - 0.5, y: bounds.height - 64.5,
+                                     width: restartButton.bodyWidth + 1, height: 38.5)
+        continueButton.frame = NSRect(x: restartButton.frame.minX - 8 - continueButton.bodyWidth, y: bounds.height - 64.5,
+                                      width: continueButton.bodyWidth + 1, height: 38.5)
     }
 }

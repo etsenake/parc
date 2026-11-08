@@ -29,13 +29,13 @@ final class BrowserImportPasswordsView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        title.font = .systemFont(ofSize: 26, weight: .bold); title.textColor = .white
-        detail.font = .systemFont(ofSize: 14); detail.textColor = .white.withAlphaComponent(0.75)
-        destination.font = .systemFont(ofSize: 13, weight: .medium); destination.textColor = .white
-        status.font = .systemFont(ofSize: 13); status.textColor = .white.withAlphaComponent(0.8)
+        title.font = .systemFont(ofSize: 26, weight: .bold); title.textColor = PArcDialogStyle.popoverTitle
+        detail.font = .systemFont(ofSize: 14); detail.textColor = PArcDialogStyle.popoverMessage
+        destination.font = .systemFont(ofSize: 13, weight: .medium); destination.textColor = PArcDialogStyle.popoverTitle
+        status.font = .systemFont(ofSize: 13); status.textColor = PArcDialogStyle.popoverMessage
         for button in [choose, help, continueButton, stop, remove] {
             button.isBordered = true; button.bezelStyle = .rounded
-            button.contentTintColor = .white; button.focusRingType = .default
+            button.contentTintColor = PArcDialogStyle.popoverTitle; button.focusRingType = .default
         }
         choose.actionBlock = { [weak self] in self?.onChooseFile?() }
         help.actionBlock = { [weak self] in self?.onHelp?() }
@@ -113,7 +113,7 @@ final class BrowserImportPasswordsView: NSView {
         else if result != nil { lines.append("The exported file remains on disk until you choose to remove it.") }
         if let error { lines.append(error) }
         status.stringValue = lines.joined(separator: "\n\n")
-        status.textColor = error == nil ? (usesSetupCard ? OnboardingSetupPalette.message : .white.withAlphaComponent(0.8)) :
+        status.textColor = error == nil ? (usesSetupCard ? OnboardingSetupPalette.message : PArcDialogStyle.popoverMessage) :
             (usesSetupCard ? OnboardingPasswordPalette.error : .systemOrange)
         let presentation: OnboardingPasswordDropTarget.Presentation
         if removing { presentation = .removingExport }

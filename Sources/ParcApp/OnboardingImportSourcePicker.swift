@@ -43,7 +43,7 @@ struct OnboardingImportSourcePicker: View {
             VStack(spacing: 20) {
                 ForEach(sources) { source in
                     VStack(spacing: 0) {
-                        OnboardingImportSourceRow(title: source.title, icon: source.icon,
+                        BrowserImportSourceCard(layout: .setup, title: source.title, icon: source.icon,
                             iconBackground: source.iconBackground, selected: source.selected,
                             selectionColor: selectionColor, action: source.choose)
                         if source.selected {
@@ -79,7 +79,7 @@ struct OnboardingImportSourcePicker: View {
                         }
                     }
                 }
-                OnboardingImportSourceRow(title: "Start fresh", icon: nil, iconBackground: .clear,
+                BrowserImportSourceCard(layout: .setup, title: "Start fresh", icon: nil,
                     selected: freshStartSelected, selectionColor: selectionColor, action: chooseFreshStart)
                 Button("Import a bookmarks file…", action: chooseFile)
                     .buttonStyle(.plain)
@@ -161,57 +161,5 @@ private struct OnboardingImportProfiles: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.black.opacity(0.1), lineWidth: 1))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Import profile")
-    }
-}
-
-private struct OnboardingImportSourceRow: View {
-    let title: String
-    let icon: NSImage?
-    let iconBackground: NSColor
-    let selected: Bool
-    let selectionColor: NSColor
-    let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovered = false
-    private var tint: Color { Color(nsColor: selectionColor) }
-    private var ink: Color {
-        colorScheme == .dark ? .white : Color(.sRGB, red: 0.094, green: 0.106, blue: 0.122)
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 0) {
-                Text(title.uppercased())
-                    .font(.system(size: 13, weight: .semibold))
-                    .kerning(-0.02)
-                    .foregroundColor(Color(.sRGB, red: 118 / 255, green: 118 / 255, blue: 118 / 255))
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let icon {
-                    ZStack {
-                        Rectangle().fill(Color(nsColor: iconBackground))
-                        Image(nsImage: icon).resizable().frame(width: 50, height: 50)
-                    }
-                    .frame(width: 92, height: 92)
-                    .accessibilityHidden(true)
-                }
-            }
-            .frame(width: 278, height: 92)
-            .background(Color.white.opacity(colorScheme == .dark ? 0.1 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(selected ? tint : ink.opacity(0.1), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 5)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(hovered && !reduceMotion ? 1.04 : 1)
-        .animation(reduceMotion ? nil : .spring(response: 0.18, dampingFraction: 0.8), value: hovered)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selected)
-        .onHover { hovered = $0 }
-        .accessibilityLabel(title)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

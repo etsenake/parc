@@ -52,9 +52,12 @@ final class BrowserImportViewController: NSViewController {
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let scroll = NSScrollView()
     private let rows = FlippedStackView()
-    private let next = ActionButton("Next")
-    private let back = ActionButton("Back")
-    private let cancelButton = ActionButton("Maybe Later")
+    // ImportDialogButtonView's body is a Dialogs.DialogButtonView: primary for
+    // Next/Import/Done, neutral for Maybe Later/Back, no hotkey badge.
+    private let next = PArcDialogButton(title: "Next", primary: true, hint: false)
+    private let back = PArcDialogButton(title: "Back", primary: false, hint: false)
+    private let cancelButton = PArcDialogButton(title: "Maybe Later", primary: false, hint: false)
+    private var sourceList: NSHostingView<BrowserImportSourceList>?
     private let closeControl = ActionButton("", symbol: "xmark")
     private let logo = NSImageView()
     private let destinationView = BrowserImportDestinationView()
@@ -113,8 +116,8 @@ final class BrowserImportViewController: NSViewController {
             self.coordinator.setNewProfileName(name)
             self.next.isEnabled = self.coordinator.canStart
         }
-        heading.font = .systemFont(ofSize: 26, weight: .bold); heading.textColor = .white
-        detail.font = .systemFont(ofSize: 13); detail.textColor = NSColor.white.withAlphaComponent(0.7)
+        heading.font = .systemFont(ofSize: 26, weight: .bold); heading.textColor = PArcDialogStyle.popoverTitle
+        detail.font = .systemFont(ofSize: 13); detail.textColor = PArcDialogStyle.popoverMessage
         rows.orientation = .vertical; rows.alignment = .leading; rows.spacing = 12
         rows.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 12, right: 0)
         rows.translatesAutoresizingMaskIntoConstraints = false
@@ -124,28 +127,29 @@ final class BrowserImportViewController: NSViewController {
         rows.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
         logo.image = ParcBrandMark.image(.borderless) ?? NSApp.applicationIconImage
         logo.imageScaling = .scaleProportionallyUpOrDown; logo.setAccessibilityElement(false)
-        closeControl.contentTintColor = NSColor.white.withAlphaComponent(0.7)
+        closeControl.contentTintColor = PArcDialogStyle.popoverMessage
         closeControl.setAccessibilityLabel("Close Import")
         closeControl.actionBlock = { [weak self] in self?.requestClose() }
         [heading, detail, scroll, destinationScroll, next, back, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
-        for button in [next, back, cancelButton] {
-            button.font = .systemFont(ofSize: 13, weight: .medium)
-            button.contentTintColor = embedded ? OnboardingSetupPalette.title : .white; button.focusRingType = .default
-        }
-        next.isBordered = true; next.bezelStyle = .rounded; next.bezelColor = NSColor(parcHex: "8370E9")
         next.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
-        next.actionBlock = { [weak self] in self?.advance() }
-        back.actionBlock = { [weak self] in self?.coordinator.back() }
-        cancelButton.actionBlock = { [weak self] in
-            guard let self else { return }
-            if self.coordinator.stage == .importing { self.coordinator.stopImport() }
-            else { self.requestClose() }
-        }
+        next.target = self; next.action = #selector(nextPressed)
+        back.target = self; back.action = #selector(backPressed)
+        cancelButton.target = self; cancelButton.action = #selector(cancelPressed)
         root.onLayout = { [weak self] in self?.layout() }
         render()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func nextPressed() { advance() }
+    @objc private func backPressed() { coordinator.back() }
+    @objc private func passwordsInsteadPressed() {
+        if embedded { coordinator.startInOriginalDestination(passwordsOnly: true) }
+        else { coordinator.choosePasswordDestination() }
+    }
+    @objc private func cancelPressed() {
+        if coordinator.stage == .importing { coordinator.stopImport() } else { requestClose() }
+    }
 
     func start() {
         guard !closed else { return }
@@ -252,23 +256,30 @@ final class BrowserImportViewController: NSViewController {
         } else if coordinator.stage == .sources {
             heading.frame = NSRect(x: 28, y: 106, width: 290, height: 26)
             detail.frame = NSRect(x: 28, y: 142, width: 260, height: 200)
-            scroll.frame = NSRect(x: 335, y: 164, width: 177, height: height - 235)
+            scroll.frame = NSRect(x: 320, y: 164, width: width - 348, height: height - 235)
         } else {
             heading.frame = NSRect(x: 34, y: 36, width: width - 68, height: 66)
             detail.frame = NSRect(x: 34, y: 104, width: width - 68, height: 45)
             scroll.frame = NSRect(x: 34, y: 158, width: width - 68, height: height - 225)
         }
-        cancelButton.frame = NSRect(x: coordinator.stage == .sources ? width - 193 : 26, y: height - 66, width: 108, height: 38)
-        let nextWidth: CGFloat = coordinator.stage == .sources ? 60 : coordinator.stage == .destination ? 64 : 112
-        back.frame = NSRect(x: width - nextWidth - 118, y: height - 66, width: 80, height: 38)
-        next.frame = NSRect(x: width - nextWidth - 24, y: height - 66, width: nextWidth, height: 38)
+        sourceList?.frame = scroll.frame.insetBy(dx: -6, dy: -4)
+        // Dialogs footer: 28 points from the right and bottom, 8 between buttons;
+        // each view extends past its 36-point body for the border and lip.
+        func place(_ button: PArcDialogButton, right: CGFloat) -> CGFloat {
+            button.frame = NSRect(x: right - button.bodyWidth - 0.5, y: height - 64.5, width: button.bodyWidth + 1, height: 38.5)
+            return button.isHidden ? right : right - button.bodyWidth - 8
+        }
+        var right = place(next, right: width - 28)
+        right = place(back, right: right)
+        if coordinator.stage == .sources { _ = place(cancelButton, right: right) }
+        else { cancelButton.frame = NSRect(x: 27.5, y: height - 64.5, width: cancelButton.bodyWidth + 1, height: 38.5) }
     }
 
     private func label(_ title: String, secondary: Bool = false) -> NSTextField {
         let view = NSTextField(wrappingLabelWithString: title)
         view.font = .systemFont(ofSize: secondary ? 11 : 13, weight: secondary ? .regular : .medium)
         view.textColor = embedded ? (secondary ? OnboardingSetupPalette.message : OnboardingSetupPalette.title) :
-            (secondary ? NSColor.white.withAlphaComponent(0.65) : .white)
+            (secondary ? PArcDialogStyle.popoverMessage : PArcDialogStyle.popoverTitle)
         return view
     }
     private func add(_ view: NSView) {
@@ -278,7 +289,7 @@ final class BrowserImportViewController: NSViewController {
     private func checkbox(_ title: String, selected: Bool, action: @escaping () -> Void) -> ActionButton {
         let button = ActionButton(title, action: action)
         button.setButtonType(.switch); button.state = selected ? .on : .off
-        button.contentTintColor = embedded ? OnboardingSetupPalette.title : .white; button.focusRingType = .default
+        button.contentTintColor = embedded ? OnboardingSetupPalette.title : PArcDialogStyle.popoverTitle; button.focusRingType = .default
         button.font = .systemFont(ofSize: 13); button.alignment = .left
         return button
     }
@@ -326,13 +337,14 @@ final class BrowserImportViewController: NSViewController {
         heading.stringValue = "Import from your old browser"
         let choosingSource = isChoosingSource
         sourcePicker?.isHidden = !choosingSource || !embedded
+        sourceList?.isHidden = coordinator.stage != .sources || embedded
         bookmarksPicker?.isHidden = coordinator.stage != .bookmarks || !embedded
         passwordChoice?.isHidden = coordinator.stage != .passwordChoice
         logo.isHidden = !choosingSource
         heading.font = .systemFont(ofSize: choosingSource || choosingDestination ? 17 : 26, weight: .bold)
         detail.font = .systemFont(ofSize: choosingSource ? 16 : 13)
         detail.stringValue = coordinator.error ?? coordinator.message
-        detail.textColor = coordinator.error == nil ? NSColor.white.withAlphaComponent(0.7) : .systemRed
+        detail.textColor = coordinator.error == nil ? PArcDialogStyle.popoverMessage : .systemRed
         back.isHidden = coordinator.stage != .profiles
         next.isHidden = false; next.isEnabled = true; next.title = "Next"
         cancelButton.title = coordinator.stage == .importing ? "Stop Import" : "Maybe Later"
@@ -342,15 +354,8 @@ final class BrowserImportViewController: NSViewController {
             progress.controlSize = .regular; progress.startAnimation(nil); add(progress)
             next.isEnabled = false
         case .sources:
-            if embedded {
-                scroll.isHidden = true
-            } else {
-                for source in coordinator.sources {
-                    let button = ImportSourceButton(source.displayName, icon: NSWorkspace.shared.icon(forFile: source.appURL.path),
-                        selected: coordinator.source === source) { [weak self] in self?.coordinator.select(source) }
-                    button.heightAnchor.constraint(equalToConstant: 48).isActive = true; add(button)
-                }
-            }
+            scroll.isHidden = true
+            if !embedded { updateSourceList() }
             if let source = coordinator.source, !freshStartSelected {
                 detail.stringValue = embedded ? "Bring your bookmarks and browsing data from \(source.displayName). You’ll choose what to keep." :
                     "Import what you need from your old browser to get started with Parc.\n\nContinue to choose your \(source.displayName) profiles and see the data they can import."
@@ -393,12 +398,12 @@ final class BrowserImportViewController: NSViewController {
                 }
             }
             if coordinator.canChoosePasswordDestination {
-                let passwords = ActionButton("Import exported passwords instead…") { [weak self] in
-                    guard let self else { return }
-                    if self.embedded { self.coordinator.startInOriginalDestination(passwordsOnly: true) }
-                    else { self.coordinator.choosePasswordDestination() }
-                }
-                passwords.bezelStyle = .rounded; add(passwords)
+                let passwords = PArcDialogButton(title: "Import exported passwords instead…", primary: false, hint: false)
+                passwords.target = self; passwords.action = #selector(passwordsInsteadPressed)
+                let row = NSView()
+                passwords.frame = NSRect(x: 0, y: 0, width: passwords.bodyWidth + 1, height: 38.5)
+                row.addSubview(passwords); row.heightAnchor.constraint(equalToConstant: 38.5).isActive = true
+                add(row)
             }
             next.isEnabled = coordinator.canChooseDestination
         case .destination:
@@ -453,7 +458,7 @@ final class BrowserImportViewController: NSViewController {
                             let disclosure = ActionButton(page.selection.expanded.contains(item.id) ? "▾" : "▸") { [weak self] in
                                 self?.coordinator.toggleBookmark(page: index, id: item.id, expansion: true)
                             }
-                            disclosure.contentTintColor = embedded ? OnboardingSetupPalette.title : .white; disclosure.setAccessibilityLabel("Expand \(item.title)")
+                            disclosure.contentTintColor = embedded ? OnboardingSetupPalette.title : PArcDialogStyle.popoverTitle; disclosure.setAccessibilityLabel("Expand \(item.title)")
                             disclosure.isEnabled = available && !page.committed
                             disclosure.widthAnchor.constraint(equalToConstant: 15).isActive = true
                             row.addArrangedSubview(disclosure)
@@ -484,7 +489,7 @@ final class BrowserImportViewController: NSViewController {
         cancelButton.isHidden = coordinator.stage == .finished || choosingDestination || choosingAccess || choosingPasswords
         closeControl.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "\u{1b}" : ""
         cancelButton.keyEquivalent = choosingDestination || choosingAccess || choosingPasswords ? "" : "\u{1b}"
-        if !choosingDestination && !choosingAccess && !choosingPasswords { coordinator.warnings.forEach { add(label($0, secondary: true)) } }
+        if !choosingDestination && !choosingAccess && !choosingPasswords && coordinator.stage != .sources { coordinator.warnings.forEach { add(label($0, secondary: true)) } }
         canAdvance = !next.isHidden && next.isEnabled
         canGoBack = !back.isHidden && !closed
         if embedded {
@@ -568,6 +573,21 @@ final class BrowserImportViewController: NSViewController {
                   approved, self.coordinator.canRemovePasswordFile else { return }
             self.coordinator.removePasswordFile()
         }
+    }
+
+    private func updateSourceList() {
+        let choices = coordinator.sources.map { source in
+            BrowserImportSourceList.Choice(id: source.identifier, title: source.displayName,
+                icon: NSWorkspace.shared.icon(forFile: source.appURL.path), selected: coordinator.source === source,
+                choose: { [weak self, weak source] in
+                    guard let self, let source, !self.closed else { return }
+                    self.coordinator.select(source)
+                })
+        }
+        let content = BrowserImportSourceList(choices: choices, messages: coordinator.warnings)
+        if let sourceList { sourceList.rootView = content }
+        else { let host = NSHostingView(rootView: content); sourceList = host; root.addSubview(host) }
+        sourceList?.isHidden = false
     }
 
     private func updateSourcePicker() {
@@ -682,46 +702,5 @@ final class BrowserImportViewController: NSViewController {
          (16, "Autofill"), (32, "Extensions")].compactMap { bit, title in
             value.rawValue & UInt(bit) != 0 ? title : nil
         }.joined(separator: " · ")
-    }
-}
-
-/// Native button tracking, keyboard activation and radio accessibility with the
-/// observed source-row composition. Detailed hover/motion comparison is separate.
-@MainActor
-private final class ImportSourceButton: NSButton {
-    private let sourceIcon: NSImage
-    private let activate: () -> Void
-    init(_ title: String, icon: NSImage, selected: Bool, action: @escaping () -> Void) {
-        sourceIcon = icon; activate = action
-        super.init(frame: .zero)
-        self.title = title; setButtonType(.radio); state = selected ? .on : .off
-        isBordered = false; focusRingType = .default
-        target = self; self.action = #selector(choose)
-        setAccessibilityLabel(title)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    @objc private func choose() { activate() }
-    override func draw(_ dirtyRect: NSRect) {
-        let frame = bounds.insetBy(dx: 1, dy: 1)
-        let shape = NSBezierPath(roundedRect: frame, xRadius: 15, yRadius: 15)
-        NSColor.white.withAlphaComponent(isHighlighted ? 0.22 : 0.12).setFill(); shape.fill()
-        (state == .on ? NSColor(parcHex: "5636F4") : NSColor.white.withAlphaComponent(0.1)).setStroke()
-        shape.lineWidth = state == .on ? 2 : 1; shape.stroke()
-        let separator = NSBezierPath()
-        separator.move(to: NSPoint(x: bounds.width - 49, y: 2))
-        separator.line(to: NSPoint(x: bounds.width - 49, y: bounds.height - 2))
-        NSColor.white.withAlphaComponent(0.12).setStroke(); separator.stroke()
-        sourceIcon.draw(in: NSRect(x: bounds.width - 37, y: (bounds.height - 24) / 2, width: 24, height: 24))
-        let radio = NSRect(x: 17, y: (bounds.height - 14) / 2, width: 14, height: 14)
-        NSColor.white.setFill(); NSBezierPath(ovalIn: radio).fill()
-        if state == .on {
-            NSColor(parcHex: "684AF5").setFill(); NSBezierPath(ovalIn: radio.insetBy(dx: 3, dy: 3)).fill()
-        }
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .bold),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.7)]
-        let text = title.uppercased() as NSString
-        let size = text.size(withAttributes: attributes)
-        text.draw(in: NSRect(x: 45, y: (bounds.height - size.height) / 2,
-                            width: max(0, bounds.width - 99), height: size.height), withAttributes: attributes)
     }
 }
