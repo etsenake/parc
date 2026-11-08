@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 616,
+  "version": 617,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -3782,7 +3782,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "f937af7efc4fd85681785a170382b72fb70ef3b395ad40ca90db426fa1fa5dc2",
+      "sha256": "fb2e162c38cd4728d10ab6ea4172cff0f4f6427203861be5186aaab89ff85f8c",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",

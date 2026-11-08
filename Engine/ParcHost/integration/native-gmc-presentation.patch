@@ -2305,7 +2305,6 @@
  // Regression test for crbug.com/468238180. The dialog reads and writes the
  // original profile's prefs, so it must observe that same profile.
  TEST_F(MediaDialogViewTest, LiveCaptionUpdatesInIncognito) {
---- a/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
 --- a/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 +++ b/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 @@ -4,7 +4,10 @@
@@ -2638,18 +2637,3 @@
    // Called by a Client when its ability to serve this source changes.
    void SetClientAvailable(Client* client, bool available);
  
---- a/chrome/browser/media/cast_remoting_connector.cc
---- a/chrome/browser/media/cast_remoting_connector.h
---- a/chrome/browser/media/cast_remoting_connector_unittest.cc
---- a/chrome/browser/media/remoting_bridge.cc
---- a/chrome/browser/media/remoting_bridge.h
---- a/chrome/browser/media/cast_remoting_connector.cc
---- a/chrome/browser/media/cast_remoting_connector.h
---- a/chrome/browser/media/cast_remoting_connector_unittest.cc
---- a/chrome/browser/media/remoting_bridge.cc
---- a/chrome/browser/media/remoting_bridge.h
---- a/chrome/browser/media/cast_remoting_connector.cc
---- a/chrome/browser/media/cast_remoting_connector.h
---- a/chrome/browser/media/cast_remoting_connector_unittest.cc
---- a/chrome/browser/media/remoting_bridge.cc
---- a/chrome/browser/media/remoting_bridge.h
