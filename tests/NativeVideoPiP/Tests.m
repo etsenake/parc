@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#include <objc/runtime.h>
 #include <stdio.h>
 
 #import "VideoPiPWindow.h"
@@ -42,6 +43,20 @@ static BOOL Near(NSRect a, NSRect b) {
 }
 static BOOL Aspect(NSRect rect, CGFloat aspect) {
   return fabs(NSWidth(rect) / NSHeight(rect) - aspect) / aspect < 0.01;
+}
+static BOOL gLiveResize;
+static BOOL LiveResize(id self, SEL _cmd) {
+  return gLiveResize;
+}
+static NSView* Host(NSButton* button) {
+  if (@available(macOS 26.0, *)) {
+    for (NSView* host = button; host; host = host.superview) {
+      if ([host isKindOfClass:NSGlassEffectView.class]) {
+        return host;
+      }
+    }
+  }
+  return button;
 }
 static void PlaceUnderCursor(NSPanel* panel) {
   NSPoint mouse = [NSEvent mouseLocation];
@@ -219,6 +234,42 @@ int main(void) {
     [presenter setAction:PCVideoPiPPlayPause visible:NO];
     [Button(presenter.panel.contentView, PCVideoPiPPlayPause) performClick:nil];
     EXPECT(actions == 1);
+    // The play button sits under the pointer at the panel's centre: it is
+    // hovered and shows the hand without the panel ever becoming key, the
+    // arrow comes back when the chrome hides, and the hand again as soon as
+    // the chrome shows under a still pointer.
+    NSButton* play = Button(presenter.panel.contentView, PCVideoPiPPlayPause);
+    EXPECT(play.alphaValue < 1);
+    [presenter setAction:PCVideoPiPPlayPause visible:YES];
+    EXPECT(play.alphaValue == 1);
+    EXPECT(Host(play).layer.transform.m11 > 1.09);
+    EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+    EXPECT(!presenter.panel.keyWindow);
+    [presenter setControlsVisible:NO];
+    EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
+    EXPECT(play.alphaValue < 1);
+    EXPECT(Host(play).layer.transform.m11 == 1);
+    [presenter setControlsVisible:YES];
+    EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+    EXPECT(play.alphaValue == 1);
+    // Off every button: the arrow, and no button hovered.
+    NSRect off = presenter.panel.frame;
+    off.origin.x += 60;
+    [presenter.panel setFrame:off display:YES];
+    [presenter.panel.contentView mouseMoved:[NSEvent new]];
+    EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
+    EXPECT(play.alphaValue < 1);
+    Hover(presenter);
+    EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+    // Every top chip is a full disc of the same size, minus included.
+    for (NSNumber* tag in @[ @(PCVideoPiPReturn), @(PCVideoPiPMinimize),
+                             @(PCVideoPiPClose) ]) {
+      NSButton* chip = Button(presenter.panel.contentView, tag.integerValue);
+      EXPECT(Near(chip.frame, NSMakeRect(0, 0, 28, 28)));
+      if (@available(macOS 26.0, *)) {
+        EXPECT(((NSGlassEffectView*)Host(chip)).cornerRadius == 14);
+      }
+    }
     [presenter setAction:PCVideoPiPMute title:@"Unmute"];
     EXPECT(
         [Button(presenter.panel.contentView, PCVideoPiPMute).accessibilityLabel
@@ -323,6 +374,23 @@ int main(void) {
     // Under a point of difference fills the window, with no hairline.
     [fitPanel setContentSize:NSMakeSize(640, 266.4)];
     EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    // A size change during the user's live resize waits for its end.
+    class_addMethod(object_getClass(fitPanel), @selector(inLiveResize),
+                    (IMP)LiveResize, "c@:");
+    const NSRect dragged = fitPanel.frame;
+    gLiveResize = YES;
+    [fitting setNaturalSize:NSMakeSize(1920, 1080)];
+    EXPECT(Near(fitPanel.frame, dragged));
+    EXPECT(Aspect(fitted.frame, 2.4));
+    // AppKit may still report the live resize while it posts its end.
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:NSWindowDidEndLiveResizeNotification
+                      object:fitPanel];
+    gLiveResize = NO;
+    EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
+    EXPECT(NSWidth(fitPanel.frame) == NSWidth(dragged));
+    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+    [fitting setNaturalSize:NSMakeSize(1920, 800)];
     // Invalid natural sizes are ignored.
     [fitting setNaturalSize:NSMakeSize(0, 0)];
     [fitting setNaturalSize:NSMakeSize(NAN, 1)];

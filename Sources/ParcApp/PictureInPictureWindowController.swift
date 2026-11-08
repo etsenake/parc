@@ -327,13 +327,15 @@ private final class PictureInPictureFrameView: NSView {
 
 // DocumentPiPTopBarView: an opaque bar (DocumentPiPTopBarBackgroundColor)
 // whose bottom hairline (DocumentPiPHairlineColor) covers the page's top
-// point, Back to Tab at the leading edge and Close at the trailing edge. The
-// rest of the bar drags the window as MovableWindow does; a double-click there
-// toggles its largest size unless the system's title-bar double-click is set
-// to do nothing or minimize (handleTopBarDoubleClick; a PiP has no Dock tile).
+// point, Back to Tab 10 pt from the leading edge and Close 16 pt from the
+//
+// MovableWindow does; a double-click there toggles its largest size unless
+// the system's title-bar double-click is set to do nothing or minimize
+// (handleTopBarDoubleClick; a PiP has no Dock tile).
 @MainActor
 private final class DocumentPictureInPictureTopBar: NSView {
-    private static let inset: CGFloat = 10
+    private static let backInset: CGFloat = 10
+    private static let closeInset: CGFloat = 16
     private static let background = NSColor(srgbRed: 0.129, green: 0.129, blue: 0.137, alpha: 1)
     private static let hairlineColor = NSColor(white: 1, alpha: 0.2)
     var onReturnToTab: (() -> Void)?
@@ -343,8 +345,8 @@ private final class DocumentPictureInPictureTopBar: NSView {
     var showsReturnToTab = true {
         didSet { back.isHidden = !showsReturnToTab }
     }
-    private let back = PictureInPictureBarButton(symbol: "arrow.up.left", label: "Back to Tab")
-    private let close = PictureInPictureBarButton(symbol: "xmark", label: "Close")
+    private let back = PictureInPictureBackToTabButton()
+    private let close = PictureInPictureCloseButton()
     private let hairline = NSView()
 
     override init(frame: NSRect) {
@@ -367,10 +369,14 @@ private final class DocumentPictureInPictureTopBar: NSView {
         layoutControls()
     }
     private func layoutControls() {
-        let side = PictureInPictureBarButton.side
-        let y = ((bounds.height - side) / 2).rounded()
-        back.frame = NSRect(x: Self.inset, y: y, width: side, height: side)
-        close.frame = NSRect(x: bounds.width - Self.inset - side, y: y, width: side, height: side)
+        let pill = back.fittingSize
+        back.frame = NSRect(x: Self.backInset, y: ((bounds.height - pill.height) / 2).rounded(),
+                            width: pill.width, height: pill.height)
+        //
+        close.side = bounds.width < 400 ? 16 : 18
+        close.frame = NSRect(x: bounds.width - Self.closeInset - close.side,
+                             y: ((bounds.height - close.side) / 2).rounded(),
+                             width: close.side, height: close.side)
         hairline.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1)
     }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -391,30 +397,27 @@ private final class DocumentPictureInPictureTopBar: NSView {
     }
 }
 
-// A white symbol that shows a soft plate under the pointer.
+// A bar control under the pointer: full opacity instead of 92.5%, 70% while
+//
+// and BackToTabButtonStyle). The panel is rarely key, so hover is tracked
+// always and the cursor set on entering and leaving rather than left to
+// cursor rects, which apply only in the key window.
 @MainActor
-private final class PictureInPictureBarButton: NSButton {
-    static let side: CGFloat = 28
+private class PictureInPictureBarControl: NSButton {
+    static let easing = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
     var perform: (() -> Void)?
     private var tracking: NSTrackingArea?
-    private var hovering = false {
-        didSet { if hovering != oldValue { updatePlate() } }
-    }
+    private(set) var hovering = false
 
-    init(symbol: String, label: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: Self.side, height: Self.side))
+    init(label: String) {
+        super.init(frame: .zero)
         isBordered = false
-        imagePosition = .imageOnly
-        contentTintColor = .white
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
         toolTip = label
         setAccessibilityLabel(label)
         target = self
         action = #selector(activate)
         wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
+        alphaValue = 0.925
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -429,10 +432,108 @@ private final class PictureInPictureBarButton: NSButton {
         addTrackingArea(area)
         tracking = area
     }
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-    private func updatePlate() {
-        layer?.backgroundColor = NSColor(white: 1, alpha: hovering ? 0.12 : 0).cgColor
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func mouseEntered(with event: NSEvent) { setHovering(true) }
+    override func mouseExited(with event: NSEvent) { setHovering(false) }
+    override func mouseDown(with event: NSEvent) {
+        // The button tracks the press inside super until the mouse goes up.
+        alphaValue = 0.7
+        super.mouseDown(with: event)
+        alphaValue = hovering ? 1 : 0.925
+    }
+    // Hidden or closed under the pointer, no exit comes.
+    override func viewDidHide() {
+        super.viewDidHide()
+        setHovering(false)
+    }
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { setHovering(false) }
+    }
+
+    func setHovering(_ hovering: Bool) {
+        guard hovering != self.hovering else { return }
+        self.hovering = hovering
+        (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
+        alphaValue = hovering ? 1 : 0.925
+        hoverChanged()
+    }
+    func hoverChanged() {}
+
+    func animate(_ keyPath: String, to value: Any, on layer: CALayer) {
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = (layer.presentation() ?? layer).value(forKeyPath: keyPath)
+        animation.toValue = value
+        animation.duration = 0.3
+        animation.timingFunction = Self.easing
+        layer.add(animation, forKey: keyPath)
+        layer.setValue(value, forKeyPath: keyPath)
+    }
+}
+
+// Back to Tab: the up-left arrow and its title in a 26 pt capsule, 8 pt in
+// from each end, 15 pt medium rounded; the capsule fills white at 33% under
+//
+@MainActor
+private final class PictureInPictureBackToTabButton: PictureInPictureBarControl {
+    private static let height: CGFloat = 26
+    private static let padding: CGFloat = 8
+
+    init() {
+        super.init(label: "Back to Tab")
+        let base = NSFont.systemFont(ofSize: 15, weight: .medium)
+        let font = base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 15) } ?? base
+        attributedTitle = NSAttributedString(string: "Back to Tab", attributes: [
+            .font: font, .foregroundColor: NSColor.white, .kern: 0.1,
+        ])
+        image = NSImage(systemSymbolName: "arrow.up.left", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .bold))
+        imagePosition = .imageLeading
+        imageHugsTitle = true
+        contentTintColor = .white
+        layer?.cornerCurve = .continuous
+        layer?.cornerRadius = Self.height / 2
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: (super.intrinsicContentSize.width + 2 * Self.padding).rounded(.up), height: Self.height)
+    }
+    override func hoverChanged() {
+        guard let layer else { return }
+        animate("backgroundColor", to: NSColor(white: 1, alpha: hovering ? 0.33 : 0).cgColor, on: layer)
+    }
+}
+
+// Close: a bare bold cross, growing to 110% about its centre under the
+//
+@MainActor
+private final class PictureInPictureCloseButton: PictureInPictureBarControl {
+    var side: CGFloat = 18 {
+        didSet { if side != oldValue { updateImage() } }
+    }
+
+    init() {
+        super.init(label: "Close")
+        imagePosition = .imageOnly
+        contentTintColor = .white
+        updateImage()
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func updateImage() {
+        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: side, weight: .bold))
+    }
+    override func hoverChanged() {
+        guard let layer else { return }
+        // AppKit anchors a view's layer at its origin; scale about the centre.
+        let scale: CGFloat = hovering ? 1.1 : 1
+        let dx = bounds.width * (0.5 - layer.anchorPoint.x)
+        let dy = bounds.height * (0.5 - layer.anchorPoint.y)
+        let transform = CATransform3DTranslate(
+            CATransform3DScale(CATransform3DMakeTranslation(dx, dy, 0), scale, scale, 1), -dx, -dy, 0)
+        animate("transform", to: NSValue(caTransform3D: transform), on: layer)
     }
 }
 

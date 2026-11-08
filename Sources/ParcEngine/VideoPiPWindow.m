@@ -137,17 +137,23 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 
 //
 // chip is an NSGlassEffectView disc with a borderless symbol button inside.
+// Under the pointer a chip grows to 110% and its symbol goes from 92.5% to
+//
+//
 @interface PCVideoPiPChromeButton : NSButton
 @property(nonatomic, readonly) NSView* hostView;
+@property(nonatomic) BOOL hovered;
 @end
 @implementation PCVideoPiPChromeButton {
   NSView* _hostView;
 }
 @synthesize hostView = _hostView;
+@synthesize hovered = _hovered;
 - (instancetype)initWithFrame:(NSRect)frame {
   if (!(self = [super initWithFrame:frame])) {
     return nil;
   }
+  self.alphaValue = 0.925;
   self.bordered = NO;
   self.buttonType = NSButtonTypeMomentaryChange;
   self.imagePosition = NSImageOnly;
@@ -175,9 +181,14 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   }
   return self;
 }
+// The glass lays its content out by alignment rect, which follows the
+// symbol's shape: a minus made a shorter button and a squarer disc.
+- (NSEdgeInsets)alignmentRectInsets {
+  return NSEdgeInsetsZero;
+}
 - (void)layout {
   [super layout];
-  const CGFloat side = fmin(NSWidth(self.bounds), NSHeight(self.bounds));
+  const CGFloat side = fmin(NSWidth(_hostView.bounds), NSHeight(_hostView.bounds));
   const CGFloat radius = side * 0.5;
   if (@available(macOS 26.0, *)) {
     if ([_hostView isKindOfClass:NSGlassEffectView.class]) {
@@ -188,7 +199,44 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   }
 }
 - (void)resetCursorRects {
-  [self addCursorRect:self.bounds cursor:NSCursor.arrowCursor];
+  [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor];
+}
+- (void)mouseDown:(NSEvent*)event {
+  // The button tracks the press inside super until the mouse goes up; its
+  // action can release the presenter that owns it.
+  __attribute__((objc_precise_lifetime)) PCVideoPiPChromeButton* keep = self;
+  keep.alphaValue = 0.7;
+  [super mouseDown:event];
+  keep.alphaValue = keep->_hovered ? 1 : 0.925;
+}
+- (void)setHovered:(BOOL)hovered {
+  if (_hovered == hovered) {
+    return;
+  }
+  _hovered = hovered;
+  self.alphaValue = hovered ? 1 : 0.925;
+  CALayer* layer = _hostView.layer;
+  if (!layer) {
+    return;
+  }
+  // AppKit anchors a view's layer at its origin; scale about the centre.
+  const CGFloat scale = hovered ? 1.1 : 1;
+  const CGFloat dx = NSWidth(_hostView.bounds) * (0.5 - layer.anchorPoint.x);
+  const CGFloat dy = NSHeight(_hostView.bounds) * (0.5 - layer.anchorPoint.y);
+  const CATransform3D to = CATransform3DTranslate(
+      CATransform3DScale(CATransform3DMakeTranslation(dx, dy, 0), scale, scale,
+                         1),
+      -dx, -dy, 0);
+  CABasicAnimation* animation =
+      [CABasicAnimation animationWithKeyPath:@"transform"];
+  animation.fromValue = [NSValue
+      valueWithCATransform3D:(layer.presentationLayer ?: layer).transform];
+  animation.toValue = [NSValue valueWithCATransform3D:to];
+  animation.duration = 0.3;
+  animation.timingFunction =
+      [CAMediaTimingFunction functionWithControlPoints:0.25:0.1:0.25:1];
+  [layer addAnimation:animation forKey:@"hover"];
+  layer.transform = to;
 }
 @end
 
@@ -309,6 +357,8 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   double _playbackRate;
   NSDate* _positionSampleAt;
   NSTimer* _progressTimer;
+  __weak PCVideoPiPChromeButton* _pointed;
+  NSSize _pendingNaturalSize;
 }
 
 - (NSButton*)makeChromeButton:(NSString*)symbol
@@ -526,6 +576,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   };
   content.hoverChanged = ^(BOOL hovering) {
     [weakSelf setHovering:hovering];
+    [weakSelf refreshPointer];
   };
   [self installMouseMonitors];
   return self;
@@ -575,6 +626,49 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   NSPoint screenPoint = [NSEvent mouseLocation];
   const BOOL inside = NSPointInRect(screenPoint, _panel.frame);
   [self setHovering:inside];
+  [self refreshPointer];
+}
+
+// The panel never becomes key, and macOS applies a window's cursor rects
+// only in the key window, so the button under the pointer is found on every
+// mouse event the monitors see and the cursor set here: a hand over a
+// button, the arrow again on leaving one. Chrome shown under a still pointer
+// counts at once.
+- (void)refreshPointer {
+  PCVideoPiPChromeButton* button = nil;
+  if (!_invalidated && _panel.visible && !_chrome.hidden) {
+    NSView* content = _panel.contentView;
+    const NSPoint point =
+        [content.superview convertPoint:[_panel convertPointFromScreen:
+                                                    NSEvent.mouseLocation]
+                               fromView:nil];
+    for (NSView* view = [content hitTest:point]; view && view != content;
+         view = view.superview) {
+      if ([view isKindOfClass:PCVideoPiPChromeButton.class]) {
+        button = (PCVideoPiPChromeButton*)view;
+        break;
+      }
+    }
+    if (button.hiddenOrHasHiddenAncestor || !button.enabled) {
+      button = nil;
+    }
+  }
+  [self pointAt:button];
+}
+- (void)pointAt:(PCVideoPiPChromeButton*)button {
+  if (button) {
+    [NSCursor.pointingHandCursor set];
+  }
+  PCVideoPiPChromeButton* previous = _pointed;
+  if (button == previous) {
+    return;
+  }
+  previous.hovered = NO;
+  if (previous && !button) {
+    [NSCursor.arrowCursor set];
+  }
+  _pointed = button;
+  button.hovered = YES;
 }
 
 - (NSPanel*)panel {
@@ -616,7 +710,9 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     _chrome.hidden = YES;
     _chrome.alphaValue = 0;
   }
+  [_panel invalidateCursorRectsForView:_chrome];
   [self refreshSliderVisibility];
+  [self refreshPointer];
 }
 - (void)refreshSliderVisibility {
   const BOOL show =
@@ -713,6 +809,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   __attribute__((objc_precise_lifetime)) PCVideoPiPPresenter* keep = self;
   [_panel orderOut:nil];
   keep->_shown = NO;
+  [keep pointAt:nil];
   [keep syncProgressTimer];
   [keep setHovering:NO];
   [keep notifyChanged];
@@ -722,6 +819,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     return;
   }
   _invalidated = YES;
+  [self pointAt:nil];
   [self removeMouseMonitors];
   [_progressTimer invalidate];
   _progressTimer = nil;
@@ -735,8 +833,22 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [_videoView removeFromSuperview];
 }
 - (void)setNaturalSize:(NSSize)size {
-  if (_invalidated || !PCVideoPiPValidSize(size) ||
-      NSEqualSizes(size, _naturalSize)) {
+  if (_invalidated || !PCVideoPiPValidSize(size)) {
+    return;
+  }
+  // A playing video's size changes (a page switching renditions as the
+  // window grows) wait while the user resizes: a refit there fought the
+  //
+  //
+  if (_panel.inLiveResize) {
+    _pendingNaturalSize = size;
+    return;
+  }
+  [self applyNaturalSize:size];
+}
+- (void)applyNaturalSize:(NSSize)size {
+  _pendingNaturalSize = NSZeroSize;
+  if (NSEqualSizes(size, _naturalSize)) {
     return;
   }
   const BOOL first = !PCVideoPiPValidSize(_naturalSize);
@@ -785,6 +897,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   } else if (visible) {
     button.hidden = NO;
   }
+  [self refreshPointer];
 }
 - (void)setAction:(PCVideoPiPAction)action title:(NSString*)title {
   NSButton* button = _buttons[@(action)];
@@ -883,6 +996,12 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   (void)note;
   [self layoutCaptions];
   [self notifyChanged];
+}
+- (void)windowDidEndLiveResize:(NSNotification*)note {
+  (void)note;
+  if (!_invalidated && PCVideoPiPValidSize(_pendingNaturalSize)) {
+    [self applyNaturalSize:_pendingNaturalSize];
+  }
 }
 - (void)windowDidMove:(NSNotification*)note {
   (void)note;

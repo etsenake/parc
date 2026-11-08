@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 632,
+  "version": 633,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -845,7 +845,7 @@
     {
       "source": "Sources/ParcEngine/VideoPiPWindow.m",
       "target": "cef/tests/parc_native_video_pip/VideoPiPWindow.m",
-      "sha256": "356623e2ca714dbd10855299e767c3fd3b75c1fabb4edd186ac8388459f2a2df"
+      "sha256": "e602a7538a6a60256dab7710da59d0c914746a07273eafb45350375a94fd4ca1"
     },
     {
       "source": "tests/NativeVideoPiP/BUILD.gn",
