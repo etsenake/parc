@@ -908,9 +908,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         body.onLayout = { [weak self, weak importer] in
             guard let self, let importer else { return }
             let bounds = self.body.bounds
-            importer.view.frame = importer.usesFullSetupColumn ? bounds
+            let target = importer.usesFullSetupColumn ? bounds
                 : importer.showsSourceCards ? NSRect(x: (bounds.width - 384) / 2, y: 0, width: 384, height: bounds.height)
                 : NSRect(x: (bounds.width - 384) / 2, y: (bounds.height - 430) / 2, width: 384, height: 430)
+            BrowserImportGeometry.resizeContent(importer.view, to: target)
         }
         root.needsLayout = true; body.needsLayout = true
         applySetupPalette()

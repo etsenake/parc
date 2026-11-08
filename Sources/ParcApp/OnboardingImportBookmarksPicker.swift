@@ -15,31 +15,31 @@ struct OnboardingImportBookmarksPicker: View {
     }
     let pages: [Page]
     let selectionColor: NSColor
-    let messages: [String]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            List {
-                ForEach(pages) { page in
-                    if pages.count > 1 {
-                        Section(page.title) { contents(page) }
-                    } else { contents(page) }
-                }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(pages) { page in
+                        if pages.count > 1 {
+                            Text(page.title).font(.headline).padding(.bottom, 8)
+                        }
+                        contents(page)
+                    }
+                }.padding(10)
             }
-            .scrollContentBackground(.hidden)
+            .textSelection(.disabled)
+            .overlay(BookmarkArrowCursor().allowsHitTesting(false))
             .background(.white)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.black.opacity(0.1), lineWidth: 1))
             // BookmarksSelectionView forces this white surface to light; the
             // surrounding setup card keeps its own appearance and theme.
             .environment(\.colorScheme, .light)
-            ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
-                Text(message).font(.system(size: 12))
-                    .foregroundColor(Color(nsColor: OnboardingSetupPalette.message))
-            }
+
         }
-        // The setup parent supplies the original 384 × 430 frame. The List
+        // The setup parent supplies the original 384 × 430 frame. The scroll view
         // fills it; source-row padding does not belong around this surface.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose bookmarks to bring to Parc")
@@ -62,7 +62,6 @@ struct OnboardingImportBookmarksPicker: View {
             OnboardingImportBookmarkBranch(item: item, depth: 0, page: page, selectionColor: selectionColor,
                                            reduceMotion: reduceMotion)
         }
-        if let status = page.status { Text(status).font(.system(size: 12)).foregroundStyle(.secondary) }
     }
 
     private func selectionMark(_ selected: Bool) -> some View {
@@ -115,12 +114,30 @@ private struct OnboardingImportBookmarkBranch: View {
             if expanded {
                 ForEach(item.children) { child in
                     // Type erasure terminates the recursive View type; source IDs
-                    // remain the List identity and no collapsed descendants render.
+                    // remain the row identity and no collapsed descendants render.
                     AnyView(OnboardingImportBookmarkBranch(item: child, depth: depth + 1, page: page,
                         selectionColor: selectionColor, reduceMotion: reduceMotion))
                 }
                 .transition(reduceMotion ? .identity : .move(edge: .top))
             }
+        }
+    }
+}
+
+/// Own the cursor without intercepting row clicks or scroll-wheel events.
+/// This also covers disabled rows on macOS 13 and 14.
+private struct BookmarkArrowCursor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ArrowView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+    private final class ArrowView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
+        override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
+        override func updateTrackingAreas() {
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: .zero,
+                options: [.cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self))
+            super.updateTrackingAreas()
         }
     }
 }

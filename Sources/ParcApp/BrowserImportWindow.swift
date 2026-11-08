@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 /// The application menu owns a separate import window. First launch embeds the
 /// same presentation in its setup window and never creates this controller.
@@ -49,6 +50,7 @@ final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
                                           y: parent.frame.midY - window.frame.height / 2))
             parent.addChildWindow(window, ordered: .above)
         } else { window.center() }
+        window.setFrame(BrowserImportGeometry.clamped(window.frame, to: parent?.screen ?? window.screen), display: false)
         showWindow(nil); window.makeKeyAndOrderFront(nil); content.start()
     }
     func resumeSafariImport(sourceBundleID: String = "com.apple.Safari") {
@@ -85,5 +87,73 @@ private final class BrowserImportNativeWindow: NSWindow {
         if event.type == .keyDown, [UInt16(36), UInt16(53), UInt16(76)].contains(event.keyCode),
            let editor = firstResponder as? NSTextView, editor.hasMarkedText() { return false }
         return super.performKeyEquivalent(with: event)
+    }
+}
+
+/// AppKit owns the interpolation, so a new request starts at the visible frame.
+@MainActor
+enum BrowserImportGeometry {
+    private static let targets = NSMapTable<NSView, NSValue>(keyOptions: .weakMemory, valueOptions: .strongMemory)
+    private static let windowSizes = NSMapTable<NSWindow, NSValue>(keyOptions: .weakMemory, valueOptions: .strongMemory)
+
+    static func clamped(_ frame: NSRect, to screen: NSScreen?) -> NSRect {
+        guard let visible = screen?.visibleFrame else { return frame }
+        var result = frame
+        result.size.width = min(result.width, visible.width)
+        result.size.height = min(result.height, visible.height)
+        result.origin.x = min(max(result.minX, visible.minX), visible.maxX - result.width)
+        result.origin.y = min(max(result.minY, visible.minY), visible.maxY - result.height)
+        return result
+    }
+
+    static func resize(_ window: NSWindow, contentSize: NSSize) {
+        // Repeated renders during a resize must not restart its animation.
+        guard windowSizes.object(forKey: window)?.sizeValue != contentSize else { return }
+        windowSizes.setObject(NSValue(size: contentSize), forKey: window)
+        let current = window.frame
+        let size = window.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize)).size
+        let target = clamped(NSRect(x: current.midX - size.width / 2,
+            y: current.midY - size.height / 2, width: size.width, height: size.height), to: window.screen)
+        animate(window: window, target: target) {
+            window.animator().setFrame(target, display: true)
+        } immediate: {
+            window.setFrame(target, display: true)
+        }
+    }
+
+    static func resizeContent(_ view: NSView, to target: NSRect) {
+        guard targets.object(forKey: view)?.rectValue != target else { return }
+        targets.setObject(NSValue(rect: target), forKey: view)
+        guard view.frame != target else { return }
+        guard let window = view.window, view.frame.width > 0, view.frame.height > 0 else {
+            view.frame = target; view.layoutSubtreeIfNeeded(); return
+        }
+        // Use the same native duration as a window changing by this amount.
+        let reference = NSRect(origin: window.frame.origin, size: NSSize(
+            width: window.frame.width + target.width - view.frame.width,
+            height: window.frame.height + target.height - view.frame.height))
+        animate(window: window, target: reference) {
+            view.animator().frame = target
+        } immediate: {
+            view.frame = target
+        }
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+    }
+
+    private static func animate(window: NSWindow, target: NSRect,
+                                changes: () -> Void, immediate: () -> Void) {
+        if !window.isVisible || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                immediate()
+            }
+        } else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = window.animationResizeTime(target)
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                changes()
+            }
+        }
     }
 }

@@ -296,10 +296,8 @@ final class BrowserImportViewController: NSViewController {
         detail.isHidden = choosingAccess || choosingPasswords
         let requestedWidth: CGFloat = choosingAccess ? 790 : 580
         let requestedHeight: CGFloat = choosingAccess ? 630 : choosingPasswords ? 630 : 454
-        if !embedded, let window, abs(root.bounds.height - requestedHeight) > 1 || abs(root.bounds.width - requestedWidth) > 1 {
-            let top = window.frame.maxY
-            window.setContentSize(NSSize(width: requestedWidth, height: requestedHeight))
-            window.setFrameOrigin(NSPoint(x: window.frame.minX, y: top - window.frame.height))
+        if !embedded, let window {
+            BrowserImportGeometry.resize(window, contentSize: NSSize(width: requestedWidth, height: requestedHeight))
         }
         heading.stringValue = "Import from your old browser"
         bookmarksPicker?.isHidden = stage != .bookmarks
@@ -595,8 +593,7 @@ final class BrowserImportViewController: NSViewController {
                     self.coordinator.toggleBookmark(pageID: page.id, id: itemID, expansion: true)
                 })
         }
-        let content = OnboardingImportBookmarksPicker(pages: pages, selectionColor: embedded ? selectionColor : NSColor(parcHex: "5636F4"),
-            messages: coordinator.warnings + (coordinator.error.map { [$0] } ?? []))
+        let content = OnboardingImportBookmarksPicker(pages: pages, selectionColor: embedded ? selectionColor : NSColor(parcHex: "5636F4"))
         if let bookmarksPicker { bookmarksPicker.rootView = content; bookmarksPicker.isHidden = false }
         else { let host = NSHostingView(rootView: content); bookmarksPicker = host; root.addSubview(host) }
     }
