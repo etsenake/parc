@@ -64,6 +64,8 @@ final class BrowserImportCoordinator {
     private var backgroundSessions: [UUID: PCNativeImportSession] = [:]
     private var backgroundPending = Set<UUID>()
     private var startingBackground = false
+    /// Background work outlives later choices on screen; only cancel stops it.
+    private var backgroundToken = UUID()
 
     func detach(onAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?) {
         guard hasBackgroundWork, !cancelled else { cancel(); return }
@@ -546,9 +548,13 @@ final class BrowserImportCoordinator {
             finishSourceFailure("The selected destination is no longer available."); return
         }
         if !extensions.isEmpty { pendingExtensions.append((profile, destination, extensions)) }
-        backgroundProfiles.append((profile, destination))
-        guard categories.contains(.bookmarks) else { activeDestination = nil; completed += 1; importNext(); return }
-        categories = [.bookmarks]
+        // Safari's history is quick and its password file needs the same
+        // destination next, so Safari imports whole in the foreground.
+        if source.map(Self.isSafari) != true {
+            backgroundProfiles.append((profile, destination))
+            guard categories.contains(.bookmarks) else { activeDestination = nil; completed += 1; importNext(); return }
+            categories = [.bookmarks]
+        }
         message = "Importing \(profile.displayName)…"; onChange?()
         session = PCNativeBrowserApplication.importBrowserData(from: profile,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window,
@@ -594,7 +600,7 @@ final class BrowserImportCoordinator {
     private func startBackground(in window: NSWindow) {
         let pending = backgroundProfiles; backgroundProfiles = []
         hasBackgroundWork = true; startingBackground = true
-        let token = generation
+        backgroundToken = UUID(); let token = backgroundToken
         for item in pending {
             var categories = item.profile.supportedCategories
             categories.remove(.bookmarks); categories.remove(.extensions)
@@ -609,7 +615,7 @@ final class BrowserImportCoordinator {
                 toProfilePath: store.independentEngineProfilePath(for: item.destination.profileID), in: window,
                 categories: categories, skipExistingCookies: skipExistingCookies,
                 progress: { _ in }, completion: { [weak self] result in
-                    guard let self, self.generation == token, !self.cancelled,
+                    guard let self, self.backgroundToken == token, !self.cancelled,
                           self.backgroundPending.remove(id) != nil else { return }
                     self.backgroundSessions[id] = nil
                     self.reportBackgroundWarnings(result.warnings)
@@ -651,11 +657,12 @@ final class BrowserImportCoordinator {
             items += chosen.filter { ids.contains($0.identifier) }
         }
         guard !requests.isEmpty else { finishBackground(); return }
-        let token = generation, batch = UUID()
+        let token = backgroundToken, batch = UUID()
         extensionBatch = batch
 
         extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, completion: { [weak self] result in
-            guard let self, self.isCurrent, self.generation == token else { return }
+            // Always ends the background phase, so a detached import is released.
+            guard let self, self.backgroundToken == token, !self.cancelled else { return }
             self.extensionInstall = nil
             self.reportFailedExtensions(result.failedNames)
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)

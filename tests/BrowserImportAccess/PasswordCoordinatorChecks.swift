@@ -135,8 +135,8 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
     ordinary.chooseDestination(); ordinary.selectDestination(.existing(target))
     PCNativeBrowserApplication.acceptsBrowserImport = true; ordinary.start()
-    expect(ordinary.stage == .safariPasswords && ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
-           "A source without bookmarks offers passwords while data imports in the background")
+    expect(ordinary.stage == .importing && !ordinary.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
+           "Safari imports whole in the foreground, so its password file can use the same destination next")
     PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
     expect(ordinary.stage == .safariPasswords && ordinary.passwordDestination?.profileID == target.profileID,
            "Actual source completion then offers optional exported passwords to the same durable destination")

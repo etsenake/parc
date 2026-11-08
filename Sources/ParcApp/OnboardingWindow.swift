@@ -773,7 +773,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     /// Extensions finish after setup moved on; their ad blockers still reach
     /// the ad-blocker step while setup hasn't passed it.
     private func adoptBackgroundAdBlockers(_ blockers: [OnboardingDraft.ImportedAdBlocker]) {
-        guard !isClosed, !isFinishing else { return }
+        let order = OnboardingDraft.Stage.setupOrder(includingAdBlockers: true, retaining: draft.stage.current)
+        guard !isClosed, !isFinishing, let here = order.firstIndex(of: draft.stage.current),
+              let step = order.firstIndex(of: .adBlockers), here <= step else { return }
         draft.importedAdBlockers = blockers.filter { !ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
         settleAdBlockerChoice(); persistDraft(); render()
     }
