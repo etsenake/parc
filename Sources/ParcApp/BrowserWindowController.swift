@@ -586,6 +586,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// sweep. Ordinary title/URL/loading chrome ticks that leave this unchanged
     /// skip AppDelegate's multi-window prepare/admit/apply pass.
     private var lastMiniPlayerSourceSignature: String?
+    private let mediaRefresh = NextTurnCoalescer()
     var onRequestBrowserTab: ((String?) -> Void)?
     /// The optional placement runs here once the page has moved; see `transferTab`.
     /// Moves a page another window holds here; true when the move started.
@@ -4345,6 +4346,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             part += "|pp\(media.canPlayPause ? 1 : 0)|pv\(media.hasPreviousTrack ? 1 : 0)|nx\(media.hasNextTrack ? 1 : 0)"
             part += "|sv\(media.canSetVolume ? 1 : 0)|mic\(media.canToggleMicrophone ? 1 : 0)|cam\(media.canToggleCamera ? 1 : 0)"
             part += "|mo\(media.microphoneOn ? 1 : 0)|co\(media.cameraOn ? 1 : 0)"
+            part += "|pip\(media.canEnterPictureInPicture ? 1 : 0)"
             if let icon = media.icon, let data = icon.tiffRepresentation {
                 var hasher = Hasher()
                 hasher.combine(data.count)
@@ -8241,6 +8243,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, let peek else { return }; self.promotePeek(peek, split: split)
         }
         peek.onUpdate = { [weak self] in self?.refreshLivePageChromeOrRender() }
+        peek.onMediaChange = { [weak self] in self?.scheduleMediaRefresh() }
         peek.onContextImage = { [weak self, weak peek] image in
             guard let self, let peek else { return }; self.browserView(peek.browser, addContextImageToEasel: image)
         }
@@ -15690,6 +15693,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                !rendering, !isClosing, !wholeWindowClose { refreshLivePageChromeOrRender() }
             scheduleTabHistoryCapture(id)
             if id == currentTabID { refreshHandoffActivity() }
+        }
+    }
+    /// Play/pause, mute, audibility, track actions and routes reach the Mini
+    /// Player and the tab's audio indicator only through this. A volume drag
+    /// publishes per step, so a burst refreshes once per run-loop turn.
+    func browserViewDidChangeMedia(_ view: PCBrowserView) {
+        guard id(for: view) != nil else { return }
+        scheduleMediaRefresh()
+    }
+    private func scheduleMediaRefresh() {
+        mediaRefresh.schedule { [weak self] in
+            guard let self, !self.rendering, !self.isClosing, !self.wholeWindowClose else { return }
+            self.refreshLivePageChromeOrRender()
         }
     }
     func browserView(_ view: PCBrowserView, didChangeRendererCrash crash: PCNativeRendererCrash?) {

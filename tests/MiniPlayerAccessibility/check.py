@@ -20,10 +20,6 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-ax-") as directory:
     fixture = fixture[fixture.index("// Stand-ins for the engine's media types"):]
     fixture = fixture.replace('let identifier: String, title = "Song", sourceURL = "https://example.test/"',
                               'let identifier: String, sourceURL = "https://example.test/"\n    var title = "Song"')
-    fixture = fixture.replace('let playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false',
-                              'var playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false')
-    fixture = fixture.replace('let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false',
-                              'var volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false')
     fixture = fixture.replace('let microphoneOn = false, cameraOn = false', 'var microphoneOn = false, cameraOn = false')
     (scratch / "Fixtures.swift").write_text("import AppKit\n" + fixture)
     executable = scratch / "checks"

@@ -507,6 +507,9 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly) BOOL canToggleCamera;
 @property(nonatomic, readonly) BOOL microphoneOn;
 @property(nonatomic, readonly) BOOL cameraOn;
+// Chromium offers Enter Picture in Picture only for one video player with a
+// video track (or a page's own handler); audio-only media never has it.
+@property(nonatomic, readonly) BOOL canEnterPictureInPicture;
 @property(nonatomic, readonly) PCNativeAirPlayState airPlayState;
 @property(nonatomic, readonly, copy, nullable) NSString* airPlayDeviceName;
 @property(nonatomic, readonly) PCNativeCastState castState;

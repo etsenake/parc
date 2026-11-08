@@ -415,7 +415,7 @@ private final class MiniPlayerRow: NSView {
                 currentRoute != nil]
     }
     func update(_ item: MiniPlayerItem) {
-        let previousCapabilities = keyCapabilities
+        let previousCapabilities = keyCapabilities, focus = focusedControl
         self.item = item
         let state = item.state
         if isCurrent { unavailable.stringValue = "" }
@@ -448,6 +448,7 @@ private final class MiniPlayerRow: NSView {
         updatePresentationVisibility()
         updateRoute()
         needsLayout = true
+        keepFocusVisible(focus)
         if previousCapabilities != keyCapabilities { onKeyViewsChanged?() }
     }
     ///
@@ -635,7 +636,14 @@ private final class MiniPlayerRow: NSView {
     }
     override func mouseDown(with event: NSEvent) { reveal() }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateRouteMotion() }
-    override func becomeFirstResponder() -> Bool { if !restoringVolumeFocus { onFocus?() }; return super.becomeFirstResponder() }
+    /// AppKit gives a clicked view that accepts first responder the focus, and
+    /// with it this card's ring. A click reveals the page instead; only the key
+    /// view loop (Tab) focuses the card.
+    override func becomeFirstResponder() -> Bool {
+        if let type = NSApp.currentEvent?.type, [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) { return false }
+        if !restoringVolumeFocus { onFocus?() }
+        return super.becomeFirstResponder()
+    }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 9, yRadius: 9).fill() }
     override func keyDown(with event: NSEvent) {
@@ -645,6 +653,7 @@ private final class MiniPlayerRow: NSView {
     }
     func setPresentation(expanded: Bool, front: Bool) {
         guard deckExpanded != expanded || frontCard != front else { return }
+        let focus = focusedControl
         deckExpanded = expanded; frontCard = front
         if !deckExpanded {
             volumeHoverOff?.cancel(); volumeHoverOff = nil
@@ -654,6 +663,7 @@ private final class MiniPlayerRow: NSView {
         }
         updatePresentationVisibility()
         updateVolumeAccessibility()
+        keepFocusVisible(focus)
         needsLayout = true
     }
     private func updatePresentationVisibility() {
@@ -662,7 +672,7 @@ private final class MiniPlayerRow: NSView {
         titleArtwork.isHidden = !frontCard
         marquee.isHidden = !deckExpanded || !frontCard
         close.isHidden = !deckExpanded || !frontCard
-        pip.isHidden = !deckExpanded || !frontCard
+        pip.isHidden = !deckExpanded || !frontCard || !state.canEnterPictureInPicture
         play.isHidden = !frontCard || !state.canPlayPause
         previous.isHidden = !frontCard || !state.canPlayPause
         next.isHidden = !frontCard || !state.canPlayPause
@@ -673,6 +683,23 @@ private final class MiniPlayerRow: NSView {
         route.isHidden = !frontCard || currentRoute == nil
         marquee.scrollingEnabled = frontCard && deckExpanded
         updateRouteMotion()
+    }
+    private var focusedControl: NSView? {
+        (window?.firstResponder as? NSView).flatMap { $0 !== self && $0.isDescendant(of: self) ? $0 : nil }
+    }
+    /// A control hidden while it holds keyboard focus (AppKit then leaves the
+    /// window itself focused) hands it to the next visible control in the
+    /// row, else the card, so focus is never invisible.
+    private func keepFocusVisible(_ focused: NSView?) {
+        guard let window, let focused, focused.isHiddenOrHasHiddenAncestor,
+              window.firstResponder === focused || window.firstResponder === window else { return }
+        let stops = SidebarAccessibility.keyViews(in: [self], space: self)
+        let following = stops.firstIndex { $0 === focused }.map { stops[($0 + 1)...] } ?? []
+        if let next = following.first(where: { $0 !== self && !$0.isHiddenOrHasHiddenAncestor && $0.acceptsFirstResponder }),
+           window.makeFirstResponder(next) { return }
+        if !window.makeFirstResponder(acceptsFirstResponder && !isHiddenOrHasHiddenAncestor ? self : nil) {
+            _ = window.makeFirstResponder(nil)
+        }
     }
     override func layout() {
         super.layout()

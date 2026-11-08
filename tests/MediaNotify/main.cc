@@ -101,6 +101,11 @@ int main() {
   mic.microphone_on = true;
   assert(ShouldNotifyMediaPayloadChange(published, mic));
 
+  // A video track arriving or leaving shows or hides Open Picture in Picture.
+  NativeMediaNotifyState pip = same;
+  pip.can_enter_picture_in_picture = true;
+  assert(ShouldNotifyMediaPayloadChange(published, pip));
+
   // After publishing a changed snapshot, an identical follow-up tick skips.
   NativeMediaNotifyState published_paused = paused;
   published_paused.published = true;

@@ -40,6 +40,7 @@ struct NativeMediaNotifyState {
   bool can_toggle_camera = false;
   bool microphone_on = false;
   bool camera_on = false;
+  bool can_enter_picture_in_picture = false;
   // PCNativeAirPlayState raw value and the device's name (native_airplay.h).
   int airplay_state = 0;
   std::string airplay_device_name;
@@ -77,6 +78,8 @@ inline bool MediaNotifyPayloadChanged(const NativeMediaNotifyState& last,
          last.can_toggle_camera != current.can_toggle_camera ||
          last.microphone_on != current.microphone_on ||
          last.camera_on != current.camera_on ||
+         last.can_enter_picture_in_picture !=
+             current.can_enter_picture_in_picture ||
          last.airplay_state != current.airplay_state ||
          last.airplay_device_name != current.airplay_device_name ||
          last.cast_state != current.cast_state ||

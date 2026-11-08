@@ -20,8 +20,6 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-presentation-") as directory:
     fixture = (root / "tests/SidebarMiniPlayerFocus/SidebarMiniPlayerFocusTests.swift").read_text()
     fixture = fixture[fixture.index("// Stand-ins for the engine's media types"):]
     fixture = fixture.replace('title = "Song"', 'title = "A long track title that must overflow the mini player available width"')
-    fixture = fixture.replace('let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false',
-                              'let volume = 1.0, canToggleMicrophone = false, canToggleCamera = false; var canSetVolume = true')
     (scratch / "Fixtures.swift").write_text("import AppKit\n" + fixture)
     executable = scratch / "checks"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",

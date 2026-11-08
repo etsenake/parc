@@ -35,6 +35,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     var onCloseRefused: (() -> Void)?
     var onPromote: ((Bool) -> Void)?
     var onUpdate: (() -> Void)?
+    var onMediaChange: (() -> Void)?
     var onContextImage: ((PCNativeContextImage) -> Void)?
     var canInteract: (() -> Bool)?
     var canSplit: (() -> Bool)?
@@ -322,7 +323,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.settleMotion(); view.removeFromSuperview()
         if browser.delegate === self { browser.delegate = nil }
         failure.pageView = nil
-        onClose = nil; onCloseRefused = nil; onPromote = nil; onUpdate = nil; onContextImage = nil; canInteract = nil; canSplit = nil; canExpand = nil
+        onClose = nil; onCloseRefused = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; canInteract = nil; canSplit = nil; canExpand = nil
     }
 
     private func installSwipeMonitor() {
@@ -349,6 +350,8 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     func browserView(_ view: PCBrowserView, didChangeLoading loading: Bool, canGoBack: Bool, canGoForward: Bool) { publishPresentationIfChanged() }
     func browserView(_ view: PCBrowserView, didChangeCaptureState state: PCNativeCaptureState?) { publishPresentationIfChanged() }
     func browserView(_ view: PCBrowserView, didChangeRendererCrash crash: PCNativeRendererCrash?) { publishPresentationIfChanged() }
+    /// Peek's own chrome shows no media; the window's Mini Player does.
+    func browserViewDidChangeMedia(_ view: PCBrowserView) { if view === browser { onMediaChange?() } }
     /// The Peek bar alone, as the window repaints a pane's.
     func browserViewDidChangePageColor(_ view: PCBrowserView) {
         guard view === browser, !self.view.browserToolbar.isHidden else { return }

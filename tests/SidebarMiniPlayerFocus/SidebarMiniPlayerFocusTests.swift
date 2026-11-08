@@ -75,6 +75,9 @@ import AppKit
         check(revealed == ["a", "b"], "Return on a focused control still reaches its row (\(revealed))")
         routeButton(window, host)
         unavailableMessage(window, host)
+        clickTakesNoFocus(window, host)
+        pictureInPicture(window, host)
+        hiddenFocusMoves(window, host)
         window.close()
         print("Sidebar mini player focus checks: \(count) passed")
     }
@@ -157,6 +160,92 @@ import AppKit
         check(page.chooserRequests == ["airplay"] && !message(), "opening the route list clears the error (\(page.chooserRequests))")
         deck.removeFromSuperview()
     }
+    /// A click on the card reveals its page but leaves keyboard focus where it
+    /// was, so the card's ring never shows for a mouse user.
+    static func clickTakesNoFocus(_ window: NSWindow, _ host: NSView) {
+        let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
+        var revealed = 0
+        let page = PCNativePage(), state = PCNativeMediaState(identifier: "click")
+        page.mediaState = state
+        deck.update([MiniPlayerItem(page: page, state: state, icon: nil, host: MiniPlayerHostLease(window), valid: { true },
+                                    reveal: { revealed += 1 })])
+        deck.layoutSubtreeIfNeeded()
+        guard let row = descendants(of: deck).first(where: { String(describing: type(of: $0)) == "MiniPlayerRow" }) else {
+            return check(false, "a row to click")
+        }
+        _ = window.makeFirstResponder(nil)
+        let before = window.firstResponder
+        // The artwork passes clicks to the card. In a key window AppKit offers
+        // the clicked view first responder, then sends it mouseDown, while
+        // the click is the current event; this off-screen window is never key,
+        // so it would swallow the click as a first mouse. Replay that order.
+        let point = row.convert(NSPoint(x: 12, y: row.bounds.height - 16), to: nil)
+        guard let hit = window.contentView?.hitTest(point) else { return check(false, "a view under the artwork") }
+        check(hit === row, "the artwork's click lands on the card")
+        NSApp.postEvent(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
+                                           windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                           clickCount: 1, pressure: 1)!, atStart: false)
+        guard let click = NSApp.nextEvent(matching: .leftMouseDown, until: .distantPast, inMode: .default, dequeue: true),
+              NSApp.currentEvent === click else { return check(false, "the click is the current event") }
+        if hit.acceptsFirstResponder { _ = window.makeFirstResponder(hit) }
+        hit.mouseDown(with: click)
+        check(revealed == 1, "a click on the card reveals its page (\(revealed))")
+        check(window.firstResponder === before && window.firstResponder !== row,
+              "a click leaves keyboard focus, and the card draws no ring (\(String(describing: window.firstResponder)))")
+        NSApp.postEvent(key("\t", 48, window), atStart: false)
+        guard let tab = NSApp.nextEvent(matching: .keyDown, until: .distantPast, inMode: .default, dequeue: true),
+              NSApp.currentEvent === tab else { return check(false, "Tab is the current event") }
+        check(window.makeFirstResponder(row) && window.firstResponder === row, "Tab focus still reaches the card")
+        _ = window.makeFirstResponder(nil)
+        deck.removeFromSuperview()
+    }
+    /// Open Picture in Picture shows only while Chromium offers it: one video
+    /// player with a video track. Audio-only media never shows it.
+    static func pictureInPicture(_ window: NSWindow, _ host: NSView) {
+        let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
+        let page = PCNativePage(), state = PCNativeMediaState(identifier: "pip")
+        page.mediaState = state
+        let item = MiniPlayerItem(page: page, state: state, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})
+        func shown() -> Bool {
+            deck.update([item]); deck.layoutSubtreeIfNeeded()
+            return descendants(of: deck).compactMap { $0 as? ActionButton }
+                .contains { !$0.isHidden && $0.accessibilityLabel() == "Open Picture in Picture" }
+        }
+        deck.updateHover(true)  // The row's top chrome shows while the deck is expanded.
+        state.canEnterPictureInPicture = false
+        check(!shown(), "audio-only media has no Open Picture in Picture")
+        state.canEnterPictureInPicture = true
+        check(shown(), "a video player keeps Open Picture in Picture")
+        state.canEnterPictureInPicture = false
+        check(!shown(), "losing its video track hides it again")
+        deck.removeFromSuperview()
+    }
+    /// A control hidden while it holds keyboard focus hands focus to the next
+    /// visible control in the row, or to the card, never leaving it invisible.
+    static func hiddenFocusMoves(_ window: NSWindow, _ host: NSView) {
+        let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
+        let page = PCNativePage(), state = PCNativeMediaState(identifier: "hide")
+        state.canToggleCamera = true; page.mediaState = state
+        let item = MiniPlayerItem(page: page, state: state, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})
+        func refresh() { deck.update([item]); deck.layoutSubtreeIfNeeded() }
+        func control(_ label: String) -> ActionButton? {
+            descendants(of: deck).compactMap { $0 as? ActionButton }.first { $0.accessibilityLabel() == label }
+        }
+        func focused() -> String {
+            (window.firstResponder as? NSView).map { ($0 as? ActionButton)?.accessibilityLabel() ?? String(describing: type(of: $0)) } ?? "none"
+        }
+        refresh()
+        guard let camera = control("Turn Camera On"), window.makeFirstResponder(camera) else { return check(false, "the camera takes focus") }
+        state.canToggleCamera = false; refresh()
+        check(focused() == "Adjust Tab Volume", "a hidden camera button hands focus on (\(focused()))")
+        guard let play = control("Pause"), window.makeFirstResponder(play) else { return check(false, "play takes focus") }
+        state.canPlayPause = false; refresh()
+        check(focused() == "Adjust Tab Volume", "a hidden play button skips its hidden neighbours (\(focused()))")
+        state.canSetVolume = false; refresh()
+        check(focused() == "MiniPlayerRow", "the row's last control hands focus to the card (\(focused()))")
+        _ = window.makeFirstResponder(nil)
+        deck.removeFromSuperview()
+    }
     static func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
     static func key(_ characters: String, _ code: UInt16, _ window: NSWindow) -> NSEvent {
         NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
@@ -185,9 +274,10 @@ enum PCNativeAirPlayState { case unavailable, available, connecting, connected }
 enum PCNativeCastState { case unavailable, available, connecting, connected }
 @MainActor final class PCNativeMediaState {
     let identifier: String, title = "Song", sourceURL = "https://example.test/"
-    let playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false
-    let volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false
+    var playing = true, canPlayPause = true, hasPreviousTrack = true, hasNextTrack = true, muted = false
+    var volume = 1.0, canSetVolume = true, canToggleMicrophone = false, canToggleCamera = false
     let microphoneOn = false, cameraOn = false
+    var canEnterPictureInPicture = true
     var airPlayState = PCNativeAirPlayState.unavailable, airPlayDeviceName: String? = nil
     var castState = PCNativeCastState.unavailable, castDeviceName: String? = nil
     init(identifier: String) { self.identifier = identifier }

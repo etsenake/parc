@@ -236,6 +236,8 @@ static void PCFinishEngineTermination(void* unused) {
   BOOL _publishedTopBandSample;
   NSColor* _publishedTopBand;
   NSString* _publishedTopBandHost;
+  BOOL _hasPublishedMedia;
+  uint64_t _publishedMediaRevision;
 }
 - (instancetype)initWithFrame:(NSRect)frame profilePath:(NSString*)profilePath {
   self = [super initWithFrame:frame];
@@ -285,6 +287,7 @@ static void PCFinishEngineTermination(void* unused) {
   _publishedTopBandSample = NO;
   _publishedTopBand = nil;
   _publishedTopBandHost = nil;
+  _hasPublishedMedia = NO;
   if (_disposed || !_nativePage || !delegate) {
     return;
   }
@@ -858,6 +861,23 @@ static void PCFinishEngineTermination(void* unused) {
     _publishedTopBandSample = topBandSample;
     _publishedTopBand = topBand;
     _publishedTopBandHost = topBandHost;
+  }
+  if (_disposed || _nativePage != page || self.delegate != target ||
+      page.observer != self) {
+    return;
+  }
+  const BOOL reportsMedia =
+      [page respondsToSelector:@selector(mediaControlsRevision)];
+  const uint64_t media = reportsMedia ? page.mediaControlsRevision : 0;
+  if (reportsMedia && (!_hasPublishedMedia || media != _publishedMediaRevision) &&
+      [target respondsToSelector:@selector(browserViewDidChangeMedia:)]) {
+    [target browserViewDidChangeMedia:self];
+    if (_disposed || _nativePage != page || self.delegate != target ||
+        page.observer != self) {
+      return;
+    }
+    _hasPublishedMedia = YES;
+    _publishedMediaRevision = media;
   }
 }
 - (void)nativePage:(PCNativePage*)page

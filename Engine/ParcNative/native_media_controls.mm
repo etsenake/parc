@@ -264,6 +264,7 @@ class MediaState final : public content::WebContentsObserver,
         if (!Has(session, Action::kToggleCamera)) return false;
         session->ToggleCamera(); break;
       case PCNativeMediaActionEnterPictureInPicture:
+        if (!Has(session, Action::kEnterPictureInPicture)) return false;
         session->EnterPictureInPicture(); break;
       default: return false;
     }
@@ -663,6 +664,8 @@ class MediaState final : public content::WebContentsObserver,
         state.can_play_pause && implementation->has_user_volume_players();
     state.can_toggle_microphone = Has(session, Action::kToggleMicrophone);
     state.can_toggle_camera = Has(session, Action::kToggleCamera);
+    state.can_enter_picture_in_picture =
+        Has(session, Action::kEnterPictureInPicture);
     state.microphone_on =
         info->microphone_state == media_session::mojom::MicrophoneState::kUnmuted;
     state.camera_on =
@@ -781,6 +784,7 @@ void NativeMediaCastChanged(content::WebContents* contents) {
 @synthesize muted = _muted, volume = _volume, canSetVolume = _canSetVolume;
 @synthesize canToggleMicrophone = _canToggleMicrophone, canToggleCamera = _canToggleCamera;
 @synthesize microphoneOn = _microphoneOn, cameraOn = _cameraOn;
+@synthesize canEnterPictureInPicture = _canEnterPictureInPicture;
 @synthesize airPlayState = _airPlayState, airPlayDeviceName = _airPlayDeviceName;
 @synthesize castState = _castState, castDeviceName = _castDeviceName;
 - (instancetype)initWithContents:(content::WebContents*)contents
@@ -815,6 +819,7 @@ void NativeMediaCastChanged(content::WebContents* contents) {
     _canToggleCamera = parc::Has(session, parc::Action::kToggleCamera);
     _microphoneOn = info->microphone_state == media_session::mojom::MicrophoneState::kUnmuted;
     _cameraOn = info->camera_state == media_session::mojom::CameraState::kTurnedOn;
+    _canEnterPictureInPicture = parc::Has(session, parc::Action::kEnterPictureInPicture);
     const parc::NativeAirPlayState airplay = parc::NativeAirPlayStateForContents(contents);
     _airPlayState = static_cast<PCNativeAirPlayState>(airplay.state);
     _airPlayDeviceName = airplay.device_name.empty() ? nil : base::SysUTF8ToNSString(airplay.device_name);

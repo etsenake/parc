@@ -48,6 +48,10 @@ NS_SWIFT_UI_ACTOR
 // not the window's chrome, since background transitions can notify per frame.
 - (void)browserViewDidChangePageColor:(PCBrowserView*)view
     NS_SWIFT_NAME(browserViewDidChangePageColor(_:));
+// The page's media controls, tab audio or media route changed
+// (mediaControlsRevision moved). No other key carries these.
+- (void)browserViewDidChangeMedia:(PCBrowserView*)view
+    NS_SWIFT_NAME(browserViewDidChangeMedia(_:));
 - (void)browserView:(PCBrowserView*)view
     requestFocusForRendererCrash:(PCNativeRendererCrash*)crash
     NS_SWIFT_NAME(browserView(_:requestFocusForRendererCrash:));

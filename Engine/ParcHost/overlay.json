@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 626,
+  "version": 627,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -395,7 +395,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "cafb868aef310a081d80dae6d8689eb60949df09f5dbfb9dd4cdab829949b535"
+      "sha256": "3140321b64c47b66d1767b58a0aa126d8683d49a47712b89ff17734ef05174cb"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1210,12 +1210,12 @@
     {
       "source": "Engine/ParcNative/native_media_notify.h",
       "target": "cef/libcef/browser/parc_native/native_media_notify.h",
-      "sha256": "4e0026dee8887c9e3d319ad691bd0e28ff4e5f45b68138aaeb095327e2d46c2b"
+      "sha256": "37ae7a39827d62f74159c499d28c8ed1fcb019af2d09dc04607cec6d2c33ed27"
     },
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "f632f98e4fcfed806ec78bb37a7d184d684d2779c54cab2a88ecb77227706334"
+      "sha256": "d876df81789cd1c7ea76e2eaa61a77c1b0e291a66f6ed92bc4db691f6491128b"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
