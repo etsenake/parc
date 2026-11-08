@@ -15,10 +15,9 @@ struct BrowserImportSelection {
     private(set) var expanded = Set<String>()
     private let nodes: [String: BrowserImportBookmark]
 
-    /// A nil history keeps the ordinary importer's explicit Select All default.
-    /// Setup passes its actual source snapshot, including an empty dictionary
-    /// when history was unavailable, so it never recommends arbitrary pages.
-    init(roots: [BrowserImportBookmark], historyVisitCounts: [String: Int]? = nil) throws {
+    /// Every bookmark starts ticked. Setup also opens the top-level folders so
+    /// their pages show.
+    init(roots: [BrowserImportBookmark], expandsTopFolders: Bool = false) throws {
         var nodes: [String: BrowserImportBookmark] = [:]
         func visit(_ items: [BrowserImportBookmark], depth: Int) throws {
             guard depth <= 128 else { throw CocoaError(.fileReadCorruptFile) }
@@ -31,58 +30,8 @@ struct BrowserImportSelection {
         }
         try visit(roots, depth: 0)
         self.roots = roots; self.nodes = nodes
-        selected = historyVisitCounts.map { Self.recommendations(roots: roots, history: $0) } ?? Set(nodes.keys)
-        if historyVisitCounts != nil {
-            expanded = Set(roots.filter { $0.url == nil }.map(\.id))
-        }
-    }
-
-    private static func recommendations(roots: [BrowserImportBookmark], history: [String: Int]) -> Set<String> {
-        var counts: [URL: Int] = [:]
-        for (value, count) in history where count >= 0 {
-            guard let url = recommendationURL(value) else { continue }
-            counts[url] = max(counts[url] ?? 0, count)
-        }
-        var candidates: [(id: String, visits: Int, order: Int)] = []
-        var seen = Set<URL>()
-        func visit(_ items: [BrowserImportBookmark]) {
-            for item in items {
-                if let value = item.url, let url = recommendationURL(value),
-                   seen.insert(url).inserted, let count = counts[url] {
-                    candidates.append((item.id, count, candidates.count))
-                }
-                visit(item.children)
-            }
-        }
-        visit(roots)
-        return Set(candidates.sorted {
-            $0.visits == $1.visits ? $0.order < $1.order : $0.visits > $1.visits
-        }.prefix(5).map(\.id))
-    }
-
-    /// Import-only identity matching recovered from NormalizedURL; the source
-    /// bookmark's actual URL is retained unchanged for display and navigation.
-    static func recommendationURL(_ value: String) -> URL? {
-        guard let original = URL(string: value) else { return nil }
-        guard var components = URLComponents(string: original.absoluteString.lowercased()) else { return original }
-        if components.scheme == nil, components.host == nil,
-           let candidate = components.string.flatMap({ URLComponents(string: "https://" + $0) }) {
-            components = candidate
-        }
-        if components.scheme == nil || components.scheme == "http" { components.scheme = "https" }
-        if let host = components.host, host.hasPrefix("www.") { components.host = String(host.dropFirst(4)) }
-        let hasFragmentRoute = components.fragment?.hasPrefix("!") == true
-        if hasFragmentRoute {
-            if components.fragment?.hasSuffix("/") == true { components.fragment?.removeLast() }
-        } else {
-            components.fragment = nil
-            if components.path.hasSuffix("/") { components.path.removeLast() }
-        }
-        if let query = components.queryItems {
-            let retained = query.filter { !($0.value ?? "").isEmpty && !$0.name.hasPrefix("utm_") }
-            components.queryItems = retained.isEmpty ? nil : retained
-        }
-        return components.url ?? original
+        selected = Set(nodes.keys)
+        if expandsTopFolders { expanded = Set(roots.filter { $0.url == nil }.map(\.id)) }
     }
 
     mutating func toggle(_ id: String) {

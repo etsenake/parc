@@ -50,38 +50,10 @@ import Foundation
                 url: "https://example.test/page-\(index)", children: [])
         }
         let rankedFolder = BrowserImportBookmark(id: "ranked-folder", title: "Bookmarks", url: nil, children: rankedPages)
-        let counts = Dictionary(uniqueKeysWithValues: (0..<8).map { (rankedPages[$0].url!, $0 * 10) })
-        var recommended = try BrowserImportSelection(roots: [rankedFolder], historyVisitCounts: counts)
-        expect(recommended.selected == Set((3..<8).map { "rank-\($0)" }),
-               "Setup recommends the five most visited source bookmarks, not the first five tree rows")
-        expect(!recommended.allSelected && recommended.selectedPageCount == 5,
-               "The recommendation is a five-page selection, not implicit folder selection")
-        expect(recommended.expanded == ["ranked-folder"], "The initial top-level folder exposes its choices")
-        expect(recommended.includedRoots.first?.children.count == 5,
-               "Recommended leaves keep their actual source parent")
-        recommended.toggle("rank-0")
-        expect(recommended.selectedPageCount == 6, "Five is a recommendation, never a limit on explicit choices")
-        recommended.toggleAll()
-        expect(recommended.allSelected && recommended.selectedPageCount == 8,
-               "Select All overrides the recommendation normally")
-        let unavailableHistory = try BrowserImportSelection(roots: [rankedFolder], historyVisitCounts: [:])
-        expect(unavailableHistory.selected.isEmpty, "Unavailable history cannot fabricate a top-five recommendation")
-        let unvisited = try BrowserImportSelection(roots: [rankedFolder], historyVisitCounts: ["https://other.test": 999])
-        expect(unvisited.selected.isEmpty, "History from unrelated URLs cannot select arbitrary source bookmarks")
-        let duplicates = try BrowserImportSelection(roots: [folder, loose], historyVisitCounts: [one.url!: 30, loose.url!: 2])
-        expect(duplicates.selected == ["one", "loose"], "Automatic choice picks one original per matching URL; duplicates remain manually available")
-        let tied = try BrowserImportSelection(roots: rankedPages, historyVisitCounts: counts.mapValues { _ in 1 })
-        expect(tied.selected == Set((0..<5).map { "rank-\($0)" }), "Ties use deterministic original tree order")
-        let normalized = try BrowserImportSelection(roots: [one], historyVisitCounts: ["http://www.EXAMPLE.test/ONE/?utm_source=test#section": 8])
-        expect(normalized.selected == ["one"], "Recommendation identity handles the reference's case, www, scheme, fragment and campaign normalization")
-        expect(normalized.includedRoots.first?.children.isEmpty == true && normalized.includedRoots.first?.url == one.url,
-               "Recommendation matching never rewrites the URL that will actually be imported")
-        expect(BrowserImportSelection.recommendationURL("https://example.test/a?keep=one&empty=&utm_medium=x") == URL(string: "https://example.test/a?keep=one"),
-               "Real query values are retained; empty and campaign arguments are excluded only from matching")
-        expect(BrowserImportSelection.recommendationURL("https://example.test/#!/route/") != BrowserImportSelection.recommendationURL("https://example.test/#!/other/"),
-               "Distinct hashbang application routes do not collapse to the same recommendation")
-        expect(BrowserImportSelection.recommendationURL("www.example.test/path/") == URL(string: "https://example.test/path"),
-               "A source identity without a scheme receives the reference's secure URL prefix")
+        let setupSelection = try BrowserImportSelection(roots: [rankedFolder], expandsTopFolders: true)
+        expect(setupSelection.allSelected && setupSelection.selectedPageCount == 8,
+               "Setup starts with every bookmark ticked")
+        expect(setupSelection.expanded == ["ranked-folder"], "Setup opens the top-level folder so its pages show")
         do {
             _ = try BrowserImportSelection(roots: [one, one])
             preconditionFailure("Duplicate native identifiers must fail")

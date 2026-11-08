@@ -1,24 +1,33 @@
 import AppKit
 
 ///
-/// browser's is a theme from its own icon, with the colour wheel's harmonies
-/// the theme editor offers.
+/// browser's own two colours, deep one first. Browsers not listed take the
+/// two strongest hues of their icon.
 @MainActor
 enum BrowserImportTheme {
-    static func page(for source: PCNativeImportSource, icon: @autoclosure () -> NSImage) -> BrowserImportBackdrop.Page {
-        if BrowserImportCoordinator.isArc(source) { return .sunset }
-        if let cached = sampled[source.appURL] { return .theme(cached) }
-        guard let theme = Self.theme(sampling: icon()) else { return .theme(SpaceTheme()) }
-        sampled[source.appURL] = theme
-        return .theme(theme)
+    static let brands: [String: (UInt32, UInt32)] = [
+        "com.google.Chrome": (0x1E8E3E, 0xFBBC04), "com.apple.Safari": (0x0B57D0, 0x22C3EE),
+        "org.mozilla.firefox": (0x7542E5, 0xFF9500), "com.microsoft.edgemac": (0x0F5BD6, 0x2BC46B),
+        "com.brave.Browser": (0xA3123A, 0xFB542B), "com.operasoftware.Opera": (0x8E0E1C, 0xFF1B2D),
+        "com.operasoftware.OperaGX": (0x8E0E1C, 0xFF1B2D), "com.vivaldi.Vivaldi": (0x8A1E3A, 0xEF3939),
+    ]
+
+    static func wash(for source: PCNativeImportSource, icon: @autoclosure () -> NSImage) -> BrowserImportWash {
+        if BrowserImportCoordinator.isArc(source) { return .arc }
+        let id = Bundle(url: source.appURL)?.bundleIdentifier ?? source.identifier
+        if let brand = brands[id] { return .pair(brand.0, brand.1) }
+        if let cached = sampled[source.appURL] { return cached }
+        guard let pair = Self.pair(sampling: icon()) else { return .arc }
+        let wash = BrowserImportWash.pair(pair.0, pair.1)
+        sampled[source.appURL] = wash
+        return wash
     }
-    private static var sampled: [URL: SpaceTheme] = [:]
+    private static var sampled: [URL: BrowserImportWash] = [:]
 
-
-    /// The icon's strongest hue, weighted toward saturated mid tones, becomes
-    /// the primary colour. A second strong hue picks the wheel: near it,
-    /// analogous; across the wheel, complementary.
-    static func theme(sampling icon: NSImage) -> SpaceTheme? {
+    /// The icon's two strongest hues, weighted toward saturated mid tones and
+    /// at least 40° apart, as deep and bright colours; one hue pairs with its
+    /// neighbour 40° on.
+    static func pair(sampling icon: NSImage) -> (UInt32, UInt32)? {
         let side = 32
         var rect = NSRect(x: 0, y: 0, width: side, height: side)
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -30,8 +39,7 @@ enum BrowserImportTheme {
         guard let data = context.data else { return nil }
         let bytes = data.bindMemory(to: UInt8.self, capacity: side * side * 4)
         let bins = 36
-        var weight = [Double](repeating: 0, count: bins), saturation = weight, lightness = weight
-        var hueX = weight, hueY = weight
+        var weight = [Double](repeating: 0, count: bins)
         for pixel in 0..<(side * side) {
             let alpha = Double(bytes[pixel * 4 + 3]) / 255
             guard alpha > 0.5 else { continue }
@@ -39,33 +47,18 @@ enum BrowserImportTheme {
             guard let color = ThemeColor(red: channel(0), green: channel(1), blue: channel(2)) else { continue }
             let hsl = color.hsl
             guard hsl.saturation > 0.3, (0.15...0.85).contains(hsl.lightness) else { continue }
-            let w = alpha * hsl.saturation * (1 - abs(hsl.lightness - 0.5))
-            let bin = Int(hsl.hue * Double(bins)) % bins
-            weight[bin] += w; saturation[bin] += hsl.saturation * w; lightness[bin] += hsl.lightness * w
-            hueX[bin] += cos(hsl.hue * 2 * .pi) * w; hueY[bin] += sin(hsl.hue * 2 * .pi) * w
+            weight[Int(hsl.hue * Double(bins)) % bins] += alpha * hsl.saturation * (1 - abs(hsl.lightness - 0.5))
         }
-        func around(_ bin: Int) -> [Int] { [(bin + bins - 1) % bins, bin, (bin + 1) % bins] }
-        let smoothed = (0..<bins).map { around($0).reduce(0) { $0 + weight[$1] } }
-        guard let top = smoothed.indices.max(by: { smoothed[$0] < smoothed[$1] }), smoothed[top] > 0 else { return nil }
-        let near = around(top), total = near.reduce(0) { $0 + weight[$1] }
-        var hue = atan2(near.reduce(0) { $0 + hueY[$1] }, near.reduce(0) { $0 + hueX[$1] }) / (2 * .pi)
-        if hue < 0 { hue += 1 }
-        let s = min(0.85, max(0.55, near.reduce(0) { $0 + saturation[$1] } / total))
-        let l = min(0.62, max(0.5, near.reduce(0) { $0 + lightness[$1] } / total))
-        guard let primary = ThemeColor.hsl(hue: hue, saturation: s, lightness: l) else { return nil }
         func distance(_ a: Int, _ b: Int) -> Int { min(abs(a - b), bins - abs(a - b)) }
-        // The other strong hues, each at least 40° from those already kept.
-        var strong = [top]
-        for bin in smoothed.indices.sorted(by: { smoothed[$0] > smoothed[$1] })
-        where smoothed[bin] >= smoothed[top] * 0.25 && strong.allSatisfy({ distance($0, bin) >= 4 }) { strong.append(bin) }
-        // Grain at 0.7 of the dial (strength 0.56): visible at a glance, as on a themed Space.
-        var theme = SpaceTheme(primaryColor: primary, colorCount: 2, wheel: .analogous, noise: 0.7, intensity: 0.8)
-        if strong.count >= 3 {
-            theme.wheel = .complimentary; theme.colorCount = 3
-        } else if strong.count == 2, distance(strong[1], top) > 9 {
-            theme.wheel = .complimentary; theme.colorCount = distance(strong[1], top) >= 16 ? 2 : 3
+        let smoothed = (0..<bins).map { bin in [-1, 0, 1].reduce(0) { $0 + weight[(bin + $1 + bins) % bins] } }
+        guard let top = smoothed.indices.max(by: { smoothed[$0] < smoothed[$1] }), smoothed[top] > 0 else { return nil }
+        let second = smoothed.indices.filter { distance($0, top) >= 4 }.max { smoothed[$0] < smoothed[$1] }
+        let other = second.flatMap { smoothed[$0] >= smoothed[top] * 0.25 ? $0 : nil } ?? (top + 4) % bins
+        func color(_ bin: Int, lightness: Double) -> UInt32 {
+            let value = ThemeColor.hsl(hue: (Double(bin) + 0.5) / Double(bins), saturation: 0.8, lightness: lightness)!
+            return [value.red, value.green, value.blue].reduce(0) { $0 << 8 | UInt32(($1 * 255).rounded()) }
         }
-        return theme
+        return (color(top, lightness: 0.4), color(other, lightness: 0.58))
     }
 }
 

@@ -7,7 +7,6 @@ xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0
   Sources/ParcCore/SpaceTheme.swift \
   Sources/ParcApp/OnboardingSetupCard.swift \
   Sources/ParcApp/BrowserImportBackdrop.swift \
-  Sources/ParcApp/ThemeRenderer.swift \
   Sources/ParcApp/SidebarSpacePaging.swift \
   Sources/ParcApp/OnboardingProgressionButton.swift \
   Sources/ParcApp/OnboardingConfettiView.swift \

@@ -1,51 +1,46 @@
 import AppKit
 
-/// The browser-choice page's backdrop. A browser's page is a Space theme drawn
 ///
 ///
-/// strip; a new choice springs the strip's position to that page and the
-/// backdrop mixes the two pages either side of it (`transitioning(from:to:
+/// paging strip; a new choice springs the strip's position to that page and
+/// the backdrop mixes the two pages either side of it (`transitioning(from:to:
 ///
-/// the mix is. The first choice, and leaving the page, fade the backdrop on the
-/// same spring over the page's own fill.
+/// the mix is. The first choice, and leaving the import, fade the backdrop on
+/// the same spring over the page's own fill.
 @MainActor
 final class BrowserImportBackdrop: NSView {
-    enum Page: Equatable { case theme(SpaceTheme), sunset }
-    private let renderer = ThemeRendererView()
-    private let sunset = BrowserImportSunset()
+    private let back = BrowserImportWashView(), front = BrowserImportWashView()
     ///
     private var position = SidebarSpring(response: SidebarSpacePagingModel.springResponse, damping: 1)
     private var visibility = SidebarSpring(response: SidebarSpacePagingModel.springResponse, damping: 1)
-    private var pages: [Page] = []
+    private var pages: [BrowserImportWash] = []
     private var page: Int?
     private var timer: Timer?
-    /// The page that holds most of the mix, nil while the page's own fill does:
-    /// text takes its contrast.
-    private(set) var dominant: Page? {
-        didSet { if dominant != oldValue { onDominantChange?(dominant) } }
+    /// Whether a wash holds most of the page: text over it turns white.
+    private(set) var isShown = false {
+        didSet { if isShown != oldValue { onShownChange?(isShown) } }
     }
-    var onDominantChange: ((Page?) -> Void)?
+    var onShownChange: ((Bool) -> Void)?
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        for view in [renderer, sunset] as [NSView] {
+        for view in [back, front] {
             view.autoresizingMask = [.width, .height]; view.frame = bounds; view.alphaValue = 0
             addSubview(view)
         }
-        renderer.drawsMaterial = false
         setAccessibilityElement(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// One page per browser in order, and the chosen browser's index.
-    func show(_ next: [Page], selected: Int?) {
+    /// One wash per browser in order, and the chosen browser's index.
+    func show(_ next: [BrowserImportWash], selected: Int?) {
         guard next != pages || selected != page else { return }
         let animate = window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let now = CACurrentMediaTime()
         let hidden = visibility.value(at: now) < 0.01
-        // Leaving the page keeps the last pages so the backdrop fades out.
+        // Leaving the import keeps the last pages so the backdrop fades out.
         if !next.isEmpty || selected != nil { pages = next }
         page = selected
         if let selected {
@@ -83,29 +78,14 @@ final class BrowserImportBackdrop: NSView {
 
     private func apply(_ value: CGFloat, _ visible: CGFloat) {
         let shown = min(1, max(0, visible))
-        guard !pages.isEmpty else {
-            renderer.alphaValue = 0; sunset.alphaValue = 0; dominant = nil; return
-        }
+        guard !pages.isEmpty else { back.alphaValue = 0; front.alphaValue = 0; isShown = false; return }
         let clamped = min(CGFloat(pages.count - 1), max(0, value))
         let lower = Int(clamped.rounded(.down)), upper = Int(clamped.rounded(.up))
-        let progress = clamped - CGFloat(lower)
-        // The renderer mixes two themes itself; the sunset crossfades with one.
-        switch (pages[lower], pages[upper]) {
-        case let (.theme(from), .theme(to)):
-            renderer.theme = from
-            renderer.pagingTransition = lower == upper ? nil : ThemePagingTransition(from: from, theme: to, progress: progress)
-            renderer.alphaValue = shown; sunset.alphaValue = 0
-        case let (.sunset, .theme(theme)):
-            renderer.theme = theme; renderer.pagingTransition = nil
-            renderer.alphaValue = shown * progress; sunset.alphaValue = shown * (1 - progress)
-        case let (.theme(theme), .sunset):
-            renderer.theme = theme; renderer.pagingTransition = nil
-            renderer.alphaValue = shown * (1 - progress); sunset.alphaValue = shown * progress
-        case (.sunset, .sunset):
-            renderer.alphaValue = 0; sunset.alphaValue = shown
-        }
-        let held = pages[progress < 0.5 ? lower : upper]
-        dominant = shown < 0.5 || held == .theme(SpaceTheme()) ? nil : held
+        // The next page lies over the last by the strip's progress, so the mix
+        // never dips to the page fill between two washes.
+        back.wash = pages[lower]; front.wash = pages[upper]
+        back.alphaValue = shown; front.alphaValue = lower == upper ? 0 : shown * (clamped - CGFloat(lower))
+        isShown = shown >= 0.5
     }
 
     override func viewDidMoveToWindow() {
@@ -115,25 +95,42 @@ final class BrowserImportBackdrop: NSView {
 }
 
 ///
-/// pink and red on the right, solid across the top and fading into the page
-/// below, with the theme grain over it. Colours are sampled from that dialog.
+/// the first deep at the left, the second at the right, with the dialog's
+/// lighter blends between them.
+struct BrowserImportWash: Equatable {
+    let locations: [CGFloat]
+    let colors: [UInt32]
+
+    ///
+    static let arc = BrowserImportWash(locations: [0, 0.11, 0.21, 0.31, 0.42, 0.52, 0.62, 0.72, 1],
+        colors: [0x3320B4, 0x4B3EC8, 0x5954D8, 0x786FDF, 0x9F75D4, 0xC86BB5, 0xEA6D93, 0xF85F72, 0xFD5967])
+    /// How much closer to white each of the dialog's stops is than a plain
+    /// blend of its two end colours.
+    private static let lift: [CGFloat] = [0, 0.153, 0.245, 0.34, 0.367, 0.345, 0.358, 0.307, 0]
+
+    static func pair(_ first: UInt32, _ second: UInt32) -> BrowserImportWash {
+        func channels(_ color: UInt32) -> [CGFloat] { [16, 8, 0].map { CGFloat(color >> $0 & 0xff) } }
+        let a = channels(first), b = channels(second)
+        let colors = zip(arc.locations, lift).map { location, lift -> UInt32 in
+            let mixed = zip(a, b).map { $0 + location * ($1 - $0) }.map { $0 + lift * (255 - $0) }
+            return mixed.reduce(0) { $0 << 8 | UInt32(min(255, max(0, $1.rounded()))) }
+        }
+        return BrowserImportWash(locations: arc.locations, colors: colors)
+    }
+}
+
+/// One wash: solid across the top and fading into the page below, with the
+///
 @MainActor
-final class BrowserImportSunset: NSView {
+final class BrowserImportWashView: NSView {
     /// The fraction of the page's height that stays solid, and where the
     /// colour is gone; the dialog's own header is shorter than these pages'.
     static let solid: CGFloat = 0.3, clear: CGFloat = 0.64
-    private static let colors: [(CGFloat, UInt32)] = [
-        (0, 0x3320B4), (0.11, 0x4B3EC8), (0.21, 0x5954D8), (0.31, 0x786FDF), (0.42, 0x9F75D4),
-        (0.52, 0xC86BB5), (0.62, 0xEA6D93), (0.72, 0xF85F72), (1, 0xFD5967),
-    ]
-    private static let wash = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors.map { stop in
-        CGColor(srgbRed: CGFloat(stop.1 >> 16 & 0xff) / 255, green: CGFloat(stop.1 >> 8 & 0xff) / 255,
-                blue: CGFloat(stop.1 & 0xff) / 255, alpha: 1)
-    } as CFArray, locations: colors.map(\.0))!
     private static let fade = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(), colors: [
         CGColor(gray: 1, alpha: 1), CGColor(gray: 1, alpha: 1), CGColor(gray: 0.55, alpha: 1),
         CGColor(gray: 0.15, alpha: 1), CGColor(gray: 0, alpha: 1)] as CFArray,
         locations: [0, solid, solid + (clear - solid) * 0.4, solid + (clear - solid) * 0.75, clear])!
+    var wash = BrowserImportWash.arc { didSet { if wash != oldValue { needsDisplay = true } } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override init(frame: NSRect) {
@@ -143,7 +140,12 @@ final class BrowserImportSunset: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext, bounds.height > 0 else { return }
+        guard let context = NSGraphicsContext.current?.cgContext, bounds.height > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return }
+        let gradient = CGGradient(colorsSpace: space, colors: wash.colors.map { color in
+            CGColor(srgbRed: CGFloat(color >> 16 & 0xff) / 255, green: CGFloat(color >> 8 & 0xff) / 255,
+                    blue: CGFloat(color & 0xff) / 255, alpha: 1)
+        } as CFArray, locations: wash.locations)!
         let rows = max(1, Int(bounds.height * 2))
         let mask = CGContext(data: nil, width: 1, height: rows, bitsPerComponent: 8, bytesPerRow: 0,
                              space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
@@ -151,7 +153,7 @@ final class BrowserImportSunset: NSView {
         mask.drawLinearGradient(Self.fade, start: CGPoint(x: 0, y: CGFloat(rows)), end: .zero, options: [])
         context.saveGState()
         context.clip(to: bounds, mask: mask.makeImage()!)
-        context.drawLinearGradient(Self.wash, start: CGPoint(x: bounds.minX, y: 0), end: CGPoint(x: bounds.maxX, y: 0), options: [])
+        context.drawLinearGradient(gradient, start: CGPoint(x: bounds.minX, y: 0), end: CGPoint(x: bounds.maxX, y: 0), options: [])
         if let grain = OnboardingSetupCard.grainTile(.grain) {
             context.setBlendMode(.overlay); context.setAlpha(0.6)
             context.draw(grain, in: CGRect(origin: .zero, size: OnboardingSetupLayout.grainTileSize), byTiling: true)
