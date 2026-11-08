@@ -58,7 +58,12 @@ about 1 MB; a background tab frozen outside the cache lost a cast that
 connected after freezing: **fixed** b6d0a63e (casting players only). A cast
 still connecting 60 s after leaving is lost when Chromium evicts a page with
 an unfinished download, and Chrome's own HLS player's data sources aren't
-covered: **in progress** (CAST-6). Media Source past its buffer can't feed a
+covered, and a 'cast this video' launch that fails outright leaves its
+remoting request set so a later tab cast shows the paused video
+(`cast_device_list_host.cc`, from 31735c02): **in progress** (CAST-6). Two
+videos where the other starts casting first, or a backend switch, can drop
+a request before it plays, and on `no-store` pages Parc ends the cast where
+Safari's TV stays connected with nothing playing: **left** (rare). Media Source past its buffer can't feed a
 cast from a frozen page (Safari's AirPlay can't cast plain Media Source
 either) and a cast paused while its page is cached can't be resumed from the
 TV until the page runs: **left**. An unmeasured paused cast is sized
