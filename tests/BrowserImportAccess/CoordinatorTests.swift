@@ -403,11 +403,15 @@ import AppKit
         let standard = PCNativeImportProfile("arc standard", [.history, .bookmarks], .complete, name: "Person 1", directory: "Default")
         let side = PCNativeImportProfile("arc side", [.history], .complete, name: "Side", directory: "Profile 1")
         let empty = PCNativeImportProfile("arc empty", [], .restricted, name: "Locked", directory: "Profile 3")
+        let preferences = directory.appendingPathComponent("ArcPreferences.plist")
+        try PropertyListSerialization.data(fromPropertyList: ["autoArchiveTimeThresholdsPerProfile":
+            #"{"thresholds":[{"custom":{"_0":{"directoryBasename":"Profile 1","machineID":"M"}}},"thirtyDays"]}"#],
+            format: .binary, options: 0).write(to: preferences)
         func begin(_ name: String, sidebar: URL) throws -> (BrowserStore, BrowserImportDestination, BrowserImportCoordinator) {
             let store = try BrowserStore(directory: directory.appendingPathComponent(name))
             let destination = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)
             let coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
-                arcSidebarURL: sidebar, ownerIsCurrent: { true })
+                arcSidebarURL: sidebar, arcPreferencesURL: preferences, ownerIsCurrent: { true })
             coordinator.discover()
             PCNativeBrowserApplication.sources.removeFirst().complete([arc])
             coordinator.select(arc); coordinator.loadProfiles()
@@ -439,6 +443,9 @@ import AppKit
         expect(work?.profileID == destination.profileID, "Arc's standard Spaces join the window's Profile")
         expect(store.state.tabs.contains { $0.spaceID == work?.id && $0.kind == .pinned }, "Arc's pinned tabs come with their Space")
         guard let sideProfile = profileNamed("Side") else { preconditionFailure("Arc's other profile becomes a Parc Profile") }
+        expect(sideProfile.autoArchiveHours == 720 && store.state.profiles.first { $0.id == destination.profileID }?.autoArchiveHours
+               == AutoArchiveInterval.twelveHours.rawValue, "Arc's archive age reaches only the Profile it was set for")
+        expect(store.state.tabs.contains { $0.kind == .today && $0.savedURL == "https://example.test/today" }, "Arc's Today tabs come over")
         expect(store.state.spaces.contains { $0.title == "Side" && $0.profileID == sideProfile.id }, "A custom profile's Space joins its Profile")
         expect(PCNativeBrowserApplication.browserRequests[requests].profile === standard
                && PCNativeBrowserApplication.browserRequests[requests].path == store.independentEngineProfilePath(for: destination.profileID),

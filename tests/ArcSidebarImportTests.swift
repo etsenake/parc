@@ -189,7 +189,13 @@ import Foundation
         expect(inner.name == "Imported folder" && tab("https://example.test/c")?.folderID == inner.id, "Nesting is kept")
         expect(SidebarHierarchy.children(in: .init(spaceID: workID, folderID: projects.id, section: .pinned), state: state)
                == [.tab(tab("https://example.test/b")!.id), .folder(inner.id)], "Folder order is Arc's order")
-        expect(!state.tabs.contains { $0.savedURL == "https://example.test/today" }, "Today tabs are not imported")
+        let today = SidebarHierarchy.children(in: .init(spaceID: workID, folderID: nil, section: .today), state: state)
+        let newer = require(state.tabs.first { $0.savedURL == "https://example.test/newer-today" }, "Newer Today tab")
+        let older = require(state.tabs.first { $0.savedURL == "https://example.test/today" }, "Today tab")
+        expect(today == [.tab(newer.id), .tab(older.id)] && newer.kind == .today && older.kind == .today
+               && older.spaceID == workID && older.folderID == nil, "Today tabs come into their Space's Today in Arc's order")
+        expect(older.lastAccessed == importedAt, "A Today tab's archive clock starts at the import")
+        expect(state.arcImportedSpaces["734FF6CE-5A92-54B8-8106-4F9A92236F11"] == workID, "Each imported Space remembers its Arc Space")
 
         let favoritesLocation = SidebarContainerLocation(spaceID: workID, folderID: nil, section: .favorite, profileID: standardID)
         let favorites = SidebarHierarchy.children(in: favoritesLocation, state: state)
@@ -208,7 +214,8 @@ import Foundation
         let reloaded = try BrowserStore(directory: directory)
         expect(reloaded.state.spaces == state.spaces && reloaded.state.profiles == state.profiles
                && reloaded.state.tabs == state.tabs && reloaded.state.folders == state.folders
-               && reloaded.state.splitLayouts == state.splitLayouts && reloaded.state.sidebarItemOrder == state.sidebarItemOrder,
+               && reloaded.state.splitLayouts == state.splitLayouts && reloaded.state.sidebarItemOrder == state.sidebarItemOrder
+               && reloaded.state.arcImportedSpaces == state.arcImportedSpaces,
                "The import is durable")
 
         let again = try store.importArcSidebar(arc, profiles: [(.standard, "Personal")], standardProfileID: standardID)
@@ -219,11 +226,9 @@ import Foundation
         expect(again.warnings.contains("1 Favorite from Personal wasn't added: Favorites are limited to 12."),
                "A full Favorites row takes nothing new; duplicate tabs and splits are passed over and the twelfth tab is reported")
         let standardSpaces = arc.spaces.filter { $0.profile == .standard }
-        let repeated = standardSpaces.filter { !$0.pinned.isEmpty }.count
-        expect(repeated == 2 && again.warnings.contains("\(repeated) Arc Spaces were already in Parc, so they weren't added again.")
-               && store.state.spaces.count == state.spaces.count + standardSpaces.count - repeated
-               && store.state.tabs.count == state.tabs.count,
-               "Importing the same Arc Spaces again adds no copies; a Space without pinned pages can't be told apart and comes again")
+        expect(standardSpaces.count == 4 && again.warnings.contains("4 Arc Spaces were already in Parc, so they weren't added again.")
+               && store.state.spaces.count == state.spaces.count && store.state.tabs.count == state.tabs.count,
+               "Importing the same Arc Spaces again adds no copies, including Spaces with nothing pinned")
         expect(again.destinations[.standard] == result.destinations[.standard], "A repeated Space stays the destination")
         let spacesBeforeReuse = store.state.spaces.count
         let secondReuse = try store.importArcSidebar(arc, profiles: [(profileOne, "work profile"), (profileTwo, "Side Projects")],
@@ -262,6 +267,32 @@ import Foundation
             _ = try store.importArcSidebar(arc, profiles: profiles, standardProfileID: UUID())
             preconditionFailure("An unknown standard Profile must refuse")
         } catch { checks += 1 }
+        let preferences: [String: Any] = [
+            "autoArchiveTimeThreshold": "\"sevenDays\"",
+            "autoArchiveTimeThresholdsPerProfile": #"{"thresholds":[{"default":{}},"oneHour",{"custom":{"_0":{"directoryBasename":"Profile 1","machineID":"M"}}},{"never":{}}]}"#]
+        let hours = ArcSidebarImport.autoArchiveHours(preferences: preferences, profiles: [.standard, profileOne, profileTwo])
+        expect(hours == [.standard: 1, profileOne: 0, profileTwo: 168], "Arc's per-Profile archive age wins over its Arc-wide one")
+        expect(ArcSidebarImport.autoArchiveHours(preferences: ["autoArchiveTimeThresholdsPerProfile": #"{"thresholds":[]}"#],
+                                                 profiles: [.standard]).isEmpty, "Without Arc's setting each Profile keeps Parc's")
+        let archiveStore = try BrowserStore(directory: directory.appendingPathComponent("Archive"))
+        var timed = arc
+        timed.autoArchiveHours = [.standard: 168]
+        _ = try archiveStore.importArcSidebar(timed, profiles: [(.standard, "Personal")], standardProfileID: archiveStore.state.profiles[0].id)
+        expect(archiveStore.state.profiles[0].autoArchiveHours == 168 && archiveStore.state.autoArchiveDefaultHours == 168
+               && !archiveStore.state.autoArchiveEducationEligible,
+               "Arc's archive age applies to the mapped Profile and, as a Settings change, to the default and education")
+        let legacyStore = try BrowserStore(directory: directory.appendingPathComponent("Legacy"))
+        let legacyProfile = legacyStore.state.profiles[0].id
+        _ = try legacyStore.importArcSidebar(arc, profiles: [(.standard, "Personal")], standardProfileID: legacyProfile)
+        var legacy = legacyStore.state
+        legacy.arcImportedSpaces = [:]
+        let legacyArc = try ArcSidebarImport(data: data)
+        let legacyResult = try legacyArc.inserting(into: legacy, profiles: [(.standard, "Personal")], standardProfileID: legacyProfile, at: importedAt)
+        let pinnedSpaces = arc.spaces.filter { $0.profile == .standard && !$0.pinned.isEmpty }.count
+        expect(legacyResult.state.spaces.count == legacy.spaces.count + 4 - pinnedSpaces
+               && legacyResult.state.arcImportedSpaces.count == 4,
+               "An import from before the record matches its Spaces by name and pinned pages and records them")
+
         print("\(checks) Arc sidebar import parsing/store assertions passed; synthetic fixtures only.")
     }
 

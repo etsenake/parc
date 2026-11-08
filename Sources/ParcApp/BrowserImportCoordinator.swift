@@ -59,6 +59,7 @@ final class BrowserImportCoordinator {
     private var session: PCNativeImportSession?
     private var activeDestination: BrowserImportDestination?
     private let arcSidebarURL: URL
+    private let arcPreferencesURL: URL
     private var queue: [PCNativeImportProfile] = []
     ///
     private var queuedDestinations: [String: BrowserImportDestination] = [:]
@@ -70,9 +71,10 @@ final class BrowserImportCoordinator {
          supportsICloudPasswords: Bool = ProcessInfo.processInfo.isOperatingSystemAtLeast(
             OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)),
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
+         arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
-        self.arcSidebarURL = arcSidebarURL
+        self.arcSidebarURL = arcSidebarURL; self.arcPreferencesURL = arcPreferencesURL
         self.onboarding = onboarding
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
@@ -391,16 +393,16 @@ final class BrowserImportCoordinator {
         skipExistingCookies = true; queue = []; queuedDestinations = [:]
         generation = UUID(); let token = generation
         message = "Bringing over your Arc Spaces…"; onChange?()
-        let url = arcSidebarURL
+        let url = arcSidebarURL, preferencesURL = arcPreferencesURL
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { try ArcSidebarSnapshot.read(url) }
+            let result = Result { try ArcSidebarSnapshot.read(url, preferences: preferencesURL) }
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated { self?.importArcSidebar(result, profiles: selected, token: token) }
             }
         }
     }
 
-    private func importArcSidebar(_ result: Result<ArcSidebarImport, Error>, profiles selected: [PCNativeImportProfile],
+    private func importArcSidebar(_ result: Result<(ArcSidebarImport, [String: Any]), Error>, profiles selected: [PCNativeImportProfile],
                                   token: UUID) {
         guard isCurrent, generation == token, stage == .importing else { return }
         var keys: [ArcSidebarImport.ProfileKey: PCNativeImportProfile] = [:], named: [(key: ArcSidebarImport.ProfileKey, name: String)] = []
@@ -411,7 +413,9 @@ final class BrowserImportCoordinator {
         }
         var destinations: [ArcSidebarImport.ProfileKey: BrowserImportDestination] = [:]
         switch result {
-        case .success(let arc):
+        case .success(let read):
+            var arc = read.0
+            arc.autoArchiveHours = ArcSidebarImport.autoArchiveHours(preferences: read.1, profiles: named.map(\.key))
             do {
                 let imported = try store.importArcSidebar(arc, profiles: named, standardProfileID: originalDestination.profileID)
                 destinations = imported.destinations; warnings += imported.warnings
@@ -711,9 +715,15 @@ enum ArcSidebarSnapshot {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
     }
+    static var preferencesURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/company.thebrowser.Browser.plist")
+    }
     static let maximumSize = 64 * 1024 * 1024
 
-    static func read(_ source: URL) throws -> ArcSidebarImport {
+    ///
+    /// each Parc Profile keeps its own archive setting.
+    static func read(_ source: URL, preferences: URL) throws -> (ArcSidebarImport, [String: Any]) {
         let files = FileManager.default
         let directory = files.temporaryDirectory.appendingPathComponent("ParcArcImport-\(UUID().uuidString)", isDirectory: true)
         try files.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -731,7 +741,13 @@ enum ArcSidebarSnapshot {
             try? files.removeItem(at: copy)
             try files.copyItem(at: source, to: copy)
             guard try stamp() == before else { continue }
-            return try ArcSidebarImport(data: Data(contentsOf: copy))
+            let arc = try ArcSidebarImport(data: Data(contentsOf: copy))
+            let settings = directory.appendingPathComponent("Preferences.plist")
+            guard let size = (try? files.attributesOfItem(atPath: preferences.path))?[.size] as? Int, size <= maximumSize,
+                  (try? files.copyItem(at: preferences, to: settings)) != nil,
+                  let data = try? Data(contentsOf: settings),
+                  let values = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return (arc, [:]) }
+            return (arc, values)
         }
         throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Arc kept changing its sidebar. Try again in a moment."])
     }

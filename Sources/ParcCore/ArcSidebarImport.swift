@@ -1,7 +1,7 @@
 import Foundation
 
 ///
-/// tree, and each Profile's Favorites (`topApps`). Today tabs, notes, easels
+/// and Today trees, and each Profile's Favorites (`topApps`). Notes, easels
 /// and links Parc cannot open are left behind. Field names and shapes follow
 ///
 /// skipped rather than failing the whole file.
@@ -31,10 +31,17 @@ struct ArcSidebarImport: Equatable {
         let theme: SpaceTheme?
         let profile: ProfileKey
         let pinned: [Item]
+        ///
+        var id: String? = nil
+        ///
+        var today: [Item] = []
     }
 
     let spaces: [Space]
     let favorites: [ProfileKey: [Item]]
+    ///
+    ///
+    var autoArchiveHours: [ProfileKey: Double] = [:]
     /// Sidebar entries Parc cannot represent or that were malformed.
     let skippedItemCount: Int
 
@@ -68,11 +75,14 @@ struct ArcSidebarImport: Equatable {
                 parser.skipped += 1; continue
             }
             let customInfo = space["customInfo"] as? [String: Any]
-            let pinned = Self.pinnedContainerID(space).flatMap { parser.items[$0] }
+            let pinned = Self.containerID(space, "pinned").flatMap { parser.items[$0] }
+            let today = Self.containerID(space, "unpinned").flatMap { parser.items[$0] }
             spaces.append(Space(title: (space["title"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                 icon: Self.icon(customInfo?["iconType"]),
                 theme: Self.theme(customInfo?["windowTheme"] ?? NSNull()),
-                profile: profile, pinned: pinned.map { parser.children(of: $0, depth: 0, inFavorites: false) } ?? []))
+                profile: profile, pinned: pinned.map { parser.children(of: $0, depth: 0, inFavorites: false) } ?? [],
+                id: (space["id"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                today: today.map { parser.children(of: $0, depth: 0, inFavorites: false) } ?? []))
         }
         var favorites: [ProfileKey: [Item]] = [:], order: [ProfileKey] = []
         for (key, id) in Parser.pairs(container["topAppsContainerIDs"]) {
@@ -87,16 +97,48 @@ struct ArcSidebarImport: Equatable {
         skippedItemCount = parser.skipped
     }
 
-    /// The `pinned` entry of `containerIDs` (label, id pairs in either order),
-    /// else the `{"pinned":{}}` entry of `newContainerIDs`.
-    private static func pinnedContainerID(_ space: [String: Any]) -> String? {
+    /// The `pinned` or `unpinned` entry of `containerIDs` (label, id pairs in
+    /// either order), else the `{"pinned":{}}` entry of `newContainerIDs`.
+    private static func containerID(_ space: [String: Any], _ section: String) -> String? {
         for key in ["containerIDs", "newContainerIDs"] {
             for (label, id) in Parser.pairs(space[key]) {
-                let isPinned = label as? String == "pinned" || (label as? [String: Any])?["pinned"] != nil
-                if isPinned, let id = id as? String { return id }
+                let matches = label as? String == section || (label as? [String: Any])?[section] != nil
+                if matches, let id = id as? String { return id }
             }
         }
         return nil
+    }
+
+    ///
+    ///
+    /// A Profile with neither keeps Parc's setting.
+    static func autoArchiveHours(preferences: [String: Any], profiles: [ProfileKey]) -> [ProfileKey: Double] {
+        func hours(_ value: Any?) -> Double? {
+            let name = value as? String ?? (value as? [String: Any]).flatMap { $0.count == 1 ? $0.keys.first : nil }
+            switch name {
+            case "twentySeconds", "oneHour": return AutoArchiveInterval.oneHour.rawValue
+            case "sixHours": return AutoArchiveInterval.sixHours.rawValue
+            case "twelveHours": return AutoArchiveInterval.twelveHours.rawValue
+            case "twentyFourHours": return AutoArchiveInterval.twentyFourHours.rawValue
+            case "sevenDays": return AutoArchiveInterval.sevenDays.rawValue
+            case "thirtyDays": return AutoArchiveInterval.thirtyDays.rawValue
+            case "never": return AutoArchiveInterval.never.rawValue
+            default: return nil
+            }
+        }
+        func decoded(_ value: Any?) -> Any? {
+            guard let text = value as? String, let data = text.data(using: .utf8) else { return value }
+            return (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) ?? value
+        }
+        let global = hours(decoded(preferences["autoArchiveTimeThreshold"]))
+        var perProfile: [ProfileKey: Double] = [:]
+        let map = (decoded(preferences["autoArchiveTimeThresholdsPerProfile"]) as? [String: Any])?["thresholds"]
+        for (key, value) in Parser.pairs(map) {
+            if let key = profile(key), let value = hours(value) { perProfile[key] = value }
+        }
+        var result: [ProfileKey: Double] = [:]
+        for key in profiles { result[key] = perProfile[key] ?? global }
+        return result
     }
 
     static func profile(_ value: Any?) -> ProfileKey? {
@@ -367,6 +409,25 @@ extension ArcSidebarImport {
             next.sidebarItemOrder[location.key] = order
         }
 
+        /// Today holds no folders in Parc; a folder's pages keep their place.
+        func insertToday(_ items: [Item], spaceID: UUID, profileID: UUID) {
+            let location = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today)
+            var order = next.sidebarItemOrder[location.key] ?? []
+            func append(_ items: [Item]) {
+                for item in items {
+                    switch item {
+                    case .tab(let tab):
+                        order.append(.tab(makeTab(tab, spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil)))
+                    case .folder(_, _, let children): append(children)
+                    case let .split(title, icon, tabs, orientation, factors):
+                        order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
+                                               spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
+                    }
+                }
+            }
+            append(items)
+            next.sidebarItemOrder[location.key] = order
+        }
         func pinnedKeys(_ items: [Item]) -> [String] {
             items.flatMap { item -> [String] in
                 switch item {
@@ -376,12 +437,16 @@ extension ArcSidebarImport {
                 }
             }.sorted()
         }
-        /// A Space this import already brought over: same name, Profile and pinned pages.
+        ///
+        /// still exists. Imports that predate the record match by name and pinned pages.
         func alreadyImported(_ space: Space, profileID: UUID) -> BrowserSpace? {
+            if let arcID = space.id, let spaceID = state.arcImportedSpaces[arcID] {
+                return state.spaces.first { $0.id == spaceID && $0.profileID == profileID }
+            }
             let keys = pinnedKeys(space.pinned)
             guard !keys.isEmpty else { return nil }
             return state.spaces.first { existing in
-                existing.profileID == profileID
+                existing.profileID == profileID && !next.arcImportedSpaces.values.contains(existing.id)
                     && existing.title?.lowercased() == space.title?.lowercased()
                     && state.tabs.filter { $0.spaceID == existing.id && $0.kind == .pinned && $0.archivedAt == nil }
                         .map { SavedTabURLComparison.key($0.savedURL) }.sorted() == keys
@@ -393,12 +458,29 @@ extension ArcSidebarImport {
             guard let profileID = mapped[space.profile] else { unmapped += 1; continue }
             if let existing = alreadyImported(space, profileID: profileID) {
                 repeated += 1
+                if let arcID = space.id { next.arcImportedSpaces[arcID] = existing.id }
                 if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: existing.id, profileID: profileID) }
                 continue
             }
             let id = appendSpace(title: space.title, icon: space.icon, theme: space.theme, profileID: profileID)
             if destinations[space.profile] == nil { destinations[space.profile] = .init(spaceID: id, profileID: profileID) }
             insertPinned(space.pinned, spaceID: id, profileID: profileID, folderID: nil)
+            insertToday(space.today, spaceID: id, profileID: profileID)
+            if let arcID = space.id { next.arcImportedSpaces[arcID] = id }
+        }
+        // As a Settings change does: a shared value becomes the default for new
+        // Profiles, and any change disarms default-interval education.
+        var archiveChanged = false
+        for (key, hours) in autoArchiveHours {
+            guard let profileID = mapped[key], let index = next.profiles.firstIndex(where: { $0.id == profileID }),
+                  next.profiles[index].autoArchiveHours != hours else { continue }
+            next.profiles[index].autoArchiveHours = hours
+            archiveChanged = true
+        }
+        if archiveChanged {
+            next.autoArchiveEducationEligible = false
+            let shared = Set(next.profiles.map(\.autoArchiveHours))
+            if shared.count == 1, let hours = shared.first { next.autoArchiveDefaultHours = hours }
         }
         for (key, _) in profiles where destinations[key] == nil {
             guard let profileID = mapped[key] else { continue }

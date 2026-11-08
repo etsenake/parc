@@ -40,6 +40,7 @@
       "title": null,
       "parentID": null,
       "childrenIds": [
+       "5B0E7C1D-2F4A-5E61-9C3B-7D8E9F0A1B2C",
        "A147C217-4497-57AE-9A14-074C4ACD9B96"
       ],
       "data": {
@@ -160,7 +161,7 @@
        "splitView": {
         "customInfo": {
          "iconType": {
-          "emoji_v2": "🧪"
+          "emoji_v2": "\ud83e\uddea"
          }
         },
         "focusItemID": "B80415F9-1D08-55A8-9EC3-9298ACF4CAE0",
@@ -822,6 +823,24 @@
       "id": "BD25CEF1-2A25-59BB-858B-F8E70FB18EF6",
       "title": "x",
       "childrenIds": []
+     },
+     "5B0E7C1D-2F4A-5E61-9C3B-7D8E9F0A1B2C",
+     {
+      "id": "5B0E7C1D-2F4A-5E61-9C3B-7D8E9F0A1B2C",
+      "title": null,
+      "parentID": "DBB1C359-C95A-55D2-9888-DAA0D1F7DE69",
+      "childrenIds": [],
+      "data": {
+       "tab": {
+        "savedURL": "https://example.test/newer-today",
+        "savedTitle": "Newer today",
+        "timeLastActiveAt": 784000100.25,
+        "savedMuteStatus": "allowAudio"
+       }
+      },
+      "isUnread": false,
+      "createdAt": 784000000.5,
+      "originatingDevice": "53395992-0434-5B29-B12F-FF27BFA8068B"
      }
     ],
     "spaces": [
@@ -952,7 +971,7 @@
       },
       "customInfo": {
        "iconType": {
-        "emoji_v2": "🚀"
+        "emoji_v2": "\ud83d\ude80"
        },
        "windowTheme": {
         "background": {

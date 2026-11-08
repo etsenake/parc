@@ -800,6 +800,8 @@ struct BrowserState: Codable, Equatable {
     var recentlyClosedIDs: [UUID] = []
     var settings = BrowserSettings()
     var profileRemovals: [ProfileRemovalRecord] = []
+    ///
+    var arcImportedSpaces: [String: UUID] = [:]
     /// The session file's window records (Windows and lifecycle hook). They
     /// drive no UI, so BrowserStore keeps them off this published state as
     /// `windowRecords`; in memory this list is always empty.
@@ -870,7 +872,7 @@ struct BrowserState: Codable, Equatable {
 extension BrowserState {
     private enum CodingKeys: String, CodingKey {
         case version, profiles, spaces, tabs, folders, activeSpaceID, selectedTabIDs,
-             selectionBySpace, splitLayouts, sidebarItemOrder, autoArchiveStartedAt, autoArchiveDefaultHours, autoArchiveEducationEligible, history, downloads, recentlyClosedIDs, settings, profileRemovals, windows
+             selectionBySpace, splitLayouts, sidebarItemOrder, autoArchiveStartedAt, autoArchiveDefaultHours, autoArchiveEducationEligible, history, downloads, recentlyClosedIDs, settings, profileRemovals, arcImportedSpaces, windows
     }
     private enum LegacySplitKeys: String, CodingKey { case splitWidthFactors }
 
@@ -890,6 +892,7 @@ extension BrowserState {
         recentlyClosedIDs = try values.decode([UUID].self, forKey: .recentlyClosedIDs)
         settings = try values.decode(BrowserSettings.self, forKey: .settings)
         profileRemovals = try values.decodeIfPresent([ProfileRemovalRecord].self, forKey: .profileRemovals) ?? []
+        arcImportedSpaces = try values.decodeIfPresent([String: UUID].self, forKey: .arcImportedSpaces) ?? [:]
         sidebarItemOrder = try values.decodeIfPresent([String: [SidebarItemReference]].self, forKey: .sidebarItemOrder) ?? [:]
         autoArchiveStartedAt = try values.decodeIfPresent(Date.self, forKey: .autoArchiveStartedAt)
         autoArchiveDefaultHours = try values.decodeIfPresent(Double.self, forKey: .autoArchiveDefaultHours) ?? AutoArchiveInterval.twelveHours.rawValue
