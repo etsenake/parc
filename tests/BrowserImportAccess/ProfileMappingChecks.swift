@@ -24,6 +24,7 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     /// Completes the background imports of every profile's other data.
     func drain() { while !PCNativeBrowserApplication.browserCompletions.isEmpty { finishNext() } }
     var requests: [PCNativeBrowserApplication.BrowserRequest] { PCNativeBrowserApplication.browserRequests }
+    let mappingStart = requests.count
     /// Each native import a source profile made since `start`, foreground and background.
     func paths(_ profile: PCNativeImportProfile, since start: Int) -> [String] {
         requests.dropFirst(start).filter { $0.profile === profile }.map(\.path)
@@ -190,5 +191,7 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
            "Each Arc profile's data imports into its own Parc Profile; the unticked one's not at all")
     expect(arcSetup.bookmarkPages.first?.destination == arcOriginal, "Arc's main bookmarks land in setup's Space")
     arcSetup.cancel()
+    expect(requests.count > mappingStart && requests.dropFirst(mappingStart).allSatisfy(\.skipExistingCookies),
+           "Every profile's import, main or not, Arc or not, keeps the existing cookies of the Parc Profile it lands in")
     return checks
 }

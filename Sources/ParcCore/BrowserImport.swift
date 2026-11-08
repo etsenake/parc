@@ -117,8 +117,8 @@ struct BrowserImportDestination: Equatable {
     }
 }
 
-/// The destination Profile is explicit. A Space is captured for sidebar
-/// bookmarks; it never follows another window's current selection.
+/// An existing Parc Profile an import can land in. A Space is captured for
+/// sidebar bookmarks; it never follows another window's current selection.
 struct BrowserImportProfileTarget: Equatable {
     let profileID: UUID
     let spaceID: UUID?
@@ -139,8 +139,8 @@ struct BrowserImportProfileTarget: Equatable {
         if let spaceID {
             return state.spaces.contains { $0.id == spaceID && $0.profileID == profileID }
         }
-        // A formerly unused Profile gaining a Space requires a fresh choice,
-        // rather than silently changing an issued destination.
+        // A formerly unused Profile gaining a Space invalidates the issued
+        // target, rather than silently changing its destination.
         return !state.spaces.contains { $0.profileID == profileID }
     }
 }

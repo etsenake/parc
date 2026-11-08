@@ -129,7 +129,7 @@ final class BrowserImportCoordinator {
                     self.onChange?()
                 } else if self.passwordDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
                     self.passwordSession?.cancel()
-                    self.passwordError = "The selected destination Profile is no longer available."
+                    self.passwordError = "The destination Profile is no longer available."
                     self.onChange?()
                 } else if self.stage == .bookmarks {
                     self.onChange?()
@@ -372,7 +372,7 @@ final class BrowserImportCoordinator {
     private func beginImport() {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
-        queue = []; queuedDestinations = [:]; usedProfiles = []
+        queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
     }
 

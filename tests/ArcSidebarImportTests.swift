@@ -303,6 +303,13 @@ import Foundation
             preconditionFailure("A target Profile that doesn't exist must refuse")
         } catch { checks += 1 }
         expect(chosenStore.state == refusedBefore, "A refused target writes nothing")
+        var retiringState = chosenStore.state
+        retiringState.profileRemovals.append(.init(id: UUID(), profileID: chosenID, profileName: "Elsewhere"))
+        do {
+            _ = try arc.inserting(into: retiringState, profiles: [(.standard, "Personal")], standardProfileID: original.profileID,
+                                  target: (.standard, chosenID), at: importedAt)
+            preconditionFailure("A target Profile being removed must refuse")
+        } catch { checks += 1 }
 
         //
         // import was opened from; the next goes by name; standard stays behind.
