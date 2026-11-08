@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 627,
+  "version": 628,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1198,6 +1198,11 @@
       "sha256": "f1be1e4abb409c9d7e6d72f66c3b56283bb47c7d697681f094da8279ed6a6de5"
     },
     {
+      "source": "Engine/ParcNative/native_route_wait.h",
+      "target": "cef/libcef/browser/parc_native/native_route_wait.h",
+      "sha256": "5d36f9ee1046d02dd0674ab581d9139fe21a4065111074ccc02a10aafb24d3d8"
+    },
+    {
       "source": "Engine/ParcNative/native_background_picture_in_picture.h",
       "target": "cef/libcef/browser/parc_native/native_background_picture_in_picture.h",
       "sha256": "67e3637baebfe9018df4b136d33abead174506111e309775e9118ba7641edc4e"
@@ -1215,7 +1220,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "d876df81789cd1c7ea76e2eaa61a77c1b0e291a66f6ed92bc4db691f6491128b"
+      "sha256": "e339150bac5b08062059159d58a6042e83c7433c4519f71200e3eada9a830de8"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
@@ -1415,7 +1420,7 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "cef/libcef/browser/parc_native/native_gmc_presentation.mm",
-      "sha256": "84497c8c1ae5cecc4a6633e891bd94f86f1185e3791e833ec8b1cc9671289dd2"
+      "sha256": "77b6da27be4a772c37856ba77bc1a327c366f5d82ae0ac76106b23deddfc2ee2"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
@@ -1875,12 +1880,12 @@
     {
       "source": "Engine/ParcNative/native_airplay.h",
       "target": "cef/libcef/browser/parc_native/native_airplay.h",
-      "sha256": "612bc27c3357fc32309ded6a994f1991ba12740480edd57a39ac8f29d2f52c6b"
+      "sha256": "8c6dadf697c71ff633f334b702719c8708314d69e6a1d7a517caccc04b17f23b"
     },
     {
       "source": "Engine/ParcNative/native_airplay.mm",
       "target": "cef/libcef/browser/parc_native/native_airplay.mm",
-      "sha256": "a09ff2bd5ed2369893599a3d757951d98ec439975a2285a0f8917a641c165fa0"
+      "sha256": "d557901ff238a4c5fc76988761c56282d7517b2031de2f68637d46ebf38bd19f"
     },
     {
       "source": "Engine/ParcHost/integration/parc_playback_target.h",
@@ -3742,7 +3747,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "2892353c3da2401efb40be3fb074ac2b16ba6be5a9db05ed9c861d39dc0057e0",
+      "sha256": "6959cb981b55655b38a029d1c86ddc64d02d059212698242c724ea602b739256",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3757,17 +3762,17 @@
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.cc",
           "before_sha256": "b48fc7716a23f1cd594b84db1a9b3e7c62b9f15b8d5125af45dc62de4a4aef1f",
-          "after_sha256": "209d7f6acd0bf36acd84590d071af1d98206acb0d44c142548a085bf0e1c976d"
+          "after_sha256": "dac33db26b343e3ea9db4a3d4b42e7928b6e42c8b2a27064c404150b77eeb221"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.h",
           "before_sha256": "f54ed351b6ff7f5d519e51b9eb8a97db6239f8a0ed7355de627c341d75fd754f",
-          "after_sha256": "ff8cfae54f5e163f53672fc5e7d2d8ba5ae69e336c240f83272a0a971e34cb6a"
+          "after_sha256": "38b6cdfa6e0728cc1d88168058807f3f6717c7947b41604cf32482a2adddd098"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc",
           "before_sha256": "7386ce0b9e2267a443fbb2615fb3d8eb88b699dbd22bec448b5e46a0f1d9080f",
-          "after_sha256": "2f2298d8ad1f29fcf2126458959b241e556bb01bf4eb4ba554af532f2ca4e06f"
+          "after_sha256": "d73fd76734c7126094f5046e006b44b61c3210a2e4a775357db6458bc9c04299"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc",
@@ -3913,6 +3918,11 @@
           "target": "chrome/browser/ui/global_media_controls/BUILD.gn",
           "before_sha256": "e1780abb57780f779c9b582fc5ee840ab190ed4ffd4ffeccf710744bb5cde8c0",
           "after_sha256": "29d28b7a5b559705d19c1b350d9016d0688a5ae443d435bec285f0f0deed8d18"
+        },
+        {
+          "target": "components/global_media_controls/public/media_session_item_producer.h",
+          "before_sha256": "cf9241120065253784ca3978228983ce206761d77181a25bd4b744958705bac0",
+          "after_sha256": "c3c377c308441394ede62c7960764749cfa2beb1e1c328472fd38f1a157bdea0"
         }
       ]
     },
@@ -6058,7 +6068,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-playback-controls.patch",
-      "sha256": "8f46439d16602ab8e2494291832669fcc71d687a603a40214e0f174cad472ce8",
+      "sha256": "d576580fb5efd32de04a21feafc322b372dbd6cb27e7a0f6ae2de3b935e71395",
       "files": [
         {
           "target": "media/mojo/mojom/media_player.mojom",
@@ -6143,7 +6153,7 @@
         {
           "target": "components/global_media_controls/public/media_session_notification_item.h",
           "before_sha256": "cb577f7f8cd1d0ceddca7469347d70cd48647e1d62c9af7cd1efe7cb2e00ab68",
-          "after_sha256": "c40b84245eb02060ebf09ef45cedc69145d498a856142a70d44aa5cb68c1cca2"
+          "after_sha256": "536162bacfe43e6608439da3392d9c05932e4b496d324a71489260aae498a993"
         },
         {
           "target": "components/global_media_controls/public/views/media_item_ui_detailed_view.cc",

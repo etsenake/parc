@@ -13,6 +13,8 @@
 #include "base/no_destructor.h"
 #include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/timer/timer.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/media/router/media_router_feature.h"
@@ -29,6 +31,8 @@
 #include "chrome/browser/ui/views/global_media_controls/media_dialog_view.h"
 #include "chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/global_media_controls/public/media_item_manager.h"
+#include "components/global_media_controls/public/media_item_manager_observer.h"
 #include "components/media_router/browser/media_router.h"
 #include "components/media_router/browser/media_router_factory.h"
 #include "components/media_router/browser/media_routes_observer.h"
@@ -515,7 +519,8 @@ std::optional<media_router::MediaSource> CastSource(content::WebContents* conten
 // plays; any other page casts its session's remote playback source.
 class MediaCastWatcher final
     : public content::WebContentsUserData<MediaCastWatcher>,
-      public content::PresentationObserver {
+      public content::PresentationObserver,
+      public global_media_controls::MediaItemManagerObserver {
  public:
   ~MediaCastWatcher() override {
     if (presentations_)
@@ -563,8 +568,14 @@ class MediaCastWatcher final
     }
     if (!CastsAsChrome(&GetWebContents()))
       return {};
-    const bool available = std::ranges::any_of(
-        sinks_, [](const auto& sinks) { return sinks->available(); });
+    // Only with media for the chooser's dialog to show, listed now or frozen
+    // until the media controls list it again (MediaCastChooser::Show()).
+    auto* service = items_.IsObserving() ? Service() : nullptr;
+    const bool available =
+        service &&
+        (service->HasActiveNotificationsForWebContents(&GetWebContents()) ||
+         service->ParcHasFrozenSessionForWebContents(&GetWebContents())) &&
+        std::ranges::any_of(sinks_, [](const auto& sinks) { return sinks->available(); });
     return {static_cast<int>(available ? PCNativeCastStateAvailable
                                        : PCNativeCastStateUnavailable), {}};
   }
@@ -604,6 +615,14 @@ class MediaCastWatcher final
   void OnDefaultPresentationChanged(const content::PresentationRequest*) override {
     NativeMediaCastChanged(&GetWebContents());
   }
+  void OnItemListChanged() override { NativeMediaCastChanged(&GetWebContents()); }
+  void OnMediaDialogOpened() override {}
+  void OnMediaDialogClosed() override {}
+  MediaNotificationService* Service() {
+    auto* profile = Profile::FromBrowserContext(GetWebContents().GetBrowserContext());
+    return profile && !profile->ShutdownStarted()
+        ? MediaNotificationServiceFactory::GetForProfile(profile) : nullptr;
+  }
   // Never from a router callback: it adds and removes router observers.
   void Update() {
     auto* contents = &GetWebContents();
@@ -623,8 +642,13 @@ class MediaCastWatcher final
     if (!CastsAsChrome(contents)) {
       sinks_.clear();
       sources_.clear();
+      items_.Reset();
       return;
     }
+    if (auto* service = Service(); !service)
+      items_.Reset();
+    else if (!items_.IsObserving())
+      items_.Observe(service->media_item_manager());
     // Only with a router: the presentation manager creates its own.
     if (!presentations_) {
       presentations_ = media_router::WebContentsPresentationManager::Get(contents);
@@ -657,6 +681,9 @@ class MediaCastWatcher final
   std::vector<media_router::MediaSource> sources_;
   url::Origin origin_;
   std::vector<std::unique_ptr<Sinks>> sinks_;
+  base::ScopedObservation<global_media_controls::MediaItemManager,
+                          global_media_controls::MediaItemManagerObserver>
+      items_{this};
   std::string route_;
   content::WeakDocumentPtr route_document_;
   bool route_started_ = false;
@@ -673,7 +700,8 @@ WEB_CONTENTS_USER_DATA_KEY_IMPL(MediaCastWatcher);
 // (CreateCastDialogControllerForSession, then OnMediaRemotingRequested), and
 // a casting page shows "Stop casting".
 class MediaCastChooser final : public content::WebContentsObserver,
-                               public views::WidgetObserver {
+                               public views::WidgetObserver,
+                               public global_media_controls::MediaItemManagerObserver {
  public:
   MediaCastChooser(content::WebContents* contents, NSWindow* host,
                    base::RepeatingCallback<bool()> valid, void (^dismissed)(void))
@@ -684,6 +712,9 @@ class MediaCastChooser final : public content::WebContentsObserver,
   bool Show(NSView* view, NSRect rect) {
     if (!Current())
       return Fail();
+    return Open(view, rect);
+  }
+  bool Open(NSView* view, NSRect rect) {
     auto* contents = web_contents();
     auto* service = Service();
     const bool dialog = CastsAsChrome(contents) && service &&
@@ -691,7 +722,61 @@ class MediaCastChooser final : public content::WebContentsObserver,
     MediaCastWatcher::CreateForWebContents(contents);
     if (dialog && !MediaCastWatcher::FromWebContents(contents)->CastsFromEarlierPage())
       return ShowDialog(view, rect);
+    if (!dialog && CastsAsChrome(contents) && service && !Route() &&
+        service->ParcHasFrozenSessionForWebContents(contents))
+      return WaitForItem(view, rect);
     return OfferStopCasting(view, rect, dialog);
+  }
+  // The media controls hold a session that lost audio focus, as when its
+  // player is replaced, frozen and unlisted for up to 2.5 seconds
+  // (MediaSessionNotificationItem's kFreezeTimerDelay); the dialog opens
+  // once they list it again.
+  bool WaitForItem(NSView* view, NSRect rect) {
+    waiting_view_ = view;
+    waiting_rect_ = rect;
+    dismissed_ = std::exchange(pending_dismissed_, nil);
+    WatchHost();
+    items_.Observe(Service()->media_item_manager());
+    // A cast that starts meanwhile offers Stop casting instead.
+    if (auto* router = Router())
+      routes_ = std::make_unique<Routes>(router, this);
+    wait_.Start(FROM_HERE, base::Seconds(3),
+                base::BindOnce(base::IgnoreResult(&MediaCastChooser::Fail), base::Unretained(this)));
+    return true;
+  }
+  class Routes final : public media_router::MediaRoutesObserver {
+   public:
+    Routes(media_router::MediaRouter* router, MediaCastChooser* owner)
+        : MediaRoutesObserver(router), owner_(owner) {}
+    void OnRoutesUpdated(const std::vector<media_router::MediaRoute>&) override {
+      owner_->OnItemListChanged();
+    }
+   private:
+    const raw_ptr<MediaCastChooser> owner_;
+  };
+  // Not within the manager's or router's notification: opening registers
+  // with them.
+  void OnItemListChanged() override {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&MediaCastChooser::ItemsChanged, weak_factory_.GetWeakPtr()));
+  }
+  void OnMediaDialogOpened() override {}
+  void OnMediaDialogClosed() override {}
+  void ItemsChanged() {
+    if (!items_.IsObserving())
+      return;
+    auto* service = Service();
+    NSView* view = waiting_view_;
+    if (!Current() || !service || !view || view.window != host_) {
+      Fail();
+    } else if (service->HasActiveNotificationsForWebContents(web_contents()) || Route()) {
+      items_.Reset();
+      routes_.reset();
+      wait_.Stop();
+      Open(view, waiting_rect_);
+    } else if (!service->ParcHasFrozenSessionForWebContents(web_contents())) {
+      Fail();
+    }
   }
   bool ShowDialog(NSView* view, NSRect rect) {
     auto* contents = web_contents();
@@ -699,19 +784,8 @@ class MediaCastChooser final : public content::WebContentsObserver,
     auto* service = Service();
     if (!service || !service->HasActiveNotificationsForWebContents(contents))
       return Fail();
+    WatchHost();
     auto weak = weak_factory_.GetWeakPtr();
-    auto close = ^(NSNotification*) {
-      if (weak)
-        weak->Close();
-    };
-    for (NSNotificationName name in @[
-           NSWindowWillCloseNotification, NSWindowWillMiniaturizeNotification,
-           PCNativeWindowSecurityStateChanged
-         ]) {
-      [notifications_ addObject:[NSNotificationCenter.defaultCenter
-                                    addObserverForName:name object:host_
-                                                 queue:nil usingBlock:close]];
-    }
     const NSRect screen = [view.window convertRectToScreen:[view convertRect:rect toView:nil]];
     auto* widget = MediaDialogView::CreateDialogForNativePage(
         gfx::NativeView(view), gfx::ScreenRectFromNSRect(screen), service, profile,
@@ -739,6 +813,9 @@ class MediaCastChooser final : public content::WebContentsObserver,
     if (closed_)
       return;
     closed_ = true;
+    items_.Reset();
+    routes_.reset();
+    wait_.Stop();
     for (id token in notifications_)
       [NSNotificationCenter.defaultCenter removeObserver:token];
     [notifications_ removeAllObjects];
@@ -777,6 +854,24 @@ class MediaCastChooser final : public content::WebContentsObserver,
     Close();
     return false;
   }
+  // Closing, hiding or securing the host window ends the chooser at once.
+  void WatchHost() {
+    if (notifications_.count)
+      return;
+    auto weak = weak_factory_.GetWeakPtr();
+    auto close = ^(NSNotification*) {
+      if (weak)
+        weak->Close();
+    };
+    for (NSNotificationName name in @[
+           NSWindowWillCloseNotification, NSWindowWillMiniaturizeNotification,
+           PCNativeWindowSecurityStateChanged
+         ]) {
+      [notifications_ addObject:[NSNotificationCenter.defaultCenter
+                                    addObserverForName:name object:host_
+                                                 queue:nil usingBlock:close]];
+    }
+  }
   // The dialog can't stop a cast that plays from a page the tab has left, or
   // one whose page has no session or presentation left, and a Safari-identity
   // page never casts from it, so the button offers the tab's route directly,
@@ -801,7 +896,8 @@ class MediaCastChooser final : public content::WebContentsObserver,
     if (dialog)
       add(l10n_util::GetNSStringWithFixup(IDS_MEDIA_ROUTER_MENU_ITEM_TITLE), kDialog);
     menu_ = menu;
-    dismissed_ = std::exchange(pending_dismissed_, nil);
+    if (!dismissed_)
+      dismissed_ = std::exchange(pending_dismissed_, nil);
     auto weak = weak_factory_.GetWeakPtr();
     __weak NSView* weak_view = view;
     [menu popUpMenuPositioningItem:nil
@@ -848,6 +944,13 @@ class MediaCastChooser final : public content::WebContentsObserver,
   NSMutableArray* notifications_ = [[NSMutableArray alloc] init];
   base::ScopedObservation<views::Widget, views::WidgetObserver> widget_observation_{this};
   NSMenu* __strong menu_ = nil;
+  __weak NSView* waiting_view_ = nil;
+  NSRect waiting_rect_ = NSZeroRect;
+  base::ScopedObservation<global_media_controls::MediaItemManager,
+                          global_media_controls::MediaItemManagerObserver>
+      items_{this};
+  std::unique_ptr<Routes> routes_;
+  base::OneShotTimer wait_;
   bool closed_ = false;
   base::WeakPtrFactory<MediaCastChooser> weak_factory_{this};
 };

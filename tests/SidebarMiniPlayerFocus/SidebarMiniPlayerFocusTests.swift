@@ -158,6 +158,15 @@ import AppKit
         page.mediaState = replaced
         button("AirPlay")?.performClick(nil)
         check(page.chooserRequests == ["airplay"] && !message(), "opening the route list clears the error (\(page.chooserRequests))")
+        // A list waiting for the page's next player holds the button until it
+        // opens or the wait ends, across the episode's updates meanwhile.
+        let next = PCNativeMediaState(identifier: "episode"); next.airPlayState = .available
+        page.mediaState = next
+        deck.update([MiniPlayerItem(page: page, state: next, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})])
+        let airPlay = button("AirPlay")
+        check(airPlay?.showsSelectedFill == true && !message(), "a waiting route list keeps its button selected")
+        page.dismissChooser?(); deck.layoutSubtreeIfNeeded()
+        check(airPlay?.showsSelectedFill == false && !message(), "the wait's end releases the button")
         deck.removeFromSuperview()
     }
     /// A click on the card reveals its page but leaves keyboard focus where it

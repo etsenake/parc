@@ -468,6 +468,16 @@
    void SeekTo(base::TimeDelta time) override;
    // This will stop the media session associated with this item. The item will
    // then call |MediaNotificationController::RemoveItem()| to ensure removal.
+@@ -146,6 +148,9 @@
+   void Freeze(base::OnceClosure unfrozen_callback);
+ 
+   bool frozen() const { return frozen_; }
++  // Parc: frozen and waiting for its freeze to time out. An item hidden at
++  // that timeout keeps frozen() without one.
++  bool ParcFreezePending() const { return freeze_timer_.IsRunning(); }
+ 
+   std::optional<std::string> device_name() const { return device_name_; }
+ 
 --- a/components/global_media_controls/public/views/media_item_ui_detailed_view.cc
 +++ b/components/global_media_controls/public/views/media_item_ui_detailed_view.cc
 @@ -293,7 +293,12 @@

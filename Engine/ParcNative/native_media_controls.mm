@@ -306,7 +306,13 @@ class MediaState final : public content::WebContentsObserver,
   bool ShowAirPlayPicker(PCNativeMediaState* state, NSView* view, NSRect rect, NSWindow* host,
                          void (^dismissed)(void)) {
     if (!host || view.window != host || !Validate(state, host)) return false;
-    return ShowNativeAirPlayPicker(web_contents(), view, rect, dismissed);
+    __weak NSWindow* weak_host = host;
+    base::WeakPtr<MediaState> weak = weak_factory_.GetWeakPtr();
+    auto valid = base::BindRepeating(^bool {
+      NSWindow* window = weak_host;
+      return weak && window && weak->Validate(state, window);
+    });
+    return ShowNativeAirPlayPicker(web_contents(), view, rect, std::move(valid), dismissed);
   }
   bool ShowCastChooser(PCNativeMediaState* state, NSView* view, NSRect rect, NSWindow* host,
                        void (^dismissed)(void)) {

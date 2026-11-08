@@ -18,10 +18,12 @@
 #include "base/strings/sys_string_conversions.h"
 #include "content/public/browser/media_player_id.h"
 #include "content/public/browser/parc_playback_target.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
 #import "native_appkit_bridge.h"
+#include "native_route_wait.h"
 
 // AVKit SPI WebKit declares (AVKitSPI.h) for its Mac route picker
 // (AVRoutePickerViewTargetPicker): the route list shown for an output
@@ -110,6 +112,23 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
       content::SetParcPlaybackTargetAvailability(contents, player_id, available_);
     }
     NativeMediaAirPlayChanged(contents);
+    if (!state.supports_target) {
+      return;
+    }
+    // Its page's list was asked for while no player could play to a target.
+    auto* frame = content::RenderFrameHost::FromID(player_id.frame_routing_id);
+    auto waiting = wait_.Arrived([contents, frame](const Waiting& waiting) {
+      return waiting.contents.get() == contents && frame &&
+             frame->GetOutermostMainFrame() == contents->GetPrimaryMainFrame();
+    });
+    if (!waiting) {
+      return;
+    }
+    NSView* view = waiting->view;
+    if (!view || !NSApp.active || !view.window.keyWindow || !waiting->valid.Run() ||
+        !Show(player_id, view, waiting->rect, waiting->dismissed)) {
+      Dismiss(std::move(waiting));
+    }
   }
 
   void OnShowPlaybackTargetPicker(content::WebContents* contents,
@@ -181,6 +200,7 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
   bool ShowFor(content::WebContents* contents,
                NSView* view,
                NSRect rect,
+               base::RepeatingCallback<bool()> valid,
                void (^dismissed)(void)) {
     // The element playing to the route, else the latest that can.
     std::optional<content::MediaPlayerId> chosen;
@@ -198,7 +218,11 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
         chosen = player_id;
       }
     }
-    return chosen && view && Show(*chosen, view, rect, dismissed);
+    if (!view) {
+      return false;
+    }
+    return chosen ? Show(*chosen, view, rect, dismissed)
+                  : WaitForPlayer(contents, view, rect, std::move(valid), dismissed);
   }
 
   // From PCAirPlayObserver.
@@ -253,6 +277,21 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
 
  private:
   friend class base::NoDestructor<NativeAirPlay>;
+
+  struct Waiting {
+    base::WeakPtr<content::WebContents> contents;
+    // The Mini Player's own check of its episode, page and window.
+    base::RepeatingCallback<bool()> valid;
+    __weak NSView* view = nil;
+    NSRect rect;
+    void (^dismissed)(void) = nil;
+  };
+
+  static void Dismiss(std::optional<Waiting> waiting) {
+    if (waiting && waiting->dismissed) {
+      waiting->dismissed();
+    }
+  }
 
   struct Player {
     base::WeakPtr<content::WebContents> contents;
@@ -336,10 +375,27 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
     return base::SysNSStringToUTF8(name ?: @"");
   }
 
+  // A player replacing one registers within a moment (a new source, or
+  // native HLS moving to AVPlayer); the Mini Player's button outlives it.
+  bool WaitForPlayer(content::WebContents* contents, NSView* view, NSRect rect,
+                     base::RepeatingCallback<bool()> valid, void (^dismissed)(void)) {
+    if (!contents || !valid || !Context()) {
+      return false;
+    }
+    Dismiss(wait_.Begin({contents->GetWeakPtr(), std::move(valid), view, rect, dismissed}));
+    const uint64_t ticket = wait_.ticket();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+                     Dismiss(wait_.Expire(ticket));
+                   });
+    return true;
+  }
+
   bool Show(const content::MediaPlayerId& player_id,
             NSView* view,
             NSRect rect,
             void (^dismissed)(void)) {
+    Dismiss(wait_.Cancel());
     id context = Context();
     if (!context || !view.window) {
       return false;
@@ -537,6 +593,7 @@ class NativeAirPlay final : public content::ParcPlaybackTargetHandler {
   void (^__strong dismissed_)(void) = nil;
   std::map<content::MediaPlayerId, Player> players_;
   std::optional<content::MediaPlayerId> picker_client_;
+  NativeRouteWait<Waiting> wait_;
   std::optional<content::MediaPlayerId> active_client_;
   // The route when the list opened (WebKit's m_hadActiveRoute).
   std::pair<bool, std::string> route_at_show_;
@@ -561,9 +618,10 @@ NativeAirPlayState NativeAirPlayStateForContents(
 bool ShowNativeAirPlayPicker(content::WebContents* contents,
                              NSView* view,
                              NSRect rect,
+                             base::RepeatingCallback<bool()> valid,
                              void (^dismissed)(void)) {
   CHECK(NSThread.isMainThread);
-  return NativeAirPlay::Get().ShowFor(contents, view, rect, dismissed);
+  return NativeAirPlay::Get().ShowFor(contents, view, rect, std::move(valid), dismissed);
 }
 
 }  // namespace parc

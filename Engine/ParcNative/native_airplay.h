@@ -14,6 +14,8 @@
 
 #include <string>
 
+#include "base/functional/callback.h"
+
 namespace content {
 class WebContents;
 }
@@ -34,11 +36,13 @@ struct NativeAirPlayState {
 NativeAirPlayState NativeAirPlayStateForContents(content::WebContents* contents);
 
 // Opens the route list at |rect| in |view| for |contents|' AirPlay player;
-// |dismissed| runs once when it closes. False (and |dismissed| never runs)
-// when |contents| has no such player or the list can't open.
+// |dismissed| runs once when it closes. With no such player while a new one
+// replaces it, it opens for the next one if |valid| still holds then, else
+// |dismissed| runs. False (and |dismissed| never runs) when it can't open.
 bool ShowNativeAirPlayPicker(content::WebContents* contents,
                              NSView* view,
                              NSRect rect,
+                             base::RepeatingCallback<bool()> valid,
                              void (^dismissed)(void));
 
 // Defined in native_media_controls.mm: |contents|' AirPlay state changed, so

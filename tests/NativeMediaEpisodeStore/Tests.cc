@@ -5,6 +5,7 @@
 
 #include "native_background_picture_in_picture.h"
 #include "native_media_episode_store.h"
+#include "native_route_wait.h"
 
 struct Source {};
 struct Profile {};
@@ -282,4 +283,27 @@ int main() {
   assert(!cleanup.Admit(b, private_b, true).get());
   private_b.reset();
   assert(cleanup.Sequence(b.get()) == UINT64_MAX);  // A dead OTR identity cannot fall back to regular.
+
+  // A route list asked for between two players opens for the page's next
+  // player, and only for that page; a later request or its deadline ends it.
+  struct Ask { int page; int press; };
+  auto page = [](int id) { return [id](const Ask& ask) { return ask.page == id; }; };
+  parc::NativeRouteWait<Ask> wait;
+  assert(!wait.Arrived(page(1)));
+  assert(!wait.Begin({1, 1}));
+  const auto first = wait.ticket();
+  assert(!wait.Arrived(page(2)));
+  auto opened = wait.Arrived(page(1));
+  assert(opened && opened->press == 1 && !wait.Arrived(page(1)));
+  assert(!wait.Expire(first));
+  assert(!wait.Begin({1, 2}));
+  const auto second = wait.ticket();
+  auto replaced = wait.Begin({2, 3});
+  assert(replaced && replaced->press == 2);
+  assert(!wait.Expire(second));
+  auto expired_ask = wait.Expire(wait.ticket());
+  assert(expired_ask && expired_ask->press == 3 && !wait.Arrived(page(2)));
+  assert(!wait.Begin({1, 4}));
+  auto cancelled = wait.Cancel();
+  assert(cancelled && cancelled->press == 4 && !wait.Cancel());
 }

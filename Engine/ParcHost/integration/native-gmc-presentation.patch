@@ -143,7 +143,7 @@
    // `cast_notification_producer_`,
    // `presentation_request_notification_producer_` and `host_receivers_`
    // depend on MediaRouter, which is another keyed service. So they must be
-@@ -334,6 +346,61 @@
+@@ -334,7 +346,62 @@
    if (web_contents && web_contents->GetLastCommittedURL().SchemeIsFile()) {
      feature_engagement::TrackerFactory::GetForBrowserContext(profile_)
          ->NotifyEvent("media_route_started_from_gmc");
@@ -188,7 +188,7 @@
 +                    content::RenderFrameHost::LifecycleState::
 +                        kInBackForwardCache))) {
 +    return;
-+  }
+   }
 +  auto* router =
 +      media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(
 +          web_contents->GetBrowserContext());
@@ -202,9 +202,10 @@
 +        route.media_source().TabIdFromRemotePlaybackSource() == tab_id) {
 +      router->TerminateRoute(route.media_route_id());
 +    }
-   }
++  }
  }
  
+ void MediaNotificationService::OnSinksDiscovered(const std::string& item_id) {
 @@ -518,8 +585,228 @@
               : false;
  }
@@ -495,17 +496,16 @@
 +    return;
 +  if (!has_context)
      remoting_session_id = session_id;
--  }
--  CreateCastDeviceListHost(CreateCastDialogControllerForSession(session_id),
--                           std::move(host_receiver), std::move(client_remote),
--                           remoting_session_id);
 +  base::RepeatingCallback<bool()> native_guard;
 +  std::optional<base::UnguessableToken> native_token;
 +  if (has_context && native_presentation_ && context_ &&
 +      context_->native_request_token() == native_presentation_->token) {
 +    native_guard = native_presentation_->guard;
 +    native_token = native_presentation_->token;
-+  }
+   }
+-  CreateCastDeviceListHost(CreateCastDialogControllerForSession(session_id),
+-                           std::move(host_receiver), std::move(client_remote),
+-                           remoting_session_id);
 +  // A second selector must not substitute a default source after this native
 +  // request has already moved into its original device host.
 +  if (native_presentation_ && !native_token)
@@ -624,7 +624,22 @@
    }
  }
  
-@@ -793,6 +1145,7 @@
+@@ -773,6 +1125,14 @@
+   });
+ }
+ 
++bool MediaNotificationService::ParcHasFrozenSessionForWebContents(
++    content::WebContents* web_contents) const {
++  return content::MediaSession::GetIfExists(web_contents) &&
++         media_session_item_producer_->ParcIsItemFrozen(
++             content::MediaSession::GetRequestIdFromWebContents(web_contents)
++                 .ToString());
++}
++
+ std::string
+ MediaNotificationService::GetActiveControllableSessionForWebContents(
+     content::WebContents* web_contents) const {
+@@ -793,6 +1153,7 @@
    // get destroyed soon anyways.
    if (!shutdown_has_started_) {
      host_receivers_.erase(host_id);
@@ -660,7 +675,7 @@
  #include "mojo/public/cpp/bindings/pending_receiver.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/receiver.h"
-@@ -118,8 +123,31 @@
+@@ -118,9 +123,38 @@
    // True if there are local cast notifications.
    bool HasLocalCastNotifications() const;
  
@@ -673,9 +688,15 @@
 +      content::WebContents* web_contents,
 +      const std::vector<media_router::MediaRoute>& routes);
 +
++  // Parc: whether `web_contents`' media session item is frozen, as on losing
++  // audio focus: it is listed again when the page regains it, or dropped when
++  // the freeze times out (MediaSessionNotificationItem::Freeze()).
++  bool ParcHasFrozenSessionForWebContents(
++      content::WebContents* web_contents) const;
++
    void OnStartPresentationContextCreated(
        std::unique_ptr<media_router::StartPresentationContext> context);
-+
+ 
 +  // Owns only the exact native request identified by token. Invalidation
 +  // closes its native surface and revokes its device host before callbacks.
 +  bool BeginNativePresentation(
@@ -689,10 +710,11 @@
 +  bool WaitForNativePreparation(base::UnguessableToken token,
 +                                base::OnceClosure completion);
 +  base::WeakPtr<MediaNotificationService> GetWeakPtrForNative();
- 
++
    // global_media_controls::mojom::DeviceService:
    void GetDeviceListHostForSession(
-@@ -163,6 +191,28 @@
+       const std::string& session_id,
+@@ -163,6 +197,28 @@
    friend class MediaToolbarButtonControllerTest;
    friend class ash::GlobalMediaControlsCastStartTest;
  
@@ -721,7 +743,7 @@
    // Instantiates a MediaRouterViewsUI object associated with the Session with
    // the given |session_id|.
    std::unique_ptr<media_router::CastDialogController>
-@@ -180,7 +230,9 @@
+@@ -180,7 +236,9 @@
            host_receiver,
        mojo::PendingRemote<global_media_controls::mojom::DeviceListClient>
            client_remote,
@@ -732,11 +754,10 @@
  
    // True if there is a presentation context for the given session ID.
    bool HasPresentationContextForSession(const std::string& session_id);
-@@ -247,6 +299,15 @@
-       int,
+@@ -248,6 +306,15 @@
        mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>>
        host_receivers_;
-+
+ 
 +  struct NativePresentationState {
 +    base::UnguessableToken token;
 +    base::RepeatingCallback<bool()> guard;
@@ -745,9 +766,10 @@
 +  std::optional<NativePresentationState> native_presentation_;
 +  std::map<int, base::UnguessableToken> native_device_hosts_;
 +  uint64_t presentation_sequence_ = 0;
- 
++
    bool shutdown_has_started_ = false;
  
+   struct IphState {
 --- a/chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc
 +++ b/chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc
 @@ -15,6 +15,7 @@
@@ -776,10 +798,12 @@
  #include "services/media_session/public/mojom/audio_focus.mojom.h"
  #include "services/media_session/public/mojom/media_session.mojom.h"
  #include "testing/gmock/include/gmock/gmock.h"
-@@ -254,6 +261,16 @@
+@@ -252,6 +259,16 @@
+       std::vector<media_router::MediaRoute> routes) {
+     ON_CALL(*presentation_manager_, GetMediaRoutes())
          .WillByDefault(Return(routes));
-   }
- 
++  }
++
 +  base::OnceCallback<void(bool)> ParcRequestMediaRemoting(
 +      const std::string& item_id) {
 +    return MediaNotificationService::ParcRequestMediaRemoting(item_id);
@@ -788,15 +812,15 @@
 +  void SetDefaultPresentationRequest(
 +      const content::PresentationRequest& request) {
 +    presentation_manager_->SetDefaultPresentationRequest(request);
-+  }
-+
-   base::WeakPtr<PresentationRequestNotificationItem>
-   GetSupplementalNotification() {
-     return service()
-@@ -750,6 +767,83 @@
-   service()->OnMediaRemotingRequested(id.ToString());
- }
+   }
  
+   base::WeakPtr<PresentationRequestNotificationItem>
+@@ -748,8 +765,103 @@
+   SimulatePlayingControllableMedia(id);
+   // TODO(takumif): Confirm that this calls the MediaNotificationItem.
+   service()->OnMediaRemotingRequested(id.ToString());
++}
++
 +// Parc: the Mini Player's Cast follows the route that casts the page: its
 +// default presentation's launch while it connects, then the presentation the
 +// page started, until the router ends it; else its Remote Playback.
@@ -845,6 +869,24 @@
 +  EXPECT_EQ("remote", route->media_route_id());
 +}
 +
++// Parc: a session item that loses audio focus is frozen, neither listed nor
++// gone, until its freeze times out.
++TEST_F(MediaNotificationServiceCastTest, ParcFrozenSessionForWebContents) {
++  EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
++  auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
++  EXPECT_TRUE(service()->HasActiveNotificationsForWebContents(web_contents()));
++  EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
++
++  SimulateFocusLost(id);
++  EXPECT_FALSE(service()->HasActiveNotificationsForWebContents(web_contents()));
++  EXPECT_TRUE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
++
++  task_environment()->FastForwardBy(base::Seconds(3));
++  EXPECT_EQ(nullptr, GetNotificationSessionItem(id));
++  EXPECT_FALSE(service()->HasActiveNotificationsForWebContents(web_contents()));
++  EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
+ }
+ 
 +// Parc: a cast picked for a session's player requests its remoting at the
 +// pick. Once launched, it stays while the player's page does; after the page
 +// is gone, the launch ends rather than waiting for a player.
@@ -877,13 +919,10 @@
  TEST_F(MediaNotificationServiceCastTest, OnSinksDiscoveredForLocalMedia) {
    // Playing the media.
    auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-@@ -792,6 +886,32 @@
-   // override is reset.
-   auto dialog_controller = CreateCastDialogControllerForSession(id.ToString());
-   EXPECT_FALSE(item->optional_presentation_request_origin().has_value());
-+}
-+
-+TEST_F(MediaNotificationServiceCastTest,
+@@ -795,6 +907,32 @@
+ }
+ 
+ TEST_F(MediaNotificationServiceCastTest,
 +       ReplacementRequestCancelsIfOldCallbackDestroysItsPage) {
 +  SimulatePlayingControllableMediaForWebContents(web_contents());
 +  std::unique_ptr<content::WebContents> second(CreateTestWebContents());
@@ -907,9 +946,12 @@
 +  EXPECT_FALSE(second);
 +  EXPECT_TRUE(canceled);
 +  EXPECT_FALSE(HasPresentationContext());
- }
- 
- TEST_F(MediaNotificationServiceCastTest,
++}
++
++TEST_F(MediaNotificationServiceCastTest,
+        PresentationRequestOriginNotResetByNewDummyRequest) {
+   auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
+   auto* item = GetNotificationSessionItem(id);
 --- a/chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc
 +++ b/chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc
 @@ -6,10 +6,12 @@
@@ -2647,3 +2689,19 @@
      "//chrome/browser/media/router:media_router_feature",
      "//chrome/browser/ui/browser_window",
      "//chrome/browser/ui/tabs:tab_strip",
+--- a/components/global_media_controls/public/media_session_item_producer.h
++++ b/components/global_media_controls/public/media_session_item_producer.h
+@@ -59,6 +59,13 @@
+       const std::string& id) override;
+   std::set<std::string> GetActiveControllableItemIds() const override;
+   bool HasFrozenItems() override;
++  // Parc: whether `id` is frozen, waiting for its session to regain audio
++  // focus until its freeze times out.
++  bool ParcIsItemFrozen(const std::string& id) {
++    auto it = sessions_.find(id);
++    return frozen_session_ids_.contains(id) && it != sessions_.end() &&
++           it->second.item()->ParcFreezePending();
++  }
+   void OnItemShown(const std::string& id, MediaItemUI* item_ui) override;
+   bool IsItemActivelyPlaying(const std::string& id) override;
+ 
