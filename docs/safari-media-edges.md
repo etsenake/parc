@@ -161,8 +161,11 @@ already running stays with the tab that started it until it ends, as
 Chromium ties routes to a tab; whether the TV keeps playing when the
 starting frame closes mid-cast is **unchecked**). A move into a document without a browsing context
 (`createHTMLDocument`) reloaded and failed where Safari keeps the player:
-**fixed** 22ce9758 (HME-1d; unchecked against WebKit's `dom/` files beyond
-`DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
+**fixed** 22ce9758 (it keeps its player: plays on in a `createHTMLDocument`
+body, pauses in template content, as WebKit's `pauseAfterDetachedTask`).
+Left (rare): a video moved from a popup into the opener's frameless document,
+whose popup then closes, reloads and fails; a `preload=none` video first
+played while frameless fails. A script-built muted
 video moved from a Chrome-identity document already latches Safari's muted
 rule at connection (muted state follows the current document, not the
 creating one): no difference; guarded by tests in 2d774d1a.
