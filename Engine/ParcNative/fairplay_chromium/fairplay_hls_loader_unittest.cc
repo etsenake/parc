@@ -155,7 +155,8 @@ class FairPlayHlsLoaderTest : public testing::Test {
   void Respond(int status,
                const char* mime_type,
                int64_t content_length,
-               const char* content_encoding = nullptr) {
+               const char* content_encoding = nullptr,
+               const char* content_range = nullptr) {
     WebURLResponse response{WebURL(KURL(kPlaylistUrl))};
     response.SetHttpStatusCode(status);
     response.SetMimeType(WebString::FromAscii(mime_type));
@@ -169,8 +170,16 @@ class FairPlayHlsLoaderTest : public testing::Test {
       response.SetHttpHeaderField(WebString::FromAscii("Content-Encoding"),
                                   WebString::FromAscii(content_encoding));
     }
+    if (content_range) {
+      response.SetHttpHeaderField(WebString::FromAscii("Content-Range"),
+                                  WebString::FromAscii(content_range));
+    }
     response.SetHttpHeaderField(WebString::FromAscii("Cache-Control"),
                                 WebString::FromAscii("max-age=2"));
+    if (etag_) {
+      response.SetHttpHeaderField(WebString::FromAscii("ETag"),
+                                  WebString::FromAscii(etag_));
+    }
     url_client_->DidReceiveResponse(response);
     task_environment_.RunUntilIdle();
   }
@@ -228,6 +237,8 @@ class FairPlayHlsLoaderTest : public testing::Test {
   raw_ptr<WebAssociatedURLLoaderClient, DanglingUntriaged> url_client_ =
       nullptr;
   std::optional<CapturedRequest> captured_;
+  // Every response's ETag, if any.
+  const char* etag_ = nullptr;
 };
 
 TEST_F(FairPlayHlsLoaderTest, ForwardsOnlyRangeAsAMediaRequest) {
@@ -475,6 +486,103 @@ TEST_F(FairPlayHlsLoaderTest, AFailureMidBodyReportsTheError) {
   EXPECT_EQ(net::ERR_CONNECTION_RESET, client_->net_error_);
   EXPECT_EQ("partial", client_->Drain());
   EXPECT_TRUE(client_->body_closed_);
+}
+
+// Parc: a load the old frame ends mid-body, once the element moved its player
+// to another frame, goes on there from the next byte.
+class FairPlayHlsLoaderMovedTest : public FairPlayHlsLoaderTest {
+ public:
+  FairPlayHlsLoaderMovedTest() { etag_ = "\"v1\""; }
+  ~FairPlayHlsLoaderMovedTest() override { loader_.reset(); }
+
+ protected:
+  // Starts |request| and answers it, gives "partial" of its body, then moves
+  // the player and ends the load as the old frame going does. Only the new
+  // frame makes a request after that.
+  void LoadPartlyThenMove(media::mojom::FairPlayHlsRequestPtr request,
+                          int status,
+                          int64_t content_length,
+                          const char* content_encoding = nullptr,
+                          const char* content_range = nullptr) {
+    MakeLoader();
+    Start(std::move(request));
+    Respond(status, "video/mp2t", content_length, content_encoding,
+            content_range);
+    Data("partial");
+    EXPECT_EQ("partial", client_->Drain());
+    EXPECT_CALL(fetch_context_, CreateUrlLoader(_)).Times(0);
+    ON_CALL(moved_fetch_context_, CreateUrlLoader(_))
+        .WillByDefault(
+            Invoke(this, &FairPlayHlsLoaderMovedTest::CreateUrlLoader));
+    loader_->SetFetchContext(&moved_fetch_context_);
+    url_client_->DidFail(
+        WebURLError(net::ERR_ABORTED, WebURL(KURL(kPlaylistUrl))));
+    task_environment_.RunUntilIdle();
+  }
+
+  NiceMock<MockResourceFetchContext> moved_fetch_context_;
+};
+
+TEST_F(FairPlayHlsLoaderMovedTest, APartialAnswerGoesOnFromTheNextByte) {
+  EXPECT_CALL(moved_fetch_context_, CreateUrlLoader(_));
+  LoadPartlyThenMove(Request(), 200, 14);
+  EXPECT_FALSE(client_->completed_);
+  EXPECT_EQ("bytes=7-13", captured_->range);
+
+  Respond(206, "video/mp2t", 7, nullptr, "bytes 7-13/*");
+  Data("-rest!!");
+  url_client_->DidFinishLoading();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ("-rest!!", client_->Drain());
+  EXPECT_TRUE(client_->completed_);
+  EXPECT_EQ(net::OK, client_->net_error_);
+  EXPECT_TRUE(client_->body_closed_);
+}
+
+TEST_F(FairPlayHlsLoaderMovedTest, AWholeAnswerIsReadPastWhatWasGiven) {
+  LoadPartlyThenMove(Request(), 200, 14);
+  Respond(200, "video/mp2t", 14);
+  Data("partial-rest!!");
+  url_client_->DidFinishLoading();
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ("-rest!!", client_->Drain());
+  EXPECT_EQ(net::OK, client_->net_error_);
+  EXPECT_TRUE(client_->body_closed_);
+}
+
+TEST_F(FairPlayHlsLoaderMovedTest, ARangeGoesOnWithinItself) {
+  media::mojom::FairPlayHlsRequestPtr request = Request();
+  request->headers["Range"] = "bytes=100-199";
+  LoadPartlyThenMove(std::move(request), 206, 100, nullptr,
+                     "bytes 100-199/1000");
+  EXPECT_EQ("bytes=107-199", captured_->range);
+
+  // An answer from elsewhere can't go on.
+  Respond(206, "video/mp2t", 100, nullptr, "bytes 100-199/1000");
+  EXPECT_TRUE(client_->completed_);
+  EXPECT_EQ(net::ERR_FAILED, client_->net_error_);
+}
+
+TEST_F(FairPlayHlsLoaderMovedTest, ALoadWithEveryByteCompletes) {
+  EXPECT_CALL(moved_fetch_context_, CreateUrlLoader(_)).Times(0);
+  LoadPartlyThenMove(Request(), 200, 7);
+  EXPECT_TRUE(client_->completed_);
+  EXPECT_EQ(net::OK, client_->net_error_);
+}
+
+TEST_F(FairPlayHlsLoaderMovedTest, AnUnversionedBodyFails) {
+  etag_ = nullptr;
+  EXPECT_CALL(moved_fetch_context_, CreateUrlLoader(_)).Times(0);
+  LoadPartlyThenMove(Request(), 200, 14);
+  EXPECT_TRUE(client_->completed_);
+  EXPECT_EQ(net::ERR_ABORTED, client_->net_error_);
+}
+
+TEST_F(FairPlayHlsLoaderMovedTest, AnEncodedBodyFails) {
+  EXPECT_CALL(moved_fetch_context_, CreateUrlLoader(_)).Times(0);
+  LoadPartlyThenMove(Request(), 200, -1, "gzip");
+  EXPECT_TRUE(client_->completed_);
+  EXPECT_EQ(net::ERR_ABORTED, client_->net_error_);
 }
 
 TEST_F(FairPlayHlsLoaderTest, CancelStopsTheLoad) {
