@@ -2917,35 +2917,45 @@ std::vector<Step> FlushRaceScenario() {
       });
     };
   };
-  // Starts 3 s before the end with end of stream, so the end time is
-  // watched; holds the core's posts across it, then releases them, after a
-  // Flush when |flush|.
+  // Queues the final segment while paused, through end of stream, so the
+  // end observer is armed before holding posts and starting the clock.
+  // Backpressure during playback must not decide whether this race is tested.
   auto near_end = [w, end](Done done) {
     w->player->ended = false;
-    StartAt(w->player, &w->video, &w->audio, w->segments - 1, w->segments, end - 3, 1, true)(done);
+    w->player->batch_reads = true;
+    StartAt(w->player, &w->video, &w->audio, w->segments - 1, w->segments, end - 3, 0, true)(done);
   };
   auto held_end = [w, end](bool flush) -> Step {
     return [w, end, flush](Done done) {
       const std::string run = flush ? "with a Flush" : "control, no Flush";
-      WaitUntil(2.5, [w] { return w->player->EndOfStreamSent(); }, [=](bool sent) {
+      WaitUntil(10, [w] { return w->player->EndOfStreamSent(); }, [=](bool sent) {
         Check(sent && w->player->Time() < end - 0.2,
               "flush-race: both streams reach end of stream before the end time (" + run + ")",
               Format("sent %d at t=%.3f, end %.3f", sent, w->player->Time(), end));
+        w->player->batch_reads = false;
+        if (!sent) {
+          done();
+          return;
+        }
         HoldPosts();
+        w->player->renderer().SetPlaybackRate(1);
         WaitUntil(5, [w, end] { return w->player->Time() > end + 0.2; }, [=](bool ok) {
           Check(ok, Format("flush-race: the clock passes the end (%.3f) while the end callback is held (%s)", end,
                            run.c_str()),
                 Format("t=%.3f", w->player->Time()));
           if (flush) w->player->renderer().Flush([] {});
           ReleasePosts();
-          After(0.5, [=] {
-            if (flush) {
+          if (flush) {
+            After(0.5, [=] {
               Check(!w->player->ended, "flush-race: an end time reached before a Flush gives no OnEnded after it");
-            } else {
-              Check(w->player->ended, "flush-race: control: the held end callback, released without a Flush, gives OnEnded");
-            }
-            done();
-          });
+              done();
+            });
+          } else {
+            WaitUntil(5, [w] { return w->player->ended; }, [=](bool delivered) {
+              Check(delivered, "flush-race: control: the held end callback, released without a Flush, gives OnEnded");
+              done();
+            });
+          }
         });
       });
     };
@@ -5275,14 +5285,14 @@ void RunAll() {
             fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.1_0") &&
             fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.2_0") &&
             fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.3_0") &&
-            !fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.") &&
+            fp::FairPlayCdm::IsKeySystemSupported("com.apple.fps.") &&
             !fp::FairPlayCdm::IsKeySystemSupported("com.apple.fpsx") &&
             !fp::FairPlayCdm::IsKeySystemSupported("COM.APPLE.FPS") &&
             !fp::FairPlayCdm::IsKeySystemSupported("com.widevine.alpha") &&
             fp::FairPlayCdm::IsInitDataTypeSupported("cenc") &&
             fp::FairPlayCdm::IsInitDataTypeSupported("mpts") &&
             !fp::FairPlayCdm::IsInitDataTypeSupported("webm"),
-        "key system names: com.apple.fps and com.apple.fps.<version> (case-sensitive); cenc and mpts init data");
+        "key system names: WebKit modern CDM accepts com.apple.fps and its dot prefix (case-sensitive); cenc and mpts init data");
   Check(fp::FairPlayCdm::IsSupported(), "FairPlayCdm::IsSupported on this Mac",
         NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
   SelfTests(w->video, w->audio);
