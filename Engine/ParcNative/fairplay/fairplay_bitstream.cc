@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 namespace parc::fairplay {
 namespace {
@@ -67,6 +68,7 @@ class BitReader {
     return leading_zeros ? Get(leading_zeros) + ((uint64_t{1} << leading_zeros) - 1) : 0;
   }
   bool failed() const { return failed_; }
+  size_t remaining() const { return size_ * 8 - position_; }
 
  private:
   const uint8_t* data_;
@@ -238,6 +240,104 @@ std::vector<uint8_t> TrackEncryptionBoxPayload(const TrackEncryption& tenc) {
     Append(&out, tenc.default_constant_iv);
   }
   return out;
+}
+
+bool UnescapeSampleAesSlices(std::vector<uint8_t>* access_unit) {
+  std::vector<uint8_t> out;
+  out.reserve(access_unit->size());
+  size_t offset = 0;
+  while (offset < access_unit->size()) {
+    if (access_unit->size() - offset < 4) {
+      return false;
+    }
+    const uint8_t* nal = access_unit->data() + offset + 4;
+    const size_t size = (size_t(nal[-4]) << 24) | (size_t(nal[-3]) << 16) | (size_t(nal[-2]) << 8) | nal[-1];
+    if (size == 0 || size > access_unit->size() - offset - 4) {
+      return false;
+    }
+    offset += 4 + size;
+    const uint8_t type = nal[0] & 0x1f;
+    if ((type != 1 && type != 5) || size <= 48) {
+      out.insert(out.end(), nal - 4, nal + size);
+      continue;
+    }
+    const size_t length_at = out.size();
+    AppendBE32(&out, 0);
+    int zeros = 0;
+    for (size_t i = 0; i < size; ++i) {
+      if (zeros >= 2 && nal[i] == 3) {
+        zeros = 0;
+        continue;
+      }
+      zeros = nal[i] == 0 ? zeros + 1 : 0;
+      out.push_back(nal[i]);
+    }
+    const uint32_t unescaped = static_cast<uint32_t>(out.size() - length_at - 4);
+    for (int i = 0; i < 4; ++i) {
+      out[length_at + i] = static_cast<uint8_t>(unescaped >> (24 - 8 * i));
+    }
+  }
+  access_unit->swap(out);
+  return true;
+}
+
+int AacSignaledObjectType(const std::vector<uint8_t>& audio_specific_config) {
+  BitReader reader(audio_specific_config.data(), audio_specific_config.size());
+  auto object_type = [&reader] {
+    const int type = static_cast<int>(reader.Get(5));
+    return type == 31 ? 32 + static_cast<int>(reader.Get(6)) : type;
+  };
+  auto frequency = [&reader] {
+    if (reader.Get(4) == 15) {
+      reader.Get(24);
+    }
+  };
+  const int type = object_type();
+  frequency();
+  const uint64_t channels = reader.Get(4);
+  if (type == 5 || type == 29 || reader.failed()) {
+    return type;
+  }
+  // GASpecificConfig; a program config element (channels 0) isn't followed.
+  const bool general_audio = type == 1 || type == 2 || type == 3 || type == 4 || type == 6 || type == 7 ||
+                             (type >= 17 && type <= 23 && type != 18);
+  if (!general_audio || channels == 0) {
+    return type;
+  }
+  reader.Get(1);  // frameLengthFlag
+  if (reader.Get(1)) {
+    reader.Get(14);  // coreCoderDelay
+  }
+  const bool extension = reader.Get(1);
+  if (type == 6 || type == 20) {
+    reader.Get(3);  // layerNr
+  }
+  if (extension) {
+    if (type == 22) {
+      reader.Get(16);  // numOfSubFrame, layer_length
+    }
+    if (type == 17 || type == 19 || type == 20 || type == 23) {
+      reader.Get(3);  // the resilience flags
+    }
+    reader.Get(1);  // extensionFlag3
+  }
+  // Backward-compatible explicit signaling of SBR (and PS).
+  if (reader.failed() || reader.remaining() < 16 || reader.Get(11) != 0x2b7 || object_type() != 5 ||
+      !reader.Get(1)) {
+    return type;
+  }
+  frequency();
+  if (reader.remaining() >= 12 && reader.Get(11) == 0x548 && reader.Get(1)) {
+    return 29;
+  }
+  return reader.failed() ? type : 5;
+}
+
+std::vector<uint8_t> TransportStreamEncryptionInitData(uint32_t format_type, uint32_t media_type) {
+  // AVStreamDataParser's bytes on macOS 27.2, layout included.
+  const std::string json = "{\n  \"codc\" : " + std::to_string(format_type) + ",\n  \"mtyp\" : " +
+                           std::to_string(media_type) + ",\n  \"cont\" : \"mpts\"\n}";
+  return std::vector<uint8_t>(json.begin(), json.end());
 }
 
 std::vector<uint8_t> MakeBox(uint32_t type, const std::vector<uint8_t>& payload) {

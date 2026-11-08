@@ -311,6 +311,44 @@ bool IsEncrypted(const TrackEncryption& encryption) {
   return encryption.scheme != EncryptionScheme::kUnencrypted;
 }
 
+bool IsTransportStreamKeyId(const std::vector<uint8_t>& key_id) {
+  return std::equal(key_id.begin(), key_id.end(), std::begin(kTransportStreamKeyId),
+                    std::end(kTransportStreamKeyId) - 1);
+}
+
+// The format type AVStreamDataParser gives an MPEG-2 TS SAMPLE-AES stream:
+// zavc for H.264, and for audio the PMT's audio_type: zaac, zach or zacp as
+// the AAC setup data signals AAC, HE-AAC or HE-AACv2, zac3 or zec3. 0 for
+// codecs TS SAMPLE-AES doesn't carry.
+uint32_t TransportStreamFormatType(VideoCodec codec) {
+  return codec == VideoCodec::kH264 ? FourCC('z', 'a', 'v', 'c') : 0;
+}
+
+uint32_t TransportStreamFormatType(const AudioConfig& config) {
+  switch (config.codec) {
+    case AudioCodec::kAAC: {
+      const int type = AacSignaledObjectType(config.extra_data);
+      return type == 5 ? FourCC('z', 'a', 'c', 'h') : type == 29 ? FourCC('z', 'a', 'c', 'p') : FourCC('z', 'a', 'a', 'c');
+    }
+    case AudioCodec::kAC3:
+      return FourCC('z', 'a', 'c', '3');
+    case AudioCodec::kEAC3:
+      return FourCC('z', 'e', 'c', '3');
+    default:
+      return 0;
+  }
+}
+
+// The clear format's extensions plus the TransportStreamEncryptionInitData
+// extension that marks the format as SAMPLE-AES protected.
+NSDictionary* TransportStreamExtensions(CMFormatDescriptionRef clear, uint32_t type, uint32_t media_type) {
+  NSMutableDictionary* extensions =
+      [(__bridge NSDictionary*)CMFormatDescriptionGetExtensions(clear) mutableCopy] ?: [NSMutableDictionary dictionary];
+  extensions[@"TransportStreamEncryptionInitData"] =
+      ToNSData(TransportStreamEncryptionInitData(type, media_type));
+  return extensions;
+}
+
 }  // namespace
 
 class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRenderer::Impl> {
@@ -1844,6 +1882,60 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     return Result::Ok();
   }
 
+  // What AVStreamDataParser gives an MPEG-2 TS SAMPLE-AES stream: the clear
+  // format under the stream's SAMPLE-AES type, with its extensions (and for
+  // audio its cookie and channel layout) and TransportStreamEncryptionInitData.
+  // Recipients decrypt those with the mpts request's key and the IV its CKC
+  // carries; samples bring no IV or subsamples.
+  static Result CreateTransportStreamFormat(const VideoConfig& config, CMFormatDescriptionRef* out) {
+    const uint32_t type = TransportStreamFormatType(config.codec);
+    if (!type) {
+      return Result::Error(Exception::kNotSupported, "MPEG-2 TS SAMPLE-AES carries no such video codec");
+    }
+    CMFormatDescriptionRef clear = nullptr;
+    if (Result result = CreateVideoFormat(config, nullptr, &clear); !result.ok()) {
+      return result;
+    }
+    ScopedFormat holder;
+    holder.Reset(clear);
+    const CMVideoDimensions size = CMVideoFormatDescriptionGetDimensions(clear);
+    OSStatus status = CMVideoFormatDescriptionCreate(
+        kCFAllocatorDefault, type, size.width, size.height,
+        (__bridge CFDictionaryRef)TransportStreamExtensions(clear, type, kCMMediaType_Video), out);
+    if (status != noErr || !*out) {
+      return Result::Error(Exception::kNotSupported, "CMVideoFormatDescriptionCreate failed",
+                           static_cast<uint32_t>(status));
+    }
+    return Result::Ok();
+  }
+
+  static Result CreateTransportStreamFormat(const AudioConfig& config, CMFormatDescriptionRef* out) {
+    const uint32_t type = TransportStreamFormatType(config);
+    if (!type) {
+      return Result::Error(Exception::kNotSupported, "MPEG-2 TS SAMPLE-AES carries no such audio codec");
+    }
+    CMFormatDescriptionRef clear = nullptr;
+    if (Result result = CreateAudioFormat(config, nullptr, &clear); !result.ok()) {
+      return result;
+    }
+    ScopedFormat holder;
+    holder.Reset(clear);
+    AudioStreamBasicDescription description = *CMAudioFormatDescriptionGetStreamBasicDescription(clear);
+    description.mFormatID = type;
+    size_t layout_size = 0;
+    const AudioChannelLayout* layout = CMAudioFormatDescriptionGetChannelLayout(clear, &layout_size);
+    size_t cookie_size = 0;
+    const void* cookie = CMAudioFormatDescriptionGetMagicCookie(clear, &cookie_size);
+    OSStatus status = CMAudioFormatDescriptionCreate(
+        kCFAllocatorDefault, &description, layout ? layout_size : 0, layout, cookie ? cookie_size : 0, cookie,
+        (__bridge CFDictionaryRef)TransportStreamExtensions(clear, type, kCMMediaType_Audio), out);
+    if (status != noErr || !*out) {
+      return Result::Error(Exception::kNotSupported, "CMAudioFormatDescriptionCreate failed",
+                           static_cast<uint32_t>(status));
+    }
+    return Result::Ok();
+  }
+
   // (Re)creates the clear video format and drops the protected ones, which
   // are rebuilt per key ID; one is built up front when the key ID is known.
   Result CreateVideoFormats(std::string* error) {
@@ -2203,7 +2295,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     CMFormatDescriptionRef format = nullptr;
     Result result = Result::Ok();
-    if constexpr (std::is_same_v<Config, VideoConfig>) {
+    if (IsTransportStreamKeyId(key_id)) {
+      result = CreateTransportStreamFormat(config, &format);
+    } else if constexpr (std::is_same_v<Config, VideoConfig>) {
       result = CreateVideoFormat(config, &encryption, &format);
     } else {
       result = CreateAudioFormat(config, &encryption, &format);
@@ -2232,18 +2326,22 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       *error = "encrypted sample on a track configured as clear";
       return false;
     }
+    // TS SAMPLE-AES leaves NAL unit headers, start codes, ADTS headers and
+    // syncframe headers clear and has no subsamples: its samples reframe as
+    // clear ones.
+    const bool transport_stream = encrypted && IsTransportStreamKeyId(sample.decrypt->key_id);
     std::vector<SubsampleEntry> subsamples;
     if (encrypted) {
       subsamples = sample.decrypt->subsamples;
     }
+    std::vector<SubsampleEntry>* clear_ranges = encrypted && !transport_stream ? &subsamples : nullptr;
 
     // Reframe into what the format description declares.
     std::vector<uint8_t> converted;
     const uint8_t* bytes = sample.data;
     size_t size = sample.size;
     if (video && video_config_->format == BitstreamFormat::kAnnexB) {
-      if (!ConvertAnnexBToLengthPrefixed(sample.data, sample.size, encrypted ? &subsamples : nullptr,
-                                         &converted)) {
+      if (!ConvertAnnexBToLengthPrefixed(sample.data, sample.size, clear_ranges, &converted)) {
         *error = "malformed Annex B access unit";
         return false;
       }
@@ -2254,10 +2352,21 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       size_t header = AdtsHeaderSize(sample.data, sample.size);
       bytes += header;
       size -= header;
-      if (encrypted && !RemoveLeadingClearBytes(header, size, &subsamples)) {
+      if (clear_ranges && !RemoveLeadingClearBytes(header, size, clear_ranges)) {
         *error = "ADTS header not covered by clear subsample bytes";
         return false;
       }
+    }
+    if (video && transport_stream) {
+      if (converted.empty()) {
+        converted.assign(bytes, bytes + size);
+      }
+      if (!UnescapeSampleAesSlices(&converted)) {
+        *error = "malformed H.264 access unit";
+        return false;
+      }
+      bytes = converted.data();
+      size = converted.size();
     }
     if (encrypted && !subsamples.empty()) {
       uint64_t total = 0;
@@ -2294,7 +2403,7 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
       return false;
     }
     if (!video && audio->awaiting_config &&
-        !UpdateAudioConfigFromSyncframe(*audio, bytes, size, encrypted ? &subsamples : nullptr, error)) {
+        !UpdateAudioConfigFromSyncframe(*audio, bytes, size, clear_ranges, error)) {
       CFRelease(block);
       return false;
     }
@@ -2356,6 +2465,9 @@ class FairPlayRenderer::Impl : public std::enable_shared_from_this<FairPlayRende
     }
     held->encrypted = true;
     held->key_id = key_id;
+    if (transport_stream) {
+      return true;
+    }
     if (!subsamples.empty()) {
       std::vector<uint8_t> aux = SubsampleAuxiliaryData(subsamples);
       CFDictionarySetValue(attachments, kCMSampleAttachmentKey_CryptorSubsampleAuxiliaryData,

@@ -59,8 +59,9 @@ struct ContentKeyRequestPlan {
   // SPC content identifier. Empty means the request's own key ID (WebKit's
   // rule for requests AVFoundation names by key ID).
   std::vector<uint8_t> content_identifier;
-  // 16-byte key IDs this call is expected to produce keys for. Empty when the
-  // init data names none (an opaque skd URI, mpts).
+  // Key IDs this call is expected to produce keys for: 16 bytes, or
+  // kTransportStreamKeyId for mpts. Empty when the init data names none (an
+  // opaque skd URI).
   std::vector<std::vector<uint8_t>> key_ids;
 };
 

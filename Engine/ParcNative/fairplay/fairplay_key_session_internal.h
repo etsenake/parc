@@ -21,6 +21,11 @@ Result AttachContentKeyRecipient(FairPlayCdm::Impl* cdm, id<AVContentKeyRecipien
 // After this the recipient is inoperable (AVContentKeySession semantics).
 void DetachContentKeyRecipient(FairPlayCdm::Impl* cdm, id<AVContentKeyRecipient> recipient);
 
+// For the harness: names every later SPC |content_identifier| instead of the
+// request's own. Axinom's license service wants a key GUID there, where an
+// mpts request's SPC is named "TransportStreamIdentifier" as in WebKit.
+void SetSpcContentIdentifierForTesting(FairPlayCdm::Impl* cdm, std::vector<uint8_t> content_identifier);
+
 // An HLS asset's key source (FairPlayHlsKeyLoader), as the key session sees it:
 // the asset's skd resource loader requests, each answered with a CKC from its
 // own SPC. Everything runs on the owner sequence; the key session calls it

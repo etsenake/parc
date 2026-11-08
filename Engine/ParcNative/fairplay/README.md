@@ -170,6 +170,16 @@ The core's `sinf` and `tenc` bytes equal those in the Axinom files. Its
 synthesized entries convert to the same format descriptions as the files' own
 entries.
 
+FairPlay's MPEG-2 TS encryption (HLS SAMPLE-AES, mpts init data) has no key
+ID or IV in the stream. Chromium's TS parser marks those samples with WebKit's
+key ID `TransportStreamIdentifier` (`kTransportStreamKeyId`), which the mpts
+request's key answers to. The renderer then gives them `AVStreamDataParser`'s
+format: the clear one under Apple's SAMPLE-AES type (`zavc`; `zaac`, `zach` or
+`zacp` as the AAC config signals; `zac3`, `zec3`) with a
+`TransportStreamEncryptionInitData` extension, and its bytes: no IV or
+subsample attachments, and slices longer than 48 bytes without emulation
+prevention. Recipients decrypt with the key and the IV the CKC carries.
+
 `hev1`, `avc3` and `dvhe` are presented to CoreMedia as `hvc1`, `avc1` and
 `dvh1`. VideoToolbox configures its decoder only from the format description's
 record: `AVSampleBufferDisplayLayer` rejects every frame of an `hev1`

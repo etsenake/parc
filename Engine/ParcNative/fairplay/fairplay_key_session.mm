@@ -167,7 +167,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     AVContentKeyRequest* answered_renewal = nil;
     AVContentKey* key = nil;  // The last key a response produced.
     int call = -1;                               // Plan entry that produced it.
-    std::vector<std::vector<uint8_t>> key_ids;  // 16-byte key IDs.
+    std::vector<std::vector<uint8_t>> key_ids;  // As ContentKeyRequestPlan's.
     std::vector<uint8_t> content_identifier;     // SPC content identifier.
     std::vector<uint8_t> reported_key_id;
     NSData* spc = nil;
@@ -270,6 +270,10 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     waiting_for_loading_.clear();
     [av_session_ expire];
     av_session_ = nil;
+  }
+
+  void SetSpcContentIdentifierForTesting(std::vector<uint8_t> content_identifier) {
+    spc_content_identifier_for_testing_ = std::move(content_identifier);
   }
 
   Result AttachRecipient(id<AVContentKeyRecipient> recipient) {
@@ -1715,7 +1719,9 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
     const std::string session_id = session->id;
     @try {
       [av_request makeStreamingContentKeyRequestDataForApp:certificate_
-                                         contentIdentifier:ToNSData(request->content_identifier)
+                                         contentIdentifier:ToNSData(spc_content_identifier_for_testing_.empty()
+                                                                        ? request->content_identifier
+                                                                        : spc_content_identifier_for_testing_)
                                                    options:options
                                          completionHandler:^(NSData* spc, NSError* error) {
                                            (*poster)([weak, av_request, spc, error, options,
@@ -2091,6 +2097,7 @@ class FairPlayCdm::Impl : public std::enable_shared_from_this<FairPlayCdm::Impl>
   // WebKit's per-origin randomized device identifier for every SPC
   // (SetDeviceIdentifierSalt), or nil.
   NSDictionary* key_request_options_ = nil;
+  std::vector<uint8_t> spc_content_identifier_for_testing_;
   std::map<std::string, std::unique_ptr<Session>> sessions_;
   bool persistent_state_allowed_ = false;
   // <storage directory>/SecureStop.plist, or nil.
@@ -2202,6 +2209,10 @@ uint64_t FairPlayCdm::AddKeysChangedObserver(KeysChangedCallback callback) {
 
 void FairPlayCdm::RemoveKeysChangedObserver(uint64_t id) {
   impl_->RemoveObserver(id);
+}
+
+void SetSpcContentIdentifierForTesting(FairPlayCdm::Impl* cdm, std::vector<uint8_t> content_identifier) {
+  cdm->SetSpcContentIdentifierForTesting(std::move(content_identifier));
 }
 
 Result AttachContentKeyRecipient(FairPlayCdm::Impl* cdm, id<AVContentKeyRecipient> recipient) {

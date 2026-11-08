@@ -154,6 +154,23 @@ int DefaultDolbyVisionCompatibilityId(int profile);
 // nullopt for other NAL types or a truncated unit.
 std::optional<uint32_t> ParameterSetId(bool hevc, const uint8_t* nal, size_t size);
 
+// Removes the emulation-prevention bytes of every slice NAL unit (types 1
+// and 5) longer than 48 bytes in a length-prefixed H.264 access unit and
+// rewrites its length. Those are the NAL units FairPlay's MPEG-2 TS
+// encryption (HLS SAMPLE-AES) encrypts, and AVStreamDataParser hands them to
+// the decryptor unescaped. Returns false if the lengths don't tile the unit.
+bool UnescapeSampleAesSlices(std::vector<uint8_t>* access_unit);
+
+// The audio object type an AudioSpecificConfig signals: 5 (SBR, HE-AAC) or
+// 29 (PS, HE-AACv2) when it says so, hierarchically or through the
+// backward-compatible sync extensions; otherwise its own type.
+int AacSignaledObjectType(const std::vector<uint8_t>& audio_specific_config);
+
+// The TransportStreamEncryptionInitData format description extension
+// AVStreamDataParser gives MPEG-2 TS SAMPLE-AES samples: JSON naming the
+// format type and media type, {"codc": .., "mtyp": .., "cont": "mpts"}.
+std::vector<uint8_t> TransportStreamEncryptionInitData(uint32_t format_type, uint32_t media_type);
+
 // Wraps |payload| in an ISO box header.
 std::vector<uint8_t> MakeBox(uint32_t type, const std::vector<uint8_t>& payload);
 

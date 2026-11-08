@@ -41,6 +41,11 @@ struct MediaTime {
 
 enum class EncryptionScheme { kUnencrypted, kCenc, kCbcs };
 
+// The key ID of samples under FairPlay's MPEG-2 TS encryption (HLS
+// SAMPLE-AES), whose stream names no key: WebKit's mptsKeyIDs, which mpts
+// init data's key answers to. A DecryptInfo with it marks a sample as such.
+inline constexpr char kTransportStreamKeyId[] = "TransportStreamIdentifier";
+
 // cbcs pattern in 16-byte blocks. {0, 0} means every complete block is
 // encrypted (CMAF cbcs audio).
 struct EncryptionPattern {

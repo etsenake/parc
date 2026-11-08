@@ -3,6 +3,9 @@
 #import <Foundation/Foundation.h>
 
 #include <algorithm>
+#include <iterator>
+
+#include "fairplay_types.h"
 
 #if !__has_feature(objc_arc)
 #error "This file requires ARC."
@@ -151,9 +154,6 @@ bool IsValidScheme(uint32_t scheme) {
   return scheme == Type("cbcs") || scheme == Type("cbc2") || scheme == Type("cbc1") ||
          scheme == Type("cenc");
 }
-
-// WebKit's name for an mpts request (extractKeyIDsMpts), which names no key.
-constexpr char kMptsRequestKeyId[] = "TransportStreamIdentifier";
 
 // A JSON number, as WebKit's JSON getInteger takes one (any number, a
 // fraction truncated). NSJSONSerialization gives true and false as NSNumber
@@ -564,9 +564,9 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
       // is "mpts" and whose "codc" and "mtyp" are numbers. The init data goes
       // to AVFoundation unchanged (sanitizeMpts) with no identifier, as for
       // sinf. The request comes back named by no key ID, so the plan names its
-      // SPC "TransportStreamIdentifier" as WebKit does, and key statuses
-      // report that name. key_ids stays empty: it lists the 16-byte key IDs
-      // renderers and JSON license responses match, and mpts names none.
+      // SPC, key statuses and the key its samples look up
+      // "TransportStreamIdentifier", WebKit's one key ID for mpts
+      // (mptsKeyIDs).
       NSDictionary* root = ParseJSON(init_data);
       NSString* container = [root isKindOfClass:[NSDictionary class]] ? root[@"cont"] : nil;
       if (![container isKindOfClass:[NSString class]] || ![container isEqualToString:@"mpts"] ||
@@ -575,8 +575,9 @@ InitDataPlan PlanContentKeyRequests(InitDataType type, const std::vector<uint8_t
       }
       ContentKeyRequestPlan call;
       call.initialization_data = init_data;
-      call.content_identifier.assign(kMptsRequestKeyId,
-                                     kMptsRequestKeyId + sizeof(kMptsRequestKeyId) - 1);
+      call.content_identifier.assign(std::begin(kTransportStreamKeyId),
+                                     std::end(kTransportStreamKeyId) - 1);
+      call.key_ids.push_back(call.content_identifier);
       InitDataPlan plan;
       plan.calls.push_back(std::move(call));
       return plan;

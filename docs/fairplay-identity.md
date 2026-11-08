@@ -137,6 +137,16 @@ On a page that presents Safari's identity:
   FairPlay configuration and `generateRequest` accepts them. Every other page
   treats them as the unregistered names they were before. Netflix and Apple
   TV+ ask for `cenc` only.
+- A Media Source element on a Safari-identity document fires `encrypted` with
+  `mpts` init data for each FairPlay SAMPLE-AES stream of an MPEG-2 TS
+  (stream types `0xdb`, `0xcf`, `0xc1`, `0xc2` with Apple's private data
+  indicator, audio with its `apad` setup), the bytes `AVStreamDataParser`'s
+  key specifier carries, `{\n  "cont" : "mpts",\n  "codc" : <type>,\n  "mtyp"
+  : <media>\n}`, once per stream. Its samples play through the FairPlay
+  renderer with the mpts request's key, in `AVStreamDataParser`'s formats
+  ([fairplay/README.md](../Engine/ParcNative/fairplay/README.md)). The mpts SPC
+  is named `TransportStreamIdentifier`, as WebKit names it, so a license
+  service must accept that asset ID (Axinom's doesn't, for Safari either).
 - A Media Source element fires `encrypted` with `sinf` init data,
   `{"sinf":["<base64 sinf payload>"]}`, for each protected track of an
   initialization segment, as Safari's Media Source does. The MP4 parser

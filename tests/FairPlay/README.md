@@ -93,7 +93,17 @@ arrive in decode order with presentation times only).
     Media comes from Chromium's `media/test/data`: `hev1` (also with its
     parameter sets moved in-band), Dolby Vision profile 5, AV1 and xHE-AAC.
     HE-AAC and HE-AACv2 are encoded locally with AudioToolbox.
-12. Session remove and close.
+12. FairPlay SAMPLE-AES in MPEG-2 TS: Axinom's "HLS H264 SingleKey" (H.264
+    `0xdb`, AAC `0xcf`), split as Chromium's TS parser splits it
+    (`ts_parser.cc`) and marked with the mpts key ID. `AVStreamDataParser`'s
+    own parse of the segments is the reference for the mpts init data, the
+    formats and every sample's bytes. Then the mpts license and 6 s of
+    playback with no corrupted frames. Axinom's license service wants a key
+    GUID as the SPC's asset ID, so the harness names it
+    (`SetSpcContentIdentifierForTesting`), where WebKit and Parc send
+    `TransportStreamIdentifier`. AC-3, E-AC-3, HE-AAC and HE-AACv2 get the
+    types `AVStreamDataParser` gives them.
+13. Session remove and close.
 13. Keys after playback started (`HandOffScenario`): a clear lead played
     without a CDM, then `SetCdm` during it, after it (over the frozen
     picture), while paused, just before a seek and just before teardown; the

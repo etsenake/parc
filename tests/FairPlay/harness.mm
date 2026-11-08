@@ -26,12 +26,66 @@
 #include "fairplay_bitstream.h"
 #include "fairplay_init_data.h"
 #include "fairplay_key_session.h"
+#include "fairplay_key_session_internal.h"
 #include "fairplay_renderer.h"
 #include "fmp4_parser.h"
+#include "ts_parser.h"
 
 #if !__has_feature(objc_arc)
 #error "This file requires ARC."
 #endif
+
+// AVStreamDataParser, which Safari's Media Source parses MPEG-2 TS with
+// (SourceBufferParserAVFObjC); the macOS SDK doesn't declare it.
+@interface AVStreamDataParser : NSObject
+- (void)setDelegate:(id)delegate;
+- (void)appendStreamData:(NSData*)data;
+- (void)setShouldProvideMediaData:(BOOL)provide forTrackID:(CMPersistentTrackID)trackID;
+- (void)providePendingMediaData;
+@end
+
+// What AVStreamDataParser makes of one TS segment: the key specifier's init
+// data, and each sample buffer's format type, TransportStreamEncryptionInitData
+// and bytes.
+@interface PCTsReference : NSObject
+@property(nonatomic) NSData* keyInitData;
+@property(nonatomic) NSMutableArray<NSNumber*>* types;
+@property(nonatomic) NSMutableArray<NSData*>* extensions;
+@property(nonatomic) NSMutableArray<NSData*>* samples;
+@end
+
+@implementation PCTsReference
+- (void)streamDataParser:(AVStreamDataParser*)parser didParseStreamDataAsAsset:(AVAsset*)asset {
+  for (AVAssetTrack* track in asset.tracks) [parser setShouldProvideMediaData:YES forTrackID:track.trackID];
+}
+- (void)streamDataParser:(AVStreamDataParser*)parser didProvideContentKeySpecifier:(AVContentKeySpecifier*)specifier
+              forTrackID:(CMPersistentTrackID)trackID {
+  if ([specifier respondsToSelector:@selector(initializationData)])
+    self.keyInitData = [specifier performSelector:@selector(initializationData)];
+}
+- (void)streamDataParser:(AVStreamDataParser*)parser didProvideMediaData:(CMSampleBufferRef)sample
+              forTrackID:(CMPersistentTrackID)trackID mediaType:(NSString*)mediaType flags:(NSUInteger)flags {
+  CMFormatDescriptionRef format = CMSampleBufferGetFormatDescription(sample);
+  [self.types addObject:@(CMFormatDescriptionGetMediaSubType(format))];
+  [self.extensions addObject:(__bridge NSData*)CMFormatDescriptionGetExtension(
+                                 format, CFSTR("TransportStreamEncryptionInitData")) ?: [NSData data]];
+  CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sample);
+  NSMutableData* bytes = [NSMutableData dataWithLength:CMBlockBufferGetDataLength(block)];
+  CMBlockBufferCopyDataBytes(block, 0, bytes.length, bytes.mutableBytes);
+  [self.samples addObject:bytes];
+}
++ (PCTsReference*)parse:(NSData*)segment {
+  PCTsReference* reference = [PCTsReference new];
+  reference.types = [NSMutableArray array];
+  reference.extensions = [NSMutableArray array];
+  reference.samples = [NSMutableArray array];
+  AVStreamDataParser* parser = [AVStreamDataParser new];
+  [parser setDelegate:reference];
+  [parser appendStreamData:segment];
+  [parser providePendingMediaData];
+  return reference;
+}
+@end
 
 namespace fp = parc::fairplay;
 namespace ft = parc::fairplay::test;
@@ -58,6 +112,11 @@ NSString* const kMultiKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJz
 NSString* const kHevcBase = @"https://media.axprod.net/TestVectors/H265/protected_cmaf_1080p_h265_singlekey/";
 NSString* const kHevcToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImFiY2M0NGU1LWMxMjItNDVhYi1hYzgwLWE1YjM1MjJhMGEzMSIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAibGs1aERneXl1NXl6a3QzMWlVWmF4UT09IiwKICAgICAgICAiaXYiOiAiczhnNHNFemp4Yml2R1pDVGxxU3pQQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.lAwTqoU-rkmyk8QtSn0RrsleMefe2Y5-E5YGoala7yM";
 const char* const kHevcSkd = "skd://abcc44e5-c122-45ab-ac80-a5b3522a0a31:B3C838B04CE3C5B8AF19909396A4B33C";
+// "HLS H264 SingleKey" from the same table: MPEG-2 TS with FairPlay SAMPLE-AES
+// (H.264 0xdb 'zavc', AAC 0xcf 'aacd'), its own token and key.
+NSString* const kTsBase = @"https://media.axprod.net/TestVectors/Hls/protected_hls_1080p_h264_singlekey/";
+const char* const kTsKeyGuid = "4060a865-8878-4267-9cbf-91ae5bae1e72";
+NSString* const kTsToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjQwNjBhODY1LTg4NzgtNDI2Ny05Y2JmLTkxYWU1YmFlMWU3MiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAieE5LNVNvRzRseGdHbGpRY2ZMOVRXQT09IiwKICAgICAgICAiaXYiOiAiTkJOYUpPcGI3MnNTYzBkSXFJejJQdz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.3Ti5rkzgw77GOXIpZWqNBUX16DXvph_NiJPCejrDStA";
 
 // ---------------------------------------------------------------- reporting
 
@@ -1453,9 +1512,10 @@ void SelfTests(const Media& video, const Media& audio) {
   Check(mpts.error.empty() && !mpts.json_messages && mpts.calls.size() == 1 &&
             mpts.calls[0].identifier.empty() && mpts.calls[0].initialization_data == Bytes(mpts_json) &&
             mpts.calls[0].content_identifier == Bytes(std::string("TransportStreamIdentifier")) &&
-            mpts.calls[0].key_ids.empty() && fp::InitDataTypeFromName("mpts") == fp::InitDataType::kMpts &&
+            mpts.calls[0].key_ids == std::vector<std::vector<uint8_t>>{Bytes(std::string("TransportStreamIdentifier"))} &&
+            fp::InitDataTypeFromName("mpts") == fp::InitDataType::kMpts &&
             std::string(fp::InitDataTypeName(fp::InitDataType::kMpts)) == "mpts",
-        "init data: mpts JSON -> passed through unchanged, SPC named TransportStreamIdentifier");
+        "init data: mpts JSON -> passed through unchanged, SPC and key named TransportStreamIdentifier");
   bool mpts_rejects = true;
   for (const char* malformed : {"{\"codc\":1,\"mtyp\":2,\"cont\":\"mp4\"}", "{\"codc\":1,\"mtyp\":2}",
                                 "{\"codc\":\"1\",\"mtyp\":2,\"cont\":\"mpts\"}",
@@ -4285,6 +4345,220 @@ std::vector<Step> HevcScenario() {
   return steps;
 }
 
+// FairPlay SAMPLE-AES in MPEG-2 TS (Axinom's "HLS H264 SingleKey"), as
+// Safari's Media Source plays it through AVStreamDataParser and as Parc's TS
+// parser hands it to the renderer: Annex B access units and ADTS frames as
+// carried, each marked with the mpts key ID (kTransportStreamKeyId), the AAC
+// config from the PMT's audio setup. The renderer must give the decryptor
+// AVStreamDataParser's formats (zavc, zaac with TransportStreamEncryptionInitData)
+// and bytes (slices unescaped), and play with the key an mpts request gets.
+std::vector<Step> TransportStreamScenario() {
+  World* w = g_world;
+  auto video = std::make_shared<Media>();
+  auto audio = std::make_shared<Media>();
+  auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
+  auto acquired = std::make_shared<bool>(false);
+  auto frames = std::make_shared<int64_t>(0);
+  const std::vector<uint8_t> ts_key(std::begin(fp::kTransportStreamKeyId), std::end(fp::kTransportStreamKeyId) - 1);
+  // What Parc's TS parser reports, AVStreamDataParser's key specifier bytes.
+  auto init_data = [](uint32_t type, uint32_t media) {
+    return Bytes(Format("{\n  \"cont\" : \"mpts\",\n  \"codc\" : %u,\n  \"mtyp\" : %u\n}", type, media));
+  };
+  const std::vector<uint8_t> video_init = init_data(fp::FourCC('z', 'a', 'v', 'c'), fp::FourCC('v', 'i', 'd', 'e'));
+  const std::vector<uint8_t> audio_init = init_data(fp::FourCC('z', 'a', 'a', 'c'), fp::FourCC('s', 'o', 'u', 'n'));
+  std::vector<Step> steps;
+  steps.push_back(Section("MPEG-2 TS with FairPlay SAMPLE-AES (H.264 zavc, AAC zaac), mpts init data"));
+  steps.push_back([=](Done done) {
+    std::string error;
+    std::vector<NSData*> video_segments, audio_segments;
+    for (int i = 1; i <= 3 && error.empty(); ++i) {
+      NSData* v = CachedGet([kTsBase stringByAppendingFormat:@"video-H264-360-800k_%d.ts", i], 0, 0, &error);
+      NSData* a = v ? CachedGet([kTsBase stringByAppendingFormat:@"audio-en_%d.ts", i], 0, 0, &error) : nil;
+      ft::TsElementaryStream vs, as;
+      if (!v || !a || !ft::ParseTransportStream(Bytes(v), true, &vs, &error) ||
+          !ft::ParseTransportStream(Bytes(a), false, &as, &error)) {
+        if (error.empty()) error = Format("segment %d has no samples", i);
+        break;
+      }
+      video_segments.push_back(v);
+      audio_segments.push_back(a);
+      for (auto* stream : {&vs, &as}) {
+        for (ft::Sample& sample : stream->samples) {
+          sample.decrypt = fp::DecryptInfo{fp::EncryptionScheme::kCbcs, ts_key, std::vector<uint8_t>(16, 0), {}, {}};
+        }
+      }
+      if (i == 1) {
+        audio->info.codec_config = ft::TsAudioSetupConfig(as.descriptors);
+        Check(vs.stream_type == 0xdb && as.stream_type == 0xcf && !audio->info.codec_config.empty(),
+              "ts: the vector's video and audio are SAMPLE-AES streams (0xdb, 0xcf), audio with its setup",
+              Format("0x%02x 0x%02x, setup %s", vs.stream_type, as.stream_type,
+                     ft::Hex(audio->info.codec_config).c_str()));
+      }
+      video->segments.push_back(std::move(vs.samples));
+      audio->segments.push_back(std::move(as.samples));
+    }
+    Check(error.empty() && video->segments.size() == 3, "ts: three segments of each stream parse", error);
+    if (!error.empty()) {
+      done();
+      return;
+    }
+    video->info.timescale = audio->info.timescale = 90000;
+    video->info.is_video = true;
+    video->info.original_format = fp::FourCC('a', 'v', 'c', '1');
+    video->info.width = 640;
+    video->info.height = 360;
+    audio->info.original_format = fp::FourCC('m', 'p', '4', 'a');
+    audio->info.sample_rate = 44100;
+    audio->info.channels = 2;
+
+    // Apple's own parse of the first segments is the reference.
+    PCTsReference* rv = [PCTsReference parse:video_segments[0]];
+    PCTsReference* ra = [PCTsReference parse:audio_segments[0]];
+    Check(Bytes(rv.keyInitData) == video_init && Bytes(ra.keyInitData) == audio_init,
+          "ts: AVStreamDataParser's init data is the mpts JSON Parc's TS parser reports",
+          std::string((const char*)rv.keyInitData.bytes, rv.keyInitData.length));
+    bool types = rv.types.count && ra.types.count;
+    for (NSNumber* type in rv.types) types &= type.unsignedIntValue == fp::FourCC('z', 'a', 'v', 'c');
+    for (NSNumber* type in ra.types) types &= type.unsignedIntValue == fp::FourCC('z', 'a', 'a', 'c');
+    Check(types &&
+              Bytes(rv.extensions.firstObject) ==
+                  fp::TransportStreamEncryptionInitData(fp::FourCC('z', 'a', 'v', 'c'), fp::FourCC('v', 'i', 'd', 'e')) &&
+              Bytes(ra.extensions.firstObject) ==
+                  fp::TransportStreamEncryptionInitData(fp::FourCC('z', 'a', 'a', 'c'), fp::FourCC('s', 'o', 'u', 'n')),
+          "ts: AVStreamDataParser's formats are zavc and zaac with the TransportStreamEncryptionInitData the core builds");
+    // AVStreamDataParser emits a segment's last access unit when the append
+    // ends, and unescapes every NAL unit of that one; the next segment's AUD
+    // ends it in Parc's parser, which keeps the rule of the others.
+    size_t same = 0, escaped = 0;
+    const auto& units = video->segments[0];
+    for (size_t i = 0; i + 1 < units.size() && i < rv.samples.count; ++i) {
+      std::vector<uint8_t> unit;
+      fp::ConvertAnnexBToLengthPrefixed(units[i].data.data(), units[i].data.size(), nullptr, &unit);
+      escaped += unit.size();
+      fp::UnescapeSampleAesSlices(&unit);
+      escaped -= unit.size();
+      if (unit == Bytes(rv.samples[i])) {
+        ++same;
+      } else {
+        Log("ts: access unit %zu: %zu bytes, AVStreamDataParser %lu", i, unit.size(),
+            (unsigned long)rv.samples[i].length);
+      }
+    }
+    Check(same + 1 == units.size() && units.size() == rv.samples.count && escaped > 0,
+          "ts: every access unit but the segment's last, reframed and its slices unescaped, is AVStreamDataParser's sample",
+          Format("%zu of %zu (parser %lu), %zu emulation-prevention bytes removed", same, units.size(),
+                 (unsigned long)rv.samples.count, escaped));
+    std::vector<uint8_t> ours, apple;
+    for (const ft::Sample& frame : audio->segments[0]) {
+      size_t header = fp::AdtsHeaderSize(frame.data.data(), frame.data.size());
+      ours.insert(ours.end(), frame.data.begin() + header, frame.data.end());
+    }
+    for (NSData* sample in ra.samples) {
+      const uint8_t* bytes = static_cast<const uint8_t*>(sample.bytes);
+      apple.insert(apple.end(), bytes, bytes + sample.length);
+    }
+    Check(!ours.empty() && ours == apple, "ts: the ADTS frames' payloads are AVStreamDataParser's audio bytes",
+          Format("%zu vs %zu bytes", ours.size(), apple.size()));
+
+    // The other SAMPLE-AES audio types, as AVStreamDataParser names them
+    // (AC-3, E-AC-3, HE-AAC and HE-AACv2 streams of crafted TS files on macOS
+    // 27.2).
+    struct Other {
+      const Media* media;
+      const char* type;
+    };
+    for (Other other : {Other{&w->ac3, "zac3"}, Other{&w->eac3, "zec3"}, Other{&w->he_aac, "zach"},
+                        Other{&w->he_aac_v2, "zacp"}}) {
+      struct NullClient : fp::FairPlayRendererClient {
+        void OnNeedData(fp::StreamId) override {}
+        void OnWaitingForKey() override {}
+        void OnEnded() override {}
+        void OnError(fp::RendererError, const std::string&) override {}
+        void OnVideoNaturalSizeChange(int32_t, int32_t) override {}
+        void OnBufferingStateChange(bool) override {}
+      } client;
+      fp::FairPlayRenderer renderer(&client, [](std::function<void()>) {});
+      fp::AudioConfig ac = AudioConfigFor(other.media->info, Framing::kChromium, true);
+      ac.encryption.scheme = fp::EncryptionScheme::kCbcs;
+      std::vector<uint8_t> storage;
+      fp::DecryptInfo unused;
+      ft::Sample clear = other.media->segments[0][0];
+      clear.decrypt.reset();
+      fp::EncodedSample sample = ft::ChromiumBuffer(other.media->info, clear, &storage, &unused);
+      sample.decrypt = fp::DecryptInfo{fp::EncryptionScheme::kCbcs, ts_key, std::vector<uint8_t>(16, 0), {}, {}};
+      fp::Result result = renderer.Initialize(std::nullopt, ac);
+      fp::EnqueueResult enqueued = result.ok() ? renderer.Enqueue(fp::StreamType::kAudio, sample)
+                                               : fp::EnqueueResult::kRejected;
+      const std::string got = ft::FourCCString(renderer.GetStatus().audio_protected_format);
+      Check(enqueued == fp::EnqueueResult::kWaitingForKey && got == other.type,
+            std::string("ts: a SAMPLE-AES ") + other.type + " sample gets AVStreamDataParser's format type",
+            Format("Initialize %s, enqueue %d, protected '%s', config %s", result.ok() ? "ok" : result.message.c_str(),
+                   int(enqueued), got.c_str(), ft::Hex(ac.extra_data).c_str()));
+    }
+
+    *keys = MakeKeySystem("ts", kTsToken);
+    fp::SetSpcContentIdentifierForTesting((*keys)->cdm->impl(), Bytes(std::string(kTsKeyGuid)));
+    Check(!(*keys)->cdm->HasSessionForInitData(fp::InitDataType::kMpts, video_init),
+          "ts: no session answers the mpts init data before generateRequest");
+    AcquireLicense(keys->get(), fp::InitDataType::kMpts, video_init, "ts mpts",
+                   [=](bool ok) {
+                     *acquired = ok;
+                     Check((*keys)->cdm->HasSessionForInitData(fp::InitDataType::kMpts, audio_init),
+                           "ts: the mpts session answers either track's init data, so Safari's encrypted "
+                           "event is skipped for it (sessionForKeyIDs(mptsKeyIDs))");
+                     done();
+                   },
+                   {ts_key});
+  });
+  steps.push_back([=](Done done) {
+    if (!*acquired) {
+      done();
+      return;
+    }
+    auto adjust = [](std::optional<fp::VideoConfig>* vc, std::optional<fp::AudioConfig>* ac) {
+      // Parc's TS parser: Annex B, no record, the setup data's AAC config, ADTS.
+      (*vc)->format = fp::BitstreamFormat::kAnnexB;
+      (*vc)->extra_data.clear();
+      (*vc)->encryption = fp::TrackEncryption{fp::EncryptionScheme::kCbcs, {}, {}, 0, {}};
+      (*ac)->framing = fp::AudioFraming::kADTS;
+      (*ac)->encryption = fp::TrackEncryption{fp::EncryptionScheme::kCbcs, {}, {}, 0, {}};
+    };
+    w->player = std::make_shared<Player>("ts", Framing::kIso, video.get(), audio.get(), (*keys)->cdm.get(),
+                                         w->host, false, false, adjust);
+    StartAt(w->player, video.get(), audio.get(), 0, 3, 0, 1, true)(done);
+  });
+  steps.push_back([=](Done done) {
+    if (!*acquired) {
+      done();
+      return;
+    }
+    Run(w->player, 6, 1, "ts play 6s")(done);
+  });
+  steps.push_back([=](Done done) {
+    if (!*acquired) {
+      done();
+      return;
+    }
+    Metrics(w->player, "ts", 100, frames)(done);
+  });
+  steps.push_back([=](Done done) {
+    if (*acquired) {
+      fp::RendererStatus status = w->player->renderer().GetStatus();
+      Check(status.protected_enqueued > 200 && w->player->errors.empty() &&
+                ft::FourCCString(status.video_protected_format) == "zavc" &&
+                ft::FourCCString(status.audio_protected_format) == "zaac",
+            "ts: protected video and audio samples were enqueued as zavc and zaac and decrypted without errors",
+            Format("%llu protected, '%s' '%s'", status.protected_enqueued,
+                   ft::FourCCString(status.video_protected_format).c_str(),
+                   ft::FourCCString(status.audio_protected_format).c_str()));
+    }
+    w->player.reset();
+    if (*keys) w->retired.push_back(std::move(*keys));
+    done();
+  });
+  return steps;
+}
+
 // An hev1 stream whose hvcC has no parameter sets: the VPS/SPS/PPS move into
 // every keyframe, as such streams carry them.
 Media InBandParameterSetsOnly(const Media& media) {
@@ -5542,6 +5816,7 @@ void RunAll() {
   add("MultiKeyScenario(true)", MultiKeyScenario(true));
   add("MultiKeyScenario(false)", MultiKeyScenario(false));
   add("HevcScenario()", HevcScenario());
+  add("TransportStreamScenario()", TransportStreamScenario());
   // hev1 decodes only when presented as hvc1, so its protected form is qhvc
   // (Apple's own parser would label the entry qhev).
   add("CodecScenario(hev1 (HEVC), &w->hev1, nullptr, qhvc)", CodecScenario("hev1 (HEVC)", &w->hev1, nullptr, "qhvc"));
