@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **85**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **87**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -160,8 +160,8 @@ Chrome's video remoting went through the opener: **fixed** 17e9e829 (a cast
 already running stays with the tab that started it until it ends, as
 Chromium ties routes to a tab; whether the TV keeps playing when the
 starting frame closes mid-cast is **unchecked**). A move into a document without a browsing context
-(`createHTMLDocument`) reloads and fails where Safari keeps the player:
-**in progress** (HME-1d; unchecked against WebKit's `dom/` files beyond
+(`createHTMLDocument`) reloaded and failed where Safari keeps the player:
+**fixed** 22ce9758 (HME-1d; unchecked against WebKit's `dom/` files beyond
 `DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
 video moved from a Chrome-identity document already latches Safari's muted
 rule at connection (muted state follows the current document, not the
@@ -495,13 +495,13 @@ controls, Remote Playback opening AirPlay, and
 `webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint, computed for
 the always-dark placard and scrim with at least 4.5:1, recolouring live:
 f339440b; the narrow-video overflow menu item on a light page **in
-progress**). A ManagedMediaSource element doesn't switch to its HLS
-`<source>` alternative when a target is picked, as Safari does: **in progress**
-(AIRPLAY-3). Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
+progress**). A ManagedMediaSource element didn't switch to its HLS
+`<source>` alternative when a target is picked, as Safari does: **fixed**
+6bc1c789. Clear `src=` files didn't AirPlay (Safari plays them through AVPlayer):
 **fixed** 1c03b194 (they move to AVPlayer and back seamlessly; Safari never
-AirPlays Media Source, so neither does Parc). The user's chosen audio track
-doesn't carry to the TV, and a live stream's `currentTime` resets on the
-switch: **in progress** (AIRPLAY-4b). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
+AirPlays Media Source, so neither does Parc). The user's chosen audio and video
+tracks now carry to the TV: **fixed** 0786af49 (live-stream `currentTime`
+continuity: see the AIRPLAY-4b report). Nothing AirPlayed to a real Apple TV yet. A streaming source's open connection may count against the
 cache's limits (**unchecked**).
 
 **HME-27. Error and rejection messages.** Chromium builds `MediaError.message`
@@ -657,7 +657,7 @@ is closed too. A late track needing the FairPlay renderer while RendererImpl pla
 restarted: **fixed** 098f5290; a turned-off first track keeps decoding silently (a
 little CPU, no audible effect: **left**); sync at rates other than 1 is
 within 30 ms by reasoning only (**unchecked**). Video track switches on FairPlay
-freeze the picture: **in progress** with the late-key handoff (FP-RESTART).
+froze the picture: **fixed** e2556dc9.
 `readyState` returned straight to
 `HAVE_ENOUGH_DATA` after the new track's data arrived: **fixed** f50e1aab.
 
