@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **91**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **92**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -505,8 +505,8 @@ devices needs Apple-only entitlements; Josh agreed). Josh approved the Mini
 controls, Remote Playback opening AirPlay, and
 `webkitWirelessVideoPlaybackDisabled`: **fixed** e82baa07 (Space tint, computed for
 the always-dark placard and scrim with at least 4.5:1, recolouring live:
-f339440b; the narrow-video overflow menu item on a light page **in
-progress**). A ManagedMediaSource element didn't switch to its HLS
+f339440b; the overflow menu item takes the tint for its own surface:
+95cdb568). A ManagedMediaSource element didn't switch to its HLS
 `<source>` alternative when a target is picked, as Safari does: **fixed**
 6bc1c789, with Safari's rule that a managed source stays closed until
 `disableRemotePlayback` or a non-blob `<source>` is present (a Safari-identity
