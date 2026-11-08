@@ -40,7 +40,7 @@ Unchecked claims are labelled **unchecked**.
 ## Scoreboard (13:45, November 7)
 
 Reading: all nine files, 20,592 lines, done (reading log below). Fix jobs on
-main: **80**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
+main: **81**. Being fixed now: **7** (casting follow-ups, moved-video ownership, late
 audio track joining the running player, PCM audio in MP4, native HLS key requests, a worker's Media Source dying, rewinding plain files). Queued:
 **about 15**. Waiting on Josh: four differences no user can perceive (proposed
 leave), two where matching Safari is worse (range-less servers: keep Chrome's;
@@ -145,17 +145,17 @@ it for clear Media Source, plain files and native HLS: **fixed** 2e206083.
 A moved video with MediaKeys attached reloaded when its CDM's frame went,
 and FairPlay and native HLS tab mute acted from the opener's tab: **fixed**
 00634ec8 (CDM ids resolve across frames of the creating renderer process
-only; mute follows the new frame with no gap). Still different, all
-user-felt and **in progress** (HME-1c part 2c): a mid-segment native
-HLS load or a non-range plain file can fail if the old frame dies during it;
-a video moved while in picture in picture stays bound to its old frame;
-MediaStream (WebRTC) videos aren't re-homed. The page's own cast button and
+only; mute follows the new frame with no gap). A mid-segment native HLS load or a non-range plain file failing when the old
+frame died, a video moved while in picture in picture staying bound to its
+old frame, and MediaStream (WebRTC) videos reloading: **fixed** 5c7cbd9c (an
+HLS resource without a strong ETag or Last-Modified isn't resumed, since a
+live playlist can change, and fails as before: **left**). The page's own cast button and
 Chrome's video remoting went through the opener: **fixed** 17e9e829 (a cast
 already running stays with the tab that started it until it ends, as
 Chromium ties routes to a tab; whether the TV keeps playing when the
 starting frame closes mid-cast is **unchecked**). A move into a document without a browsing context
 (`createHTMLDocument`) reloads and fails where Safari keeps the player:
-**queued** (HME-1d; unchecked against WebKit's `dom/` files beyond
+**in progress** (HME-1d; unchecked against WebKit's `dom/` files beyond
 `DOMImplementation.cpp:144`, `Document.cpp:2740`). A script-built muted
 video moved from a Chrome-identity document already latches Safari's muted
 rule at connection (muted state follows the current document, not the
