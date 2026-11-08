@@ -35,6 +35,11 @@ static NSSlider* Slider(NSView* view) {
   }
   return nil;
 }
+static BOOL Near(NSRect a, NSRect b) {
+  return fabs(NSMinX(a) - NSMinX(b)) < 0.01 && fabs(NSMinY(a) - NSMinY(b)) < 0.01 &&
+         fabs(NSWidth(a) - NSWidth(b)) < 0.01 &&
+         fabs(NSHeight(a) - NSHeight(b)) < 0.01;
+}
 static void PlaceUnderCursor(NSPanel* panel) {
   NSPoint mouse = [NSEvent mouseLocation];
   NSRect frame = panel.frame;
@@ -143,6 +148,60 @@ int main(void) {
     [presenter.panel setContentSize:NSMakeSize(640, 360)];
     EXPECT(NSWidth(video.bounds) == 640);
     EXPECT(changes > 0);
+    // Captions sit over the video, under the chrome, at their page bounds
+    // (top-left origin), follow resizes and never take the pointer.
+    NSView* content = presenter.panel.contentView;
+    NSView* captions = nil;
+    for (NSView* child in content.subviews) {
+      if ([NSStringFromClass(child.class) isEqual:@"PCVideoPiPCaptions"]) {
+        captions = child;
+      }
+    }
+    EXPECT(captions != nil);
+    EXPECT(captions.hidden);
+    NSImage* cue = [NSImage imageWithSize:NSMakeSize(512, 36)
+                                  flipped:NO
+                           drawingHandler:^BOOL(NSRect rect) {
+                             return YES;
+                           }];
+    [presenter setControlsVisible:NO];
+    [presenter setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+    EXPECT(!captions.hidden);
+    EXPECT(Near(captions.frame, NSMakeRect(64, 36, 512, 36)));
+    NSUInteger captionsIndex = [content.subviews indexOfObject:captions];
+    EXPECT(captionsIndex > [content.subviews indexOfObject:video]);
+    EXPECT(captionsIndex == content.subviews.count - 2);
+    NSView* hit = [content hitTest:NSMakePoint(100, 40)];
+    EXPECT(hit != nil && hit != captions);
+    [captions displayIfNeeded];
+    EXPECT(captions.layer.contents == cue);
+    [presenter.panel setContentSize:NSMakeSize(320, 180)];
+    EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
+    // Chrome without a scrubber (no duration) leaves cues in place; a shown
+    // scrubber lifts them clear, and they drop back when it hides.
+    [presenter setControlsVisible:YES];
+    Hover(presenter);
+    EXPECT(slider.hidden);
+    EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
+    [presenter setPosition:5 duration:20];
+    EXPECT(!slider.hidden);
+    EXPECT(NSMinY(captions.frame) >= NSMaxY(slider.frame));
+    EXPECT(NSWidth(captions.frame) == 256);
+    [presenter setControlsVisible:NO];
+    EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
+    [presenter setControlsVisible:YES];
+    [presenter setPosition:0 duration:0];
+    // Page bounds outside the window are clipped to it; huge ones too.
+    [presenter setCaptions:cue bounds:NSMakeRect(0.5, 0.9, 0.8, 0.2)];
+    EXPECT(Near(captions.frame, NSMakeRect(160, 0, 160, 18)));
+    [presenter setCaptions:cue bounds:NSMakeRect(1e308, -1e308, 1e308, 1e308)];
+    EXPECT(captions.hidden);
+    [presenter setCaptions:cue bounds:NSMakeRect(NAN, 0.8, 0.8, 0.1)];
+    EXPECT(captions.hidden);
+    [presenter setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+    [presenter setCaptions:nil bounds:NSZeroRect];
+    EXPECT(captions.hidden);
+    [presenter.panel setContentSize:NSMakeSize(640, 360)];
     Hover(presenter);
     [presenter setAction:PCVideoPiPPlayPause visible:YES];
     [Button(presenter.panel.contentView, PCVideoPiPPlayPause) performClick:nil];

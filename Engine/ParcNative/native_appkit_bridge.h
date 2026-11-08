@@ -41,6 +41,9 @@ NS_SWIFT_UI_ACTOR
 - (void)setSourceTitle:(NSString*)title;
 - (void)setFavicon:(nullable NSImage*)image;
 - (void)setPosition:(double)position duration:(double)duration;
+// The video's displayed cues at `bounds`, a fraction of the window with its
+// origin at the top left; nil removes them.
+- (void)setCaptions:(nullable NSImage*)image bounds:(NSRect)bounds;
 @end
 
 @class PCNativePage;

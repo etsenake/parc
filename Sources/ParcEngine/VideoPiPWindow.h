@@ -30,6 +30,7 @@ NS_SWIFT_UI_ACTOR
 - (void)setControlsVisible:(BOOL)visible;
 - (void)setSourceTitle:(NSString*)title;
 - (void)setFavicon:(nullable NSImage*)image;
+- (void)setCaptions:(nullable NSImage*)image bounds:(NSRect)bounds;
 - (void)setPosition:(double)position duration:(double)duration;
 - (void)setPosition:(double)position
            duration:(double)duration

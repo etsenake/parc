@@ -137,6 +137,29 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 }
 @end
 
+// Cues sit between the video and the chrome and never take the pointer, so
+// clicks still drag the window.
+@interface PCVideoPiPCaptions : NSView
+@property(nonatomic) NSImage* image;
+@end
+@implementation PCVideoPiPCaptions
+@synthesize image = _image;
+- (void)setImage:(NSImage*)image {
+  _image = image;
+  self.needsDisplay = YES;
+}
+- (BOOL)wantsUpdateLayer {
+  return YES;
+}
+- (void)updateLayer {
+  self.layer.contents = _image;
+}
+- (NSView*)hitTest:(NSPoint)point {
+  (void)point;
+  return nil;
+}
+@end
+
 @interface PCVideoPiPContent : NSView
 @property(nonatomic, copy) dispatch_block_t changed;
 @property(nonatomic, copy) void (^hoverChanged)(BOOL hovering);
@@ -205,6 +228,9 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   NSPanel* _panel;
   BOOL _shown;
   NSView* _videoView;
+  PCVideoPiPCaptions* _captions;
+  NSRect _captionBounds;
+  BOOL _captionsLiftedForScrubber;
   NSView* _chrome;
   NSButton* _backButton;
   NSButton* _minimizeButton;
@@ -304,6 +330,11 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _videoView.layer.masksToBounds = YES;
   _videoView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [content addSubview:_videoView];
+
+  _captions = [[PCVideoPiPCaptions alloc] initWithFrame:NSZeroRect];
+  _captions.wantsLayer = YES;
+  _captions.hidden = YES;
+  [content addSubview:_captions];
 
   _chrome = [[NSView alloc] initWithFrame:content.bounds];
   _chrome.wantsLayer = YES;
@@ -536,6 +567,10 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   const BOOL show =
       _controlsEnabled && _hovering && !_invalidated && _mediaDuration > 0;
   _position.hidden = !show;
+  if (_captionsLiftedForScrubber != !_position.hiddenOrHasHiddenAncestor) {
+    _captionsLiftedForScrubber = !_captionsLiftedForScrubber;
+    [self layoutCaptions];
+  }
 }
 - (double)currentMediaPosition {
   if (_mediaDuration <= 0 || !isfinite(_mediaDuration)) {
@@ -710,6 +745,36 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 - (void)setFavicon:(NSImage*)image {
   _favicon.image = image;
 }
+- (void)setCaptions:(NSImage*)image bounds:(NSRect)bounds {
+  // The page supplies the bounds, so they stay within the window.
+  const BOOL finite = isfinite(NSMinX(bounds)) && isfinite(NSMinY(bounds)) &&
+                      isfinite(NSWidth(bounds)) && isfinite(NSHeight(bounds));
+  _captionBounds =
+      finite ? NSIntersectionRect(bounds, NSMakeRect(0, 0, 1, 1)) : NSZeroRect;
+  const BOOL valid = image && !NSIsEmptyRect(_captionBounds);
+  _captions.image = valid ? image : nil;
+  _captions.hidden = !valid;
+  [self layoutCaptions];
+}
+- (void)layoutCaptions {
+  if (_captions.hidden) {
+    return;
+  }
+  // Bounds come from the page with the origin at the top left.
+  const NSRect content = _panel.contentView.bounds;
+  NSRect frame = NSMakeRect(NSWidth(content) * NSMinX(_captionBounds),
+                            NSHeight(content) * (1 - NSMaxY(_captionBounds)),
+                            NSWidth(content) * NSWidth(_captionBounds),
+                            NSHeight(content) * NSHeight(_captionBounds));
+  // A shown scrubber would cover bottom cues; they rise above it meanwhile.
+  if (!_position.hiddenOrHasHiddenAncestor) {
+    [_chrome layoutSubtreeIfNeeded];
+    const CGFloat floor = NSMaxY(_position.frame) + 6;
+    frame.origin.y = fmin(fmax(NSMinY(frame), floor),
+                          fmax(0, NSHeight(content) - NSHeight(frame)));
+  }
+  _captions.frame = frame;
+}
 - (void)setPosition:(double)position duration:(double)duration {
   [self setPosition:position
            duration:duration
@@ -733,6 +798,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 }
 - (void)windowDidResize:(NSNotification*)note {
   (void)note;
+  [self layoutCaptions];
   [self notifyChanged];
 }
 - (void)windowDidMove:(NSNotification*)note {

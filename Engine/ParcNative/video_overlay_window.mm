@@ -32,6 +32,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "services/media_session/public/cpp/media_image_manager.h"
+#include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -43,6 +44,7 @@
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/dip_util.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
@@ -426,6 +428,14 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   }
   void SetPlaybackControlsVisibility(bool visible) override {
     [presenter_ setControlsVisible:visible];
+  }
+  void SetCaptions(const SkBitmap& captions,
+                   const gfx::RectF& bounds) override {
+    // The renderer paints at most 8192 pixels a side for the window.
+    const bool shown = !captions.drawsNothing() && captions.width() <= 8192 &&
+                       captions.height() <= 8192;
+    [presenter_ setCaptions:shown ? skia::SkBitmapToNSImage(captions) : nil
+                     bounds:bounds.ToCGRect()];
   }
   void SetImmersiveVideoOptions(const content::ImmersiveOptions&) override {
     // Chrome macOS does not enable immersive playback. Native entry

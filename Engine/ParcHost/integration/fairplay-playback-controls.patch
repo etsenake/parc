@@ -266,7 +266,16 @@
  #include <set>
  #include <utility>
  
-@@ -327,6 +329,7 @@
+@@ -22,6 +24,8 @@
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/common/content_client.h"
+ #include "media/base/media_switches.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/gfx/geometry/rect_f.h"
+ 
+ namespace content {
+ 
+@@ -327,6 +331,7 @@
    }
  
    if (active_session_) {
@@ -274,7 +283,19 @@
      active_session_->Disconnect();
      pip_session_media_position_ = std::nullopt;
    }
-@@ -389,6 +392,7 @@
+@@ -352,6 +357,11 @@
+     window_->SetImmersiveVideoOptions(immersive_options.value());
+   }
+ 
++  // A reused window may still show the previous session's captions.
++  if (window_) {
++    window_->SetCaptions(SkBitmap(), gfx::RectF());
++  }
++
+   // If the window is closed by the system, then the picture in picture session
+   // will end. The renderer must call `StartSession()` again.
+   EmbedSurface(surface_id, natural_size);
+@@ -389,6 +399,7 @@
    if (!active_session_ || active_session_->service() != service)
      return;
  
@@ -282,10 +303,27 @@
    active_session_->Shutdown();
    active_session_ = nullptr;
    pip_session_media_position_ = std::nullopt;
-@@ -476,14 +480,32 @@
-   return MediaSessionImpl::Get(web_contents())->GetMuteStatus();
+@@ -412,6 +423,14 @@
+   UpdateMediaPosition();
  }
  
++void VideoPictureInPictureWindowControllerImpl::SetCaptions(
++    const SkBitmap& captions,
++    const gfx::RectF& bounds) {
++  if (window_) {
++    window_->SetCaptions(captions, bounds);
++  }
++}
++
+ void VideoPictureInPictureWindowControllerImpl::SetPlaybackControlsVisibility(
+     bool is_visible) {
+   always_show_play_pause_button_ = false;
+@@ -474,16 +493,34 @@
+ 
+ bool VideoPictureInPictureWindowControllerImpl::GetMuteStatus() {
+   return MediaSessionImpl::Get(web_contents())->GetMuteStatus();
++}
++
 +bool VideoPictureInPictureWindowControllerImpl::ParcPresentsSafariIdentity() const {
 +  return active_session_ && active_session_->player_id() &&
 +         parc::fairplay::FramePresentsSafariIdentity(RenderFrameHost::FromID(
@@ -301,8 +339,8 @@
 +      scrubbing ? media_session::mojom::PlaybackControlsAction::kBeginScrubbing
 +                : media_session::mojom::PlaybackControlsAction::kEndScrubbing,
 +      base::TimeDelta());
-+}
-+
+ }
+ 
  void VideoPictureInPictureWindowControllerImpl::SeekTo(base::TimeDelta time) {
    // Default to the Media Session handler if it's available.
 -  if (media_session_action_seek_to_handled_) {
@@ -317,7 +355,7 @@
  }
  
  void VideoPictureInPictureWindowControllerImpl::MediaSessionInfoChanged(
-@@ -676,6 +698,7 @@
+@@ -676,6 +713,7 @@
          /*triggered_by_user=*/false);
    }
  
@@ -337,6 +375,16 @@
    void SeekTo(base::TimeDelta time) override;
    void SetOnWindowCreatedNotifyObserversCallback(
        base::OnceClosure on_window_created_notify_observers_callback) override;
+@@ -130,6 +133,9 @@
+ 
+   void SetMediaPosition(const media_session::MediaPosition& media_position);
+ 
++  // Parc: shows the session video's captions in the window.
++  void SetCaptions(const SkBitmap& captions, const gfx::RectF& bounds);
++
+   // Called to show or hide the playback controls.
+   void SetPlaybackControlsVisibility(bool is_visible);
+ 
 --- a/content/public/browser/video_picture_in_picture_window_controller.h
 +++ b/content/public/browser/video_picture_in_picture_window_controller.h
 @@ -66,6 +66,7 @@

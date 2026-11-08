@@ -4146,13 +4146,10 @@
    // `track.label()` and `track.language()` may contains invalid UTF-8
    // sequences, and AtomicString::FromUtf8() doesn't accept invalid sequences.
    switch (track.type()) {
-@@ -3676,12 +5154,166 @@
-       }
-       break;
-     }
-+  }
-+}
-+
+@@ -3679,9 +5157,163 @@
+   }
+ }
+ 
 +void HTMLMediaElement::ParcSetInbandTextTracks(
 +    const std::vector<media::ParcInbandTextTrack>& tracks,
 +    media::ParcInbandTextTrackModeCB set_mode) {
@@ -4293,9 +4290,9 @@
 +  wtf_size_t index = text_tracks_when_resource_selection_began_.Find(track);
 +  if (index != kNotFound) {
 +    text_tracks_when_resource_selection_began_.EraseAt(index);
-   }
- }
- 
++  }
++}
++
  void HTMLMediaElement::ForgetResourceSpecificTracks() {
    audio_tracks_->RemoveAll();
    video_tracks_->RemoveAll();
@@ -4340,21 +4337,21 @@
          goto checkAgain;
      }
  
-@@ -3939,6 +5582,14 @@
-   // We should only consider a <source> element when there is neither a
-   // srcObject nor a src attribute at all.
-   if (FastHasAttribute(html_names::kSrcAttr) || HasSrcObject()) {
-+    return;
-+  }
-+
+@@ -3942,6 +5585,14 @@
+     return;
+   }
+ 
 +  // Parc: a lazily deferred load waits at NETWORK_NO_SOURCE under Safari's
 +  // identity (SelectMediaResource), not at the step 21 wait below; it picks
 +  // the new child when it resumes, as from NETWORK_IDLE elsewhere.
 +  if (IsLazyLoadDeferred() && network_state_ == kNetworkNoSource &&
 +      PresentsParcSafariIdentity()) {
-     return;
-   }
- 
++    return;
++  }
++
+   // 4.8.8 - If a source element is inserted as a child of a media element that
+   // has no src attribute and whose networkState has the value NETWORK_EMPTY,
+   // the user agent must invoke the media element's resource selection
 @@ -4044,19 +5695,45 @@
    // 4.8.12.9 steps 12-14. Needed if no ReadyState change is associated with the
    // seek.
@@ -4540,12 +4537,12 @@
    }
  
    {
-@@ -4377,7 +6118,21 @@
+@@ -4377,6 +6118,20 @@
  
    StopPeriodicTimers();
    load_timer_.Stop();
 +  parc_prepare_to_play_after_selection_ = false;
- 
++
 +  // Parc: WebKit's clearMediaPlayer tells availability listeners the element
 +  // has nothing to play to a target, and it plays to none.
 +  if (PresentsParcSafariIdentity()) {
@@ -4558,10 +4555,9 @@
 +    }
 +    ParcRemoteAvailabilityChanged();
 +  }
-+
+ 
    pending_action_flags_ = 0;
    load_state_ = kWaitingForSource;
- 
 @@ -4387,6 +6142,33 @@
  
  void HTMLMediaElement::ContextLifecycleStateChanged(
@@ -4596,10 +4592,13 @@
    if (state == mojom::blink::FrameLifecycleState::kFrozen) {
      if (playing_) {
        PausePlayback(WebMediaPlayer::PauseReason::kFrameFrozen);
-@@ -4397,6 +6179,50 @@
-   }
- }
- 
+@@ -4394,7 +6176,51 @@
+     if (web_media_player_) {
+       web_media_player_->OnFrozen();
+     }
++  }
++}
++
 +void HTMLMediaElement::ParcResumeAfterBackForwardCacheIfAllowed() {
 +  // Parc: WebKit's resume() plays on only once its page can start media
 +  // (MediaElementSession::pageAllowsPlaybackAfterResuming), which WebKit
@@ -4640,13 +4639,11 @@
 +          MakeGarbageCollected<ParcPageVisibilityObserver>(this);
 +    }
 +    parc_page_visibility_observer_->SetPage(page);
-+  }
+   }
 +  web_media_player_->ParcSetPageHidden(is_page_hidden);
-+}
-+
- void HTMLMediaElement::ContextDestroyed() {
-   DVLOG(3) << "contextDestroyed(" << static_cast<void*>(this) << ")";
+ }
  
+ void HTMLMediaElement::ContextDestroyed() {
 @@ -4409,6 +6235,8 @@
    ClearMediaPlayer();
    ready_state_ = kHaveNothing;
@@ -4667,7 +4664,30 @@
  
    UpdateVideoVisibilityTracker();
  }
-@@ -4839,12 +6671,15 @@
+@@ -4581,6 +6413,22 @@
+ 
+   EnsureTextTrackContainer().UpdateDisplay(
+       *this, TextTrackContainer::kDidNotStartExposingControls);
++  // Parc: Safari's picture in picture shows the cues (WebKit
++  // MediaControlTextTrackContainerElement::updateTextTrackRepresentationIfNeeded).
++  if (PictureInPictureController::IsElementInPictureInPicture(this)) {
++    PictureInPictureController::From(GetDocument()).OnTextTrackDisplayChanged();
++  }
++}
++
++SkBitmap HTMLMediaElement::PaintTextTracksForPictureInPicture(
++    const gfx::SizeF& window_size,
++    float device_scale_factor,
++    gfx::RectF& bounds) {
++  if (!IsHTMLVideoElement() || !TextTracksVisible()) {
++    return SkBitmap();
++  }
++  return EnsureTextTrackContainer().PaintForPictureInPicture(
++      window_size, device_scale_factor, bounds);
+ }
+ 
+ 
+@@ -4839,12 +6687,15 @@
    visitor->Trace(removed_from_document_timer_);
    visitor->Trace(played_time_ranges_);
    visitor->Trace(async_event_queue_);
@@ -4683,7 +4703,7 @@
    visitor->Trace(video_tracks_);
    visitor->Trace(cue_timeline_);
    visitor->Trace(text_tracks_);
-@@ -4865,6 +6700,7 @@
+@@ -4865,6 +6716,7 @@
    visitor->Trace(media_player_receiver_set_);
    visitor->Trace(opener_document_);
    visitor->Trace(opener_context_observer_);
@@ -4691,7 +4711,7 @@
    Supplementable<HTMLMediaElement>::Trace(visitor);
    HTMLElement::Trace(visitor);
    ExecutionContextLifecycleStateObserver::Trace(visitor);
-@@ -4873,7 +6709,8 @@
+@@ -4873,7 +6725,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -4701,7 +4721,7 @@
      AddTrack(media::MediaTrack::CreateAudioTrack(
          "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
    }
-@@ -4993,6 +6830,10 @@
+@@ -4993,6 +6846,10 @@
          "Failed to load because no supported source was found.");
      return;
    }
@@ -4712,7 +4732,7 @@
  
    const char* reason = "";
    switch (play_promise_error_code_) {
-@@ -5032,6 +6873,7 @@
+@@ -5032,6 +6889,7 @@
            "media-playback-while-not-visible permission policy";
        break;
      case PlayPromiseError::kNotSupported:
@@ -4720,7 +4740,7 @@
        NOTREACHED();
    }
    RejectPlayPromisesInternal(DOMExceptionCode::kAbortError,
-@@ -5056,8 +6898,11 @@
+@@ -5056,8 +6914,11 @@
    DCHECK(code == DOMExceptionCode::kAbortError ||
           code == DOMExceptionCode::kNotSupportedError ||
           code == DOMExceptionCode::kNotAllowedError);
@@ -4733,7 +4753,7 @@
  
    play_promise_reject_list_.clear();
  }
-@@ -5070,10 +6915,22 @@
+@@ -5070,10 +6931,22 @@
      return;
    }
  
@@ -4757,7 +4777,7 @@
  }
  
  void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
-@@ -5212,8 +7069,23 @@
+@@ -5212,8 +7085,23 @@
    }
  
    OnRemotePlaybackMetadataChange();
@@ -4781,7 +4801,7 @@
  void HTMLMediaElement::DidPlayerMediaPositionStateChange(
      double playback_rate,
      base::TimeDelta duration,
-@@ -5299,6 +7171,9 @@
+@@ -5299,6 +7187,9 @@
  }
  
  String HTMLMediaElement::GetPlayErrorMessage(DOMExceptionCode code) const {
@@ -4791,7 +4811,7 @@
    switch (code) {
      case DOMExceptionCode::kNotAllowedError:
        return autoplay_policy_->GetPlayErrorMessage();
-@@ -5324,6 +7199,43 @@
+@@ -5324,6 +7215,43 @@
    return *media_player_host_remote_->Value().get();
  }
  
@@ -4835,7 +4855,7 @@
  mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
  HTMLMediaElement::AddMediaPlayerObserverAndPassReceiver() {
    mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayerObserver>
-@@ -5360,24 +7272,105 @@
+@@ -5360,24 +7288,105 @@
    PauseInternal(triggered_by_user
                      ? WebMediaPlayer::PauseReason::kPauseRequestedByUser
                      : WebMediaPlayer::PauseReason::kPauseRequestedInternally);
@@ -4862,8 +4882,8 @@
 +    return;
 +  }
    setCurrentTime(currentTime() - seconds);
- }
- 
++}
++
 +// WebKit PlaybackSessionModelMediaElement forwards playback controls to
 +// beginScrubbing/endScrubbing and setCurrentTimeWithTolerance, not remote seeks.
 +void HTMLMediaElement::RequestHandlePlaybackControlsAction(
@@ -4902,8 +4922,8 @@
 +      UpdatePlayState();
 +      break;
 +  }
-+}
-+
+ }
+ 
  void HTMLMediaElement::RequestSeekTo(base::TimeDelta seek_time) {
 +  if (PresentsParcSafariIdentity()) {
 +    ParcHandleSeekToPlaybackPosition(seek_time.InSecondsF());
@@ -4941,7 +4961,7 @@
  void HTMLMediaElement::RequestMute(bool mute) {
    setMuted(mute);
  }
-@@ -5490,6 +7483,29 @@
+@@ -5490,6 +7499,29 @@
    element_->AttachToNewFrame();
  }
  
@@ -5041,7 +5061,20 @@
  #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
  #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
  #include "third_party/blink/renderer/platform/media/media_player_client.h"
-@@ -98,8 +100,10 @@
+@@ -67,8 +69,12 @@
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/webrtc_overrides/low_precision_timer.h"
+ 
++class SkBitmap;
++
+ namespace gfx {
++class RectF;
+ class Size;
++class SizeF;
+ }
+ 
+ namespace cc {
+@@ -98,8 +104,10 @@
  class MediaSourceHandle;
  class MediaSourceTracer;
  class MediaStreamDescriptor;
@@ -5052,7 +5085,7 @@
  class ScriptState;
  class TextTrack;
  class TextTrackContainer;
-@@ -141,6 +145,8 @@
+@@ -141,6 +149,8 @@
      kPaused_PauseRequestedInternally,
      kPaused_FrameFrozen,
      kPaused_FrameHidden,
@@ -5061,7 +5094,7 @@
    };
  
    bool IsMediaElement() const override { return true; }
-@@ -235,6 +241,15 @@
+@@ -235,6 +245,15 @@
    WebTimeRanges BufferedInternal() const;
    TimeRanges* buffered() const;
    void load();
@@ -5077,7 +5110,7 @@
    V8CanPlayTypeResult canPlayType(const String& mime_type) const;
  
    // ready state
-@@ -246,18 +261,60 @@
+@@ -246,18 +265,60 @@
      kHaveEnoughData
    };
    ReadyState getReadyState() const;
@@ -5138,7 +5171,7 @@
    void setPlaybackRate(double, ExceptionState& = ASSERT_NO_EXCEPTION);
    TimeRanges* played();
    WebTimeRanges SeekableInternal() const;
-@@ -284,6 +341,13 @@
+@@ -284,6 +345,13 @@
    // media source extensions
    void CloseMediaSource();
    void DurationChanged(double duration, bool request_seek);
@@ -5152,7 +5185,18 @@
  
    // controls
    bool ShouldShowControls() const;
-@@ -504,11 +568,24 @@
+@@ -350,6 +418,10 @@
+ 
+   bool HasClosedCaptions() const;
+   bool TextTracksVisible() const;
++  // Parc: TextTrackContainer::PaintForPictureInPicture.
++  SkBitmap PaintTextTracksForPictureInPicture(const gfx::SizeF& window_size,
++                                              float device_scale_factor,
++                                              gfx::RectF& bounds);
+ 
+   static void SetTextTrackKindUserPreferenceForAllMediaElements(Document*);
+   void AutomaticTrackSelectionForUpdatedUserPreference();
+@@ -504,11 +576,24 @@
    bool MediaShouldBeOpaque() const;
  
    void DidMoveToNewDocument(Document& old_document) override;
@@ -5177,7 +5221,7 @@
  
    void UpdateLayoutObject();
  
-@@ -618,6 +695,23 @@
+@@ -618,6 +703,23 @@
    void AddTrack(const media::MediaTrack&) final;
    void RemoveTrack(const media::MediaTrack&) final;
    void SetTrackState(const media::MediaTrack&, media::MediaTrack::State) final;
@@ -5201,7 +5245,7 @@
  
    void MediaSourceOpened(std::unique_ptr<WebMediaSource>) final;
    void RemotePlaybackCompatibilityChanged(const KURL&,
-@@ -634,6 +728,15 @@
+@@ -634,6 +736,15 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
@@ -5217,7 +5261,7 @@
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -669,6 +772,8 @@
+@@ -669,6 +780,8 @@
    void RequestPause(bool triggered_by_user) override;
    void RequestSeekForward(base::TimeDelta seek_time) override;
    void RequestSeekBackward(base::TimeDelta seek_time) override;
@@ -5226,7 +5270,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override;
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -685,23 +790,39 @@
+@@ -685,23 +798,39 @@
        const media::PictureInPictureEventsInfo::AutoPipInfo&
            auto_picture_in_picture_info) override;
    void RequestSaveVideoFrame() override;
@@ -5268,7 +5312,7 @@
    void InvokeResourceSelectionAlgorithm();
    void LoadInternal();
    void SelectMediaResource();
-@@ -754,6 +875,9 @@
+@@ -754,6 +883,9 @@
        std::optional<WebMediaPlayer::PauseReason> pause_reason = std::nullopt);
  
    bool PotentiallyPlaying() const;
@@ -5278,17 +5322,17 @@
    bool StoppedDueToErrors() const;
    bool CouldPlayIfEnoughData() const override;
  
-@@ -831,6 +955,9 @@
-   // bind to.
+@@ -832,6 +964,9 @@
    mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
    AddMediaPlayerObserverAndPassReceiver();
-+
+ 
 +  // Tells the browser side of the document's frame about |web_media_player_|.
 +  void RegisterWithMediaPlayerHost();
- 
++
    // Timers used to schedule one-shot tasks with no delay.
    HeapTaskRunnerTimer<HTMLMediaElement> load_timer_;
-@@ -851,6 +978,9 @@
+   HeapTaskRunnerTimer<HTMLMediaElement> audio_tracks_timer_;
+@@ -851,6 +986,9 @@
    NetworkState network_state_maximum_ = kNetworkEmpty;
    ReadyState ready_state_ = kHaveNothing;
    ReadyState ready_state_maximum_ = kHaveNothing;
@@ -5298,7 +5342,7 @@
  
    SourceMetadata current_src_;
    KURL current_src_after_redirects_;
-@@ -873,6 +1003,17 @@
+@@ -873,6 +1011,17 @@
    // The last time a timeupdate event was sent in movie time.
    double last_time_update_event_media_time_ =
        std::numeric_limits<double>::quiet_NaN();
@@ -5316,7 +5360,7 @@
  
    // The default playback start position.
    double default_playback_start_position_ = 0;
-@@ -934,6 +1075,8 @@
+@@ -934,6 +1083,8 @@
    bool playing_ : 1 = false;
    bool should_delay_load_event_ : 1 = false;
    bool have_fired_loaded_data_ : 1 = false;
@@ -5325,7 +5369,7 @@
    bool can_autoplay_ : 1 = true;
    bool muted_is_default_ : 1 = true;
    bool muted_ : 1 = false;
-@@ -968,6 +1111,118 @@
+@@ -968,6 +1119,118 @@
    bool is_remote_rendering_ = false;
    // Whether the media content is encrypted.
    bool is_encrypted_media_ = false;
@@ -5444,7 +5488,7 @@
  
    // Whether the frame containing the media element is hidden. This is nullopt
    // if the visibility state of the frame is not yet known - e.g. during frame
-@@ -985,6 +1240,12 @@
+@@ -985,6 +1248,12 @@
    std::optional<media::VideoCodec> video_codec_;
  
    Member<AudioTrackList> audio_tracks_;
@@ -5457,11 +5501,10 @@
    Member<VideoTrackList> video_tracks_;
    Member<TextTrackList> text_tracks_;
    HeapVector<Member<TextTrack>> text_tracks_when_resource_selection_began_;
-@@ -1078,6 +1339,37 @@
- 
+@@ -1079,6 +1348,37 @@
    Member<Document> opener_document_;
    Member<OpenerContextObserver> opener_context_observer_;
-+
+ 
 +  // Parc: under Safari's identity, tells a player made by a frame on another
 +  // page than the element's the visibility of the element's page.
 +  void ParcUpdatePlayerPageVisibility();
@@ -5492,9 +5535,10 @@
 +  };
 +
 +  Member<ParcPageVisibilityObserver> parc_page_visibility_observer_;
- 
++
    friend class AutoplayPolicy;
    friend class AutoplayUmaHelperTest;
+   friend class Internals;
 --- a/third_party/blink/renderer/platform/media/media_player_client.h
 +++ b/third_party/blink/renderer/platform/media/media_player_client.h
 @@ -39,6 +39,7 @@
@@ -6811,7 +6855,7 @@
                                                WrapWeakPersistent(&element),
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
-@@ -27,6 +27,7 @@
+@@ -27,12 +27,15 @@
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -6819,7 +6863,25 @@
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -131,7 +132,15 @@
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+ #include "third_party/blink/renderer/core/layout/layout_video.h"
++#include "third_party/blink/renderer/core/page/chrome_client.h"
++#include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture.h"
+ #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture_event.h"
+ #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_event.h"
+@@ -41,6 +44,9 @@
+ #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
+ #include "third_party/blink/renderer/platform/widget/frame_widget.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/gfx/geometry/rect_f.h"
++#include "ui/gfx/geometry/size_f.h"
+ #include "ui/gfx/geometry/point.h"
+ 
+ namespace blink {
+@@ -131,7 +137,15 @@
    if (!video_element.HasVideo())
      return Status::kVideoTrackNotAvailable;
  
@@ -6836,6 +6898,65 @@
      return Status::kDisabledByAttribute;
  
    if (video_element.IsInAutoPIP())
+@@ -274,6 +288,9 @@
+ 
+   picture_in_picture_element_ = element;
+   picture_in_picture_element_->OnEnteredPictureInPicture();
++  // The first update always goes out: a reused window may show old cues.
++  showing_captions_ = true;
++  OnTextTrackDisplayChanged();
+ 
+   // Request that viz does not throttle our LayerTree's BeginFrame messages, in
+   // case this page generates them as a side-effect of driving picture-in-
+@@ -616,8 +633,48 @@
+     const gfx::Size& size) {
+   if (picture_in_picture_window_)
+     picture_in_picture_window_->OnResize(size);
++  // WebKit lays the cues out again for the new window size
++  // (MediaControlTextTrackContainerElement::textTrackRepresentationBoundsChanged).
++  OnTextTrackDisplayChanged();
+ }
+ 
++void PictureInPictureControllerImpl::OnTextTrackDisplayChanged() {
++  // Paints after the cue boxes are laid out, once however many cues changed.
++  if (captions_update_pending_ || !picture_in_picture_session_.is_bound()) {
++    return;
++  }
++  captions_update_pending_ = true;
++  GetSupplementable()
++      ->GetTaskRunner(TaskType::kMediaElementEvent)
++      ->PostTask(FROM_HERE,
++                 BindOnce(&PictureInPictureControllerImpl::UpdateCaptions,
++                          WrapWeakPersistent(this)));
++}
++
++void PictureInPictureControllerImpl::UpdateCaptions() {
++  captions_update_pending_ = false;
++  LocalFrame* frame = GetSupplementable()->GetFrame();
++  if (!frame || !frame->GetPage() || !picture_in_picture_element_ || !picture_in_picture_window_ ||
++      !picture_in_picture_session_.is_bound()) {
++    return;
++  }
++  gfx::RectF bounds;
++  SkBitmap captions =
++      picture_in_picture_element_->PaintTextTracksForPictureInPicture(
++          gfx::SizeF(picture_in_picture_window_->width(),
++                     picture_in_picture_window_->height()),
++          frame->GetPage()
++              ->GetChromeClient()
++              .GetScreenInfo(*frame)
++              .device_scale_factor,
++          bounds);
++  if (captions.drawsNothing() && !showing_captions_) {
++    return;
++  }
++  showing_captions_ = !captions.drawsNothing();
++  picture_in_picture_session_->UpdateCaptions(captions, bounds);
++}
++
+ void PictureInPictureControllerImpl::OnStopped() {
+   OnExitedPictureInPicture(nullptr);
+ }
 --- a/third_party/blink/renderer/core/html/media/html_video_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_video_element.cc
 @@ -56,6 +56,7 @@
@@ -12556,7 +12677,15 @@
 +}  // namespace blink
 --- a/third_party/blink/renderer/core/html/track/cue_timeline.cc
 +++ b/third_party/blink/renderer/core/html/track/cue_timeline.cc
-@@ -31,11 +31,13 @@
+@@ -7,6 +7,7 @@
+ #include <algorithm>
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
++#include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/html/track/html_track_element.h"
+ #include "third_party/blink/renderer/core/html/track/loadable_text_track.h"
+@@ -31,11 +32,13 @@
                                        HTMLMediaElement const& media_element) {
    static_assert(HTMLMediaElement::kMinPlaybackRate >= 0,
                  "The following code assumes playback rates are never negative");
@@ -12572,7 +12701,7 @@
  
    // Only allow timeouts of multiples of 1ms to prevent "polling-by-timer"
    // and excessive calls to `TimeMarchesOn`.
-@@ -245,6 +247,12 @@
+@@ -245,6 +248,12 @@
    // has not fired a timeupdate event at the element in the past 15 to 250ms...
    // NOTE: periodic 'timeupdate' scheduling is handled by HTMLMediaElement in
    // PlaybackProgressTimerFired().
@@ -12585,7 +12714,20 @@
  
    // Explicitly cache vector sizes, as their content is constant from here.
    wtf_size_t missed_cues_size = missed_cues.size();
-@@ -487,7 +495,7 @@
+@@ -421,6 +430,12 @@
+ 
+     cue->UpdatePastAndFutureNodes(movie_time);
+   }
++  // Parc: picture in picture repaints cues as their timestamps pass.
++  if (PictureInPictureController::IsElementInPictureInPicture(
++          &MediaElement())) {
++    PictureInPictureController::From(MediaElement().GetDocument())
++        .OnTextTrackDisplayChanged();
++  }
+ 
+   SetCueTimestampEventTimer();
+ }
+@@ -487,7 +502,7 @@
  void CueTimeline::SetCueEventTimer() {
    auto const& media_element = MediaElement();
    if (!next_cue_event_.has_value() || media_element.paused() ||
@@ -12594,7 +12736,7 @@
      CancelCueEventTimer();
      return;
    }
-@@ -518,7 +526,7 @@
+@@ -518,7 +533,7 @@
    double constexpr kInfinity = std::numeric_limits<double>::infinity();
    auto const& media_element = MediaElement();
  
