@@ -649,13 +649,8 @@ import AppKit
         let departed = live.reconcileArrangedSubviews([first])
         try check(departed.count == 1 && departed[0] === second && first.superview === live,
                   "Only the departing pane leaves the arranged list")
-        let firstID = UUID(), extraID = UUID()
-        try check(SplitArrangementDiff.departingIDs(rendered: [firstID], panes: [firstID: first], wanted: [first, second]).isEmpty,
-                  "Growing the arranged set does not mark the original pane as departing")
-        try check(SplitArrangementDiff.departingIDs(rendered: [firstID, extraID], panes: [firstID: first, extraID: second], wanted: [first]) == [extraID],
-                  "Only the pane missing from wanted is departing")
-        try check(SplitArrangementDiff.departingIDs(rendered: [extraID], panes: [:], wanted: [first]) == [extraID],
-                  "A rendered ID without a wrapper still departs")
+        try check(second.superview === live && second.frame.width > 0,
+                  "A departing pane stays on screen where it was until its owner parks it")
         print("PASS: \(count) original native divider/store checks (no browser)")
     }
 }

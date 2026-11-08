@@ -426,6 +426,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var nativeFullscreenPresentation: (sidebar: SidebarPresentation, findHidden: Bool)?
     private var extensionSidePanelVisible = false
     private var attachedPageIDs = Set<String>()
+    private var switchHold = PageSwitchHold<BrowserPane>()
     private var rendering = false
     private var lastChromeState: BrowserState?
     /// The store publication `lastChromeState` was presented at.
@@ -3919,7 +3920,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         // A window with no tab shows the empty content's translucent backing.
         let showsEmpty = splitView.arrangedSubviews.count == 1 && splitView.arrangedSubviews.first is SplitPanePlaceholder
-        splitView.configureBacking(in: pageHost, hasTranslucentPane: translucentPane || showsEmpty)
+        let backing = (splitView.arrangedSubviews.first as? BrowserPane)?.contentBacking ?? .white
+        splitView.configureBacking(in: pageHost, hasTranslucentPane: translucentPane || showsEmpty, backing: backing)
         refreshPageShadow()
         refreshSplitPaneHighlights()
     }
@@ -4014,13 +4016,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 wanted = [empty]
             }
         }
-        let departingIDs = SplitArrangementDiff.departingIDs(
-            rendered: renderedPaneIDs, panes: panes, wanted: wanted)
-        detachPages(departingIDs)
+        let previous = splitView.arrangedSubviews
         let leaving = splitView.reconcileArrangedSubviews(wanted)
-        for view in leaving {
-            if view is BrowserPane { parkedPages.addSubview(view) }
-            else { view.removeFromSuperview() }
+        for view in leaving where !(view is BrowserPane) { view.removeFromSuperview() }
+        let arriving = wanted.filter { view in !previous.contains { $0 === view } }.compactMap { $0 as? BrowserPane }
+        let drawing = displayed.compactMap { tab in drawsReportedFrame(tab) ? panes[tab.id] : nil }
+        let leavingPanes = leaving.compactMap { $0 as? BrowserPane }
+        let parking = switchHold.rearrange(leaving: leavingPanes, arriving: arriving,
+                                           drawing: drawing, canHold: canHoldPageSwitch)
+        for case let pane as BrowserPane in wanted { pane.heldOverSwitch = false }
+        retirePages(leavingPanes)
+        for pane in switchHold.held { pane.heldOverSwitch = true }
+        parkPanes(parking)
+        if switchHold.isHolding {
+            if let binding = nativeBinding {
+                for pane in switchHold.waiting {
+                    if let page = pane.browser?.nativePage { binding.reportNextFrame(of: page) }
+                }
+            }
+            scheduleSwitchHoldCap()
         }
         for (id, pane) in panes {
             pane.contentResize.mode = displayedIDs.contains(id) ? contentResizeReasons.mode : .intrinsic
@@ -7802,11 +7816,69 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    private func detachPages(_ ids: Set<UUID>) {
-        for id in ids {
-            guard let page = browsers[id]?.nativePage, attachedPageIDs.remove(page.identifier) != nil else { continue }
-            nativeBinding?.pageWillDetach(page)
+    /// Pages leaving the arrangement end their prompts and dialogs and give up
+    /// keyboard focus at once, as a detach did, even while held on screen.
+    /// They stay attached with their compositors and saved frames; one that
+    /// could not stay attached, or an engine without parking, is detached and
+    /// attachOwnedPages attaches it again.
+    private func retirePages(_ leaving: [BrowserPane]) {
+        for pane in leaving {
+            if let page = pane.browser?.nativePage, let binding = nativeBinding, attachedPageIDs.contains(page.identifier) {
+                if binding.responds(to: #selector(PCNativeBrowserWindow.pageWillPark(_:))) {
+                    if !binding.pageWillPark(page) { attachedPageIDs.remove(page.identifier) }
+                } else {
+                    attachedPageIDs.remove(page.identifier)
+                    binding.pageWillDetach(page)
+                }
+            }
+            resignFocus(in: pane)
         }
+    }
+    /// Panes leaving the arrangement stay in this window, hidden.
+    private func parkPanes(_ leaving: [BrowserPane]) {
+        for pane in leaving where pane.superview === splitView && !splitView.arrangedSubviews.contains(where: { $0 === pane }) {
+            resignFocus(in: pane)
+            parkedPages.addSubview(pane)
+        }
+    }
+    private func resignFocus(in pane: BrowserPane) {
+        if let responder = window?.firstResponder as? NSView, responder.isDescendant(of: pane) {
+            window?.makeFirstResponder(nil)
+        }
+    }
+    /// Holding needs the engine's frame reports.
+    private var canHoldPageSwitch: Bool {
+        guard let window, window.isVisible, !window.isMiniaturized, !isClosing, !wholeWindowClose,
+              let binding = nativeBinding else { return false }
+        return binding.responds(to: #selector(PCNativeBrowserWindow.reportNextFrame(of:)))
+    }
+    /// A displayed tab whose live page has drawn a document reports its frame
+    /// when shown; a page still loading its first document does not hold the
+    /// switch.
+    private func drawsReportedFrame(_ tab: BrowserTab) -> Bool {
+        guard !InternalPage.isInternal(tab.url), !rendersBlank(tab), !presentation.showsPlaceholder(tab.id),
+              failures[tab.id] == nil, !closingTabIDs.contains(tab.id),
+              let page = browsers[tab.id]?.nativePage, !page.isClosed, page.rendererCrash == nil,
+              attachedPageIDs.contains(page.identifier),
+              page.responds(to: #selector(getter: PCNativePage.pageBackgroundColor)) else { return false }
+        return page.pageBackgroundColor != nil
+    }
+    private func scheduleSwitchHoldCap() {
+        let generation = switchHold.generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + PageSwitchHold<BrowserPane>.cap) { [weak self] in
+            guard let self else { return }
+            self.finishPageSwitch(self.switchHold.expire(generation))
+        }
+    }
+    private func finishPageSwitch(_ ended: [BrowserPane]) {
+        guard !ended.isEmpty else { return }
+        guard !rendering else {
+            DispatchQueue.main.async { [weak self] in self?.finishPageSwitch(ended) }
+            return
+        }
+        parkPanes(ended)
+        attachOwnedPages()
+        synchronizeNativeLayout()
     }
 
     private func attachOwnedPages() {
@@ -8790,7 +8862,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return browser.nativePage
         }
         let embedded = renderedPaneIDs.flatMap { easelEditors[$0]?.editor.pageObjects?.visiblePages ?? [] }
-        return parents + embedded + (peek.map { [$0.page] } ?? [])
+        // Outgoing pages keep drawing until the incoming ones have drawn.
+        let held: [PCNativePage] = switchHold.held.compactMap { pane in
+            guard pane.superview === splitView, let browser = pane.browser, !browser.isHiddenOrHasHiddenAncestor else { return nil }
+            return browser.nativePage
+        }
+        return parents + embedded + held + (peek.map { [$0.page] } ?? [])
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, containerFor page: PCNativePage,
@@ -15658,9 +15735,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Repaints this page's visible pane bar only; a Peek's bar is its
     /// controller's. Background transitions can notify per frame.
     func browserViewDidChangePageColor(_ view: PCBrowserView) {
-        guard let id = id(for: view), let pane = panes[id], pane.livePage === view,
-              !pane.browserToolbar.isHidden, !isClosing, !wholeWindowClose else { return }
+        guard let id = id(for: view), let pane = panes[id], pane.browser === view, !isClosing, !wholeWindowClose else { return }
+        pane.showPageBacking(of: view.nativePage)
+        guard pane.livePage === view, !pane.browserToolbar.isHidden else { return }
         pane.browserToolbar.showPageColor(of: view.nativePage, failing: pane.showsFailure)
+    }
+    func browserViewDidPresentFrame(_ view: PCBrowserView) {
+        guard let id = id(for: view), let pane = panes[id], pane.browser === view else { return }
+        finishPageSwitch(switchHold.presented(pane))
     }
     func browserView(_ view: PCBrowserView, didChangeCaptureState state: PCNativeCaptureState?) {
         guard id(for: view) != nil, !rendering, !isClosing, !wholeWindowClose else { return }
@@ -15957,6 +16039,40 @@ private final class BrowserPane: NSView {
     private(set) var showsTopBar = false
     private var noteCanvasContentAppearance: NSAppearance?
     var onContentBackingChange: (() -> Void)?
+    /// The page's own opaque background, which shows behind the page while it
+    /// has not drawn, as its gutter does; white until the page reports one.
+    private var pageBacking: NSColor?
+    /// What the content backing shows.
+    var contentBacking: NSColor { showsNoteCanvas ? .clear : (surface == .page ? pageBacking : nil) ?? .white }
+    /// Outgoing, still on screen over the incoming panes until their pages
+    /// have drawn (PageSwitchHold). Clicks reach the incoming panes beneath.
+    var heldOverSwitch = false {
+        didSet {
+            guard heldOverSwitch != oldValue else { return }
+            wantsLayer = true; layer?.zPosition = heldOverSwitch ? 1 : 0
+        }
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? { heldOverSwitch ? nil : super.hitTest(point) }
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        heldOverSwitch = false; super.viewWillMove(toSuperview: newSuperview)
+    }
+    func showPageBacking(of page: PCNativePage?) {
+        let color = page.flatMap { page -> NSColor? in
+            guard !page.isClosed, page.responds(to: #selector(getter: PCNativePage.pageBackgroundColor)) else { return nil }
+            return PaneTopBarColor.fill(from: page.pageBackgroundColor)
+        }
+        guard color != pageBacking else { return }
+        pageBacking = color
+        applyContentBacking()
+    }
+    private func applyContentBacking() {
+        let color = contentBacking.cgColor
+        guard content.layer?.backgroundColor != color else { return }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        content.layer?.backgroundColor = color
+        CATransaction.commit()
+        onContentBackingChange?()
+    }
     ///
     /// hold (docs/sidebar-resize.md); intrinsic keeps autoresizing to content.
     let contentResize = PageContentResizer()
@@ -15965,7 +16081,9 @@ private final class BrowserPane: NSView {
     /// navigation failure or renderer crash still belongs to web content.
     private var surface = PaneSurface.page {
         didSet {
-            guard surface != oldValue, !browserToolbar.isHidden else { return }
+            guard surface != oldValue else { return }
+            applyContentBacking()
+            guard !browserToolbar.isHidden else { return }
             browserToolbar.showPageColor(of: livePage?.nativePage, failing: showsFailure)
         }
     }
@@ -16073,7 +16191,7 @@ private final class BrowserPane: NSView {
     private func setNoteCanvasBacking(_ visible: Bool) {
         guard showsNoteCanvas != visible else { return }
         showsNoteCanvas = visible
-        content.layer?.backgroundColor = (visible ? NSColor.clear : .white).cgColor
+        content.layer?.backgroundColor = contentBacking.cgColor
         applyNoteCanvasTheme()
         onContentBackingChange?()
     }
@@ -16081,7 +16199,10 @@ private final class BrowserPane: NSView {
     /// A tab with no address yet shows the pane's own blank white backing, as
     ///
     func showBlank() { hidePlaceholder(); error.clear(); browser?.isHidden = true; nativeContent?.isHidden = true; showsBlank = true; surface = .local; setNoteCanvasBacking(false) }
-    func showBrowser() { hidePlaceholder(); error.clear(); browser?.isHidden = false; nativeContent?.isHidden = true; showsBlank = false; surface = .page; setNoteCanvasBacking(false) }
+    func showBrowser() {
+        hidePlaceholder(); error.clear(); browser?.isHidden = false; nativeContent?.isHidden = true; showsBlank = false; surface = .page; setNoteCanvasBacking(false)
+        showPageBacking(of: browser?.nativePage)
+    }
     func showError(_ message: String) { hidePlaceholder(); error.showNavigationFailure(message); browser?.isHidden = true; nativeContent?.isHidden = true; showsBlank = false; surface = .failure; setNoteCanvasBacking(false) }
     private var placeholder: PagePlaceholderView?
     private var placeholderSnapshot: CGImage?

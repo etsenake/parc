@@ -6,6 +6,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -38,6 +39,7 @@
 #include "chrome/browser/ui/views/eye_dropper/eye_dropper.h"
 #include "components/apps/link_capturing/intent_picker_info.h"
 #include "components/input/native_web_keyboard_event.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/public/browser/eye_dropper.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
@@ -168,6 +170,49 @@ class PageVisibilityWatch final : public content::WebContentsObserver {
  private:
   base::RepeatingCallback<void(content::Visibility)> changed_;
 };
+// The embedding a page makes when it is shown (DelegatedFrameHost::WasShown)
+// waits this many frames for the page's renderer. The shell holds the page it
+// replaces for the same second.
+constexpr uint32_t kShowDeadlineFrames = 60;
+// A view swapped in meanwhile keeps Chromium's deadlines; the one set is reset.
+class ScopedShowDeadline final {
+ public:
+  explicit ScopedShowDeadline(content::WebContents* contents) {
+    auto* view = contents ? static_cast<content::RenderWidgetHostViewBase*>(
+                                contents->GetRenderWidgetHostView())
+                          : nullptr;
+    if (view) {
+      view_ = view->GetWeakPtr();
+      view->SetForceSpecifiedDeadline(kShowDeadlineFrames);
+    }
+  }
+  ScopedShowDeadline(const ScopedShowDeadline&) = delete;
+  ScopedShowDeadline& operator=(const ScopedShowDeadline&) = delete;
+  ~ScopedShowDeadline() { Reset(); }
+  void Reset() {
+    if (view_) {
+      view_->SetForceSpecifiedDeadline(std::nullopt);
+    }
+    view_.reset();
+  }
+
+ private:
+  base::WeakPtr<content::RenderWidgetHostViewBase> view_;
+};
+bool ReportPresentedFrame(content::WebContents& contents, PCNativePage* page) {
+  __weak PCNativePage* weak_page = page;
+  return NotifyPaneCompositorPresented(contents, base::BindOnce(^{
+                                  PCNativePage* presented = weak_page;
+                                  id<PCNativePageObserver> observer =
+                                      presented.observer;
+                                  if (presented && !presented.isClosed &&
+                                      [observer respondsToSelector:@selector
+                                                (nativePageDidPresentFrame:)]) {
+                                    [observer
+                                        nativePageDidPresentFrame:presented];
+                                  }
+                                }));
+}
 }  // namespace
 
 class AppKitBrowserHost final : public NativeBrowserWindowHost,
@@ -1184,6 +1229,19 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                          page.nativeView.window == window_ &&
                          !page.nativeView.hiddenOrHasHiddenAncestor &&
                          window_.visible && !window_.miniaturized;
+      // A page coming into view makes its compositor wait for the page's own
+      // next frame, instead of Chromium's default four frames after which the
+      // page's gutter colour shows. The shell keeps the page it replaces on
+      // screen until then, having asked for that frame's report.
+      const bool drawn = shown && !occluded;
+      bool arriving = false;
+      if (auto binding = pages_.find(contents.get()); binding != pages_.end()) {
+        arriving = drawn && !binding->second.shown;
+        if (!drawn) {
+          binding->second.shown = false;
+        }
+      }
+      ScopedShowDeadline show_deadline(arriving ? contents.get() : nullptr);
       // Keep Chromium paint visibility tied to shell attachment only. Mapping
       // resign-active to WasOccluded blanked the live page while the window
       // stayed on screen. Auto-PiP still treats resign-active as occluded via
@@ -1255,6 +1313,20 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       } else if (!shown &&
                  contents->GetVisibility() != content::Visibility::HIDDEN) {
         contents->WasHidden();
+      }
+      show_deadline.Reset();
+      if (drawn && attached_here()) {
+        if (auto binding = pages_.find(contents.get());
+            binding != pages_.end() && binding->second.page == page) {
+          binding->second.shown = true;
+          if (binding->second.report_frame) {
+            if (ReportPresentedFrame(*contents, page)) {
+              binding->second.report_frame = false;
+            } else {
+              Synchronize();
+            }
+          }
+        }
       }
       const auto pip_visibility =
           !shown ? parc::BackgroundPipVisibility::kHidden
@@ -1364,6 +1436,80 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         browser_.GetTabStripModel()->GetActiveWebContents());
   }
   void PageWillDetach(content::WebContents& contents) { Detach(contents); }
+  // The shell took the page's pane out of view but keeps it in this window.
+  // Its prompts, dialogs and bubbles end as a detach ends them; its views,
+  //
+  // stay in their pane host's window. False when the page is no longer
+  // attached here afterwards: a callback detached it, or it could not be
+  // attached again and has been detached.
+  bool ParkPage(content::WebContents& contents) {
+    auto found = pages_.find(&contents);
+    if (tearing_down_ || draining_ || found == pages_.end()) {
+      return false;
+    }
+    PCNativePage* page = found->second.page;
+    found->second.report_frame = false;
+    // As a detach and attach did: no pending or fallback focus returns to it.
+    if ([focus_.fallbackKey isEqualToString:page.identifier]) {
+      focus_.fallbackKey = nil;
+    }
+    [found->second.focus invalidate];
+    found->second.focus = RegisterFocus(page);
+    auto weak = weak_factory_.GetWeakPtr();
+    auto contents_weak = contents.GetWeakPtr();
+    auto still_bound = [&] {
+      if (!weak || !contents_weak || weak->tearing_down_ || weak->draining_) {
+        return false;
+      }
+      auto current = weak->pages_.find(contents_weak.get());
+      return current != weak->pages_.end() && current->second.page == page;
+    };
+    action_bridge_->Changed();
+    payment_entry_->Changed();
+    if (!still_bound()) return false;
+    CloseNativeIntentPicker(contents);
+    if (!still_bound()) return false;
+    CancelNativeCapturePicker(*contents_weak);
+    if (!still_bound()) return false;
+    HideNativePasswordPrompt(contents_weak.get());
+    if (!still_bound()) return false;
+    autofill_->PageHostWillDetach(*contents_weak);
+    if (!still_bound()) return false;
+    auto platform = [&]() -> NativeChromePlatformDelegate* {
+      auto cef =
+          ChromeBrowserHostImpl::GetBrowserForContents(contents_weak.get());
+      return cef && cef->browser() == &browser_
+                 ? static_cast<NativeChromePlatformDelegate*>(
+                       cef->platform_delegate())
+                 : nullptr;
+    };
+    if (auto* delegate = platform()) {
+      delegate->PageHostWillDetach();
+    }
+    if (!still_bound()) return false;
+    auto* delegate = platform();
+    const bool attached = delegate && delegate->PageHostDidAttach();
+    if (!still_bound()) return false;
+    autofill_->PageHostDidAttach(*contents_weak);
+    if (!still_bound()) return false;
+    if (!attached) {
+      Detach(*contents_weak);
+      return false;
+    }
+    visibility_retries_ = 0;
+    Synchronize();
+    return true;
+  }
+  // The shell holds the page this one replaces until it hears of this page's
+  // next frame on screen once the page is drawn.
+  void ReportNextFrame(content::WebContents& contents) {
+    auto found = pages_.find(&contents);
+    if (tearing_down_ || draining_ || found == pages_.end()) {
+      return;
+    }
+    found->second.report_frame = true;
+    Synchronize();
+  }
   void SetWebsiteTheme(NSString* stylesheet) {
     if (tearing_down_ || draining_ || !window_) return;
     website_theme_ = stylesheet ? base::SysNSStringToUTF8(stylesheet) : std::string();
@@ -1416,7 +1562,23 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     base::CallbackListSubscription discard;
     std::unique_ptr<NativeWebsiteTheme> theme;
     std::unique_ptr<PageVisibilityWatch> visibility;
+    // Drawn (shown, its window not occluded) at the last pass that got past
+    // its WasShown.
+    bool shown = false;
+    // The shell waits for this page's next frame on screen once it is drawn.
+    bool report_frame = false;
   };
+  PCNativeFocusRegistration* RegisterFocus(PCNativePage* page) {
+    auto weak = weak_factory_.GetWeakPtr();
+    return [focus_ registerResponder:page.nativeView
+                              forKey:page.identifier
+                           didBecome:^{
+                             if (weak) {
+                               weak->focus_.fallbackKey = page.identifier;
+                             }
+                           }
+                           didResign:nil];
+  }
   bool Attach(content::WebContents& contents,
               PCNativePage* page,
               NSView* container,
@@ -1500,15 +1662,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     entry.page = page;
     entry.container = container;
     entry.pane = pane;
-    entry.focus = [focus_ registerResponder:view
-                                     forKey:page.identifier
-                                  didBecome:^{
-                                    if (weak) {
-                                      weak->focus_.fallbackKey =
-                                          page.identifier;
-                                    }
-                                  }
-                                  didResign:nil];
+    entry.focus = RegisterFocus(page);
     if (!valid() || !attached_here()) {
       [entry.focus invalidate];
       return false;
@@ -2055,6 +2209,20 @@ void DetachAppKitPage(BrowserWindowInterface& browser, PCNativePage* page) {
   auto* contents = ContentsForNativePage(page);
   if (contents && found != Hosts().end() && found->second) {
     found->second->PageWillDetach(*contents);
+  }
+}
+bool ParkAppKitPage(BrowserWindowInterface& browser, PCNativePage* page) {
+  auto found = Hosts().find(&browser);
+  auto* contents = ContentsForNativePage(page);
+  return contents && found != Hosts().end() && found->second &&
+         found->second->ParkPage(*contents);
+}
+void ReportAppKitPageFrame(BrowserWindowInterface& browser,
+                           PCNativePage* page) {
+  auto found = Hosts().find(&browser);
+  auto* contents = ContentsForNativePage(page);
+  if (contents && found != Hosts().end() && found->second) {
+    found->second->ReportNextFrame(*contents);
   }
 }
 void SynchronizeAppKitBrowser(BrowserWindowInterface& browser) {

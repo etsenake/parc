@@ -21,6 +21,9 @@ NS_SWIFT_UI_ACTOR
 @protocol PCBrowserViewDelegate <NSObject>
 @optional
 - (void)browserViewDidChangeFavicon:(PCBrowserView*)view;
+// The page came into view and its frame is on screen.
+- (void)browserViewDidPresentFrame:(PCBrowserView*)view
+    NS_SWIFT_NAME(browserViewDidPresentFrame(_:));
 - (void)browserView:(PCBrowserView*)view addContextImageToEasel:(PCNativeContextImage*)image
     NS_SWIFT_NAME(browserView(_:addContextImageToEasel:));
 - (void)browserView:(PCBrowserView*)view openLinkInSplitView:(NSURL*)url

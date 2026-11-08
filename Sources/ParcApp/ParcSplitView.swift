@@ -14,18 +14,6 @@ struct SplitDividerSnapState {
         return previous != isSnapped
     }
 }
-
-/// IDs whose wrappers are not in the wanted arranged list. Growing the
-/// displayed set yields an empty result, so survivors are not detached.
-enum SplitArrangementDiff {
-    static func departingIDs<Pane: NSView>(rendered: [UUID], panes: [UUID: Pane], wanted: [NSView]) -> Set<UUID> {
-        Set(rendered.filter { id in
-            guard let pane = panes[id] else { return true }
-            return !wanted.contains { $0 === pane }
-        })
-    }
-}
-
 final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     // The reference container is a plain NSView. NSSplitView repairs child
     // geometry to fit its own bounds, which would discard expanded minima.
@@ -721,12 +709,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     ///
     /// backing and rounded clipping. Keep the existing single-page host policy.
-    func configureBacking(in host: NSView, hasTranslucentPane: Bool) {
+    func configureBacking(in host: NSView, hasTranslucentPane: Bool, backing: NSColor = .white) {
         let divided = arrangedSubviews.count > 1
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer?.backgroundColor = nil
         layer?.masksToBounds = false
-        host.layer?.backgroundColor = (divided || hasTranslucentPane ? NSColor.clear : .white).cgColor
+        host.layer?.backgroundColor = (divided || hasTranslucentPane ? NSColor.clear : backing).cgColor
         host.layer?.masksToBounds = !divided
         for pane in arrangedSubviews {
             pane.wantsLayer = true

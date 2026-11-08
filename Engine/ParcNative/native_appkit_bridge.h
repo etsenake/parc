@@ -389,6 +389,9 @@ NS_SWIFT_UI_ACTOR
 // the page's Profile, or its private context when
 // fairPlayIdentityOffTheRecord is YES.
 - (void)nativePage:(PCNativePage*)page didLearnSafariIdentityForSite:(NSString*)site;
+// After reportNextFrameOfPage:, the page is drawn and its next frame is on
+// screen: its own new frame, or after about a second whatever it had.
+- (void)nativePageDidPresentFrame:(PCNativePage*)page;
 @end
 
 // One immutable snapshot per actual native SadTab instance. Status is the
@@ -1127,6 +1130,14 @@ __attribute__((visibility("default")))
 // The app must call these before/after actual page container reparenting.
 - (void)pageWillDetach:(PCNativePage*)page;
 - (BOOL)pageDidAttach:(PCNativePage*)page container:(NSView*)container;
+// The page's pane left the arrangement but stays in this window: ends the
+// page's prompts and dialogs as pageWillDetach: would, and keeps it attached
+// with its views, compositor and saved frame. NO when it is no longer
+// attached afterwards; pageDidAttach:container: attaches it again.
+- (BOOL)pageWillPark:(PCNativePage*)page;
+// Once the page is drawn, its observer hears nativePageDidPresentFrame: for
+// its next frame on screen.
+- (void)reportNextFrameOfPage:(PCNativePage*)page;
 // One physical-window coordinator waits for every attached Browser/Profile.
 // The caller may close NSWindow only on YES. It must not force-close pages from
 // windowWillClose or remove saved tabs before the individual close callback.

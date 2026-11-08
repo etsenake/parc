@@ -8,6 +8,7 @@
 
 #import <AppKit/AppKit.h>
 
+#include "base/functional/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "pane_compositor_policy.h"
 
@@ -60,6 +61,13 @@ PaneCompositorShow ShowInPaneCompositor(content::WebContents& contents,
 // page until another page in the window needs it or a sweep retires it.
 // Ignored while the compositor is still on screen for a newer owner.
 void HidePaneCompositor(content::WebContents& contents);
+
+// Runs `presented` once the compositor showing `contents` has put a frame
+// drawn after this call on screen, or soon when the page has no compositor.
+// Dropped if the page is hidden or leaves that compositor first. False, with
+// nothing queued, while a hand-off involving the page is mid-flight.
+bool NotifyPaneCompositorPresented(content::WebContents& contents,
+                                   base::OnceClosure presented);
 
 // Before CefShutdown, with the message loop returned: detaches every page and
 // destroys every compositor while Chromium's ImageTransportFactory still

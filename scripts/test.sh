@@ -290,6 +290,9 @@ python3 "$repo_root/tests/PeekPresentationSkip/check.py"
 compile_and_run split-layout-flush-skip SplitLayoutFlushSkipTests \
   "$repo_root/Sources/ParcCore/SplitLayoutFlushSkip.swift"
 python3 "$repo_root/tests/SplitLayoutFlushSkip/check.py"
+# The outgoing page stays on screen until the incoming page has drawn.
+compile_and_run page-switch-hold PageSwitchHoldTests \
+  "$repo_root/Sources/ParcApp/PageSwitchHold.swift"
 # Sidebar outline/list layoutSubtree skips when frames match and the subtree is clean.
 compile_and_run sidebar-outline-layout-flush-skip SidebarOutlineLayoutFlushSkipTests \
   "$repo_root/Sources/ParcCore/SidebarOutlineLayoutFlushSkip.swift"

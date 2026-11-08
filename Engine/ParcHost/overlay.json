@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 638,
+  "version": 639,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -55,12 +55,12 @@
     {
       "source": "Engine/ParcNative/pane_compositor.h",
       "target": "cef/libcef/browser/parc_native/pane_compositor.h",
-      "sha256": "c5656b192b5a4b7f5e4d42fef04e0353e2d2de53563442574f4a53cf624a6a85"
+      "sha256": "940d7c1bd4f976041f2942f7f88d13c1cc136563e6c15e49c864823c015cc601"
     },
     {
       "source": "Engine/ParcNative/pane_compositor.mm",
       "target": "cef/libcef/browser/parc_native/pane_compositor.mm",
-      "sha256": "df2b5c691fbf4508f006946c0a863c81f7b9ed8595b1448a2f6fecdb3ea5c399"
+      "sha256": "7fc95ddc92e8949a93c9e6ec91fd8e13a8f11e1118c8dfcad210d97733cae088"
     },
     {
       "source": "Engine/ParcNative/pane_compositor_policy.h",
@@ -390,22 +390,22 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_application.mm",
-      "sha256": "5632181dcba337cb29878da100b357def377890773874094172c4f7861b01af6"
+      "sha256": "436e5d13919f9189d5b1475a30f36daf33cbf006a16cbfcc9ba17c9594666531"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "df37f1faf7f2f8e2594200a74c3355ec669ec31bfc01bb699b15562575273691"
+      "sha256": "e4027db21aa46fc66216cff221ca2ed2fff22cc7b6a7a43358b9ae7b8a1c0ef4"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.h",
-      "sha256": "eac582c51a5685fe1d7a737f67f0363867cca6ed926c66d512e1af79387e131b"
+      "sha256": "566a743094e5d99021567ef059c2295cd9f5d4dd9af180392a684b17ec6103d2"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "a863d5b7a54755bfbf475531625fcf892440767ad508a2e9b9f431238cc20eb3"
+      "sha256": "3f2ba358c722c79769f18e7cdd561a011a97533a4910306694398a7dc9282bef"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",

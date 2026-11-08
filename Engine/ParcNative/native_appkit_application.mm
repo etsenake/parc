@@ -2654,6 +2654,28 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   }
   parc::DetachAppKitPage(*cef->browser(), page);
 }
+- (BOOL)pageWillPark:(PCNativePage*)page {
+  CHECK(NSThread.isMainThread);
+  auto* contents = parc::ContentsForNativePage(page);
+  auto cef = contents ? ChromeBrowserHostImpl::GetBrowserForContents(contents)
+                      : nullptr;
+  if (!cef || !cef->browser() ||
+      parc::AppKitBindingForBrowser(cef->browser()) != self) {
+    return NO;
+  }
+  return parc::ParkAppKitPage(*cef->browser(), page);
+}
+- (void)reportNextFrameOfPage:(PCNativePage*)page {
+  CHECK(NSThread.isMainThread);
+  auto* contents = parc::ContentsForNativePage(page);
+  auto cef = contents ? ChromeBrowserHostImpl::GetBrowserForContents(contents)
+                      : nullptr;
+  if (!cef || !cef->browser() ||
+      parc::AppKitBindingForBrowser(cef->browser()) != self) {
+    return;
+  }
+  parc::ReportAppKitPageFrame(*cef->browser(), page);
+}
 - (BOOL)pageDidAttach:(PCNativePage*)page container:(NSView*)container {
   CHECK(NSThread.isMainThread);
   auto* contents = parc::ContentsForNativePage(page);

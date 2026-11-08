@@ -711,6 +711,13 @@ static void PCFinishEngineTermination(void* unused) {
     [target browserViewDidChangeFavicon:self];
   }
 }
+- (void)nativePageDidPresentFrame:(PCNativePage*)page {
+  if (page != _nativePage || _disposed || page.observer != self) return;
+  id<PCBrowserViewDelegate> target = self.delegate;
+  if ([target respondsToSelector:@selector(browserViewDidPresentFrame:)]) {
+    [target browserViewDidPresentFrame:self];
+  }
+}
 - (void)nativePageDidChange:(PCNativePage*)page {
   if (page != _nativePage || _disposed) {
     return;

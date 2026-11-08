@@ -171,6 +171,7 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   // Drops the frame the display view holds.
   void ClearDisplay();
   void UpdateSurface();
+  void NotifyPresented(base::OnceClosure presented);
 
   // ui::ViewsHostableView::Host:
   ui::Layer* GetUiLayer() const override;
@@ -191,6 +192,8 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   void SuspendDrawing();
   void ResumeDrawing();
   void AllowProtectedLayers();
+  void RequestPresentation();
+  void DropPresentation();
   void ReleaseCaptureLock();
   void ReleasePool();
 
@@ -221,6 +224,11 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
       held_frame_page_ = nullptr;
   // Advanced by each suspend and resume, cancelling a pending re-allow.
   uint64_t protected_layers_generation_ = 0;
+  // Waiting for this page's next frame on screen; requested while drawing.
+  std::vector<base::OnceClosure> presented_;
+  // Advanced when the page is hidden or detached, so a frame requested for
+  // an earlier showing reports nothing.
+  uint64_t presentation_generation_ = 0;
   base::WeakPtrFactory<NativePaneCompositor> weak_factory_{this};
 };
 
@@ -399,6 +407,7 @@ void NativePaneCompositor::Hide(uint64_t use) {
     page_shown_ = false;
     last_used_ = use;
   }
+  DropPresentation();
   if (!capture_locks_) {
     SuspendDrawing();
   }
@@ -410,6 +419,7 @@ void NativePaneCompositor::Detach(bool restore_view) {
   }
   // The last frame stays on screen until the next page's first frame.
   SuspendDrawing();
+  DropPresentation();
   detaching_ = true;
   page_shown_ = false;
   ui::ViewsHostableView* hostable = std::exchange(hostable_, nullptr).get();
@@ -623,6 +633,42 @@ void NativePaneCompositor::ResumeDrawing() {
   AllowProtectedLayers();
   compositor_->widget()->SetSuspended(false);
   compositor_->Unsuspend();
+  if (!presented_.empty()) {
+    RequestPresentation();
+  }
+}
+
+void NativePaneCompositor::NotifyPresented(base::OnceClosure presented) {
+  presented_.push_back(std::move(presented));
+  if (drawing_) {
+    RequestPresentation();
+  }
+}
+
+void NativePaneCompositor::RequestPresentation() {
+  std::vector<base::OnceClosure> presented = std::exchange(presented_, {});
+  compositor_->compositor()->RequestSuccessfulPresentationTimeForNextFrame(
+      base::BindOnce(
+          [](base::WeakPtr<NativePaneCompositor> self, uint64_t generation,
+             std::vector<base::OnceClosure> presented,
+             const viz::FrameTimingDetails&) {
+            if (!self || generation != self->presentation_generation_) {
+              return;
+            }
+            for (auto& callback : presented) {
+              std::move(callback).Run();
+            }
+          },
+          weak_factory_.GetWeakPtr(), presentation_generation_,
+          std::move(presented)));
+  // The page may have nothing new to commit (its saved frame is current), and
+  // the request alone makes no frame.
+  compositor_->compositor()->ScheduleFullRedraw();
+}
+
+void NativePaneCompositor::DropPresentation() {
+  presented_.clear();
+  ++presentation_generation_;
 }
 
 void NativePaneCompositor::AllowProtectedLayers() {
@@ -928,6 +974,24 @@ void HidePaneCompositor(content::WebContents& contents) {
   NativePaneCompositorPool& pool = compositor->pool();
   compositor->Hide(pool.NextUse());
   pool.ScheduleSweep();
+}
+
+bool NotifyPaneCompositorPresented(content::WebContents& contents,
+                                   base::OnceClosure presented) {
+  CHECK(NSThread.isMainThread);
+  NativePaneCompositor* compositor = AttachedCompositor(contents);
+  if (compositor && compositor->busy()) {
+    return false;
+  }
+  if (!compositor) {
+    if (!ShutDown() && base::SingleThreadTaskRunner::HasCurrentDefault()) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, std::move(presented));
+    }
+    return true;
+  }
+  compositor->NotifyPresented(std::move(presented));
+  return true;
 }
 
 void ShutDownPaneCompositors() {

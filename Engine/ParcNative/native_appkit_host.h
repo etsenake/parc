@@ -57,6 +57,8 @@ void SynchronizeAppKitBrowserVisibility(BrowserWindowInterface&);
 void SetAppKitWebsiteTheme(BrowserWindowInterface&, NSString* stylesheet);
 bool AttachAppKitPage(BrowserWindowInterface&, PCNativePage*, NSView*);
 void DetachAppKitPage(BrowserWindowInterface&, PCNativePage*);
+bool ParkAppKitPage(BrowserWindowInterface&, PCNativePage*);
+void ReportAppKitPageFrame(BrowserWindowInterface&, PCNativePage*);
 void PrepareAppKitBrowserForDeletion(BrowserWindowInterface&,
                                      base::OnceClosure);
 void RequestAppKitBrowserClose(BrowserWindowInterface&);
