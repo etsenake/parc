@@ -649,8 +649,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         case .next:
             window.makeFirstResponder(next.keyboardView)
         case .unchanged:
+            // An import page change can hide the control that had focus (Back
+            // on the browser cards); Next takes it then.
             if let view = previousResponder as? NSView, view.window === window, view.acceptsFirstResponder {
-                window.makeFirstResponder(view)
+                window.makeFirstResponder(view.isHiddenOrHasHiddenAncestor ? next.keyboardView : view)
             }
         }
     }

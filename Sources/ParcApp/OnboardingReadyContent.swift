@@ -144,11 +144,6 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
         }
     }
 
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil { cancelPresentation() }
-        super.viewWillMove(toWindow: newWindow)
-    }
-
     /// Leaving the step or closing setup drops an open save panel, as Settings' card does.
     func cancelPresentation() {
         saveGeneration = UUID()

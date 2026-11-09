@@ -360,6 +360,11 @@ final class BrowserImportCoordinator {
     func beginSafariRestart() -> Bool {
         guard stage == .safariAccess, isCurrent, safariAccessReady, !checkingSafariAccess,
               !restarting, source != nil else { return false }
+        // Quitting now would cut off the browser imported before Back, which
+        // only Safari's import resumes after a restart.
+        if Self.earlierImportRunning {
+            safariAccessError = "Finishing your last import…"; onChange?(); return false
+        }
         restarting = true; continueAfterSafariRefresh = false; error = nil; safariAccessError = nil
         generation = UUID(); discovery?.cancel(); discovery = nil
         onChange?(); return true

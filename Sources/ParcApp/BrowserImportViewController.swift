@@ -184,6 +184,7 @@ final class BrowserImportViewController: NSViewController {
 
     func goBack() {
         guard !closed, window?.attachedSheet == nil else { return }
+        guard coordinator.canGoBackInSetup else { return }
         pendingBack = true
         coordinator.goBackInSetup()
     }
