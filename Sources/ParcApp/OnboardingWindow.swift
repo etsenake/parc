@@ -35,6 +35,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private let store: BrowserStore
     private var browserImport: BrowserImportViewController?
+    private var importFoundNoSources = false
     private var passwordHelp: OnboardingPasswordHelp?
     var onCancelImportRestart: (() -> Void)?
     var hasActiveBrowserImport: Bool { browserImport != nil && !isClosed && !isFinishing }
@@ -415,7 +416,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let ordinal = order.firstIndex(of: draft.stage.current) ?? 0
         let isReady = draft.stage == .ready
         progress.stringValue = (isReplay ? "Replay · " : "") + (isReady ? "Ready" : "\(ordinal + 1) of \(draft.displayedSetupCount())")
+        // Back from the first step after an import that found no browsers
+        // would only reopen it and bounce here again.
         back.isHidden = isReady || draft.previousStage() == nil
+            || (importFoundNoSources && draft.previousStage()?.current == .bookmarks)
         skip.title = "Skip for now"
         skip.isHidden = ![.theme, .favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
         let canAdvance = browserImport == nil
@@ -885,8 +889,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 guard let self else { return false }
                 return !self.isClosed && !self.isFinishing && self.draft.stage == .bookmarks
             })
-        controller.onClose = { [weak self] in
+        controller.onClose = { [weak self, weak controller] in
             guard let self, !self.isClosed, !self.isFinishing else { return }
+            if controller?.foundNoSources == true { self.importFoundNoSources = true }
             self.captureBrowserImportResults()
             self.closeBrowserImport()
             if let next = self.draft.nextStage() { self.transition(to: next) }

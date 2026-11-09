@@ -9,11 +9,12 @@ import UniformTypeIdentifiers
 final class BrowserImportViewController: NSViewController {
     var onClose: (() -> Void)?
     var onChange: (() -> Void)?
-    ///
-    /// moves forward and the import has no Back of its own. Nil for the first
-    /// page and for updates within a page.
+    /// Set for the `onChange` that shows a different page: back after setup's
+    /// Back, otherwise forward. Nil for the first page and for updates within
+    /// a page.
     private(set) var pageDirection: OnboardingExperience.TransitionDirection?
     private var shownPage: BrowserImportCoordinator.Stage?
+    private var pendingBack = false
     var onShowPasswordHelp: (() -> Void)?
     var onHidePasswordHelp: (() -> Void)?
     /// Ad blockers the import adds after its presentation closed.
@@ -177,11 +178,13 @@ final class BrowserImportViewController: NSViewController {
 
     func skip() {
         guard !closed, window?.attachedSheet == nil else { return }
+        pendingBack = false
         coordinator.skipInSetup()
     }
 
     func goBack() {
         guard !closed, window?.attachedSheet == nil else { return }
+        pendingBack = true
         coordinator.goBackInSetup()
     }
 
@@ -449,7 +452,8 @@ final class BrowserImportViewController: NSViewController {
         root.needsLayout = true; root.layoutSubtreeIfNeeded()
         // Finding browsers, choosing them and importing share the browser cards.
         let page: BrowserImportCoordinator.Stage = cards || stage == .loading ? .sources : stage
-        pageDirection = shownPage.flatMap { $0 == page ? nil : .forward }
+        pageDirection = shownPage.flatMap { $0 == page ? nil : pendingBack ? .back : .forward }
+        if pageDirection != nil { pendingBack = false }
         shownPage = page
         onChange?()
     }
@@ -635,6 +639,7 @@ final class BrowserImportViewController: NSViewController {
 
     func advance() {
         guard !closed, window?.attachedSheet == nil else { return }
+        pendingBack = false
         switch coordinator.stage {
         case .sources:
             if embedded && skipSelected { requestClose() }
