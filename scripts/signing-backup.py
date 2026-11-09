@@ -72,11 +72,11 @@ def helper():
 
 
 def backup():
-    # Do not prompt/unlock 1Password behind an unattended release.
-    env = dict(os.environ, OP_BIOMETRIC_UNLOCK_ENABLED='false')
-    result = subprocess.run(['op','whoami','--format=json'], capture_output=True, env=env, timeout=10)
+    # Backup is run by hand, so 1Password may unlock through its app. Releases only run restore.
+    result = subprocess.run(['op','whoami','--format=json'], capture_output=True, timeout=120)
     if result.returncode:
-        raise ValueError('Unlock/sign in to 1Password CLI once with op signin; secure backup is pending')
+        raise ValueError('Sign in to 1Password CLI with op signin, and with more than one account choose it with '
+                         'OP_ACCOUNT=<sign-in address>; secure backup is pending')
     backup_identity()
     backup_sparkle()
     backup_notary()

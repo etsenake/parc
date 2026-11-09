@@ -176,7 +176,9 @@ The helper exports only the selected identity as password-encrypted PKCS#12,
 generates a strong password in memory, and stores both as concealed fields via
 1Password's standard input. No secret enters argv, logs, plaintext files or Git.
 It verifies a fresh vault read before reporting success and preserves an existing
-backup. Set `PARC_SIGNING_VAULT` if the account has no default vault. Normal
+backup. Set `PARC_SIGNING_VAULT` if the account has no default vault, and
+1Password's own `OP_ACCOUNT=<sign-in address>` when this Mac has more than one
+account. Backup is interactive and may unlock through the 1Password app. Normal
 Keychain export approval may be required. The current CLI is not signed in, so
 **the actual secure backup remains pending `op signin`/vault unlock**.
 
