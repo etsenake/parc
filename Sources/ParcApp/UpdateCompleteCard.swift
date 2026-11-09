@@ -104,7 +104,7 @@ struct UpdateCompleteBanner: View {
 }
 
 ///
-private struct UpdateBannerCard: View {
+struct UpdateBannerCard: View {
     let dark: Bool
     var body: some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -120,22 +120,24 @@ private struct UpdateBannerCard: View {
 
 ///
 /// leading once it no longer fits beside the close button, over a hairline.
-private struct UpdateBannerHeader: View {
+struct UpdateBannerHeader: View {
     let title: String
     let dark: Bool
     let sparkles: Bool
     let sparkleColor: Color
-    let close: () -> Void
+    ///
+    let close: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             //
             ViewThatFits(in: .horizontal) {
-                label.padding(.horizontal, 20)
+                label.fixedSize().padding(.horizontal, 20)
+                // A long title truncates rather than leaving the card.
                 label.frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, minHeight: 24)
-            UpdateBannerCloseButton(dark: dark, action: close)
+            if let close { UpdateBannerCloseButton(dark: dark, action: close) }
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(dark ? Color.white.opacity(0.15) : Color.black.opacity(0.07)).frame(height: 1)
@@ -149,7 +151,6 @@ private struct UpdateBannerHeader: View {
             .font(.system(size: 12))
             .padding(.horizontal, 8)
             .lineLimit(1)
-            .fixedSize()
             .overlay {
                 // The gradient's palette treatment, so a pastel stays visible on the light card.
                 if sparkles {
@@ -208,12 +209,13 @@ private struct CloseButtonPlate: Shape {
 
 ///
 /// hovered; a gradient row paints its label with `ButtonBackground`.
-private struct UpdateBannerRow: View {
+struct UpdateBannerRow: View {
     let title: String
     let icon: String
     let dark: Bool
     let gradient: Bool
     let base: Color
+    var alignment = Alignment.leading
     let action: () -> Void
     @State private var hovered = false
 
@@ -247,42 +249,48 @@ private struct UpdateBannerRow: View {
         }
         .foregroundStyle((dark ? Color.white : .black).opacity(dark ? 1 : 0.8))
         .frame(height: 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: alignment)
     }
 }
 
 ///
 /// hue-shifted capsules turning over the base colour. The turn durations were
 /// not recovered.
-private struct UpdateBannerGradient: View {
+struct UpdateBannerGradient: View {
     let base: Color
+    /// `SecondaryButton` passes 6 and 1, `PrimaryButtonStyle` 12 and 0.5.
+    var blurRadius: CGFloat = 6
+    var blurOpacity = 1.0
     @State private var size = CGSize.zero
     @State private var turned = false
 
     var body: some View {
         ZStack {
             base
-            Capsule(style: .continuous)
-                .frame(width: size.width / 1.5, height: size.height)
-                .scaleEffect(2)
-                .rotationEffect(.degrees(turned ? 360 : 0))
-                .foregroundStyle(base)
-                .hueRotation(.degrees(40))
-                .saturation(5)
-                .brightness(1.25)
-                .blur(radius: 12)
-                .blendMode(.hardLight)
-            Capsule(style: .continuous)
-                .frame(width: size.width * 0.5, height: size.height)
-                .scaleEffect(2)
-                .rotationEffect(.degrees(turned ? -360 : 0))
-                .foregroundStyle(base.opacity(0.6))
-                .hueRotation(.degrees(-40))
-                .saturation(2)
-                .brightness(-0.5)
-                .offset(y: size.height / -1.75)
-                .blur(radius: 6)
-                .blendMode(.hardLight)
+            ZStack {
+                Capsule(style: .continuous)
+                    .frame(width: size.width / 1.5, height: size.height)
+                    .scaleEffect(2)
+                    .rotationEffect(.degrees(turned ? 360 : 0))
+                    .foregroundStyle(base)
+                    .hueRotation(.degrees(40))
+                    .saturation(5)
+                    .brightness(1.25)
+                    .blur(radius: blurRadius * 2)
+                    .blendMode(.hardLight)
+                Capsule(style: .continuous)
+                    .frame(width: size.width * 0.5, height: size.height)
+                    .scaleEffect(2)
+                    .rotationEffect(.degrees(turned ? -360 : 0))
+                    .foregroundStyle(base.opacity(0.6))
+                    .hueRotation(.degrees(-40))
+                    .saturation(2)
+                    .brightness(-0.5)
+                    .offset(y: size.height / -1.75)
+                    .blur(radius: blurRadius)
+                    .blendMode(.hardLight)
+            }
+            .opacity(blurOpacity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
