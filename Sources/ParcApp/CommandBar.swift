@@ -1374,7 +1374,7 @@ import SwiftUI
                                         || result.favoriteAction != nil || result.folderMove != nil || result.favoriteRename != nil
                                         || result.managesPasswords || result.muteAllTabs != nil)
         bind(cell, to: result)
-        cell.toolTip = result.command?.toolTip
+        cell.toolTip = result.command?.id == "checkForUpdates:" ? result.command?.toolTip : nil
         cell.selectedColor = selectedRowColor
         cell.setSelected(row == table.selectedRow)
         return cell
