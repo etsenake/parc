@@ -511,12 +511,14 @@ that native identifier:
 `jhkhlgaomejplkanglolfpcmfknnomle`, `gekoepiplklhniacchbbgbhilidiojmb`,
 `amgmhmoikcefmalfmbpkpnnpebhmhfnd`.
 
-Parc includes the step only when one of those IDs was actually submitted with a
-non-failed first-launch import (or the current draft stage is already
-adBlockers). The pending keep/none choice resumes with the draft; Skip leaves
-it unchanged. There is no native uninstall/disable API on this path, so none
-does not fake-disable imported extensions. Default selection is the first
-imported blocker. No extra steps are invented.
+unless the imported blockers are exactly uBlock Origin, so it also shows when
+`uninstallExtension:`), keeping one uninstalls the others, keep-all changes
+nothing, and YES installs uBlock Origin into the setup Space's Profile, falling
+back to uBlock Origin Lite because this engine refuses Manifest V2. The native
+side removes only the 19 known blocker IDs through Chromium's
+internal-management uninstall, refuses externally installed ones, and waits up
+to ten minutes for a blocker still downloading. A failed YES install shows the
+browser's existing "couldn't be added" notice; a failed removal is logged.
 
 SHA256 `4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`.
 Helpers: `components.py find` UnboxingManager / ImportFeature / NewSetupView;
