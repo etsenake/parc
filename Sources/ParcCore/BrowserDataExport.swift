@@ -42,7 +42,7 @@ struct BrowserDataExport {
     private func urlLine(_ tab: BrowserTab) -> String? {
         // The reference emits SidebarTab.savedURL, without tab/custom titles.
         // Native Notes/Easels correspond to distinct non-tab payloads there.
-        guard !InternalPage.isInternal(tab.savedURL) else { return nil }
+        guard !InternalPage.isInternal(tab.savedURL), !WhatsNewPage.matches(tab.savedURL) else { return nil }
         return "- " + (URL(string: tab.savedURL)?.absoluteString ?? "")
     }
 

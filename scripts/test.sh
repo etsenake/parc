@@ -43,6 +43,7 @@ compile_and_run favorite-moves FavoriteMoveTests \
   "$repo_root/Sources/ParcCore/RecentTabOrder.swift"
 compile_and_run browser-store BrowserStoreTests \
   "$repo_root/Sources/ParcCore/FolderLinks.swift" "$repo_root/tests/Support/FileObservation.swift"
+compile_and_run whats-new-page WhatsNewPageTests
 # Temporary data only: verifies that blocked edits preserve an unreadable file.
 # Also locks identical pretty-JSON recommit skip for link-routing prefs.
 compile_and_run link-routing-store LinkRoutingStoreTests

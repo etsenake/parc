@@ -143,8 +143,8 @@ struct BrowserArchivedItem: Identifiable {
     var id: UUID { tabs[0].id }
     var archivedAt: Date { tabs[0].archivedAt! }
     var provenance: ArchiveProvenance? { tabs[0].archiveProvenance }
-    var title: String { tabs.map { $0.title.isEmpty ? $0.url : $0.title }.joined(separator: " · ") }
-    var urls: [String] { tabs.map(\.url) }
+    var title: String { tabs.map { $0.title.isEmpty ? WhatsNewPage.presented($0.url) : $0.title }.joined(separator: " · ") }
+    var urls: [String] { tabs.map { WhatsNewPage.presented($0.url) } }
 }
 
 struct ArchivePreviewLease: Equatable {
@@ -2110,6 +2110,36 @@ enum InternalPage: Equatable {
     }
 }
 
+/// The What's New page bundled as `Contents/Resources/WhatsNew.html`. It
+/// loads as an ordinary file page, but its address is a path into the app,
+///
+///
+/// content's `titleText` for Notes and Easels instead of a URL).
+enum WhatsNewPage {
+    static let current = Bundle.main.url(forResource: "WhatsNew", withExtension: "html")
+
+    /// Any app bundle's page: once an earlier install or a renamed app is
+    /// gone, the path is the only sign that an address was Parc's page.
+    static func matches(_ address: String) -> Bool {
+        guard let url = URL(string: address), url.isFileURL else { return false }
+        let parts = url.standardizedFileURL.pathComponents
+        return parts.count > 4 && parts.suffix(3) == ["Contents", "Resources", "WhatsNew.html"]
+            && parts[parts.count - 4].hasSuffix(".app")
+    }
+
+    /// The address Parc shows, copies or shares for a page: none for this one.
+    static func presented(_ address: String) -> String { matches(address) ? "" : address }
+
+    /// A restored tab of another bundle's page opens this build's copy. Only
+    /// session load relocates: a Back to such an entry must not redirect.
+    /// This build's address keeps Chromium's spelling.
+    static func relocated(_ address: String, to page: URL? = current) -> String {
+        guard let page, matches(address), let url = URL(string: address),
+              url.standardizedFileURL.path != page.standardizedFileURL.path else { return address }
+        return page.absoluteString
+    }
+}
+
 enum NavigationInput {
     static func resolve(_ input: String, searchEngine: String = "https://duckduckgo.com/?q=") -> URL? {
         let value = BrowserInternalURL.publicString(input.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -2303,8 +2333,8 @@ final class BrowserStore: ObservableObject {
             }
             state = decoded
             for i in state.tabs.indices {
-                state.tabs[i].url = BrowserInternalURL.publicString(state.tabs[i].url)
-                state.tabs[i].savedURL = BrowserInternalURL.publicString(state.tabs[i].savedURL)
+                state.tabs[i].url = BrowserInternalURL.publicString(WhatsNewPage.relocated(state.tabs[i].url))
+                state.tabs[i].savedURL = BrowserInternalURL.publicString(WhatsNewPage.relocated(state.tabs[i].savedURL))
             }
             for i in state.history.indices {
                 state.history[i].url = BrowserInternalURL.publicString(state.history[i].url)

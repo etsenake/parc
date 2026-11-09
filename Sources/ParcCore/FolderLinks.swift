@@ -36,7 +36,7 @@ enum FolderLinks {
                 if case .folder(let child) = item { append(child); continue }
                 for id in SidebarHierarchy.tabIDs(in: item, state: state, spaceID: target.spaceID) {
                     guard seenTabs.insert(id).inserted, let tab = tabs.first(where: { $0.id == id }),
-                          !InternalPage.isInternal(tab.url), let url = URL(string: tab.url), url.scheme != nil else { continue }
+                          !InternalPage.isInternal(tab.url), let url = URL(string: WhatsNewPage.presented(tab.url)), url.scheme != nil else { continue }
                     result.append(Link(tabID: tab.id, title: tab.title, url: url.absoluteString))
                 }
             }
@@ -55,7 +55,7 @@ enum FolderLinks {
         return roots.flatMap { SidebarHierarchy.tabIDs(in: $0, state: state, spaceID: spaceID) }.compactMap { id in
             guard seen.insert(id).inserted,
                   let tab = state.tabs.first(where: { $0.id == id && $0.profileID == profileID && $0.spaceID == spaceID && $0.archivedAt == nil }),
-                  !InternalPage.isInternal(tab.url), let url = URL(string: tab.url), url.scheme != nil else { return nil }
+                  !InternalPage.isInternal(tab.url), let url = URL(string: WhatsNewPage.presented(tab.url)), url.scheme != nil else { return nil }
             return Link(tabID: id, title: tab.title, url: url.absoluteString)
         }
     }
