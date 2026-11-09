@@ -11,15 +11,21 @@ startup-promotion requirements for this release command and tonight's 1.1.0 run.
 Artifact signature/hash/source/notarization checks remain required; never claim
 runtime acceptance from them. Root continues directly on main without agents.
 
-**CRITICAL — EVERY COMMIT SUBJECT IS A CONVENTIONAL COMMIT. User direction, November 9.**
-Write `type(scope)!: summary`; the scope is optional, and `!` or a
-`BREAKING CHANGE:` footer marks a breaking change. Types: `feat fix perf
-refactor docs build ci chore test style revert`. `feat`, `fix` and `perf`
-subjects are Parc's release notes on GitHub and in What's New, so write them for
-Parc users: a short sentence, starting with a capital, saying what changed for
+**CRITICAL — EVERY COMMIT MESSAGE IS ONE CONVENTIONAL COMMIT LINE. User direction, November 9.**
+The whole message is one line, `type(scope)!: summary`; the scope is optional.
+Types: `feat fix perf refactor docs build ci chore test style revert`. `feat`,
+`fix` and `perf` subjects are Parc's release notes on GitHub and in What's New:
+write them for Parc users, starting with a capital, saying what changed for
 them (`fix(sidebar): Keep pinned tabs after a restart`). Internal work (tooling,
-tests, docs, the ledger, refactors) uses the other types. `.githooks/commit-msg`
-enforces this; enable it per clone as in [developer onboarding](docs/developer-onboarding.md).
+tests, docs, the ledger, refactors) uses the other types. Only `!` marks a
+breaking change. No body, trailers, `Co-Authored-By` or other attribution. A
+revert is one line too:
+`git revert --no-commit X && git commit -m 'Revert "<original subject>"'`.
+`.githooks/commit-msg` rejects anything else, and
+`.githooks/pre-push` refuses a push carrying a nonconforming commit, including
+ones made with `commit-tree`, rebases or cherry-picks. Never use `--no-verify`;
+reword the commit instead. Enable the hooks per clone as in
+[developer onboarding](docs/developer-onboarding.md).
 
 **Current Codex chat — November 5:** Josh directs root to do all work itself,
 directly in `/Users/josh.etsenake/parc` on `main`, with no subagents or new

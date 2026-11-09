@@ -12,10 +12,11 @@ historical context. Onboarding does not claim or resume feature rows.
 2. **Check the checkout.** Verify the repository, origin, branch and working
    tree. Fetch `origin/main`; update a clean checkout safely while preserving
    local changes. Do not reset or discard work to make setup easier.
-   Enable the commit-message check once per clone; its worktrees share it:
-   `git config core.hooksPath .githooks`. It rejects subjects that aren't
-   Conventional Commits, which the release builds its version and notes from
-   (see the rule in [AGENTS.md](../AGENTS.md)).
+   Enable the commit-message hooks once per clone; its worktrees share them:
+   `git config core.hooksPath .githooks`. `commit-msg` rejects a message that
+   isn't one Conventional Commit line, which the release builds its version and
+   notes from, and `pre-push` refuses to push any commit no remote has yet that
+   breaks the same rule (see [AGENTS.md](../AGENTS.md)).
 
 3. **Set up prerequisites.** Follow the setup guide to verify full Xcode,
    its selected developer directory, Swift/SDK, Python 3.12+, Git, GitHub CLI,

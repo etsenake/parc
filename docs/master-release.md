@@ -14,15 +14,15 @@ The earlier one-night wait was coordination, not a feature of this command.
 
 ## Versions and release notes
 
-Commit subjects follow Conventional Commits (see `AGENTS.md`). The release reads
-the commits since the newest published `v*` tag on main, ignoring merges and
-subjects that don't parse; git's own `Revert "…"` cancels the change it reverts
-and `Reapply "…"` (`Revert "Revert "…""` from git before 2.43) restores it.
-A breaking change (`type!:` or a `BREAKING CHANGE:` footer) makes a major
-release, any `feat` a minor one and any `fix` or `perf` a patch. With none of
-those the command prints `Nothing to release since vX` and exits successfully
-before taking the release lease, committing or building. `--type` overrides the
-bump when the commits can't describe it.
+Every commit message is one Conventional Commit line (see `AGENTS.md`). The
+release reads the commits since the newest published `v*` tag on main, ignoring
+merges and subjects that don't parse; git's own `Revert "…"` cancels the change
+it reverts and `Reapply "…"` (`Revert "Revert "…""` from git before 2.43)
+restores it. A breaking change (`type!:`) makes a major release, any `feat` a
+minor one and any `fix` or `perf` a patch. With none of those the command prints
+`Nothing to release since vX` and exits successfully before taking the release
+lease, committing or building. `--type` overrides the bump when the commits
+can't describe it.
 
 A minor release after 1.0.0 is 1.1.0; the Apple bundle build increases
 independently. The version commit, `chore(release): X`, holds
