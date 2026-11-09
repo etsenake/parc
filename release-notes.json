@@ -1,3 +1,143 @@
 {
-  "releases": []
+  "releases": [
+    {
+      "version": "1.9.0",
+      "build": 23,
+      "date": "2026-11-09",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": null,
+          "summary": "correct browser chrome, onboarding replay, and About panel",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "menus",
+          "summary": "open the bundled What\u2019s New page from Help \u25b8 Release Notes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "make Edit Theme\u2026 and other window commands work from the command bar",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "updates",
+          "summary": "check for updates from the Parc menu",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "show Update Complete with See What\u2019s New after Parc updates",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "center and restyle scope tokens",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "stop row labels, keycaps and the privacy banner clipping their text",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "add the hover gradient and sparkles to Update Complete",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "updates",
+          "summary": "Size the up-to-date window at the 270 \u00d7 341",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "Show Restart and Update when a Parc update is ready",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "Open the update-ready banner from its title",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "whats-new",
+          "summary": "Reopen saved What's New tabs at this version's page and leave its file address out of link copies",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "whats-new",
+          "summary": "Show the page's title instead of its file address in the toolbar, Copy URL, Share and address edit",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "whats-new",
+          "summary": "Show the page's title in the sidebar address and keep its file address out of the command bar and Archive",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Open the command bar inside the browser window",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Show hover text only on the unavailable Check for Updates\u2026 row",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "sidebar",
+          "summary": "Reach every update banner control from the keyboard",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "whats-new",
+          "summary": "Hide only Parc's own What's New address and leave other apps' pages where they are",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Keep window commands and their shortcuts live while the command bar is open",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "capture",
+          "summary": "Leave the What's New page's file address out of its captures and their shares",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "whats-new",
+          "summary": "Offer no shared quote on the What's New page, whose link would be its file address",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "sidebar",
+          "summary": "Keep rows and buttons under the command bar from lighting up on hover",
+          "breaking": false
+        }
+      ]
+    }
+  ]
 }
