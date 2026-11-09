@@ -20,7 +20,18 @@
    void SetFrameTreeVisibility(
        blink::mojom::PageVisibilityState visibility_state);
    void SetIsInBackForwardCache(
-@@ -90,6 +96,9 @@
+@@ -77,6 +83,10 @@
+ 
+   void SetIsLeavingBackForwardCache(base::OnceClosure done_cb);
+ 
++  // Parc: barrier for actions on a different IPC pipe that require the page's
++  // visibilitychange to have run. The caller must have a live PageBroadcast.
++  void SynchronizeParcPageLifecycleState(base::OnceClosure done_cb);
++
+   // Returns true if the page has fully entered back/foward-cache
+   bool DidReceiveBackForwardCacheAck() const {
+     return back_forward_cache_entered_ == BackForwardCacheEntered::kEntered;
+@@ -90,6 +100,9 @@
    void SetDelegateForTesting(TestDelegate* test_delegate_);
  
   private:
@@ -53,7 +64,19 @@
  }
  
  void PageLifecycleStateManager::SetFrameTreeVisibility(
-@@ -231,7 +245,8 @@
+@@ -191,6 +205,11 @@
+   return !eviction_enabled_ || !last_acknowledged_state_->eviction_enabled;
+ }
+ 
++void PageLifecycleStateManager::SynchronizeParcPageLifecycleState(
++    base::OnceClosure done_cb) {
++  SendUpdatesToRendererIfNeeded(nullptr, std::move(done_cb));
++}
++
+ void PageLifecycleStateManager::SendUpdatesToRendererIfNeeded(
+     blink::mojom::PageRestoreParamsPtr page_restore_params,
+     base::OnceClosure done_cb) {
+@@ -231,7 +250,8 @@
  PageLifecycleStateManager::CalculatePageLifecycleState() {
    auto state = blink::mojom::PageLifecycleState::New();
    state->is_in_back_forward_cache = IsInBackForwardCache();

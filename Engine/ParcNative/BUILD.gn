@@ -69,6 +69,17 @@ source_set("native_video_pip_api") {
   sources = public
 }
 
+# Lifecycle acknowledgement is implemented in libcef, without a dependency
+# from Chrome back to libcef_static.
+source_set("native_background_picture_in_picture_api") {
+  public = [
+    "native_background_picture_in_picture.h",
+    "native_background_picture_in_picture_api.h",
+  ]
+  sources = public
+  public_deps = [ "//base" ]
+}
+
 # Chrome's BrowserWebContentsDelegate asks a Parc page's own alert sheet for
 # the repost warning; javascript_dialog_runner.mm implements it in libcef.
 source_set("native_repost_form_warning_api") {

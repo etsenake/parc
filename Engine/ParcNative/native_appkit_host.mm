@@ -1332,8 +1332,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       }
       const auto pip_visibility =
           !shown ? parc::BackgroundPipVisibility::kHidden
-                 : (NSApp.isActive ? parc::BackgroundPipVisibility::kVisible
-                                   : parc::BackgroundPipVisibility::kOccluded);
+                 : ((parc::PageHandlesAutoPictureInPicture(contents.get())
+                         ? page_occluded
+                         : !NSApp.isActive)
+                        ? parc::BackgroundPipVisibility::kOccluded
+                        : parc::BackgroundPipVisibility::kVisible);
       parc::SyncBackgroundPictureInPicture(contents.get(), pip_visibility);
       if (!attached_here()) {
         return;
@@ -1347,13 +1350,13 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       side_panel_->HostStateChanged();
     }
   }
-  // Leaving Parc occludes a page whose auto-PiP is Chromium's, as a covered
-  // Chrome window's: Chromium enters it only for a hidden page, and Meet's
-  // handler opens no PiP while its page is visible.
-  static bool PageOccluded(content::WebContents& contents,
-                           bool window_occluded) {
-    return window_occluded || (!NSApp.isActive &&
-                               parc::PageHandlesAutoPictureInPicture(&contents));
+  // Leaving this window occludes a page whose auto-PiP is Chromium's. Meet's
+  // automatic handler returns while document.hidden is false. A key sheet or
+  // extension popup still belongs to this window's active chain.
+  bool PageOccluded(content::WebContents& contents, bool window_occluded) const {
+    return window_occluded ||
+           (!InActiveKeyChain() &&
+            parc::PageHandlesAutoPictureInPicture(&contents));
   }
   // Every page the shell shows in an on-screen window must end a pass drawing
   // (or occluded with its window). One that did not — skipped while still
@@ -1876,7 +1879,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                       // becoming key (a restored background window) gets no
                       // other. Chromium's checker posts this notification for
                       // the window too whenever its own flag changes.
-                      if (!any_window && !self->WindowCurrentlyOccluded()) {
+                      // Key changes also reconcile site-owned auto-PiP when
+                      // switching between two visible Parc windows.
+                      if (any_window || !self->WindowCurrentlyOccluded()) {
                         self->Synchronize();
                       }
                     }

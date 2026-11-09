@@ -2,6 +2,7 @@
 #ifndef PARC_NATIVE_NATIVE_BACKGROUND_PICTURE_IN_PICTURE_API_H_
 #define PARC_NATIVE_NATIVE_BACKGROUND_PICTURE_IN_PICTURE_API_H_
 
+#include "base/functional/callback_forward.h"
 #include "native_background_picture_in_picture.h"
 
 namespace content {
@@ -20,9 +21,15 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents);
 void SyncBackgroundPictureInPicture(content::WebContents* contents,
                                     BackgroundPipVisibility shell_visibility);
 
-// The page registered its own auto-PiP handler (Meet), so Chromium's
-// AutoPictureInPictureTabHelper, not the policy above, enters its PiP.
+// Chromium owns automatic entry for this session, including site handlers
+// such as Meet's document PiP handler.
 bool PageHandlesAutoPictureInPicture(content::WebContents* contents);
+
+// Reports success only after the renderer acknowledges its lifecycle update.
+// False means the original document is no longer live/hidden. No timeout may
+// substitute for acknowledgement: the media action uses a different IPC pipe.
+void SynchronizeAutoPictureInPictureVisibility(
+    content::WebContents* contents, base::OnceCallback<void(bool)> callback);
 
 }  // namespace parc
 

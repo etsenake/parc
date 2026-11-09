@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 647,
+  "version": 648,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -40,7 +40,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "cef/libcef/browser/parc_native/BUILD.gn",
-      "sha256": "e126033b4aa098200b7c236c39b19621604d248e01bfdc6f6064a2ced1f01c8c"
+      "sha256": "2b65a62bac46c04408606277c99df4aba598b4860ad9c3e530d84ecf9151fcd3"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -405,7 +405,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "5dfe1963844bc53ffea691aac21405050ed6fd42912f7ad01f3598298246c0fc"
+      "sha256": "a3971c8088a24cf4900f74f19334e7aa712ee6fd6cff21e39de13f864b6ed82c"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -1210,7 +1210,7 @@
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture_api.h",
       "target": "cef/libcef/browser/parc_native/native_background_picture_in_picture_api.h",
-      "sha256": "0ccc5146bc07f4fdbc93a681f9bdfaeee8a31bb4f43e71a5f382fb1917dd925f"
+      "sha256": "f8b438d7b7936ab33d384bbb61d25b8abf8fa3101bc297003eb09995e5137283"
     },
     {
       "source": "Engine/ParcNative/native_media_notify.h",
@@ -1220,7 +1220,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "4b7d8ddd7fc23c522415af159ce6b2c412ddf91005586be9f18296a58add1eb5"
+      "sha256": "7499b98747b06425014180a2a3a39c14eb47acfedf5ceffc27509810431f3caa"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
@@ -3502,17 +3502,17 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-applescript-lifecycle.patch",
-      "sha256": "7b422f18c6c114dde4b6d20558cb28ddb168c5be4d40e9232e314ed9eacfb145",
+      "sha256": "e7ff6bb656ea1cd39d2d64dc4412a322bec5db676c23dc615e2e65563f04d92a",
       "files": [
         {
           "target": "content/browser/renderer_host/page_lifecycle_state_manager.h",
           "before_sha256": "7df95e3deb200003fc7d7891f945fa3b03406d798f450856528ef7ee7098d3d4",
-          "after_sha256": "35124f6917958a8fd62033f14570af305853fe83eaf27cafa2e655294b5be869"
+          "after_sha256": "896f895241d77735e76e56e33ebb1a85b9b4b1b935e70516f92f21a7b271ca05"
         },
         {
           "target": "content/browser/renderer_host/page_lifecycle_state_manager.cc",
           "before_sha256": "e149a33f348be28f769ab972b36ab283461f6273e1c240fd5a3d8935ea3ab290",
-          "after_sha256": "a37073cb05baf9f0246e4dfb24407898fa45658a4fd8b859fa721de2d02d4a36"
+          "after_sha256": "830d9dc6547b613154c2422abc8ca0a4ae1ddc074b809339c037fa3bdb1b1549"
         }
       ]
     },
@@ -4301,17 +4301,22 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-auto-pip-host-occlusion.patch",
-      "sha256": "f0a0132021a591ac79d871e2887fb7d4b4fbfa3808d7460154c11a5b46180925",
+      "sha256": "b61ec59d30fd87b724561c64f9de675e74ba0a9346a3e926656bc223a8b7beb5",
       "files": [
-        {
-          "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h",
-          "before_sha256": "8d04b3dc944c41be95d473829eb396c8709fbe25384afbee0c7ddd430de30f28",
-          "after_sha256": "0e5901f11820c38ae7267dbc51add5a593a681700af7dd91d645e959217dc198"
-        },
         {
           "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc",
           "before_sha256": "184a6d15b62037cdf22573229f4df156bfd3ca69b007aac07abafb435f45d99e",
-          "after_sha256": "ec94bf0057a9ddf420ced7e3485789819e35a0978188f4ff7a0d5dbfbebc0c9f"
+          "after_sha256": "d477d690d80a433259a38ae13dbbd36fce18a805b6f2ad005927286fe4a64a6d"
+        },
+        {
+          "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h",
+          "before_sha256": "8d04b3dc944c41be95d473829eb396c8709fbe25384afbee0c7ddd430de30f28",
+          "after_sha256": "c9d9505d39c674ed93d42043e20090bafac18991c700a9de4f53c788841ec1fc"
+        },
+        {
+          "target": "chrome/browser/picture_in_picture/BUILD.gn",
+          "before_sha256": "04c44b4d971696b35797036e9d697948708c8dbe157356615bda16ea16870adb",
+          "after_sha256": "6a9cb4278a29bef93eb633b4b908a590dd0107cc4e2770f9a7feb4d568de4929"
         }
       ]
     },

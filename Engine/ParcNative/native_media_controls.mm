@@ -22,6 +22,8 @@
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/browser/media/session/media_session_impl.h"
+#include "content/browser/renderer_host/page_lifecycle_state_manager.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_handle.h"
@@ -426,8 +428,9 @@ class MediaState final : public content::WebContentsObserver,
     if (!contents) return false;
     auto* session = content::MediaSession::GetIfExists(contents);
     if (!session) return false;
-    // Only Chromium's entry grants the activation a document PiP needs; our
-    // plain Enter would fail and hold back the occlusion that triggers it.
+    // Chromium owns this session's automatic reason, scoped activation and
+    // lifecycle ordering. Manual Enter also grants activation, but must not
+    // compete with that automatic path or suppress its occlusion notification.
     if (PageHandlesAutoPictureInPicture(contents)) return false;
     const auto info = session->GetMediaSessionInfoSync();
     using AudioVideoState = media_session::mojom::MediaAudioVideoState;
@@ -757,6 +760,49 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
 bool PageHandlesAutoPictureInPicture(content::WebContents* contents) {
   return contents && Has(content::MediaSession::GetIfExists(contents),
                          Action::kEnterAutoPictureInPicture);
+}
+
+void SynchronizeAutoPictureInPictureVisibility(
+    content::WebContents* contents, base::OnceCallback<void(bool)> callback) {
+  auto* frame = contents && !contents->IsBeingDestroyed()
+                    ? contents->GetPrimaryMainFrame() : nullptr;
+  if (!frame || !frame->IsRenderFrameLive() || !frame->IsActive() ||
+      contents->GetVisibility() == content::Visibility::VISIBLE) {
+    std::move(callback).Run(false);
+    return;
+  }
+  auto* view =
+      static_cast<content::RenderViewHostImpl*>(frame->GetRenderViewHost());
+  auto* lifecycle = view->GetPageLifecycleStateManager();
+  if (!view->GetAssociatedPageBroadcast() ||
+      lifecycle->CalculatePageLifecycleState()->visibility ==
+          blink::mojom::PageVisibilityState::kVisible) {
+    std::move(callback).Run(false);
+    return;
+  }
+  lifecycle->SynchronizeParcPageLifecycleState(base::BindOnce(
+      [](base::WeakPtr<content::WebContents> contents,
+         content::WeakDocumentPtr document,
+         base::OnceCallback<void(bool)> callback) {
+        auto* frame = document.AsRenderFrameHostIfValid();
+        if (!contents || contents->IsBeingDestroyed() || !frame ||
+            !frame->IsRenderFrameLive() ||
+            !frame->IsActive() || frame != contents->GetPrimaryMainFrame() ||
+            contents->GetVisibility() == content::Visibility::VISIBLE) {
+          std::move(callback).Run(false);
+          return;
+        }
+        auto* view =
+            static_cast<content::RenderViewHostImpl*>(frame->GetRenderViewHost());
+        auto* lifecycle = view->GetPageLifecycleStateManager();
+        std::move(callback).Run(
+            !lifecycle->IsInBackForwardCache() &&
+            lifecycle->CalculatePageLifecycleState()->visibility !=
+                blink::mojom::PageVisibilityState::kVisible &&
+            lifecycle->last_acknowledged_state().visibility !=
+                blink::mojom::PageVisibilityState::kVisible);
+      },
+      contents->GetWeakPtr(), frame->GetWeakDocumentPtr(), std::move(callback)));
 }
 
 void NativeMediaAirPlayChanged(content::WebContents* contents) {

@@ -6995,6 +6995,29 @@ Evidence: parity.md P0-13–16; Engine/ParcNative extension_*; native Browser/ta
 
 Evidence: parity.md P0-22; media-mini-player.md; media-casting.md; MiniPlayerView.swift; native_media_controls.mm; native_cast.mm.
 
+**Meet automatic PiP follow-up — November 9.** Josh reported reliable manual
+Meet PiP and ordinary video PiP but inconsistent automatic Meet entry on tab
+and window departure. Main's `273e1922` defers the request until WebContents
+becomes hidden/occluded and occludes site-handled pages when Parc resigns active.
+The follow-up waits for the renderer's lifecycle acknowledgement before sending
+the automatic media action: PageBroadcast and MediaSessionClient use separate
+message pipes, and Meet's automatic handler returns while `document.hidden` is
+false. Pending entry cancels on tab return, navigation, handler removal or an
+already-open PiP, with document identity checked again after acknowledgement.
+Switching between visible Parc windows now reconciles site-handled page
+visibility using the existing key-window/parent-sheet chain. The outgoing-tab
+anti-flash hold, ordinary native video policy and manual entry remain intact.
+
+Root reviewed the source directly without agents. Exact read-only reconstruction
+of all 1,170 overlay targets passes. An isolated execution of the cached Meet
+handler with service stubs confirms automatic-visible rejection,
+automatic-hidden entry and manual-visible entry; delayed lifecycle delivery
+also demonstrates why browser visibility alone is insufficient. This is not a
+live reproduction of a failure after `273e1922`. No compiler, engine apply,
+build, launch or browser test was run for this follow-up, as Josh instructed;
+the native change still needs compilation and live acceptance in a later
+authorized build. Existing family completion counts are unchanged.
+
 | ID | State | Requirement |
 |---|---|---|
 | MEDIA01 | DONE | Keep PiP accepted DONE under explicit user direction. |
