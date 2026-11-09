@@ -502,7 +502,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Key restoration during command-bar dismissal happens before its
     /// selected menu item has been dispatched.
     var hasCommandBarDuringActivation: Bool { commandBar != nil }
-    var commandBarHasFocus: Bool { commandBar?.hasFocus == true }
     var onCommandBarDismissalSettled: (() -> Void)?
     ///
     private var commandBarCreatesNewTab = false

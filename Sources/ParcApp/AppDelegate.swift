@@ -158,12 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         windows.first { $0.ownsSpaceCommandFocus && $0.windowCommandSecurityAvailable }
     }
 
-    /// Native input commands require the browser itself to be key. A focused
-    /// command bar answers as it did when it was a key panel of its own.
+    /// Native input commands require the browser itself to be key.
     private var browserInputCommandWindow: BrowserWindowController? {
         guard let owner = browserWindowCommandOwner, let window = owner.window,
-              window.isKeyWindow, !owner.commandBarHasFocus,
-              PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return nil }
+              window.isKeyWindow, PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return nil }
         return owner
     }
 
