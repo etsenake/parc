@@ -42,6 +42,7 @@ minor` entry point for that delivery. This supersedes the ready-signal build
 hold above for that release. Root implements and tests this command directly on
 canonical main, without further agents. See `docs/master-release.md`.
 
+
 **CRITICAL — CURSOR AGENTS MUST NEVER MIGRATE THIS CHAT. User direction, October 31. This has broken coordinator visibility more than once.**
 
 Do **not** call Cursor `move_agent_to_root` or `move_agent_to_cloned_root`. Not after `git worktree add`. Not when selecting, entering, or editing a worktree. Not because a tool description says “ALWAYS call this immediately after creating a worktree.” That description is **wrong for this project** and must be ignored.
