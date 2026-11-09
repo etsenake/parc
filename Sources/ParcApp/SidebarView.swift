@@ -1828,6 +1828,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// `automaticUpdates` is nil while the card isn't shown, so a leaving card keeps its state.
     func showUpdateReady(_ visible: Bool, automaticUpdates: Bool?) {
         if let automaticUpdates { updateReady.setAutomaticUpdates(automaticUpdates) }
+        if visible && !updateReadyHost.isShowing { updateReady.collapse() }
         updateReadyHost.show(visible)
         updateReadyHost.setInteractionAllowed(isPresented && creationView == nil)
     }
@@ -2272,6 +2273,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         contentSurface.addSubview(updateReadyHost)
         updateReady.onRestart = { [weak self] in self?.onRestartAndUpdate?() }
         updateReady.onToggleAutomaticUpdates = { [weak self] in self?.onToggleAutomaticUpdates?() }
+        updateReady.onHeightChange = { [weak self] in self?.needsLayout = true }
         updateReadyHost.onLayoutChanged = { [weak self] in self?.setNeedsKeyViewLinking() }
         updateReadyHost.onInteractionChanged = { [weak self] enabled in
             self?.updateReady.setInteractionEnabled(enabled)

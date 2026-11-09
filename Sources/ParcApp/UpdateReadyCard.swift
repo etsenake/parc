@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 ///
@@ -9,9 +10,12 @@ import SwiftUI
 final class UpdateReadyCard: NSView {
     var onRestart: (() -> Void)?
     var onToggleAutomaticUpdates: (() -> Void)?
+    /// Expanding grows the card, so the sidebar lays the slot out again.
+    var onHeightChange: (() -> Void)?
     private let model = UpdateReadyModel()
     private var hosting: NSHostingController<UpdateReadyBanner>!
     private var measured: (width: CGFloat, height: CGFloat)?
+    private var expansion: AnyCancellable?
     override var isFlipped: Bool { true }
     var keyViewControls: [NSView] { [hosting.view] }
 
@@ -26,6 +30,10 @@ final class UpdateReadyCard: NSView {
         hosting.view.autoresizingMask = [.width, .height]
         addSubview(hosting.view)
         setAccessibilityElement(false)
+        expansion = model.$expanded.dropFirst().removeDuplicates().sink { [weak self] _ in
+            self?.measured = nil
+            self?.onHeightChange?()
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -40,6 +48,8 @@ final class UpdateReadyCard: NSView {
         } else { model.label = .white }
     }
     func setInteractionEnabled(_ enabled: Bool) { model.interactive = enabled }
+    ///
+    func collapse() { model.expanded = false }
     func setAutomaticUpdates(_ enabled: Bool) {
         // The window refreshes banners on every chrome tick; publish changes only.
         if model.automaticUpdates != enabled { model.automaticUpdates = enabled }
@@ -62,6 +72,7 @@ final class UpdateReadyModel: ObservableObject {
     @Published var dark = false
     @Published var interactive = false
     @Published var automaticUpdates = true
+    @Published var expanded = false
     @Published var base = Color.accentColor
     @Published var label = Color.white
     var restart: () -> Void = {}
@@ -74,26 +85,68 @@ struct UpdateReadyBanner: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 8) {
-            UpdateBannerHeader(title: "New Parc Version Available", dark: model.dark, sparkles: false,
-                               sparkleColor: model.base, close: nil)
-            VStack(spacing: 8) {
-                //
-                UpdateBannerRow(title: "Automatic Updates", icon: model.automaticUpdates ? "checkmark.square" : "square",
-                                dark: model.dark, gradient: false, base: model.base, alignment: .center, action: model.toggle)
-                    .accessibilityValue(model.automaticUpdates ? "On" : "Off")
-                UpdateBannerPrimaryButton(title: "Restart and Update", dark: model.dark, label: model.label,
-                                          gradient: hovered && model.interactive && !reduceMotion, base: model.base,
-                                          action: model.restart)
+        content
+            .onHover { hovered = $0 }
+            //
+            //
+            .task(id: hovered) {
+                guard hovered, !model.expanded else { return }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if !Task.isCancelled { expand() }
             }
-            .padding(.horizontal, 8)
+            // No hover exit arrives once hit testing stops.
+            .onReceive(model.$interactive) { if !$0 { hovered = false } }
+            // Not .disabled: that would dim the controls through the exit fade.
+            .allowsHitTesting(model.interactive)
+            .environment(\.colorScheme, model.dark ? .dark : .light)
+    }
+
+    private func expand() {
+        guard model.interactive, !model.expanded else { return }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.7)) { model.expanded = true }
+    }
+
+    // One header throughout, so expanding doesn't swap it for a copy.
+    private var content: some View {
+        VStack(spacing: 8) {
+            // Parc's: a click, Space or VoiceOver's press on the collapsed
+            // title also opens it, so the controls never need a resting pointer.
+            Button(action: expand) {
+                UpdateBannerHeader(title: "New Parc Version Available", dark: model.dark, sparkles: false,
+                                   sparkleColor: model.base, close: nil, expanded: model.expanded, hovered: hovered)
+            }
+            .buttonStyle(Bare())
+            // Open, it's a plain title again for Tab and VoiceOver.
+            .disabled(model.expanded)
+            .accessibilityHint(model.expanded ? "" : "Shows Restart and Update")
+            if model.expanded { controls.transition(.opacity) }
         }
-        .padding(.bottom, 8)
-        .background(UpdateBannerCard(dark: model.dark))
-        .onHover { hovered = $0 }
-        // Not .disabled: that would dim the controls through the exit fade.
-        .allowsHitTesting(model.interactive)
-        .environment(\.colorScheme, model.dark ? .dark : .light)
+        .padding(.bottom, model.expanded ? 8 : 0)
+        .background { if model.expanded { UpdateBannerCard(dark: model.dark) } }
+        .overlay {
+            //
+            if !model.expanded {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(model.dark ? 0.2 : 0), lineWidth: 1)
+            }
+        }
+    }
+
+    private struct Bare: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View { configuration.label.contentShape(Rectangle()) }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 8) {
+            //
+            UpdateBannerRow(title: "Automatic Updates", icon: model.automaticUpdates ? "checkmark.square" : "square",
+                            dark: model.dark, gradient: false, base: model.base, alignment: .center, action: model.toggle)
+                .accessibilityValue(model.automaticUpdates ? "On" : "Off")
+            UpdateBannerPrimaryButton(title: "Restart and Update", dark: model.dark, label: model.label,
+                                      gradient: hovered && model.interactive && !reduceMotion, base: model.base,
+                                      action: model.restart)
+        }
+        .padding(.horizontal, 8)
     }
 }
 

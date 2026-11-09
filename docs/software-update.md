@@ -375,9 +375,13 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   opacity 0.5) while the banner is hovered, a white 0.2 edge in dark, and a
   0.97 scale with 0.8 label opacity on a 0.2/0.6 spring when pressed [R].
   Parc's values (open): the label is 12-point medium in black or white by the
-  pointer rests on it for 300 ms (a debounced hover subject expands it, and
-  the card background, divider and buttons appear); Parc's is always
-  expanded for now.
+  the header's own fill (white/black at 0.1/0.03, doubled on hover, a 0.08
+  edge) and the container's dark white-0.2 edge. Once the pointer rests on it
+  passes) it expands for good on a 0.35/0.7 spring: the card background,
+  divider and controls appear, and the slot grows. Parc's additions: the
+  collapsed title is a button, so a click, Space with Full Keyboard Access
+  or VoiceOver's press also expands it. Unverified without a run: how the slot's growth and the
+  spring line up (the slot resizes at once; the content springs inside it).
 
 ### Updater API
 
@@ -398,7 +402,8 @@ nothing there.
 `preparing`, `readyToInstall(version:)` or `installing`. The version is
 Sparkle's display version, e.g. "1.9.0".
 
-- Show **update ready** while the phase is `readyToInstall`; the notification
+- Show **update ready** while the phase is `readyToInstall` (Parc keeps it
+  through `installing`, so a cancelled quit can retry); the notification
   fires on every phase change, so read `phase` when it arrives.
 - `installAndRelaunch()` acts in `readyToInstall`, and retries in
   `installing` if a page cancelled the quit. It runs Sparkle's install-now

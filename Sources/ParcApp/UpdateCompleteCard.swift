@@ -97,6 +97,8 @@ struct UpdateCompleteBanner: View {
         .padding(.bottom, 8)
         .background(UpdateBannerCard(dark: model.dark))
         .onHover { hovered = $0 }
+        // No hover exit arrives once hit testing stops.
+        .onReceive(model.$interactive) { if !$0 { hovered = false } }
         // Not .disabled: that would dim the rows through the exit fade.
         .allowsHitTesting(model.interactive)
         .environment(\.colorScheme, model.dark ? .dark : .light)
@@ -127,6 +129,12 @@ struct UpdateBannerHeader: View {
     let sparkleColor: Color
     ///
     let close: (() -> Void)?
+    /// Collapsed, the header is the whole banner: its own fill, no divider.
+    var expanded = true
+    var hovered = false
+    // Kept here, not in the label, so a switch between the two layouts
+    //
+    @State private var sparkling = true
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -140,7 +148,23 @@ struct UpdateBannerHeader: View {
             if let close { UpdateBannerCloseButton(dark: dark, action: close) }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(dark ? Color.white.opacity(0.15) : Color.black.opacity(0.07)).frame(height: 1)
+            if expanded {
+                Rectangle().fill(dark ? Color.white.opacity(0.15) : Color.black.opacity(0.07)).frame(height: 1)
+            }
+        }
+        .background {
+            //
+            if !expanded {
+                let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+                shape.fill((dark ? Color.white : .black).opacity((dark ? 0.1 : 0.03) * (hovered ? 2 : 1)))
+                    .overlay { shape.stroke(Color.black.opacity(0.08), lineWidth: 1) }
+            }
+        }
+        .onAppear {
+            // Always scheduled: sparkles turned on later still time out.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+                withAnimation(.easeOut(duration: 0.4)) { sparkling = false }
+            }
         }
     }
 
@@ -153,9 +177,10 @@ struct UpdateBannerHeader: View {
             .lineLimit(1)
             .overlay {
                 // The gradient's palette treatment, so a pastel stays visible on the light card.
-                if sparkles {
+                if sparkles && sparkling {
                     UpdateBannerSparkles(color: sparkleColor).brightness(dark ? 0.6 : -0.2).saturation(dark ? 1 : 2)
                         .padding(-2).opacity(0.7)
+                        .transition(.opacity)
                 }
             }
     }
@@ -315,12 +340,11 @@ private struct UpdateBannerSparkles: View {
     }
     @State private var sparkles: [Sparkle] = []
     @State private var lit = false
-    @State private var active = true
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                ForEach(active ? sparkles : []) { sparkle in
+                ForEach(sparkles) { sparkle in
                     Image(systemName: "sparkle")
                         .font(.system(size: sparkle.size))
                         .foregroundStyle(color)
@@ -339,9 +363,6 @@ private struct UpdateBannerSparkles: View {
             }
             // Inserted dark first, so the repeating animation sees lit change.
             DispatchQueue.main.async { lit = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
-                withAnimation(.easeOut(duration: 0.4)) { active = false }
-            }
         }
     }
 }
