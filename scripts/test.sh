@@ -94,6 +94,9 @@ compile_and_run automatic-archive-presentation AutoArchivePresentationTests
 compile_and_run automatic-archive-education-view AutoArchiveEducationViewTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcApp/AutoArchiveEducationView.swift"
+compile_and_run update-complete-card UpdateCompleteCardTests \
+  "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
+  "$repo_root/Sources/ParcApp/UpdateCompleteCard.swift"
 compile_and_run tab-creation-provenance TabCreationProvenanceTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
 compile_and_run recent-tab-switcher RecentTabSwitcherTests \
