@@ -26,8 +26,13 @@ final class BrowserImportViewController: NSViewController {
         guard !closed, coordinator.stage == .finished else { return nil }
         return coordinator.acceptedICloudPasswordsDestination
     }
-    var importedAdBlockers: [OnboardingDraft.ImportedAdBlocker] { coordinator.importedAdBlockers }
+    var importedAdBlockers: [OnboardingDraft.ImportedAdBlocker] {
+        earlierAdBlockers + coordinator.importedAdBlockers.filter { blocker in
+            !earlierAdBlockers.contains { $0.identifier == blocker.identifier }
+        }
+    }
     var importReachedCompletion: Bool {
+        if earlierImport || coordinator.parkedStage != nil { return true }
         switch coordinator.stage {
         case .passwordChoice, .safariPasswords, .bookmarks, .finished: return true
         default: return false
@@ -50,6 +55,11 @@ final class BrowserImportViewController: NSViewController {
     // menu-wizard labels do not replace that progression control.
     var nextTitle: String { embedded ? "Next" : next.title }
     private(set) var canAdvance = false
+    /// Setup's second button on this import page, or nil for none.
+    var skipTitle: String? { closed ? nil : coordinator.setupSkipTitle }
+    var canSkip: Bool { !closed && coordinator.canSkipInSetup }
+    var canGoBack: Bool { !closed && coordinator.canGoBackInSetup }
+    var foundNoSources: Bool { coordinator.foundNoSources }
     var isImporting: Bool { coordinator.stage == .importing }
     ///
     /// button spinner, the import's only loading presentation.
@@ -82,6 +92,12 @@ final class BrowserImportViewController: NSViewController {
     private var activationObserver: NSObjectProtocol?
     private var restartRequest: UUID?
     private var coordinator: BrowserImportCoordinator!
+    private let ownerIsCurrent: () -> Bool
+    /// Setup went Back after an import and chose another browser; the earlier
+    /// import finishes on its own and its ad blockers still count.
+    private var earlierImport = false
+    private var earlierAdBlockers: [OnboardingDraft.ImportedAdBlocker] = []
+    private var lateAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?
     private var closed = false
     private var queuedSetupCompletion = false
 
@@ -89,11 +105,10 @@ final class BrowserImportViewController: NSViewController {
          onboarding: Bool, ownerIsCurrent: @escaping () -> Bool) {
         self.onboarding = onboarding
         self.window = window
+        self.ownerIsCurrent = ownerIsCurrent
         super.init(nibName: nil, bundle: nil)
         view = root
-        coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
-            onboarding: onboarding, ownerIsCurrent: ownerIsCurrent)
-        coordinator.onChange = { [weak self] in self?.render() }
+        coordinator = makeCoordinator(store: store, destination: destination, window: window)
         passwordsView.usesSetupCard = onboarding
         passwordsView.onChooseFile = { [weak self] in self?.choosePasswordFile() }
         passwordsView.onDropFile = { [weak self] in self?.coordinator.importPasswordFile($0) }
@@ -151,6 +166,47 @@ final class BrowserImportViewController: NSViewController {
 
     func stopImport() { coordinator.stopImport() }
     func requestClose() { guard !closed else { return }; onClose?() }
+
+    private func makeCoordinator(store: BrowserStore, destination: BrowserImportDestination,
+                                 window: NSWindow) -> BrowserImportCoordinator {
+        let made = BrowserImportCoordinator(store: store, destination: destination, window: window,
+            onboarding: onboarding, ownerIsCurrent: ownerIsCurrent)
+        made.onChange = { [weak self] in self?.render() }
+        return made
+    }
+
+    func skip() {
+        guard !closed, window?.attachedSheet == nil else { return }
+        coordinator.skipInSetup()
+    }
+
+    func goBack() {
+        guard !closed, window?.attachedSheet == nil else { return }
+        coordinator.goBackInSetup()
+    }
+
+    /// Another browser chosen on the cards after Back gets an import of its
+    /// own; the earlier one keeps what it brought in and finishes by itself.
+    private func startOver(with source: PCNativeImportSource) {
+        guard let window, let earlier = coordinator else { return }
+        earlierImport = true
+        earlierAdBlockers = Self.merged(earlierAdBlockers, earlier.importedAdBlockers)
+        earlier.onChange = nil
+        if earlier.hasBackgroundWork {
+            // Held until the earlier import finishes, so its ad blockers reach setup.
+            earlier.detach(onAdBlockers: { [self] blockers in
+                earlierAdBlockers = Self.merged(earlierAdBlockers, blockers)
+                if closed { lateAdBlockers?(importedAdBlockers) }
+            })
+        } else { earlier.cancel() }
+        coordinator = makeCoordinator(store: earlier.store, destination: earlier.originalDestination, window: window)
+        coordinator.chooseSourceInline(source, from: earlier.sources)
+    }
+
+    private static func merged(_ first: [OnboardingDraft.ImportedAdBlocker],
+                               _ second: [OnboardingDraft.ImportedAdBlocker]) -> [OnboardingDraft.ImportedAdBlocker] {
+        first + second.filter { blocker in !first.contains { $0.identifier == blocker.identifier } }
+    }
 
     /// A persisted restart intent never contains source/profile leases. Obtain
     /// new descriptors and stop before any user-approved import submission.
@@ -217,7 +273,13 @@ final class BrowserImportViewController: NSViewController {
         activationObserver = nil
         //
         coordinator.onChange = nil
-        if coordinator.hasBackgroundWork { coordinator.detach(onAdBlockers: onBackgroundAdBlockers) } else { coordinator.cancel() }
+        var forward = onBackgroundAdBlockers
+        if earlierImport, let setup = forward {
+            // Setup's list also keeps the earlier import's ad blockers.
+            lateAdBlockers = setup
+            forward = { [self] _ in setup(importedAdBlockers) }
+        }
+        if coordinator.hasBackgroundWork { coordinator.detach(onAdBlockers: forward) } else { coordinator.cancel() }
         onBackgroundAdBlockers = nil
         onboardingAccess?.actions.removeFromSuperview()
         onChange = nil; onClose = nil; onRequestRestart = nil
@@ -321,7 +383,10 @@ final class BrowserImportViewController: NSViewController {
             let name = coordinator.source?.displayName ?? "this browser"
             if embedded {
                 heading.stringValue = "Import from \(name)."
-                detail.stringValue = "To import from \(name), Parc will need Full Disk Access. Feel free to remove access when this step is finished."
+                //
+                detail.stringValue = coordinator.source.map(BrowserImportCoordinator.isSafari) == true
+                    ? "To import Safari browser history, Parc will need Full Disk Access. Feel free to remove access when this step is finished."
+                    : "To import from \(name), Parc will need Full Disk Access. Feel free to remove access when this step is finished."
                 next.isEnabled = !coordinator.continueAfterSafariRefresh && !coordinator.restarting
                 onboardingAccess?.update(ready: coordinator.safariAccessReady, checking: coordinator.checkingSafariAccess,
                     continuing: coordinator.continueAfterSafariRefresh, restarting: coordinator.restarting,
@@ -344,10 +409,15 @@ final class BrowserImportViewController: NSViewController {
         case .safariPasswords:
             // The window's passwords view draws its own title and text.
             heading.stringValue = "Stay logged in"
-            detail.stringValue = "To manually import passwords from Safari, you’ll have to export them.\n\nOnce imported, your passwords will be encrypted locally on your computer and they’ll never be stored on our servers or shared with anyone else."
+            //
+            detail.stringValue = (coordinator.supportsICloudPasswords
+                ? "To manually import passwords from Safari, you’ll have to export them."
+                : "To use your Safari passwords in Parc, you’ll have to export them from Safari.")
+                + "\n\nOnce imported, your passwords will be encrypted locally on your computer and they’ll never be stored on our servers or shared with anyone else."
             next.isHidden = !embedded
             next.title = coordinator.passwordResult == nil ? "Skip Passwords" : "Continue"
-            next.isEnabled = !coordinator.importingPasswords && !coordinator.removingPasswordFile
+            next.isEnabled = embedded ? coordinator.canContinueSetupPasswords
+                : !coordinator.importingPasswords && !coordinator.removingPasswordFile
             passwordsView.update(canImport: coordinator.canImportPasswordFile,
                 busy: coordinator.importingPasswords, removing: coordinator.removingPasswordFile,
                 result: coordinator.passwordResult, canRemove: coordinator.canRemovePasswordFile, error: coordinator.passwordError)
@@ -516,12 +586,17 @@ final class BrowserImportViewController: NSViewController {
                 iconBackground: BrowserImportSourcePicker.iconBackground(bundleIdentifier: source.identifier),
                 selected: !skipSelected && coordinator.source === source, choose: { [weak self, weak source] in
                     guard let self, let source, self.canChooseSource else { return }
-                    self.skipSelected = false; self.coordinator.selectSourceInline(source)
+                    self.skipSelected = false
+                    // After Back, the imported browser stays as it was.
+                    if self.coordinator.parkedStage == nil { self.coordinator.selectSourceInline(source) }
+                    else if self.coordinator.source === source { self.render() }
+                    else { self.startOver(with: source) }
                 })
         }
         let skip = embedded ? BrowserImportSourcePicker.Skip(selected: skipSelected, choose: { [weak self] in
             guard let self, self.canChooseSource else { return }
-            self.skipSelected = true; self.coordinator.clearSourceInline()
+            self.skipSelected = true
+            if self.coordinator.parkedStage == nil { self.coordinator.clearSourceInline() } else { self.render() }
         }) : nil
         let content = BrowserImportSourcePicker(layout: embedded ? .setup : .window, sources: choices, skip: skip,
             enabled: stage != .importing,
@@ -563,12 +638,14 @@ final class BrowserImportViewController: NSViewController {
         switch coordinator.stage {
         case .sources:
             if embedded && skipSelected { requestClose() }
-        case .profiles: coordinator.continueSourceInline()
+        case .profiles:
+            if embedded && skipSelected { requestClose() } else { coordinator.continueSourceInline() }
         case .bookmarks: coordinator.commitBookmarks()
         case .finished: requestClose()
         case .safariAccess:
             if embedded { coordinator.continueSafariWithoutRestarting() }
-        case .safariPasswords: coordinator.continueAfterPasswords()
+        case .safariPasswords:
+            if !embedded || coordinator.canContinueSetupPasswords { coordinator.continueAfterPasswords() }
         case .passwordChoice: coordinator.continuePasswordChoice()
         case .loading, .importing: break
         }

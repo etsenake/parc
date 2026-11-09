@@ -12,13 +12,16 @@ final class BrowserImportCoordinator {
         var selection: BrowserImportSelection
         var committed = false
         var discarded = false
+        /// Setup's Skip leaves these out; Back to the bookmark step offers them again.
+        var skipped = false
     }
     let store: BrowserStore
     let originalDestination: BrowserImportDestination
     private weak var window: NSWindow?
     private let ownerIsCurrent: () -> Bool
     private let onboarding: Bool
-    private let supportsICloudPasswords: Bool
+    /// Setup offers Apple's iCloud Passwords extension before the file step.
+    let supportsICloudPasswords: Bool
     var onChange: (() -> Void)?
     private(set) var stage: Stage = .loading {
         didSet { if stage == .finished && !hasBackgroundWork { reportDataFailure() } }
@@ -52,6 +55,16 @@ final class BrowserImportCoordinator {
     private(set) var passwordError: String?
     private var passwordSession: PCNativePasswordFileImportSession?
     private var passwordStageOffered = false
+    /// Back keeps the password method the user picked when the step returns.
+    private var keepsPasswordChoice = false
+    /// Setup reached Safari's password steps without Full Disk Access.
+    private var passwordsWithoutData = false
+    private var skipAfterSafariRefresh = false
+    /// Setup went Back to the browser cards after its data was read; Next on
+    /// the same browser returns to this step instead of importing again.
+    private(set) var parkedStage: Stage?
+    /// Setup found no browser to import from and leaves its import step out.
+    private(set) var foundNoSources = false
     private var generation = UUID()
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
@@ -74,7 +87,8 @@ final class BrowserImportCoordinator {
     func detach(onAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?) {
         guard hasBackgroundWork, !cancelled else { cancel(); return }
         onChange = nil
-        if !importingPasswords { startDeferredBackground() }
+        // A finished file's session still holds the Profile the data needs.
+        if !importingPasswords { passwordSession?.cancel(); passwordSession = nil; startDeferredBackground() }
         onDetachedAdBlockers = onAdBlockers
         if !detached { detached = true; Self.detachedImports.append(self) }
     }
@@ -178,8 +192,10 @@ final class BrowserImportCoordinator {
 
     func discover(resumingSourceBundleID: String? = nil) {
         guard isCurrent else { return }
-        guard !hasBackgroundWork, stage != .importing && stage != .bookmarks && stage != .passwordChoice && stage != .safariPasswords && !restarting else { return }
+        guard !hasBackgroundWork, stage != .importing && stage != .bookmarks && stage != .passwordChoice && stage != .safariPasswords && !restarting,
+              parkedStage == nil else { return }
         discovery?.cancel(); generation = UUID(); let token = generation
+        foundNoSources = false
         checkingSafariAccess = false; continueAfterSafariRefresh = false; safariAccessError = nil
         source = nil; sources = []; profiles = []; selectedProfiles = []
         passwordDestination = nil; passwordStageOffered = false
@@ -194,6 +210,11 @@ final class BrowserImportCoordinator {
             self.sources = sources.enumerated().sorted {
                 (priorities[$0.element.identifier] ?? 2, $0.offset) < (priorities[$1.element.identifier] ?? 2, $1.offset)
             }.map(\.element)
+            if self.onboarding && sources.isEmpty {
+                //
+                self.foundNoSources = true; self.stage = .finished
+                self.message = "No supported browsers were found."; self.onChange?(); return
+            }
             self.stage = .sources
             self.message = sources.isEmpty ? "No supported browsers were found." : "Bring your browsing with you."
             if let bundleID = resumingSourceBundleID {
@@ -221,7 +242,7 @@ final class BrowserImportCoordinator {
     }
 
     func selectSourceInline(_ source: PCNativeImportSource) {
-        guard isChoosingSourceInline, isCurrent, sources.contains(where: { $0 === source }) else { return }
+        guard isChoosingSourceInline, isCurrent, parkedStage == nil, sources.contains(where: { $0 === source }) else { return }
         if self.source === source && (stage == .loading || (stage == .profiles && error == nil)) { return }
         clearSourceInline(notify: false)
         self.source = source
@@ -231,7 +252,7 @@ final class BrowserImportCoordinator {
     func clearSourceInline() { clearSourceInline(notify: true) }
 
     private func clearSourceInline(notify: Bool) {
-        guard isChoosingSourceInline, isCurrent else { return }
+        guard isChoosingSourceInline, isCurrent, parkedStage == nil else { return }
         generation = UUID(); discovery?.cancel(); discovery = nil
         source = nil; profiles = []; selectedProfiles = []
         requiresSafariAccess = false; safariAccessReady = false
@@ -241,11 +262,22 @@ final class BrowserImportCoordinator {
     }
 
     var canContinueSourceInline: Bool {
-        stage == .profiles && isCurrent && (requiresSafariAccess || hasImportableSelection)
+        stage == .profiles && isCurrent && (parkedStage != nil || requiresSafariAccess || hasImportableSelection)
+    }
+
+    /// Another browser chosen after setup's Back starts its own import from
+    /// the same cards, without discovering them again.
+    func chooseSourceInline(_ source: PCNativeImportSource, from sources: [PCNativeImportSource]) {
+        guard stage == .loading, discovery == nil, isCurrent, sources.contains(where: { $0 === source }) else { return }
+        self.sources = sources; stage = .sources; message = "Bring your browsing with you."
+        selectSourceInline(source)
     }
 
     func continueSourceInline() {
         guard canContinueSourceInline else { return }
+        if let parked = parkedStage {
+            parkedStage = nil; stage = parked; onChange?(); return
+        }
         if requiresSafariAccess {
             stage = .safariAccess; onChange?()
         } else {
@@ -295,15 +327,34 @@ final class BrowserImportCoordinator {
             self.discovery = nil; self.checkingSafariAccess = false; self.applyProfiles(result)
             if self.continueAfterSafariRefresh {
                 self.continueAfterSafariRefresh = false; self.requiresSafariAccess = false; self.stage = .profiles
+                let skipping = self.skipAfterSafariRefresh; self.skipAfterSafariRefresh = false
+                if self.onboarding { self.continueSetupAfterSafariAccess(skipping: skipping); return }
             }
             self.onChange?()
         }
     }
 
-    func continueSafariWithoutRestarting() {
+    func continueSafariWithoutRestarting() { continueSafariWithoutRestarting(skipping: false) }
+
+    private func continueSafariWithoutRestarting(skipping: Bool) {
         guard stage == .safariAccess, !restarting, isCurrent else { return }
-        continueAfterSafariRefresh = true; safariAccessError = nil
+        continueAfterSafariRefresh = true; skipAfterSafariRefresh = skipping; safariAccessError = nil
         refreshSafariAccess()
+    }
+
+    ///
+    /// Safari's password steps don't need Full Disk Access, so they still follow.
+    private func continueSetupAfterSafariAccess(skipping: Bool) {
+        if hasImportableSelection { startInOriginalDestination(); return }
+        if source.map(Self.isSafari) == true {
+            let keepsChoice = keepsPasswordChoice
+            beginImport(); keepsPasswordChoice = keepsChoice
+            passwordDestination = originalDestination; passwordsWithoutData = true
+            _ = presentPasswordStageIfNeeded()
+        } else if skipping {
+            stage = .finished; message = "Your import has finished."
+        }
+        onChange?()
     }
 
     func beginSafariRestart() -> Bool {
@@ -367,6 +418,7 @@ final class BrowserImportCoordinator {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
         dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
+        keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
     }
@@ -631,7 +683,7 @@ final class BrowserImportCoordinator {
     }
 
     private var hasPendingBookmarks: Bool {
-        bookmarkPages.contains { !$0.committed && !$0.discarded }
+        bookmarkPages.contains { !$0.committed && !$0.discarded && !$0.skipped }
     }
 
     /// Changes presentation only. Exported credentials are never read until an
@@ -644,7 +696,7 @@ final class BrowserImportCoordinator {
         stage = onboarding && supportsICloudPasswords ? .passwordChoice : .safariPasswords
         // Original setup initializes the recommendation when the included
         // Safari extension-choice path is enabled. Next still owns acceptance.
-        wantsICloudPasswords = stage == .passwordChoice
+        if !keepsPasswordChoice { wantsICloudPasswords = stage == .passwordChoice }
         message = stage == .passwordChoice ? "Choose how to bring your Safari passwords with you." : "Import your exported Safari passwords."
         return true
     }
@@ -664,6 +716,8 @@ final class BrowserImportCoordinator {
             // Transfer only an accepted pending choice to the setup owner.
             // The installation belongs to finishing setup, never row selection.
             acceptedICloudPasswordsDestination = destination
+            // A file imported before going Back keeps its passwords.
+            passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
             passwordDestination = nil; stage = .finished; startDeferredBackground()
             message = "Your import has finished."
         } else {
@@ -796,6 +850,107 @@ final class BrowserImportCoordinator {
             error = nil
         } catch { self.error = error.localizedDescription }
         onChange?()
+    }
+
+    var passwordImportCompleted: Bool { passwordResult?.outcome == .completed }
+
+    ///
+    var setupSkipTitle: String? {
+        guard onboarding else { return nil }
+        switch stage {
+        case .safariAccess: return "Do this later"
+        case .bookmarks, .passwordChoice: return "Skip for now"
+        case .safariPasswords: return passwordImportCompleted ? nil : "Do this later"
+        default: return nil
+        }
+    }
+
+    var canSkipInSetup: Bool {
+        guard setupSkipTitle != nil, isCurrent else { return false }
+        switch stage {
+        case .safariAccess: return !restarting && !continueAfterSafariRefresh
+        case .safariPasswords: return !importingPasswords && !removingPasswordFile
+        default: return true
+        }
+    }
+
+    /// Setup's Next on Stay logged in waits for a completed password file;
+    /// Do this later moves on without one.
+    var canContinueSetupPasswords: Bool {
+        stage == .safariPasswords && passwordImportCompleted && !importingPasswords && !removingPasswordFile
+    }
+
+    ///
+    /// this one would have added.
+    func skipInSetup() {
+        guard canSkipInSetup else { return }
+        switch stage {
+        case .safariAccess:
+            continueSafariWithoutRestarting(skipping: true)
+        case .bookmarks:
+            for index in bookmarkPages.indices where !bookmarkPages[index].committed { bookmarkPages[index].skipped = true }
+            error = nil
+            if !presentPasswordStageIfNeeded() {
+                stage = .finished; message = "Your import has finished."; startDeferredBackground()
+            }
+            onChange?()
+        case .passwordChoice, .safariPasswords:
+            // Skipping never installs the iCloud Passwords extension.
+            wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
+            passwordSession?.cancel(); passwordSession = nil; passwordDestination = nil; passwordRequestID = nil
+            startDeferredBackground()
+            stage = .finished; message = "Your import has finished."
+            onChange?()
+        default: break
+        }
+    }
+
+    ///
+    var canGoBackInSetup: Bool {
+        guard onboarding, isCurrent else { return false }
+        switch stage {
+        case .safariAccess: return !restarting
+        case .bookmarks, .passwordChoice: return true
+        case .safariPasswords: return !importingPasswords && !removingPasswordFile
+        default: return false
+        }
+    }
+
+    /// Back keeps everything already imported. The browser cards keep the
+    /// chosen browser, and Next on it returns here without importing again.
+    func goBackInSetup() {
+        guard canGoBackInSetup else { return }
+        switch stage {
+        case .safariAccess:
+            generation = UUID(); discovery?.cancel(); discovery = nil
+            checkingSafariAccess = false; continueAfterSafariRefresh = false; skipAfterSafariRefresh = false
+            safariAccessError = nil; requiresSafariAccess = !safariAccessReady
+            stage = .profiles; message = "Bring your browsing with you."
+        case .bookmarks:
+            park()
+        case .safariPasswords where supportsICloudPasswords:
+            keepsPasswordChoice = true; stage = .passwordChoice
+        case .passwordChoice, .safariPasswords:
+            keepsPasswordChoice = true
+            if !bookmarkPages.isEmpty {
+                passwordStageOffered = false
+                for index in bookmarkPages.indices { bookmarkPages[index].skipped = false }
+                stage = .bookmarks
+            } else if passwordsWithoutData {
+                // Nothing was readable, so the access page is still the one before.
+                passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
+                passwordStageOffered = false; passwordDestination = nil
+                requiresSafariAccess = true; stage = .safariAccess
+            } else {
+                park()
+            }
+        default: return
+        }
+        error = nil; onChange?()
+    }
+
+    private func park() {
+        parkedStage = stage; stage = .profiles; message = "Bring your browsing with you."
     }
 
     func stopImport() {

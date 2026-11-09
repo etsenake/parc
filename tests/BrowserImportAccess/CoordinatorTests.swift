@@ -218,11 +218,22 @@ import AppKit
         inline.continueSourceInline()
         expect(inline.stage == .safariAccess && !inline.isChoosingSourceInline,
                "Next opens the genuine Safari permission guidance")
-        inline.continueSafariWithoutRestarting()
+        inline.goBackInSetup()
+        expect(inline.isChoosingSourceInline && inline.canContinueSourceInline && inline.source === safari,
+               "Back from Safari access returns to the browser cards with Safari still chosen")
+        expect(!inline.safariAccessReady, "Back does not manufacture Safari access readiness")
+        let direct = BrowserImportCoordinator(store: firstLaunchStore, destination: firstLaunchDestination,
+            window: window, onboarding: true, ownerIsCurrent: { setupCurrent })
+        direct.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
+        direct.selectSourceInline(safari)
         PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
-        expect(inline.isChoosingSourceInline && inline.canContinueSourceInline,
-               "Explicit Continue retains readable Safari data without pretending access is granted")
-        expect(!inline.safariAccessReady, "Continue does not manufacture Safari access readiness")
+        direct.continueSourceInline()
+        let beforeDirect = PCNativeBrowserApplication.imports
+        direct.continueSafariWithoutRestarting()
+        PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
+        expect(PCNativeBrowserApplication.imports == beforeDirect + 1 && PCNativeBrowserApplication.browserRequests.last?.profile === partial,
+               "As Arc's, Next on Safari access imports what is readable without a second Next on the cards")
+        direct.cancel()
         inline.selectSourceInline(impostor)
         let abandoned = PCNativeBrowserApplication.profiles.removeFirst()
         inline.clearSourceInline()

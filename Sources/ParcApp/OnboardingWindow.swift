@@ -144,7 +144,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         back.actionBlock = { [weak self] in
             guard let self, !self.isFinishing,
                   self.window?.attachedSheet == nil, self.passwordHelp?.isPresented != true else { return }
-            guard self.browserImport == nil else { return }
+            if let browserImport = self.browserImport { browserImport.goBack(); return }
             if let stage = self.draft.previousStage() { self.transition(to: stage) }
         }
         skip.actionBlock = { [weak self] in self?.skipStep() }
@@ -846,9 +846,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         guard !isClosed, !isFinishing,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
         if let browserImport {
-            if browserImport.isImporting { browserImport.stopImport(); return }
-            captureBrowserImportResults()
-            closeBrowserImport()
+            // Each import page's skip moves through the import; its end closes it.
+            if browserImport.isImporting { browserImport.stopImport() } else { browserImport.skip() }
+            return
         }
         if draft.stage == .theme {
             themeEditor.finishEditing()
@@ -937,10 +937,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
         importer.selectionColor = selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor
         next.title = importer.nextTitle; next.isEnabled = importer.canAdvance; next.isLoading = importer.isLoading
-        back.isHidden = true
-        skip.title = importer.isImporting ? "Stop Import" : "Skip for now"
+        back.isHidden = !importer.canGoBack; back.isEnabled = true
         //
-        skip.isHidden = importer.isSafariPasswords || importer.isChoosingSource; skip.isEnabled = true
+        skip.title = importer.isImporting ? "Stop Import" : importer.skipTitle ?? ""
+        skip.isHidden = !importer.isImporting && importer.skipTitle == nil
+        skip.isEnabled = importer.isImporting || importer.canSkip
         progress.stringValue = (isReplay ? "Replay · " : "") + "1 of \(draft.displayedSetupCount())"
         progress.isHidden = false; next.isHidden = false
         setupCard.isHidden = false

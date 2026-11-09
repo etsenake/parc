@@ -36,7 +36,6 @@ struct BrowserImportSourceCard: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selected)
         .onHover { hovered = $0 }
         .accessibilityLabel(title)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

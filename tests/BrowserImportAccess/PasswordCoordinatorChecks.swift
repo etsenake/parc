@@ -179,6 +179,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     following.cancel()
     closing.cancel(); PCNativeBrowserApplication.acceptsBrowserImport = false
     checks += onboardingImportOrderChecks(store: store, destination: destination, window: window, safari: safari)
+    checks += setupAccessChecks(store: store, destination: destination, window: window, safari: safari, other: other)
     return checks
 }
 
@@ -299,6 +300,128 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     let unchangedMenu = start(onboarding: false, iCloudSupported: true); complete([])
     expect(unchangedMenu.stage == .safariPasswords && !unchangedMenu.canChoosePasswordMethod,
            "OS availability does not add onboarding-only choices to the menu wizard")
+    expect(unchangedMenu.setupSkipTitle == nil && !unchangedMenu.canGoBackInSetup,
+           "The menu wizard keeps its own buttons")
     unchangedMenu.cancel()
+
+    let skipping = start(); complete([selected])
+    expect(skipping.setupSkipTitle == "Skip for now" && skipping.canGoBackInSetup, "The bookmark picker offers Skip for now and Back")
+    let tabsBeforeSkip = store.state.tabs
+    skipping.skipInSetup()
+    expect(skipping.stage == .safariPasswords && store.state.tabs == tabsBeforeSkip,
+           "Skip on bookmarks goes on to Stay logged in without adding bookmarks")
+    expect(skipping.setupSkipTitle == "Do this later" && !skipping.canContinueSetupPasswords,
+           "Stay logged in offers Do this later and holds Next until a file imports")
+    skipping.importPasswordFile(URL(fileURLWithPath: "/fixture/Passwords.csv"))
+    let failedFile = PCNativeBrowserApplication.passwordRequests.removeFirst()
+    expect(skipping.setupSkipTitle == "Do this later" && !skipping.canSkipInSetup && !skipping.canGoBackInSetup,
+           "While a file imports, Do this later stays but waits, and Back is hidden")
+    failedFile.complete(.init(outcome: .failed))
+    expect(!skipping.canContinueSetupPasswords && skipping.setupSkipTitle == "Do this later",
+           "A failed file leaves Next disabled and Do this later in place")
+    skipping.goBackInSetup()
+    expect(skipping.stage == .bookmarks && !skipping.bookmarkPages[0].skipped && !skipping.bookmarkPages[0].committed,
+           "Back from Stay logged in returns to the skipped bookmarks, offered again")
+    func keptCount() -> Int { store.state.tabs.filter { $0.url == selected.url!.absoluteString }.count }
+    let keptBefore = keptCount()
+    skipping.commitBookmarks()
+    expect(skipping.stage == .safariPasswords && keptCount() == keptBefore + 1,
+           "Adding them after Back adds each once and returns to Stay logged in")
+    skipping.importPasswordFile(URL(fileURLWithPath: "/fixture/Passwords.csv"))
+    PCNativeBrowserApplication.passwordRequests.removeFirst().complete(.init(outcome: .completed, importedCount: 2))
+    expect(skipping.canContinueSetupPasswords && skipping.setupSkipTitle == nil,
+           "Once a file imports, Next is enabled and Do this later goes away")
+    skipping.goBackInSetup()
+    let tabsAfterAdd = store.state.tabs
+    expect(skipping.stage == .bookmarks && skipping.bookmarkPages[0].committed, "Back shows the bookmarks already added")
+    skipping.skipInSetup()
+    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == tabsAfterAdd,
+           "Going forward again keeps the imported passwords and adds nothing twice")
+    skipping.skipInSetup()
+    expect(skipping.stage == .safariPasswords, "A completed file leaves no Do this later to press")
+    skipping.continueAfterPasswords()
+    expect(skipping.stage == .finished, "Next finishes the import")
+    skipping.cancel()
+
+    let declined = start(iCloudSupported: true); complete([])
+    expect(declined.stage == .passwordChoice && declined.setupSkipTitle == "Skip for now", "The password choice offers Skip for now")
+    declined.choosePasswordMethod(installExtension: false); declined.continuePasswordChoice()
+    declined.goBackInSetup()
+    expect(declined.stage == .passwordChoice && !declined.wantsICloudPasswords,
+           "Back from Stay logged in returns to the choice the user made")
+    declined.choosePasswordMethod(installExtension: true)
+    declined.skipInSetup()
+    expect(declined.stage == .finished && declined.acceptedICloudPasswordsDestination == nil && declined.passwordDestination == nil,
+           "Skip on the password choice finishes without the iCloud Passwords extension or a file")
+    declined.cancel()
+
+    let returning = start(); let importsBefore = PCNativeBrowserApplication.imports; complete([selected])
+    returning.goBackInSetup()
+    expect(returning.stage == .profiles && returning.parkedStage == .bookmarks && returning.source === safari
+               && returning.canContinueSourceInline && !returning.canGoBackInSetup && returning.setupSkipTitle == nil,
+           "Back from bookmarks shows the browser cards with Safari still chosen")
+    returning.selectSourceInline(safari); returning.clearSourceInline()
+    expect(returning.source === safari && returning.parkedStage == .bookmarks, "The imported browser's choice can't be undone in place")
+    returning.continueSourceInline()
+    expect(returning.stage == .bookmarks && returning.bookmarkPages.count == 1 && PCNativeBrowserApplication.imports == importsBefore,
+           "Next on the same browser returns to its bookmarks without importing again")
+    returning.cancel()
+    return checks
+}
+
+/// Setup's Safari access page: Back, Do this later and the no-browser case.
+@MainActor
+func setupAccessChecks(store: BrowserStore, destination: BrowserImportDestination,
+                       window: NSWindow, safari: PCNativeImportSource, other: PCNativeImportSource) -> Int {
+    var checks = 0
+    func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+        checks += 1; precondition(condition(), message)
+    }
+    let restricted = PCNativeImportProfileResult(profiles: [PCNativeImportProfile("Locked", [], .restricted)], access: .restricted)
+    func access(_ source: PCNativeImportSource) -> BrowserImportCoordinator {
+        let coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
+            onboarding: true, supportsICloudPasswords: false, ownerIsCurrent: { true })
+        coordinator.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari, other])
+        coordinator.selectSourceInline(source)
+        PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
+        coordinator.continueSourceInline()
+        return coordinator
+    }
+    let back = access(safari)
+    expect(back.stage == .safariAccess && back.setupSkipTitle == "Do this later" && back.canGoBackInSetup,
+           "The Safari access page offers Do this later and Back")
+    back.continueSafariWithoutRestarting()
+    let pending = PCNativeBrowserApplication.profiles.removeFirst()
+    back.goBackInSetup()
+    expect(back.stage == .profiles && back.source === safari && back.canContinueSourceInline && pending.lease.cancelled,
+           "Back returns to the browser cards with Safari still chosen and stops the access check")
+    pending.complete(.init(profiles: [PCNativeImportProfile("Safari", [.history, .bookmarks], .complete)], access: .complete))
+    expect(back.stage == .profiles, "A late access check can't move the cards on")
+    back.continueSourceInline()
+    expect(back.stage == .safariAccess, "Next on the same browser comes back to its access page")
+    back.cancel()
+
+    let safariLater = access(safari)
+    safariLater.skipInSetup()
+    PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
+    expect(safariLater.stage == .safariPasswords && safariLater.passwordDestination == destination,
+           "Do this later on Safari still offers its password file, which needs no Full Disk Access")
+    safariLater.goBackInSetup()
+    expect(safariLater.stage == .safariAccess && safariLater.passwordDestination == nil,
+           "Back from Stay logged in returns to the access page that was put off")
+    safariLater.cancel()
+
+    let otherLater = access(other)
+    otherLater.skipInSetup()
+    PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
+    expect(otherLater.stage == .finished && PCNativeBrowserApplication.passwordRequests.isEmpty,
+           "Do this later on another browser with nothing readable ends the import")
+    otherLater.cancel()
+
+    let none = BrowserImportCoordinator(store: store, destination: destination, window: window,
+        onboarding: true, ownerIsCurrent: { true })
+    none.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([])
+    expect(none.stage == .finished && none.foundNoSources, "Setup leaves its import step out when no browser is found")
+    none.cancel()
     return checks
 }
