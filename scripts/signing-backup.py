@@ -26,6 +26,8 @@ TITLE = 'Parc Developer ID 94HKA7L2DR'
 SPARKLE_TITLE = 'Parc Sparkle EdDSA key'
 NOTARY_TITLE = 'Parc notary profile'
 PROFILE = os.environ.get('PARC_NOTARY_PROFILE', 'parc-notary')
+# Josh's 1Password account holds the backups; 1Password's own OP_ACCOUNT can override it.
+os.environ.setdefault('OP_ACCOUNT', 'my.1password.ca')
 spec = importlib.util.spec_from_file_location('parc_signing_sparkle', Path(__file__).with_name('sparkle.py'))
 sparkle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sparkle)
@@ -75,8 +77,8 @@ def backup():
     # Backup is run by hand, so 1Password may unlock through its app. Releases only run restore.
     result = subprocess.run(['op','whoami','--format=json'], capture_output=True, timeout=120)
     if result.returncode:
-        raise ValueError('Sign in to 1Password CLI with op signin, and with more than one account choose it with '
-                         'OP_ACCOUNT=<sign-in address>; secure backup is pending')
+        raise ValueError('Sign in to 1Password CLI with op signin --account ' + os.environ['OP_ACCOUNT']
+                         + '; secure backup is pending')
     backup_identity()
     backup_sparkle()
     backup_notary()
