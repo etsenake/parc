@@ -8,7 +8,10 @@ struct OnboardingImportBookmarksPicker: View {
         let id: UUID
         let title: String
         let selection: BrowserImportSelection
+        /// Whether ticks can change. A page already added shows as disabled,
+        /// but its folders still open.
         let enabled: Bool
+        let expandable: Bool
         let select: (String?) -> Void
         let expand: (String) -> Void
     }
@@ -85,6 +88,7 @@ private struct OnboardingImportBookmarkBranch: View {
                         .imageScale(.large).foregroundColor(Color(nsColor: selectionColor))
                 }
                 .buttonStyle(.plain)
+                .disabled(!page.enabled)
                 .accessibilityLabel("Select \(item.title)")
                 .accessibilityValue(selected ? "Selected" : "Not selected")
                 Button {
@@ -104,10 +108,10 @@ private struct OnboardingImportBookmarkBranch: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(item.url == nil ? !page.expandable : !page.enabled)
                 .accessibilityLabel(item.url == nil ? "\(expanded ? "Collapse" : "Expand") \(item.title)" : item.title)
                 .accessibilityValue(item.url == nil ? (expanded ? "Expanded" : "Collapsed") : (selected ? "Selected" : "Not selected"))
             }
-            .disabled(!page.enabled)
             .padding(.bottom, 12)
             if expanded {
                 ForEach(item.children) { child in

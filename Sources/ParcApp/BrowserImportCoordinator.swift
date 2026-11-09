@@ -62,7 +62,6 @@ final class BrowserImportCoordinator {
     private var keepsPasswordChoice = false
     /// Setup reached Safari's password steps without Full Disk Access.
     private var passwordsWithoutData = false
-    private var skipAfterSafariRefresh = false
     /// Setup went Back to the browser cards after its data was read; Next on
     /// the same browser returns to this step instead of importing again.
     private(set) var parkedStage: Stage?
@@ -332,32 +331,31 @@ final class BrowserImportCoordinator {
             self.discovery = nil; self.checkingSafariAccess = false; self.applyProfiles(result)
             if self.continueAfterSafariRefresh {
                 self.continueAfterSafariRefresh = false; self.requiresSafariAccess = false; self.stage = .profiles
-                let skipping = self.skipAfterSafariRefresh; self.skipAfterSafariRefresh = false
-                if self.onboarding { self.continueSetupAfterSafariAccess(skipping: skipping); return }
+                if self.onboarding { self.continueSetupAfterSafariAccess(); return }
             }
             self.onChange?()
         }
     }
 
-    func continueSafariWithoutRestarting() { continueSafariWithoutRestarting(skipping: false) }
-
-    private func continueSafariWithoutRestarting(skipping: Bool) {
+    func continueSafariWithoutRestarting() {
         guard stage == .safariAccess, !restarting, isCurrent else { return }
         restartWaitingToken = nil
-        continueAfterSafariRefresh = true; skipAfterSafariRefresh = skipping; safariAccessError = nil
+        continueAfterSafariRefresh = true; safariAccessError = nil
         refreshSafariAccess()
     }
 
     ///
-    /// Safari's password steps don't need Full Disk Access, so they still follow.
-    private func continueSetupAfterSafariAccess(skipping: Bool) {
+    /// readable and move on. Safari's password steps don't need Full Disk
+    /// Access, so they still follow; any other browser with nothing readable
+    /// finishes the import.
+    private func continueSetupAfterSafariAccess() {
         if hasImportableSelection { startInOriginalDestination(); return }
         if source.map(Self.isSafari) == true {
             let keepsChoice = keepsPasswordChoice
             beginImport(); keepsPasswordChoice = keepsChoice
             passwordDestination = originalDestination; passwordsWithoutData = true
             _ = presentPasswordStageIfNeeded()
-        } else if skipping {
+        } else {
             stage = .finished; message = "Your import has finished."
         }
         onChange?()
@@ -838,9 +836,18 @@ final class BrowserImportCoordinator {
         return try originals.map { try convert($0, depth: 0) }
     }
 
+    /// A page whose bookmarks can still be shown, or opened folder by folder.
+    func canShowBookmarks(_ page: BookmarkPage) -> Bool {
+        !page.discarded && page.destination.isCurrent(in: store.state)
+    }
+
+    /// A page already added to the sidebar (setup's Back from its password
+    /// steps) shows as accepted: its ticks can't change, so Next adds nothing twice.
+    func canChooseBookmarks(_ page: BookmarkPage) -> Bool { !page.committed && canShowBookmarks(page) }
+
     func toggleBookmark(page: Int, id: String, expansion: Bool) {
-        guard stage == .bookmarks, isCurrent, bookmarkPages.indices.contains(page), !bookmarkPages[page].committed,
-              !bookmarkPages[page].discarded, bookmarkPages[page].destination.isCurrent(in: store.state) else { return }
+        guard stage == .bookmarks, isCurrent, bookmarkPages.indices.contains(page),
+              expansion ? canShowBookmarks(bookmarkPages[page]) : canChooseBookmarks(bookmarkPages[page]) else { return }
         if expansion { bookmarkPages[page].selection.toggleExpanded(id) }
         else { bookmarkPages[page].selection.toggle(id) }
         onChange?()
@@ -851,8 +858,7 @@ final class BrowserImportCoordinator {
     func toggleBookmark(pageID: UUID, id: String?, expansion: Bool = false) {
         guard stage == .bookmarks, isCurrent,
               let index = bookmarkPages.firstIndex(where: { $0.id == pageID }),
-              !bookmarkPages[index].committed, !bookmarkPages[index].discarded,
-              bookmarkPages[index].destination.isCurrent(in: store.state) else { return }
+              expansion ? canShowBookmarks(bookmarkPages[index]) : canChooseBookmarks(bookmarkPages[index]) else { return }
         if let id {
             if expansion { bookmarkPages[index].selection.toggleExpanded(id) }
             else { bookmarkPages[index].selection.toggle(id) }
@@ -916,7 +922,7 @@ final class BrowserImportCoordinator {
         guard canSkipInSetup else { return }
         switch stage {
         case .safariAccess:
-            continueSafariWithoutRestarting(skipping: true)
+            continueSafariWithoutRestarting()
         case .bookmarks:
             for index in bookmarkPages.indices where !bookmarkPages[index].committed { bookmarkPages[index].skipped = true }
             error = nil
@@ -954,7 +960,7 @@ final class BrowserImportCoordinator {
         case .safariAccess:
             restartWaitingToken = nil
             generation = UUID(); discovery?.cancel(); discovery = nil
-            checkingSafariAccess = false; continueAfterSafariRefresh = false; skipAfterSafariRefresh = false
+            checkingSafariAccess = false; continueAfterSafariRefresh = false
             safariAccessError = nil; requiresSafariAccess = !safariAccessReady
             stage = .profiles; message = "Bring your browsing with you."
         case .bookmarks:

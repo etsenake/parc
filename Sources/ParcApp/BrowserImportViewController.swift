@@ -618,9 +618,8 @@ final class BrowserImportViewController: NSViewController {
     private func updateBookmarksPicker() {
         guard !closed, coordinator?.stage == .bookmarks else { return }
         let pages = coordinator.bookmarkPages.map { page in
-            let available = !page.discarded && page.destination.isCurrent(in: coordinator.store.state)
-            return OnboardingImportBookmarksPicker.Page(id: page.id, title: page.sourceName,
-                selection: page.selection, enabled: available && !page.committed,
+            OnboardingImportBookmarksPicker.Page(id: page.id, title: page.sourceName, selection: page.selection,
+                enabled: coordinator.canChooseBookmarks(page), expandable: coordinator.canShowBookmarks(page),
                 select: { [weak self] itemID in
                     guard let self, self.canChooseInlineBookmarks else { return }
                     self.coordinator.toggleBookmark(pageID: page.id, id: itemID)

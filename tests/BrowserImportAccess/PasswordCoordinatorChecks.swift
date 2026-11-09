@@ -334,6 +334,18 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     skipping.goBackInSetup()
     let tabsAfterAdd = store.state.tabs
     expect(skipping.stage == .bookmarks && skipping.bookmarkPages[0].committed, "Back shows the bookmarks already added")
+    let accepted = skipping.bookmarkPages[0]
+    expect(!skipping.canChooseBookmarks(accepted) && skipping.canShowBookmarks(accepted),
+           "The bookmarks already added show as accepted: their ticks can't change")
+    skipping.toggleBookmark(pageID: accepted.id, id: selected.identifier)
+    skipping.toggleBookmark(pageID: accepted.id, id: nil)
+    skipping.toggleBookmark(page: 0, id: selected.identifier, expansion: false)
+    expect(skipping.bookmarkPages[0].selection.selected == accepted.selection.selected && store.state.tabs == tabsAfterAdd,
+           "Clicking an accepted page's ticks or Select All changes nothing")
+    skipping.commitBookmarks()
+    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == tabsAfterAdd,
+           "Next on the accepted page goes on without adding its bookmarks twice")
+    skipping.goBackInSetup()
     skipping.skipInSetup()
     expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == tabsAfterAdd,
            "Going forward again keeps the imported passwords and adds nothing twice")
@@ -417,6 +429,14 @@ func setupAccessChecks(store: BrowserStore, destination: BrowserImportDestinatio
     expect(otherLater.stage == .finished && PCNativeBrowserApplication.passwordRequests.isEmpty,
            "Do this later on another browser with nothing readable ends the import")
     otherLater.cancel()
+
+    let otherNext = access(other), importsBeforeNext = PCNativeBrowserApplication.imports
+    otherNext.continueSafariWithoutRestarting()
+    PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
+    expect(otherNext.stage == .finished && PCNativeBrowserApplication.passwordRequests.isEmpty
+               && PCNativeBrowserApplication.imports == importsBeforeNext,
+           "Next on another browser with nothing readable ends the import, as Do this later does")
+    otherNext.cancel()
 
     let none = BrowserImportCoordinator(store: store, destination: destination, window: window,
         onboarding: true, ownerIsCurrent: { true })
