@@ -11,11 +11,13 @@ SwiftUI logo/headline/button animation, its desktop backdrop and `AVAudioPlayer`
 One SwiftUI host stays alive across the three welcome reducer phases, so a phase
 change does not reset or truncate the animation. The backdrop is an owned child
 behind the setup window; it neither creates a browser nor enters a macOS
-fullscreen Space. Leaving welcome, closing, replaying or enabling Reduce Motion
-cancels its deadlines, removes its layer animations and detaches the child. The local setup order is browser/HTML bookmark import, favorite choices, the
-shared theme editor and Space naming, optional default-browser selection, then
-final review. Complete capability-dependent import and extension branching
-remains open. Direct browser import uses the original
+fullscreen Space. Closing, replaying or enabling Reduce Motion cancels its
+deadlines, removes its layer animations and detaches the child. Leaving welcome
+cancels it, and cancels only a dim still waiting for the main screen. The
+welcome's logo, headline and arrow are built from the second phase (3.3 s), and
+is browser/HTML bookmark import, favorite choices, the shared theme editor and
+Space naming, conditional ad blockers, default-browser selection, then the
+finished card; see [the November 9 comparison](#november-9-arc-comparison). Direct browser import uses the original
 setup window/Space/Profile, genuine native source readers and bookmark hierarchy
 selection. Its shared presenter is embedded in the setup content, rather than
 opening a second import window. The explicit Import action uses the already
@@ -446,12 +448,10 @@ The actual isolated onboarding window was visually inspected in light and dark s
 339-point width, 67-point row height and 22-point row spacing, an enabled border,
 rounded corners, hover scaling and the current theme's `maxContrastColor`.
 The Yes option is preferred; the initial choice is Yes. Selecting a row changes
-only the pending draft. Next uses the existing application-wide default-browser
-controller to request genuine HTTP then HTTPS macOS consent and query the actual
-handlers. Refusal permits continuing; an actual failure remains visible and
-retryable, and No always permits setup. A request identifier prevents a late
-reply from advancing a closed or replaced onboarding owner. Replay makes the
-same request.
+starts the macOS request through the application-wide default-browser
+controller and moves to the finished card at once; onboarding never waits for
+the answer or shows its outcome, which only Settings' banner reports. No
+advances without a request. Replay makes the same request.
 
 indicator diameter22 with inner fill14, label gap19 and label width250 with
 16-point system text. The continuous corner is15, border width1.5, shadow black
@@ -488,10 +488,10 @@ separately open.
 2 `importBookmarks`, 3 `safariPasswordImportOptions`, 4 `importSafariKeychain`,
 5 `spaceStyleEditor`, 6 `topApps`, 7 `adBlockers`, 8 `arcMax`, 9 `defaultBrowser`,
 preserving the current one. Nested first-launch import already covers tags 0–4
-inside `.bookmarks`. Without the excluded remote flag
-`skip-and-auto-select-onboarding-favorites-enabled`, Parc keeps Favorites after
-that nested import rather than splicing `topApps` into the importer: bookmarks
-→ favorites → theme → conditional adBlockers → defaultBrowser → ready.
+`skip-and-auto-select-onboarding-favorites-enabled` is off, which puts
+`topApps` in slot 2, after source choice and Safari access and before the
+whole import, slot 6), pending Josh's decision: bookmarks → favorites → theme →
+conditional adBlockers → defaultBrowser → ready.
 
 `ImportFeature.AdBlockersSelection` is setup tag 7. NewSetupView's adBlockers
 invasive trackers or intrusive pop-ups.” Selection cases are userSelected,
@@ -1033,6 +1033,11 @@ requirement credit is claimed.
 
 ### Import content and initial bookmark recommendations
 
+November 8 correction: Josh's import cleanup ("Two-colour import backdrops,
+all ticked, no Profile step") replaced the five-page recommendation below.
+Setup now starts with every bookmark ticked and the bookmark step has no
+description; the recovered recommendation is kept here as reference only.
+
 The five included import presentations now retain their recovered title and
 explanation: source selection, Safari access, bookmarks, Safari password method,
 and manual password export. The bookmark screen recommends five pages; it no
@@ -1250,12 +1255,10 @@ steal first responder. A layout-changed announcement fires when the stage
 changes. Back, Space name, card actions, Skip (when visible) and Next form a
 key-view loop.
 
-Setup.Action `onPressEscape` (19) exists; its payload was not recovered in
-this pass, so Escape is not treated as Back. Favorite tiles and default-browser
-choices are SwiftUI buttons (VoiceOver labels exist) but are not inserted into
-the native key-view loop. Full VoiceOver traversal of import lists, theme
-editor internals and the post-close browser reveal remains unverified (no AX
-harness, no browser test).
+Setup.Action `onPressEscape` (19) shares `modalBackgroundTapped`'s handler
+November 9: every step's own choices are now in the key-view loop (see the
+November 9 comparison); VoiceOver speech and Full Keyboard Access focus rings
+remain unheard and unseen.
 
 ### OB34 audio interruption/mute/focus
 
@@ -1266,18 +1269,17 @@ AVAudioSession or interruption name.
 
 Parc now owns that policy explicitly: start only from welcome, stop on
 close/finish/terminate/replay, and ignore resign-key/resign-active/stage
-changes. System output mute remains authoritative. Remaining: any indirect
-audio session owned outside Unboxing (for example Chromium media) is outside
-this owner.
+changes. System output mute remains authoritative. Onboarding has no other
+(SHA-256 `32646cdf…7e0a`).
 
 ### OB35 haptics
 
 `performFeedbackPattern:performanceTime:` has fifteen 1.122 callers. None
 are in AuthFeature/Unboxing `0x10166`–`0x1016f`. The onboarding-adjacent
-through the shared theme editor used on the theme step). ImportFeature
-No welcome/Next/confetti haptic is synthesized. Bounded absence of AuthFeature
-haptics is evidenced; it is not a claim that every indirect import/editor
-path is silent.
+Modal V2's drag-to-dismiss (`ModalContent.ModalV2HostView`, 152-point
+threshold), not onboarding. All fifteen sites are attributed and SwiftUI
+haptics are unused, so no welcome/Next/confetti haptic exists or is
+synthesized.
 
 ### OB36 first-launch inventory and appearance
 
@@ -1324,6 +1326,31 @@ The stock sidebar editor is unchanged: 356×508, corner 12, popover material,
 no unboxing empty-state copy. Setup presentation is `OnboardingThemeEditorChrome`
 around that same `SpaceThemeEditorView`.
 
-Remaining whole-family work (theme-editor composition, conditional step
-order, ready/reveal choreography, keyboard/accessibility traversal) stays
-with OB17/20/22/23/32–36. No browser functional test ran.
+
+Eleven bounded comparisons (welcome, step order, import, Favorites, theme,
+default browser, extensions, ready/reveal, transitions, keyboard, audio)
+
+- Welcome: content from phase two (logo about 4.3 s, headline 7.3 s, arrow
+  steps one phase); 0.2 s crossfade into setup; running dim not cut off.
+  in place; title and description slide 400 pt on springs 0.4/0.8 and 0.5/0.8,
+  opaque, old and new both drawn; no slide from welcome; import pages move the
+  same way, backwards after Back. Back is `arrow.left` + " Back"; description
+  15 pt, kern −0.3, 21 pt lines. Reduce Motion keeps the fades and skips the
+  the starting theme); Favorites Skip selects none (Replay keeps existing
+  every page but source choice; Stay logged in keeps Next disabled until a
+  file imports; Back is hidden on the finished card; an import that finds no
+  browsers is skipped.
+- Default browser: Next never waits on macOS (above).
+  0.4 s after arrival, once per window), "Welcome to Parc, %@" without a full
+  stop, Randomize squish 0.93, Share/Download/Randomize tooltips, no "Card
+  saved.", free-standing save panel named `<name>_Parc.png`, share text "I
+  just set up Parc!".
+- Keyboard: Command-Q works during setup; Command-W closes an open password
+  help panel first; in Replay a key browser window's Command-W closes its tab;
+  Tab reaches each step's own choices with Full Keyboard Access.
+
+Parc-only additions kept under the never-remove rule: the Space name field,
+the step counter, Favorite name tooltips, Replay, Stop Import and the Safari
+access helper buttons. Open decisions for Josh, defaults followed: Favorites
+slides, uBlock Origin Lite if uBlock Origin won't install, no seeded starter
+folder. Not verified at runtime: VoiceOver speech, Full Keyboard Access focus

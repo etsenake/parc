@@ -6449,13 +6449,9 @@ Scope and evidence: `docs/split-groups.md`, NAV-05 and split rows in `docs/parit
 | OB14 | DONE | Apply the real selected-theme backgroundExtra/maxContrast semantic colors and update the existing controls. |
 | OB15 | DONE | Share the recovered setup progression control dimensions, states, labels and Return/IME ownership. |
 | OB16 | DONE | Finish card grain, border, complete light/dark optical composition and small-screen presentation. Named CardBackground/CardInnerBorder/CardOuterBorder once-inits; grain drawn by the sidebar theme renderer's rules (theme texture, dial strength, 100-point pitch, multiply; November 2); inner 1pt continuous stroke above the content column (centerline 0.5); outer 1pt stroke and shadow unclipped; 967×548 bounds in 24h/48v one coordinate space. |
-| OB17 | LEFT | Complete the full included reference step order and conditional branching beyond the implemented local import/Favorites/theme/default-browser sequence. |
 | OB18 | DONE | Complete the browser/bookmark-import step’s reference content, controls and presentation: same-window source/profile rows, source-history top-five recommendation and full bookmark list/folder controls, Safari access, password-method choice, manual CSV/results and parent-owned help. Exact copy/frame/default-selection comparison and native model/compiler/appearance checks are recorded in [onboarding evidence](onboarding.md#import-content-and-initial-bookmark-recommendations). Independent-source permission/progress/error adaptations remain explicit. |
 | OB19 | DONE | Favorites uses the recovered nine-app sidebar illustration, exact default/ordered selection, bundled light/dark artwork, selection/hover/press appearance and persistent native owner, wired through draft persistence to the real session. Source/model/compiler and actual native appearance evidence is in [onboarding evidence](onboarding.md#favorites-setup-content-and-selection). Whole-flow traversal retains OB33. |
-| OB20 | LEFT | Complete theme/customization step presentation, including its onboarding-specific editor composition. |
 | OB21 | DONE | Optional default-browser step: recovered radio geometry, theme colors, hover/selection springs and preferred-choice heart; durable pending choice, genuine sequential macOS consent/readback, refusal/retry and replay/owner guards. |
-| OB22 | LEFT | Complete any applicable extension-import/setup step and its real conditional continuation. |
-| OB23 | LEFT | Complete final ready/reveal content and reference transition choreography. |
 | OB24 | DONE | Route selected browser/HTML imports to actual local readers and retain genuine imported hierarchy/data. |
 | OB25 | DONE | Connect draft theme/Space/favorite choices to the actual local model and shared editor. |
 | OB26 | DONE | Save selected setup and completion atomically, roll back failed saves and avoid duplicate favorites/bookmarks. |
@@ -6464,10 +6460,7 @@ Scope and evidence: `docs/split-groups.md`, NAV-05 and split rows in `docs/parit
 | OB29 | DONE | Prepare the real browser hidden, close onboarding before reveal and retain retry on preparation failure. |
 | OB30 | DONE | Offer Replay onboarding only from General settings and start it from the original welcome/music. |
 | OB31 | DONE | Apply finished replay choices to the originating Space without removing existing tabs, Spaces or settings; preview its theme live and restore it on early close; resume across a Safari restart; never save the theme or light/dark preview, so a crash keeps both; apply only what replay changed; return queued links to the surviving browser. |
-| OB32 | LEFT | Match Back/Next and theme/step transition choreography throughout setup. |
-| OB33 | LEFT | Complete keyboard/focus/VoiceOver traversal and return throughout welcome, setup and reveal. |
-| OB34 | LEFT | Complete the full audio interruption/mute/focus policy beyond the recovered single-player owner. |
-| OB35 | LEFT | Attribute and implement any onboarding haptic triggers; bounded absence is not a whole-flow conclusion. |
+
 
 **OB18 closure:** all five included import compositions have a recovered content/control comparison; actual source visit counts now reach the initial bookmark selection, and the list fills its attributed frame. The final native session and 186-source application checks pass with warnings as errors, alongside 87 selection/store, 156 coordinator and five restart assertions. Actual window captures confirm light/dark native list contents. This closes one existing requirement: Onboarding 63.9% → 66.7%, +2.8 pp, with the denominator unchanged. Whole-flow conditional order, extension setup, theme/card optics, motion and traversal retain their own LEFT rows. The new engine source is published without reopening a browser-test gate.
 
