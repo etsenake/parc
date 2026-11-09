@@ -9,9 +9,11 @@ import tempfile
 VERSION = "2.10.1"
 URL = f"https://github.com/sparkle-project/Sparkle/releases/download/{VERSION}/Sparkle-{VERSION}.tar.xz"
 SHA256 = "1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27"
-FEED_URL = "https://github.com/etsenake/parc-releases/releases/latest/download/appcast.xml"
+RELEASES = "https://github.com/etsenake/parc-releases/releases"
+FEED_URL = RELEASES + "/latest/download/appcast.xml"
 # The private key lives in the release Mac's login Keychain under Sparkle's
-# service, account "parc" (generate_keys/sign_update --account parc).
+# service, this account (generate_keys/sign_update --account parc).
+ACCOUNT = "parc"
 PUBLIC_ED_KEY = "1hic4mo2AXODWtTea711Nwof69H++DEETfSXVUzCqKI="
 #
 INFO = {"SUFeedURL": FEED_URL, "SUPublicEDKey": PUBLIC_ED_KEY, "SUEnableAutomaticChecks": True,
