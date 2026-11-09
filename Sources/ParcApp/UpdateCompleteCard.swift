@@ -34,6 +34,7 @@ final class UpdateCompleteCard: NSView {
 
     func applyPalette(_ palette: ThemeChromePalette) {
         model.dark = palette.isDark
+        model.gradientBase = Color(nsColor: UpdateCompleteModel.gradientBase(palette))
     }
     func setInteractionEnabled(_ enabled: Bool) { model.interactive = enabled }
     /// Asked on every sidebar layout while the banner occupies the slot.
@@ -53,27 +54,49 @@ final class UpdateCompleteCard: NSView {
 final class UpdateCompleteModel: ObservableObject {
     @Published var dark = false
     @Published var interactive = false
+    @Published var gradientBase = Color.accentColor
     var seeWhatsNew: () -> Void = {}
     var share: () -> Void = {}
     var dismiss: () -> Void = {}
+
+    /// `ButtonBackground` fills from the theme palette and falls back to a
+    ///
+    /// entries it reads is inferred; see the doc.
+    static func gradientBase(_ palette: ThemeChromePalette) -> NSColor {
+        guard let color = (palette.isDark ? palette.maxContrastColor : palette.minContrastColor).usingColorSpace(.sRGB)
+        else { return .controlAccentColor }
+        // HSL saturation: the palette lifts the theme colour's lightness,
+        // which keeps it but drains HSB saturation from a pastel.
+        let high = max(color.redComponent, color.greenComponent, color.blueComponent)
+        let low = min(color.redComponent, color.greenComponent, color.blueComponent)
+        let spread = 1 - abs(high + low - 1)
+        return spread > 0 && (high - low) / spread > 0.1 ? color : .controlAccentColor
+    }
 }
 
 struct UpdateCompleteBanner: View {
     @ObservedObject var model: UpdateCompleteModel
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 8) {
-            UpdateBannerHeader(title: "Update Complete!", dark: model.dark, close: model.dismiss)
+            UpdateBannerHeader(title: "Update Complete!", dark: model.dark, sparkles: !reduceMotion, sparkleColor: model.gradientBase,
+                               close: model.dismiss)
             VStack(alignment: .leading) {
                 //
                 //
-                UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, action: model.seeWhatsNew)
-                UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark, action: model.share)
+                UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark,
+                                gradient: hovered && model.interactive && !reduceMotion, base: model.gradientBase,
+                                action: model.seeWhatsNew)
+                UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark,
+                                gradient: false, base: model.gradientBase, action: model.share)
             }
             .padding(.horizontal, 8)
         }
         .padding(.bottom, 8)
         .background(UpdateBannerCard(dark: model.dark))
+        .onHover { hovered = $0 }
         // Not .disabled: that would dim the rows through the exit fade.
         .allowsHitTesting(model.interactive)
         .environment(\.colorScheme, model.dark ? .dark : .light)
@@ -100,6 +123,8 @@ private struct UpdateBannerCard: View {
 private struct UpdateBannerHeader: View {
     let title: String
     let dark: Bool
+    let sparkles: Bool
+    let sparkleColor: Color
     let close: () -> Void
 
     var body: some View {
@@ -125,6 +150,13 @@ private struct UpdateBannerHeader: View {
             .padding(.horizontal, 8)
             .lineLimit(1)
             .fixedSize()
+            .overlay {
+                // The gradient's palette treatment, so a pastel stays visible on the light card.
+                if sparkles {
+                    UpdateBannerSparkles(color: sparkleColor).brightness(dark ? 0.6 : -0.2).saturation(dark ? 1 : 2)
+                        .padding(-2).opacity(0.7)
+                }
+            }
     }
 }
 
@@ -175,21 +207,35 @@ private struct CloseButtonPlate: Shape {
 }
 
 ///
-/// hovered.
+/// hovered; a gradient row paints its label with `ButtonBackground`.
 private struct UpdateBannerRow: View {
     let title: String
     let icon: String
     let dark: Bool
+    let gradient: Bool
+    let base: Color
     let action: () -> Void
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
-            label.contentShape(Rectangle())
+            label
+                .opacity(gradient ? 0 : 1)
+                .overlay {
+                    // Built only while shown, so its endless turn stops with it.
+                    if gradient {
+                        UpdateBannerGradient(base: base)
+                            .brightness(dark ? 0.6 : -0.2)
+                            .saturation(dark ? 1 : 2)
+                            .mask { label }
+                            .transition(.opacity)
+                    }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(hovered ? 1 : 0.75)
-        .animation(.easeOut(duration: 0.1), value: hovered)
+        .animation(.easeOut(duration: 0.1), value: [hovered, gradient])
         .onHover { hovered = $0 }
     }
 
@@ -202,5 +248,92 @@ private struct UpdateBannerRow: View {
         .foregroundStyle((dark ? Color.white : .black).opacity(dark ? 1 : 0.8))
         .frame(height: 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+///
+/// hue-shifted capsules turning over the base colour. The turn durations were
+/// not recovered.
+private struct UpdateBannerGradient: View {
+    let base: Color
+    @State private var size = CGSize.zero
+    @State private var turned = false
+
+    var body: some View {
+        ZStack {
+            base
+            Capsule(style: .continuous)
+                .frame(width: size.width / 1.5, height: size.height)
+                .scaleEffect(2)
+                .rotationEffect(.degrees(turned ? 360 : 0))
+                .foregroundStyle(base)
+                .hueRotation(.degrees(40))
+                .saturation(5)
+                .brightness(1.25)
+                .blur(radius: 12)
+                .blendMode(.hardLight)
+            Capsule(style: .continuous)
+                .frame(width: size.width * 0.5, height: size.height)
+                .scaleEffect(2)
+                .rotationEffect(.degrees(turned ? -360 : 0))
+                .foregroundStyle(base.opacity(0.6))
+                .hueRotation(.degrees(-40))
+                .saturation(2)
+                .brightness(-0.5)
+                .offset(y: size.height / -1.75)
+                .blur(radius: 6)
+                .blendMode(.hardLight)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .background { GeometryReader { Color.clear.preference(key: Size.self, value: $0.size) } }
+        .onPreferenceChange(Size.self) { size = $0 }
+        .onAppear { withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { turned = true } }
+    }
+    private struct Size: PreferenceKey {
+        static let defaultValue = CGSize.zero
+        static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+    }
+}
+
+///
+/// `update-complete-sparkle-timeout-in-seconds` (15). Their glyph, count and
+/// timing were not recovered; they take the theme colour the view reads.
+private struct UpdateBannerSparkles: View {
+    let color: Color
+    private struct Sparkle: Identifiable {
+        let id = UUID()
+        let x: CGFloat, y: CGFloat, size: CGFloat, delay: Double
+    }
+    @State private var sparkles: [Sparkle] = []
+    @State private var lit = false
+    @State private var active = true
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                ForEach(active ? sparkles : []) { sparkle in
+                    Image(systemName: "sparkle")
+                        .font(.system(size: sparkle.size))
+                        .foregroundStyle(color)
+                        .opacity(lit ? 1 : 0)
+                        .transition(.opacity)
+                        .scaleEffect(lit ? 1 : 0.3)
+                        .position(x: sparkle.x * proxy.size.width, y: sparkle.y * proxy.size.height)
+                        .animation(.easeInOut(duration: 0.8).repeatForever().delay(sparkle.delay), value: lit)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            sparkles = (0..<6).map { _ in
+                Sparkle(x: .random(in: 0...1), y: .random(in: 0...1), size: .random(in: 5...8), delay: .random(in: 0...0.8))
+            }
+            // Inserted dark first, so the repeating animation sees lit change.
+            DispatchQueue.main.async { lit = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+                withAnimation(.easeOut(duration: 0.4)) { active = false }
+            }
+        }
     }
 }

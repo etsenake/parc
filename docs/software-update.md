@@ -340,8 +340,9 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     run for `update-complete-sparkle-timeout-in-seconds` (default 15,
   - **Not recovered** (Parc's values, open): the header height (24, the close
     button's), the gradient's base palette colour (Parc uses the theme's max-
-    or min-contrast colour, else the accent colour) and its turn speed (4 s),
-    and the sparkles' glyph, count, colour and timing (six `sparkle` glyphs
+    or min-contrast colour, else the accent colour when that is grey by HSL
+    saturation) and its turn speed (4 s), and the sparkles' glyph, count,
+    colour and timing (six `sparkle` glyphs in the base colour with the
     not modelled. The card is one SwiftUI hosting view in the sidebar's key
     loop; whether Tab reaches each of its three buttons hasn't been checked
     (no app may be run here).

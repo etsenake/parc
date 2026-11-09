@@ -22,6 +22,12 @@ struct UpdateCompleteCardTests {
                        "One header and two single-line rows at every sidebar width: \(heights)")
         }
         try expect(actions == 0, "Laying out never reaches the original owner")
+        let grey = ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "808080")!), isDark: false)
+        let greyBase = UpdateCompleteModel.gradientBase(grey)
+        try expect(greyBase == .controlAccentColor || (greyBase.usingColorSpace(.sRGB)?.saturationComponent ?? 0) > 0.1,
+                   "The gradient never paints a grey base")
+        let blue = UpdateCompleteModel.gradientBase(ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "0000FF")!), isDark: false))
+        try expect(blue != .controlAccentColor, "A saturated theme keeps its own colour")
         print("UpdateCompleteCard: \(assertions) assertions passed")
     }
 }
