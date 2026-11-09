@@ -567,6 +567,40 @@ class Pipeline(Repository):
                 self.assertEqual(len(restores), 1 if tool else 0)
             for handle in runner.locks: handle.close()
 
+    def test_preflight_restores_a_failing_notary_profile_or_stops(self):
+        home = Path(self.tmp.name); (home / '.config/parc').mkdir(parents=True)
+        identity = 'Developer ID Application: Fixture (' + release.TEAM + ')'
+        (home / '.config/parc/signing-identity').write_text(identity + '\n')
+        # (op installed, profile works, what restore brings back)
+        for tool, works, restored in (('/usr/local/bin/op', True, False), ('/usr/local/bin/op', False, True),
+                                      ('/usr/local/bin/op', False, False), (None, False, True)):
+            runner = self.runner(); runner.auth = Mock(); profile = {'works': works}; commands = []
+            def command(args, **kwargs):
+                commands.append([str(arg) for arg in args])
+                if commands[-1][-1] == 'restore':
+                    profile['works'] = restored
+                if 'history' in commands[-1] and not profile['works']:
+                    raise release.Failure('Command failed (69)')
+                return '1) ABC "' + identity + '"' if 'find-identity' in commands[-1] else ''
+            runner.command = command
+            with self.subTest(op=tool, works=works, restored=restored), \
+                    patch.object(Path, 'home', return_value=home), \
+                    patch.object(release.platform, 'system', return_value='Darwin'), \
+                    patch.object(release.platform, 'machine', return_value='arm64'), \
+                    patch.object(release.shutil, 'which', side_effect=lambda name: tool if name == 'op' else '/opt/homebrew/bin/brew'), \
+                    patch.object(release.sparkle, 'has_key', return_value=True):
+                if works or (tool and restored):
+                    runner.preflight()
+                    self.assertEqual(runner.state['notary_profile'], 'parc-notary')
+                else:
+                    with self.assertRaisesRegex(release.Failure, 'notarytool profile parc-notary .* not restored'):
+                        runner.preflight()
+                histories = [args for args in commands if 'history' in args]
+                self.assertEqual(len([args for args in commands if args[-1] == 'restore']), 0 if works or not tool else 1)
+                self.assertEqual(len(histories), 1 if works or not tool else 2)
+                self.assertTrue(all(args[args.index('--keychain-profile') + 1] == 'parc-notary' for args in histories))
+            for handle in runner.locks: handle.close()
+
     def test_tap_stage_hands_the_appcast_to_the_publisher(self):
         runner = self.runner()
         runner.checkpoint(source=str(self.root), tag='v1.1.0', version={'version': '1.1.0', 'build': 2},

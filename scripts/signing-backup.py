@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Store/restore Parc's signing credentials in an unlocked 1Password vault: the selected
-encrypted Developer ID identity and Sparkle's EdDSA update key.
+encrypted Developer ID identity, Sparkle's EdDSA update key and the notarytool profile.
 
 No private key/password in argv, logs, plaintext files or GitHub; Sparkle's own
-generate_keys only reads or writes its key through a removed 0600 temporary file.
-Normal Keychain approval is never bypassed. Notarization profiles use Apple's
-separate --sync.
+generate_keys only reads or writes its key through a removed 0600 temporary file,
+and notarytool reads its password on standard input. Normal Keychain approval is
+never bypassed.
 """
 import argparse
 import base64
+import getpass
 import hashlib
 import importlib.util
 import json
@@ -23,13 +24,16 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 TITLE = 'Parc Developer ID 94HKA7L2DR'
 SPARKLE_TITLE = 'Parc Sparkle EdDSA key'
+NOTARY_TITLE = 'Parc notary profile'
+PROFILE = os.environ.get('PARC_NOTARY_PROFILE', 'parc-notary')
 spec = importlib.util.spec_from_file_location('parc_signing_sparkle', Path(__file__).with_name('sparkle.py'))
 sparkle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sparkle)
 
 
-def run(args, *, data=None, umask=-1):
-    result = subprocess.run(args, input=data, text=True, capture_output=True, timeout=60, umask=umask)
+def run(args, *, data=None, umask=-1, start_new_session=False):
+    result = subprocess.run(args, input=data, text=True, capture_output=True, timeout=60, umask=umask,
+                            start_new_session=start_new_session)
     if result.returncode:
         # Tool diagnostics can echo secret-bearing input; argv never carries a secret.
         raise ValueError('Credential operation failed: ' + ' '.join([Path(args[0]).name, *args[1:]]))
@@ -75,6 +79,7 @@ def backup():
         raise ValueError('Unlock/sign in to 1Password CLI once with op signin; secure backup is pending')
     backup_identity()
     backup_sparkle()
+    backup_notary()
 
 
 def backup_identity():
@@ -132,10 +137,54 @@ def backup_sparkle():
     print('Sparkle signing key backed up to 1Password')
 
 
+def notarytool(*args, password):
+    # Without a controlling terminal, notarytool's getpass prompt reads standard input.
+    run(['xcrun','notarytool',*args,'--team-id','94HKA7L2DR'], data=password + '\n', start_new_session=True)
+
+
+def notary_works():
+    try:
+        run(['xcrun','notarytool','history','--keychain-profile',PROFILE,'--output-format','json'])
+    except (ValueError, subprocess.TimeoutExpired):
+        return False
+    return True
+
+
+def backup_notary():
+    saved = existing(NOTARY_TITLE)
+    if saved is not None:
+        if saved.get('team_id') != '94HKA7L2DR' or not saved.get('apple_id') or not saved.get('password'):
+            raise ValueError('Existing notary profile vault entry differs or is incomplete; it was preserved')
+        try:
+            notarytool('history','--apple-id',saved['apple_id'],'--output-format','json', password=saved['password'])
+        except (ValueError, subprocess.TimeoutExpired):
+            raise ValueError('Apple did not accept the existing notary profile backup; it was preserved') from None
+        print('Existing notary profile backup verified with Apple and in 1Password')
+        return
+    # notarytool keeps the profile in the data-protection Keychain under its own entitlement, so
+    # no other process can read it back, even with approval; the password is entered again instead.
+    if not sys.stdin.isatty():
+        raise ValueError('Run backup in a terminal to enter the notary profile\'s app-specific password')
+    apple_id = input('Apple ID of the ' + PROFILE + ' notary profile: ').strip()
+    password = getpass.getpass('Its app-specific password (not shown): ')
+    try:
+        notarytool('history','--apple-id',apple_id,'--output-format','json', password=password)
+    except (ValueError, subprocess.TimeoutExpired):
+        raise ValueError('Apple did not accept that Apple ID and app-specific password; nothing was backed up') from None
+    saved = create({'title':NOTARY_TITLE,'category':'SECURE_NOTE','tags':['Parc','production-signing'], 'fields':[
+        {'id':'apple_id','type':'STRING','label':'Apple ID','value':apple_id},
+        {'id':'team_id','type':'STRING','label':'Team ID','value':'94HKA7L2DR'},
+        {'id':'password','type':'CONCEALED','label':'App-specific password','value':password}]})
+    if saved.get('apple_id') != apple_id or saved.get('password') != password:
+        raise ValueError('Vault round-trip verification failed; no successful backup claimed')
+    print('Notary profile credentials verified with Apple and backed up to 1Password')
+
+
 def restore():
     """Restore whichever credential this Mac's Keychain lacks."""
     restore_identity()
     restore_sparkle()
+    restore_notary()
 
 
 def restore_identity():
@@ -182,10 +231,27 @@ def restore_sparkle():
     print('Sparkle signing key restored and verified in the login Keychain')
 
 
+
+def restore_notary():
+    if notary_works():
+        print('Notary profile ' + PROFILE + ' already works')
+        return
+    saved = existing(NOTARY_TITLE)
+    if saved is None:
+        raise ValueError('1Password has no notary profile backup to restore')
+    if saved.get('team_id') != '94HKA7L2DR' or not saved.get('apple_id') or not saved.get('password'):
+        raise ValueError('Vault entry is not the expected notary profile')
+    # store-credentials checks the password with Apple before saving, so a rejected one changes nothing.
+    notarytool('store-credentials',PROFILE,'--apple-id',saved['apple_id'], password=saved['password'])
+    if not notary_works():
+        raise ValueError('The restored notary profile ' + PROFILE + ' still fails notarytool history')
+    print('Notary profile ' + PROFILE + ' restored and verified')
+
+
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__); parser.add_argument('operation',choices=('backup','restore'))
     args=parser.parse_args()
     try:
         backup() if args.operation == 'backup' else restore()
-    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, EOFError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         parser.exit(1,str(error)+'\n')

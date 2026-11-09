@@ -189,20 +189,37 @@ one-time `scripts/setup-signing.sh` selection. Never commit private keys or
 passwords, put passwords in command arguments, export all identities, or fall
 back to ad-hoc signing.
 
-Notary profiles support iCloud synchronization when explicitly provisioned:
+The notarytool profile `parc-notary` (`PARC_NOTARY_PROFILE` selects another) is
+created once with Apple's secure prompt for the app-specific password:
 
 ```sh
 xcrun notarytool store-credentials parc-notary \
-  --apple-id '<Apple ID>' --team-id 94HKA7L2DR --sync
+  --apple-id '<Apple ID>' --team-id 94HKA7L2DR
 ```
 
-Enter the app-specific password at the secure prompt. `--sync` cannot combine
-with `--keychain`; normal iCloud Keychain availability still applies. The current
-Mac's existing working profile was stored without `--sync`; synchronization or
-an encrypted private-key backup must not be claimed until actually provisioned.
-The script checks credentials before starting compilation. One-time provisioning
-or a locked Keychain can require the user's normal OS approval; those cannot
-be made unattended by a release script.
+notarytool keeps the profile in the data-protection Keychain under its own
+access group, `com.apple.gke.notary`. No other process can read it back, even
+with Keychain approval: an attributes-only query from an ordinary process gets
+`errSecMissingEntitlement`. So `signing-backup.py backup` must run in a
+terminal. It asks for the profile's Apple ID and, at a no-echo prompt, the
+app-specific password. It checks them with `notarytool history` before saving
+anything, then saves the 1Password item "Parc notary profile" (Apple ID, Team ID
+and the concealed password), verified by a fresh vault read. An existing item is
+checked with Apple again and preserved either way. Use the profile's existing
+app-specific password; if it is lost, create a new one at appleid.apple.com.
+`restore` leaves a profile that passes `notarytool history` alone. Otherwise it
+recreates the profile with `notarytool store-credentials`, which checks the
+password with Apple before saving, then checks it again. notarytool only takes
+the password in argv or at its `getpass` prompt, and with no controlling
+terminal that prompt reads standard input, so both commands run in a new session
+and receive the password on stdin. The release preflight runs `restore` when the
+profile fails and `op` is installed, rechecks it, and stops if it still fails.
+`store-credentials --sync` remains Apple's separate iCloud Keychain route; it
+cannot combine with `--keychain`. The script checks credentials before starting
+compilation. One-time provisioning or a locked Keychain can require the user's
+normal OS approval; those cannot be made unattended by a release script. **This
+backup has not been run yet; it needs `op signin` and the app-specific
+password.**
 
 The Sparkle EdDSA private key lives in the release Mac's login Keychain, under
 Sparkle's service `https://sparkle-project.org` with account `parc`. If it is

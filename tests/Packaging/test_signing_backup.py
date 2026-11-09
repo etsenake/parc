@@ -13,6 +13,11 @@ from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('parc_signing_backup',Path(__file__).resolve().parents[2]/'scripts/signing-backup.py')
 backup=importlib.util.module_from_spec(spec);spec.loader.exec_module(backup)
 
+def setUpModule():
+    # A step a test forgets to fake fails here instead of reaching the real Keychain, vault or Apple.
+    guard = patch.object(backup.subprocess, 'run', side_effect=AssertionError('unfaked credential command'))
+    guard.start(); unittest.addModuleCleanup(guard.stop)
+
 class Backup(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
@@ -36,7 +41,7 @@ class Backup(unittest.TestCase):
             if template:
                 fields=template['fields'];self.saved={'id':'vault-id','fields':fields};return json.dumps(self.saved)
             return json.dumps(self.saved)
-        with patch.object(Path,'home',return_value=self.home),patch.object(backup.subprocess,'run',side_effect=[CompletedProcess([],0),CompletedProcess([],1)]),patch.object(backup,'helper',return_value='native-helper'),patch.object(backup,'run',side_effect=run),patch.object(backup,'backup_sparkle'),contextlib.redirect_stdout(io.StringIO()) as output:
+        with patch.object(Path,'home',return_value=self.home),patch.object(backup.subprocess,'run',side_effect=[CompletedProcess([],0),CompletedProcess([],1)]),patch.object(backup,'helper',return_value='native-helper'),patch.object(backup,'run',side_effect=run),patch.object(backup,'backup_sparkle'),patch.object(backup,'backup_notary'),contextlib.redirect_stdout(io.StringIO()) as output:
             backup.backup()
         native=next(call for call in calls if call[0][-1]=='export')
         password=json.loads(native[1])['password']
@@ -145,6 +150,104 @@ class SparkleKey(unittest.TestCase):
         run.assert_called_once_with(['security', 'find-identity', '-v', '-p', 'codesigning'])
 
 
+class NotaryProfile(unittest.TestCase):
+    """Fake notarytool, Apple and vault; the real profile, Keychain and 1Password are never touched."""
+    PASSWORD = 'fake-fake-fake-fake'
+
+    def setUp(self):
+        self.profile, self.accepted, self.vault, self.calls = None, self.PASSWORD, {}, []
+        def run(args, *, data=None, umask=-1, start_new_session=False):
+            self.calls.append(list(args))
+            if args[:2] == ['xcrun', 'notarytool']:
+                self.assertNotIn(self.PASSWORD, args)
+                if '--keychain-profile' in args:
+                    if self.profile is None: raise ValueError('Credential operation failed')
+                    return '{"history": []}'
+                # The password arrives only at the prompt, from a process without a terminal.
+                self.assertTrue(start_new_session); self.assertEqual(args[-2:], ['--team-id', '94HKA7L2DR'])
+                if data != self.accepted + '\n': raise ValueError('Credential operation failed')
+                if args[2] == 'store-credentials':
+                    self.assertEqual(args[3:6], ['parc-notary', '--apple-id', 'release@example.com']); self.profile = data
+                return ''
+            if args[:3] == ['op', 'item', 'create']:
+                self.vault['created'] = json.loads(data)['fields']; return json.dumps({'id': 'created'})
+            if args[:3] == ['op', 'item', 'get']:
+                return json.dumps({'fields': self.vault[args[3]]})
+            raise AssertionError(args)
+        for target, value in (('run', {'side_effect': run}),
+                              ('existing', {'side_effect': lambda title: backup.fields({'fields': self.vault[title]}) if title in self.vault else None})):
+            patcher = patch.object(backup, target, **value); patcher.start(); self.addCleanup(patcher.stop)
+
+    def entry(self, team='94HKA7L2DR'):
+        return [{'id': 'apple_id', 'type': 'STRING', 'value': 'release@example.com'},
+                {'id': 'team_id', 'type': 'STRING', 'value': team},
+                {'id': 'password', 'type': 'CONCEALED', 'value': self.PASSWORD}]
+
+    def prompted(self, terminal=True):
+        prompts = patch.object(backup, 'input', create=True, return_value='release@example.com ')
+        hidden = patch.object(backup.getpass, 'getpass', return_value=self.PASSWORD)
+        tty = patch.object(backup.sys.stdin, 'isatty', return_value=terminal)
+        return prompts, hidden, tty
+
+    def test_backup_verifies_the_typed_password_with_apple_then_the_vault(self):
+        prompts, hidden, tty = self.prompted()
+        with prompts, hidden, tty, contextlib.redirect_stdout(io.StringIO()) as output:
+            backup.backup_notary()
+        self.assertEqual({field['id']: (field['type'], field['value']) for field in self.vault['created']},
+                         {'apple_id': ('STRING', 'release@example.com'), 'team_id': ('STRING', '94HKA7L2DR'),
+                          'password': ('CONCEALED', self.PASSWORD)})
+        self.assertEqual(self.calls[0][2:6], ['history', '--apple-id', 'release@example.com', '--output-format'])
+        self.assertEqual(self.calls[-1], ['op', 'item', 'get', 'created', '--format=json'])
+        self.assertNotIn(self.PASSWORD, repr(self.calls) + output.getvalue())
+
+    def test_backup_saves_nothing_apple_rejects_or_without_a_terminal(self):
+        self.accepted = 'another-password'
+        prompts, hidden, tty = self.prompted()
+        with prompts, hidden, tty, self.assertRaisesRegex(ValueError, 'nothing was backed up'):
+            backup.backup_notary()
+        prompts, hidden, tty = self.prompted(terminal=False)
+        with prompts as asked, hidden, tty, self.assertRaisesRegex(ValueError, 'in a terminal'):
+            backup.backup_notary()
+        asked.assert_not_called(); self.assertNotIn('created', self.vault)
+
+    def test_existing_backup_is_verified_or_preserved(self):
+        self.vault[backup.NOTARY_TITLE] = self.entry()
+        with contextlib.redirect_stdout(io.StringIO()):
+            backup.backup_notary()
+        self.assertEqual([call[2] for call in self.calls], ['history'])
+        self.accepted = 'rotated-password'
+        with self.assertRaisesRegex(ValueError, 'Apple did not accept the existing'):
+            backup.backup_notary()
+        self.vault[backup.NOTARY_TITLE] = self.entry('0000000000')
+        with self.assertRaisesRegex(ValueError, 'preserved'):
+            backup.backup_notary()
+        self.assertEqual(len(self.calls), 2); self.assertEqual(set(self.vault), {backup.NOTARY_TITLE})
+
+    def test_restore_recreates_the_profile_through_the_prompt_and_rechecks_it(self):
+        self.vault[backup.NOTARY_TITLE] = self.entry()
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            backup.restore_notary()
+        self.assertEqual(self.profile, self.PASSWORD + '\n')
+        self.assertEqual([call[2] for call in self.calls], ['history', 'store-credentials', 'history'])
+        self.assertNotIn(self.PASSWORD, repr(self.calls) + output.getvalue())
+
+    def test_restore_keeps_a_working_profile_and_refuses_a_missing_or_rejected_backup(self):
+        self.profile = 'present'
+        with contextlib.redirect_stdout(io.StringIO()):
+            backup.restore_notary()
+        self.assertEqual(len(self.calls), 1)
+        self.profile = None
+        with self.assertRaisesRegex(ValueError, 'no notary profile backup'):
+            backup.restore_notary()
+        self.vault[backup.NOTARY_TITLE] = self.entry('0000000000')
+        with self.assertRaisesRegex(ValueError, 'not the expected notary profile'):
+            backup.restore_notary()
+        self.vault[backup.NOTARY_TITLE] = self.entry(); self.accepted = 'another-password'
+        with self.assertRaisesRegex(ValueError, 'Credential operation failed'):
+            backup.restore_notary()
+        self.assertIsNone(self.profile)
+
+
 class Vault(unittest.TestCase):
     def test_lookup_uses_one_titled_item_and_refuses_duplicates_or_failures(self):
         items = [{'id': 'a', 'title': 'Parc Sparkle EdDSA key'}, {'id': 'b', 'title': 'Other'}]
@@ -175,11 +278,22 @@ class Vault(unittest.TestCase):
                     self.assertIs(backup.sparkle.has_key(), expected)
                 self.assertNotIn('-w', run.call_args[0][0]); self.assertNotIn('-g', run.call_args[0][0])
 
-    def test_restore_covers_the_identity_then_the_sparkle_key(self):
+    def test_backup_covers_the_identity_the_sparkle_key_then_the_notary_profile(self):
+        from subprocess import CompletedProcess
+        order = []
+        with patch.object(backup.subprocess, 'run', return_value=CompletedProcess([], 0)), \
+                patch.object(backup, 'backup_identity', side_effect=lambda: order.append('identity')), \
+                patch.object(backup, 'backup_sparkle', side_effect=lambda: order.append('sparkle')), \
+                patch.object(backup, 'backup_notary', side_effect=lambda: order.append('notary')):
+            backup.backup()
+        self.assertEqual(order, ['identity', 'sparkle', 'notary'])
+
+    def test_restore_covers_the_identity_the_sparkle_key_then_the_notary_profile(self):
         order = []
         with patch.object(backup, 'restore_identity', side_effect=lambda: order.append('identity')), \
-                patch.object(backup, 'restore_sparkle', side_effect=lambda: order.append('sparkle')):
+                patch.object(backup, 'restore_sparkle', side_effect=lambda: order.append('sparkle')), \
+                patch.object(backup, 'restore_notary', side_effect=lambda: order.append('notary')):
             backup.restore()
-        self.assertEqual(order, ['identity', 'sparkle'])
+        self.assertEqual(order, ['identity', 'sparkle', 'notary'])
 
 if __name__=='__main__':unittest.main()

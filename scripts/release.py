@@ -411,8 +411,20 @@ class Release:
         if '"' + identity + '"' not in identities:
             raise Failure("Configured signing identity/private key is unavailable or expired on this Mac")
         self.env["PARC_SIGN_IDENTITY"] = identity
-        self.env["PARC_NOTARY_PROFILE"] = os.environ.get("PARC_NOTARY_PROFILE", "parc-notary")
-        self.command(["xcrun", "notarytool", "history", "--keychain-profile", self.env["PARC_NOTARY_PROFILE"], "--output-format", "json"], capture=True, retries=2)
+        profile = self.env["PARC_NOTARY_PROFILE"] = os.environ.get("PARC_NOTARY_PROFILE", "parc-notary")
+        history = ["xcrun", "notarytool", "history", "--keychain-profile", profile, "--output-format", "json"]
+        unavailable = ("The notarytool profile " + profile + " is missing or failing and was not restored; "
+                       "unlock 1Password and run python3 scripts/signing-backup.py restore")
+        try:
+            self.command(history, capture=True, retries=2)
+        except Failure:
+            if not shutil.which('op'):
+                raise Failure(unavailable) from None
+            try:
+                self.command([sys.executable, self.root / 'scripts/signing-backup.py', 'restore'], name='restore-notary-profile')
+                self.command(history, capture=True)
+            except Failure:
+                raise Failure(unavailable) from None
         self.checkpoint(identity=identity, notary_profile=self.env["PARC_NOTARY_PROFILE"])
 
     def published(self, commit):
