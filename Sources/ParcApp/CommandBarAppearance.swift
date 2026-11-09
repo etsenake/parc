@@ -115,39 +115,14 @@ final class CommandBarHairline: NSView {
 
 ///
 ///
-/// presses around the bar land on the page. Parc's bar is a child panel, so the
-/// shadow is a second child window that ignores the mouse, ordered below the
-/// panel. It is masked to outside the bar so the panel's behind-window
-/// material does not blur its own shadow.
-final class CommandBarShadowWindow: NSWindow {
+/// bar. It ignores the mouse, so presses around the bar land on the page. It
+/// is masked to outside the bar so the bar's material doesn't blur its own
+/// shadow.
+final class CommandBarShadowView: NSView {
     /// Room for the blur to fade out around the bar: measured offscreen, it
     /// still darkens a white page by 3–6 levels at 72 points; the 24-point
     /// offset adds to the bottom.
     static let margins = NSEdgeInsets(top: 96, left: 96, bottom: 120, right: 96)
-    let shadowView = CommandBarShadowView()
-
-    init() {
-        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
-        isOpaque = false; backgroundColor = .clear; hasShadow = false
-        ignoresMouseEvents = true; isReleasedWhenClosed = false
-        animationBehavior = .none; level = .normal; hidesOnDeactivate = true
-        contentView = shadowView
-        setAccessibilityElement(false)
-    }
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    /// Surrounds the bar's screen frame with the margin.
-    func track(bar: NSRect, cornerRadius: CGFloat) {
-        let m = Self.margins
-        let target = NSRect(x: bar.minX - m.left, y: bar.minY - m.bottom,
-                            width: bar.width + m.left + m.right, height: bar.height + m.top + m.bottom)
-        if shadowView.cornerRadius != cornerRadius { shadowView.cornerRadius = cornerRadius }
-        if frame != target { setFrame(target, display: true) }
-    }
-}
-
-final class CommandBarShadowView: NSView {
     let shadowLayer = CALayer()
     private let outsideBar = CAShapeLayer()
     var cornerRadius: CGFloat = 12 { didSet { needsLayout = true } }
@@ -168,7 +143,7 @@ final class CommandBarShadowView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     var barFrame: NSRect {
-        let m = CommandBarShadowWindow.margins
+        let m = Self.margins
         return NSRect(x: m.left, y: m.top, width: max(0, bounds.width - m.left - m.right),
                       height: max(0, bounds.height - m.top - m.bottom))
     }
@@ -231,9 +206,11 @@ enum CommandBarBounce {
 /// the scope's colour in the bar's continuous rounded rectangle, blurred and
 /// faded together. On appear its blur radius goes from 0 to 150 and its opacity
 ///
-/// under the bar view; Parc draws it in `CommandBarSplashWindow`.
+/// under the bar view; Parc's sits under the bar's shadow with `padding` for
+/// its blur: two blur radii, past which it has faded to nothing.
 struct CommandBarSplashView: View {
     static let blurRadius: CGFloat = 150
+    static let padding = 2 * blurRadius
     static let duration: TimeInterval = 1.2
     let color: NSColor
     let cornerRadius: CGFloat
@@ -249,30 +226,5 @@ struct CommandBarSplashView: View {
             .animation(.easeOut(duration: Self.duration), value: opacity)
             .onAppear { blurRadius = Self.blurRadius; opacity = 0 }
             .padding(margin)
-    }
-}
-
-/// A passive child window under the bar's shadow that holds the splash with
-/// room for its blur: two blur radii, past which it has faded to nothing. The
-///
-/// in-window material does.
-final class CommandBarSplashWindow: NSWindow {
-    static let margin = 2 * CommandBarSplashView.blurRadius
-
-    init(color: NSColor, cornerRadius: CGFloat) {
-        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
-        isOpaque = false; backgroundColor = .clear; hasShadow = false
-        ignoresMouseEvents = true; isReleasedWhenClosed = false
-        animationBehavior = .none; level = .normal; hidesOnDeactivate = true
-        contentView = NSHostingView(rootView: CommandBarSplashView(color: color, cornerRadius: cornerRadius, margin: Self.margin))
-        setAccessibilityElement(false)
-    }
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    /// Surrounds the bar's screen frame with the margin.
-    func track(bar: NSRect) {
-        let target = bar.insetBy(dx: -Self.margin, dy: -Self.margin)
-        if frame != target { setFrame(target, display: true) }
     }
 }

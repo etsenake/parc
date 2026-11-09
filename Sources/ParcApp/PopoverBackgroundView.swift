@@ -7,9 +7,7 @@ import AppKit
 /// draws the shadow.
 final class PopoverBackgroundView: NSView {
     ///
-    ///
-    /// view in the browser window; Parc's is a child panel over it, so it
-    /// blends behind the panel to reach the page underneath.
+    /// state, within-window blending, not emphasized.
     let translucency = NSVisualEffectView()
     /// The wash sits in its own view over the material.
     let wash = NSView()

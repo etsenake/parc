@@ -1,9 +1,10 @@
 import AppKit
 import Combine
+import SwiftUI
 
 /// One address-editing session. Navigation rows retain Chromium's classified
 /// request; tab rows retain a tab ID; command rows retain the original menu item.
-final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
+@MainActor final class CommandBar: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private struct Result {
         let id: String
         let title: String
@@ -159,10 +160,16 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private let table = CommandResultsTable()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "Search or Enter URL…")
-    private let container = PopoverBackgroundView(blending: .behindWindow)
-    private let shadowWindow = CommandBarShadowWindow()
+    ///
+    /// the window stays key and its material blends within the window.
+    private let host = CommandBarHost()
+    private let container = PopoverBackgroundView(blending: .withinWindow)
+    private let shadowView = CommandBarShadowView()
     private var showsShadow = true
-    private var splashWindow: CommandBarSplashWindow?
+    private var splashView: NSView?
+    private let fieldEditor: CommandFieldEditor = {
+        let editor = CommandFieldEditor(); editor.isFieldEditor = true; return editor
+    }()
     private var showsScopeSplash = false
     private let divider = CommandBarHairline()
     private var palette: CommandBarPalette
@@ -235,6 +242,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private var icons: [URL: NSImage] = [:]
     private var requestedIcons = Set<URL>()
     private var observers: [NSObjectProtocol] = []
+    private var focusObservation: NSKeyValueObservation?
     private var bindings: AnyCancellable?
     private var dismissed = false
     private var presented = false
@@ -273,22 +281,22 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
            let field = editor.delegate as? NSTextField {
             originalResponder = field; originalSelection = editor.selectedRange()
         } else { originalResponder = parent.firstResponder }
-        let panel = CommandPanel(contentRect: NSRect(x: 0, y: 0, width: 765, height: 330),
-                                 styleMask: [.borderless], backing: .buffered, defer: false)
-        panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
-        panel.appearance = CommandBarPalette.panelAppearance(inlineEmpty: sidebarAnchor != nil, space: contentAppearance, window: parent.appearance)
-        panel.level = .normal; panel.isMovableByWindowBackground = false
-        panel.hidesOnDeactivate = true; panel.animationBehavior = .none
-        super.init(window: panel)
-        panel.onBackgroundReturn = { [weak self] event in self?.handleBackgroundReturn(event) ?? false }
-        panel.onDeleteSuggestion = { [weak self] event in self?.handleDeleteSuggestionKey(event) ?? false }
-        panel.commandField = input
-        panel.commandFieldEditor.onCopy = { [weak self] text in
+        host.appearance = CommandBarPalette.panelAppearance(inlineEmpty: sidebarAnchor != nil, space: contentAppearance, window: parent.appearance)
+        super.init()
+        host.bar = container
+        host.onKeyEquivalent = { [weak self] event in
+            guard let self, self.hasFocus else { return false }
+            return self.handleBackgroundReturn(event) || self.handleDeleteSuggestionKey(event)
+        }
+        fieldEditor.onCopy = { [weak self] text in
             guard let self, !self.dismissed, self.isOwnerValid?() != false else { return }
             self.onCopyText?(text)
         }
-        panel.contentView = container
-        panel.setAccessibilityLabel(addressOnly ? "Current Tab Address" : "Command Bar")
+        host.addSubview(shadowView)
+        host.addSubview(container)
+        container.setAccessibilityElement(true)
+        container.setAccessibilityRole(.group)
+        container.setAccessibilityLabel(addressOnly ? "Current Tab Address" : "Command Bar")
         inputIcon.imageScaling = .scaleProportionallyDown
         container.addSubview(inputIcon)
         input.isBordered = false; input.drawsBackground = false
@@ -397,17 +405,16 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         }
         refreshResults()
     }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func present() {
-        guard let parent, let window, !dismissed, isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
+        guard let parent, let content = parent.contentView, !dismissed, isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
         presented = true
+        host.frame = content.bounds; host.autoresizingMask = [.width, .height]
+        content.addSubview(host, positioned: .above, relativeTo: nil)
         refreshResults(requestNative: false)
         position()
-        parent.addChildWindow(window, ordered: .above)
-        window.makeKeyAndOrderFront(nil)
-        syncShadow()
-        window.makeFirstResponder(input); applySelectionColor(); input.selectText(nil)
+        if !parent.isKeyWindow { parent.makeKey() }
+        parent.makeFirstResponder(input); applySelectionColor(); input.selectText(nil)
         if let selection = initialEditSelection, let editor = input.currentEditor() as? NSTextView {
             let count = (input.stringValue as NSString).length
             editor.setSelectedRange(NSRange(location: min(selection.location, count), length: min(selection.length, max(0, count - selection.location))))
@@ -434,17 +441,46 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
                 owner.explicitSelectionID = projection.resultID
             }
         }
-        observe(NSWindow.didResignKeyNotification, object: window) { owner in
-            if let alert = owner.scopeAlert, owner.window?.attachedSheet === alert.window { return }
+        observe(NSWindow.didResignKeyNotification, object: parent) { owner in
+            if let alert = owner.scopeAlert, owner.parent?.attachedSheet === alert.window { return }
             owner.dismiss(restoreFocus: false)
+        }
+        //
+        // (`CommandBarContainer.onDidResignFirstResponder`). Handing the field
+        // its editor passes through other responders, so judge once it settles.
+        focusObservation = parent.observe(\.firstResponder) { [weak self] _, _ in
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.presented, !self.dismissed, !self.holdsFirstResponder else { return }
+                    self.dismiss(restoreFocus: false)
+                }
+            }
         }
         observe(NSWindow.willCloseNotification, object: parent) { $0.dismiss(restoreFocus: false) }
         observe(NSWindow.willMiniaturizeNotification, object: parent) { $0.dismiss(restoreFocus: false) }
-        observe(NSWindow.willBeginSheetNotification, object: parent) { $0.dismiss(restoreFocus: false) }
+        observe(NSWindow.willBeginSheetNotification, object: parent) { owner in
+            if owner.scopeAlert == nil { owner.dismiss(restoreFocus: false) }
+        }
         observe(Notification.Name("PCNativeWindowSecurityStateChanged"), object: parent) { $0.dismiss(restoreFocus: false) }
         observe(NSApplication.didResignActiveNotification, object: NSApp) { $0.dismiss(restoreFocus: false) }
         observe(NSWindow.didResizeNotification, object: parent) { $0.position() }
         observe(NSWindow.didMoveNotification, object: parent) { $0.position() }
+    }
+    private var holdsFirstResponder: Bool {
+        (parent?.firstResponder as? NSView)?.isDescendant(of: host) == true
+    }
+    /// The bar's field (or its results) is first responder in its key window.
+    var hasFocus: Bool { presented && !dismissed && parent?.isKeyWindow == true && holdsFirstResponder }
+    /// The window's sheet is the bar's own site-search alert, part of its session.
+    var ownsAttachedSheet: Bool { scopeAlert.map { $0.window === parent?.attachedSheet } ?? false }
+    /// A press on the bar itself; one anywhere else in the window closes it.
+    func contains(_ event: NSEvent) -> Bool {
+        presented && !dismissed && event.window === parent
+            && container.bounds.contains(container.convert(event.locationInWindow, from: nil))
+    }
+    /// The field's own editor, which reports its copies.
+    func fieldEditor(for client: Any?) -> Any? {
+        (client as? NSTextField) === input ? fieldEditor : nil
     }
     private func observe(_ name: Notification.Name, object: AnyObject, action: @escaping @MainActor @Sendable (CommandBar) -> Void) {
         observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
@@ -452,7 +488,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         })
     }
     private func position() {
-        guard let parent, window != nil else { return }
+        guard let parent, host.window === parent else { return }
         applyAppearance()
         let available = parent.screen?.visibleFrame ?? parent.frame
         if let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
@@ -485,24 +521,30 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         let y = min(max(top - height, available.minY + 16), available.maxY - height - 16)
         setSurfaceFrame(NSRect(x: x, y: y, width: width, height: height))
     }
+    /// `surface` is in screen coordinates, as the bar has always been placed;
+    /// it then stays inside its window, which clips it.
     private func setSurfaceFrame(_ surface: NSRect) {
-        window?.setFrame(surface, display: true)
+        guard let parent else { return }
+        var frame = host.convert(parent.convertFromScreen(surface), from: nil)
+        frame.origin.x = min(max(frame.minX, host.bounds.minX), host.bounds.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, host.bounds.minY), host.bounds.maxY - frame.height)
+        frame = host.backingAlignedRect(frame, options: .alignAllEdgesNearest)
+        if container.frame != frame { container.frame = frame; container.needsLayout = true }
         syncShadow()
     }
-    /// The shadow window follows the panel while the bar is shown; the inline
-    /// sidebar bar has none.
+    /// The shadow follows the bar while it's shown; the inline sidebar bar has none.
     private func syncShadow() {
-        guard let parent, let window, presented, !dismissed, showsShadow, window.isVisible else {
-            if shadowWindow.parent != nil { shadowWindow.parent?.removeChildWindow(shadowWindow) }
-            shadowWindow.orderOut(nil)
+        guard presented, !dismissed, showsShadow, host.window != nil else {
+            shadowView.isHidden = true
             removeSplash()
             return
         }
-        shadowWindow.track(bar: window.frame, cornerRadius: container.cornerRadius)
-        splashWindow?.track(bar: window.frame)
-        guard shadowWindow.parent == nil || !shadowWindow.isVisible else { return }
-        if shadowWindow.parent == nil { parent.addChildWindow(shadowWindow, ordered: .above) }
-        shadowWindow.order(.below, relativeTo: window.windowNumber)
+        let bar = container.frame, m = CommandBarShadowView.margins
+        shadowView.frame = NSRect(x: bar.minX - m.left, y: bar.minY - m.bottom,
+                                  width: bar.width + m.left + m.right, height: bar.height + m.top + m.bottom)
+        if shadowView.cornerRadius != container.cornerRadius { shadowView.cornerRadius = container.cornerRadius }
+        shadowView.isHidden = false
+        splashView?.frame = bar.insetBy(dx: -CommandBarSplashView.padding, dy: -CommandBarSplashView.padding)
     }
     /// The Space's content appearance, which only the empty sidebar bar takes.
     var contentAppearance: NSAppearance? { didSet { applyAppearance() } }
@@ -510,13 +552,13 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         // A hidden sidebar lays the bar out centred, so it takes the window's too.
         let inline = sidebarAnchor.map { $0.window === parent && !$0.isHiddenOrHasHiddenAncestor } ?? false
         let appearance = CommandBarPalette.panelAppearance(inlineEmpty: inline && sidebarBrowsing, space: contentAppearance, window: parent?.appearance)
-        if window?.appearance != appearance { window?.appearance = appearance }
+        if host.appearance != appearance { host.appearance = appearance }
     }
     /// CustomSelectionColorTextField puts its colour on the current editor when
     ///
     private func applySelectionColor() {
         let attributes: [NSAttributedString.Key: Any] = [.backgroundColor: palette.inputSelection]
-        (window as? CommandPanel)?.commandFieldEditor.selectedTextAttributes = attributes
+        fieldEditor.selectedTextAttributes = attributes
         (input.currentEditor() as? NSTextView)?.selectedTextAttributes = attributes
     }
     private func applyPalette() {
@@ -541,17 +583,18 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         guard shows != showsScopeSplash else { return }
         showsScopeSplash = shows
         removeSplash()
-        guard presented, !dismissed, sidebarAnchor == nil, let parent, let window, window.isVisible else { return }
+        guard presented, !dismissed, sidebarAnchor == nil, host.window != nil else { return }
         if shows, let color = scopeColor {
-            let splash = CommandBarSplashWindow(color: color, cornerRadius: container.cornerRadius)
-            splash.track(bar: window.frame)
-            parent.addChildWindow(splash, ordered: .above)
-            splash.order(.below, relativeTo: (shadowWindow.isVisible ? shadowWindow : window).windowNumber)
-            splashWindow = splash
-            // Faded out by then; the window goes rather than waiting for the scope to end.
+            let splash = NSHostingView(rootView: CommandBarSplashView(color: color, cornerRadius: container.cornerRadius,
+                                                                      margin: CommandBarSplashView.padding))
+            splash.setAccessibilityElement(false)
+            splash.frame = container.frame.insetBy(dx: -CommandBarSplashView.padding, dy: -CommandBarSplashView.padding)
+            host.addSubview(splash, positioned: .below, relativeTo: shadowView)
+            splashView = splash
+            // Faded out by then; the view goes rather than waiting for the scope to end.
             DispatchQueue.main.asyncAfter(deadline: .now() + CommandBarSplashView.duration + 0.1) { [weak self, weak splash] in
                 MainActor.assumeIsolated {
-                    guard let self, let splash, self.splashWindow === splash else { return }
+                    guard let self, let splash, self.splashView === splash else { return }
                     self.removeSplash()
                 }
             }
@@ -560,20 +603,17 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         // empty scoped surface.
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.presented, !self.dismissed, self.window?.isVisible == true else { return }
+                guard let self, self.presented, !self.dismissed, self.host.window != nil else { return }
                 CommandBarBounce.play(on: self.container.layer)
                 //
-                if self.shadowWindow.isVisible {
-                    CommandBarBounce.play(on: self.shadowWindow.shadowView.shadowLayer,
-                                          about: self.shadowWindow.shadowView.barCentreOffset)
+                if !self.shadowView.isHidden {
+                    CommandBarBounce.play(on: self.shadowView.shadowLayer, about: self.shadowView.barCentreOffset)
                 }
             }
         }
     }
     private func removeSplash() {
-        guard let splash = splashWindow else { return }
-        splashWindow = nil
-        splash.parent?.removeChildWindow(splash); splash.orderOut(nil)
+        splashView?.removeFromSuperview(); splashView = nil
     }
     private var layingOutContents = false
     private func layoutContents() {
@@ -592,7 +632,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         }
         inputIcon.frame = NSRect(x: 22, y: 22, width: 18, height: 18)
         input.frame = NSRect(x: 49, y: 21, width: max(0, width - 71), height: 31)
-        divider.frame = NSRect(x: 12, y: 64, width: max(0, width - 24), height: CommandBarHairline.height(in: window))
+        divider.frame = NSRect(x: 12, y: 64, width: max(0, width - 24), height: CommandBarHairline.height(in: parent))
         let bannerHeight = showsPrivacyBanner ? privacyBanner.preferredHeight(forWidth: width) : 0
         privacyBanner.isHidden = bannerHeight == 0
         privacyBanner.frame = NSRect(x: 0, y: container.bounds.height - bannerHeight, width: width, height: bannerHeight)
@@ -626,8 +666,10 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     }
     func dismiss(restoreFocus: Bool = true) {
         guard !dismissed else { return }
-        let mayRestore = restoreFocus && presented && NSApp.isActive && window?.isKeyWindow == true && isOwnerValid?() != false
+        let mayRestore = restoreFocus && presented && NSApp.isActive && parent?.isKeyWindow == true && isOwnerValid?() != false
+        let heldFocus = holdsFirstResponder
         dismissed = true
+        focusObservation = nil
         endNativeHold()
         retireScopeMenu()
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
@@ -635,19 +677,24 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         omnibox?.cancel(); omnibox = nil; nativeResults = []; extensionActions = []
         extensionLaunchSnapshot = []
         scopeOffers = []; activeScope = nil; enteringScopeName = nil; actionsScope = false
-        parent?.removeChildWindow(shadowWindow); shadowWindow.orderOut(nil)
         removeSplash()
-        if let window { parent?.removeChildWindow(window); window.orderOut(nil) }
-        if mayRestore, let parent, parent.isVisible, !parent.isMiniaturized, parent.attachedSheet == nil {
-            parent.makeKey()
-            if let view = originalResponder as? NSView, mayRestoreOriginal?(view) ?? true,
-               SavedFocus.mayReturn(to: view, in: parent), parent.makeFirstResponder(view) {
-                if let field = view as? NSTextField, let editor = field.currentEditor() as? NSTextView,
-                   let range = originalSelection, NSMaxRange(range) <= (editor.string as NSString).length { editor.setSelectedRange(range) }
-            } else { restorePageFocus?() }
+        if heldFocus, let parent {
+            // The window's responder goes back to what held it before the bar.
+            // Only Escape or a commit falls back to the page.
+            if mayRestore, parent.isVisible, !parent.isMiniaturized, parent.attachedSheet == nil {
+                if !returnFocus(in: parent) { parent.makeFirstResponder(nil); restorePageFocus?() }
+            } else if !returnFocus(in: parent) { parent.makeFirstResponder(nil) }
         }
+        host.removeFromSuperview()
         onDismiss?()
         if submissionDepth == 0 { onDismissalSettled?() }
+    }
+    private func returnFocus(in parent: NSWindow) -> Bool {
+        guard let view = originalResponder as? NSView, mayRestoreOriginal?(view) ?? true,
+              SavedFocus.mayReturn(to: view, in: parent), parent.makeFirstResponder(view) else { return false }
+        if let field = view as? NSTextField, let editor = field.currentEditor() as? NSTextView,
+           let range = originalSelection, NSMaxRange(range) <= (editor.string as NSString).length { editor.setSelectedRange(range) }
+        return true
     }
     func controlTextDidChange(_ obj: Notification) {
         addressWasEdited = true
@@ -1229,7 +1276,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         applyCompletion(preserveEditorSelection: preserveEditorSelection)
     }
     private func projectDefaultCompletion() {
-        guard explicitSelectionID == nil, !dismissed, window?.isKeyWindow == true,
+        guard explicitSelectionID == nil, !dismissed, parent?.isKeyWindow == true,
               isOwnerValid?() != false, omnibox?.canSubmit == true,
               !isScoped, !scopeInvalidated, table.selectedRow == 0,
               let result = results.first, let navigation = result.navigation,
@@ -1285,7 +1332,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         if editState.projection != nil {
             editState.accept(); applyCompletion()
         }
-        window?.makeFirstResponder(input)
+        parent?.makeFirstResponder(input)
         if let editor = input.currentEditor() as? NSTextView {
             editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
         }
@@ -1374,13 +1421,13 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         }
         if result.input != nil && result.url == nil { cell.setAccessibilityHelp("Search or open address") }
         cell.onPress = { [weak self, weak cell] in
-            guard let self, let cell, cell.window === self.window,
+            guard let self, let cell, cell.window === self.parent,
                   !cell.isHiddenOrHasHiddenAncestor else { return false }
             return self.activateResult(result, publication: publication, disposition: .ordinary)
         }
     }
     private func deleteSuggestion(_ navigation: PCNativeSearchNavigation) -> Bool {
-        guard !dismissed, window?.isKeyWindow == true, isOwnerValid?() != false,
+        guard !dismissed, parent?.isKeyWindow == true, isOwnerValid?() != false,
               !scopeInvalidated, (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
               let row = results.firstIndex(where: { $0.navigation === navigation }),
               omnibox?.deleteResult(navigation) == true else { return false }
@@ -1399,7 +1446,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         return true
     }
     private func deleteExtensionSuggestion(_ action: PCNativeOmniboxExtensionAction) -> Bool {
-        guard !dismissed, window?.isKeyWindow == true, isOwnerValid?() != false,
+        guard !dismissed, parent?.isKeyWindow == true, isOwnerValid?() != false,
               !scopeInvalidated, (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
               let row = results.firstIndex(where: { $0.extensionAction === action }),
               omnibox?.deleteExtensionAction(action) == true else { return false }
@@ -1566,7 +1613,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         editState.edit(value)
         input.stringValue = value
         previousInput = value
-        window?.makeFirstResponder(input)
+        parent?.makeFirstResponder(input)
         if let editor = input.currentEditor() as? NSTextView {
             editor.string = value
             editor.setSelectedRange(NSRange(location: selectAll ? 0 : (value as NSString).length,
@@ -1711,7 +1758,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: scopePill.bounds.maxY), in: scopePill)
         if scopeMenu === menu { scopeMenu = nil }
         if !dismissed, scopeAlert == nil, scopeMenuIsCurrent(lease) {
-            window?.makeFirstResponder(input)
+            parent?.makeFirstResponder(input)
             restoreScopeSelection(editing.selection)
         }
     }
@@ -1725,13 +1772,14 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     }
     private func presentScopeAlert(_ alert: NSAlert, lease: PCNativeOmniboxScopeMenu,
                                    completion: @escaping (NSApplication.ModalResponse) -> Void) {
-        guard scopeMenuIsCurrent(lease), let window, window.attachedSheet == nil, scopeAlert == nil else { return }
+        guard scopeMenuIsCurrent(lease), let window = parent, window.attachedSheet == nil, scopeAlert == nil else { return }
         scopeAlert = alert
         alert.beginSheetModal(for: window) { [weak self, weak alert] response in
             guard let self, let alert, self.scopeAlert === alert else { return }
+            let current = self.scopeMenuIsCurrent(lease)
             self.scopeAlert = nil
-            guard self.scopeMenuIsCurrent(lease) else { return }
-            self.window?.makeFirstResponder(self.input)
+            guard current else { return }
+            self.parent?.makeFirstResponder(self.input)
             completion(response)
         }
     }
@@ -1773,7 +1821,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         return NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
     private func activateResult(_ result: Result, publication: UUID, disposition: CommandBarSubmission) -> Bool {
-        guard resultPublication == publication, !dismissed, window?.isKeyWindow == true,
+        guard resultPublication == publication, !dismissed, parent?.isKeyWindow == true,
               isOwnerValid?() != false, !scopeInvalidated, !sidebarBrowsing,
               (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
               enabled(result) else { return false }
@@ -1807,7 +1855,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             // A launch operates in the original page. It cannot promise a new
             // split/background destination. Dismiss the command surface before
             // Chromium validates and opens its genuine popup/context fallback.
-            guard disposition == .ordinary, !dismissed, window?.isKeyWindow == true,
+            guard disposition == .ordinary, !dismissed, parent?.isKeyWindow == true,
                   isOwnerValid?() != false,
                   (input.currentEditor() as? NSTextView)?.hasMarkedText() != true else {
                 NSSound.beep(); return
@@ -1821,7 +1869,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             // Original Chromium onInputEntered must run while its keyword
             // provider is alive. Cancellation first would send the wrong event.
             // Extension API supports tab dispositions, not Parc split promises.
-            guard let extensionDisposition, !inSplit, !dismissed, window?.isKeyWindow == true,
+            guard let extensionDisposition, !inSplit, !dismissed, parent?.isKeyWindow == true,
                   isOwnerValid?() != false,
                   (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
                   omnibox?.executeExtensionAction(action, disposition: disposition == .background ? .newBackgroundTab : extensionDisposition) == true else {
@@ -1909,7 +1957,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         let generation = backgroundGeneration
         backgroundOperation = operation
         let valid: () -> Bool = { [weak self] in
-            guard let self, !self.dismissed, self.window?.isKeyWindow == true,
+            guard let self, !self.dismissed, self.parent?.isKeyWindow == true,
                   self.backgroundOperation == operation, self.backgroundGeneration == generation, self.isOwnerValid?() != false,
                   self.omnibox?.canSubmit == true, self.editState.query == query,
                   self.activeScope === scope, !self.scopeInvalidated else { return false }
@@ -1983,8 +2031,11 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
 
 ///
 ///
+/// stays its own, as it was in the bar's panel, not the browser window's.
 private final class CommandFieldEditor: NSTextView {
     var onCopy: ((String) -> Void)?
+    private let undo = UndoManager()
+    override var undoManager: UndoManager? { undo }
     override func copy(_ sender: Any?) {
         let pasteboard = NSPasteboard.general, before = pasteboard.changeCount
         let range = selectedRange(), value = string as NSString
@@ -1995,21 +2046,22 @@ private final class CommandFieldEditor: NSTextView {
         if let text, pasteboard.changeCount != before { onCopy?(text) }
     }
 }
-private final class CommandPanel: NSPanel {
-    var onBackgroundReturn: ((NSEvent) -> Bool)?
-    var onDeleteSuggestion: ((NSEvent) -> Bool)?
-    lazy var commandFieldEditor: CommandFieldEditor = {
-        let editor = CommandFieldEditor(); editor.isFieldEditor = true; return editor
-    }()
-    weak var commandField: NSTextField?
-    override func fieldEditor(_ createFlag: Bool, for object: Any?) -> NSText? {
-        guard let field = object as? NSTextField, field === commandField else { return super.fieldEditor(createFlag, for: object) }
-        return commandFieldEditor
+/// The bar's place in its browser window: the topmost view over the page,
+/// sidebar and Peek. Only the bar takes the mouse, so a press anywhere else,
+/// its shadow included, lands on what is underneath.
+private final class CommandBarHost: NSView {
+    weak var bar: NSView?
+    var onKeyEquivalent: ((NSEvent) -> Bool)?
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bar?.hitTest(convert(point, from: superview))
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if isKeyWindow, onBackgroundReturn?(event) == true || onDeleteSuggestion?(event) == true { return true }
-        return super.performKeyEquivalent(with: event)
+        onKeyEquivalent?(event) == true || super.performKeyEquivalent(with: event)
     }
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { false }
+    //
+    override func mouseDown(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
 }

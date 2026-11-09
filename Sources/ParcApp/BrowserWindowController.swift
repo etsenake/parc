@@ -502,6 +502,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Key restoration during command-bar dismissal happens before its
     /// selected menu item has been dispatched.
     var hasCommandBarDuringActivation: Bool { commandBar != nil }
+    var commandBarHasFocus: Bool { commandBar?.hasFocus == true }
     var onCommandBarDismissalSettled: (() -> Void)?
     ///
     private var commandBarCreatesNewTab = false
@@ -1056,6 +1057,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 // selection operation and the original returned event.
                 let inputSnapshot = NativeInputDiagnostics.beforeDispatch(event, phase: "monitor")
                 defer { NativeInputDiagnostics.afterDispatch(event, snapshot: inputSnapshot, phase: "monitor") }
+                if self.commandBar?.contains(event) == true { return event }
                 if self.activePeek?.contains(event) == true { return event }
                 let point = self.rootView.convert(event.locationInWindow, from: nil)
                 // Preview controls own their hit region; a click here must not
@@ -1874,7 +1876,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     // and checks the actual native window/security gate again before mutation.
     var ownsSpaceCommandFocus: Bool {
         guard let window, NSApp.isActive, window.isVisible, !window.isMiniaturized else { return false }
-        return window.isKeyWindow || (window.isMainWindow && commandBar?.window?.isKeyWindow == true)
+        return window.isKeyWindow || (window.isMainWindow && commandBar?.hasFocus == true)
     }
 
     /// Existing registered-window/security admission also works while an
@@ -1906,7 +1908,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             navigationHistory?.dismiss()
             guard current() else { return false }
         }
-        if commandBar?.window?.isKeyWindow == true {
+        if commandBar?.hasFocus == true {
             commandBar?.dismiss()
             guard current() else { return false }
         }
@@ -1947,7 +1949,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 && self.tabSwitcher == nil && self.navigationHistory == nil
                 && self.themePopover == nil && !self.siteControlCenterDefers
                 && (PCNativeBrowserApplication.canUseWindowUndo(in: original)
-                    || (original.isMainWindow && self.commandBar?.window?.isKeyWindow == true))
+                    || (original.isMainWindow && self.commandBar?.hasFocus == true))
         }
         guard common() else { return false }
         let available: () -> Bool
@@ -2025,7 +2027,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               tabSwitcher == nil, themePopover == nil, ownsSpaceCommandFocus,
               let window, window.attachedSheet == nil else { return false }
         return PCNativeBrowserApplication.canPresentTabSwitcher(in: window)
-            || (window.isMainWindow && commandBar?.window?.isKeyWindow == true)
+            || (window.isMainWindow && commandBar?.hasFocus == true)
     }
 
     func canSelectSpace(_ id: UUID, profileID: UUID? = nil) -> Bool {
@@ -5388,17 +5390,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   canOwnDownloadDialog(for: originalProfileID), windowCommandSecurityAvailable else { return false }
             return !original.isKeyWindow || PCNativeBrowserApplication.canPresentTabSwitcher(in: original)
         }
-        let splitPanel = splitInsertion == nil ? nil : commandBar?.window
-        let splitPanelWasKey = splitPanel?.isKeyWindow == true
         guard WindowOwnerSequence.run(while: stillOwnsInteraction, steps: [
-            {
-                self.cancelSplitInsertion(restoreFocus: false)
-                if splitPanelWasKey, self.window === original, !original.isKeyWindow,
-                   self.windowCommandSecurityAvailable,
-                   NSApp.keyWindow == nil || NSApp.keyWindow === splitPanel {
-                    original.makeKey()
-                }
-            },
+            { self.cancelSplitInsertion(restoreFocus: false) },
             { self.cancelSpaceCreation(restoreFocus: false) },
             { self.pageCapture?.dismiss(restoreFocus: false) },
             { self.cancelPendingCommandSplit() },
@@ -5484,7 +5477,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.currentTabID == commandTab, self.activePeek === sourcePeek,
                   self.currentBrowser === commandBrowser, self.selectedNativePage() === commandPage,
                   commandPage?.isClosed != true, window.isVisible, !window.isMiniaturized,
-                  window.attachedSheet == nil else { return false }
+                  window.attachedSheet == nil || self.commandBar?.ownsAttachedSheet == true else { return false }
             if inSidebar && (self.libraryView != nil || self.sidebarPresentation == .hidden
                 || self.nativeFullscreenTabID != nil) { return false }
             if let id = commandTab {
@@ -7837,7 +7830,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     && self.themePopover == nil && !self.siteControlCenterDefers
                     && self.visibleTabs.contains { $0.kind == .today }
                     && (PCNativeBrowserApplication.canUseWindowUndo(in: original)
-                        || (original.isMainWindow && self.commandBar?.window?.isKeyWindow == true))
+                        || (original.isMainWindow && self.commandBar?.hasFocus == true))
             }, prepare: { [weak self] in self?.commandBar?.dismiss(restoreFocus: true) },
             clear: { [weak self] in self?.clearToday() })
         item.representedObject = command.isAvailable ? command : nil
@@ -10792,6 +10785,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             || libraryView.map { view === $0.spaceManager || view.isDescendant(of: $0.spaceManager) } == true
     }
 
+    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
+        sender === window ? commandBar?.fieldEditor(for: client) : nil
+    }
+
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
         guard self.window === window else { return nil }
         return usesFolderUndoResponder ? folderUndo : nativeEditingUndo
@@ -11619,7 +11616,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         let session = SplitPaneInsertionSession(request: request, candidateIDs: Set(candidates.map(\.id))) { [weak self, weak window] in
             guard let self, let window, self.window === window, window.isVisible,
-                  window.attachedSheet == nil, owner.isAvailable, self.currentTabID == focus,
+                  window.attachedSheet == nil || self.commandBar?.ownsAttachedSheet == true,
+                  owner.isAvailable, self.currentTabID == focus,
                   self.activePeek == nil,
                   self.nativeFullscreenTabID == nil, self.libraryView == nil,
                   request.isCurrent(in: self.presentedState), request.selection.allSatisfy(validItem) else { return false }

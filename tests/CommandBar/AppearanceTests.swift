@@ -77,14 +77,14 @@ import AppKit
 
         // Surface: popover material, wash and decorative rings in each appearance.
         let window = NSWindow(contentRect: NSRect(x: -30000, y: -30000, width: 900, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
-        let surface = PopoverBackgroundView(blending: .behindWindow)
+        let surface = PopoverBackgroundView(blending: .withinWindow)
         window.contentView = surface
         let host = surface
         for (appearance, isDark) in [(dark, true), (light, false)] {
             window.appearance = appearance
             host.layoutSubtreeIfNeeded(); surface.updateLayer()
             expect(surface.translucency.material == .popover && surface.translucency.state == .followsWindowActiveState
-                   && surface.translucency.blendingMode == .behindWindow && !surface.translucency.isEmphasized, "popover material")
+                   && surface.translucency.blendingMode == .withinWindow && !surface.translucency.isEmphasized, "popover material")
             let wash = rgba(surface.wash.layer?.backgroundColor)
             expect(isDark ? near(wash, SIMD4(0.065, 0.065, 0.065, 0.7)) : near(wash, SIMD4(1, 1, 1, 0.7)), "wash")
             expect(near(rgba(surface.outerBorder.borderColor), SIMD4(0, 0, 0, isDark ? 0.9 : 0.34)), "outer ring")
@@ -105,17 +105,13 @@ import AppKit
                "inline sidebar bar has a fill and no material or ring")
         surface.sidebarBrowsing = false
 
-        // Shadow: a separate child window that ignores the mouse, masked to outside the bar.
-        let shadow = CommandBarShadowWindow()
+        // Shadow: a view around the bar in its window that ignores the mouse, masked to outside the bar.
         let bar = NSRect(x: 100, y: 200, width: 700, height: 326)
-        shadow.track(bar: bar, cornerRadius: 12)
-        shadow.shadowView.layoutSubtreeIfNeeded()
-        let m = CommandBarShadowWindow.margins
-        expect(shadow.frame == NSRect(x: bar.minX - m.left, y: bar.minY - m.bottom, width: bar.width + m.left + m.right,
-                                      height: bar.height + m.top + m.bottom), "the shadow window surrounds the bar")
-        expect(shadow.ignoresMouseEvents && !shadow.canBecomeKey && !shadow.hasShadow, "the shadow never takes the mouse or focus")
-        let view = shadow.shadowView
-        expect(view.barFrame.size == bar.size && view.hitTest(NSPoint(x: 2, y: 2)) == nil, "the bar's place in the shadow window")
+        let m = CommandBarShadowView.margins
+        let view = CommandBarShadowView(frame: NSRect(x: 0, y: 0, width: bar.width + m.left + m.right,
+                                                      height: bar.height + m.top + m.bottom))
+        view.layoutSubtreeIfNeeded()
+        expect(view.barFrame.size == bar.size && view.hitTest(NSPoint(x: 2, y: 2)) == nil, "the bar's place in its shadow, which never takes the mouse")
         expect(view.shadowLayer.superlayer === view.layer, "the shadow layer is attached")
         expect(view.shadowLayer.shadowOpacity == 0.5 && view.shadowLayer.shadowRadius == 48
                && view.shadowLayer.shadowOffset == CGSize(width: 0, height: 24), "black 0.5 / 48 / 24 shadow")
@@ -151,12 +147,7 @@ import AppKit
         let playedFrom = (played?.fromValue as? NSValue)?.caTransform3DValue ?? CATransform3DIdentity
         expect(abs(playedFrom.m41 - 0.05 * 350) < 0.0001 && abs(playedFrom.m42 - 0.05 * 32) < 0.0001,
                "a layer anchored at its corner bounces about its middle")
-        let splash = CommandBarSplashWindow(color: .systemRed, cornerRadius: 12)
-        splash.track(bar: bar)
-        expect(splash.frame == bar.insetBy(dx: -300, dy: -300) && CommandBarSplashWindow.margin == 2 * CommandBarSplashView.blurRadius,
-               "the splash window leaves two blur radii around the bar")
-        expect(splash.ignoresMouseEvents && !splash.canBecomeKey && !splash.canBecomeMain && !splash.hasShadow && !splash.isOpaque,
-               "the splash never takes the mouse or focus")
+        expect(CommandBarSplashView.padding == 2 * CommandBarSplashView.blurRadius, "the splash leaves two blur radii around the bar")
         expect(CommandBarSplashView.blurRadius == 150 && CommandBarSplashView.duration == 1.2,
                "the splash blurs to 150 and fades over 1.2 seconds")
 
