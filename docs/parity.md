@@ -6875,7 +6875,8 @@ Evidence: command-bar.md; CommandBar.swift; native_search.mm; CommandBar action 
 
 UPD03: pinned Sparkle 2.10.1 is embedded and Developer ID–signed, distribution
 packages carry the feed and the EdDSA public key, and the private key is in the
-release Mac's login Keychain (account `parc`, not yet backed up). Each release's
+release Mac's login Keychain (account `parc`; `signing-backup.py` backs it up to
+1Password, not yet run). Each release's
 appcast stage signs the notarized ZIP and publishes `appcast.xml` with the DMG
 and ZIP on the public latest release, against the
 [appcast contract](software-update.md#appcast-contract); the cask says

@@ -13,11 +13,18 @@ RELEASES = "https://github.com/etsenake/parc-releases/releases"
 FEED_URL = RELEASES + "/latest/download/appcast.xml"
 # The private key lives in the release Mac's login Keychain under Sparkle's
 # service, this account (generate_keys/sign_update --account parc).
+SERVICE = "https://sparkle-project.org"
 ACCOUNT = "parc"
 PUBLIC_ED_KEY = "1hic4mo2AXODWtTea711Nwof69H++DEETfSXVUzCqKI="
 #
 INFO = {"SUFeedURL": FEED_URL, "SUPublicEDKey": PUBLIC_ED_KEY, "SUEnableAutomaticChecks": True,
         "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 28800}
+
+
+def has_key() -> bool:
+    """Whether the login Keychain holds the signing key; its secret is not read."""
+    return subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", ACCOUNT],
+                          capture_output=True).returncode == 0
 
 
 def directory(cache: Path) -> Path:

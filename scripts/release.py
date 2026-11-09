@@ -22,6 +22,7 @@ import release_inputs
 import release_lease
 import release_notes
 import app_version
+import sparkle
 
 ROOT = Path(__file__).resolve().parents[1]
 TEAM = "94HKA7L2DR"
@@ -332,9 +333,14 @@ class Release:
         self.command(["xcodebuild", "-checkFirstLaunchStatus"], capture=True)
         identity_path = Path.home() / ".config/parc/signing-identity"
         identities = self.command(["security", "find-identity", "-v", "-p", "codesigning"], capture=True)
-        if not re.search(r'"Developer ID Application: [^"\n]+ \(' + TEAM + r'\)"', identities) and shutil.which('op'):
-            self.command([sys.executable, self.root / 'scripts/signing-backup.py', 'restore'], name='restore-signing-identity')
+        missing = (not re.search(r'"Developer ID Application: [^"\n]+ \(' + TEAM + r'\)"', identities)
+                   or not sparkle.has_key())
+        if missing and shutil.which('op'):
+            self.command([sys.executable, self.root / 'scripts/signing-backup.py', 'restore'], name='restore-signing-keys')
             identities = self.command(['security','find-identity','-v','-p','codesigning'], capture=True)
+        if not sparkle.has_key():
+            raise Failure("Sparkle's update signing key (login Keychain, account parc) is missing and was not restored; "
+                          "unlock 1Password and run python3 scripts/signing-backup.py restore")
         if not identity_path.is_file():
             candidates = re.findall(r'"(Developer ID Application: [^"\n]+ \(' + TEAM + r'\))"', identities)
             if len(candidates) != 1:

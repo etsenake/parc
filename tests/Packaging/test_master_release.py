@@ -476,6 +476,32 @@ class Pipeline(Repository):
                         runner.verify_feed()
                 runner.github.assert_called_once_with('api', 'repos/etsenake/parc-releases/releases/latest')
 
+    def test_preflight_restores_a_missing_sparkle_key_or_stops(self):
+        home = Path(self.tmp.name); (home / '.config/parc').mkdir(parents=True)
+        identity = 'Developer ID Application: Fixture (' + release.TEAM + ')'
+        (home / '.config/parc/signing-identity').write_text(identity + '\n')
+        for op, restored in (('/usr/local/bin/op', True), ('/usr/local/bin/op', False), (None, False)):
+            runner = self.runner(); runner.auth = Mock(); keychain = {'key': False}; commands = []
+            def command(args, **kwargs):
+                commands.append([str(arg) for arg in args])
+                if commands[-1][-1] == 'restore':
+                    keychain['key'] = restored
+                return '1) ABC "' + identity + '"' if 'find-identity' in commands[-1] else ''
+            runner.command = command
+            with self.subTest(op=op, restored=restored), patch.object(Path, 'home', return_value=home), \
+                    patch.object(release.platform, 'system', return_value='Darwin'), \
+                    patch.object(release.platform, 'machine', return_value='arm64'), \
+                    patch.object(release.shutil, 'which', side_effect=lambda name: op if name == 'op' else '/opt/homebrew/bin/brew'), \
+                    patch.object(release.sparkle, 'has_key', side_effect=lambda: keychain['key']):
+                if restored:
+                    runner.preflight()
+                else:
+                    with self.assertRaisesRegex(release.Failure, "Sparkle's update signing key"):
+                        runner.preflight()
+                restores = [args for args in commands if args[-1] == 'restore']
+                self.assertEqual(len(restores), 1 if op else 0)
+            for handle in runner.locks: handle.close()
+
     def test_tap_stage_hands_the_appcast_to_the_publisher(self):
         runner = self.runner()
         runner.checkpoint(source=str(self.root), tag='v1.1.0', version={'version': '1.1.0', 'build': 2},

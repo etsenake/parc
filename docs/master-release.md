@@ -195,9 +195,18 @@ or a locked Keychain can require the user's normal OS approval; those cannot
 be made unattended by a release script.
 
 The Sparkle EdDSA private key lives in the release Mac's login Keychain, under
-Sparkle's service with account `parc`; `signing-backup.py` does not back it up.
-Another Mac needs it moved with `generate_keys --account parc -x <file>` here
-and `-f <file>` there, then the file deleted. Never run plain `generate_keys
+Sparkle's service `https://sparkle-project.org` with account `parc`. If it is
+lost, installed Parcs reject every later update. `signing-backup.py backup` also
+saves it as the 1Password item "Parc Sparkle EdDSA key" (account, public key and
+the concealed private key), after checking that the Keychain key's public half
+is Parc's `SUPublicEDKey`. Sparkle's `generate_keys --account parc -x` exports it
+into a 0600 file in a private temporary folder that is removed straight away,
+and the item is verified by a fresh vault read. `restore` imports a missing key
+the same way with `generate_keys -f` and checks the public key afterwards; it
+leaves a present key and identity alone. The release preflight runs `restore`
+when either credential is missing and `op` is installed, and stops if the
+Sparkle key is still missing. Like the identity, **this backup has not been run
+yet; it needs `op signin`/vault unlock**. Never run plain `generate_keys
 --account parc` on a Mac without the key: it would create a new key that no
 installed Parc trusts, and the appcast stage refuses to sign with it. The first
 signing asks for Keychain access to `sign_update`; choose Always Allow so later
