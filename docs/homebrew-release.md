@@ -202,7 +202,7 @@ brew ruby -- -c "$HOME/homebrew-tap/Casks/parc.rb"
 brew ruby "$HOME/homebrew-tap/test/parc_download_strategy_test.rb"
 brew audit --cask etsenake/tap/parc
 brew fetch --cask etsenake/tap/parc
-brew upgrade --cask etsenake/tap/parc
+brew upgrade --cask parc
 ```
 
 Homebrew may replace the same manually installed candidate while registering

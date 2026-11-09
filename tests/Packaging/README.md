@@ -123,7 +123,7 @@ and `brew upgrade --cask parc`. Stable releases are mirrored with identical
 bytes to the public `etsenake/parc-releases` repository, which the cask
 downloads from; the source stays private. Homebrew uninstall preserves the Parc
 profile. The initial 0.1.0 bootstrap cask can adopt the verified matching existing
-notarized app with `brew install --cask --adopt etsenake/tap/parc` before its
+notarized app with `brew install --cask --adopt parc` before its
 first accepted stable upgrade. Actual DMG installation/upgrade validation waits
 for an authorized app operation; promotion of user-confirmed 1.0.0 is authorized
 now. Follow the complete [release runbook](../../docs/homebrew-release.md)

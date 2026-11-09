@@ -2,6 +2,15 @@
 
 
 
+## Install
+
+```sh
+brew tap etsenake/tap
+brew install --cask parc
+```
+
+Upgrade with `brew upgrade --cask parc`. Releases are published at [parc-releases](https://github.com/etsenake/parc-releases/releases).
+
 ## Scope
 
 

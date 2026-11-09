@@ -9,7 +9,7 @@ Run from clean main on an Apple Silicon Mac. This command is **release-only**:
 engine/app build, production signing, notarization, GitHub assets and Homebrew
 cask publication. It never installs/replaces/quits/opens Parc, runs startup or
 browser tests, or invokes Homebrew install/upgrade/reinstall. Josh runs
-`brew upgrade --cask etsenake/tap/parc` himself. There is no quiet-window timer.
+`brew upgrade --cask parc` himself. There is no quiet-window timer.
 The earlier one-night wait was coordination, not a feature of this command.
 
 A minor release after 1.0.0 is 1.1.0; the Apple bundle build increases
