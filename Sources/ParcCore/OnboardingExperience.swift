@@ -3,9 +3,7 @@ import Foundation
 ///
 /// Addresses and remaining gaps live in docs/onboarding.md.
 enum OnboardingExperience {
-    enum TransitionDirection: Equatable {
-        case forward, back
-    }
+    typealias TransitionDirection = OnboardingTransitionDirection
 
     ///
     ///
@@ -26,8 +24,11 @@ enum OnboardingExperience {
     static let readyConfettiDelay: TimeInterval = 0.4
 
     ///
+    ///
+    /// NewSetupView with no transition, and its per-step animations can't fire
+    /// on insertion, so the first setup card appears in place.
     static func direction(from: OnboardingDraft.Stage, to: OnboardingDraft.Stage) -> TransitionDirection? {
-        if from.isWelcome && !to.isWelcome { return .forward }
+        if from.isWelcome && !to.isWelcome { return nil }
         if !from.isWelcome && to.isWelcome { return .back }
         let order = OnboardingDraft.Stage.setupOrder(
             includingAdBlockers: from.current == .adBlockers || to.current == .adBlockers)
@@ -36,6 +37,9 @@ enum OnboardingExperience {
               origin != destination else { return nil }
         return destination > origin ? .forward : .back
     }
+
+    typealias Spring = OnboardingStepMotion.Spring
+    typealias StepMotion = OnboardingStepMotion
 
     enum MusicEvent: Equatable {
         case startWelcome, changeStage, resignKey, resignActive, becomeKey, becomeActive

@@ -492,12 +492,30 @@ struct OnboardingTests {
         precondition(OnboardingExperience.readyConfettiDelay == 0.4, "Confetti waits 0.4 s into the finished step")
         precondition(OnboardingExperience.direction(from: .defaultBrowser, to: .ready) == .forward
                      && OnboardingExperience.direction(from: .ready, to: .defaultBrowser) == .back
-                     && OnboardingExperience.direction(from: .sellCompleted, to: .bookmarks) == .forward
                      && OnboardingExperience.direction(from: .theme, to: .adBlockers) == .forward
                      && OnboardingExperience.direction(from: .adBlockers, to: .defaultBrowser) == .forward
                      && OnboardingExperience.direction(from: .adBlockers, to: .theme) == .back
                      && OnboardingExperience.direction(from: .theme, to: .theme) == nil,
                      "Setup TransitionDirection is back/forward from step order")
+        precondition(OnboardingExperience.direction(from: .sellCompleted, to: .bookmarks) == nil
+                     && OnboardingExperience.direction(from: .introAnimation, to: .bookmarks) == nil
+                     && OnboardingExperience.direction(from: .bookmarks, to: .introAnimation) == .back,
+                     "The first setup card appears in place after welcome; returning to welcome stays back")
+        typealias Motion = OnboardingExperience.StepMotion
+        precondition(Motion.offset == 400
+                     && Motion.offsets(.forward) == (400, -400) && Motion.offsets(.back) == (-400, 400),
+                     "Forward text comes from +400 and leaves to -400; back mirrors it")
+        precondition(Motion.titleSpring == .init(response: 0.4, dampingFraction: 0.8)
+                     && Motion.messageSpring == .init(response: 0.5, dampingFraction: 0.8),
+                     "Title springs 0.4/0.8 and the message 0.5/0.8")
+        precondition(abs(Motion.titleSpring.stiffness - 246.74) < 0.01 && abs(Motion.titleSpring.damping - 25.133) < 0.001
+                     && abs(Motion.messageSpring.stiffness - 157.91) < 0.01 && abs(Motion.messageSpring.damping - 20.106) < 0.001,
+                     "SwiftUI response/damping convert to unit-mass stiffness (2π/response)² and damping 4πζ/response")
+        precondition(Motion.contentFadeDuration == 0.5 && Motion.enabledFadeDuration == 0.12,
+                     "Content crossfades over the default 0.5 s spring; Next's enabled state fades over 0.12 s")
+        precondition(Motion.slidesText(reduceMotion: false) && !Motion.slidesText(reduceMotion: true)
+                     && Motion.fadesContent(reduceMotion: true) && Motion.fadesEnabledState(reduceMotion: true),
+                     "Reduce Motion drops the 400 pt slides but keeps the fades")
         precondition(OnboardingExperience.shouldStartMusic(on: .startWelcome)
                      && !OnboardingExperience.shouldStartMusic(on: .changeStage)
                      && !OnboardingExperience.shouldStartMusic(on: .resignKey),

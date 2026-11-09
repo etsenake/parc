@@ -9,6 +9,11 @@ import UniformTypeIdentifiers
 final class BrowserImportViewController: NSViewController {
     var onClose: (() -> Void)?
     var onChange: (() -> Void)?
+    ///
+    /// moves forward and the import has no Back of its own. Nil for the first
+    /// page and for updates within a page.
+    private(set) var pageDirection: OnboardingExperience.TransitionDirection?
+    private var shownPage: BrowserImportCoordinator.Stage?
     var onShowPasswordHelp: (() -> Void)?
     var onHidePasswordHelp: (() -> Void)?
     /// Ad blockers the import adds after its presentation closed.
@@ -372,6 +377,10 @@ final class BrowserImportViewController: NSViewController {
         }
         reconcileAccessTimer()
         root.needsLayout = true; root.layoutSubtreeIfNeeded()
+        // Finding browsers, choosing them and importing share the browser cards.
+        let page: BrowserImportCoordinator.Stage = cards || stage == .loading ? .sources : stage
+        pageDirection = shownPage.flatMap { $0 == page ? nil : .forward }
+        shownPage = page
         onChange?()
     }
 

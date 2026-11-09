@@ -192,6 +192,7 @@ struct OnboardingSetupCardTests {
                 }
             }
         }
+        checkStepMotion(card, font: font, back: back, next: next, skip: skip, progress: progress)
         card.themeBackground = NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1)
         precondition(card.chrome.layer?.backgroundColor == card.themeBackground?.cgColor)
         card.effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -272,5 +273,54 @@ struct OnboardingSetupCardTests {
     static func require<T>(_ value: T?) throws -> T {
         guard let value else { throw CocoaError(.featureUnsupported) }
         return value
+    }
+
+    /// NewSetupView's description typography and step motion: the old text
+    /// springs out while the new springs in, and the content only crossfades.
+    @MainActor static func checkStepMotion(_ card: OnboardingSetupCard, font: NSFont, back: NSView, next: NSView,
+                                           skip: NSView, progress: NSView) {
+        card.configure(title: "Choose the apps you use most.", subtitle: "Select your favorite apps to keep them handy in your sidebar.",
+                       font: font, back: back, next: next, skip: skip, progress: progress, accessory: nil)
+        card.layoutSubtreeIfNeeded()
+        let attributes = card.message.attributedStringValue.attributes(at: 0, effectiveRange: nil)
+        let messageFont = attributes[.font] as? NSFont
+        let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle
+        precondition(messageFont?.pointSize == 15 && attributes[.kern] as? Double == -0.3,
+                     "The setup message is 15 pt with -0.3 kerning")
+        if let messageFont, let paragraph {
+            precondition(abs(messageFont.ascender - messageFont.descender + messageFont.leading + paragraph.lineSpacing - 21) < 0.001,
+                         "The setup message sets a 21 pt line")
+        } else { preconditionFailure("The setup message carries a paragraph style") }
+        guard let snapshot = card.captureText() else { preconditionFailure("A visible heading and message can be captured") }
+        card.configure(title: "Go steady with Parc?", subtitle: "Make Parc your default browser so links open here.",
+                       font: font, back: back, next: next, skip: skip, progress: progress, accessory: nil)
+        card.animateStepChange(from: snapshot, direction: .forward, slides: true, fades: true)
+        for (field, spring) in [(card.heading, OnboardingStepMotion.titleSpring), (card.message, OnboardingStepMotion.messageSpring)] {
+            guard let slide = field.layer?.animation(forKey: "step") as? CASpringAnimation else {
+                preconditionFailure("New setup text springs in")
+            }
+            precondition(slide.keyPath == "transform.translation.x" && slide.fromValue as? Double == 400
+                         && slide.toValue as? Double == 0 && slide.mass == 1
+                         && abs(slide.stiffness - spring.stiffness) < 0.001 && abs(slide.damping - spring.damping) < 0.001
+                         && slide.duration == slide.settlingDuration, "New text comes from +400 on its spring")
+        }
+        let outgoing = card.outgoingText.subviews
+        precondition(outgoing.count == 2 && outgoing.allSatisfy {
+            ($0.layer?.animation(forKey: "step") as? CASpringAnimation)?.toValue as? Double == -400
+        }, "The old heading and message leave to -400, still drawn")
+        precondition(outgoing.allSatisfy { $0.layer?.animation(forKey: "opacity") == nil } && card.outgoingText.hitTest(.zero) == nil,
+                     "Outgoing text stays opaque and never takes clicks")
+        guard let fade = card.content.layer?.animation(forKey: kCATransition) as? CATransition else {
+            preconditionFailure("The step content crossfades")
+        }
+        precondition(fade.type == .fade && fade.duration == OnboardingStepMotion.contentFadeDuration,
+                     "Step content crossfades in place, no push")
+        outgoing.forEach { $0.removeFromSuperview() }
+        card.heading.layer?.removeAllAnimations(); card.message.layer?.removeAllAnimations()
+        card.content.layer?.removeAllAnimations()
+        card.animateStepChange(from: nil, direction: .back, slides: false, fades: true)
+        precondition(card.heading.layer?.animation(forKey: "step") == nil && card.outgoingText.subviews.isEmpty
+                     && card.content.layer?.animation(forKey: kCATransition) != nil,
+                     "Reduce Motion keeps the crossfade and drops the slides")
     }
 }

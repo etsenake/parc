@@ -13,6 +13,7 @@ pathlib.Path(sys.argv[1]).write_text('import AppKit\nextension NSColor { static 
 PY
 xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   Sources/ParcCore/SpaceTheme.swift \
+  Sources/ParcCore/OnboardingStepMotion.swift \
   Sources/ParcApp/OnboardingSetupCard.swift \
   Sources/ParcApp/BrowserImportBackdrop.swift \
   Sources/ParcApp/SidebarSpacePaging.swift \

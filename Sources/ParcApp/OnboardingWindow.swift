@@ -42,7 +42,13 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private let root = LayoutView()
     private var body: OnboardingSetupCard.Column { setupCard.content }
     private let next = OnboardingProgressionControl(frame: .zero)
-    private let back = ActionButton("Back", symbol: "chevron.left")
+    /// NewSetupView: `Image(systemName: "arrow.left") + Text(" Back")`, 13 pt medium.
+    private let back: ActionButton = {
+        let button = ActionButton("Back", symbol: "arrow.left")
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.image = button.image?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        return button
+    }()
     private let skip = ActionButton("Skip for now")
     private let progress = NSTextField(labelWithString: "")
     private let persistenceStatus = NSTextField(labelWithString: "")
@@ -328,6 +334,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func render(from previous: OnboardingDraft.Stage? = nil) {
+        let outgoingText = stepTextSnapshot()
         if browserImport?.canShowPasswordHelp != true { dismissPasswordHelp() }
         themeEditor.finishEditing()
         let previousResponder = window?.firstResponder
@@ -397,7 +404,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         body.onLayout = nil
         if let browserImport, draft.stage == .bookmarks {
             renderBrowserImport(browserImport)
-            animateStepChange()
+            animateStepChange(from: outgoingText)
             confetti.stop(); confetti.isHidden = true
             restoreFocus(from: entering, previousResponder: previousResponder)
             announceStageIfNeeded(from: entering)
@@ -508,7 +515,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
            OnboardingThemeEditorLayout.shouldAnimateAppearance(alreadyVisible: themeWasVisible) {
             themeChrome.playAppearance(reduceMotion: reduceMotion)
         }
-        animateStepChange()
+        animateStepChange(from: outgoingText)
         updateConfetti(from: entering)
         restoreFocus(from: entering, previousResponder: previousResponder)
         announceStageIfNeeded(from: entering)
@@ -566,17 +573,21 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
     }
 
-    private func animateStepChange() {
+    /// The outgoing heading and message, taken before a directed step change
+    /// replaces them.
+    private func stepTextSnapshot() -> OnboardingSetupCard.TextSnapshot? {
+        guard transitionDirection != nil, !draft.stage.isWelcome,
+              OnboardingExperience.StepMotion.slidesText(reduceMotion: reduceMotion) else { return nil }
+        return setupCard.captureText()
+    }
+
+    private func animateStepChange(from outgoingText: OnboardingSetupCard.TextSnapshot?) {
         let direction = transitionDirection
         transitionDirection = nil
-        guard !reduceMotion, let direction, !draft.stage.isWelcome else { return }
-        let animation = CATransition()
-        animation.type = .push
-        animation.subtype = direction == .forward ? .fromRight : .fromLeft
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        setupCard.content.layer?.add(animation, forKey: "step")
-        setupCard.heading.layer?.add(animation, forKey: "step")
-        setupCard.message.layer?.add(animation, forKey: "step")
+        guard let direction, !draft.stage.isWelcome else { return }
+        setupCard.animateStepChange(from: outgoingText, direction: direction,
+            slides: OnboardingExperience.StepMotion.slidesText(reduceMotion: reduceMotion),
+            fades: OnboardingExperience.StepMotion.fadesContent(reduceMotion: reduceMotion))
     }
 
     ///
@@ -880,7 +891,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             self.closeBrowserImport()
             if let next = self.draft.nextStage() { self.transition(to: next) }
         }
-        controller.onChange = { [weak self] in self?.render() }
+        controller.onChange = { [weak self, weak controller] in
+            guard let self else { return }
+            if let direction = controller?.pageDirection { self.transitionDirection = direction }
+            self.render()
+        }
         controller.onShowPasswordHelp = { [weak self] in self?.showPasswordHelp() }
         controller.onHidePasswordHelp = { [weak self] in self?.dismissPasswordHelp(remove: true) }
         controller.onBackgroundAdBlockers = { [weak self] in self?.adoptBackgroundAdBlockers($0) }

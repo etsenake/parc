@@ -57,7 +57,9 @@ private struct OnboardingSetupProgressionButton: View {
         .keyboardShortcut(.defaultAction)
         .accessibilityLabel(state.title)
         .accessibilityValue(state.loading ? "Loading" : "")
-        .animation(state.reduceMotion ? nil : .easeInOut(duration: 0.12), value: state.enabled)
+        .animation(OnboardingStepMotion.fadesEnabledState(reduceMotion: state.reduceMotion)
+                   ? .easeInOut(duration: OnboardingStepMotion.enabledFadeDuration) : nil,
+                   value: state.enabled)
     }
 }
 

@@ -175,7 +175,35 @@ final class OnboardingSetupCard: NSView {
         }
     }
 
+    /// Holds the outgoing heading and message while they slide away, above
+    /// the instructions and below the step content, as in NewSetupView's HStack.
+    final class OutgoingText: NSView {
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    private final class TextTrail: NSView {
+        let image: CGImage
+        init(image: CGImage, frame: NSRect) {
+            self.image = image
+            super.init(frame: frame)
+            wantsLayer = true
+            layerContentsRedrawPolicy = .onSetNeedsDisplay
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+        override var wantsUpdateLayer: Bool { true }
+        override func updateLayer() { layer?.contents = image; layer?.contentsGravity = .resize }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    /// The heading and message as drawn before a step change.
+    struct TextSnapshot {
+        fileprivate let heading: (image: CGImage, frame: NSRect)?
+        fileprivate let message: (image: CGImage, frame: NSRect)?
+    }
+
     let instructions = Column()
+    let outgoingText = OutgoingText()
     let content = Column()
     let chrome = Chrome()
     let borders = Borders()
@@ -185,7 +213,8 @@ final class OnboardingSetupCard: NSView {
     let backdrop = BrowserImportBackdrop()
     var titleColor: NSColor { OnboardingSetupPalette.title }
     /// The import's pages set every line in the title's colour.
-    var importInk = false { didSet { if importInk != oldValue { message.textColor = messageColor } } }
+    var importInk = false { didSet { if importInk != oldValue { styleMessage() } } }
+    private var messageText = ""
     /// The import step's own text reaches across the content column too.
     var textSpansCard = false { didSet { if textSpansCard != oldValue { updateColors() } } }
     var messageColor: NSColor { importInk ? titleColor : OnboardingSetupPalette.message }
@@ -218,6 +247,7 @@ final class OnboardingSetupCard: NSView {
         chrome.addSubview(backdrop)
         addSubview(chrome)
         addSubview(instructions)
+        addSubview(outgoingText)
         addSubview(content)
         addSubview(borders)
         updateColors()
@@ -278,12 +308,11 @@ final class OnboardingSetupCard: NSView {
         ])
         heading.setAccessibilityRole(NSAccessibility.Role(rawValue: "AXHeading"))
         heading.setAccessibilityLabel(title)
-        message.stringValue = subtitle
+        messageText = subtitle
+        styleMessage()
         message.setAccessibilityRole(.staticText)
         progress.setAccessibilityRole(.staticText)
         setAccessibilityLabel(title)
-        message.font = .systemFont(ofSize: 14)
-        message.textColor = messageColor
         for view in controls where view.superview !== instructions { instructions.addSubview(view) }
         instructions.onLayout = { [weak self, weak back, weak next, weak skip, weak progress, weak accessory] in
             guard let self else { return }
@@ -304,6 +333,80 @@ final class OnboardingSetupCard: NSView {
         needsLayout = true
     }
 
+    ///
+    ///
+    ///
+    private func styleMessage() {
+        let font = NSFont.systemFont(ofSize: 15, weight: .regular)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = max(0, 21 - (font.ascender - font.descender + font.leading))
+        paragraph.lineBreakMode = .byWordWrapping
+        message.font = font
+        message.attributedStringValue = NSAttributedString(string: messageText, attributes: [
+            .font: font, .foregroundColor: messageColor, .kern: -0.3, .paragraphStyle: paragraph
+        ])
+        message.textColor = messageColor
+    }
+
+    /// Call before the heading and message change; nil when nothing is drawn.
+    func captureText() -> TextSnapshot? {
+        guard !isHiddenOrHasHiddenAncestor, window != nil else { return nil }
+        func capture(_ field: NSTextField) -> (image: CGImage, frame: NSRect)? {
+            guard !field.isHidden, !field.stringValue.isEmpty, field.bounds.width > 0, field.bounds.height > 0,
+                  let rep = field.bitmapImageRepForCachingDisplay(in: field.bounds) else { return nil }
+            field.effectiveAppearance.performAsCurrentDrawingAppearance {
+                field.cacheDisplay(in: field.bounds, to: rep)
+            }
+            return rep.cgImage.map { ($0, field.frame) }
+        }
+        let snapshot = TextSnapshot(heading: capture(heading), message: capture(message))
+        return snapshot.heading == nil && snapshot.message == nil ? nil : snapshot
+    }
+
+    /// The step change after `configure`: the content crossfades in place;
+    /// with `slides`, the new heading and message spring in from one side
+    /// while the snapshot of the old ones springs out the other, fully opaque.
+    func animateStepChange(from outgoing: TextSnapshot?, direction: OnboardingTransitionDirection,
+                           slides: Bool, fades: Bool) {
+        typealias Motion = OnboardingStepMotion
+        if fades {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = Motion.contentFadeDuration
+            let curve = Motion.contentFadeCurve
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: curve.0, curve.1, curve.2, curve.3)
+            content.layer?.add(fade, forKey: "step")
+        }
+        guard slides else { return }
+        let (insertion, removal) = Motion.offsets(direction)
+        for (field, spring, old) in [(heading, Motion.titleSpring, outgoing?.heading),
+                                     (message, Motion.messageSpring, outgoing?.message)] {
+            field.layer?.add(Self.slide(from: insertion, to: 0, spring: spring), forKey: "step")
+            guard let old else { continue }
+            let trail = TextTrail(image: old.image, frame: old.frame)
+            outgoingText.addSubview(trail)
+            trail.displayIfNeeded()
+            let away = Self.slide(from: 0, to: removal, spring: spring)
+            away.fillMode = .forwards
+            away.isRemovedOnCompletion = false
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak trail] in trail?.removeFromSuperview() }
+            trail.layer?.add(away, forKey: "step")
+            CATransaction.commit()
+        }
+    }
+
+    private static func slide(from: Double, to: Double, spring: OnboardingStepMotion.Spring) -> CASpringAnimation {
+        let animation = CASpringAnimation(keyPath: "transform.translation.x")
+        animation.mass = 1
+        animation.stiffness = spring.stiffness
+        animation.damping = spring.damping
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = animation.settlingDuration
+        return animation
+    }
+
     override func layout() {
         super.layout()
         chrome.frame = bounds
@@ -315,6 +418,7 @@ final class OnboardingSetupCard: NSView {
         instructions.frame = NSRect(x: padding, y: padding,
             width: OnboardingSetupLayout.instructionWidth - 2 * padding,
             height: bounds.height - 2 * padding)
+        outgoingText.frame = instructions.frame
         content.frame = NSRect(x: OnboardingSetupLayout.instructionWidth, y: 0,
             width: bounds.width - OnboardingSetupLayout.instructionWidth, height: bounds.height)
         instructions.needsLayout = true

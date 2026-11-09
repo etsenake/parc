@@ -7,6 +7,7 @@ tooltip=()
 while IFS= read -r path; do tooltip+=("$path"); done < <(python3 tests/Tooltip/support.py "$output" SpaceTheme.swift)
 xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 "${tooltip[@]}" \
   Sources/ParcCore/SpaceTheme.swift \
+  Sources/ParcCore/OnboardingStepMotion.swift \
   Sources/ParcCore/SpaceThemeEditor.swift \
   Sources/ParcApp/AppAppearance.swift \
   Sources/ParcApp/ThemeHapticFeedback.swift \
