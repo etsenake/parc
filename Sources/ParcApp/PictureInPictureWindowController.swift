@@ -477,34 +477,24 @@ private class PictureInPictureBarControl: NSButton {
     }
 }
 
-// Back to Tab: the up-left arrow and its title in a 26 pt capsule, 8 pt in
-// from each end, 15 pt medium rounded; the capsule fills white at 33% under
+// Back to Tab: the up-left arrow alone in a 26 pt circle, as the video PiP's;
+// the circle fills white at 33% under the pointer (BackToTabButtonStyle
 //
 @MainActor
 private final class PictureInPictureBackToTabButton: PictureInPictureBarControl {
-    private static let height: CGFloat = 26
-    private static let padding: CGFloat = 8
+    private static let side: CGFloat = 26
 
     init() {
         super.init(label: "Back to Tab")
-        let base = NSFont.systemFont(ofSize: 15, weight: .medium)
-        let font = base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 15) } ?? base
-        attributedTitle = NSAttributedString(string: "Back to Tab", attributes: [
-            .font: font, .foregroundColor: NSColor.white, .kern: 0.1,
-        ])
         image = NSImage(systemSymbolName: "arrow.up.left", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .bold))
-        imagePosition = .imageLeading
-        imageHugsTitle = true
+        imagePosition = .imageOnly
         contentTintColor = .white
-        layer?.cornerCurve = .continuous
-        layer?.cornerRadius = Self.height / 2
+        layer?.cornerRadius = Self.side / 2
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: (super.intrinsicContentSize.width + 2 * Self.padding).rounded(.up), height: Self.height)
-    }
+    override var intrinsicContentSize: NSSize { NSSize(width: Self.side, height: Self.side) }
     override func hoverChanged() {
         guard let layer else { return }
         animate("backgroundColor", to: NSColor(white: 1, alpha: hovering ? 0.33 : 0).cgColor, on: layer)

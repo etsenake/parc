@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 645,
+  "version": 646,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1220,7 +1220,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "e339150bac5b08062059159d58a6042e83c7433c4519f71200e3eada9a830de8"
+      "sha256": "36820e257230d600657bb417ddc3b387f9fd196f693ede4741e6464ab5e02143"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
