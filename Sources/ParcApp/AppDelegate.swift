@@ -1750,13 +1750,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return started && !terminationInProgress && onboarding == nil && !requiresOnboarding
                 && front?.isPrivateBrowsing == false
         }
-        if item.action == #selector(closeTab), onboarding != nil {
+        if item.action == #selector(closeTab), let onboarding,
+           OnboardingCloseCommand.owns(setup: onboarding.window, key: NSApp.keyWindow) {
             item.title = "Close Setup"
-            return true
+            return OnboardingCloseCommand.isAvailable(setup: onboarding.window)
         }
-        if requiresOnboarding || onboarding != nil {
+        // Replay leaves a key browser window's own Close Tab in place.
+        if requiresOnboarding || onboarding != nil, requiresOnboarding || item.action != #selector(closeTab) {
             return item.action == #selector(newWindow) || item.action == #selector(newBlankWindow)
-                || item.action == #selector(about)
+                || item.action == #selector(about) || item.action == #selector(quitMenu)
         }
         if item.action == WebpageEditCommands.pasteMatchingStyle { return WebpageEditCommands.canPasteMatchingStyle(item) }
         if let appearance = AppAppearance.forSelector(item.action) {
@@ -1959,7 +1961,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             SettingsCloseCommand.perform(window: settings.window, appIsActive: NSApp.isActive, sender: sender)
             return
         }
-        if let onboarding { onboarding.window?.performClose(sender); return }
+        if let onboarding, OnboardingCloseCommand.owns(setup: onboarding.window, key: NSApp.keyWindow) {
+            guard OnboardingCloseCommand.isAvailable(setup: onboarding.window) else { return }
+            if !onboarding.handleCloseCommand() { onboarding.window?.performClose(sender) }
+            return
+        }
+        if requiresOnboarding { return }
         if let education = NSApp.keyWindow?.windowController as? ShortcutEssentialsWindow { education.close(); return }
         if let tools = devToolsWindows.first(where: { $0.window === NSApp.keyWindow }) {
             tools.window?.performClose(sender)

@@ -84,7 +84,6 @@ struct OnboardingChoiceRow<Label: View>: View {
             withAnimation(selectionAnimation) { showHeart = false }
         }
         .accessibilityLabel(label)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 

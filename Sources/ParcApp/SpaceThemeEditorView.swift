@@ -164,6 +164,14 @@ final class SpaceThemeEditorView: NSView {
         intensity.frame = NSRect(x: 10, y: rowY + 56, width: bounds.width - 116, height: 60)
         noise.frame = NSRect(x: bounds.width - 98, y: rowY + 46, width: 80, height: 80)
     }
+    /// Setup's Tab loop enters the editor here. The sidebar popover never
+    /// calls these, so its own key-view loop is unchanged.
+    var firstKeyView: NSView { pad }
+    func chainKeyViews(to following: NSView) {
+        let controls: [NSView] = [pad] + appearanceButtons + [remove, add, previous] + presets + [next, intensity, noise]
+        for (view, after) in zip(controls, controls.dropFirst()) { view.nextKeyView = after }
+        noise.nextKeyView = following
+    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         reportedTooltipTheme = nil

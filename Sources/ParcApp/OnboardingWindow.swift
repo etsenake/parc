@@ -590,7 +590,38 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         else if previous != .ready { confetti.fire(after: OnboardingExperience.readyConfettiDelay) }
     }
 
+    ///
+    func handleCloseCommand() -> Bool {
+        guard passwordHelp?.isPresented == true else { return false }
+        dismissPasswordHelp()
+        return true
+    }
+
     private func restoreFocus(from previous: OnboardingDraft.Stage?, previousResponder: NSResponder?) {
+        if !draft.stage.isWelcome {
+            // Back, the step's own controls, Skip, then Next. Hosted SwiftUI
+            //
+            typealias Segment = (first: NSView, link: (NSView) -> Void)
+            func views(_ list: [NSView]) -> [Segment] { list.map { view in (view, { view.nextKeyView = $0 }) } }
+            var loop = views(back.isHidden ? [] : [back])
+            switch draft.stage.current {
+            case .theme:
+                loop += views([spaceField])
+                loop.append((themeEditor.firstKeyView, { self.themeEditor.chainKeyViews(to: $0) }))
+            case .favorites: loop += views([favoritePicker.keyboardView])
+            case .defaultBrowser: loop += views(defaultChoice.map { [$0] } ?? [])
+            case .adBlockers: loop += views(adBlockerHost.map { [$0] } ?? [])
+            case .ready: loop.append((readyContent.firstKeyView, { self.readyContent.chainKeyViews(to: $0) }))
+            default:
+                if let browserImport {
+                    loop += views(BrowserImportFocus.keyViews(in: [browserImport.setupAccessory, browserImport.view].compactMap { $0 }))
+                } else {
+                    loop += views(body.subviews)
+                }
+            }
+            loop += views((skip.isHidden ? [] : [skip]) + [next.keyboardView])
+            for (segment, following) in zip(loop, loop.dropFirst() + loop.prefix(1)) { segment.link(following.first) }
+        }
         guard let window, window.isKeyWindow, window.attachedSheet == nil,
               passwordHelp?.isPresented != true, !isFinishing else { return }
         switch OnboardingExperience.focusTarget(entering: draft.stage, from: previous) {
@@ -605,19 +636,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 window.makeFirstResponder(view)
             }
         }
-        let afterContent: NSView = skip.isHidden ? next.keyboardView : skip
-        if draft.stage == .ready {
-            back.nextKeyView = readyContent.firstKeyView
-            readyContent.chainKeyViews(to: afterContent)
-        } else if draft.stage == .theme {
-            back.nextKeyView = spaceField
-            spaceField.nextKeyView = afterContent
-        } else {
-            back.nextKeyView = afterContent
-        }
-        skip.nextKeyView = next.keyboardView
-        next.keyboardView.nextKeyView = !back.isHidden ? back
-            : draft.stage == .ready ? readyContent.firstKeyView : afterContent
     }
 
     private func announceStageIfNeeded(from previous: OnboardingDraft.Stage?) {

@@ -110,9 +110,8 @@ private struct OnboardingFavoritesView: View {
         }
         .help(choice.title)
         .accessibilityLabel(choice.title)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-        .accessibilityHint("Toggle this Favorite for the first Space")
+        .accessibilityHint("Toggle this Favorite")
     }
 }
 
@@ -168,6 +167,8 @@ final class OnboardingFavoritesControl: NSView {
     private let state = OnboardingFavoritesState()
     private var host: NSHostingView<OnboardingFavoritesView>!
     var onToggle: ((OnboardingDraft.FavoriteChoice) -> Void)?
+    /// The setup Tab loop targets the SwiftUI host that owns the tiles.
+    var keyboardView: NSView { host }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
