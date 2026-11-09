@@ -2075,6 +2075,27 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return request(id, self) { [weak self] in self?.movePagesHere(ids.dropFirst(), then: completion) ?? false }
     }
 
+    /// Moves sidebar roots' pages another window owns here, one at a time,
+    /// then runs `close` with the pages moved. A refused move, or one that
+    /// ends with the page left where it was, sends the pages already moved
+    /// back, so a Close never leaves part of its set here unseen.
+    private func moveRootsHere(_ ids: ArraySlice<UUID>, moved: [UUID], then close: @escaping ([UUID]) -> Bool) -> Bool {
+        guard let id = ids.first else { return close(moved) }
+        guard ownership.isClaimed(id), !ownership.canUse(id, owner: presentationID),
+              let request = onRequestTabTransfer else { return moveRootsHere(ids.dropFirst(), moved: moved, then: close) }
+        let arrival = PendingArrival { [weak self] in self?.returnMovedRoots(moved) }
+        let started = request(id, self) { [weak self] in
+            arrival.ran = true
+            // The chain presents or returns every moved page itself, so the
+            // arrival is never selected here.
+            _ = self?.moveRootsHere(ids.dropFirst(), moved: moved + [id], then: close)
+            return true
+        }
+        if !started { arrival.ran = true; returnMovedRoots(moved) }
+        return started
+    }
+    private func returnMovedRoots(_ ids: [UUID]) { for id in ids { returnIfUnshown(id) } }
+
     ///
     /// page cannot move right now (a window closing, another move under way,
     /// the page in full screen) only beeps.
@@ -2174,13 +2195,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var heldContentIDs: Set<UUID> {
         Set(browsers.keys).union(noteEditors.keys).union(easelEditors.keys)
     }
-    /// Content, or an empty claim, that could go back to a placeholder.
-    private var returnableIDs: Set<UUID> { heldContentIDs.union(panes.keys.filter(holdsEmptyClaim)) }
+    /// Content, or an empty claim, that could go back to a placeholder. A
+    /// handed-over claim that was never shown has no pane here.
+    private var returnableIDs: Set<UUID> {
+        heldContentIDs.union(panes.keys.filter(holdsEmptyClaim)).union(shownSinceArrival.filter(holdsEmptyClaim))
+    }
     /// A page that arrived for a selection that then didn't happen (a later
     /// page of the split refused to move) goes back to its placeholder
     /// rather than sitting here unseen.
     private func returnIfUnshown(_ id: UUID) {
-        guard !presentation.displayedTabIDs.contains(id), heldContentIDs.contains(id) else { return }
+        guard !presentation.displayedTabIDs.contains(id), heldContentIDs.contains(id) || holdsEmptyClaim(id) else { return }
         shownSinceArrival.insert(id)
         scheduleUntargetedReturns()
     }
@@ -6235,10 +6259,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     /// Closing sidebar roots (the split cell's Close and keyboard Close of
     /// selected roots) takes ordinary row Close's conditions for every
-    /// original tab, without its key-window check and with no command panel.
-    private func sidebarRootsCloseAvailable(_ ids: Set<UUID>) -> Bool {
+    /// original tab, without its key-window check and with no command panel:
+    /// a page another window holds must be able to move here first.
+    private func sidebarRootsCloseAvailable(_ ids: Set<UUID>, movingHere: Bool = true) -> Bool {
         guard sidebarTabActionWindowAvailable, commandBar == nil, !ids.isEmpty,
-              ids.allSatisfy({ id in visibleTabs.contains { $0.id == id } && sidebarTabActionAvailable(id) && switcherCanUse(id) })
+              ids.allSatisfy({ id in
+                  visibleTabs.contains { $0.id == id }
+                      && PageReparenting.rowAction(closing: true, busy: !sidebarTabActionAvailable(id),
+                          usableHere: switcherCanUse(id), heldElsewhere: movingHere && canMovePageHere(id)) != nil
+              })
         else { return false }
         return retirementUnavailableReason?(ids) == nil
     }
@@ -10363,22 +10392,48 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// otherwise the roots' pages close and saved references stay. Validity
     /// follows the hierarchy, selection, focus and retirement rather than the
     /// window-move lease, so private windows close too. A selection command
-    /// also holds the sidebar selection.
+    /// also holds the sidebar selection. Pages another window holds move here
+    /// first, as a row's Close does, and the close is prepared once they have;
+    /// `declined` runs when a started close is cancelled or refused.
     private func prepareSidebarRootsClose(_ items: [SidebarItemReference], archive: Bool, requiresConfirmation: Bool,
-                                          isSelectionCommand: Bool, selectionIsCurrent current: @escaping () -> Bool) -> (() -> Bool)? {
+                                          isSelectionCommand: Bool, selectionIsCurrent current: @escaping () -> Bool,
+                                          declined: @escaping () -> Void = {}) -> (() -> Bool)? {
         guard let target = SidebarKeyboardCloseTarget(items: items, spaceID: activeSpaceID,
                   profileID: activeProfileID, state: store.state) else { return nil }
+        let ids = Set(target.items.tabs.map(\.id))
+        let expected = target.items.hierarchy
+        let elsewhere = target.items.tabs.map(\.id).filter { !switcherCanUse($0) }
+        if !elsewhere.isEmpty {
+            let valid: () -> Bool = { [weak self] in
+                guard let self, current(), self.sidebarRootsCloseAvailable(ids),
+                      self.activeSpaceID == expected.spaceID, self.activeProfileID == expected.profileID else { return false }
+                return SidebarHierarchySnapshot(state: self.store.state, spaceID: expected.spaceID, profileID: expected.profileID) == expected
+            }
+            guard valid() else { return nil }
+            var consumed = false
+            return { [weak self] in
+                guard !consumed, let self, valid() else { return false }
+                consumed = true
+                return self.moveRootsHere(elsewhere[...], moved: []) { [weak self] moved in
+                    let giveBack = { [weak self] in self?.returnMovedRoots(moved); declined() }
+                    guard let self, ids.allSatisfy(self.switcherCanUse),
+                          let close = self.prepareSidebarRootsClose(items, archive: archive, requiresConfirmation: requiresConfirmation,
+                              isSelectionCommand: isSelectionCommand, selectionIsCurrent: current, declined: giveBack),
+                          close() else { giveBack(); return false }
+                    return true
+                }
+            }
+        }
         if !isPrivateBrowsing, archive {
             return prepareSidebarDeletion(items, isSelectionCommand: isSelectionCommand,
-                requiresConfirmation: requiresConfirmation, recordsKeyboardReopen: true, selectionIsCurrent: current)
+                requiresConfirmation: requiresConfirmation, recordsKeyboardReopen: true, selectionIsCurrent: current,
+                declined: declined)
         }
-        let ids = Set(target.items.tabs.map(\.id))
         guard current(), let window else { return nil }
-        let expected = target.items.hierarchy
         let selection = selectedTabIDs, focus = focusedTabID
         let valid: () -> Bool = { [weak self, weak window] in
             guard let self, let window, self.window === window, current(),
-                  self.sidebarRootsCloseAvailable(ids),
+                  self.sidebarRootsCloseAvailable(ids, movingHere: false),
                   self.activeSpaceID == expected.spaceID, self.activeProfileID == expected.profileID,
                   self.selectedTabIDs == selection, self.focusedTabID == focus else { return false }
             return SidebarHierarchySnapshot(state: self.store.state, spaceID: expected.spaceID, profileID: expected.profileID) == expected
@@ -10399,7 +10454,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return SidebarHierarchySnapshot(state: self.store.state, spaceID: expected.spaceID, profileID: expected.profileID) == expected
             }) { [weak self] allowed in
                 releaseSelection()
-                guard let self, allowed else { return }
+                guard let self, allowed else { declined(); return }
                 for id in ids { self.presentation.remove(id) }
                 self.render(self.store.state); self.requestNativeSelection()
             }
@@ -10430,7 +10485,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func prepareSidebarDeletion(_ items: [SidebarItemReference], isSelectionCommand: Bool = false,
                                         requiresConfirmation: Bool = true, recordsKeyboardReopen: Bool = false,
-                                        selectionIsCurrent: @escaping () -> Bool = { true }) -> (() -> Bool)? {
+                                        selectionIsCurrent: @escaping () -> Bool = { true },
+                                        declined: @escaping () -> Void = {}) -> (() -> Bool)? {
         guard !folderUndo.isBusy, folderDuplicateContextAvailable, let window,
               selectionIsCurrent(), let lease = prepareSidebarMoves(items),
               let target = FolderRemovalTarget(items: items, spaceID: activeSpaceID,
@@ -10467,7 +10523,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                           self.retirementUnavailableReason?(ids) == nil else {
                         releaseSelection(); lease.end()
                         // Rebuild one-shot menu/AX capabilities after Cancel.
-                        self.updateNavigation()
+                        self.updateNavigation(); declined()
                         return
                     }
                     lease.end()
@@ -10513,8 +10569,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                             if applied && !ids.isDisjoint(with: selection) {
                                 self.requestNativeSelection(); self.focusSelectedLocalContent()
                             }
-                        case .success(false): self.updateNavigation()
-                        case .failure(let error): self.updateNavigation(); window.presentError(error)
+                        case .success(false): self.updateNavigation(); declined()
+                        case .failure(let error): self.updateNavigation(); declined(); window.presentError(error)
                         }
                     }
                 }
@@ -16021,6 +16077,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
 
 extension SidebarView: SidebarKeyViewEnds {}
+
+/// A move's placement step. A transfer that ends without moving the page
+/// (it stayed, closed or was refused late) drops the step unrun, and only
+/// releasing it reports that. The engine may release it on any thread.
+private final class PendingArrival {
+    var ran = false
+    private let abandoned: () -> Void
+    init(abandoned: @escaping () -> Void) { self.abandoned = abandoned }
+    deinit {
+        guard !ran else { return }
+        DispatchQueue.main.async(execute: abandoned)
+    }
+}
 
 private final class BrowserPane: NSView {
     let content = LayoutView()
