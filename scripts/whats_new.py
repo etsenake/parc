@@ -4,9 +4,14 @@ import argparse
 import base64
 import datetime
 from html import escape
+import importlib.util
 import json
 from pathlib import Path
 from string import Template
+
+notes_spec = importlib.util.spec_from_file_location("parc_release_notes", Path(__file__).with_name("release_notes.py"))
+release_notes = importlib.util.module_from_spec(notes_spec)
+notes_spec.loader.exec_module(release_notes)
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = "Sources/WhatsNew/WhatsNew.html"
@@ -38,7 +43,7 @@ def render_groups(changes: list, heading: str) -> str:
                      if (change["breaking"] and key == "breaking")
                      or (not change["breaking"] and change["type"] == key)]
         if summaries:
-            items = "".join(f"<li>{escape(summary)}</li>" for summary in summaries)
+            items = "".join(f"<li>{escape(release_notes.display(summary))}</li>" for summary in summaries)
             html.append(f'<div class="group {name}"><{heading} class="label">{title}</{heading}>'
                         f"<ul>{items}</ul></div>")
     return "\n".join(html) or '<p class="quiet">Behind-the-scenes work only.</p>'

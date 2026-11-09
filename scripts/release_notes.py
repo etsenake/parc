@@ -85,6 +85,12 @@ def number(version):
     return tuple(map(int, version.split(".")))
 
 
+def display(summary):
+    """Capitalizes an all-lowercase first word, leaving names like macOS or iCloud alone. Some subjects on main start
+    lowercase, and release-notes.json keeps them as written."""
+    return summary[:1].upper() + summary[1:] if summary.split(" ", 1)[0].islower() else summary
+
+
 def markdown(release):
     lines = []
     for title, kind in SECTIONS:
@@ -92,7 +98,8 @@ def markdown(release):
                  if (change["breaking"] if kind is None else change["type"] == kind and not change["breaking"])]
         if items:
             lines += ["", "### " + title, ""]
-            lines += ["- " + (f"**{item['scope']}:** " if item["scope"] else "") + item["summary"] for item in items]
+            lines += ["- " + (f"**{item['scope']}:** " if item["scope"] else "") + display(item["summary"])
+                      for item in items]
     return "\n".join(lines).strip()
 
 

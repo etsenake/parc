@@ -98,6 +98,15 @@ class Notes(unittest.TestCase):
         quiet = notes.files({'releases': []}, notes.entry('1.9.1', 11, '2026-11-11', []), '1.9.0')
         self.assertIn('## 1.9.1 (2026-11-11)\n\nNo user-facing changes.\n', quiet['CHANGELOG.md'])
 
+    def test_display_capitalizes_the_first_letter_and_storage_keeps_the_subject(self):
+        subject = 'make Edit Theme… work from the command bar'
+        release = notes.entry('1.9.0', 10, '2026-11-10', [change('fix', subject, 'command-bar')])
+        once = notes.files({'releases': []}, release, '1.8.2')
+        self.assertEqual(json.loads(once['release-notes.json'])['releases'][0]['changes'][0]['summary'], subject)
+        self.assertIn('\n- **command-bar:** Make Edit Theme… work from the command bar\n', once['CHANGELOG.md'])
+        self.assertEqual([notes.display(text) for text in ('', 'macOS menus stay put', 'iCloud tabs load')],
+                         ['', 'macOS menus stay put', 'iCloud tabs load'])
+
 
 class History(unittest.TestCase):
     def setUp(self):

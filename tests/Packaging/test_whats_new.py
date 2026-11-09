@@ -44,6 +44,10 @@ class WhatsNewTests(unittest.TestCase):
         self.assertNotIn("<img", page)
         self.assertNotIn("<b>", page)
 
+    def test_summaries_render_with_a_capital_first_letter_only(self):
+        page = self.render(release("1.0.1", change("fix", "correct browser chrome in iCloud tabs")))
+        self.assertIn("<li>Correct browser chrome in iCloud tabs</li>", page)
+
     def test_groups_follow_heads_up_new_fixed_faster(self):
         page = self.render(release("2.0.0", change("perf", "Faster thing"), change("fix", "Fixed thing"),
                                    change("feat", "Breaking thing", breaking=True), change("feat", "New thing"),

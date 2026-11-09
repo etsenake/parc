@@ -27,10 +27,11 @@ A minor release after 1.0.0 is 1.1.0; the Apple bundle build increases
 independently. The version commit, `chore(release): X`, holds
 `app-version.json`, `release-notes.json` and the generated `CHANGELOG.md`.
 `release-notes.json` is the source of truth: newest release first, only feat,
-fix, perf and breaking changes, and the UTC date the version was prepared. The
-same notes become the GitHub release text on etsenake/parc and
-etsenake/parc-releases under Heads up, New, Fixed and Faster, followed by the
-build provenance. If main moves while the version commit is being pushed, the
+fix, perf and breaking changes, and the UTC date the version was prepared. It
+keeps each summary as written; the CHANGELOG, GitHub text and What's New page
+capitalize an all-lowercase first word. The same notes become the GitHub
+release text on etsenake/parc and etsenake/parc-releases under Heads up, New,
+Fixed and Faster, followed by the build provenance. If main moves while the version commit is being pushed, the
 release merges it and adds those commits to its notes; the version chosen before
 stays.
 
