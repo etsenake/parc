@@ -85,7 +85,7 @@ class ShippingTests(unittest.TestCase):
         with self.assertRaisesRegex(engine.Refusal, "arguments changed"):
             self.build()
 
-    def test_foreign_output_and_in_progress_receipt_are_preserved(self):
+    def test_foreign_output_is_preserved_and_dead_build_resumes(self):
         self.output.mkdir()
         with self.assertRaisesRegex(engine.Refusal, "without its ownership"):
             self.build()
@@ -94,8 +94,8 @@ class ShippingTests(unittest.TestCase):
         receipt = engine.read_shipping_marker(self.workspace, self.sha, self.state)
         receipt["phase"] = "build-in-progress"
         engine.write_marker(self.workspace, receipt, engine.SHIPPING_MARKER)
-        with self.assertRaisesRegex(engine.Refusal, "Interrupted"):
-            self.build()
+        self.build()
+        self.assertEqual(engine.read_shipping_marker(self.workspace, self.sha, self.state)["phase"], "built")
 
     def emulate_previous_lock(self, args_bytes=b"is_component_build=false\n"):
         """Rewrite the built receipts as if made by the lock before the DCHECK/trial policy."""
@@ -166,16 +166,13 @@ class ShippingTests(unittest.TestCase):
         self.assertEqual((self.output / "args.gn").read_bytes(), b"is_component_build=true\n")
         self.assertEqual((self.workspace / engine.MARKER).read_bytes(), before)
 
-    def test_in_progress_shipping_receipt_blocks_reconfigure_without_writes(self):
+    def test_dead_shipping_build_can_be_reconfigured(self):
         self.build()
         previous = self.emulate_previous_lock()
         receipt = json.loads((self.workspace / engine.SHIPPING_MARKER).read_text())
         engine.write_marker(self.workspace, dict(receipt, phase="build-in-progress"), engine.SHIPPING_MARKER)
-        files = [self.workspace / engine.MARKER, self.workspace / engine.SHIPPING_MARKER, self.output / "args.gn"]
-        before = [path.read_bytes() for path in files]
-        with self.assertRaisesRegex(engine.Refusal, "Interrupted shipping operation"):
-            self.reconfigure(previous)
-        self.assertEqual([path.read_bytes() for path in files], before)
+        self.reconfigure(previous)
+        self.assertEqual(json.loads((self.workspace / engine.SHIPPING_MARKER).read_text())["phase"], "reconfigured")
 
     def test_shipping_environment_is_local_noncomponent(self):
         env = engine.shipping_environment(self.workspace, self.lock, 1)

@@ -178,6 +178,11 @@ class EngineSourceTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "generation-in-progress")
+        # No live process holds the lock now, so the next build regenerates.
+        with patch.object(engine, "host_report", return_value=self.good_host), patch.object(engine, "verify_workspace"), patch.object(engine, "tree_fingerprint", return_value="generated"), patch.object(engine, "run") as run:
+            engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "built")
 
     def test_bootstrap_failure_does_not_begin_generation(self):
         self.owned()
@@ -389,7 +394,7 @@ class EngineSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(engine.Refusal, "source lock does not match"):
                 engine.reconfigure(self.workspace, self.lock, self.sha, previous_path)
             state = json.loads(receipt)
-            state.update(lock_sha256=previous_sha, phase="generation-in-progress")
+            state.update(lock_sha256=previous_sha, phase="sync-in-progress")
             engine.write_marker(self.workspace, state)
             receipt = (self.workspace / engine.MARKER).read_bytes()
             with self.assertRaisesRegex(engine.Refusal, "Partial operation"):

@@ -245,6 +245,24 @@ def write_marker(workspace: Path, state: dict, name: str = MARKER) -> None:
     os.replace(temp, workspace / name)
 
 
+def settle_dead_operation(workspace: Path, receipt: dict, name: str = MARKER) -> dict:
+    """Record a dead generation or build as that step's returned failure.
+
+    Callers hold the operation lock, and flock is released when its process
+    dies, so a step still recorded in progress belongs to no live process.
+    Resuming re-verifies the source fingerprint. A dead sync stays refused:
+    a partial checkout is never adopted.
+    """
+    phase = receipt.get("phase")
+    if phase not in {"generation-in-progress", "build-in-progress"}:
+        return receipt
+    error = "generation_error" if name == MARKER else "error"
+    receipt = dict(receipt, phase=phase.removesuffix("-in-progress") + "-failed",
+                   **{error: "interrupted: its process died"})
+    write_marker(workspace, receipt, name)
+    return receipt
+
+
 def shipping_environment(workspace: Path, lock: dict, symbol_level: int) -> dict:
     env = environment(workspace, lock, symbol_level)
     env["GN_DEFINES"] = SHIPPING_DEFINES + f" symbol_level={symbol_level}"
@@ -313,7 +331,7 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
             fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise Refusal("Another operation is using this workspace") from error
-        state = read_marker(workspace, lock_sha)
+        state = settle_dead_operation(workspace, read_marker(workspace, lock_sha))
         if state.get("phase") not in {"generated", "built"} or state["symbol_level"] != symbol_level:
             raise Refusal("Complete normal CEF source generation before building the shipping configuration")
         env = shipping_environment(workspace, lock, symbol_level)
@@ -325,7 +343,8 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
         receipt_path = internal_path(workspace / SHIPPING_MARKER, workspace)
         arguments = shipping_arguments(workspace, env)
         if receipt_path.exists():
-            previous = read_shipping_marker(workspace, lock_sha, state)
+            previous = settle_dead_operation(workspace, read_shipping_marker(workspace, lock_sha, state),
+                                             SHIPPING_MARKER)
             if previous.get("phase") not in RESUMABLE_SHIPPING_PHASES:
                 raise Refusal("Interrupted shipping operation preserved; receipt is not resumable")
             args_path = internal_path(output / "args.gn", workspace)
@@ -364,6 +383,7 @@ def reconfigure_shipping(workspace: Path, lock: dict, previous_sha: str, lock_sh
             or receipt.get("symbol_level") != state["symbol_level"]
             or receipt.get("lock_sha256") not in {previous_sha, lock_sha}):
         raise Refusal("Shipping build ownership/configuration mismatch")
+    receipt = settle_dead_operation(workspace, receipt, SHIPPING_MARKER)
     if receipt.get("phase") not in RESUMABLE_SHIPPING_PHASES:
         raise Refusal("Interrupted shipping operation preserved; receipt is not resumable")
     args_path = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION / "args.gn", workspace)
@@ -420,7 +440,7 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
         if already:
             raise Refusal("Workspace already records the current source lock; reconfigure is complete, "
                           "continue with overlay-apply or build")
-        state = read_marker(workspace, previous_sha)
+        state = settle_dead_operation(workspace, read_marker(workspace, previous_sha))
         if state.get("phase") not in {"synced", "generation-failed", "generated", "built"}:
             raise Refusal("Partial operation preserved; only a completed source state can be reconfigured")
         verify_workspace(workspace, previous, state, environment(workspace, previous, state["symbol_level"]))
@@ -811,7 +831,7 @@ def overlay(workspace: Path, lock: dict, lock_sha: str, manifest: Path, apply: b
             fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise Refusal("Another operation is using this workspace") from error
-        state = read_marker(workspace, lock_sha)
+        state = settle_dead_operation(workspace, read_marker(workspace, lock_sha))
         env = environment(workspace, lock, state["symbol_level"])
         # A killed apply leaves phase overlay-applying with pending_overlay set.
         # Re-running overlay-apply with the same manifest finishes those writes.
@@ -891,7 +911,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
     is_new = not workspace.exists()
 
     def admitted_state() -> dict:
-        state = read_marker(workspace, lock_sha)
+        state = settle_dead_operation(workspace, read_marker(workspace, lock_sha))
         allowed = {"dependency-sync-failed"} if operation == "sync" else {"synced", "generation-failed", "generated", "built"}
         if state.get("phase") not in allowed:
             raise Refusal("Partial operation preserved; only recorded, unchanged failures can resume")
@@ -905,7 +925,8 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                  "phase": "sync-in-progress", "symbol_level": symbol_level}
         write_marker(workspace, state)
     else:
-        state = admitted_state()
+        # Ownership before touching the lock; the phase is judged under it.
+        state = read_marker(workspace, lock_sha)
     for name in ("tmp", ".parc-operation.lock"):
         internal_path(workspace / name, workspace)
     with (workspace / ".parc-operation.lock").open("a") as guard:
@@ -914,7 +935,6 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
         except BlockingIOError as error:
             raise Refusal("Another operation is using this workspace") from error
         if not claimed:
-            # The receipt may have changed while another operation held the lock.
             state = admitted_state()
         if operation == "sync":
             if is_new:
