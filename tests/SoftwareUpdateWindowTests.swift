@@ -16,7 +16,7 @@ struct SoftwareUpdateWindowTests {
         let size = content.fittingSize
         print("up to date content: \(size.width) × \(size.height)")
         check(size.width == 270, "Up to date is the 270-point column")
-        check(abs(size.height - 341) <= 1, "Up to date is the measured 341 points tall")
+        check(size.height == 341, "Up to date is the measured 341 points tall")
         content.frame = NSRect(origin: .zero, size: size)
         content.layoutSubtreeIfNeeded()
         check(primary.frame.size == NSSize(width: 170, height: 48), "Close is the 170 × 48 button")
@@ -27,6 +27,16 @@ struct SoftwareUpdateWindowTests {
         let icon = content.subviews[0].subviews.first { $0 is NSImageView }!
         check(icon.frame.size == NSSize(width: 82, height: 82) && size.height - icon.frame.maxY == 54,
               "The 82-point icon view is 54 below the top")
+        let version = content.subviews[0].subviews.compactMap { $0 as? NSTextField }[1]
+        check(version.frame.height == 13, "The version label is its 11-point font's line height")
+
+        let (update, install, later) = SoftwareUpdateWindow.content(
+            style: .update(prompt: "You have v1.8.2.\nWould you like to download\nv1.9.0 (23) now?", action: "Download",
+                           title: nil, notes: nil),
+            info: info, icon: NSImage(size: NSSize(width: 1024, height: 1024)))
+        print("update found content: \(update.fittingSize.width) × \(update.fittingSize.height)")
+        check(update.fittingSize == NSSize(width: 692, height: 418), "Update found is the 692 × 418")
+        check(install.title == "Download" && later?.title == "Remind me Later", "Update found offers Download and Remind me Later")
         print("SoftwareUpdateWindowTests: \(checks) checks passed")
     }
 }

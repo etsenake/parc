@@ -189,6 +189,9 @@ private final class UpdaterButton: NSButton {
             versionLabel.topAnchor.constraint(equalTo: title.bottomAnchor),
             versionLabel.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             versionLabel.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            // The 11-point font's line height. AppKit pads the label to 14,
+            //
+            versionLabel.heightAnchor.constraint(equalToConstant: 13),
             prompt.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 20),
             prompt.widthAnchor.constraint(equalToConstant: 206),
             prompt.centerXAnchor.constraint(equalTo: column.centerXAnchor),
