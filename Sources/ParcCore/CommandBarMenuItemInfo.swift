@@ -37,6 +37,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "captureFullPage:": .init(triggers: ["Full Page Capture", "Capture Entire Page", "Screenshot Full Page", "Capture Full Page", "Screenshot"]),
         "captureLibrary:": .init(triggers: ["Screenshots", "Captures", "Videos", "Media"]),
         "capturePage:": .init(triggers: ["Capture", "Screenshot", "Snapshot", "Cut Out"]),
+        "checkForUpdates:": .init(triggers: ["Download", "Update", "Check for Updates"]),
         "clearArchive:": .init(triggers: ["Clear Archive", "Delete Archive"]),
         "clearCacheAndRefresh:": .init(triggers: ["Clear Cache"]),
         "clearCookiesAndRefresh:": .init(triggers: ["Clear Cookies"]),

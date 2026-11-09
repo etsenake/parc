@@ -374,7 +374,8 @@ becomes the row title (Share… shows **Share URL**). No item sets a minimum que
 length. The disregard-cache flag is not ported, since Parc has no
 recently-used cache for it to bypass. Items for excluded features have no
 "Changelog; Whats new; What's new", and "parc updates" for "arc updates"),
-because it opens Parc's own bundled What's New page. Getting Started stays out
+because it opens Parc's own bundled What's New page. Check for Updates… keeps
+([software update](software-update.md#parc)). Getting Started stays out
 by the October 26 direction that onboarding replay lives only in Settings →
 General.
 

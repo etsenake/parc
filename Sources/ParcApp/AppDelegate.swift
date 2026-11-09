@@ -353,6 +353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func openInitialWindow() {
         NSApp.finishLaunching()
+        SoftwareUpdater.shared.start(disabled: argument("--parc-profile") != nil
+                                     || arguments.contains("--disable-software-updater"))
         AppIconController.shared.configure(directory: store.directory, updatesSystemIdentity: argument("--parc-profile") == nil)
         restorationLaunch.finishLaunch()
         finishInitialLaunchIfReady()
@@ -2848,6 +2850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("Settings…", #selector(settings), ",", in: app)
         item("Set as Default Browser", #selector(setAsDefaultBrowser), in: app)
         item("Import from Another Browser…", #selector(importFromBrowser), in: app)
+        item("Check for Updates…", #selector(SoftwareUpdater.checkForUpdates(_:)), in: app, target: SoftwareUpdater.shared)
         app.addItem(.separator())
         let services = NSMenu(title: "Services")
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")

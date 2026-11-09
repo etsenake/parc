@@ -28,7 +28,8 @@ enum CommandBarCommandPresentation {
     /// template image.
     private static let commandSymbols: [String: String] = [
         "about": "book.closed", "settings": "gearshape" /* Parc */, "setAsDefaultBrowser": "heart",
-        "importFromBrowser": "arrow.turn.right.down", "quitMenu": "hand.wave",
+        "importFromBrowser": "arrow.turn.right.down", "checkForUpdates": "arrow.down.circle" /* Parc */,
+        "quitMenu": "hand.wave",
         "newTab": "add-tab", "focusAddress": "magnifyingglass" /* Parc */, "newWindow": "plus.rectangle",
         "newIncognitoWindow": "macwindow.on.rectangle", "newBlankWindow": "macwindow.on.rectangle",
         "createSpace": "plus.rectangle.portrait", "newProfile": "person.fill", "createNote": "note.text",

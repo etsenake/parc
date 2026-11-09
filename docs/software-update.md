@@ -272,6 +272,77 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   and Extensions. A build without the page disables the item, so it stays
   disabled until UPD06's build step bundles the page. The command bar lists it
 
+- **Check for Updates…** sits in the Parc menu after Import from Another
+  follows the phase: "Update Available…" while an update is available or
+  ready, "Updating…" while downloading, preparing or installing, otherwise
+  ("Download; Update; Check for Updates") and a Parc icon,
+- **Sparkle.** Parc embeds the pinned Sparkle 2.10.1 (`scripts/sparkle.py`,
+  [packaging](../tests/Packaging/README.md#sparkle)). Only distribution
+  and local test builds never replace themselves.
+- **Updater.** `SoftwareUpdater` (`Sources/ParcApp/SoftwareUpdater.swift`) is
+  `SPUUpdaterDelegate`. Its state is `SoftwareUpdateSession`
+  (`Sources/ParcCore/SoftwareUpdateSession.swift`), free of Sparkle and AppKit;
+  `scripts/test-software-update.sh` tests it and the up-to-date window's
+  - A manual check shows the status window ("Checking for updates..."), then
+    the up-to-date window, the update-found window, or the "Update error!"
+    alert, following the table above.
+  - A scheduled check (every 8 hours) downloads silently. Sparkle's
+    `willInstallUpdateOnQuit` handler is kept, the phase becomes
+    `readyToInstall`, and only the sidebar banner shows it. Restart and Update
+    runs the handler; otherwise Sparkle installs on quit.
+  - A scheduled find that isn't downloaded (automatic downloads turned off)
+    also shows no window; the menu reads Update Available… and opens it.
+  - Closing a status window cancels a check or download. A prepared update
+    stays ready and still installs on quit. A downloaded update whose window
+    is dismissed with Remind me Later also stays ready: Sparkle keeps it, and
+    installs it on quit once it has begun installing.
+    `--disable-software-updater` never start Sparkle: a disposable session
+    shares the installed Parc's bundle identifier, defaults and Sparkle
+    to update." error.
+
+### Updater API
+
+For the sidebar's update banners (UPD05). Everything is on the main actor.
+
+```swift
+SoftwareUpdater.shared.phase                       // SoftwareUpdater.Phase
+SoftwareUpdater.phaseDidChangeNotification         // posted on the main thread, object: SoftwareUpdater.shared
+SoftwareUpdater.shared.installAndRelaunch()        // Restart and Update
+SoftwareUpdater.shared.automaticallyDownloadsUpdates  // get/set; the Automatic Updates checkbox
+SoftwareUpdater.shared.checkForUpdates()           // the menu's action
+```
+
+`Phase` is `idle`, `checking`, `available(version:)`, `downloading`,
+`preparing`, `readyToInstall(version:)` or `installing`. The version is
+Sparkle's display version, e.g. "1.9.0".
+
+- Show **update ready** while the phase is `readyToInstall`; the notification
+  fires on every phase change, so read `phase` when it arrives.
+- `installAndRelaunch()` acts in `readyToInstall`, and retries in
+  `installing` if a page cancelled the quit. It runs Sparkle's install-now
+  handler for a background download or answers the ready window's reply. For
+  a downloaded update whose window was dismissed, it starts a check that
+  resumes the update and installs it without another window. Parc quits and
+  Sparkle relaunches it.
+- `automaticallyDownloadsUpdates` is Sparkle's own persisted setting
+  (`SUAutomaticallyUpdate`, on by default). Turning it off makes later
+  scheduled checks report `available(version:)` without downloading.
+- Dismissing the banner needs nothing from the updater: the update stays
+  ready and installs on quit.
+
+### Appcast contract
+
+For the release appcast's owner. The update-found window shows the item's
+embedded notes only; Parc doesn't fetch `sparkle:releaseNotesLink`.
+
+  appcast does. Without it the window says "Thanks for using Parc!".
+- `sparkle:version` is `CFBundleVersion` (Sparkle compares it) and
+  `sparkle:shortVersionString` the plain version, e.g. "1.9.0". The prompt
+  reads "v1.9.0 (23)" from these two.
+- The enclosure must carry `sparkle:edSignature` from the Keychain key
+  (account `parc`) and its `length`; Parc's ZIP may keep its `development/`
+  folder, since Sparkle finds `Parc.app` anywhere in the archive.
+
 ## Open questions
 
 1. **Banner gating.** The exact reads and writes of the release-notes and
