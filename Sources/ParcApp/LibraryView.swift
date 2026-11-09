@@ -622,7 +622,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         case .item(let item):
             let subtitle = Self.subtitle(urls: item.urls, spaceName: item.spaceName)
             let view = LibraryItemView(title: item.title, subtitle: subtitle)
-            view.toolTip = item.urls.joined(separator: "\n") + "\n" + item.date.formatted(date: .abbreviated, time: .shortened)
+            view.toolTip = (item.urls.filter { !$0.isEmpty } + [item.date.formatted(date: .abbreviated, time: .shortened)]).joined(separator: "\n")
             view.setAccessibilityLabel(item.title + ", " + subtitle)
             if kind == .archive && !store.isEphemeral {
                 view.onPutBack = { [weak self] in self?.archiveAction(item) { $0.onRestore?([item.id], item.spaceID) } }
@@ -726,7 +726,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         }
     }
     private func copySelection() {
-        let text = selectedItems.flatMap(\.urls).joined(separator: "\n")
+        let text = selectedItems.flatMap(\.urls).filter { !$0.isEmpty }.joined(separator: "\n")
         guard !text.isEmpty else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     }

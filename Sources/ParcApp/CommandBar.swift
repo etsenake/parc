@@ -1014,7 +1014,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         return passwords + matchedCommands
     }
     private static func isAddressSuggestion(_ value: String) -> Bool {
-        guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
+        guard let scheme = URL(string: value)?.scheme?.lowercased(), !WhatsNewPage.matches(value) else { return false }
         return ["http", "https", "file", "chrome", "about"].contains(scheme)
     }
     private func tabResult(_ tab: BrowserTab) -> Result {
@@ -1146,7 +1146,10 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
                           symbol: "magnifyingglass", isSearch: true, url: navigation.url, navigation: navigation)
         }
         // A held snapshot belongs to the input it answered, not the field's text.
-        guard let row = CommandBarResultText.nativeRow(matchType: Self.matchType(of: navigation), isSearch: navigation.search,
+        // Chromium's history keeps What's New's file address; its Release
+        // Notes command is the row that opens it.
+        guard !WhatsNewPage.matches(navigation.url.absoluteString),
+              let row = CommandBarResultText.nativeRow(matchType: Self.matchType(of: navigation), isSearch: navigation.search,
                                                       contents: navigation.title, description: navigation.detail,
                                                       url: navigation.url.absoluteString, input: nativeInput,
                                                       preserveDefault: preserveDefault) else { return nil }
@@ -1765,7 +1768,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         return results[table.selectedRow].url
     }
     @discardableResult func copySelectedURL() -> Bool {
-        guard let url = selectedURL else { return false }
+        guard let url = selectedURL, !WhatsNewPage.matches(url.absoluteString) else { return false }
         NSPasteboard.general.clearContents()
         return NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
