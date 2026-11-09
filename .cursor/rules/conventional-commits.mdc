@@ -13,7 +13,8 @@ Types: `feat fix perf refactor docs build ci chore test style revert`.
 
 - `feat`, `fix` and `perf` subjects are Parc's release notes on GitHub and in
   What's New. Write them for Parc users, starting with a capital, saying what
-  changed for them: `fix(sidebar): Keep pinned tabs after a restart`.
+  changed for them: `fix(sidebar): Keep pinned tabs after a restart`. Parc
+  names or file paths: `fix(updates): Fit the up-to-date window to its content`,
 - Internal work (tooling, tests, docs, the ledger, refactors) uses the other
   types.
 - Only `!` marks a breaking change.

@@ -16,10 +16,10 @@ The whole message is one line, `type(scope)!: summary`; the scope is optional.
 Types: `feat fix perf refactor docs build ci chore test style revert`. `feat`,
 `fix` and `perf` subjects are Parc's release notes on GitHub and in What's New:
 write them for Parc users, starting with a capital, saying what changed for
-them (`fix(sidebar): Keep pinned tabs after a restart`). Internal work (tooling,
-tests, docs, the ledger, refactors) uses the other types. Only `!` marks a
-breaking change. No body, trailers, `Co-Authored-By` or other attribution. A
-revert is one line too:
+them (`fix(sidebar): Keep pinned tabs after a restart`). Parc users read them,
+270 × 341". Internal work (tooling, tests, docs, the ledger, refactors) uses
+the other types. Only `!` marks a breaking change. No body, trailers,
+`Co-Authored-By` or other attribution. A revert is one line too:
 `git revert --no-commit X && git commit -m 'Revert "<original subject>"'`.
 `.githooks/commit-msg` rejects anything else, and
 `.githooks/pre-push` refuses a push carrying a nonconforming commit, including
