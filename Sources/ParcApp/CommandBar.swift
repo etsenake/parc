@@ -58,7 +58,7 @@ import SwiftUI
     var canRenameFavorite: ((CommandBarFavoriteRenameAction) -> Bool)?
     var onRenameFavorite: ((CommandBarFavoriteRenameAction) -> Void)?
     ///
-    /// answers availability while the panel is open and rechecks on commit.
+    /// answers availability while the bar is open and rechecks on commit.
     var canPerformTypedCommand: ((CommandBarTypedCommand) -> Bool)?
     var onPerformTypedCommand: ((CommandBarTypedCommand) -> Void)?
     var canSplitSelection: ((UUID?) -> Bool)?
@@ -1931,7 +1931,7 @@ import SwiftUI
         else if let action = result.favoriteRename { renameFavorite?(action) }
         else if let command = result.typedCommand { performTyped?(command) }
         else if let muted = result.muteAllTabs { if muteAllTabs?(muted) != true { NSSound.beep() } }
-        // Revalidated now the panel is gone; a refusal never runs another target.
+        // Revalidated now the bar is gone; a refusal never runs another target.
         else if let command = result.command { if !KeyboardShortcuts.shared.performMenuCommand(command) { NSSound.beep() } }
         else if let id = result.tabID { selectTab?(id) }
         else if result.managesPasswords { managePasswords?() }
@@ -2022,7 +2022,7 @@ import SwiftUI
 
 ///
 ///
-/// stays its own, as it was in the bar's panel, not the browser window's.
+/// stays its own, not the browser window's.
 private final class CommandFieldEditor: NSTextView {
     var onCopy: ((String) -> Void)?
     private let undo = UndoManager()

@@ -1869,30 +1869,29 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return false
     }
 
-    // Space commands originate in this physical browser window. An owned
-    // command panel may show prospective availability; execution dismisses it
-    // and checks the actual native window/security gate again before mutation.
+    // Space commands originate in this physical browser window. Execution
+    // checks the actual native window/security gate again before mutation.
     var ownsSpaceCommandFocus: Bool {
         guard let window, NSApp.isActive, window.isVisible, !window.isMiniaturized else { return false }
-        return window.isKeyWindow || (window.isMainWindow && commandBar?.hasFocus == true)
+        return window.isKeyWindow
     }
 
-    /// Existing registered-window/security admission also works while an
-    /// original child panel is key. It does not initiate a page transfer.
+    /// Existing registered-window/security admission. It does not initiate a
+    /// page transfer.
     var windowCommandSecurityAvailable: Bool {
         guard let window, let binding = nativeBinding, binding.window === window else { return false }
         return binding.canParticipateInPageTransfer
     }
 
     /// Window-owned commands may dismiss the original history chooser or
-    /// command panel before rechecking the browser itself.
+    /// command bar before rechecking the browser itself.
     var ownsWindowCommandFocus: Bool {
         guard let window, NSApp.isActive, window.isVisible, !window.isMiniaturized else { return false }
         return ownsSpaceCommandFocus || (window.isMainWindow && navigationHistory?.ownsKeyWindow(in: window) == true)
     }
 
     /// A menu command belongs to this exact native window, including its own
-    /// key command panel or history chooser. Cleanup can synchronously change
+    /// command bar or history chooser. Cleanup can synchronously change
     /// focus or security ownership, so validate again after each dismissal.
     func prepareLibraryMenuCommand() -> Bool {
         let profileID = activeProfileID
@@ -1946,8 +1945,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 && self.transferRecoveries.isEmpty && self.pageCapture == nil
                 && self.tabSwitcher == nil && self.navigationHistory == nil
                 && self.themePopover == nil && !self.siteControlCenterDefers
-                && (PCNativeBrowserApplication.canUseWindowUndo(in: original)
-                    || (original.isMainWindow && self.commandBar?.hasFocus == true))
+                && PCNativeBrowserApplication.canUseWindowUndo(in: original)
         }
         guard common() else { return false }
         let available: () -> Bool
@@ -2025,7 +2023,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               tabSwitcher == nil, themePopover == nil, ownsSpaceCommandFocus,
               let window, window.attachedSheet == nil else { return false }
         return PCNativeBrowserApplication.canPresentTabSwitcher(in: window)
-            || (window.isMainWindow && commandBar?.hasFocus == true)
     }
 
     func canSelectSpace(_ id: UUID, profileID: UUID? = nil) -> Bool {
@@ -5408,8 +5405,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebar.setKeyboardSearchActive(true)
             reconcileSidebarKeyboardFocus(scroll: true)
         }
-        // Capture the sidebar collection before our child panel changes key
-        // focus. Unsupported original collections do not fall back to one tab.
+        // Capture the sidebar collection as the bar opens. Unsupported
+        // original collections do not fall back to one tab.
         let membershipItems = sidebar.commandBarSelectionItems()
             ?? (selectedTabIDs.count == 1 ? currentTabID.map { [.tab($0)] } : nil) ?? []
         let favoriteAction = !isPrivateBrowsing && !isPopupWindow && activePeek == nil
@@ -5422,7 +5419,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let hadNote = note != nil, hadEasel = easel != nil
             return { [weak self, weak browser, weak page, weak note, weak easel] in
                 guard let self, let tab = self.visibleTabs.first(where: { $0.id == id }),
-                      self.canPerformSidebarTabAction(tab, closing: false, allowingCommandPanel: true),
+                      self.canPerformSidebarTabAction(tab, closing: false),
                       !self.modelRetirementIDs.contains(id),
                       hadBrowser == (self.browsers[id] != nil), self.browsers[id] === browser,
                       hadPage == (self.browsers[id]?.nativePage != nil), self.browsers[id]?.nativePage === page,
@@ -5490,8 +5487,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let historyExcludedURL = currentBrowser?.url?.absoluteString
             ?? store.state.tabs.first(where: { $0.id == commandTab })?.url
         let seedURL = newTab || WhatsNewPage.matches(historyExcludedURL ?? "") ? nil : historyExcludedURL
-        // Captured before the child panel takes key, like the sidebar
-        // collection the Pin to folder and Favorite actions retain.
+        // Captured as the bar opens, like the sidebar collection the Pin to
+        // folder and Favorite actions retain.
         let typedItems = currentSidebarMenuItems
         let typedCommands = commandBarTypedCommands(items: typedItems, profileID: commandProfile)
         let panel = CommandBar(parent: window,
@@ -5643,7 +5640,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !self.isPrivateBrowsing, self.activePeek == nil, self.spaceCommandsAvailable,
                   let tab = action.currentTab(in: self.store.state, spaceID: self.activeSpaceID,
                       profileID: self.activeProfileID, selectedTabIDs: self.selectedTabIDs),
-                  self.canPerformSidebarTabAction(tab, closing: false, allowingCommandPanel: true),
+                  self.canPerformSidebarTabAction(tab, closing: false),
                   hadRenameNote == (self.noteEditors[tab.id]?.editor != nil), self.noteEditors[tab.id]?.editor === renameNote,
                   hadRenameEasel == (self.easelEditors[tab.id]?.editor != nil), self.easelEditors[tab.id]?.editor === renameEasel else { return false }
             return true
@@ -6356,9 +6353,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    private func canPerformSidebarTabAction(_ expected: BrowserTab, closing: Bool, allowingCommandPanel: Bool = false) -> Bool {
+    private func canPerformSidebarTabAction(_ expected: BrowserTab, closing: Bool) -> Bool {
         guard sidebarTabActionWindowAvailable,
-              (window?.isKeyWindow == true || (allowingCommandPanel && ownsSpaceCommandFocus)),
+              window?.isKeyWindow == true,
               expected.profileID == activeProfileID, visibleTabs.contains(expected),
               PageReparenting.rowAction(closing: closing, busy: !sidebarTabActionAvailable(expected.id),
                   usableHere: closing ? ownership.canUse(expected.id, owner: presentationID) : switcherCanUse(expected.id),
@@ -6383,7 +6380,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     /// Closing sidebar roots (the split cell's Close and keyboard Close of
     /// selected roots) takes ordinary row Close's conditions for every
-    /// original tab, without its key-window check and with no command panel:
+    /// original tab, without its key-window check and with no command bar open:
     /// a page another window holds must be able to move here first.
     private func sidebarRootsCloseAvailable(_ ids: Set<UUID>, movingHere: Bool = true) -> Bool {
         guard sidebarTabActionWindowAvailable, commandBar == nil, !ids.isEmpty,
@@ -6409,10 +6406,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var canRenameCurrentItem: Bool {
         guard spaceCommandsAvailable, activePeek == nil, !sidebar.isEditingTitle else { return false }
         if let target = currentRenameSplit {
-            return target.children.allSatisfy { canPerformSidebarTabAction($0, closing: false, allowingCommandPanel: true) }
+            return target.children.allSatisfy { canPerformSidebarTabAction($0, closing: false) }
         }
         guard let tab = currentRenameTab, !InternalPage.isInternal(tab.url) else { return false }
-        return canPerformSidebarTabAction(tab, closing: false, allowingCommandPanel: true)
+        return canPerformSidebarTabAction(tab, closing: false)
     }
 
     func renameCurrentItem() {
@@ -6567,7 +6564,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return (tab, url)
     }
 
-    /// Availability while the original command panel is open. The commit
+    /// Availability while the original command bar is open. The commit
     /// owners in `prepareTypedCommand` check everything again after dismissal.
     private func typedCommandIsAvailable(_ command: CommandBarTypedCommand, items: [SidebarItemReference]?, profileID: UUID) -> Bool {
         switch command.kind {
@@ -7819,8 +7816,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     && self.tabSwitcher == nil && self.navigationHistory == nil
                     && self.themePopover == nil && !self.siteControlCenterDefers
                     && self.visibleTabs.contains { $0.kind == .today }
-                    && (PCNativeBrowserApplication.canUseWindowUndo(in: original)
-                        || (original.isMainWindow && self.commandBar?.hasFocus == true))
+                    && PCNativeBrowserApplication.canUseWindowUndo(in: original)
             }, prepare: { [weak self] in self?.commandBar?.dismiss(restoreFocus: true) },
             clear: { [weak self] in self?.clearToday() })
         item.representedObject = command.isAvailable ? command : nil

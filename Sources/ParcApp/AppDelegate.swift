@@ -146,13 +146,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         windows.first { $0.ownsSpaceCommandFocus }
     }
 
-    /// An owned command panel or history chooser can request an operation
+    /// An open command bar or history chooser can request an operation
     /// that dismisses it and revalidates the same browser before proceeding.
     private var browserWindowCommandOwner: BrowserWindowController? {
         windows.first { $0.ownsWindowCommandFocus && $0.windowCommandSecurityAvailable }
     }
 
-    /// Copy URL also belongs to an owned command panel, but not to a
+    /// Copy URL also belongs to an open command bar, but not to a
     /// navigation-history chooser or an unrelated auxiliary window.
     private var browserCopyCommandOwner: BrowserWindowController? {
         windows.first { $0.ownsSpaceCommandFocus && $0.windowCommandSecurityAvailable }
