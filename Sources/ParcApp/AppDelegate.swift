@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// After a crash or an update every saved window comes back; otherwise only
     ///
     private var restoresEveryWindow = false
+    /// A Parc run has started on this data before (every release writes
+    /// launch.json), so a launch without a release-notes record is an update.
+    private var previousRunRecorded = false
     private var launchWindowID: UUID?
     private var requiresOnboarding: Bool {
         store != nil && !arguments.contains("--parc-smoke") && !store.state.settings.onboardingComplete
@@ -324,6 +327,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 })
                 // Only a run that actually started counts: a failed start or a
                 // launch handed to an already running Parc leaves the marker.
+                // The release-notes record first: a launch marker without one
+                // would make the next run read this one as an older Parc's.
+                SoftwareUpdateBanner.shared.launch(in: root, existingData: previousRunRecorded)
                 LaunchContinuity(running: true, build: Self.buildIdentity).write(in: root)
                 resumePendingAppKitRestorations()
                 return .ready
@@ -1279,7 +1285,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
            defaults.persistentDomain(forName: domain)?["NSQuitAlwaysKeepsWindows"] == nil {
             defaults.set(true, forKey: "NSQuitAlwaysKeepsWindows")
         }
-        restoresEveryWindow = LaunchContinuity.restoresEveryWindow(previous: .read(in: root), build: Self.buildIdentity)
+        let previous = LaunchContinuity.read(in: root)
+        previousRunRecorded = previous != nil
+        restoresEveryWindow = LaunchContinuity.restoresEveryWindow(previous: previous, build: Self.buildIdentity)
     }
 
     /// This executable's identity: a new build replaces it.
@@ -2035,7 +2043,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return browserInputCommandWindow?.canOpenPageInNewTab ?? false
         }
         if item.action == #selector(showReleaseNotes) {
-            return BrowserWindowController.releaseNotesURL != nil && browserInputCommandWindow?.canOpenPageInNewTab == true
+            return SoftwareUpdateBanner.releaseNotesURL != nil && browserInputCommandWindow?.canOpenPageInNewTab == true
         }
         if item.action == #selector(captureLibrary) { return libraryCommandWindow?.canShowMedia ?? false }
         if item.action == #selector(archive) || item.action == #selector(clearArchive) {
