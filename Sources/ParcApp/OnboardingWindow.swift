@@ -156,7 +156,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             self.setupCard.frame = OnboardingSetupLayout.frame(in: self.root.bounds)
             self.setupCard.setBoundsSize(OnboardingSetupLayout.size)
             self.setupCard.needsLayout = true
-            self.confetti.frame = self.setupCard.frame
+            self.confetti.frame = self.root.bounds
             self.persistenceStatus.frame = NSRect(x: 24, y: self.root.bounds.height - 36,
                 width: self.root.bounds.width - 48, height: 22)
         }
@@ -459,6 +459,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             defaultChoice = host
             lower = [host]
         } else if stage == .adBlockers {
+            //
+            skip.title = "Use all imported ad blockers"
+            skip.isHidden = draft.importedAdBlockers.isEmpty
             if draft.adBlockerChoice == nil, let first = draft.importedAdBlockers.first {
                 draft.adBlockerChoice = .keep(first.identifier)
                 persistDraft()
@@ -576,15 +579,15 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         setupCard.message.layer?.add(animation, forKey: "step")
     }
 
+    ///
+    /// window-level overlay does; only a burst still waiting is cancelled.
     private func updateConfetti(from previous: OnboardingDraft.Stage?) {
-        let show = draft.stage == .ready && OnboardingExperience.shouldPlayConfetti(reduceMotion: reduceMotion)
-        confetti.isHidden = !show
-        if show, previous != .ready {
-            let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
-            confetti.burst(using: [palette.maxContrastColor, palette.backgroundExtra, OnboardingSetupPalette.action])
-        } else if !show {
-            confetti.stop()
+        guard OnboardingExperience.shouldPlayConfetti(reduceMotion: reduceMotion) else {
+            confetti.stop(); confetti.isHidden = true; return
         }
+        confetti.isHidden = false
+        if draft.stage != .ready { confetti.cancelPending() }
+        else if previous != .ready { confetti.fire(after: OnboardingExperience.readyConfettiDelay) }
     }
 
     private func restoreFocus(from previous: OnboardingDraft.Stage?, previousResponder: NSResponder?) {

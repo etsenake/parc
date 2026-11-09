@@ -209,6 +209,8 @@ struct MembershipCardBlobField {
 
 @MainActor
 final class MembershipCardView: NSView {
+    /// UserCard's `scaleEffect(scale)`, kept apart from the hover tilt on `surface`.
+    private let squishLayer = CALayer()
     private let surface = CALayer()
     private let art = CALayer()
     private let shine = CAGradientLayer()
@@ -233,7 +235,9 @@ final class MembershipCardView: NSView {
         surface.shadowOpacity = 0.1; surface.shadowRadius = 54
         surface.shadowOffset = NSSize(width: 0, height: 24)
         surface.shadowPath = CGPath(roundedRect: surface.bounds, cornerWidth: 6, cornerHeight: 6, transform: nil)
-        layer?.addSublayer(surface)
+        squishLayer.frame = NSRect(origin: .zero, size: MembershipCardArtwork.size)
+        squishLayer.addSublayer(surface)
+        layer?.addSublayer(squishLayer)
         art.frame = NSRect(x: 16, y: 16, width: 208, height: 192)
         art.masksToBounds = true; surface.addSublayer(art)
         grain.frame = art.bounds; grain.opacity = 0.12
@@ -326,6 +330,41 @@ final class MembershipCardView: NSView {
         updateActivity()
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
+    ///
+    ///
+    func squish() {
+        guard canAnimate else { return }
+        let step = 1.0 / 120
+        let squish = CAKeyframeAnimation(keyPath: "transform.scale")
+        let values = Self.squishCurve(step: step)
+        squish.values = values
+        squish.duration = step * Double(values.count - 1)
+        squish.calculationMode = .linear
+        squishLayer.add(squish, forKey: "squish")
+    }
+
+    /// Scale samples of the retargeted spring, from 1 back to rest at 1.
+    static func squishCurve(step: Double) -> [Double] {
+        let omega = 2 * Double.pi / 0.4
+        let stiffness = omega * omega, damping = 2 * 0.8 * omega
+        var value = 1.0, velocity = 0.0, time = 0.0
+        var samples = [value]
+        // Up to 1.5 s, stopping once the spring has settled at rest.
+        while time < 1.5 {
+            let target = time < 0.05 ? 0.93 : 1
+            let substeps = 8, h = step / Double(substeps)
+            for _ in 0..<substeps {
+                velocity += (stiffness * (target - value) - damping * velocity) * h
+                value += velocity * h
+            }
+            time += step
+            samples.append(value)
+            if time > 0.05, abs(value - 1) < 0.0005, abs(velocity) < 0.01 { break }
+        }
+        samples[samples.count - 1] = 1
+        return samples
+    }
+
     private var canAnimate: Bool {
         guard let window else { return false }
         return state != nil && window.isVisible && window.isKeyWindow && !window.isMiniaturized &&

@@ -9,9 +9,10 @@ enum OnboardingExperience {
 
     ///
     ///
+    ///
     static func readyTitle(cardName: String) -> String {
         let name = cardName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "Welcome to Parc." : "Welcome to Parc, \(name)."
+        return name.isEmpty ? "Welcome to Parc" : "Welcome to Parc, \(name)"
     }
 
     ///
@@ -20,6 +21,9 @@ enum OnboardingExperience {
 
     ///
     static func shouldPlayConfetti(reduceMotion: Bool) -> Bool { !reduceMotion }
+
+    ///
+    static let readyConfettiDelay: TimeInterval = 0.4
 
     ///
     static func direction(from: OnboardingDraft.Stage, to: OnboardingDraft.Stage) -> TransitionDirection? {

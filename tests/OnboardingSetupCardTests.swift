@@ -31,7 +31,7 @@ struct OnboardingSetupCardTests {
             ("Add some flair with a theme.", "Pick a color, any color—add your favorite shade to your new home on the internet."),
             ("Choose the apps you use most.", "Favorites stay close at hand across your Spaces.\nChoose a few, or add your own while you browse."),
             ("Treat your bookmarks to an upgrade.", "Bring your browsing from another browser.\nChoose the bookmarks you want to keep in your sidebar."),
-            ("Welcome to Parc, Ada Lovelace.", "Here’s your Parc Card. Show it off to the world or keep it to yourself.\n\nAnd with that, you’re now ready to experience your upgraded internet.")
+            ("Welcome to Parc, Ada Lovelace", "Here’s your Parc Card. Show it off to the world or keep it to yourself.\n\nAnd with that, you’re now ready to experience your upgraded internet.")
         ]
         for (index, stage) in stages.enumerated() {
             //
@@ -202,19 +202,75 @@ struct OnboardingSetupCardTests {
         card.effectiveAppearance.performAsCurrentDrawingAppearance {
             precondition(card.chrome.layer?.backgroundColor == OnboardingSetupPalette.card.cgColor)
         }
-        let confetti = OnboardingConfettiView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
-        window.contentView?.addSubview(confetti)
-        confetti.burst(using: [.red])
-        precondition(confetti.emitterBirthRate == 1)
-        confetti.stop()
-        precondition(confetti.emitterBirthRate == 0)
-        confetti.burst(using: [.red])
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        confetti.burst(using: [.blue])
-        precondition(confetti.emitterBirthRate == 1)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        precondition(confetti.emitterBirthRate == 1, "A stale burst must not zero the live emitter")
+        do { try checkReady(in: window) } catch { fatalError("Ready step checks: \(error)") }
         window.close()
         print("PASS: all five setup layouts, grain/border chrome, native compact-display scaling and light/dark optical composition")
+    }
+
+    @MainActor static func checkReady(in window: NSWindow) throws {
+        typealias Config = OnboardingConfettiView.Config
+        let bounds = NSRect(x: 0, y: 0, width: 1_280, height: 800)
+        precondition(OnboardingConfettiView.cannonPoints(in: bounds).map(\.x) == [140, 340, 540, 740, 940, 1_140])
+        precondition(OnboardingConfettiView.cannonPoints(in: bounds).allSatisfy { $0.y == 400 })
+        var generator = SystemRandomNumberGenerator()
+        let pieces = OnboardingConfettiView.makePieces(using: &generator)
+        precondition(pieces.count == 96 && Set(pieces.map(\.cannon)).count == 6)
+        precondition(Config.glyphs == ["●", "●", "♥︎"] && Config.colors.count == 5)
+        precondition(Config.rainDuration == 5.5 && Config.size == 12 && Config.opacity == 0.7)
+        for piece in pieces {
+            precondition(piece.offset.dy >= 150 * sin(.pi / 3) - 0.01, "Pieces fan upward between 60° and 120°")
+            precondition(abs(piece.offset.dx) <= 600 * cos(.pi / 3) + 0.01)
+            precondition(piece.sample(at: 0).opacity == 0)
+            let peak = piece.sample(at: 0.6)
+            precondition(peak.offset.dy > 0 && peak.opacity > 0.6, "Burst rises and appears")
+            precondition(piece.sample(at: 5.5).offset.dy < -100, "Then falls 800 pt")
+            precondition(piece.sample(at: 4.6).opacity == 0, "And has faded by 4.5 s")
+        }
+        precondition(OnboardingConfettiView.glyphImages(scale: 2).joined().allSatisfy { $0 != nil })
+
+        let confetti = OnboardingConfettiView(frame: bounds)
+        window.contentView?.addSubview(confetti)
+        window.orderBack(nil)
+        confetti.fire(after: 0.05)
+        precondition(confetti.isPending && !confetti.hasFired)
+        confetti.cancelPending()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        precondition(!confetti.hasFired && confetti.livePieceCount == 0, "Leaving before 0.4 s cancels the burst")
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            confetti.fire(after: 0.05)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+            precondition(confetti.hasFired && confetti.livePieceCount == 96)
+            confetti.fire(after: 0.05)
+            precondition(!confetti.isPending, "Confetti fires once per onboarding window")
+            confetti.stop()
+            precondition(confetti.livePieceCount == 0)
+        }
+        confetti.fire(after: 0.05)
+        confetti.stop()
+        precondition(!confetti.isPending)
+        confetti.removeFromSuperview()
+
+        let ready = OnboardingReadyContent(frame: NSRect(x: 0, y: 0, width: 967, height: 548))
+        func buttons(_ view: NSView) -> [NSButton] { view.subviews.compactMap { $0 as? NSButton } }
+        precondition(buttons(ready).map { $0.toolTip ?? "" } == ["Share", "Download", "Randomize"])
+        precondition(buttons(ready).map { $0.accessibilityLabel() ?? "" }
+                     == ["Share card", "Download card", "Randomize card design"])
+        ready.layoutSubtreeIfNeeded()
+        let frames = buttons(ready).map(\.frame)
+        let card = try require(ready.subviews.first { $0 is MembershipCardView })
+        precondition(frames.allSatisfy { $0.size == NSSize(width: 32, height: 32) && $0.minY == card.frame.maxY + 25 })
+        precondition(frames[1].minX - frames[0].maxX == 10 && frames[2].minX - frames[1].maxX == 10)
+        precondition(OnboardingReadyContent.downloadName(cardName: "Ada Lovelace") == "Ada Lovelace_Parc.png")
+        precondition(OnboardingReadyContent.downloadName(cardName: " ") == "Parc.png")
+        precondition(OnboardingReadyContent.shareText == "I just set up Parc!")
+
+        let squish = MembershipCardView.squishCurve(step: 1.0 / 120)
+        precondition(squish.first == 1 && squish.last == 1 && squish.min()! < 0.985 && squish.min()! >= 0.93,
+                     "Randomize springs the card toward 0.93 and back")
+    }
+
+    static func require<T>(_ value: T?) throws -> T {
+        guard let value else { throw CocoaError(.featureUnsupported) }
+        return value
     }
 }

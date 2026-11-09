@@ -126,7 +126,7 @@ struct MembershipCardTests {
         precondition(descendants(pane).contains { ($0 as? NSTextField)?.stringValue == "macOS refused the change." },
                      "a refused default-browser request is shown on the banner")
         window.contentView = nil
-        let surface = try require(card.layer?.sublayers?.first)
+        let surface = try require(card.layer?.sublayers?.first?.sublayers?.first)
         precondition(surface.animationKeys()?.isEmpty ?? true)
         let art = try require(surface.sublayers?.first { abs($0.frame.width - 208) < 0.5 && abs($0.frame.height - 192) < 0.5 })
         precondition(art.isHidden == false, "stopMotion keeps the live artwork layer visible")

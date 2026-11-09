@@ -479,9 +479,9 @@ struct OnboardingTests {
     }
 
     static func checkExperience() throws {
-        precondition(OnboardingExperience.readyTitle(cardName: "Ada Lovelace") == "Welcome to Parc, Ada Lovelace.",
+        precondition(OnboardingExperience.readyTitle(cardName: "Ada Lovelace") == "Welcome to Parc, Ada Lovelace",
                      "Finished-step title interpolates the membership-card name")
-        precondition(OnboardingExperience.readyTitle(cardName: "  ") == "Welcome to Parc.",
+        precondition(OnboardingExperience.readyTitle(cardName: "  ") == "Welcome to Parc",
                      "An empty card name does not invent a comma")
         precondition(OnboardingExperience.readyDescription.contains("Parc Card")
                      && OnboardingExperience.readyDescription.contains("upgraded internet"),
@@ -489,6 +489,7 @@ struct OnboardingTests {
         precondition(OnboardingExperience.shouldPlayConfetti(reduceMotion: false)
                      && !OnboardingExperience.shouldPlayConfetti(reduceMotion: true),
                      "Confetti is the inverse of Reduce Motion")
+        precondition(OnboardingExperience.readyConfettiDelay == 0.4, "Confetti waits 0.4 s into the finished step")
         precondition(OnboardingExperience.direction(from: .defaultBrowser, to: .ready) == .forward
                      && OnboardingExperience.direction(from: .ready, to: .defaultBrowser) == .back
                      && OnboardingExperience.direction(from: .sellCompleted, to: .bookmarks) == .forward
