@@ -27,6 +27,12 @@ final class OnboardingBackdrop {
         screenChanged()
     }
 
+    ///
+    /// dim still waiting for the main screen must not start during setup.
+    func welcomeEnded() {
+        if overlay == nil { cancel() }
+    }
+
     func cancel() {
         generation += 1
         deadlines.forEach { $0.cancel() }; deadlines.removeAll()

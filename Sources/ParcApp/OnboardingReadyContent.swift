@@ -125,22 +125,34 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
 
     private func downloadCard() {
         guard actionWindow != nil, savePanel == nil else { return }
-        do {
-            guard let data = try snapshot().representation(using: .png, properties: [:]) else {
-                throw MembershipCardFailure.unreadable
-            }
-            //
-            let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.canCreateDirectories = true
-            panel.nameFieldStringValue = Self.downloadName(cardName: cardName)
-            let generation = UUID(); saveGeneration = generation; savePanel = panel
-            panel.begin { [weak self, weak panel] response in
-                guard let self, let panel, self.saveGeneration == generation else { return }
-                self.savePanel = nil
-                guard response == .OK, let url = panel.url else { return }
-                do { try data.write(to: url, options: .atomic) }
-                catch { self.report(error.localizedDescription) }
-            }
-        } catch { report(error.localizedDescription) }
+        //
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.canCreateDirectories = true
+        panel.nameFieldStringValue = Self.downloadName(cardName: cardName)
+        let generation = UUID(); saveGeneration = generation; savePanel = panel
+        panel.begin { [weak self, weak panel] response in
+            guard let self, let panel, self.saveGeneration == generation else { return }
+            self.savePanel = nil
+            guard response == .OK, let url = panel.url else { return }
+            // The panel is modeless, so Randomize may have run meanwhile:
+            // save the card as it is now.
+            do {
+                guard let data = try self.snapshot().representation(using: .png, properties: [:]) else {
+                    throw MembershipCardFailure.unreadable
+                }
+                try data.write(to: url, options: .atomic)
+            } catch { self.report(error.localizedDescription) }
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { cancelPresentation() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    /// Leaving the step or closing setup drops an open save panel, as Settings' card does.
+    func cancelPresentation() {
+        saveGeneration = UUID()
+        savePanel?.cancel(nil); savePanel = nil
     }
 
     private func randomizeCard() {

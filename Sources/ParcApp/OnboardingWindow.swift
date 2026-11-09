@@ -208,6 +208,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         scheduledAdvance?.cancel(); scheduledAdvance = nil
         applyMusicPolicy(.close)
         confetti.stop()
+        readyContent.cancelPresentation()
         welcomeBackdrop.cancel()
         welcome?.removeFromSuperview(); welcome = nil
         background?.removeFromSuperview(); background = nil
@@ -316,6 +317,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         // phase. Let it finish naturally while setup continues; close, finish
         // and an explicit replay still stop or replace it.
         applyMusicPolicy(.changeStage)
+        if !stage.isWelcome { welcomeBackdrop.welcomeEnded() }
         if stage == .bookmarks { beginBrowserImport() }
         render(from: previous)
         let delay: TimeInterval?
@@ -601,7 +603,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             confetti.stop(); confetti.isHidden = true; return
         }
         confetti.isHidden = false
-        if draft.stage != .ready { confetti.cancelPending() }
+        if draft.stage != .ready { confetti.cancelPending(); readyContent.cancelPresentation() }
         else if previous != .ready { confetti.fire(after: OnboardingExperience.readyConfettiDelay) }
     }
 
@@ -764,6 +766,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             scheduledAdvance?.cancel(); scheduledAdvance = nil
             applyMusicPolicy(.finish)
             confetti.stop()
+            readyContent.cancelPresentation()
             welcomeBackdrop.cancel()
             if !isReplay { try? OnboardingDraft.remove(directory: store.directory) }
             if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
