@@ -679,6 +679,32 @@ window, registry revision, attached item and target. The deferred refresh reads
 the then-current Space state and window owner. A current-package runtime check
 is still needed to determine whether this resolves the observed failures.
 
+## Commands that need a key browser — November 9
+
+draws its bar inside the browser window, so the browser stays key and its
+`MainWindowController` stays in the responder chain. Parc's bar is a key panel
+of its own. Every menu validator that needs its browser to be key therefore
+said no while the bar was open, and Return on the dimmed row only beeped. That
+covers `browserInputCommandWindow` (Edit Theme…, New Space…, Back, Forward,
+Refresh, Stop, Zoom, Toggle Sidebar, Pin, Share, Cast, History, Manage and Add
+Extensions), the native window gate behind Reveal Current Tab, Next/Previous
+Tab, Go to Sidebar Item and the recent-tab switcher, Reset Tab's key check, and
+nil-targeted items such as Minimize and Paste and Match Style, which resolved
+against the bar's own panel. The page-tool snapshot above fixed one instance of
+this.
+
+The bar now reads its command list as it opens, while the browser is still key
+(`presentCommandBar` requires the native window gate first), and records which
+commands could run (`MenuCommand.wasAvailable`). A row stays offered if it was
+available then or is available now. Choosing it dismisses the panel and
+`performMenuCommand` validates the original item again against the key
+browser, so the open-time answer never runs anything by itself. The answer
+isn't refreshed while the bar is open: a command that stops being available in
+that time (Stop after the page finishes loading) stays offered, and choosing it
+closes the bar and beeps. A command first registered while the bar is open has
+no open-time answer and shows its live state. Shortcuts pressed while the bar
+is open are unchanged. `MenuCommandAvailabilityTests` covers the rule.
+
 ## Search-suggestion privacy banner
 
 When the centred bar has results and no website-search hint, an ⓘ accessory sits

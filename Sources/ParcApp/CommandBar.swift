@@ -208,6 +208,12 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private var topDomainGeneration = 0
     private let typedCommands: [CommandBarTypedCommand]
     private var commands: [KeyboardShortcuts.MenuCommand] = []
+    ///
+    /// inside the browser window; Parc's is a key panel of its own, so a command
+    /// that needs its browser key (Edit Theme…, Back, Zoom, Minimize) can't
+    /// accept once the panel is open. Its row stays offered, and choosing it
+    /// validates it again after the panel has gone.
+    private var commandsAvailableAtOpen: Set<String> = []
     /// Each command's displayed title and lowercased searchable text, by index.
     private var commandSearch: [(title: String, text: String)] = []
     /// Builds the searchable text once per command list, not for every
@@ -348,6 +354,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         container.onAppearanceChange = { [weak self] in self?.applyPalette() }
         applyPalette()
         adoptCommands(KeyboardShortcuts.shared.menuCommands(in: parent))
+        commandsAvailableAtOpen = Set(commands.filter(\.wasAvailable).map(\.id))
         bindings = KeyboardShortcuts.shared.$revision.dropFirst().sink { [weak self] _ in
             // Published emits before assignment; snapshot the committed registry
             // revision on the next main turn, not the previous revision.
@@ -1183,7 +1190,9 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         if let action = result.folderMove { return canMoveToFolder?(action) == true }
         if let action = result.favoriteRename { return canRenameFavorite?(action) == true }
         if let command = result.typedCommand { return canPerformTypedCommand?(command) == true }
-        return result.command.map { KeyboardShortcuts.shared.canPerformMenuCommand($0) } ?? true
+        return result.command.map {
+            KeyboardShortcuts.shared.canPerformMenuCommand($0, availableAtOpen: commandsAvailableAtOpen.contains($0.id))
+        } ?? true
     }
     private func select(row: Int, explicit: Bool, projectCompletion: Bool = false, preserveEditorSelection: Bool = false) {
         guard results.indices.contains(row) else { return }

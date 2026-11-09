@@ -913,12 +913,15 @@ final class KeyboardShortcuts: ObservableObject {
         let title: String
         let group: String
         let shortcut: KeyboardShortcut?
+        /// Whether its target accepted it when the list was read.
+        let wasAvailable: Bool
         fileprivate weak var item: NSMenuItem?
         fileprivate weak var window: NSWindow?
         fileprivate let revision: Int
-        fileprivate init(id: String, item: NSMenuItem, group: String, shortcut: KeyboardShortcut?, window: NSWindow, revision: Int) {
+        fileprivate init(id: String, item: NSMenuItem, group: String, shortcut: KeyboardShortcut?, wasAvailable: Bool,
+                         window: NSWindow, revision: Int) {
             self.id = id; self.item = item; title = item.title; self.group = group
-            self.shortcut = shortcut; self.window = window; self.revision = revision
+            self.shortcut = shortcut; self.wasAvailable = wasAvailable; self.window = window; self.revision = revision
         }
     }
     func menuCommands(in window: NSWindow) -> [MenuCommand] {
@@ -931,18 +934,21 @@ final class KeyboardShortcuts: ObservableObject {
                   let metadata = commandsByID[reference.id], seen.insert(reference.id).inserted else { return nil }
             // Validation may update a dynamic title or representedObject. Retain
             // that original item and revalidate it again when the row is chosen.
-            _ = validatedTarget(item)
-            return MenuCommand(id: reference.id, item: item, group: metadata.group,
-                               shortcut: activeShortcut(for: reference.id), window: window, revision: revision)
+            let available = validatedTarget(item) != nil
+            return MenuCommand(id: reference.id, item: item, group: metadata.group, shortcut: activeShortcut(for: reference.id),
+                               wasAvailable: available, window: window, revision: revision)
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
-    func canPerformMenuCommand(_ command: MenuCommand) -> Bool {
+    /// `availableAtOpen` keeps a command-bar row its browser accepted before the
+    /// bar's own panel took key (`CommandBar.commandsAvailableAtOpen`). Dispatch
+    /// never passes it, so a chosen command is always validated again.
+    func canPerformMenuCommand(_ command: MenuCommand, availableAtOpen: Bool = false) -> Bool {
         guard command.revision == revision, let window = command.window,
               window.isVisible, !window.isMiniaturized, NSApp.isActive,
               NSApp.mainWindow === window, window.attachedSheet == nil,
               let item = command.item,
               references.contains(where: { $0.id == command.id && $0.item === item }) else { return false }
-        return validatedTarget(item) != nil
+        return availableAtOpen && isAttached(item) || validatedTarget(item) != nil
     }
     @discardableResult func performMenuCommand(_ command: MenuCommand) -> Bool {
         guard canPerformMenuCommand(command), let item = command.item,

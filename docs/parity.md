@@ -110,6 +110,15 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   are done at Josh's direct request alongside Codex `codex/command-bar-polish`;
   reconcile rather than overwrite each other's changes. Contract and evidence:
   [software update](software-update.md).
+
+- **Claude — commands that need a key browser (November 9, Josh's report).**
+  Helper increment; the Command bar family stays Codex's. Edit Theme… and every
+  other menu command whose validator needs its browser key showed dimmed in the
+  bar and beeped on Return, because Parc's bar is its own key panel. The bar now
+  keeps each command's availability from the moment it opened and validates the
+  chosen command again after dismissal. CMD04/CMD25 correction; no family count
+  changes. [Cause and fix](command-bar.md#commands-that-need-a-key-browser--november-9).
+
 - **Codex root — eight-hour release watch (November 7).** Josh authorized
   checking main every twenty minutes through 07:26 Mountain (14:26 UTC),
   publishing new contributor changes as patch releases, monitoring each release

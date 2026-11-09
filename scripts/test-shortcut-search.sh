@@ -11,6 +11,8 @@ xcrun swiftc -whole-module-optimization -warnings-as-errors -parse-as-library -t
   "$repo_root/Sources/ParcCore/NumberedTarget.swift" \
   "$repo_root/Sources/ParcApp/ShortcutKeycapView.swift" \
   "$repo_root/Sources/ParcApp/ShortcutSmileyView.swift" \
+  "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
+  "$repo_root/Sources/ParcCore/SpaceTheme.swift" \
   "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" \
   "$repo_root/tests/KeyboardNavigation/SearchPresentationTests.swift" \
   -o "$check_dir/shortcut-search"
