@@ -46,7 +46,7 @@ def render_groups(changes: list, heading: str) -> str:
             items = "".join(f"<li>{escape(release_notes.display(summary))}</li>" for summary in summaries)
             html.append(f'<div class="group {name}"><{heading} class="label">{title}</{heading}>'
                         f"<ul>{items}</ul></div>")
-    return "\n".join(html) or '<p class="quiet">Behind-the-scenes work only.</p>'
+    return "\n".join(html) or f'<p class="quiet">{escape(release_notes.QUIET)}</p>'
 
 
 def long_date(value: str) -> str:
@@ -60,11 +60,8 @@ def render_content(releases: list) -> str:
                 "<p>This build of Parc doesn’t have release notes yet. "
                 "They’ll show up here after your next update.</p></section>")
     latest, *earlier = releases
-    if latest["changes"]:
-        notes = ('<p class="lead">Thanks for using Parc! Here’s what’s new in this version.</p>\n'
-                 + render_groups(latest["changes"], "h3"))
-    else:
-        notes = '<p class="lead">Thanks for using Parc! This version is all behind-the-scenes work.</p>'
+    notes = ('<p class="lead">Thanks for using Parc! Here’s what’s new in this version.</p>\n'
+             + render_groups(latest["changes"], "h3"))
     html = ['<section class="latest">'
             f'<p class="eyebrow">{escape(long_date(latest["date"]))} · Build {escape(str(latest["build"]))}</p>'
             f'<h2>Parc {escape(latest["version"])}</h2>{notes}</section>']

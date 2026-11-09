@@ -165,7 +165,7 @@ class HomebrewReleaseTests(unittest.TestCase):
         receipt["launch_observation"]["passed"] = False
         with patch.object(publisher, "github") as request:
             with self.assertRaises(ValueError):
-                publisher.promote_release(self.release, receipt, self.report["app_version"], "f" * 64)
+                publisher.promote_release(self.release, receipt, self.report["app_version"], "f" * 64, "notes")
             request.assert_not_called()
 
     def test_explicit_dated_user_acceptance_preserves_interrupted_observation(self):
@@ -194,9 +194,9 @@ class HomebrewReleaseTests(unittest.TestCase):
         self.pack()
         self.assertEqual(publisher.verify_release(self.release, self.archive)[0], self.report["app_version"])
 
-    def test_passed_receipt_promotes_without_changing_assets(self):
+    def test_passed_receipt_promotes_with_bare_title_and_notes_without_changing_assets(self):
         self.pack()
-        self.release.update(name="Parc 1.0.1 candidate (engine overlay 327)", prerelease=True)
+        self.release.update(name="Parc 1.0.1 candidate (engine overlay 327)", body="Package built from …", prerelease=True)
         self.release["assets"][0]["id"] = 123
         promoted = copy.deepcopy(self.release)
         promoted["prerelease"] = False
@@ -208,10 +208,16 @@ class HomebrewReleaseTests(unittest.TestCase):
             if args[:2] == ("release", "edit"):
                 self.assertIn("--prerelease=false", args)
                 self.assertIn("--latest", args)
+                self.assertEqual(args[args.index("--title") + 1], "1.0.1")
+                self.assertEqual(args[args.index("--notes") + 1], "### Fixed\n\n- Keep tabs")
+                edits.append(args)
                 return ""
             return json.dumps(promoted)
+        edits = []
         with patch.object(publisher, "github", side_effect=request):
-            publisher.promote_release(self.release, self.acceptance(), self.report["app_version"], "f" * 64)
+            publisher.promote_release(self.release, self.acceptance(), self.report["app_version"], "f" * 64,
+                                      "### Fixed\n\n- Keep tabs")
+        self.assertEqual(len(edits), 1)
 
 
 
@@ -227,6 +233,8 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
             def run(*args, **kwargs):
                 if args[:3] == ('git','remote','get-url'): return 'https://github.com/etsenake/homebrew-tap.git'
                 if args[:3] == ('git','branch','--show-current'): return 'main'
+                if args[:2] == ('git','show') and args[2].endswith(':release-notes.json'):
+                    return json.dumps({'releases': [{'version': '1.1.0', 'changes': []}]})
                 if args[:2] == ('git','show'): return json.dumps(app_version)
                 return ''
             def github(*args):
@@ -238,9 +246,10 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
                         with self.assertRaises(SystemExit): publisher.main()
                         promote.assert_not_called(); public.assert_not_called()
                     else:
-                        publisher.main(); promote.assert_called_once_with(release)
+                        publisher.main(); promote.assert_called_once_with(release, 'Small fixes and improvements.')
                         self.assertEqual([path.name for path in public.call_args[0][1]],
                                          ['Parc-1.1.0-arm64.dmg', 'Parc-1.1.0-arm64.zip', 'appcast.xml'])
+                        self.assertEqual(public.call_args[0][2], 'Small fixes and improvements.')
                     startup.assert_not_called()
 
 
@@ -269,7 +278,7 @@ class PublicMirrorTests(unittest.TestCase):
         self.files = [folder / 'Parc-1.1.0-arm64.dmg', folder / 'Parc-1.1.0-arm64.zip']
         for path in self.files: path.write_bytes(path.name.encode())
         self.digests = {path.name: 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest() for path in self.files}
-        self.release = {'tag_name': 'v1.1.0', 'name': 'Parc 1.1.0 (engine overlay 1)', 'body': 'notes'}
+        self.release = {'tag_name': 'v1.1.0', 'name': 'Parc 1.1.0 (engine overlay 1)', 'body': 'Package built from …'}
         self.calls = []
 
     def tearDown(self): self.folder.cleanup()
@@ -285,7 +294,7 @@ class PublicMirrorTests(unittest.TestCase):
                 return json.dumps({'assets': [{'name': n, 'digest': d} for n, d in state.items()]})
             return ''
         with patch.object(publisher, 'github', side_effect=github):
-            publisher.publish_public(self.release, self.files)
+            publisher.publish_public(self.release, self.files, '### New\n\n- Show What’s New')
 
     def test_missing_release_is_created_with_both_assets(self):
         self.mirror(None, self.digests)
@@ -293,12 +302,17 @@ class PublicMirrorTests(unittest.TestCase):
         self.assertEqual(len(create), 1)
         self.assertIn('etsenake/parc-releases', create[0])
         self.assertTrue(all(str(path) in create[0] for path in self.files))
+        self.assertEqual(create[0][create[0].index('--title') + 1], '1.1.0')
+        self.assertEqual(create[0][create[0].index('--notes') + 1], '### New\n\n- Show What’s New')
 
     def test_resume_uploads_only_missing_assets(self):
         dmg = self.files[0].name
         self.mirror({dmg: self.digests[dmg]}, self.digests)
         uploads = [call for call in self.calls if call[:2] == ('release', 'upload')]
         self.assertEqual([call[3] for call in uploads], [str(self.files[1])])
+        edit = [call for call in self.calls if call[:2] == ('release', 'edit')]
+        self.assertEqual(edit[0][edit[0].index('--title') + 1:edit[0].index('--title') + 4],
+                         ('1.1.0', '--notes', '### New\n\n- Show What’s New'))
 
     def test_differing_existing_asset_is_never_replaced(self):
         with self.assertRaises(ValueError):

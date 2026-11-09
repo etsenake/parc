@@ -13,7 +13,7 @@ NOTABLE = ("feat", "fix", "perf")
 SUBJECT = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^()\s]+)\))?(?P<breaking>!)?: (?P<summary>\S.*)")
 UNDO = re.compile(r'(Revert|Reapply) "(.*)"')
 SECTIONS = (("Heads up", None), ("New", "feat"), ("Fixed", "fix"), ("Faster", "perf"))
-QUIET = "No user-facing changes."
+QUIET = "Small fixes and improvements."
 RULE = ("Commit messages are one line, a Conventional Commit: type(scope)!: summary\n"
         "  for example: fix(sidebar): Keep pinned tabs after a restart\n"
         "  types: " + " ".join(TYPES) + "\n"
@@ -125,6 +125,14 @@ def markdown(release):
     return "\n".join(lines).strip()
 
 
+def text(notes, version):
+    """One recorded release's notes as its GitHub release shows them."""
+    found = [release for release in notes["releases"] if release["version"] == version]
+    if not found:
+        raise ValueError("release-notes.json has no release " + version)
+    return markdown(found[0]) or QUIET
+
+
 def changelog(notes):
     parts = ["# Changelog"]
     for release in notes["releases"]:
@@ -156,11 +164,10 @@ def main():
     preview.add_argument("--until", default="origin/main")
     args = parser.parse_args()
     if args.command == "markdown":
-        releases = json.loads((ROOT / "release-notes.json").read_text())["releases"]
-        found = [release for release in releases if release["version"] == args.version]
-        if not found:
-            sys.exit("release-notes.json has no release " + args.version)
-        print(markdown(found[0]) or QUIET)
+        try:
+            print(text(json.loads((ROOT / "release-notes.json").read_text()), args.version))
+        except ValueError as error:
+            sys.exit(str(error))
     else:
         since = args.since or last_release(ROOT, args.until)
         found = changes(ROOT, since, args.until)

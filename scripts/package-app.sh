@@ -74,7 +74,7 @@ stable_tag="v$app_version"
 release_notes=""
 if [ -n "$stable" ]; then
   # Committed with the version, so a resumed release publishes the same text.
-  release_notes="$(python3 scripts/release_notes.py markdown "$app_version")"$'\n\n'
+  release_notes="$(python3 scripts/release_notes.py markdown "$app_version")"
   stable_ref="$(git ls-remote --tags origin "refs/tags/$stable_tag")"
   if [ -n "$stable_ref" ] && [ -z "${PARC_PACKAGE_RUN:-}" ]; then
     echo "error: $stable_tag already exists; advance app-version.json before another stable release" >&2
@@ -160,11 +160,15 @@ fi
 
 if [ -n "$from_release" ]; then
   if [ -z "$release_tag" ]; then
-    # A local test takes the newest engine; a published build needs HEAD's overlay.
-    wanted="engine overlay $overlay)"
-    if [ -n "$local_test" ]; then wanted="engine overlay "; fi
-    release_tag="$(gh release list -R "$github_repo" --limit 200 --json tagName,name,createdAt,isDraft,isPrerelease \
-      --jq "[.[] | select((((.tagName | test(\"$tag_pattern\")) and .isPrerelease) or ((.tagName | test(\"$stable_tag_pattern\")) and (.isPrerelease | not))) and (.isDraft | not) and (.name | contains(\"$wanted\")))] | sort_by(.createdAt) | reverse | .[0].tagName // empty" </dev/null)"
+    # A local test takes the newest engine; a published build needs HEAD's overlay, read
+    # from the release's tagged source because stable release titles are just the version.
+    while IFS= read -r candidate; do
+      if [ -n "$local_test" ] || [ "$(git show "$candidate:Engine/ParcHost/overlay.json" 2>/dev/null | jq .version)" = "$overlay" ]; then
+        release_tag="$candidate"
+        break
+      fi
+    done < <(gh release list -R "$github_repo" --limit 200 --json tagName,createdAt,isDraft,isPrerelease \
+      --jq "[.[] | select((((.tagName | test(\"$tag_pattern\")) and .isPrerelease) or ((.tagName | test(\"$stable_tag_pattern\")) and (.isPrerelease | not))) and (.isDraft | not))] | sort_by(.createdAt) | reverse | .[].tagName" </dev/null)
     if [ -z "$release_tag" ] && [ -n "$local_test" ]; then
       echo "error: no published app package to take an engine from" >&2
       exit 1
@@ -296,11 +300,14 @@ tag="app-$stamp-$short"
 archive="$run/Parc-$stamp-$short.zip"
 release_options=(--prerelease)
 title="Parc app $stamp ($short, engine overlay $overlay)"
+notes="$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
 if [ -n "$stable" ]; then
+  # Users read stable releases; their provenance stays in package-report.json and the release run.
   tag="$stable_tag"
   archive="$run/Parc-$app_version-arm64.zip"
   release_options=(--prerelease --latest=false)
-  title="Parc $app_version candidate (engine overlay $overlay)"
+  title="$app_version"
+  notes="$release_notes"
 fi
 if [ -z "${PARC_PACKAGE_RUN:-}" ]; then trap 'rm -rf -- "$archive" "$run/engine-release"' EXIT; fi
 if [ ! -f "$archive" ]; then
@@ -324,8 +331,7 @@ PY
   python3 "$repo_root/scripts/release_assets.py" "$tag" "$commit" "${assets[@]}"
 else
   gh release create "$tag" "${assets[@]}" -R "$github_repo" "${release_options[@]}" --target "$commit" \
-    --title "$title" \
-    --notes "$release_notes$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
+    --title "$title" --notes "$notes"
 fi
 if [ -n "${PARC_PACKAGE_RUN:-}" ]; then
   python3 "$repo_root/scripts/release_assets.py" "$tag" "$commit" "${assets[@]}"

@@ -30,9 +30,15 @@ independently. The version commit, `chore(release): X`, holds
 `release-notes.json` is the source of truth: newest release first, only feat,
 fix, perf and breaking changes, and the UTC date the version was prepared. It
 keeps each summary as written; the CHANGELOG, GitHub text and What's New page
-capitalize an all-lowercase first word. The same notes become the GitHub
-release text on etsenake/parc and etsenake/parc-releases under Heads up, New,
-Fixed and Faster, followed by the build provenance. If main moves while the
+capitalize an all-lowercase first word. Both GitHub releases, on etsenake/parc
+and etsenake/parc-releases, are titled with the bare version (`1.9.0`) and
+their text is only those notes under Heads up, New, Fixed and Faster, rendered
+by `scripts/release_notes.py`. A release with none, possible only with a forced
+`--type`, says "Small fixes and improvements." there, on the What's New page and
+in the appcast. Build provenance stays in `package-report.json`, `delivery.json`
+and the run state, never the release text; promotion rewrites the private
+release's title and text from the frozen `release-notes.json`, so a resumed
+candidate packaged with older text is corrected. If main moves while the
 version commit is being pushed, the release merges it and adds those commits to
 its notes. A feat or breaking change among them raises the version, since it
 isn't published yet; a version chosen with `--type` stays.

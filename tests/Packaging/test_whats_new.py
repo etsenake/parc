@@ -74,9 +74,7 @@ class WhatsNewTests(unittest.TestCase):
 
     def test_releases_without_user_facing_changes_say_so(self):
         page = self.render(release("1.9.1"), release("1.9.0"))
-        self.assertIn("This version is all behind-the-scenes work.", page)
-        self.assertNotIn("Here’s what’s new", page)
-        self.assertIn('<p class="quiet">Behind-the-scenes work only.</p>', page)
+        self.assertEqual(page.count('<p class="quiet">Small fixes and improvements.</p>'), 2)
 
     def test_out_of_order_or_unknown_changes_are_refused(self):
         with self.assertRaisesRegex(ValueError, "newest release first"):

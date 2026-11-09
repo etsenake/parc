@@ -31,6 +31,9 @@ _github_environment = None
 spec = importlib.util.spec_from_file_location("parc_release_dmg", Path(__file__).with_name("package-dmg.py"))
 dmg_tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dmg_tool)
+spec = importlib.util.spec_from_file_location("parc_release_notes", Path(__file__).with_name("release_notes.py"))
+release_notes = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release_notes)
 
 
 def run(*args, cwd=None, env=None):
@@ -158,18 +161,19 @@ def verify_acceptance(acceptance, tag, commit, app_version, report_sha):
         raise ValueError("Startup acceptance must bind this exact release commit, app report hash, version and production identity")
 
 
-def promote_release(release, acceptance, app_version, report_sha):
+def promote_release(release, acceptance, app_version, report_sha, notes):
     verify_acceptance(acceptance, release["tag_name"], release["target_commitish"], app_version, report_sha)
-    promote_verified_artifacts(release)
+    promote_verified_artifacts(release, notes)
 
 
-def promote_verified_artifacts(release):
-    """Called only after ZIP, DMG, signatures, Apple ticket and source verification."""
+def promote_verified_artifacts(release, notes):
+    """Called only after ZIP, DMG, signatures, Apple ticket and source verification. Sets the bare-version title
+    and user notes too, so a candidate packaged with older text is corrected when a release resumes."""
     verify_tag(release["tag_name"], release["target_commitish"])
     if github("api", f"repos/{REPOSITORY}", "--jq", ".private") != "true":
         raise ValueError("Parc release assets must remain in the private repository")
     github("release", "edit", release["tag_name"], "--repo", REPOSITORY,
-           "--prerelease=false", "--latest", "--title", release["name"].replace(" candidate", "", 1))
+           "--prerelease=false", "--latest", "--title", release["tag_name"].removeprefix("v"), "--notes", notes)
     after = json.loads(github("api", f'repos/{REPOSITORY}/releases/tags/{release["tag_name"]}'))
     if (after["prerelease"] or after["draft"] or after["target_commitish"] != release["target_commitish"]
             or [(item["id"], item["digest"]) for item in after["assets"]]
@@ -190,9 +194,10 @@ def verify_dmg_asset(release, dmg, report, folder):
     return digest
 
 
-def publish_public(release, files):
+def publish_public(release, files, notes):
     """Mirror the verified assets to the public releases repository; never replace differing bytes."""
     tag = release["tag_name"]
+    text = ("--title", tag.removeprefix("v"), "--notes", notes)
     if github("api", f"repos/{PUBLIC_REPOSITORY}", "--jq", ".private") != "false":
         raise ValueError(PUBLIC_REPOSITORY + " must be public")
     try:
@@ -200,8 +205,7 @@ def publish_public(release, files):
     except subprocess.CalledProcessError:
         public = None
     if public is None:
-        github("release", "create", tag, "--repo", PUBLIC_REPOSITORY, "--target", "main", "--latest",
-               "--title", release["name"].replace(" candidate", "", 1), "--notes", release.get("body") or "",
+        github("release", "create", tag, "--repo", PUBLIC_REPOSITORY, "--target", "main", "--latest", *text,
                *[str(path) for path in files])
     else:
         existing = {item["name"]: item.get("digest", "") for item in public["assets"]}
@@ -212,7 +216,8 @@ def publish_public(release, files):
                 github("release", "upload", tag, str(path), "--repo", PUBLIC_REPOSITORY)
             elif existing[path.name] != digest:
                 raise ValueError(f"{PUBLIC_REPOSITORY} {tag} already has a different {path.name}")
-        github("release", "edit", tag, "--repo", PUBLIC_REPOSITORY, "--draft=false", "--prerelease=false", "--latest")
+        github("release", "edit", tag, "--repo", PUBLIC_REPOSITORY, "--draft=false", "--prerelease=false", "--latest",
+               *text)
     public = json.loads(github("api", f"repos/{PUBLIC_REPOSITORY}/releases/tags/{tag}"))
     published = {item["name"]: item.get("digest", "") for item in public["assets"]}
     for path in files:
@@ -300,13 +305,14 @@ def main():
                 "--pattern", f'Parc-{app_version["version"]}-arm64.dmg', "--output", str(dmg))
             digest = verify_dmg_asset(release, dmg, report, Path(temporary))
             version = app_version["version"]
+            notes = release_notes.text(json.loads(run("git", "show", commit + ":release-notes.json", cwd=ROOT)), version)
             public_dmg = Path(temporary) / f"Parc-{version}-arm64.dmg"
             public_zip = Path(temporary) / f"Parc-{version}-arm64.zip"
             dmg.rename(public_dmg); archive.rename(public_zip)
             appcast = Path(temporary) / "appcast.xml"
             appcast.write_bytes(args.appcast.read_bytes())
             verify_appcast(appcast, args.tag, public_zip)
-            publish_public(release, [public_dmg, public_zip, appcast])
+            publish_public(release, [public_dmg, public_zip, appcast], notes)
         source_version = json.loads(run("git", "show", commit + ":app-version.json", cwd=ROOT))
         if source_version != app_version:
             raise ValueError("The release source commit declares a different version")
@@ -321,9 +327,9 @@ def main():
                 raise ValueError("Local cask edits differ from this verified release; preserved")
         target.write_text(cask(version, digest))
         if acceptance is not None:
-            promote_release(release, acceptance, app_version, report_sha)
+            promote_release(release, acceptance, app_version, report_sha, notes)
         else:
-            promote_verified_artifacts(release)
+            promote_verified_artifacts(release, notes)
         print(f"Promoted {args.tag} and updated {target} from {commit}; verify, commit and push the tap.")
     except (OSError, ValueError, KeyError, dmg_tool.Refusal, subprocess.CalledProcessError, zipfile.BadZipFile,
             ElementTree.ParseError) as error:

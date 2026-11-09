@@ -50,6 +50,7 @@ class PublishedSigningTests(unittest.TestCase):
         self.tool("git", """
             import sys
             if sys.argv[1] == 'rev-parse': print('a' * 40)
+            elif sys.argv[1] == 'show': print({'v1.1.0': '{"version": 317}'}.get(sys.argv[2].split(':')[0], '{"version": 316}'))
         """)
         self.tool("security", """
             import os, pathlib, sys
@@ -63,10 +64,12 @@ class PublishedSigningTests(unittest.TestCase):
             import hashlib, json, os, pathlib, subprocess, sys
             if sys.argv[1:3] == ['auth', 'token']: print('fixture-token')
             elif sys.argv[1:3] == ['release', 'list']:
-                releases = [{'tagName': 'v1.0.0', 'name': 'Parc 1.0.0 (engine overlay 316)',
+                releases = [{'tagName': 'v1.0.0', 'name': '1.0.0',
                              'createdAt': '2026-11-06T00:00:00Z', 'isDraft': False, 'isPrerelease': False},
-                            {'tagName': 'v9.0.0', 'name': 'Parc 9.0.0 candidate (engine overlay 316)',
-                             'createdAt': '2026-11-07T00:00:00Z', 'isDraft': False, 'isPrerelease': True}]
+                            {'tagName': 'v1.1.0', 'name': '1.1.0',
+                             'createdAt': '2026-11-07T00:00:00Z', 'isDraft': False, 'isPrerelease': False},
+                            {'tagName': 'v9.0.0', 'name': '9.0.0',
+                             'createdAt': '2026-11-08T00:00:00Z', 'isDraft': False, 'isPrerelease': True}]
                 query = sys.argv[sys.argv.index('--jq') + 1]
                 print(subprocess.check_output(['jq', '-r', query], input=json.dumps(releases), text=True).strip())
             elif sys.argv[1:3] == ['release', 'view']:
@@ -189,7 +192,12 @@ class PublishedSigningTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.root / 'built').exists())
         self.assertTrue((self.root / 'notarized').exists())
-        self.assertTrue((self.root / 'published').exists())
+        arguments = (self.root / 'published').read_text().split('\n--')
+        self.assertIn('title\nParc app ', arguments[-2])
+        self.assertIn(', engine overlay 316)', arguments[-2])
+        self.assertRegex(arguments[-1], r'^notes\nPackage built from a{40} on engine overlay 316; signed '
+                         r'Developer ID Application: Fixture \(FIXTURE\)\. Notarized by Apple with a stapled ticket\. '
+                         r'Install: tests/Packaging/README.md, "Publishing app builds"\.$')
 
     def test_stable_release_uses_retained_versioned_tag_and_archive(self):
         result = self.run_package('--stable')
@@ -200,8 +208,8 @@ class PublishedSigningTests(unittest.TestCase):
         self.assertTrue(any(item.endswith('/Parc-1.0.0-arm64.dmg') for item in arguments))
         self.assertIn('--latest=false', arguments)
         self.assertIn('--prerelease', arguments)
-        self.assertIn('--notes\n### New\n\n- **updates:** Show What’s New\n\nPackage built from ',
-                      (self.root / 'published').read_text())
+        self.assertTrue((self.root / 'published').read_text().endswith(
+            '\n--title\n1.0.0\n--notes\n### New\n\n- **updates:** Show What’s New'))
         self.assertTrue((self.root / 'notarized').exists())
         self.assertTrue((self.root / 'dmg-notarized').exists())
 
@@ -231,7 +239,7 @@ class PublishedSigningTests(unittest.TestCase):
         self.assertEqual(arguments[arguments.index('--release-tag') + 1], 'v1.0.0')
         self.assertTrue((self.repo / 'build/release-cache/v1.0.0/Parc-1.0.0-arm64.zip').exists())
 
-    def test_auto_engine_selection_evaluates_actual_jq_with_stable_only_release(self):
+    def test_auto_engine_selection_takes_the_newest_stable_release_with_this_overlay(self):
         result = self.run_package('--from-release')
         self.assertEqual(result.returncode, 0, result.stderr)
         arguments = json.loads((self.root / 'build-arguments.json').read_text())

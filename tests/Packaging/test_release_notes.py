@@ -81,6 +81,14 @@ class Notes(unittest.TestCase):
             '### Faster', '', '- Open faster']))
         self.assertEqual(notes.markdown(notes.entry('1.0.1', 2, '2026-11-10', [])), '')
 
+    def test_release_text_is_only_the_notes_or_one_plain_line(self):
+        recorded = {'releases': [notes.entry('1.9.1', 11, '2026-11-11', []),
+                                 notes.entry('1.9.0', 10, '2026-11-10', [change('fix', 'Keep tabs')])]}
+        self.assertEqual(notes.text(recorded, '1.9.0'), '### Fixed\n\n- Keep tabs')
+        self.assertEqual(notes.text(recorded, '1.9.1'), 'Small fixes and improvements.')
+        with self.assertRaisesRegex(ValueError, 'no release 1.8.0'):
+            notes.text(recorded, '1.8.0')
+
     def test_record_is_newest_first_idempotent_and_replaces_unshipped_versions(self):
         first = notes.entry('1.9.0', 10, '2026-11-10', [change('feat', 'A')])
         second = notes.entry('1.9.1', 11, '2026-11-11', [change('fix', 'B')])
@@ -99,7 +107,7 @@ class Notes(unittest.TestCase):
         self.assertEqual(once['CHANGELOG.md'],
                          '# Changelog\n\n## 1.9.0 (2026-11-10)\n\n### New\n\n- **updates:** Show What’s New\n')
         quiet = notes.files({'releases': []}, notes.entry('1.9.1', 11, '2026-11-11', []), '1.9.0')
-        self.assertIn('## 1.9.1 (2026-11-11)\n\nNo user-facing changes.\n', quiet['CHANGELOG.md'])
+        self.assertIn('## 1.9.1 (2026-11-11)\n\nSmall fixes and improvements.\n', quiet['CHANGELOG.md'])
 
     def test_display_capitalizes_the_first_letter_and_storage_keeps_the_subject(self):
         subject = 'make Edit Theme… work from the command bar'
