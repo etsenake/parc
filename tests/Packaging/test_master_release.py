@@ -213,6 +213,64 @@ class Repository(unittest.TestCase):
         self.assertEqual(first.state['release_type'], 'minor')
 
 
+class InterruptedOverlayCheck(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.runner = release.Release(self.tmp.name, 'patch', refresh_source=True)
+        self.addCleanup(lambda: [item.close() for item in self.runner.locks])
+        run = self.runner.base / 'interrupted'
+        self.prior = {
+            'id': 'interrupted', 'run': str(run), 'source': str(run / 'source'),
+            'status': 'running', 'stage': 'engine', 'release_type': 'patch',
+            'completed': ['source'], 'version': {'version': '1.8.2', 'build': 22},
+            'command_pid': 999999,
+            'command': ['python3', str(run / 'source/scripts/engine-source.py'),
+                        'overlay-check'],
+        }
+        release.save(self.runner.current, self.prior)
+
+    def test_dead_check_allows_refresh_without_claiming_success_or_bumping(self):
+        with patch.object(release.os, 'kill', side_effect=ProcessLookupError), \
+             patch.object(release.os, 'killpg', side_effect=ProcessLookupError):
+            self.runner.start()
+        self.assertEqual(self.runner.state['version'], self.prior['version'])
+        self.assertEqual(self.runner.state['completed'], ['source'])
+        self.assertIsNone(self.runner.state['command_pid'])
+        self.assertIsNone(self.runner.state['last_command_exit'])
+        self.assertEqual(self.runner.state['interrupted_overlay_check']['command'],
+                         self.prior['command'])
+
+    def test_live_pid_or_surviving_group_refuses_refresh(self):
+        for pid_error, group_error in ((None, ProcessLookupError),
+                                       (ProcessLookupError, None),
+                                       (PermissionError, ProcessLookupError)):
+            with self.subTest(pid_error=pid_error, group_error=group_error):
+                release.save(self.runner.current, self.prior)
+                with patch.object(release.os, 'kill', side_effect=pid_error), \
+                     patch.object(release.os, 'killpg', side_effect=group_error):
+                    with self.assertRaises((release.Failure, PermissionError)):
+                        self.runner.start()
+                self.assertEqual(json.loads(self.runner.current.read_text())['command_pid'], 999999)
+                for item in self.runner.locks: item.close()
+                self.runner.locks.clear()
+
+    def test_mutating_or_foreign_command_keeps_existing_recovery_guard(self):
+        for script, operation in ((self.prior['command'][1], 'shipping-build'),
+                                  (self.prior['command'][1], 'overlay-apply'),
+                                  ('/other/engine-source.py', 'overlay-check')):
+            with self.subTest(operation=operation, script=script):
+                release.save(self.runner.current,
+                             dict(self.prior, command=['python3', script, operation]))
+                with patch.object(release.os, 'kill') as probe:
+                    with self.assertRaisesRegex(release.Failure, 'stopped engine'):
+                        self.runner.start()
+                    probe.assert_not_called()
+                self.assertEqual(json.loads(self.runner.current.read_text())['command_pid'], 999999)
+                for item in self.runner.locks: item.close()
+                self.runner.locks.clear()
+
+
 class Pipeline(Repository):
     def test_publish_then_immediate_install_and_resume_without_rebuild(self):
         calls = []

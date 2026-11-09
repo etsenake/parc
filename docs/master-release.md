@@ -100,6 +100,11 @@ checked correction when other contributors publish during its checks. The SHA
 must be on main, descend from the failed release source and keep its saved
 version. Later commits remain available for the next release.
 
+If the release owner died during the read-only overlay check, source refresh
+verifies that both the saved command PID and its process group are gone, records
+the interrupted check and reruns it against the refreshed archive. It does not
+record a successful exit or clear an interrupted apply/build operation.
+
 The command cannot repair arbitrary source bugs, revoke/reissue certificates,
 bypass protected authorization, resolve someone else's local edits, or invent
 successful checks. It stops with exact logs and preserves previous artifacts for

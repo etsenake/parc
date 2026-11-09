@@ -172,6 +172,8 @@ class Release:
                 self.supersede(prior)
                 prior = json.loads(self.current.read_text())
             if prior.get("status") not in TERMINAL:
+                if self.refresh_source:
+                    self.recover_dead_overlay_check(prior)
                 if self.refresh_source and (prior.get('status') != 'stopped'
                         or prior.get('stage') != 'engine'
                         or prior.get('completed') != ['source']
@@ -191,6 +193,30 @@ class Release:
             self.state = {"schema_version": 1, "id": run.name, "run": str(run), "release_type": self.kind,
                           "started_utc": now(), "status": "running", "stage": "preflight", "completed": []}
         self.checkpoint(status="running", error=None)
+
+    def recover_dead_overlay_check(self, prior):
+        """A dead read-only check may be rerun with refreshed source inputs."""
+        command = prior.get('command', [])
+        pid = prior.get('command_pid')
+        if (prior.get('status') != 'stopped' or prior.get('stage') != 'engine'
+                or not pid or len(command) < 3 or not prior.get('source')
+                or command[1] != str(Path(prior['source']) / 'scripts/engine-source.py')
+                or command[2] != 'overlay-check'):
+            return
+        # A dead leader does not establish that its descendants are gone.
+        # Permission failures and reused/live PIDs must also refuse recovery.
+        for probe in (os.kill, os.killpg):
+            try:
+                probe(pid, 0)
+            except ProcessLookupError:
+                continue
+            raise Failure('Previous overlay-check process or group is still alive')
+        prior['interrupted_overlay_check'] = {
+            'command': command, 'pid': pid,
+            'started_utc': prior.get('command_started_utc'), 'recovered_utc': now()}
+        prior.update(command_pid=None, last_command_exit=None)
+        save(self.current, prior)
+        save(Path(prior['run']) / 'state.json', prior)
 
     def supersede(self, prior):
         """Retire a stopped, never-published release of another type so a new bump can start.
