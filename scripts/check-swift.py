@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,9 @@ import sys
 import time
 
 REPO = Path(__file__).resolve().parents[1]
+sparkle_spec = importlib.util.spec_from_file_location("parc_sparkle", Path(__file__).with_name("sparkle.py"))
+sparkle = importlib.util.module_from_spec(sparkle_spec)
+sparkle_spec.loader.exec_module(sparkle)
 
 
 class Refusal(Exception):
@@ -54,10 +58,12 @@ def swift_sources(repo: Path) -> list[Path]:
     return sources
 
 
-def snapshot(repo: Path, cef_include: Path) -> tuple[list[Path], dict[str, str]]:
+def snapshot(repo: Path, cef_include: Path, sparkle_release: Path) -> tuple[list[Path], dict[str, str]]:
     sources = swift_sources(repo)
     files = set(sources)
-    for directory in (repo / "Sources/ParcEngine", repo / "Engine/ParcNative"):
+    sparkle_code = sparkle_release / "Sparkle.framework/Versions/B"
+    for directory in (repo / "Sources/ParcEngine", repo / "Engine/ParcNative", sparkle_code / "Headers",
+                      sparkle_code / "PrivateHeaders", sparkle_code / "Modules"):
         files.update(directory.rglob("*.h"))
         files.update(directory.rglob("*.modulemap"))
     files.update(path for path in cef_include.rglob("*") if path.is_file())
@@ -66,13 +72,15 @@ def snapshot(repo: Path, cef_include: Path) -> tuple[list[Path], dict[str, str]]
     return sources, {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
 
 
-def compiler_command(repo: Path, cef_include: Path, mode: str, sources: list[Path]) -> list[str]:
+def compiler_command(repo: Path, cef_include: Path, sparkle_release: Path, mode: str,
+                     sources: list[Path]) -> list[str]:
     flags = ["-emit-sil", "-Onone", "-o", "/dev/null"] if mode == "sil" else ["-typecheck"]
     return [
         "xcrun", "--sdk", "macosx", "swiftc", "-warnings-as-errors",
         "-whole-module-optimization", *flags, "-target", "arm64-apple-macos13.0",
         "-I", str(repo / "Engine/ParcNative"), "-Xcc", "-DOS_MAC=1",
-        "-I", str(cef_include), "-import-objc-header", str(repo / "Sources/ParcEngine/ParcEngine.h"),
+        "-I", str(cef_include), "-F", str(sparkle_release),
+        "-import-objc-header", str(repo / "Sources/ParcEngine/ParcEngine.h"),
         *map(str, sources),
     ]
 
@@ -130,11 +138,15 @@ def main(argv: list[str] | None = None) -> int:
         output = parent / label
         if output.exists() or output.is_symlink():
             raise Refusal(f"Receipt directory already exists; use a fresh --label: {output}")
-        sources, before = snapshot(repo, cef_include)
-        command = compiler_command(repo, cef_include, args.mode, sources)
+        # Fetch the build's pinned Sparkle into the same ignored cache; a plan writes nothing.
+        cache = repo / "build/sparkle"
+        sparkle_release = sparkle.directory(cache) if args.plan else sparkle.fetch(cache)
+        sources, before = snapshot(repo, cef_include, sparkle_release)
+        command = compiler_command(repo, cef_include, sparkle_release, args.mode, sources)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
-            "cef_include": str(cef_include), "command": command, "inputs": before,
+            "cef_include": str(cef_include), "sparkle_release": str(sparkle_release),
+            "sparkle_cached": sparkle_release.is_dir(), "command": command, "inputs": before,
             "source_count": len(sources), "output": str(output),
             "scope": "Swift compiler check only; no engine ABI, linked app, package or runtime verification",
         }
@@ -168,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         head_unchanged = False
         after_state = None
         try:
-            after_sources, after = snapshot(repo, cef_include)
+            after_sources, after = snapshot(repo, cef_include, sparkle_release)
             unchanged = after == before and after_sources == sources
             after_state = git_state(repo)
             head_unchanged = after_state["head"] == state["head"]

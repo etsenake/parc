@@ -1,6 +1,7 @@
 """Exercise the portable checker with a fake compiler, never an app or engine."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,9 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/check-swift.py"
+spec = importlib.util.spec_from_file_location("parc_sparkle_check", SCRIPT.with_name("sparkle.py"))
+sparkle = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sparkle)
 FAKE_XCRUN = """#!/usr/bin/env python3
 import os, pathlib, sys
 args = sys.argv[1:]
@@ -47,10 +51,16 @@ class CheckSwiftTests(unittest.TestCase):
             "Sources/ParcEngine/ParcEngine.h": "#import <Cocoa/Cocoa.h>\n",
             "Engine/ParcNative/native_appkit_bridge.h": "#pragma once\n",
             "Engine/source-lock.json": "{}\n",
+            ".gitignore": "/build/\n",
         }.items():
             file = self.repo / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(content)
+        # An already fetched pinned Sparkle, so the checker never downloads.
+        self.sparkle = sparkle.directory(self.repo / "build/sparkle")
+        self.sparkle_header = self.sparkle / "Sparkle.framework/Versions/B/Headers/Sparkle.h"
+        self.sparkle_header.parent.mkdir(parents=True)
+        self.sparkle_header.write_text("#pragma once\n")
         self.headers.mkdir(parents=True)
         (self.headers / "cef_application_mac.h").write_text("#pragma once\n")
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
@@ -92,6 +102,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertEqual(plan["source_count"], 2)
         self.assertIn(str(self.repo / "Sources/ParcApp/App.swift"), plan["command"])
         self.assertIn(str(self.headers), plan["command"])
+        self.assertTrue(plan["sparkle_cached"])
         for flag in ("-warnings-as-errors", "-whole-module-optimization", "-typecheck"):
             self.assertIn(flag, plan["command"])
 
@@ -142,6 +153,8 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertEqual(receipt["toolchain"]["DEVELOPER_DIR"], self.env["DEVELOPER_DIR"])
         self.assertEqual(receipt["compiler_exit"], 0)
         self.assertIn(str(self.headers / "cef_application_mac.h"), receipt["inputs"])
+        self.assertIn(str(self.sparkle_header), receipt["inputs"])
+        self.assertEqual(receipt["command"][receipt["command"].index(str(self.sparkle)) - 1], "-F")
         self.assertIn("test compiler diagnostics", (self.output / "case/compiler.log").read_text())
 
     def test_compiler_failure_is_preserved(self):
