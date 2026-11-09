@@ -511,6 +511,24 @@ struct OnboardingTests {
         }
         precondition(!OnboardingExperience.authFeatureOnboardingPerformsHaptics,
                      "AuthFeature onboarding has no recovered haptic producer")
+        precondition(!OnboardingExperience.welcomeShowsContent(stage: .introAnimation, reduceMotion: false)
+                     && OnboardingExperience.welcomeShowsContent(stage: .sellIntro, reduceMotion: false)
+                     && OnboardingExperience.welcomeShowsContent(stage: .sellCompleted, reduceMotion: false),
+                     "The welcome's first phase builds no logo, headline or arrow, so their timers start with sellIntro")
+        precondition(OnboardingExperience.welcomeShowsContent(stage: .introAnimation, reduceMotion: true)
+                     && !OnboardingExperience.welcomeShowsContent(stage: .bookmarks, reduceMotion: true),
+                     "Reduce Motion shows the settled headline and arrow from the first phase, never in setup")
+        for stage: OnboardingDraft.Stage in [.introAnimation, .sellIntro, .sellCompleted] {
+            precondition(OnboardingExperience.welcomeContinueTarget(from: stage) == .bookmarks,
+                         "One press on the welcome arrow leaves for the first setup step: \(stage)")
+        }
+        for stage: OnboardingDraft.Stage in [.bookmarks, .theme, .ready] {
+            precondition(OnboardingExperience.welcomeContinueTarget(from: stage) == nil,
+                         "A late welcome press after setup began does nothing: \(stage)")
+        }
+        precondition(OnboardingDraft.Stage.introAnimation.next == .sellIntro
+                     && OnboardingDraft.Stage.sellIntro.next == .sellCompleted,
+                     "Timed welcome phases still step one at a time")
         precondition(OnboardingExperience.focusTarget(entering: .theme, from: .favorites) == .spaceName
                      && OnboardingExperience.focusTarget(entering: .theme, from: .theme) == .unchanged
                      && OnboardingExperience.focusTarget(entering: .ready, from: .defaultBrowser) == .next

@@ -58,6 +58,20 @@ enum OnboardingExperience {
     ///
     static let authFeatureOnboardingPerformsHaptics = false
 
+    ///
+    /// the logo and content (whose onAppear starts their timers) arrive with
+    /// sellIntro. Reduce Motion shows the settled headline and arrow at once.
+    static func welcomeShowsContent(stage: OnboardingDraft.Stage, reduceMotion: Bool) -> Bool {
+        stage.isWelcome && (reduceMotion || stage != .introAnimation)
+    }
+
+    /// A press on the visible welcome arrow always leaves the welcome, unlike
+    ///
+    /// changes still step one phase at a time.
+    static func welcomeContinueTarget(from stage: OnboardingDraft.Stage) -> OnboardingDraft.Stage? {
+        stage.isWelcome ? OnboardingDraft.Stage.sellCompleted.next : nil
+    }
+
     enum FocusTarget: Equatable {
         case welcome, spaceName, next, unchanged
     }

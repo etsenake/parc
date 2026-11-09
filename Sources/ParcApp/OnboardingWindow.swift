@@ -309,7 +309,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         // phase. Let it finish naturally while setup continues; close, finish
         // and an explicit replay still stop or replace it.
         applyMusicPolicy(.changeStage)
-        if !stage.isWelcome { welcomeBackdrop.cancel() }
         if stage == .bookmarks { beginBrowserImport() }
         render(from: previous)
         let delay: TimeInterval?
@@ -346,13 +345,34 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             root.addSubview(host, positioned: .below, relativeTo: setupCard)
         }
         applySetupPalette()
-        if !draft.stage.isWelcome { welcome?.removeFromSuperview(); welcome = nil }
+        if !draft.stage.isWelcome, let leaving = welcome {
+            welcome = nil
+            //
+            if reduceMotion {
+                leaving.removeFromSuperview()
+            } else {
+                leaving.rootView.isLeaving = true
+                leaving.wantsLayer = true
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { leaving.removeFromSuperview() }
+                // Explicit from-values: the hidden card's committed opacity is already 1.
+                for (view, from) in [(leaving as NSView, 1.0), (setupCard, 0.0)] {
+                    let fade = CABasicAnimation(keyPath: "opacity")
+                    fade.fromValue = from; fade.toValue = 1 - from
+                    fade.duration = 0.2
+                    fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    view.layer?.add(fade, forKey: "welcomeHandoff")
+                }
+                leaving.alphaValue = 0
+                CATransaction.commit()
+            }
+        }
         setupCard.isHidden = draft.stage.isWelcome
         if draft.stage.isWelcome {
             back.isHidden = true; skip.isHidden = true; progress.isHidden = true
             next.isHidden = true
             let content = OnboardingWelcomeView(stage: draft.stage, reduceMotion: reduceMotion,
-                onContinue: { [weak self] in self?.advance() })
+                onContinue: { [weak self] in self?.advance(leavingWelcome: true) })
             if let welcome {
                 welcome.rootView = content
             } else {
@@ -635,9 +655,13 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             }
         }
     }
-    private func advance() {
+    private func advance(leavingWelcome: Bool = false) {
         guard !isFinishing, !isClosed,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
+        if leavingWelcome {
+            if let target = OnboardingExperience.welcomeContinueTarget(from: draft.stage) { transition(to: target) }
+            return
+        }
         if let browserImport { browserImport.advance(); return }
         if draft.stage == .ready { finish(); return }
         //

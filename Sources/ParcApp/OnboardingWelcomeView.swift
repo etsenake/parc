@@ -1,11 +1,33 @@
 import AppKit
 import SwiftUI
 
-/// The welcome view has its own animation lifetime, independent of the reducer's
-/// three phases. Keep this host alive until setup begins. See onboarding.md.
+/// The content's animation lifetime starts with sellIntro and is then independent
+/// of the reducer's phases. Keep this host alive until setup begins. See onboarding.md.
 struct OnboardingWelcomeView: View {
     let stage: OnboardingDraft.Stage
     let reduceMotion: Bool
+    let onContinue: () -> Void
+    /// Fading out into setup: Return and clicks belong to the setup card.
+    var isLeaving = false
+    // Once inserted, the content keeps its timers even if Reduce Motion is
+    // turned off again before sellIntro.
+    @State private var contentStarted = false
+
+    var body: some View {
+        ZStack {
+            if contentStarted || OnboardingExperience.welcomeShowsContent(stage: stage, reduceMotion: reduceMotion) {
+                OnboardingWelcomeContent(reduceMotion: reduceMotion, isLeaving: isLeaving, onContinue: onContinue)
+                    .onAppear { contentStarted = true }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(isLeaving)
+    }
+}
+
+private struct OnboardingWelcomeContent: View {
+    let reduceMotion: Bool
+    let isLeaving: Bool
     let onContinue: () -> Void
     @State private var opacity = 0.0
     @State private var blur = 25.0
@@ -31,9 +53,9 @@ struct OnboardingWelcomeView: View {
                 .frame(width: 120, height: 101)
                 .opacity(opacity).blur(radius: blur).scaleEffect(scale).offset(y: offset)
                 .accessibilityHidden(true)
-            VStack(spacing: 24) {
+            VStack(spacing: 0) {
                 OnboardingHeadline(visible: headlineVisible, reduceMotion: reduceMotion)
-                    .frame(height: 90)
+                Spacer().frame(height: 24)
                 Button(action: continuePressed) {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 16, weight: .bold))
@@ -47,7 +69,7 @@ struct OnboardingWelcomeView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(OnboardingProgressionButtonStyle(reduceMotion: reduceMotion))
-                .disabled(!buttonVisible || advancing)
+                .disabled(!buttonVisible || advancing || isLeaving)
                 .accessibilityLabel("Get started")
                 .keyboardShortcut(.defaultAction)
                 .opacity(buttonVisible ? 1 : 0)
@@ -56,7 +78,7 @@ struct OnboardingWelcomeView: View {
                 .animation(reduceMotion ? nil : spring, value: buttonVisible)
                 .allowsHitTesting(buttonVisible && !advancing)
                 .accessibilityHidden(!buttonVisible)
-                .accessibilityHint("Continue to the next welcome or setup step")
+                .accessibilityHint("Continue to setup")
             }.foregroundStyle(.white).padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
