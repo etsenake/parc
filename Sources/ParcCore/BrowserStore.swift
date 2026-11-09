@@ -2243,7 +2243,7 @@ final class BrowserStore: ObservableObject {
     // native owner MUST call shouldCommit after all approvals and before any
     // unload, then report success only after every actual page is destroyed.
     var requestPageRetirement: ((Set<UUID>, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
-    /// Whether another shared sidebar banner (Update Complete) holds the slot.
+    /// Whether another shared sidebar banner (update ready, Update Complete) holds the slot.
     var sidebarBannerOccupied: () -> Bool = { false }
     private var profileWriteReservations: [UUID: UUID] = [:]
     /// Capture output is an explicit durable write. Reserve its original

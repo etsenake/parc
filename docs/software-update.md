@@ -366,6 +366,19 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     loop; whether Tab reaches each of its three buttons hasn't been checked
     (no app may be run here).
 
+  is `readyToInstall`, and through `installing` so a page that cancels the
+  quit leaves Restart and Update to retry; it takes the slot from Update Complete and the
+  auto-archive card. The shared header reads "New Parc Version Available"
+  `automaticallyDownloadsUpdates`, and **Restart and Update**, which calls
+  `installAndRelaunch()`. The primary button is the theme base colour in a
+  continuous radius-6 shape, with `ButtonBackground`'s gradient (blur 12,
+  opacity 0.5) while the banner is hovered, a white 0.2 edge in dark, and a
+  0.97 scale with 0.8 label opacity on a 0.2/0.6 spring when pressed [R].
+  Parc's values (open): the label is 12-point medium in black or white by the
+  pointer rests on it for 300 ms (a debounced hover subject expands it, and
+  the card background, divider and buttons appear); Parc's is always
+  expanded for now.
+
 ### Updater API
 
 For the sidebar's update banners (UPD05). Everything is on the main actor.

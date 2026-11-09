@@ -1821,6 +1821,17 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         updateCompleteHost.setInteractionAllowed(isPresented && creationView == nil)
     }
     func resetUpdateComplete() { updateCompleteHost.reset() }
+    private let updateReady = UpdateReadyCard(frame: .zero)
+    private lazy var updateReadyHost = SidebarBannerHost(card: updateReady)
+    var onRestartAndUpdate: (() -> Void)?
+    var onToggleAutomaticUpdates: (() -> Void)?
+    /// `automaticUpdates` is nil while the card isn't shown, so a leaving card keeps its state.
+    func showUpdateReady(_ visible: Bool, automaticUpdates: Bool?) {
+        if let automaticUpdates { updateReady.setAutomaticUpdates(automaticUpdates) }
+        updateReadyHost.show(visible)
+        updateReadyHost.setInteractionAllowed(isPresented && creationView == nil)
+    }
+    func resetUpdateReady() { updateReadyHost.reset() }
     private var miniPlayerIDs: [String] = []
     func updateMiniPlayers(_ items: [MiniPlayerItem]) {
         miniPlayers.update(items)
@@ -2258,6 +2269,15 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             self?.setNeedsKeyViewLinking()
         }
         updateCompleteHost.onRelinquishFocus = { [weak self] in self?.onBannerRelinquishFocus?() }
+        contentSurface.addSubview(updateReadyHost)
+        updateReady.onRestart = { [weak self] in self?.onRestartAndUpdate?() }
+        updateReady.onToggleAutomaticUpdates = { [weak self] in self?.onToggleAutomaticUpdates?() }
+        updateReadyHost.onLayoutChanged = { [weak self] in self?.setNeedsKeyViewLinking() }
+        updateReadyHost.onInteractionChanged = { [weak self] enabled in
+            self?.updateReady.setInteractionEnabled(enabled)
+            self?.setNeedsKeyViewLinking()
+        }
+        updateReadyHost.onRelinquishFocus = { [weak self] in self?.onBannerRelinquishFocus?() }
         // The list's empty area and any other view without a menu of its own.
         spaceMenu = { [weak self] in self?.sidebarSpaceMenu() }
         for view in [keyViewGate, windowButtons, spacesHost, back, forward, reload, reloadOptions, footerMore, libraryEntry, toggle] { addSubview(view) }
@@ -2881,6 +2901,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             if !isPresented { spacePager.cancel() }
             archiveEducationHost.setInteractionAllowed(isPresented && creationView == nil)
             updateCompleteHost.setInteractionAllowed(isPresented && creationView == nil)
+            updateReadyHost.setInteractionAllowed(isPresented && creationView == nil)
             retestPointer(); setNeedsKeyViewLinking()
             // Bypassed at once, not at the next layout, so no Tab enters the
             // settled hidden sidebar in between.
@@ -4331,6 +4352,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if view != nil { clearItemSelection(); clearDrop() }
         archiveEducationHost.setInteractionAllowed(isPresented && view == nil)
         updateCompleteHost.setInteractionAllowed(isPresented && view == nil)
+        updateReadyHost.setInteractionAllowed(isPresented && view == nil)
         for (space, button) in zip(spaces, spaceButtons) {
             let selected = view == nil && space.id == activeSpaceID
             button.tag = selected ? 1 : 0; button.state = selected ? .on : .off
@@ -4373,6 +4395,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         var regions: [NSView] = [list, miniPlayers]
         if archiveEducationHost.isInteractive { regions += archiveEducation.keyViewControls }
         if updateCompleteHost.isInteractive { regions += updateComplete.keyViewControls }
+        if updateReadyHost.isInteractive { regions += updateReady.keyViewControls }
         if let creationView { regions.append(creationView) }
         let chain = SidebarAccessibility.keyViewChain(leading: leading, favorites: favoritesHost, list: self, regions: regions,
                                                       trailing: [footerMore], space: self, beforeList: [spaceHeader], laidOut: listLaidOut)
@@ -4458,11 +4481,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty) - hiddenAddressHeight
         let dockTop = bounds.height - Chrome.dockHeight
         let bannerWidth = max(0, width - 16)
-        let bannerHeight = archiveEducationHost.occupiesSpace ? archiveEducation.preferredHeight(for: bannerWidth)
-            : updateCompleteHost.occupiesSpace ? updateComplete.preferredHeight(for: bannerWidth) : 0
+        // The card coming in sizes the slot while another is still leaving.
+        let banners: [(host: SidebarBannerHost, height: (CGFloat) -> CGFloat)] = [
+            (updateReadyHost, updateReady.preferredHeight), (updateCompleteHost, updateComplete.preferredHeight),
+            (archiveEducationHost, archiveEducation.preferredHeight)]
+        let banner = banners.first { $0.host.isShowing } ?? banners.first { $0.host.occupiesSpace }
+        let bannerHeight = banner?.height(bannerWidth) ?? 0
         let bannerSpacing: CGFloat = bannerHeight > 0 ? 8 : 0
         archiveEducationHost.frame = NSRect(x: 8, y: dockTop - bannerHeight, width: bannerWidth, height: bannerHeight)
         updateCompleteHost.frame = archiveEducationHost.frame
+        updateReadyHost.frame = archiveEducationHost.frame
         let playerBottom = dockTop - bannerHeight - bannerSpacing
         let playerHeight = min(miniPlayers.desiredHeight, max(0, playerBottom - listY))
         let playerSpacing: CGFloat = playerHeight > 0 ? 8 : 0
@@ -4780,6 +4808,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard let palette else { return }
         archiveEducation.applyPalette(palette)
         updateComplete.applyPalette(palette)
+        updateReady.applyPalette(palette)
         // Inferred: the dim alpha and overlay colour follow the theme's
         // darkness rather than the window's appearance.
         windowButtons.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)

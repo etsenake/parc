@@ -252,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                     self?.store?.forgetHistory(deletion)
                 }
             }
-            store.sidebarBannerOccupied = { SoftwareUpdateBanner.shared.showsCompletedUpdate }
+            store.sidebarBannerOccupied = { SoftwareUpdateBanner.shared.showsCompletedUpdate || BrowserWindowController.updateReadyToInstall }
             store.requestPageRetirement = { [weak self] ids, shouldCommit, completion in
                 guard let self else { completion(false); return }
                 self.retireNativePages(ids, shouldCommit: shouldCommit, completion: completion)

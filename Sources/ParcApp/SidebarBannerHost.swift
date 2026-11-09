@@ -59,6 +59,8 @@ final class SidebarBannerHost: NSView {
     private var accessibilityObserver: NSObjectProtocol?
     var phase: Phase { presentation.phase }
     var occupiesSpace: Bool { phase != .absent }
+    /// Asked to show (not leaving): the slot sizes to this card first.
+    var isShowing: Bool { desiredVisible }
     var isInteractive: Bool { presentation.interactive }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }

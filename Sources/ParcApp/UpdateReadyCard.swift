@@ -40,7 +40,10 @@ final class UpdateReadyCard: NSView {
         } else { model.label = .white }
     }
     func setInteractionEnabled(_ enabled: Bool) { model.interactive = enabled }
-    func setAutomaticUpdates(_ enabled: Bool) { model.automaticUpdates = enabled }
+    func setAutomaticUpdates(_ enabled: Bool) {
+        // The window refreshes banners on every chrome tick; publish changes only.
+        if model.automaticUpdates != enabled { model.automaticUpdates = enabled }
+    }
     /// Asked on every sidebar layout while the banner occupies the slot.
     func preferredHeight(for width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
