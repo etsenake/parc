@@ -40,17 +40,23 @@ The nine setup apps use the recovered BaseAssets resource keys (`twitter`,
 `gmail`, `gcal`, `spotify`, `youtube`, `notion`, `slack`, `figma`, `outlook`).
 with explicit Aqua and Dark Aqua drawing appearances. Twitter has separate
 light/dark artwork (the current catalog uses X); all others share one rendition.
-Original logical image sizes are retained at 2x resolution. These are bundled
+Setup draws each at 40 points. Twitter (both), Gmail, Google Calendar, Slack,
+Figma and Outlook are 120×120 drawings of the catalog's vector (SVG)
+others), in Display P3 because the Slack, Gmail and Google Calendar vectors
+specify Display P3 colours. They are pixel-exact at 3x and sharp at 2x; the
+catalog's 48 and 64 px bitmaps would be enlarged. Spotify, YouTube and Notion
+are 240×240 (Notion's catalog source is a 120 px PNG with no vector). These
+bundle.
 
 | Resource | SHA256 |
 | --- | --- |
-| `favorite-figma.png` | `bb9a0869fe23451902e57850a168145bd2a4f23c7ac32889ed9a018aee0f0cfe` |
-| `favorite-gcal.png` | `f5acd8da5d9fae0fdb33869c5da22d938c738a5a1469ab9d88754bb7093aa3d0` |
-| `favorite-gmail.png` | `91f0ccfa0e807a396f755843899e7eff678e33cffddd3aa05f4aa9ed5989799b` |
+| `favorite-figma.png` | `23bc39ba1ff2206f21b52d095cbd81a81d5baebcc9d222d2cb16c7584f3e5b47` |
+| `favorite-gcal.png` | `7cf29758961a0b0bb2eebd7ab3e242b66d87c6f10b056554e7cea2b161650a85` |
+| `favorite-gmail.png` | `c19a856478ede52d43864642a12a8a800d8f5bb5a39005095c7304b8ca19ae7b` |
 | `favorite-notion.png` | `0c8ac6404ac54030c8f1e85dc87ba3598a1dc39ea8a5264dd92fc1c75f8f690f` |
-| `favorite-outlook.png` | `21f253f3313e5c0e24baa22321c92a06cfb883763431f48ad08eb7530335fe10` |
-| `favorite-slack.png` | `dbef0e78f1f045e95622c6cd9b3862ab04989e2bf518a33577175a7c031149ee` |
+| `favorite-outlook.png` | `77279b0b4803d74ba50eab0f5d371ff728a3e72343517b1f7f7f04634429d4c9` |
+| `favorite-slack.png` | `7d11d197966dd197b50620cc62c0947347d1c0b265e08b260ed3b85c3108f1f4` |
 | `favorite-spotify.png` | `a4547c6f76fec8a603ccfd76999634a56243d49315942241053ff706b1781319` |
-| `favorite-twitter-dark.png` | `bce519051ec3c5d254bb014c3bec151d05bc6e68cf8a2d322600f6289c53a09f` |
-| `favorite-twitter.png` | `2c6eb630fa2f9d33fd0ea0ec789d7045980c9608db4a24ed34385592b533be2a` |
+| `favorite-twitter-dark.png` | `1dcbe9988512ec6d0dca9fe8a8c9d4d022746a91dcfe9a5d948d873ca541e752` |
+| `favorite-twitter.png` | `a2a1a872429b52dc99d0a6db2ab188870a5f914649129ee113f1189e7f5c196a` |
 | `favorite-youtube.png` | `a2e80605f61f643ec336958bbfb9d5ff463aa94e1d78b5b70c2b41e9e845ec00` |
