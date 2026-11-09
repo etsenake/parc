@@ -268,10 +268,6 @@ compile_and_run command-bar-typed-commands CommandBar/TypedCommandTests \
   "$repo_root/Sources/ParcCore/CommandBarMenuItemInfo.swift" \
   "$repo_root/Sources/ParcCore/CommandBarCommandPresentation.swift"
 
-# Page tools answer from the pre-open snapshot only while that bar is open.
-compile_and_run command-bar-page-tools CommandBar/PageToolSnapshotTests \
-  "$repo_root/Sources/ParcCore/CommandBarPageToolSnapshot.swift"
-
 # Closed-bar render must not snapshot tabs/history/spaces/folders; open bar still does.
 compile_and_run command-bar-reconcile-inputs CommandBar/ReconcileInputsTests \
   "$repo_root/Sources/ParcCore/CommandBarReconcileInputs.swift"

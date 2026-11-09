@@ -483,7 +483,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var attachingOwnedPages = false
     private var sidebarKeyboardCursor: SidebarKeyboardCursor?
     private var sidebarKeyboardBrowsing = false
-    private var commandBarPageTools: CommandBarPageToolSnapshot?
     private var commandBarHostCache: (profileID: UUID, revision: UInt64, hosts: Set<String>)?
     /// Whole-sidebar model checks behind typed commands, which the open command
     /// bar asks on every update while typing; they read only published state.
@@ -5495,11 +5494,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         // collection the Pin to folder and Favorite actions retain.
         let typedItems = currentSidebarMenuItems
         let typedCommands = commandBarTypedCommands(items: typedItems, profileID: commandProfile)
-        // Asked while this window is still key; the panel takes key on present.
-        let pageToolPage = currentBrowser.map(ObjectIdentifier.init)
-        let pageTools = Set((0...PCNativePageTool.taskManager.rawValue).filter {
-            PCNativePageTool(rawValue: $0).map(canPerformPageTool) == true
-        })
         let panel = CommandBar(parent: window,
             tabs: commandBarTabs(profileID: commandProfile, excluding: commandTab),
             history: commandBarHistory(profileID: commandProfile),
@@ -5905,7 +5899,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         panel.onSearchSettings = { [weak self] in if isOriginal() { self?.showSettings(pane: .profiles) } }
         panel.onDismiss = { [weak self, weak panel] in
             guard let self, self.commandBar === panel else { return }
-            self.commandBar = nil; self.commandBarPageTools = nil
+            self.commandBar = nil
             self.commandBarRecentPages?.query.invalidate(); self.commandBarRecentPages = nil
             if inSidebar {
                 self.sidebarKeyboardCursor = nil; self.sidebarKeyboardBrowsing = false
@@ -5915,9 +5909,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.refreshSidebarPointer()
         }
         commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar
-        commandBarPageTools = pageToolPage.map {
-            CommandBarPageToolSnapshot(panel: ObjectIdentifier(panel), page: $0, tools: pageTools)
-        }
         commandBar = panel; panel.present()
         if !isPopupWindow, !isPrivateBrowsing {
             deliverCommandBarTopDomains(to: panel, profileID: commandProfile)
@@ -13612,10 +13603,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func canPerformPageTool(_ tool: PCNativePageTool) -> Bool {
         guard presentation.isReady, !isClosing, !wholeWindowClose,
               let browser = currentBrowser else { return false }
-        if let answer = commandBarPageTools?.allows(tool.rawValue, openPanel: commandBar.map(ObjectIdentifier.init),
-                                                    page: ObjectIdentifier(browser)) {
-            return answer
-        }
         return browser.canPerformPageTool(tool)
     }
 

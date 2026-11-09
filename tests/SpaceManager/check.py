@@ -30,8 +30,7 @@ for use in ("archiveTabs(SpaceClearToday.ids(in: store.state, spaceID: activeSpa
 # The window sidebar's New Tab is current while a new-tab bar shows its
 # suggestions in the centre: Command-T, the New Tab row and Add Split, not the
 # sidebar's keyboard search. Closing the bar ends it.
-for use in ("commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar\n        commandBarPageTools = pageToolPage.map {",
-            "CommandBarPageToolSnapshot(panel: ObjectIdentifier(panel), page: $0, tools: pageTools)\n        }\n        commandBar = panel; panel.present()",
+for use in ("commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar\n        commandBar = panel; panel.present()",
             "commandBarCreatesNewTab = true; commandBarShowsNewTabPlaceholder = true\n        commandBar = panel; panel.present()",
             "if commandBar == nil { commandBarCreatesNewTab = false; commandBarShowsNewTabPlaceholder = false }\n"
             "            refreshSplitPaneHighlights()\n            refreshNewTabPlaceholder()",
