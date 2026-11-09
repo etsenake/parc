@@ -30,6 +30,14 @@ starts; noticeably worse battery or heat.
   today would stop playing), say so plainly and recommend the better
   experience; that is Josh's call.
 
+## Real usage only (Josh, November 8)
+
+"Would feel it" means in realistic use, like Josh's own (a sidebar of about
+five folders and 20 to 100 items), not at stress-test sizes. A harness's large
+sizes are for spotting scaling bugs, never a reason to start new work. On
+November 8 a stutter report grew into four hours of work on 200-folder
+sidebars nobody has. Fix what's felt at real sizes, confirm it, and stop.
+
 ## How to report a difference
 
 Report every difference as what the user experiences, not what the code does:
