@@ -281,27 +281,66 @@ class Repository(unittest.TestCase):
         self.assertEqual((resumed.state['id'], resumed.kind), (explicit.state['id'], 'major'))
         self.assertEqual(resumed.state['version']['version'], '2.0.0')
 
-    def test_commits_landing_before_the_push_ship_with_their_notes(self):
-        self.commit('fix: Keep tabs')
+    def race(self, runner, killed_after_merge=False):
+        """Prepares while a peer pushes a feat just before the version commit's first push."""
         peer = Path(self.tmp.name) / 'peer'
         subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
-        runner = self.automatic(); original = runner.git; landed = []
+        original = runner.git; pushes = []
         def racing(*args, **kwargs):
-            if args[0] == 'push' and not landed:
-                landed.append(True)
-                # The peer's notes edit conflicts with the version commit's.
-                (peer / 'release-notes.json').write_text('{"releases":[]}\n')
-                for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
-                                 '-qam', 'feat: Land late'], ['push', '-q', 'origin', 'main']):
-                    subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
+            if args[0] == 'push':
+                pushes.append(args)
+                if len(pushes) == 1:
+                    # The peer's notes edit conflicts with the version commit's.
+                    (peer / 'release-notes.json').write_text('{"releases":[]}\n')
+                    for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
+                                     '-qam', 'feat: Land late'], ['push', '-q', 'origin', 'main']):
+                        subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
+                elif killed_after_merge:
+                    raise OSError('power lost before the merged version commit was pushed')
             return original(*args, **kwargs)
         with patch.object(runner, 'git', side_effect=racing):
             runner.prepare()
+
+    def test_commits_landing_before_the_push_ship_with_their_notes_and_bump(self):
+        self.commit('fix: Keep tabs')
+        runner = self.automatic()
+        with self.assertRaises(OSError):
+            self.race(runner, killed_after_merge=True)
+        for item in runner.locks: item.close()
+        resumed = self.automatic(); resumed.prepare()
         [entry] = self.notes()
-        self.assertEqual([item['summary'] for item in entry['changes']], ['Keep tabs', 'Land late'])
+        self.assertEqual((entry['version'], [item['summary'] for item in entry['changes']]),
+                         ('1.1.0', ['Keep tabs', 'Land late']))
         self.assertEqual(len(self.git('log', '-1', '--format=%p').split()), 2)
-        self.assertEqual(self.git('log', '-1', '--format=%s'), 'chore(release): 1.0.1')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'chore(release): 1.1.0')
+        self.assertEqual(self.git('log', '--format=%s', 'v1.0.0..').count('chore(release): 1.1.0'), 1)
+        self.assertEqual(json.loads(self.git('show', 'origin/main:app-version.json')), {'version': '1.1.0', 'build': 2})
+        self.assertEqual((resumed.state['release_type'], resumed.state['tag']), ('minor', 'v1.1.0'))
+        self.assertTrue(resumed.published(resumed.state['commit']))
+
+    def test_type_override_keeps_its_version_when_a_feat_lands_late(self):
+        self.commit('fix: Keep tabs')
+        runner = release.Release(self.root, 'patch'); runner.start()
+        self.addCleanup(lambda: [item.close() for item in runner.locks])
+        self.race(runner)
+        self.assertEqual([item['version'] for item in self.notes()], ['1.0.1'])
+        self.assertEqual((runner.state['release_type'], runner.state['tag']), ('patch', 'v1.0.1'))
         self.assertTrue(runner.published(runner.state['commit']))
+
+    def test_resuming_with_type_keeps_its_version_when_a_feat_lands_late(self):
+        self.commit('fix: Keep tabs')
+        automatic = self.automatic(); original = automatic.git
+        def killed(*args, **kwargs):
+            if args[0] == 'push': raise OSError('power lost before the first push')
+            return original(*args, **kwargs)
+        with patch.object(automatic, 'git', side_effect=killed):
+            with self.assertRaises(OSError): automatic.prepare()
+        for item in automatic.locks: item.close()
+        runner = release.Release(self.root, 'patch'); runner.start()
+        self.addCleanup(lambda: [item.close() for item in runner.locks])
+        self.race(runner)
+        self.assertEqual((runner.state['id'], runner.state['tag']), (automatic.state['id'], 'v1.0.1'))
+        self.assertEqual([item['version'] for item in self.notes()], ['1.0.1'])
 
 
 class InterruptedOverlayCheck(unittest.TestCase):

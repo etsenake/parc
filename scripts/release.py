@@ -185,6 +185,9 @@ class Release:
                     raise Failure('Source refresh requires a stopped engine stage with no active command or packaged artifacts')
                 self.refresh_previous = dict(prior)
                 self.state = prior
+                if self.kind:
+                    # Resuming with --type fixes the version too, even for a run whose commits chose it.
+                    self.state["type_override"] = self.kind
                 self.kind = self.kind or prior["release_type"]
                 self.state["release_type"] = self.kind
                 if (prior.get('status') == 'stopped' and prior.get('command_pid')
@@ -393,11 +396,11 @@ class Release:
                 raise Failure('Nothing to release since ' + tag + '; main changed after the release check')
             version = {"version": next_version(previous["version"], kind), "build": previous["build"] + 1}
             date = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-            self.kind = kind
-            self.checkpoint(release_type=kind, previous_version=previous, version=version, since=tag,
-                            notes=release_notes.entry(version['version'], version['build'], date, found),
+            self.checkpoint(release_type=kind, type_override=self.kind, previous_version=previous, version=version,
+                            since=tag, notes=release_notes.entry(version['version'], version['build'], date, found),
                             base_commit=self.git('rev-parse', 'HEAD'),
                             tag='v' + version['version'], source=str(Path(self.state['run']) / 'source'))
+            self.kind = kind
         wanted = self.state['version']
         if not self.state.get('commit'):
             files = self.version_files(self.state['base_commit'])
@@ -433,8 +436,15 @@ class Release:
                 # three version files, which are rewritten from origin/main's notes right after.
                 since, found = self.changes('origin/main')
                 self.git('merge', '--no-commit', '-X', 'theirs', 'origin/main')
+                # The version is unpublished, so a late feat or breaking change raises a bump --type didn't set.
+                kind = self.state.get('type_override') or release_notes.bump(found) or self.kind
+                raised = next_version(self.state['previous_version']['version'], kind)
+                if release_notes.number(raised) > release_notes.number(wanted['version']):
+                    self.emit('Commits that landed before the push raise ' + wanted['version'] + ' to ' + raised)
+                    self.kind, wanted = kind, {'version': raised, 'build': wanted['build']}
                 notes = release_notes.entry(wanted['version'], wanted['build'], self.state['notes']['date'], found)
-                self.checkpoint(notes=notes, since=since)
+                self.checkpoint(release_type=self.kind, version=wanted, tag='v' + wanted['version'],
+                                notes=notes, since=since)
                 self.commit_version(self.version_files('origin/main'))
                 self.checkpoint(commit=self.git('rev-parse', 'HEAD'))
             try:

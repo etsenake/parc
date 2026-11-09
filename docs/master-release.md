@@ -32,9 +32,10 @@ fix, perf and breaking changes, and the UTC date the version was prepared. It
 keeps each summary as written; the CHANGELOG, GitHub text and What's New page
 capitalize an all-lowercase first word. The same notes become the GitHub
 release text on etsenake/parc and etsenake/parc-releases under Heads up, New,
-Fixed and Faster, followed by the build provenance. If main moves while the version commit is being pushed, the
-release merges it and adds those commits to its notes; the version chosen before
-stays.
+Fixed and Faster, followed by the build provenance. If main moves while the
+version commit is being pushed, the release merges it and adds those commits to
+its notes. A feat or breaking change among them raises the version, since it
+isn't published yet; a version chosen with `--type` stays.
 
 Rerun the same command after interruption. It resumes the saved type, version,
 notes and frozen inputs instead of bumping twice, and never records a release
