@@ -74,6 +74,65 @@ class Repository(unittest.TestCase):
         with self.assertRaisesRegex(release.Failure, 'immutable'):
             refreshed.refresh_inputs()
 
+    def stopped_patch_release(self):
+        """A 1.0.1 release of 'fix: Keep tabs' that stopped on a compiler error."""
+        self.commit('fix: Keep tabs')
+        runner = release.Release(self.root); runner.start(); runner.prepare()
+        runner.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None,
+                          error='compiler error',
+                          engine_seal_path=str(Path(runner.state['run']) / 'engine-artifacts.json'))
+        for item in runner.locks: item.close()
+
+    def refresh(self, commit=None):
+        refreshed = release.Release(self.root, refresh_source=True, source_commit=commit); refreshed.start()
+        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
+        return refreshed
+
+    def test_refresh_lists_the_fixes_it_freezes_and_keeps_later_commits_out(self):
+        self.stopped_patch_release()
+        self.commit('fix(engine): build with the new SDK'); checked = self.git('rev-parse', 'HEAD')
+        self.commit('feat: Later work'); later = self.git('rev-parse', 'HEAD')
+        refreshed = self.refresh(checked)
+        with patch.object(release_inputs, 'create', side_effect=OSError('power lost after publishing the notes')):
+            with self.assertRaises(OSError): refreshed.refresh_inputs()
+        for item in refreshed.locks: item.close()
+        # A plain resume finishes the refresh instead of building the commit main has moved past.
+        refreshed = release.Release(self.root); refreshed.preflight = Mock(); refreshed.env['GH_TOKEN'] = 'fixture-token'
+        with patch.dict(release.os.environ), patch.object(release_lease, 'acquire', return_value='lease'):
+            with patch.object(refreshed, 'engine', side_effect=release.Failure('compiler error again')):
+                self.assertEqual(refreshed.run(), 1)
+        self.assertIsNone(refreshed.state['refresh_commit'])
+        notes = refreshed.state['commit']
+        self.assertEqual(self.git('rev-parse', notes + '^'), checked)
+        self.assertEqual(self.git('log', '-1', '--format=%s %P', 'origin/main'),
+                         'Merge chore(release): 1.0.1 notes ' + later + ' ' + notes)
+        # The rerun reused the published notes commit and merge.
+        self.assertEqual(sorted(self.git('log', '--format=%s', checked + '..origin/main').splitlines()),
+                         ['Merge chore(release): 1.0.1 notes', 'chore(release): 1.0.1 notes', 'feat: Later work'])
+        self.assertTrue(subprocess.run(['git', 'merge-base', '--is-ancestor', later, notes], cwd=self.root).returncode)
+        # The GitHub text and What's New page come from the frozen source's notes, which main shares.
+        shipped = (Path(refreshed.state['source']) / 'release-notes.json').read_text().strip()
+        self.assertEqual(shipped, self.git('show', 'origin/main:release-notes.json'))
+        [entry] = json.loads(shipped)['releases']
+        self.assertEqual(([item['summary'] for item in entry['changes']], refreshed.state['notes']),
+                         (['Keep tabs', 'build with the new SDK'], entry))
+        self.assertIn('- **engine:** Build with the new SDK', release.release_notes.markdown(entry))
+        release_inputs.verify(self.root, refreshed.state['source'], notes)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main'))
+
+    def test_refresh_without_a_pin_publishes_its_notes_as_a_fast_forward(self):
+        self.stopped_patch_release()
+        self.commit('fix(engine): build with the new SDK'); fixed = self.git('rev-parse', 'HEAD')
+        refreshed = self.refresh(); refreshed.refresh_inputs()
+        self.assertEqual(self.git('rev-parse', 'origin/main'), refreshed.state['commit'])
+        self.assertEqual(self.git('log', '-1', '--format=%s %P', 'origin/main'), 'chore(release): 1.0.1 notes ' + fixed)
+
+    def test_refresh_refuses_a_feat_its_patch_release_cannot_ship(self):
+        self.stopped_patch_release(); self.commit('feat: Later work')
+        with self.assertRaisesRegex(release.Failure, 'would ship a minor change in 1.0.1'):
+            self.refresh().refresh_inputs()
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'feat: Later work')
+
     def test_other_type_supersedes_stopped_unpublished_release(self):
         patch_run = release.Release(self.root, 'patch'); patch_run.start()
         patch_run.prepare()

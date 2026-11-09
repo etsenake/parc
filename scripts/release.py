@@ -286,7 +286,7 @@ class Release:
             raise Failure('Source refresh requires main')
         self.git('fetch', 'origin', 'main', retries=2)
         self.git('merge', '--ff-only', 'origin/main')
-        commit = self.source_commit or self.git('rev-parse', 'HEAD')
+        commit = self.source_commit or self.state.get('refresh_commit') or self.git('rev-parse', 'HEAD')
         if not re.fullmatch(r'[0-9a-f]{40}', commit):
             raise Failure('Refreshed source requires a full Git commit SHA')
         if json.loads(self.git('show', commit + ':app-version.json')) != self.state['version']:
@@ -300,14 +300,72 @@ class Release:
             raise Failure('Refreshed source must be published on origin/main')
         self.git('merge-base', '--is-ancestor', self.state['commit'], commit)
         release_inputs.verify(self.root, self.state['source'], self.state['commit'])
+        since, found = self.changes(commit)
+        version = self.state['version']
+        # The version commit is published, so a feat or breaking change here can't raise it as prepare() would.
+        kind = release_notes.bump(found) or self.kind
+        raised = next_version(self.state['previous_version']['version'], kind)
+        outgrown = release_notes.number(raised) > release_notes.number(version['version'])
+        if outgrown and not self.state.get('type_override'):
+            raise Failure('Refreshed source would ship a ' + kind + ' change in ' + version['version']
+                          + '; pin --source-commit before it, or release ' + raised + ' with --type ' + kind)
+        notes = release_notes.entry(version['version'], version['build'], self.state['notes']['date'], found)
+        files = release_notes.files(json.loads(self.git('show', commit + ':release-notes.json')), notes, since[1:])
+        if any(self.git('show', commit + ':' + name) != text.strip() for name, text in files.items()):
+            # The fixes frozen in here ship, so the source and main must carry notes that list them. Until the
+            # checkpoint below, any resume finishes this refresh instead of building the commit main has moved past.
+            self.checkpoint(refresh_commit=commit)
+            commit = self.publish_notes(commit, files)
         source = Path(self.state['run']) / ('source-' + commit)
         release_inputs.create(self.root, source, commit)
         history = list(self.state.get('source_history', []))
         history.append({'commit': self.state['commit'], 'source': self.state['source'],
                         'overlay': self.state.get('overlay'), 'error': self.refresh_previous.get('error'),
                         'refreshed_utc': now()})
-        self.checkpoint(commit=commit, source=str(source), source_history=history)
+        self.checkpoint(commit=commit, notes=notes, since=since, source=str(source), source_history=history,
+                        refresh_commit=None)
         self.emit('Refreshed unpublished release inputs to ' + commit + '; previous archive and compiled objects preserved')
+
+    def tree(self, commit, files):
+        """commit's tree with these top-level files replaced, written without touching the checkout."""
+        def plumbing(args, text):
+            return subprocess.run(['git', *args], cwd=self.root, env=self.env, input=text, capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        entries = [line for line in self.git('ls-tree', commit).splitlines() if line.split('\t', 1)[1] not in files]
+        entries += ['100644 blob ' + plumbing(['hash-object', '-w', '--stdin'], text) + '\t' + name
+                    for name, text in files.items()]
+        return plumbing(['mktree'], '\n'.join(entries) + '\n')
+
+    def publish_notes(self, source, files):
+        """Publishes source plus these notes on main, merged when main has moved on, and returns that commit.
+
+        The merge keeps main's later commits out of the frozen source, as --source-commit asks.
+        """
+        message = 'chore(release): ' + self.state['version']['version'] + ' notes'
+        tree = self.tree(source, files)
+        self.git('fetch', 'origin', 'main', retries=2)
+        # A rerun after a crash reuses the notes commit it already published.
+        log = self.git('log', '--format=%H %T %P', source + '..origin/main').splitlines()
+        published = [line.split()[0] for line in log if line.split()[1:] == [tree, source]]
+        notes = published[0] if published else self.git('commit-tree', tree, '-p', source, '-m', message)
+        for attempt in range(4):
+            if self.published(notes):
+                break
+            tip, head = self.git('rev-parse', 'origin/main'), notes
+            if tip != source:
+                if any(self.git('show', tip + ':' + name) != self.git('show', source + ':' + name) for name in files):
+                    raise Failure('Main changed the release notes after ' + source + '; preserved for reconciliation')
+                head = self.git('commit-tree', self.tree(tip, files), '-p', tip, '-p', notes, '-m', 'Merge ' + message)
+            try:
+                self.git('push', 'origin', head + ':refs/heads/main')
+            except Failure:
+                if attempt == 3:
+                    raise
+            self.git('fetch', 'origin', 'main', retries=2)
+        if not self.published(notes):
+            raise Failure('Could not verify the release notes commit on origin/main')
+        self.git('merge', '--ff-only', 'origin/main')
+        return notes
 
     def auth(self):
         clean = {key: value for key, value in self.env.items() if key not in ("GH_TOKEN", "GITHUB_TOKEN")}
@@ -651,7 +709,7 @@ class Release:
                     return 0
             lease = release_lease.acquire(self.state['id'], self.state.get('commit') or self.git('rev-parse', 'origin/main'), self.state.get('lease'))
             self.checkpoint(lease=lease)
-            if self.refresh_source:
+            if self.refresh_source or self.state.get('refresh_commit'):
                 self.refresh_inputs()
             for name, action in [("source", self.prepare), ("engine", self.engine), ("package", self.package),
                                  ("appcast", self.appcast), ("homebrew", self.tap)]:

@@ -142,6 +142,16 @@ checked correction when other contributors publish during its checks. The SHA
 must be on main, descend from the failed release source and keep its saved
 version. Later commits remain available for the next release.
 
+Fixes frozen in by a refresh join the release's notes. When they change them,
+the refresh publishes `chore(release): X notes` on top of the frozen commit,
+merged into main if main has moved past it, and freezes that commit instead, so
+the GitHub text, the What's New page and main's `release-notes.json` agree. If
+it stops before finishing, any resume finishes it, reusing a notes commit it
+already published. The version is already
+published, so a refresh that would add a feat or breaking change to a version
+the commits chose stops; pin an earlier commit or release the higher version
+with `--type`.
+
 If the release owner died during the read-only overlay check, source refresh
 verifies that both the saved command PID and its process group are gone, records
 the interrupted check and reruns it against the refreshed archive. It does not
