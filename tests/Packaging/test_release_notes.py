@@ -77,23 +77,25 @@ class Notes(unittest.TestCase):
             '### Faster', '', '- Open faster']))
         self.assertEqual(notes.markdown(notes.entry('1.0.1', 2, '2026-11-10', [])), '')
 
-    def test_record_is_newest_first_and_idempotent(self):
+    def test_record_is_newest_first_idempotent_and_replaces_unshipped_versions(self):
         first = notes.entry('1.9.0', 10, '2026-11-10', [change('feat', 'A')])
         second = notes.entry('1.9.1', 11, '2026-11-11', [change('fix', 'B')])
-        once = notes.record(notes.record({'releases': []}, first), second)
+        once = notes.record(notes.record({'releases': []}, first, '1.8.2'), second, '1.9.0')
         self.assertEqual([item['version'] for item in once['releases']], ['1.9.1', '1.9.0'])
-        self.assertEqual(notes.record(once, second), once)
-        self.assertEqual(notes.record(once, dict(first, build=12))['releases'], [second, dict(first, build=12)])
+        self.assertEqual(notes.record(once, second, '1.9.0'), once)
+        # 1.9.1 was committed by a superseded run but never tagged; 1.10.0 covers its changes.
+        third = notes.entry('1.10.0', 12, '2026-11-12', [change('fix', 'B'), change('feat', 'C')])
+        self.assertEqual(notes.record(once, third, '1.9.0'), {'releases': [third, first]})
 
-    def test_write_and_rerun_never_duplicates(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder); (root / 'release-notes.json').write_text('{"releases": []}\n')
-            release = notes.entry('1.9.0', 10, '2026-11-10', [change('feat', 'Show What’s New', 'updates')])
-            notes.write(root, release); notes.write(root, release)
-            saved = json.loads((root / 'release-notes.json').read_text())
-            self.assertEqual(saved, {'releases': [release]})
-            self.assertEqual((root / 'CHANGELOG.md').read_text(),
-                             '# Changelog\n\n## 1.9.0 (2026-11-10)\n\n### New\n\n- **updates:** Show What’s New\n')
+    def test_files_rerun_never_duplicates(self):
+        release = notes.entry('1.9.0', 10, '2026-11-10', [change('feat', 'Show What’s New', 'updates')])
+        once = notes.files({'releases': []}, release, '1.8.2')
+        self.assertEqual(notes.files(json.loads(once['release-notes.json']), release, '1.8.2'), once)
+        self.assertEqual(json.loads(once['release-notes.json']), {'releases': [release]})
+        self.assertEqual(once['CHANGELOG.md'],
+                         '# Changelog\n\n## 1.9.0 (2026-11-10)\n\n### New\n\n- **updates:** Show What’s New\n')
+        quiet = notes.files({'releases': []}, notes.entry('1.9.1', 11, '2026-11-11', []), '1.9.0')
+        self.assertIn('## 1.9.1 (2026-11-11)\n\nNo user-facing changes.\n', quiet['CHANGELOG.md'])
 
 
 class History(unittest.TestCase):
@@ -131,6 +133,12 @@ class History(unittest.TestCase):
         self.assertEqual(notes.bump(found), 'major')
         self.commit('Revert "Reapply "feat(sidebar): Pin tabs""')
         self.assertEqual(notes.bump(notes.changes(self.root, 'v1.0.0', 'HEAD')), 'patch')
+
+    def test_last_release_skips_untagged_versions(self):
+        self.commit('chore(release): 1.0.1'); self.commit('feat: Add')
+        self.assertEqual(notes.last_release(self.root, 'HEAD'), 'v1.0.0')
+        self.git('tag', 'app-20261110-abc'); self.git('tag', 'v1.1.0')
+        self.assertEqual(notes.last_release(self.root, 'HEAD'), 'v1.1.0')
 
     def test_nothing_since_tag(self):
         self.commit('docs: Explain releases'); self.commit('Unconventional history')

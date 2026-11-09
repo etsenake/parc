@@ -15,6 +15,7 @@ BREAKING = re.compile(r"^BREAKING[ -]CHANGE: ", re.MULTILINE)
 GENERATED = ("Merge ", 'Revert "', 'Reapply "', "fixup! ", "squash! ", "amend! ")
 UNDO = re.compile(r'(Revert|Reapply) "(.*)"')
 SECTIONS = (("Heads up", None), ("New", "feat"), ("Fixed", "fix"), ("Faster", "perf"))
+QUIET = "No user-facing changes."
 
 
 def parse(message):
@@ -25,6 +26,12 @@ def parse(message):
         return None
     return {"type": match["type"], "scope": match["scope"], "summary": match["summary"].strip(),
             "breaking": bool(match["breaking"] or BREAKING.search(body))}
+
+
+def last_release(repo, revision):
+    """The newest release tag revision contains; a superseded run's version commit has none."""
+    return subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*", revision],
+                          cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
 
 
 def changes(repo, since, until):
@@ -67,12 +74,15 @@ def entry(version, build, date, changes):
             "changes": [change for change in changes if change["type"] in NOTABLE or change["breaking"]]}
 
 
-def record(notes, release):
-    """Newest first; a rerun replaces its own version in place instead of appending it twice."""
-    releases = notes["releases"]
-    if any(item["version"] == release["version"] for item in releases):
-        return {"releases": [release if item["version"] == release["version"] else item for item in releases]}
-    return {"releases": [release, *releases]}
+def record(notes, release, since):
+    """Newest first. Entries after the published version `since` are a rerun of this release or a
+    superseded run that never shipped; this release covers all of their changes, so it replaces them."""
+    older = [item for item in notes["releases"] if number(item["version"]) <= number(since)]
+    return {"releases": [release, *older]}
+
+
+def number(version):
+    return tuple(map(int, version.split(".")))
 
 
 def markdown(release):
@@ -89,16 +99,14 @@ def markdown(release):
 def changelog(notes):
     parts = ["# Changelog"]
     for release in notes["releases"]:
-        parts += [f"## {release['version']} ({release['date']})", markdown(release) or "No user-facing changes."]
+        parts += [f"## {release['version']} ({release['date']})", markdown(release) or QUIET]
     return "\n\n".join(parts) + "\n"
 
 
-def write(repo, release):
-    """Record one release in release-notes.json and regenerate CHANGELOG.md from it."""
-    path = Path(repo) / "release-notes.json"
-    notes = record(json.loads(path.read_text()), release)
-    path.write_text(json.dumps(notes, indent=2) + "\n")
-    (Path(repo) / "CHANGELOG.md").write_text(changelog(notes))
+def files(notes, release, since):
+    """release-notes.json and CHANGELOG.md after recording one release."""
+    notes = record(notes, release, since)
+    return {"release-notes.json": json.dumps(notes, indent=2) + "\n", "CHANGELOG.md": changelog(notes)}
 
 
 def check(message):
@@ -119,7 +127,7 @@ def main():
     commands.add_parser("check", help="validate a commit message file").add_argument("file")
     commands.add_parser("markdown", help="print one recorded release's notes").add_argument("version")
     preview = commands.add_parser("preview", help="print the bump and notes a range would release")
-    preview.add_argument("--since", help="default: the tag of app-version.json")
+    preview.add_argument("--since", help="default: the newest release tag in --until")
     preview.add_argument("--until", default="origin/main")
     args = parser.parse_args()
     if args.command == "check":
@@ -131,9 +139,9 @@ def main():
         found = [release for release in releases if release["version"] == args.version]
         if not found:
             sys.exit("release-notes.json has no release " + args.version)
-        print(markdown(found[0]))
+        print(markdown(found[0]) or QUIET)
     else:
-        since = args.since or "v" + json.loads((ROOT / "app-version.json").read_text())["version"]
+        since = args.since or last_release(ROOT, args.until)
         found = changes(ROOT, since, args.until)
         kind = bump(found)
         print(f"{kind or 'Nothing to release'} since {since}")

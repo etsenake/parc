@@ -25,6 +25,10 @@ class PublishedSigningTests(unittest.TestCase):
         (self.repo / "Resources").mkdir()
         shutil.copy2(REPO / "scripts/package-app.sh", self.repo / "scripts/package-app.sh")
         shutil.copy2(REPO / "scripts/app_version.py", self.repo / "scripts/app_version.py")
+        shutil.copy2(REPO / "scripts/release_notes.py", self.repo / "scripts/release_notes.py")
+        (self.repo / "release-notes.json").write_text(json.dumps({"releases": [{
+            "version": "1.0.0", "build": 1, "date": "2026-11-10", "changes": [
+                {"type": "feat", "scope": "updates", "summary": "Show What’s New", "breaking": False}]}]}))
         (self.repo / "app-version.json").write_text(json.dumps({"version": "1.0.0", "build": 1}) + "\n")
         (self.repo / "Engine/ParcHost/overlay.json").write_text('{"version": 316}')
         self.manifest = self.root / "engine.json"
@@ -196,6 +200,8 @@ class PublishedSigningTests(unittest.TestCase):
         self.assertTrue(any(item.endswith('/Parc-1.0.0-arm64.dmg') for item in arguments))
         self.assertIn('--latest=false', arguments)
         self.assertIn('--prerelease', arguments)
+        self.assertIn('--notes\n### New\n\n- **updates:** Show What’s New\n\nPackage built from ',
+                      (self.root / 'published').read_text())
         self.assertTrue((self.root / 'notarized').exists())
         self.assertTrue((self.root / 'dmg-notarized').exists())
 

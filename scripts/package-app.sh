@@ -71,7 +71,10 @@ if ! git merge-base --is-ancestor "$commit" origin/main; then
 fi
 app_version="$(python3 scripts/app_version.py show)"
 stable_tag="v$app_version"
+release_notes=""
 if [ -n "$stable" ]; then
+  # Committed with the version, so a resumed release publishes the same text.
+  release_notes="$(python3 scripts/release_notes.py markdown "$app_version")"$'\n\n'
   stable_ref="$(git ls-remote --tags origin "refs/tags/$stable_tag")"
   if [ -n "$stable_ref" ] && [ -z "${PARC_PACKAGE_RUN:-}" ]; then
     echo "error: $stable_tag already exists; advance app-version.json before another stable release" >&2
@@ -322,7 +325,7 @@ PY
 else
   gh release create "$tag" "${assets[@]}" -R "$github_repo" "${release_options[@]}" --target "$commit" \
     --title "$title" \
-    --notes "$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
+    --notes "$release_notes$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
 fi
 if [ -n "${PARC_PACKAGE_RUN:-}" ]; then
   python3 "$repo_root/scripts/release_assets.py" "$tag" "$commit" "${assets[@]}"
