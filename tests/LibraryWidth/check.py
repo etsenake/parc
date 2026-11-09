@@ -43,7 +43,11 @@ with tempfile.TemporaryDirectory(prefix="parc-library-width-") as directory:
            "SidebarMotionController", "PArcToast", "TopBarColorClient", "PArcDialog"]
     sources = sorted((root / "Sources/ParcCore").glob("*.swift"))
     sources += [root / "Sources/ParcApp" / f"{name}.swift" for name in app]
-    sources += [controls, store_owner, sidebar_stub, pathlib.Path(__file__).with_name("LibraryWidthTests.swift")]
+    #
+    spinner = temporary / "PArcButtonSpinner.swift"
+    subprocess.run([sys.executable, "-B", str(root / "tests/Support/declarations.py"), str(spinner), "PArcButtonSpinner"],
+                   check=True, stdout=subprocess.DEVNULL)
+    sources += [controls, store_owner, sidebar_stub, spinner, pathlib.Path(__file__).with_name("LibraryWidthTests.swift")]
     sources += tooltip_sources(root, temporary, sources)
     shutil.copytree(root / "Resources/Library", temporary / "Library")
     executable = temporary / "library-width"

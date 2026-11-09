@@ -4,6 +4,7 @@
 Off-screen window, never made key; no browser, input or preferences.
 """
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,13 +25,15 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     for use in ("windowButtons.setPresented(isPresented); spacesHost.setPresented(isPresented)\n        retestPointerInSidebar()",
                 "guard isPresented, let window = paymentAction.window else { return false }",
                 "super.canBecomeKeyView && isPresented && !contentSurface.isHidden && !selectionOrder.isEmpty",
-                "SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented)",
                 "retestPointer(); setNeedsKeyViewLinking()",
                 "if !isPresented { keyViewsNeedLinking = false; linkKeyViews() }",
                 "guard isPresented, super.becomeFirstResponder() else { return false }",
                 "if !isPresented, [51, 117, 125, 126].contains(event.keyCode) { super.keyDown(with: event); return }",
                 "isPresented, !isHiddenOrHasHiddenAncestor, window.attachedSheet == nil,"):
         assert use in sidebar, f"SidebarView no longer follows its presentation: {use}"
+    sys.path.insert(0, str(Path(__file__).parent))
+    from key_view_links import assert_sidebar_links
+    assert_sidebar_links(sidebar)
     # The window owner gives up focus in a sidebar that stops being presented,
     # as hiding its container did (checked below). Rename reveals a hidden
     # sidebar first, from the window's command and from a row's own actions;
@@ -44,8 +47,11 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
                        ("private func revealSidebarForEditing() {\n        if sidebarPresentation == .hidden { setSidebarPresentation(.floating) }\n"
                         "        settleSidebarMotion(); layoutChrome(); rootView.layoutSubtreeIfNeeded()", 1)):
         assert controller.count(use) == count, f"the window owner no longer keeps focus out of the hidden sidebar: {use}"
+    renames = re.findall(r"let commit = prepare\w+Rename\?\(", sidebar)
+    assert len(renames) >= 2 and len(renames) == len(re.findall(
+        r"let commit = prepare\w+Rename\?\(\w+\), presentsForEditing\(reveal: revealForEditing\) else \{ return false \}", sidebar)), \
+        "every rename the sidebar starts (let commit = prepare…Rename?(x)) reveals a hidden sidebar first, in the same guard"
     for use, count in (("final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, OffscreenPresenting {", 1),
-                       ("presentsForEditing(reveal: revealForEditing) else { return false }", 2),
                        ("private func focusSelectionList() { focusIfPresented(); refreshItemSelection() }", 1),
                        ("makeFirstResponder(self)", 0),
                        ("focusSelectionList()", 3)):
@@ -55,7 +61,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     # sidebar, PeekFocusReturn's responder lies inside the page or Peek, and
     # CaptureMotion's responder only detects a user's move; it restores Capture
     # Library views, which lie in the Library page or its detail panel.
-    import re
     app = root / "Sources/ParcApp"
     owners = sorted(p.name for p in app.glob("*.swift")
                     if re.search(r"weak var \w*[rR]esponder: NSResponder\?", p.read_text()))

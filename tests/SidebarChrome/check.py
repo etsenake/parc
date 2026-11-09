@@ -80,19 +80,29 @@ for use in ("SidebarSpaceMenu.sidebar(spaces: spaces, activeSpaceID: activeSpace
             "toggleHeader: { [weak self] in self?.toggleSpaceHeaderOnSingleUnnamedSpaces?() })"):
     assert use in sidebar_menu.group(1), f"SidebarView's Space menu no longer follows the checked rule: {use}"
 sidebar_class = sidebar[sidebar.index("final class SidebarView:"):sidebar.index("private final class SidebarKeyboardHighlightView")]
-for override in ("override func menu(for", "override func mouseDown(", "override func rightMouseDown("):
+for override in ("override func menu(for", "override func rightMouseDown("):
     assert override not in sidebar_class, f"SidebarView overrides the checked surface's event handling: {override}"
+# Its one mouseDown: is the empty tablist's window drag (SidebarTablistBackground,
+# whose Control pass-through tests/CommandBar/SearchPrivacyBannerTests runs);
+# every press it doesn't drag with, a Control-click included, reaches the
+# surface's mouseDown:, which opens the menu.
+assert sidebar_class.count("override func mouseDown(") == 1, \
+    "SidebarView's one mouseDown: (the tablist background's) is missing, moved out of the class, or joined by another"
+press_start = sidebar_class.index("override func mouseDown(")
+press = " ".join(sidebar_class[press_start:sidebar_class.index("\n    }\n", press_start)].split())
+for use in ("guard let window, isTablistBackground(event) else { super.mouseDown(with: event); return }",
+            "switch SidebarTablistBackground.press(clickCount: event.clickCount, modifiers: event.modifierFlags)",
+            "case .passThrough: super.mouseDown(with: event)"):
+    assert use in press, f"a press SidebarView doesn't drag with no longer reaches the Space menu surface: {use}"
 controller = (app / "BrowserWindowController.swift").read_text()
 assert "sidebar.toggleSpaceHeaderOnSingleUnnamedSpaces = { [weak self] in self?.store.toggleSpaceHeaderOnSingleUnnamedSpaces() }" in controller, \
     "BrowserWindowController no longer records the Space header toggle in the store"
 store = (root / "Sources/ParcCore/BrowserStore.swift").read_text()
 # BrowserStore.swift and the ParcCore sources it needs, as scripts/test.sh compiles them.
-store_sources = [root / "Sources/ParcCore" / name for name in [
-    "BrowserStore.swift", "BrowserImport.swift", "FavoriteSplit.swift", "OriginalSplitDrop.swift", "InterProfileMove.swift",
-    "SidebarSpaceMove.swift", "SidebarWindowMove.swift", "CommandBarFavoriteAction.swift",
-    "CommandBarFolderMove.swift", "CommandBarFolderAction.swift", "ClosedItems.swift", "SpaceTheme.swift",
-    "OnboardingDraft.swift", "LinkRouting.swift", "SettingsPrettyJSONPersistSkip.swift", "ProfileRemoval.swift", "SplitPaneControls.swift",
-    "SplitCrossSpaceAdd.swift", "SidebarFolderFromItems.swift", "SpaceManagement.swift", "TabHistoryArchive.swift"]]
+core_sources = re.search(r"^core_sources=\((.*?)^\)", (root / "scripts/test.sh").read_text(), re.S | re.M)
+assert core_sources, "scripts/test.sh no longer lists core_sources"
+store_sources = [root / "Sources/ParcCore" / name for name in re.findall(r"Sources/ParcCore/(\w+\.swift)", core_sources.group(1))]
+assert "BrowserStore.swift" in {path.name for path in store_sources}, "scripts/test.sh core_sources no longer compiles BrowserStore"
 reference = re.search(r"^enum SidebarItemReference\b.*?^\}\n", store, re.S | re.M)
 assert reference, "SidebarItemReference not found in BrowserStore.swift"
 sources_by_name = {path.name: path.read_text() for path in
@@ -178,12 +188,16 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
     # the store sources it compiles with supply SplitOrientation.
     action_button = Path(directory) / "ActionButton.swift"
     action_button.write_text(sidebar[:sidebar.index("final class MenuAction")])
+    # SidebarRowAppearance resolves its ring colour with ThemeRenderer's
+    # NSColor.cgColor(in:), in the palette slice the tooltip sources cut.
+    tooltips = tooltip_sources(root, Path(directory), store_sources)
+    theme_palette = next((path for path in tooltips if Path(path).name == "TooltipThemePalette.swift"), None)
+    assert theme_palette, "tests/Tooltip/support.py no longer cuts the ThemeRenderer palette slice"
     suites = {"chrome": [app / "SidebarChromeLayout.swift", here / "SidebarChromeLayoutTests.swift"],
               "header": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarSpaceHeader.swift",
-                         app / "SidebarRowAppearance.swift", here / "SidebarSpaceHeaderTests.swift",
-                         *tooltip_sources(root, Path(directory), store_sources)],
+                         app / "SidebarRowAppearance.swift", here / "SidebarSpaceHeaderTests.swift", *tooltips],
               "dockmenu": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarDockStrip.swift",
-                           app / "SidebarRowAppearance.swift", app / "SidebarAccessibility.swift", here / "SidebarDockMenuTests.swift"],
+                           app / "SidebarRowAppearance.swift", theme_palette, app / "SidebarAccessibility.swift", here / "SidebarDockMenuTests.swift"],
               "listmenu": [*store_sources, core / "SidebarOutlineConfigureSkip.swift",
                            app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarOutline.swift",
                            app / "SidebarTablist.swift", action_button, app / "TranslucentButtonFace.swift",
@@ -203,6 +217,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
                                              app / "SidebarChromeLayout.swift", app / "SidebarTablist.swift", app / "SidebarOutline.swift",
                                              item_reference, here / "SidebarTablistTests.swift"], [[], ["-AppleShowScrollBars", "Always"]]),
                                 ("strip", [app / "SidebarChromeLayout.swift", app / "SidebarDockStrip.swift", app / "SidebarRowAppearance.swift",
+                                           theme_palette, core / "SpaceTheme.swift",
                                            app / "SidebarAccessibility.swift", here / "SidebarDockStripTests.swift"], [[]])]:
         executable = build(name, sources)
         for arguments in runs:

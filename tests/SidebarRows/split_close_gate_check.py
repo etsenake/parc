@@ -35,11 +35,15 @@ for guard in ("!isPopupWindow", "presentation.isReady", "!isClosing", "!wholeWin
 expect("isKeyWindow" not in window, "the shared window conditions carry no key-window check")
 tab = body(controller, "private func sidebarTabActionAvailable(_ id: UUID) -> Bool")
 for guard in ("!closingTabIDs.contains(id)", "!transferringTabIDs.contains(id)", "!resolvingTransfers.contains(id)",
-              "transferRecoveries[id] == nil", "!store.retiringTabIDs.contains(id)", "ownership.canUse(id, owner: presentationID)"):
+              "transferRecoveries[id] == nil", "!store.retiringTabIDs.contains(id)"):
     expect(guard in tab, f"per-tab condition missing: {guard}")
 row = body(controller, "private func canPerformSidebarTabAction(")
 expect("sidebarTabActionWindowAvailable" in row and "sidebarTabActionAvailable(expected.id)" in row
        and "window?.isKeyWindow == true" in row, "ordinary row actions use the shared conditions plus the key window")
+# The per-tab conditions hold wherever the page is; each action checks which
+# window holds it. A row's Close takes this window's page or moves it here.
+expect("usableHere: closing ? ownership.canUse(expected.id, owner: presentationID) : switcherCanUse(expected.id)" in row
+       and "heldElsewhere: canMovePageHere(expected.id)" in row, "a row action checks which window holds its page")
 roots = body(controller, "private func sidebarRootsCloseAvailable(_ ids: Set<UUID>) -> Bool")
 for guard in ("sidebarTabActionWindowAvailable", "commandBar == nil", "!ids.isEmpty", "visibleTabs.contains",
               "sidebarTabActionAvailable(id)", "switcherCanUse(id)", "retirementUnavailableReason?(ids) == nil"):
@@ -55,4 +59,7 @@ split = body(controller, "sidebar.prepareSplitClose = { [weak self] id in")
 expect("self.splitCellCloseAction(id)" in split, "the split's close action is read when pressed")
 expect("closeAX" not in sidebar and "Archive Split View" not in sidebar and "Close Split View\"" not in sidebar,
        "the split cell has no Close/Archive accessibility action; its visible Close button is the only route")
+expect("canMovePageHere(" in roots or "canCloseOrMoveHere(" in roots,
+       "closing roots must take a page another window holds as row Close does (move it here, then close); "
+       "roots Close still requires this window to hold every page (switcherCanUse)")
 print(f"PASS: {checks} split close gate source assertions (no browser)")

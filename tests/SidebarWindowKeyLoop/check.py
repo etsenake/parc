@@ -5,7 +5,9 @@ WindowKeyViewLoop and the production sidebar linker over a stand-in page side.
 Off-screen window, never made key; no browser, input or preferences.
 """
 from pathlib import Path
+import re
 import subprocess
+import sys
 import tempfile
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
@@ -29,14 +31,21 @@ assert layout.index("guard fullPass else { return }") < layout.index("windowKeyV
     "the window loop must relink at the end of every full chrome layout"
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 for use in ("var keyViewEntry: NSView { keyViewGate }",
-            "weak var keyViewExit: NSView? { didSet { if keyViewExit !== oldValue { setNeedsKeyViewLinking() } } }",
-            "SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented)"):
+            "weak var keyViewExit: NSView? { didSet { if keyViewExit !== oldValue { setNeedsKeyViewLinking() } } }"):
     assert use in sidebar, f"SidebarView's ends changed: {use}"
+sys.path.insert(0, str(root / "tests/SidebarAccessibility"))
+from key_view_links import assert_sidebar_links
+assert_sidebar_links(sidebar)
 # The preview card's own surface, the root subview the window leaves out
 # (and PeekController's host, hosted over the page host, as asserted above).
 peek = (root / "Sources/ParcApp/PeekController.swift").read_text()
 assert "final class PeekHostView: NSView {" in peek and "override var acceptsFirstResponder: Bool { true }" in peek
-assert controller.count("pageHost.addSubview(peek.view, positioned: .above, relativeTo: nil)") == 1
+# A Peek opens over this window's page host, or a moving parent's Peek over its destination's.
+hosted = controller.count("addSubview(peek.view")
+assert controller.count("pageHost.addSubview(peek.view, positioned: .above, relativeTo: nil)") == hosted, \
+    "every Peek is hosted over a page host"
+assert re.search(r"^\s+pageHost\.addSubview\(peek\.view, positioned: \.above, relativeTo: nil\)", controller, re.M), \
+    "this window's own Peek is hosted over its page host"
 preview = (root / "Sources/ParcApp/SidebarPreviewController.swift").read_text()
 assert "host.addSubview(card, positioned: .above, relativeTo: nil)" in preview and "host: rootView" in controller
 with tempfile.TemporaryDirectory(prefix="parc-window-key-loop-") as directory:
@@ -47,5 +56,6 @@ with tempfile.TemporaryDirectory(prefix="parc-window-key-loop-") as directory:
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcApp/SidebarAccessibility.swift"),
                     str(root / "Sources/ParcApp/WindowKeyViewLoop.swift"), str(surface),
+                    str(root / "Sources/ParcApp/PopoverBackgroundView.swift"),
                     str(Path(__file__).with_name("SidebarWindowKeyLoopTests.swift")), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

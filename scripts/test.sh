@@ -165,10 +165,12 @@ compile_and_run command-bar-scope-menu CommandBar/ScopeMenuTests \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
 # Offscreen privacy banner and the sidebar background double-click rule; no profile or browser.
+# A busy dialog button shows the onboarding button's spinner.
+spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/command-bar-privacy-spinner.swift" PArcButtonSpinner)
 compile_and_run command-bar-privacy CommandBar/SearchPrivacyBannerTests \
   "$repo_root/Sources/ParcApp/CommandBarSearchPrivacyBanner.swift" \
   "$repo_root/Sources/ParcApp/SidebarTablistBackground.swift" \
-  "$repo_root/Sources/ParcApp/PArcDialog.swift" \
+  "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
 compile_and_run command-bar-background CommandBar/BackgroundOpenTests \

@@ -46,7 +46,11 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
            "SidebarMotionController", "PArcToast", "TopBarColorClient", "PArcDialog"]
     sources = sorted((root / "Sources/ParcCore").glob("*.swift"))
     sources += [root / "Sources/ParcApp" / f"{name}.swift" for name in app]
-    sources += [controls, store_owner, sidebar_stub, root / "tests/Support/AppKitObservation.swift",
+    #
+    spinner = temporary / "PArcButtonSpinner.swift"
+    subprocess.run([sys.executable, "-B", str(root / "tests/Support/declarations.py"), str(spinner), "PArcButtonSpinner"],
+                   check=True, stdout=subprocess.DEVNULL)
+    sources += [controls, store_owner, sidebar_stub, spinner, root / "tests/Support/AppKitObservation.swift",
                 root / "tests/DownloadLibrary/ViewTests.swift"]
     sources += tooltip_sources(root, temporary, sources)
     # An unbundled executable's Bundle.main.resourceURL is its own directory,
@@ -82,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     library_entry_sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [
         root / "Sources/ParcApp" / f"{name}.swift" for name in
         sorted(set(app) | {"BoxOfThingsIcon", "SidebarLibraryEntry", "SidebarChromeLayout", "LibraryFlyout", "PArcDialog"})] + [
-        controls, store_owner, sidebar_stub, root / "tests/Support/AppKitObservation.swift",
+        controls, store_owner, sidebar_stub, spinner, root / "tests/Support/AppKitObservation.swift",
         root / "tests/DownloadLibrary/LibraryEntryTests.swift"]
     library_entry_sources += tooltip_sources(root, temporary, library_entry_sources)
     library_entry = temporary / "library-entry"

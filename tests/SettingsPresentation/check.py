@@ -17,4 +17,7 @@ with tempfile.TemporaryDirectory(prefix="parc-settings-presentation-") as folder
                root / "Sources/ParcApp/SettingsPresentation.swift", root / "tests/SettingsPresentation/PresentationTests.swift"]
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)
-    subprocess.run([str(executable), str(root), sys.argv[1]], check=True)
+    # The light/dark component renders go to the given directory, else build/.
+    renders = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else root / "build/tests/settings-presentation"
+    subprocess.run([str(executable), str(root), str(renders)], check=True)
+    print(f"Settings presentation renders: {renders}")

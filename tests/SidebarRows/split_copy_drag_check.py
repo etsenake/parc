@@ -118,14 +118,18 @@ expect("_ = self.selectSpaceFromUser(location.spaceID, profileID: space.profileI
 expect("sidebar.prepareDockDrop = { [weak self] session, items, location, before in" in controller, "the window wires its dock drop")
 expect(copy.index("self.store.copySidebarSplitsReloadingOriginals(") > copy.index("guard destinationProfile != sourceProfile else {"),
        "a cross-Profile copy reloads the originals through page consent (deleteAndReloadWindowContentsFor)")
-expect("_ = source.selectTab(shown, reportRefusal: false)" in copy, "originals the source window showed are shown (reloaded) again")
+expect("source.activeSpaceID == sourceSpace, let shown = sourceFocus" in copy and "_ = source.selectTab(shown)" in copy,
+       "originals the source window showed are shown (reloaded) again")
 expect(copy.index("if location.spaceID != self.activeSpaceID {") < copy.index("self.openDuplicatedChildren("),
        "a copy into another Space focuses that Space before opening and selecting the copy")
 
 admit = body(sidebar, "private func admitDrop(")
 expect(admit.index("if copying {") < admit.index("session.window === window"), "an Option drop never falls back to a move")
 expect("session.allowsCopy, let action = prepareCopyDrop?(session, session.items, destination, before)" in admit, "copy needs the session and this window")
-update = body(sidebar, "private func updateDrop(_ sender: NSDraggingInfo) -> NSDragOperation")
+drop_update = body(sidebar, "private func updateDrop(_ sender: NSDraggingInfo) -> NSDragOperation")
+expect("let operation = proposeDrop(sender)" in drop_update and "return operation" in drop_update,
+       "each drag update reports the proposed drop's operation")
+update = body(sidebar, "private func proposeDrop(_ sender: NSDraggingInfo) -> NSDragOperation")
 expect("let copying = mask.contains(.copy) && option" in update and "option = NSEvent.modifierFlags.contains(.option)" in update,
        "Option held with a copy-capable source selects the copy")
 expect("guard !option || copying else { return [] }" in update, "Option never lets a move-only source move")

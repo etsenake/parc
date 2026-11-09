@@ -3,10 +3,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 check_dir=$(mktemp -d "${TMPDIR:-/tmp}/parc-favorites.XXXXXX")
 trap 'rm -rf "$check_dir"' EXIT
-xcrun swiftc -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SidebarItemDrag.swift Sources/ParcApp/FavoriteTileLayout.swift Sources/ParcApp/FavoriteTile.swift Sources/ParcApp/FavoriteTileOverlays.swift tests/Favorites/MoveOwnerStub.swift tests/Support/AppKitObservation.swift tests/Favorites/FavoriteTileTests.swift -o "$check_dir/favorites"
+drag_list=$(python3 -B tests/Support/sidebar_item_drag.py "$check_dir" Sources/ParcCore/*.swift)
+drag=()
+while IFS= read -r path; do drag+=("$path"); done <<< "$drag_list"
+xcrun swiftc -parse-as-library Sources/ParcCore/*.swift "${drag[@]}" Sources/ParcApp/FavoriteTileLayout.swift Sources/ParcApp/FavoriteTile.swift Sources/ParcApp/FavoriteTileOverlays.swift tests/Favorites/MoveOwnerStub.swift tests/Support/AppKitObservation.swift tests/Favorites/FavoriteTileTests.swift -o "$check_dir/favorites"
 "$check_dir/favorites"
 
-xcrun swiftc -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SidebarItemDrag.swift Sources/ParcApp/FavoriteTileLayout.swift Sources/ParcApp/FavoriteTile.swift Sources/ParcApp/FavoriteTileOverlays.swift tests/Favorites/MoveOwnerStub.swift tests/Favorites/FavoritePointerTests.swift -o "$check_dir/pointer"
+xcrun swiftc -parse-as-library Sources/ParcCore/*.swift "${drag[@]}" Sources/ParcApp/FavoriteTileLayout.swift Sources/ParcApp/FavoriteTile.swift Sources/ParcApp/FavoriteTileOverlays.swift tests/Favorites/MoveOwnerStub.swift tests/Favorites/FavoritePointerTests.swift -o "$check_dir/pointer"
 "$check_dir/pointer"
 
 xcrun swiftc -parse-as-library Sources/ParcCore/*.swift tests/Favorites/FavoriteSplitTests.swift -o "$check_dir/favorite-split-tests"
@@ -21,5 +24,5 @@ xcrun swiftc -parse-as-library Sources/ParcCore/*.swift tests/Favorites/SavedTab
 xcrun swiftc -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/FavoriteTileLayout.swift tests/Favorites/FavoriteTileLayoutTests.swift -o "$check_dir/tile-layout"
 "$check_dir/tile-layout"
 
-xcrun swiftc -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SidebarItemDrag.swift Sources/ParcApp/FavoriteTileLayout.swift Sources/ParcApp/FavoriteTile.swift Sources/ParcApp/FavoriteTileOverlays.swift tests/Favorites/MoveOwnerStub.swift tests/Support/AppKitObservation.swift tests/Favorites/FavoriteTileOverlayTests.swift -o "$check_dir/tile-overlays"
+xcrun swiftc -parse-as-library Sources/ParcCore/*.swift "${drag[@]}" Sources/ParcApp/FavoriteTileLayout.swift Sources/ParcApp/FavoriteTile.swift Sources/ParcApp/FavoriteTileOverlays.swift tests/Favorites/MoveOwnerStub.swift tests/Support/AppKitObservation.swift tests/Favorites/FavoriteTileOverlayTests.swift -o "$check_dir/tile-overlays"
 "$check_dir/tile-overlays"

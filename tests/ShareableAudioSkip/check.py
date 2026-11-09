@@ -6,11 +6,23 @@ audible/muted). Everyday chrome ticks still walk/probe; real shareable and
 audible/mute flips still hand off. No dirty-bit early out that can miss flips.
 """
 from pathlib import Path
-import re
 
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
+
+
+def body(source, signature):
+    """The declaration at `signature`, through its body's closing brace."""
+    assert source.count(signature) == 1, f"{signature} not found once"
+    start = source.index(signature)
+    depth = 0
+    for end in range(source.index("{", start), len(source)):
+        depth += {"{": 1, "}": -1}.get(source[end], 0)
+        if depth == 0:
+            return source[start:end + 1]
+    raise AssertionError(f"unterminated {signature}")
+
 
 assert "shareableAudioDirty" not in controller, \
     "dirty-bit early out can miss audible/mute/shareable flips; skip must compare live fingerprint"
@@ -21,18 +33,10 @@ assert "private var lastAppliedShareable = Set<UUID>()" in controller, \
 assert "private var lastAppliedAudio: [UUID: SidebarTabAudio] = [:]" in controller, \
     "missing last-applied audio map"
 
-build = re.search(
-    r"private func liveShareableTabs\(\) -> Set<UUID> \{(?P<body>.*?)\n    \}\n\n    /// Live tab-audio map",
-    controller, re.S)
-assert build, "liveShareableTabs not found"
-assert "canShareThisTabInstead" in build.group("body"), \
+assert "canShareThisTabInstead" in body(controller, "private func liveShareableTabs() -> Set<UUID>"), \
     "liveShareableTabs must still probe canShareThisTabInstead"
 
-audio_build = re.search(
-    r"private func liveTabAudio\(\) -> \[UUID: SidebarTabAudio\] \{(?P<body>.*?)\n    \}\n\n    /// Stable fingerprint of shareable",
-    controller, re.S)
-assert audio_build, "liveTabAudio not found"
-audio_body = audio_build.group("body")
+audio_body = body(controller, "private func liveTabAudio() -> [UUID: SidebarTabAudio]")
 for needle in (
     "page.tabAudioState",
     "tabAudioIsAudible",
@@ -41,12 +45,7 @@ for needle in (
 ):
     assert needle in audio_body, f"liveTabAudio no longer probes {needle}"
 
-fp = re.search(
-    r"private func shareableAudioFingerprint\(shareable: Set<UUID>,\s*"
-    r"audio: \[UUID: SidebarTabAudio\]\) -> String \{(?P<body>.*?)\n    \}\n\n    /// Walk live shareable",
-    controller, re.S)
-assert fp, "shareableAudioFingerprint not found"
-fp_body = fp.group("body")
+fp_body = body(controller, "private func shareableAudioFingerprint(shareable: Set<UUID>,")
 for needle in (
     "uuidString",
     "ObjectIdentifier(entry.lease)",
@@ -55,12 +54,9 @@ for needle in (
 ):
     assert needle in fp_body, f"fingerprint no longer includes {needle}"
 
-published = re.search(
-    r"private func publishedShareableAndAudio\(\)\s*"
-    r"-> \(shareable: Set<UUID>, audio: \[UUID: SidebarTabAudio\], changed: Bool\) \{(?P<body>.*?)\n    \}\n\n    /// Record maps only after",
-    controller, re.S)
-assert published, "publishedShareableAndAudio not found"
-pub_body = published.group("body")
+pub_body = body(controller, "private func publishedShareableAndAudio()")
+assert "-> (shareable: Set<UUID>, audio: [UUID: SidebarTabAudio], changed: Bool)" in pub_body, \
+    "publishedShareableAndAudio must report whether the maps changed"
 assert "liveShareableTabs()" in pub_body, "must still build live shareable before skip"
 assert "liveTabAudio()" in pub_body, "must still build live audio before skip"
 assert "shareableAudioFingerprint(shareable: shareable, audio: audio)" in pub_body, \
@@ -80,22 +76,13 @@ assert pub_body.index("liveTabAudio()") < pub_body.index(
     "if fingerprint == lastShareableAudioFingerprint"), \
     "live audio probe must precede the identical-fingerprint skip"
 
-remember = re.search(
-    r"private func rememberAppliedShareableAudio\(shareable: Set<UUID>,\s*"
-    r"audio: \[UUID: SidebarTabAudio\]\) \{(?P<body>.*?)\n    \}\n\n    /// Stable fingerprint of the capture-indicator",
-    controller, re.S)
-assert remember, "rememberAppliedShareableAudio not found"
-rem_body = remember.group("body")
+rem_body = body(controller, "private func rememberAppliedShareableAudio(shareable: Set<UUID>,")
 assert "lastShareableAudioFingerprint = shareableAudioFingerprint" in rem_body, \
     "remember must record fingerprint only after handoff"
 assert "lastAppliedShareable = shareable" in rem_body and "lastAppliedAudio = audio" in rem_body, \
     "remember must cache applied maps"
 
-live = re.search(
-    r"private func refreshLivePageChrome\(\) -> Bool \{(?P<body>.*?)\n    \}\n\n",
-    controller, re.S)
-assert live, "refreshLivePageChrome not found"
-live_body = live.group("body")
+live_body = body(controller, "private func refreshLivePageChrome() -> Bool")
 assert "publishedShareableAndAudio()" in live_body, \
     "refreshLivePageChrome must publish through the fingerprint gate"
 assert "applyShareableAudio: published.changed" in live_body, \
@@ -110,11 +97,7 @@ assert "browsers.compactMap" not in live_body, \
 assert "tabAudioState" not in live_body, \
     "live path must not inline a second audio rebuild"
 
-nav = re.search(
-    r"private func updateNavigation\(\) \{(?P<body>.*?)\n    \}\n\n    /// the per-pane scrim loaders",
-    controller, re.S)
-assert nav, "updateNavigation not found"
-nav_body = nav.group("body")
+nav_body = body(controller, "private func updateNavigation()")
 assert "publishedShareableAndAudio()" in nav_body, \
     "updateNavigation must publish through the same fingerprint gate"
 assert "applyShareableAudio: published.changed" in nav_body, \

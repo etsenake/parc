@@ -162,6 +162,21 @@ import AppKit
         list.isHidden = true
         check(!first.canBecomeKeyView && !last.canBecomeKeyView && !list.canBecomeKeyView, "a hidden sidebar's controls are no key views")
         list.isHidden = false
+        // A prepared Space's list waits hidden with its window-loop links kept;
+        // the way out is found past it, in the shown subtree after it.
+        let owner = FlippedView(frame: NSRect(x: 0, y: 200, width: 240, height: 120)); root.addSubview(owner)
+        let start = field("start", NSRect(x: 0, y: 0, width: 40, height: 20), in: owner)
+        let end = field("end", NSRect(x: 50, y: 0, width: 40, height: 20), in: owner)
+        let prepared = FlippedView(frame: NSRect(x: 0, y: 30, width: 240, height: 40)); owner.addSubview(prepared)
+        prepared.isHidden = true
+        field("prepared", NSRect(x: 0, y: 0, width: 40, height: 20), in: prepared).nextKeyView = outside
+        field("shown", NSRect(x: 0, y: 80, width: 40, height: 20), in: owner).nextKeyView = page
+        SidebarAccessibility.link([start, end], within: owner, exit: nil, skipping: { $0.isHidden })
+        check(start.nextKeyView === end && end.nextKeyView === page, "the way out skips a hidden prepared list's links")
+        end.nextKeyView = nil
+        SidebarAccessibility.link([start, end], within: owner, exit: nil)
+        check(end.nextKeyView === outside, "without skipping, the hidden list's link would be the way out")
+        owner.removeFromSuperview()
 
         //
         let container = NSView(frame: root.bounds)

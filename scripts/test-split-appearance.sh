@@ -13,11 +13,18 @@ xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift "${t
 # An unbundled executable's Bundle.main.resourceURL is its own directory.
 cp -R Resources/CustomInfoPicker "$output/CustomInfoPicker"
 "$output/check"
+# The row background resolves its ring colour with ThemeRenderer's NSColor.cgColor(in:),
+# in the palette slice the tooltip step above cut into "$output".
 xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcApp/SidebarRowAppearance.swift \
-    Sources/ParcApp/SidebarSplitCellLayout.swift tests/SidebarRows/SplitCellLayoutTests.swift -o "$output/layout"
+    Sources/ParcApp/SidebarSplitCellLayout.swift "$output/TooltipThemePalette.swift" Sources/ParcCore/SpaceTheme.swift \
+    tests/SidebarRows/SplitCellLayoutTests.swift -o "$output/layout"
 "$output/layout"
 python3 tests/SidebarRows/split_close_gate_check.py
-xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SidebarItemDrag.swift \
+mkdir "$output/drag"
+drag_list=$(python3 -B tests/Support/sidebar_item_drag.py "$output/drag" Sources/ParcCore/*.swift)
+drag=()
+while IFS= read -r path; do drag+=("$path"); done <<< "$drag_list"
+xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift "${drag[@]}" \
     tests/SidebarRows/SidebarMoveCopyTests.swift -o "$output/copy"
 "$output/copy"
 python3 tests/SidebarRows/split_copy_drag_check.py

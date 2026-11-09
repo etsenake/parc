@@ -91,6 +91,8 @@ struct SidebarSpaceHeaderTests {
                               backing: .buffered, defer: false)
         let host = FlippedHost(frame: NSRect(x: 0, y: 0, width: 228, height: 400))
         host.wantsLayer = true
+        // The sidebar's Space appearance, which the header inherits.
+        host.appearance = NSAppearance(named: .aqua)
         window.contentView = host
         let header = SidebarSpaceHeaderView()
         let list = NSView()
@@ -125,11 +127,15 @@ struct SidebarSpaceHeaderTests {
         check(components(field.textColor) == [0, 0, 0, 0.45], "SidebarForegroundDarker in a light theme")
         check(components(symbolView.contentTintColor) == [0, 0, 0, 0.3], "ForegroundTertiary icon tint without a Space colour")
         header.applyStyle(dark: true, tint: nil)
-        check(components(field.textColor) == [1, 1, 1, 0.45] && components(symbolView.contentTintColor) == [1, 1, 1, 0.3]
-              && header.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua, "dark theme")
+        check(components(field.textColor) == [1, 1, 1, 0.45] && components(symbolView.contentTintColor) == [1, 1, 1, 0.3], "dark theme")
+        // The header takes the sidebar's appearance, not one of its own.
+        check(header.appearance == nil && header.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua,
+              "a dark theme sets no appearance on the header; it keeps the sidebar's")
+        host.appearance = NSAppearance(named: .darkAqua)
+        check(header.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua, "the header follows the sidebar's appearance")
+        host.appearance = NSAppearance(named: .aqua)
         header.applyStyle(dark: false, tint: .systemRed)
-        check(symbolView.contentTintColor == .systemRed && header.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua,
-              "the header's tint colours the icon")
+        check(symbolView.contentTintColor == .systemRed && header.appearance == nil, "the header's tint colours the icon")
 
         let privateHeader = SidebarSpaceHeaderView(frame: NSRect(x: 0, y: 0, width: 212, height: 36))
         privateHeader.update(titled("Incognito Tabs"), symbol: nil, emoji: nil)
@@ -238,6 +244,7 @@ struct SidebarSpaceHeaderTests {
               && field.intrinsicContentSize.height == titleHeight && field.frame == reference.nameField.frame,
               "the placeholder is AppKit's, in the same slot as a title")
         for dark in [false, true] {
+            host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             header.applyStyle(dark: dark, tint: nil); reference.applyStyle(dark: dark, tint: nil)
             let name = pixels(reference.nameField)
             reference.nameField.textColor = .placeholderTextColor
@@ -245,6 +252,7 @@ struct SidebarSpaceHeaderTests {
             check(placeholder != nil && placeholder == expected && placeholder != name,
                   "\(dark ? "dark" : "light"): the placeholder draws in placeholderTextColor, not SidebarForegroundDarker")
         }
+        host.appearance = NSAppearance(named: .aqua)
         header.applyStyle(dark: false, tint: nil)
         reference.removeFromSuperview()
 
