@@ -1800,10 +1800,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     private let miniPlayers = MiniPlayerDeck()
     private let archiveEducation = AutoArchiveEducationView(frame: .zero)
-    private lazy var archiveEducationHost = AutoArchiveEducationHost(card: archiveEducation)
+    private lazy var archiveEducationHost = SidebarBannerHost(card: archiveEducation)
     var onDismissAutoArchiveEducation: (() -> Void)?
     var onAutoArchiveEducationSettings: (() -> Void)?
-    var onAutoArchiveEducationRelinquishFocus: (() -> Void)?
+    var onBannerRelinquishFocus: (() -> Void)?
 
     func showAutoArchiveEducation(_ visible: Bool) {
         archiveEducationHost.show(visible)
@@ -2236,7 +2236,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             self?.archiveEducation.setInteractionEnabled(enabled)
             self?.setNeedsKeyViewLinking()
         }
-        archiveEducationHost.onRelinquishFocus = { [weak self] in self?.onAutoArchiveEducationRelinquishFocus?() }
+        archiveEducationHost.onRelinquishFocus = { [weak self] in self?.onBannerRelinquishFocus?() }
         // The list's empty area and any other view without a menu of its own.
         spaceMenu = { [weak self] in self?.sidebarSpaceMenu() }
         for view in [keyViewGate, windowButtons, spacesHost, back, forward, reload, reloadOptions, footerMore, libraryEntry, toggle] { addSubview(view) }

@@ -3175,7 +3175,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.onNavigation = { [weak self] kind in self?.prepareNavigationInteraction(kind) }
         sidebar.onReloadOptions = { [weak self] anchor in self?.showReloadOptions(from: anchor) }
         sidebar.onSettings = { [weak self] in self?.showSettings() }
-        sidebar.onAutoArchiveEducationRelinquishFocus = { [weak self] in
+        sidebar.onBannerRelinquishFocus = { [weak self] in
             guard let self, let window = self.window else { return }
             // The host calls this only for its own responder. A background
             // original window also drops that disappearing control, without

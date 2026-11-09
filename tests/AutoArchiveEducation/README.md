@@ -6,7 +6,7 @@ Run from the repository root with an output directory outside Git:
 bash tests/AutoArchiveEducation/check.sh /absolute/path/to/check-output
 ```
 
-The script compiles the production `AutoArchiveEducationHost` and exercises it
+The script compiles the production `SidebarBannerHost` and exercises it
 in an inert AppKit process. It never launches Parc, loads an engine, creates a
 browser profile, activates a real browser window or synthesizes input. The
 native component windows remain off screen.

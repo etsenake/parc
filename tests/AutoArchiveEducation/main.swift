@@ -22,7 +22,7 @@ func run() {
     field.frame = NSRect(x: 250, y: 20, width: 180, height: 30)
     root.addSubview(field)
     let card = NSButton(title: "Got it", target: nil, action: nil)
-    let host = AutoArchiveEducationHost(card: card)
+    let host = SidebarBannerHost(card: card)
     host.frame = NSRect(x: 8, y: 20, width: 220, height: 180)
     var changes: [Bool] = [], relinquished = 0
     host.onInteractionChanged = { changes.append($0) }
@@ -52,7 +52,7 @@ func run() {
     check(relinquished == 1 && window.firstResponder === beforeDismissal, "Background dismissal does not change focus")
     host.show(true); pump()
     check(host.phase == .appeared && host.isInteractive, "New presentation supersedes old exit")
-    pump(AutoArchiveEducationHost.dismissalLifetime + 0.05)
+    pump(SidebarBannerHost.dismissalLifetime + 0.05)
     check(host.phase == .appeared, "Stale exit cannot remove a newer presentation")
     host.setInteractionAllowed(false)
     check(!host.isInteractive && host.phase == .appeared, "Hidden sidebar bypasses controls without consuming shared state")
@@ -66,7 +66,7 @@ func run() {
     check(host.phase == .absent && !host.isInteractive, "Detached original window invalidates card actions")
     root.addSubview(host); pump()
     check(host.phase == .appeared, "Pending card can attach to its own window again")
-    host.show(false); pump(AutoArchiveEducationHost.dismissalLifetime + 0.05)
+    host.show(false); pump(SidebarBannerHost.dismissalLifetime + 0.05)
     check(host.phase == .absent && host.isHidden, "Completed exit releases layout space")
     host.reset(); window.close()
     print("AutoArchiveEducation inert lifecycle checks passed")

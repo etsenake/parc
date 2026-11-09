@@ -44,7 +44,7 @@ assert controller.count("commandBarShowsNewTabPlaceholder = ") == 4, "an unexpec
 assert controller.count("newTabPlaceholderActive") == 2, "only the window's own sidebar takes the New Tab placeholder"
 names = """PArcDialog.swift
 PArcMenuColors.swift
-AutoArchiveEducationHost.swift
+SidebarBannerHost.swift
 AutoArchiveEducationView.swift
 BoxOfThingsIcon.swift
 CaptureIndicatorPresentation.swift

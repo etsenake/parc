@@ -2,11 +2,12 @@ import AppKit
 import SwiftUI
 
 ///
-/// content only in .appeared and uses bottom-move + opacity, with a 0.6/0.4
-/// spring on entry and 0.25-second ease-in on exit. The shared reducer retains
-/// the dismissing banner for 0.7 seconds. See docs/archive.md (AUTO12).
+///
+/// in .appeared and uses bottom-move + opacity, with a 0.6/0.4 spring on entry
+/// and 0.25-second ease-in on exit. The shared reducer retains the dismissing
+/// banner for 0.7 seconds. See docs/archive.md (AUTO12).
 @MainActor
-final class AutoArchiveEducationHost: NSView {
+final class SidebarBannerHost: NSView {
     enum Phase: Equatable { case absent, initial, appeared, dismissing }
     static let dismissalLifetime: TimeInterval = 0.7
 
