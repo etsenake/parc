@@ -98,7 +98,7 @@ final class CommandBarSearchPrivacyBanner: NSView {
     @objc private func dismiss() { onDismiss?() }
 
     private var regularContentWidth: CGFloat {
-        Self.leadingInset + 16 + Self.contentSpacing + ceil(title.intrinsicContentSize.width) + Self.contentSpacing
+        Self.leadingInset + 16 + Self.contentSpacing + title.singleLineWidth + Self.contentSpacing
             + settingsButton.intrinsicContentSize.width + Self.buttonSpacing
             + dismissButton.intrinsicContentSize.width + Self.trailingInset
     }

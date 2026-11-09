@@ -87,6 +87,14 @@ enum CommandBarTypography {
     static let label = NSFont.systemFont(ofSize: 13, weight: .medium)
 }
 
+extension NSTextField {
+    /// The label's single-line width, its 2-point text padding included, which
+    /// its intrinsic (alignment) width leaves out; independent of its frame.
+    var singleLineWidth: CGFloat {
+        cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 20)).width.rounded(.up) ?? 0
+    }
+}
+
 ///
 ///
 /// CommandBarHairlineDividerColor, shown in the empty state too.

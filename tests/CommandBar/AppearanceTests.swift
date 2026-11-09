@@ -221,6 +221,23 @@ import AppKit
         expect(near(rgba(plainCell.selectedColor, dark), neutralDark)
                && !accent(dark).contains { near($0, rgba(plainCell.selectedColor, dark), 0.05) }, "no system-accent cell default")
 
+        // A label framed at its intrinsic (alignment) width loses its 2-point text
+        // padding and truncates, so every row label must hold its single line.
+        let longSpace = CommandBarSpaceAction(spaceID: UUID(), profileID: UUID(), name: "Personal Projects", symbol: "briefcase",
+                                              profileName: "Work Profile", needsProfileLabel: true)
+        let longCell = CommandResultCell(title: "Focus on", detail: longSpace.detail, accessory: "", isTab: false, icon: nil,
+                                         enabled: true, spaceAction: longSpace)
+        longCell.frame = NSRect(x: 0, y: 0, width: 600, height: 50); surface.addSubview(longCell); longCell.layoutSubtreeIfNeeded()
+        func labels(_ view: NSView) -> [NSTextField] { view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels($0) } }
+        for cell in [longCell, command] {
+            for field in labels(cell) where !field.isHidden && !field.stringValue.isEmpty {
+                let line = field.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 10_000, height: 100)).width ?? .infinity
+                expect(line <= field.frame.width, "'\(field.stringValue)' fits its frame without truncating")
+            }
+        }
+        let keycap = labels(command).first { $0.stringValue == "⌃⇧E" }
+        expect(keycap.map { $0.alignmentRect(forFrame: $0.frame).minX } == 4, "the keycap's text starts 4 points in pins it")
+
         // Appearance changes re-resolve tiles, keycaps and the Space capsule.
         command.setSelected(false)
         window.appearance = light; command.layoutSubtreeIfNeeded()

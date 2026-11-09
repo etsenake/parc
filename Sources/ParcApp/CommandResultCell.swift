@@ -56,7 +56,7 @@ final class CommandResultCell: NSView {
         self.accessory.alignment = .right; self.accessory.lineBreakMode = .byTruncatingTail
         badgeLabel.stringValue = isTab ? "→" : accessory
         badgeLabel.font = .systemFont(ofSize: isTab ? 17 : 12, weight: .medium)
-        badgeLabel.alignment = .center
+        if isTab { badgeLabel.alignment = .center }
         badge.wantsLayer = true
         //
         badge.layer?.cornerRadius = 4; badge.layer?.cornerCurve = .continuous; badge.layer?.masksToBounds = true
@@ -127,10 +127,10 @@ final class CommandResultCell: NSView {
             badgeLabel.textColor = badgeColor
         } else {
             //
-            let centred = NSMutableParagraphStyle(); centred.alignment = .center; centred.lineBreakMode = .byClipping
+            let clipping = NSMutableParagraphStyle(); clipping.lineBreakMode = .byClipping
             badgeLabel.attributedStringValue = NSAttributedString(string: badgeLabel.stringValue, attributes: [
                 .font: badgeLabel.font ?? .systemFont(ofSize: 12, weight: .medium), .foregroundColor: badgeColor,
-                .kern: 2, .paragraphStyle: centred
+                .kern: 2, .paragraphStyle: clipping
             ])
         }
         spaceLabel.textColor = primary; spaceIcon.contentTintColor = primary
@@ -157,7 +157,7 @@ final class CommandResultCell: NSView {
         let badgeWidth = badgeSize.width
         // The cell's own size, padding included: the label's intrinsic width
         // can lag its font and truncate Switch to Tab.
-        let textWidth = isTab ? min(bounds.width * 0.30, Self.fittingWidth(accessory)) : 0
+        let textWidth = isTab ? min(bounds.width * 0.30, accessory.singleLineWidth) : 0
         let deleteWidth: CGFloat = onDelete == nil ? 0 : 23
         let trailing = max(deleteWidth, badgeWidth + (textWidth > 0 ? textWidth + 8 : 0))
         deleteButton.frame = NSRect(x: max(0, bounds.width - 35), y: 14, width: min(23, bounds.width), height: 23)
@@ -166,19 +166,21 @@ final class CommandResultCell: NSView {
         icon.frame = NSRect(x: 16, y: 18, width: 14, height: 14)
         badge.frame = NSRect(x: bounds.width - badgeWidth - 12, y: 14 + (23 - badgeSize.height) / 2,
                              width: badgeWidth, height: badgeSize.height)
-        badgeLabel.frame = isTab ? badge.bounds : NSRect(x: 4, y: 4, width: ceil(text.width), height: ceil(text.height))
+        // Constraints pin a label's alignment rect, inside its 2-point text padding.
+        badgeLabel.frame = isTab ? badge.bounds
+            : badgeLabel.frame(forAlignmentRect: NSRect(x: 4, y: 4, width: ceil(text.width), height: ceil(text.height)))
         // Labels draw their 16-point line at the top of the frame; a 17-point
         // frame from y 16 centres that line on the 50-point row with the icon.
         accessory.frame = NSRect(x: bounds.width - trailing - 12, y: 16, width: textWidth, height: 17)
         let available = max(0, bounds.width - trailing - 70)
         if hasContext {
-            let prefixWidth = min(label.intrinsicContentSize.width, available)
+            let prefixWidth = min(label.singleLineWidth, available)
             label.frame = NSRect(x: 44, y: 16, width: prefixWidth, height: 17)
             // Contextual names need visible destination context even when the destination
             // name is long. The complete values remain available to AX/tooltips.
-            let detailWidth = detail.isEmpty ? 0 : min(spaceDetail.intrinsicContentSize.width, available * 0.3)
+            let detailWidth = detail.isEmpty ? 0 : min(spaceDetail.singleLineWidth, available * 0.3)
             let reserve = detailWidth > 0 ? detailWidth + 8 : 0
-            let capsuleWidth = min(max(0, available - prefixWidth - 8 - reserve), spaceLabel.intrinsicContentSize.width + 32)
+            let capsuleWidth = min(max(0, available - prefixWidth - 8 - reserve), spaceLabel.singleLineWidth + 32)
             let x = label.frame.maxX + 8
             spaceCapsule.frame = NSRect(x: x, y: 13, width: capsuleWidth, height: 24)
             spaceIcon.frame = NSRect(x: 7, y: 6, width: min(12, max(0, capsuleWidth - 14)), height: 12)
@@ -189,11 +191,11 @@ final class CommandResultCell: NSView {
             // DefaultSuggestionTitleView sizes the title to fit within 480 points,
             // then gives the subtitle up to 280 of what remains, 4 points after
             //
-            let titleWidth = min(Self.fittingWidth(label), 480, available)
+            let titleWidth = min(label.singleLineWidth, 480, available)
             label.frame = NSRect(x: 44, y: 16, width: titleWidth, height: 17)
             let subtitleX = label.frame.maxX + 4
             let subtitleWidth = subtitleLabel.isHidden ? 0
-                : min(Self.fittingWidth(subtitleLabel), 280, max(0, 44 + available - subtitleX))
+                : min(subtitleLabel.singleLineWidth, 280, max(0, 44 + available - subtitleX))
             subtitleLabel.frame = NSRect(x: subtitleX, y: 16, width: subtitleWidth, height: 17)
         }
     }
@@ -203,10 +205,6 @@ final class CommandResultCell: NSView {
         }
         copy.isTemplate = false
         return copy
-    }
-    /// A label's single-line width, independent of the frame it had before.
-    private static func fittingWidth(_ field: NSTextField) -> CGFloat {
-        field.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 20)).width.rounded(.up) ?? 0
     }
     private static func line(_ string: String, font: NSFont, color: NSColor, truncation: NSLineBreakMode) -> NSAttributedString {
         // An attributed value without its own paragraph style wraps at a word

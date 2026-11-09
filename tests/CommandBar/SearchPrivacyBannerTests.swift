@@ -58,6 +58,12 @@ import AppKit
         check(abs(banner.icon.frame.midY - 30) < 0.5 && abs(banner.dismissButton.frame.minY + 18 - 30) < 0.5,
               "the icon and the buttons' 36-point bodies are vertically centred")
         check(banner.dismissButton.intrinsicContentSize.height == 39, "a 36-point body, its 2-point lip and the half-point stroke inset")
+        // The narrowest single-row bar still fits the title, text padding included.
+        let narrowest = CommandBarSearchPrivacyBanner(frame: .zero)
+        let singleRow = (300...1000).map(CGFloat.init).first { !narrowest.isCondensed(forWidth: $0) } ?? 0
+        narrowest.frame = NSRect(x: 0, y: 0, width: singleRow, height: 60); narrowest.layout()
+        let titleLine = narrowest.title.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 10_000, height: 100)).width ?? .infinity
+        check(titleLine <= narrowest.title.frame.width, "the narrowest single-row banner does not truncate its title")
         var title = NSColor.clear, icon = NSColor.clear
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
             title = CommandBarSearchPrivacyBanner.titleColor.usingColorSpace(.sRGB)!
