@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 TYPES = ("feat", "fix", "perf", "refactor", "docs", "build", "ci", "chore", "test", "style", "revert")
 NOTABLE = ("feat", "fix", "perf")
 SUBJECT = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^()\s]+)\))?(?P<breaking>!)?: (?P<summary>\S.*)")
-BREAKING = re.compile(r"^BREAKING[ -]CHANGE: ", re.MULTILINE)
 UNDO = re.compile(r'(Revert|Reapply) "(.*)"')
 SECTIONS = (("Heads up", None), ("New", "feat"), ("Fixed", "fix"), ("Faster", "perf"))
 QUIET = "No user-facing changes."
@@ -24,13 +23,12 @@ RULE = ("Commit messages are one line, a Conventional Commit: type(scope)!: summ
 
 
 def parse(message):
-    """The Conventional Commit in a message, or None when its subject doesn't follow the format."""
-    subject, _, body = message.strip().partition("\n")
-    match = SUBJECT.fullmatch(subject.strip())
+    """The Conventional Commit in a message's subject, or None when it doesn't follow the format."""
+    match = SUBJECT.fullmatch(message.strip().partition("\n")[0].strip())
     if not match or match["type"] not in TYPES:
         return None
     return {"type": match["type"], "scope": match["scope"], "summary": match["summary"].strip(),
-            "breaking": bool(match["breaking"] or BREAKING.search(body))}
+            "breaking": bool(match["breaking"])}
 
 
 def undone(subject):

@@ -23,10 +23,8 @@ class Parse(unittest.TestCase):
         self.assertEqual(notes.parse('refactor(engine)!: Drop the old host'),
                          change('refactor', 'Drop the old host', 'engine', True))
 
-    def test_breaking_footer(self):
-        for footer in ('BREAKING CHANGE: profiles move', 'BREAKING-CHANGE: profiles move'):
-            self.assertTrue(notes.parse('feat: Move profiles\n\n' + footer)['breaking'])
-        self.assertFalse(notes.parse('feat: Move profiles\n\nMentions BREAKING CHANGE: inline')['breaking'])
+    def test_only_the_bang_marks_a_breaking_change(self):
+        self.assertFalse(notes.parse('feat: Move profiles\n\nBREAKING CHANGE: profiles move')['breaking'])
 
     def test_unparseable_subjects(self):
         for subject in ('Release Parc 1.8.2', 'feature: Add', 'feat:missing space', 'feat(): Empty scope',
@@ -139,14 +137,14 @@ class History(unittest.TestCase):
         self.assertEqual(notes.bump(found), 'minor')
 
     def test_revert_in_range_cancels_and_reapply_restores(self):
-        self.commit('feat(sidebar): Pin tabs\n\nBREAKING CHANGE: pins move'); self.commit('fix: Keep tabs')
-        self.commit('Revert "feat(sidebar): Pin tabs"')
+        self.commit('feat(sidebar)!: Pin tabs'); self.commit('fix: Keep tabs')
+        self.commit('Revert "feat(sidebar)!: Pin tabs"')
         self.assertEqual(notes.bump(notes.changes(self.root, 'v1.0.0', 'HEAD')), 'patch')
-        self.commit('Reapply "feat(sidebar): Pin tabs"')
+        self.commit('Reapply "feat(sidebar)!: Pin tabs"')
         found = notes.changes(self.root, 'v1.0.0', 'HEAD')
         self.assertEqual([item['summary'] for item in found], ['Keep tabs', 'Pin tabs'])
         self.assertEqual(notes.bump(found), 'major')
-        self.commit('Revert "Reapply "feat(sidebar): Pin tabs""')
+        self.commit('Revert "Reapply "feat(sidebar)!: Pin tabs""')
         self.assertEqual(notes.bump(notes.changes(self.root, 'v1.0.0', 'HEAD')), 'patch')
 
     def test_git_before_2_43_reverting_a_revert_reapplies(self):
