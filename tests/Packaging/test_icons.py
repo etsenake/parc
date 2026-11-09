@@ -30,6 +30,9 @@ class PackagingIconTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.repo = self.root / "repo"
         shutil.copytree(REPO / "Resources/AppIcons", self.repo / "Resources/AppIcons")
+        (self.repo / "Resources/Onboarding").mkdir()
+        shutil.copy2(REPO / "Resources/Onboarding/MarlinSoftSQ-ExtraBold.otf", self.repo / "Resources/Onboarding")
+        shutil.copytree(REPO / "Sources/WhatsNew", self.repo / "Sources/WhatsNew")
         shutil.copy2(REPO / "app-version.json", self.repo / "app-version.json")
         (self.repo / "Engine").mkdir()
         shutil.copy2(REPO / "Engine/source-lock.json", self.repo / "Engine/source-lock.json")
@@ -154,6 +157,8 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(data[:4], b"icns")
             self.assertEqual(struct.unpack(">I", data[4:8])[0], len(data))
             icons.append(data)
+            # The fixture has no release-notes.json, so the bundled page shows its empty state.
+            self.assertIn("A clean slate", (app / "Contents/Resources/WhatsNew.html").read_text())
             self.assertEqual(report["configuration"], configuration)
             self.assertEqual(report["layout"], "cef-component-development")
             self.assertEqual(report["app"], str(app))

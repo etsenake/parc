@@ -27,6 +27,9 @@ version_spec.loader.exec_module(app_version)
 icon_spec = importlib.util.spec_from_file_location("parc_app_icons", Path(__file__).with_name("app_icons.py"))
 app_icons = importlib.util.module_from_spec(icon_spec)
 icon_spec.loader.exec_module(app_icons)
+whats_new_spec = importlib.util.spec_from_file_location("parc_whats_new", Path(__file__).with_name("whats_new.py"))
+whats_new = importlib.util.module_from_spec(whats_new_spec)
+whats_new_spec.loader.exec_module(whats_new)
 vmp_spec = importlib.util.spec_from_file_location("parc_widevine_vmp", Path(__file__).with_name("widevine_vmp.py"))
 widevine_vmp = importlib.util.module_from_spec(vmp_spec)
 vmp_spec.loader.exec_module(widevine_vmp)
@@ -982,6 +985,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         inventory_tree(repo / "Resources")  # Reject escaping source-resource links.
         progress("packaging: copying resources and engine framework")
         shutil.copytree(repo / "Resources", resources, symlinks=True)
+        whats_new.write(repo, resources / "WhatsNew.html")
         icon_file = app_icons.package_app_icons(resources)
         copied_engine = copy_engine(engine, app, manifest)
         notices = resources / "EngineLicenses"

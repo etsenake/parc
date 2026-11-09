@@ -1,0 +1,62 @@
+{
+  "releases": [
+    {
+      "version": "1.9.0",
+      "build": 23,
+      "date": "2026-11-10",
+      "changes": [
+        {"type": "feat", "scope": "updates", "summary": "Parc now updates itself, so brew upgrade no longer needs to replace it", "breaking": true},
+        {"type": "feat", "scope": "sidebar", "summary": "Show Update Complete in the sidebar after Parc updates", "breaking": false},
+        {"type": "feat", "scope": "updates", "summary": "Check for updates from the Parc menu, with the update window", "breaking": false},
+        {"type": "feat", "scope": "command-bar", "summary": "Open Edit Theme… straight from the command bar", "breaking": false},
+        {"type": "fix", "scope": "pip", "summary": "Keep a Meet call in picture in picture when you switch Spaces", "breaking": false},
+        {"type": "fix", "scope": "sidebar", "summary": "Stop pinned tabs from jumping when a folder is dragged above them", "breaking": false},
+        {"type": "perf", "scope": "sidebar", "summary": "Build sidebar rows only near the visible area", "breaking": false}
+      ]
+    },
+    {
+      "version": "1.8.2",
+      "build": 22,
+      "date": "2026-11-08",
+      "changes": [
+        {"type": "fix", "scope": "pip", "summary": "Wait until a Meet tab is hidden before asking for automatic picture in picture", "breaking": false},
+        {"type": "fix", "scope": "pip", "summary": "Show an icon-only Back to Tab button in Meet’s floating window", "breaking": false},
+        {"type": "fix", "scope": "import", "summary": "Keep accepted bookmarks editable after going back in import", "breaking": false}
+      ]
+    },
+    {
+      "version": "1.8.1",
+      "build": 21,
+      "date": "2026-11-07",
+      "changes": [
+        {"type": "feat", "scope": "onboarding", "summary": "Apply the ad blocker you pick during setup", "breaking": false},
+        {"type": "fix", "scope": "onboarding", "summary": "Fire the welcome confetti once the window is actually on screen", "breaking": false},
+        {"type": "fix", "scope": "import", "summary": "List only the browsers Parc can import from", "breaking": false},
+        {"type": "perf", "scope": "spaces", "summary": "Keep each Space’s sidebar around so swiping between Spaces never rebuilds it", "breaking": false}
+      ]
+    },
+    {
+      "version": "1.8.0",
+      "build": 20,
+      "date": "2026-11-05",
+      "changes": [
+        {"type": "feat", "scope": "import", "summary": "Import brings in every browser profile at once; tidy up the Spaces afterwards", "breaking": true},
+        {"type": "feat", "scope": "settings", "summary": "Bring back Replay Onboarding in Settings › General", "breaking": false},
+        {"type": "feat", "scope": "onboarding", "summary": "Draw setup’s Favorites icons from vector art so they stay sharp", "breaking": false},
+        {"type": "fix", "scope": "folders", "summary": "Delete folders from the sidebar and the Edit menu again", "breaking": false},
+        {"type": "fix", "scope": "windows", "summary": "Return a page moved to another window once that window can take it", "breaking": false},
+        {"type": "perf", "scope": "sidebar", "summary": "Open windows with thousands of tabs without a pause", "breaking": false}
+      ]
+    },
+    {
+      "version": "1.7.0",
+      "build": 19,
+      "date": "2026-10-29",
+      "changes": [
+        {"type": "feat", "scope": "split", "summary": "Drag a tab onto the edge of a page to open it in Split View", "breaking": false},
+        {"type": "feat", "scope": "library", "summary": "Preview downloads in the Library by pressing Space", "breaking": false},
+        {"type": "fix", "scope": "peek", "summary": "Close Peek with Escape even while the page has focus", "breaking": false}
+      ]
+    }
+  ]
+}

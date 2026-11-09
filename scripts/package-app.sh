@@ -51,7 +51,7 @@ if [ -n "$stable" ] && [ -n "$local_test" ]; then usage; fi
 cd "$repo_root"
 started=$SECONDS
 # build.py reads these paths whether or not Git tracks the files.
-inputs=(Sources Resources Engine scripts app-version.json)
+inputs=(Sources Resources Engine scripts app-version.json release-notes.json)
 check_checkout() {
   if [ -n "${PARC_RELEASE_COMMIT:-}" ]; then
     python3 "$repo_root/scripts/release_inputs.py" "$git_root" "$repo_root" "$commit"
