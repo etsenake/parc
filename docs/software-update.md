@@ -284,6 +284,21 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   source address (`PageCaptureController`), so Messages and the Capture
   Library share only the image and an Easel gets a plain image, not a web
   card.
+- **Engine paths that still show the address.** No existing engine API reaches
+  them, so they need an engine change. Chromium records `file:` visits
+  (`CanAddURLToHistory`, `chrome/browser/history/history_utils.cc`), so its
+  history deletion: the omnibox's `deleteResult:` removes only a delivered
+  result, and Clear Browsing Data is the user's dialog. The fix is for
+  `CanAddURLToHistory` to refuse the running app's
+  `Contents/Resources/WhatsNew.html`, so no visit is written; a bridge method
+  over `history::HistoryService::DeleteURLs` (for example
+  `+[PCNativeBrowserApplication deleteHistoryForURLs:profilePath:]`) would
+  instead let the app remove visits after the fact. Copy URL and the shared
+  quote check the visible address, but the engine copies the committed one, so
+  while a typed address is loading in the page's tab they can still copy the
+  file address. `CanCopy` (`native_copy_link.mm`) would have to refuse the
+  page's committed address, as Chromium's own Copy Link to Highlight refuses
+  anything but http(s).
 - **Feed.** Every release publishes the feed the embedded Sparkle reads,
   `SUFeedURL` = `parc-releases/releases/latest/download/appcast.xml`
   (`scripts/sparkle.py`). The release's appcast stage (`scripts/appcast.py`)
