@@ -13229,6 +13229,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     /// View > Use Chrome/Safari Identity for This Site (docs/fairplay-identity.md):
     /// the current page's site and the choice it offers, bound to that page.
+    @MainActor
     private final class FairPlayIdentityMenuRequest {
         weak var owner: BrowserWindowController?
         weak var page: PCNativePage?

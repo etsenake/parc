@@ -851,7 +851,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
                     guard let error else { return }
                     NSLog("Parc could not install uBlock Origin: %@", error.localizedDescription)
-                    ImportedExtensionFailures.add(["uBlock Origin Lite"])
+                    MainActor.assumeIsolated { ImportedExtensionFailures.add(["uBlock Origin Lite"]) }
                 }
         }
     }
