@@ -480,26 +480,32 @@ class Pipeline(Repository):
         home = Path(self.tmp.name); (home / '.config/parc').mkdir(parents=True)
         identity = 'Developer ID Application: Fixture (' + release.TEAM + ')'
         (home / '.config/parc/signing-identity').write_text(identity + '\n')
-        for op, restored in (('/usr/local/bin/op', True), ('/usr/local/bin/op', False), (None, False)):
-            runner = self.runner(); runner.auth = Mock(); keychain = {'key': False}; commands = []
+        op = '/usr/local/bin/op'
+        # (op installed, identity present, key present, what restore brings back)
+        for tool, has_identity, has_key, restored in ((op, True, False, True), (op, True, False, False),
+                                                      (None, True, False, False), (op, False, True, True)):
+            runner = self.runner(); runner.auth = Mock(); keychain = {'identity': has_identity, 'key': has_key}; commands = []
             def command(args, **kwargs):
                 commands.append([str(arg) for arg in args])
                 if commands[-1][-1] == 'restore':
-                    keychain['key'] = restored
-                return '1) ABC "' + identity + '"' if 'find-identity' in commands[-1] else ''
+                    keychain.update(identity=True, key=keychain['key'] or restored)
+                found = 'find-identity' in commands[-1] and keychain['identity']
+                return '1) ABC "' + identity + '"' if found else ''
             runner.command = command
-            with self.subTest(op=op, restored=restored), patch.object(Path, 'home', return_value=home), \
+            with self.subTest(op=tool, identity=has_identity, key=has_key, restored=restored), \
+                    patch.object(Path, 'home', return_value=home), \
                     patch.object(release.platform, 'system', return_value='Darwin'), \
                     patch.object(release.platform, 'machine', return_value='arm64'), \
-                    patch.object(release.shutil, 'which', side_effect=lambda name: op if name == 'op' else '/opt/homebrew/bin/brew'), \
+                    patch.object(release.shutil, 'which', side_effect=lambda name: tool if name == 'op' else '/opt/homebrew/bin/brew'), \
                     patch.object(release.sparkle, 'has_key', side_effect=lambda: keychain['key']):
                 if restored:
                     runner.preflight()
+                    self.assertEqual(runner.env['PARC_SIGN_IDENTITY'], identity)
                 else:
                     with self.assertRaisesRegex(release.Failure, "Sparkle's update signing key"):
                         runner.preflight()
                 restores = [args for args in commands if args[-1] == 'restore']
-                self.assertEqual(len(restores), 1 if op else 0)
+                self.assertEqual(len(restores), 1 if tool else 0)
             for handle in runner.locks: handle.close()
 
     def test_tap_stage_hands_the_appcast_to_the_publisher(self):

@@ -202,8 +202,9 @@ the concealed private key), after checking that the Keychain key's public half
 is Parc's `SUPublicEDKey`. Sparkle's `generate_keys --account parc -x` exports it
 into a 0600 file in a private temporary folder that is removed straight away,
 and the item is verified by a fresh vault read. `restore` imports a missing key
-the same way with `generate_keys -f` and checks the public key afterwards; it
-leaves a present key and identity alone. The release preflight runs `restore`
+the same way with `generate_keys -f` and checks the public key afterwards,
+removing an imported key that doesn't match; it leaves a present key and
+identity alone. Two vault items with the same title stop both commands. The release preflight runs `restore`
 when either credential is missing and `op` is installed, and stops if the
 Sparkle key is still missing. Like the identity, **this backup has not been run
 yet; it needs `op signin`/vault unlock**. Never run plain `generate_keys

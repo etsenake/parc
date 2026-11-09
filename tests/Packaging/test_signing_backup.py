@@ -31,6 +31,7 @@ class Backup(unittest.TestCase):
         def run(args,data=None):
             calls.append((args,data))
             if args[-1]=='export':return 'ZW5jcnlwdGVk'
+            if args[:3]==['op','item','list']:return '[]'
             template=json.loads(data) if data else None
             if template:
                 fields=template['fields'];self.saved={'id':'vault-id','fields':fields};return json.dumps(self.saved)
@@ -67,6 +68,8 @@ class SparkleKey(unittest.TestCase):
                 self.vault['created'] = json.loads(data)['fields']; return json.dumps({'id': 'created'})
             if args[:3] == ['op', 'item', 'get']:
                 return json.dumps({'fields': self.vault[args[3]]})
+            if args[:2] == ['security', 'delete-generic-password']:
+                self.keychain = None; return ''
             raise AssertionError(args)
         for target, value in (('run', {'side_effect': run}), ('generate_keys', {'return_value': ['generate_keys', '--account', 'parc']}),
                               ('existing', {'side_effect': lambda title: backup.fields({'fields': self.vault[title]}) if title in self.vault else None})):
@@ -129,11 +132,54 @@ class SparkleKey(unittest.TestCase):
         self.vault[backup.SPARKLE_TITLE] = self.entry(); self.public = 'another-key'
         with self.assertRaisesRegex(ValueError, 'restored Sparkle key is not'):
             backup.restore_sparkle()
+        self.assertIsNone(self.keychain)
+        self.assertEqual(self.calls[-1], ['security', 'delete-generic-password', '-s', 'https://sparkle-project.org', '-a', 'parc'])
+        self.vault.clear()
+        with self.assertRaisesRegex(ValueError, 'no Sparkle signing key backup'):
+            backup.restore_sparkle()
 
     def test_present_identity_is_not_restored_again(self):
         with patch.object(backup, 'run', return_value='1) ABC "Developer ID Application: Fixture (94HKA7L2DR)"') as run, \
                 contextlib.redirect_stdout(io.StringIO()):
             backup.restore_identity()
         run.assert_called_once_with(['security', 'find-identity', '-v', '-p', 'codesigning'])
+
+
+class Vault(unittest.TestCase):
+    def test_lookup_uses_one_titled_item_and_refuses_duplicates_or_failures(self):
+        items = [{'id': 'a', 'title': 'Parc Sparkle EdDSA key'}, {'id': 'b', 'title': 'Other'}]
+        def run(args, data=None):
+            if args[:3] == ['op', 'item', 'list']:
+                self.assertEqual(args[4:], ['--vault', 'Release'])
+                return json.dumps(items)
+            self.assertEqual(args[:4], ['op', 'item', 'get', 'a'])
+            return json.dumps({'fields': [{'id': 'account', 'value': 'parc'}]})
+        with patch.dict(backup.os.environ, {'PARC_SIGNING_VAULT': 'Release'}), patch.object(backup, 'run', side_effect=run):
+            self.assertEqual(backup.existing('Parc Sparkle EdDSA key'), {'account': 'parc'})
+            self.assertIsNone(backup.existing('Missing'))
+            items.append({'id': 'c', 'title': 'Parc Sparkle EdDSA key'})
+            with self.assertRaisesRegex(ValueError, 'More than one'):
+                backup.existing('Parc Sparkle EdDSA key')
+        with patch.object(backup, 'run', side_effect=ValueError('Credential operation failed: op item list')):
+            with self.assertRaises(ValueError):
+                backup.existing('Parc Sparkle EdDSA key')
+
+    def test_keychain_lookup_separates_missing_from_unsearchable(self):
+        from subprocess import CompletedProcess
+        for code, expected in ((0, True), (44, False), (36, RuntimeError)):
+            with self.subTest(code=code), patch.object(backup.sparkle.subprocess, 'run', return_value=CompletedProcess([], code)) as run:
+                if expected is RuntimeError:
+                    with self.assertRaisesRegex(RuntimeError, 'unlock it'):
+                        backup.sparkle.has_key()
+                else:
+                    self.assertIs(backup.sparkle.has_key(), expected)
+                self.assertNotIn('-w', run.call_args[0][0]); self.assertNotIn('-g', run.call_args[0][0])
+
+    def test_restore_covers_the_identity_then_the_sparkle_key(self):
+        order = []
+        with patch.object(backup, 'restore_identity', side_effect=lambda: order.append('identity')), \
+                patch.object(backup, 'restore_sparkle', side_effect=lambda: order.append('sparkle')):
+            backup.restore()
+        self.assertEqual(order, ['identity', 'sparkle'])
 
 if __name__=='__main__':unittest.main()

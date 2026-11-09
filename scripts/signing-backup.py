@@ -31,8 +31,8 @@ spec.loader.exec_module(sparkle)
 def run(args, *, data=None, umask=-1):
     result = subprocess.run(args, input=data, text=True, capture_output=True, timeout=60, umask=umask)
     if result.returncode:
-        # Tool diagnostics can echo secret-bearing input. Emit only the operation.
-        raise ValueError('Credential operation failed: ' + Path(args[0]).name + ' ' + args[1])
+        # Tool diagnostics can echo secret-bearing input; argv never carries a secret.
+        raise ValueError('Credential operation failed: ' + ' '.join([Path(args[0]).name, *args[1:]]))
     return result.stdout.strip()
 
 
@@ -40,17 +40,21 @@ def fields(item):
     return {field['id']: field.get('value', '') for field in item['fields']}
 
 
+def vault():
+    return ['--vault', os.environ['PARC_SIGNING_VAULT']] if os.environ.get('PARC_SIGNING_VAULT') else []
+
+
 def existing(title):
-    result = subprocess.run(['op','item','get',title,'--format=json'], capture_output=True, text=True, timeout=15)
-    return fields(json.loads(result.stdout)) if result.returncode == 0 else None
+    """The titled item's fields, or None; a failed lookup or duplicate titles stop instead of guessing."""
+    found = [item['id'] for item in json.loads(run(['op','item','list','--format=json',*vault()])) if item['title'] == title]
+    if len(found) > 1:
+        raise ValueError('More than one 1Password item is titled ' + title + '; preserved for manual cleanup')
+    return fields(json.loads(run(['op','item','get',found[0],'--format=json']))) if found else None
 
 
 def create(template):
     """Save a vault item and return its fields from a fresh read."""
-    args = ['op','item','create','--format=json']
-    if os.environ.get('PARC_SIGNING_VAULT'):
-        args += ['--vault',os.environ['PARC_SIGNING_VAULT']]
-    created = json.loads(run(args,data=json.dumps(template)))
+    created = json.loads(run(['op','item','create','--format=json',*vault()],data=json.dumps(template)))
     return fields(json.loads(run(['op','item','get',created['id'],'--format=json'])))
 
 
@@ -139,7 +143,9 @@ def restore_identity():
     if re.search(r'"Developer ID Application: [^"\n]+ \(94HKA7L2DR\)"', identities):
         print('Production identity already in the normal Keychain')
         return
-    saved = fields(json.loads(run(['op','item','get',TITLE,'--format=json'])))
+    saved = existing(TITLE)
+    if saved is None:
+        raise ValueError('1Password has no production identity backup to restore')
     identity = saved['identity']
     if not identity.startswith('Developer ID Application: ') or not identity.endswith('(94HKA7L2DR)'):
         raise ValueError('Vault entry is not the expected production identity')
@@ -158,7 +164,9 @@ def restore_sparkle():
     if sparkle.has_key():
         print('Sparkle signing key already in the login Keychain')
         return
-    saved = fields(json.loads(run(['op','item','get',SPARKLE_TITLE,'--format=json'])))
+    saved = existing(SPARKLE_TITLE)
+    if saved is None:
+        raise ValueError('1Password has no Sparkle signing key backup to restore')
     if saved.get('account') != sparkle.ACCOUNT or saved.get('public_key') != sparkle.PUBLIC_ED_KEY:
         raise ValueError('Vault entry is not the Sparkle key Parc trusts')
     tool = generate_keys()
@@ -168,7 +176,9 @@ def restore_sparkle():
             stream.write(saved['private_key'])
         run([*tool, '-f', str(imported)])
     if run([*tool, '-p']) != sparkle.PUBLIC_ED_KEY:
-        raise ValueError("The restored Sparkle key is not the one Parc trusts")
+        # The Keychain had no key before this import, so only the wrong one is removed.
+        run(['security','delete-generic-password','-s',sparkle.SERVICE,'-a',sparkle.ACCOUNT])
+        raise ValueError('The restored Sparkle key is not the one Parc trusts; it was removed again')
     print('Sparkle signing key restored and verified in the login Keychain')
 
 
@@ -177,5 +187,5 @@ if __name__ == '__main__':
     args=parser.parse_args()
     try:
         backup() if args.operation == 'backup' else restore()
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         parser.exit(1,str(error)+'\n')

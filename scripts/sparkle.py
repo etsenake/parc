@@ -23,8 +23,12 @@ INFO = {"SUFeedURL": FEED_URL, "SUPublicEDKey": PUBLIC_ED_KEY, "SUEnableAutomati
 
 def has_key() -> bool:
     """Whether the login Keychain holds the signing key; its secret is not read."""
-    return subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", ACCOUNT],
-                          capture_output=True).returncode == 0
+    found = subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", ACCOUNT],
+                           capture_output=True, timeout=30).returncode
+    # 44 is errSecItemNotFound; anything else (a locked Keychain) is not "missing".
+    if found not in (0, 44):
+        raise RuntimeError("The login Keychain could not be searched for Sparkle's signing key; unlock it first")
+    return found == 0
 
 
 def directory(cache: Path) -> Path:
