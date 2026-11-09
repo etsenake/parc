@@ -29,10 +29,11 @@ class Repository(unittest.TestCase):
         self.git('config', 'core.hooksPath', '/dev/null')
         (self.root / '.gitignore').write_text('build/\n')
         (self.root / 'app-version.json').write_text('{"version":"1.0.0","build":1}\n')
+        (self.root / 'release-notes.json').write_text('{"releases": []}\n')
         (self.root / 'Resources').mkdir(); (self.root / 'Resources/icon').write_bytes(b'icon')
-        self.git('add', '.'); self.git('commit', '-m', 'Initial fixture')
+        self.git('add', '.'); self.git('commit', '-m', 'Initial fixture'); self.git('tag', 'v1.0.0')
         subprocess.run(['git', 'init', '--bare', str(self.remote)], capture_output=True, check=True)
-        self.git('remote', 'add', 'origin', str(self.remote)); self.git('push', '-u', 'origin', 'main')
+        self.git('remote', 'add', 'origin', str(self.remote)); self.git('push', '-u', 'origin', 'main', 'v1.0.0')
 
     def git(self, *args):
         return subprocess.check_output(['git', *args], cwd=self.root, stderr=subprocess.DEVNULL, text=True).strip()
@@ -89,6 +90,9 @@ class Repository(unittest.TestCase):
         self.assertNotEqual(minor.state['run'], str(patch_dir))
         minor.prepare()
         self.assertEqual(minor.state['version'], {'version': '1.1.0', 'build': 3})
+        # The superseded 1.0.1 was committed but never tagged, so 1.1.0 replaces its notes.
+        self.assertEqual(minor.state['since'], 'v1.0.0')
+        self.assertEqual([item['version'] for item in self.notes()], ['1.1.0'])
 
     def test_superseding_release_finds_the_cancelled_shipping_build(self):
         patch_run = release.Release(self.root, 'patch'); patch_run.start()
@@ -212,6 +216,93 @@ class Repository(unittest.TestCase):
         for item in second.locks: item.close()
         self.assertEqual(first.state['release_type'], 'minor')
 
+    def commit(self, message):
+        self.git('commit', '--allow-empty', '-m', message); self.git('push', 'origin', 'main')
+
+    def automatic(self):
+        runner = release.Release(self.root); runner.start()
+        self.addCleanup(lambda: [item.close() for item in runner.locks])
+        return runner
+
+    def notes(self):
+        return json.loads((self.root / 'release-notes.json').read_text())['releases']
+
+    def test_nothing_to_release_takes_no_lease_and_commits_nothing(self):
+        self.commit('docs: Explain releases'); self.commit('Unconventional history')
+        head = self.git('rev-parse', 'HEAD')
+        for _ in range(2):
+            runner = release.Release(self.root); runner.preflight = Mock(); runner.env['GH_TOKEN'] = 'fixture-token'
+            with patch.object(release_lease, 'acquire') as acquired:
+                self.assertEqual(runner.run(), 0)
+            acquired.assert_not_called()
+            self.assertEqual(runner.state['status'], 'nothing-to-release')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertNotIn('version', runner.state)
+        self.assertIn('Nothing to release since v1.0.0', runner.log.read_text())
+
+    def test_conventional_commits_choose_the_bump_and_notes(self):
+        self.commit('fix(tabs): Keep pinned tabs'); self.commit('chore: Tidy')
+        self.commit('feat(sidebar): Show Update Complete')
+        runner = self.automatic(); runner.prepare(); runner.prepare()
+        self.assertEqual((runner.state['release_type'], runner.state['since']), ('minor', 'v1.0.0'))
+        self.assertEqual(json.loads((self.root / 'app-version.json').read_text()), {'version': '1.1.0', 'build': 2})
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'chore(release): 1.1.0')
+        self.assertEqual(sorted(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').split()),
+                         ['CHANGELOG.md', 'app-version.json', 'release-notes.json'])
+        [entry] = self.notes()
+        self.assertEqual([item['summary'] for item in entry['changes']], ['Keep pinned tabs', 'Show Update Complete'])
+        self.assertEqual(entry['date'], release.datetime.datetime.now(release.datetime.timezone.utc).date().isoformat())
+        self.assertTrue((self.root / 'CHANGELOG.md').read_text().startswith('# Changelog\n\n## 1.1.0 ('))
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main').split()[0])
+
+    def test_kill_before_version_commit_resumes_without_appending_twice(self):
+        self.commit('perf: Paint sooner')
+        runner = self.automatic(); original = runner.git
+        def killed(*args, **kwargs):
+            if args[0] == 'commit': raise OSError('power lost before commit')
+            return original(*args, **kwargs)
+        with patch.object(runner, 'git', side_effect=killed):
+            with self.assertRaises(OSError): runner.prepare()
+        (self.root / 'CHANGELOG.md').write_text('someone else\n')
+        with self.assertRaisesRegex(release.Failure, 'Unexpected local edits'): runner.prepare()
+        self.assertEqual((self.root / 'CHANGELOG.md').read_text(), 'someone else\n')
+        (self.root / 'CHANGELOG.md').write_text(runner.version_files(runner.state['base_commit'])['CHANGELOG.md'])
+        runner.prepare()
+        self.assertEqual([item['version'] for item in self.notes()], ['1.0.1'])
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'chore(release): 1.0.1')
+
+    def test_automatic_run_resumes_a_stopped_explicit_run(self):
+        explicit = release.Release(self.root, 'major'); explicit.start(); explicit.prepare()
+        explicit.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None)
+        for item in explicit.locks: item.close()
+        with patch.object(release_lease, 'release') as released:
+            resumed = self.automatic()
+        released.assert_not_called()
+        self.assertEqual((resumed.state['id'], resumed.kind), (explicit.state['id'], 'major'))
+        self.assertEqual(resumed.state['version']['version'], '2.0.0')
+
+    def test_commits_landing_before_the_push_ship_with_their_notes(self):
+        self.commit('fix: Keep tabs')
+        peer = Path(self.tmp.name) / 'peer'
+        subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
+        runner = self.automatic(); original = runner.git; landed = []
+        def racing(*args, **kwargs):
+            if args[0] == 'push' and not landed:
+                landed.append(True)
+                # The peer's notes edit conflicts with the version commit's.
+                (peer / 'release-notes.json').write_text('{"releases":[]}\n')
+                for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
+                                 '-qam', 'feat: Land late'], ['push', '-q', 'origin', 'main']):
+                    subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
+            return original(*args, **kwargs)
+        with patch.object(runner, 'git', side_effect=racing):
+            runner.prepare()
+        [entry] = self.notes()
+        self.assertEqual([item['summary'] for item in entry['changes']], ['Keep tabs', 'Land late'])
+        self.assertEqual(len(self.git('log', '-1', '--format=%p').split()), 2)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'chore(release): 1.0.1')
+        self.assertTrue(runner.published(runner.state['commit']))
+
 
 class InterruptedOverlayCheck(unittest.TestCase):
     def setUp(self):
@@ -298,7 +389,6 @@ class Pipeline(Repository):
                 self.assertEqual(runner.run(), 0)
         runner.install.assert_not_called()
         self.assertEqual(calls, ['source','engine','publish','tap','tap'])
-
 
 
 class Install(unittest.TestCase):

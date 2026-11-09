@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run or resume one complete production release: release.sh --type minor."""
+"""Run or resume one complete production release: release.sh [--type major|minor|patch]."""
 import argparse
 import datetime
 import fcntl
@@ -20,12 +20,13 @@ import uuid
 
 import release_inputs
 import release_lease
+import release_notes
 import app_version
 
 ROOT = Path(__file__).resolve().parents[1]
 TEAM = "94HKA7L2DR"
 REPOSITORY = "etsenake/parc"
-TERMINAL = {"complete", "abandoned"}
+TERMINAL = {"complete", "abandoned", "nothing-to-release"}
 
 
 class Failure(RuntimeError):
@@ -65,7 +66,7 @@ def module(source, name):
 
 
 class Release:
-    def __init__(self, root=ROOT, kind="patch", refresh_source=False, source_commit=None):
+    def __init__(self, root=ROOT, kind=None, refresh_source=False, source_commit=None):
         self.root = Path(root).resolve()
         self.kind = kind
         self.refresh_source = refresh_source
@@ -168,7 +169,9 @@ class Release:
                 save(self.current, prior)
                 if prior.get("run"):
                     save(Path(prior["run"]) / "state.json", prior)
-            if prior.get("status") not in TERMINAL and prior["release_type"] != self.kind:
+            # Only an explicit, different --type retires a stopped run; an automatic run resumes it.
+            if (prior.get("status") not in TERMINAL and self.kind and prior["release_type"]
+                    and prior["release_type"] != self.kind):
                 self.supersede(prior)
                 prior = json.loads(self.current.read_text())
             if prior.get("status") not in TERMINAL:
@@ -181,6 +184,8 @@ class Release:
                     raise Failure('Source refresh requires a stopped engine stage with no active command or packaged artifacts')
                 self.refresh_previous = dict(prior)
                 self.state = prior
+                self.kind = self.kind or prior["release_type"]
+                self.state["release_type"] = self.kind
                 if (prior.get('status') == 'stopped' and prior.get('command_pid')
                         and 'shipping-build' in prior.get('command', [])):
                     self.state['interrupted_process_group'] = prior['command_pid']
@@ -346,6 +351,26 @@ class Release:
         return subprocess.run(["git", "merge-base", "--is-ancestor", commit, "origin/main"],
                               cwd=self.root, env=self.env, capture_output=True).returncode == 0
 
+    def changes(self, revision):
+        """The newest published release tag in revision and the Conventional Commits since it."""
+        # Published tags are immutable; a differing local tag fails here instead of being replaced.
+        self.git('fetch', '--no-tags', 'origin', 'refs/tags/v*:refs/tags/v*', retries=2)
+        tag = release_notes.last_release(self.root, revision)
+        return tag, release_notes.changes(self.root, tag, revision)
+
+    def version_files(self, base):
+        """The version commit's exact files: base's notes plus this release, so a rerun never appends twice."""
+        notes = json.loads(self.git('show', base + ':release-notes.json'))
+        return {'app-version.json': json.dumps(self.state['version'], indent=2) + '\n',
+                **release_notes.files(notes, self.state['notes'], self.state['since'][1:])}
+
+    def commit_version(self, files):
+        for name, text in files.items():
+            (self.root / name).write_text(text)
+        self.git('add', *files)
+        # Callers verify nothing else is staged; a merge refuses a partial (--only) commit.
+        self.git('commit', '-m', 'chore(release): ' + self.state['version']['version'])
+
     def prepare(self):
         if self.git("branch", "--show-current") != "main":
             raise Failure("Use main; all local changes are preserved")
@@ -361,26 +386,34 @@ class Release:
             previous = app_version.read(self.root)
             if previous['build'] >= 9999:
                 raise Failure("Apple bundle build number exhausted")
-            version = {"version": next_version(previous["version"], self.kind), "build": previous["build"] + 1}
-            self.checkpoint(previous_version=previous, version=version, base_commit=self.git('rev-parse', 'HEAD'),
+            tag, found = self.changes('HEAD')
+            kind = self.kind or release_notes.bump(found)
+            if not kind:
+                raise Failure('Nothing to release since ' + tag + '; main changed after the release check')
+            version = {"version": next_version(previous["version"], kind), "build": previous["build"] + 1}
+            date = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            self.kind = kind
+            self.checkpoint(release_type=kind, previous_version=previous, version=version, since=tag,
+                            notes=release_notes.entry(version['version'], version['build'], date, found),
+                            base_commit=self.git('rev-parse', 'HEAD'),
                             tag='v' + version['version'], source=str(Path(self.state['run']) / 'source'))
-        path = self.root / 'app-version.json'
         wanted = self.state['version']
         if not self.state.get('commit'):
+            files = self.version_files(self.state['base_commit'])
             head = self.git('rev-parse', 'HEAD')
             # Recover a kill between commit creation and checkpoint, without a second bump.
             if head != self.state['base_commit']:
                 parent = self.git('rev-parse', 'HEAD^')
-                changed = self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD')
-                if parent != self.state['base_commit'] or changed != 'app-version.json' or app_version.read(self.root) != wanted:
+                changed = self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').splitlines()
+                if (parent != self.state['base_commit'] or sorted(changed) != sorted(files)
+                        or any(self.git('show', 'HEAD:' + name) != text.strip() for name, text in files.items())):
                     raise Failure('Source changed during version transaction; preserved for reconciliation')
             else:
-                dirty = self.git('status', '--porcelain')
-                if dirty and (dirty.strip() not in ('M app-version.json', 'M  app-version.json') or app_version.read(self.root) != wanted):
+                # Porcelain lines are "XY path"; git() strips the first line's leading space.
+                dirty = {line.split(maxsplit=1)[1] for line in self.git('status', '--porcelain').splitlines()}
+                if not dirty <= set(files) or any((self.root / name).read_text() != files[name] for name in dirty):
                     raise Failure('Unexpected local edits during version transaction; preserved')
-                path.write_text(json.dumps(wanted, indent=2) + '\n')
-                self.git('add', 'app-version.json')
-                self.git('commit', '--only', 'app-version.json', '-m', 'Release Parc ' + wanted['version'])
+                self.commit_version(files)
             self.checkpoint(commit=self.git('rev-parse', 'HEAD'))
         for attempt in range(4):
             self.git('fetch', 'origin', 'main', retries=2)
@@ -394,7 +427,14 @@ class Release:
                 raise Failure('Another release changed the remote version; no retagging or automatic version replacement')
             if not subprocess.run(['git', 'merge-base', '--is-ancestor', 'origin/main', commit], cwd=self.root,
                                   env=self.env, capture_output=True).returncode == 0:
-                self.git('merge', '--no-edit', 'origin/main')
+                # Commits merged in here ship in this release, so its notes are recomputed to include them.
+                # The network fetch stays outside the open merge, and the merge only conflicts in the
+                # three version files, which are rewritten from origin/main's notes right after.
+                since, found = self.changes('origin/main')
+                self.git('merge', '--no-commit', '-X', 'theirs', 'origin/main')
+                notes = release_notes.entry(wanted['version'], wanted['build'], self.state['notes']['date'], found)
+                self.checkpoint(notes=notes, since=since)
+                self.commit_version(self.version_files('origin/main'))
                 self.checkpoint(commit=self.git('rev-parse', 'HEAD'))
             try:
                 self.git('push', 'origin', self.state['commit'] + ':refs/heads/main')
@@ -564,6 +604,14 @@ class Release:
             os.environ.pop('GITHUB_TOKEN', None)
             if not self.state.get('source_frozen'):
                 self.git('fetch', 'origin', 'main', retries=2)
+            if not self.kind and not self.state.get('version'):
+                tag, found = self.changes('origin/main')
+                if not release_notes.bump(found):
+                    if self.state.get('lease'):
+                        release_lease.release(self.state['lease'])
+                    self.checkpoint(status='nothing-to-release', lease=None)
+                    self.emit('Nothing to release since ' + tag)
+                    return 0
             lease = release_lease.acquire(self.state['id'], self.state.get('commit') or self.git('rev-parse', 'origin/main'), self.state.get('lease'))
             self.checkpoint(lease=lease)
             if self.refresh_source:
@@ -604,7 +652,8 @@ class Release:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--type", required=True, choices=("major", "minor", "patch"))
+    parser.add_argument("--type", choices=("major", "minor", "patch"),
+                        help="Override the bump Conventional Commits since the last release tag would choose")
     parser.add_argument("--refresh-source", action="store_true",
                         help="Use published fixes for a stopped, unsealed engine build without bumping again")
     parser.add_argument("--source-commit", help="Full published commit SHA to freeze for an explicit source refresh")
