@@ -113,6 +113,7 @@ struct TypedCommandTests {
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "exportNotes:") == 1.5, "Export Notes bump")
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "newTab:") == nil, "No bump without data")
         check(CommandBarMenuItemInfo.searchText(forMenuCommand: "clearToday:").contains("Close Unpinned Tabs"), "Clear Today triggers")
+        check(CommandBarMenuItemInfo.searchText(forMenuCommand: "showReleaseNotes:").contains("Changelog"), "Release Notes triggers")
         check(Command.commandBarSearchText(forMenuCommand: "createEasel:").contains("Mood Board"), "Easel trigger")
         check(Command.commandBarTitle(forMenuCommand: "sharePage:", menuTitle: "Share…") == "Share URL", "Share's Type Travel title")
         check(CommandBarMenuItemInfo.rankingBump(1.5) < 0.95 - 0.85, "The largest bump can't lift an exact command over an exact tab")

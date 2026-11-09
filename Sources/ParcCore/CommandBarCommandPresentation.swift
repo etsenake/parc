@@ -67,7 +67,7 @@ enum CommandBarCommandPresentation {
         "renameFocusedSpace": "character.cursor.ibeam", "changeSpaceProfile": "person.fill",
         "nextSpace": "arrow.right.to.line", "previousSpace": "arrow.left.to.line",
         "viewLibrary": "archivebox", "downloads": "arrow.down.circle", "captureLibrary": "photo.on.rectangle.angled",
-        "showDocuments": "scribble.variable", "showEssentialShortcuts": "keyboard",
+        "showDocuments": "scribble.variable", "showEssentialShortcuts": "keyboard", "showReleaseNotes": "clock",
         "performMiniaturize": "arrow.down.right.and.arrow.up.left", "performZoom": "arrow.up.left.and.arrow.down.right",
         "hide": "macwindow", "hideOtherApplications": "macwindow", "unhideAllApplications": "book",
         "goBackArrow": "arrow.backward", "goForwardArrow": "arrow.right",

@@ -8,6 +8,7 @@ import Foundation
 /// `Base.lproj/MainMenu.nib`; the 1.122 binary carries only the key names.
 /// No item sets a minimum query length. Items for excluded features (Boosts,
 ///
+/// Release Notes opens Parc's own bundled page, so it is kept.
 struct CommandBarMenuItemInfo: Equatable, Sendable {
     let triggers: [String]
     var bump: Double? = nil
@@ -91,6 +92,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "sharePage:": .init(triggers: ["Share"]),
         "showDocuments:": .init(triggers: ["Easels", "Notes"]),
         "showEssentialShortcuts:": .init(triggers: ["Essential Keyboard Shortcuts", "keyboard", "shortcuts"], bump: 0.1),
+        "showReleaseNotes:": .init(triggers: ["Changelog", "Whats new", "What's new", "parc updates"]),
         "split:": .init(triggers: ["Add Split View", "Split View", "Create Split View Pane", "New Split View", "Split"]),
         "toggleArcToolbar:": .init(triggers: ["Toggle Hide Show Toolbar"]),
         "toggleDeveloperMode:": .init(triggers: ["Developer Mode", "Enable Developer Mode", "Disable Developer Mode"]),

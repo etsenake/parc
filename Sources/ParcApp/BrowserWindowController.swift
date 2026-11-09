@@ -6738,6 +6738,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     ///
     /// imported visits included, is the one history.
     func openHistoryPage() { openPageInNewTab("parc://history/") }
+    /// The What's New page in the bundle's Resources (UPD06 renders it at build
+    /// time); a build without it has no release notes to open.
+    static var releaseNotesURL: URL? { Bundle.main.url(forResource: "WhatsNew", withExtension: "html") }
+    ///
+    ///
+    func openReleaseNotes() {
+        guard let url = Self.releaseNotesURL else { return }
+        openPageInNewTab(url.absoluteString)
+    }
     private func openPageInNewTab(_ input: String) {
         guard canOpenPageInNewTab, let original = window, original.isKeyWindow,
               windowCommandSecurityAvailable else { return }

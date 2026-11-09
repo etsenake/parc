@@ -373,7 +373,8 @@ records (117 items).
 becomes the row title (Share… shows **Share URL**). No item sets a minimum query
 length. The disregard-cache flag is not ported, since Parc has no
 recently-used cache for it to bypass. Items for excluded features have no
-Privacy Policy, Release Notes and Check for Updates. Getting Started stays out
+"Changelog; Whats new; What's new", and "parc updates" for "arc updates"),
+because it opens Parc's own bundled What's New page. Getting Started stays out
 by the October 26 direction that onboarding replay lives only in Settings →
 General.
 

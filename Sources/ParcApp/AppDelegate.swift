@@ -2034,6 +2034,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             || item.action == #selector(history) {
             return browserInputCommandWindow?.canOpenPageInNewTab ?? false
         }
+        if item.action == #selector(showReleaseNotes) {
+            return BrowserWindowController.releaseNotesURL != nil && browserInputCommandWindow?.canOpenPageInNewTab == true
+        }
         if item.action == #selector(captureLibrary) { return libraryCommandWindow?.canShowMedia ?? false }
         if item.action == #selector(archive) || item.action == #selector(clearArchive) {
             return libraryCommandWindow?.canShowLibrary ?? false
@@ -2326,6 +2329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } catch { presentWindowCreationError(error); return false }
     }
     @objc private func showEssentialShortcuts(_ sender: Any?) { front?.showEssentialShortcuts() }
+    @objc private func showReleaseNotes(_ sender: Any?) { browserInputCommandWindow?.openReleaseNotes() }
     @objc private func openExtensions(_ sender: Any?) {
         guard let owner = browserInputCommandWindow, owner.canOpenExtensionPicker else { return }
         owner.openExtensionPicker()
@@ -3122,6 +3126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         window.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
         let help = menu("Help")
         item("Essential Keyboard Shortcuts", #selector(showEssentialShortcuts), in: help)
+        // MainMenu Help order: Release Notes follows Essential Keyboard Shortcuts.
+        item("Release Notes", #selector(showReleaseNotes), in: help)
         NSApp.helpMenu = help
         NSApp.mainMenu = main
     }

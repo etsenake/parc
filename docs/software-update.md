@@ -264,6 +264,14 @@ Check for Updates and Release Notes were excluded from Parc's earlier menu
 and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-the-ledger),
 [command bar](command-bar.md)). Josh's request now brings them into scope.
 
+## Parc
+
+  Shortcuts, with no shortcut. It opens the bundled `WhatsNew.html`
+  (`Bundle.main.url(forResource: "WhatsNew", withExtension: "html")`) as a
+  file URL in a new tab of the key window, through the same path as History
+  and Extensions. A build without the page disables the item, so it stays
+  disabled until UPD06's build step bundles the page. The command bar lists it
+
 ## Open questions
 
 1. **Banner gating.** The exact reads and writes of the release-notes and

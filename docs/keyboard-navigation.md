@@ -696,7 +696,8 @@ Screen, Exit, Cast, Developer submenu, appearance), Spaces (New Space, Edit
 Theme, Next/Previous Space and the Space list), Tabs (Pin, Rename, Reset Tab,
 Reset all tabs, Clear Today, positional/linear/recent traversal), Archive (Back
 and Forward with arrow alternates, View/Clear Archive, History), Window
-(Minimize) and Help (Essential Keyboard Shortcuts; Export Notes is in File). The
+(Minimize) and Help (Essential Keyboard Shortcuts and Release Notes, which opens
+the bundled What's New page; Export Notes is in File). The
 hidden Paste and Match Style and Open Extensions items were already delivered.
 
 ### Numbered execution ownership
