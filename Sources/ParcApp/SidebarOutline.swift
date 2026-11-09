@@ -254,7 +254,8 @@ final class SidebarOutlineView: NSView {
     override func isAccessibilityFocused() -> Bool {
         guard let focusOwner, focusOwner.canBecomeKeyView, let window = focusOwner.window,
               window.firstResponder === focusOwner else { return false }
-        return !isHiddenOrHasHiddenAncestor && rows.contains(where: \.isItem)
+        // A kept Space's page waits off the strip, out of view.
+        return !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty && rows.contains(where: \.isItem)
     }
 }
 

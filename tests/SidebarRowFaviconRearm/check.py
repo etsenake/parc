@@ -39,9 +39,9 @@ assert render, "SidebarView.render not found"
 render_body = render.group("body")
 
 assert "var priorTabFaviconArt: [UUID: TabRowSettledFaviconArt] = [:]" in render_body, \
-    "render must snapshot settled row art before tabRows.removeAll"
-assert render_body.index("priorTabFaviconArt") < render_body.index("tabRows.removeAll()"), \
-    "settled-art snapshot must precede row teardown"
+    "a page build must snapshot settled row art before its rows are let go"
+assert render_body.index("priorTabFaviconArt") < render_body.index("page.beginBuild()"), \
+    "settled-art snapshot must precede the page's row teardown"
 assert "let arm = TabRowFaviconIdentity(pageURL: tab.url, resetDestination: tab.resetDestination)" in render_body, \
     "makeRow must build TabRowFaviconIdentity from page URL + reset destination"
 assert "let skipArm = tabFaviconArms[tab.id] == arm" in render_body, \

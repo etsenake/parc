@@ -1,6 +1,6 @@
 """SidebarView is not compiled by the key-view suites: every place it links its
 chain must pass the window owner's exit, bypass the chain while the sidebar is
-not presented and skip hidden prepared Space lists (the linker's behaviour for
+not presented and skip the Space pages it isn't showing (the linker's behaviour for
 each is run in SidebarAccessibilityTests)."""
 
 
@@ -25,5 +25,5 @@ def assert_sidebar_links(sidebar):
     assert calls, "SidebarView no longer links its key-view chain through SidebarAccessibility.link"
     for call in calls:
         for argument in ("within: self", "exit: keyViewExit", "bypassed: !isPresented",
-                         "skipping: { $0 is SidebarOutlineView && $0.isHidden }"):
+                         "skipping: { ($0 as? SidebarPageStripView)?.passesThrough == true }"):
             assert argument in call, f"SidebarView links its chain without {argument}: {call}"

@@ -464,7 +464,18 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-tab")
     let tabID: UUID
     private let titleLabel = SidebarChromeLabel(labelWithString: "")
-    private let titleField = SidebarTitleField()
+    /// Built for the first rename; most rows are never renamed, and every
+    /// rarely shown part built up front cost a long list most of its memory.
+    private var titleFieldStore: SidebarTitleField?
+    private var titleField: SidebarTitleField {
+        if let titleFieldStore { return titleFieldStore }
+        let field = SidebarTitleField()
+        addSubview(field, positioned: .above, relativeTo: titleStack)
+        titleFieldStore = field
+        needsLayout = true
+        return field
+    }
+    private var editingTitle: Bool { titleFieldStore?.editingTitle == true }
     private let background = SidebarRowBackgroundView()
     private let icon = SidebarFaviconView()
     private let closeButton = SidebarRowActionButton("Close Tab")
@@ -472,18 +483,67 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     /// with a 14-point semibold rectangle.inset.filled.and.person.filled,
     /// shown only while the row is hovered without its reset subtitle and the
     ///
-    private let shareButton = SidebarRowActionButton("Share this tab instead")
+    private var shareButtonStore: SidebarRowActionButton?
+    private var shareButton: SidebarRowActionButton {
+        if let shareButtonStore { return shareButtonStore }
+        let button = SidebarRowActionButton("Share this tab instead")
+        button.symbol = Self.shareSymbol
+        button.setAccessibilityIdentifier("shareTabButton")
+        button.isHidden = true
+        button.prepareAction = prepareShare
+        addSubview(button, positioned: .below, relativeTo: closeButton)
+        shareButtonStore = button
+        updateColor()
+        onControlsChanged?()
+        return button
+    }
     var shareable = false { didSet { if shareable != oldValue { updateActions(); needsLayout = true } } }
-    var prepareShare: (() -> (() -> Bool)?)? { didSet { shareButton.prepareAction = prepareShare } }
+    var prepareShare: (() -> (() -> Bool)?)? { didSet { shareButtonStore?.prepareAction = prepareShare } }
     ///
     /// region (TabCellRegionalBackgroundView), the slash between icon and
-    /// title, and the hover subtitle carried by the lifted title stack.
-    private let resetRegion = SidebarRowResetRegion()
-    private let bodyRegion = SidebarRowBodyRegionView()
-    private let slash = SidebarRowSlashView()
-    private let resetIcon = SidebarFaviconView()
+    /// title, and the hover subtitle carried by the lifted title stack. Built
+    /// once the row's tab first has a reset destination.
+    private struct ResetParts {
+        let region: SidebarRowResetRegion
+        let body: SidebarRowBodyRegionView
+        let slash: SidebarRowSlashView
+        let icon: SidebarFaviconView
+        let subtitle: SidebarChromeLabel
+    }
+    private var resetParts: ResetParts?
+    private var resetAction: () -> (() -> Bool)? = { nil }
+    private var separateAction: () -> (() -> Bool)? = { nil }
+    @discardableResult private func makeResetParts() -> ResetParts {
+        if let resetParts { return resetParts }
+        let parts = ResetParts(region: SidebarRowResetRegion(), body: SidebarRowBodyRegionView(), slash: SidebarRowSlashView(),
+                               icon: SidebarFaviconView(), subtitle: SidebarChromeLabel(labelWithString: SidebarRowAppearance.resetSubtitle))
+        parts.region.prepareAction = resetAction; parts.region.prepareSeparate = separateAction
+        parts.region.onHoverChange = { [weak self] in self?.resetHoverChanged() }
+        parts.region.makeMenu = { [weak self] in self?.context?() }
+        parts.icon.isHidden = true
+        parts.subtitle.font = .systemFont(ofSize: SidebarRowAppearance.subtitleFontSize)
+        parts.subtitle.lineBreakMode = .byTruncatingTail
+        parts.subtitle.maximumNumberOfLines = 1
+        parts.subtitle.setAccessibilityElement(false)
+        parts.subtitle.wantsLayer = true; parts.subtitle.alphaValue = 0
+        addSubview(parts.body, positioned: .above, relativeTo: background)
+        addSubview(parts.region, positioned: .above, relativeTo: parts.body)
+        addSubview(parts.icon, positioned: .above, relativeTo: icon)
+        addSubview(parts.slash, positioned: .above, relativeTo: parts.icon)
+        titleStack.addSubview(parts.subtitle)
+        resetParts = parts
+        LiveShortcutToolTip.set(parts.region, "Reset Tab", commandID: "resetTab:", requiresBinding: true)
+        updateColor()
+        needsLayout = true
+        return parts
+    }
+    /// The hover subtitle's line height, for rows that have none yet.
+    private static let subtitleHeight: CGFloat = {
+        let label = SidebarChromeLabel(labelWithString: SidebarRowAppearance.resetSubtitle)
+        label.font = .systemFont(ofSize: SidebarRowAppearance.subtitleFontSize)
+        return ceil(label.intrinsicContentSize.height)
+    }()
     private let titleStack = SidebarRowTitleStack()
-    private let hoverSubtitle = SidebarChromeLabel(labelWithString: SidebarRowAppearance.resetSubtitle)
     private var shownSubtitle: SidebarRowHoverSubtitle?
     private var resetIconGeneration: UInt64 = 0
     private var hasReset = false
@@ -496,29 +556,69 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     /// border) rounded and clipped the current-item shadow.
     var listFocusRing = false { didSet { if listFocusRing != oldValue { updateColor() } } }
     private var dimmed = false
-    private let captureButton = ActionButton("Active capture", symbol: "mic.fill")
-    private let muteButton = SidebarRowActionButton("Mute this tab")
+    /// Built while the tab first records.
+    private var captureButtonStore: ActionButton?
+    private var captureButton: ActionButton {
+        if let captureButtonStore { return captureButtonStore }
+        let capture = ActionButton("Active capture", symbol: "mic.fill")
+        capture.isHidden = true
+        capture.imagePosition = .imageOnly
+        capture.actionBlock = { [weak self, weak capture] in
+            guard let self, let capture else { return }
+            self.showCapture?(capture)
+        }
+        addSubview(capture, positioned: .above, relativeTo: closeButton)
+        captureButtonStore = capture
+        updateColor()
+        onControlsChanged?()
+        return capture
+    }
+    /// Built once the tab plays or is muted.
+    private var muteButtonStore: SidebarRowActionButton?
+    private var muteButton: SidebarRowActionButton {
+        if let muteButtonStore { return muteButtonStore }
+        let button = SidebarRowActionButton("Mute this tab")
+        button.decoration = builtSpeaker
+        button.setAccessibilityIdentifier("sidebarTabCellMuteButton")
+        button.isHidden = true
+        button.makeMenu = { [weak self] in self?.context?() }
+        button.prepareAction = prepareMute
+        addSubview(button, positioned: .above, relativeTo: captureButtonStore ?? closeButton)
+        muteButtonStore = button
+        applyAudioLabel(speaker: audio != nil)
+        updateColor()
+        onControlsChanged?()
+        return button
+    }
+    private var hasAudio: Bool { audio?.audible == true || audio?.muted == true }
     var audio: SidebarTabAudio? {
         didSet {
             // Every live-metadata pass sets each row's audio; only a change
             // rebuilds its tooltip and layout.
             guard audio?.audible != oldValue?.audible || audio?.muted != oldValue?.muted else { return }
-            let muted = audio?.muted == true
-            let label = muted ? "Unmute this tab" : "Mute this tab"
-            LiveShortcutToolTip.set(muteButton, label); muteButton.setAccessibilityLabel(label)
-            if let speaker = muteButton.decoration as? SidebarSpeakerHost, speaker.model.muted != muted {
-                speaker.model.muted = muted
-            }
+            if hasAudio { _ = muteButton }
+            applyAudioLabel(speaker: true)
             needsLayout = true
         }
     }
+    private func applyAudioLabel(speaker: Bool) {
+        let muted = audio?.muted == true
+        if let muteButtonStore {
+            let label = muted ? "Unmute this tab" : "Mute this tab"
+            LiveShortcutToolTip.set(muteButtonStore, label); muteButtonStore.setAccessibilityLabel(label)
+        }
+        if speaker, let speakerHost, speakerHost.model.muted != muted { speakerHost.model.muted = muted }
+    }
+    /// A share, capture or mute button joined the row: the sidebar's Tab
+    /// order takes it.
+    var onControlsChanged: (() -> Void)?
     var prepareMute: (() -> (() -> Bool)?)? {
-        didSet { muteButton.prepareAction = prepareMute; muteButton.refreshAvailability() }
+        didSet { muteButtonStore?.prepareAction = prepareMute; muteButtonStore?.refreshAvailability() }
     }
     var showCapture: ((NSView) -> Void)?
     var capture: CaptureIndicatorPresentation? {
         didSet {
-            guard capture != oldValue else { return }
+            guard capture != oldValue, capture != nil || captureButtonStore != nil else { return }
             captureButton.isHidden = capture == nil
             captureButton.image = capture.flatMap { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) }
             //
@@ -626,34 +726,15 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         //
         //
         hasReset = tab.resetDestination != nil
-        resetRegion.prepareAction = reset; resetRegion.prepareSeparate = separate
-        resetRegion.isHidden = !hasReset; bodyRegion.isHidden = !hasReset; slash.isHidden = !hasReset
-        resetRegion.onHoverChange = { [weak self] in self?.resetHoverChanged() }
-        resetIcon.isHidden = true
-        hoverSubtitle.font = .systemFont(ofSize: SidebarRowAppearance.subtitleFontSize)
-        hoverSubtitle.lineBreakMode = .byTruncatingTail
-        hoverSubtitle.maximumNumberOfLines = 1
-        hoverSubtitle.setAccessibilityElement(false)
-        hoverSubtitle.wantsLayer = true; hoverSubtitle.alphaValue = 0
+        resetAction = reset; separateAction = separate
         titleStack.wantsLayer = true
         closeButton.focusRingType = .exterior
-        shareButton.symbol = Self.shareSymbol
-        shareButton.setAccessibilityIdentifier("shareTabButton")
-        shareButton.isHidden = true
-        muteButton.decoration = speaker
-        muteButton.setAccessibilityIdentifier("sidebarTabCellMuteButton")
-        muteButton.isHidden = true
-        captureButton.isHidden = true
-        captureButton.imagePosition = .imageOnly
-        captureButton.actionBlock = { [weak self] in
-            guard let self else { return }
-            self.showCapture?(self.captureButton)
-        }
-        addSubview(background); addSubview(bodyRegion); addSubview(resetRegion)
-        addSubview(icon); addSubview(resetIcon); addSubview(slash)
-        titleStack.addSubview(titleLabel); titleStack.addSubview(hoverSubtitle)
-        addSubview(titleStack); addSubview(titleField); addSubview(shareButton); addSubview(closeButton); addSubview(captureButton); addSubview(muteButton)
-        updateResetTooltip()
+        builtSpeaker = speaker
+        addSubview(background); addSubview(icon)
+        titleStack.addSubview(titleLabel)
+        addSubview(titleStack); addSubview(closeButton)
+        if hasReset { makeResetParts() }
+        if speaker != nil { _ = muteButton }
         self.selected = selected
         updateColor()
         updateRowTooltip(); shownURL = tab.url
@@ -665,8 +746,6 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         if InternalPage(urlString: tab.url) == nil { setAccessibilityRoleDescription("Tab") }
         setAccessibilityHelp(tab.url)
         closeButton.makeMenu = { [weak self] in self?.context?() }
-        resetRegion.makeMenu = { [weak self] in self?.context?() }
-        muteButton.makeMenu = { [weak self] in self?.context?() }
     }
     /// Every row shows one of a few symbols; looking each up again per row was
     /// a third of building a long list's rows.
@@ -692,7 +771,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         let generation = resetIconGeneration
         request { [weak self] image in
             guard let self, self.resetIconGeneration == generation else { return }
-            self.resetIcon.image = image
+            self.makeResetParts().icon.image = image
             self.updateResetIcon()
         }
     }
@@ -702,7 +781,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     fileprivate func settledFaviconArt() -> TabRowSettledFaviconArt? {
         guard allowsFavicon, icon.hasSettledFavicon, let page = icon.image else { return nil }
         if hasReset {
-            guard let reset = resetIcon.image else { return nil }
+            guard let reset = resetParts?.icon.image else { return nil }
             return TabRowSettledFaviconArt(page: page, reset: reset)
         }
         return TabRowSettledFaviconArt(page: page, reset: nil)
@@ -713,7 +792,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         icon.adoptSettled(art.page)
         if hasReset {
             resetIconGeneration &+= 1
-            resetIcon.image = art.reset
+            makeResetParts().icon.image = art.reset
             updateResetIcon()
         }
     }
@@ -741,9 +820,10 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         let reset = tab.resetDestination != nil
         if reset != hasReset {
             hasReset = reset
-            slash.isHidden = !hasReset
+            if hasReset { makeResetParts() }
+            resetParts?.slash.isHidden = !hasReset
             if !hasReset {
-                resetIcon.image = nil
+                resetParts?.icon.image = nil
                 updateResetIcon()
             }
             updateActions()
@@ -757,10 +837,11 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
                          reset: @escaping () -> (() -> Bool)?,
                          separate: @escaping () -> (() -> Bool)?) {
         closeButton.prepareAction = close
-        resetRegion.prepareAction = reset
-        resetRegion.prepareSeparate = separate
+        resetAction = reset; separateAction = separate
+        resetParts?.region.prepareAction = reset
+        resetParts?.region.prepareSeparate = separate
         // The region stays shown; scrolling no longer re-reads its availability.
-        resetRegion.refreshAvailability()
+        resetParts?.region.refreshAvailability()
         guard !privateBrowsing else { return }
         bindCloseButton(tooltip: Self.closeTooltip(tab), label: tab.kind == .today ? "Archive Tab" : "Close Tab")
     }
@@ -798,89 +879,94 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         titleLabel.isHidden = true; needsLayout = true
         return true
     }
-    func cancelTitleEditing() { titleField.cancel() }
+    func cancelTitleEditing() { titleFieldStore?.cancel() }
 
     override func layout() {
         super.layout()
         defer {
             let titleFrame = NSRect(x: titleStack.frame.minX, y: titleStack.frame.minY,
                                     width: titleLabel.frame.width, height: titleLabel.frame.height)
-            if titleField.editingTitle {
+            if editingTitle {
                 titleLabel.isHidden = true
                 titleField.frame = NSRect(x: titleFrame.minX, y: titleFrame.minY,
                     width: max(0, bounds.width - titleFrame.minX - 8), height: titleFrame.height)
-                closeButton.isHidden = true; resetRegion.isHidden = true; bodyRegion.isHidden = true
-                captureButton.isHidden = true; shareButton.isHidden = true; muteButton.isHidden = true
-            } else { titleField.frame = titleFrame }
+                closeButton.isHidden = true; resetParts?.region.isHidden = true; resetParts?.body.isHidden = true
+                captureButtonStore?.isHidden = true; shareButtonStore?.isHidden = true; muteButtonStore?.isHidden = true
+            } else { titleFieldStore?.frame = titleFrame }
         }
         background.frame = bounds
         updateActions()
+        let mute = muteButtonStore.flatMap { $0.isHidden ? nil : $0 }
         if compactSplitChild {
             //
             // slash or hover subtitle; Parc's capture button takes the
             // recording indicator's place before the icon.
             let titleHeight = ceil(titleLabel.intrinsicContentSize.height)
             let layout = SidebarRowAppearance.splitChildLayout(in: bounds, titleHeight: titleHeight,
-                recording: capture != nil, closeAvailable: !titleField.editingTitle && splitChildCloseAvailable,
+                recording: capture != nil, closeAvailable: !editingTitle && splitChildCloseAvailable,
                 groupHovered: groupHover)
             background.frame = layout.cell
-            captureButton.isHidden = layout.indicator == nil
-            if let indicator = layout.indicator { captureButton.frame = indicator }
+            if let indicator = layout.indicator { captureButton.isHidden = false; captureButton.frame = indicator }
+            else { captureButtonStore?.isHidden = true }
             icon.isHidden = false
             let slot = layout.iconSlot
             icon.frame = NSRect(x: slot.midX - SidebarRowAppearance.iconSize / 2, y: slot.midY - SidebarRowAppearance.iconSize / 2,
                                 width: SidebarRowAppearance.iconSize, height: SidebarRowAppearance.iconSize).integral
-            resetIcon.frame = icon.frame
+            resetParts?.icon.frame = icon.frame
             closeButton.frame = layout.close
-            if !muteButton.isHidden {
+            if let mute {
                 let right = layout.showsClose ? layout.close.minX - 2 : bounds.maxX - 4
                 let frame = NSRect(x: right - 24, y: layout.close.minY, width: 24, height: layout.close.height)
-                if frame.minX < slot.maxX { muteButton.isHidden = true }
-                else { muteButton.frame = frame }
+                if frame.minX < slot.maxX { mute.isHidden = true }
+                else { mute.frame = frame }
             }
             closeButton.isHidden = !layout.showsClose
-            slash.isHidden = true
+            resetParts?.slash.isHidden = true
             titleLabel.isHidden = layout.title == nil
             let title = layout.title ?? NSRect(x: slot.maxX, y: 0, width: 0, height: titleHeight)
-            let titleWidth = muteButton.isHidden ? title.width : max(0, min(title.width, muteButton.frame.minX - title.minX))
+            let shownMute = mute.flatMap { $0.isHidden ? nil : $0 }
+            let titleWidth = shownMute.map { max(0, min(title.width, $0.frame.minX - title.minX)) } ?? title.width
             titleStack.frame = NSRect(x: title.minX, y: title.minY, width: titleWidth, height: title.height)
             titleLabel.frame = NSRect(x: 0, y: 0, width: titleWidth, height: title.height)
-            hoverSubtitle.frame = NSRect(x: 0, y: title.height, width: title.width, height: 0)
+            resetParts?.subtitle.frame = NSRect(x: 0, y: title.height, width: title.width, height: 0)
             return
         }
         titleLabel.isHidden = false; icon.isHidden = false
-        icon.frame = SidebarRowAppearance.iconFrame(in: bounds); resetIcon.frame = icon.frame
+        icon.frame = SidebarRowAppearance.iconFrame(in: bounds)
         titleLabel.font = .systemFont(ofSize: SidebarRowAppearance.titleFontSize)
-        slash.isHidden = !hasReset
-        slash.frame = SidebarRowAppearance.slashFrame(in: bounds)
-        resetRegion.frame = SidebarRowAppearance.resetRegionFrame(in: bounds)
-        bodyRegion.frame = NSRect(x: resetRegion.frame.maxX, y: 0,
-                                  width: max(0, bounds.width - resetRegion.frame.maxX), height: bounds.height)
+        if let parts = resetParts {
+            parts.icon.frame = icon.frame
+            parts.slash.isHidden = !hasReset
+            parts.slash.frame = SidebarRowAppearance.slashFrame(in: bounds)
+            parts.region.frame = SidebarRowAppearance.resetRegionFrame(in: bounds)
+            parts.body.frame = NSRect(x: parts.region.frame.maxX, y: 0,
+                                      width: max(0, bounds.width - parts.region.frame.maxX), height: bounds.height)
+        }
         closeButton.frame = SidebarRowAppearance.closeFrame(in: bounds)
         var trailing = SidebarRowAppearance.titleTrailingEdge(in: bounds, closeVisible: !closeButton.isHidden)
-        if !shareButton.isHidden {
+        if let share = shareButtonStore, !share.isHidden {
             //
             let close = closeButton.frame
-            shareButton.frame = NSRect(x: close.minX - 2 - close.width, y: close.minY, width: close.width, height: close.height)
-            trailing = shareButton.frame.minX - SidebarRowAppearance.titleCloseSpacing
+            share.frame = NSRect(x: close.minX - 2 - close.width, y: close.minY, width: close.width, height: close.height)
+            trailing = share.frame.minX - SidebarRowAppearance.titleCloseSpacing
         }
-        if !muteButton.isHidden {
-            muteButton.frame = NSRect(x: trailing - 24, y: ((bounds.height - 24) / 2).rounded(.down), width: 24, height: 24)
-            trailing = muteButton.frame.minX
+        if let mute {
+            mute.frame = NSRect(x: trailing - 24, y: ((bounds.height - 24) / 2).rounded(.down), width: 24, height: 24)
+            trailing = mute.frame.minX
         }
         // Shown again after a title edit (the defer above hides it while editing).
-        captureButton.isHidden = capture == nil
         if capture != nil {
             // Parc's capture indicator sits in the body stack before Close.
+            captureButton.isHidden = false
             captureButton.frame = NSRect(x: trailing - 23, y: ((bounds.height - 25) / 2).rounded(.down), width: 23, height: 25)
             trailing = captureButton.frame.minX
-        }
+        } else { captureButtonStore?.isHidden = true }
         let (titleX, width) = SidebarRowAppearance.titleLabelSpan(resettable: hasReset, trailing: trailing)
         //
-        let subtitleHeight = ceil(hoverSubtitle.intrinsicContentSize.height)
+        let subtitleHeight = resetParts.map { ceil($0.subtitle.intrinsicContentSize.height) } ?? Self.subtitleHeight
         titleStack.frame = NSRect(x: titleX, y: ((bounds.height - 18) / 2).rounded(.down), width: width, height: 18 + subtitleHeight)
         titleLabel.frame = NSRect(x: 0, y: 0, width: width, height: 18)
-        hoverSubtitle.frame = NSRect(x: 0, y: 18, width: width, height: subtitleHeight)
+        resetParts?.subtitle.frame = NSRect(x: 0, y: 18, width: width, height: subtitleHeight)
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -942,17 +1028,23 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         updateActions(); updateColor(); needsLayout = true
     }
     private func updateActions() {
-        closeButton.refreshAvailability(); resetRegion.refreshAvailability()
+        closeButton.refreshAvailability(); resetParts?.region.refreshAvailability()
         // Hidden pointer controls keep their context-menu and accessibility
         // actions. A split child shows Close while its split is hovered (its
         // layout also needs room) and has no reset target.
-        closeButton.isHidden = titleField.editingTitle || !(compactSplitChild ? groupHover && splitChildCloseAvailable : hover)
-        muteButton.isHidden = titleField.editingTitle || !(audio?.audible == true || audio?.muted == true)
-        muteButton.refreshAvailability()
-        shareButton.refreshAvailability()
-        shareButton.isHidden = titleField.editingTitle || compactSplitChild || !shareable || !hover || shownSubtitle != nil
-        resetRegion.isHidden = titleField.editingTitle || !hasReset || compactSplitChild
-        bodyRegion.isHidden = resetRegion.isHidden
+        closeButton.isHidden = editingTitle || !(compactSplitChild ? groupHover && splitChildCloseAvailable : hover)
+        let muteHidden = editingTitle || !hasAudio
+        if !muteHidden || muteButtonStore != nil {
+            muteButton.isHidden = muteHidden
+            muteButton.refreshAvailability()
+        }
+        let shareHidden = editingTitle || compactSplitChild || !shareable || !hover || shownSubtitle != nil
+        if !shareHidden || shareButtonStore != nil {
+            shareButton.refreshAvailability()
+            shareButton.isHidden = shareHidden
+        }
+        resetParts?.region.isHidden = editingTitle || !hasReset || compactSplitChild
+        resetParts?.body.isHidden = resetParts?.region.isHidden ?? true
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         cancelInteraction()
@@ -983,11 +1075,12 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     }
     override var isHidden: Bool { didSet { if isHidden { cancelInteraction() } } }
     private func cancelInteraction() {
-        titleField.cancel()
+        titleFieldStore?.cancel()
         hover = false; groupHover = false; mouseStart = nil; selectionEvent = nil; pendingActivation = nil
         setResetSubtitle(nil, animated: false)
-        closeButton.cancelInteraction(); resetRegion.cancelInteraction(); shareButton.cancelInteraction(); muteButton.cancelInteraction()
-        closeButton.isHidden = true; shareButton.isHidden = true
+        closeButton.cancelInteraction(); resetParts?.region.cancelInteraction()
+        shareButtonStore?.cancelInteraction(); muteButtonStore?.cancelInteraction()
+        closeButton.isHidden = true; shareButtonStore?.isHidden = true
         updateColor()
     }
     ///
@@ -995,20 +1088,20 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     private func updateDim() {
         dimmed = window.map { !$0.isKeyWindow && !$0.isMainWindow } ?? false
         // Muting needs the key window: the speaker's dimming follows it.
-        muteButton.refreshAvailability()
+        muteButtonStore?.refreshAvailability()
         updateColor()
     }
     private func updateColor() {
         let dark = palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         let title = palette?.title ?? .parcInk
         titleLabel.textColor = title
-        hoverSubtitle.textColor = title.withAlphaComponent(SidebarRowAppearance.subtitleTextAlpha)
+        resetParts?.subtitle.textColor = title.withAlphaComponent(SidebarRowAppearance.subtitleTextAlpha)
         icon.fallbackTintColor = title
-        resetIcon.fallbackTintColor = title
-        closeButton.dark = dark; shareButton.dark = dark; muteButton.dark = dark
-        (muteButton.decoration as? SidebarSpeakerHost)?.model.color = dark
+        resetParts?.icon.fallbackTintColor = title
+        closeButton.dark = dark; shareButtonStore?.dark = dark; muteButtonStore?.dark = dark
+        speakerHost?.model.color = dark
             ? NSColor(white: 1, alpha: 0.592) : NSColor(white: 0, alpha: 0.565)
-        captureButton.contentTintColor = title
+        captureButtonStore?.contentTintColor = title
         // Fill changes apply on the next layer update, without a transition,
         //
         // resettable row's hover belongs to its regions, not the row fill. A
@@ -1020,16 +1113,17 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         background.dark = dark
         background.ringColor = palette?.maxContrastColor ?? .labelColor
         background.appearanceState = state
-        resetRegion.dark = dark; bodyRegion.dark = dark
-        resetRegion.corners = state.resetRegionCorners
-        bodyRegion.hovered = hover && !resetRegion.hovered && state.splitsResetRegions
+        guard let parts = resetParts else { return }
+        parts.region.dark = dark; parts.body.dark = dark
+        parts.region.corners = state.resetRegionCorners
+        parts.body.hovered = hover && !parts.region.hovered && state.splitsResetRegions
         //
-        slash.color = SidebarRowAppearance.slashColor(dark: dark)
-        slash.alphaValue = resetRegion.hovered || bodyRegion.hovered ? 0 : 1
+        parts.slash.color = SidebarRowAppearance.slashColor(dark: dark)
+        parts.slash.alphaValue = parts.region.hovered || parts.body.hovered ? 0 : 1
     }
     private func resetHoverChanged() {
         updateColor()
-        setResetSubtitle(compactSplitChild || titleField.editingTitle ? nil : resetRegion.hoverSubtitle, animated: true)
+        setResetSubtitle(compactSplitChild || editingTitle ? nil : resetParts?.region.hoverSubtitle, animated: true)
     }
     /// The hover subtitle fades in below the title while the title stack lifts
     ///
@@ -1039,16 +1133,16 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         guard subtitle != shownSubtitle else { return }
         let wasVisible = shownSubtitle != nil, visible = subtitle != nil
         shownSubtitle = subtitle
-        if let subtitle { hoverSubtitle.stringValue = subtitle.text }
+        if let subtitle { resetParts?.subtitle.stringValue = subtitle.text }
         updateResetIcon()
         if shareable && visible != wasVisible { updateActions(); needsLayout = true }
-        guard visible != wasVisible, let stack = titleStack.layer, let label = hoverSubtitle.layer else { return }
+        guard visible != wasVisible, let stack = titleStack.layer, let subtitleLabel = resetParts?.subtitle, let label = subtitleLabel.layer else { return }
         let lift = visible ? CATransform3DMakeTranslation(0, -SidebarRowAppearance.subtitleLift, 0) : CATransform3DIdentity
         let opacity: Float = visible ? 1 : 0
         let fromLift = stack.presentation()?.sublayerTransform ?? stack.sublayerTransform
         let fromOpacity = label.presentation()?.opacity ?? label.opacity
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        stack.sublayerTransform = lift; hoverSubtitle.alphaValue = CGFloat(opacity)
+        stack.sublayerTransform = lift; subtitleLabel.alphaValue = CGFloat(opacity)
         CATransaction.commit()
         stack.removeAnimation(forKey: "transform_animation"); label.removeAnimation(forKey: "opacity_animation")
         // Settled Reduce Motion is an adaptation shared with the row controls.
@@ -1067,14 +1161,9 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     ///
     /// subtitle keeps the page image.
     private func updateResetIcon() {
-        let swap = shownSubtitle == .reset && resetIcon.image != nil
-        resetIcon.isHidden = !swap
+        let swap = shownSubtitle == .reset && resetParts?.icon.image != nil
+        resetParts?.icon.isHidden = !swap
         icon.alphaValue = swap ? 0 : 1
-    }
-    /// "Reset Tab" with the reset shortcut, only while one is bound
-    ///
-    private func updateResetTooltip() {
-        LiveShortcutToolTip.set(resetRegion, "Reset Tab", commandID: "resetTab:", requiresBinding: true)
     }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -1082,7 +1171,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     }
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.control) { rightMouseDown(with: event); return }
-        guard window != nil, !isHiddenOrHasHiddenAncestor, !titleField.editingTitle else { return }
+        guard window != nil, !isHiddenOrHasHiddenAncestor, !editingTitle else { return }
         mouseStart = convert(event.locationInWindow, from: nil); selectionEvent = event
         pendingActivation = prepareActivation?()
     }
@@ -1121,8 +1210,10 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         guard window != nil, !isHiddenOrHasHiddenAncestor else { return [] }
         return mergedAccessibilityActions + (makeAccessibilityActions?() ?? [])
     }
-    /// The Mini Player speaker host this row was built with.
-    var speakerHost: SidebarSpeakerHost? { muteButton.decoration as? SidebarSpeakerHost }
+    /// The Mini Player speaker host this row was built with, while its mute
+    /// button still shows it (another row can take the host over).
+    private var builtSpeaker: SidebarSpeakerHost?
+    var speakerHost: SidebarSpeakerHost? { muteButtonStore?.decoration as? SidebarSpeakerHost }
     /// Whether another render can reuse this row for `tab`: what only `init`
     /// sets (the close action's kind, the page type's glyph and role, the
     /// reset regions) still holds.
@@ -1131,11 +1222,11 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
             && InternalPage(urlString: tab.url) == built.page
     }
     private let built: (kind: TabKind, reset: Bool, page: InternalPage?)
-    /// A kept page's outline hides with its rows under the pointer. Rows
-    /// with nothing to cancel stay as they are, so the outline has no layout
-    /// left for when it shows again.
-    override func viewDidHide() {
-        super.viewDidHide()
+    /// A kept page's outline hides, or leaves the screen, with its rows under
+    /// the pointer. Rows with nothing to cancel stay as they are, so the
+    /// outline has no layout left for when it shows again.
+    override func viewDidHide() { super.viewDidHide(); resetPointer() }
+    func resetPointer() {
         if hover || groupHover || mouseStart != nil || pendingActivation != nil { cancelInteraction() }
     }
     override func isAccessibilityEnabled() -> Bool {
@@ -1152,7 +1243,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     /// Compact split children keep the split cell's separate handler.
     override func otherMouseDown(with event: NSEvent) {
         guard event.buttonNumber == 2, !compactSplitChild, window != nil, !isHiddenOrHasHiddenAncestor,
-              !titleField.editingTitle, let close = closeButton.prepareAction?() else {
+              !editingTitle, let close = closeButton.prepareAction?() else {
             super.otherMouseDown(with: event); return
         }
         cancelInteraction(); _ = close()
@@ -1200,7 +1291,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     /// cell's visible background, as for the split cell's drag image.
     private func dragImage() -> NSImage {
         // A drag from the reset icon would otherwise keep its hover fill and subtitle.
-        resetRegion.cancelInteraction(); setResetSubtitle(nil, animated: false)
+        resetParts?.region.cancelInteraction(); setResetSubtitle(nil, animated: false)
         updateColor(); layoutSubtreeIfNeeded()
         let image = NSImage(size: bounds.size)
         if let bitmap = bitmapImageRepForCachingDisplay(in: bounds) {
@@ -1300,7 +1391,11 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     var onPreview: ((SidebarPreviewTarget) -> Void)?
     var onPreviewPreferencesChanged: (() -> Void)?
-    private var previewAnchors: [SidebarPreviewTarget: NSView] = [:]
+    /// Favorites' preview anchors; the shown page holds its rows'.
+    private var favoriteAnchors: [SidebarPreviewTarget: NSView] = [:]
+    private var previewAnchors: [SidebarPreviewTarget: NSView] {
+        favoriteAnchors.merging(shownPage.previewAnchors) { _, row in row }
+    }
     var onAddress: (() -> Void)?
     var onNewTab: (() -> Void)?
     var onNavigation: ((NavigationControlKind) -> NavigationControlInteraction?)?
@@ -1389,27 +1484,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     var isEditingTitle: Bool { titleEdit != nil || splitTitleEdit != nil || folderTitleEdit != nil }
 
-    /// Folder rows by folder, kept across renders (in their Space's page) so a
-    /// disclosure change animates the row's icon and the row keeps its pointer state.
-    private var renderedFolderRows: [UUID: SidebarFolderRow] = [:]
-    ///
-    /// (`spaceViewControllerCache`, read by collectionView(_:willDisplay:…)
-    ///
-    /// rows of the Spaces it showed last, so showing one again reuses them
-    /// instead of building every row and laying the list out anew.
-    private struct SpacePage {
-        let list: SidebarOutlineView
-        var tabRows: [UUID: SidebarTabRow] = [:]
-        var folderRows: [UUID: SidebarFolderRow] = [:]
-    }
-    private var spacePages: [UUID: SpacePage] = [:]
-    /// The kept pages' Spaces, the most recently shown last; pages prepared
-    /// ahead of a visit go first.
-    private var spacePageOrder: [UUID] = []
-    private static let keptHiddenRows = 1200
     private var folderTitleEdit: (folder: BrowserFolder, row: SidebarFolderRow)?
-    /// The last rendered Space's folder disclosure.
-    private var renderedDisclosure: (space: UUID, expanded: [UUID: Bool], peeks: [UUID: [SidebarItemReference]])?
     /// Prepares an inline rename of the original folder: commits a name, or
     /// nil when the folder cannot be renamed here.
     var prepareFolderRename: ((BrowserFolder) -> ((String) -> Bool)?)?
@@ -1419,7 +1494,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     var prepareFolderIcon: ((BrowserFolder) -> (() -> Bool)?)?
     /// The folder row and its icon's rect, where Change Icon… anchors.
     func folderIconAnchor(_ id: UUID) -> (view: NSView, rect: NSRect)? {
-        guard let row = renderedFolderRows[id], row.window != nil else { return nil }
+        guard let row = shownPage.folderRow(id), row.window != nil else { return nil }
         return (row, row.iconFrame)
     }
     ///
@@ -1453,7 +1528,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             if !kept.isEmpty { next[id] = kept }
         }
         if let active, !keepActive {
-            let previous = renderedDisclosure?.space == state.activeSpaceID ? renderedDisclosure?.expanded : nil
+            let previous = shownPage.spaceID == state.activeSpaceID ? shownPage.renderedDisclosure?.expanded : nil
             var child = active
             var location = SidebarHierarchy.location(of: child, state: state, spaceID: state.activeSpaceID)
             while let folderID = location?.folderID, let folder = folders[folderID] {
@@ -1521,7 +1596,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     @discardableResult func beginFolderTitleEditing(_ id: UUID, untitled: Bool = false) -> Bool {
         guard !isEditingTitle, !isSpaceManagement, let state = hierarchyState,
               let folder = state.folders.first(where: { $0.id == id }),
-              let row = renderedFolderRows[id], row.window != nil,
+              let row = shownPage.folderRow(id), row.window != nil,
               let commit = prepareFolderRename?(folder), presentsForEditing(reveal: revealForEditing) else { return false }
         folderTitleEdit = (folder, row)
         row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -3))
@@ -1542,7 +1617,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     @discardableResult func beginTitleEditing(_ tab: BrowserTab) -> Bool {
         guard !isEditingTitle, let state = hierarchyState,
-              let row = tabRows.first(where: { $0.tabID == tab.id }),
+              let row = shownPage.tabRow(tab.id),
               let commit = prepareTabRename?(tab), presentsForEditing(reveal: revealForEditing) else { return false }
         titleEdit = (tab, row, state.selectedTabIDs, latestFocusedTabID)
         row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -3))
@@ -1559,7 +1634,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     func appearanceAnchor(for group: BrowserSplitLayout) -> NSView? {
         if let anchor = group.sidebarAnchorID, let tile = favoriteTiles[anchor] { return tile }
-        return hierarchyRows.first { $0.0 == .split(group.id) }?.1
+        return shownPage.splitRow(group.id)
     }
 
     ///
@@ -1626,7 +1701,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     @discardableResult func beginTitleEditing(_ target: SidebarSplitTitleEdit) -> Bool {
         guard !isEditingTitle, let state = hierarchyState, target.matches(state),
-              let row = hierarchyRows.first(where: { $0.0 == .split(target.group.id) })?.1 as? SidebarSplitGroupView,
+              let row = shownPage.splitRow(target.group.id),
               let commit = prepareSplitRename?(target), presentsForEditing(reveal: revealForEditing) else { return false }
         splitTitleEdit = (target, row, state.selectedTabIDs, latestFocusedTabID)
         row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -3))
@@ -1655,7 +1730,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     var onChangeSpaceIcon: ((UUID) -> Void)?
     private var editingSpace: BrowserSpace?
     /// The last render's header visibility rule, without the editing session.
-    private var spaceHeaderContentShown = false
+    private var spaceHeaderContentShown: Bool {
+        get { shownPage.headerContentShown } set { shownPage.headerContentShown = newValue }
+    }
     var isEditingSpaceName: Bool { editingSpace != nil }
     func spaceAppearanceAnchor(_ id: UUID) -> NSView? {
         if id == activeSpaceID, !spaceHeader.isHidden { return spaceHeader }
@@ -1843,7 +1920,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// clicks, key focus or accessibility. Until then it holds its place in
     /// the divider's row and the border ends 8 points before it; NSStackView
     /// lays out only unhidden views.
-    private var clearRevealed = false
+    private var clearRevealed: Bool { get { shownPage.clearRevealed } set { shownPage.clearRevealed = newValue } }
     /// Only the latest fade's completion may hide Clear.
     private var clearRevealGeneration = 0
     private func updateClearReveal() {
@@ -1904,7 +1981,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         for tile in favoriteTiles.values { tile.setKeyboardHighlighted(tile === favorite) }
         let row: NSView?
         if let favorite { row = favorite }
-        else if let item, let view = hierarchyRows.first(where: { $0.0 == item })?.1 { row = view }
+        else if let item, let view = shownPage.view(for: item) { row = view }
         else if case .tab(let id) = item { row = previewAnchors[.tab(id)] }
         else { row = nil }
         guard let row else { return }
@@ -1935,7 +2012,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     ///
     func revealItem(_ item: SidebarItemReference) {
         layoutSubtreeIfNeeded()
-        guard let row = hierarchyRows.first(where: { $0.0 == item })?.1 else { return }
+        guard let row = shownPage.view(for: item) else { return }
         row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -4))
         NSAccessibility.post(element: row, notification: .layoutChanged)
         SidebarAttentionShake.play(on: row)
@@ -1945,19 +2022,30 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// row into view without the reveal's attention shake.
     func scrollItemToVisible(_ item: SidebarItemReference) {
         layoutSubtreeIfNeeded()
-        guard let row = hierarchyRows.first(where: { $0.0 == item })?.1 else { return }
+        guard let row = shownPage.view(for: item) else { return }
         row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -4))
     }
 
-    private let scroll = SidebarPagingScrollView()
     ///
-    /// the shown Space's page's.
-    private var list = SidebarOutlineView()
-    /// The list's document view. It also holds the kept Spaces' outlines,
-    /// hidden: moving a long outline to another view, or out of the window
-    /// and back, costs every row its constraints and its layout.
-    private let listHost = SidebarListHost()
-    /// Outlines of pages let go, removed one per idle turn.
+    /// off-screen ones (`spaceViewControllerCache`, an NSCache whose count
+    ///
+    ///
+    private var pages: [UUID: SidebarSpacePage] = [:]
+    /// The kept pages' Spaces, the most recently shown last.
+    private var pageOrder: [UUID] = []
+    private static let keptPages = 10
+    /// Kept pages other than the shown one and those beside it stay within
+    /// about 150 MB: a row cost about 170 KB once the window's layout engine
+    /// held it (tests/SidebarSpaceSwipe, 50 folders).
+    private static let keptRowBudget = 900
+    /// The page on screen; before the first render, one no Space owns yet.
+    private lazy var shownPage: SidebarSpacePage = makePage()
+    ///
+    /// and the Space header above it (SidebarSpaceHeader.swift), the shown page's.
+    private var scroll: SidebarPagingScrollView { shownPage.scroll }
+    private var list: SidebarOutlineView { shownPage.list }
+    private var spaceHeader: SidebarSpaceHeaderView { shownPage.header }
+    /// Outlines of pages let go, taken apart a row at a time while idle.
     private var retiredLists: [SidebarOutlineView] = []
     private let favoritesHost = NSView()
     ///
@@ -1965,9 +2053,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private let favoritesEmptyState = FavoritesEmptyStateView()
     /// Records the Dismiss button's or Hide item's profile in the store.
     var dismissFavoritesEmptyState: ((UUID) -> Void)?
-    ///
-    /// SidebarChromeLayout.SpaceHeader.content.
-    private let spaceHeader = SidebarSpaceHeaderView()
     /// Flips the app-wide showSpaceHeaderOnSingleUnnamedSpaces in the store
     /// (the header menu's Show/Hide Space Header).
     var toggleSpaceHeaderOnSingleUnnamedSpaces: (() -> Void)?
@@ -2042,8 +2127,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private var spaceButtonsByID: [UUID: ActionButton] = [:]
     /// Each dock Space button's Space menu by Space ID (SidebarDockItemMenu).
     private var spaceMenusByID: [UUID: SidebarDockItemMenu] = [:]
-    private var tabRows: [SidebarTabRow] = []
-    private var speakerHosts: [UUID: SidebarSpeakerHost] = [:]
+    /// The shown page's tab rows and Mini Player speakers.
+    private var tabRows: [SidebarTabRow] { shownPage.tabRows }
+    private var speakerHosts: [UUID: SidebarSpeakerHost] { shownPage.speakerHosts }
     ///
     private var keyDraggedTabID: UUID?
     /// The split whose cell is the key item of an in-progress drag.
@@ -2051,24 +2137,35 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private weak var keyboardHighlightedGroup: SidebarSplitGroupView?
     private weak var keyboardHighlightedFolder: SidebarFolderRow?
     private var hierarchyState: BrowserState?
-    private var hierarchyRows: [(SidebarItemReference, NSView)] = []
+    /// The shown page's item rows in outline order.
+    private var hierarchyRows: [(SidebarItemReference, NSView)] { shownPage.hierarchyRows }
     private let dropFeedback = SidebarDropFeedbackView()
     private var dropProposal: (SidebarMoveSession, SidebarContainerLocation, SidebarItemReference?)?
     private var windowDropAction: (() -> Bool)?
     private var copyDropAction: (() -> Bool)?
     private var dockDropAction: (() -> Bool)?
-    private weak var pinnedEnd: NSView?
-    private weak var todayStart: NSView?
-    /// One New Tab row across renders, so a render keeps its hover plate and
-    /// lets a release bounce finish.
-    private lazy var newTabRow: SidebarNewTabRow = {
+    private var pinnedEnd: NSView? { shownPage.pinnedEnd }
+    private var todayStart: NSView? { shownPage.todayStart }
+    /// Each page keeps one New Tab row across renders, so a render keeps its
+    /// hover plate and lets a release bounce finish.
+    private var newTabRow: SidebarNewTabRow { shownPage.newTabRow }
+    private func makePage() -> SidebarSpacePage {
         let row = SidebarNewTabRow(dark: false) { [weak self] in self?.onNewTab?() }
         row.button.focusRingCornerRadius = SidebarRowAppearance.cornerRadius // a Parc ring in the hover plate's shape
         //
         // the state has no tooltip, so only the help carries it.
         LiveShortcutToolTip.help(row.button, "New tab", commandID: "newTab:")
-        return row
-    }()
+        let page = SidebarSpacePage(newTabRow: row)
+        configureHeader(page.header)
+        page.scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }
+        page.list.focusOwner = self
+        page.view.passesThrough = true
+        // Built pages wait out of the strip's reach rather than hidden:
+        // showing a long page again cost a frame.
+        page.view.frame = NSRect(x: 3 * bounds.width, y: 0, width: bounds.width, height: bounds.height)
+        pageStrip.addSubview(page.view)
+        return page
+    }
     ///
     /// is then the only current item: the tab and split cell builders report
     ///
@@ -2077,10 +2174,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// read it.
     var newTabPlaceholderActive = false { didSet { newTabRow.current = newTabPlaceholderActive } }
     private var renderedNewTabPlaceholder = false
-    private weak var clearButton: ActionButton?
-    private var todayHasTabs = false
-    private weak var sectionLine: SidebarHairline?
-    private weak var privateUnpinnedHeader: SidebarSpaceHeaderView?
+    private var clearButton: ActionButton? { shownPage.clearButton }
+    private var todayHasTabs: Bool { shownPage.todayHasTabs }
+    private var sectionLine: SidebarHairline? { shownPage.sectionLine }
+    private var privateUnpinnedHeader: SidebarSpaceHeaderView? { shownPage.privateUnpinnedHeader }
     var showsPrivateProfileIndicator = false {
         didSet {
             guard showsPrivateProfileIndicator != oldValue else { return }
@@ -2097,7 +2194,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         addSubview(spaceCreationFeedback)
         addSubview(contentSurface)
         for view in [favoritesHost, addressBackground, addressButton, shareQuote, copyQuote, pageActions, paymentAction, extensionToolbar, pageStrip, miniPlayers] { contentSurface.addSubview(view) }
-        pageStrip.addSubview(spaceHeader); pageStrip.addSubview(scroll)
         contentSurface.addSubview(archiveEducationHost)
         archiveEducation.setInteractionEnabled(false)
         archiveEducation.onDismiss = { [weak self] in self?.onDismissAutoArchiveEducation?() }
@@ -2108,26 +2204,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             self?.setNeedsKeyViewLinking()
         }
         archiveEducationHost.onRelinquishFocus = { [weak self] in self?.onAutoArchiveEducationRelinquishFocus?() }
-        // The header's menu offers the Space actions Parc already has.
-        spaceHeader.isHidden = true
-        spaceHeader.managementMenu = { [weak self] in
-            guard let self, let id = self.activeSpaceID else { return nil }
-            return self.makeSpaceManagementMenu?(id)
-        }
-        spaceHeader.onChangeIcon = { [weak self] in
-            guard let self, let id = self.activeSpaceID else { return }
-            self.onChangeSpaceIcon?(id)
-        }
-        spaceHeader.onRenameSpace = { [weak self] in
-            guard let self, let id = self.activeSpaceID else { return }
-            self.onRenameSpace?(id)
-        }
-        spaceHeader.onEditTheme = { [weak self] in self?.onEditTheme?() }
-        spaceHeader.onNewFolder = { [weak self] in self?.onNewFolder?() }
-        spaceHeader.onToggleHeader = { [weak self] in self?.toggleSpaceHeaderOnSingleUnnamedSpaces?() }
-        //
-        // header can show its edit button; Parc has no `.home` one [I].
-        spaceHeader.canShowHeaderButtonsIfPossible = true
         // The list's empty area and any other view without a menu of its own.
         spaceMenu = { [weak self] in self?.sidebarSpaceMenu() }
         for view in [keyViewGate, windowButtons, spacesHost, back, forward, reload, reloadOptions, footerMore, libraryEntry, toggle] { addSubview(view) }
@@ -2244,53 +2320,72 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         creationSpaceButton.setAccessibilityLabel("Create Space")
         SidebarAccessibility.configureSpace(creationSpaceButton, name: "Create Space")
         extensionToolbar.onButtonsChange = { [weak self] in self?.setNeedsKeyViewLinking() }
-        scroll.drawsBackground = false; scroll.adoptTablistScroller()
-        scroll.horizontalScrollElasticity = .none
-        list.focusOwner = self
-        scroll.documentView = listHost; listHost.addSubview(list)
         configureSpacePaging()
+        shownPage.view.isHidden = false; shownPage.view.passesThrough = false
+        SidebarInputClock.start()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Every page's Space header offers the shown Space's actions; only the
+    /// shown page's takes input.
+    private func configureHeader(_ header: SidebarSpaceHeaderView) {
+        // The header's menu offers the Space actions Parc already has.
+        header.isHidden = true
+        header.managementMenu = { [weak self] in
+            guard let self, let id = self.activeSpaceID else { return nil }
+            return self.makeSpaceManagementMenu?(id)
+        }
+        header.onChangeIcon = { [weak self] in
+            guard let self, let id = self.activeSpaceID else { return }
+            self.onChangeSpaceIcon?(id)
+        }
+        header.onRenameSpace = { [weak self] in
+            guard let self, let id = self.activeSpaceID else { return }
+            self.onRenameSpace?(id)
+        }
+        header.onEditTheme = { [weak self] in self?.onEditTheme?() }
+        header.onNewFolder = { [weak self] in self?.onNewFolder?() }
+        header.onToggleHeader = { [weak self] in self?.toggleSpaceHeaderOnSingleUnnamedSpaces?() }
+        //
+        // header can show its edit button; Parc has no `.home` one [I].
+        header.canShowHeaderButtonsIfPossible = true
+    }
 
     // MARK: Mouse and trackpad navigation (docs/navigation.md)
 
     ///
-    /// window's Spaces in dock order. The Space header and tablist live in
+    /// window's Spaces in dock order, each Space's header and tablist its own
+    /// page view (SidebarSpacePage) in `pageStrip`, which clips to the sidebar
     ///
     ///
-    /// dock stay in place. While the strip is off rest, the neighbouring
-    /// Space's page is drawn beside it by a non-interactive sidebar rendered
-    /// for that Space, and the themes of the pages either side of the strip's
+    /// either side of the shown one wait beside it, outside the strip, so a
+    /// swipe only moves the strip. The themes of the pages either side of the
     ///
-    /// background and the floating container's theme view
+    /// window's background and the floating container's theme view
     ///
     private let spacePager = SidebarSpacePager()
     private let pageStrip = SidebarPageStripView()
-    private let neighborPage = SidebarPageStripView()
-    private var neighborSidebar: SidebarView?
-    private var neighborSpaceID: UUID?
-    /// The state the neighbouring page last rendered; a page prepared before
-    /// a live title or load change renders again when it is shown.
-    private var neighborRenderedState: BrowserState?
     /// The Space a switch made elsewhere left, shown beside the strip and
     /// blended from while it slides in, even when it isn't the adjacent page.
     private var pagingSourceID: UUID?
     /// Set when the creation page closes, so its new Space doesn't slide in
     /// from the Space it was created from.
     private var creationEnded = false
-    private var neighborPaletteSource: (theme: SpaceTheme, appearance: NSAppearance.Name)?
     ///
     private let spaceCreationFeedback = SidebarSpaceCreationFeedbackView()
     private var spaceCreationGesture = SidebarSpaceCreationGesture()
     /// The themes either side of the strip's position and the progress
     /// between them, which the window's theme surfaces draw; nil at rest.
     var onPagingTheme: ((ThemePagingTransition?) -> Void)?
+    /// The latest render's captures and share offers, for pages built between renders.
+    private var renderedCaptures: [UUID: CaptureIndicatorPresentation] = [:]
+    private var renderedShareable: Set<UUID> = []
+    /// Counts the states renders show; a page checks itself once against each.
+    private var stateGeneration = 0
+    /// The page a swipe or slide shows beside the strip.
+    private var revealedPageID: UUID?
     private func configureSpacePaging() {
         pageStrip.wantsLayer = true; pageStrip.layer?.masksToBounds = true
-        neighborPage.wantsLayer = true; neighborPage.layer?.masksToBounds = true
-        neighborPage.isHidden = true
-        neighborPage.passesThrough = true
-        pageStrip.addSubview(neighborPage)
         spacePager.pages = { [weak self] in
             self?.spaces.map { SidebarSpacePager.Page(id: $0.id, profileID: $0.profileID) } ?? []
         }
@@ -2312,9 +2407,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         // takes a horizontal gesture over the sidebar before the list
         //
         // can't use, so they never reached the sidebar.
-        scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }
-        spacesHost.offerScroll = scroll.offerScroll
-        miniPlayers.offerScroll = scroll.offerScroll
+        let offer: (NSEvent) -> Bool = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }
+        spacesHost.offerScroll = offer
+        miniPlayers.offerScroll = offer
     }
 
     ///
@@ -2346,22 +2441,19 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let source = pagingSourceID.flatMap { id in spaces.firstIndex { $0.id == id } }
         let neighborIndex = source ?? index.map { offset < 0 ? $0 + 1 : $0 - 1 }
         guard offset != 0, width > 0, let index, let neighborIndex, spaces.indices.contains(neighborIndex),
-              let state = hierarchyState,
+              hierarchyState != nil,
               let pages = SidebarSpacePagingModel.themePages(selected: index, offset: offset, width: width, count: spaces.count) else {
-            neighborPage.isHidden = true
             pagingSourceID = nil
+            // A page the strip revealed but didn't land on lets go of the pointer.
+            if let revealed = revealedPageID, revealed != activeSpaceID { self.pages[revealed]?.resetPointer() }
+            revealedPageID = nil
+            placePages(side: nil)
             onPagingTheme?(nil)
             return
         }
-        let space = spaces[neighborIndex]
-        if neighborSpaceID != space.id || neighborRenderedState != state { renderNeighbor(space, state: state) }
-        let pageTop = spaceHeader.isHidden ? scroll.frame.minY : spaceHeader.frame.minY
-        let pageRect = NSRect(x: offset < 0 ? width : -width, y: pageTop, width: width,
-                              height: max(0, scroll.frame.maxY - pageTop))
-        neighborPage.frame = pageRect
-        neighborSidebar?.frame = NSRect(x: 0, y: -pageTop, width: width, height: bounds.height)
-        neighborPage.isHidden = false
-        updateNeighborPalette(space)
+        if let revealed = revealedPageID, revealed != spaces[neighborIndex].id { self.pages[revealed]?.resetPointer() }
+        revealedPageID = spaces[neighborIndex].id
+        placePages(side: (spaces[neighborIndex].id, offset < 0 ? 1 : -1))
         if let source {
             // The source sits on the side the strip slides in from.
             let fraction = min(1, max(0, abs(offset) / width))
@@ -2374,52 +2466,167 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
     }
 
-    /// The neighbouring page's text and fills, from the window's appearance
-    /// rather than the current Space's contrasting one.
-    private func updateNeighborPalette(_ space: BrowserSpace) {
-        let appearance = window?.effectiveAppearance ?? effectiveAppearance
-        guard neighborPaletteSource?.theme != space.theme || neighborPaletteSource?.appearance != appearance.name else { return }
-        neighborSidebar?.palette = ThemeChromePalette(theme: space.theme, appearance: appearance)
-        neighborPaletteSource = (space.theme, appearance.name)
+    /// Places the pages beside the shown one, outside the strip's bounds:
+    /// `side`'s page, which a swipe or slide reveals, on its side (built now
+    /// if it isn't yet), and the built pages of the Spaces either side.
+    /// Every other page is hidden.
+    private func placePages(side: (id: UUID, direction: Int)?) {
+        guard !isSpaceManagement, let state = hierarchyState else { return }
+        var beside: [UUID: Int] = [:]
+        if let index = spaces.firstIndex(where: { $0.id == activeSpaceID }) {
+            for direction in [-1, 1] where spaces.indices.contains(index + direction) { beside[spaces[index + direction].id] = direction }
+        }
+        if let side {
+            for (id, direction) in beside where direction == side.direction { beside[id] = nil }
+            beside[side.id] = side.direction
+            if pages[side.id] == nil, spaces.contains(where: { $0.id == side.id }) { keep(side.id, page: makePage()) }
+        }
+        for (id, page) in pages where page !== shownPage {
+            guard let direction = beside[id], id == side?.id || page.key != nil else {
+                let away = NSRect(x: 3 * bounds.width, y: 0, width: bounds.width, height: bounds.height)
+                if page.view.frame != away { page.view.frame = away }
+                continue
+            }
+            if id == side?.id, page.checkedGeneration != stateGeneration || page.pendingBuild != nil { refresh(page, spaceID: id, state: state) }
+            let frame = NSRect(x: CGFloat(direction) * bounds.width, y: 0, width: bounds.width, height: bounds.height)
+            if page.view.frame != frame { page.view.frame = frame }
+            if !page.laidOut || !isFramed(page) { layoutPage(page) }
+        }
     }
 
-    /// Renders the neighbouring Space's page with its own palette from the
-    /// same state; no callbacks are connected, so it cannot act.
-    private func neighborSidebarView() -> SidebarView {
-        if let neighborSidebar { return neighborSidebar }
-        let sidebar = SidebarView(frame: bounds)
-        neighborSidebar = sidebar; neighborPage.addSubview(sidebar)
-        sidebar.isPresented = false
-        return sidebar
+    /// The state `id`'s page shows: this one with that Space active and its
+    /// own remembered selection, as selecting the Space restores it.
+    private func pageState(_ id: UUID, from state: BrowserState) -> BrowserState {
+        guard id != state.activeSpaceID else { return state }
+        var next = state
+        next.activeSpaceID = id
+        next.selectedTabIDs = state.selectionBySpace[id.uuidString] ?? []
+        return next
     }
-    private func renderNeighbor(_ space: BrowserSpace, state: BrowserState) {
-        let sidebar = neighborSidebarView()
-        sidebar.isPrivateBrowsing = isPrivateBrowsing
-        sidebar.requestTabFavicon = requestTabFavicon
-        sidebar.requestSavedFavicon = requestSavedFavicon
-        updateNeighborPalette(space)
-        var neighbor = state; neighbor.activeSpaceID = space.id
-        sidebar.frame = bounds
-        // A page already showing this Space takes a title or load change as the
-        // live path does, falling back to a render.
-        if neighborSpaceID != space.id || !sidebar.applyLivePageMetadata(state: neighbor, focusedTabID: nil, loading: [], canBack: false, canForward: false) {
-            sidebar.render(state: neighbor, focusedTabID: nil, loading: [], canBack: false, canForward: false)
+
+    /// Brings a page that isn't shown up to `state`: its rows take live title
+    /// and address changes in place, and a changed Space rebuilds it, until
+    /// `deadline` if there is one. Answers whether the page is up to date.
+    @discardableResult
+    private func refresh(_ page: SidebarSpacePage, spaceID: UUID, state: BrowserState, until deadline: CFTimeInterval? = nil) -> Bool {
+        let shown = pageState(spaceID, from: state)
+        let focused = shown.selectedTabIDs.first
+        let key = pageKey(shown, focused: focused, placeholder: false)
+        if page.key == key, page.pendingBuild == nil {
+            page.checkedGeneration = stateGeneration
+            patchLive(page, state: shown, focusedTabID: focused)
+        } else {
+            if page.pendingBuild?.key != key {
+                page.pendingBuild = (key, startBuild(page, state: shown, focusedTabID: focused, placeholder: false, key: key))
+            }
+            guard page.pendingBuild?.run(deadline) ?? true else { return false }
+            patchLive(page, state: shown, focusedTabID: focused)
         }
-        neighborSpaceID = space.id; neighborRenderedState = state
+        applyPagePalette(page, paletteForPage(spaceID))
+        return true
+    }
+
+    /// A page beside the shown one takes its own Space's palette, from the
+    /// window's appearance rather than the shown Space's contrasting one.
+    private func paletteForPage(_ spaceID: UUID) -> ThemeChromePalette? {
+        guard let space = spaces.first(where: { $0.id == spaceID }) else { return palette }
+        return ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? effectiveAppearance)
+    }
+
+    /// Keeps `page` as `id`'s and lets go of the pages farthest from the
+    ///
+    /// preparation builds them in reversed; the shown page and those beside it stay.
+    private func keep(_ id: UUID, page: SidebarSpacePage) {
+        page.spaceID = id
+        pages[id] = page
+        pageOrder.removeAll { $0 == id }
+        pageOrder.append(id)
+        let pinned = pinnedPages
+        let index = spaces.firstIndex { $0.id == activeSpaceID } ?? 0
+        let distance: (UUID) -> Int = { [spaces] id in spaces.firstIndex { $0.id == id }.map { abs($0 - index) } ?? .max }
+        let farthest = pageOrder.filter { !pinned.contains($0) && $0 != id }.sorted { distance($0) > distance($1) }
+        var excess = pages.count - (Self.keptPages + pinned.count)
+        var rows = pageOrder.filter { !pinned.contains($0) }.reduce(0) { $0 + (pages[$1]?.rowCount ?? 0) }
+        for old in farthest where excess > 0 || rows > Self.keptRowBudget {
+            excess -= 1; rows -= pages[old]?.rowCount ?? 0
+            retirePage(old)
+        }
+    }
+    /// The rows a Space's page shows at most: its items and folders.
+    private func estimatedRows(_ id: UUID, in state: BrowserState) -> Int {
+        state.tabs.reduce(0) { $0 + ($1.spaceID == id && $1.archivedAt == nil && $1.kind != .favorite ? 1 : 0) }
+            + state.folders.reduce(0) { $0 + ($1.spaceID == id ? 1 : 0) }
+    }
+    /// The shown Space and the Spaces either side.
+    /// The shown Space, the Spaces either side and the Space a slide comes from.
+    private var pinnedPages: Set<UUID> {
+        let source = Set(pagingSourceID.map { [$0] } ?? [])
+        guard let index = spaces.firstIndex(where: { $0.id == activeSpaceID }) else { return source.union(activeSpaceID.map { [$0] } ?? []) }
+        return source.union([index - 1, index, index + 1].filter(spaces.indices.contains).map { spaces[$0].id })
+    }
+    /// Lets go of `id`'s page: it leaves view now and its rows leave the
+    /// window a few at a time while idle.
+    private func retirePage(_ id: UUID) {
+        guard let page = pages[id], page !== shownPage else { return }
+        pages.removeValue(forKey: id)
+        pageOrder.removeAll { $0 == id }
+        page.view.frame.origin.x = 3 * bounds.width
+        page.pendingBuild = nil
+        retiredLists.append(page.list)
+        retiredPageViews.append(page.view)
+        scheduleNeighborPreparation()
+    }
+    private var retiredPageViews: [NSView] = []
+    /// Lets go of the pages of Spaces that no longer exist.
+    private func retirePages(notIn spaces: [BrowserSpace]) {
+        for id in pages.keys where !spaces.contains(where: { $0.id == id }) && pages[id] !== shownPage { retirePage(id) }
+    }
+
+    /// Under memory pressure the off-screen pages go, except the ones beside
+    ///
+    private var memoryPressure: DispatchSourceMemoryPressure?
+    /// Watches memory pressure while the sidebar is in a window.
+    private func watchMemoryPressure(_ watching: Bool) {
+        guard watching != (memoryPressure != nil) else { return }
+        guard watching else { memoryPressure?.cancel(); memoryPressure = nil; return }
+        // A new source reports only changes from here on.
+        underMemoryPressure = false
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
+        source.setEventHandler { [weak self, weak source] in
+            MainActor.assumeIsolated {
+                guard let self, let source else { return }
+                if source.data.contains(.normal) { self.memoryPressureEnded() } else { self.releaseOffscreenPages() }
+            }
+        }
+        source.activate()
+        memoryPressure = source
+    }
+    private var underMemoryPressure = false
+    func releaseOffscreenPages() {
+        underMemoryPressure = true
+        let pinned = pinnedPages
+        for id in pageOrder where !pinned.contains(id) { retirePage(id) }
+        if hierarchyState != nil { prepareNeighborPages() }
+    }
+    private func memoryPressureEnded() {
+        guard underMemoryPressure else { return }
+        underMemoryPressure = false
+        if isPresented && !isSpaceManagement && hierarchyState != nil { prepareNeighborPages() }
     }
 
     ///
     /// While this sidebar is idle it prepares, a few milliseconds per turn,
-    /// the neighbouring page's rows for the Spaces either side and this one,
-    /// and the rows of every Space's page (the nearest first, within the
-    /// kept-row budget). A swipe, or a first visit to a Space, reuses those
-    /// rows instead of building them.
+    /// every Space's page up to the ten it keeps, the Spaces either side
+    /// first and then the nearest: their rows, then the page, then its
+    /// layout. A swipe, a click on a Space or a shortcut to one then only
+    /// shows a page.
     private enum PreparationStep {
-        /// Takes let-go outlines' rows out of the window, this sidebar's and the neighbour's.
-        case retire
-        /// Builds the missing rows of this sidebar's page for a Space, or the
-        /// neighbour's, listing the Space's items a container at a time.
-        case rows(neighbor: Bool, UUID, PreparationCursor?)
+        /// Builds the missing rows of a Space's page, listing the Space's
+        /// items a container at a time.
+        case rows(UUID, PreparationCursor?)
+        /// Builds the page from its rows, then lays out its rows a few at a time.
+        case page(UUID)
+        case layout(UUID, Int)
     }
     private struct PreparationCursor {
         var containers: [SidebarContainerLocation]
@@ -2428,108 +2635,122 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private var neighborPreparation: Timer?
     private var pendingPreparation: [PreparationStep] = []
     /// One turn's share, well inside a 120 Hz frame.
-    private static let preparationSlice: CFTimeInterval = 0.004
-    /// Preparation waits for this long without keyboard, pointer or trackpad input.
+    private static let preparationSlice: CFTimeInterval = 0.003
+    /// Rows that join or leave the window in one turn. The window's layout
+    /// engine takes them after the turn, about a millisecond each at 200 folders.
+    private static let rowsPerTurn = 8
+    /// Preparation waits for this long after Parc's own keyboard, pointer or trackpad input.
     private static let preparationQuiet: CFTimeInterval = 0.3
     private func scheduleNeighborPreparation(after delay: TimeInterval = 0.25) {
         neighborPreparation?.invalidate(); neighborPreparation = nil
-        guard isPresented, !isSpaceManagement, window != nil, !pendingPreparation.isEmpty else { return }
-        let timer = Timer(timeInterval: max(delay, Self.preparationQuiet - Self.secondsSinceInput), repeats: false) { [weak self] _ in
+        guard window != nil, !pendingPreparation.isEmpty || !retiredLists.isEmpty || !retiredPageViews.isEmpty else { return }
+        let timer = Timer(timeInterval: max(delay, Self.preparationQuiet - SidebarInputClock.secondsSinceInput), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.prepareNeighborPage() }
         }
         // Not in event tracking: a drag or a menu waits for it.
         RunLoop.main.add(timer, forMode: .default)
         neighborPreparation = timer
     }
-    private static var secondsSinceInput: CFTimeInterval {
-        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-    }
     /// Input arrived recently: preparation steps aside.
-    private var inputRecent: Bool { Self.secondsSinceInput < Self.preparationQuiet }
+    private var inputRecent: Bool { SidebarInputClock.secondsSinceInput < Self.preparationQuiet }
     private func prepareNeighborPage() {
         neighborPreparation = nil
         guard window != nil else { pendingPreparation = []; return }
-        guard isPresented, creationView == nil, !contentSurface.isHidden, let state = hierarchyState else { return }
+        let canBuild = isPresented && !isSpaceManagement && creationView == nil && !contentSurface.isHidden && hierarchyState != nil
         // A waiting event is peeked once: the peek runs the run loop.
         guard !spacePager.isTracking, !spacePager.isAnimating, !inputRecent,
               NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: false) == nil else {
             scheduleNeighborPreparation(); return
         }
         let deadline = CACurrentMediaTime() + Self.preparationSlice
+        // Let-go pages leave the window first.
+        if !retireLists(until: deadline) { scheduleNeighborPreparation(after: 0.008); return }
         while CACurrentMediaTime() < deadline, !inputRecent, let step = pendingPreparation.first {
             switch step {
-            case .retire:
-                let neighborDone = neighborSidebar?.retireLists(until: deadline) ?? true
-                if neighborDone, retireLists(until: deadline) { pendingPreparation.removeFirst() }
-            case .rows(let neighbor, let id, let cursor):
-                guard let sidebar = neighbor ? neighborSidebar : self else { pendingPreparation.removeFirst(); continue }
-                if let next = sidebar.prepareRows(id, from: cursor, state: state, until: deadline) {
-                    pendingPreparation[0] = .rows(neighbor: neighbor, id, next)
+            case .rows(let id, let cursor):
+                guard canBuild, let state = hierarchyState else { return }
+                if let next = prepareRows(id, from: cursor, state: state, until: deadline) {
+                    pendingPreparation[0] = .rows(id, next)
+                } else { pendingPreparation.removeFirst() }
+            case .page(let id):
+                guard canBuild, let state = hierarchyState else { return }
+                guard let page = pages[id], page !== shownPage else { pendingPreparation.removeFirst(); continue }
+                if page.checkedGeneration != stateGeneration || page.pendingBuild != nil {
+                    guard refresh(page, spaceID: id, state: state, until: deadline) else { continue }
+                }
+                pendingPreparation.removeFirst()
+                guard !page.laidOut || !isFramed(page) else { continue }
+                if page.view.frame.size != bounds.size { page.view.frame = NSRect(origin: page.view.frame.origin, size: bounds.size) }
+                layoutPage(page, flush: false)
+                pendingPreparation.insert(.layout(id, 0), at: 0)
+            case .layout(let id, let from):
+                guard canBuild else { return }
+                guard let page = pages[id], page !== shownPage else { pendingPreparation.removeFirst(); continue }
+                if let next = layoutRows(page, from: from, until: deadline) {
+                    pendingPreparation[0] = .layout(id, next)
                 } else { pendingPreparation.removeFirst() }
             }
         }
         // A gap between turns keeps frames and typing free.
         scheduleNeighborPreparation(after: 0.008)
     }
+    /// Queues every Space's page the sidebar doesn't hold up to date, the
+    /// Spaces either side first, then the nearest, up to the ten it keeps.
     private func prepareNeighborPages() {
-        let neighbor = neighborSidebarView()
-        neighbor.retirePages(notIn: spaces)
-        let retiring: [PreparationStep] = retiredLists.isEmpty && neighbor.retiredLists.isEmpty ? [] : [.retire]
-        guard let index = spaces.firstIndex(where: { $0.id == activeSpaceID }), spaces.count > 1 else {
-            pendingPreparation = retiring; scheduleNeighborPreparation(); return
+        retirePages(notIn: spaces)
+        guard let index = spaces.firstIndex(where: { $0.id == activeSpaceID }), spaces.count > 1, !isSpaceManagement else {
+            pendingPreparation = []; scheduleNeighborPreparation(); return
         }
-        let sides = [index + 1, index - 1].filter(spaces.indices.contains).map { spaces[$0].id }
-        let byDistance = spaces.indices.filter { $0 != index }.sorted { abs($0 - index) < abs($1 - index) }.map { spaces[$0].id }
-        pendingPreparation = retiring
-            + (sides + [spaces[index].id]).map { .rows(neighbor: true, $0, nil) }
-            + byDistance.map { .rows(neighbor: false, $0, nil) }
+        // After memory pressure only the pages beside the shown one are built
+        // ahead; otherwise the nearest others too, within the kept-row budget.
+        let pinned = pinnedPages
+        var budget = Self.keptRowBudget
+        let byDistance = spaces.indices.filter { $0 != index }
+            .sorted { abs($0 - index) != abs($1 - index) ? abs($0 - index) < abs($1 - index) : $0 > $1 }
+            .prefix(Self.keptPages).map { spaces[$0].id }
+            .filter { id in
+                guard !pinned.contains(id) else { return true }
+                guard !underMemoryPressure, let state = hierarchyState else { return false }
+                let rows = estimatedRows(id, in: state)
+                guard rows <= budget else { return false }
+                budget -= rows
+                return true
+            }
+        pendingPreparation = byDistance.flatMap { id -> [PreparationStep] in
+            guard let page = pages[id], page.key != nil else { return [.rows(id, nil), .page(id)] }
+            return page.checkedGeneration == stateGeneration && page.laidOut && page.pendingBuild == nil ? [] : [.page(id)]
+        }
         scheduleNeighborPreparation()
-    }
-    /// Lets go of the pages of Spaces that no longer exist.
-    private func retirePages(notIn spaces: [BrowserSpace]) {
-        for (id, page) in spacePages where !spaces.contains(where: { $0.id == id }) {
-            spacePages.removeValue(forKey: id); spacePageOrder.removeAll { $0 == id }
-            if page.list !== list { retiredLists.append(page.list) }
-        }
     }
     /// Takes let-go outlines apart a row at a time, so each row leaves the
     /// window and is freed in its own share of a turn; true once none are left.
     private func retireLists(until deadline: CFTimeInterval) -> Bool {
-        while let retired = retiredLists.last, CACurrentMediaTime() < deadline {
-            if !retired.removeLastRow() { retired.removeFromSuperview(); retiredLists.removeLast() }
+        var removed = 0
+        while let retired = retiredLists.last, CACurrentMediaTime() < deadline, removed < Self.rowsPerTurn {
+            if retired.removeLastRow() { removed += 1 } else { retiredLists.removeLast() }
         }
-        return retiredLists.isEmpty
+        guard retiredLists.isEmpty else { return false }
+        for view in retiredPageViews { view.removeFromSuperview() }
+        retiredPageViews.removeAll()
+        return true
     }
-    /// Builds rows `id`'s page lacks for the tabs and folders a render shows
+    /// Builds rows `id`'s page lacks for the tabs and folders a build shows
     /// (pinned and Today items, inside expanded folders too) until `deadline`,
-    /// and returns where to go on, or nil once done. A Space whose rows would
-    /// pass the kept-row budget is skipped.
+    /// and returns where to go on, or nil once done.
     private func prepareRows(_ id: UUID, from cursor: PreparationCursor?, state: BrowserState,
                              until deadline: CFTimeInterval) -> PreparationCursor? {
         guard state.spaces.contains(where: { $0.id == id }) else { return nil }
-        var page = spacePages[id]
-        if page == nil {
-            let hidden = spacePageOrder.filter { $0 != activeSpaceID }.map(keptRows).reduce(0, +)
-            let rows = state.tabs.reduce(0) { $0 + ($1.spaceID == id && $1.archivedAt == nil ? 1 : 0) }
-                + state.folders.reduce(0) { $0 + ($1.spaceID == id ? 1 : 0) }
-            guard hidden + rows <= Self.keptHiddenRows else { return nil }
-            let outline = SidebarOutlineView()
-            outline.focusOwner = self; outline.isHidden = true
-            listHost.addSubview(outline)
-            page = SpacePage(list: outline)
-            spacePageOrder.insert(id, at: 0)
-        }
-        guard var page else { return nil }
+        let page = pages[id] ?? { let page = makePage(); keep(id, page: page); return page }()
+        guard page !== shownPage else { return nil }
         var cursor = cursor ?? PreparationCursor(containers: [.init(spaceID: id, folderID: nil, section: .pinned),
                                                               .init(spaceID: id, folderID: nil, section: .today)])
-        defer { spacePages[id] = page }
         while CACurrentMediaTime() < deadline {
             if !cursor.items.isEmpty {
                 switch cursor.items.removeFirst() {
                 case .tab(let tabID):
-                    guard page.tabRows[tabID] == nil, let tab = state.tabs.first(where: { $0.id == tabID }) else { continue }
-                    page.tabRows[tabID] = SidebarTabRow(tab: tab, selected: false, speaker: nil,
-                                                        close: { nil }, reset: { nil }, separate: { nil })
+                    guard page.keptTabRows[tabID] == nil, let tab = state.tabs.first(where: { $0.id == tabID }) else { continue }
+                    page.keptTabRows[tabID] = SidebarTabRow(tab: tab, selected: false, speaker: nil,
+                                                            close: { nil }, reset: { nil }, separate: { nil })
                 case .folder(let folderID):
                     guard page.folderRows[folderID] == nil, let folder = state.folders.first(where: { $0.id == folderID }) else { continue }
                     page.folderRows[folderID] = SidebarFolderRow(folder: folder)
@@ -2546,32 +2767,20 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
         return cursor
     }
-    private func keptRows(_ id: UUID) -> Int { spacePages[id].map { $0.tabRows.count + $0.folderRows.count } ?? 0 }
-
-    /// The kept page for `id`, or a new one: the outline shown now when no
-    /// kept page holds it, else a new outline. Pages of Spaces that no longer
-    /// exist are let go, and the oldest hidden ones past the kept-row budget.
-    private func keptSpacePage(_ id: UUID, spaces: [BrowserSpace]) -> SpacePage {
-        spacePageOrder.removeAll { kept in kept == id || !spaces.contains { $0.id == kept } }
-        spacePageOrder.append(id)
-        // Every kept row stays a view; past the budget the oldest hidden pages go.
-        while spacePageOrder.count > 1, spacePageOrder.dropLast().map(keptRows).reduce(0, +) > Self.keptHiddenRows {
-            spacePageOrder.removeFirst()
+    /// Lays out a page's rows from `index` until `deadline`; nil once all are.
+    private func layoutRows(_ page: SidebarSpacePage, from index: Int, until deadline: CFTimeInterval) -> Int? {
+        // The outline places its rows first; then each row lays out its own views.
+        if index == 0, page.list.needsLayout { page.list.layout() }
+        let rows = page.list.subviews
+        var next = index
+        while next < rows.count, CACurrentMediaTime() < deadline {
+            let row = rows[next]; next += 1
+            guard row.needsLayout || row.subviews.contains(where: { $0.needsLayout || $0.subviews.contains(where: \.needsLayout) }) else { continue }
+            row.layoutSubtreeIfNeeded()
         }
-        for (id, page) in spacePages where !spacePageOrder.contains(id) {
-            spacePages.removeValue(forKey: id)
-            if page.list !== list { retiredLists.append(page.list) }
-        }
-        let owned = spacePages.values.contains { $0.list === list }
-        if let page = spacePages[id] {
-            // The outline shown now belonged to a page just let go.
-            if page.list !== list, !owned { retiredLists.append(list) }
-            return page
-        }
-        if !owned { return SpacePage(list: list) }
-        let outline = SidebarOutlineView()
-        outline.focusOwner = self
-        return SpacePage(list: outline)
+        guard next >= rows.count else { return next }
+        page.laidOut = true
+        return nil
     }
 
     /// Horizontal scrolls the tablist does not use (its horizontal elasticity
@@ -2834,6 +3043,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if selectionChanged { applySelection(state: state, focusedTabID: focusedTabID) }
         latestFocusedTabID = focusedTabID
         hierarchyState = state
+        stateGeneration += 1
+        shownPage.renderedState = state; shownPage.checkedGeneration = stateGeneration
+        if selectionChanged { shownPage.key?.selected = state.selectedTabIDs; shownPage.key?.focused = focusedTabID }
         updateNavigation(canBack: canBack, canForward: canForward,
             loading: focusedTabID.map { loading.contains($0) } ?? false, enabled: true)
         let selected = state.tabs.first { $0.id == (focusedTabID ?? state.selectedTabIDs.first) }
@@ -2853,6 +3065,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 row.audio = tabAudio[tab.id]
             }
             if urlChanged {
+                refreshPreviewAction(row, tab: tab)
                 tabFaviconArms[tab.id] = TabRowFaviconIdentity(
                     pageURL: tab.url, resetDestination: tab.resetDestination)
                 row.loadFavicon { [weak self, weak row] completion in
@@ -3009,12 +3222,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
 
     func reloadFavicon(for id: UUID) {
-        if let row = tabRows.first(where: { $0.tabID == id }),
-           let tab = hierarchyState?.tabs.first(where: { $0.id == id }) {
-            row.loadFavicon { [weak self, weak row] completion in
-                self?.requestTabFavicon?(tab) { [weak self, weak row] image in
-                    guard let self, let row, self.tabRows.contains(where: { $0 === row }) else { return }
-                    completion(image)
+        // A kept page off screen holds its rows too; a page being built re-arms.
+        tabFaviconArms.removeValue(forKey: id)
+        if let tab = hierarchyState?.tabs.first(where: { $0.id == id }) {
+            for page in pages.values {
+                guard let row = page.tabRow(id) else { continue }
+                row.loadFavicon { [weak self, weak row, weak page] completion in
+                    self?.requestTabFavicon?(tab) { [weak row, weak page] image in
+                        guard let row, page?.holds(row) == true else { return }
+                        completion(image)
+                    }
                 }
             }
         }
@@ -3108,7 +3325,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let structure = context.flatMap { SidebarHierarchySnapshot(state: disclosed, spaceID: $0.spaceID, profileID: $0.profileID) }
         if structure != selectionStructure || activeItem != selectionActive { itemSelection.clear() }
         selectionContext = context; selectionStructure = structure; selectionActive = activeItem
-        previewAnchors.removeAll()
+        favoriteAnchors.removeAll()
         if state.activeSpaceID != activeSpaceID { newTabRow.dropHeldPress() }
         let departing = activeSpaceID, afterCreation = creationEnded
         creationEnded = false
@@ -3181,7 +3398,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             button.selected = activeID.map { group?.tabIDs.contains($0) ?? ($0 == tab.id) } ?? false
             if button.superview !== favoritesHost { favoritesHost.addSubview(button) }
             favorites.append(button); favoriteItems.append(item)
-            previewAnchors[.tab(tab.id)] = button
+            favoriteAnchors[.tab(tab.id)] = button
             //
             // row, so the window capture strip is their only Stop entry.
             button.setOverlays(favoriteOverlays[tab.id] ?? .none)
@@ -3194,43 +3411,18 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         // dismisses it.
         favoritesEmptyState.update(favorites: favorites.count, profileID: space?.profileID, settings: state.settings,
                                    privateWindow: isPrivateBrowsing) { [weak self] in self?.dismissFavoritesEmptyState?($0) }
-        //
-        // and menu toggle (SidebarChromeLayout.SpaceHeader.content).
-        let headerContent = SidebarChromeLayout.SpaceHeader.content(
-            spaces: state.spaces, activeSpaceID: state.activeSpaceID, privateWindow: isPrivateBrowsing,
-            showOnSingleUnnamedSpace: state.settings.showSpaceHeaderOnSingleUnnamedSpaces ?? false)
         if let editingSpace, space?.id != editingSpace.id || space?.profileID != editingSpace.profileID || space?.title != editingSpace.title {
             cancelSpaceNameEditing()
         }
-        spaceHeader.canShowHeaderButtonsIfPossible = !isSpaceManagement
-        spaceHeaderContentShown = headerContent.isShown
-        spaceHeader.isHidden = !headerContent.isShown && !spaceHeader.isEditing
-        spaceHeader.update(headerContent, symbol: space?.customIcon?.image, emoji: space?.customIcon?.emoji)
-        let profileName = state.profiles.count > 1 && !isPrivateBrowsing
-            ? state.profiles.first(where: { $0.id == space?.profileID })?.name : nil
-        spaceHeader.updateProfile(name: profileName, menu: { [weak self] in
-            guard let self, let id = self.activeSpaceID else { return nil }
-            return self.makeSpaceManagementMenu?(id)?.profileMenu()
-        })
+        stateGeneration += 1
+        hierarchyState = state
+        renderedCaptures = captures; renderedShareable = shareable
+        // The Space's own page: kept, or the one no Space owns yet, or new.
+        let page = pages[state.activeSpaceID] ?? (shownPage.spaceID == nil ? shownPage : makePage())
+        let swapsPage = page !== shownPage
         let origin = scroll.contentView.bounds.origin
-        // Capture settled art before teardown so replacement rows for the same
-        // page identity can adopt it and skip a true no-op re-arm.
-        var priorTabFaviconArt: [UUID: TabRowSettledFaviconArt] = [:]
-        for row in tabRows {
-            if let art = row.settledFaviconArt() {
-                priorTabFaviconArt[row.tabID] = art
-            }
-        }
-        tabRows.removeAll(); hierarchyRows.removeAll(); hierarchyState = state
-        renderedFolderRows.removeAll()
-        let page = keptSpacePage(state.activeSpaceID, spaces: state.spaces)
-        let swapsList = page.list !== list
-        if swapsList {
-            list.isHidden = true
-            list = page.list; list.isHidden = false
-            if list.superview !== listHost { listHost.addSubview(list) }
-        }
-        neighborSpaceID = nil
+        if swapsPage { show(page) }
+        keep(state.activeSpaceID, page: page)
         // A new Space arrives from its own creation page, not the one it left.
         if let departing, departing != state.activeSpaceID, !afterCreation, window != nil, isPresented,
            creationView == nil, !contentSurface.isHidden,
@@ -3240,6 +3432,129 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             if !spacePager.slideIn(from: from, to: to) { pagingSourceID = nil }
         }
         dropProposal = nil; dropFeedback.targetRect = nil
+        //
+        // (TablistViewController's SidebarSnapshotViewState view store): a
+        // page whose Space is unchanged patches live fields, a selection
+        // change moves the current row, and only a changed Space rebuilds.
+        let key = pageKey(state, focused: focusedTabID, placeholder: renderedNewTabPlaceholder)
+        if page.key == key, page.pendingBuild == nil {
+            patchLive(page, state: state, focusedTabID: focusedTabID)
+        } else if page.pendingBuild == nil, let built = page.key, built.matchesApartFromSelection(key),
+                  patchSelection(page, state: state, focusedTabID: focusedTabID) {
+            page.key = key
+            patchLive(page, state: state, focusedTabID: focusedTabID)
+        } else if let pending = page.pendingBuild, pending.key == key {
+            // A build begun ahead finishes, then takes what changed since it began.
+            _ = pending.run(nil)
+            patchLive(page, state: state, focusedTabID: focusedTabID)
+        } else {
+            buildPage(page, state: state, focusedTabID: focusedTabID, placeholder: renderedNewTabPlaceholder, key: key, animated: !swapsPage)
+        }
+        page.checkedGeneration = stateGeneration
+        if swapsPage {
+            // Another Space's page took the list's place.
+            NSAccessibility.post(element: list, notification: .rowCountChanged)
+            NSAccessibility.post(element: list, notification: .selectedRowsChanged)
+        }
+        itemSelection.reconcile(order: selectionOrder)
+        refreshItemSelection()
+        let previousSpaceButtons = spaceButtonsByID, previousSpaceMenus = spaceMenusByID
+        spaceButtonsByID = [:]; spaceMenusByID = [:]
+        spaceButtons = spaces.enumerated().map { offset, space in
+            let button = previousSpaceButtons[space.id] ?? ActionButton()
+            spaceButtonsByID[space.id] = button
+            let spaceID = space.id
+            let dockMenu = previousSpaceMenus[spaceID] ?? SidebarDockItemMenu { [weak self] in self?.dockSpaceMenu(spaceID) }
+            spaceMenusByID[spaceID] = dockMenu
+            dockMenu.install(on: button)
+            button.actionBlock = { [weak self] in self?.onSelectSpace?(space.id, space.profileID) }
+            if let icon = space.customIcon {
+                button.image = icon.image; button.font = .systemFont(ofSize: 18)
+            } else {
+                button.image = NSImage(systemSymbolName: space.symbol, accessibilityDescription: space.name)
+                button.font = .systemFont(ofSize: 12, weight: .medium)
+            }
+            button.title = space.customIcon?.emoji ?? ""
+            button.imagePosition = space.customIcon?.emoji == nil ? .imageOnly : .noImage
+            //
+            // its Profile while there is more than one, and the Space's
+            // numbered binding, above.
+            let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil
+            button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled Space" : space.name,
+                                                      style: .dockItem(profileName: profileName),
+                                                      shortcut: .command(NumberedTarget.spaceBindingID(offset + 1)), anchor: .top)
+            button.setAccessibilityLabel(space.name)
+            SidebarAccessibility.configureSpace(button, name: space.name)
+            let selected = creationView == nil && space.id == state.activeSpaceID
+            button.tag = selected ? 1 : 0
+            button.state = selected ? .on : .off
+            button.isEnabled = canSelectSpace?(space.id, space.profileID) ?? false
+            return button
+        }
+        updateDockItems()
+        applyPalette()
+        highlightItemForKeyboard(keyboardHighlightedItem, scrollToHighlight: false)
+        setKeyboardSearchActive(keyboardSearchActive)
+        keyViewsNeedLinking = true
+        let retainedTabIDs = Set(pages.values.flatMap { $0.tabRows.map(\.tabID) + $0.keptTabRows.keys })
+        for id in Set(tabFaviconArms.keys).subtracting(retainedTabIDs) {
+            tabFaviconArms.removeValue(forKey: id)
+        }
+        needsLayout = true; layoutSubtreeIfNeeded()
+        //
+        if !swapsPage {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(origin.y, max(0, list.frame.height - scroll.contentView.bounds.height))))
+        }
+        if spacePager.offset == 0 { placePages(side: nil) } else { showPageStrip(at: spacePager.offset) }
+        if isPresented && !isSpaceManagement { prepareNeighborPages() }
+    }
+
+    /// Builds `page` for `state`, whose active Space is the page's: its
+    /// header, rows and outline, reusing the rows it kept. It writes only into
+    /// the page, so a page beside the shown one builds the same way.
+    private func buildPage(_ page: SidebarSpacePage, state: BrowserState, focusedTabID: UUID?, placeholder: Bool,
+                           key: SidebarSpacePageKey, animated: Bool = false) {
+        page.pendingBuild = nil
+        _ = startBuild(page, state: state, focusedTabID: focusedTabID, placeholder: placeholder, key: key, animated: animated)(nil)
+    }
+
+    /// A page's build, run until a deadline or, without one, to the end; it
+    /// answers whether it finished. Idle preparation resumes it a slice at a time.
+    private func startBuild(_ page: SidebarSpacePage, state: BrowserState, focusedTabID: UUID?, placeholder: Bool,
+                            key: SidebarSpacePageKey, animated: Bool = false) -> (CFTimeInterval?) -> Bool {
+        page.checkedGeneration = stateGeneration
+        // Its rows are let go below; until the build ends the page matches no key.
+        page.key = nil; page.laidOut = false
+        let pagePalette = page === shownPage ? palette : paletteForPage(state.activeSpaceID)
+        let space = state.spaces.first { $0.id == state.activeSpaceID }
+        let visible = state.tabs.filter { $0.archivedAt == nil }
+        let splitGroups = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID)
+        let pageFolders = state.folders.filter { $0.spaceID == state.activeSpaceID }
+        //
+        // and menu toggle (SidebarChromeLayout.SpaceHeader.content).
+        let headerContent = SidebarChromeLayout.SpaceHeader.content(
+            spaces: state.spaces, activeSpaceID: state.activeSpaceID, privateWindow: isPrivateBrowsing,
+            showOnSingleUnnamedSpace: state.settings.showSpaceHeaderOnSingleUnnamedSpaces ?? false)
+        page.header.canShowHeaderButtonsIfPossible = !isSpaceManagement
+        page.headerContentShown = headerContent.isShown
+        page.header.isHidden = !headerContent.isShown && !page.header.isEditing
+        page.header.update(headerContent, symbol: space?.customIcon?.image, emoji: space?.customIcon?.emoji)
+        let profileName = state.profiles.count > 1 && !isPrivateBrowsing
+            ? state.profiles.first(where: { $0.id == space?.profileID })?.name : nil
+        page.header.updateProfile(name: profileName, menu: { [weak self] in
+            guard let self, let id = self.activeSpaceID else { return nil }
+            return self.makeSpaceManagementMenu?(id)?.profileMenu()
+        })
+        // Capture settled art before teardown so replacement rows for the same
+        // page identity can adopt it and skip a true no-op re-arm.
+        var priorTabFaviconArt: [UUID: TabRowSettledFaviconArt] = [:]
+        for row in page.tabRows {
+            if let art = row.settledFaviconArt() {
+                priorTabFaviconArt[row.tabID] = art
+            }
+        }
+        page.beginBuild()
+        var renderedFolderRows: [UUID: SidebarFolderRow] = [:]
         typealias Chrome = SidebarChromeLayout
         // Item rows in the order they are built; Chrome.tablistSlots places
         // them in the list.
@@ -3249,31 +3564,32 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             guard let audio = tabAudio[tab.id], audio.audible || audio.muted else { return nil }
             return tab.id
         })
-        speakerHosts = speakerHosts.filter { activeAudioIDs.contains($0.key) }
+        page.speakerHosts = page.speakerHosts.filter { activeAudioIDs.contains($0.key) }
         func makeRow(_ tab: BrowserTab, inGroup: Bool = false) -> SidebarTabRow {
             let current = inGroup ? focusedTabID == tab.id
-                : !renderedNewTabPlaceholder && state.selectedTabIDs.contains(tab.id)
+                : !placeholder && state.selectedTabIDs.contains(tab.id)
             //
             //
             let speaker: SidebarSpeakerHost?
             if activeAudioIDs.contains(tab.id) {
-                speaker = speakerHosts[tab.id] ?? SidebarSpeakerHost(muted: tabAudio[tab.id]?.muted == true)
-                speakerHosts[tab.id] = speaker
+                speaker = page.speakerHosts[tab.id] ?? SidebarSpeakerHost(muted: tabAudio[tab.id]?.muted == true)
+                page.speakerHosts[tab.id] = speaker
             } else { speaker = nil }
             // A split's children move into a new split cell each render; a
             // standalone row is reused from its Space's page, as the live
             // path patches it, while it keeps its speaker.
-            let reused = inGroup ? nil : page.tabRows[tab.id].flatMap { $0.speakerHost === speaker && $0.canShow(tab) ? $0 : nil }
+            let reused = inGroup ? nil : page.keptTabRows[tab.id].flatMap { $0.speakerHost === speaker && $0.canShow(tab) ? $0 : nil }
             let row = reused ?? SidebarTabRow(tab: tab, selected: current, speaker: speaker,
                 close: { [weak self] in self?.closingPeek(.tab(tab.id), self?.prepareTabClose?(tab)) },
                 reset: { [weak self] in inGroup ? nil : self?.prepareIconReset?(tab, false) },
                 separate: { [weak self] in inGroup ? nil : self?.prepareIconReset?(tab, true) })
             if let reused { reused.applyLivePage(tab); reused.selected = current }
             row.audio = tabAudio[tab.id]
+            row.onControlsChanged = { [weak self] in self?.rowControlsBuilt = true; self?.setNeedsKeyViewLinking() }
             bindLiveRow(row, tab: tab, inGroup: inGroup)
-            row.capture = captures[tab.id]
+            row.capture = renderedCaptures[tab.id]
             row.showCapture = { [weak self] anchor in self?.onCaptureMenu?(tab.id, anchor) }
-            row.shareable = shareable.contains(tab.id)
+            row.shareable = renderedShareable.contains(tab.id)
             row.prepareShare = { [weak self] in self?.prepareShareThisTab?(tab.id) }
             let selectionItem = inGroup ? splitGroups.first { $0.tabIDs.contains(tab.id) }.map { SidebarItemReference.split($0.id) } ?? .tab(tab.id) : .tab(tab.id)
             row.selectionClick = { [weak self] event in self?.selectItem(selectionItem, event: event) ?? false }
@@ -3297,7 +3613,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 })])
             } else { row.setAccessibilityCustomActions([]) }
             if !inGroup { addMoveAccessibility(to: row, item: .tab(tab.id)) }
-            tabRows.append(row)
+            page.tabRows.append(row)
             // True no-op only when page URL + reset destination match the last
             // arm and settled art can be adopted onto this replacement row.
             // Fallback / in-flight rows keep loading so a later same-URL
@@ -3310,20 +3626,20 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 row.adoptSettledFaviconArt(art)
             } else {
                 tabFaviconArms[tab.id] = arm
-                row.loadFavicon { [weak self, weak row] completion in
-                    self?.requestTabFavicon?(tab) { [weak self, weak row] image in
-                        guard let self, let row, self.tabRows.contains(where: { $0 === row }) else { return }
+                row.loadFavicon { [weak self, weak row, weak page] completion in
+                    self?.requestTabFavicon?(tab) { [weak self, weak row, weak page] image in
+                        guard self != nil, let row, page?.holds(row) == true else { return }
                         completion(image)
                     }
                 }
-                row.loadResetIcon { [weak self, weak row] completion in
-                    self?.requestSavedFavicon?(tab) { [weak self, weak row] image in
-                        guard let self, let row, self.tabRows.contains(where: { $0 === row }) else { return }
+                row.loadResetIcon { [weak self, weak row, weak page] completion in
+                    self?.requestSavedFavicon?(tab) { [weak self, weak row, weak page] image in
+                        guard self != nil, let row, page?.holds(row) == true else { return }
                         completion(image)
                     }
                 }
             }
-            previewAnchors[.tab(tab.id)] = row
+            page.previewAnchors[.tab(tab.id)] = row
             return row
         }
         var emittedGroups = Set<UUID>()
@@ -3334,7 +3650,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 let children = group.tabIDs.compactMap { id in visible.first { $0.id == id } }.map { makeRow($0, inGroup: true) }
                 // ChildItemState.isGroupSelected: every child of the selected
                 //
-                let groupSelected = !renderedNewTabPlaceholder && group.tabIDs == state.selectedTabIDs
+                let groupSelected = !placeholder && group.tabIDs == state.selectedTabIDs
                 children.forEach { $0.splitGroupSelected = groupSelected }
                 //
                 //
@@ -3378,31 +3694,53 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 groupView.selectionClick = { [weak self] event in self?.selectItem(.split(group.id), event: event) ?? false }
                 groupView.selectionContext = { [weak self] in self?.selectedItemsMenu(for: .split(group.id)) ?? cellMenu() }
                 addMoveAccessibility(to: groupView, item: .split(group.id))
+                if let pagePalette { groupView.applyPalette(pagePalette) }
                 content = groupView
-                hierarchyRows.append((.split(group.id), content))
-            } else { content = makeRow(tab); hierarchyRows.append((.tab(tab.id), content)) }
-            guard let item = hierarchyRows.last?.0 else { return }
+                page.add(.split(group.id), content)
+            } else { content = makeRow(tab); page.add(.tab(tab.id), content) }
+            guard let item = page.hierarchyRows.last?.0 else { return }
             itemRows.append(.item(item, content: content, depth: depth, in: folder))
         }
         var visitedFolders = Set<UUID>()
-        func addItems(parentID: UUID?, section: TabKind = .pinned, depth: Int = 0, only: [SidebarItemReference]? = nil) {
-            let location = SidebarContainerLocation(spaceID: state.activeSpaceID, folderID: parentID, section: section)
-            for item in SidebarHierarchy.children(in: location, state: state) where only?.contains(item) ?? true {
+        /// The walk's remaining work, the next last: a container lists its
+        /// items in place, and a folder's children follow its row, in the
+        /// order a recursive walk visits them.
+        enum Work {
+            case container(UUID?, TabKind, Int, [SidebarItemReference]?)
+            case item(SidebarItemReference, UUID?, Int)
+            case today
+        }
+        var work: [Work] = isPrivateBrowsing ? [.today] : [.today, .container(nil, .pinned, 0, nil)]
+        var pinnedRows: [SidebarOutlineEntry] = []
+        func process(_ next: Work) {
+            switch next {
+            case .today:
+                pinnedRows = itemRows; itemRows.removeAll()
+                work.append(.container(nil, .today, 0, nil))
+            case .container(let parentID, let section, let depth, let only):
+                let location = SidebarContainerLocation(spaceID: state.activeSpaceID, folderID: parentID, section: section)
+                let items = SidebarHierarchy.children(in: location, state: state).filter { only?.contains($0) ?? true }
+                work.append(contentsOf: items.reversed().map { .item($0, parentID, depth) })
+            case .item(let item, let parentID, let depth):
+                addItem(item, parentID: parentID, depth: depth)
+            }
+        }
+        func addItem(_ item: SidebarItemReference, parentID: UUID?, depth: Int) {
                 switch item {
                 case .tab(let id):
                     if let tab = tabs.first(where: { $0.id == id }) { addTab(tab, depth: depth, folder: parentID) }
-                    continue
+                    return
                 case .split(let id):
                     if let group = splitGroups.first(where: { $0.id == id }), let tab = visible.first(where: { $0.id == group.sidebarAnchorID }) { addTab(tab, depth: depth, folder: parentID) }
-                    continue
+                    return
                 case .folder: break
                 }
                 guard case .folder(let id) = item, visitedFolders.insert(id).inserted,
-                      let folder = folders.first(where: { $0.id == id }) else { continue }
+                      let folder = pageFolders.first(where: { $0.id == id }) else { return }
                 // The row outlives renders so its icon animates a disclosure change.
                 let button = page.folderRows[folder.id] ?? SidebarFolderRow(folder: folder)
                 renderedFolderRows[folder.id] = button
-                button.update(folder, animated: !swapsList)
+                button.update(folder, animated: animated)
                 let peeks = folder.isExpanded ? [] : folderPeeks[folder.id] ?? []
                 button.closePeek = peeks.isEmpty ? nil : { [weak self] in self?.closeFolderPeek(folder.id) }
                 button.peeked = !peeks.isEmpty
@@ -3412,13 +3750,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 button.selectionClick = { [weak self] event in self?.selectItem(.folder(folder.id), event: event) ?? false }
                 button.selectionContext = { [weak self] in self?.selectedItemsMenu(for: .folder(folder.id)) }
                 button.beginMove = { [weak self] in self?.beginSelectedMove(.folder(folder.id)) }
-                hierarchyRows.append((.folder(folder.id), button))
+                page.add(.folder(folder.id), button)
                 if SidebarPreviewPreference.folders.isEnabled {
                     button.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Preview folder", handler: { [weak self] in
                         self?.onPreview?(.folder(folder.id)); return true
                     })])
                 }
-                previewAnchors[.folder(folder.id)] = button
+                page.previewAnchors[.folder(folder.id)] = button
                 button.makeMenu = { [weak self, id = folder.id] in
                     guard let self else { return nil }
                     return self.isSpaceManagement ? self.managementItemMenu?(.folder(id)) : self.folderMenu(id)
@@ -3429,22 +3767,18 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                     guard let self else { return [] }
                     return self.folderAccessibilityActions(id) + self.moveAccessibilityActions(item: .folder(id))
                 }
-                button.palette = palette
+                if button.palette != pagePalette { button.palette = pagePalette }
                 // The folder's row discloses its children's rows. Its AXDisclosing
                 // toggles the folder without the click's selection reset.
                 itemRows.append(.folder(folder.id, content: button, depth: depth, in: parentID, expanded: folder.isExpanded,
                                         toggle: { [weak self] in self?.onToggleFolder?(folder.id) }))
                 if folder.isExpanded {
-                    addItems(parentID: folder.id, depth: depth + 1)
+                    work.append(.container(folder.id, .pinned, depth + 1, nil))
                 } else if !peeks.isEmpty {
-                    addItems(parentID: folder.id, depth: depth + 1, only: peeks)
+                    work.append(.container(folder.id, .pinned, depth + 1, peeks))
                 }
-            }
         }
         let today = tabs.filter { $0.kind == .today && $0.folderID == nil }
-        if !isPrivateBrowsing { addItems(parentID: nil) }
-        let pinnedRows = itemRows; itemRows.removeAll()
-        addItems(parentID: nil, section: .today)
         func makeSectionDivider() -> NSView {
             //
             //
@@ -3454,10 +3788,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             let section = LayoutView()
             //
             //
-            pinnedEnd = section
+            page.pinnedEnd = section
             let clear = ActionButton(SidebarClearAppearance.title) { [weak self] in self?.onClearToday?() }
             clear.identifier = NSUserInterfaceItemIdentifier("sidebarClear")
-            SidebarClearAppearance.apply(to: clear, dark: palette?.isDark ?? false)
+            SidebarClearAppearance.apply(to: clear, dark: pagePalette?.isDark ?? false)
             clear.onHover = { [weak self, weak clear] hovered in
                 guard let self, let clear else { return }
                 SidebarClearAppearance.apply(to: clear, dark: self.palette?.isDark ?? false, hovered: hovered)
@@ -3469,15 +3803,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             //
             //
             LiveShortcutToolTip.set(clear, "Clear Today tabs", commandID: "clearToday:")
-            clearButton = clear
-            todayHasTabs = !today.isEmpty
+            page.clearButton = clear
+            page.todayHasTabs = !today.isEmpty
             clear.isAvailable = { [weak self] in self?.clearAvailable ?? false }
-            refreshClearAvailability()
             clear.hitTestsWhenTransparent = false
-            clearRevealed = clearShown
-            clear.isHidden = !clearRevealed; clear.alphaValue = clearRevealed ? 1 : 0
-            let line = SidebarHairline(); line.dark = palette?.isDark ?? false
-            sectionLine = line
+            page.clearRevealed = clearShown
+            clear.isHidden = !page.clearRevealed; clear.alphaValue = page.clearRevealed ? 1 : 0
+            let line = SidebarHairline(); line.dark = pagePalette?.isDark ?? false
+            page.sectionLine = line
             section.addSubview(line); section.addSubview(clear)
             section.onLayout = { [weak section, weak line, weak clear] in
                 guard let section, let clear else { return }
@@ -3502,136 +3835,329 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             let heading = SidebarSpaceHeaderView()
             heading.update(.init(isShown: true, title: "Incognito Tabs", placeholder: nil, toggleTitle: nil),
                            symbol: nil, emoji: nil)
-            heading.applyStyle(dark: palette?.isDark ?? true, tint: nil)
+            heading.applyStyle(dark: pagePalette?.isDark ?? true, tint: nil)
             heading.updateIncognitoIndicator(shown: showsPrivateProfileIndicator)
-            privateUnpinnedHeader = heading
+            page.privateUnpinnedHeader = heading
             return heading
         }
         func makeNewTabRow() -> NSView {
-            newTabRow.dark = palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
-            newTabRow.paletteTitle = palette?.title ?? .parcInk
-            newTabRow.invalidateHover()
-            todayStart = newTabRow
-            return newTabRow
+            page.newTabRow.dark = pagePalette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+            page.newTabRow.paletteTitle = pagePalette?.title ?? .parcInk
+            page.newTabRow.invalidateHover()
+            page.todayStart = page.newTabRow
+            return page.newTabRow
         }
-        pinnedEnd = nil; clearButton = nil; sectionLine = nil; clearRevealed = false; todayHasTabs = false
-        var pinnedEntries = pinnedRows.makeIterator(), todayEntries = itemRows.makeIterator()
-        // Each visible list entry, in outline order, becomes one outline row.
-        var outline: [SidebarOutlineEntry] = []
-        for slot in Chrome.tablistSlots(pinnedItems: pinnedRows.count, todayItems: itemRows.count,
-                                        isPrivate: isPrivateBrowsing) {
-            switch slot {
-            case .pinnedHeader: outline.append(.pinnedHeader(SidebarListRow.pinnedHeader))
-            case .pinnedItem: if let entry = pinnedEntries.next() { outline.append(entry) }
-            case .todayItem: if let entry = todayEntries.next() { outline.append(entry) }
-            case .sectionDivider: outline.append(.init(key: SidebarListRow.divider, content: makeSectionDivider(), row: slot.row))
-            case .privateHeading: outline.append(.init(key: SidebarListRow.heading, content: makePrivateHeading(), row: slot.row))
-            case .newTab:
-                // Library cards have no New Tab cell; Today begins below the
-                // divider, or below the last row without one.
-                if isSpaceManagement { todayStart = pinnedEnd; continue }
-                outline.append(.init(key: SidebarListRow.newTab, content: makeNewTabRow(), row: slot.row))
-                // Without a divider the pinned section ends at New Tab's row.
-                if pinnedEnd == nil, !isPrivateBrowsing { pinnedEnd = todayStart }
+        var phase = 0, reloaded = 0, chunked = false, labelled = 0
+        var outline: [SidebarOutlineEntry] = [], previousFrames: [AnyHashable: NSRect] = [:], disclosureChanged = false
+        return { [self] deadline in
+            func expired() -> Bool { deadline.map { CACurrentMediaTime() >= $0 } ?? false }
+            if phase == 0 {
+                while let next = work.popLast() {
+                    process(next)
+                    if !work.isEmpty, expired() { return false }
+                }
+                page.pinnedEnd = nil; page.clearButton = nil; page.sectionLine = nil; page.clearRevealed = false; page.todayHasTabs = false
+                var pinnedEntries = pinnedRows.makeIterator(), todayEntries = itemRows.makeIterator()
+                // Each visible list entry, in outline order, becomes one outline row.
+                for slot in Chrome.tablistSlots(pinnedItems: pinnedRows.count, todayItems: itemRows.count,
+                                                isPrivate: isPrivateBrowsing) {
+                    switch slot {
+                    case .pinnedHeader: outline.append(.pinnedHeader(SidebarListRow.pinnedHeader))
+                    case .pinnedItem: if let entry = pinnedEntries.next() { outline.append(entry) }
+                    case .todayItem: if let entry = todayEntries.next() { outline.append(entry) }
+                    case .sectionDivider: outline.append(.init(key: SidebarListRow.divider, content: makeSectionDivider(), row: slot.row))
+                    case .privateHeading: outline.append(.init(key: SidebarListRow.heading, content: makePrivateHeading(), row: slot.row))
+                    case .newTab:
+                        // Library cards have no New Tab cell; Today begins below the
+                        // divider, or below the last row without one.
+                        if isSpaceManagement { page.todayStart = page.pinnedEnd; continue }
+                        outline.append(.init(key: SidebarListRow.newTab, content: makeNewTabRow(), row: slot.row))
+                        // Without a divider the pinned section ends at New Tab's row.
+                        if page.pinnedEnd == nil, !isPrivateBrowsing { page.pinnedEnd = page.todayStart }
+                    }
+                }
+                // A folder's disclosure or peek change in this Space animates the outline.
+                let disclosure = Dictionary(pageFolders.map { ($0.id, $0.isExpanded) }, uniquingKeysWith: { first, _ in first })
+                let visiblePeeks = folderPeeks.filter { disclosure[$0.key] != nil }
+                disclosureChanged = page.renderedDisclosure.map { previous in
+                    animated && (previous.peeks != visiblePeeks
+                        || disclosure.contains { id, expanded in previous.expanded[id].map { $0 != expanded } ?? false })
+                } ?? false
+                page.renderedDisclosure = (disclosure, visiblePeeks)
+                previousFrames = disclosureChanged ? page.list.rowFrames() : [:]
+                // A new outline fills a few rows at a time when built ahead.
+                chunked = deadline != nil && page.list.rows.isEmpty
+                phase = 1
+                if expired() { return false }
+            }
+            if phase == 1 {
+                if chunked, deadline != nil {
+                    // The window's layout engine takes each row that joins it
+                    // after this turn, so a turn adds only a few.
+                    reloaded = min(outline.count, reloaded + Self.rowsPerTurn)
+                    page.list.reload(Array(outline.prefix(reloaded)))
+                    if reloaded < outline.count { return false }
+                } else { page.list.reload(outline) }
+                page.endBuild()
+                if disclosureChanged { page.list.animateDisclosure(from: previousFrames) }
+                phase = 2
+                if expired() { return false }
+            }
+            while labelled < page.hierarchyRows.count {
+                let (item, view) = page.hierarchyRows[labelled]; labelled += 1
+                let select = NSAccessibilityCustomAction(name: "Add or Remove from Selection") { [weak self] in
+                    guard let self, self.window?.isKeyWindow == true, self.canSelectItems?() == true else { return false }
+                    self.itemSelection.select(item, order: self.selectionOrder, active: self.selectionActive, extending: false, toggling: true)
+                    if self.activateSingleSelection() { return true }
+                    self.focusSelectionList(); return true
+                }
+                let actions = (view as? SidebarDeferredAccessibilityActions)?.storedAccessibilityActions
+                    ?? view.accessibilityCustomActions() ?? []
+                let close = NSAccessibilityCustomAction(name: "Close Tabs in Selection") { [weak self] in
+                    guard let self, self.itemSelection.items.contains(item), let action = self.prepareSidebarClose?(self.itemSelection.items) else { return false }
+                    return action()
+                }
+                let clear = NSAccessibilityCustomAction(name: "Clear Selection") { [weak self] in self?.clearItemSelection(); return true }
+                let duplicate = NSAccessibilityCustomAction(name: "Duplicate Selection") { [weak self] in
+                    guard let self, self.itemSelection.items.contains(item),
+                          let action = self.prepareSidebarDuplicate?(self.itemSelection.items) else { return false }
+                    return action()
+                }
+                let remove = NSAccessibilityCustomAction(name: "Delete or Archive Selection") { [weak self] in
+                    guard let self, self.itemSelection.items.contains(item),
+                          let action = self.prepareSidebarDeletion?(self.itemSelection.items) else { return false }
+                    return action()
+                }
+                var selectionActions: [NSAccessibilityCustomAction] = []
+                if canSelectItems != nil { selectionActions += [select, clear] }
+                if prepareSidebarDuplicate != nil { selectionActions.append(duplicate) }
+                if prepareSidebarClose != nil { selectionActions.append(close) }
+                if prepareSidebarDeletion != nil { selectionActions.append(remove) }
+                view.setAccessibilityCustomActions(actions + selectionActions)
+                if labelled < page.hierarchyRows.count, expired() { return false }
+            }
+            page.key = key; page.renderedState = state; page.laidOut = false; page.framed = nil
+            page.palette = nil
+            applyPagePalette(page, pagePalette)
+            if page === shownPage { refreshClearAvailability() }
+            page.pendingBuild = nil
+            return true
+        }
+    }
+
+    /// Shows `page` in the strip's place. The page shown until now keeps its
+    /// views and stays beside it while the strip moves.
+    private func show(_ page: SidebarSpacePage) {
+        let previous = shownPage
+        previous.view.passesThrough = true
+        for (_, view) in previous.hierarchyRows {
+            if let row = view as? SidebarTabRow { if row.multiSelected { row.multiSelected = false }; if row.listFocusRing { row.listFocusRing = false } }
+            else if let group = view as? SidebarSplitGroupView { group.multiSelected = false; group.listFocusRing = false }
+            else if let folder = view as? SidebarFolderRow { folder.multiSelected = false; folder.listFocusRing = false }
+        }
+        previous.resetPointer()
+        previous.newTabRow.current = false
+        shownPage = page
+        page.view.passesThrough = false
+        page.view.frame = pageStrip.bounds
+        page.view.isHidden = false
+        newTabRow.current = newTabPlaceholderActive
+        // A page built while the pointer was elsewhere takes Clear's current reveal.
+        if let clearButton {
+            clearRevealed = clearShown
+            clearButton.isHidden = !clearRevealed; clearButton.alphaValue = clearRevealed ? 1 : 0
+        }
+        refreshClearAvailability()
+        layoutPage(page)
+        setNeedsKeyViewLinking()
+    }
+
+    /// The key of `state`'s active Space's page (SidebarSpacePageKey).
+    private func pageKey(_ state: BrowserState, focused: UUID?, placeholder: Bool) -> SidebarSpacePageKey {
+        let id = state.activeSpaceID
+        var speakers = Set<UUID>()
+        for tab in state.tabs where tab.spaceID == id {
+            if let audio = tabAudio[tab.id], audio.audible || audio.muted { speakers.insert(tab.id) }
+        }
+        let splits = state.splitLayouts.filter { $0.spaceID == id }
+        let presented = Set(splits.flatMap(\.tabIDs).filter { hasPresentedContent?($0) == true })
+        var splitCaptures: [UUID: CaptureIndicatorPresentation] = [:]
+        for split in splits where SidebarSplitCellLayout.usesCustomInfo(title: split.customTitle, hasIcon: split.customIcon != nil, editing: false) {
+            for tab in split.tabIDs { splitCaptures[tab] = renderedCaptures[tab] }
+        }
+        // The drag's key item only shapes its own Space's page.
+        let dragged = [keyDraggedTabID.flatMap { tab in state.tabs.contains { $0.id == tab && $0.spaceID == id } ? tab : nil },
+                       keyDraggedSplitID.flatMap { split in splits.contains { $0.id == split } ? split : nil }]
+        return SidebarSpacePageKey(state: state, spaceID: id, focused: focused, placeholder: placeholder, peeks: folderPeeks,
+            speakers: speakers, presented: presented, splitCaptures: splitCaptures, keyDragged: dragged,
+            flags: [isPrivateBrowsing, isSpaceManagement, showsPrivateProfileIndicator,
+                    SidebarPreviewPreference.recentPages.isEnabled, SidebarPreviewPreference.folders.isEnabled,
+                    canSelectItems != nil, prepareSidebarDuplicate != nil, prepareSidebarClose != nil,
+                    prepareSidebarDeletion != nil, prepareFolderDeletion != nil])
+    }
+
+    /// The live path's patch on a page whose Space is otherwise unchanged:
+    /// titles, addresses and favicons, captures, share offers and audio.
+    private func patchLive(_ page: SidebarSpacePage, state: BrowserState, focusedTabID: UUID?) {
+        let rendered = page.renderedState
+        page.renderedState = state
+        let id = state.activeSpaceID
+        var current: [UUID: BrowserTab] = [:], before: [UUID: BrowserTab] = [:]
+        for tab in state.tabs where tab.spaceID == id && tab.archivedAt == nil { current[tab.id] = tab }
+        for tab in rendered?.tabs ?? [] where tab.spaceID == id { before[tab.id] = tab }
+        let splitTabs = Set(SidebarSplitItems.groups(in: state, spaceID: id).flatMap(\.tabIDs))
+        for row in page.tabRows {
+            guard let tab = current[row.tabID] else { continue }
+            if before[row.tabID] != tab {
+                let urlChanged = row.applyLivePage(tab)
+                bindLiveRow(row, tab: tab, inGroup: splitTabs.contains(tab.id))
+                if urlChanged {
+                    refreshPreviewAction(row, tab: tab)
+                    tabFaviconArms[tab.id] = TabRowFaviconIdentity(pageURL: tab.url, resetDestination: tab.resetDestination)
+                    row.loadFavicon { [weak self, weak row, weak page] completion in
+                        self?.requestTabFavicon?(tab) { [weak row, weak page] image in
+                            guard let row, page?.holds(row) == true else { return }
+                            completion(image)
+                        }
+                    }
+                    row.loadResetIcon { [weak self, weak row, weak page] completion in
+                        self?.requestSavedFavicon?(tab) { [weak row, weak page] image in
+                            guard let row, page?.holds(row) == true else { return }
+                            completion(image)
+                        }
+                    }
+                }
+            }
+            row.capture = renderedCaptures[tab.id]
+            row.shareable = renderedShareable.contains(tab.id)
+            row.audio = tabAudio[tab.id]
+        }
+    }
+
+    /// A kept row's Preview recent pages action follows its page, as a
+    /// rebuild makes it: first among the row's actions, before its moves.
+    private func refreshPreviewAction(_ row: SidebarTabRow, tab: BrowserTab) {
+        let stored = row.storedAccessibilityActions
+        let had = stored.first?.name == "Preview recent pages"
+        let wants = !isSpaceManagement && URL(string: tab.url).flatMap(SidebarRecentDomain.matching) != nil
+            && SidebarPreviewPreference.recentPages.isEnabled
+        guard had != wants else { return }
+        var actions = had ? Array(stored.dropFirst()) : stored
+        if wants {
+            actions.insert(NSAccessibilityCustomAction(name: "Preview recent pages") { [weak self] in
+                self?.onPreview?(.tab(tab.id)); return true
+            }, at: 0)
+        }
+        row.setAccessibilityCustomActions(actions)
+        if var deferred = row.deferredAccessibilityActions {
+            deferred.index = max(0, deferred.index + (wants ? 1 : -1))
+            row.deferredAccessibilityActions = deferred
+        }
+    }
+
+    /// Moves the current row on a page whose Space changed only its
+    /// selection between plain tabs (or a Favorite, which has no row), as
+    /// `applySelection` does for a tab-to-tab switch; false when the rows
+    /// can't show it.
+    private func patchSelection(_ page: SidebarSpacePage, state: BrowserState, focusedTabID: UUID?) -> Bool {
+        guard let built = page.key, !renderedNewTabPlaceholder, !built.placeholder,
+              state.selectedTabIDs.count <= 1, built.selected.count <= 1 else { return false }
+        let involved = Set(state.selectedTabIDs + built.selected + [focusedTabID, built.focused].compactMap { $0 })
+        let splitTabs = Set(state.splitLayouts.filter { $0.spaceID == state.activeSpaceID }.flatMap(\.tabIDs))
+        let favorites = Set(state.tabs.filter { $0.kind == .favorite }.map(\.id))
+        guard involved.allSatisfy({ !splitTabs.contains($0) && (page.tabRow($0) != nil || favorites.contains($0)) }) else { return false }
+        for id in involved {
+            let selected = state.selectedTabIDs.contains(id)
+            if let row = page.tabRow(id), row.selected != selected { row.selected = selected }
+        }
+        return true
+    }
+
+    /// The pages' shared geometry, from the sidebar's layout: the App Tray's
+    /// height and the bottom of the tablist above the Mini Players.
+    private struct PageGeometry: Equatable {
+        var trayHeight: CGFloat = 0
+        var hasFavorites = false
+        var bottom: CGFloat = 0
+    }
+    private var pageGeometry = PageGeometry()
+    /// Lays out `page`'s header and tablist at the sidebar's geometry; its
+    /// rows too unless `flush` is false (idle preparation lays them out a few
+    /// at a time).
+    private func isFramed(_ page: SidebarSpacePage) -> Bool {
+        guard let framed = page.framed else { return false }
+        return framed.size == bounds.size && framed.trayHeight == pageGeometry.trayHeight
+            && framed.hasFavorites == pageGeometry.hasFavorites && framed.bottom == pageGeometry.bottom
+            && page.headerFramedShown == !page.header.isHidden
+    }
+    private func layoutPage(_ page: SidebarSpacePage, flush: Bool = true) {
+        typealias Chrome = SidebarChromeLayout
+        let width = bounds.width, geometry = pageGeometry
+        page.framed = (bounds.size, geometry.trayHeight, geometry.hasFavorites, geometry.bottom)
+        page.headerFramedShown = !page.header.isHidden
+        if isSpaceManagement {
+            // The card's page has no App Tray: a shown header sits its
+            // padding below the top and the list follows it, else the list
+            // starts at the top (SidebarChromeLayout.SpaceHeader).
+            page.header.frame = NSRect(x: 0, y: Chrome.SpaceHeader.topPadding, width: width, height: Chrome.SpaceHeader.height)
+            let listTop = page.header.isHidden ? 0 : page.header.frame.maxY
+            page.scroll.frame = NSRect(x: 8, y: listTop, width: max(0, width - 16), height: max(0, bounds.height - listTop))
+        } else {
+            // A shown Space header drops the header's 5-point inset, sits 8 below
+            // the page's top while the profile has no Favorites, and the list
+            // follows its bottom (SidebarChromeLayout.SpaceHeader).
+            page.header.frame = NSRect(x: 0, y: Chrome.SpaceHeader.top(trayHeight: geometry.trayHeight, hasFavorites: geometry.hasFavorites),
+                                       width: width, height: Chrome.SpaceHeader.height)
+            let listY = Chrome.tablistTop(trayHeight: geometry.trayHeight, spaceHeader: !page.header.isHidden, hasFavorites: geometry.hasFavorites)
+            page.scroll.frame = NSRect(x: 8, y: listY, width: width - 16, height: max(0, geometry.bottom - listY))
+        }
+        // Membership rebuilds / disclosure / size changes dirty outline rows
+        // or move this frame and still flush. Identical geometry with a clean
+        // outline is a true no-op after the row-fill paint skip.
+        let listFrame = NSRect(x: 0, y: 0, width: page.scroll.contentSize.width, height: max(0, page.list.contentHeight))
+        let listFrameChanged = page.list.frame != listFrame
+        if listFrameChanged { page.list.frame = listFrame }
+        if page.listHost.frame != listFrame { page.listHost.frame = listFrame }
+        guard flush else { return }
+        if SidebarOutlineLayoutFlushSkip.shouldFlush(
+            frameChanged: listFrameChanged,
+            needsLayout: page.list.needsLayout,
+            subtreeNeedsLayout: page.list.subviews.contains(where: \.needsLayout)
+        ) {
+            page.list.layoutSubtreeIfNeeded()
+        }
+        page.laidOut = true
+    }
+
+    /// The palette's colours on a page's rows, headings and header; a page
+    /// already showing `palette` is left alone.
+    private func applyPagePalette(_ page: SidebarSpacePage, _ palette: ThemeChromePalette?) {
+        guard let palette, page.palette != palette else { return }
+        page.palette = palette
+        for row in page.tabRows {
+            if row.palette != palette { row.palette = palette }
+            if isPrivateBrowsing { row.privateBrowsing = true }
+        }
+        for (_, view) in page.hierarchyRows {
+            if let folder = view as? SidebarFolderRow, folder.palette != palette { folder.palette = palette }
+            (view as? SidebarSplitGroupView)?.applyPalette(palette)
+        }
+        for view in page.list.contents {
+            if let row = view as? SidebarNewTabRow {
+                row.dark = palette.isDark; row.paletteTitle = palette.title
+            } else if let heading = view as? SidebarSpaceHeaderView {
+                heading.applyStyle(dark: palette.isDark, tint: nil)
             }
         }
-        // A folder's disclosure or peek change in this Space animates the outline.
-        let disclosure = Dictionary(folders.map { ($0.id, $0.isExpanded) }, uniquingKeysWith: { first, _ in first })
-        let visiblePeeks = folderPeeks.filter { disclosure[$0.key] != nil }
-        let disclosureChanged = renderedDisclosure.map { previous in
-            previous.space == state.activeSpaceID && (previous.peeks != visiblePeeks
-                || disclosure.contains { id, expanded in previous.expanded[id].map { $0 != expanded } ?? false })
-        } ?? false
-        renderedDisclosure = (state.activeSpaceID, disclosure, visiblePeeks)
-        let previousFrames = disclosureChanged ? list.rowFrames() : [:]
-        list.reload(outline)
-        // Another Space's kept outline took the list's place.
-        if swapsList {
-            NSAccessibility.post(element: list, notification: .rowCountChanged)
-            NSAccessibility.post(element: list, notification: .selectedRowsChanged)
-        }
-        spacePages[state.activeSpaceID] = SpacePage(
-            list: list, tabRows: Dictionary(tabRows.filter { !$0.compactSplitChild }.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first }),
-            folderRows: renderedFolderRows)
-        if disclosureChanged { list.animateDisclosure(from: previousFrames) }
-        itemSelection.reconcile(order: selectionOrder)
-        for (item, view) in hierarchyRows {
-            let select = NSAccessibilityCustomAction(name: "Add or Remove from Selection") { [weak self] in
-                guard let self, self.window?.isKeyWindow == true, self.canSelectItems?() == true else { return false }
-                self.itemSelection.select(item, order: self.selectionOrder, active: self.selectionActive, extending: false, toggling: true)
-                if self.activateSingleSelection() { return true }
-                self.focusSelectionList(); return true
-            }
-            let actions = (view as? SidebarDeferredAccessibilityActions)?.storedAccessibilityActions
-                ?? view.accessibilityCustomActions() ?? []
-            let close = NSAccessibilityCustomAction(name: "Close Tabs in Selection") { [weak self] in
-                guard let self, self.itemSelection.items.contains(item), let action = self.prepareSidebarClose?(self.itemSelection.items) else { return false }
-                return action()
-            }
-            let clear = NSAccessibilityCustomAction(name: "Clear Selection") { [weak self] in self?.clearItemSelection(); return true }
-            let duplicate = NSAccessibilityCustomAction(name: "Duplicate Selection") { [weak self] in
-                guard let self, self.itemSelection.items.contains(item),
-                      let action = self.prepareSidebarDuplicate?(self.itemSelection.items) else { return false }
-                return action()
-            }
-            let remove = NSAccessibilityCustomAction(name: "Delete or Archive Selection") { [weak self] in
-                guard let self, self.itemSelection.items.contains(item),
-                      let action = self.prepareSidebarDeletion?(self.itemSelection.items) else { return false }
-                return action()
-            }
-            var selectionActions: [NSAccessibilityCustomAction] = []
-            if canSelectItems != nil { selectionActions += [select, clear] }
-            if prepareSidebarDuplicate != nil { selectionActions.append(duplicate) }
-            if prepareSidebarClose != nil { selectionActions.append(close) }
-            if prepareSidebarDeletion != nil { selectionActions.append(remove) }
-            view.setAccessibilityCustomActions(actions + selectionActions)
-        }
-        refreshItemSelection()
-        let previousSpaceButtons = spaceButtonsByID, previousSpaceMenus = spaceMenusByID
-        spaceButtonsByID = [:]; spaceMenusByID = [:]
-        spaceButtons = spaces.enumerated().map { offset, space in
-            let button = previousSpaceButtons[space.id] ?? ActionButton()
-            spaceButtonsByID[space.id] = button
-            let spaceID = space.id
-            let dockMenu = previousSpaceMenus[spaceID] ?? SidebarDockItemMenu { [weak self] in self?.dockSpaceMenu(spaceID) }
-            spaceMenusByID[spaceID] = dockMenu
-            dockMenu.install(on: button)
-            button.actionBlock = { [weak self] in self?.onSelectSpace?(space.id, space.profileID) }
-            if let icon = space.customIcon {
-                button.image = icon.image; button.font = .systemFont(ofSize: 18)
-            } else {
-                button.image = NSImage(systemSymbolName: space.symbol, accessibilityDescription: space.name)
-                button.font = .systemFont(ofSize: 12, weight: .medium)
-            }
-            button.title = space.customIcon?.emoji ?? ""
-            button.imagePosition = space.customIcon?.emoji == nil ? .imageOnly : .noImage
-            //
-            // its Profile while there is more than one, and the Space's
-            // numbered binding, above.
-            let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil
-            button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled Space" : space.name,
-                                                      style: .dockItem(profileName: profileName),
-                                                      shortcut: .command(NumberedTarget.spaceBindingID(offset + 1)), anchor: .top)
-            button.setAccessibilityLabel(space.name)
-            SidebarAccessibility.configureSpace(button, name: space.name)
-            let selected = creationView == nil && space.id == state.activeSpaceID
-            button.tag = selected ? 1 : 0
-            button.state = selected ? .on : .off
-            button.isEnabled = canSelectSpace?(space.id, space.profileID) ?? false
-            return button
-        }
-        updateDockItems()
-        applyPalette()
-        highlightItemForKeyboard(keyboardHighlightedItem, scrollToHighlight: false)
-        setKeyboardSearchActive(keyboardSearchActive)
-        keyViewsNeedLinking = true
-        let retainedTabIDs = Set(tabRows.map(\.tabID)).union(spacePages.values.flatMap(\.tabRows.keys))
-        for id in Set(tabFaviconArms.keys).subtracting(retainedTabIDs) {
-            tabFaviconArms.removeValue(forKey: id)
-        }
-        needsLayout = true; layoutSubtreeIfNeeded()
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(origin.y, max(0, list.frame.height - scroll.contentView.bounds.height))))
-        if isPresented && !isSpaceManagement { prepareNeighborPages() }
+        if let clearButton = page.clearButton { SidebarClearAppearance.apply(to: clearButton, dark: palette.isDark, hovered: clearButton.hovered) }
+        page.sectionLine?.dark = palette.isDark
+        // The Space header's icon takes ViewState headerTintColor, the
+        // window's theme palette at +0x70 while that theme belongs to this
+        //
+        // live. As in the dock, +0x70 is read as maxContrastColor and a Space
+        // stored without a theme colour keeps ForegroundTertiary [I].
+        let themed = spaces.first { $0.id == page.spaceID }.map { $0.theme.primaryColor != nil && $0.theme.isValid } ?? false
+        page.header.applyStyle(dark: palette.isDark, tint: themed ? palette.maxContrastColor : nil)
     }
 
     func updateSpaceAvailability() {
@@ -3680,12 +4206,20 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// keyboard highlight are no responders.
     private var keyViewsNeedLinking = true
     func setNeedsKeyViewLinking() { keyViewsNeedLinking = true; needsLayout = true }
+    /// The shown page's outline, laid out by `layout` just before it links,
+    /// unless a row has since built a control the chain must place.
+    private var listLaidOut: (NSView) -> Bool {
+        let built = rowControlsBuilt
+        return { [list] in $0 === list && !list.needsLayout && !built }
+    }
+    private var rowControlsBuilt = false
     private func linkKeyViews() {
+        defer { rowControlsBuilt = false }
         if isSpaceManagement {
             let chain = SidebarAccessibility.keyViewChain(leading: [], favorites: favoritesHost, list: self,
-                regions: [list], trailing: [], space: self, beforeList: [spaceHeader])
+                regions: [list], trailing: [], space: self, beforeList: [spaceHeader], laidOut: listLaidOut)
             SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented,
-                                     skipping: { $0 is SidebarOutlineView && $0.isHidden })
+                                     skipping: { ($0 as? SidebarPageStripView)?.passesThrough == true })
             return
         }
         let leading: [NSView] = [keyViewGate] + headerControls + [addressButton] + extensionToolbar.orderedButtons
@@ -3694,9 +4228,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if archiveEducationHost.isInteractive { regions += archiveEducation.keyViewControls }
         if let creationView { regions.append(creationView) }
         let chain = SidebarAccessibility.keyViewChain(leading: leading, favorites: favoritesHost, list: self, regions: regions,
-                                                      trailing: [footerMore], space: self, beforeList: [spaceHeader])
+                                                      trailing: [footerMore], space: self, beforeList: [spaceHeader], laidOut: listLaidOut)
         SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented,
-                                     skipping: { $0 is SidebarOutlineView && $0.isHidden })
+                                     skipping: { ($0 as? SidebarPageStripView)?.passesThrough == true })
     }
 
     override func layout() {
@@ -3708,27 +4242,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             for child in subviews where child !== spaceHeader { child.isHidden = !shown.contains { $0 === child } }
             for child in contentSurface.subviews { child.isHidden = child !== pageStrip }
             contentSurface.frame = bounds; pageStrip.frame = bounds; dropFeedback.frame = bounds
-            // The card's page has no App Tray: a shown header sits its
-            // padding below the top and the list follows it, else the list
-            // starts at the top (SidebarChromeLayout.SpaceHeader).
-            spaceHeader.frame = NSRect(x: 0, y: Chrome.SpaceHeader.topPadding, width: width, height: Chrome.SpaceHeader.height)
-            let listTop = spaceHeader.isHidden ? 0 : spaceHeader.frame.maxY
-            scroll.frame = NSRect(x: 8, y: listTop, width: max(0, width - 16), height: max(0, bounds.height - listTop))
-            // Membership rebuilds / disclosure / size changes dirty outline rows
-            // or move this frame and still flush. Identical geometry with a
-            // clean outline is a true no-op after the row-fill paint skip.
-            let listFrame = NSRect(x: 0, y: 0, width: scroll.contentSize.width,
-                                   height: max(0, list.contentHeight))
-            let listFrameChanged = list.frame != listFrame
-            if listFrameChanged { list.frame = listFrame }
-            if listHost.frame != listFrame { listHost.frame = listFrame }
-            if SidebarOutlineLayoutFlushSkip.shouldFlush(
-                frameChanged: listFrameChanged,
-                needsLayout: list.needsLayout,
-                subtreeNeedsLayout: list.subviews.contains(where: \.needsLayout)
-            ) {
-                list.layoutSubtreeIfNeeded()
-            }
+            shownPage.view.frame = pageStrip.bounds
+            layoutPage(shownPage)
             if keyViewsNeedLinking { keyViewsNeedLinking = false; linkKeyViews() }
             return
         }
@@ -3793,12 +4308,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             // The host is unflipped; the recovered grid is top-left based.
             button.frame = NSRect(x: frame.minX, y: favoritesHeight - frame.maxY, width: frame.width, height: frame.height)
         }
-        // A shown Space header drops the header's 5-point inset, sits 8 below
-        // the page's top while the profile has no Favorites, and the list
-        // follows its bottom (SidebarChromeLayout.SpaceHeader).
         let showsSpaceHeader = !spaceHeader.isHidden
-        spaceHeader.frame = NSRect(x: 0, y: Chrome.SpaceHeader.top(trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty),
-                                   width: width, height: Chrome.SpaceHeader.height)
         let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty)
         let dockTop = bounds.height - Chrome.dockHeight
         let bannerWidth = max(0, width - 16)
@@ -3809,22 +4319,21 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let playerHeight = min(miniPlayers.desiredHeight, max(0, playerBottom - listY))
         let playerSpacing: CGFloat = playerHeight > 0 ? 8 : 0
         miniPlayers.frame = NSRect(x: 8, y: playerBottom - playerHeight, width: width - 16, height: playerHeight)
-        scroll.frame = NSRect(x: 8, y: listY, width: width - 16,
-                              height: max(0, playerBottom - listY - playerHeight - playerSpacing))
-        // Membership rebuilds / disclosure / size changes dirty outline rows
-        // or move this frame and still flush. Identical geometry with a clean
-        // outline is a true no-op after the row-fill paint skip.
-        let listFrame = NSRect(x: 0, y: 0, width: scroll.contentSize.width,
-                               height: max(0, list.contentHeight))
-        let listFrameChanged = list.frame != listFrame
-        if listFrameChanged { list.frame = listFrame }
-        if listHost.frame != listFrame { listHost.frame = listFrame }
-        if SidebarOutlineLayoutFlushSkip.shouldFlush(
-            frameChanged: listFrameChanged,
-            needsLayout: list.needsLayout,
-            subtreeNeedsLayout: list.subviews.contains(where: \.needsLayout)
-        ) {
-            list.layoutSubtreeIfNeeded()
+        let geometry = PageGeometry(trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty,
+                                    bottom: playerBottom - playerHeight - playerSpacing)
+        let geometryChanged = geometry != pageGeometry
+        pageGeometry = geometry
+        if shownPage.view.frame != pageStrip.bounds { shownPage.view.frame = pageStrip.bounds }
+        layoutPage(shownPage)
+        // The other pages follow a changed size or tray while idle, or when
+        // a swipe reveals them.
+        if geometryChanged {
+            for page in pages.values where page !== shownPage {
+                let slot = page.view.frame.width > 0 ? (page.view.frame.minX / page.view.frame.width).rounded() : 3
+                page.view.frame = NSRect(x: slot * width, y: 0, width: width, height: bounds.height)
+                page.laidOut = false
+            }
+            if isPresented && !isSpaceManagement && !pages.isEmpty { prepareNeighborPages() }
         }
         //
         // button, 32 × 32 and 8 from the edges, with the Space strip between
@@ -4135,26 +4644,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         addressBackground.dark = palette.isDark
         applyAddressPillStyle()
         setAddressTitle(addressText)
-        for row in tabRows { row.palette = palette; row.privateBrowsing = isPrivateBrowsing }
-        for (_, view) in hierarchyRows {
-            (view as? SidebarFolderRow)?.palette = palette
-            (view as? SidebarSplitGroupView)?.applyPalette(palette)
-        }
+        applyPagePalette(shownPage, palette)
         refreshItemSelection()
         keyboardHighlight.color = palette.maxContrastColor
         creationView?.palette = palette
         //
         //
         dropFeedback.tint = palette.maxContrastColor
-        for view in list.contents {
-            if let row = view as? SidebarNewTabRow {
-                row.dark = palette.isDark; row.paletteTitle = palette.title
-            } else if let heading = view as? SidebarSpaceHeaderView {
-                heading.applyStyle(dark: palette.isDark, tint: nil)
-            }
-        }
-        if let clearButton { SidebarClearAppearance.apply(to: clearButton, dark: palette.isDark, hovered: clearButton.hovered) }
-        sectionLine?.dark = palette.isDark
         for button in favorites {
             button.applyPalette(isDark: palette.isDark, glyphColor: palette.title, highlightColor: palette.maxContrastColor)
         }
@@ -4169,13 +4665,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             guard space.theme.primaryColor != nil, space.theme.isValid else { return nil }
             return ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? effectiveAppearance).maxContrastColor
         }
-        // The Space header's icon takes ViewState headerTintColor, the
-        // window's theme palette at +0x70 while that theme belongs to this
-        //
-        // live. As in the dock, +0x70 is read as maxContrastColor and a Space
-        // stored without a theme colour keeps ForegroundTertiary [I].
-        let themed = spaces.first { $0.id == activeSpaceID }.map { $0.theme.primaryColor != nil && $0.theme.isValid } ?? false
-        spaceHeader.applyStyle(dark: palette.isDark, tint: themed ? palette.maxContrastColor : nil)
     }
     private var selectionOrder: [SidebarItemReference] {
         guard let state = hierarchyState, let spaceID = activeSpaceID else { return [] }
@@ -4184,7 +4673,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         // Out of a window, nothing is left to prepare for.
-        if window == nil { neighborPreparation?.invalidate(); neighborPreparation = nil; pendingPreparation = [] }
+        if window == nil {
+            neighborPreparation?.invalidate(); neighborPreparation = nil; pendingPreparation = []
+            for page in pages.values where page.pendingBuild != nil {
+                page.pendingBuild = nil; page.key = nil; page.laidOut = false; page.checkedGeneration = -1
+            }
+        }
+        watchMemoryPressure(window != nil)
         needsLayout = true
         observeFirstResponder()
         if let selectionWindowObserver { NotificationCenter.default.removeObserver(selectionWindowObserver) }
@@ -4301,7 +4796,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// drag ends, as ordinary rows do (TAB19).
     private func setKeyDraggedSplit(_ id: UUID, _ dragging: Bool) {
         if dragging { keyDraggedSplitID = id } else if keyDraggedSplitID == id { keyDraggedSplitID = nil }
-        for (item, view) in hierarchyRows where item == .split(id) { (view as? SidebarSplitGroupView)?.keyDragged = dragging }
+        shownPage.splitRow(id)?.keyDragged = dragging
     }
     /// `listFocused` is passed while first responder changes, before the window
     /// reports it.
@@ -4315,8 +4810,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 // Multi-selection is TabCellBackgroundMutiselected. List-stop
                 // focus uses HighlightRingView; a 1-point accent border on this
                 // layer rounded the row and clipped the current-item shadow.
-                row.multiSelected = selected
-                row.listFocusRing = focused
+                if row.multiSelected != selected { row.multiSelected = selected }
+                if row.listFocusRing != focused { row.listFocusRing = focused }
                 continue
             }
             if let group = view as? SidebarSplitGroupView {
@@ -4490,7 +4985,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 }
                 refreshItemSelection()
             }
-            if let row = hierarchyRows.first(where: { $0.0 == next })?.1 { row.scrollToVisible(row.bounds) }
+            if let row = shownPage.view(for: next) { row.scrollToVisible(row.bounds) }
             return
         }
         if flags.isEmpty, [51, 117].contains(event.keyCode) {
@@ -4822,15 +5317,15 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     private func updateSpringLoading(_ id: UUID?) {
         guard springFolder?.id != id else { return }
-        if let previous = springFolder { previous.timer.invalidate(); renderedFolderRows[previous.id]?.dropTarget = false }
+        if let previous = springFolder { previous.timer.invalidate(); shownPage.folderRow(previous.id)?.dropTarget = false }
         springFolder = nil
         guard let id else { return }
-        renderedFolderRows[id]?.dropTarget = true
+        shownPage.folderRow(id)?.dropTarget = true
         let timer = Timer(timeInterval: Self.springLoadingDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.springFolder?.id == id else { return }
                 self.springFolder = nil
-                self.renderedFolderRows[id]?.dropTarget = false
+                self.shownPage.folderRow(id)?.dropTarget = false
                 guard self.hierarchyState?.folders.first(where: { $0.id == id })?.isExpanded == false else { return }
                 self.onToggleFolder?(id)
                 self.sprungFolders.append(id)
@@ -5024,6 +5519,184 @@ private final class SidebarKeyboardHighlightView: NSView {
 /// The Space page container. It takes no hits of its own, so the App Tray,
 /// address and header controls beneath it stay reachable; a neighbouring
 /// page drawn for paging passes every hit and hides from accessibility.
+/// The time since Parc's own last keyboard, pointer or trackpad input.
+/// Input to other apps doesn't count, so work Parc does while idle goes on
+/// while the user works elsewhere.
+@MainActor enum SidebarInputClock {
+    private static var lastInput: CFTimeInterval = 0
+    private static var monitor: Any?
+    static var secondsSinceInput: CFTimeInterval {
+        start()
+        return CACurrentMediaTime() - lastInput
+    }
+    /// Counts from now: input before the first sidebar isn't known.
+    static func start() {
+        if monitor == nil {
+            lastInput = CACurrentMediaTime()
+            let input: NSEvent.EventTypeMask = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .leftMouseUp, .rightMouseDown,
+                .rightMouseUp, .otherMouseDown, .otherMouseUp, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+                .mouseMoved, .scrollWheel, .gesture, .magnify, .swipe, .rotate, .beginGesture, .endGesture, .smartMagnify, .pressure]
+            monitor = NSEvent.addLocalMonitorForEvents(matching: input) { event in
+                lastInput = CACurrentMediaTime()
+                return event
+            }
+        }
+    }
+}
+
+/// One Space's sidebar page: its header and tablist, laid out in its own
+///
+/// per Space (`spaceViewControllerCache`, collectionView(_:willDisplay:…) at
+///
+/// views as they were, with their scroll position. Every lookup of a row's
+/// view by item goes through this page.
+@MainActor final class SidebarSpacePage {
+    let view = SidebarPageStripView()
+    let header = SidebarSpaceHeaderView()
+    let scroll = SidebarPagingScrollView()
+    /// The list's flipped document view.
+    let listHost = SidebarListHost()
+    let list = SidebarOutlineView()
+    let newTabRow: SidebarNewTabRow
+    var spaceID: UUID?
+    /// Every tab row in build order, a split's children included.
+    var tabRows: [SidebarTabRow] = []
+    /// Standalone tab rows by tab, kept for the page's next build.
+    var keptTabRows: [UUID: SidebarTabRow] = [:]
+    /// Folder rows by folder, kept across builds so a disclosure change
+    /// animates the row's icon and the row keeps its pointer state.
+    var folderRows: [UUID: SidebarFolderRow] = [:]
+    /// The items' rows in outline order.
+    private(set) var hierarchyRows: [(SidebarItemReference, NSView)] = []
+    private var rowsByItem: [SidebarItemReference: NSView] = [:]
+    var previewAnchors: [SidebarPreviewTarget: NSView] = [:]
+    var speakerHosts: [UUID: SidebarSpeakerHost] = [:]
+    weak var pinnedEnd: NSView?
+    weak var todayStart: NSView?
+    weak var clearButton: ActionButton?
+    weak var sectionLine: SidebarHairline?
+    weak var privateUnpinnedHeader: SidebarSpaceHeaderView?
+    var todayHasTabs = false
+    var clearRevealed = false
+    var headerContentShown = false
+    var renderedDisclosure: (expanded: [UUID: Bool], peeks: [UUID: [SidebarItemReference]])?
+    /// What the page was last built from; nil until built, or once it must rebuild.
+    var key: SidebarSpacePageKey?
+    /// The state the page's rows last showed.
+    var renderedState: BrowserState?
+    var palette: ThemeChromePalette?
+    /// The sidebar's state generation this page was last brought up to.
+    var checkedGeneration = -1
+    /// Every row has been laid out since the last build.
+    var laidOut = false
+    /// The sidebar size and shared geometry the page was last framed for.
+    var framed: (size: NSSize, trayHeight: CGFloat, hasFavorites: Bool, bottom: CGFloat)?
+    var headerFramedShown = false
+    /// A build idle preparation has begun, for the key it builds.
+    var pendingBuild: (key: SidebarSpacePageKey, run: (CFTimeInterval?) -> Bool)?
+
+    init(newTabRow: SidebarNewTabRow) {
+        self.newTabRow = newTabRow
+        view.wantsLayer = true
+        view.addSubview(header); view.addSubview(scroll)
+        scroll.drawsBackground = false; scroll.adoptTablistScroller()
+        scroll.horizontalScrollElasticity = .none
+        scroll.documentView = listHost; listHost.addSubview(list)
+    }
+
+    /// The view showing `item`'s row: its tab, Split View or folder row.
+    func view(for item: SidebarItemReference) -> NSView? { rowsByItem[item] }
+    /// The row showing a tab: its own, or its split's child row.
+    func tabRow(_ id: UUID) -> SidebarTabRow? { rowsByItem[.tab(id)] as? SidebarTabRow ?? tabRows.first { $0.tabID == id } }
+    func folderRow(_ id: UUID) -> SidebarFolderRow? { rowsByItem[.folder(id)] as? SidebarFolderRow }
+    func splitRow(_ id: UUID) -> SidebarSplitGroupView? { rowsByItem[.split(id)] as? SidebarSplitGroupView }
+    /// The shown items in outline order.
+    var items: [SidebarItemReference] { hierarchyRows.map(\.0) }
+    /// Whether `row` still belongs to this page's last build.
+    func holds(_ row: SidebarTabRow) -> Bool { tabRows.contains { $0 === row } }
+    /// The page left the screen: rows under the pointer let go of it.
+    func resetPointer() {
+        header.clearHover()
+        newTabRow.invalidateHover()
+        for row in tabRows { row.resetPointer() }
+        for (_, view) in hierarchyRows {
+            (view as? SidebarFolderRow)?.resetPointer()
+            (view as? SidebarSplitGroupView)?.resetPointer()
+        }
+    }
+
+    func beginBuild() {
+        tabRows.removeAll(); hierarchyRows.removeAll(); rowsByItem.removeAll(); previewAnchors.removeAll()
+    }
+    func add(_ item: SidebarItemReference, _ view: NSView) {
+        hierarchyRows.append((item, view))
+        if rowsByItem[item] == nil { rowsByItem[item] = view }
+    }
+    /// Rows kept for reuse: those the build showed.
+    func endBuild() {
+        keptTabRows = Dictionary(tabRows.filter { !$0.compactSplitChild }.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
+        folderRows = folderRows.filter { rowsByItem[.folder($0.key)] != nil }
+    }
+    /// Row views the page holds, built or kept, for the memory budget.
+    var rowCount: Int { max(tabRows.count, keptTabRows.count) + folderRows.count }
+}
+
+/// What a Space's page shows, apart from the live title, address, loading
+/// and favicon fields the live path patches in place: the Space's own items,
+/// order, folders, disclosure and selection, and the sidebar chrome that
+/// shapes its rows. A page whose key still matches needs no rebuild.
+struct SidebarSpacePageKey: Equatable {
+    struct Tab: Equatable {
+        let id: UUID, profileID: UUID, kind: TabKind, folderID: UUID?, archived: Bool
+        let page: InternalPage?, blank: Bool, reset: Bool
+    }
+    var spaceID: UUID
+    var profiles: [BrowserProfile]
+    var spaces: [BrowserSpace]
+    var settings: BrowserSettings
+    var tabs: [Tab]
+    var folders: [BrowserFolder]
+    var splits: [BrowserSplitLayout]
+    var order: [String: [SidebarItemReference]]
+    var selected: [UUID]
+    var focused: UUID?
+    var placeholder: Bool
+    var peeks: [UUID: [SidebarItemReference]]
+    var speakers: Set<UUID>
+    var presented: Set<UUID>
+    /// Captures of custom-named Split Views' tabs, which their split cell shows.
+    var splitCaptures: [UUID: CaptureIndicatorPresentation]
+    var keyDragged: [UUID?]
+    var flags: [Bool]
+
+    init(state: BrowserState, spaceID: UUID, focused: UUID?, placeholder: Bool, peeks: [UUID: [SidebarItemReference]],
+         speakers: Set<UUID>, presented: Set<UUID>, splitCaptures: [UUID: CaptureIndicatorPresentation],
+         keyDragged: [UUID?], flags: [Bool]) {
+        self.spaceID = spaceID
+        profiles = state.profiles; spaces = state.spaces; settings = state.settings
+        tabs = state.tabs.filter { $0.spaceID == spaceID }.map {
+            Tab(id: $0.id, profileID: $0.profileID, kind: $0.kind, folderID: $0.folderID, archived: $0.archivedAt != nil,
+                page: InternalPage(urlString: $0.url), blank: BrowserState.isBlankPage($0.url), reset: $0.resetDestination != nil)
+        }
+        folders = state.folders.filter { $0.spaceID == spaceID }
+        splits = state.splitLayouts.filter { $0.spaceID == spaceID }
+        let space = spaceID.uuidString
+        order = state.sidebarItemOrder.filter { $0.key.hasPrefix(space) }
+        selected = state.selectedTabIDs; self.focused = focused; self.placeholder = placeholder
+        let shown = Set(folders.map(\.id))
+        self.peeks = peeks.filter { shown.contains($0.key) }
+        self.speakers = speakers; self.presented = presented; self.splitCaptures = splitCaptures
+        self.keyDragged = keyDragged; self.flags = flags
+    }
+
+    /// The same page apart from its selection.
+    func matchesApartFromSelection(_ other: Self) -> Bool {
+        var other = other
+        other.selected = selected; other.focused = focused
+        return other == self
+    }
+}
+
 final class SidebarPageStripView: NSView {
     var passesThrough = false
     override var isFlipped: Bool { true }

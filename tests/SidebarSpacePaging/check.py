@@ -27,10 +27,10 @@ assert "timer?.invalidate(); timer = nil" in source, \
 #
 # every scroll view in it offers its scrolls to the pager first.
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
-for use in ("    private let scroll = SidebarPagingScrollView()\n",
-            "        scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }\n",
-            "        spacesHost.offerScroll = scroll.offerScroll\n",
-            "        miniPlayers.offerScroll = scroll.offerScroll\n"):
+for use in ("    let scroll = SidebarPagingScrollView()\n",
+            "        page.scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }\n",
+            "        spacesHost.offerScroll = offer\n",
+            "        miniPlayers.offerScroll = offer\n"):
     assert use in sidebar, f"SidebarView no longer routes a sidebar scroll view to the pager: {use}"
 assert "    private let scroll = SidebarPagingScrollView()\n" in (root / "Sources/ParcApp/MiniPlayerView.swift").read_text(), \
     "the Mini Player list keeps sideways swipes from the pager again"

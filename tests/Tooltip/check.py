@@ -34,7 +34,7 @@ assert "parcTooltip = compactSplitChild ? nil : Self.rowTooltip(tooltipTab, rena
 assert "if Self.isRenameClick(originalEvent), beginRename?() == true { return }" in sidebar \
     and "row.beginRename = inGroup || isSpaceManagement || !SidebarTabTitle.isRenameable(tab) ? nil" in sidebar, \
     "the rename hint no longer matches the row's double-click rename"
-assert 'LiveShortcutToolTip.set(resetRegion, "Reset Tab", commandID: "resetTab:", requiresBinding: true)' in sidebar
+assert 'LiveShortcutToolTip.set(parts.region, "Reset Tab", commandID: "resetTab:", requiresBinding: true)' in sidebar
 #
 assert "footerMore.toolTip" not in sidebar and "LiveShortcutToolTip.set(footerMore" not in sidebar \
     and "footerMore.parcTooltip" not in sidebar, "the dock + has no tooltip in Parc"

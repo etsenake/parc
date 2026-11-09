@@ -65,8 +65,11 @@ enum SidebarAccessibility {
     /// (the dock). Regions lay out first, so children they place in their own
     /// layout sort by their real frames.
     static func keyViewChain(leading: [NSView], favorites: NSView, list: NSView, regions: [NSView],
-                             trailing: [NSView], space: NSView, beforeList: [NSView] = []) -> [NSView] {
-        ([favorites] + beforeList + regions).forEach { $0.layoutSubtreeIfNeeded() }
+                             trailing: [NSView], space: NSView, beforeList: [NSView] = [],
+                             laidOut: (NSView) -> Bool = { _ in false }) -> [NSView] {
+        // A region the owner has just laid out is skipped: asking a long
+        // outline's rows again only searched them all.
+        for region in [favorites] + beforeList + regions where !laidOut(region) { region.layoutSubtreeIfNeeded() }
         return leading + keyViews(in: [favorites] + beforeList, space: space) + [list] + keyViews(in: regions, space: space) + trailing
     }
 

@@ -291,8 +291,7 @@ final class AreaEvent: NSEvent {
         check(titleFrame.minX == SidebarRowAppearance.titleInset - SidebarRowAppearance.titleTextPadding
               && titleFrame.maxX == SidebarRowAppearance.titleTrailingEdge(in: todayRow.bounds, closeVisible: false) + SidebarRowAppearance.titleTextPadding,
               "the idle title label extends 2 past the inset and the trailing edge (\(titleFrame))")
-        let renameField = descendants(todayRow).compactMap { $0 as? SidebarTitleField }.first!
-        check(renameField.convert(renameField.bounds, to: todayRow) == titleFrame, "the rename field keeps the title's frame")
+        check(descendants(todayRow).allSatisfy { !($0 is SidebarTitleField) }, "a row builds its rename field for its first rename")
         // The row re-reads its hover from the pointer as its tracking updates.
         window.pointer = todayRow.convert(NSPoint(x: todayRow.bounds.midX, y: todayRow.bounds.midY), to: nil)
         todayRow.updateTrackingAreas(); todayRow.layoutSubtreeIfNeeded()
@@ -302,10 +301,13 @@ final class AreaEvent: NSEvent {
               "a hovered title's text stops 2 before the ×, its frame at the × (\(hoveredTitle), × \(close.frame))")
         check(todayRow.beginTitleEditing("today") { _ in }, "the row's rename begins")
         todayRow.layoutSubtreeIfNeeded()
+        let renameField = descendants(todayRow).compactMap { $0 as? SidebarTitleField }.first!
         let editing = renameField.convert(renameField.bounds, to: todayRow)
         check(editing.minX == titleFrame.minX && editing.maxX == todayRow.bounds.width - 8, "renaming edits from the title's frame to 8 inside the row")
         todayRow.cancelTitleEditing()
         window.pointer = nil; todayRow.updateTrackingAreas(); todayRow.layoutSubtreeIfNeeded()
+        check(renameField.convert(renameField.bounds, to: todayRow) == title.convert(title.bounds, to: todayRow)
+              && renameField.convert(renameField.bounds, to: todayRow) == titleFrame, "after a rename the field keeps the idle title's frame")
         let glyphs = title.bitmapImageRepForCachingDisplay(in: title.bounds)!
         title.cacheDisplay(in: title.bounds, to: glyphs)
         let scale = CGFloat(glyphs.pixelsWide) / title.bounds.width

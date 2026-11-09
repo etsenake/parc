@@ -40,8 +40,9 @@ assert "if hierarchyState != nil," in render_body, \
     "render must prefer live patch when hierarchy already exists"
 assert "applyLivePageMetadata(state: state, focusedTabID: focusedTabID, loading: loading," in render_body, \
     "render must call applyLivePageMetadata before outline rebuild"
-assert render_body.index("if hierarchyState != nil,") < render_body.index("tabRows.removeAll()"), \
-    "live no-op skip must precede row teardown"
+assert render_body.index("if hierarchyState != nil,") < render_body.index("page.beginBuild()") \
+    and render_body.index("if hierarchyState != nil,") < render_body.index("buildPage(page, state: state"), \
+    "live no-op skip must precede the page build and its row teardown"
 assert "favoriteFaviconArms[tab.id] == arm" in render_body, \
     "Favorite favicon re-arm skip on full render must remain"
 assert "button.hasSettledPageFavicons(count: pages.count)" in render_body, \

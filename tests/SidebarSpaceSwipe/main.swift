@@ -47,7 +47,7 @@ extension NSView {
         return state
     }
 
-    struct Swipe { var firstFrame = 0.0, frames: [Double] = [], release = 0.0, settle: [Double] = [], built = 0, builtInFrames = 0, builtIdle = 0, idleTurn = 0.0 }
+    struct Swipe { var firstFrame = 0.0, frames: [Double] = [], release = 0.0, settle: [Double] = [], settled = true, built = 0, builtInFrames = 0, builtIdle = 0, idleTurn = 0.0 }
 
     /// Main-thread busy spans between run loop waits, for the spring's frames.
     final class Busy {
@@ -109,6 +109,18 @@ extension NSView {
             let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 260, height: 900))
             let window = NSWindow(contentRect: sidebar.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false; window.contentView = sidebar
+            if ProcessInfo.processInfo.environment["SWIPE_NO_ENGINE"] == nil {
+                // The browser window lays its content out with constraints
+                // (ParcSplitView.constrain), so it has a layout engine.
+                let content = NSView(frame: sidebar.frame)
+                window.contentView = content; content.addSubview(sidebar)
+                let pane = NSView()
+                pane.translatesAutoresizingMaskIntoConstraints = false
+                content.addSubview(pane)
+                NSLayoutConstraint.activate([pane.leadingAnchor.constraint(equalTo: content.trailingAnchor),
+                                             pane.topAnchor.constraint(equalTo: content.topAnchor),
+                                             pane.widthAnchor.constraint(equalToConstant: 0), pane.heightAnchor.constraint(equalToConstant: 0)])
+            }
             // BrowserWindowController's move lease: the hierarchy it expects,
             // revalidated on every check, and the real move proposal.
             if ProcessInfo.processInfo.environment["SWIPE_NO_LEASES"] == nil { sidebar.prepareSidebarMove = { item in
@@ -157,7 +169,8 @@ extension NSView {
             }
             var counted = BuiltRows.count
             func newRows() -> Int { defer { counted = BuiltRows.count }; return BuiltRows.count - counted }
-            idle()
+            // The idle preparation of the other Spaces' pages.
+            let preparingTurn = idle()
             let prepared = newRows()
             if ProcessInfo.processInfo.environment["SWIPE_VERBOSE"] != nil { print("  idle before swiping built \(prepared)") }
             func frame(_ body: () -> Void) -> Double {
@@ -190,6 +203,7 @@ extension NSView {
                 let deadline = Date().addingTimeInterval(1.5)
                 while moving(sidebar), Date() < deadline { deliverEvents(); RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 240)) }
                 busy.remove()
+                swipe.settled = !moving(sidebar)
                 swipe.settle = busy.spans.map { $0 * 1000 }
                 swipe.built = swipe.builtInFrames + newRows()
                 if ProcessInfo.processInfo.environment["SWIPE_VERBOSE"] != nil {
@@ -201,6 +215,19 @@ extension NSView {
                 swipes[swipes.count - 1] = swipe
                 clock = CACurrentMediaTime()
             }
+            // A click on the farthest Space's icon and back, as the dock or a
+            // shortcut switches: the kept page shows, or one let go rebuilds.
+            // SWIPE_PRESSURE: macOS reports memory pressure first, so the jump
+            // finds the pages the sidebar let go and rebuilds one.
+            if ProcessInfo.processInfo.environment["SWIPE_PRESSURE"] != nil { sidebar.releaseOffscreenPages(); idle(); _ = newRows() }
+            var jumps: [Double] = []
+            var jumpBuilt = 0
+            for target in spaceCount > 2 ? [spaceCount - 1, 0] : [] {
+                let space = state.spaces[target]
+                jumps.append(frame { sidebar.onSelectSpace?(space.id, space.profileID) })
+                jumpBuilt += newRows()
+                idle(); _ = newRows()
+            }
             func fmt(_ value: Double) -> String { String(format: "%.1f", value) }
             let first = swipes.map(\.firstFrame).max() ?? 0
             let steady = swipes.flatMap(\.frames)
@@ -209,14 +236,27 @@ extension NSView {
             let builtInFrames = swipes.map(\.builtInFrames).max() ?? 0
             let built = swipes.map(\.built).max() ?? 0
             let builtIdle = swipes.map(\.builtIdle).max() ?? 0
-            let idleTurn = swipes.map(\.idleTurn).max() ?? 0
+            let idleTurn = max(preparingTurn, swipes.map(\.idleTurn).max() ?? 0)
+            let jump = jumps.max() ?? 0
+            let memory = footprint()
             let line = "\(items) folders+\(items * 2) items/Space: render \(fmt(renderMs)) ms; swipe first frame \(fmt(first)) ms, "
                 + "other frames max \(fmt(steady.max() ?? 0)) ms, release \(fmt(release)) ms, settle frame max \(fmt(settle)) ms; "
-                + "rows built while tracking \(builtInFrames), during the swipe \(built), idle after \(builtIdle) (longest idle turn \(fmt(idleTurn)) ms); footprint \(fmt(footprint())) MB"
+                + "far jump \(fmt(jump)) ms; rows built while tracking \(builtInFrames), during the swipe \(built), idle after \(builtIdle) "
+                + "(longest idle turn \(fmt(idleTurn)) ms); footprint \(fmt(memory)) MB"
             print(line); report.append(line)
             if ProcessInfo.processInfo.environment["SWIPE_ASSERT"] != nil {
                 // Prepared while idle, no swipe builds a row, first visits included.
                 precondition(builtInFrames == 0 && built == 0, "\(items): a swipe built rows (\(builtInFrames) tracking, \(built) in all)")
+                // Each Space keeps its page: a swipe only moves it, within a frame,
+                // and its release and the spring don't lay a page out again.
+                precondition(first < 16 && (steady.max() ?? 0) < 16, "\(items): a swipe frame took \(fmt(max(first, steady.max() ?? 0))) ms")
+                precondition(settle < 8, "\(items): a spring frame took \(fmt(settle)) ms")
+                precondition(release < 50, "\(items): a release took \(fmt(release)) ms")
+                precondition(swipes.allSatisfy(\.settled), "\(items): a page didn't spring back to rest")
+                precondition(jumpBuilt == 0, "\(items): a jump to a kept Space built \(jumpBuilt) rows")
+            }
+            if let hold = ProcessInfo.processInfo.environment["SWIPE_HOLD"].flatMap(Double.init) {
+                print("hold pid \(getpid())"); fflush(stdout); Thread.sleep(forTimeInterval: hold)
             }
             window.contentView = nil
         }

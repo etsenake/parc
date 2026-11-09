@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """A Space swipe's main-thread work on the production SidebarView with 5, 50
 and 200 folders and items per Space, in an off-screen window that is never
-shown. Phased scroll events are built in memory and handed to the sidebar; no
+shown and, like the browser window, lays its content out with constraints.
+Phased scroll events are built in memory and handed to the sidebar; no
 browser, engine, posted events or preferences. Prints each size's frame times,
-the sidebar rows each swipe builds and the footprint. Without arguments it is
-the regression check: after the idle preparation, no swipe at 5 or 50 builds a
-row, first visits to each of four Spaces included.
+release, spring frames, a jump to the farthest Space, the rows each swipe
+builds, the longest idle turn and the footprint. Without arguments it is the
+regression check at 5 and 50 folders, four Spaces, first visits and returns:
+no swipe builds a row, swipe frames stay within a frame, spring frames stay
+under 8 ms and releases under 50 ms.
 """
 from pathlib import Path
 import ast
@@ -47,4 +50,7 @@ with tempfile.TemporaryDirectory(prefix="parc-space-swipe-") as directory:
                     *map(str, sources), "-o", str(executable)], check=True)
     # Without sizes: the regression check at 5 and 50 folders and items, four Spaces.
     environment = dict(os.environ) if len(sys.argv) > 1 else {**os.environ, "SWIPE_ASSERT": "1", "SWIPE_SPACES": "4"}
-    subprocess.run([str(executable), *(sys.argv[1:] or ["5", "50"])], check=True, env=environment)
+    run = lambda: subprocess.run([str(executable), *(sys.argv[1:] or ["5", "50"])], env=environment).returncode
+    # Frame timings are wall clock: a busy Mac gets one more try before a failure counts.
+    if run() != 0 and (len(sys.argv) > 1 or run() != 0):
+        sys.exit("SidebarSpaceSwipe failed")

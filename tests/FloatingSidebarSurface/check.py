@@ -48,9 +48,13 @@ assert "SidebarSpacePagingModel.themePages(selected: index, offset: offset, widt
     and "ThemePagingTransition(from: spaces[source].theme, theme: spaces[index].theme, progress: 1 - fraction)" in strip \
     and "onPagingTheme?(nil)" in strip, "SidebarView no longer gives every swipe's pages to the window's surfaces"
 assert "alphaValue" not in strip and "isOnFloatingSurface" not in sidebar_view, "a swipe's neighbouring theme is stacked over the sidebar again"
-assert "ThemeRendererView(" not in sidebar_view and "neighborTheme" not in sidebar_view and "updateNeighborPalette(space)" in strip \
-    and "        neighborSidebar?.palette = ThemeChromePalette(theme: space.theme, appearance: appearance)\n" in sidebar_view, \
+assert "ThemeRendererView(" not in sidebar_view and "neighborTheme" not in sidebar_view \
+    and "        applyPagePalette(page, paletteForPage(spaceID))\n" in sidebar_view \
+    and "ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? effectiveAppearance)" in sidebar_view, \
     "the neighbouring page builds a theme renderer for its palette again"
+refresh = sidebar_view[sidebar_view.index("    private func refresh(_ page: SidebarSpacePage"):]
+refresh = refresh[:refresh.index("\n    }\n")]
+assert "applyPagePalette(page, paletteForPage(spaceID))" in refresh, "a page shown beside the strip no longer takes its Space's palette"
 assert ("        sidebar.onPagingTheme = { [weak self] transition in\n"
         "            self?.rootView.pagingTransition = transition; self?.sidebarContainer.pagingTransition = transition\n"
         "        }\n") in controller, "the controller no longer gives the swipe to the window's background and the sidebar surface"

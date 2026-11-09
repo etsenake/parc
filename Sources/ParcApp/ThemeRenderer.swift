@@ -17,7 +17,7 @@ extension NSColor {
 /// Source-owned implementation of the installed WindowTheme renderer's measured
 /// color math. The evidence and remaining parity limits live in the theme
 ///
-struct ThemeChromePalette {
+struct ThemeChromePalette: Equatable {
     let isDark: Bool
     let foregroundPrimary: NSColor
     let foregroundSecondary: NSColor

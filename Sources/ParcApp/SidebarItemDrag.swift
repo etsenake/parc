@@ -330,9 +330,9 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         updateLeadingHover(nil)
         guard hover else { return }; hover = false; updateColor()
     }
-    /// A kept page's outline hides with its rows under the pointer.
-    override func viewDidHide() {
-        super.viewDidHide()
+    /// A kept page's outline hides, or leaves the screen, with its rows under the pointer.
+    override func viewDidHide() { super.viewDidHide(); resetPointer() }
+    func resetPointer() {
         updateLeadingHover(nil)
         guard hover else { return }; hover = false; updateColor()
     }

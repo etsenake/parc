@@ -206,6 +206,8 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     override func mouseExited(with event: NSEvent) {
         if event.trackingArea === tracking { setHover(false) } else { super.mouseExited(with: event) }
     }
+    /// The split's page left the screen with the pointer over it.
+    func resetPointer() { setHover(false) }
     private func setHover(_ value: Bool) {
         guard hover != value else { return }
         hover = value

@@ -23,17 +23,23 @@ layout = re.search(
 assert layout, "SidebarView.layout not found"
 body = layout.group("body")
 
-# Both space-management and ordinary chrome paths must gate the outline flush.
-assert body.count("SidebarOutlineLayoutFlushSkip.shouldFlush(") == 2, \
-    "space-management and ordinary layout must both gate list layoutSubtree"
-assert body.count("list.layoutSubtreeIfNeeded()") == 2, \
-    "both layout paths must still flush the list when shouldFlush is true"
+# Both space-management and ordinary chrome paths lay the shown page out
+# through layoutPage, which gates the outline flush.
+assert body.count("layoutPage(shownPage)") == 2, \
+    "space-management and ordinary layout must both lay the shown page out"
+page = re.search(r"private func layoutPage\(_ page: SidebarSpacePage, flush: Bool = true\) \{(?P<body>.*?)\n    \}\n", sidebar, re.S)
+assert page, "SidebarView.layoutPage not found"
+page_body = page.group("body")
+assert page_body.count("SidebarOutlineLayoutFlushSkip.shouldFlush(") == 1, \
+    "layoutPage must gate list layoutSubtree"
+assert page_body.count("page.list.layoutSubtreeIfNeeded()") == 1, \
+    "layoutPage must still flush the list when shouldFlush is true"
 assert re.search(
-    r"list\.frame = .*\n\s+list\.layoutSubtreeIfNeeded\(\)", body) is None, \
-    "layout must not unconditionally layoutSubtree the list after assigning its frame"
-assert "frameChanged:" in body and "list.needsLayout" in body, \
+    r"list\.frame = .*\n\s+(page\.)?list\.layoutSubtreeIfNeeded\(\)", page_body) is None, \
+    "layoutPage must not unconditionally layoutSubtree the list after assigning its frame"
+assert "frameChanged:" in page_body and "page.list.needsLayout" in page_body, \
     "shouldFlush must observe list frame moves and needsLayout"
-assert "list.subviews.contains(where: \\.needsLayout)" in body, \
+assert "page.list.subviews.contains(where: \\.needsLayout)" in page_body, \
     "shouldFlush must observe dirty outline children"
 
 # Membership rebuilds must still force a sidebar layoutSubtree walk.

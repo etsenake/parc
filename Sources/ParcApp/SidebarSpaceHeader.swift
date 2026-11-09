@@ -313,7 +313,8 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         clearHover()
     }
     @objc private func windowDidResignKey(_ notification: Notification) { clearHover() }
-    private func clearHover() { isHovered = false; editButton.clearHover() }
+    /// Also when its page leaves the screen with the pointer over it.
+    func clearHover() { isHovered = false; editButton.clearHover() }
 
     ///
     /// `menuForEvent:`); of its subviews only the edit button is a control.
