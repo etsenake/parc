@@ -31,6 +31,8 @@ class PackagingIconTests(unittest.TestCase):
         self.repo = self.root / "repo"
         shutil.copytree(REPO / "Resources/AppIcons", self.repo / "Resources/AppIcons")
         shutil.copy2(REPO / "app-version.json", self.repo / "app-version.json")
+        (self.repo / "Engine").mkdir()
+        shutil.copy2(REPO / "Engine/source-lock.json", self.repo / "Engine/source-lock.json")
         for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
             target = self.repo / "Engine/ParcNative" / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -121,6 +123,8 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(info["NSDockTilePlugIn"], "ParcDockTile.plugin")
             self.assertEqual(info["LSEnvironment"], {"MallocNanoZone": "0"})
             self.assertEqual(info["CFBundleIdentifier"], "org.parc.Browser")
+            lock = json.loads((REPO / "Engine/source-lock.json").read_text())
+            self.assertEqual(info["ParcChromiumVersion"], lock["chromium"]["tag"])
             self.assertEqual(info["CFBundleURLTypes"][0]["CFBundleURLSchemes"], ["http", "https"])
             self.assertEqual(info["LSApplicationCategoryType"], "public.app-category.productivity")
             documents = {kind for document in info["CFBundleDocumentTypes"]
