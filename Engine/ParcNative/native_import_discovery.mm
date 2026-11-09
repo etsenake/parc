@@ -78,7 +78,8 @@ bool HasProfilePath(const ProfilesResult& result, const base::FilePath& path) {
 void AddProfile(ProfilesResult& result,
                 const std::shared_ptr<const Installation>& source,
                 const base::FilePath& path,
-                std::string name) {
+                std::string name,
+                bool listing) {
   struct stat directory{};
   base::FilePath normalized = base::MakeAbsoluteFilePath(path);
   if (normalized.empty())
@@ -112,9 +113,14 @@ void AddProfile(ProfilesResult& result,
       p->categories |= PCNativeImportCategoryPasswords;
     if (can("Web Data"))
       p->categories |= PCNativeImportCategoryAutofill;
-    auto prefs = JSON(normalized.AppendASCII("Secure Preferences"));
-    if (!prefs)
-      prefs = JSON(normalized.AppendASCII("Preferences"));
+    // Listing browsers only needs to know a profile has data, so its
+    // preferences are read there only when nothing else would show it.
+    std::optional<base::DictValue> prefs;
+    if (!listing || p->categories == 0) {
+      prefs = JSON(normalized.AppendASCII("Secure Preferences"));
+      if (!prefs)
+        prefs = JSON(normalized.AppendASCII("Preferences"));
+    }
     const auto* extensions =
         prefs ? prefs->FindDictByDottedPath("extensions.settings") : nullptr;
     if (extensions)
@@ -165,7 +171,8 @@ void AddProfile(ProfilesResult& result,
   result.profiles.push_back(std::move(p));
 }
 ProfilesResult Load(std::shared_ptr<const Installation> source,
-                    base::FilePath home) {
+                    base::FilePath home,
+                    bool listing) {
   ProfilesResult result;
   const auto root = home.Append(base::FilePath(source->root_relative));
   if (source->family == 0) {
@@ -179,7 +186,7 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
           continue;
         const auto* name = value.GetDict().FindString("name");
         AddProfile(result, source, root.AppendASCII(directory),
-                   name ? *name : directory);
+                   name ? *name : directory, listing);
       }
     // Listing the user-data root is often blocked until Full Disk Access is
     // granted. Probe the stable Chromium directory names so Default still
@@ -187,11 +194,12 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     const char* known[] = {
         "Default", "Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5"};
     for (const char* directory : known)
-      AddProfile(result, source, root.AppendASCII(directory), directory);
+      AddProfile(result, source, root.AppendASCII(directory), directory,
+                 listing);
     if (result.profiles.empty() &&
         source->bundle_id == "com.operasoftware.Opera" &&
         base::PathExists(root.AppendASCII("Preferences")))
-      AddProfile(result, source, root, "Opera");
+      AddProfile(result, source, root, "Opera", listing);
     auto blocked = [](const base::FilePath& path) {
       return access(path.value().c_str(), R_OK) != 0 &&
              (errno == EACCES || errno == EPERM);
@@ -203,15 +211,16 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
         blocked(root.DirName().AppendASCII("StorableSidebar.json")))
       result.restricted = true;
   } else if (source->family == 1) {
-    AddProfile(result, source, root, "Safari");
+    AddProfile(result, source, root, "Safari", listing);
     result.constraints.push_back(
         "Safari imports the original default history/bookmark store. Separate "
         "newer Safari profile stores are not advertised by this importer.");
   } else {
     std::string ini;
-    if (!base::ReadFileToStringWithMaxSize(root.AppendASCII("profiles.ini"),
-                                           &ini, 1024 * 1024)) {
-      result.restricted = true;
+    const auto ini_path = root.AppendASCII("profiles.ini");
+    if (!base::ReadFileToStringWithMaxSize(ini_path, &ini, 1024 * 1024)) {
+      // Only an existing file can be one macOS withholds.
+      result.restricted = base::PathExists(ini_path);
       return result;
     }
     std::map<std::string, std::string> section;
@@ -223,7 +232,8 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
         path = root.Append(path);
       AddProfile(
           result, source, path,
-          section.contains("Name") ? section["Name"] : path.BaseName().value());
+          section.contains("Name") ? section["Name"] : path.BaseName().value(),
+          listing);
     };
     bool profile = false;
     for (auto line : base::SplitStringPiece(ini, "\n", base::TRIM_WHITESPACE,
@@ -255,6 +265,30 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
         "No accessible source profiles were found. Check that this browser has "
         "a profile and that macOS permits access.");
   return result;
+}
+//
+// (availableImportSourceProfiles:), a browser is offered only with a profile
+// to import, or one macOS withholds until Full Disk Access. Safari's store is
+// always behind that permission, so its own step decides.
+std::vector<Installation> Importable(std::vector<Installation> installed,
+                                     base::FilePath home) {
+  std::vector<Installation> importable;
+  for (auto& source : installed) {
+    if (source.family != 1) {
+      const auto profiles =
+          Load(std::make_shared<const Installation>(source), home,
+               /*listing=*/true);
+      if (!profiles.restricted &&
+          std::none_of(profiles.profiles.begin(), profiles.profiles.end(),
+                       [](const auto& profile) {
+                         return profile->categories != 0 ||
+                                profile->restricted;
+                       }))
+        continue;
+    }
+    importable.push_back(std::move(source));
+  }
+  return importable;
 }
 }  // namespace
 }  // namespace parc::importer
@@ -375,10 +409,8 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     (void (^)(NSArray<PCNativeImportSource*>*))completion {
   auto cancelled = std::make_shared<std::atomic_bool>(false);
   auto lease = [[PCNativeImportDiscovery alloc] initWithCancellation:cancelled];
-  dispatch_async(dispatch_get_main_queue(), ^{
-    if (cancelled->load())
-      return;
-    NSMutableArray* sources = [NSMutableArray array];
+  std::vector<parc::importer::Installation> installed;
+  {
     const std::vector<parc::importer::Installation> candidates = {
         {0,
          "com.google.Chrome",
@@ -454,15 +486,29 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
       if (!url)
         continue;
       candidate.app_path = base::FilePath(base::SysNSStringToUTF8(url.path));
-      [sources addObject:[[PCNativeImportSource alloc]
-                             initWithInstallation:
-                                 std::make_shared<
-                                     const parc::importer::Installation>(
-                                     std::move(candidate))]];
+      installed.push_back(std::move(candidate));
     }
-    if (!cancelled->load())
-      completion([sources copy]);
-  });
+  }
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&parc::importer::Importable, std::move(installed),
+                     base::FilePath(base::SysNSStringToUTF8(NSHomeDirectory()))),
+      base::BindOnce(
+          [](std::shared_ptr<std::atomic_bool> cancelled,
+             void (^completion)(NSArray<PCNativeImportSource*>*),
+             std::vector<parc::importer::Installation> importable) {
+            if (cancelled->load())
+              return;
+            NSMutableArray* sources = [NSMutableArray array];
+            for (auto& source : importable)
+              [sources addObject:[[PCNativeImportSource alloc]
+                                     initWithInstallation:
+                                         std::make_shared<const parc::importer::
+                                                              Installation>(
+                                             std::move(source))]];
+            completion([sources copy]);
+          },
+          cancelled, [completion copy]));
   return lease;
 }
 + (PCNativeImportDiscovery*)
@@ -489,7 +535,8 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
           &parc::importer::Load, installation,
-          base::FilePath(base::SysNSStringToUTF8(NSHomeDirectory()))),
+          base::FilePath(base::SysNSStringToUTF8(NSHomeDirectory())),
+          /*listing=*/false),
       base::BindOnce(
           [](std::shared_ptr<std::atomic_bool> cancelled,
              PCNativeImportSource* source,

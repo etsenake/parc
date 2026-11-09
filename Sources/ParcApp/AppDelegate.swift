@@ -294,10 +294,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 if pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
                 ProfileRemovalController.shared.configure(store: store)
                 // Only a window someone is looking at; otherwise the next one to become key.
-                ImportedExtensionFailures.present = { [weak self] in
+                let presentImportFailures = { [weak self] in
                     guard NSApp.isActive, let front = self?.front, front.window?.isKeyWindow == true else { return }
-                    front.showImportedExtensionFailures()
+                    front.showImportFailures()
                 }
+                ImportedExtensionFailures.present = presentImportFailures
+                ImportedBrowserDataFailures.present = presentImportFailures
                 // Safari's identity for learned FairPlay sites, before any page loads.
                 FairPlayIdentityController.shared.start(profilePaths: store.state.profiles.map {
                     store.independentEngineProfilePath(for: $0.id)

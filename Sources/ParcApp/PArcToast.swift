@@ -61,6 +61,10 @@ struct PArcToastContent: Equatable {
     }
     ///
     ///
+    static let importPartial = standard("Only some of your data imported. Please try again!")
+    static let importFailed = standard("We weren’t able to import… please try again!")
+    ///
+    ///
     static func tabRestored(to location: String, selected: Bool) -> PArcToastContent {
         standard("Tab restored to " + location + (selected ? "" : ". Click to view."))
     }

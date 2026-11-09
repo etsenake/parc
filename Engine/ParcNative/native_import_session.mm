@@ -385,7 +385,9 @@ class Session final : public ProfileObserver,
       return;
     }
     if (!remaining_) {
-      Finish(failure_ || failed_ || warnings_.count
+      // Notes about skipped records leave a category complete; only a
+      // category that failed makes the import partial.
+      Finish(failure_ || failed_
                  ? ((completed_ || written_any_) ? PCNativeImportOutcomePartial
                                                  : PCNativeImportOutcomeFailed)
                  : PCNativeImportOutcomeCompleted,

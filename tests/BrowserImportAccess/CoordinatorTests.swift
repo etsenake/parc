@@ -388,6 +388,8 @@ import AppKit
                && coordinator.warnings.contains("uBlock Origin couldn’t be added.")
                && coordinator.warnings.contains("Extension couldn’t be added."),
                "Extensions that fail are listed and none reaches the ad-blocker step")
+        expect(ImportedExtensionFailures.pending.isEmpty && ImportedBrowserDataFailures.take() == .failed,
+               "An import whose data all failed says so once, its failed extensions under that one toast")
         run()
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         coordinator.stopImport()
@@ -427,6 +429,7 @@ import AppKit
         coordinator.cancel()
         expect(ImportedExtensionFailures.take() == ["uBlock Origin", "Extension"],
                "With no results page, every failed extension waits for a browser window, once each")
+        expect(ImportedBrowserDataFailures.take() == nil, "Imports whose data came in say nothing about it")
         var presented = 0
         ImportedExtensionFailures.present = { presented += 1 }
         downloading.background(["uBlock Origin"])
@@ -485,12 +488,33 @@ import AppKit
         firstCompletion(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         let install = PCNativeBrowserApplication.extensionInstalls.removeFirst()
         expect(retained!.hasBackgroundWork && changes == 0, "Detached extension installation keeps ownership without updating closed views")
+        expect(ImportedBrowserDataFailures.pending == nil, "A failed profile is reported only once the whole import is over")
         install.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier], failedNames: ["Broken"]))
         expect(retained == nil && delivered == [.init(identifier: blocker.identifier, displayName: blocker.displayName)]
-               && ImportedExtensionFailures.take() == ["Broken"]
-               && ImportedBrowserDataFailures.take() == ["Some data was unavailable.", "Other could not be imported."], "Completion reports detached blockers and failures and releases the coordinator")
+               && ImportedExtensionFailures.pending.isEmpty && ImportedBrowserDataFailures.take() == .partial,
+               "Completion delivers blockers, one partial-import toast that covers its failed extensions, and releases the coordinator")
         install.background([blocker.displayName])
         expect(ImportedExtensionFailures.take() == [blocker.displayName], "Failures arriving after detachment reach the browser window")
+
+        let stopStore = try BrowserStore(directory: directory.appendingPathComponent("StopAfterFailure"))
+        let stopWindow = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
+        let stopping = BrowserImportCoordinator(store: stopStore, destination: BrowserImportDestination(
+            spaceID: stopStore.activeSpace.id, profileID: stopStore.activeSpace.profileID), window: stopWindow,
+            onboarding: true, ownerIsCurrent: { true })
+        let failingProfile = PCNativeImportProfile("stop failing", [.bookmarks], .complete, directory: "Default")
+        let stoppedProfile = PCNativeImportProfile("stop later", [.bookmarks], .complete, name: "Later")
+        stopping.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([source])
+        stopping.selectSourceInline(source)
+        PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [failingProfile, stoppedProfile], access: .complete))
+        stopping.continueSourceInline()
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .failed, bookmarks: [], warnings: [], error: nil))
+        expect(ImportedBrowserDataFailures.pending == nil, "Nothing is said while the import is still running")
+        stopping.stopImport()
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .cancelled, bookmarks: [], warnings: [], error: nil))
+        expect(stopping.stage == .finished && ImportedBrowserDataFailures.take() == .partial,
+               "Stopping after a profile failed says so at once, as a partial import")
+        stopping.cancel()
+        expect(ImportedBrowserDataFailures.take() == nil, "Closing it afterwards says nothing more")
         return checks
     }
 
@@ -573,6 +597,7 @@ import AppKit
         expect(coordinator.warnings == ["fixture warning"],
                "The import reports only the native importer's own warnings, as Chrome's does")
         coordinator.cancel()
+        expect(ImportedBrowserDataFailures.take() == nil, "A note about skipped records is not a failed import")
 
         let missing = directory.appendingPathComponent("NoArc/StorableSidebar.json")
         let (fallback, fallbackDestination, unreadable) = try begin("ArcUnreadable", sidebar: missing)

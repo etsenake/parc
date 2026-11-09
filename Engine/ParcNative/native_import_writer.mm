@@ -60,12 +60,10 @@ class HistoryImport final : public history::HistoryDBTask {
   HistoryImport(history::URLRows rows,
                 history::VisitSource source,
                 std::shared_ptr<std::atomic_bool> cancelled,
-                size_t invalid,
                 WriteReply reply)
       : rows_(std::move(rows)),
         source_(source),
         cancelled_(std::move(cancelled)),
-        invalid_(invalid),
         reply_(std::move(reply)) {}
   bool RunOnDBThread(history::HistoryBackend* backend,
                      history::HistoryDatabase* db) override {
@@ -85,12 +83,9 @@ class HistoryImport final : public history::HistoryDBTask {
                  result.cancelled
                      ? "History import was cancelled before commit."
                      : "History import did not commit."};
-    } else if (result.expired || invalid_) {
-      result_ = {false, result.imported,
-                 "History was imported; " + std::to_string(result.expired) +
-                     " expired and " + std::to_string(invalid_) +
-                     " invalid records were skipped."};
     } else {
+      // Visits past history's retention, and rows the reader couldn't
+      // parse, are skipped as Chromium's own import skips them.
       result_ = {true, result.imported, {}};
     }
     return true;
@@ -103,7 +98,6 @@ class HistoryImport final : public history::HistoryDBTask {
   history::URLRows rows_;
   history::VisitSource source_;
   std::shared_ptr<std::atomic_bool> cancelled_;
-  size_t invalid_;
   WriteReply reply_;
   WriteResult result_;
 };
@@ -291,14 +285,11 @@ class Writer final : public ImportWriter,
       return;
     }
     history::URLRows rows;
-    size_t invalid = 0;
     for (const auto& h : batch_->history) {
       GURL url(h->url);
       if (!url.is_valid() || h->last_visit <= 0 || h->visits < 0 ||
-          h->typed < 0) {
-        ++invalid;
+          h->typed < 0)
         continue;
-      }
       history::URLRow row(url);
       row.set_title(base::UTF8ToUTF16(h->title));
       row.set_visit_count(h->visits);
@@ -316,7 +307,7 @@ class Writer final : public ImportWriter,
         family_ == 2   ? history::SOURCE_FIREFOX_IMPORTED
         : family_ == 1 ? history::SOURCE_SAFARI_IMPORTED
                        : history::SOURCE_OS_MIGRATION_IMPORTED,
-        cancelled_, invalid, base::BindOnce(&Writer::Done, shared_from_this()));
+        cancelled_, base::BindOnce(&Writer::Done, shared_from_this()));
     if (service->ScheduleDBTask(FROM_HERE, std::move(task), &tasks_) ==
         base::CancelableTaskTracker::kBadTaskId)
       Done({false, 0, "History completion could not be scheduled."});

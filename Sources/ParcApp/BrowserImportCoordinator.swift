@@ -20,7 +20,9 @@ final class BrowserImportCoordinator {
     private let onboarding: Bool
     private let supportsICloudPasswords: Bool
     var onChange: (() -> Void)?
-    private(set) var stage: Stage = .loading
+    private(set) var stage: Stage = .loading {
+        didSet { if stage == .finished && !hasBackgroundWork { reportDataFailure() } }
+    }
     private(set) var sources: [PCNativeImportSource] = []
     private(set) var source: PCNativeImportSource?
     private(set) var profiles: [PCNativeImportProfile] = []
@@ -77,13 +79,31 @@ final class BrowserImportCoordinator {
         if !detached { detached = true; Self.detachedImports.append(self) }
     }
 
-    private func reportBackgroundWarnings(_ lines: [String]) {
-        warnings += lines
-        if detached { ImportedBrowserDataFailures.add(lines) }
+    private func reportBackgroundWarnings(_ lines: [String]) { warnings += lines }
+
+    /// Whether a profile's data failed to import, and whether any came in; a
+    /// browser window says which once the whole import is over.
+    private var dataFailed = false, dataImported = false, dataFailureReported = false
+    private func record(_ result: PCNativeImportResult) {
+        switch result.outcome {
+        // A stopped profile keeps what it had already brought in.
+        case .cancelled: dataImported = true
+        case .completed where result.error == nil: dataImported = true
+        case .partial: dataImported = true; dataFailed = true
+        default: dataFailed = true
+        }
+    }
+    private func failed(_ line: String) { warnings.append(line); dataFailed = true }
+
+    private func reportDataFailure() {
+        guard dataFailed, !dataFailureReported else { return }
+        dataFailureReported = true
+        ImportedBrowserDataFailures.add(dataImported ? .partial : .failed)
     }
 
     private func finishBackground() {
         hasBackgroundWork = false
+        reportDataFailure()
         if detached {
             onDetachedAdBlockers?(importedAdBlockers)
             onDetachedAdBlockers = nil
@@ -345,6 +365,7 @@ final class BrowserImportCoordinator {
 
     private func beginImport() {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
+        dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
@@ -438,7 +459,7 @@ final class BrowserImportCoordinator {
                 activeDestination = try destination(named: profile.displayName, excluding: usedProfiles)
                 usedProfiles.insert(activeDestination!.profileID)
             } catch {
-                activeDestination = nil; warnings.append("\(profile.displayName) could not be imported.")
+                activeDestination = nil; failed("\(profile.displayName) could not be imported.")
                 completed += 1; importNext(); return
             }
         }
@@ -468,7 +489,7 @@ final class BrowserImportCoordinator {
                     self.finishSourceFailure("\(profile.displayName): its destination was removed, so this import stopped.")
                     return
                 }
-                self.warnings += result.warnings
+                self.warnings += result.warnings; self.record(result)
                 if let error = result.error { self.warnings.append("\(profile.displayName): \(error.localizedDescription)") }
                 if result.outcome == .failed && result.error == nil {
                     self.warnings.append("\(profile.displayName) could not be imported.")
@@ -480,7 +501,7 @@ final class BrowserImportCoordinator {
                         self.bookmarkPages.append(BookmarkPage(sourceName: profile.displayName,
                                                               destination: destination, selection: selection))
                     }
-                } catch { self.warnings.append("Bookmarks: \(error.localizedDescription)") }
+                } catch { self.failed("Bookmarks: \(error.localizedDescription)") }
                 self.completed += 1
                 if result.outcome == .cancelled {
                     self.queue = []; self.pendingExtensions = []; self.backgroundProfiles = []; self.passwordDestination = nil
@@ -503,6 +524,7 @@ final class BrowserImportCoordinator {
             categories.remove(.bookmarks); categories.remove(.extensions)
             guard categories.rawValue != 0 else { continue }
             guard item.destination.isCurrent(in: store.state) else {
+                dataFailed = true
                 reportBackgroundWarnings(["\(item.profile.displayName): its destination was removed, so this import stopped."])
                 continue
             }
@@ -515,7 +537,7 @@ final class BrowserImportCoordinator {
                     guard let self, self.backgroundToken == token, !self.cancelled,
                           self.backgroundPending.remove(id) != nil else { return }
                     self.backgroundSessions[id] = nil
-                    self.reportBackgroundWarnings(result.warnings)
+                    self.reportBackgroundWarnings(result.warnings); self.record(result)
                     if let error = result.error { self.reportBackgroundWarnings(["\(item.profile.displayName): \(error.localizedDescription)"]) }
                     else if result.outcome == .failed { self.reportBackgroundWarnings(["\(item.profile.displayName) could not be imported."]) }
                     self.onChange?()
@@ -524,7 +546,7 @@ final class BrowserImportCoordinator {
             if backgroundPending.contains(id) {
                 if let lease { backgroundSessions[id] = lease }
                 else {
-                    backgroundPending.remove(id)
+                    backgroundPending.remove(id); dataFailed = true
                     reportBackgroundWarnings(["Parc could not begin the import from \(item.profile.displayName)."])
                 }
             }
@@ -538,9 +560,11 @@ final class BrowserImportCoordinator {
         backgroundDeferred = false
         // A closing import window leaves any visible window to host the sessions.
         guard let host = (window?.isVisible == true ? window : nil) ?? NSApp.windows.first(where: { $0.isVisible }) ?? window else {
+            if !backgroundProfiles.isEmpty { dataFailed = true }
             reportBackgroundWarnings(backgroundProfiles.map { "\($0.profile.displayName) could not be imported." })
             backgroundProfiles = []; reportFailedExtensions(pendingExtensions.flatMap { item in
-                item.profile.extensions.filter { item.ids.contains($0.identifier) }.map(\.displayName) })
+                item.profile.extensions.filter { item.ids.contains($0.identifier) }.map(\.displayName) },
+                announcing: !dataFailed)
             pendingExtensions = []; finishBackground(); return
         }
         startBackground(in: host)
@@ -558,7 +582,9 @@ final class BrowserImportCoordinator {
         var items: [PCNativeImportExtension] = []
         for item in pending {
             let chosen = item.profile.extensions.filter { item.ids.contains($0.identifier) }
-            guard item.destination.isCurrent(in: store.state) else { reportFailedExtensions(chosen.map(\.displayName)); continue }
+            guard item.destination.isCurrent(in: store.state) else {
+                reportFailedExtensions(chosen.map(\.displayName), announcing: !dataFailed); continue
+            }
             let path = store.independentEngineProfilePath(for: item.destination.profileID)
             let ids = item.ids.subtracting(requested[path] ?? [])
             guard !ids.isEmpty else { continue }
@@ -574,7 +600,8 @@ final class BrowserImportCoordinator {
             // Always ends the background phase, so a detached import is released.
             guard let self, self.backgroundToken == token, !self.cancelled else { return }
             self.extensionInstall = nil
-            self.reportFailedExtensions(result.failedNames)
+            // A data failure's toast already covers the whole import.
+            self.reportFailedExtensions(result.failedNames, announcing: !self.dataFailed)
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
             let added = result.installedIdentifiers.union(result.installingIdentifiers)
                 .subtracting(ImportedExtensionFailures.failedIdentifiers)
@@ -589,17 +616,17 @@ final class BrowserImportCoordinator {
             self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
             // An import still open records them once; either way a browser window says so.
             if let self, !self.detached, self.isCurrent, self.extensionBatch == batch {
-                self.reportFailedExtensions(names); self.onChange?()
+                self.reportFailedExtensions(names, announcing: !self.dataFailed); self.onChange?()
             } else { ImportedExtensionFailures.add(names) }
         })
-        if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName)); finishBackground() }
+        if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName), announcing: !dataFailed); finishBackground() }
     }
 
     /// The import shows no results, so a browser window reports them.
-    private func reportFailedExtensions(_ names: [String]) {
+    private func reportFailedExtensions(_ names: [String], announcing: Bool = true) {
         var seen = Set(warnings)
         let fresh = names.filter { seen.insert("\($0) couldn’t be added.").inserted }
-        if !fresh.isEmpty { ImportedExtensionFailures.add(fresh) }
+        if announcing, !fresh.isEmpty { ImportedExtensionFailures.add(fresh) }
         warnings += fresh.map { "\($0) couldn’t be added." }
     }
 
@@ -706,7 +733,7 @@ final class BrowserImportCoordinator {
     }
 
     private func finishSourceFailure(_ failure: String) {
-        queue = []; passwordDestination = nil; warnings.append(failure); error = nil
+        queue = []; passwordDestination = nil; failed(failure); error = nil
         // Profiles that already imported still get their extensions.
         if !pendingExtensions.isEmpty || !backgroundProfiles.isEmpty { importNext(); return }
         stage = bookmarkPages.isEmpty ? .finished : .bookmarks
@@ -756,7 +783,7 @@ final class BrowserImportCoordinator {
             for index in bookmarkPages.indices where !bookmarkPages[index].committed && !bookmarkPages[index].discarded {
                 let page = bookmarkPages[index]
                 guard page.destination.isCurrent(in: store.state) else {
-                    warnings.append("\(page.sourceName): its destination Profile or Space was removed; these bookmarks were not added.")
+                    failed("\(page.sourceName): its destination Profile or Space was removed; these bookmarks were not added.")
                     bookmarkPages[index].discarded = true
                     continue
                 }
@@ -784,6 +811,8 @@ final class BrowserImportCoordinator {
 
     func cancel() {
         guard !cancelled else { return }
+        // A profile still importing when the import closes counts as stopped.
+        if session != nil || !backgroundSessions.isEmpty { dataImported = true }
         cancelled = true; generation = UUID(); discovery?.cancel(); discovery = nil
         checkingSafariAccess = false; restarting = false; continueAfterSafariRefresh = false
         session?.cancel(); session = nil; activeDestination = nil; subscription = nil; queue = []; queuedDestinations = [:]
@@ -798,17 +827,20 @@ final class BrowserImportCoordinator {
     }
 }
 
-/// Data failures outlive a detached import so a browser window can report them.
+/// An import whose data partly or wholly failed, waiting for a browser window
+/// to say so once.
 @MainActor
 enum ImportedBrowserDataFailures {
-    static let didFail = Notification.Name("ParcImportedBrowserDataDidFail")
-    private(set) static var pending: [String] = []
-    static func add(_ lines: [String]) {
-        guard !lines.isEmpty else { return }
-        for line in lines where !pending.contains(line) { pending.append(line) }
-        NotificationCenter.default.post(name: didFail, object: nil)
+    enum Outcome { case partial, failed }
+    private(set) static var pending: Outcome?
+    static var present: (() -> Void)?
+    static func add(_ outcome: Outcome) {
+        pending = pending.map { $0 == .failed && outcome == .failed ? .failed : .partial } ?? outcome
+        present?()
     }
-    static func take() -> [String] { defer { pending = [] }; return pending }
+    static func take() -> Outcome? { defer { pending = nil }; return pending }
+    /// Kept for the next window when this one couldn't show it.
+    static func restore(_ outcome: Outcome) { if pending == nil { pending = outcome } }
 }
 
 /// Imported extensions that failed, waiting for a browser window to say so.

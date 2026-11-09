@@ -705,7 +705,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         lastActivatedAt = Date()
         guard presentation.isReady else { return }
         onActivateWindow?()
-        showImportedExtensionFailures()
+        showImportFailures()
         for id in awaitedPeekRetries where selectedTabIDs.contains(id) {
             DispatchQueue.main.async { [weak self] in self?.openAwaitedPeek(over: id) }
         }
@@ -12397,9 +12397,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// pane, else the focused content (a presented Peek's card, else the focused
     /// pane); `.window` is the window's top right.
     private enum ToastLocation { case content(UUID?), window }
-    func showImportedExtensionFailures() {
-        guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow,
-              !ImportedExtensionFailures.pending.isEmpty else { return }
+    /// An import's failed data, then extensions that failed after it, one toast at a time.
+    func showImportFailures() {
+        guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow else { return }
+        if let outcome = ImportedBrowserDataFailures.take() {
+            if showToast(outcome == .failed ? .importFailed : .importPartial, at: .window) == nil {
+                ImportedBrowserDataFailures.restore(outcome)
+            }
+            return
+        }
+        guard !ImportedExtensionFailures.pending.isEmpty else { return }
         let names = ImportedExtensionFailures.take()
         if showToast(.extensionsNotAdded(names), at: .window) == nil { ImportedExtensionFailures.restore(names) }
     }
