@@ -599,11 +599,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     ///
     /// window-level overlay does; only a burst still waiting is cancelled.
     private func updateConfetti(from previous: OnboardingDraft.Stage?) {
+        if draft.stage != .ready { readyContent.cancelPresentation() }
         guard OnboardingExperience.shouldPlayConfetti(reduceMotion: reduceMotion) else {
             confetti.stop(); confetti.isHidden = true; return
         }
         confetti.isHidden = false
-        if draft.stage != .ready { confetti.cancelPending(); readyContent.cancelPresentation() }
+        if draft.stage != .ready { confetti.cancelPending() }
         else if previous != .ready { confetti.fire(after: OnboardingExperience.readyConfettiDelay) }
     }
 

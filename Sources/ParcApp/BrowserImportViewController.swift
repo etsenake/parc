@@ -173,6 +173,7 @@ final class BrowserImportViewController: NSViewController {
         let made = BrowserImportCoordinator(store: store, destination: destination, window: window,
             onboarding: onboarding, ownerIsCurrent: ownerIsCurrent)
         made.onChange = { [weak self] in self?.render() }
+        made.retryRestart = { [weak self] in self?.requestSafariRestart() }
         return made
     }
 

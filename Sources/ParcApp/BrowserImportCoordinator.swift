@@ -41,6 +41,9 @@ final class BrowserImportCoordinator {
     private var requiresSafariAccess = false
     private(set) var checkingSafariAccess = false
     private(set) var restarting = false
+    /// A restart held until the import detached by setup's Back finishes.
+    private var restartWaiting = false
+    var retryRestart: (() -> Void)?
     private(set) var continueAfterSafariRefresh = false
     private(set) var safariAccessError: String?
     private(set) var passwordDestination: BrowserImportDestination?
@@ -363,7 +366,18 @@ final class BrowserImportCoordinator {
         // Quitting now would cut off the browser imported before Back, which
         // only Safari's import resumes after a restart.
         if Self.earlierImportRunning {
-            safariAccessError = "Finishing your last import…"; onChange?(); return false
+            guard !restartWaiting else { return false }
+            restartWaiting = true
+            safariAccessError = "Finishing your last import…"; onChange?()
+            let token = generation
+            Self.waitingStarts.append { [weak self] in
+                guard let self, self.restartWaiting else { return }
+                self.restartWaiting = false
+                guard self.isCurrent, self.generation == token, self.stage == .safariAccess else { return }
+                self.safariAccessError = nil; self.onChange?()
+                self.retryRestart?()
+            }
+            return false
         }
         restarting = true; continueAfterSafariRefresh = false; error = nil; safariAccessError = nil
         generation = UUID(); discovery?.cancel(); discovery = nil
