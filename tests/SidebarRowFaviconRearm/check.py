@@ -46,8 +46,9 @@ assert "let arm = TabRowFaviconIdentity(pageURL: tab.url, resetDestination: tab.
     "makeRow must build TabRowFaviconIdentity from page URL + reset destination"
 assert "let skipArm = tabFaviconArms[tab.id] == arm" in render_body, \
     "makeRow skip must require last-arm identity match"
-assert "&& priorTabFaviconArt[tab.id] != nil" in render_body, \
-    "makeRow skip must require prior settled art"
+assert "let priorArt = priorTabFaviconArt[tab.id] ?? reused?.settledFaviconArt()" in render_body \
+    and "tabFaviconArms[tab.id] == arm && priorArt != nil" in render_body, \
+    "makeRow skip must require prior settled art (the replaced or reused row's)"
 assert "row.adoptSettledFaviconArt(art)" in render_body, \
     "skip path must adopt settled art onto the replacement row"
 assert "tabFaviconArms[tab.id] = arm" in render_body, \

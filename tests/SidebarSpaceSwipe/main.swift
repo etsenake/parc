@@ -1,0 +1,227 @@
+import AppKit
+import ObjectiveC
+import QuartzCore
+
+/// Tab and folder rows constructed, counted at NSView's initializer.
+@MainActor enum BuiltRows { static var count = 0 }
+extension NSView {
+    @objc func swipeCountingInit(frame: NSRect) -> NSView {
+        if self is SidebarTabRow || self is SidebarFolderRow { MainActor.assumeIsolated { BuiltRows.count += 1 } }
+        return swipeCountingInit(frame: frame)
+    }
+}
+
+/// A Space swipe's main-thread work on the production SidebarView, with 5, 50
+/// and 200 folders and items in each of three Spaces. Phased scroll events
+/// built in memory go straight to the sidebar, which selects Spaces the way
+/// BrowserWindowController does: it renders the new Space synchronously. The
+/// window is off screen and never shown; no browser, engine or posted events.
+@main @MainActor struct SidebarSpaceSwipe {
+    static func scroll(_ dx: Int32, phase: Int64, at time: CFTimeInterval) -> NSEvent {
+        let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: dx, wheel3: 0)!
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        event.timestamp = UInt64(time * 1_000_000_000)
+        return NSEvent(cgEvent: event)!
+    }
+
+    static func state(items: Int, spaces: Int) -> BrowserState {
+        var state = BrowserState.initial()
+        let profile = state.profiles[0].id
+        for index in 1..<spaces {
+            var space = BrowserSpace(id: UUID(), name: "Space \(index + 1)", symbol: "circle.fill", color: "B9B5D4", profileID: profile)
+            space.updateDisplayName(position: index)
+            state.spaces.append(space)
+        }
+        for space in state.spaces {
+            for index in 0..<items {
+                let folder = BrowserFolder(id: UUID(), spaceID: space.id, name: "Folder \(index)")
+                state.folders.append(folder)
+                let url = "https://example\(index).test/"
+                state.tabs.append(BrowserTab(id: UUID(), spaceID: space.id, profileID: profile, url: url, title: "Pinned \(index)",
+                    kind: .pinned, folderID: folder.id, createdAt: Date(), lastAccessed: Date(), savedURL: url, savedTitle: "Pinned \(index)"))
+                state.tabs.append(BrowserTab(id: UUID(), spaceID: space.id, profileID: profile, url: url, title: "Today \(index)",
+                    kind: .today, createdAt: Date(), lastAccessed: Date(), savedURL: url, savedTitle: "Today \(index)"))
+            }
+        }
+        return state
+    }
+
+    struct Swipe { var firstFrame = 0.0, frames: [Double] = [], release = 0.0, settle: [Double] = [], built = 0, builtInFrames = 0, builtIdle = 0, idleTurn = 0.0 }
+
+    /// Main-thread busy spans between run loop waits, for the spring's frames.
+    final class Busy {
+        var spans: [Double] = []
+        private var start: CFTimeInterval?
+        private var observer: CFRunLoopObserver?
+        func install() {
+            observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue | CFRunLoopActivity.beforeWaiting.rawValue,
+                                                          true, 0) { [unowned self] _, activity in
+                let now = CACurrentMediaTime()
+                if activity == .afterWaiting { self.start = now } else if let start = self.start { self.spans.append(now - start); self.start = nil }
+            }
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        }
+        func remove() { if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) } }
+    }
+
+    /// Delivers waiting events, as the application's event loop does.
+    static func deliverEvents() {
+        while let event = NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: true) { NSApp.sendEvent(event) }
+    }
+
+    /// Runs the main loop until it has been quiet for 0.4 s (no turn over
+    /// 2 ms), as a user pauses between swipes; at most 30 s.
+    @discardableResult static func idle() -> Double {
+        let busy = Busy(); busy.install()
+        let end = Date().addingTimeInterval(30)
+        var quietSince = Date()
+        while Date() < end, Date().timeIntervalSince(quietSince) < 0.4 {
+            let before = busy.spans.count, began = Date()
+            deliverEvents()
+            RunLoop.main.run(until: began.addingTimeInterval(0.05))
+            // A turn that overran the slice ended it before it reported.
+            if Date().timeIntervalSince(began) > 0.06 || busy.spans[before...].contains(where: { $0 > 0.002 }) { quietSince = Date() }
+        }
+        busy.remove()
+        return (busy.spans.max() ?? 0) * 1000
+    }
+
+    /// The process's physical footprint in MB.
+    static func footprint() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+    }
+
+    static func main() {
+        _ = NSApplication.shared
+        method_exchangeImplementations(class_getInstanceMethod(NSView.self, #selector(NSView.init(frame:)))!,
+                                       class_getInstanceMethod(NSView.self, #selector(NSView.swipeCountingInit(frame:)))!)
+        var report: [String] = []
+        let sizes = CommandLine.arguments.dropFirst().compactMap { Int($0) }
+        for items in sizes.isEmpty ? [5, 50, 200] : sizes {
+            let spaceCount = ProcessInfo.processInfo.environment["SWIPE_SPACES"].flatMap(Int.init) ?? 3
+            var state = state(items: items, spaces: spaceCount)
+            let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 260, height: 900))
+            let window = NSWindow(contentRect: sidebar.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false; window.contentView = sidebar
+            // BrowserWindowController's move lease: the hierarchy it expects,
+            // revalidated on every check, and the real move proposal.
+            if ProcessInfo.processInfo.environment["SWIPE_NO_LEASES"] == nil { sidebar.prepareSidebarMove = { item in
+                let space = state.spaces.first { $0.id == state.activeSpaceID }!
+                guard var expected = SidebarHierarchySnapshot(state: state, spaceID: space.id, profileID: space.profileID, includesFavorites: true),
+                      SidebarMoveCollection(items: [item], spaceID: space.id, profileID: space.profileID, state: state) != nil else { return nil }
+                func undisclosed(_ state: BrowserState) -> SidebarHierarchySnapshot? {
+                    var state = state
+                    for index in state.folders.indices { state.folders[index].isExpanded = false }
+                    return SidebarHierarchySnapshot(state: state, spaceID: expected.spaceID, profileID: expected.profileID, includesFavorites: true)
+                }
+                let structure = undisclosed(state)
+                let valid: () -> Bool = {
+                    guard state.activeSpaceID == expected.spaceID, let current = SidebarHierarchySnapshot(
+                        state: state, spaceID: expected.spaceID, profileID: expected.profileID, includesFavorites: true) else { return false }
+                    if current != expected {
+                        guard structure != nil, undisclosed(state) == structure else { return false }
+                        expected = current
+                    }
+                    return true
+                }
+                return SidebarMoveSession(items: [item], window: window, validate: valid, propose: { location, before in
+                    valid() && SidebarHierarchy.moving([item], to: location, before: before, expected: expected, state: state) != nil
+                }, commit: { _, _ in false })
+            } }
+            sidebar.prepareSidebarSpaceMove = { _, id in id == state.activeSpaceID ? nil : { false } }
+            sidebar.canSelectSpace = { _, _ in true }
+            sidebar.onSelectSpace = { id, _ in
+                state.activeSpaceID = id
+                sidebar.render(state: state, focusedTabID: nil, loading: [], canBack: false, canForward: false)
+            }
+            let initial = CACurrentMediaTime()
+            sidebar.render(state: state, focusedTabID: nil, loading: [], canBack: false, canForward: false)
+            sidebar.layoutSubtreeIfNeeded()
+            let renderMs = (CACurrentMediaTime() - initial) * 1000
+            if let rounds = ProcessInfo.processInfo.environment["SWIPE_PROFILE_RENDERS"].flatMap(Int.init) {
+                // Space switches between kept pages only, for a profiler.
+                let began = CACurrentMediaTime()
+                for round in 0..<rounds {
+                    state.activeSpaceID = state.spaces[round % 2 == 0 ? 1 : 0].id
+                    autoreleasepool { sidebar.render(state: state, focusedTabID: nil, loading: [], canBack: false, canForward: false) }
+                }
+                print("\(items): \(rounds) kept-page renders, \(String(format: "%.1f", (CACurrentMediaTime() - began) * 1000 / Double(rounds))) ms each")
+                if let hold = ProcessInfo.processInfo.environment["SWIPE_HOLD"].flatMap(Double.init) { Thread.sleep(forTimeInterval: hold) }
+                continue
+            }
+            var counted = BuiltRows.count
+            func newRows() -> Int { defer { counted = BuiltRows.count }; return BuiltRows.count - counted }
+            idle()
+            let prepared = newRows()
+            if ProcessInfo.processInfo.environment["SWIPE_VERBOSE"] != nil { print("  idle before swiping built \(prepared)") }
+            func frame(_ body: () -> Void) -> Double {
+                let began = CACurrentMediaTime()
+                autoreleasepool { body(); sidebar.layoutSubtreeIfNeeded(); window.displayIfNeeded(); CATransaction.flush() }
+                return (CACurrentMediaTime() - began) * 1000
+            }
+            var swipes: [Swipe] = []
+            var clock = CACurrentMediaTime()
+            // Through every Space and back, one Space a swipe: each first
+            // visit and each return.
+            for direction: Int32 in Array(repeating: -1, count: spaceCount - 1) + Array(repeating: 1, count: spaceCount - 1) {
+                var swipe = Swipe()
+                _ = frame { sidebar.scrollWheel(with: scroll(0, phase: 128, at: clock)) }
+                clock += 0.008
+                _ = frame { sidebar.scrollWheel(with: scroll(4 * direction, phase: 1, at: clock)) }
+                for index in 0..<30 {
+                    clock += 1.0 / 120
+                    let ms = frame { sidebar.scrollWheel(with: scroll(12 * direction, phase: 2, at: clock)) }
+                    if index == 0 { swipe.firstFrame = ms } else { swipe.frames.append(ms) }
+                }
+                swipe.builtInFrames = newRows()
+                clock += 1.0 / 120
+                swipe.release = frame { sidebar.scrollWheel(with: scroll(0, phase: 4, at: clock)) }
+                // The spring's frames, until the page strip is back at rest.
+                func moving(_ view: NSView) -> Bool {
+                    !CATransform3DIsIdentity(view.layer?.sublayerTransform ?? CATransform3DIdentity) || view.subviews.contains(where: moving)
+                }
+                let busy = Busy(); busy.install()
+                let deadline = Date().addingTimeInterval(1.5)
+                while moving(sidebar), Date() < deadline { deliverEvents(); RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 240)) }
+                busy.remove()
+                swipe.settle = busy.spans.map { $0 * 1000 }
+                swipe.built = swipe.builtInFrames + newRows()
+                if ProcessInfo.processInfo.environment["SWIPE_VERBOSE"] != nil {
+                    print("  swipe \(swipes.count + 1): first \(swipe.firstFrame) release \(swipe.release) settle max \(swipe.settle.max() ?? 0) built tracking \(swipe.builtInFrames) swipe \(swipe.built)")
+                }
+                swipes.append(swipe)
+                swipe.idleTurn = idle()
+                swipe.builtIdle = newRows()
+                swipes[swipes.count - 1] = swipe
+                clock = CACurrentMediaTime()
+            }
+            func fmt(_ value: Double) -> String { String(format: "%.1f", value) }
+            let first = swipes.map(\.firstFrame).max() ?? 0
+            let steady = swipes.flatMap(\.frames)
+            let release = swipes.map(\.release).max() ?? 0
+            let settle = swipes.flatMap(\.settle).max() ?? 0
+            let builtInFrames = swipes.map(\.builtInFrames).max() ?? 0
+            let built = swipes.map(\.built).max() ?? 0
+            let builtIdle = swipes.map(\.builtIdle).max() ?? 0
+            let idleTurn = swipes.map(\.idleTurn).max() ?? 0
+            let line = "\(items) folders+\(items * 2) items/Space: render \(fmt(renderMs)) ms; swipe first frame \(fmt(first)) ms, "
+                + "other frames max \(fmt(steady.max() ?? 0)) ms, release \(fmt(release)) ms, settle frame max \(fmt(settle)) ms; "
+                + "rows built while tracking \(builtInFrames), during the swipe \(built), idle after \(builtIdle) (longest idle turn \(fmt(idleTurn)) ms); footprint \(fmt(footprint())) MB"
+            print(line); report.append(line)
+            if ProcessInfo.processInfo.environment["SWIPE_ASSERT"] != nil {
+                // Prepared while idle, no swipe builds a row, first visits included.
+                precondition(builtInFrames == 0 && built == 0, "\(items): a swipe built rows (\(builtInFrames) tracking, \(built) in all)")
+            }
+            window.contentView = nil
+        }
+        if let path = ProcessInfo.processInfo.environment["SWIPE_REPORT"] {
+            try? report.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
+}

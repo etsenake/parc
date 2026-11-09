@@ -5,6 +5,29 @@ protocol SidebarItemDragSource: AnyObject {
     var sidebarDrag: SidebarMoveSession? { get }
 }
 
+/// An item row whose move, Duplicate and Delete actions are made when an
+/// accessibility client asks for them: each move checks the window's lease
+/// for every destination, too costly to repeat for every row on each render.
+@MainActor
+protocol SidebarDeferredAccessibilityActions: NSView {
+    /// The actions set on the row, without the deferred ones.
+    var storedAccessibilityActions: [NSAccessibilityCustomAction] { get }
+    var deferredAccessibilityActions: (index: Int, make: () -> [NSAccessibilityCustomAction])? { get set }
+}
+
+extension SidebarDeferredAccessibilityActions {
+    /// The deferred actions follow the actions set so far and precede any set later.
+    func deferAccessibilityActions(_ make: @escaping () -> [NSAccessibilityCustomAction]) {
+        deferredAccessibilityActions = (storedAccessibilityActions.count, make)
+    }
+    var mergedAccessibilityActions: [NSAccessibilityCustomAction] {
+        var actions = storedAccessibilityActions
+        guard let deferred = deferredAccessibilityActions else { return actions }
+        actions.insert(contentsOf: deferred.make(), at: min(deferred.index, actions.count))
+        return actions
+    }
+}
+
 /// A process-local source capability. The pasteboard only identifies this exact
 /// one-shot session. Another window must obtain a separate original-owner grant;
 /// external text and stale rows never authorize a move.
@@ -136,8 +159,19 @@ class SidebarMoveHandle: NSView, NSDraggingSource, SidebarItemDragSource {
 /// with the "Folder Title" placeholder. The row outlives renders, so a
 /// disclosure change animates its icon open or closed.
 @MainActor
-final class SidebarFolderRow: SidebarMoveHandle {
+final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityActions {
     static let titlePlaceholder = "Folder Title"
+    /// The folder's context menu, built when it opens.
+    var makeMenu: (() -> NSMenu?)?
+    override var menu: NSMenu? {
+        get { makeMenu?() ?? super.menu }
+        set { super.menu = newValue }
+    }
+    var deferredAccessibilityActions: (index: Int, make: () -> [NSAccessibilityCustomAction])?
+    var storedAccessibilityActions: [NSAccessibilityCustomAction] { super.accessibilityCustomActions() ?? [] }
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        window != nil && !isHiddenOrHasHiddenAncestor ? mergedAccessibilityActions : []
+    }
     static let untitled = SidebarFolderFromItems.defaultName
     static let iconSize: CGFloat = 17
     let folderID: UUID
@@ -293,6 +327,12 @@ final class SidebarFolderRow: SidebarMoveHandle {
     }
     override func mouseMoved(with event: NSEvent) { updateLeadingHover(convert(event.locationInWindow, from: nil)) }
     override func mouseExited(with event: NSEvent) {
+        updateLeadingHover(nil)
+        guard hover else { return }; hover = false; updateColor()
+    }
+    /// A kept page's outline hides with its rows under the pointer.
+    override func viewDidHide() {
+        super.viewDidHide()
         updateLeadingHover(nil)
         guard hover else { return }; hover = false; updateColor()
     }

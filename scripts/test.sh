@@ -304,6 +304,8 @@ python3 "$repo_root/tests/SidebarOutlineLayoutFlushSkip/check.py"
 compile_and_run sidebar-outline-configure-skip SidebarOutlineConfigureSkipTests \
   "$repo_root/Sources/ParcCore/SidebarOutlineConfigureSkip.swift"
 python3 "$repo_root/tests/SidebarOutlineConfigureSkip/check.py"
+# A Space swipe on the real sidebar builds no rows once its pages are prepared.
+python3 "$repo_root/tests/SidebarSpaceSwipe/check.py"
 # Sidebar header TranslucentButton glyphs, face states and the URL bar surface/reveal.
 python3 "$repo_root/tests/SidebarHeaderGlyphs/check.py"
 # Parc tooltips: configuration, palette, keycaps, placement, layout, drawing and presentation state.

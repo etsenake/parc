@@ -12,7 +12,12 @@ extension SidebarTabRow: SplitDropCardSource {}
 /// `SidebarSplitCellLayout`. The container keeps each original child's AX,
 /// close/capture controls and authenticated drag source.
 @MainActor
-final class SidebarSplitGroupView: NSView {
+final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
+    var deferredAccessibilityActions: (index: Int, make: () -> [NSAccessibilityCustomAction])?
+    var storedAccessibilityActions: [NSAccessibilityCustomAction] { super.accessibilityCustomActions() ?? [] }
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        window != nil && !isHiddenOrHasHiddenAncestor ? mergedAccessibilityActions : []
+    }
     let groupID: UUID
     let rows: [SidebarTabRow]
     private let background = SidebarRowBackgroundView()

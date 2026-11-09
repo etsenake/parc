@@ -25,7 +25,7 @@ core = root / "Sources/ParcCore"
 sidebar = (app / "SidebarView.swift").read_text()
 # SidebarView itself is not compiled here; its list and Space header use the checked model.
 for use in ("scroll.adoptTablistScroller()",
-            "private let list = SidebarOutlineView()",
+            "private var list = SidebarOutlineView()",
             "for slot in Chrome.tablistSlots(pinnedItems: pinnedRows.count, todayItems: itemRows.count,",
             "list.reload(outline)",
             "let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty)",

@@ -120,6 +120,8 @@ with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
         ("NavigationControls.swift", None, "enum NavigationHistoryMenuMetrics", ""),
         ("SiteControlCenter.swift", None, "enum SiteControlCenterMetrics", ""),
         ("DownloadLibraryView.swift", "@MainActor enum DownloadRowSubtitle", "/// BaseAssets artwork", "import AppKit\nimport UniformTypeIdentifiers\n"),
+        #
+        ("OnboardingProgressionButton.swift", "struct PArcButtonSpinner", "extension NSColor", "import SwiftUI\n"),
     ]
     extracted = []
     for name, start, end, prefix in excerpts:

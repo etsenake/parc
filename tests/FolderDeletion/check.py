@@ -16,8 +16,8 @@ def body(marker):
         if depth == 0:
             return source[start:end + 1]
 
-start = source.index('                let deleteFolder', source.index('let duplicateFolder ='))
-end = source.index('                button.menu =', start)
+start = source.index('        let deleteFolder', source.index('let duplicateFolder ='))
+end = source.index('        return menu', start)
 menu = source[start:end]
 method = body('    func performFolderDeletion(') if '    func performFolderDeletion(' in source else ''
 edit = body('    @objc func delete(').replace('@objc ', '') if '    @objc func delete(' in source else ''

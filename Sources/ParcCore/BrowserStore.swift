@@ -1090,6 +1090,10 @@ enum SidebarHierarchy {
         guard let profileID = state.spaces.first(where: { $0.id == spaceID })?.profileID,
               let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil && $0.profileID == profileID
                   && ($0.kind == .favorite || $0.spaceID == spaceID) }) else { return nil }
+        return tabLocation(of: tab, spaceID: spaceID, profileID: profileID)
+    }
+    /// The location of a live tab of the Space's profile, a Favorite or in the Space.
+    private static func tabLocation(of tab: BrowserTab, spaceID: UUID, profileID: UUID) -> SidebarContainerLocation? {
         if tab.kind == .favorite {
             guard tab.folderID == nil else { return nil }
             return .init(spaceID: spaceID, folderID: nil, section: .favorite, profileID: profileID)
@@ -1108,7 +1112,9 @@ enum SidebarHierarchy {
                 guard group.sidebarAnchorID == tab.id else { continue }
                 item = .split(group.id)
             } else { item = .tab(tab.id) }
-            if self.location(of: item, state: state, spaceID: location.spaceID, groups: groups) == location { legacy.append(item) }
+            // The tab is the item's (or its split's anchor's) own record, so
+            // its location needn't be looked up again among every tab.
+            if tabLocation(of: tab, spaceID: location.spaceID, profileID: profileID) == location { legacy.append(item) }
         }
         if location.section == .pinned {
             legacy += state.folders.filter { $0.spaceID == location.spaceID && $0.parentID == location.folderID }.map { .folder($0.id) }
@@ -1120,7 +1126,8 @@ enum SidebarHierarchy {
             return item
         }
         var seen = Set<SidebarItemReference>()
-        return (stored + legacy).filter { legacy.contains($0) && seen.insert($0).inserted }
+        let present = Set(legacy)
+        return (stored + legacy).filter { present.contains($0) && seen.insert($0).inserted }
     }
     ///
     /// tab enters at index 0. Otherwise the scan starts at the referrer's whole

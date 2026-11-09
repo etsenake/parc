@@ -118,7 +118,8 @@ enum SidebarAccessibility {
     /// linking it again unbypassed restores the chain behind that way in. A
     /// moved link never takes the start's way back from an outside link already
     /// there (the window owner's, from the page side's end).
-    static func link(_ chain: [NSView], within owner: NSView, exit: NSView?, bypassed: Bool = false) {
+    static func link(_ chain: [NSView], within owner: NSView, exit: NSView?, bypassed: Bool = false,
+                     skipping skipped: (NSView) -> Bool = { _ in false }) {
         guard let first = chain.first, let last = chain.last else { return }
         func outside(_ view: NSView) -> Bool { view.window != nil && view.window === owner.window && !view.isDescendant(of: owner) }
         let wayBack = first.previousKeyView.flatMap { $0.nextKeyView === first && outside($0) ? $0 : nil }
@@ -126,9 +127,15 @@ enum SidebarAccessibility {
             if let entering = member.previousKeyView, entering.nextKeyView === member, outside(entering) { entering.nextKeyView = first }
         }
         if let wayBack { link(wayBack, to: first) }
-        func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
-        let next = exit ?? ([last] + chain).lazy.compactMap(\.nextKeyView).first(where: outside)
-            ?? descendants(of: owner).lazy.compactMap(\.nextKeyView).first(where: outside)
+        // Depth first, as AppKit's loop runs, past `skipped` subtrees.
+        func linkOut(below view: NSView) -> NSView? {
+            for child in view.subviews where !skipped(child) {
+                if let next = child.nextKeyView, outside(next) { return next }
+                if let next = linkOut(below: child) { return next }
+            }
+            return nil
+        }
+        let next = exit ?? ([last] + chain).lazy.compactMap(\.nextKeyView).first(where: outside) ?? linkOut(below: owner)
         if bypassed { link(first, to: next); return }
         for (view, following) in zip(chain, chain.dropFirst()) { link(view, to: following) }
         link(last, to: next)

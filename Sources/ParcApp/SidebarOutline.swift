@@ -71,18 +71,18 @@ struct SidebarOutlineEntry {
 /// (SidebarChromeLayout.tablist): each is its cell plus the 1-point intercell
 /// gap below it, and the outline ends with the 120-point bottom inset that
 ///
+/// constraints, a long list's rows and all their views filled the window's
+/// layout engine, which grew faster than the rows did.
 @MainActor
-final class SidebarOutlineView: NSStackView {
+final class SidebarOutlineView: NSView {
     override var isFlipped: Bool { true }
+    let orientation = NSUserInterfaceLayoutOrientation.vertical
+    let spacing: CGFloat = 0
+    let edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: SidebarChromeLayout.tablistBottomInset, right: 0)
+    /// The rows in order, hidden ones included; a hidden row takes no space.
+    private(set) var arrangedSubviews: [NSView] = []
     override init(frame: NSRect) {
         super.init(frame: frame)
-        orientation = .vertical; alignment = .leading; spacing = 0
-        edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: SidebarChromeLayout.tablistBottomInset, right: 0)
-        // The sidebar sets this frame to the list's fitting size in layout. A
-        // frame still short of new rows (zero at first) must not fight their
-        // required heights: AppKit would log the conflict and break a row's
-        // height for that pass. Fitting sizes honour any priority above 50.
-        setClippingResistancePriority(.init(999), for: .vertical)
         // TablistViewController's lazy getter names the new outline
         //
         //
@@ -102,13 +102,29 @@ final class SidebarOutlineView: NSStackView {
     private lazy var column = SidebarOutlineColumn(outline: self)
 
     /// The list's fitting height: each shown row's fixed height (its cell and
-    /// the intercell gap) plus the insets. Summed here because `fittingSize`
-    /// solves every row's constraints in a fresh engine, and the sidebar asks
-    /// on every layout pass, so each tab switch and page load paid for it.
+    /// the intercell gap) plus the insets.
     var contentHeight: CGFloat {
         let shown = arrangedSubviews.compactMap { $0.isHidden ? nil : $0 as? SidebarOutlineRow }
         return shown.reduce(edgeInsets.top + edgeInsets.bottom) { $0 + $1.rowHeight }
             + spacing * CGFloat(max(0, shown.count - 1))
+    }
+
+    override var fittingSize: NSSize { NSSize(width: frame.width, height: contentHeight) }
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = newSize.width != frame.width
+        super.setFrameSize(newSize)
+        if widthChanged { needsLayout = true }
+    }
+
+    override func layout() {
+        super.layout()
+        var y = edgeInsets.top
+        let width = max(0, bounds.width - edgeInsets.left - edgeInsets.right)
+        for case let row as SidebarOutlineRow in arrangedSubviews where !row.isHidden {
+            let frame = NSRect(x: edgeInsets.left, y: y, width: width, height: row.rowHeight)
+            if row.frame != frame { row.frame = frame }
+            y += row.rowHeight + spacing
+        }
     }
 
     /// The entries' own views, top to bottom (hidden ones included).
@@ -121,26 +137,27 @@ final class SidebarOutlineView: NSStackView {
         var previousExpanded: [AnyHashable: Bool] = [:]
         for row in rows { if let expanded = row.expanded { previousExpanded[row.key] = expanded } }
         var arranged: [SidebarOutlineRow] = []
-        var kept: [AnyHashable: SidebarOutlineRow] = [:]
+        var keptRows: [AnyHashable: SidebarOutlineRow] = [:]
         for entry in entries {
             // A repeated key gets a row of its own rather than share one.
-            let reused = kept[entry.key] == nil ? rowsByKey[entry.key] : nil
+            let reused = keptRows[entry.key] == nil ? rowsByKey[entry.key] : nil
             let row = reused ?? SidebarOutlineRow(key: entry.key)
-            if kept[entry.key] == nil { kept[entry.key] = row }
+            if keptRows[entry.key] == nil { keptRows[entry.key] = row }
             row.configure(entry)
             arranged.append(row)
         }
-        for view in arrangedSubviews where !arranged.contains(where: { $0 === view }) {
-            removeArrangedSubview(view); view.removeFromSuperview()
+        let kept = Set(arranged.map(ObjectIdentifier.init))
+        for view in arrangedSubviews where !kept.contains(ObjectIdentifier(view)) { view.removeFromSuperview() }
+        let changed = arrangedSubviews.count != arranged.count || zip(arrangedSubviews, arranged).contains { $0 !== $1 }
+        arrangedSubviews = arranged
+        if changed {
+            for row in arranged where row.superview !== self { addSubview(row) }
+            needsLayout = true
         }
-        for (index, row) in arranged.enumerated() where index >= arrangedSubviews.count || arrangedSubviews[index] !== row {
-            insertArrangedSubview(row, at: index)
-            if row.widthConstraint == nil {
-                row.widthConstraint = row.widthAnchor.constraint(equalTo: widthAnchor)
-                row.widthConstraint?.isActive = true
-            }
-        }
-        rowsByKey = kept
+        // Drawing order follows the list's order, as the stack's did; prepared
+        // rows a render didn't use leave.
+        if subviews.count != arranged.count || zip(subviews, arranged).contains(where: { $0 !== $1 }) { subviews = arranged }
+        rowsByKey = keptRows
         rows = arranged.filter { !$0.isHidden }
         var folders: [AnyHashable: SidebarOutlineRow] = [:]
         for (index, row) in rows.enumerated() {
@@ -157,6 +174,15 @@ final class SidebarOutlineView: NSStackView {
             guard let expanded = row.expanded, let previous = previousExpanded[row.key], previous != expanded else { continue }
             NSAccessibility.post(element: row, notification: expanded ? .rowExpanded : .rowCollapsed)
         }
+    }
+
+    /// Takes out the last row of an outline being let go; false once none are left.
+    func removeLastRow() -> Bool {
+        guard let row = arrangedSubviews.popLast() as? SidebarOutlineRow else { return false }
+        if rowsByKey[row.key] === row { rowsByKey.removeValue(forKey: row.key) }
+        if rows.last === row { rows.removeLast() } else { rows.removeAll { $0 === row } }
+        row.removeFromSuperview()
+        return true
     }
 
     /// Each visible row's frame by key, for `animateDisclosure(from:)`.
@@ -212,7 +238,7 @@ final class SidebarOutlineView: NSStackView {
         NSAccessibility.post(element: self, notification: .selectedRowsChanged)
     }
 
-    override func isAccessibilityElement() -> Bool { true }
+    override func isAccessibilityElement() -> Bool { !isHidden }
     override func accessibilityRole() -> NSAccessibility.Role? { .outline }
     /// AppKit lists the rows, then the column.
     override func accessibilityChildren() -> [Any]? { rows + [column] }
@@ -246,14 +272,13 @@ final class SidebarOutlineRow: NSView {
     fileprivate var disclosedByKey: AnyHashable?
     fileprivate weak var disclosingRow: SidebarOutlineRow?
     fileprivate var disclosedRows: [SidebarOutlineRow] = []
-    fileprivate var widthConstraint: NSLayoutConstraint?
     private var toggle: (() -> Void)?
     /// An expandable row with no children: AXDisclosing is settable and
     /// changes nothing.
     private var disclosesNothing = false
-    private lazy var heightConstraint = heightAnchor.constraint(equalToConstant: 0)
     private var cellHeight: CGFloat = 0
-    fileprivate var rowHeight: CGFloat { heightConstraint.constant }
+    /// The cell and the intercell gap below it.
+    fileprivate private(set) var rowHeight: CGFloat = 0
     /// Last configure apply. Identical content/size/appearance fingerprints skip
     /// setContent and needsLayout; membership/size/appearance deltas still dirty.
     private var lastConfigureFingerprint: SidebarOutlineConfigureFingerprint?
@@ -262,12 +287,10 @@ final class SidebarOutlineRow: NSView {
     fileprivate init(key: AnyHashable) {
         self.key = key
         super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
         // TabCellShadowSelected paints 1 point below the 36-point visible row,
         // into this cell's 2-point padding. Clipping here flattens current
         // and hover cards, including split groups.
         clipsToBounds = false
-        heightConstraint.isActive = true
         cell.autoresizingMask = [.width, .height]
         addSubview(cell)
     }
@@ -295,16 +318,22 @@ final class SidebarOutlineRow: NSView {
         // content with matching size/appearance. Still refresh toggle so AX
         // disclosing keeps the entry's current closure. Membership/size/
         // appearance deltas fall through and dirty layout.
+        // A view another Space's outline showed since (the one New Tab row)
+        // comes back to this cell.
+        if let content = entry.content, content.superview !== cell { lastConfigureFingerprint = nil }
         if SidebarOutlineConfigureSkip.shouldSkip(previous: lastConfigureFingerprint, next: fingerprint) {
             toggle = entry.toggle
             return
         }
         // AppKit's row is the cell and the intercell gap below it.
         cellHeight = nextHeight
-        heightConstraint.constant = cellHeight + SidebarChromeLayout.tablistIntercellSpacing
+        if rowHeight != cellHeight + SidebarChromeLayout.tablistIntercellSpacing {
+            rowHeight = cellHeight + SidebarChromeLayout.tablistIntercellSpacing
+            superview?.needsLayout = true
+        }
         cell.span = nextSpan
         cell.setContent(entry.content)
-        isHidden = nextHidden
+        if isHidden != nextHidden { isHidden = nextHidden; superview?.needsLayout = true }
         level = entry.level; disclosedByKey = entry.disclosedBy; isItem = entry.isItem
         disclosesNothing = nextDisclosesNothing
         expanded = nextExpanded; toggle = entry.toggle
@@ -364,8 +393,8 @@ final class SidebarOutlineCell: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     fileprivate func setContent(_ view: NSView?) {
-        guard view !== content else { return }
-        content?.removeFromSuperview()
+        guard view !== content || (view != nil && view?.superview !== self) else { return }
+        if content?.superview === self { content?.removeFromSuperview() }
         content = view
         guard let view else { return }
         // Width changes between layouts follow the cell.

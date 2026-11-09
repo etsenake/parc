@@ -293,6 +293,11 @@ final class SidebarHairline: NSView {
     }
 }
 
+/// The sidebar list's flipped document view; it holds the shown Space's outline.
+final class SidebarListHost: NSView {
+    override var isFlipped: Bool { true }
+}
+
 final class FlippedStackView: NSStackView {
     override var isFlipped: Bool { true }
 }
@@ -455,7 +460,7 @@ final class SidebarNewTabRow: NSView {
     }
 }
 
-final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
+final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, SidebarDeferredAccessibilityActions {
     static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-tab")
     let tabID: UUID
     private let titleLabel = SidebarChromeLabel(labelWithString: "")
@@ -588,6 +593,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
     init(tab: BrowserTab, selected: Bool, speaker: SidebarSpeakerHost?, close: @escaping () -> (() -> Bool)?,
          reset: @escaping () -> (() -> Bool)?, separate: @escaping () -> (() -> Bool)?) {
         tabID = tab.id; tooltipTab = tab
+        built = (tab.kind, tab.resetDestination != nil, InternalPage(urlString: tab.url))
         super.init(frame: .zero)
         // Rounding lives on CellSelectionStateView, not this row. A 12-point
         //
@@ -607,8 +613,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
         // and Notes use typed FaviconType glyphs (easel / arcDocument), not a
         // page favicon; the still fallback is that typed SF template, tinted
         // with SemanticColorPalette.title like mini player and the row title.
-        icon.image = NSImage(systemSymbolName: InternalPage.sidebarFallbackSymbol(urlString: tab.url),
-                             accessibilityDescription: nil)
+        icon.image = Self.fallbackSymbol(tab)
         icon.fallbackTintColor = .parcInk
         allowsFavicon = InternalPage(urlString: tab.url) == nil
         closeButton.prepareAction = close
@@ -632,8 +637,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
         hoverSubtitle.wantsLayer = true; hoverSubtitle.alphaValue = 0
         titleStack.wantsLayer = true
         closeButton.focusRingType = .exterior
-        shareButton.symbol = NSImage(systemSymbolName: "rectangle.inset.filled.and.person.filled", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
+        shareButton.symbol = Self.shareSymbol
         shareButton.setAccessibilityIdentifier("shareTabButton")
         shareButton.isHidden = true
         muteButton.decoration = speaker
@@ -664,6 +668,18 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
         resetRegion.makeMenu = { [weak self] in self?.context?() }
         muteButton.makeMenu = { [weak self] in self?.context?() }
     }
+    /// Every row shows one of a few symbols; looking each up again per row was
+    /// a third of building a long list's rows.
+    private static var fallbackSymbols: [String: NSImage] = [:]
+    private static func fallbackSymbol(_ tab: BrowserTab) -> NSImage? {
+        let name = InternalPage.sidebarFallbackSymbol(urlString: tab.url)
+        if let image = fallbackSymbols[name] { return image }
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        fallbackSymbols[name] = image
+        return image
+    }
+    private static let shareSymbol = NSImage(systemSymbolName: "rectangle.inset.filled.and.person.filled", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
     func loadFavicon(_ request: (@escaping (NSImage?) -> Void) -> Void) {
         guard allowsFavicon else { return }
         icon.load(request)
@@ -719,8 +735,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
             let allows = InternalPage(urlString: tab.url) == nil
             if allows != allowsFavicon {
                 allowsFavicon = allows
-                icon.image = NSImage(systemSymbolName: InternalPage.sidebarFallbackSymbol(urlString: tab.url),
-                                     accessibilityDescription: nil)
+                icon.image = Self.fallbackSymbol(tab)
             }
         }
         let reset = tab.resetDestination != nil
@@ -1098,12 +1113,30 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource {
         guard window != nil, !isHiddenOrHasHiddenAncestor else { return false }
         return prepareActivation?()?() == true
     }
-    var supplementaryAccessibilityActions: [NSAccessibilityCustomAction] {
+    var storedAccessibilityActions: [NSAccessibilityCustomAction] {
         super.accessibilityCustomActions() ?? []
     }
+    var deferredAccessibilityActions: (index: Int, make: () -> [NSAccessibilityCustomAction])?
     override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
         guard window != nil, !isHiddenOrHasHiddenAncestor else { return [] }
-        return supplementaryAccessibilityActions + (makeAccessibilityActions?() ?? [])
+        return mergedAccessibilityActions + (makeAccessibilityActions?() ?? [])
+    }
+    /// The Mini Player speaker host this row was built with.
+    var speakerHost: SidebarSpeakerHost? { muteButton.decoration as? SidebarSpeakerHost }
+    /// Whether another render can reuse this row for `tab`: what only `init`
+    /// sets (the close action's kind, the page type's glyph and role, the
+    /// reset regions) still holds.
+    func canShow(_ tab: BrowserTab) -> Bool {
+        tab.id == tabID && tab.kind == built.kind && (tab.resetDestination != nil) == built.reset
+            && InternalPage(urlString: tab.url) == built.page
+    }
+    private let built: (kind: TabKind, reset: Bool, page: InternalPage?)
+    /// A kept page's outline hides with its rows under the pointer. Rows
+    /// with nothing to cancel stay as they are, so the outline has no layout
+    /// left for when it shows again.
+    override func viewDidHide() {
+        super.viewDidHide()
+        if hover || groupHover || mouseStart != nil || pendingActivation != nil { cancelInteraction() }
     }
     override func isAccessibilityEnabled() -> Bool {
         window != nil && !isHiddenOrHasHiddenAncestor && prepareActivation?() != nil
@@ -1356,10 +1389,24 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     var isEditingTitle: Bool { titleEdit != nil || splitTitleEdit != nil || folderTitleEdit != nil }
 
-    /// Folder rows by folder, kept across renders so a disclosure change
-    /// animates the row's icon and the row keeps its pointer state.
-    private var folderRowCache: [UUID: SidebarFolderRow] = [:]
+    /// Folder rows by folder, kept across renders (in their Space's page) so a
+    /// disclosure change animates the row's icon and the row keeps its pointer state.
     private var renderedFolderRows: [UUID: SidebarFolderRow] = [:]
+    ///
+    /// (`spaceViewControllerCache`, read by collectionView(_:willDisplay:…)
+    ///
+    /// rows of the Spaces it showed last, so showing one again reuses them
+    /// instead of building every row and laying the list out anew.
+    private struct SpacePage {
+        let list: SidebarOutlineView
+        var tabRows: [UUID: SidebarTabRow] = [:]
+        var folderRows: [UUID: SidebarFolderRow] = [:]
+    }
+    private var spacePages: [UUID: SpacePage] = [:]
+    /// The kept pages' Spaces, the most recently shown last; pages prepared
+    /// ahead of a visit go first.
+    private var spacePageOrder: [UUID] = []
+    private static let keptHiddenRows = 1200
     private var folderTitleEdit: (folder: BrowserFolder, row: SidebarFolderRow)?
     /// The last rendered Space's folder disclosure.
     private var renderedDisclosure: (space: UUID, expanded: [UUID: Bool], peeks: [UUID: [SidebarItemReference]])?
@@ -1904,7 +1951,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     private let scroll = SidebarPagingScrollView()
     ///
-    private let list = SidebarOutlineView()
+    /// the shown Space's page's.
+    private var list = SidebarOutlineView()
+    /// The list's document view. It also holds the kept Spaces' outlines,
+    /// hidden: moving a long outline to another view, or out of the window
+    /// and back, costs every row its constraints and its layout.
+    private let listHost = SidebarListHost()
+    /// Outlines of pages let go, removed one per idle turn.
+    private var retiredLists: [SidebarOutlineView] = []
     private let favoritesHost = NSView()
     ///
     /// the tray until its profile dismisses it.
@@ -2193,7 +2247,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         scroll.drawsBackground = false; scroll.adoptTablistScroller()
         scroll.horizontalScrollElasticity = .none
         list.focusOwner = self
-        scroll.documentView = list
+        scroll.documentView = listHost; listHost.addSubview(list)
         configureSpacePaging()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -2215,6 +2269,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private let neighborPage = SidebarPageStripView()
     private var neighborSidebar: SidebarView?
     private var neighborSpaceID: UUID?
+    /// The state the neighbouring page last rendered; a page prepared before
+    /// a live title or load change renders again when it is shown.
+    private var neighborRenderedState: BrowserState?
     /// The Space a switch made elsewhere left, shown beside the strip and
     /// blended from while it slides in, even when it isn't the adjacent page.
     private var pagingSourceID: UUID?
@@ -2297,7 +2354,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return
         }
         let space = spaces[neighborIndex]
-        if neighborSpaceID != space.id { renderNeighbor(space, state: state) }
+        if neighborSpaceID != space.id || neighborRenderedState != state { renderNeighbor(space, state: state) }
         let pageTop = spaceHeader.isHidden ? scroll.frame.minY : spaceHeader.frame.minY
         let pageRect = NSRect(x: offset < 0 ? width : -width, y: pageTop, width: width,
                               height: max(0, scroll.frame.maxY - pageTop))
@@ -2328,20 +2385,193 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     /// Renders the neighbouring Space's page with its own palette from the
     /// same state; no callbacks are connected, so it cannot act.
+    private func neighborSidebarView() -> SidebarView {
+        if let neighborSidebar { return neighborSidebar }
+        let sidebar = SidebarView(frame: bounds)
+        neighborSidebar = sidebar; neighborPage.addSubview(sidebar)
+        sidebar.isPresented = false
+        return sidebar
+    }
     private func renderNeighbor(_ space: BrowserSpace, state: BrowserState) {
-        let sidebar = neighborSidebar ?? SidebarView(frame: bounds)
-        if neighborSidebar == nil {
-            neighborSidebar = sidebar; neighborPage.addSubview(sidebar)
-            sidebar.isPresented = false
-        }
+        let sidebar = neighborSidebarView()
         sidebar.isPrivateBrowsing = isPrivateBrowsing
         sidebar.requestTabFavicon = requestTabFavicon
         sidebar.requestSavedFavicon = requestSavedFavicon
         updateNeighborPalette(space)
         var neighbor = state; neighbor.activeSpaceID = space.id
         sidebar.frame = bounds
-        sidebar.render(state: neighbor, focusedTabID: nil, loading: [], canBack: false, canForward: false)
-        neighborSpaceID = space.id
+        // A page already showing this Space takes a title or load change as the
+        // live path does, falling back to a render.
+        if neighborSpaceID != space.id || !sidebar.applyLivePageMetadata(state: neighbor, focusedTabID: nil, loading: [], canBack: false, canForward: false) {
+            sidebar.render(state: neighbor, focusedTabID: nil, loading: [], canBack: false, canForward: false)
+        }
+        neighborSpaceID = space.id; neighborRenderedState = state
+    }
+
+    ///
+    /// While this sidebar is idle it prepares, a few milliseconds per turn,
+    /// the neighbouring page's rows for the Spaces either side and this one,
+    /// and the rows of every Space's page (the nearest first, within the
+    /// kept-row budget). A swipe, or a first visit to a Space, reuses those
+    /// rows instead of building them.
+    private enum PreparationStep {
+        /// Takes let-go outlines' rows out of the window, this sidebar's and the neighbour's.
+        case retire
+        /// Builds the missing rows of this sidebar's page for a Space, or the
+        /// neighbour's, listing the Space's items a container at a time.
+        case rows(neighbor: Bool, UUID, PreparationCursor?)
+    }
+    private struct PreparationCursor {
+        var containers: [SidebarContainerLocation]
+        var items: [SidebarItemReference] = []
+    }
+    private var neighborPreparation: Timer?
+    private var pendingPreparation: [PreparationStep] = []
+    /// One turn's share, well inside a 120 Hz frame.
+    private static let preparationSlice: CFTimeInterval = 0.004
+    /// Preparation waits for this long without keyboard, pointer or trackpad input.
+    private static let preparationQuiet: CFTimeInterval = 0.3
+    private func scheduleNeighborPreparation(after delay: TimeInterval = 0.25) {
+        neighborPreparation?.invalidate(); neighborPreparation = nil
+        guard isPresented, !isSpaceManagement, window != nil, !pendingPreparation.isEmpty else { return }
+        let timer = Timer(timeInterval: max(delay, Self.preparationQuiet - Self.secondsSinceInput), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.prepareNeighborPage() }
+        }
+        // Not in event tracking: a drag or a menu waits for it.
+        RunLoop.main.add(timer, forMode: .default)
+        neighborPreparation = timer
+    }
+    private static var secondsSinceInput: CFTimeInterval {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+    /// Input arrived recently: preparation steps aside.
+    private var inputRecent: Bool { Self.secondsSinceInput < Self.preparationQuiet }
+    private func prepareNeighborPage() {
+        neighborPreparation = nil
+        guard window != nil else { pendingPreparation = []; return }
+        guard isPresented, creationView == nil, !contentSurface.isHidden, let state = hierarchyState else { return }
+        // A waiting event is peeked once: the peek runs the run loop.
+        guard !spacePager.isTracking, !spacePager.isAnimating, !inputRecent,
+              NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: false) == nil else {
+            scheduleNeighborPreparation(); return
+        }
+        let deadline = CACurrentMediaTime() + Self.preparationSlice
+        while CACurrentMediaTime() < deadline, !inputRecent, let step = pendingPreparation.first {
+            switch step {
+            case .retire:
+                let neighborDone = neighborSidebar?.retireLists(until: deadline) ?? true
+                if neighborDone, retireLists(until: deadline) { pendingPreparation.removeFirst() }
+            case .rows(let neighbor, let id, let cursor):
+                guard let sidebar = neighbor ? neighborSidebar : self else { pendingPreparation.removeFirst(); continue }
+                if let next = sidebar.prepareRows(id, from: cursor, state: state, until: deadline) {
+                    pendingPreparation[0] = .rows(neighbor: neighbor, id, next)
+                } else { pendingPreparation.removeFirst() }
+            }
+        }
+        // A gap between turns keeps frames and typing free.
+        scheduleNeighborPreparation(after: 0.008)
+    }
+    private func prepareNeighborPages() {
+        let neighbor = neighborSidebarView()
+        neighbor.retirePages(notIn: spaces)
+        let retiring: [PreparationStep] = retiredLists.isEmpty && neighbor.retiredLists.isEmpty ? [] : [.retire]
+        guard let index = spaces.firstIndex(where: { $0.id == activeSpaceID }), spaces.count > 1 else {
+            pendingPreparation = retiring; scheduleNeighborPreparation(); return
+        }
+        let sides = [index + 1, index - 1].filter(spaces.indices.contains).map { spaces[$0].id }
+        let byDistance = spaces.indices.filter { $0 != index }.sorted { abs($0 - index) < abs($1 - index) }.map { spaces[$0].id }
+        pendingPreparation = retiring
+            + (sides + [spaces[index].id]).map { .rows(neighbor: true, $0, nil) }
+            + byDistance.map { .rows(neighbor: false, $0, nil) }
+        scheduleNeighborPreparation()
+    }
+    /// Lets go of the pages of Spaces that no longer exist.
+    private func retirePages(notIn spaces: [BrowserSpace]) {
+        for (id, page) in spacePages where !spaces.contains(where: { $0.id == id }) {
+            spacePages.removeValue(forKey: id); spacePageOrder.removeAll { $0 == id }
+            if page.list !== list { retiredLists.append(page.list) }
+        }
+    }
+    /// Takes let-go outlines apart a row at a time, so each row leaves the
+    /// window and is freed in its own share of a turn; true once none are left.
+    private func retireLists(until deadline: CFTimeInterval) -> Bool {
+        while let retired = retiredLists.last, CACurrentMediaTime() < deadline {
+            if !retired.removeLastRow() { retired.removeFromSuperview(); retiredLists.removeLast() }
+        }
+        return retiredLists.isEmpty
+    }
+    /// Builds rows `id`'s page lacks for the tabs and folders a render shows
+    /// (pinned and Today items, inside expanded folders too) until `deadline`,
+    /// and returns where to go on, or nil once done. A Space whose rows would
+    /// pass the kept-row budget is skipped.
+    private func prepareRows(_ id: UUID, from cursor: PreparationCursor?, state: BrowserState,
+                             until deadline: CFTimeInterval) -> PreparationCursor? {
+        guard state.spaces.contains(where: { $0.id == id }) else { return nil }
+        var page = spacePages[id]
+        if page == nil {
+            let hidden = spacePageOrder.filter { $0 != activeSpaceID }.map(keptRows).reduce(0, +)
+            let rows = state.tabs.reduce(0) { $0 + ($1.spaceID == id && $1.archivedAt == nil ? 1 : 0) }
+                + state.folders.reduce(0) { $0 + ($1.spaceID == id ? 1 : 0) }
+            guard hidden + rows <= Self.keptHiddenRows else { return nil }
+            let outline = SidebarOutlineView()
+            outline.focusOwner = self; outline.isHidden = true
+            listHost.addSubview(outline)
+            page = SpacePage(list: outline)
+            spacePageOrder.insert(id, at: 0)
+        }
+        guard var page else { return nil }
+        var cursor = cursor ?? PreparationCursor(containers: [.init(spaceID: id, folderID: nil, section: .pinned),
+                                                              .init(spaceID: id, folderID: nil, section: .today)])
+        defer { spacePages[id] = page }
+        while CACurrentMediaTime() < deadline {
+            if !cursor.items.isEmpty {
+                switch cursor.items.removeFirst() {
+                case .tab(let tabID):
+                    guard page.tabRows[tabID] == nil, let tab = state.tabs.first(where: { $0.id == tabID }) else { continue }
+                    page.tabRows[tabID] = SidebarTabRow(tab: tab, selected: false, speaker: nil,
+                                                        close: { nil }, reset: { nil }, separate: { nil })
+                case .folder(let folderID):
+                    guard page.folderRows[folderID] == nil, let folder = state.folders.first(where: { $0.id == folderID }) else { continue }
+                    page.folderRows[folderID] = SidebarFolderRow(folder: folder)
+                case .split: continue
+                }
+            } else if !cursor.containers.isEmpty {
+                for item in SidebarHierarchy.children(in: cursor.containers.removeFirst(), state: state) {
+                    cursor.items.append(item)
+                    if case .folder(let folderID) = item, state.folders.first(where: { $0.id == folderID })?.isExpanded == true {
+                        cursor.containers.append(.init(spaceID: id, folderID: folderID, section: .pinned))
+                    }
+                }
+            } else { return nil }
+        }
+        return cursor
+    }
+    private func keptRows(_ id: UUID) -> Int { spacePages[id].map { $0.tabRows.count + $0.folderRows.count } ?? 0 }
+
+    /// The kept page for `id`, or a new one: the outline shown now when no
+    /// kept page holds it, else a new outline. Pages of Spaces that no longer
+    /// exist are let go, and the oldest hidden ones past the kept-row budget.
+    private func keptSpacePage(_ id: UUID, spaces: [BrowserSpace]) -> SpacePage {
+        spacePageOrder.removeAll { kept in kept == id || !spaces.contains { $0.id == kept } }
+        spacePageOrder.append(id)
+        // Every kept row stays a view; past the budget the oldest hidden pages go.
+        while spacePageOrder.count > 1, spacePageOrder.dropLast().map(keptRows).reduce(0, +) > Self.keptHiddenRows {
+            spacePageOrder.removeFirst()
+        }
+        for (id, page) in spacePages where !spacePageOrder.contains(id) {
+            spacePages.removeValue(forKey: id)
+            if page.list !== list { retiredLists.append(page.list) }
+        }
+        let owned = spacePages.values.contains { $0.list === list }
+        if let page = spacePages[id] {
+            // The outline shown now belonged to a page just let go.
+            if page.list !== list, !owned { retiredLists.append(list) }
+            return page
+        }
+        if !owned { return SpacePage(list: list) }
+        let outline = SidebarOutlineView()
+        outline.focusOwner = self
+        return SpacePage(list: outline)
     }
 
     /// Horizontal scrolls the tablist does not use (its horizontal elasticity
@@ -2773,9 +3003,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             if let close = self.prepareFavoriteClose?(tab) {
                 actions.append(NSAccessibilityCustomAction(name: "Close Tab", handler: close))
             }
-            if let hierarchy = self.hierarchyState {
-                actions += self.moveAccessibilityActions(item: item, state: hierarchy)
-            }
+            actions += self.moveAccessibilityActions(item: item)
             return actions
         }
     }
@@ -2995,6 +3223,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
         tabRows.removeAll(); hierarchyRows.removeAll(); hierarchyState = state
         renderedFolderRows.removeAll()
+        let page = keptSpacePage(state.activeSpaceID, spaces: state.spaces)
+        let swapsList = page.list !== list
+        if swapsList {
+            list.isHidden = true
+            list = page.list; list.isHidden = false
+            if list.superview !== listHost { listHost.addSubview(list) }
+        }
         neighborSpaceID = nil
         // A new Space arrives from its own creation page, not the one it left.
         if let departing, departing != state.activeSpaceID, !afterCreation, window != nil, isPresented,
@@ -3025,10 +3260,15 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 speaker = speakerHosts[tab.id] ?? SidebarSpeakerHost(muted: tabAudio[tab.id]?.muted == true)
                 speakerHosts[tab.id] = speaker
             } else { speaker = nil }
-            let row = SidebarTabRow(tab: tab, selected: current, speaker: speaker,
+            // A split's children move into a new split cell each render; a
+            // standalone row is reused from its Space's page, as the live
+            // path patches it, while it keeps its speaker.
+            let reused = inGroup ? nil : page.tabRows[tab.id].flatMap { $0.speakerHost === speaker && $0.canShow(tab) ? $0 : nil }
+            let row = reused ?? SidebarTabRow(tab: tab, selected: current, speaker: speaker,
                 close: { [weak self] in self?.closingPeek(.tab(tab.id), self?.prepareTabClose?(tab)) },
                 reset: { [weak self] in inGroup ? nil : self?.prepareIconReset?(tab, false) },
                 separate: { [weak self] in inGroup ? nil : self?.prepareIconReset?(tab, true) })
+            if let reused { reused.applyLivePage(tab); reused.selected = current }
             row.audio = tabAudio[tab.id]
             bindLiveRow(row, tab: tab, inGroup: inGroup)
             row.capture = captures[tab.id]
@@ -3055,8 +3295,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 row.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Preview recent pages", handler: { [weak self] in
                     self?.onPreview?(.tab(tab.id)); return true
                 })])
-            }
-            if !inGroup { addMoveAccessibility(to: row, item: .tab(tab.id), state: state) }
+            } else { row.setAccessibilityCustomActions([]) }
+            if !inGroup { addMoveAccessibility(to: row, item: .tab(tab.id)) }
             tabRows.append(row)
             // True no-op only when page URL + reset destination match the last
             // arm and settled art can be adopted onto this replacement row.
@@ -3064,9 +3304,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             // history hit is not dropped; `reloadFavicon(for:)` still forces
             // load. Favorite tiles above keep their own settled skip.
             let arm = TabRowFaviconIdentity(pageURL: tab.url, resetDestination: tab.resetDestination)
-            let skipArm = tabFaviconArms[tab.id] == arm
-                && priorTabFaviconArt[tab.id] != nil
-            if let art = priorTabFaviconArt[tab.id], skipArm {
+            let priorArt = priorTabFaviconArt[tab.id] ?? reused?.settledFaviconArt()
+            let skipArm = tabFaviconArms[tab.id] == arm && priorArt != nil
+            if let art = priorArt, skipArm {
                 row.adoptSettledFaviconArt(art)
             } else {
                 tabFaviconArms[tab.id] = arm
@@ -3137,7 +3377,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 }
                 groupView.selectionClick = { [weak self] event in self?.selectItem(.split(group.id), event: event) ?? false }
                 groupView.selectionContext = { [weak self] in self?.selectedItemsMenu(for: .split(group.id)) ?? cellMenu() }
-                addMoveAccessibility(to: groupView, item: .split(group.id), state: state)
+                addMoveAccessibility(to: groupView, item: .split(group.id))
                 content = groupView
                 hierarchyRows.append((.split(group.id), content))
             } else { content = makeRow(tab); hierarchyRows.append((.tab(tab.id), content)) }
@@ -3160,9 +3400,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 guard case .folder(let id) = item, visitedFolders.insert(id).inserted,
                       let folder = folders.first(where: { $0.id == id }) else { continue }
                 // The row outlives renders so its icon animates a disclosure change.
-                let button = folderRowCache[folder.id] ?? SidebarFolderRow(folder: folder)
+                let button = page.folderRows[folder.id] ?? SidebarFolderRow(folder: folder)
                 renderedFolderRows[folder.id] = button
-                button.update(folder, animated: true)
+                button.update(folder, animated: !swapsList)
                 let peeks = folder.isExpanded ? [] : folderPeeks[folder.id] ?? []
                 button.closePeek = peeks.isEmpty ? nil : { [weak self] in self?.closeFolderPeek(folder.id) }
                 button.peeked = !peeks.isEmpty
@@ -3179,91 +3419,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                     })])
                 }
                 previewAnchors[.folder(folder.id)] = button
-                //
-                // Turn “name” into Space and Copy All Links, then Change Icon…
-                // and Rename…, then Duplicate and the
-                //
-                // service) is excluded; Preview folder is Parc's keyboard entry
-                // to the folder preview.
-                let menu = NSMenu(); menu.autoenablesItems = false
-                let previewItem = MenuAction.item("Preview folder") { [weak self] in self?.onPreview?(.folder(folder.id)) }
-                previewItem.isEnabled = SidebarPreviewPreference.folders.isEnabled
-                menu.addItem(previewItem)
-                menu.addItem(.separator())
-                let newSubfolder = MenuAction.item("New Nested Folder…") { [weak self] in self?.onNewSubfolder?(folder.id) }
-                KeyboardShortcuts.shared.showBinding(on: newSubfolder, for: "createFolder:")
-                menu.addItem(newSubfolder)
-                //
-                let turnIntoSpace = prepareTurnFolderIntoSpace?(folder.id)
-                let folderName = folder.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : folder.name
-                let spaceItem = MenuAction.item("Turn “\(folderName)” into Space") { if turnIntoSpace?() != true { NSSound.beep() } }
-                spaceItem.isEnabled = turnIntoSpace != nil
-                menu.addItem(spaceItem)
-                if let space = state.spaces.first(where: { $0.id == folder.spaceID }) {
-                    let target = FolderLinkTarget(folderID: folder.id, spaceID: space.id, profileID: space.profileID)
-                    let hasLinks = !(FolderLinks.links(in: state, target: target)?.isEmpty ?? true)
-                    let copy = MenuAction.item("Copy All Links") { [weak self] in
-                        self?.onCopyFolderLinks?(target, .plain)
-                    }
-                    copy.isEnabled = hasLinks
-                    copy.keyEquivalentModifierMask = []
-                    menu.addItem(copy)
-                    //
-                    // action target and changes only the requested format.
-                    let markdown = MenuAction.item("Copy All Links as Markdown") { [weak self] in
-                        self?.onCopyFolderLinks?(target, .markdown)
-                    }
-                    markdown.isEnabled = hasLinks
-                    markdown.isAlternate = true
-                    markdown.keyEquivalentModifierMask = [.option]
-                    menu.addItem(markdown)
+                button.makeMenu = { [weak self, id = folder.id] in
+                    guard let self else { return nil }
+                    return self.isSpaceManagement ? self.managementItemMenu?(.folder(id)) : self.folderMenu(id)
                 }
-                menu.addItem(.separator())
-                let changeIcon = prepareFolderIcon?(folder)
-                let icon = MenuAction.item("Change Icon…") { if changeIcon?() != true { NSSound.beep() } }
-                icon.isEnabled = changeIcon != nil
-                menu.addItem(icon)
-                //
-                let renameFolder = MenuAction.item("Rename…") { [weak self] in
-                    guard let self, !self.beginFolderTitleEditing(folder.id) else { return }
-                    self.onRenameFolder?(folder.id)
-                }
-                KeyboardShortcuts.shared.showBinding(on: renameFolder, for: "renameCurrentItem:")
-                menu.addItem(renameFolder)
-                menu.addItem(.separator())
-                let duplicateFolder = prepareFolderDuplicate?(folder.id)
-                let duplicate = MenuAction.item("Duplicate") {
-                    if duplicateFolder?() != true { NSSound.beep() }
-                }
-                KeyboardShortcuts.shared.showBinding(on: duplicate, for: "duplicateCurrentItem:")
-                duplicate.isEnabled = duplicateFolder != nil
-                menu.addItem(duplicate)
-                if let duplicateFolder {
-                    button.setAccessibilityCustomActions((button.accessibilityCustomActions() ?? []) + [
-                        NSAccessibilityCustomAction(name: "Duplicate") { duplicateFolder() }
-                    ])
-                }
-                let move = moveMenu(for: .folder(folder.id), state: state)
-                for item in move.items { move.removeItem(item); menu.addItem(item) }
-                menu.addItem(.separator())
-                // Rows survive live metadata updates. Capture the folder identity,
-                // then prepare consent/retirement against current owners on press.
-                let deleteFolder: () -> Bool = { [weak self] in
-                    self?.performFolderDeletion(folder.id, spaceID: folder.spaceID) == true
-                }
-                let delete = MenuAction.item("Delete") {
-                    if !deleteFolder() { NSSound.beep() }
-                }
-                delete.isEnabled = !isPrivateBrowsing && prepareFolderDeletion != nil
-                menu.addItem(delete)
-                if delete.isEnabled {
-                    button.setAccessibilityCustomActions((button.accessibilityCustomActions() ?? []) + [
-                        NSAccessibilityCustomAction(name: "Delete Folder") { deleteFolder() }
-                    ])
-                }
-                button.menu = isSpaceManagement ? managementItemMenu?(.folder(folder.id)) : menu
+                button.menu = nil
                 if isSpaceManagement { button.setAccessibilityCustomActions([]) }
-                addMoveAccessibility(to: button, item: .folder(folder.id), state: state)
+                button.deferAccessibilityActions { [weak self, id = folder.id] in
+                    guard let self else { return [] }
+                    return self.folderAccessibilityActions(id) + self.moveAccessibilityActions(item: .folder(id))
+                }
                 button.palette = palette
                 // The folder's row discloses its children's rows. Its AXDisclosing
                 // toggles the folder without the click's selection reset.
@@ -3380,7 +3545,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         renderedDisclosure = (state.activeSpaceID, disclosure, visiblePeeks)
         let previousFrames = disclosureChanged ? list.rowFrames() : [:]
         list.reload(outline)
-        folderRowCache = renderedFolderRows
+        // Another Space's kept outline took the list's place.
+        if swapsList {
+            NSAccessibility.post(element: list, notification: .rowCountChanged)
+            NSAccessibility.post(element: list, notification: .selectedRowsChanged)
+        }
+        spacePages[state.activeSpaceID] = SpacePage(
+            list: list, tabRows: Dictionary(tabRows.filter { !$0.compactSplitChild }.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first }),
+            folderRows: renderedFolderRows)
         if disclosureChanged { list.animateDisclosure(from: previousFrames) }
         itemSelection.reconcile(order: selectionOrder)
         for (item, view) in hierarchyRows {
@@ -3390,7 +3562,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 if self.activateSingleSelection() { return true }
                 self.focusSelectionList(); return true
             }
-            let actions = view.accessibilityCustomActions() ?? []
+            let actions = (view as? SidebarDeferredAccessibilityActions)?.storedAccessibilityActions
+                ?? view.accessibilityCustomActions() ?? []
             let close = NSAccessibilityCustomAction(name: "Close Tabs in Selection") { [weak self] in
                 guard let self, self.itemSelection.items.contains(item), let action = self.prepareSidebarClose?(self.itemSelection.items) else { return false }
                 return action()
@@ -3452,12 +3625,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         highlightItemForKeyboard(keyboardHighlightedItem, scrollToHighlight: false)
         setKeyboardSearchActive(keyboardSearchActive)
         keyViewsNeedLinking = true
-        let retainedTabIDs = Set(tabRows.map(\.tabID))
+        let retainedTabIDs = Set(tabRows.map(\.tabID)).union(spacePages.values.flatMap(\.tabRows.keys))
         for id in Set(tabFaviconArms.keys).subtracting(retainedTabIDs) {
             tabFaviconArms.removeValue(forKey: id)
         }
         needsLayout = true; layoutSubtreeIfNeeded()
         scroll.contentView.scroll(to: NSPoint(x: 0, y: min(origin.y, max(0, list.frame.height - scroll.contentView.bounds.height))))
+        if isPresented && !isSpaceManagement { prepareNeighborPages() }
     }
 
     func updateSpaceAvailability() {
@@ -3510,7 +3684,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if isSpaceManagement {
             let chain = SidebarAccessibility.keyViewChain(leading: [], favorites: favoritesHost, list: self,
                 regions: [list], trailing: [], space: self, beforeList: [spaceHeader])
-            SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented)
+            SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented,
+                                     skipping: { $0 is SidebarOutlineView && $0.isHidden })
             return
         }
         let leading: [NSView] = [keyViewGate] + headerControls + [addressButton] + extensionToolbar.orderedButtons
@@ -3520,7 +3695,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if let creationView { regions.append(creationView) }
         let chain = SidebarAccessibility.keyViewChain(leading: leading, favorites: favoritesHost, list: self, regions: regions,
                                                       trailing: [footerMore], space: self, beforeList: [spaceHeader])
-        SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented)
+        SidebarAccessibility.link(chain, within: self, exit: keyViewExit, bypassed: !isPresented,
+                                     skipping: { $0 is SidebarOutlineView && $0.isHidden })
     }
 
     override func layout() {
@@ -3545,6 +3721,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                                    height: max(0, list.contentHeight))
             let listFrameChanged = list.frame != listFrame
             if listFrameChanged { list.frame = listFrame }
+            if listHost.frame != listFrame { listHost.frame = listFrame }
             if SidebarOutlineLayoutFlushSkip.shouldFlush(
                 frameChanged: listFrameChanged,
                 needsLayout: list.needsLayout,
@@ -3641,6 +3818,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                                height: max(0, list.contentHeight))
         let listFrameChanged = list.frame != listFrame
         if listFrameChanged { list.frame = listFrame }
+        if listHost.frame != listFrame { listHost.frame = listFrame }
         if SidebarOutlineLayoutFlushSkip.shouldFlush(
             frameChanged: listFrameChanged,
             needsLayout: list.needsLayout,
@@ -4005,6 +4183,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // Out of a window, nothing is left to prepare for.
+        if window == nil { neighborPreparation?.invalidate(); neighborPreparation = nil; pendingPreparation = [] }
         needsLayout = true
         observeFirstResponder()
         if let selectionWindowObserver { NotificationCenter.default.removeObserver(selectionWindowObserver) }
@@ -4396,16 +4576,105 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         row.submenu = submenu; menu.addItem(row)
     }
 
-    private func addMoveAccessibility(to view: NSView, item: SidebarItemReference, state: BrowserState) {
+    /// A folder row's context menu, built when it opens from the current
+    /// hierarchy.
+    private func folderMenu(_ id: UUID) -> NSMenu? {
+        guard let state = hierarchyState, let folder = state.folders.first(where: { $0.id == id && $0.spaceID == activeSpaceID }) else { return nil }
+        //
+        // Turn “name” into Space and Copy All Links, then Change Icon…
+        // and Rename…, then Duplicate and the
+        //
+        // service) is excluded; Preview folder is Parc's keyboard entry
+        // to the folder preview.
+        let menu = NSMenu(); menu.autoenablesItems = false
+        let previewItem = MenuAction.item("Preview folder") { [weak self] in self?.onPreview?(.folder(folder.id)) }
+        previewItem.isEnabled = SidebarPreviewPreference.folders.isEnabled
+        menu.addItem(previewItem)
+        menu.addItem(.separator())
+        let newSubfolder = MenuAction.item("New Nested Folder…") { [weak self] in self?.onNewSubfolder?(folder.id) }
+        KeyboardShortcuts.shared.showBinding(on: newSubfolder, for: "createFolder:")
+        menu.addItem(newSubfolder)
+        //
+        let turnIntoSpace = prepareTurnFolderIntoSpace?(folder.id)
+        let folderName = folder.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : folder.name
+        let spaceItem = MenuAction.item("Turn “\(folderName)” into Space") { if turnIntoSpace?() != true { NSSound.beep() } }
+        spaceItem.isEnabled = turnIntoSpace != nil
+        menu.addItem(spaceItem)
+        if let space = state.spaces.first(where: { $0.id == folder.spaceID }) {
+            let target = FolderLinkTarget(folderID: folder.id, spaceID: space.id, profileID: space.profileID)
+            let hasLinks = !(FolderLinks.links(in: state, target: target)?.isEmpty ?? true)
+            let copy = MenuAction.item("Copy All Links") { [weak self] in
+                self?.onCopyFolderLinks?(target, .plain)
+            }
+            copy.isEnabled = hasLinks
+            copy.keyEquivalentModifierMask = []
+            menu.addItem(copy)
+            //
+            // action target and changes only the requested format.
+            let markdown = MenuAction.item("Copy All Links as Markdown") { [weak self] in
+                self?.onCopyFolderLinks?(target, .markdown)
+            }
+            markdown.isEnabled = hasLinks
+            markdown.isAlternate = true
+            markdown.keyEquivalentModifierMask = [.option]
+            menu.addItem(markdown)
+        }
+        menu.addItem(.separator())
+        let changeIcon = prepareFolderIcon?(folder)
+        let icon = MenuAction.item("Change Icon…") { if changeIcon?() != true { NSSound.beep() } }
+        icon.isEnabled = changeIcon != nil
+        menu.addItem(icon)
+        //
+        let renameFolder = MenuAction.item("Rename…") { [weak self] in
+            guard let self, !self.beginFolderTitleEditing(folder.id) else { return }
+            self.onRenameFolder?(folder.id)
+        }
+        KeyboardShortcuts.shared.showBinding(on: renameFolder, for: "renameCurrentItem:")
+        menu.addItem(renameFolder)
+        menu.addItem(.separator())
+        let duplicateFolder = prepareFolderDuplicate?(folder.id)
+        let duplicate = MenuAction.item("Duplicate") {
+            if duplicateFolder?() != true { NSSound.beep() }
+        }
+        KeyboardShortcuts.shared.showBinding(on: duplicate, for: "duplicateCurrentItem:")
+        duplicate.isEnabled = duplicateFolder != nil
+        menu.addItem(duplicate)
+        let move = moveMenu(for: .folder(folder.id), state: state)
+        for item in move.items { move.removeItem(item); menu.addItem(item) }
+        menu.addItem(.separator())
+        // Rows survive live metadata updates. Capture the folder identity,
+        // then prepare consent/retirement against current owners on press.
+        let deleteFolder: () -> Bool = { [weak self] in
+            self?.performFolderDeletion(folder.id, spaceID: folder.spaceID) == true
+        }
+        let delete = MenuAction.item("Delete") {
+            if !deleteFolder() { NSSound.beep() }
+        }
+        delete.isEnabled = !isPrivateBrowsing && prepareFolderDeletion != nil
+        menu.addItem(delete)
+        return menu
+    }
+    /// A folder row's Duplicate and Delete Folder actions, prepared when asked for.
+    private func folderAccessibilityActions(_ id: UUID) -> [NSAccessibilityCustomAction] {
+        guard !isSpaceManagement, let folder = hierarchyState?.folders.first(where: { $0.id == id && $0.spaceID == activeSpaceID }) else { return [] }
+        var actions: [NSAccessibilityCustomAction] = []
+        if let duplicateFolder = prepareFolderDuplicate?(id) {
+            actions.append(NSAccessibilityCustomAction(name: "Duplicate") { duplicateFolder() })
+        }
+        if !isPrivateBrowsing && prepareFolderDeletion != nil {
+            actions.append(NSAccessibilityCustomAction(name: "Delete Folder") { [weak self] in
+                self?.performFolderDeletion(id, spaceID: folder.spaceID) == true
+            })
+        }
+        return actions
+    }
+    private func addMoveAccessibility(to view: SidebarDeferredAccessibilityActions, item: SidebarItemReference) {
         // AX alternatives use the same original-item transaction. They do not
         // synthesize drag events or silently move an individual split child.
-        let actions = moveAccessibilityActions(item: item, state: state)
-        // Rows are assembled before attachment; keep their stored Preview.
-        let existing = (view as? SidebarTabRow)?.supplementaryAccessibilityActions
-            ?? view.accessibilityCustomActions() ?? []
-        view.setAccessibilityCustomActions(existing + actions)
+        view.deferAccessibilityActions { [weak self] in self?.moveAccessibilityActions(item: item) ?? [] }
     }
-    private func moveAccessibilityActions(item: SidebarItemReference, state: BrowserState) -> [NSAccessibilityCustomAction] {
+    private func moveAccessibilityActions(item: SidebarItemReference) -> [NSAccessibilityCustomAction] {
+        guard let state = hierarchyState else { return [] }
         let actions = moveOptions(for: item, state: state).compactMap { title, destination, before -> NSAccessibilityCustomAction? in
             guard let session = prepareSidebarMove?(item), session.canMove(to: destination, before: before) else { return nil }
             return NSAccessibilityCustomAction(name: title) { session.move(to: destination, before: before) }
