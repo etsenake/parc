@@ -198,8 +198,8 @@ final class OnboardingSetupCard: NSView {
 
     /// The heading and message as drawn before a step change.
     struct TextSnapshot {
-        fileprivate let heading: (image: CGImage, frame: NSRect)?
-        fileprivate let message: (image: CGImage, frame: NSRect)?
+        fileprivate let heading: (image: CGImage, frame: NSRect, offset: Double)?
+        fileprivate let message: (image: CGImage, frame: NSRect, offset: Double)?
     }
 
     let instructions = Column()
@@ -351,13 +351,15 @@ final class OnboardingSetupCard: NSView {
     /// Call before the heading and message change; nil when nothing is drawn.
     func captureText() -> TextSnapshot? {
         guard !isHiddenOrHasHiddenAncestor, window != nil else { return nil }
-        func capture(_ field: NSTextField) -> (image: CGImage, frame: NSRect)? {
+        func capture(_ field: NSTextField) -> (image: CGImage, frame: NSRect, offset: Double)? {
             guard !field.isHidden, !field.stringValue.isEmpty, field.bounds.width > 0, field.bounds.height > 0,
                   let rep = field.bitmapImageRepForCachingDisplay(in: field.bounds) else { return nil }
             field.effectiveAppearance.performAsCurrentDrawingAppearance {
                 field.cacheDisplay(in: field.bounds, to: rep)
             }
-            return rep.cgImage.map { ($0, field.frame) }
+            // Text still springing in leaves from where it is on screen.
+            let offset = field.layer?.presentation()?.value(forKeyPath: "transform.translation.x") as? Double ?? 0
+            return rep.cgImage.map { ($0, field.frame, offset) }
         }
         let snapshot = TextSnapshot(heading: capture(heading), message: capture(message))
         return snapshot.heading == nil && snapshot.message == nil ? nil : snapshot
@@ -386,7 +388,7 @@ final class OnboardingSetupCard: NSView {
             let trail = TextTrail(image: old.image, frame: old.frame)
             outgoingText.addSubview(trail)
             trail.displayIfNeeded()
-            let away = Self.slide(from: 0, to: removal, spring: spring)
+            let away = Self.slide(from: old.offset, to: removal, spring: spring)
             away.fillMode = .forwards
             away.isRemovedOnCompletion = false
             CATransaction.begin()
