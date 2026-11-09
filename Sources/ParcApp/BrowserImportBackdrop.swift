@@ -17,11 +17,6 @@ final class BrowserImportBackdrop: NSView {
     private var pages: [BrowserImportWash] = []
     private var page: Int?
     private var timer: Timer?
-    /// Whether a wash holds most of the page: text over it turns white.
-    private(set) var isShown = false {
-        didSet { if isShown != oldValue { onShownChange?(isShown) } }
-    }
-    var onShownChange: ((Bool) -> Void)?
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -35,13 +30,11 @@ final class BrowserImportBackdrop: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// One wash per browser in order, and the chosen browser's index; true
-    /// when that changes what the backdrop shows.
-    @discardableResult
-    func show(_ next: [BrowserImportWash], selected: Int?) -> Bool {
-        guard next != pages || selected != page else { return false }
+    /// One wash per browser in order, and the chosen browser's index.
+    func show(_ next: [BrowserImportWash], selected: Int?) {
+        guard next != pages || selected != page else { return }
         // Already leaving: the kept pages are fading out.
-        if next.isEmpty && selected == nil && page == nil { return false }
+        if next.isEmpty && selected == nil && page == nil { return }
         let animate = window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let now = CACurrentMediaTime()
         let hidden = visibility.value(at: now) < 0.01
@@ -52,7 +45,7 @@ final class BrowserImportBackdrop: NSView {
             if hidden || !animate { position.place(CGFloat(selected)) } else { position.retarget(CGFloat(selected), now: now) }
         }
         if animate { visibility.retarget(selected == nil ? 0 : 1, now: now) } else { visibility.place(selected == nil ? 0 : 1) }
-        guard animate else { settle(); return true }
+        guard animate else { settle(); return }
         if timer == nil {
             let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
                 MainActor.assumeIsolated {
@@ -64,7 +57,6 @@ final class BrowserImportBackdrop: NSView {
             RunLoop.main.add(timer, forMode: .common)
         }
         tick()
-        return true
     }
 
     /// Places the strip and fade directly, for a still frame of the motion.
@@ -87,14 +79,13 @@ final class BrowserImportBackdrop: NSView {
 
     private func apply(_ value: CGFloat, _ visible: CGFloat) {
         let shown = min(1, max(0, visible))
-        guard !pages.isEmpty else { back.alphaValue = 0; front.alphaValue = 0; isShown = false; return }
+        guard !pages.isEmpty else { back.alphaValue = 0; front.alphaValue = 0; return }
         let clamped = min(CGFloat(pages.count - 1), max(0, value))
         let lower = Int(clamped.rounded(.down)), upper = Int(clamped.rounded(.up))
         // The next page lies over the last by the strip's progress, so the mix
         // never dips to the page fill between two washes.
-        back.wash = pages[lower]; front.wash = pages[upper]
+        back.wash = toned(pages[lower]); front.wash = toned(pages[upper])
         back.alphaValue = shown; front.alphaValue = lower == upper ? 0 : shown * (clamped - CGFloat(lower))
-        isShown = shown >= 0.5
     }
 
     override func viewDidMoveToWindow() {
@@ -102,128 +93,55 @@ final class BrowserImportBackdrop: NSView {
         if window == nil { settle() }
     }
 
-    /// Whether white text at `alpha` reads over the chosen wash where `rect`
-    /// of `view` lies, on a page filled with `fill`: 3:1, WCAG's floor for
-    /// large text, averaged along the text's middle line so a heading that
-    /// starts on the deep colour isn't judged by its lightest end alone.
-    func whiteInkHolds(over rect: NSRect, of view: NSView, fill: NSColor, alpha: CGFloat = 1) -> Bool {
-        guard isShown, let page, pages.indices.contains(page), bounds.width > 0, bounds.height > 0 else { return false }
-        var base: NSColor?
-        effectiveAppearance.performAsCurrentDrawingAppearance { base = fill.usingColorSpace(.sRGB) }
-        guard let base else { return false }
-        let area = convert(rect, from: view), wash = pages[page]
-        let paper = [base.redComponent, base.greenComponent, base.blueComponent]
-        let cover = BrowserImportWashView.coverage(at: area.midY / bounds.height)
-        let ratios = [area.minX, area.midX, area.maxX].map { x -> CGFloat in
-            let behind = zip(paper, wash.color(at: x / bounds.width)).map { $0 + cover * ($1 - $0) }
-            let ink = behind.map { $0 + alpha * (1 - $0) }
-            return (Self.luminance(ink) + 0.05) / (Self.luminance(behind) + 0.05)
+    /// The page's fill, its one text colour, and the fraction of the page's
+    /// width its text spans: each wash darkens or lightens there just enough
+    /// for that colour to read on it.
+    func setPage(fill: NSColor, ink: NSColor, text: ClosedRange<CGFloat>) {
+        guard fill != surface.fill || ink != surface.ink || text != surface.text else { return }
+        surface = (fill, ink, text); retone()
+    }
+    private var surface: (fill: NSColor, ink: NSColor, text: ClosedRange<CGFloat>) =
+        (.textBackgroundColor, .textColor, 0...1)
+    private var tones: [BrowserImportWash: BrowserImportWash] = [:]
+
+    private func toned(_ wash: BrowserImportWash) -> BrowserImportWash {
+        if let cached = tones[wash] { return cached }
+        var fill: NSColor?, ink: NSColor?
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            fill = surface.fill.usingColorSpace(.sRGB); ink = surface.ink.usingColorSpace(.sRGB)
         }
-        return ratios.reduce(0, +) / 3 >= 3
+        guard let fill, let ink else { return wash }
+        let result = wash.toned(ink: [ink.redComponent, ink.greenComponent, ink.blueComponent],
+                                fill: [fill.redComponent, fill.greenComponent, fill.blueComponent], across: surface.text)
+        tones[wash] = result
+        return result
     }
 
-    private static func luminance(_ rgb: [CGFloat]) -> CGFloat {
+    private func retone() {
+        tones = [:]
+        apply(position.value(at: CACurrentMediaTime()), visibility.value(at: CACurrentMediaTime()))
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        retone()
+    }
+
+    nonisolated static func contrast(_ a: [CGFloat], _ b: [CGFloat]) -> CGFloat {
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+
+    nonisolated static func luminance(_ rgb: [CGFloat]) -> CGFloat {
         let linear = rgb.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
         return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
     }
-
-    /// White ink where it reads over the wash and the page's ink elsewhere, for
-    /// every label and plain button under `container`; without a wash they
-    /// return to their own. `BrowserImportInkOpaque` views keep theirs.
-    func applyInk(under container: NSView, fill: NSColor) {
-        guard !container.isHidden else { return }
-        for view in container.subviews where !view.isHidden {
-            switch view {
-            case is BrowserImportInkOpaque: continue
-            case let field as NSTextField where !field.isEditable:
-                let text = field.cell?.cellSize(forBounds: field.bounds) ?? field.bounds.size
-                let size = NSSize(width: min(text.width, field.bounds.width), height: min(text.height, field.bounds.height))
-                let origin = NSPoint(x: 0, y: field.isFlipped ? 0 : field.bounds.height - size.height)
-                var alpha: CGFloat = 1
-                let own = originalInk.object(forKey: field) as? NSColor ?? field.textColor
-                NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
-                    alpha = own?.usingColorSpace(.sRGB)?.alphaComponent ?? 1
-                }
-                setInk(field, NSRect(origin: origin, size: size), fill: fill, alpha: alpha)
-            case let button as NSButton:
-                setInk(button, button.bounds, fill: fill, alpha: 1)
-            default:
-                applyInk(under: view, fill: fill)
-            }
-        }
-    }
-
-    /// Returns every label and plain button under `container` to its own ink.
-    func clearInk(under container: NSView) {
-        for view in container.subviews {
-            switch view {
-            case is BrowserImportInkOpaque: continue
-            case let field as NSTextField where field.isEditable: continue
-            case is NSTextField, is NSButton: view.appearance = nil; restoreInk(view)
-            default: clearInk(under: view)
-            }
-        }
-    }
-
-    private func setInk(_ view: NSView, _ rect: NSRect, fill: NSColor, alpha: CGFloat) {
-        let white = isShown && whiteInkHolds(over: rect, of: view, fill: fill, alpha: alpha)
-        let ink = isShown ? NSAppearance(named: white ? .darkAqua : .aqua) : nil
-        if view.appearance?.name != ink?.name { view.appearance = ink }
-        // The page's greys lose their contrast over the wash's lighter colours.
-        guard isShown, !white, bounds.height > 0,
-              BrowserImportWashView.coverage(at: convert(rect, from: view).midY / bounds.height) > 0.1 else {
-            restoreInk(view); return
-        }
-        if let field = view as? NSTextField {
-            guard field.textColor !== Self.washInk else { return }
-            originalInk.removeObject(forKey: field)
-            guard let color = field.textColor, Self.isGrey(color, in: ink) else { return }
-            originalInk.setObject(color, forKey: field); field.textColor = Self.washInk
-        } else if let button = view as? NSButton, button.attributedTitle.length > 0 {
-            let title = button.attributedTitle
-            guard title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor !== Self.washInk else { return }
-            originalInk.removeObject(forKey: button)
-            guard let color = title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor,
-                  Self.isGrey(color, in: ink) else { return }
-            originalInk.setObject(title, forKey: button)
-            let dark = NSMutableAttributedString(attributedString: title)
-            dark.addAttribute(.foregroundColor, value: Self.washInk, range: NSRange(location: 0, length: dark.length))
-            button.attributedTitle = dark
-        }
-    }
-
-    /// Puts back a grey this backdrop replaced, unless its owner has set a new colour since.
-    private func restoreInk(_ view: NSView) {
-        guard let original = originalInk.object(forKey: view) else { return }
-        originalInk.removeObject(forKey: view)
-        if let field = view as? NSTextField, field.textColor === Self.washInk {
-            field.textColor = original as? NSColor
-        } else if let button = view as? NSButton, let title = original as? NSAttributedString,
-                  button.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor === Self.washInk {
-            button.attributedTitle = title
-        }
-    }
-
-    private let originalInk = NSMapTable<NSView, AnyObject>.weakToStrongObjects()
-    private static let washInk = NSColor.black.withAlphaComponent(0.75)
-    /// A grey lighter than near-black; coloured text such as errors keeps its colour.
-    private static func isGrey(_ color: NSColor, in appearance: NSAppearance?) -> Bool {
-        var rgb: NSColor?
-        (appearance ?? NSAppearance(named: .aqua)!).performAsCurrentDrawingAppearance { rgb = color.usingColorSpace(.sRGB) }
-        guard let rgb else { return false }
-        let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
-        return (channels.max()! - channels.min()!) < 0.12 && luminance(channels) > 0.05
-    }
 }
-
-/// Views whose ink is their own, such as filled buttons; SwiftUI picks it per element.
-protocol BrowserImportInkOpaque {}
-extension NSHostingView: BrowserImportInkOpaque {}
 
 ///
 /// the first deep at the left, the second at the right, with the dialog's
 /// lighter blends between them.
-struct BrowserImportWash: Equatable {
+struct BrowserImportWash: Hashable {
     let locations: [CGFloat]
     let colors: [UInt32]
 
@@ -244,13 +162,36 @@ struct BrowserImportWash: Equatable {
         return BrowserImportWash(locations: arc.locations, colors: colors)
     }
 
-    /// The gradient's sRGB colour at a fraction of its width.
-    func color(at fraction: CGFloat) -> [CGFloat] {
-        func channels(_ color: UInt32) -> [CGFloat] { [16, 8, 0].map { CGFloat(color >> $0 & 0xff) / 255 } }
-        let x = min(1, max(0, fraction))
-        guard let upper = locations.firstIndex(where: { $0 >= x }), upper > 0 else { return channels(colors[0]) }
-        let t = (x - locations[upper - 1]) / max(0.0001, locations[upper] - locations[upper - 1])
-        return zip(channels(colors[upper - 1]), channels(colors[upper])).map { $0 + t * ($1 - $0) }
+    /// Each colour stop behind text (`span` of the width, with the stops either
+    /// side so no blend between them crosses it) moves toward black under light
+    /// ink, or toward white under dark ink, by the least amount that gives the
+    /// ink 4.5:1 on it, WCAG's floor for body text; never more than the page's
+    /// own fill gives. Hue stays. Past the text the change eases off over a
+    /// third of the width, so no seam shows where it ends.
+    func toned(ink: [CGFloat], fill: [CGFloat], across span: ClosedRange<CGFloat>) -> BrowserImportWash {
+        let target = min(4.5, BrowserImportBackdrop.contrast(fill, ink))
+        let toward: CGFloat = BrowserImportBackdrop.contrast(ink, [0, 0, 0]) > BrowserImportBackdrop.contrast(ink, [1, 1, 1]) ? 0 : 1
+        let colors = colors.indices.map { index -> UInt32 in
+            let before = locations[max(0, index - 1)], after = locations[min(locations.count - 1, index + 1)]
+            let color = [16, 8, 0].map { CGFloat(colors[index] >> $0 & 0xff) / 255 }
+            func mixed(_ t: CGFloat) -> [CGFloat] { color.map { $0 + t * (toward - $0) } }
+            guard BrowserImportBackdrop.contrast(color, ink) < target else { return colors[index] }
+            let behind = after >= span.lowerBound && before <= span.upperBound
+            let distance = max(0, span.lowerBound - locations[index], locations[index] - span.upperBound)
+            let weight = behind ? 1 : max(0, 1 - distance / 0.35)
+            guard weight > 0 else { return colors[index] }
+            var low: CGFloat = 0, high: CGFloat = 1
+            for _ in 0..<16 {
+                let t = (low + high) / 2
+                if BrowserImportBackdrop.contrast(mixed(t), ink) < target { low = t } else { high = t }
+            }
+            // Rounding toward the target colour keeps the contrast just reached.
+            return mixed(high * weight).reduce(0) { result, channel in
+                let value = channel * 255
+                return result << 8 | UInt32(min(255, max(0, toward == 0 ? value.rounded(.down) : value.rounded(.up))))
+            }
+        }
+        return BrowserImportWash(locations: locations, colors: colors)
     }
 }
 
@@ -265,13 +206,6 @@ final class BrowserImportWashView: NSView {
     private static let fadeLocations: [CGFloat] = [0, solid, solid + (clear - solid) * 0.4, solid + (clear - solid) * 0.75, clear]
     private static let fade = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(),
         colors: fadeLevels.map { CGColor(gray: $0, alpha: 1) } as CFArray, locations: fadeLocations)!
-    /// How much of the wash shows at a fraction of the page's height.
-    static func coverage(at fraction: CGFloat) -> CGFloat {
-        guard let upper = fadeLocations.firstIndex(where: { $0 >= fraction }) else { return 0 }
-        guard upper > 0 else { return 1 }
-        let t = (fraction - fadeLocations[upper - 1]) / (fadeLocations[upper] - fadeLocations[upper - 1])
-        return fadeLevels[upper - 1] + t * (fadeLevels[upper] - fadeLevels[upper - 1])
-    }
     var wash = BrowserImportWash.arc { didSet { if wash != oldValue { needsDisplay = true } } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 

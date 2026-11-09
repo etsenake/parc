@@ -1,6 +1,6 @@
 import AppKit
 
-/// Every source profile starts ticked. The browser's main profile imports into
+/// Every source profile imports; there is no choice. The browser's main profile imports into
 /// the Parc Profile import was opened from; each other one into a Parc Profile
 /// of its name, made only when its turn comes. Neither flow has a destination step.
 @MainActor
@@ -59,7 +59,7 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
         profiles: three, prepare: { existingSide = $0.createProfile(name: "SIDE") })
     let reused = existingSide!
     let originalPath = store.independentEngineProfilePath(for: original.profileID)
-    expect(windowImport.selectedProfiles == Set(three.map(\.identifier)), "Every profile of the browser starts ticked")
+    expect(windowImport.selectedProfiles == Set(three.map(\.identifier)), "Every profile of the browser imports")
     expect(windowImport.stage == .profiles && windowImport.canContinueSourceInline, "Next is ready with nothing more to choose")
     let profilesBefore = store.state.profiles, spacesBefore = store.state.spaces
     let start = requests.count
@@ -95,35 +95,33 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     windowImport.cancel()
 
     let (setupStore, setupOriginal, setup) = try begin("MappingSetup", onboarding: true, source: chrome, profiles: three)
-    expect(setup.selectedProfiles == Set(three.map(\.identifier)), "Setup ticks every profile too")
-    setup.selectProfile(work.identifier)
-    expect(setup.selectedProfiles == [main.identifier, side.identifier], "One profile unticks on its own")
+    expect(setup.selectedProfiles == Set(three.map(\.identifier)), "Setup imports every profile too")
     let setupProfiles = setupStore.state.profiles.count, setupStart = requests.count
     setup.continueSourceInline()
     expect(setup.stage == .importing && requests.count == setupStart + 1 && requests[setupStart].profile === main
            && requests[setupStart].path == setupStore.independentEngineProfilePath(for: setupOriginal.profileID),
            "Setup imports the main profile into setup's own Profile")
     finishNext()
-    let setupSide = setupStore.state.profiles.first { $0.name == "Side" }
-    expect(requests.count == setupStart + 2 && requests[setupStart + 1].profile === side && setupSide != nil
-           && requests[setupStart + 1].path == setupStore.independentEngineProfilePath(for: setupSide!.id),
-           "Setup gives another ticked profile its own new Parc Profile")
-    finishNext()
+    let setupWork = setupStore.state.profiles.first { $0.name == "Work" }
+    expect(requests.count == setupStart + 2 && requests[setupStart + 1].profile === work && setupWork != nil
+           && requests[setupStart + 1].path == setupStore.independentEngineProfilePath(for: setupWork!.id),
+           "Setup gives each other profile its own new Parc Profile")
+    finishNext(); finishNext()
     drain()
-    expect(setup.stage == .finished && paths(work, since: setupStart).isEmpty
-           && setupStore.state.profiles.count == setupProfiles + 1 && !setupStore.state.profiles.contains { $0.name == "Work" },
-           "An unticked profile is left behind with no Parc Profile and no import")
+    let setupSide = setupStore.state.profiles.first { $0.name == "Side" }
+    expect(setup.stage == .finished && setupSide != nil && setupStore.state.profiles.count == setupProfiles + 2
+           && paths(side, since: setupStart).allSatisfy { $0 == setupStore.independentEngineProfilePath(for: setupSide!.id) },
+           "No profile is left behind")
     setup.cancel()
 
     let historyOnly = PCNativeImportProfile("chrome side history", [.history], .complete, name: "Side", directory: "Profile 2")
     let (otherStore, otherOriginal, other) = try begin("MappingNoDefault", onboarding: false, source: chrome,
-        profiles: [work, main, historyOnly])
-    other.selectProfile(main.identifier)
+        profiles: [work, historyOnly])
     let otherStart = requests.count
     other.continueSourceInline()
     expect(other.stage == .importing && requests.count == otherStart + 1 && requests[otherStart].profile === work
            && requests[otherStart].path == otherStore.independentEngineProfilePath(for: otherOriginal.profileID),
-           "Without Default, the first ticked profile imports into the original Profile")
+           "Without Default, the first profile imports into the original Profile")
     finishNext()
     drain()
     let otherSide = otherStore.state.profiles.first { $0.name == "Side" }
@@ -163,32 +161,33 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     let (arcStore, arcOriginal, arcSetup) = try begin("MappingArc", onboarding: true, source: arc,
         profiles: [standard, arcSide, arcProjects], sidebar: sidebar)
     expect(arcSetup.selectedProfiles == [standard.identifier, arcSide.identifier, arcProjects.identifier],
-           "Every Parc profile starts ticked")
-    arcSetup.selectProfile(standard.identifier)
+           "Every Arc profile imports")
     let arcStart = requests.count, arcProfiles = arcStore.state.profiles.count
     arcSetup.continueSourceInline()
     wait { requests.count > arcStart }
     expect(arcSetup.stage == .importing && requests.count == arcStart + 1, "Next starts Arc's import at once")
+    let arcSideProfile = arcStore.state.profiles.first { $0.name == "Side" }
     let projects = arcStore.state.profiles.first { $0.name == "Side Projects" }
-    expect(arcStore.state.spaces.contains { $0.title == "Side" && $0.profileID == arcOriginal.profileID }
-           && !arcStore.state.profiles.contains { $0.name == "Side" },
-           "A custom Arc profile chosen first brings its Spaces into the original Profile")
-    expect(!arcStore.state.spaces.contains { $0.title == "Work" }, "The unticked default Arc profile's Spaces stay behind")
-    expect(projects != nil && arcStore.state.profiles.count == arcProfiles + 1
+    expect(arcStore.state.spaces.contains { $0.title == "Work" && $0.profileID == arcOriginal.profileID },
+           "The default Arc profile brings its Spaces into the original Profile")
+    expect(arcSideProfile != nil && arcStore.state.spaces.contains { $0.title == "Side" && $0.profileID == arcSideProfile!.id },
+           "Another Arc profile brings its Spaces into a Parc Profile of its name")
+    expect(projects != nil && arcStore.state.profiles.count == arcProfiles + 2
            && arcStore.state.tabs.contains { $0.kind == .favorite && $0.profileID == projects!.id },
-           "Another Arc profile gets a Parc Profile of its name with its Favorites")
+           "Every other Arc profile gets a Parc Profile of its name with its Favorites")
     let arcOriginalPath = arcStore.independentEngineProfilePath(for: arcOriginal.profileID)
-    expect(requests[arcStart].profile === arcSide && requests[arcStart].path == arcOriginalPath,
-           "The first chosen Arc profile's browser data imports into the original Profile")
+    expect(requests[arcStart].profile === standard && requests[arcStart].path == arcOriginalPath,
+           "The default Arc profile's browser data imports into the original Profile")
     finishNext([PCNativeImportedBookmark("mapping arc", title: "Arc", url: URL(string: "https://example.test/arc"))])
-    expect(requests.count == arcStart + 2 && requests[arcStart + 1].profile === arcProjects,
-           "The other Arc profile imports next")
-    finishNext()
+    expect(requests.count == arcStart + 2 && requests[arcStart + 1].profile === arcSide,
+           "The other Arc profiles import next")
+    finishNext(); finishNext()
     drain()
+    let sidePath = arcStore.independentEngineProfilePath(for: arcSideProfile!.id)
     let projectsPath = arcStore.independentEngineProfilePath(for: projects!.id)
-    expect(paths(arcSide, since: arcStart) == [arcOriginalPath, arcOriginalPath]
-           && paths(arcProjects, since: arcStart) == [projectsPath, projectsPath] && paths(standard, since: arcStart).isEmpty,
-           "Each Arc profile's data imports into its own Parc Profile; the unticked one's not at all")
+    expect(paths(standard, since: arcStart) == [arcOriginalPath, arcOriginalPath]
+           && paths(arcSide, since: arcStart) == [sidePath, sidePath] && paths(arcProjects, since: arcStart) == [projectsPath, projectsPath],
+           "Each Arc profile's data imports into its own Parc Profile")
     expect(arcSetup.bookmarkPages.first?.destination == arcOriginal, "Arc's main bookmarks land in setup's Space")
     arcSetup.cancel()
     expect(requests.count > mappingStart && requests.dropFirst(mappingStart).allSatisfy(\.skipExistingCookies),

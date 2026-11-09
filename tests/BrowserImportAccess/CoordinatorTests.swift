@@ -236,26 +236,22 @@ import AppKit
         firstProfile.extensions = [PCNativeImportExtension()]
         let secondProfile = PCNativeImportProfile("Second", [.bookmarks], .complete)
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [firstProfile, secondProfile], access: .complete))
-        expect(inline.selectedProfiles == [firstProfile.identifier, secondProfile.identifier]
-               && inline.selectedExtensions[firstProfile.identifier] == ["extension"],
-               "Profile discovery ticks every readable profile and every extension found")
-        inline.toggleExtension("extension")
-        expect(inline.selectedExtensions[firstProfile.identifier]?.isEmpty == true, "Setup can untick an extension")
-        inline.selectProfile(firstProfile.identifier)
-        expect(inline.selectedProfiles == [secondProfile.identifier], "Unticking a profile leaves the others ticked")
+        expect(inline.selectedProfiles == [firstProfile.identifier, secondProfile.identifier],
+               "Profile discovery takes every readable profile")
         let beforeInlineImport = PCNativeBrowserApplication.imports
         setupCurrent = false
-        inline.continueSourceInline(); inline.selectProfile(firstProfile.identifier)
-        expect(PCNativeBrowserApplication.imports == beforeInlineImport && inline.selectedProfiles == [secondProfile.identifier],
-               "Retired setup rejects both selection and import actions")
+        inline.continueSourceInline()
+        expect(PCNativeBrowserApplication.imports == beforeInlineImport, "Retired setup rejects import actions")
         setupCurrent = true; PCNativeBrowserApplication.acceptsBrowserImport = true
         inline.continueSourceInline()
         let inlineRequest = PCNativeBrowserApplication.browserRequests.last!
-        expect(PCNativeBrowserApplication.imports == beforeInlineImport + 1 && inlineRequest.profile === secondProfile,
-               "Next submits only the profile selected inside the original source card")
-        expect(!inlineRequest.categories.contains(.extensions) && inlineRequest.window === window &&
-               inlineRequest.path == firstLaunchStore.independentEngineProfilePath(for: firstLaunchDestination.profileID),
-               "Another profile's extension choice and another window's destination cannot leak into setup import")
+        expect(PCNativeBrowserApplication.imports == beforeInlineImport + 1 && inlineRequest.profile === secondProfile
+               && inlineRequest.categories == [.bookmarks],
+               "Next reads the bookmarks of the profile that has them first")
+        let secondDestination = firstLaunchStore.state.profiles.first { $0.name == "Second" }
+        expect(inlineRequest.window === window && secondDestination != nil &&
+               inlineRequest.path == firstLaunchStore.independentEngineProfilePath(for: secondDestination!.id),
+               "The other profile reads into a Parc Profile of its name, never another window's destination")
         inline.selectSourceInline(safari); inline.clearSourceInline()
         expect(inline.stage == .importing && inline.source === impostor,
                "Inline source controls cannot replace an accepted import")
@@ -375,8 +371,6 @@ import AppKit
             coordinator.continueSourceInline()
         }
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
-        expect(coordinator.selectedExtensions[profile.identifier] == [known.identifier, unknown.identifier],
-               "Every extension found starts selected")
         PCNativeBrowserApplication.acceptsBrowserImport = true
         coordinator.continueSourceInline()
         expect(PCNativeBrowserApplication.browserRequests.last?.categories.contains(.extensions) == false
@@ -388,7 +382,7 @@ import AppKit
                && failing.requests[0].extensionIDs == [known.identifier, unknown.identifier]
                && failing.requests[0].profilePath == store.independentEngineProfilePath(for: destination.profileID)
                && coordinator.stage == .finished && coordinator.hasBackgroundWork,
-               "Every selected extension, including known ad blockers, installs even when other data failed")
+               "Every extension found, including known ad blockers, installs even when other data failed")
         failing.complete(.init(outcome: .failed, failedNames: ["uBlock Origin", "Extension"]))
         expect(coordinator.stage == .finished && coordinator.importedAdBlockers.isEmpty
                && coordinator.warnings.contains("uBlock Origin couldn’t be added.")
@@ -413,13 +407,16 @@ import AppKit
                "Results appear while a download is still running, and only known ad blockers carry on into setup")
         downloading.background(["uBlock Origin"])
         expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1
-               && ImportedExtensionFailures.pending.isEmpty,
-               "A later failure joins the open results once")
+               && ImportedExtensionFailures.pending.contains("uBlock Origin"),
+               "A later failure is recorded once and waits for a browser window")
         expect(coordinator.importedAdBlockers.isEmpty && ImportedExtensionFailures.failedIdentifiers.contains(known.identifier),
                "An ad blocker whose download failed isn't offered in setup")
+        var repeated = 0
+        ImportedExtensionFailures.present = { repeated += 1 }
         downloading.background(["uBlock Origin"])
-        expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1,
-               "The same failure is never listed twice")
+        expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1 && repeated == 0,
+               "The same failure is never listed or announced twice")
+        ImportedExtensionFailures.present = nil
         run()
         PCNativeBrowserApplication.rejectsExtensionInstall = true
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
@@ -428,6 +425,8 @@ import AppKit
                && coordinator.warnings.contains("Extension couldn’t be added."),
                "An install that can't begin lists each extension as a failure")
         coordinator.cancel()
+        expect(ImportedExtensionFailures.take() == ["uBlock Origin", "Extension"],
+               "With no results page, every failed extension waits for a browser window, once each")
         var presented = 0
         ImportedExtensionFailures.present = { presented += 1 }
         downloading.background(["uBlock Origin"])
@@ -523,18 +522,17 @@ import AppKit
             coordinator.discover()
             PCNativeBrowserApplication.sources.removeFirst().complete([arc])
             coordinator.select(arc); coordinator.loadProfiles()
-            PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [standard, side, empty], access: .complete))
+            PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [standard, side, empty], access: .complete,
+                constraints: ["Encrypted cookies may require macOS Keychain authorization."]))
             return (store, destination, coordinator)
         }
         PCNativeBrowserApplication.acceptsBrowserImport = true
         PCNativeBrowserApplication.browserCompletions = []
 
         let (stopped, _, stopping) = try begin("ArcStopped", sidebar: sidebar)
-        expect(stopping.selectedProfiles == [standard.identifier, side.identifier], "Every readable Arc profile starts ticked, as Chrome's do")
-        stopping.selectProfile(side.identifier)
-        expect(stopping.selectedProfiles == [standard.identifier], "A profile unticks on its own")
-        stopping.selectProfile(side.identifier); stopping.selectProfile(empty.identifier)
-        expect(stopping.selectedProfiles == [standard.identifier, side.identifier], "An unreadable profile cannot be chosen")
+        expect(stopping.selectedProfiles == [standard.identifier, side.identifier],
+               "Every readable Arc profile imports, as Chrome's do; an unreadable one doesn't")
+        expect(stopping.warnings.isEmpty, "The importer's explanations of a profile are never recorded as warnings")
         let spaces = stopped.state.spaces, requests = PCNativeBrowserApplication.browserRequests.count
         stopping.continueSourceInline()
         expect(stopping.stage == .importing, "Next starts Arc's import straight from the profile choice, as Chrome's does")
@@ -576,22 +574,6 @@ import AppKit
                "The import reports only the native importer's own warnings, as Chrome's does")
         coordinator.cancel()
 
-        let (onlyStore, onlyDestination, onlyImport) = try begin("ArcOnlyDefault", sidebar: sidebar)
-        let onlyStart = PCNativeBrowserApplication.browserRequests.count
-        let onlyProfiles = onlyStore.state.profiles.count
-        onlyImport.selectProfile(side.identifier)
-        onlyImport.continueSourceInline()
-        wait { PCNativeBrowserApplication.browserRequests.count > onlyStart }
-        expect(onlyStore.state.spaces.contains { $0.title == "Work" && $0.profileID == onlyDestination.profileID }
-               && onlyStore.state.profiles.count == onlyProfiles && !onlyStore.state.profiles.contains { $0.name == "Side" },
-               "The default profile's Spaces join the opened Profile; an unticked profile stays behind and no Profile is created")
-        expect(PCNativeBrowserApplication.browserRequests[onlyStart].path == onlyStore.independentEngineProfilePath(for: onlyDestination.profileID),
-               "The browser data imports into the opened Profile")
-        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
-        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
-        expect(onlyImport.stage == .finished && onlyImport.warnings.isEmpty, "A clean Arc import has nothing to report")
-        onlyImport.cancel()
-
         let missing = directory.appendingPathComponent("NoArc/StorableSidebar.json")
         let (fallback, fallbackDestination, unreadable) = try begin("ArcUnreadable", sidebar: missing)
         let before = PCNativeBrowserApplication.browserRequests.count
@@ -626,17 +608,6 @@ import AppKit
         PCNativeBrowserApplication.sources.removeFirst().complete([arc])
         setup.selectSourceInline(arc)
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [withExtensions, onlyExtensions], access: .complete))
-        expect(setup.selectedExtensions[withExtensions.identifier] == [blocker.identifier, broken.identifier]
-               && setup.selectedExtensions[onlyExtensions.identifier] == [blocker.identifier, helper.identifier],
-               "Setup selects every extension of every Parc profile")
-        setup.toggleExtension(blocker.identifier)
-        expect(setup.selectedExtensions.values.allSatisfy { !$0.contains(blocker.identifier) },
-               "An extension listed once unticks in every profile that has it")
-        setup.selectProfile(onlyExtensions.identifier)
-        setup.toggleExtension(blocker.identifier)
-        setup.selectProfile(onlyExtensions.identifier)
-        expect(setup.selectedExtensions.values.allSatisfy { $0.contains(blocker.identifier) },
-               "A profile switched off and on again keeps the choice made meanwhile")
         let extensionStart = PCNativeBrowserApplication.browserRequests.count
         let installsBefore = PCNativeBrowserApplication.extensionInstalls.count
         setup.continueSourceInline()

@@ -25,7 +25,6 @@ final class BrowserImportCoordinator {
     private(set) var source: PCNativeImportSource?
     private(set) var profiles: [PCNativeImportProfile] = []
     private(set) var selectedProfiles = Set<String>()
-    private(set) var selectedExtensions: [String: Set<String>] = [:]
     private(set) var importedAdBlockers: [OnboardingDraft.ImportedAdBlocker] = []
     private(set) var bookmarkPages: [BookmarkPage] = []
     private(set) var message = "Finding your browsers…"
@@ -50,7 +49,6 @@ final class BrowserImportCoordinator {
     private(set) var passwordFileRemoved = false
     private(set) var passwordError: String?
     private var passwordSession: PCNativePasswordFileImportSession?
-    private(set) var passwordsOnly = false
     private var passwordStageOffered = false
     private var generation = UUID()
     private var discovery: PCNativeImportDiscovery?
@@ -163,8 +161,8 @@ final class BrowserImportCoordinator {
         guard !hasBackgroundWork, stage != .importing && stage != .bookmarks && stage != .passwordChoice && stage != .safariPasswords && !restarting else { return }
         discovery?.cancel(); generation = UUID(); let token = generation
         checkingSafariAccess = false; continueAfterSafariRefresh = false; safariAccessError = nil
-        source = nil; sources = []; profiles = []; selectedProfiles = []; selectedExtensions = [:]
-        passwordsOnly = false; passwordDestination = nil; passwordStageOffered = false
+        source = nil; sources = []; profiles = []; selectedProfiles = []
+        passwordDestination = nil; passwordStageOffered = false
         wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
         safariAccessReady = false; requiresSafariAccess = false
         extensionBatch = nil
@@ -215,7 +213,7 @@ final class BrowserImportCoordinator {
     private func clearSourceInline(notify: Bool) {
         guard isChoosingSourceInline, isCurrent else { return }
         generation = UUID(); discovery?.cancel(); discovery = nil
-        source = nil; profiles = []; selectedProfiles = []; selectedExtensions = [:]
+        source = nil; profiles = []; selectedProfiles = []
         requiresSafariAccess = false; safariAccessReady = false
         warnings = []; error = nil; stage = .sources
         message = "Bring your browsing with you."
@@ -252,16 +250,13 @@ final class BrowserImportCoordinator {
     }
 
     private func applyProfiles(_ result: PCNativeImportProfileResult) {
-        profiles = result.profiles; warnings = result.constraints
-        // Every readable profile comes along unless the user unticks it.
+        profiles = result.profiles; warnings = []
+        // Every readable profile comes along; there is no choice, as for extensions.
         // An unreadable one stays chosen so Full Disk Access can follow.
         let readable = result.profiles.filter { $0.supportedCategories.rawValue != 0 }
         selectedProfiles = Set((readable.isEmpty ? Array(result.profiles.prefix(1)) : readable).map(\.identifier))
-        // Every extension found comes along unless the user unticks it.
-        selectedExtensions = Dictionary(result.profiles.map { ($0.identifier, Set($0.extensions.map(\.identifier))) },
-                                        uniquingKeysWith: { $0.union($1) })
         error = result.error?.localizedDescription
-        message = result.profiles.isEmpty ? "No readable profiles were found." : "Choose the profile to bring into Parc."
+        message = result.profiles.isEmpty ? "No readable profiles were found." : "Bring your browsing with you."
         // This describes selected-source readability, never a fabricated TCC
         // grant. Missing history or an incomplete result cannot enable Restart.
         safariAccessReady = result.error == nil && result.access == .complete && result.profiles.contains {
@@ -310,77 +305,39 @@ final class BrowserImportCoordinator {
         safariAccessError = message; onChange?()
     }
 
-    func selectProfile(_ id: String) {
-        guard stage == .profiles, isCurrent,
-              profiles.contains(where: { $0.identifier == id && $0.supportedCategories.rawValue != 0 }) else { return }
-        if selectedProfiles.remove(id) == nil { selectedProfiles.insert(id) }
-        onChange?()
-    }
-
     /// Some chosen profile still has data or extensions to import.
     var hasImportableSelection: Bool { isCurrent && !chosenProfiles.isEmpty }
-
-    /// An explicitly exported file does not require access to Safari's history store.
-    var canImportPasswordsOnly: Bool {
-        stage == .profiles && isCurrent && source.map(Self.isSafari) == true
-    }
 
     /// Both presentations import into the Space and Profile they were opened
     /// from: setup's first one, or the window's. Import must not follow a later
     /// selection elsewhere. Source discovery alone never submits data.
-    func startInOriginalDestination(passwordsOnly: Bool = false) {
-        guard stage == .profiles, isCurrent,
-              passwordsOnly ? canImportPasswordsOnly : hasImportableSelection else { return }
+    func startInOriginalDestination() {
+        guard stage == .profiles, isCurrent, hasImportableSelection else { return }
         if Self.earlierImportRunning {
             generation = UUID(); let token = generation
             stage = .importing; error = nil; message = "Finishing your last import…"; onChange?()
             Self.waitingStarts.append { [weak self] in
                 guard let self, self.isCurrent, self.generation == token, self.stage == .importing else { return }
-                self.stage = .profiles; self.startInOriginalDestination(passwordsOnly: passwordsOnly)
+                self.stage = .profiles; self.startInOriginalDestination()
             }
             return
         }
-        self.passwordsOnly = passwordsOnly
         let chosen = chosenProfiles
-        if isArcSource, !passwordsOnly, !chosen.isEmpty { startArc(chosen); return }
+        if isArcSource { startArc(chosen); return }
         beginImport()
         passwordDestination = source.map(Self.isSafari) == true ? originalDestination : nil
-        if passwordsOnly { importNext(); return }
         queueProfiles(chosen, primaryDestination: originalDestination)
         importNext()
     }
 
-    func toggleExtension(_ id: String, profileID: String) {
-        guard stage == .profiles, isCurrent, selectedProfiles.contains(profileID),
-              let profile = profiles.first(where: { $0.identifier == profileID }),
-              profile.extensions.contains(where: { $0.identifier == id }) else { return }
-        if !(selectedExtensions[profileID, default: []].insert(id).inserted) {
-            selectedExtensions[profileID]?.remove(id)
-        }
-        onChange?()
-    }
-
-    /// Setup lists each extension once; its choice holds in every profile.
-    func toggleExtension(_ id: String) {
-        guard stage == .profiles, isCurrent else { return }
-        let owners = profiles.filter { $0.extensions.contains { $0.identifier == id } }
-        guard !owners.isEmpty else { return }
-        let selected = owners.allSatisfy { selectedExtensions[$0.identifier]?.contains(id) == true }
-        for owner in owners {
-            if selected { selectedExtensions[owner.identifier]?.remove(id) }
-            else { selectedExtensions[owner.identifier, default: []].insert(id) }
-        }
-        onChange?()
-    }
-
     /// The browser's default profile goes to the original destination; each
-    /// other chosen profile goes to a Parc Profile of its own name.
+    /// other chosen profile goes to a Parc Profile of its own name. Every
+    /// extension a chosen profile has comes with it.
     private var chosenProfiles: [PCNativeImportProfile] {
         let chosen = profiles.filter { profile in
-            guard selectedProfiles.contains(profile.identifier) else { return false }
             var categories = profile.supportedCategories
-            if (selectedExtensions[profile.identifier] ?? []).isEmpty { categories.remove(.extensions) }
-            return categories.rawValue != 0
+            if profile.extensions.isEmpty { categories.remove(.extensions) }
+            return selectedProfiles.contains(profile.identifier) && categories.rawValue != 0
         }
         guard let primary = chosen.first(where: { $0.directoryName == "Default" }) ?? chosen.first else { return [] }
         return [primary] + chosen.filter { $0 !== primary }
@@ -487,11 +444,7 @@ final class BrowserImportCoordinator {
         }
         var categories = profile.supportedCategories
         categories.remove(.extensions)
-        let extensions = Set(profile.extensions.map(\.identifier)).intersection(selectedExtensions[profile.identifier] ?? [])
-        guard categories.rawValue != 0 || !extensions.isEmpty else {
-            warnings.append("No data was selected for \(profile.displayName).")
-            activeDestination = nil; completed += 1; importNext(); return
-        }
+        let extensions = Set(profile.extensions.map(\.identifier))
         guard let destination = activeDestination, destination.isCurrent(in: store.state) else {
             finishSourceFailure("The selected destination is no longer available."); return
         }
@@ -634,7 +587,7 @@ final class BrowserImportCoordinator {
         }, backgroundFailures: { [weak self] names in
             ImportedExtensionFailures.recordFailed(items.filter { names.contains($0.displayName) }.map(\.identifier))
             self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
-            // Results still on screen list it; otherwise a browser window does.
+            // An import still open records them once; either way a browser window says so.
             if let self, !self.detached, self.isCurrent, self.extensionBatch == batch {
                 self.reportFailedExtensions(names); self.onChange?()
             } else { ImportedExtensionFailures.add(names) }
@@ -642,12 +595,12 @@ final class BrowserImportCoordinator {
         if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName)); finishBackground() }
     }
 
+    /// The import shows no results, so a browser window reports them.
     private func reportFailedExtensions(_ names: [String]) {
-        if detached { ImportedExtensionFailures.add(names) }
-        for name in names {
-            let line = "\(name) couldn’t be added."
-            if !warnings.contains(line) { warnings.append(line) }
-        }
+        var seen = Set(warnings)
+        let fresh = names.filter { seen.insert("\($0) couldn’t be added.").inserted }
+        if !fresh.isEmpty { ImportedExtensionFailures.add(fresh) }
+        warnings += fresh.map { "\($0) couldn’t be added." }
     }
 
     private var hasPendingBookmarks: Bool {
@@ -858,8 +811,7 @@ enum ImportedBrowserDataFailures {
     static func take() -> [String] { defer { pending = [] }; return pending }
 }
 
-/// Imported extensions that failed in the background after their import's
-/// results closed, waiting for a browser window to say so.
+/// Imported extensions that failed, waiting for a browser window to say so.
 @MainActor
 enum ImportedExtensionFailures {
     static let didFail = Notification.Name("ParcImportedExtensionsDidFail")

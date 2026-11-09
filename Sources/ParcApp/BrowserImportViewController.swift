@@ -5,10 +5,6 @@ import UniformTypeIdentifiers
 /// One import presentation retains its original window through source discovery,
 /// native permissions and final bookmark admission. Onboarding embeds this owner;
 /// the application menu wraps it in its dedicated import window.
-/// The dialog buttons and the password drop area draw their own fills.
-extension PArcDialogButton: BrowserImportInkOpaque {}
-extension OnboardingPasswordDropTarget: BrowserImportInkOpaque {}
-
 @MainActor
 final class BrowserImportViewController: NSViewController {
     var onClose: (() -> Void)?
@@ -116,17 +112,13 @@ final class BrowserImportViewController: NSViewController {
             MainActor.assumeIsolated { self?.refreshSafariAccessIfVisible() }
         }
         heading.font = .systemFont(ofSize: 26, weight: .bold); heading.textColor = PArcDialogStyle.popoverTitle
-        detail.font = .systemFont(ofSize: 13); detail.textColor = PArcDialogStyle.popoverMessage
+        detail.font = .systemFont(ofSize: 13); detail.textColor = PArcDialogStyle.popoverTitle
         logo.image = ParcBrandMark.image(.borderless) ?? NSApp.applicationIconImage
         logo.imageScaling = .scaleProportionallyUpOrDown; logo.setAccessibilityElement(false)
-        closeControl.contentTintColor = PArcDialogStyle.popoverMessage
+        closeControl.contentTintColor = PArcDialogStyle.popoverTitle
         closeControl.setAccessibilityLabel("Close Import")
         closeControl.actionBlock = { [weak self] in self?.requestClose() }
-        if !onboarding {
-            root.addSubview(windowBackdrop)
-            windowBackdrop.onShownChange = { [weak self] in self?.applyBackdropContrast($0) }
-            inkBackdrop = { [weak self] in self.map { ($0.windowBackdrop, PArcDialogStyle.popoverBackground) } }
-        }
+        if !onboarding { root.addSubview(windowBackdrop) }
         [heading, detail, next, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
         next.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
@@ -255,17 +247,16 @@ final class BrowserImportViewController: NSViewController {
             return button.isHidden ? right : right - button.bodyWidth - 8
         }
         let right = place(next, right: width - 28)
-        if showsSourceCards && coordinator.stage != .finished { _ = place(cancelButton, right: right) }
+        if showsSourceCards { _ = place(cancelButton, right: right) }
         else { cancelButton.frame = NSRect(x: 27.5, y: height - 64.5, width: cancelButton.bodyWidth + 1, height: 38.5) }
     }
 
     ///
-    /// and any result; only the cards' state changes.
+    /// only the cards' state changes.
     var showsSourceCards: Bool {
         switch coordinator.stage {
         case .sources, .profiles, .importing: return true
         case .loading: return coordinator.source != nil
-        case .finished: return !coordinator.warnings.isEmpty || coordinator.error != nil
         default: return false
         }
     }
@@ -274,9 +265,9 @@ final class BrowserImportViewController: NSViewController {
 
     private func render() {
         guard !closed else { return }
-        if coordinator.stage == .finished, coordinator.warnings.isEmpty, coordinator.error == nil {
-            // A clean import has no results page: setup continues to its next
-            // step and the window closes. Leave the view update stack first.
+        if coordinator.stage == .finished {
+            //
+            // next step and the window closes. Leave the view update stack first.
             guard !queuedSetupCompletion else { return }
             queuedSetupCompletion = true
             DispatchQueue.main.async { [weak self] in
@@ -306,7 +297,6 @@ final class BrowserImportViewController: NSViewController {
         heading.font = .systemFont(ofSize: cards || stage == .loading ? 17 : 26, weight: .bold)
         detail.font = .systemFont(ofSize: cards || stage == .loading ? 16 : 13)
         detail.stringValue = coordinator.error ?? coordinator.message
-        detail.textColor = coordinator.error == nil ? detailColor : .systemRed
         next.isHidden = false; next.isEnabled = true; next.title = "Next"
         cancelButton.title = stage == .importing ? "Stop Import" : "Maybe Later"
         if cards || stage == .loading {
@@ -325,8 +315,7 @@ final class BrowserImportViewController: NSViewController {
                 next.isEnabled = !coordinator.continueAfterSafariRefresh && !coordinator.restarting
                 onboardingAccess?.update(ready: coordinator.safariAccessReady, checking: coordinator.checkingSafariAccess,
                     continuing: coordinator.continueAfterSafariRefresh, restarting: coordinator.restarting,
-                    restartAvailable: onRequestRestart != nil, error: coordinator.safariAccessError ?? coordinator.error,
-                    sourceName: name)
+                    restartAvailable: onRequestRestart != nil, error: coordinator.safariAccessError ?? coordinator.error)
             } else {
                 next.isHidden = true
                 accessView.update(ready: coordinator.safariAccessReady, checking: coordinator.checkingSafariAccess,
@@ -343,21 +332,15 @@ final class BrowserImportViewController: NSViewController {
             next.isEnabled = coordinator.canChoosePasswordMethod
             updatePasswordChoice()
         case .safariPasswords:
-            heading.stringValue = embedded ? "Stay logged in" : "Stay logged in."
-            if embedded {
-                detail.stringValue = "To manually import passwords from Safari, you’ll have to export them.\n\nOnce imported, your passwords will be encrypted locally on your computer and they’ll never be stored on our servers or shared with anyone else."
-            } else {
-                detail.stringValue = "Bring your saved Safari passwords with you. They’ll stay in this Parc Profile."
-            }
+            // The window's passwords view draws its own title and text.
+            heading.stringValue = "Stay logged in"
+            detail.stringValue = "To manually import passwords from Safari, you’ll have to export them.\n\nOnce imported, your passwords will be encrypted locally on your computer and they’ll never be stored on our servers or shared with anyone else."
             next.isHidden = !embedded
             next.title = coordinator.passwordResult == nil ? "Skip Passwords" : "Continue"
             next.isEnabled = !coordinator.importingPasswords && !coordinator.removingPasswordFile
-            let name = coordinator.store.state.profiles.first { $0.id == coordinator.passwordDestination?.profileID }?.name ?? "Unavailable Profile"
-            passwordsView.update(destination: name, canImport: coordinator.canImportPasswordFile,
+            passwordsView.update(canImport: coordinator.canImportPasswordFile,
                 busy: coordinator.importingPasswords, removing: coordinator.removingPasswordFile,
-                result: coordinator.passwordResult, fileName: coordinator.passwordFileName,
-                removed: coordinator.passwordFileRemoved, canRemove: coordinator.canRemovePasswordFile,
-                error: coordinator.passwordError)
+                result: coordinator.passwordResult, canRemove: coordinator.canRemovePasswordFile, error: coordinator.passwordError)
             schedulePasswordFileConsent()
         case .bookmarks:
             //
@@ -365,8 +348,7 @@ final class BrowserImportViewController: NSViewController {
             heading.stringValue = "Treat your bookmarks to an upgrade."
             detail.stringValue = ""
             updateBookmarksPicker()
-        case .finished:
-            next.title = embedded ? "Next" : "Done"
+        case .finished: break
         }
         if isChoosingSource {
             // Source cards remain in place while their real profile request is
@@ -375,8 +357,8 @@ final class BrowserImportViewController: NSViewController {
         }
         if cards { updateSourcePicker() } else { sourcePicker?.isHidden = true }
         updateBackdrop()
-        cancelButton.isHidden = stage == .finished || choosingAccess || choosingPasswords
-        closeControl.keyEquivalent = choosingAccess || choosingPasswords || stage == .finished ? "\u{1b}" : ""
+        cancelButton.isHidden = choosingAccess || choosingPasswords
+        closeControl.keyEquivalent = choosingAccess || choosingPasswords ? "\u{1b}" : ""
         cancelButton.keyEquivalent = choosingAccess || choosingPasswords ? "" : "\u{1b}"
         next.isLoading = isLoading
         canAdvance = !next.isHidden && next.isEnabled
@@ -385,7 +367,6 @@ final class BrowserImportViewController: NSViewController {
         }
         reconcileAccessTimer()
         root.needsLayout = true; root.layoutSubtreeIfNeeded()
-        if !embedded { applyWashInk(refreshingCards: false) }
         onChange?()
     }
 
@@ -476,32 +457,10 @@ final class BrowserImportViewController: NSViewController {
     private func updateBackdrop() {
         guard !embedded else { return }
         let value = backdrop
+        // The browser cards keep their own fill; only the left column's text is on the wash.
+        windowBackdrop.setPage(fill: PArcDialogStyle.popoverBackground, ink: PArcDialogStyle.popoverTitle,
+                               text: showsSourceCards || coordinator.stage == .loading ? 28 / 580...318 / 580 : 0...1)
         windowBackdrop.show(value.pages, selected: value.selected)
-    }
-
-    /// The cards keep their light fill over the wash.
-    private func applyBackdropContrast(_ shown: Bool) {
-        sourcePicker?.appearance = shown ? NSAppearance(named: .aqua) : nil
-        if coordinator?.error == nil { detail.textColor = detailColor }
-        applyWashInk()
-    }
-    /// The backdrop behind this import and the page it fades into: the
-    /// window's own, or setup's card.
-    var inkBackdrop: (() -> (BrowserImportBackdrop, NSColor)?)?
-    /// White text where it reads over the wash, the page's ink elsewhere;
-    /// call after layout. The cards' messages read the backdrop as they draw.
-    func applyWashInk(refreshingCards: Bool = true) {
-        guard !closed, let target = inkBackdrop?() else { return }
-        target.0.applyInk(under: embedded ? passwordsView : root, fill: target.1)
-        if refreshingCards { updateSourcePicker() }
-    }
-    private func whiteInkHolds(_ rect: CGRect, alpha: CGFloat) -> Bool {
-        guard let host = sourcePicker, let target = inkBackdrop?() else { return false }
-        return target.0.whiteInkHolds(over: rect, of: host, fill: target.1, alpha: alpha)
-    }
-    /// Over a backdrop the grey message loses contrast; the title ink holds it.
-    private var detailColor: NSColor {
-        windowBackdrop.isShown ? PArcDialogStyle.popoverTitle.withAlphaComponent(0.75) : PArcDialogStyle.popoverMessage
     }
 
     private static func icon(_ source: PCNativeImportSource) -> NSImage {
@@ -512,63 +471,21 @@ final class BrowserImportViewController: NSViewController {
     private func updateSourcePicker() {
         guard coordinator != nil, showsSourceCards, !closed else { return }
         let stage = coordinator.stage
-        let choosing = isChoosingSource
-        // Once a browser is chosen beyond setup's inline step, only its card stays.
-        let shown = choosing ? coordinator.sources : coordinator.sources.filter { $0 === coordinator.source }
-        let choices = shown.map { source in
-            let selected = !skipSelected && coordinator.source === source
-            let listsProfiles = selected && choosing
-            let profiles = listsProfiles ? coordinator.profiles.map { profile in
-                BrowserImportSourcePicker.Profile(id: profile.identifier, title: profile.displayName,
-                    selected: coordinator.selectedProfiles.contains(profile.identifier),
-                    enabled: profile.supportedCategories.rawValue != 0, choose: { [weak self, weak source] in
-                        guard let self, let source, self.canChooseSource,
-                              self.coordinator.source === source,
-                              self.coordinator.profiles.contains(where: { $0 === profile }) else { return }
-                        self.coordinator.selectProfile(profile.identifier)
-                    })
-            } : []
-            let chosen = listsProfiles ? coordinator.profiles.filter { coordinator.selectedProfiles.contains($0.identifier) } : []
-            let profile = chosen.first
-            var listed = Set<String>()
-            let options = chosen.flatMap { profile in
-                profile.extensions.filter { listed.insert($0.identifier).inserted }.map { item in
-                    BrowserImportSourcePicker.ImportOption(id: item.identifier, title: item.displayName,
-                        selected: chosen.allSatisfy { owner in
-                            !owner.extensions.contains { $0.identifier == item.identifier }
-                                || coordinator.selectedExtensions[owner.identifier]?.contains(item.identifier) == true
-                        },
-                        toggle: { [weak self, weak source] in
-                            guard let self, let source, self.canChooseSource,
-                                  self.coordinator.source === source else { return }
-                            self.coordinator.toggleExtension(item.identifier)
-                        })
-                }
-            }
-            var messages: [String] = []
-            if selected && (listsProfiles || stage == .finished) {
-                messages = coordinator.warnings + (profile?.constraints ?? []) + (embedded ? coordinator.error.map { [$0] } ?? [] : [])
-                if stage == .profiles, coordinator.profiles.isEmpty, coordinator.error == nil { messages.append(coordinator.message) }
-            }
-            let choosePasswords: (() -> Void)? = listsProfiles && coordinator.canImportPasswordsOnly ? { [weak self, weak source] in
-                guard let self, let source, self.canChooseSource, self.coordinator.source === source else { return }
-                self.coordinator.startInOriginalDestination(passwordsOnly: true)
-            } : nil
-            return BrowserImportSourcePicker.Source(id: source.identifier, title: source.displayName,
+        let choices = coordinator.sources.map { source in
+            BrowserImportSourcePicker.Source(id: source.identifier, title: source.displayName,
                 icon: Self.icon(source),
                 iconBackground: BrowserImportSourcePicker.iconBackground(bundleIdentifier: source.identifier),
-                selected: selected, choose: { [weak self, weak source] in
+                selected: !skipSelected && coordinator.source === source, choose: { [weak self, weak source] in
                     guard let self, let source, self.canChooseSource else { return }
                     self.skipSelected = false; self.coordinator.selectSourceInline(source)
-                }, profiles: profiles, options: options, messages: messages, choosePasswords: choosePasswords)
+                })
         }
-        let skip = embedded && (choosing || skipSelected) ? BrowserImportSourcePicker.Skip(selected: skipSelected, choose: { [weak self] in
+        let skip = embedded ? BrowserImportSourcePicker.Skip(selected: skipSelected, choose: { [weak self] in
             guard let self, self.canChooseSource else { return }
             self.skipSelected = true; self.coordinator.clearSourceInline()
         }) : nil
         let content = BrowserImportSourcePicker(layout: embedded ? .setup : .window, sources: choices, skip: skip,
-            enabled: stage != .importing && stage != .finished,
-            whiteInk: { [weak self] in self?.whiteInkHolds($0, alpha: $1) ?? false },
+            enabled: stage != .importing,
             selectionColor: embedded ? selectionColor : NSColor(parcHex: "5636F4"))
         if let sourcePicker { sourcePicker.rootView = content; sourcePicker.isHidden = false }
         else { let host = NSHostingView(rootView: content); sourcePicker = host; root.addSubview(host) }
@@ -582,9 +499,8 @@ final class BrowserImportViewController: NSViewController {
         guard !closed, coordinator?.stage == .bookmarks else { return }
         let pages = coordinator.bookmarkPages.map { page in
             let available = !page.discarded && page.destination.isCurrent(in: coordinator.store.state)
-            let status: String? = page.committed ? "Added to Parc" : available ? nil : "Destination no longer available"
             return OnboardingImportBookmarksPicker.Page(id: page.id, title: page.sourceName,
-                selection: page.selection, enabled: available && !page.committed, status: status,
+                selection: page.selection, enabled: available && !page.committed,
                 select: { [weak self] itemID in
                     guard let self, self.canChooseInlineBookmarks else { return }
                     self.coordinator.toggleBookmark(pageID: page.id, id: itemID)

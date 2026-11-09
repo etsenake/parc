@@ -17,8 +17,6 @@ enum OnboardingPasswordPalette {
     static let completedBackground = NSColor(srgbRed: 0.773, green: 0.898, blue: 0.753, alpha: 1)
     static let completedForeground = NSColor(srgbRed: 0.243, green: 0.659, blue: 0.18, alpha: 1)
     static let error = NSColor(srgbRed: 0.788, green: 0.2, blue: 0.2, alpha: 1)
-    static let instruction = adaptive(.black.withAlphaComponent(216 / 255), .white)
-    static let help = NSColor(srgbRed: 0.518, green: 0.518, blue: 0.518, alpha: 1)
 
     private static func adaptive(_ light: NSColor, _ dark: NSColor) -> NSColor {
         NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
@@ -54,7 +52,7 @@ final class OnboardingPasswordDropTarget: NSButton {
         setAccessibilityValue(presentation == .saved ? "Passwords saved" :
             presentation == .working ? "Import in progress" :
             presentation == .removingExport ? "Moving the exported file to Trash" :
-            presentation == .needsAttention ? "Review the import result below" : "No file selected")
+            presentation == .needsAttention ? "Import needs attention" : "No file selected")
         needsDisplay = true
     }
 

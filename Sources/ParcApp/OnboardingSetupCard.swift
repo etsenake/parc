@@ -183,17 +183,15 @@ final class OnboardingSetupCard: NSView {
     let message = NSTextField(wrappingLabelWithString: "")
     /// The import's backdrop, behind every step of it.
     let backdrop = BrowserImportBackdrop()
-    var onBackdropChange: (() -> Void)?
-    /// White where it reads over the wash's colour, black where the wash is
-    /// too light for it, and the page's own ink without one.
-    private var headingInk: NSColor?, messageInk: NSColor?
-    private weak var accessory: NSView?
-    var titleColor: NSColor { headingInk ?? OnboardingSetupPalette.title }
-    var messageColor: NSColor { messageInk?.withAlphaComponent(0.75) ?? OnboardingSetupPalette.message }
+    var titleColor: NSColor { OnboardingSetupPalette.title }
+    /// The import's pages set every line in the title's colour.
+    var importInk = false { didSet { if importInk != oldValue { message.textColor = messageColor } } }
+    /// The import step's own text reaches across the content column too.
+    var textSpansCard = false { didSet { if textSpansCard != oldValue { updateColors() } } }
+    var messageColor: NSColor { importInk ? titleColor : OnboardingSetupPalette.message }
     /// The card's own fill, which the wash fades into.
     var fill: NSColor { themeBackground ?? OnboardingSetupPalette.card }
-    /// Skip, Back and the step count sit low on the card, below the wash.
-    var chromeColor: NSColor { OnboardingSetupPalette.message }
+    var chromeColor: NSColor { importInk ? titleColor : OnboardingSetupPalette.message }
     var themeBackground: NSColor? { didSet { updateColors() } }
     /// The chosen Space theme's texture, drawn as the sidebar's theme renderer
     /// draws it. No theme, or one without colour, draws none.
@@ -218,7 +216,6 @@ final class OnboardingSetupCard: NSView {
         layer?.shadowOffset = CGSize(width: 0, height: 14)
         layer?.backgroundColor = nil
         chrome.addSubview(backdrop)
-        backdrop.onShownChange = { [weak self] in self?.applyBackdrop($0) }
         addSubview(chrome)
         addSubview(instructions)
         addSubview(content)
@@ -230,31 +227,6 @@ final class OnboardingSetupCard: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateColors()
-        applyBackdropInk()
-    }
-
-    private func applyBackdrop(_ shown: Bool) {
-        applyBackdropInk()
-        onBackdropChange?()
-    }
-
-    /// Chooses each instruction's ink from the wash behind it; call after layout.
-    func applyBackdropInk() {
-        func ink(_ field: NSTextField, alpha: CGFloat) -> NSColor? {
-            guard backdrop.isShown else { return nil }
-            let text = field.sizeThatFits(NSSize(width: field.bounds.width, height: .greatestFiniteMagnitude))
-            return backdrop.whiteInkHolds(over: NSRect(x: 0, y: 0, width: min(text.width, field.bounds.width),
-                height: min(text.height, field.bounds.height)), of: field, fill: fill, alpha: alpha) ? .white : .black
-        }
-        headingInk = ink(heading, alpha: 1); messageInk = ink(message, alpha: 0.75)
-        let current = heading.attributedStringValue
-        if current.length > 0, current.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor != titleColor {
-            let text = NSMutableAttributedString(attributedString: current)
-            text.addAttribute(.foregroundColor, value: titleColor, range: NSRange(location: 0, length: text.length))
-            heading.attributedStringValue = text
-        }
-        message.textColor = messageColor
-        if let accessory { backdrop.applyInk(under: accessory, fill: fill) }
     }
 
     override func viewDidChangeBackingProperties() {
@@ -265,6 +237,9 @@ final class OnboardingSetupCard: NSView {
     }
 
     private func updateColors() {
+        let width = OnboardingSetupLayout.size.width, padding = OnboardingSetupLayout.padding
+        backdrop.setPage(fill: fill, ink: titleColor,
+                         text: textSpansCard ? 0...1 : padding / width...(OnboardingSetupLayout.instructionWidth - padding) / width)
         effectiveAppearance.performAsCurrentDrawingAppearance {
             chrome.layer?.backgroundColor = (themeBackground ?? OnboardingSetupPalette.card).cgColor
             borders.inner.borderColor = OnboardingSetupPalette.innerBorder.cgColor
@@ -310,8 +285,6 @@ final class OnboardingSetupCard: NSView {
         message.font = .systemFont(ofSize: 14)
         message.textColor = messageColor
         for view in controls where view.superview !== instructions { instructions.addSubview(view) }
-        if self.accessory !== accessory, let previous = self.accessory { backdrop.clearInk(under: previous) }
-        self.accessory = accessory
         instructions.onLayout = { [weak self, weak back, weak next, weak skip, weak progress, weak accessory] in
             guard let self else { return }
             let bounds = self.instructions.bounds

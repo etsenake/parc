@@ -9,7 +9,6 @@ struct OnboardingImportBookmarksPicker: View {
         let title: String
         let selection: BrowserImportSelection
         let enabled: Bool
-        let status: String?
         let select: (String?) -> Void
         let expand: (String) -> Void
     }
@@ -37,7 +36,6 @@ struct OnboardingImportBookmarksPicker: View {
             // BookmarksSelectionView forces this white surface to light; the
             // surrounding setup card keeps its own appearance and theme.
             .environment(\.colorScheme, .light)
-
         }
         // The setup parent supplies the original 384 × 430 frame. The scroll view
         // fills it; source-row padding does not belong around this surface.

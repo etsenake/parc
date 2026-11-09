@@ -143,7 +143,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             if let stage = self.draft.previousStage() { self.transition(to: stage) }
         }
         skip.actionBlock = { [weak self] in self?.skipStep() }
-        setupCard.onBackdropChange = { [weak self] in self?.applySetupPalette(); self?.browserImport?.applyWashInk() }
         progress.font = .systemFont(ofSize: 10, weight: .medium); progress.textColor = OnboardingSetupPalette.message; progress.alignment = .center
         persistenceStatus.font = .systemFont(ofSize: 11)
         persistenceStatus.textColor = .systemRed
@@ -614,7 +613,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         setupCard.grainTheme = selectedTheme
         setupCard.grainIsActive = ThemeWindowActivity.isActive(window)
         let backdrop = draft.stage == .bookmarks ? browserImport?.backdrop : nil
-        let backdropChanged = setupCard.backdrop.show(backdrop?.pages ?? [], selected: backdrop?.selected)
+        setupCard.backdrop.show(backdrop?.pages ?? [], selected: backdrop?.selected)
+        setupCard.importInk = backdrop != nil
+        setupCard.textSpansCard = browserImport?.isSafariPasswords == true
         progress.textColor = setupCard.chromeColor
         persistenceStatus.textColor = draft.stage.isWelcome ? .white : .systemRed
         // ProgressionButton's theme getters select maxContrastColor (+0x70)
@@ -632,10 +633,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             } else if let button = view as? ActionButton {
                 button.contentTintColor = OnboardingSetupPalette.title
             }
-        }
-        if let browserImport, draft.stage == .bookmarks {
-            root.layoutSubtreeIfNeeded()
-            setupCard.applyBackdropInk(); browserImport.applyWashInk(refreshingCards: backdropChanged)
         }
     }
     private func advance() {
@@ -850,7 +847,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             if let next = self.draft.nextStage() { self.transition(to: next) }
         }
         controller.onChange = { [weak self] in self?.render() }
-        controller.inkBackdrop = { [weak self] in self.map { ($0.setupCard.backdrop, $0.setupCard.fill) } }
         controller.onShowPasswordHelp = { [weak self] in self?.showPasswordHelp() }
         controller.onHidePasswordHelp = { [weak self] in self?.dismissPasswordHelp(remove: true) }
         controller.onBackgroundAdBlockers = { [weak self] in self?.adoptBackgroundAdBlockers($0) }

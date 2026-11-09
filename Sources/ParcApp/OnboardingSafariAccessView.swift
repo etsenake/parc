@@ -42,15 +42,14 @@ final class OnboardingSafariAccessView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func update(ready: Bool, checking: Bool, continuing: Bool, restarting: Bool,
-                restartAvailable: Bool, error: String?, sourceName: String = "this browser") {
+                restartAvailable: Bool, error: String?) {
         openSettings.isEnabled = !restarting
         revealApplication.isEnabled = !restarting
         restart.isEnabled = ready && !checking && !continuing && !restarting && restartAvailable
         restart.title = restarting ? "Restarting…" : "Restart Parc"
-        status.stringValue = error ?? (restarting ? "Preparing to restart Parc…" : continuing ?
-            "Checking \(sourceName) access…" : ready ? "\(sourceName) can now be read." :
-            "You can continue with the data \(sourceName) currently makes available.")
-        status.textColor = error == nil ? OnboardingSetupPalette.message : .systemRed
+        // The buttons and Next's spinner show progress; only a problem needs words.
+        status.stringValue = error ?? ""
+        status.textColor = OnboardingSetupPalette.title
     }
 
     override func layout() {

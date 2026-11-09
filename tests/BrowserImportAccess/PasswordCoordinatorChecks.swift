@@ -9,38 +9,35 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
         checks += 1; precondition(condition(), message)
     }
     var current = true
-    func make(_ source: PCNativeImportSource = safari) -> BrowserImportCoordinator {
+    /// A Safari import reaches its password step through the browser's own data.
+    func make(_ source: PCNativeImportSource = safari, continuing: Bool = true) -> BrowserImportCoordinator {
         let coordinator = BrowserImportCoordinator(store: store, destination: destination,
             window: window, ownerIsCurrent: { current })
         coordinator.discover()
         PCNativeBrowserApplication.sources.removeFirst().complete([source])
         coordinator.select(source); coordinator.loadProfiles()
-        PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [], access: .restricted))
-        if coordinator.stage == .safariAccess {
-            coordinator.continueSafariWithoutRestarting()
-            PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [], access: .restricted))
-        }
+        PCNativeBrowserApplication.profiles.removeFirst().complete(.init(
+            profiles: [PCNativeImportProfile("Safari", [.history], .complete)], access: .complete))
+        if continuing { coordinator.continueSourceInline() }
         return coordinator
     }
     let wrongSource = make(other)
-    expect(!wrongSource.canImportPasswordsOnly, "A display name cannot expose Safari CSV guidance")
-    wrongSource.startInOriginalDestination(passwordsOnly: true)
-    expect(wrongSource.stage == .profiles, "An unrelated source cannot enter this password stage")
+    expect(wrongSource.stage == .finished && wrongSource.passwordDestination == nil,
+           "An unrelated source imports without this password stage")
     wrongSource.cancel()
+    let retired = make(continuing: false)
+    current = false; retired.continueSourceInline()
+    expect(retired.stage == .profiles && retired.passwordDestination == nil, "A retired owner cannot enter the file step")
+    current = true; retired.cancel()
+    let before = store.state, imports = PCNativeBrowserApplication.imports
     let coordinator = make()
-    let before = store.state
-    expect(coordinator.canImportPasswordsOnly && !coordinator.hasImportableSelection,
-           "Explicit exported credentials do not require Safari history/profile access")
-    current = false; coordinator.startInOriginalDestination(passwordsOnly: true)
-    expect(coordinator.stage == .profiles && !coordinator.passwordsOnly, "A retired owner cannot enter the file route")
-    current = true; coordinator.startInOriginalDestination(passwordsOnly: true)
-    expect(coordinator.passwordsOnly && coordinator.stage == .safariPasswords && coordinator.canImportPasswordFile,
-           "The file route goes straight to its own real password stage")
+    expect(coordinator.stage == .safariPasswords && coordinator.canImportPasswordFile,
+           "Safari goes straight to its own real password stage")
     expect(store.state.profiles == before.profiles && store.state.spaces == before.spaces,
-           "The file route writes no Profile or Space")
+           "The password step writes no Profile or Space")
     expect(coordinator.passwordDestination?.profileID == destination.profileID,
            "The password stage holds the explicit original destination identity")
-    expect(PCNativeBrowserApplication.imports == 0 && PCNativeBrowserApplication.passwordRequests.isEmpty,
+    expect(PCNativeBrowserApplication.imports == imports && PCNativeBrowserApplication.passwordRequests.isEmpty,
            "Entering the stage does not import any data")
     coordinator.importPasswordFile(URL(string: "https://example.invalid/passwords.csv")!)
     coordinator.importPasswordFile(URL(fileURLWithPath: "/fixture/passwords.txt"))
@@ -100,7 +97,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     expect(coordinator.stage == .finished, "A late callback cannot reopen the finished stage")
     coordinator.cancel()
 
-    let refused = make(); refused.startInOriginalDestination(passwordsOnly: true)
+    let refused = make()
     PCNativeBrowserApplication.rejectsPasswordImport = true
     refused.importPasswordFile(file)
     expect(!refused.importingPasswords && refused.passwordError != nil && refused.canImportPasswordFile,
@@ -116,10 +113,10 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     expect(losing.lease.cancelled && refused.stage == .finished && refused.passwordResult == nil,
            "Close cancels the original session and rejects later completion")
 
-    let skipped = make(); skipped.startInOriginalDestination(passwordsOnly: true)
+    let skipped = make()
     skipped.continueAfterPasswords()
     expect(skipped.stage == .finished && PCNativeBrowserApplication.passwordRequests.isEmpty,
-           "Skip needs no file access and never invokes native import")
+           "Skip reads no password file")
     expect(store.state.profiles == before.profiles && store.state.spaces == before.spaces && store.state.tabs == before.tabs,
            "Existing-profile password guidance and aggregate callbacks do not mutate sidebar/session models")
     skipped.cancel()
