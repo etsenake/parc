@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -48,7 +49,9 @@ class HomebrewReleaseTests(unittest.TestCase):
                          ({"version": "1.0.1", "build": 2}, digest, "a" * 40))
         text = publisher.cask("1.0.1", digest)
         self.assertIn('sha256 "' + digest + '"', text)
-        self.assertIn('using: ParcPrivateReleaseDownloadStrategy', text)
+        self.assertIn('url "https://github.com/etsenake/parc-releases/releases/download/', text)
+        self.assertNotIn('using:', text)
+        self.assertNotIn('require_relative', text)
         self.assertIn('app "Parc.app"', text)
         self.assertIn('Parc-#{version}-arm64.dmg', text)
         self.assertNotIn('zap ', text)
@@ -216,8 +219,7 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
         import sys
         from unittest.mock import Mock
         with tempfile.TemporaryDirectory() as temporary:
-            tap = Path(temporary); (tap / 'Casks').mkdir(); (tap / 'lib').mkdir()
-            (tap / 'lib/parc_private_release_download_strategy.rb').touch()
+            tap = Path(temporary); (tap / 'Casks').mkdir()
             app_version = {'version':'1.1.0','build':2}
             release = {'tag_name':'v1.1.0','target_commitish':'a'*40,'name':'Parc 1.1.0 candidate'}
             def run(*args, **kwargs):
@@ -229,13 +231,62 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
                 if args[0]=='api': return json.dumps(release)
                 return ''
             for failure in (False, True):
-                with self.subTest(invalid_dmg=failure), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume']), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup:
+                with self.subTest(invalid_dmg=failure), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume']), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup, patch.object(publisher,'publish_public') as public, patch.object(Path,'rename'):
                     if failure:
                         with self.assertRaises(SystemExit): publisher.main()
-                        promote.assert_not_called()
+                        promote.assert_not_called(); public.assert_not_called()
                     else:
                         publisher.main(); promote.assert_called_once_with(release)
+                        self.assertEqual([path.name for path in public.call_args[0][1]],
+                                         ['Parc-1.1.0-arm64.dmg', 'Parc-1.1.0-arm64.zip'])
                     startup.assert_not_called()
+
+
+class PublicMirrorTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory(); folder = Path(self.folder.name)
+        self.files = [folder / 'Parc-1.1.0-arm64.dmg', folder / 'Parc-1.1.0-arm64.zip']
+        for path in self.files: path.write_bytes(path.name.encode())
+        self.digests = {path.name: 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest() for path in self.files}
+        self.release = {'tag_name': 'v1.1.0', 'name': 'Parc 1.1.0 (engine overlay 1)', 'body': 'notes'}
+        self.calls = []
+
+    def tearDown(self): self.folder.cleanup()
+
+    def mirror(self, existing, after=None):
+        def github(*args):
+            self.calls.append(args)
+            if args[:2] == ('api', 'repos/etsenake/parc-releases'): return 'false'
+            if args[0] == 'api':
+                lookups = sum(1 for call in self.calls if call[0] == 'api' and 'releases/tags' in call[1])
+                state = existing if lookups == 1 or after is None else after
+                if state is None: raise subprocess.CalledProcessError(1, 'gh')
+                return json.dumps({'assets': [{'name': n, 'digest': d} for n, d in state.items()]})
+            return ''
+        with patch.object(publisher, 'github', side_effect=github):
+            publisher.publish_public(self.release, self.files)
+
+    def test_missing_release_is_created_with_both_assets(self):
+        self.mirror(None, self.digests)
+        create = [call for call in self.calls if call[:2] == ('release', 'create')]
+        self.assertEqual(len(create), 1)
+        self.assertIn('etsenake/parc-releases', create[0])
+        self.assertTrue(all(str(path) in create[0] for path in self.files))
+
+    def test_resume_uploads_only_missing_assets(self):
+        dmg = self.files[0].name
+        self.mirror({dmg: self.digests[dmg]}, self.digests)
+        uploads = [call for call in self.calls if call[:2] == ('release', 'upload')]
+        self.assertEqual([call[3] for call in uploads], [str(self.files[1])])
+
+    def test_differing_existing_asset_is_never_replaced(self):
+        with self.assertRaises(ValueError):
+            self.mirror({self.files[0].name: 'sha256:' + '0' * 64})
+        self.assertFalse(any(call[:2] == ('release', 'upload') for call in self.calls))
+
+    def test_unverified_upload_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.mirror(None, {})
 
 if __name__ == "__main__":
     unittest.main()

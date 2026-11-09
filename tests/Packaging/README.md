@@ -117,11 +117,11 @@ and push the tap immediately and compare its local/remote SHA. The updater
 requires a clean main checkout of `etsenake/homebrew-tap`; it preserves unrelated
 casks and rejects equal or decreasing release versions.
 
-On another Apple Silicon Mac, authenticate `gh` with access to `etsenake/parc`
-once, then use `brew install --cask etsenake/tap/parc`. Upgrade with `brew update`
-and `brew upgrade --cask etsenake/tap/parc`. The public cask contains a checksum
-and private release URL; its downloader obtains credentials only during fetch.
-No tokens or app assets are made public. Homebrew uninstall preserves the Parc
+On another Apple Silicon Mac, run `brew tap etsenake/tap` and
+`brew install --cask parc`; no GitHub login is needed. Upgrade with `brew update`
+and `brew upgrade --cask parc`. Stable releases are mirrored with identical
+bytes to the public `etsenake/parc-releases` repository, which the cask
+downloads from; the source stays private. Homebrew uninstall preserves the Parc
 profile. The initial 0.1.0 bootstrap cask can adopt the verified matching existing
 notarized app with `brew install --cask --adopt etsenake/tap/parc` before its
 first accepted stable upgrade. Actual DMG installation/upgrade validation waits

@@ -209,5 +209,6 @@ Homebrew may replace the same manually installed candidate while registering
 the actual upgrade. Keep a rollback copy, then run the recorder again with a
 new receipt path before removing it. Verify the installed Homebrew version and
 all code hashes. Do not change the chosen default browser or the Parc profile.
-The public tap contains metadata only; private assets authenticate through the
-user's GitHub login without tokens in cask metadata or URLs.
+The publisher mirrors each stable release's verified DMG and ZIP to the public
+`etsenake/parc-releases` repository (never replacing differing bytes) and the
+cask downloads from there without a GitHub login; the source stays private.

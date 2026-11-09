@@ -19,6 +19,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "etsenake/parc"
+PUBLIC_REPOSITORY = "etsenake/parc-releases"
 TAP_REPOSITORY = "etsenake/homebrew-tap"
 PRODUCTION_TEAM = "94HKA7L2DR"
 PRODUCTION_DESIGNATED_REQUIREMENT = ('designated => identifier "org.parc.Browser" and anchor apple generic and '
@@ -188,24 +189,53 @@ def verify_dmg_asset(release, dmg, report, folder):
     return digest
 
 
+def publish_public(release, files):
+    """Mirror the verified assets to the public releases repository; never replace differing bytes."""
+    tag = release["tag_name"]
+    if github("api", f"repos/{PUBLIC_REPOSITORY}", "--jq", ".private") != "false":
+        raise ValueError(PUBLIC_REPOSITORY + " must be public")
+    try:
+        public = json.loads(github("api", f"repos/{PUBLIC_REPOSITORY}/releases/tags/{tag}"))
+    except subprocess.CalledProcessError:
+        public = None
+    if public is None:
+        github("release", "create", tag, "--repo", PUBLIC_REPOSITORY, "--target", "main", "--latest",
+               "--title", release["name"].replace(" candidate", "", 1), "--notes", release.get("body") or "",
+               *[str(path) for path in files])
+    else:
+        existing = {item["name"]: item.get("digest", "") for item in public["assets"]}
+        for path in files:
+            with path.open("rb") as stream:
+                digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+            if path.name not in existing:
+                github("release", "upload", tag, str(path), "--repo", PUBLIC_REPOSITORY)
+            elif existing[path.name] != digest:
+                raise ValueError(f"{PUBLIC_REPOSITORY} {tag} already has a different {path.name}")
+        github("release", "edit", tag, "--repo", PUBLIC_REPOSITORY, "--draft=false", "--prerelease=false", "--latest")
+    public = json.loads(github("api", f"repos/{PUBLIC_REPOSITORY}/releases/tags/{tag}"))
+    published = {item["name"]: item.get("digest", "") for item in public["assets"]}
+    for path in files:
+        with path.open("rb") as stream:
+            if published.get(path.name) != "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest():
+                raise ValueError(f"{PUBLIC_REPOSITORY} {tag} {path.name} was not verified after upload")
+
+
 def cask(version, digest):
     return f'''# typed: false
 # frozen_string_literal: true
-
-require_relative "../lib/parc_private_release_download_strategy"
 
 cask "parc" do
   version "{version}"
   sha256 "{digest}"
 
-  url "https://github.com/etsenake/parc/releases/download/v#{{version}}/Parc-#{{version}}-arm64.dmg",
-      using: ParcPrivateReleaseDownloadStrategy
+  url "https://github.com/{PUBLIC_REPOSITORY}/releases/download/v#{{version}}/Parc-#{{version}}-arm64.dmg"
   name "Parc"
   desc "Native browser with an independent Chromium engine"
-  homepage "https://github.com/etsenake/parc"
+  homepage "https://github.com/{PUBLIC_REPOSITORY}"
 
   livecheck do
-    skip "Private releases; the release publisher updates this cask"
+    url :url
+    strategy :github_latest
   end
 
   depends_on arch: :arm64
@@ -243,8 +273,6 @@ def main():
             raise ValueError("Update the tap's main branch")
         run("git", "fetch", "origin", "main", cwd=tap)
         run("git", "merge", "--ff-only", "origin/main", cwd=tap)
-        if not (tap / "lib/parc_private_release_download_strategy.rb").is_file():
-            raise ValueError("The tap's authenticated Parc download strategy is missing")
         if not re.fullmatch(r"v[0-9]+[.][0-9]+[.][0-9]+", args.tag):
             raise ValueError("Use a stable v<major>.<minor>.<patch> tag")
         release = json.loads(github("api", f"repos/{REPOSITORY}/releases/tags/{args.tag}"))
@@ -260,7 +288,11 @@ def main():
             github("release", "download", args.tag, "--repo", REPOSITORY,
                 "--pattern", f'Parc-{app_version["version"]}-arm64.dmg', "--output", str(dmg))
             digest = verify_dmg_asset(release, dmg, report, Path(temporary))
-        version = app_version["version"]
+            version = app_version["version"]
+            public_dmg = Path(temporary) / f"Parc-{version}-arm64.dmg"
+            public_zip = Path(temporary) / f"Parc-{version}-arm64.zip"
+            dmg.rename(public_dmg); archive.rename(public_zip)
+            publish_public(release, [public_dmg, public_zip])
         source_version = json.loads(run("git", "show", commit + ":app-version.json", cwd=ROOT))
         if source_version != app_version:
             raise ValueError("The release source commit declares a different version")
