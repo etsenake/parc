@@ -56,6 +56,7 @@ Create worktrees with Git only. Edit them by **absolute path** or `working_direc
 
 **CRITICAL — TELL JOSH ABOUT EVERY GAP YOU RECORD. User direction, November 1.** A gap, limitation, known failure or open decision written into docs, the ledger or a commit must also be told to Josh in plain words in the same turn. Never leave it only in the docs. See `.cursor/rules/call-out-gaps.mdc`.
 
+
 **CRITICAL — IF A USER WOULD FEEL IT, FIX IT. User direction, November 7.** Any difference an actual user would notice (playback restarting, stopping, freezing, rebuffering, casting or picture in picture misbehaving, sound missing, video not playing) gets fixed, however large; "only matters while casting" or "rare" is not a reason to leave it. Report differences as what the user experiences and answer the obvious follow-ups (PiP, casting, background tabs, Now Playing, FairPlay) up front. See `.cursor/rules/fix-what-users-feel.mdc`.
 
 
