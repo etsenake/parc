@@ -48,8 +48,19 @@ direct = re.findall(r"\bsidebarPresentation = ([^;\n} ]+)", controller)
 assert sorted(direct) == [".hidden", ".hidden", "presentation", "presentation", "saved.sidebar"], \
     f"an unexpected direct presentation write: {direct}"
 render = re.search(r"^    private func render\(_ sharedState: BrowserState\) \{.*?^    }\n", controller, re.S | re.M).group(0)
-assert render.rstrip().endswith("lastChromeState = sharedState\n        refreshEmptyWindowSidebar()\n    }"), \
-    "render no longer ends by applying the no-tab rule"
+tail = [line.strip() for line in render[render.index("        lastChromeState = sharedState\n"):].rstrip().removesuffix("}").splitlines()
+        if line.strip()]
+assert "refreshEmptyWindowSidebar()" in tail, "render no longer ends by applying the no-tab rule"
+# Anything after the rule only queues work for a later turn of the run loop.
+for later in tail[tail.index("refreshEmptyWindowSidebar()") + 1:]:
+    deferred = re.fullmatch(r"(\w+)\(\)", later)
+    assert deferred, f"render changes state after applying the no-tab rule: {later}"
+    scheduled = body(deferred.group(1))
+    start = scheduled.find("\n        DispatchQueue.main.async {")
+    now = scheduled[scheduled.index("{") + 1:start].splitlines()
+    assert start > 0 and scheduled[scheduled.index("\n        }\n", start):] == "\n        }\n    }\n" \
+        and all(re.fullmatch(r"|guard [^()]* else \{ return \}|\w+Scheduled = true", line.strip()) for line in now), \
+        f"render changes state after applying the no-tab rule: {later}"
 assert "layoutChrome()\n        refreshEmptyWindowSidebar()" in body("closeLibrary"), "closing the Library no longer applies the no-tab rule"
 assert ("EmptyWindowSidebarRule.holdsSidebar(focusedTab: currentTabID, pendingSplitPane: splitInsertion != nil,\n"
         "                                            creatingSpace: spaceCreation != nil, popup: isPopupWindow, library: libraryView != nil)"
@@ -68,7 +79,8 @@ assert controller.index("self.splitInsertion = nil; session.cancel()") < control
 assert controller.count("splitInsertion = nil; session.cancel()") == 3, "an unexpected end of the pending pane"
 # The empty window shows the empty content through a clear, clipping host.
 assert "let empty = SplitPanePlaceholder(frame: .zero)\n                empty.setAccessibilityLabel(\"No tab open\")" in controller
-assert "splitView.configureBacking(in: pageHost, hasTranslucentPane: translucentPane || showsEmpty)" in controller
+assert "let showsEmpty = splitView.arrangedSubviews.count == 1 && splitView.arrangedSubviews.first is SplitPanePlaceholder" in controller
+assert re.search(r"splitView\.configureBacking\(in: pageHost, hasTranslucentPane: translucentPane \|\| showsEmpty[,)]", controller)
 assert "pageShadow.isHidden = splitView.arrangedSubviews.count > 1 || nativeFullscreenTabID != nil" in controller
 
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in (

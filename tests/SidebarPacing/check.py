@@ -61,9 +61,13 @@ for source, view in (("DeveloperMode.swift", "DeveloperToolbarView"), ("BrowserT
     body = re.search(rf"^(?:@MainActor )?final class {view}\b.*?(?=^(?:@MainActor |private |fileprivate )?(?:final )?(?:class|struct|enum|extension) )",
                      (app / source).read_text() + "\nclass End", re.S | re.M)
     assert body and "override func draw(_ dirtyRect: NSRect)" in body.group(0), f"{view} no longer draws; the harness's hidden strips stand for it"
-for use in ("developerToolbar.isHidden = true; addSubview(developerToolbar)", "browserToolbar.isHidden = true; addSubview(browserToolbar)",
+# A pane builds its developer strip, hidden, for its first Developer Mode site
+# and keeps it; the harness's panes stand for one that has.
+for use in ("        let toolbar = DeveloperToolbarView()\n        toolbar.isHidden = true\n"
+            "        addSubview(toolbar, positioned: .below, relativeTo: browserToolbar)\n",
+            "browserToolbar.isHidden = true; addSubview(browserToolbar)",
             "browserToolbar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)",
-            "developerToolbar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: developerHeight)",
+            "loadedDeveloperToolbar?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: developerHeight)",
             "            self.error.frame = self.content.bounds\n"):
     assert use in controller, f"BrowserPane no longer lays its hidden views out as the harness does: {use}"
 hold = "        for view in hidden { view.layerContentsRedrawPolicy = .beforeViewResize }\n"

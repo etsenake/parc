@@ -61,8 +61,12 @@ import QuartzCore
         check(indicator.frame.minX == -1.5 && indicator.frame.minY == 4, "half the line sits outside the strip")
         check(indicator.path?.boundingBox == CGRect(x: 0, y: 0, width: 3, height: 670), "rounded path fills the line")
         check(!region.mouseDownCanMoveWindow, "strip never drags the window")
+        // AppKit asks for tracking areas when the pointer next needs them, which
+        // an off-screen window never does; ask twice, as each geometry change would.
+        region.updateTrackingAreas(); region.updateTrackingAreas()
         let area = region.trackingAreas.first
-        check(region.trackingAreas.count == 1 && area?.options.rawValue == 0x227, "recovered tracking options 0x227")
+        check(region.trackingAreas.count == 1 && area?.options.rawValue == 0x227 && area?.owner === region,
+              "recovered tracking options 0x227, replaced on each update")
         check(region.gestureRecognizers.count == 2 && region.gestureRecognizers.allSatisfy { $0.delegate == nil }, "two recognizers without delegate")
         check(region.panGestureRecognizer.view === region, "pan installed")
         check(region.doubleClickGestureRecognizer.numberOfClicksRequired == 2 && region.doubleClickGestureRecognizer.view === region, "double-click installed")

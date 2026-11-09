@@ -15,11 +15,14 @@ assert "enum DeveloperChromeGeometry" in layout, "DeveloperChromeGeometry helper
 assert "static func paneIsCurrent(" in layout, "paneIsCurrent missing"
 assert "static func peekIsCurrent(" in layout, "peekIsCurrent missing"
 
-refresh = re.search(
-    r"private func refreshDeveloperToolbars\(\) \{(?P<body>.*?)\n    \}\n    private func configureDeveloperToolbar",
-    controller, re.S)
+def method(signature):
+    match = re.search(rf"^    private func {signature} \{{(?P<body>.*?)\n    \}}\n", controller, re.S | re.M)
+    return match and match.group("body")
+
+
+refresh = method(r"refreshDeveloperToolbars\(\)")
 assert refresh, "refreshDeveloperToolbars not found"
-body = refresh.group("body")
+body = refresh
 
 assert "var flushedChromeLayout = false" in body, \
     "refreshDeveloperToolbars must track whether a chrome layout flush ran"
@@ -52,13 +55,16 @@ assert "peek.view.needsLayout = true; peek.view.layoutSubtreeIfNeeded()" not in 
     "blanket peek needsLayout+layoutSubtree must be gone"
 
 # Live path must still configure without forcing pane layout.
-live = re.search(
-    r"private func refreshLivePageChrome\(\) -> Bool \{(?P<body>.*?)\n    \}\n\n    private func showInternalPage",
-    controller, re.S)
-assert live, "refreshLivePageChrome not found"
-live_body = live.group("body")
-assert "configureDeveloperToolbar" in live_body, "live path must still configure developer toolbars"
-assert "layoutSubtreeIfNeeded()" not in live_body, \
-    "live path must not force layoutSubtreeIfNeeded"
+live_body = method(r"refreshLivePageChrome\(\) -> Bool")
+assert live_body, "refreshLivePageChrome not found"
+assert "configurePaneDeveloperToolbar(pane," in live_body and "configureDeveloperToolbar(peek.view.developerToolbar," in live_body, \
+    "live path must still configure pane and peek developer toolbars"
+pane_toolbar = method(r"configurePaneDeveloperToolbar\(_ pane: BrowserPane, visible: Bool\)")
+assert pane_toolbar and "configureDeveloperToolbar(toolbar," in pane_toolbar, "configurePaneDeveloperToolbar not found"
+toolbar = method(r"configureDeveloperToolbar\(_ toolbar: DeveloperToolbarView, browser: PCBrowserView\?, visible: Bool\)")
+assert toolbar, "configureDeveloperToolbar not found"
+for path, text in (("live path", live_body), ("pane developer toolbar", pane_toolbar), ("developer toolbar", toolbar)):
+    assert not re.search(r"layoutSubtreeIfNeeded\(|needsLayout\s*=\s*true|\blayout\(\)|layoutChrome\(", text), \
+        f"{path} must not force layout"
 
 print("DeveloperToolbarSkip: geometry+needsLayout gate; sync only after flush; live path stays no-force")

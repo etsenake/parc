@@ -5,6 +5,7 @@ Off-screen windows that report key without being shown; no browser, input,
 preferences or Parc binary. Runs the main run loop briefly for the idle retry.
 """
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
@@ -27,7 +28,20 @@ assert controller.count("ContentFocusRequest.returnsToSaved(view, find: find,") 
 assert controller.count("if self.panes[id]?.showsBlank == true { window.makeFirstResponder(nil); return .focused }") == 1
 assert controller.count("else if panes[id]?.showsBlank == true { window.makeFirstResponder(nil) }") == 1
 assert controller.count("else if self.panes[id]?.showsBlank == true { self.window?.makeFirstResponder(nil) }") == 1
-assert controller.count("showsBlank = true") == 1 and controller.count("; showsBlank = false") == 4, "a pane surface no longer sets showsBlank"
+pane = controller[controller.index("private final class BrowserPane: NSView {"):]
+pane = pane[:pane.index("\n}\n")]
+def switches(text):
+    return len(re.findall(r"(?<!var )\bsurface = ", text))
+
+
+surfaces = {re.match(r"\s*(?:\w+\s+)*func (\w+)", member).group(1): member
+            for member in re.split(r"\n(?=    (?:(?:private|fileprivate|override)\s+)*func )", pane)[1:] if switches(member)}
+assert {"showBlank", "showBrowser", "showError"} <= surfaces.keys(), f"the pane's surfaces moved: {sorted(surfaces)}"
+assert sum(map(switches, surfaces.values())) == switches(pane), "BrowserPane switches surface outside its show functions"
+for name, member in surfaces.items():
+    assert member.count("showsBlank = ") == switches(member), f"BrowserPane.{name} switches surface without setting showsBlank"
+    assert ("showsBlank = true" in member) == (name == "showBlank"), f"BrowserPane.{name} sets showsBlank wrongly"
+assert controller.count("showsBlank = true") == 1, "showsBlank is set outside the blank surface"
 attempt = controller.index("if self.panes[id]?.showsBlank == true { window.makeFirstResponder(nil); return .focused }")
 assert attempt < controller.index("self.focusSelectedLocalContent()\n            return paneHoldsFocus() ? .focused : .waiting"), \
     "a blank tab no longer ends the request before the waiting fallback"
