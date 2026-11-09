@@ -44,11 +44,13 @@ assert render_body.index("priorTabFaviconArt") < render_body.index("page.beginBu
     "settled-art snapshot must precede the page's row teardown"
 assert "let arm = TabRowFaviconIdentity(pageURL: tab.url, resetDestination: tab.resetDestination)" in render_body, \
     "makeRow must build TabRowFaviconIdentity from page URL + reset destination"
-assert "let skipArm = tabFaviconArms[tab.id] == arm" in render_body, \
-    "makeRow skip must require last-arm identity match"
-assert "let priorArt = priorTabFaviconArt[tab.id] ?? reused?.settledFaviconArt()" in render_body \
-    and "tabFaviconArms[tab.id] == arm && priorArt != nil" in render_body, \
-    "makeRow skip must require prior settled art (the replaced or reused row's)"
+assert "let skipArm = (tabFaviconArms[tab.id] == arm || releasedArt != nil)" in render_body, \
+    "makeRow skip must require last-arm identity match, or art let go at the same identity"
+assert "let releasedArt = released?.arm == arm ? released?.art : nil" in render_body, \
+    "art kept from a row the list let go must match the row's identity"
+assert "let priorArt = releasedArt ?? build.priorFavicons[tab.id] ?? reused?.settledFaviconArt()" in render_body \
+    and "releasedArt != nil) && priorArt != nil" in render_body, \
+    "makeRow skip must require prior settled art (the replaced, reused or let-go row's)"
 assert "row.adoptSettledFaviconArt(art)" in render_body, \
     "skip path must adopt settled art onto the replacement row"
 assert "tabFaviconArms[tab.id] = arm" in render_body, \

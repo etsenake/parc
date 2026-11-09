@@ -344,6 +344,56 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(!outline.isAccessibilityFocused() && outline.rows.isEmpty, "an empty list is never focused")
         check((outline.accessibilityChildren() ?? []).count == 1, "an empty outline keeps only its column")
 
+        //
+        // makes a cell only for a row AppKit shows. Every row is still listed
+        // with its index, depth, disclosure and selection; a row without a view
+        // takes it when an accessibility client asks for its children, and
+        // moving the accessibility focus to one scrolls it in.
+        var built = 0
+        var released: [AnyHashable] = []
+        outline.releaseContent = { key, _ in released.append(key) }
+        var long: [SidebarOutlineEntry] = [header]
+        for index in 0..<60 {
+            let key = SidebarItemReference.tab(UUID())
+            long.append(index == 40
+                ? .folder(UUID(), depth: 0, in: nil, expanded: false, toggle: {}) { built += 1; return FolderItem("Folder", expanded: false) }
+                : .item(key, depth: index % 2, in: nil) {
+                    built += 1
+                    let item = TabItem("Row \(index)")
+                    item.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Close Tab") { true }])
+                    return item
+                })
+        }
+        scroll.contentView.scroll(to: .zero); scroll.reflectScrolledClipView(scroll.contentView)
+        outline.reload(long); layout()
+        let longRows = outline.rows
+        let attached = longRows.filter { $0.superview === outline }
+        check(longRows.count == 61 && (outline.accessibilityRows() ?? []).count == 61, "every row is listed, built or not")
+        check(built > 0 && built < 20 && attached.count == built + 1, "only the rows near the visible area build views and join the window (\(built))")
+        let far = longRows[52], farKey = far.key
+        check(far.superview == nil && far.cell.content == nil, "a row far from the visible area has no view")
+        check(far.accessibilityIndex() == 52 && far.accessibilityDisclosureLevel() == 1 && !far.isAccessibilityDisclosed()
+              && same(far.accessibilityParent(), outline) && far.accessibilityFrame() != .zero,
+              "a row without a view keeps its index, depth, disclosure, parent and frame")
+        let folderRow = longRows[41]
+        check(folderRow.superview == nil && !folderRow.isAccessibilityDisclosed()
+              && folderRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityDisclosed(_:))),
+              "a collapsed folder's row without a view is listed collapsed, its disclosure settable")
+        outline.select([farKey.base as! SidebarItemReference], single: nil, active: nil)
+        check(far.isAccessibilitySelected() && (outline.accessibilitySelectedRows() ?? []).count == 1, "a row without a view is selected like any other")
+        let farContent = (far.accessibilityChildren()?.first as? NSView)?.accessibilityChildren()?.first as? TabItem
+        check(farContent?.accessibilityTitle() == "Row 51" && farContent?.accessibilityCustomActions()?.first?.name == "Close Tab"
+              && far.superview === outline && farContent?.window === window,
+              "asked for its children, a row takes its view, with its label and actions, at its place in the window")
+        let farther = longRows[58]
+        check(farther.superview == nil && !scroll.contentView.bounds.intersects(farther.frame), "a later row has no view and is out of view")
+        farther.setAccessibilityFocused(true)
+        check(scroll.contentView.bounds.contains(farther.frame) && farther.superview === outline && farther.cell.content != nil,
+              "moving the accessibility focus to a row without a view scrolls the whole row in and builds it")
+        check(released.contains(longRows[1].key) && longRows[1].cell.content == nil && longRows[1].superview == nil,
+              "rows the scroll leaves far behind let go of their views")
+        outline.releaseContent = nil
+
         window.close()
         stockHeader()
         print("SidebarOutline: \(count) checks passed")

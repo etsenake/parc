@@ -5,10 +5,12 @@ shown and, like the browser window, lays its content out with constraints.
 Phased scroll events are built in memory and handed to the sidebar; no
 browser, engine, posted events or preferences. Prints each size's frame times,
 release, spring frames, a jump to the farthest Space, the rows each swipe
-builds, the longest idle turn and the footprint. Without arguments it is the
+builds, the longest idle turn, the frames of a scroll through the list, a
+drag auto-scrolling it, a folder springing open under the drag and folders
+expanding and collapsing, and the footprint. Without arguments it is the
 regression check at 5 and 50 folders, four Spaces, first visits and returns:
-no swipe builds a row, swipe frames stay within a frame, spring frames stay
-under 8 ms and releases under 50 ms.
+no swipe builds a row, swipe frames stay within a frame, spring frames, idle
+turns and list frames stay under 8 ms, releases and far jumps under 50 ms.
 """
 from pathlib import Path
 import ast

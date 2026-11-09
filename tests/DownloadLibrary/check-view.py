@@ -96,7 +96,6 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     for use in ("private let libraryEntry = SidebarLibraryEntry()",
                 "libraryEntry.place(button: Chrome.dockLeadingButton(height: bounds.height))",
                 "spacesHost.frame = Chrome.dockStrip(width: width, height: bounds.height)",
-                "trailing: [footerMore], space: self, beforeList: [spaceHeader])",
                 "for button in [pageActions, paymentAction] { button.focusRingCornerRadius = 5 }",
                 "libraryEntry.onOpen = { [weak self] page in self?.onLibrary?(page) }",
                 "libraryEntry.updateFlyoutDownloads(items, profiles: profiles, privateWindow: isPrivateBrowsing,",
@@ -114,6 +113,11 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
                 "            maxContrast: palette?.maxContrastColor ?? .labelColor, cutout: palette?.cutoutColor ?? .windowBackgroundColor)",
                 "libraryEntry.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)"):
         assert use in sidebar, f"SidebarView no longer hosts the Library entry as checked: {use}"
+    # The window's key-view chain keeps footer More last and the Space header
+    # before the list, whatever else the call passes.
+    chain = re.search(r"SidebarAccessibility\.keyViewChain\((?P<args>[^()]*\btrailing: \[footerMore\][^()]*)\)", sidebar)
+    assert chain and "beforeList: [spaceHeader]" in chain.group("args"), \
+        "SidebarView's key-view chain no longer ends with footer More after the Space header and list"
     for gone in ("ActionButton(\"Downloads\"", "arrow.down.circle", "width - 73", "onDownloads"):
         assert gone not in sidebar, f"SidebarView still carries the former Downloads button: {gone}"
     controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()

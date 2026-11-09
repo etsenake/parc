@@ -11,6 +11,42 @@ extension NSView {
     }
 }
 
+/// The source of an in-memory sidebar drag: it holds the drag's move session,
+/// as a row does.
+@MainActor final class SwipeDragSource: NSView, SidebarItemDragSource { var sidebarDrag: SidebarMoveSession? }
+
+/// A drag over the sidebar built in memory: the session's pasteboard
+/// identity and a location the check moves; nothing is posted.
+@MainActor final class SwipeDrag: NSObject, @preconcurrency NSDraggingInfo {
+    private let pasteboard = NSPasteboard(name: NSPasteboard.Name("org.parc.swipe-check.\(UUID().uuidString)"))
+    private let source: SwipeDragSource
+    private weak var window: NSWindow?
+    var location = NSPoint.zero
+    init(source: SwipeDragSource, session: SidebarMoveSession, window: NSWindow) {
+        self.source = source; self.window = window
+        pasteboard.clearContents()
+        pasteboard.setString(session.identifier.uuidString, forType: SidebarMoveSession.pasteboardType)
+    }
+    deinit { pasteboard.releaseGlobally() }
+    var draggingDestinationWindow: NSWindow? { window }
+    var draggingSourceOperationMask: NSDragOperation { .move }
+    var draggingLocation: NSPoint { location }
+    var draggedImageLocation: NSPoint { location }
+    var draggedImage: NSImage? { nil }
+    var draggingPasteboard: NSPasteboard { pasteboard }
+    var draggingSource: Any? { source }
+    var draggingSequenceNumber: Int { 1 }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes classArray: [AnyClass],
+                                searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:],
+                                using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func resetSpringLoading() {}
+}
+
 /// A Space swipe's main-thread work on the production SidebarView, with 5, 50
 /// and 200 folders and items in each of three Spaces. Phased scroll events
 /// built in memory go straight to the sidebar, which selects Spaces the way
@@ -58,7 +94,9 @@ extension NSView {
             observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue | CFRunLoopActivity.beforeWaiting.rawValue,
                                                           true, 0) { [unowned self] _, activity in
                 let now = CACurrentMediaTime()
-                if activity == .afterWaiting { self.start = now } else if let start = self.start { self.spans.append(now - start); self.start = nil }
+                if activity == .afterWaiting { self.start = now } else if let start = self.start {
+                    self.spans.append(now - start); self.start = nil
+                }
             }
             CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         }
@@ -228,7 +266,110 @@ extension NSView {
                 jumpBuilt += newRows()
                 idle(); _ = newRows()
             }
+            // The shown page's list: a brisk scroll to its end and back, a drag
+            // resting at its bottom edge that auto-scrolls it, a collapsed
+            // folder springing open under the drag (and closing as the drag
+            // leaves), and folders expanding with the rows below sliding or
+            // with their children landing out of view.
+            var scrollFrames: [Double] = [], dragFrames: [Double] = [], springFrames: [Double] = [], disclosureFrames: [Double] = []
+            func shownScroll() -> NSScrollView? {
+                var found: NSScrollView?
+                func walk(_ view: NSView) {
+                    if let strip = view as? SidebarPageStripView, !strip.passesThrough,
+                       let scroll = strip.subviews.compactMap({ $0 as? NSScrollView }).first { found = scroll }
+                    view.subviews.forEach(walk)
+                }
+                walk(sidebar)
+                return found
+            }
+            func folderRows(in scroll: NSScrollView) -> [SidebarFolderRow] {
+                var rows: [SidebarFolderRow] = []
+                func walk(_ view: NSView) { if let row = view as? SidebarFolderRow { rows.append(row) }; view.subviews.forEach(walk) }
+                scroll.documentView.map(walk)
+                let visible = scroll.contentView.bounds
+                return rows.filter { visible.intersects(scroll.contentView.convert($0.bounds, from: $0)) }
+                    .sorted { scroll.contentView.convert($0.bounds, from: $0).minY < scroll.contentView.convert($1.bounds, from: $1).minY }
+            }
+            /// The main thread's turns for `seconds`, as an animation's frames.
+            func spans(for seconds: TimeInterval) -> [Double] {
+                let busy = Busy(); busy.install()
+                let end = Date().addingTimeInterval(seconds)
+                while Date() < end { deliverEvents(); RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 240)) }
+                busy.remove()
+                return busy.spans.map { $0 * 1000 }
+            }
+            var toggled: Double?
+            sidebar.onToggleFolder = { id in
+                guard let index = state.folders.firstIndex(where: { $0.id == id }) else { return }
+                state.folders[index].isExpanded.toggle()
+                toggled = frame { sidebar.render(state: state, focusedTabID: nil, loading: [], canBack: false, canForward: false) }
+            }
+            func toggle(_ id: UUID) -> [Double] {
+                toggled = nil
+                sidebar.onToggleFolder?(id)
+                return [toggled ?? 0] + spans(for: 0.35)
+            }
+            if let scroll = shownScroll(), let height = scroll.documentView?.frame.height {
+                let clip = scroll.contentView
+                func scrollTo(_ y: CGFloat) {
+                    clip.scroll(to: NSPoint(x: 0, y: min(max(0, y), max(0, height - clip.bounds.height))))
+                    scroll.reflectScrolledClipView(clip)
+                }
+                scrollTo(0); idle()
+                var y: CGFloat = 0
+                while y < height - clip.bounds.height { y += 60; scrollFrames.append(frame { scrollTo(y) }) }
+                while y > 0 { y -= 60; scrollFrames.append(frame { scrollTo(y) }) }
+                idle()
+                let tab = state.tabs.first { $0.spaceID == state.activeSpaceID && $0.kind == .today }
+                if let tab, let session = sidebar.prepareSidebarMove?(.tab(tab.id)) {
+                    let source = SwipeDragSource(); source.sidebarDrag = session
+                    let drag = SwipeDrag(source: source, session: session, window: window)
+                    let edge = sidebar.convert(scroll.bounds, from: scroll)
+                    drag.location = sidebar.convert(NSPoint(x: edge.midX, y: edge.maxY - 10), to: nil)
+                    _ = sidebar.draggingEntered(drag)
+                    for _ in 0..<150 { dragFrames.append(frame { _ = sidebar.draggingUpdated(drag) }) }
+                    sidebar.draggingExited(drag)
+                    scrollTo(0); idle()
+                    if let first = folderRows(in: scroll).first {
+                        disclosureFrames += toggle(first.folderID)
+                        idle()
+                        if let collapsed = folderRows(in: scroll).first(where: { $0.folderID == first.folderID }) {
+                            let middle = sidebar.convert(NSPoint(x: collapsed.bounds.midX, y: collapsed.bounds.midY), from: collapsed)
+                            drag.location = sidebar.convert(middle, to: nil)
+                            toggled = nil
+                            let busy = Busy(); busy.install()
+                            _ = sidebar.draggingEntered(drag)
+                            let end = Date().addingTimeInterval(1.5)
+                            while toggled == nil, Date() < end { _ = sidebar.draggingUpdated(drag); RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 60)) }
+                            busy.remove()
+                            springFrames = [toggled ?? .infinity] + spans(for: 0.35)
+                            sidebar.draggingExited(drag)
+                            springFrames += [toggled ?? 0] + spans(for: 0.35)
+                        }
+                        idle()
+                        // The top folder expands: every row below it slides.
+                        if folderRows(in: scroll).first?.folderID == first.folderID,
+                           state.folders.first(where: { $0.id == first.folderID })?.isExpanded == false {
+                            disclosureFrames += toggle(first.folderID)
+                            idle()
+                        }
+                    }
+                    // The lowest folder in view collapses, then expands with its
+                    // child out of view.
+                    if let last = folderRows(in: scroll).last {
+                        disclosureFrames += toggle(last.folderID); idle()
+                        disclosureFrames += toggle(last.folderID); idle()
+                    }
+                }
+            }
             func fmt(_ value: Double) -> String { String(format: "%.1f", value) }
+            if ProcessInfo.processInfo.environment["SWIPE_VERBOSE"] != nil {
+                for (name, frames) in [("scroll", scrollFrames), ("drag auto-scroll", dragFrames), ("spring-open", springFrames),
+                                       ("expand/collapse", disclosureFrames)] where !frames.isEmpty {
+                    let sorted = frames.sorted()
+                    print("  \(name): \(frames.count) frames, median \(fmt(sorted[sorted.count / 2])) ms, 95th \(fmt(sorted[sorted.count * 95 / 100])) ms, max \(fmt(sorted.last!)) ms")
+                }
+            }
             let first = swipes.map(\.firstFrame).max() ?? 0
             let steady = swipes.flatMap(\.frames)
             let release = swipes.map(\.release).max() ?? 0
@@ -242,7 +383,9 @@ extension NSView {
             let line = "\(items) folders+\(items * 2) items/Space: render \(fmt(renderMs)) ms; swipe first frame \(fmt(first)) ms, "
                 + "other frames max \(fmt(steady.max() ?? 0)) ms, release \(fmt(release)) ms, settle frame max \(fmt(settle)) ms; "
                 + "far jump \(fmt(jump)) ms; rows built while tracking \(builtInFrames), during the swipe \(built), idle after \(builtIdle) "
-                + "(longest idle turn \(fmt(idleTurn)) ms); footprint \(fmt(memory)) MB"
+                + "(longest idle turn \(fmt(idleTurn)) ms); scroll frame max \(fmt(scrollFrames.max() ?? 0)) ms, "
+                + "drag auto-scroll frame max \(fmt(dragFrames.max() ?? 0)) ms, spring-open frame max \(fmt(springFrames.max() ?? 0)) ms, "
+                + "expand/collapse frame max \(fmt(disclosureFrames.max() ?? 0)) ms; footprint \(fmt(memory)) MB"
             print(line); report.append(line)
             if ProcessInfo.processInfo.environment["SWIPE_ASSERT"] != nil {
                 // Prepared while idle, no swipe builds a row, first visits included.
@@ -254,6 +397,18 @@ extension NSView {
                 precondition(release < 50, "\(items): a release took \(fmt(release)) ms")
                 precondition(swipes.allSatisfy(\.settled), "\(items): a page didn't spring back to rest")
                 precondition(jumpBuilt == 0, "\(items): a jump to a kept Space built \(jumpBuilt) rows")
+                // Rows have views only near the visible area: no idle turn, AppKit's
+                // layout passes included, and no frame of the list's own motion
+                // grows with the list.
+                precondition(idleTurn < 8, "\(items): an idle turn took \(fmt(idleTurn)) ms")
+                precondition(jump < 50, "\(items): a far jump took \(fmt(jump)) ms")
+                for (name, frames) in [("scroll", scrollFrames), ("drag auto-scroll", dragFrames)] {
+                    precondition(!frames.isEmpty && frames.max()! < 8, "\(items): a \(name) frame took \(fmt(frames.max() ?? .infinity)) ms")
+                }
+                // A folder's expand or collapse still rebuilds its page's list.
+                for (name, frames) in [("spring-open", springFrames), ("expand/collapse", disclosureFrames)] {
+                    precondition(!frames.isEmpty && frames.max()! < 16, "\(items): a \(name) frame took \(fmt(frames.max() ?? .infinity)) ms")
+                }
             }
             if let hold = ProcessInfo.processInfo.environment["SWIPE_HOLD"].flatMap(Double.init) {
                 print("hold pid \(getpid())"); fflush(stdout); Thread.sleep(forTimeInterval: hold)

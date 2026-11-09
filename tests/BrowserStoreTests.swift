@@ -1029,12 +1029,22 @@ struct BrowserStoreTests {
             let peer = store.createFolder(name: "Peer")
             let today = store.open("https://today.example.org")
             @MainActor func snapshot() -> SidebarHierarchySnapshot { SidebarHierarchySnapshot(state: store.state, spaceID: space, profileID: profile)! }
+            // The sidebar lists a Space's containers in one pass; each must
+            // match its own children(in:).
+            @MainActor func batchedMatches() -> Bool {
+                let state = store.state, batched = SidebarHierarchy.childrenByContainer(spaceID: space, state: state)
+                let locations = [root, SidebarContainerLocation(spaceID: space, folderID: nil, section: .today)]
+                    + state.folders.filter { $0.spaceID == space }.map { SidebarContainerLocation(spaceID: space, folderID: $0.id, section: .pinned) }
+                return locations.allSatisfy { (batched[$0.key] ?? []) == SidebarHierarchy.children(in: $0, state: state) }
+            }
             try expect(SidebarHierarchy.children(in: root, state: store.state) == [.tab(first), .tab(second), .folder(parent), .folder(peer)], "Legacy sessions preserve their prior tab-then-folder order")
+            try expect(batchedMatches(), "Every container's children match in one pass, legacy order")
             let original = store.state
             var publications = 0
             let observation = store.statePublisher.dropFirst().sink { _ in publications += 1 }
             try expect(try store.moveSidebarItem(.folder(peer), to: root, before: .tab(second), expected: snapshot()), "Folders reorder among tabs in a typed shared container")
             try expect(SidebarHierarchy.children(in: root, state: store.state) == [.tab(first), .folder(peer), .tab(second), .folder(parent)], "Mixed sibling insertion is exact")
+            try expect(batchedMatches(), "Every container's children match in one pass, stored mixed order")
             try expect(publications == 1, "The complete move publishes once")
             try expect(store.state.tabs == original.tabs && store.state.selectedTabIDs == original.selectedTabIDs && store.state.history == original.history, "Reordering preserves original pages, selection and history metadata")
             let stale = snapshot()
@@ -1071,6 +1081,7 @@ struct BrowserStoreTests {
             let groupState = store.state
             try expect(try store.moveSidebarItem(.folder(parent), to: .init(spaceID: space, folderID: peer, section: .pinned), before: nil, expected: snapshot()), "A folder subtree containing a split can nest")
             try expect(store.state.tabs == groupState.tabs && store.state.splitLayouts == groupState.splitLayouts, "Subtree nesting preserves every original child record")
+            try expect(batchedMatches(), "Every container's children match in one pass, with stored order, nesting and a split")
             let loaded = try BrowserStore(directory: directory)
             try expect(loaded.state.sidebarItemOrder == store.state.sidebarItemOrder && loaded.state.folders == store.state.folders, "Hierarchy ordering and nesting survive reopening the model")
             let stable = store.state, snap = snapshot()

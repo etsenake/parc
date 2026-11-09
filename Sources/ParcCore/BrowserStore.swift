@@ -1129,6 +1129,37 @@ enum SidebarHierarchy {
         let present = Set(legacy)
         return (stored + legacy).filter { present.contains($0) && seen.insert($0).inserted }
     }
+    /// `children(in:state:)` of every pinned, Today and folder (pinned)
+    /// container of a Space, keyed by location key, from one pass over the
+    /// tabs; a container without children has no entry.
+    static func childrenByContainer(spaceID: UUID, state: BrowserState) -> [String: [SidebarItemReference]] {
+        guard let profileID = state.spaces.first(where: { $0.id == spaceID })?.profileID else { return [:] }
+        let groups = SidebarSplitItems.groups(in: state, spaceID: spaceID)
+        var legacy: [String: [SidebarItemReference]] = [:]
+        for tab in state.tabs where tab.archivedAt == nil && tab.profileID == profileID && tab.spaceID == spaceID && tab.kind != .favorite {
+            let item: SidebarItemReference
+            if let group = groups.first(where: { $0.tabIDs.contains(tab.id) }) {
+                guard group.sidebarAnchorID == tab.id else { continue }
+                item = .split(group.id)
+            } else { item = .tab(tab.id) }
+            guard let location = tabLocation(of: tab, spaceID: spaceID, profileID: profileID) else { continue }
+            legacy[location.key, default: []].append(item)
+        }
+        for folder in state.folders where folder.spaceID == spaceID {
+            legacy[SidebarContainerLocation(spaceID: spaceID, folderID: folder.parentID, section: .pinned).key, default: []].append(.folder(folder.id))
+        }
+        var result: [String: [SidebarItemReference]] = [:]
+        for (key, items) in legacy {
+            let stored = (state.sidebarItemOrder[key] ?? []).map { item -> SidebarItemReference in
+                if case .tab(let id) = item, let group = groups.first(where: { $0.sidebarAnchorID == id }) { return .split(group.id) }
+                return item
+            }
+            var seen = Set<SidebarItemReference>()
+            let present = Set(items)
+            result[key] = (stored + items).filter { present.contains($0) && seen.insert($0).inserted }
+        }
+        return result
+    }
     ///
     /// tab enters at index 0. Otherwise the scan starts at the referrer's whole
     /// root item, or the top when the referrer is pinned, a Favorite or outside
