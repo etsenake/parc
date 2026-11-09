@@ -378,6 +378,10 @@ class Pipeline(Repository):
             runner.checkpoint(manifest=str(manifest), manifest_sha256=release.sha(manifest))
         runner.engine = engine
         runner.package = lambda: calls.append('publish')
+        def appcast():
+            calls.append('appcast'); feed = Path(runner.state['run']) / 'appcast.xml'; feed.write_text('<rss/>')
+            runner.checkpoint(appcast=str(feed), appcast_sha256=release.sha(feed))
+        runner.appcast = appcast
         runner.install = Mock(side_effect=AssertionError('Release must never install or launch'))
         def fail_tap():
             calls.append('tap'); raise release.Failure('interrupted tap publication')
@@ -388,7 +392,68 @@ class Pipeline(Repository):
             with patch.object(release_inputs, 'verify'):
                 self.assertEqual(runner.run(), 0)
         runner.install.assert_not_called()
-        self.assertEqual(calls, ['source','engine','publish','tap','tap'])
+        self.assertEqual(calls, ['source','engine','publish','appcast','tap','tap'])
+
+    def test_appcast_rerun_signs_with_the_same_date_and_a_changed_feed_is_refused(self):
+        runner = self.runner()
+        runner.checkpoint(source=str(self.root), version={'version': '1.1.0', 'build': 2},
+                          package=str(Path(runner.state['run']) / 'package/development'))
+        commands = []
+        def command(args, **kwargs):
+            commands.append(args)
+            Path(args[4]).write_text(' '.join(map(str, args[2:])))
+        runner.command = command
+        runner.appcast(); first = runner.state['appcast_sha256']
+        runner.appcast()
+        self.assertEqual(commands[0], commands[1])
+        self.assertEqual(runner.state['appcast_sha256'], first)
+        self.assertEqual(Path(commands[0][3]).name, 'Parc-1.1.0-arm64.zip')
+        self.assertEqual(commands[0][5:], ['--published', runner.state['appcast_published']])
+        Path(runner.state['appcast']).write_text('<rss>edited</rss>')
+        manifest = Path(runner.state['run']) / 'engine.json'; manifest.write_text('{}')
+        runner.checkpoint(completed=['source', 'engine', 'package', 'appcast'], commit=self.git('rev-parse', 'HEAD'),
+                          manifest=str(manifest), manifest_sha256=release.sha(manifest))
+        del runner.command
+        for handle in runner.locks: handle.close()
+        runner.locks.clear()
+        runner.preflight = Mock(); runner.tap = Mock(); runner.env['GH_TOKEN'] = 'fixture-token'
+        with patch.object(release_lease, 'acquire', return_value='lease'), patch.object(release_inputs, 'verify'):
+            self.assertEqual(runner.run(), 1)
+        runner.tap.assert_not_called()
+        self.assertIn('Completed appcast changed', runner.state['error'])
+
+    def test_finish_requires_the_public_latest_release_to_serve_this_appcast(self):
+        runner = self.runner()
+        runner.checkpoint(tag='v1.1.0', appcast_sha256='a' * 64)
+        feed = {'name': 'appcast.xml', 'digest': 'sha256:' + 'a' * 64}
+        for tag, assets, served in (('v1.1.0', [feed], True), ('v1.0.9', [feed], False),
+                                    ('v1.1.0', [dict(feed, digest='sha256:' + 'b' * 64)], False), ('v1.1.0', [], False)):
+            runner.github = Mock(return_value=json.dumps({'tag_name': tag, 'assets': assets}))
+            with self.subTest(tag=tag, assets=assets):
+                if served:
+                    runner.verify_feed()
+                else:
+                    with self.assertRaisesRegex(release.Failure, "does not serve this release's appcast"):
+                        runner.verify_feed()
+                runner.github.assert_called_once_with('api', 'repos/etsenake/parc-releases/releases/latest')
+
+    def test_tap_stage_hands_the_appcast_to_the_publisher(self):
+        runner = self.runner()
+        runner.checkpoint(source=str(self.root), tag='v1.1.0', version={'version': '1.1.0', 'build': 2},
+                          appcast='/run/appcast.xml')
+        (Path(self.tmp.name) / 'homebrew-tap').mkdir()
+        commands = []
+        def command(args, **kwargs):
+            commands.append([str(arg) for arg in args])
+            if 'ls-remote' in commands[-1]: return 'f' * 40 + '\trefs/heads/main'
+            if 'rev-parse' in commands[-1]: return 'f' * 40
+            return self.tmp.name if commands[-1][:2] == ['brew', '--repo'] else ''
+        runner.command = command
+        with patch.object(Path, 'home', return_value=Path(self.tmp.name)):
+            runner.tap()
+        publish = next(args for args in commands if args[1].endswith('publish-homebrew.py'))
+        self.assertEqual(publish[2:], ['v1.1.0', '--tap', str(Path(self.tmp.name) / 'homebrew-tap'),
+                                       '--artifact-only', '--resume', '--appcast', '/run/appcast.xml'])
 
 
 class Install(unittest.TestCase):

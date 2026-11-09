@@ -97,7 +97,8 @@ as required below, then update the existing public tap clone:
 
 ```sh
 python3 scripts/publish-homebrew.py v1.0.1 \
-  --acceptance /absolute/acceptance.json --tap /absolute/homebrew-tap
+  --acceptance /absolute/acceptance.json --tap /absolute/homebrew-tap \
+  --appcast /absolute/appcast.xml
 ```
 
 First use the source-owned `scripts/record-release-acceptance.py` on a fresh

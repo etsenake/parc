@@ -53,6 +53,7 @@ class HomebrewReleaseTests(unittest.TestCase):
         self.assertNotIn('using:', text)
         self.assertNotIn('require_relative', text)
         self.assertIn('app "Parc.app"', text)
+        self.assertIn('  auto_updates true\n  depends_on arch: :arm64\n', text)
         self.assertIn('Parc-#{version}-arm64.dmg', text)
         self.assertNotIn('zap ', text)
 
@@ -220,6 +221,7 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
         from unittest.mock import Mock
         with tempfile.TemporaryDirectory() as temporary:
             tap = Path(temporary); (tap / 'Casks').mkdir()
+            feed = tap / 'appcast.xml'; feed.write_text('<rss/>')
             app_version = {'version':'1.1.0','build':2}
             release = {'tag_name':'v1.1.0','target_commitish':'a'*40,'name':'Parc 1.1.0 candidate'}
             def run(*args, **kwargs):
@@ -231,15 +233,34 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
                 if args[0]=='api': return json.dumps(release)
                 return ''
             for failure in (False, True):
-                with self.subTest(invalid_dmg=failure), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume']), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup, patch.object(publisher,'publish_public') as public, patch.object(Path,'rename'):
+                with self.subTest(invalid_dmg=failure), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume','--appcast',str(feed)]), patch.object(publisher,'verify_appcast'), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup, patch.object(publisher,'publish_public') as public, patch.object(Path,'rename'):
                     if failure:
                         with self.assertRaises(SystemExit): publisher.main()
                         promote.assert_not_called(); public.assert_not_called()
                     else:
                         publisher.main(); promote.assert_called_once_with(release)
                         self.assertEqual([path.name for path in public.call_args[0][1]],
-                                         ['Parc-1.1.0-arm64.dmg', 'Parc-1.1.0-arm64.zip'])
+                                         ['Parc-1.1.0-arm64.dmg', 'Parc-1.1.0-arm64.zip', 'appcast.xml'])
                     startup.assert_not_called()
+
+
+class AppcastTests(unittest.TestCase):
+    def test_appcast_must_offer_this_releases_public_zip(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / 'Parc-1.1.0-arm64.zip'; archive.write_bytes(b'zip bytes')
+            feed = Path(temporary) / 'appcast.xml'
+            url = 'https://github.com/etsenake/parc-releases/releases/download/v1.1.0/Parc-1.1.0-arm64.zip'
+            def offer(url, length):
+                feed.write_text(f'<rss><channel><item><enclosure url="{url}" length="{length}"/></item></channel></rss>')
+            offer(url, 9)
+            publisher.verify_appcast(feed, 'v1.1.0', archive)
+            for wrong in ((url.replace('1.1.0', '1.0.9'), 9), (url, 8)):
+                offer(*wrong)
+                with self.subTest(enclosure=wrong), self.assertRaises(ValueError):
+                    publisher.verify_appcast(feed, 'v1.1.0', archive)
+            feed.write_text('<rss><channel/></rss>')
+            with self.assertRaises(ValueError):
+                publisher.verify_appcast(feed, 'v1.1.0', archive)
 
 
 class PublicMirrorTests(unittest.TestCase):

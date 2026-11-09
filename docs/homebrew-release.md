@@ -170,9 +170,11 @@ The 1.0.0 receipt uses Josh's November 5 confirmation of normal startup.
 ## Publish the tap from verified notarized artifacts
 
 The master uses `python3 scripts/publish-homebrew.py <tag> --tap ~/homebrew-tap
---artifact-only --resume`. This checks published ZIP/DMG hashes, actual mounted
-app signatures/Apple ticket, tag/source/version and report before stable/latest
-promotion and cask publication. It never runs the app. This path requires no
+--artifact-only --resume --appcast <run>/appcast.xml`. This checks published
+ZIP/DMG hashes, actual mounted app signatures/Apple ticket, tag/source/version
+and report before stable/latest promotion and cask publication. `--appcast` is
+the run's signed Sparkle feed from the appcast stage (`scripts/appcast.py`); it
+must offer this release's public ZIP and is mirrored with the ZIP and DMG. It never runs the app. This path requires no
 startup receipt and makes no startup claim.
 
 The historical acceptance-backed path below remains available for separately
@@ -189,7 +191,8 @@ verification. Both routes require the exact commit, raw report hash and version.
 
 ```sh
 python3 scripts/publish-homebrew.py "$PARC_TAG" \
-  --acceptance "$PARC_RECEIPTS/acceptance.json" --tap "$HOME/homebrew-tap"
+  --acceptance "$PARC_RECEIPTS/acceptance.json" --tap "$HOME/homebrew-tap" \
+  --appcast "$PARC_RUN/appcast.xml"
 ```
 
 Review the tap diff and parse its Ruby, selectively commit and immediately push

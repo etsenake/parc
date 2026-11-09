@@ -15,6 +15,7 @@ import plistlib
 import re
 import subprocess
 import tempfile
+from xml.etree import ElementTree
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -220,6 +221,14 @@ def publish_public(release, files):
                 raise ValueError(f"{PUBLIC_REPOSITORY} {tag} {path.name} was not verified after upload")
 
 
+def verify_appcast(appcast, tag, archive):
+    """The feed must offer exactly this release's public ZIP."""
+    enclosure = ElementTree.parse(appcast).find("channel/item/enclosure")
+    url = f"https://github.com/{PUBLIC_REPOSITORY}/releases/download/{tag}/{archive.name}"
+    if enclosure is None or enclosure.get("url") != url or enclosure.get("length") != str(archive.stat().st_size):
+        raise ValueError("The appcast does not offer this release's ZIP")
+
+
 def cask(version, digest):
     return f'''# typed: false
 # frozen_string_literal: true
@@ -238,6 +247,7 @@ cask "parc" do
     strategy :github_latest
   end
 
+  auto_updates true
   depends_on arch: :arm64
   depends_on macos: :ventura
 
@@ -257,6 +267,7 @@ def main():
                         help="passed receipt from scripts/record-release-acceptance.py")
     parser.add_argument("--tap", required=True, type=Path, help="existing etsenake/homebrew-tap clone")
     parser.add_argument("--resume", action="store_true", help="reconcile this release's exact generated cask")
+    parser.add_argument("--appcast", required=True, type=Path, help="this release's signed Sparkle appcast.xml")
     args = parser.parse_args()
     tap = args.tap.resolve()
     try:
@@ -292,7 +303,10 @@ def main():
             public_dmg = Path(temporary) / f"Parc-{version}-arm64.dmg"
             public_zip = Path(temporary) / f"Parc-{version}-arm64.zip"
             dmg.rename(public_dmg); archive.rename(public_zip)
-            publish_public(release, [public_dmg, public_zip])
+            appcast = Path(temporary) / "appcast.xml"
+            appcast.write_bytes(args.appcast.read_bytes())
+            verify_appcast(appcast, args.tag, public_zip)
+            publish_public(release, [public_dmg, public_zip, appcast])
         source_version = json.loads(run("git", "show", commit + ":app-version.json", cwd=ROOT))
         if source_version != app_version:
             raise ValueError("The release source commit declares a different version")
@@ -311,7 +325,8 @@ def main():
         else:
             promote_verified_artifacts(release)
         print(f"Promoted {args.tag} and updated {target} from {commit}; verify, commit and push the tap.")
-    except (OSError, ValueError, KeyError, dmg_tool.Refusal, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
+    except (OSError, ValueError, KeyError, dmg_tool.Refusal, subprocess.CalledProcessError, zipfile.BadZipFile,
+            ElementTree.ParseError) as error:
         parser.exit(1, "error: " + str(error) + "\n")
 
 

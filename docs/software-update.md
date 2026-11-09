@@ -271,6 +271,20 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   and Extensions. `scripts/build.py` renders the page from
   `release-notes.json` (`Sources/WhatsNew/README.md`); a bundle without it
   disables the item. The command bar lists it
+- **Feed.** Every release publishes the feed the embedded Sparkle reads,
+  `SUFeedURL` = `parc-releases/releases/latest/download/appcast.xml`
+  (`scripts/sparkle.py`). The release's appcast stage (`scripts/appcast.py`)
+  signs the notarized ZIP with `sign_update --account parc` once that key's
+  public half matches the app's `SUPublicEDKey`, verifies it with
+  `sign_update --verify`, and writes one item. The item carries
+  `sparkle:version` = `CFBundleVersion`, `shortVersionString`, the app's
+  `LSMinimumSystemVersion`, the ZIP enclosure, and this version's notes as
+  HTML grouped like the What's New page. The homebrew stage uploads it with the
+  ZIP and DMG to the same public release and makes that release latest. The cask
+  says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
+  alone; installs from before Sparkle need one `brew upgrade parc` (or
+  `--greedy`) to reach the first Sparkle build. Pipeline and recovery:
+  [master-release](master-release.md).
 
 - **Check for Updates…** sits in the Parc menu after Import from Another
   follows the phase: "Update Available…" while an update is available or

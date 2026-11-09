@@ -65,12 +65,22 @@ published tag still refuses.
    `package-app.sh`. Verify actual release/tag, pristine signatures, stable Team
    and requirement, signed-image hashes, source/overlay identity and Apple
    acceptance. Existing version tags and uploaded bytes are immutable.
-5. Download/verify the published ZIP and DMG, including the mounted app's actual
-   signatures and ticket. Promote stable/latest and update/push the cask's
-   version, URL and checksum in `~/homebrew-tap`. Refresh the local tap metadata,
-   check Ruby syntax and audit the cask. **Updating the tap does not install or
-   upgrade the app.** Runtime acceptance is neither required nor claimed by this
-   artifact-only release path. Separate manual startup tools remain optional.
+5. Sign the notarized ZIP with Sparkle's `sign_update` (Keychain account `parc`,
+   after checking that key's public half is the app's `SUPublicEDKey`), verify
+   the signature with `sign_update --verify`, and write the run's one-item
+   `appcast.xml` (`scripts/appcast.py`): build, version, minimum macOS, the
+   public ZIP URL, its length and signature, and this version's release notes as
+   HTML from the frozen `release-notes.json`.
+6. Download/verify the published ZIP and DMG, including the mounted app's actual
+   signatures and ticket. Mirror the DMG, ZIP and `appcast.xml` together to the
+   public `etsenake/parc-releases` release and make it latest, so Sparkle's feed
+   `releases/latest/download/appcast.xml` offers it. Promote stable/latest and
+   update/push the cask's version, URL and checksum in `~/homebrew-tap`; the cask
+   says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
+   alone. Refresh the local tap metadata, check Ruby syntax and audit the cask.
+   **Updating the tap does not install or upgrade the app.** Runtime acceptance
+   is neither required nor claimed by this artifact-only release path. Separate
+   manual startup tools remain optional.
 
 On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
 first to avoid a full pinned source sync/build. An unowned existing workspace is
@@ -103,6 +113,12 @@ Returned network failures retry unchanged inputs. Pending Apple submissions
 resume their stored IDs rather than uploading again. An ambiguous upload with no
 confirmed ID stops for reconciliation instead of duplicating it. Interrupted
 GitHub uploads compare existing SHA-256 digests and upload only missing assets.
+The appcast's pubDate is saved in the run state and Ed25519 signatures are
+deterministic, so a rerun of the appcast stage writes identical bytes and the
+public upload skips the identical asset. A completed appcast that changed on disk
+stops the run instead of being signed again. Before the release is marked
+complete, `finish` checks that the public latest release serves this appcast's
+digest.
 
 For a cancelled shipping operation, the script requires the original owned
 process group to be gone, acquires the engine operation lock, verifies exact
@@ -176,3 +192,12 @@ an encrypted private-key backup must not be claimed until actually provisioned.
 The script checks credentials before starting compilation. One-time provisioning
 or a locked Keychain can require the user's normal OS approval; those cannot
 be made unattended by a release script.
+
+The Sparkle EdDSA private key lives in the release Mac's login Keychain, under
+Sparkle's service with account `parc`; `signing-backup.py` does not back it up.
+Another Mac needs it moved with `generate_keys --account parc -x <file>` here
+and `-f <file>` there, then the file deleted. Never run plain `generate_keys
+--account parc` on a Mac without the key: it would create a new key that no
+installed Parc trusts, and the appcast stage refuses to sign with it. The first
+signing asks for Keychain access to `sign_update`; choose Always Allow so later
+releases run unattended.

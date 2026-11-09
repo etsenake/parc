@@ -26,6 +26,7 @@ import app_version
 ROOT = Path(__file__).resolve().parents[1]
 TEAM = "94HKA7L2DR"
 REPOSITORY = "etsenake/parc"
+PUBLIC_REPOSITORY = "etsenake/parc-releases"
 TERMINAL = {"complete", "abandoned", "nothing-to-release"}
 
 
@@ -533,12 +534,23 @@ class Release:
         self.command(["bash", source / "scripts/package-app.sh", "--stable", self.state["manifest"]], name="package-publish")
         self.checkpoint(package=str(package_run / "development"))
 
+    def appcast(self):
+        source = Path(self.state["source"]); run = Path(self.state["run"]); version = self.state["version"]["version"]
+        # A fixed pubDate and Ed25519's deterministic signature make a rerun write identical bytes.
+        if not self.state.get("appcast_published"):
+            self.checkpoint(appcast_published=now())
+        output = run / "appcast.xml"
+        self.command([sys.executable, source / "scripts/appcast.py", Path(self.state["package"]) / "Parc.app",
+                      run / "package" / ("Parc-" + version + "-arm64.zip"), output,
+                      "--published", self.state["appcast_published"]], name="appcast")
+        self.checkpoint(appcast=str(output), appcast_sha256=sha(output))
+
     def tap(self):
         source = Path(self.state["source"]); tap = Path.home() / "homebrew-tap"
         if not tap.exists():
             self.command(["git", "clone", "https://github.com/etsenake/homebrew-tap.git", tap], name="tap-clone", retries=2)
         self.command([sys.executable, self.root / "scripts/publish-homebrew.py", self.state["tag"], "--tap", tap,
-                      "--artifact-only", "--resume"], name="tap-update")
+                      "--artifact-only", "--resume", "--appcast", self.state["appcast"]], name="tap-update")
         self.git("diff", "--check", cwd=tap)
         self.command(["brew", "ruby", "--", "-c", tap / "Casks/parc.rb"], name="tap-syntax")
         if self.git("status", "--porcelain", cwd=tap):
@@ -562,6 +574,13 @@ class Release:
         self.command(["brew", "audit", "--cask", "etsenake/tap/parc"], name="tap-audit")
         self.checkpoint(tap=str(tap), tap_commit=self.git("rev-parse", "HEAD", cwd=tap))
 
+    def verify_feed(self):
+        """Parc's feed URL, releases/latest/download/appcast.xml, must serve this release's appcast."""
+        public = json.loads(self.github('api', 'repos/' + PUBLIC_REPOSITORY + '/releases/latest'))
+        feed = {item['name']: item.get('digest') for item in public['assets']}.get('appcast.xml')
+        if public['tag_name'] != self.state['tag'] or feed != 'sha256:' + self.state['appcast_sha256']:
+            raise Failure("The public latest release does not serve this release's appcast")
+
     def finish(self):
         self.checkpoint(stage='verify-release')
         package = Path(self.state['package'])
@@ -574,6 +593,7 @@ class Release:
         published = json.loads(self.github('api', 'repos/' + REPOSITORY + '/releases/tags/' + self.state['tag']))
         if published['draft'] or published['prerelease'] or published['target_commitish'] != self.state['commit']:
             raise Failure('Final GitHub release/source promotion was not verified')
+        self.verify_feed()
         delivery = {'schema_version': 1, 'status': 'published', 'source_commit': self.state['commit'],
                     'engine_overlay': self.state['overlay'], 'overlay_identity': report['overlay']['identity'],
                     'engine_manifest': self.state['manifest'], 'engine_manifest_sha256': self.state['manifest_sha256'],
@@ -581,6 +601,7 @@ class Release:
                     'release_tag': self.state['tag'], 'release_url': published['html_url'],
                     'app_version': self.state['version'], 'signing_team': report['signing_team'],
                     'notarization': report['notarization'], 'tap_commit': self.state['tap_commit'],
+                    'appcast': self.state['appcast'], 'appcast_sha256': self.state['appcast_sha256'],
                     'installed_or_launched_by_release_script': False, 'runtime_acceptance_claimed': False,
                     'homebrew_upgrade': 'manual', 'completed_utc': now(), 'run': self.state['run']}
         save(Path(self.state['run']) / 'delivery.json', delivery)
@@ -617,12 +638,14 @@ class Release:
             if self.refresh_source:
                 self.refresh_inputs()
             for name, action in [("source", self.prepare), ("engine", self.engine), ("package", self.package),
-                                 ("homebrew", self.tap)]:
+                                 ("appcast", self.appcast), ("homebrew", self.tap)]:
                 if name in self.state["completed"]:
                     if name == 'source':
                         release_inputs.verify(self.root, self.state['source'], self.state['commit'])
                     if name == 'engine' and sha(self.state['manifest']) != self.state['manifest_sha256']:
                         raise Failure('Completed engine seal changed; preserved without retargeting')
+                    if name == 'appcast' and sha(self.state['appcast']) != self.state['appcast_sha256']:
+                        raise Failure('Completed appcast changed; preserved without signing again')
                     self.emit("Reusing completed " + name + " stage")
                     continue
                 self.checkpoint(stage=name)
