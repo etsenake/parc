@@ -70,46 +70,117 @@ struct OnboardingTests {
             "Included setup inserts ad blockers only between theme and default browser")
         let ublock = OnboardingDraft.ImportedAdBlocker(
             identifier: "cjpalhdlnbpafiamejdnhcphjbkeiagm", displayName: "uBlock Origin")
+        let setupProfile = store.activeSpace.profileID, sideProfile = UUID()
+        let adGuard = OnboardingDraft.ImportedAdBlocker(identifier: "bgnkhhnnamicmpeenaelnjfhikgbkllg",
+            displayName: "AdGuard AdBlocker", profileIDs: [setupProfile, sideProfile])
         var blocked = draft
         blocked.stage = .theme
+        precondition(blocked.nextStage() == .adBlockers && blocked.displayedSetupCount() == 5,
+                     "With no ad blocker imported, allSteps includes the YES/NO ad-blocker step")
         blocked.importedAdBlockers = [ublock]
+        precondition(blocked.nextStage() == .defaultBrowser && !blocked.visibleSetupOrder().contains(.adBlockers)
+            && blocked.displayedSetupCount() == 4,
+                     "uBlock Origin alone is already the choice, so the step is omitted; Ready is not in the total")
+        blocked.importedAdBlockers = [ublock, adGuard]
         blocked.adBlockerChoice = .keep(ublock.identifier)
-        precondition(draft.displayedSetupCount() == 4 && !draft.visibleSetupOrder().filter { $0 != .ready }.isEmpty,
-                     "Numbered setup is 1–4 of 4; Ready is not in the total")
         precondition(blocked.nextStage() == .adBlockers && blocked.visibleSetupOrder().contains(.adBlockers),
-                     "A completed known-ad-blocker import continues into the setup step")
-        precondition(blocked.displayedSetupCount() == 5,
-                     "Ad blockers add one numbered step without counting Ready")
+                     "Any other imported blocker continues into the setup step")
         blocked.stage = .adBlockers
         precondition(blocked.nextStage() == .defaultBrowser && blocked.previousStage() == .theme,
                      "Ad-blocker setup continues to the default-browser step and returns to theme")
         blocked.stage = .defaultBrowser
         precondition(blocked.previousStage() == .adBlockers,
                      "Back from default browser returns to ad blockers while they remain included")
-        blocked.importedAdBlockers = []
-        precondition(blocked.previousStage() == .theme && !blocked.visibleSetupOrder().contains(.adBlockers),
-                     "Absent imported blockers omit the step without changing the remaining order")
         blocked.importedAdBlockers = [ublock]
+        precondition(blocked.previousStage() == .theme && !blocked.visibleSetupOrder().contains(.adBlockers),
+                     "A blocker set of only uBlock Origin omits the step without changing the remaining order")
         blocked.stage = .adBlockers
         precondition(blocked.visibleSetupOrder().contains(.adBlockers) && blocked.nextStage() == .defaultBrowser,
                      "The current ad-blocker step is retained until Next or Back leaves it")
+        blocked.importedAdBlockers = [ublock, adGuard]
         try blocked.save(directory: root)
         let resumedBlockers = try OnboardingDraft.load(directory: root, space: store.activeSpace)
-        precondition(resumedBlockers.importedAdBlockers == [ublock]
+        precondition(resumedBlockers.importedAdBlockers == [ublock, adGuard]
             && resumedBlockers.adBlockerChoice == .keep(ublock.identifier),
-                     "Imported blockers and the pending keep choice resume")
+                     "Imported blockers, their Profiles and the pending keep choice resume")
         blocked.importedAdBlockers.append(.init(identifier: "not-a-known-blocker", displayName: "Unknown"))
         blocked.adBlockerChoice = .keep("not-a-known-blocker")
         try blocked.save(directory: root)
         let filteredBlockers = try OnboardingDraft.load(directory: root, space: store.activeSpace)
-        precondition(filteredBlockers.importedAdBlockers == [ublock] && filteredBlockers.adBlockerChoice == nil,
+        precondition(filteredBlockers.importedAdBlockers == [ublock, adGuard] && filteredBlockers.adBlockerChoice == nil,
                      "Unknown extension IDs cannot invent the ad-blocker step or keep choice")
         blocked.importedAdBlockers = [ublock]
         blocked.adBlockerChoice = OnboardingDraft.AdBlockerChoice.none
         try blocked.save(directory: root)
         let noneChoice = try OnboardingDraft.load(directory: root, space: store.activeSpace)
         precondition(noneChoice.adBlockerChoice == OnboardingDraft.AdBlockerChoice.none,
-                     "Don't-block-ads survives restart without disabling extensions")
+                     "Don't-block-ads survives restart until setup finishes")
+        blocked.adBlockerChoice = .uBlock
+        try blocked.save(directory: root)
+        let misplacedYes = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(misplacedYes.adBlockerChoice == nil,
+                     "YES belongs only to the layout shown when nothing was imported")
+        blocked.importedAdBlockers = []
+        try blocked.save(directory: root)
+        let yesChoice = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(yesChoice.adBlockerChoice == .uBlock, "YES survives restart")
+        var olderBlocker = try JSONSerialization.jsonObject(with: Data(contentsOf: draftFile)) as! [String: Any]
+        olderBlocker["importedAdBlockers"] = [["identifier": ublock.identifier, "displayName": ublock.displayName]]
+        olderBlocker["adBlockerChoice"] = ["keep": ["_0": ublock.identifier]]
+        try JSONSerialization.data(withJSONObject: olderBlocker).write(to: draftFile)
+        let olderBlockers = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(olderBlockers.importedAdBlockers == [ublock] && olderBlockers.importedAdBlockers[0].profileIDs == nil
+            && olderBlockers.adBlockerChoice == .keep(ublock.identifier),
+                     "Drafts saved before Profiles were recorded still decode")
+        typealias Choice = OnboardingDraft.AdBlockerChoice
+        precondition(Choice.settled(nil, for: []) == .uBlock && Choice.settled(Choice.none, for: []) == Choice.none
+            && Choice.settled(.keep(ublock.identifier), for: []) == .uBlock
+            && Choice.settled(nil, for: [ublock, adGuard]) == .keep(ublock.identifier)
+            && Choice.settled(.uBlock, for: [ublock, adGuard]) == .keep(ublock.identifier)
+            && Choice.settled(.keep(adGuard.identifier), for: [ublock, adGuard]) == .keep(adGuard.identifier)
+            && Choice.settled(Choice.none, for: [ublock, adGuard]) == Choice.none,
+                     "The step opens on YES or the first imported blocker and keeps a choice that still has its row")
+        var placed = ublock
+        placed.profileIDs = [setupProfile]
+        precondition(Choice.none.plan(for: [placed, adGuard], setupProfileID: setupProfile)
+            == .init(removals: [setupProfile: [ublock.identifier, adGuard.identifier], sideProfile: [adGuard.identifier]],
+                     installProfileID: nil),
+                     "Don't block ads removes every imported blocker from each Profile it went into")
+        precondition(Choice.keep(ublock.identifier).plan(for: [placed, adGuard], setupProfileID: setupProfile)
+            == .init(removals: [setupProfile: [adGuard.identifier], sideProfile: [adGuard.identifier]], installProfileID: nil)
+            && Choice.keep(adGuard.identifier).plan(for: [placed, adGuard], setupProfileID: setupProfile)
+            == .init(removals: [setupProfile: [ublock.identifier]], installProfileID: nil),
+                     "Keeping one blocker removes the others in each Profile")
+        precondition(Choice.uBlock.plan(for: [], setupProfileID: setupProfile)
+            == .init(removals: [:], installProfileID: setupProfile)
+            && Choice.none.plan(for: [], setupProfileID: setupProfile) == .init(removals: [:], installProfileID: nil),
+                     "YES installs uBlock into the setup Space's Profile; NO changes nothing")
+        precondition(Choice.keepAll.plan(for: [placed, adGuard], setupProfileID: setupProfile)
+            == .init(removals: [:], installProfileID: nil)
+            && Choice.keepAll.plan(for: [], setupProfileID: setupProfile) == .init(removals: [:], installProfileID: nil),
+                     "Use all imported ad blockers leaves every one installed, though the step preselected the first")
+        blocked.importedAdBlockers = [ublock, adGuard]
+        blocked.adBlockerChoice = .keepAll
+        try blocked.save(directory: root)
+        let keptAll = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(keptAll.adBlockerChoice == .keepAll
+            && Choice.settled(.keepAll, for: [ublock, adGuard]) == .keep(ublock.identifier),
+                     "Keep-all survives restart; returning to the step selects its first row again")
+        blocked.stage = .defaultBrowser
+        blocked.importedAdBlockers = [ublock]
+        blocked.adBlockerChoice = .keep(adGuard.identifier)
+        try blocked.save(directory: root)
+        let choiceAfterStep = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(choiceAfterStep.adBlockerChoice == .keep(adGuard.identifier),
+                     "A choice made at the step stands after restart even if its kept blocker later failed")
+        blocked.stage = .adBlockers
+        precondition(Choice.keep("pkehgijcmpdhfbdbbnkijodmdjhbjlgp").plan(for: [placed, adGuard], setupProfileID: setupProfile)
+            == .init(removals: [setupProfile: [ublock.identifier, adGuard.identifier], sideProfile: [adGuard.identifier]],
+                     installProfileID: nil),
+                     "Keeping a blocker whose download later failed still removes the others")
+        precondition(Choice.none.plan(for: [ublock], setupProfileID: setupProfile)
+            == .init(removals: [setupProfile: [ublock.identifier]], installProfileID: nil),
+                     "An older draft's blocker without Profiles is removed from the setup Space's Profile")
         blocked.importedAdBlockers = []
         blocked.adBlockerChoice = nil
         blocked.stage = .defaultBrowser

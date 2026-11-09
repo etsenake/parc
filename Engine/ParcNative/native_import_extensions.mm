@@ -5,6 +5,8 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "base/no_destructor.h"
+#include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
@@ -17,8 +19,14 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #import "native_appkit_host.h"
 #import "native_import_internal.h"
+#include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/install_prompt_data.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/browser/uninstall_reason.h"
+#include "extensions/common/manifest.h"
 
 @interface PCNativeImportExtensionRequest ()
 @property(nonatomic, readonly) PCNativeImportProfile* source;
@@ -67,6 +75,11 @@ namespace parc::importer {
 namespace {
 constexpr uint32_t kExtensionCategory = PCNativeImportCategoryExtensions;
 class Batch;
+// Imports that may still be installing extensions; main thread only.
+std::vector<std::weak_ptr<Batch>>& LiveBatches() {
+  static base::NoDestructor<std::vector<std::weak_ptr<Batch>>> batches;
+  return *batches;
+}
 //
 // metadata, policy, blocklist and CRX checks still run.
 class Installer final : public extensions::WebstoreInstallWithPrompt {
@@ -146,6 +159,9 @@ class Batch final : public ProfileObserver,
   void Start() {
     if (finished_)
       return;
+    auto& live = LiveBatches();
+    std::erase_if(live, [](const std::weak_ptr<Batch>& batch) { return batch.expired(); });
+    live.push_back(weak_from_this());
     started_ = base::TimeTicks::Now();
     ticker_.Start(FROM_HERE, base::Seconds(1),
                   base::BindRepeating(&Batch::Tick, base::Unretained(this)));
@@ -154,6 +170,19 @@ class Batch final : public ProfileObserver,
     MaybeFinish();
   }
   bool Stopped() const { return cancelled_ || finished_; }
+  // Whether this import may still install `id` into the Profile at `path`.
+  bool MayInstall(NSString* path, const std::string& id) const {
+    if (finished_)
+      return false;
+    for (const auto& group : groups_)
+      if (!group.loaded && [group.path isEqualToString:path] &&
+          std::find(group.ids.begin(), group.ids.end(), id) != group.ids.end())
+        return true;
+    return std::any_of(items_.begin(), items_.end(), [&](const Item& item) {
+      return item.id == id && Pending(item) &&
+             [groups_[item.group].path isEqualToString:path];
+    });
+  }
   // The Web Store answered; past this point Chromium owns the install.
   bool Proceed(size_t index) {
     if (Stopped() || items_[index].state != Item::kPreparing)
@@ -536,6 +565,13 @@ void Installer::OnManifestParsed() {
   installing_ = true;
   ProceedWithInstallPrompt();
 }
+bool ImportMayInstall(NSString* path, const std::string& id) {
+  return std::any_of(LiveBatches().begin(), LiveBatches().end(),
+                     [&](const std::weak_ptr<Batch>& weak) {
+                       auto batch = weak.lock();
+                       return batch && batch->MayInstall(path, id);
+                     });
+}
 }  // namespace
 }  // namespace parc::importer
 
@@ -592,17 +628,33 @@ void Installer::OnManifestParsed() {
 }
 @end
 
-namespace parc::setup_password_extension {
+namespace parc::setup_extension {
 namespace {
 //
-// general unattended-extension API and cannot accept an ID from page content.
+// unattended-extension API and cannot accept an ID from page content.
 constexpr char kICloudPasswordsID[] = "pejdijmoenmkgeppbflobdenhhabjlaj";
+constexpr char kUBlockOriginID[] = "cjpalhdlnbpafiamejdnhcphjbkeiagm";
+constexpr char kUBlockOriginLiteID[] = "ddkjiahejlhfcafbddmgiahcphecmpfh";
+//
+constexpr const char* kAdBlockerIDs[] = {
+    "cfhdojbkjhnklbpkdaibdccddilifddb", "aemffjkmgcepimloclpkecifcnipnodh",
+    "mlomiejdfkolichcflejclcbmpeaniij", "pkehgijcmpdhfbdbbnkijodmdjhbjlgp",
+    "cjpalhdlnbpafiamejdnhcphjbkeiagm", "ddkjiahejlhfcafbddmgiahcphecmpfh",
+    "bgnkhhnnamicmpeenaelnjfhikgbkllg", "gighmmpiobklfepjocnamgkkbiglidom",
+    "ohahllgiabjaoigichmmfljhkcfikeof", "lgblnfidahcdcjddiepkckcfdhpknnjh",
+    "bkkbcggnhapdmkeljlodobbkopceiche", "pmekfefnodgilnnjcfkkdjlebokonhpm",
+    "gekdekpbfehejjiecgonmgmepbdnaggp", "ggdpplfehdighdpleoegjefnpefgpgfh",
+    "onomjaelhagjjojbkcafidnepbfkpnee", "ojjjflcdgjegkdcojbahlbgeiinpbfgf",
+    "jhkhlgaomejplkanglolfpcmfknnomle", "gekoepiplklhniacchbbgbhilidiojmb",
+    "amgmhmoikcefmalfmbpkpnnpebhmhfnd"};
+// An import may still be downloading a blocker the user chose to remove.
+constexpr base::TimeDelta kRemovalWait = base::Minutes(10);
 
 class Installer final : public extensions::WebstoreInstallWithPrompt {
  public:
-  Installer(Profile& profile, Callback callback)
-      : WebstoreInstallWithPrompt(kICloudPasswordsID, &profile,
-                                  gfx::NativeWindow(), std::move(callback)),
+  Installer(const std::string& id, Profile& profile, Callback callback)
+      : WebstoreInstallWithPrompt(id, &profile, gfx::NativeWindow(),
+                                  std::move(callback)),
         profile_(profile.GetWeakPtr()) {
     set_show_post_install_ui(false);
   }
@@ -621,10 +673,14 @@ class Installer final : public extensions::WebstoreInstallWithPrompt {
   base::WeakPtr<Profile> profile_;
 };
 
+// Installs the first candidate that ends up enabled; one already enabled is
+// the result.
 class Session final : public std::enable_shared_from_this<Session> {
  public:
-  Session(NSString* path, void (^completion)(NSError*))
-      : path_([path copy]), completion_([completion copy]) {}
+  Session(NSString* path, std::vector<std::string> candidates, NSString* failure,
+          void (^completion)(NSError*))
+      : path_([path copy]), candidates_(std::move(candidates)),
+        failure_([failure copy]), completion_([completion copy]) {}
 
   void Start() {
     lifetime_ = shared_from_this();
@@ -646,21 +702,60 @@ class Session final : public std::enable_shared_from_this<Session> {
             return;
           }
           self->context_ = context;
-          self->installer_ = base::MakeRefCounted<Installer>(*profile,
-              base::BindOnce([](std::weak_ptr<Session> weak, bool success,
-                                const std::string& message, extensions::webstore_install::Result) {
-                if (auto self = weak.lock()) {
-                  NSError* failure = success ? nil : importer::ImportError(message.empty()
-                      ? @"The selected iCloud Passwords extension could not be installed."
-                      : base::SysUTF8ToNSString(message));
-                  self->Finish(failure);
-                }
-              }, weak));
-          self->installer_->BeginInstall();
+          self->profile_ = profile->GetWeakPtr();
+          self->Next();
         }, weak));
   }
 
  private:
+  void Next() {
+    if (finished_) return;
+    if (!profile_ || profile_->ShutdownStarted()) {
+      Finish(importer::ImportError(@"The selected Profile is unavailable."));
+      return;
+    }
+    auto* registry = extensions::ExtensionRegistry::Get(profile_.get());
+    if (std::any_of(candidates_.begin(), candidates_.end(), [&](const std::string& id) {
+          return registry->enabled_extensions().Contains(id);
+        })) {
+      // An earlier candidate this setup installed but the engine keeps off.
+      std::u16string ignored;
+      for (const auto& id : disabled_)
+        if (registry->disabled_extensions().Contains(id))
+          extensions::ExtensionRegistrar::Get(profile_.get())->UninstallExtension(
+              id, extensions::UNINSTALL_REASON_INTERNAL_MANAGEMENT, &ignored);
+      Finish(nil);
+      return;
+    }
+    if (next_ == candidates_.size()) {
+      Finish(error_ ?: importer::ImportError(failure_));
+      return;
+    }
+    error_ = nil;
+    // A Manifest V2 candidate is refused, or installed disabled, by an engine
+    // that no longer runs Manifest V2; the next candidate follows.
+    const auto id = candidates_[next_++];
+    // Chromium reports an existing install as success; that copy is the user's.
+    const bool existed = registry->GetInstalledExtension(id) != nullptr;
+    installer_ = base::MakeRefCounted<Installer>(id, *profile_,
+        base::BindOnce([](std::weak_ptr<Session> weak, std::string id, bool existed, bool success,
+                          const std::string& message, extensions::webstore_install::Result) {
+          auto self = weak.lock();
+          if (!self) return;
+          if (success && !existed && self->profile_ &&
+              !extensions::ExtensionRegistry::Get(self->profile_.get())->enabled_extensions().Contains(id))
+            self->disabled_.push_back(id);
+          if (!success && !message.empty())
+            self->error_ = importer::ImportError(base::SysUTF8ToNSString(message));
+          // Leave Chromium's completion stack before releasing its installer.
+          base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+              base::BindOnce([](std::shared_ptr<Session> self) {
+                self->installer_ = nullptr;
+                self->Next();
+              }, self));
+        }, weak_from_this(), id, existed));
+    installer_->BeginInstall();
+  }
   void Finish(NSError* error) {
     if (finished_) return;
     finished_ = true;
@@ -677,21 +772,186 @@ class Session final : public std::enable_shared_from_this<Session> {
         }, shared_from_this(), error));
   }
   NSString* __strong path_;
+  std::vector<std::string> candidates_, disabled_;
+  size_t next_ = 0;
+  NSString* __strong failure_;
+  NSError* __strong error_;
   void (^completion_)(NSError*);
   CefRefPtr<CefRequestContext> context_;
+  base::WeakPtr<Profile> profile_;
   scoped_refptr<Installer> installer_;
   std::shared_ptr<Session> lifetime_;
   bool finished_ = false;
 };
+
+void StartSession(NSString* path, std::vector<std::string> candidates,
+                  NSString* failure, void (^completion)(NSError*)) {
+  auto session = std::make_shared<Session>(path, std::move(candidates), failure, completion);
+  // Always asynchronous, including profile admission failure.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+      base::BindOnce(&Session::Start, std::move(session)));
+}
+
+// Uninstalls known ad blockers now, and any an import is still installing
+//
+// doesn't keep.
+class Removal final : public extensions::ExtensionRegistryObserver,
+                      public ProfileObserver,
+                      public std::enable_shared_from_this<Removal> {
+ public:
+  Removal(NSString* path, std::set<std::string> ids, void (^completion)(NSError*))
+      : path_([path copy]), waiting_(std::move(ids)), completion_([completion copy]) {}
+  ~Removal() override { Stop(); }
+
+  void Start() {
+    lifetime_ = shared_from_this();
+    WithNativeProfile(path_, base::BindOnce(
+        [](std::weak_ptr<Removal> weak, Profile* profile,
+           CefRefPtr<CefRequestContext> context, NSError* error) {
+          auto self = weak.lock();
+          if (!self || self->finished_) return;
+          if (error || !profile || !context || profile->IsOffTheRecord() ||
+              profile->ShutdownStarted()) {
+            self->Finish(error ?: importer::ImportError(@"The selected Profile is unavailable."));
+            return;
+          }
+          self->context_ = context;
+          self->profile_ = profile->GetWeakPtr();
+          profile->AddObserver(self.get());
+          self->registry_.Observe(extensions::ExtensionRegistry::Get(profile));
+          for (const auto& id : self->waiting_) self->Remove(id);
+          self->Poll();
+          if (self->finished_) return;
+          self->poll_.Start(FROM_HERE, base::Seconds(5),
+              base::BindRepeating(&Removal::Poll, base::Unretained(self.get())));
+          self->timer_.Start(FROM_HERE, kRemovalWait,
+              base::BindOnce(&Removal::Expire, base::Unretained(self.get())));
+        }, weak_from_this()));
+  }
+  void OnExtensionInstalled(content::BrowserContext*,
+                            const extensions::Extension* extension,
+                            bool) override {
+    if (finished_ || !waiting_.erase(extension->id())) return;
+    // Not from inside the registry's own notification.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+        base::BindOnce([](std::weak_ptr<Removal> weak, std::string id) {
+          auto self = weak.lock();
+          if (!self || self->finished_) return;
+          self->Remove(id);
+          self->Poll();
+        }, weak_from_this(), extension->id()));
+  }
+  void OnProfileWillBeDestroyed(Profile*) override {
+    Stop();
+    Finish(importer::ImportError(@"The selected Profile is unavailable."));
+  }
+
+ private:
+  // Only a blocker an import may still install is waited for, so one the
+  // user installs again later stays.
+  void Poll() {
+    if (finished_) return;
+    std::erase_if(waiting_, [&](const std::string& id) {
+      return !importer::ImportMayInstall(path_, id);
+    });
+    if (waiting_.empty()) Finish(error_);
+  }
+  void Remove(const std::string& id) {
+    if (!profile_ || profile_->ShutdownStarted()) {
+      error_ = importer::ImportError(@"The selected Profile is unavailable.");
+      return;
+    }
+    const extensions::Extension* extension =
+        extensions::ExtensionRegistry::Get(profile_.get())->GetInstalledExtension(id);
+    if (!extension) return;
+    // External installs return after an internal uninstall.
+    if (extensions::Manifest::IsExternalLocation(extension->location())) {
+      error_ = importer::ImportError(@"An ad blocker installed by another app can't be removed here.");
+      return;
+    }
+    // The internal reason opens no uninstall page and skips Chromium's policy
+    // check, so the user's own permission is checked here.
+    auto* policy = extensions::ExtensionSystem::Get(profile_.get())->management_policy();
+    std::u16string message;
+    if (!policy->UserMayModifySettings(extension, &message) ||
+        policy->MustRemainInstalled(extension, &message) ||
+        !extensions::ExtensionRegistrar::Get(profile_.get())->UninstallExtension(
+            id, extensions::UNINSTALL_REASON_INTERNAL_MANAGEMENT, &message)) {
+      error_ = importer::ImportError(message.empty()
+          ? @"An imported ad blocker could not be removed."
+          : base::SysUTF16ToNSString(message));
+    }
+  }
+  void Expire() { Finish(error_); }
+  void Stop() {
+    timer_.Stop();
+    poll_.Stop();
+    registry_.Reset();
+    if (profile_) profile_->RemoveObserver(this);
+    profile_.reset();
+  }
+  void Finish(NSError* error) {
+    if (finished_) return;
+    finished_ = true;
+    Stop();
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+        base::BindOnce([](std::shared_ptr<Removal> self, NSError* error) {
+          self->context_ = nullptr;
+          auto completion = self->completion_; self->completion_ = nil;
+          self->lifetime_.reset();
+          completion(error);
+        }, shared_from_this(), error));
+  }
+  NSString* __strong path_;
+  std::set<std::string> waiting_;
+  void (^completion_)(NSError*);
+  NSError* __strong error_;
+  CefRefPtr<CefRequestContext> context_;
+  base::WeakPtr<Profile> profile_;
+  base::ScopedObservation<extensions::ExtensionRegistry,
+                          extensions::ExtensionRegistryObserver>
+      registry_{this};
+  base::OneShotTimer timer_;
+  base::RepeatingTimer poll_;
+  std::shared_ptr<Removal> lifetime_;
+  bool finished_ = false;
+};
 }  // namespace
-}  // namespace parc::setup_password_extension
+}  // namespace parc::setup_extension
 
 @implementation PCNativeBrowserApplication (SetupPasswordExtension)
 + (void)installICloudPasswordsExtensionToProfilePath:(NSString*)profilePath
     completion:(void (^)(NSError*))completion {
-  auto session = std::make_shared<parc::setup_password_extension::Session>(profilePath, completion);
-  // Always asynchronous, including profile admission failure.
+  parc::setup_extension::StartSession(profilePath,
+      {parc::setup_extension::kICloudPasswordsID},
+      @"The selected iCloud Passwords extension could not be installed.", completion);
+}
++ (void)installSetupAdBlockerToProfilePath:(NSString*)profilePath
+    completion:(void (^)(NSError*))completion {
+  parc::setup_extension::StartSession(profilePath,
+      {parc::setup_extension::kUBlockOriginID, parc::setup_extension::kUBlockOriginLiteID},
+      @"uBlock Origin could not be installed.", completion);
+}
++ (void)removeSetupAdBlockers:(NSSet<NSString*>*)extensionIDs
+    fromProfilePath:(NSString*)profilePath
+    completion:(void (^)(NSError*))completion {
+  std::set<std::string> ids;
+  for (NSString* id in extensionIDs)
+    ids.insert(base::SysNSStringToUTF8(id));
+  // Paths match the import's own, which are standardized absolute paths.
+  if (!profilePath.isAbsolutePath || ![profilePath isEqual:profilePath.stringByStandardizingPath] ||
+      !std::all_of(ids.begin(), ids.end(), [](const std::string& value) {
+        return std::any_of(std::begin(parc::setup_extension::kAdBlockerIDs),
+                           std::end(parc::setup_extension::kAdBlockerIDs),
+                           [&](const char* known) { return value == known; });
+      })) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      completion(parc::importer::ImportError(@"Only known ad blockers can be removed."));
+    });
+    return;
+  }
+  auto removal = std::make_shared<parc::setup_extension::Removal>(profilePath, std::move(ids), completion);
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
-      base::BindOnce(&parc::setup_password_extension::Session::Start, std::move(session)));
+      base::BindOnce(&parc::setup_extension::Removal::Start, std::move(removal)));
 }
 @end

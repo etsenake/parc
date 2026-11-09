@@ -75,7 +75,11 @@ struct OnboardingDraft: Codable, Equatable {
     var replayBaseTheme: SpaceTheme?
     var replayAppearance: String?
     var wantsDefaultBrowser: Bool { defaultBrowserChoice ?? true }
-    var showsAdBlockers: Bool { !importedAdBlockers.isEmpty || stage.current == .adBlockers }
+    //
+    // {uBlock Origin}, so an empty import shows the YES/NO choice.
+    var showsAdBlockers: Bool {
+        Set(importedAdBlockers.map(\.identifier)) != [OnboardingAdBlocker.uBlockOrigin] || stage.current == .adBlockers
+    }
     func nextStage() -> Stage? { stage.next(includingAdBlockers: showsAdBlockers) }
     func previousStage() -> Stage? { stage.previous(includingAdBlockers: showsAdBlockers) }
     func visibleSetupOrder() -> [Stage] {
@@ -89,12 +93,21 @@ struct OnboardingDraft: Codable, Equatable {
     struct ImportedAdBlocker: Codable, Equatable, Identifiable {
         var identifier: String
         var displayName: String
+        // Destination Profiles it was imported into; nil in older drafts.
+        var profileIDs: [UUID]? = nil
         var id: String { identifier }
     }
 
+    /// AdBlockersSelection.Selection without arcNative and keepAll.
     enum AdBlockerChoice: Codable, Equatable {
+        /// noAdBlock: "Don't block ads", or NO when nothing was imported.
         case none
+        /// userSelected: keeps this imported blocker and removes the rest.
         case keep(String)
+        /// uBlock: YES when nothing was imported.
+        case uBlock
+        /// keepAll: "Use all imported ad blockers" leaves every one installed.
+        case keepAll
         var keptIdentifier: String? {
             if case .keep(let identifier) = self { return identifier }
             return nil
@@ -103,6 +116,36 @@ struct OnboardingDraft: Codable, Equatable {
             if case .keep(let kept) = self { return kept == identifier }
             return false
         }
+        ///
+        /// current choice still names one of its rows.
+        static func settled(_ choice: Self?, for blockers: [ImportedAdBlocker]) -> Self {
+            guard let first = blockers.first else { return choice == AdBlockerChoice.none ? .none : .uBlock }
+            switch choice {
+            case .some(.none): return .none
+            case .some(.keep(let kept)) where blockers.contains(where: { $0.identifier == kept }): return .keep(kept)
+            default: return .keep(first.identifier)
+            }
+        }
+        ///
+        /// blocker the choice doesn't keep is removed; YES installs uBlock in
+        /// the setup Space's Profile.
+        func plan(for blockers: [ImportedAdBlocker], setupProfileID: UUID) -> AdBlockerPlan {
+            var removals: [UUID: Set<String>] = [:]
+            if self != .uBlock && self != .keepAll {
+                for blocker in blockers where blocker.identifier != keptIdentifier {
+                    for profileID in blocker.profileIDs ?? [setupProfileID] {
+                        removals[profileID, default: []].insert(blocker.identifier)
+                    }
+                }
+            }
+            return AdBlockerPlan(removals: removals,
+                installProfileID: self == .uBlock && blockers.isEmpty ? setupProfileID : nil)
+        }
+    }
+
+    struct AdBlockerPlan: Equatable {
+        var removals: [UUID: Set<String>]
+        var installProfileID: UUID?
     }
 
     struct FavoriteChoice: Identifiable {
@@ -243,9 +286,15 @@ struct OnboardingDraft: Codable, Equatable {
         draft.importedAdBlockers = draft.importedAdBlockers.filter {
             OnboardingAdBlocker.isKnown($0.identifier) && !$0.identifier.isEmpty && !$0.displayName.isEmpty
         }
-        if let choice = draft.adBlockerChoice, let kept = choice.keptIdentifier,
-           !draft.importedAdBlockers.contains(where: { $0.identifier == kept }) {
-            draft.adBlockerChoice = nil
+        if let choice = draft.adBlockerChoice {
+            // Past the step a made choice stands, as it does without a restart:
+            // a kept blocker that later failed still removes the others.
+            let order = Stage.setupOrder(includingAdBlockers: true)
+            let passed = (order.firstIndex(of: draft.stage.current) ?? 0) > (order.firstIndex(of: .adBlockers) ?? 0)
+            let valid = passed
+                ? choice.keptIdentifier.map(OnboardingAdBlocker.isKnown) ?? (choice != .uBlock || draft.importedAdBlockers.isEmpty)
+                : choice == .keepAll || AdBlockerChoice.settled(choice, for: draft.importedAdBlockers) == choice
+            if !valid { draft.adBlockerChoice = nil }
         }
         draft.stage = draft.stage.current
         return draft
@@ -296,5 +345,6 @@ enum OnboardingAdBlocker {
         "gekoepiplklhniacchbbgbhilidiojmb",
         "amgmhmoikcefmalfmbpkpnnpebhmhfnd"
     ]
+    static let uBlockOrigin = "cjpalhdlnbpafiamejdnhcphjbkeiagm"
     static func isKnown(_ identifier: String) -> Bool { chromeExtensionIDs.contains(identifier) }
 }

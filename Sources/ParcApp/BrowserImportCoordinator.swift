@@ -651,7 +651,7 @@ final class BrowserImportCoordinator {
     private func installExtensions() {
         let pending = pendingExtensions; pendingExtensions = []
         var requests: [PCNativeImportExtensionRequest] = [], requested: [String: Set<String>] = [:]
-        var items: [PCNativeImportExtension] = []
+        var items: [PCNativeImportExtension] = [], destinations: [String: [UUID]] = [:]
         for item in pending {
             let chosen = item.profile.extensions.filter { item.ids.contains($0.identifier) }
             guard item.destination.isCurrent(in: store.state) else {
@@ -663,6 +663,9 @@ final class BrowserImportCoordinator {
             requested[path, default: []].formUnion(ids)
             requests.append(PCNativeImportExtensionRequest(source: item.profile, profilePath: path, extensionIDs: ids))
             items += chosen.filter { ids.contains($0.identifier) }
+            for id in ids where !(destinations[id]?.contains(item.destination.profileID) ?? false) {
+                destinations[id, default: []].append(item.destination.profileID)
+            }
         }
         guard !requests.isEmpty else { finishBackground(); return }
         let token = backgroundToken, batch = UUID()
@@ -677,9 +680,16 @@ final class BrowserImportCoordinator {
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
             let added = result.installedIdentifiers.union(result.installingIdentifiers)
                 .subtracting(ImportedExtensionFailures.failedIdentifiers)
-            for item in items where added.contains(item.identifier) && OnboardingAdBlocker.isKnown(item.identifier)
-                && !self.importedAdBlockers.contains(where: { $0.identifier == item.identifier }) {
-                self.importedAdBlockers.append(.init(identifier: item.identifier, displayName: item.displayName))
+            for item in items where added.contains(item.identifier) && OnboardingAdBlocker.isKnown(item.identifier) {
+                let profiles = destinations[item.identifier] ?? []
+                if let index = self.importedAdBlockers.firstIndex(where: { $0.identifier == item.identifier }) {
+                    let known = self.importedAdBlockers[index].profileIDs ?? []
+                    let merged = known + profiles.filter { !known.contains($0) }
+                    self.importedAdBlockers[index].profileIDs = merged.isEmpty ? nil : merged
+                } else {
+                    self.importedAdBlockers.append(.init(identifier: item.identifier, displayName: item.displayName,
+                        profileIDs: profiles.isEmpty ? nil : profiles))
+                }
             }
             self.onChange?()
             self.finishBackground()

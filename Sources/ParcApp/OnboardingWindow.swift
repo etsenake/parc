@@ -475,10 +475,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             //
             skip.title = "Use all imported ad blockers"
             skip.isHidden = draft.importedAdBlockers.isEmpty
-            if draft.adBlockerChoice == nil, let first = draft.importedAdBlockers.first {
-                draft.adBlockerChoice = .keep(first.identifier)
-                persistDraft()
-            }
+            let shown = draft.adBlockerChoice
+            settleAdBlockerChoice()
+            if draft.adBlockerChoice != shown { persistDraft() }
             let host = NSHostingView(rootView: adBlockerChoices())
             adBlockerHost = host
             lower = [host]
@@ -505,8 +504,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 lower[0].frame = NSRect(x: (width - 339) / 2, y: (height - 156) / 2,
                     width: 339, height: 156)
             } else if current == .adBlockers {
-                let rows = CGFloat(adBlockerCount + 1)
-                let hostHeight = rows * 67 + max(0, rows - 1) * 22
+                let hostHeight = OnboardingAdBlockersChoice.height(blockerCount: adBlockerCount)
                 lower[0].frame = NSRect(x: (width - 339) / 2, y: (height - hostHeight) / 2,
                     width: 339, height: hostHeight)
             } else if current == .bookmarks {
@@ -766,6 +764,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                         if let error { NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription) }
                     }
             }
+            applyAdBlockerChoice()
             scheduledAdvance?.cancel(); scheduledAdvance = nil
             applyMusicPolicy(.finish)
             confetti.stop()
@@ -823,13 +822,37 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         settleAdBlockerChoice(); persistDraft(); render()
     }
 
+    /// Only the step makes a choice; a changed import before it leaves none,
+    /// so finish never applies a preselection the user didn't see.
     private func settleAdBlockerChoice() {
-        if let kept = draft.adBlockerChoice?.keptIdentifier,
-           !draft.importedAdBlockers.contains(where: { $0.identifier == kept }) {
-            draft.adBlockerChoice = nil
+        draft.adBlockerChoice = draft.stage == .adBlockers
+            ? .settled(draft.adBlockerChoice, for: draft.importedAdBlockers) : nil
+    }
+
+    ///
+    /// sent when setup completes. A choice exists only once the step was
+    /// passed; keep-all, from the step's Skip, changes nothing.
+    private func applyAdBlockerChoice() {
+        guard let choice = draft.adBlockerChoice,
+              let space = store.state.spaces.first(where: { $0.id == draft.spaceID }) else { return }
+        draft.adBlockerChoice = nil
+        let plan = choice.plan(for: draft.importedAdBlockers, setupProfileID: space.profileID)
+        for (profileID, identifiers) in plan.removals
+        where store.state.profiles.contains(where: { $0.id == profileID })
+            && !store.state.profileRemovals.contains(where: { $0.profileID == profileID }) {
+            PCNativeBrowserApplication.removeSetupAdBlockers(identifiers,
+                fromProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
+                    if let error { NSLog("Parc could not remove an imported ad blocker: %@", error.localizedDescription) }
+                }
         }
-        if draft.adBlockerChoice == nil, let first = draft.importedAdBlockers.first {
-            draft.adBlockerChoice = .keep(first.identifier)
+        if let profileID = plan.installProfileID,
+           BrowserImportDestination(spaceID: space.id, profileID: profileID).isCurrent(in: store.state) {
+            PCNativeBrowserApplication.installSetupAdBlocker(
+                toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
+                    guard let error else { return }
+                    NSLog("Parc could not install uBlock Origin: %@", error.localizedDescription)
+                    ImportedExtensionFailures.add(["uBlock Origin Lite"])
+                }
         }
     }
 
@@ -839,9 +862,13 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let before = draft.importedAdBlockers.count
         draft.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
         guard draft.importedAdBlockers.count != before else { return }
-        settleAdBlockerChoice()
+        // Past the step a choice already made stands: keeping a blocker that
+        // later failed still removes the others.
+        let order = OnboardingDraft.Stage.setupOrder(includingAdBlockers: true, retaining: draft.stage.current)
+        if let here = order.firstIndex(of: draft.stage.current), let step = order.firstIndex(of: .adBlockers),
+           here <= step { settleAdBlockerChoice() }
         persistDraft()
-        if draft.stage == .adBlockers { adBlockerHost?.rootView = adBlockerChoices() }
+        if draft.stage == .adBlockers { render() }
     }
 
     func closeBrowserImport() {
@@ -872,6 +899,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         } else if draft.stage == .favorites {
             draft.skipFavorites(keeping: isReplay ? replayExistingFavorites : [])
             persistDraft()
+        } else if draft.stage == .adBlockers {
+            draft.adBlockerChoice = .keepAll
         }
         if let next = draft.nextStage() { transition(to: next) }
     }

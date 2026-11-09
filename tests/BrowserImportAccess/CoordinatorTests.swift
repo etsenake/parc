@@ -417,8 +417,9 @@ import AppKit
         downloading.complete(.init(outcome: .completed, installedIdentifiers: [unknown.identifier],
                                    installingIdentifiers: [known.identifier]))
         expect(coordinator.stage == .finished
-               && coordinator.importedAdBlockers == [.init(identifier: known.identifier, displayName: known.displayName)],
-               "Results appear while a download is still running, and only known ad blockers carry on into setup")
+               && coordinator.importedAdBlockers == [.init(identifier: known.identifier, displayName: known.displayName,
+                                                           profileIDs: [destination.profileID])],
+               "Results appear while a download is still running, and only known ad blockers carry on into setup with their Profile")
         downloading.background(["uBlock Origin"])
         expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1
                && ImportedExtensionFailures.pending.contains("uBlock Origin"),
@@ -502,7 +503,8 @@ import AppKit
         expect(retained!.hasBackgroundWork && changes == 0, "Detached extension installation keeps ownership without updating closed views")
         expect(ImportedBrowserDataFailures.pending == nil, "A failed profile is reported only once the whole import is over")
         install.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier], failedNames: ["Broken"]))
-        expect(retained == nil && delivered == [.init(identifier: blocker.identifier, displayName: blocker.displayName)]
+        expect(retained == nil && delivered == [.init(identifier: blocker.identifier, displayName: blocker.displayName,
+                                                      profileIDs: [destination.profileID])]
                && ImportedExtensionFailures.pending.isEmpty && ImportedBrowserDataFailures.take() == .partial,
                "Completion delivers blockers, one partial-import toast that covers its failed extensions, and releases the coordinator")
         install.background([blocker.displayName])
@@ -666,8 +668,10 @@ import AppKit
         together.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier, helper.identifier],
                                 failedNames: ["Broken"]))
         expect(setup.stage == .finished && setup.warnings.contains("Broken couldn’t be added.")
-               && setup.importedAdBlockers == [.init(identifier: blocker.identifier, displayName: blocker.displayName)],
-               "A failure among several is listed with the import's other failures and the rest are added")
+               && setup.importedAdBlockers == [.init(identifier: blocker.identifier, displayName: blocker.displayName,
+                                                     profileIDs: [extensionDestination.profileID, sideID!])],
+               "A failure among several is listed with the import's other failures and the rest are added, "
+                   + "an ad blocker once with every Profile it went into")
         setup.cancel()
         PCNativeBrowserApplication.acceptsBrowserImport = false
         return checks

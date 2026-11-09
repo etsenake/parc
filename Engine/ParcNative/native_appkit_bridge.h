@@ -2331,6 +2331,18 @@ NS_SWIFT_UI_ACTOR
 + (void)installICloudPasswordsExtensionToProfilePath:(NSString*)profilePath
     completion:(void (^)(NSError* _Nullable))completion
     NS_SWIFT_NAME(installICloudPasswordsExtension(toProfilePath:completion:));
+// The setup ad-blocker step's YES: uBlock Origin, or uBlock Origin Lite when
+// this engine refuses Manifest V2.
++ (void)installSetupAdBlockerToProfilePath:(NSString*)profilePath
+    completion:(void (^)(NSError* _Nullable))completion
+    NS_SWIFT_NAME(installSetupAdBlocker(toProfilePath:completion:));
+// The setup ad-blocker step's other choices: uninstalls these known ad
+// blockers, including ones an import finishes installing later. Other IDs and
+// extensions the user may not remove are refused. Completion is once on main.
++ (void)removeSetupAdBlockers:(NSSet<NSString*>*)extensionIDs
+    fromProfilePath:(NSString*)profilePath
+    completion:(void (^)(NSError* _Nullable))completion
+    NS_SWIFT_NAME(removeSetupAdBlockers(_:fromProfilePath:completion:));
 @end
 
 // Safari's identity for the sites that need Apple FairPlay, Chrome's
