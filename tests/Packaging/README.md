@@ -217,6 +217,9 @@ A development component build needs its whole `development` folder; install that
 Copied code is signed inside-out. The app is verified with `codesign --verify --deep --strict`, and sibling component dylibs are individually verified with `codesign --verify --strict` because they are outside the app bundle. Signing itself never uses `--deep`. The default ad-hoc identity is for development and requires library validation to be disabled because its separately signed component dylibs have no Team ID. Supply `--sign-identity` with an Apple-issued certificate (`Developer ID Application: …` or `Apple Development: …`); packaging reads its Team ID from a signed probe, and with one it does not add the development library-validation exception. A self-signed certificate has no Team ID, so it keeps the exception, like ad-hoc signing. Its only exception is `Parc Helper (CDM)`, signed with just `com.apple.security.cs.disable-library-validation` because the component-updated CDM carries Google's signature. Every other helper and the main app keep library validation ([why](../../docs/engine-flags.md#library-validation)). The tool does not create certificates, install trust, modify Keychain ACLs or claim signing/notarization continuity. Normal encrypted startup/restart across rebuilt packages remains a runtime gate.
 
 
+## Sparkle
+
+
 ## Widevine host signatures
 
 Packages are unsigned Widevine hosts unless a VMP signer is configured; the report's `widevine` entry records `unsigned` and why. With a Google-issued VMP certificate and its RSA key, add to `build`:

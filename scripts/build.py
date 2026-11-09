@@ -33,6 +33,9 @@ whats_new_spec.loader.exec_module(whats_new)
 vmp_spec = importlib.util.spec_from_file_location("parc_widevine_vmp", Path(__file__).with_name("widevine_vmp.py"))
 widevine_vmp = importlib.util.module_from_spec(vmp_spec)
 vmp_spec.loader.exec_module(widevine_vmp)
+sparkle_spec = importlib.util.spec_from_file_location("parc_sparkle", Path(__file__).with_name("sparkle.py"))
+sparkle = importlib.util.module_from_spec(sparkle_spec)
+sparkle_spec.loader.exec_module(sparkle)
 WIDEVINE_KEY_PASSPHRASE = widevine_vmp.PASSPHRASE_VARIABLE
 FRAMEWORK = "Chromium Embedded Framework.framework"
 ENGINE_NAME = "Chromium Embedded Framework"
@@ -68,6 +71,7 @@ PINNED_INPUTS = (("chromium", "LICENSE"), ("cef", "cef/LICENSE.txt"),
                  ("chromium", "chrome/app/app-entitlements.plist"),
                  ("chromium", CHROMIUM_USAGE_DESCRIPTIONS))
 RELEASE_FRAMEWORK = "Parc.app/Contents/Frameworks/" + FRAMEWORK
+SPARKLE = "Sparkle.framework"
 LOAD_COMMANDS = {"LC_LOAD_DYLIB", "LC_LOAD_WEAK_DYLIB", "LC_REEXPORT_DYLIB",
                  "LC_LOAD_UPWARD_DYLIB", "LC_LAZY_LOAD_DYLIB"}
 MACH_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe",
@@ -736,6 +740,7 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
     if main not in executables:
         raise Refusal("Development application executable is missing")
     framework = inside(app / "Contents/Frameworks" / FRAMEWORK / ENGINE_NAME, root)
+    sparkle_framework = (app / "Contents/Frameworks" / SPARKLE).resolve()
     for executable in executables:
         if executable != main and any(not system_library(v) for v in images[executable]["loads"]):
             raise Refusal("Helper directly links non-system code before sandbox initialization")
@@ -759,9 +764,11 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
                     visit(target, rpaths)
 
         visit(executable, ())
-        if executable == (app / "Contents/MacOS/ParcRestart").resolve():
-            # This process only watches the original PID and execs Launch
-            # Services; it never initializes Chromium or its sandbox.
+        if (executable == (app / "Contents/MacOS/ParcRestart").resolve()
+                or sparkle_framework in executable.parents):
+            # ParcRestart only watches the original PID and execs Launch
+            # Services, and Sparkle's updater only replaces and relaunches the
+            # app; neither initializes Chromium or its sandbox.
             continue
         inherited = tuple(expand_loader_path(v, executable, executable).resolve()
                           for v in images[executable]["rpaths"])
@@ -808,6 +815,28 @@ def publish_development_directory(stage: Path, output: Path) -> None:
     if rename(os.fsencode(stage), os.fsencode(output), 0x00000004) != 0:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), str(output))
+
+
+def embed_sparkle(release: Path, frameworks: Path) -> Path:
+    """Copy the pinned Sparkle without build-time headers or its XPC services.
+
+    Sparkle documents those services as unused by apps that aren't sandboxed,
+    which may remove them; Parc isn't sandboxed.
+    """
+    framework = frameworks / SPARKLE
+    shutil.copytree(release / SPARKLE, framework, symlinks=True)
+    if os.readlink(framework / "Versions/Current") != "B":
+        raise Refusal("Unexpected Sparkle framework version layout")
+    code = framework / "Versions/B"
+    for name in ("Headers", "PrivateHeaders", "Modules", "XPCServices"):
+        (framework / name).unlink()
+        shutil.rmtree(code / name)
+    # Parc ships ARM64 only, like its engine and Swift runtime.
+    for binary in (code / "Sparkle", code / "Autoupdate", code / "Updater.app/Contents/MacOS/Updater"):
+        thin = binary.with_name(binary.name + ".arm64")
+        run("/usr/bin/lipo", binary, "-thin", "arm64", "-output", thin)
+        os.replace(thin, binary)
+    return framework
 
 
 def plist(path: Path, data: dict) -> None:
@@ -973,6 +1002,8 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
     facade = repo / "Sources/ParcEngine/ParcEngine.m"
     if '"native_engine_entry.h"' not in facade.read_text():
         raise Refusal("Refusing to compile the superseded engine facade")
+    progress(f"packaging: fetching Sparkle {sparkle.VERSION}")
+    sparkle_release = sparkle.fetch(repo / "build/sparkle")
     with tempfile.TemporaryDirectory(prefix=".parc-package-", dir=output.parent) as temporary:
         stage = Path(temporary)
         development = stage / "development"
@@ -1044,9 +1075,10 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             "-Xcc", "-DOS_MAC=1", "-I", source / "cef/include",
             "-import-objc-header", repo / "Sources/ParcEngine/ParcEngine.h", *swift,
             stage / "ParcEngine.o", stage / "VideoPiPWindow.o", "-F", frameworks, "-framework", ENGINE_NAME,
-            "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
+            "-F", sparkle_release, "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
             "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
             "-o", contents / "MacOS/Parc", capture=False)
+        sparkle_framework = embed_sparkle(sparkle_release, frameworks)
         progress("packaging: copying Swift runtime and signing")
         swift_runtime = stage / "swift-runtime"
         swift_runtime.mkdir()
@@ -1097,6 +1129,10 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     NSDesktopFolderUsageDescription="Show images and videos from Desktop in your Media Library.",
                     NSDocumentsFolderUsageDescription="Show images and videos from Documents in your Media Library.",
                     NSDownloadsFolderUsageDescription="Show images and videos from Downloads in your Media Library.")
+        # Only a distribution package follows the release feed; a development or
+        # local test build behind the latest release must not replace itself.
+        if purpose == "distribution":
+            info.update(sparkle.INFO)
         if bundle_note:
             info["ParcLocalTestBuild"] = bundle_note
         chromium_usage = re.findall(r'"(NS\w+UsageDescription)"',
@@ -1140,6 +1176,9 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             if path.parent.name != "MacOS":
                 sign(path)
         sign(frameworks / FRAMEWORK)
+        # Sparkle's documented Developer ID order: Autoupdate (above), Updater, framework.
+        sign(sparkle_framework / "Versions/B/Updater.app")
+        sign(sparkle_framework)
         for helper, jit, hosts_cdm in helper_apps:
             helper_ent = {"com.apple.security.cs.allow-jit": True} if jit else {}
             # The component-updated Widevine CDM is signed by Google's team,
@@ -1175,6 +1214,8 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                   "application_icon": {"file": icon_file, "sha256": sha(resources / icon_file)},
                   "signing_identity": identity, "signing_team": team, "signed_images": signed,
                   "notarized": False, "widevine": widevine_report,
+                  "sparkle": {"version": sparkle.VERSION, "sha256": sparkle.SHA256,
+                              "update_feed": info.get("SUFeedURL")},
                   "signing_verification": "app deep/strict and sibling components strict verification passed",
                   "runtime_verified": False,
                   **({"engine_release": manifest["engine_release"]} if "engine_release" in manifest else {})}

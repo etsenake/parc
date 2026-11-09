@@ -72,6 +72,19 @@ class PackagingIconTests(unittest.TestCase):
                                                 "is_official_build": False, "is_debug": False,
                                                 "enable_dsyms": False, "symbol_level": 0},
                          "build_classification": "development-component", "distribution_eligible": False, "components": {}}
+        # The extracted release layout sparkle.fetch returns, with fixture code.
+        self.sparkle = self.root / "sparkle"
+        framework = self.sparkle / pkg.SPARKLE
+        for name in ("Sparkle", "Autoupdate", "Updater.app/Contents/MacOS/Updater", "Headers/Sparkle.h",
+                     "PrivateHeaders/SPUInstallationType.h", "Modules/module.modulemap",
+                     "XPCServices/Installer.xpc/Contents/MacOS/Installer", "Resources/Info.plist"):
+            target = framework / "Versions/B" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("fixture Sparkle")
+            top = framework / name.split("/")[0]
+            if not top.is_symlink():
+                top.symlink_to("Versions/Current/" + name.split("/")[0])
+        (framework / "Versions/Current").symlink_to("B")
         self.commands = []
         self.signed_entitlements = []
 
@@ -80,6 +93,8 @@ class PackagingIconTests(unittest.TestCase):
         self.commands.append(values)
         if values[:2] in (("xcrun", "clang"), ("xcrun", "clang++"), ("xcrun", "swiftc")):
             Path(values[values.index("-o") + 1]).write_bytes(b"explicit compiler fixture")
+        if values[0] == "/usr/bin/lipo" and "-output" in values:
+            Path(values[values.index("-output") + 1]).write_bytes(b"thin fixture")
         if values[0] == "/usr/bin/codesign" and "--entitlements" in values:
             self.signed_entitlements.append((values[-1], plistlib.loads(Path(values[values.index("--entitlements") + 1]).read_bytes())))
         return ""
@@ -105,6 +120,7 @@ class PackagingIconTests(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(pkg, "run", self.fake_run))
             stack.enter_context(patch.object(pkg, "copy_engine", self.fake_copy_engine))
+            stack.enter_context(patch.object(pkg.sparkle, "fetch", return_value=self.sparkle))
             stack.enter_context(patch.object(pkg, "inspect_macho", return_value={"loads": ["/usr/lib/libSystem.B.dylib"]}))
             stack.enter_context(patch.object(pkg, "verify_development_layout", return_value={}))
             stack.enter_context(patch.object(pkg, "exported_symbols", return_value=pkg.PUBLIC_SYMBOLS))
@@ -128,6 +144,16 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(info["CFBundleIdentifier"], "org.parc.Browser")
             lock = json.loads((REPO / "Engine/source-lock.json").read_text())
             self.assertEqual(info["ParcChromiumVersion"], lock["chromium"]["tag"])
+            self.assertFalse([key for key in info if key.startswith("SU")])
+            self.assertEqual(report["sparkle"], {"version": pkg.sparkle.VERSION, "sha256": pkg.sparkle.SHA256,
+                                                 "update_feed": None})
+            embedded = app / "Contents/Frameworks" / pkg.SPARKLE
+            self.assertEqual(sorted(path.name for path in embedded.iterdir()),
+                             ["Autoupdate", "Resources", "Sparkle", "Updater.app", "Versions"])
+            self.assertEqual(sorted(path.name for path in (embedded / "Versions/B").iterdir()),
+                             ["Autoupdate", "Resources", "Sparkle", "Updater.app"])
+            for binary in ("Sparkle", "Autoupdate", "Updater.app/Contents/MacOS/Updater"):
+                self.assertEqual((embedded / "Versions/B" / binary).read_bytes(), b"thin fixture")
             self.assertEqual(info["CFBundleURLTypes"][0]["CFBundleURLSchemes"], ["http", "https"])
             self.assertEqual(info["LSApplicationCategoryType"], "public.app-category.productivity")
             documents = {kind for document in info["CFBundleDocumentTypes"]
@@ -215,12 +241,15 @@ class PackagingIconTests(unittest.TestCase):
         compiles = [cmd for cmd in self.commands if cmd[:2] == ("xcrun", "swiftc")]
         self.assertFalse(any("install_name_tool" in str(arg) for cmd in self.commands for arg in cmd))
         self.assertEqual(len(compiles), 2)
+        for compile in compiles:
+            self.assertEqual(compile[compile.index(str(self.sparkle)) - 1], "-F")
+            self.assertEqual(compile[compile.index("Sparkle") - 1], "-framework")
         self.assertTrue(all("-v" in cmd for cmd in compiles))
         self.assertIn("-g", compiles[0]); self.assertIn("-Onone", compiles[0]); self.assertNotIn("-O", compiles[0])
         self.assertIn("-O", compiles[1]); self.assertNotIn("-Onone", compiles[1]); self.assertNotIn("-g", compiles[1])
         self.assertIn("-whole-module-optimization", compiles[1]); self.assertNotIn("-whole-module-optimization", compiles[0])
         signs = [cmd for cmd in self.commands if cmd[0] == "/usr/bin/codesign" and "--sign" in cmd]
-        self.assertEqual(len(signs), 18)  # framework, five helpers, Dock, restart and app per configuration
+        self.assertEqual(len(signs), 22)  # engine, Sparkle Updater and framework, five helpers, Dock, restart and app per configuration
         self.assertTrue(all("--deep" not in cmd for cmd in signs))
         signed_paths = [Path(cmd[-1]) for cmd in signs]
         plugins = [path for path in signed_paths if path.name == "ParcDockTile.plugin"]
@@ -231,6 +260,13 @@ class PackagingIconTests(unittest.TestCase):
             self.assertLess(signed_paths.index(restarter), signed_paths.index(restarter.parents[2]))
         for plugin in plugins:
             self.assertLess(signed_paths.index(plugin), signed_paths.index(plugin.parents[2]))
+        updaters = [path for path in signed_paths if path.name == "Updater.app"]
+        self.assertEqual(len(updaters), 2)
+        for updater in updaters:
+            framework, app = updater.parents[2], updater.parents[5]
+            self.assertEqual(framework.name, pkg.SPARKLE)
+            self.assertLess(signed_paths.index(updater), signed_paths.index(framework))
+            self.assertLess(signed_paths.index(framework), signed_paths.index(app))
         for path, ent in self.signed_entitlements:
             self.assertTrue(ent["com.apple.security.cs.disable-library-validation"])
             if "Parc Helper" in path:
@@ -260,6 +296,20 @@ class PackagingIconTests(unittest.TestCase):
         self.assertFalse(list(app.rglob("*.sig")))
         signs = [cmd for cmd in self.commands if cmd[0] == "/usr/bin/codesign" and "--sign" in cmd]
         self.assertTrue(all("--timestamp" in cmd for cmd in signs))
+
+    def test_only_distribution_packages_follow_the_update_feed(self):
+        self.manifest.update(build_classification="release-noncomponent", distribution_eligible=True,
+                             engine_build_flags={**self.manifest["engine_build_flags"], "is_component_build": False})
+        output = self.root / "distribution"
+        with self.fixture_tools():
+            report = pkg.build_app(self.repo, self.engine, self.manifest, output, "fixture certificate identity",
+                                   purpose="distribution")
+        info = plistlib.loads((output / "Parc.app/Contents/Info.plist").read_bytes())
+        self.assertEqual({key: info[key] for key in info if key.startswith("SU")}, {
+            "SUFeedURL": "https://github.com/etsenake/parc-releases/releases/latest/download/appcast.xml",
+            "SUPublicEDKey": pkg.sparkle.PUBLIC_ED_KEY, "SUEnableAutomaticChecks": True,
+            "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 28800})
+        self.assertEqual(report["sparkle"]["update_feed"], info["SUFeedURL"])
 
     def test_self_signed_certificate_keeps_library_validation_off_without_timestamps(self):
         output = self.root / "self-signed-development"
