@@ -27,7 +27,7 @@ class RenderTests(unittest.TestCase):
         url = "https://example.invalid/download?a=1&b=2"
         text = appcast.render(info, notes, url, SIGNATURE, 42, PUBLISHED)
         item = ElementTree.fromstring(text).find("channel/item")
-        self.assertEqual(item.findtext("title"), "Parc 1.9.0")
+        self.assertEqual(item.findtext("title"), "New Version Available")
         self.assertEqual(item.findtext("pubDate"), "Mon, 09 Nov 2026 21:14:03 +0000")
         self.assertEqual(item.findtext(SPARKLE + "version"), "23")
         self.assertEqual(item.findtext(SPARKLE + "shortVersionString"), "1.9.0")

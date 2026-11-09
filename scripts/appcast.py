@@ -63,7 +63,7 @@ def render(info, notes, url, signature, length, published):
   <channel>
     <title>Parc</title>
     <item>
-      <title>{escape("Parc " + version)}</title>
+      <title>New Version Available</title>
       <pubDate>{email.utils.format_datetime(published)}</pubDate>
       <sparkle:version>{escape(info["CFBundleVersion"])}</sparkle:version>
       <sparkle:shortVersionString>{escape(version)}</sparkle:shortVersionString>
