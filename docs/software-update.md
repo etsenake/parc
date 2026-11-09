@@ -271,6 +271,15 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   and Extensions. `scripts/build.py` renders the page from
   `release-notes.json` (`Sources/WhatsNew/README.md`); a bundle without it
   disables the item. The command bar lists it
+- **The page has no address.** It stays an ordinary file page, so reload,
+  back, forward and session restore work, but its address is a path into the
+  `WhatsNewPage` (`BrowserStore.swift`) recognises the page inside any `.app`
+  bundle. The sidebar and toolbar address show its title, and Copy URL (plain,
+  Markdown, Quote), Share, the command bar's address edit and rows, row and
+  Favorite help, link copies, bookmark export, the Archive, folder previews
+  and the back/forward list omit it. Another install's saved address opens
+  this build's page. Chromium's own History page and captures of the page
+  still carry the file address.
 - **Feed.** Every release publishes the feed the embedded Sparkle reads,
   `SUFeedURL` = `parc-releases/releases/latest/download/appcast.xml`
   (`scripts/sparkle.py`). The release's appcast stage (`scripts/appcast.py`)

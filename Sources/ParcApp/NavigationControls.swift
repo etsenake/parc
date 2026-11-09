@@ -404,6 +404,8 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     var stillSelected: (() -> Bool)?
     var onClose: (() -> Void)?
     var onNavigate: (() -> Void)?
+    /// What an entry shows of its URL; nil for a page with no address to show.
+    var address: (URL) -> String? = { $0.absoluteString }
 
     init(page: PCNativePage, snapshot: PCNativeNavigationHistory, window: NSWindow, theme: SpaceTheme) {
         self.page = page; self.snapshot = snapshot; colors = PArcMenuColors(theme: theme)
@@ -554,13 +556,13 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         icon.image = entry.favicon ?? NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         icon.imageScaling = .scaleProportionallyUpOrDown; icon.contentTintColor = primary
         cell.addSubview(icon); cell.imageView = icon
-        let label = NSTextField(labelWithString: entry.title.isEmpty ? entry.url?.absoluteString ?? "Untitled" : entry.title)
+        let label = NSTextField(labelWithString: entry.title.isEmpty ? entry.url.flatMap(address) ?? "Untitled" : entry.title)
         label.font = m.font; label.textColor = primary
         label.lineBreakMode = .byTruncatingTail; label.maximumNumberOfLines = 1
         let x = m.rowHorizontalInset + side + m.imageSpacing
         let height = ceil(label.intrinsicContentSize.height)
         label.frame = NSRect(x: x, y: (m.rowHeight - height) / 2, width: width - x - m.rowHorizontalInset, height: height)
-        cell.addSubview(label); cell.textField = label; cell.toolTip = entry.url?.absoluteString
+        cell.addSubview(label); cell.textField = label; cell.toolTip = entry.url.flatMap(address)
         cell.setAccessibilityLabel(label.stringValue)
         return cell
     }
