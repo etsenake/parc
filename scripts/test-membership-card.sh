@@ -19,6 +19,6 @@ PY
 xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/MembershipCard.swift \
   Sources/ParcApp/MembershipCardView.swift Sources/ParcApp/MembershipCardSettingsView.swift \
   Sources/ParcApp/SettingsHoverButton.swift Sources/ParcApp/SettingsFocus.swift Sources/ParcApp/SettingsPresentation.swift \
-  Sources/ParcApp/TranslucentButtonFace.swift Sources/ParcApp/ReloadControl.swift \
+  Sources/ParcApp/TranslucentButtonFace.swift Sources/ParcApp/PointerCover.swift Sources/ParcApp/ReloadControl.swift \
   "$output/NativeBases.swift" tests/MembershipCardTests.swift -o "$output/CardChecks.app/Contents/MacOS/CardChecks"
 "$output/CardChecks.app/Contents/MacOS/CardChecks" "${1:-$output}"

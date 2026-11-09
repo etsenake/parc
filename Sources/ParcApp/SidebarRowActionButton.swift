@@ -94,15 +94,26 @@ final class SidebarRowActionButton: NSButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
         addTrackingArea(area); trackingArea = area
-        hovering = window?.isKeyWindow == true && !isHiddenOrHasHiddenAncestor && window.map {
-            bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil))
+        hovering = window.map { window in
+            let point = window.mouseLocationOutsideOfEventStream
+            return window.isKeyWindow && !isHiddenOrHasHiddenAncestor && bounds.contains(convert(point, from: nil))
+                && isTopmost(atWindowPoint: point)
         } == true
         refreshAvailability(); needsDisplay = true
     }
-    override func mouseEntered(with event: NSEvent) { hovering = true; refreshAvailability(); needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) {
+        hovering = isTopmost(atWindowPoint: event.locationInWindow); refreshAvailability(); needsDisplay = true
+    }
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
+    /// Sliding out from under something drawn over the row, such as the
+    /// command bar, hovers the button; sliding back under doesn't.
+    override func mouseMoved(with event: NSEvent) {
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovering else { return }
+        hovering = value; refreshAvailability(); needsDisplay = true
+    }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         cancelInteraction()
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
@@ -360,14 +371,19 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
         addTrackingArea(area); trackingArea = area
         // A row rebuilt under a stationary pointer reconciles its actual hover.
-        setPointerInside(window?.isKeyWindow == true && !isHiddenOrHasHiddenAncestor && window.map {
-            bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil))
+        setPointerInside(window.map { window in
+            let point = window.mouseLocationOutsideOfEventStream
+            return window.isKeyWindow && !isHiddenOrHasHiddenAncestor && bounds.contains(convert(point, from: nil))
+                && isTopmost(atWindowPoint: point)
         } == true)
     }
-    override func mouseEntered(with event: NSEvent) { setPointerInside(true) }
+    // Under something drawn over the row, such as the command bar, the
+    // pointer isn't on the button; moves re-read it as it slides out.
+    override func mouseEntered(with event: NSEvent) { setPointerInside(isTopmost(atWindowPoint: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) { setPointerInside(isTopmost(atWindowPoint: event.locationInWindow)) }
     override func mouseExited(with event: NSEvent) { setPointerInside(false) }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         cancelInteraction()

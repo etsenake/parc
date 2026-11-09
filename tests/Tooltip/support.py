@@ -1,5 +1,6 @@
 """Sources a component check needs once it compiles a control that shows Parc's
-tooltip (`parcTooltip`, `LiveShortcutToolTip`): the three tooltip files and,
+tooltip (`parcTooltip`, `LiveShortcutToolTip`): the three tooltip files, the
+hover rule in PointerCover.swift and,
 unless the check already compiles their whole files, ThemeChromePalette,
 KeyboardShortcut and ViewDisplayFrameDriver cut from them."""
 from pathlib import Path
@@ -22,7 +23,8 @@ def tooltip_sources(root: Path, scratch: Path, compiled) -> list:
     """`compiled` are the paths the check already compiles."""
     app = root / "Sources/ParcApp"
     names = {Path(path).name for path in compiled}
-    result = [app / name for name in ("Tooltip.swift", "TooltipView.swift", "TooltipController.swift") if name not in names]
+    result = [app / name for name in ("Tooltip.swift", "TooltipView.swift", "TooltipController.swift", "PointerCover.swift")
+              if name not in names]
     if "SpaceTheme.swift" not in names:
         result.append(root / "Sources/ParcCore/SpaceTheme.swift")
     for name, (target, start, end, prefix) in SLICES.items():

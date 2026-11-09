@@ -131,7 +131,8 @@ final class ActionButton: NSButton {
     override func updateTrackingAreas() {
         if let hoverTracking { removeTrackingArea(hoverTracking); self.hoverTracking = nil }
         if tracksHover {
-            hoverTracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+            hoverTracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                                           owner: self, userInfo: nil)
             addTrackingArea(hoverTracking!)
         }
         super.updateTrackingAreas()
@@ -141,12 +142,17 @@ final class ActionButton: NSButton {
     var isAvailable: (() -> Bool)?
     override func mouseEntered(with event: NSEvent) {
         if let available = isAvailable?(), isEnabled != available { isEnabled = available }
-        if tracksHover { hovered = isEnabled }
+        if tracksHover { hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow) }
         super.mouseEntered(with: event)
     }
     override func mouseExited(with event: NSEvent) {
         if tracksHover { hovered = false }
         super.mouseExited(with: event)
+    }
+    /// Sliding out from under something drawn over the button, such as the
+    /// command bar, hovers it; sliding back under doesn't.
+    override func mouseMoved(with event: NSEvent) {
+        if tracksHover { hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow) }
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { hovered = false; translucentFace?.stop() }
@@ -158,8 +164,9 @@ final class ActionButton: NSButton {
     /// window, is checked: a press on the button closes a key child window
     /// before this window takes key.
     func refreshHover() {
-        hovered = isEnabled && NSApp.isActive && !isHiddenOrHasHiddenAncestor
-            && window.map { bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } == true
+        guard let window, isEnabled, NSApp.isActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }
+        let point = window.mouseLocationOutsideOfEventStream
+        hovered = bounds.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
     }
     /// NSButton's press highlight: on while the pointer is down inside.
     var onHighlight: ((Bool) -> Void)?
@@ -971,7 +978,8 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area); tracking = area
         // A row can be rebuilt under a stationary pointer after navigation.
         // Reconcile its actual hover instead of waiting for another enter event.
@@ -985,10 +993,12 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         trackedWindow = window
         updateActions(); updateColor(); needsLayout = true
     }
+    /// The pointer is on `view`, not on something drawn over it such as the
+    /// command bar.
     private func pointerIsInside(_ view: NSView) -> Bool {
-        window?.isKeyWindow == true && window.map {
-            view.bounds.contains(view.convert($0.mouseLocationOutsideOfEventStream, from: nil))
-        } == true && mouseStart == nil
+        guard let window, window.isKeyWindow, mouseStart == nil else { return false }
+        let point = window.mouseLocationOutsideOfEventStream
+        return view.bounds.contains(view.convert(point, from: nil)) && view.isTopmost(atWindowPoint: point)
     }
     /// A split child follows its whole split's hover with a tracking area on
     ///
@@ -1001,30 +1011,22 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         // An in-visible-rect area follows the split's bounds by itself.
         if groupTracking?.view !== group {
             if let groupTracking { groupTracking.view.removeTrackingArea(groupTracking.area) }
-            let area = NSTrackingArea(rect: group.bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect],
+            let area = NSTrackingArea(rect: group.bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
                                       owner: self, userInfo: nil)
             group.addTrackingArea(area); groupTracking = (area, group)
         }
         groupHover = pointerIsInside(group)
     }
-    override func mouseEntered(with event: NSEvent) {
-        if event.trackingArea === groupTracking?.area {
-            guard !groupHover else { return }
-            groupHover = true
-        } else {
-            guard !hover else { return }
-            hover = true
-        }
-        updateActions(); updateColor(); needsLayout = true
-    }
-    override func mouseExited(with event: NSEvent) {
-        if event.trackingArea === groupTracking?.area {
-            guard groupHover else { return }
-            groupHover = false
-        } else {
-            guard hover else { return }
-            hover = false
-        }
+    // Moves re-read the pointer, so sliding out from under the command bar
+    // lights the row and sliding back under it doesn't.
+    override func mouseEntered(with event: NSEvent) { reconcileHover() }
+    override func mouseExited(with event: NSEvent) { reconcileHover() }
+    override func mouseMoved(with event: NSEvent) { reconcileHover() }
+    private func reconcileHover() {
+        let wasHover = hover, wasGroupHover = groupHover
+        hover = pointerIsInside(self)
+        groupHover = groupTracking.map { pointerIsInside($0.view) } ?? false
+        guard hover != wasHover || groupHover != wasGroupHover else { return }
         updateActions(); updateColor(); needsLayout = true
     }
     private func updateActions() {
