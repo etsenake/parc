@@ -66,6 +66,12 @@ final class OnboardingPasswordHelp: NSView {
         let dismiss: () -> Void
         @FocusState private var focused: Bool
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        static let cardSize = CGSize(width: 950, height: 680)
+        static let margin: CGFloat = 24
+        /// The full card centers 793-point instructions; a narrower card keeps
+        /// the same text sizes and wraps them inside at least this inset.
+        static let instructionsWidth: CGFloat = 793
+        static let minimumInset: CGFloat = 32
 
         var body: some View {
             GeometryReader { geometry in
@@ -73,9 +79,7 @@ final class OnboardingPasswordHelp: NSView {
                     ZStack {
                         Color.black.opacity(0.1).contentShape(Rectangle()).onTapGesture(perform: dismiss)
                             .accessibilityHidden(true)
-                        card
-                            .scaleEffect(min(1, max(0, geometry.size.width - 48) / 950,
-                                             max(0, geometry.size.height - 48) / 680))
+                        card(fitting: geometry.size)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                     }
                     .transition(.opacity.animation(reduceMotion ? nil : .default))
@@ -87,8 +91,12 @@ final class OnboardingPasswordHelp: NSView {
             }
         }
 
-        private var card: some View {
-            VStack(spacing: 0) {
+        private func card(fitting space: CGSize) -> some View {
+            let size = CGSize(width: min(Self.cardSize.width, max(0, space.width - 2 * Self.margin)),
+                              height: min(Self.cardSize.height, max(0, space.height - 2 * Self.margin)))
+            let inset = max(Self.minimumInset, (size.width - Self.instructionsWidth) / 2)
+            let width = max(0, size.width - 2 * inset)
+            return VStack(spacing: 0) {
                 HStack {
                     Spacer()
                     Button(action: dismiss) {
@@ -101,13 +109,15 @@ final class OnboardingPasswordHelp: NSView {
                     .padding(.trailing, 24)
                 }
                 .frame(height: 56)
-                Text(title).font(.system(size: 36, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 85)
-                instructions.padding(.top, 24).frame(width: 793, height: 492)
+                ViewThatFits(in: .vertical) {
+                    page(inset: inset, width: width)
+                    ScrollView { page(inset: inset, width: width) }
+                }
+                .layoutPriority(1)
                 Spacer(minLength: 0)
             }
             .foregroundColor(Color(nsColor: OnboardingSetupPalette.title))
-            .frame(width: 950, height: 680)
+            .frame(width: size.width, height: size.height)
             .background(Color(nsColor: Self.background))
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -119,7 +129,17 @@ final class OnboardingPasswordHelp: NSView {
             return "Exporting Safari Passwords"
         }
 
-        @ViewBuilder private var instructions: some View {
+        /// The full card's title sits 6.5 points inside its instructions' edge.
+        private func page(inset: CGFloat, width: CGFloat) -> some View {
+            VStack(spacing: 0) {
+                Text(title).font(.system(size: 36, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, inset + 6.5).padding(.trailing, inset)
+                instructions(width: width).padding(.top, 24)
+            }
+        }
+
+        @ViewBuilder private func instructions(width: CGFloat) -> some View {
             if #available(macOS 15, *) {
                 // macOS 15 moved password export out of Safari. Keep the same
                 // help owner and three-step composition, with current commands;
@@ -128,13 +148,12 @@ final class OnboardingPasswordHelp: NSView {
                     instruction(1, title: "Open Passwords", detail: "Open Apple’s Passwords app and unlock it yourself.")
                     instruction(2, title: "Export your passwords", detail: "Choose File → Export All Passwords to File, then save the CSV.")
                     instruction(3, title: "Bring the file to Parc", detail: "Close this help and drop the exported CSV onto the password-import area, or click it to choose the file.")
-                    Text("The exported CSV contains readable passwords. Parc can move it to Trash after supported passwords are confirmed. Passkeys and verification codes are not imported.")
-                        .font(.system(size: 14)).foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(width: width, alignment: .leading)
                 .padding(.top, 24)
             } else {
-                SafariIllustration()
+                // The full card draws the illustration at 793×468.
+                SafariIllustration().frame(width: width, height: width * 468 / Self.instructionsWidth)
             }
         }
 

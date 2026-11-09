@@ -70,6 +70,7 @@ final class BrowserImportViewController: NSViewController {
     private let accessView = BrowserImportAccessView()
     private let passwordsView = BrowserImportPasswordsView()
     private var passwordPanel: NSOpenPanel?
+    private var passwordHelp: OnboardingPasswordHelp?
     private var promptedPasswordRequest: UUID?
     private let onboarding: Bool
     private var accessTimer: Timer?
@@ -92,7 +93,10 @@ final class BrowserImportViewController: NSViewController {
         passwordsView.onChooseFile = { [weak self] in self?.choosePasswordFile() }
         passwordsView.onDropFile = { [weak self] in self?.coordinator.importPasswordFile($0) }
         passwordsView.onHelp = { [weak self] in self?.showPasswordHelp() }
-        passwordsView.onContinue = { [weak self] in self?.coordinator.continueAfterPasswords() }
+        passwordsView.onContinue = { [weak self] in
+            guard let self, !self.helpCoversContent else { return }
+            self.coordinator.continueAfterPasswords()
+        }
         passwordsView.onStop = { [weak self] in self?.coordinator.stopPasswordImport() }
         passwordsView.onRemoveFile = { [weak self] in self?.confirmPasswordFileRemoval() }
         accessView.onContinue = { [weak self] in self?.coordinator.continueSafariWithoutRestarting() }
@@ -201,7 +205,7 @@ final class BrowserImportViewController: NSViewController {
     func cancel() {
         guard !closed else { return }
         closed = true; restartRequest = nil
-        onHidePasswordHelp?()
+        onHidePasswordHelp?(); dismissPasswordHelp(remove: true)
         passwordPanel?.cancel(nil); passwordPanel = nil
         accessTimer?.invalidate(); accessTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
@@ -226,7 +230,7 @@ final class BrowserImportViewController: NSViewController {
             return
         }
         accessView.frame = root.bounds; passwordsView.frame = root.bounds
-        windowBackdrop.frame = root.bounds
+        windowBackdrop.frame = root.bounds; passwordHelp?.frame = root.bounds
         closeControl.frame = NSRect(x: width - 48, y: 24, width: 24, height: 24)
         logo.frame = NSRect(x: 30, y: 34, width: 54, height: 47)
         if showsSourceCards || coordinator.stage == .loading {
@@ -280,6 +284,7 @@ final class BrowserImportViewController: NSViewController {
         let choosingAccess = stage == .safariAccess
         let choosingPasswords = stage == .safariPasswords
         let cards = showsSourceCards
+        if !canShowPasswordHelp { dismissPasswordHelp() }
         passwordsView.isHidden = !choosingPasswords
         accessView.isHidden = !choosingAccess || embedded
         onboardingAccess?.isHidden = !choosingAccess
@@ -358,7 +363,7 @@ final class BrowserImportViewController: NSViewController {
         if cards { updateSourcePicker() } else { sourcePicker?.isHidden = true }
         updateBackdrop()
         cancelButton.isHidden = choosingAccess || choosingPasswords
-        closeControl.keyEquivalent = choosingAccess || choosingPasswords ? "\u{1b}" : ""
+        updateCloseKey()
         cancelButton.keyEquivalent = choosingAccess || choosingPasswords ? "" : "\u{1b}"
         next.isLoading = isLoading
         canAdvance = !next.isHidden && next.isEnabled
@@ -399,21 +404,46 @@ final class BrowserImportViewController: NSViewController {
         }
     }
 
+    /// Setup presents this help above its card; the menu window presents the
+    /// same panel above its own content.
     private func showPasswordHelp() {
-        guard !closed, coordinator.stage == .safariPasswords, let window,
-              window.attachedSheet == nil, !coordinator.importingPasswords else { return }
+        guard canShowPasswordHelp, let window, window.attachedSheet == nil else { return }
         if embedded {
             onShowPasswordHelp?()
             return
         }
-        let alert = NSAlert(); alert.messageText = "Exporting Safari passwords"
-        if #available(macOS 15, *) {
-            alert.informativeText = "Open Apple’s Passwords app and unlock it yourself. Choose File → Export All Passwords to File, then save the CSV. Return here and choose that file.\n\nThe exported CSV contains readable passwords. Parc can move it to Trash after all supported records have been confirmed. Passkeys and verification codes are not imported."
-        } else {
-            alert.informativeText = "In Safari, open Settings → Passwords and unlock it yourself. Use the options menu to export passwords, then save the CSV. Return here and choose that file.\n\nThe exported CSV contains readable passwords. Parc can move it to Trash after all supported records have been confirmed. Passkeys and verification codes are not imported."
+        let help: OnboardingPasswordHelp
+        if let passwordHelp { help = passwordHelp }
+        else {
+            help = OnboardingPasswordHelp(frame: root.bounds)
+            help.onDismiss = { [weak self] in self?.coverContent(false) }
+            passwordHelp = help
+            root.addSubview(help, positioned: .above, relativeTo: nil)
         }
-        alert.addButton(withTitle: "Done")
-        alert.beginSheetModal(for: window)
+        help.present()
+        coverContent(help.isPresented)
+    }
+
+    private func dismissPasswordHelp(remove: Bool = false) {
+        passwordHelp?.dismiss(animated: !remove)
+        if remove {
+            passwordHelp?.removeFromSuperview()
+            passwordHelp = nil
+        }
+    }
+
+    private var helpCoversContent: Bool { passwordHelp?.isPresented == true }
+
+    /// The covered content leaves accessibility and gives up its Escape close.
+    private func coverContent(_ covered: Bool) {
+        guard !closed else { return }
+        root.subviews.forEach { if $0 !== passwordHelp { $0.setAccessibilityHidden(covered) } }
+        updateCloseKey()
+    }
+
+    private func updateCloseKey() {
+        let closes = (isSafariAccess || isSafariPasswords) && !helpCoversContent
+        closeControl.keyEquivalent = closes ? "\u{1b}" : ""
     }
 
     private func schedulePasswordFileConsent() {
