@@ -437,6 +437,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var scriptingWindowCloseCompletions: [(Bool) -> Void] = []
     private var windowClosePending = false
     private var windowCloseApproved = false
+    private var onboardingCloseRequested = false
+    private var onboardingCloseNotes: [(editor: NoteEditorViewController, bodyEditable: Bool, titleEditable: Bool)]?
     private var wholeWindowClose = false {
         didSet { if !wholeWindowClose, oldValue { onReturnUnblocked?() } }
     }
@@ -883,7 +885,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         popupChrome.prepareCopy = { [weak self] in self?.preparePopupCopyURL() }
         popupChrome.prepareExtensions = { [weak self] in self?.preparePopupSiteControls(requireExtensions: true) }
         popupChrome.prepareSiteControls = { [weak self] in self?.preparePopupSiteControls(requireExtensions: false) }
-        popupChrome.onAddress = { [weak self] in self?.focusAddress() }
+        popupChrome.onAddress = { [weak self] in
+            guard let self else { return }; self.focusAddress(anchor: self.popupChrome.addressAnchor)
+        }
         popupChrome.onPageMenu = { [weak self] in
             guard let self else { return }; self.showPageMenu(from: self.popupChrome.addressAnchor)
         }
@@ -3164,7 +3168,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func wireSidebar() {
-        sidebar.onAddress = { [weak self] in self?.focusAddress() }
+        sidebar.onAddress = { [weak self] in
+            guard let self else { return }; self.focusAddress(anchor: self.sidebar.addressEditorAnchor)
+        }
         sidebar.onNewTab = { [weak self] in self?.newTab() }
         sidebar.onNavigation = { [weak self] kind in self?.prepareNavigationInteraction(kind) }
         sidebar.onReloadOptions = { [weak self] anchor in self?.showReloadOptions(from: anchor) }
@@ -5166,7 +5172,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         presentCommandBar(newTab: true)
     }
-    func focusAddress() { presentCommandBar(newTab: false) }
+    func focusAddress(anchor: NSView? = nil) {
+        presentCommandBar(newTab: false, addressAnchor: anchor)
+    }
 
     var canFocusSidebar: Bool {
         !isPopupWindow && libraryView == nil && nativeFullscreenTabID == nil && activePeek == nil
@@ -5303,7 +5311,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             deliverCommandBarRecentPages(to: bar, profileID: asked.profileID)
         }
     }
-    private func presentCommandBar(newTab: Bool, inSidebar: Bool = false, initialEdit: (String, NSRange)? = nil) {
+    private func presentCommandBar(newTab: Bool, inSidebar: Bool = false, addressAnchor: NSView? = nil, initialEdit: (String, NSRange)? = nil) {
         // A background or sheet-covered window must not lose its current
         // sessions just because a command was routed to it. An owned command
         // panel can be key, so its native admission is checked after dismissal.
@@ -5449,7 +5457,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             documents: { [weak self] in self?.commandBarDocuments(profileID: commandProfile) ?? [] },
             typedCommands: typedCommands, currentURL: seedURL,
             profilePath: store.independentEngineProfilePath(for: commandProfile), page: commandPage, nativeWindow: nativeBinding,
-            sidebarAnchor: inSidebar ? sidebar.keyboardSearchAnchor : nil, initialEdit: initialEdit,
+            sidebarAnchor: inSidebar ? sidebar.keyboardSearchAnchor : addressAnchor,
+            addressOnly: addressAnchor != nil,
+            currentPageTitle: currentBrowser?.title ?? store.state.tabs.first(where: { $0.id == commandTab })?.title,
+            initialEdit: initialEdit,
             extensionDisposition: isPopupWindow && newTab ? nil : (newTab ? .newForegroundTab : .currentTab),
             theme: windowPaletteTheme, contentAppearance: rootView.palette.contentAppearance)
         panel.isOwnerValid = isOriginal
@@ -13066,7 +13077,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             guard original(), let browser, let page else { return }
             switch action {
-            case .address: self.focusAddress()
+            case .address: self.focusAddress(anchor: anchor)
             case .copy: self.copyCurrentURL()
             // didClickSiteSettingsButton and didClickSiteInsecureButton share
             //
@@ -13134,7 +13145,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             switch action {
             //
             //
-            case .address: self.focusAddress()
+            case .address: self.focusAddress(anchor: anchor)
             case .split: self.showSplitPaneMenu(tabID, from: anchor)
             case .closeSplit: break
             case .sidebar: self.toggleSidebar()
@@ -16062,11 +16073,90 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         restoreSettingsAfterCancelledTermination = false
         render(store.state)
     }
+    func ownsSettings(_ candidate: SettingsWindow) -> Bool { settings === candidate }
+    /// Private browsers and popups must retain their native context. Ask their
+    /// complete page set for real beforeunload consent, then release the native
+    /// reservation without unloading; replay can hide the exact owner on approval.
+    func prepareAuxiliaryWindowForOnboarding(completion: @escaping (Bool) -> Void) {
+        guard isPrivateBrowsing || isPopupWindow, hasReadyPresentation, let window,
+              window.attachedSheet == nil, !isClosing, !wholeWindowClose,
+              !windowClosePending, !windowCloseApproved, let binding = nativeBinding else {
+            completion(false); return
+        }
+        func pages() -> [PCNativePage] {
+            Array(browsers.values.compactMap(\.nativePage)) + peeks.values.map(\.page)
+                + easelEditors.values.flatMap { $0.editor.pageObjects?.pages ?? [] }
+        }
+        func hasStableOwners() -> Bool {
+            collectionTransfer == nil && transferRecoveries.isEmpty && transferringTabIDs.isEmpty
+                && resolvingTransfers.isEmpty && transferContainers.isEmpty
+                && !hasPendingNativePage(in: Set(browsers.keys).union(easelEditors.keys))
+        }
+        guard hasStableOwners() else { completion(false); return }
+        let originals = pages()
+        let identities = Set(originals.map(ObjectIdentifier.init))
+        guard identities.count == originals.count else { completion(false); return }
+        windowClosePending = true
+        func isCurrent() -> Bool {
+            self.window === window && self.nativeBinding === binding && !isClosing && !wholeWindowClose
+                && windowClosePending && hasStableOwners()
+                && Set(pages().map(ObjectIdentifier.init)) == identities
+                && originals.allSatisfy { !$0.isClosed && PCNativeBrowserApplication.owner(of: $0) === binding }
+        }
+        var consented = false
+        PCNativeBrowserApplication.requestClosePages(originals, shouldCommit: {
+            MainActor.assumeIsolated {
+                consented = isCurrent()
+                return false // Release the reservation; keep every original page.
+            }
+        }, completion: { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { completion(false); return }
+                let approved = consented && isCurrent()
+                self.windowClosePending = false
+                completion(approved)
+            }
+        })
+    }
+    /// The same close path as the red window control, with a result for replay.
+    /// A refusal before native consent must settle too; it must never leave a
+    /// pending replay that can fire after an unrelated later close.
+    func closeForOnboarding(completion: @escaping (Bool) -> Void) {
+        guard hasReadyPresentation, let window, window.attachedSheet == nil,
+              !isClosing, !wholeWindowClose, !windowClosePending,
+              !windowCloseApproved, nativeBinding != nil else { completion(false); return }
+        onboardingCloseRequested = true
+        scriptingWindowCloseCompletions.append { [weak self] approved in
+            if let self {
+                if !approved {
+                    for saved in self.onboardingCloseNotes ?? [] {
+                        saved.editor.text.isEditable = saved.bodyEditable && !saved.editor.session.document.deleted
+                        saved.editor.titleText.isEditable = saved.titleEditable && !saved.editor.session.document.deleted
+                        saved.editor.view.needsLayout = true
+                    }
+                }
+                self.onboardingCloseNotes = nil
+                self.onboardingCloseRequested = false
+            }
+            completion(approved)
+        }
+        window.performClose(nil)
+        if !windowClosePending && !windowCloseApproved && !closeAfterEjecting && !pendingApprovedWindowClose {
+            finishScriptingWindowClose(false)
+        }
+    }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard sender === window, prepareNotesToClose() else { return false }
-        if let transfer = collectionTransfer { transfer.retry(); return false }
-        if let retry = transferRecoveries.values.first { retry(); return false }
-        guard transferringTabIDs.isEmpty else { return false }
+        guard sender === window else { return false }
+        // Replay freezes the exact saved editors before native consent begins.
+        // Native approval has already drained every Browser and is irreversible;
+        // do not introduce another save/transfer refusal after that boundary.
+        if windowCloseApproved, onboardingCloseNotes != nil { return true }
+        guard !windowClosePending else { return false }
+        func refuse() -> Bool { finishScriptingWindowClose(false); return false }
+        guard prepareNotesToClose() else { return refuse() }
+        if let transfer = collectionTransfer { transfer.retry(); return refuse() }
+        if let retry = transferRecoveries.values.first { retry(); return refuse() }
+        guard transferringTabIDs.isEmpty else { return refuse() }
         if windowCloseApproved {
             guard settings?.attemptClose() ?? true else {
                 pendingApprovedWindowClose = true
@@ -16075,12 +16165,26 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             pendingApprovedWindowClose = false
             return true
         }
-        guard !windowClosePending, let binding = nativeBinding else { return false }
+        guard let binding = nativeBinding else { return refuse() }
         if ejectPageBeforeClose() { return false }
         let settingsWasVisible = settings?.window?.isVisible == true
         guard settings?.attemptClose() ?? true else {
             finishScriptingWindowClose(false)
             return false
+        }
+        if onboardingCloseRequested {
+            // Flush and freeze in this same main-thread turn: there is no gap
+            // for a new local draft while another page awaits beforeunload.
+            guard prepareNotesToClose() else { return refuse() }
+            onboardingCloseNotes = noteEditors.values.map { note in
+                let editor = note.editor
+                let saved = (editor: editor, bodyEditable: editor.text.isEditable,
+                             titleEditable: editor.titleText.isEditable)
+                editor.text.isEditable = false
+                editor.titleText.isEditable = false
+                editor.view.needsLayout = true
+                return saved
+            }
         }
         windowClosePending = true
         wholeWindowClose = true

@@ -80,6 +80,13 @@ final class OnboardingSetupCard: NSView {
     /// background shape; clicks fall through to the card and its controls.
     final class Chrome: NSView {
         let grain = TiledGrainLayer()
+        var themeSurface: NSView? {
+            didSet {
+                oldValue?.removeFromSuperview()
+                if let themeSurface { addSubview(themeSurface, positioned: .below, relativeTo: subviews.first) }
+                needsLayout = true
+            }
+        }
         override var isFlipped: Bool { true }
         override init(frame: NSRect) {
             super.init(frame: frame)
@@ -98,6 +105,7 @@ final class OnboardingSetupCard: NSView {
             super.layout()
             CATransaction.begin(); CATransaction.setDisableActions(true)
             grain.frame = bounds
+            themeSurface?.frame = bounds
             CATransaction.commit()
         }
     }
@@ -211,16 +219,27 @@ final class OnboardingSetupCard: NSView {
     let message = NSTextField(wrappingLabelWithString: "")
     /// The import's backdrop, behind every step of it.
     let backdrop = BrowserImportBackdrop()
-    var titleColor: NSColor { OnboardingSetupPalette.title }
+    /// Same ink as sidebar page titles on the selected Space surface.
+    var themeTextColor: NSColor? {
+        didSet {
+            heading.textColor = titleColor
+            let title = NSMutableAttributedString(attributedString: heading.attributedStringValue)
+            title.addAttribute(.foregroundColor, value: titleColor, range: NSRange(location: 0, length: title.length))
+            heading.attributedStringValue = title
+            styleMessage()
+            updateColors()
+        }
+    }
+    var titleColor: NSColor { themeTextColor ?? OnboardingSetupPalette.title }
     /// The import's pages set every line in the title's colour.
     var importInk = false { didSet { if importInk != oldValue { styleMessage() } } }
     private var messageText = ""
     /// The import step's own text reaches across the content column too.
     var textSpansCard = false { didSet { if textSpansCard != oldValue { updateColors() } } }
-    var messageColor: NSColor { importInk ? titleColor : OnboardingSetupPalette.message }
+    var messageColor: NSColor { themeTextColor ?? (importInk ? titleColor : OnboardingSetupPalette.message) }
     /// The card's own fill, which the wash fades into.
     var fill: NSColor { themeBackground ?? OnboardingSetupPalette.card }
-    var chromeColor: NSColor { importInk ? titleColor : OnboardingSetupPalette.message }
+    var chromeColor: NSColor { themeTextColor ?? (importInk ? titleColor : OnboardingSetupPalette.message) }
     var themeBackground: NSColor? { didSet { updateColors() } }
     /// The chosen Space theme's texture, drawn as the sidebar's theme renderer
     /// draws it. No theme, or one without colour, draws none.

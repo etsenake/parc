@@ -24,7 +24,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private var store: BrowserStore!
+    private var aboutWindow: AboutParcWindow?
     private var onboarding: OnboardingWindow?
+    private var replayCloseInProgress = false
+    private struct ReplayWindow {
+        let record: BrowserWindowRecord
+        let frame: NSRect
+        let wasVisible: Bool
+        let wasMiniaturized: Bool
+        let wasFullScreen: Bool
+    }
+    private var replayWindow: ReplayWindow?
+    private var replayReturnOwner: BrowserWindowController?
+    private var replaySessionActive = false
+    // Keep these exact owners alive: recreating a popup or a private browser
+    // would lose its native context even if its saved tabs looked identical.
+    private var hiddenReplayWindows: [BrowserWindowController] = []
+    private var deferredReplayTermination: (() -> Void)?
+    private var replayRestoreError: Error?
+    private var replayRestoreAlert: NSAlert?
     private var browserImport: BrowserImportWindow?
     private var applicationSettings: SettingsWindow?
     private var applicationSettingsProfileID: UUID?
@@ -378,7 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func showOnboarding() {
-        guard !terminationInProgress else { return }
+        guard !terminationInProgress, !replayCloseInProgress else { return }
         if let onboarding { onboarding.resume(); return }
         do {
             let controller = try OnboardingWindow(store: store)
@@ -422,49 +440,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    /// A requested Parc setting: the production flow, applied to the Settings
-    /// Space on Finish. Browser windows and their pages stay owned throughout.
+    /// Replay uses the production flow. The ordinary window-close transaction
+    /// resolves notes, Settings and page beforeunload before welcome is shown.
     @objc func replayOnboarding(_ sender: Any?) {
         guard let settings = sender as? SettingsWindow,
-              started, initialBrowserOpened, !terminationInProgress else { return }
+              started, initialBrowserOpened, !terminationInProgress, !replayCloseInProgress,
+              quitWarning == nil, !quitWarningApprovalPending else { return }
+        if replayRestoreError != nil { presentReplayRestoreFailure(); return }
         if let onboarding {
             guard settings.attemptClose() else { return }
             onboarding.resume()
             return
         }
-        let originalBrowser = front
         do {
             guard let spaceID = settings.replaySpaceID else { throw BrowserScriptError.missing }
-            try? OnboardingDraft.remove(directory: store.directory, fileName: OnboardingDraft.replayRestartFileName)
-            let controller = try makeOnboardingReplay(.replay(spaceID: spaceID), returningTo: originalBrowser)
+            let original = windows.first(where: { $0.ownsSettings(settings) })
+                ?? (settings === applicationSettings ? front : nil)
+            guard original != nil || settings === applicationSettings else { throw BrowserScriptError.missing }
+            let controller = try makeOnboardingReplay(.replay(spaceID: spaceID))
             guard settings.attemptClose() else { return }
-            onboarding = controller
-            controller.present()
+            Self.removeReplayRestartDraft(in: store.directory)
+            try startOnboardingReplay(controller, closing: original)
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "Parc couldn’t replay onboarding."
-            if let window = settings.window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+            if let window = settings.window, window.isVisible, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
             else { alert.runModal() }
         }
     }
 
-    private func makeOnboardingReplay(_ mode: OnboardingWindow.Mode,
-                                      returningTo originalBrowser: BrowserWindowController?) throws -> OnboardingWindow {
+    private func startOnboardingReplay(_ controller: OnboardingWindow, closing original: BrowserWindowController?,
+                                       onPresented: (() -> Void)? = nil) throws {
+        guard !terminationInProgress, !replayCloseInProgress, !replaySessionActive else { throw BrowserScriptError.busy }
+        if let original {
+            guard windows.contains(where: { $0 === original }), original.hasReadyPresentation,
+                  original.window != nil else { throw BrowserScriptError.busy }
+        }
+        let closesOriginal = original.map { $0.store === store && !$0.isPopupWindow } ?? false
+        if closesOriginal, let original {
+            guard original.prepareNotesToClose() else { throw CocoaError(.userCancelled) }
+            try NoteStore.flushAllSharedDelayedDiskSaves()
+        }
+        recordWindowSessions()
+        persistTabHistory()
+        try store.save()
+        if closesOriginal, let original, let window = original.window {
+            replayWindow = ReplayWindow(record: original.sessionRecord, frame: window.frame,
+                                        wasVisible: window.isVisible, wasMiniaturized: window.isMiniaturized,
+                                        wasFullScreen: window.styleMask.contains(.fullScreen))
+        }
+        replayReturnOwner = original
+        replaySessionActive = true
+        replayCloseInProgress = true
+        onboarding = controller
+        let finishClose: (Bool) -> Void = { [weak self, weak controller] approved in
+            // windowWillClose completes before AppDelegate's onClose removes
+            // the original owner. Continue after that notification unwinds.
+            DispatchQueue.main.async {
+                guard let self, let controller, self.onboarding === controller else { return }
+                self.replayCloseInProgress = false
+                if !approved {
+                    // Cancel means retain this window and cancel replay. A Quit
+                    // queued behind the same consent must not immediately ask again.
+                    self.deferredReplayTermination = nil
+                    self.cancelApplicationRestart("Restart cancelled. Your browser is still open.")
+                    self.finishOnboardingReplay()
+                } else if self.deferredReplayTermination != nil {
+                    // Finish the local close before a global close can touch its
+                    // reservation. Restore first so a denied Quit retains a browser.
+                    self.finishOnboardingReplay()
+                } else {
+                    self.hiddenReplayWindows = NSApp.orderedWindows.compactMap { window in
+                        self.windows.first { $0.window === window && window.isVisible && !window.isMiniaturized }
+                    }
+                    self.hiddenReplayWindows.forEach { $0.window?.orderOut(nil) }
+                    controller.present()
+                    onPresented?()
+                }
+            }
+        }
+        // Settings also exists for private browsers and popups. Preserve those
+        // exact native owners; only a regular browser is closed and reconstructed.
+        if closesOriginal, let original { original.closeForOnboarding(completion: finishClose) }
+        else if let original { original.prepareAuxiliaryWindowForOnboarding(completion: finishClose) }
+        else { finishClose(true) }
+    }
+
+    private func restoreReplayWindow() throws -> BrowserWindowController? {
+        guard let saved = replayWindow else {
+            if let original = replayReturnOwner,
+               let live = windows.first(where: { $0 === original && $0.hasReadyPresentation }) { return live }
+            // Application Settings can outlive its browser, and an auxiliary
+            // page can close itself while replay is up. Never reconstruct that
+            // private/popup context; return to a normal browser instead.
+            return try windows.first(where: { $0.store === store && !$0.isPopupWindow && $0.hasReadyPresentation })
+                ?? makeBrowserWindow(renderInitialSelection: true, showImmediately: false)
+        }
+        if let owner = windows.first(where: { $0.sessionID == saved.record.id }) { return owner }
+        let owner = try makeBrowserWindow(renderInitialSelection: true, showImmediately: false,
+                                          restoredRecord: saved.record)
+        owner.window?.setFrame(saved.frame, display: false)
+        return owner
+    }
+
+    private func makeOnboardingReplay(_ mode: OnboardingWindow.Mode) throws -> OnboardingWindow {
         let controller = try OnboardingWindow(store: store, mode: mode)
-        controller.onComplete = { [weak self, weak controller, weak originalBrowser] in
+        controller.onComplete = { [weak self, weak controller] in
             guard let self, let controller, self.onboarding === controller,
                   !self.terminationInProgress else { throw CocoaError(.userCancelled) }
-            let browser = try self.replayDestination(preferred: originalBrowser)
-                ?? self.makeBrowserWindow(renderInitialSelection: true, showImmediately: false)
+            guard let browser = try self.restoreReplayWindow() else { throw BrowserScriptError.missing }
             self.lastActiveWindow = browser
         }
-        controller.onCancel = { [weak self, weak controller, weak originalBrowser] in
+        controller.onCancel = { [weak self, weak controller] in
             guard let self, let controller, self.onboarding === controller else { return }
-            self.finishOnboardingReplay(returningTo: originalBrowser)
+            self.finishOnboardingReplay()
         }
-        controller.onRevealCompleted = { [weak self, weak controller, weak originalBrowser] in
+        controller.onRevealCompleted = { [weak self, weak controller] in
             guard let self, let controller, self.onboarding === controller else { return }
-            self.finishOnboardingReplay(returningTo: originalBrowser)
+            self.finishOnboardingReplay()
         }
         controller.onRequestImportRestart = { [weak self, weak controller] intent, completion in
             guard let self, let controller else { completion("This import is no longer available."); return }
@@ -491,26 +584,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return controller
     }
 
-    private func replayDestination(preferred: BrowserWindowController?) -> BrowserWindowController? {
-        if let preferred, windows.contains(where: { $0 === preferred }), preferred.hasReadyPresentation {
-            return preferred
-        }
-        return front
-    }
-
-    private func finishOnboardingReplay(returningTo preferred: BrowserWindowController?) {
-        onboarding = nil
+    private func finishOnboardingReplay() {
         guard !terminationInProgress else { return }
-        if let browser = replayDestination(preferred: preferred) {
-            lastActiveWindow = browser
-            browser.window?.deminiaturize(nil)
-            browser.window?.makeKeyAndOrderFront(nil)
-        } else {
-            createStandardWindow(showCommandBar: false)
+        let browser: BrowserWindowController
+        do {
+            guard let restored = try restoreReplayWindow() else { return }
+            browser = restored
+        } catch {
+            replayRestoreError = error
+            presentReplayRestoreFailure()
+            return
         }
-        if let owner = front { deliverPendingBrowserRequests(to: owner) }
+        let saved = replayWindow
+        replayWindow = nil
+        replayReturnOwner = nil
+        replaySessionActive = false
+        replayRestoreError = nil
+        onboarding?.suspend()
+        onboarding = nil
+        for owner in hiddenReplayWindows.reversed() where windows.contains(where: { $0 === owner }) {
+            owner.window?.orderFront(nil)
+        }
+        hiddenReplayWindows.removeAll()
+        lastActiveWindow = browser
+        if let saved, let window = browser.window {
+            if saved.wasMiniaturized { window.miniaturize(nil) }
+            else if saved.wasVisible {
+                window.makeKeyAndOrderFront(nil)
+                if saved.wasFullScreen && !window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+            }
+        } else if browser.window?.isMiniaturized != true {
+            browser.window?.makeKeyAndOrderFront(nil)
+        }
+        recordWindowSessions()
+        deliverPendingBrowserRequests(to: browser)
         NSApp.activate(ignoringOtherApps: true)
         refreshVisibleActivity()
+        let deferred = deferredReplayTermination
+        deferredReplayTermination = nil
+        deferred?()
+    }
+
+    private func presentReplayRestoreFailure() {
+        // onCancel runs inside the setup window's close notification. Do not
+        // attach the recovery UI to that closing owner or clear its saved record.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.replaySessionActive, let error = self.replayRestoreError,
+                  !self.terminationInProgress, self.replayRestoreAlert == nil else { return }
+            let alert = NSAlert()
+            alert.messageText = "Parc couldn’t restore your browser window."
+            alert.informativeText = "Your saved tabs and window are retained. \(error.localizedDescription)"
+            alert.addButton(withTitle: "Retry")
+            alert.addButton(withTitle: "Quit")
+            self.replayRestoreAlert = alert
+            let response = alert.runModal()
+            self.replayRestoreAlert = nil
+            if response == .alertFirstButtonReturn { self.finishOnboardingReplay() }
+            else { self.requestApplicationTermination(nil) }
+        }
+    }
+
+    private func resumeOnboardingAfterCancelledTermination() {
+        if replayRestoreError != nil { presentReplayRestoreFailure() }
+        else if !replayCloseInProgress { onboarding?.resume() }
     }
 
     private func finishInitialBrowserPresentation() {
@@ -979,7 +1115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// records in BrowserWindowRecord.sessionOrder. Quit keeps the records
     /// taken as it began, before closing windows.
     private func recordWindowSessions() {
-        guard sessionRestorationInitialized, !terminationInProgress else { return }
+        guard sessionRestorationInitialized, !terminationInProgress, !replaySessionActive else { return }
         let order = NSApp.orderedWindows
         let standard = windows.filter { $0.store === store && !$0.isPopupWindow && $0.hasReadyPresentation }
         let indices = BrowserWindowRecord.sessionOrder(
@@ -993,6 +1129,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let fromQuitCommand = quitCommandPending
         quitCommandPending = false
         guard !terminationInProgress, !quitWarningApprovalPending else { return }
+        if replayCloseInProgress {
+            deferredReplayTermination = { [weak self] in
+                self?.quitCommandPending = fromQuitCommand
+                self?.requestApplicationTermination(sender)
+            }
+            return
+        }
         guard started else {
             (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
             return
@@ -1025,7 +1168,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             warning.onDecision = { [weak self, weak warning] approved in
                 guard let self, self.quitWarning === warning else { return }
                 self.quitWarning = nil
-                guard approved else { self.cancelApplicationRestart("Restart cancelled."); return }
+                guard approved else {
+                    self.cancelApplicationRestart("Restart cancelled.")
+                    self.resumeOnboardingAfterCancelledTermination()
+                    return
+                }
                 self.quitWarningApprovalPending = true
                 DispatchQueue.main.async { [weak self] in self?.continueApplicationTermination(sender) }
             }
@@ -1049,21 +1196,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private func continueApplicationTermination(_ sender: Any?) {
         quitWarningApprovalPending = false
         guard !terminationInProgress else { return }
+        if replayCloseInProgress {
+            deferredReplayTermination = { [weak self] in self?.continueApplicationTermination(sender) }
+            return
+        }
         guard started else {
             (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
             return
         }
         guard windows.allSatisfy({ $0.prepareNotesToClose() }) else {
-            cancelApplicationRestart("Restart cancelled. Your notes are still open."); return
+            cancelApplicationRestart("Restart cancelled. Your notes are still open.")
+            resumeOnboardingAfterCancelledTermination()
+            return
         }
         do { try NoteStore.flushAllSharedDelayedDiskSaves() }
         catch {
             cancelApplicationRestart("Quit cancelled. A note could not be saved on this Mac.")
+            resumeOnboardingAfterCancelledTermination()
             return
         }
         guard applicationSettings?.prepareForTermination() ?? true,
               windows.allSatisfy({ $0.prepareSettingsForTermination() }) else {
             cancelApplicationRestart("Quit cancelled. Air Traffic Control changes could not be saved.")
+            resumeOnboardingAfterCancelledTermination()
             return
         }
         recordWindowSessions()
@@ -1080,6 +1235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             finishInitialLaunchIfReady()
             drainInitialActions()
             cancelApplicationRestart("Quit cancelled. Settings could not be closed.")
+            resumeOnboardingAfterCancelledTermination()
             return
         }
         if applicationRestart == nil { browserImport?.close(); onboarding?.closeBrowserImport() }
@@ -1103,7 +1259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
             } else {
                 self.terminationInProgress = false
-                self.onboarding?.resume()
+                self.resumeOnboardingAfterCancelledTermination()
                 if applicationSettingsWasVisible { self.applicationSettings?.restoreAfterCancelledOwnerClose() }
                 self.windows.forEach { $0.cancelApplicationClose() }
                 self.resumePendingAppKitRestorations()
@@ -2090,11 +2246,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if intent.replay, onboarding == nil,
                let space = store.state.spaces.first(where: { $0.id == intent.spaceID && $0.profileID == intent.profileID }),
                let draft = OnboardingDraft.takeReplayRestart(directory: store.directory, space: space),
-               let controller = try? makeOnboardingReplay(.replay(spaceID: space.id, resuming: draft),
-                                                          returningTo: original) {
-                onboarding = controller
-                controller.present()
-                controller.resumeSafariImport(destination: intent.destination, sourceBundleID: intent.sourceBundleID)
+               let controller = try? makeOnboardingReplay(.replay(spaceID: space.id, resuming: draft)) {
+                do {
+                    try startOnboardingReplay(controller, closing: original) { [weak controller] in
+                        controller?.resumeSafariImport(destination: intent.destination, sourceBundleID: intent.sourceBundleID)
+                    }
+                } catch { presentWindowCreationError(error) }
             } else {
                 presentBrowserImport(destination: intent.destination, original: original, parent: parent,
                                      resumingSourceBundleID: intent.sourceBundleID)
@@ -2460,7 +2617,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         owner.toggleStayOnTop()
     }
     @objc private func about(_ sender: Any?) {
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Parc", .applicationVersion: "Development"])
+        if aboutWindow == nil { aboutWindow = AboutParcWindow() }
+        aboutWindow?.present()
     }
     private func trace(_ value: @autoclosure () -> String) {
         if arguments.contains("--parc-smoke") { FileHandle.standardError.write(Data(("Parc test: " + value() + "\n").utf8)) }

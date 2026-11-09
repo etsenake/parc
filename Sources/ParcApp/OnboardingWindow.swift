@@ -28,6 +28,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private let welcomeBackdrop = OnboardingBackdrop()
     private var background: NSHostingView<OnboardingBackgroundView>?
     private let setupCard = OnboardingSetupCard(frame: .zero)
+    private let themePreview = ThemeRendererView(frame: .zero)
+    private var appearanceObservation: NSKeyValueObservation?
     private let readyContent = OnboardingReadyContent(frame: .zero)
     private let confetti = OnboardingConfettiView(frame: .zero)
     private var lastStage: OnboardingDraft.Stage?
@@ -96,8 +98,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         themeEditor = SpaceThemeEditorView(theme: draft.theme)
         themeChrome = OnboardingThemeEditorChrome(editor: themeEditor)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.welcomeSize(on: NSScreen.main)), styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
-        if case .replay = mode { window.title = "Replay onboarding" }
-        else { window.title = "Welcome to Parc" }
+        window.title = "Welcome to Parc"
         window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.isOpaque = false; window.backgroundColor = .clear
@@ -109,6 +110,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         super.init(window: window)
         window.delegate = self
         window.contentView = root
+        themePreview.drawsMaterial = false
+        setupCard.chrome.themeSurface = themePreview
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.applySetupPalette() }
+        }
         themeEditor.onPreview = { [weak self] theme in
             guard let self else { return }
             self.selectedTheme = theme
@@ -126,6 +132,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             guard let self, !self.isClosed, !self.isFinishing, self.draft.stage == .theme,
                   self.window?.attachedSheet == nil else { return }
             if self.isReplay { self.previewReplayAppearance(appearance) } else { AppAppearance.apply(appearance) }
+            self.applySetupPalette()
         }
         root.addSubview(setupCard)
         root.addSubview(confetti)
@@ -417,7 +424,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let order = draft.visibleSetupOrder()
         let ordinal = order.firstIndex(of: draft.stage.current) ?? 0
         let isReady = draft.stage == .ready
-        progress.stringValue = (isReplay ? "Replay · " : "") + (isReady ? "Ready" : "\(ordinal + 1) of \(draft.displayedSetupCount())")
+        progress.stringValue = (isReady ? "Ready" : "\(ordinal + 1) of \(draft.displayedSetupCount())")
         // Back from the first step after an import that found no browsers
         // would only reopen it and bounce here again.
         back.isHidden = isReady || draft.previousStage() == nil
@@ -426,7 +433,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         skip.isHidden = ![.theme, .favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
         let canAdvance = browserImport == nil
         next.isEnabled = canAdvance; next.isLoading = false; back.isEnabled = canAdvance; skip.isEnabled = canAdvance
-        next.title = isReady ? (isReplay ? "Finish replay" : "Get Started") : "Next"
+        next.title = isReady ? "Get Started" : "Next"
         if isReady {
             readyContent.attach(store: MembershipCardStore.shared(directory: store.directory, name: NSFullUserName()))
         }
@@ -663,13 +670,21 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func applySetupPalette() {
-        let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
+        let palette = ThemeChromePalette(theme: selectedTheme, appearance: NSApp.effectiveAppearance)
+        let hasTheme = selectedTheme.isValid && selectedTheme.primaryColor != nil
         setupCard.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)
-        // NewSetupView's style getter consumes SpaceStyleEditorState.windowTheme;
-        // Card reads semantic backgroundExtra (+0xb0), not the window gradient.
+        setupCard.themeTextColor = hasTheme ? palette.title : nil
+        spaceName.themeTextColor = setupCard.themeTextColor
+        // The inner card previews the actual Space surface. The animated blue
+        // background remains independent. Picker chrome follows app appearance,
+        // while card text follows the Space's contrast palette.
+        themeChrome.appearance = NSApp.effectiveAppearance
+        themePreview.appearance = NSApp.effectiveAppearance
+        themePreview.theme = selectedTheme
         setupCard.themeBackground = selectedTheme.isValid && selectedTheme.primaryColor != nil
             ? palette.backgroundExtra : nil
-        setupCard.grainTheme = selectedTheme
+        // ThemeRenderer owns both the gradient and its texture; don't double it.
+        setupCard.grainTheme = nil
         setupCard.grainIsActive = ThemeWindowActivity.isActive(window)
         let backdrop = draft.stage == .bookmarks ? browserImport?.backdrop : nil
         setupCard.backdrop.show(backdrop?.pages ?? [], selected: backdrop?.selected)
@@ -679,7 +694,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         persistenceStatus.textColor = draft.stage.isWelcome ? .white : .systemRed
         // ProgressionButton's theme getters select maxContrastColor (+0x70)
         // and backgroundExtra (+0xb0). Unthemed setup uses AuthFeature assets.
-        let hasTheme = selectedTheme.isValid && selectedTheme.primaryColor != nil
         next.configure(background: hasTheme ? palette.maxContrastColor : OnboardingSetupPalette.action,
                        foreground: hasTheme ? palette.backgroundExtra : .white,
                        reduceMotion: reduceMotion)
@@ -688,9 +702,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         for view in body.subviews + setupCard.instructions.subviews {
             if let label = view as? NSTextField, label !== spaceField {
                 label.textColor = label === setupCard.heading ? setupCard.titleColor : label === setupCard.message
-                    ? setupCard.messageColor : (label.font?.pointSize ?? 14) >= 17 ? OnboardingSetupPalette.title : setupCard.chromeColor
+                    ? setupCard.messageColor : (label.font?.pointSize ?? 14) >= 17 ? setupCard.titleColor : setupCard.chromeColor
             } else if let button = view as? ActionButton {
-                button.contentTintColor = OnboardingSetupPalette.title
+                button.contentTintColor = setupCard.titleColor
             }
         }
     }
@@ -711,7 +725,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func defaultBrowserChoices() -> OnboardingDefaultBrowserChoice {
-        let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
+        let palette = ThemeChromePalette(theme: selectedTheme, appearance: NSApp.effectiveAppearance)
         return OnboardingDefaultBrowserChoice(selected: draft.wantsDefaultBrowser,
             selectionColor: selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor,
             onSelect: { [weak self] choice in
@@ -725,7 +739,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func adBlockerChoices() -> OnboardingAdBlockersChoice {
-        let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
+        let palette = ThemeChromePalette(theme: selectedTheme, appearance: NSApp.effectiveAppearance)
         return OnboardingAdBlockersChoice(blockers: draft.importedAdBlockers, choice: draft.adBlockerChoice,
             enabled: true,
             selectionColor: selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor,
@@ -788,11 +802,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         } catch {
             isFinishing = false; next.isEnabled = true
             back.isEnabled = !setupCommitted
-            if setupCommitted, !isReplay { next.title = "Open Parc" }
+            if setupCommitted { next.title = "Open Parc" }
             if let window {
                 let alert = NSAlert(error: error)
-                alert.messageText = !isReplay ? "Parc couldn’t finish setup."
-                    : setupCommitted ? "Parc couldn’t return to browsing." : "Parc couldn’t apply your onboarding choices."
+                alert.messageText = setupCommitted ? "Parc couldn’t open the browser." : "Parc couldn’t finish setup."
                 alert.beginSheetModal(for: window)
             }
         }
@@ -974,7 +987,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func renderBrowserImport(_ importer: BrowserImportViewController) {
-        let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
+        let palette = ThemeChromePalette(theme: selectedTheme, appearance: NSApp.effectiveAppearance)
         importer.selectionColor = selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor
         next.title = importer.nextTitle; next.isEnabled = importer.canAdvance; next.isLoading = importer.isLoading
         back.isHidden = !importer.canGoBack; back.isEnabled = true
@@ -982,7 +995,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         skip.title = importer.isImporting ? "Stop Import" : importer.skipTitle ?? ""
         skip.isHidden = !importer.isImporting && importer.skipTitle == nil
         skip.isEnabled = importer.isImporting || importer.canSkip
-        progress.stringValue = (isReplay ? "Replay · " : "") + "1 of \(draft.displayedSetupCount())"
+        progress.stringValue = "1 of \(draft.displayedSetupCount())"
         progress.isHidden = false; next.isHidden = false
         setupCard.isHidden = false
         setupCard.configure(title: importer.showsSourceCards ? "Get us up\nto speed." : importer.headingText,

@@ -1,5 +1,14 @@
 # Address and command bar
 
+**November 9 address editor:** clicking the sidebar, page-toolbar or popup URL
+opens the separate 350-point compact editor anchored to that control, as in
+addresses and native search suggestions, and navigates the original current
+tab. It does not offer application commands, document actions or Actions scope.
+Cmd-L and Cmd-T retain the large command palette and its existing command and
+tab-switching features. The compact surface shares the original page/profile
+lease, genuine native navigation requests, IME, selection and dismissal owner.
+
+
 The command bar is a temporary child panel of one browser window. Cmd-L begins with the current native page URL selected; Cmd-T begins with an empty field. It uses AppKit's field editor for selection, undo, input methods and ordinary text copy. Explicit native-result selection can project provider edit text while retaining the typed query and original request; eligible default results can now select their genuine inline suffix while typing.
 
 Rows retain one of three distinct actions:

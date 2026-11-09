@@ -23,7 +23,10 @@ final class PCNativeOmniboxExtensionAction {
     let resultIndex: Int
     init(index: Int) { resultIndex = index }
 }
-final class PCNativeExtensionAction { let identifier = "fixture"; let generation = 0 }
+final class PCNativeExtensionAction {
+    let identifier = "fixture", name = "Fixture Extension"
+    let generation = 0, modelIndex = 0
+}
 final class PCNativeOmniboxScope {
     let searchHost: String
     var result: PCNativeSearchNavigation?
@@ -48,6 +51,9 @@ struct TabCandidatesFixture {
     var table = Table()
     let input = NSTextField()
     var editState = CommandBarEditState(query: "")
+    var addressOnly = false, addressWasEdited = false
+    var initialInput = ""
+    var currentPageTitle: String?
     var nativeHold = CommandBarNativeHold()
     var nativeHoldDeadline: DispatchWorkItem?
     var snapshotRevision: UInt64 = 0
@@ -63,6 +69,7 @@ struct TabCandidatesFixture {
     var documents: [CommandBarDocument] = []
     var topDomainList: [CommandBarRanking.Domain] = []
     var commands: [KeyboardShortcuts.MenuCommand] = []
+    var commandSearch: [(title: String, text: String)] = []
     var typedCommands: [CommandBarTypedCommand] = []
     var spaces: [CommandBarSpaceAction] = []
     var folders: [CommandBarFolderAction] = []
@@ -77,6 +84,10 @@ struct TabCandidatesFixture {
     var historyRevision: UInt64 = 0
     var historyExcludedURL: String?
     var recentPagesGeneration = 0, topDomainGeneration = 0
+    var recentPages: [(url: String, title: String)]?
+    var rankedHistory: [CommandBarHistoryScanSkip.Visit] = []
+    var lastHistoryScanKey: CommandBarHistoryScanSkip.Key?
+    var cachedHistoryVisits: [CommandBarHistoryScanSkip.Visit] = []
     var retainedBackgroundHistory: (result: Result, row: Int)?
     var explicitSelectionID: String?
     var actionsScope = false, isWebsiteScoped = false, scopeInvalidated = false, dismissed = false
@@ -88,27 +99,15 @@ struct TabCandidatesFixture {
     var isOwnerValid: (() -> Bool)?
     var results: [Result] = []
     var submitted: (result: Result, disposition: CommandBarSubmission)?
-    var lastFingerprint: String?
+    var lastOpenResultsFingerprint: String?
+    var resultPublication = UUID()
     var rebuilds = 0
-    var localCommands: [Result] = []
     static func matchType(of value: PCNativeSearchNavigation) -> String? { value.matchType }
     static func site(of scope: PCNativeOmniboxScope) -> Site? { Site(host: scope.searchHost) }
     func caption(for tab: BrowserTab) -> CommandBarResultText.TabCaption { .switchToTab }
-    func commandResults(query: String, includesEmpty: Bool) -> [Result] { localCommands }
     func dismiss(restoreFocus: Bool) { dismissed = true }
     func submitResult(_ result: Result, disposition: CommandBarSubmission, retainsSelection: Bool) {
         submitted = (result, disposition)
-    }
-    // The harness supplies the table/window shell only; all transformations
-    // and the submission boundary are the extracted production functions.
-    func refreshResults(requestNative: Bool = false) {
-        guard !nativeHold.isHolding else { return }
-        let query = editState.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = openResultsFingerprint(query: query)
-        guard !CommandBarOpenResultsSkip.shouldSkip(previous: lastFingerprint, next: next) else { return }
-        lastFingerprint = next; rebuilds += 1
-        results = isWebsiteScoped ? nativeResultRows(scoped: true) : rankedResults(query: query)
-        table.selectedRow = 0
     }
     func publish(_ values: [PCNativeSearchNavigation], input: String) {
         snapshotRevision += 1
@@ -135,6 +134,83 @@ struct TabCandidatesFixture {
         func search(_ query: String) -> PCNativeSearchNavigation {
             PCNativeSearchNavigation("https://www.google.com/search?q=" + query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!,
                                      search: true, title: query, type: "search-what-you-typed")
+        }
+        func compact(_ url: String) -> NavigationFixture {
+            let f = NavigationFixture()
+            f.addressOnly = true; f.initialInput = url; f.currentPageTitle = "Current page"
+            f.editState = CommandBarEditState(query: url)
+            return f
+        }
+
+        // A pristine compact field displays the selected current URL but ranks
+        // zero-query suggestions. Clearing it also ranks zero-query suggestions;
+        // the fingerprint must still discard the old URL, without depending on
+        // a newer native answer or a change in the provider's error state.
+        for providerError in [nil, "Suggestions unavailable"] as [String?] {
+            let f = compact("https://current.example/")
+            f.nativeError = providerError; f.refreshResults()
+            expect(f.results.first?.id == "current-address", "pristine compact field offers the current address first")
+            expect(f.results.first?.title == "Current page", "current-address suggestion uses the page title")
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.result.input == f.initialInput, "pristine Return retains the displayed current address")
+            f.submitted = nil
+            let rebuilds = f.rebuilds, nativeRevision = f.snapshotRevision
+            f.addressWasEdited = true; f.editState.edit(""); f.refreshResults()
+            expect(f.rebuilds == rebuilds + 1, "clearing the seeded URL rebuilds despite the same effective empty query")
+            expect(f.snapshotRevision == nativeRevision, "cleared-field regression uses no replacement native publication")
+            expect(f.results.isEmpty, "clearing with no other suggestions removes the current-address row")
+            f.submitSelection(.ordinary)
+            expect(f.submitted == nil, "Return after clearing cannot navigate to the deleted URL")
+        }
+
+        let recents = compact("https://current.example/")
+        recents.historyExcludedURL = recents.initialInput
+        recents.refreshResults()
+        let beforeRecents = recents.rebuilds
+        recents.updateRecentPages([(recents.initialInput, "Current page"), ("https://recent.example/", "Recent page")])
+        expect(!recents.editState.query.isEmpty && !recents.addressWasEdited, "recent-page answer arrives while the seed URL remains in the field")
+        expect(recents.rebuilds == beforeRecents + 1, "async recents refresh a pristine compact field")
+        expect(recents.results.map(\.id) == ["current-address", "history:https://recent.example/"],
+               "async recents retain current-address first and exclude its duplicate history row")
+        recents.addressWasEdited = true; recents.editState.edit(""); recents.refreshResults()
+        expect(recents.results.map(\.id) == ["history:https://recent.example/"], "clearing preserves real recents while removing the seed row")
+        recents.submitSelection(.ordinary)
+        expect(recents.submitted?.result.input == "https://recent.example/", "Return after clearing selects an actual recent page")
+
+        // Local tabs are URL suggestions in the compact editor, but exact-ID
+        // switches in the full palette. Notes, Easels and app commands remain
+        // available in that full palette and do not leak into address editing.
+        let websiteTab = tab("https://example.com/", title: "Example")
+        let note = CommandBarDocument(kind: .note, id: UUID(), title: "Example Note")
+        let easel = CommandBarDocument(kind: .easel, id: UUID(), title: "Example Easel")
+        for addressOnly in [false, true] {
+            let f = NavigationFixture(); f.addressOnly = addressOnly
+            f.tabs = [websiteTab, tab(InternalPage.note(note.id).urlString, title: note.title)]
+            f.documents = [note, easel]
+            f.adoptCommands([.init(id: "copyCurrentURL:", title: "Copy Current URL", group: "Edit")])
+            expect(f.commands.isEmpty == addressOnly, "menu adoption distinguishes compact editor from the full palette")
+            let commands = f.commandResults(query: "", includesEmpty: true)
+            expect(addressOnly ? commands.isEmpty : commands.contains(where: { $0.command != nil }),
+                   "compact editor excludes commands while the full action palette retains them")
+            expect(addressOnly ? commands.isEmpty : commands.contains(where: { $0.managesPasswords }),
+                   "password management remains in the full action palette")
+            f.refreshResults()
+            expect(f.results.first?.input == (addressOnly ? websiteTab.url : nil), "compact tab candidate owns its URL input")
+            expect(f.results.first?.tabID == (addressOnly ? nil : websiteTab.id), "full palette tab candidate retains its exact tab identity")
+            expect(f.results.count == (addressOnly ? 1 : 2), "compact empty-query rows exclude local document tabs")
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.disposition == .ordinary, "ordinary Return retains its destination disposition")
+            expect(f.submitted?.result.tabID == (addressOnly ? nil : websiteTab.id), "Return preserves the address-versus-switch intent")
+            f.addressWasEdited = true; f.editState.edit("Example"); f.refreshResults()
+            expect(f.results.contains(where: { $0.document != nil }) == !addressOnly, "typed compact queries exclude documents while full palette keeps them")
+            f.siteScopes = [PCNativeOmniboxScope("example.com")]
+            if let row = f.results.firstIndex(where: { $0.url?.absoluteString == websiteTab.url }) {
+                f.table.selectedRow = row
+                expect(f.selectedScopeOffer === f.siteScopes.first, "URL-backed compact and full tab suggestions retain website search scope")
+            } else { expect(false, "website suggestion remains available for scope selection") }
+            let request = search("weather tomorrow")
+            f.editState.edit("weather tomorrow"); f.publish([request], input: "weather tomorrow")
+            expect(f.results.first?.navigation === request, "both surfaces retain the original native search request")
         }
 
         // Use the shell's real candidate filter: other Spaces in this Profile

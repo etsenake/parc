@@ -92,7 +92,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private var privacyBannerVisible = false
     ///
     /// banner stays under the scoped results too.
-    private var showsPrivacyBanner: Bool { privacyBannerVisible && sidebarAnchor == nil }
+    private var showsPrivacyBanner: Bool { privacyBannerVisible && sidebarAnchor == nil && !addressOnly }
     private var privacyBannerHeight: CGFloat { privacyBanner.isHidden ? 0 : privacyBanner.frame.height }
     /// Profile/page-owned extension launch candidates, distinct from an
     /// extension's optional omnibox keyword and its query suggestions.
@@ -113,8 +113,11 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     var onSidebarCommit: (() -> Void)?
     var onSidebarQueryState: ((Bool) -> Void)?
     private weak var sidebarAnchor: NSView?
-    private var sidebarBrowsing: Bool { sidebarAnchor != nil && input.stringValue.isEmpty && !isScoped && !scopeInvalidated }
-    var isSidebarSession: Bool { sidebarAnchor != nil }
+    private let addressOnly: Bool
+    private let currentPageTitle: String?
+    private var addressWasEdited = false
+    private var sidebarBrowsing: Bool { !addressOnly && sidebarAnchor != nil && input.stringValue.isEmpty && !isScoped && !scopeInvalidated }
+    var isSidebarSession: Bool { sidebarAnchor != nil && !addressOnly }
     func refreshPosition() { if presented && !dismissed { position() } }
 
     private let input = NSTextField()
@@ -210,8 +213,8 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     /// Builds the searchable text once per command list, not for every
     /// command on every update while typing.
     private func adoptCommands(_ list: [KeyboardShortcuts.MenuCommand]) {
-        commands = list
-        commandSearch = list.map { command in
+        commands = addressOnly ? [] : list
+        commandSearch = commands.map { command in
             let title = Self.title(for: command)
             return (title, (title + " " + command.title + " " + command.group + " "
                 + CommandBarTypedCommand.commandBarSearchText(forMenuCommand: command.id)).lowercased())
@@ -245,7 +248,10 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private var nativeHold = CommandBarNativeHold()
     private var nativeHoldDeadline: DispatchWorkItem?
 
-    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil) {
+    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil) {
+        self.addressOnly = addressOnly
+        self.currentPageTitle = currentPageTitle
+        self.addressWasEdited = initialEdit != nil
         self.extensionDisposition = extensionDisposition
         self.theme = theme; palette = CommandBarPalette(theme: theme); self.contentAppearance = contentAppearance
         initialInput = currentURL == "about:blank" ? "" : currentURL ?? ""
@@ -277,7 +283,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             self.onCopyText?(text)
         }
         panel.contentView = container
-        panel.setAccessibilityLabel("Command Bar")
+        panel.setAccessibilityLabel(addressOnly ? "Current Tab Address" : "Command Bar")
         inputIcon.imageScaling = .scaleProportionallyDown
         container.addSubview(inputIcon)
         input.isBordered = false; input.drawsBackground = false
@@ -290,6 +296,9 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         input.focusRingType = .none; input.delegate = self
         input.setAccessibilityLabel("Search or Enter URL")
         input.setAccessibilityHelp("Use Up and Down to choose a result, wrapping at either end while searching, Tab on empty input to search Actions, or Tab to accept its completion or enter its offered search scope, Return to open, Option-Return to open an eligible result in a split pane, Command-Option-Return to open a web result in a background tab and keep searching, Command-Option-Delete to remove a removable suggestion, or Escape to return to the page.")
+        if addressOnly {
+            input.setAccessibilityHelp("Search or enter an address for the current tab. Use Up and Down to choose a result, Return to open it, or Escape to return to the page.")
+        }
         input.stringValue = initialEdit?.0 ?? initialInput
         previousInput = input.stringValue
         container.addSubview(input)
@@ -461,9 +470,9 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             input.font = CommandBarTypography.label
             return
         }
-        let width = max(260, min(765, parent.frame.width - 48, available.width - 24))
+        let width = max(260, min(addressOnly ? 350 : 765, parent.frame.width - 48, available.width - 24))
         // A 64-point header, the 4-point list inset, five 50-point rows and 8 below.
-        let baselineHeight = min(326, max(180, available.height - 32))
+        let baselineHeight = min(addressOnly ? 309 : 326, max(180, available.height - 32))
         //
         // SuggestionsView does, without moving the input's top edge.
         let bannerHeight = showsPrivacyBanner ? privacyBanner.preferredHeight(forWidth: width) : 0
@@ -471,7 +480,8 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         let x = min(max(parent.frame.midX - width / 2, available.minX + 12), available.maxX - width - 12)
         // Scoped results grow below the original input edge, as observed in
         // the installed reference, without moving the field under the user.
-        let y = min(max(parent.frame.midY + baselineHeight / 2 - height, available.minY + 16), available.maxY - height - 16)
+        let top = addressOnly ? parent.frame.maxY - 48 : parent.frame.midY + baselineHeight / 2
+        let y = min(max(top - height, available.minY + 16), available.maxY - height - 16)
         setSurfaceFrame(NSRect(x: x, y: y, width: width, height: height))
     }
     private func setSurfaceFrame(_ surface: NSRect) {
@@ -573,7 +583,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         layingOutContents = true
         defer { layoutScopeHeader(); layingOutContents = false }
         let width = container.bounds.width
-        if sidebarAnchor != nil {
+        if sidebarAnchor != nil || addressOnly {
             inputIcon.frame = NSRect(x: 15, y: sidebarBrowsing ? 10 : 17, width: 14, height: 14)
             input.frame = NSRect(x: 38, y: sidebarBrowsing ? 7 : 13, width: max(0, width - 49), height: 22)
             divider.isHidden = true
@@ -642,6 +652,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         if submissionDepth == 0 { onDismissalSettled?() }
     }
     func controlTextDidChange(_ obj: Notification) {
+        addressWasEdited = true
         retireScopeMenu()
         backgroundGeneration &+= 1
         retainedBackgroundHistory = nil
@@ -693,7 +704,8 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             extensionLaunchSnapshot = extensionLaunchActions?() ?? []
             extensionLaunchSnapshotIsStale = false
         }
-        let query = isScoped ? editState.query : editState.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let showsCurrentAddress = addressOnly && !addressWasEdited && !initialInput.isEmpty && !isScoped
+        let query = showsCurrentAddress ? "" : isScoped ? editState.query : editState.query.trimmingCharacters(in: .whitespacesAndNewlines)
         if sidebarAnchor != nil {
             onSidebarQueryState?(sidebarBrowsing)
             position()
@@ -748,6 +760,10 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             results.first { $0.id == id && ($0.spaceAction != nil || $0.folderAction != nil || $0.favoriteAction != nil || $0.folderMove != nil || $0.favoriteRename != nil || $0.typedCommand != nil || $0.extensionAction != nil || $0.extensionLaunch != nil) }
         }
         results = []
+        if showsCurrentAddress, let url = URL(string: initialInput) {
+            results.append(Result(id: "current-address", title: currentPageTitle?.isEmpty == false ? currentPageTitle! : initialInput,
+                                  detail: "", symbol: "globe", url: url, input: initialInput))
+        }
         if actionsScope {
             //
             // These remain original menu/typed commands, never navigation text.
@@ -760,7 +776,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             if !query.isEmpty {
                 results = rankedResults(query: query)
             } else {
-                results += tabs.filter { $0.archivedAt == nil }.prefix(8).map(tabResult)
+                results += tabs.filter { $0.archivedAt == nil && (!addressOnly || Self.isAddressSuggestion($0.url)) }.prefix(8).map(tabResult)
             }
             if query.isEmpty {
                 // This uses the profile's Chromium history (`recentPages`), else
@@ -875,7 +891,9 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     /// title/`lastAccessed` chrome noise is outside tab tokens; membership and
     /// selection changes alter the fingerprint and still rebuild.
     private func openResultsFingerprint(query: String) -> String {
-        CommandBarOpenResultsSkip.fingerprint(
+        // A pristine URL and a field the user cleared both rank zero-query
+        // suggestions, but only the former owns the current-address row.
+        "\(addressOnly):\(addressWasEdited):" + CommandBarOpenResultsSkip.fingerprint(
             query: query,
             actionsScope: actionsScope,
             websiteScoped: isWebsiteScoped,
@@ -930,6 +948,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         )
     }
     private func commandResults(query: String, includesEmpty: Bool) -> [Result] {
+        guard !addressOnly else { return [] }
         // This actual app-owned command is not a registered menu action.
         // Ordinary search inserts it separately to retain its existing order.
         let passwords: [Result] = includesEmpty && (query.isEmpty || CommandBarScopeKeyboard.matchesPasswords(query: query))
@@ -996,8 +1015,17 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         }
         return passwords + matchedCommands
     }
+    private static func isAddressSuggestion(_ value: String) -> Bool {
+        guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
+        return ["http", "https", "file", "chrome", "about"].contains(scheme)
+    }
     private func tabResult(_ tab: BrowserTab) -> Result {
-        Result(id: "tab:" + tab.id.uuidString,
+        if addressOnly {
+            return Result(id: "address:" + tab.id.uuidString,
+                title: CommandBarResultText.tabTitle(customTitle: tab.customTitle, pageTitle: tab.title, url: tab.url),
+                detail: "", symbol: "globe", url: URL(string: tab.url), input: tab.url)
+        }
+        return Result(id: "tab:" + tab.id.uuidString,
                title: CommandBarResultText.tabTitle(customTitle: tab.customTitle, pageTitle: tab.title, url: tab.url),
                detail: "", symbol: InternalPage.sidebarFallbackSymbol(urlString: tab.url), caption: caption(for: tab),
                url: URL(string: tab.url), tabID: tab.id)
@@ -1009,7 +1037,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         func add(_ result: Result, _ candidate: CommandBarRanking.Candidate) {
             pool.append(result); candidates.append(candidate)
         }
-        if CommandBarScopeKeyboard.matchesPasswords(query: query) {
+        if !addressOnly && CommandBarScopeKeyboard.matchesPasswords(query: query) {
             add(Result(id: "passwords", title: "Manage Passwords", detail: "", symbol: "key", managesPasswords: true),
                 .init(archetype: .typeTravel, key: "typeTravel:passwords", texts: ["Manage Passwords", "Passwords"]))
         }
@@ -1040,7 +1068,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             add(result, .init(archetype: .chromium, key: key, chromiumRank: rank,
                               urlKey: result.navigation.flatMap { $0.search ? nil : CommandBarRowDiff.pageKey($0.url) }))
         }
-        for tab in tabs where tab.archivedAt == nil {
+        for tab in tabs where tab.archivedAt == nil && (!addressOnly || Self.isAddressSuggestion(tab.url)) {
             let url = URL(string: tab.url)
             let key = InternalPage(urlString: tab.url).map {
                 $0.noteID.map { "document:" + $0.uuidString.lowercased() } ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
@@ -1050,7 +1078,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             add(row, .init(archetype: .tab, key: key, texts: [row.title, tab.title, url?.host ?? "", tab.url],
                            urlKey: url.map(CommandBarRowDiff.pageKey)))
         }
-        for document in documents {
+        for document in (addressOnly ? [] : documents) {
             add(Result(id: document.key, title: document.title.isEmpty ? (document.kind == .note ? "Untitled Note" : "Untitled Easel") : document.title,
                        detail: document.kind == .note ? "Note" : "Easel",
                        symbol: (document.kind == .note ? InternalPage.note(document.id) : .easel(document.id)).sidebarFallbackSymbol,
@@ -1082,7 +1110,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         guard !dismissed, !pages.isEmpty || recentPages != nil else { return }
         recentPages = pages.isEmpty ? nil : pages; recentPagesGeneration += 1
         lastHistoryScanKey = nil; cachedHistoryVisits = []
-        if editState.query.isEmpty && !isScoped { refreshResults(requestNative: false) }
+        if (editState.query.isEmpty || (addressOnly && !addressWasEdited)) && !isScoped { refreshResults(requestNative: false) }
     }
     ///
     private static func iconImage(_ name: String) -> NSImage? {
@@ -1237,7 +1265,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         let scope: CommandBarScopeKeyboard.Scope = actionsScope ? .actions
             : isWebsiteScoped ? .website : scopeInvalidated ? .unavailable : .ordinary
         switch CommandBarScopeKeyboard.tab(query: editState.query, scope: scope) {
-        case .enterActions: enterActionsScope(); return true
+        case .enterActions: if !addressOnly { enterActionsScope(); return true }
         case .leaveScope: leaveScope(); return true
         case .complete: break
         }
@@ -1483,14 +1511,14 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         scopePill.contentTintColor = scopeInvalidated ? .disabledControlTextColor : .white
         scopePill.setAccessibilityValue(scopeInvalidated ? "\(displayedName), unavailable" : displayedName)
         input.placeholderString = isScoped ? "Search…" : (sidebarBrowsing ? "Search…" : "Search or Enter URL…")
-        let baseX: CGFloat = sidebarAnchor == nil ? 49 : 38
-        let right: CGFloat = sidebarAnchor == nil ? 22 : 11
+        let baseX: CGFloat = sidebarAnchor == nil && !addressOnly ? 49 : 38
+        let right: CGFloat = sidebarAnchor == nil && !addressOnly ? 22 : 11
         var left = baseX
         if showsScope {
             let natural = actionsPill.isHidden ? scopePill.intrinsicContentSize.width
                 : CommandBarScopePill.width(title: actionsPill.stringValue, font: actionsPill.font)
             let width = min(max(50, natural), max(50, container.bounds.width * 0.4))
-            scopePill.frame = NSRect(x: left, y: sidebarAnchor == nil ? 20 : 12, width: width, height: 24)
+            scopePill.frame = NSRect(x: left, y: sidebarAnchor == nil && !addressOnly ? 20 : 12, width: width, height: 24)
             actionsPill.frame = scopePill.frame
             left += width + 10
         }
@@ -1504,13 +1532,13 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             let size = scopeOfferButton.intrinsicContentSize
             let width = min(size.width, max(0, container.bounds.width * 0.45))
             scopeOfferButton.frame = NSRect(x: container.bounds.width - right - width,
-                y: (sidebarAnchor == nil ? 32 : 24) - size.height / 2, width: width, height: size.height)
+                y: (sidebarAnchor == nil && !addressOnly ? 32 : 24) - size.height / 2, width: width, height: size.height)
             trailing += width + 12
         }
         let showsPrivacyInfo = CommandBarSearchPrivacyPolicy.showsInfoAccessory(
             dismissed: privacyPolicy.hasBeenExplicitlyDismissed, bannerVisible: privacyBannerVisible,
             scoped: showsScope, offeringSiteSearch: offer != nil, hasResults: !results.isEmpty,
-            sidebarSession: sidebarAnchor != nil)
+            sidebarSession: sidebarAnchor != nil || addressOnly)
         privacyInfoButton.isHidden = !showsPrivacyInfo
         if showsPrivacyInfo {
             privacyInfoButton.frame = NSRect(x: container.bounds.width - right - 24, y: 20, width: 24, height: 24)
@@ -1521,11 +1549,11 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         if isWebsiteScoped, input.stringValue.isEmpty, results.isEmpty, nativeError == nil {
             emptyLabel.isHidden = true; scroll.isHidden = true; divider.isHidden = true
         } else {
-            scroll.isHidden = sidebarBrowsing; divider.isHidden = sidebarAnchor != nil
+            scroll.isHidden = sidebarBrowsing; divider.isHidden = sidebarAnchor != nil || addressOnly
         }
         if isScoped || scopeInvalidated {
             emptyLabel.frame = NSRect(x: 24, y: 77, width: max(0, container.bounds.width - 48), height: 40)
-            if sidebarAnchor == nil {
+            if sidebarAnchor == nil && !addressOnly {
                 scroll.frame.origin.y = 68
                 scroll.frame.size.height = max(0, container.bounds.height - 76 - privacyBannerHeight)
             }
@@ -1550,6 +1578,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
     private func enterActionsScope() {
+        guard !addressOnly else { return }
         guard !dismissed, isOwnerValid?() != false, !isScoped, !scopeInvalidated,
               editState.query.isEmpty,
               (input.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }

@@ -1,5 +1,12 @@
 # Native settings shell
 
+About Parc now uses a native panel with the running app version/build, the
+complete Chromium tag recorded by packaging from the sealed engine source lock,
+and the installed system WebKit build. It identifies Media and FairPlay via
+WebKit/AVFoundation and links the Chromium project, Chromium third-party source,
+and WebKit. The app icon refreshes when the panel opens. Missing development
+metadata is labeled explicitly rather than presenting a guessed version. This
+
 Settings-wide control-state and transition attribution is retained in
 [Settings motion](settings-motion.md). Ordinary pane switches are immediate;
 specialized Icon/Shortcuts feedback and native modal/action owners remain separate.

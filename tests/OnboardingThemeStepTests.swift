@@ -213,6 +213,15 @@ struct OnboardingThemeStepTests {
         expect(!name.field.isBordered && !name.field.drawsBackground, "Borderless field in setup chrome")
         expect(name.field.superview === name, "Field stays inside the named chrome")
         expect(name.bounds.contains(name.field.frame), "Field inset inside 36-point row")
+        let ink = NSColor(srgbRed: 0.04, green: 0.2, blue: 0.12, alpha: 1)
+        name.themeTextColor = ink
+        expect(name.field.textColor == ink, "Space name follows the sidebar title color")
+        name.viewDidChangeEffectiveAppearance()
+        expect(name.field.textColor == ink, "Appearance updates retain the selected Space text color")
+        expect(name.field.placeholderAttributedString?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == ink.withAlphaComponent(0.65),
+               "The placeholder uses the selected Space ink")
+        name.themeTextColor = nil
+        expect(name.field.textColor == OnboardingSetupPalette.title, "Clearing the theme restores semantic name ink")
     }
 
     @MainActor static func lightDarkFieldAndCard() {

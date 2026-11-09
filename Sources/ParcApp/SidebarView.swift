@@ -1775,6 +1775,11 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     let extensionToolbar = ExtensionToolbarView()
     /// The URL bar gives way to the Toolbar (`PaneTopBarAdmission
     /// .sidebarAddressBarShown`); Back, Forward and Reload go with it.
+    private var hiddenAddressHeight: CGFloat {
+        SidebarChromeLayout.hiddenAddressHeight(toolbar: usesContentToolbar,
+            hasPrompt: paymentWidth > 0, keyboardSearch: keyboardSearchActive)
+    }
+    var addressEditorAnchor: NSView { addressButton }
     var usesContentToolbar = false {
         didSet {
             guard oldValue != usesContentToolbar else { return }
@@ -1839,10 +1844,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     private var addressText = ""
     private func applyAddressPillStyle() {
-        addressBackground.style = showsSharedQuote
-            ? .sharedQuote(fill: palette?.hover ?? NSColor.white.withAlphaComponent(0.32)) : .urlBar
-        addressButton.focusRingCornerRadius = showsSharedQuote ? SidebarAddressPillView.sharedQuoteCornerRadius
-            : SidebarAddressPillView.cornerRadius
+        addressBackground.style = .urlBar
+        addressButton.focusRingCornerRadius = SidebarAddressPillView.cornerRadius
+        shareQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor
+        copyQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor
     }
     /// CommandBarPlaceholderTextView's host text: system 13 regular
     ///
@@ -2270,7 +2275,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         // Clicking the affordance must preserve the original renderer selection.
         // Keyboard access remains the actual Copy URL as Quote menu command.
         shareQuote.refusesFirstResponder = true; copyQuote.refusesFirstResponder = true
-        shareQuote.alignment = .left; shareQuote.font = .systemFont(ofSize: 10, weight: .medium)
+        shareQuote.alignment = .left; shareQuote.font = .systemFont(ofSize: 13, weight: .semibold)
         shareQuote.contentTintColor = .linkColor
         shareQuote.setAccessibilityLabel("Share Quote")
         //
@@ -4187,6 +4192,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// The pages' shared geometry, from the sidebar's layout: the App Tray's
     /// height and the bottom of the tablist above the Mini Players.
     private struct PageGeometry: Equatable {
+        var hiddenAddressHeight: CGFloat = 0
         var trayHeight: CGFloat = 0
         var hasFavorites = false
         var bottom: CGFloat = 0
@@ -4197,14 +4203,15 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     /// at a time).
     private func isFramed(_ page: SidebarSpacePage) -> Bool {
         guard let framed = page.framed else { return false }
-        return framed.size == bounds.size && framed.trayHeight == pageGeometry.trayHeight
+        return framed.size == bounds.size && framed.hiddenAddressHeight == pageGeometry.hiddenAddressHeight
+            && framed.trayHeight == pageGeometry.trayHeight
             && framed.hasFavorites == pageGeometry.hasFavorites && framed.bottom == pageGeometry.bottom
             && page.headerFramedShown == !page.header.isHidden
     }
     private func layoutPage(_ page: SidebarSpacePage, flush: Bool = true) {
         typealias Chrome = SidebarChromeLayout
         let width = bounds.width, geometry = pageGeometry
-        page.framed = (bounds.size, geometry.trayHeight, geometry.hasFavorites, geometry.bottom)
+        page.framed = (bounds.size, geometry.hiddenAddressHeight, geometry.trayHeight, geometry.hasFavorites, geometry.bottom)
         page.headerFramedShown = !page.header.isHidden
         if isSpaceManagement {
             // The card's page has no App Tray: a shown header sits its
@@ -4217,9 +4224,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             // A shown Space header drops the header's 5-point inset, sits 8 below
             // the page's top while the profile has no Favorites, and the list
             // follows its bottom (SidebarChromeLayout.SpaceHeader).
-            page.header.frame = NSRect(x: 0, y: Chrome.SpaceHeader.top(trayHeight: geometry.trayHeight, hasFavorites: geometry.hasFavorites),
+            page.header.frame = NSRect(x: 0, y: Chrome.SpaceHeader.top(trayHeight: geometry.trayHeight, hasFavorites: geometry.hasFavorites) - geometry.hiddenAddressHeight,
                                        width: width, height: Chrome.SpaceHeader.height)
-            let listY = Chrome.tablistTop(trayHeight: geometry.trayHeight, spaceHeader: !page.header.isHidden, hasFavorites: geometry.hasFavorites)
+            let listY = Chrome.tablistTop(trayHeight: geometry.trayHeight, spaceHeader: !page.header.isHidden, hasFavorites: geometry.hasFavorites) - geometry.hiddenAddressHeight
             page.scroll.frame = NSRect(x: 8, y: listY, width: width - 16, height: max(0, geometry.bottom - listY))
         }
         // Membership rebuilds / disclosure / size changes dirty outline rows
@@ -4404,11 +4411,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         addressButton.frame.size.width = max(0, width - 54 - quoteWidth - paymentWidth - extensionWidth)
         applyAddressPillStyle()
         if showsSharedQuote {
-            // Shared-quote mode keeps Parc's earlier pill: the URL line only, with the quote below it.
+            //
             addressButton.frame.size.height = 18
-            addressBackground.frame = NSRect(x: field.minX, y: field.minY, width: max(0, addressButton.frame.maxX - field.minX), height: 18)
         }
-        shareQuote.frame = NSRect(x: 16, y: field.minY + 18, width: max(0, addressButton.frame.width - 7), height: 15)
+        shareQuote.frame = NSRect(x: field.minX + 13.5, y: field.minY + 18, width: max(0, addressButton.frame.width - 14), height: 16)
         let iconSide = SidebarAddressSearchIcon.side
         addressSearchIcon.frame = NSRect(x: SidebarAddressSearchIcon.centerX - 1 - iconSide / 2,
                                          y: (addressButton.bounds.height - iconSide) / 2, width: iconSide, height: iconSide)
@@ -4418,14 +4424,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         // (SidebarChromeLayout.appTrayHeight and tablistTop).
         let grid = FavoriteGridLayout.frames(count: favorites.count, width: width)
         let favoritesHeight = isPrivateBrowsing ? 0 : favoritesEmptyState.trayHeight(gridHeight: grid.height, width: width)
-        favoritesHost.frame = NSRect(x: 0, y: Chrome.headerBottom, width: width, height: favoritesHeight)
+        favoritesHost.frame = NSRect(x: 0, y: Chrome.headerBottom - hiddenAddressHeight, width: width, height: favoritesHeight)
         favoritesEmptyState.frame = favoritesHost.bounds
         for (button, frame) in zip(favorites, grid.frames) {
             // The host is unflipped; the recovered grid is top-left based.
             button.frame = NSRect(x: frame.minX, y: favoritesHeight - frame.maxY, width: frame.width, height: frame.height)
         }
         let showsSpaceHeader = !spaceHeader.isHidden
-        let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty)
+        let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty) - hiddenAddressHeight
         let dockTop = bounds.height - Chrome.dockHeight
         let bannerWidth = max(0, width - 16)
         let bannerHeight = archiveEducationHost.occupiesSpace ? archiveEducation.preferredHeight(for: bannerWidth) : 0
@@ -4435,7 +4441,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let playerHeight = min(miniPlayers.desiredHeight, max(0, playerBottom - listY))
         let playerSpacing: CGFloat = playerHeight > 0 ? 8 : 0
         miniPlayers.frame = NSRect(x: 8, y: playerBottom - playerHeight, width: width - 16, height: playerHeight)
-        let geometry = PageGeometry(trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty,
+        let geometry = PageGeometry(hiddenAddressHeight: hiddenAddressHeight, trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty,
                                     bottom: playerBottom - playerHeight - playerSpacing)
         let geometryChanged = geometry != pageGeometry
         pageGeometry = geometry
@@ -5736,7 +5742,7 @@ private final class SidebarKeyboardHighlightView: NSView {
     /// Every row has been laid out since the last build.
     var laidOut = false
     /// The sidebar size and shared geometry the page was last framed for.
-    var framed: (size: NSSize, trayHeight: CGFloat, hasFavorites: Bool, bottom: CGFloat)?
+    var framed: (size: NSSize, hiddenAddressHeight: CGFloat, trayHeight: CGFloat, hasFavorites: Bool, bottom: CGFloat)?
     var headerFramedShown = false
     /// A build idle preparation has begun, for the key it builds.
     var pendingBuild: (key: SidebarSpacePageKey, run: (CFTimeInterval?) -> Bool)?

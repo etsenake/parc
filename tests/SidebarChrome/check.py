@@ -26,12 +26,12 @@ sidebar = (app / "SidebarView.swift").read_text()
 # SidebarView itself is not compiled here; its list and Space header use the checked model.
 for use in ("scroll.adoptTablistScroller()",
             "    let list = SidebarOutlineView()",
-            "let geometry = PageGeometry(trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty,",
-            "let listY = Chrome.tablistTop(trayHeight: geometry.trayHeight, spaceHeader: !page.header.isHidden, hasFavorites: geometry.hasFavorites)",
+            "let geometry = PageGeometry(hiddenAddressHeight: hiddenAddressHeight, trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty,",
+            "let listY = Chrome.tablistTop(trayHeight: geometry.trayHeight, spaceHeader: !page.header.isHidden, hasFavorites: geometry.hasFavorites) - geometry.hiddenAddressHeight",
             "for slot in Chrome.tablistSlots(pinnedItems: pinnedRows.count, todayItems: itemRows.count,",
             "list.reload(outline, budget:",
-            "let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty)",
-            "page.header.frame = NSRect(x: 0, y: Chrome.SpaceHeader.top(trayHeight: geometry.trayHeight, hasFavorites: geometry.hasFavorites),",
+            "let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty) - hiddenAddressHeight",
+            "page.header.frame = NSRect(x: 0, y: Chrome.SpaceHeader.top(trayHeight: geometry.trayHeight, hasFavorites: geometry.hasFavorites) - geometry.hiddenAddressHeight,",
             "width: width, height: Chrome.SpaceHeader.height)",
             "let headerContent = SidebarChromeLayout.SpaceHeader.content(",
             "spaces: state.spaces, activeSpaceID: state.activeSpaceID, privateWindow: isPrivateBrowsing,",
@@ -61,6 +61,16 @@ for use in ("scroll.adoptTablistScroller()",
             "newFolder: { [weak self] in self?.onNewFolder?() },",
             "toggleHeader: { [weak self] in self?.toggleSpaceHeaderOnSingleUnnamedSpaces?() })"):
     assert use in sidebar, f"SidebarView no longer lays its list out by the checked model: {use}"
+# Toolbar ownership collapses the missing URL row in every Space, including
+# cached neighboring pages prepared for a swipe. Prompts and keyboard search
+# retain their required row; an unchanged sidebar size must not hide this change.
+for use in ("SidebarChromeLayout.hiddenAddressHeight(toolbar: usesContentToolbar,",
+            "hasPrompt: paymentWidth > 0, keyboardSearch: keyboardSearchActive)",
+            "favoritesHost.frame = NSRect(x: 0, y: Chrome.headerBottom - hiddenAddressHeight,",
+            "framed.hiddenAddressHeight == pageGeometry.hiddenAddressHeight",
+            "page.framed = (bounds.size, geometry.hiddenAddressHeight, geometry.trayHeight, geometry.hasFavorites, geometry.bottom)",
+            "var framed: (size: NSSize, hiddenAddressHeight: CGFloat, trayHeight: CGFloat, hasFavorites: Bool, bottom: CGFloat)?"):
+    assert use in sidebar, f"the collapsed URL row no longer participates in every Space page's layout: {use}"
 assert "func makeMenu() -> NSMenu { spaceMenu?.makeMenu() ?? NSMenu() }" in (app / "SidebarSpaceHeader.swift").read_text(), \
     "the Space header no longer builds the shared Space menu"
 for use in ("if isEditing { finishNameEditing(cancelled: false); return }",

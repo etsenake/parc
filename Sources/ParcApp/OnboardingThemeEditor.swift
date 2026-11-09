@@ -42,6 +42,7 @@ enum OnboardingThemeEditorLayout {
 /// action; Parc keeps the existing draft Space name here.
 final class OnboardingSpaceNameField: NSView, NSTextFieldDelegate {
     let field = NSTextField()
+    var themeTextColor: NSColor? { didSet { updateColors() } }
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
@@ -75,8 +76,16 @@ final class OnboardingSpaceNameField: NSView, NSTextFieldDelegate {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(dark ? 0.12 : 0.08).cgColor
-            field.textColor = OnboardingSetupPalette.title
-            field.placeholderString = "Space name"
+            let ink = themeTextColor ?? OnboardingSetupPalette.title
+            field.textColor = ink
+            if themeTextColor != nil {
+                field.placeholderAttributedString = NSAttributedString(string: "Space name", attributes: [
+                    .foregroundColor: ink.withAlphaComponent(0.65), .font: field.font!
+                ])
+            } else {
+                field.placeholderAttributedString = nil
+                field.placeholderString = "Space name"
+            }
         }
     }
 }

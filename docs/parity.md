@@ -75,6 +75,31 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 
 ## Current ownership and handoffs
 
+- **November 9 screenshot corrections — Codex root.** Josh requested the
+  the page toolbar is shown, a separate compact current-tab URL editor, live
+  Space theme rendering on the inner onboarding card, picker light/dark
+  response, identical replay copy with consent-gated browser closing, and
+  complete About Parc app/Chromium/WebKit media information. Root owns the
+  integrated main-checkout change; Josh authorized focused parallel replay
+  implementation, review and validation. All requested source corrections are
+  implemented and independently reviewed. The follow-up palette correction
+  applies sidebar page-title ink to all card text, including the progress
+  counter; Next uses the theme contrast/background colors. Regular replay
+  closes the Settings owner through native consent; private/popup replay
+  releases its close reservation after consent and hides the exact owner to
+  preserve its native context. All refusal, retry and saved-state paths remain
+  covered. These corrections do not reweight the fixed family rows.
+  Checks: full Swift typecheck and whole-module SIL with warnings as errors;
+  12 focused suites
+  covering packaging, quote lifetime, sidebar/header geometry, command
+  navigation/editing/scope, onboarding model/theme/presentation/keyboard; the
+  additional extracted-production replay lifecycle harness. The compact editor
+  regressions fail when either reviewed refresh fix is removed. Updated native
+  views were rendered offscreen in light and dark themes, without activating
+  windows. Receipts/renders: `build/nov9-experience-fixes/` (ignored). Engine
+  overlay 648 is unchanged. No production app was packaged, installed or
+  launched, and no browser-runtime acceptance is claimed.
+
 - **Claude — software updates, release notes and unfinished commands (November 9).**
   Josh asked for Conventional Commit semantic releases with real release notes,
   sidebar banner, a bundled What's New page, and finishing command-bar commands

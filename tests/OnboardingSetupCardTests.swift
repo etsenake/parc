@@ -193,6 +193,19 @@ struct OnboardingSetupCardTests {
             }
         }
         checkStepMotion(card, font: font, back: back, next: next, skip: skip, progress: progress)
+        for ink in [NSColor(srgbRed: 0.02, green: 0.2, blue: 0.1, alpha: 1),
+                    NSColor(srgbRed: 0.96, green: 0.9, blue: 1, alpha: 1)] {
+            card.themeTextColor = ink
+            precondition(card.titleColor == ink && card.messageColor == ink && card.chromeColor == ink,
+                         "Every themed card text role follows sidebar page-title ink")
+            for field in [card.heading, card.message] {
+                precondition(field.attributedStringValue.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == ink,
+                             "Live theme changes replace the already-rendered heading and message ink")
+            }
+        }
+        card.themeTextColor = nil
+        precondition(card.titleColor == OnboardingSetupPalette.title && card.messageColor == OnboardingSetupPalette.message,
+                     "Clearing the Space theme restores setup's semantic text colors")
         card.themeBackground = NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1)
         precondition(card.chrome.layer?.backgroundColor == card.themeBackground?.cgColor)
         card.effectiveAppearance.performAsCurrentDrawingAppearance {

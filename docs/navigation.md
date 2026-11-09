@@ -74,6 +74,12 @@ Parc's `NavigationControlButton.windowControlStyle` draws exactly this: the unco
 
 Parc's `SidebarAddressPillView` reproduces the surface, fill, hover and corner radius, following the palette's darkness.
 
+full 36-point URL pill with continuous 12-point corners behind both text lines
+and the action buttons. The host uses the ordinary 13-point address styling;
+**Share Quote** is 13-point semibold below it, and both quote affordances take
+the Space's maximum-contrast tint. Their existing original-selection lease and
+copy-text-fragment action remain intact. The prior 18-point/7-corner adaptation
+is superseded. Parc maps the reveal predicate as follows:
 
 - `isSidebarHovered` is the pointer inside `SidebarView`.
 - `!isSidebarAnchored` is the floating sidebar.

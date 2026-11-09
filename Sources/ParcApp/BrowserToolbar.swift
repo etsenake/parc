@@ -89,7 +89,7 @@ final class BrowserToolbarView: NSView {
             guard let self else { return }; self.onAction?(.address, self.address)
         }
         addSubview(address)
-        address.setAccessibilityHelp("Edit the address in the command bar.")
+        address.setAccessibilityHelp("Edit the current tab’s address.")
         extensionToolbar.onWidthChange = { [weak self] in self?.needsLayout = true }
         addSubview(extensionToolbar); applyColors(animated: false)
     }

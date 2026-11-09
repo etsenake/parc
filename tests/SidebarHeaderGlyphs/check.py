@@ -30,8 +30,9 @@ for use in ("private let addressBackground = SidebarAddressPillView()",
             "pageActions.hitTestsWhenTransparent = false",
             "extensionToolbar.hitTestsWhenTransparent = false",
             "reloadOptions.windowControlStyle = true",
-            '.sharedQuote(fill: palette?.hover ?? NSColor.white.withAlphaComponent(0.32)) : .urlBar',
-            "addressButton.focusRingCornerRadius = showsSharedQuote ? SidebarAddressPillView.sharedQuoteCornerRadius",
+            "addressBackground.style = .urlBar",
+            "shareQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor",
+            "copyQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor",
             ".font: NSFont.systemFont(ofSize: SidebarChromeLayout.addressFontSize), .foregroundColor: color, .paragraphStyle: paragraph,",
             "paragraph.firstLineHeadIndent = empty ? SidebarAddressSearchIcon.textIndent : SidebarChromeLayout.addressTextIndent",
             #
@@ -41,6 +42,18 @@ for use in ("private let addressBackground = SidebarAddressPillView()",
             "(palette?.isDark == true ? NSColor.white : NSColor.black).withAlphaComponent(0.6)",
             "addressButton.focusRingCornerRadius = SidebarAddressPillView.cornerRadius"):
     assert use in sidebar, f"SidebarView no longer wires the header through the checked types: {use}"
+# Quote mode adds a second text line inside the complete 36-point URL pill.
+# Only the URL hit target becomes shorter; the fill and quote actions must stay
+# visible, and clicking either quote action must preserve the page selection.
+quote_layout = sidebar[sidebar.index("        addressBackground.frame = field"):sidebar.index("        let iconSide = SidebarAddressSearchIcon.side")]
+assert quote_layout.count("addressBackground.frame") == 1, "quote mode must not shrink or reposition the full URL pill"
+assert "height: Chrome.fieldHeight)" in sidebar and "static let fieldHeight: CGFloat = 36" in (app / "SidebarChromeLayout.swift").read_text()
+for use in ("addressButton.frame.size.height = 18",
+            "shareQuote.frame = NSRect(x: field.minX + 13.5, y: field.minY + 18,",
+            "shareQuote.alignment = .left; shareQuote.font = .systemFont(ofSize: 13, weight: .semibold)",
+            "shareQuote.refusesFirstResponder = true; copyQuote.refusesFirstResponder = true",
+            "shareQuote.actionBlock = action; copyQuote.actionBlock = action"):
+    assert use in sidebar, f"the full-height quote pill lost its two-line presentation or original selection: {use}"
 # An event without a tracking area never matches the reveal area before AppKit has installed it.
 for kind in ("Entered", "Exited"):
     assert (f"guard let revealTracking, event.trackingArea === revealTracking else {{ super.mouse{kind}(with: event); return }}"

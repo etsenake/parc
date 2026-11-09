@@ -31,6 +31,11 @@ enum SidebarChromeLayout {
     static let addressTextIndent: CGFloat = 12
     /// The header ends below the field; the App Tray follows directly.
     static let headerBottom: CGFloat = fieldTop + fieldHeight
+    /// Moving the address into the page toolbar also collapses its sidebar row.
+    /// A real prompt or keyboard field still needs that space.
+    static func hiddenAddressHeight(toolbar: Bool, hasPrompt: Bool, keyboardSearch: Bool) -> CGFloat {
+        toolbar && !hasPrompt && !keyboardSearch ? fieldHeight + 2 : 0
+    }
     ///
     /// bottom inset while the App Tray is empty, its empty state dismissed and
     ///

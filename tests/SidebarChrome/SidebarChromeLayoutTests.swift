@@ -16,6 +16,14 @@ extension SidebarChromeLayout.Toolbar {
     }
     static func main() {
         typealias L = SidebarChromeLayout
+        check(L.headerBottom - L.hiddenAddressHeight(toolbar: true, hasPrompt: false, keyboardSearch: false) == L.headerTop + L.navigationRowHeight,
+              "Toolbar collapses the hidden URL row before the Space header and Favorites")
+        check(L.hiddenAddressHeight(toolbar: false, hasPrompt: false, keyboardSearch: false) == 0,
+              "Ordinary sidebar keeps its URL row")
+        check(L.hiddenAddressHeight(toolbar: true, hasPrompt: true, keyboardSearch: false) == 0,
+              "A real page prompt retains its interactive row")
+        check(L.hiddenAddressHeight(toolbar: true, hasPrompt: false, keyboardSearch: true) == 0,
+              "Keyboard search retains its interactive row")
         check(L.narrowWidth == 212, "narrow below 212")
         check(L.fieldTop == 46 && L.fieldHeight == 36, "field below the 4 + 40 row and 2-point padding")
 

@@ -1062,6 +1062,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             else:
                 raise Refusal("Swift runtime lacks ARM64: " + library.name)
         info = info_plist("Parc", "org.parc.Browser", version)
+        info["ParcChromiumVersion"] = read_json(repo / "Engine/source-lock.json")["chromium"]["tag"]
         info.update(CFBundleIconFile=icon_file, NSDockTilePlugIn="ParcDockTile.plugin", NSPrincipalClass="ParcApplication", NSUserNotificationAlertStyle="banner",
                     NSAppleScriptEnabled=True, OSAScriptingDefinition="Parc.sdef", LSEnvironment={"MallocNanoZone": "0"},
                     CFBundleURLTypes=[{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "Webpage URL",

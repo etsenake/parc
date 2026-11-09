@@ -52,7 +52,7 @@ addition. It dispatches to the application delegate and creates the same
 `OnboardingWindow` owner in `.replay(spaceID:)` mode. Every new replay starts
 at `introAnimation`, including the P animation, desktop backdrop, bundled
 music, typography/artwork, welcome motion and all current local setup stages.
-A second Settings request while the flow is already open resumes that owner.
+A second Settings request while the flow is already open resumes that owner; a pending browser-close transaction cannot reveal it early.
 Settings → General is the only replay entry point; setup and welcome contain
 no replay shortcut. The application action requires the original Settings
 controller and Space. The former in-flow button and its restart handler are removed.
@@ -110,9 +110,34 @@ editor has replaced the preview) and `AppAppearance.endPreview` shows the saved
 light/dark choice again (unless a choice made elsewhere has replaced replay's).
 Actions that take effect when performed stay, exactly as on first launch: a
 completed browser import, a default-browser change macOS confirmed and a
-Randomize of the Parc card. The normal browser remains alive with its tabs, Spaces, native pages
-and saved settings; ordinary background browser activity continues. Setup
-progress reads “Replay · n of N” and the final action is **Finish replay**.
+Randomize of the Parc card.
+
+**November 9 correction (Josh):** replay uses first launch's exact visible
+wording, window title, step counter and **Get Started** action. Before welcome,
+the ordinary browser-window close path flushes notes and asks native pages for
+beforeunload consent. Replay waits for closure; refusing a close cancels replay.
+The regular browser owning Settings is the only window closed; its geometry,
+selection and tab history are retained, and its saved tabs are not archived.
+Other visible browser windows are hidden only after approval, keeping their
+exact native owners (including private windows and popups). Completing or
+cancelling setup restores the saved browser and reveals those same owners.
+The Safari access restart uses this same entry gate. Existing tabs, pins, history,
+Space names and themes remain unless a setup choice explicitly changes them.
+
+When Settings belongs to a private browser or popup, replay asks its complete
+native page set for the same beforeunload consent, then releases the close
+reservation and hides that exact owner. This preserves the private context and
+popup identity; refusal still cancels replay. If that auxiliary owner closes
+itself while setup is open, or application Settings has no live browser, setup
+returns to an ordinary browser without recreating a private context.
+
+The inner setup card now uses the production `ThemeRendererView` to preview
+the chosen gradient, intensity and texture live. The animated blue outer
+background is unchanged. This is Josh's requested preview design, superseding
+the earlier semantic `backgroundExtra`-only card fill. Headings, body copy, the Space name, Back/Skip and the step counter use the
+same `title` color as sidebar page titles and update live. Next uses the theme's
+`maxContrastColor` fill and `backgroundExtra` ink. The embedded picker follows
+the app's light/dark appearance independently of that text palette.
 
 A Safari Full Disk Access restart during replay saves the replay draft,
 including its light/dark preview, to `onboarding-replay.json` (never
@@ -128,14 +153,16 @@ when a dropped intent or launch has no replay intent, and when a new replay
 starts from Settings. Closing replay's import cancels only a restart replay
 itself requested, never one owned by a File → Import window.
 
-The delegate closes the originating Settings window, keeps the existing browser
-windows owned, and presents the full production welcome above them. Completion
-returns to the original browser if it still exists after closing the welcome
-controller; cancellation returns immediately. If that browser has closed, another
-ready browser is used, or an ordinary browser window is created from the
-existing session. Browser-creation failure during completion leaves replay
-open for retry. Window closure, application termination and a new introduction
-all use the existing music/backdrop/animation cancellation paths.
+The delegate resolves the originating Settings edits and waits for its browser
+to finish the ordinary consent-gated close before showing welcome. Refusal
+retains that browser and cancels replay. Saved note editors are held read-only
+while native close consent is pending so late edits cannot invalidate an
+already-approved close; refusal restores their previous editability. A Quit
+request during this close waits for the local close transaction to settle.
+Restoration failure retains the saved window record and presents a retry; it
+does not overwrite the saved session with the temporarily hidden/closed state.
+Window closure, application termination and a new introduction use the existing
+music/backdrop/animation cancellation paths.
 
 URLs and singleton relaunch destinations received during replay are queued by
 the existing onboarding gate and delivered after completion or cancellation.
@@ -322,10 +349,11 @@ music, cancels the backdrop, closes its retained window, and synchronously calls
 the parent. The parent then activates the prepared browser and delivers queued
 requests. A preparation failure leaves setup visible and retryable.
 
-Replay uses the same handoff and returns to the original surviving browser or an
-eligible existing destination; it creates a browser only when none remains.
-Replay's draft stays in memory and applies on Finish. Cancel restores its
-theme preview and returns immediately to browsing.
+Replay uses the same handoff and restores the browser that owned Settings from
+its retained session and frame. Its other browser windows remain owned and
+hidden during setup. Replay's draft stays in memory and applies on Get Started.
+Cancel restores its theme preview and returns to browsing; a failed browser
+restoration retains the snapshot and presents Retry instead of losing it.
 Pending termination consent retains the current welcome host and audio player.
 If an existing replay page declines Quit, the parent resumes the retained window
 without calling the initial presentation path, rebuilding the host, replaying
@@ -427,7 +455,7 @@ SwiftUI button retains accessibility and default Return. Disabled, hidden,
 non-key or sheet-owned setup cannot advance, nor can marked-text composition.
 
 optional direction nil, knockout foreground and the actual theme getter. Its
-label. The builder also applies the recovered0.12-second enabled transition.
+label (November 9 correction). The builder also applies the recovered0.12-second enabled transition.
 REA evidence `ev_48cebc050fc43562531c01241f4ae8e357fc6b40d2d80e90026b2dafdad353a1`
 is paired with full-image imports and Swift type/key-path metadata; the raw slice
 alone cannot name those Swift types or semantic colors.
@@ -1319,9 +1347,9 @@ step. OB20 stays LEFT.
 
 Parc's first-Space name remains a left-column accessory. Setup.Action has no
 name-text case, so this field is the existing draft `spaceName` rather than a
-palette fill/placeholder, and no bezel or focus ring. Theme preview still
-drives `backgroundExtra` / `maxContrastColor` on the original card and Next
-control. Replay applies the light/dark choice as first launch does and
+palette fill/placeholder, and no bezel or focus ring. The card now previews
+the full Space renderer (November 9 correction); `maxContrastColor` and the
+semantic palette still drive the text and Next control. Replay applies the light/dark choice as first launch does and
 restores the previous appearance if it is closed early.
 
 The stock sidebar editor is unchanged: 356×508, corner 12, popover material,
