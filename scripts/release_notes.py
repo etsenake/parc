@@ -12,10 +12,15 @@ TYPES = ("feat", "fix", "perf", "refactor", "docs", "build", "ci", "chore", "tes
 NOTABLE = ("feat", "fix", "perf")
 SUBJECT = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^()\s]+)\))?(?P<breaking>!)?: (?P<summary>\S.*)")
 BREAKING = re.compile(r"^BREAKING[ -]CHANGE: ", re.MULTILINE)
-GENERATED = ("Merge ", 'Revert "', 'Reapply "', "fixup! ", "squash! ", "amend! ")
 UNDO = re.compile(r'(Revert|Reapply) "(.*)"')
 SECTIONS = (("Heads up", None), ("New", "feat"), ("Fixed", "fix"), ("Faster", "perf"))
 QUIET = "No user-facing changes."
+RULE = ("Commit messages are one line, a Conventional Commit: type(scope)!: summary\n"
+        "  for example: fix(sidebar): Keep pinned tabs after a restart\n"
+        "  types: " + " ".join(TYPES) + "\n"
+        "  feat, fix and perf subjects are Parc's release notes: write them for Parc users, starting with a capital.\n"
+        "  No body or trailers such as Co-Authored-By; ! alone marks a breaking change.\n"
+        '  A revert is one line too: Revert "fix(sidebar): Keep pinned tabs after a restart"')
 
 
 def parse(message):
@@ -135,32 +140,24 @@ def files(notes, release, since):
     return {"release-notes.json": json.dumps(notes, indent=2) + "\n", "CHANGELOG.md": changelog(notes)}
 
 
-def check(message):
-    """An error for a commit message the commit-msg hook must reject, else None."""
-    subject = next((line for line in message.splitlines() if line.strip() and not line.startswith("#")), "")
-    if subject.startswith(GENERATED) or parse(subject):
+def check(message, merge=False):
+    """What breaks the commit rules in a stored message, else None; a merge may keep git's own body."""
+    lines = [line for line in message.splitlines() if line.strip()]
+    subject = lines[0] if lines else ""
+    if (merge and subject.startswith("Merge ")) or (len(lines) == 1 and (UNDO.fullmatch(subject) or parse(subject))):
         return None
-    return ("Commit subjects use Conventional Commits: type(scope)!: summary\n"
-            "  for example: fix(sidebar): Keep pinned tabs after a restart\n"
-            "  types: " + " ".join(TYPES) + "\n"
-            "  feat, fix and perf subjects become Parc's release notes; write them for Parc users.\n"
-            "  rejected: " + (subject or "(empty)"))
+    return (subject or "(empty)") + (f" [{len(lines)} lines]" if len(lines) > 1 else "")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("check", help="validate a commit message file").add_argument("file")
     commands.add_parser("markdown", help="print one recorded release's notes").add_argument("version")
     preview = commands.add_parser("preview", help="print the bump and notes a range would release")
     preview.add_argument("--since", help="default: the newest release tag in --until")
     preview.add_argument("--until", default="origin/main")
     args = parser.parse_args()
-    if args.command == "check":
-        error = check(Path(args.file).read_text())
-        if error:
-            sys.exit(error)
-    elif args.command == "markdown":
+    if args.command == "markdown":
         releases = json.loads((ROOT / "release-notes.json").read_text())["releases"]
         found = [release for release in releases if release["version"] == args.version]
         if not found:

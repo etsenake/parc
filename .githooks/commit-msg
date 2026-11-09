@@ -1,3 +1,19 @@
-#!/bin/sh
-# Rejects commit subjects that aren't Conventional Commits; release notes are built from them.
-exec python3 "$(git rev-parse --show-toplevel)/scripts/release_notes.py" check "$1"
+#!/usr/bin/env python3
+"""Rejects a message that isn't one Conventional Commit line; release notes are built from them."""
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from release_notes import RULE, check
+
+# What git stores from the draft: text above `commit -v`'s cut line, comments stripped.
+# A -m message keeps its comment-like lines; pre-push checks the stored message.
+draft = re.split(r"^\S+ -{24} >8 -{24}$", Path(sys.argv[1]).read_text(), maxsplit=1, flags=re.MULTILINE)[0]
+message = subprocess.run(["git", "stripspace", "--strip-comments"], input=draft,
+                         capture_output=True, text=True, check=True).stdout
+merging = subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], capture_output=True).returncode == 0
+error = check(message, merging)
+if error:
+    sys.exit(RULE + "\n  rejected: " + error)
