@@ -82,6 +82,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     var onProfileSettingsPage: ((UUID, UUID, ProfileSettingsPage) -> Bool)?
     private let moreSettings = SettingsPillButton(title: "More Settings…")
     private let exportData = SettingsPillButton(title: "Export Data")
+    private let replay = SettingsPillButton(title: "Replay onboarding")
     private var dataExportPanel: NSSavePanel?
     private var dataExportID: UUID?
     var onMoreSettings: ((UUID, UUID) -> Bool)?
@@ -225,6 +226,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         downloadRetry.bezelStyle = .rounded; downloadRetry.isHidden = true
         moreSettings.target = self; moreSettings.action = #selector(openMoreSettings)
         exportData.target = self; exportData.action = #selector(exportBrowserData)
+        replay.target = self; replay.action = #selector(replayWelcome)
         exportData.setAccessibilityHelp("Export your Spaces and saved tab links as Markdown.")
         moreSettings.setAccessibilityHelp(applicationProfileID == nil ? "Open browser settings for this window’s Space and profile." : "Open browser settings for the original regular profile.")
         removeProfile.contentTintColor = .labelColor
@@ -278,6 +280,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     ///
     ///
     ///
+    /// onboarding below them.
     private func makeGeneralPane() -> NSScrollView {
         let (scroll, content) = pane()
         let quitting = group(in: content, y: 20, height: 37)
@@ -296,6 +299,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let jump = SettingsPillButton(title: "Profile Settings…")
         jump.target = self; jump.action = #selector(openProfilesPane)
         place(jump, in: preferences, NSRect(x: 546 - jump.fittingWidth, y: 55, width: jump.fittingWidth, height: 24))
+        let onboarding = group(in: content, y: 164, height: 82)
+        label("Onboarding", in: onboarding, NSRect(x: 10, y: 13, width: 300, height: 18))
+        place(replay, in: onboarding, NSRect(x: 546 - replay.fittingWidth, y: 10, width: replay.fittingWidth, height: 24))
+        label("Replay the full welcome and setup. Finishing applies your choices to this Space; existing tabs stay.",
+              in: onboarding, NSRect(x: 10, y: 44, width: 536, height: 32), help: true)
         return scroll
     }
     @objc private func openPreviewSettings() { showPreviewSettings() }
@@ -694,6 +702,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             button.toolTip = button.isEnabled ? nil : "Use this profile for a Space to manage its browser settings."
         }
         moreSettings.isEnabled = settingsContextSpace() != nil && onMoreSettings != nil
+        replay.isEnabled = replaySpaceID != nil && NSApp.delegate?.responds(to: #selector(AppDelegate.replayOnboarding(_:))) == true
         restore.state = store.state.settings.restoreSession ? .on : .off
         refreshingProfiles = true
         profileList.reloadData()
@@ -895,6 +904,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
 
     var replaySpaceID: UUID? { settingsContextSpace()?.id }
 
+    @objc private func replayWelcome() {
+        NSApp.sendAction(#selector(AppDelegate.replayOnboarding(_:)), to: NSApp.delegate, from: self)
+    }
 
     private func openProfileSettingsPage(_ page: ProfileSettingsPage) {
         guard selectedPane == .profiles, window?.isKeyWindow == true,
