@@ -7014,9 +7014,26 @@ handler with service stubs confirms automatic-visible rejection,
 automatic-hidden entry and manual-visible entry; delayed lifecycle delivery
 also demonstrates why browser visibility alone is insufficient. This is not a
 live reproduction of a failure after `273e1922`. No compiler, engine apply,
-build, launch or browser test was run for this follow-up, as Josh instructed;
-the native change still needs compilation and live acceptance in a later
-authorized build. Existing family completion counts are unchanged.
+build, launch or browser test was run before publishing this source follow-up,
+as Josh instructed. Existing family completion counts are unchanged.
+
+Josh subsequently authorized restarting 1.8.2 with the change and explicitly
+required root to monitor the release through completion. Release run
+`20261109T175056Z-f4dd0f50` completed at 18:59:42 UTC November 9 from
+`629b4fd1642ed45d9822a6aa871582dcb10970d1`, including PiP fix `04ff64e7`
+and overlay 648. All four changed engine units, the shipping engine link and
+optimized app build passed. Both app and DMG received Apple acceptance,
+stapling and artifact verification; `v1.8.2` is published and Homebrew cask
+commit `30f23206ec6d169602eb42f00a590d9b5d53e895` is pushed and audited.
+No installation, launch or live Meet acceptance is claimed. The first restart
+stopped unattended during validation; root acknowledged that monitoring miss,
+then checked the resumed process, state and logs through publication. Recovery
+preserved two manually applied overlay-647 files, restored their exact recorded
+overlay-646 bytes and verified the complete workspace fingerprint before the
+normal overlay-648 apply. The disk-space gate was resolved by removing 4.66 GB
+of old local ZIP/DMG duplicates after matching their hashes to published assets;
+engine objects, caches, profiles, signed app bundles and receipts were retained.
+The run's `delivery.json` and recovery receipts retain the exact evidence.
 
 | ID | State | Requirement |
 |---|---|---|
