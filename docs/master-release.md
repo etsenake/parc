@@ -158,10 +158,22 @@ published, so a refresh that would add a feat or breaking change to a version
 the commits chose stops; pin an earlier commit or release the higher version
 with `--type`.
 
-If the release owner died during the read-only overlay check, source refresh
-verifies that both the saved command PID and its process group are gone, records
-the interrupted check and reruns it against the refreshed archive. It does not
-record a successful exit or clear an interrupted apply/build operation.
+The merge of commits that landed before the push is written with Git plumbing
+and never touches the checkout, so a kill at any point in it leaves main clean
+on the version commit, and a rerun builds the merge again. The checkout stays on
+the version commit; the next release fast-forwards it. A release never starts
+from local commits main lacks, and a version commit carrying anything besides the
+version files that main lacks, as after main is rewritten, stops for
+reconciliation instead of being merged away.
+
+If the release owner died during the read-only overlay check, or during a Git
+command or a preflight step (`gh`, `xcrun`, `xcodebuild`, `security`, or the
+signing-key restore), for example while a source refresh was fetching, source
+refresh verifies that both the saved command PID and its process group are gone,
+records the interrupted command and reruns from its start. A live PID or group
+still refuses. It does not record a successful exit or clear an interrupted
+apply/build operation; a cancelled shipping build awaiting recovery first needs
+a plain resume.
 
 The command cannot repair arbitrary source bugs, revoke/reissue certificates,
 bypass protected authorization, resolve someone else's local edits, or invent

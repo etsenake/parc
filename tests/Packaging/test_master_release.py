@@ -127,6 +127,25 @@ class Repository(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'origin/main'), refreshed.state['commit'])
         self.assertEqual(self.git('log', '-1', '--format=%s %P', 'origin/main'), 'chore(release): 1.0.1 notes ' + fixed)
 
+    def test_refresh_interrupted_in_a_git_command_reruns_once_it_is_gone(self):
+        self.stopped_patch_release(); self.commit('fix(engine): build with the new SDK')
+        interrupted = release.Release(self.root, refresh_source=True)
+        interrupted.preflight = Mock(); interrupted.env['GH_TOKEN'] = 'fixture-token'
+        original = interrupted.checkpoint
+        def checkpoint(**values):
+            original(**values)
+            if values.get('command', [])[:2] == ['git', 'fetch']:
+                raise KeyboardInterrupt('Release interrupted by signal 15')
+        with patch.dict(release.os.environ), patch.object(release_lease, 'acquire', return_value='lease'), \
+                patch.object(interrupted, 'checkpoint', side_effect=checkpoint):
+            self.assertEqual(interrupted.run(), 1)
+        stopped = json.loads(interrupted.current.read_text())
+        self.assertEqual((stopped['status'], stopped['command'][:2]), ('stopped', ['git', 'fetch']))
+        with self.assertRaises(ProcessLookupError): release.os.killpg(stopped['command_pid'], 0)
+        refreshed = self.refresh(); refreshed.refresh_inputs()
+        self.assertEqual(refreshed.state['interrupted_command']['pid'], stopped['command_pid'])
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.0.1 notes')
+
     def test_refresh_refuses_a_feat_its_patch_release_cannot_ship(self):
         self.stopped_patch_release(); self.commit('feat: Later work')
         with self.assertRaisesRegex(release.Failure, 'would ship a minor change in 1.0.1'):
@@ -340,7 +359,7 @@ class Repository(unittest.TestCase):
         self.assertEqual((resumed.state['id'], resumed.kind), (explicit.state['id'], 'major'))
         self.assertEqual(resumed.state['version']['version'], '2.0.0')
 
-    def race(self, runner, killed_after_merge=False):
+    def race(self, runner, killed=None, rewritten=False):
         """Prepares while a peer pushes a feat just before the version commit's first push."""
         peer = Path(self.tmp.name) / 'peer'
         subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
@@ -349,33 +368,66 @@ class Repository(unittest.TestCase):
             if args[0] == 'push':
                 pushes.append(args)
                 if len(pushes) == 1:
+                    if rewritten:
+                        subprocess.run(['git', 'reset', '-q', '--hard', 'HEAD~1'], cwd=peer, check=True)
                     # The peer's notes edit conflicts with the version commit's.
                     (peer / 'release-notes.json').write_text('{"releases":[]}\n')
+                    (peer / 'Resources/icon').write_bytes(b'late icon')
                     for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
-                                     '-qam', 'feat: Land late'], ['push', '-q', 'origin', 'main']):
+                                     '-qam', 'feat: Land late'], ['push', '-qf', 'origin', 'main']):
                         subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
-                elif killed_after_merge:
+                elif killed == 'push':
                     raise OSError('power lost before the merged version commit was pushed')
             return original(*args, **kwargs)
-        with patch.object(runner, 'git', side_effect=racing):
+        saved = runner.checkpoint
+        def checkpoint(**values):
+            saved(**values)
+            if pushes and 'notes' in values and killed == 'merge':
+                raise OSError('power lost while merging, after saving the raised version')
+        with patch.object(runner, 'git', side_effect=racing), patch.object(runner, 'checkpoint', side_effect=checkpoint):
             runner.prepare()
 
-    def test_commits_landing_before_the_push_ship_with_their_notes_and_bump(self):
+    def resume_after_a_kill_in_the_late_merge(self, killed):
         self.commit('fix: Keep tabs')
         runner = self.automatic()
         with self.assertRaises(OSError):
-            self.race(runner, killed_after_merge=True)
+            self.race(runner, killed)
         for item in runner.locks: item.close()
+        # The merge is written without the checkout, so the kill leaves it clean on the version commit.
+        self.assertEqual((self.git('status', '--porcelain'), self.git('log', '-1', '--format=%s')),
+                         ('', 'chore(release): 1.0.1'))
+        self.assertTrue(subprocess.run(['git', 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], cwd=self.root).returncode)
         resumed = self.automatic(); resumed.prepare()
-        [entry] = self.notes()
+        [entry] = json.loads(self.git('show', 'origin/main:release-notes.json'))['releases']
         self.assertEqual((entry['version'], [item['summary'] for item in entry['changes']]),
                          ('1.1.0', ['Keep tabs', 'Land late']))
-        self.assertEqual(len(self.git('log', '-1', '--format=%p').split()), 2)
-        self.assertEqual(self.git('log', '-1', '--format=%s'), 'chore(release): 1.1.0')
-        self.assertEqual(self.git('log', '--format=%s', 'v1.0.0..').count('chore(release): 1.1.0'), 1)
+        self.assertEqual(len(self.git('log', '-1', '--format=%p', 'origin/main').split()), 2)
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.1.0')
+        self.assertEqual(self.git('log', '--format=%s', 'v1.0.0..origin/main').count('chore(release): 1.1.0'), 1)
+        self.assertEqual(self.git('show', 'origin/main:Resources/icon'), 'late icon')
         self.assertEqual(json.loads(self.git('show', 'origin/main:app-version.json')), {'version': '1.1.0', 'build': 2})
         self.assertEqual((resumed.state['release_type'], resumed.state['tag']), ('minor', 'v1.1.0'))
         self.assertTrue(resumed.published(resumed.state['commit']))
+        self.assertEqual(self.git('rev-parse', 'origin/main'), resumed.state['commit'])
+
+    def test_commits_landing_before_the_push_ship_with_their_notes_and_bump(self):
+        self.resume_after_a_kill_in_the_late_merge('push')
+
+    def test_a_kill_while_merging_late_commits_resumes_without_git_cleanup(self):
+        self.resume_after_a_kill_in_the_late_merge('merge')
+
+    def test_unpushed_local_commits_are_never_released(self):
+        (self.root / 'Resources/icon').write_bytes(b'local icon'); self.git('commit', '-qam', 'fix: Unpushed')
+        with self.assertRaisesRegex(release.Failure, 'unpushed commits'):
+            self.automatic().prepare()
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'fix: Unpushed')
+
+    def test_late_merge_refuses_to_drop_what_a_rewritten_main_lost(self):
+        (self.root / 'Resources/icon').write_bytes(b'kept icon'); self.git('commit', '-qam', 'fix: Keep icon')
+        self.git('push', 'origin', 'main')
+        with self.assertRaisesRegex(release.Failure, 'changes main lacks'):
+            self.race(self.automatic(), rewritten=True)
+        self.assertEqual(json.loads(self.git('show', 'origin/main:app-version.json'))['version'], '1.0.0')
 
     def test_type_override_keeps_its_version_when_a_feat_lands_late(self):
         self.commit('fix: Keep tabs')
@@ -419,16 +471,21 @@ class InterruptedOverlayCheck(unittest.TestCase):
         }
         release.save(self.runner.current, self.prior)
 
-    def test_dead_check_allows_refresh_without_claiming_success_or_bumping(self):
-        with patch.object(release.os, 'kill', side_effect=ProcessLookupError), \
-             patch.object(release.os, 'killpg', side_effect=ProcessLookupError):
-            self.runner.start()
-        self.assertEqual(self.runner.state['version'], self.prior['version'])
-        self.assertEqual(self.runner.state['completed'], ['source'])
-        self.assertIsNone(self.runner.state['command_pid'])
-        self.assertIsNone(self.runner.state['last_command_exit'])
-        self.assertEqual(self.runner.state['interrupted_overlay_check']['command'],
-                         self.prior['command'])
+    def test_dead_check_or_tool_allows_refresh_without_claiming_success_or_bumping(self):
+        restore = [release.sys.executable, str(self.runner.root / 'scripts/signing-backup.py'), 'restore']
+        for command in (self.prior['command'], ['xcrun', 'notarytool', 'history'], restore):
+            with self.subTest(command=command):
+                release.save(self.runner.current, dict(self.prior, command=command))
+                with patch.object(release.os, 'kill', side_effect=ProcessLookupError), \
+                     patch.object(release.os, 'killpg', side_effect=ProcessLookupError):
+                    self.runner.start()
+                self.assertEqual(self.runner.state['version'], self.prior['version'])
+                self.assertEqual(self.runner.state['completed'], ['source'])
+                self.assertIsNone(self.runner.state['command_pid'])
+                self.assertIsNone(self.runner.state['last_command_exit'])
+                self.assertEqual(self.runner.state['interrupted_command']['command'], command)
+                for item in self.runner.locks: item.close()
+                self.runner.locks.clear()
 
     def test_live_pid_or_surviving_group_refuses_refresh(self):
         for pid_error, group_error in ((None, ProcessLookupError),
@@ -443,6 +500,14 @@ class InterruptedOverlayCheck(unittest.TestCase):
                 self.assertEqual(json.loads(self.runner.current.read_text())['command_pid'], 999999)
                 for item in self.runner.locks: item.close()
                 self.runner.locks.clear()
+
+    def test_cancelled_shipping_build_awaiting_recovery_refuses_refresh(self):
+        release.save(self.runner.current, dict(self.prior, command=['git', 'fetch'], interrupted_process_group=999998))
+        with patch.object(release.os, 'kill', side_effect=ProcessLookupError), \
+             patch.object(release.os, 'killpg', side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(release.Failure, 'stopped engine'):
+                self.runner.start()
+        self.assertEqual(json.loads(self.runner.current.read_text())['interrupted_process_group'], 999998)
 
     def test_mutating_or_foreign_command_keeps_existing_recovery_guard(self):
         for script, operation in ((self.prior['command'][1], 'shipping-build'),

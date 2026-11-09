@@ -178,11 +178,11 @@ class Release:
                 prior = json.loads(self.current.read_text())
             if prior.get("status") not in TERMINAL:
                 if self.refresh_source:
-                    self.recover_dead_overlay_check(prior)
+                    self.recover_dead_command(prior)
                 if self.refresh_source and (prior.get('status') != 'stopped'
                         or prior.get('stage') != 'engine'
                         or prior.get('completed') != ['source']
-                        or prior.get('command_pid') is not None):
+                        or prior.get('command_pid') is not None or prior.get('interrupted_process_group')):
                     raise Failure('Source refresh requires a stopped engine stage with no active command or packaged artifacts')
                 self.refresh_previous = dict(prior)
                 self.state = prior
@@ -204,14 +204,20 @@ class Release:
                           "started_utc": now(), "status": "running", "stage": "preflight", "completed": []}
         self.checkpoint(status="running", error=None)
 
-    def recover_dead_overlay_check(self, prior):
-        """A dead read-only check may be rerun with refreshed source inputs."""
+    def recover_dead_command(self, prior):
+        """A dead overlay check, Git or preflight tool command leaves no engine operation to recover.
+
+        So it can't block a source refresh, which checks Git again from scratch; engine operations keep the guard.
+        """
         command = prior.get('command', [])
         pid = prior.get('command_pid')
-        if (prior.get('status') != 'stopped' or prior.get('stage') != 'engine'
-                or not pid or len(command) < 3 or not prior.get('source')
-                or command[1] != str(Path(prior['source']) / 'scripts/engine-source.py')
-                or command[2] != 'overlay-check'):
+        source = prior.get('source')
+        overlay_check = bool(source) and command[1:3] == [str(Path(source) / 'scripts/engine-source.py'), 'overlay-check']
+        tool = command[:1] in (['git'], ['gh'], ['xcrun'], ['xcodebuild'], ['security'])
+        # Preflight checks the keys again and restores whatever is still missing.
+        restore = command[1:3] == [str(self.root / 'scripts/signing-backup.py'), 'restore']
+        if (prior.get('status') != 'stopped' or prior.get('stage') != 'engine' or not pid
+                or not (overlay_check or tool or restore)):
             return
         # A dead leader does not establish that its descendants are gone.
         # Permission failures and reused/live PIDs must also refuse recovery.
@@ -220,8 +226,8 @@ class Release:
                 probe(pid, 0)
             except ProcessLookupError:
                 continue
-            raise Failure('Previous overlay-check process or group is still alive')
-        prior['interrupted_overlay_check'] = {
+            raise Failure('Previous command ' + str(pid) + ' or its process group is still alive')
+        prior['interrupted_command'] = {
             'command': command, 'pid': pid,
             'started_utc': prior.get('command_started_utc'), 'recovered_utc': now()}
         prior.update(command_pid=None, last_command_exit=None)
@@ -444,13 +450,6 @@ class Release:
         return {'app-version.json': json.dumps(self.state['version'], indent=2) + '\n',
                 **release_notes.files(notes, self.state['notes'], self.state['since'][1:])}
 
-    def commit_version(self, files):
-        for name, text in files.items():
-            (self.root / name).write_text(text)
-        self.git('add', *files)
-        # Callers verify nothing else is staged; a merge refuses a partial (--only) commit.
-        self.git('commit', '-m', 'chore(release): ' + self.state['version']['version'])
-
     def prepare(self):
         if self.git("branch", "--show-current") != "main":
             raise Failure("Use main; all local changes are preserved")
@@ -463,6 +462,8 @@ class Release:
             self.checkpoint(quiet_seconds=None, quiet_head=None, quiet_since=None)
             self.git("fetch", "origin", "main", retries=2)
             self.git("merge", "--ff-only", "origin/main")
+            if self.git('rev-parse', 'HEAD') != self.git('rev-parse', 'origin/main'):
+                raise Failure('Local main has unpushed commits; preserved without releasing them')
             previous = app_version.read(self.root)
             if previous['build'] >= 9999:
                 raise Failure("Apple bundle build number exhausted")
@@ -493,25 +494,28 @@ class Release:
                 dirty = {line.split(maxsplit=1)[1] for line in self.git('status', '--porcelain').splitlines()}
                 if not dirty <= set(files) or any((self.root / name).read_text() != files[name] for name in dirty):
                     raise Failure('Unexpected local edits during version transaction; preserved')
-                self.commit_version(files)
+                for name, text in files.items():
+                    (self.root / name).write_text(text)
+                self.git('add', *files)
+                self.git('commit', '-m', 'chore(release): ' + wanted['version'])
             self.checkpoint(commit=self.git('rev-parse', 'HEAD'))
         for attempt in range(4):
             self.git('fetch', 'origin', 'main', retries=2)
             commit = self.state['commit']
             if self.published(commit):
                 break
-            if self.git('status', '--porcelain') or self.git('rev-parse', 'HEAD') != commit:
-                raise Failure('Unpublished version commit has local edits; preserved without overwriting')
             remote_version = json.loads(self.git('show', 'origin/main:app-version.json'))
             if remote_version != self.state['previous_version']:
                 raise Failure('Another release changed the remote version; no retagging or automatic version replacement')
             if not subprocess.run(['git', 'merge-base', '--is-ancestor', 'origin/main', commit], cwd=self.root,
                                   env=self.env, capture_output=True).returncode == 0:
                 # Commits merged in here ship in this release, so its notes are recomputed to include them.
-                # The network fetch stays outside the open merge, and the merge only conflicts in the
-                # three version files, which are rewritten from origin/main's notes right after.
-                since, found = self.changes('origin/main')
-                self.git('merge', '--no-commit', '-X', 'theirs', 'origin/main')
+                tip = self.git('rev-parse', 'origin/main')
+                ours = self.git('diff-tree', '-r', '--name-only', self.git('merge-base', commit, tip), commit).splitlines()
+                # The merge below keeps only the version files from this side, not e.g. an unpushed local commit.
+                if not set(ours) <= set(self.version_files(tip)):
+                    raise Failure('The version commit carries changes main lacks; preserved for reconciliation')
+                since, found = self.changes(tip)
                 # The version is unpublished, so a late feat or breaking change raises a bump --type didn't set.
                 kind = self.state.get('type_override') or release_notes.bump(found) or self.kind
                 raised = next_version(self.state['previous_version']['version'], kind)
@@ -521,8 +525,10 @@ class Release:
                 notes = release_notes.entry(wanted['version'], wanted['build'], self.state['notes']['date'], found)
                 self.checkpoint(release_type=self.kind, version=wanted, tag='v' + wanted['version'],
                                 notes=notes, since=since)
-                self.commit_version(self.version_files('origin/main'))
-                self.checkpoint(commit=self.git('rev-parse', 'HEAD'))
+                # The version commit only changes these files, so the merge is main's tree with them
+                # replaced. Writing it without the checkout leaves a kill nothing to clean up.
+                self.checkpoint(commit=self.git('commit-tree', self.tree(tip, self.version_files(tip)), '-p', commit,
+                                                '-p', tip, '-m', 'chore(release): ' + wanted['version']))
             try:
                 self.git('push', 'origin', self.state['commit'] + ':refs/heads/main')
             except Failure:
