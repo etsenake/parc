@@ -380,7 +380,8 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   passes) it expands for good on a 0.35/0.7 spring: the card background,
   divider and controls appear, and the slot grows. Parc's additions: the
   collapsed title is a button, so a click, Space with Full Keyboard Access
-  or VoiceOver's press also expands it. Unverified without a run: how the slot's growth and the
+  or VoiceOver's press also expands it. A keyboard expand leaves focus on
+  the now-plain title rather than moving it to the controls (open). Unverified without a run: how the slot's growth and the
   spring line up (the slot resizes at once; the content springs inside it).
 
 ### Updater API
