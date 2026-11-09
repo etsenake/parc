@@ -1,0 +1,3 @@
+#!/bin/sh
+# Rejects commit subjects that aren't Conventional Commits; release notes are built from them.
+exec python3 "$(git rev-parse --show-toplevel)/scripts/release_notes.py" check "$1"

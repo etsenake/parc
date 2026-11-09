@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -143,6 +144,31 @@ class History(unittest.TestCase):
     def test_nothing_since_tag(self):
         self.commit('docs: Explain releases'); self.commit('Unconventional history')
         self.assertIsNone(notes.bump(notes.changes(self.root, 'v1.0.0', 'HEAD')))
+
+
+class Hook(unittest.TestCase):
+    def test_commit_msg_hook_in_checkout_and_worktree(self):
+        source = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / 'repo'; (root / 'scripts').mkdir(parents=True)
+            shutil.copytree(source / '.githooks', root / '.githooks')
+            shutil.copy2(source / 'scripts/release_notes.py', root / 'scripts')
+            def git(*args, cwd=root):
+                return subprocess.run(['git', *args], cwd=cwd, capture_output=True, text=True)
+            git('init', '-b', 'main'); git('config', 'core.hooksPath', '.githooks')
+            git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid')
+            git('config', 'commit.gpgsign', 'false'); git('add', '-A')
+            rejected = git('commit', '-m', 'Add the hook')
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('rejected: Add the hook', rejected.stderr)
+            self.assertEqual(git('commit', '-m', 'build: Add the hook').returncode, 0)
+            git('worktree', 'add', '-b', 'topic', str(Path(folder) / 'topic'))
+            topic = Path(folder) / 'topic'
+            self.assertNotEqual(git('commit', '--allow-empty', '-m', 'Tidy', cwd=topic).returncode, 0)
+            (topic / 'tabs').write_text('pinned\n'); git('add', 'tabs', cwd=topic)
+            self.assertEqual(git('commit', '-m', 'fix: Keep tabs', cwd=topic).returncode, 0)
+            self.assertEqual(git('merge', '--no-ff', '--no-edit', 'topic').returncode, 0)
+            self.assertEqual(git('revert', '--no-edit', 'topic').returncode, 0)
 
 
 if __name__ == '__main__':

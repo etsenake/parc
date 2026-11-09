@@ -254,7 +254,7 @@ def main():
             write(ROOT / "Engine/engine-artifacts.json", pin)
             if subprocess.call(["git", "diff", "--quiet", "--", "Engine/engine-artifacts.json"], cwd=ROOT) or run(["git", "ls-files", "--others", "--exclude-standard", "Engine/engine-artifacts.json"], cwd=ROOT):
                 run(["git", "add", "Engine/engine-artifacts.json"], cwd=ROOT)
-                run(["git", "commit", "-m", "Pin existing engine workspace and development package"], cwd=ROOT)
+                run(["git", "commit", "-m", "build(engine): pin the existing engine workspace and development package"], cwd=ROOT)
             run(["git", "push", "origin", "HEAD:main"], cwd=ROOT)
             head = run(["git", "rev-parse", "HEAD"], cwd=ROOT)
             if run(["git", "ls-remote", "origin", "refs/heads/main"], cwd=ROOT).split()[0] != head:

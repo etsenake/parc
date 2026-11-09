@@ -1,8 +1,8 @@
 # Production release command
 
 ```sh
-bash scripts/release.sh --type minor
-# Other release types: --type patch or --type major
+bash scripts/release.sh
+# Override the bump only when the commits can't choose it: --type patch, minor or major
 ```
 
 Run from clean main on an Apple Silicon Mac. This command is **release-only**:
@@ -12,13 +12,36 @@ browser tests, or invokes Homebrew install/upgrade/reinstall. Josh runs
 `brew upgrade --cask parc` himself. There is no quiet-window timer.
 The earlier one-night wait was coordination, not a feature of this command.
 
+## Versions and release notes
+
+Commit subjects follow Conventional Commits (see `AGENTS.md`). The release reads
+the commits since the newest published `v*` tag on main, ignoring merges and
+subjects that don't parse; git's own `Revert "…"` cancels the change it reverts.
+A breaking change (`type!:` or a `BREAKING CHANGE:` footer) makes a major
+release, any `feat` a minor one and any `fix` or `perf` a patch. With none of
+those the command prints `Nothing to release since vX` and exits successfully
+before taking the release lease, committing or building. `--type` overrides the
+bump when the commits can't describe it.
+
 A minor release after 1.0.0 is 1.1.0; the Apple bundle build increases
-independently. Rerun the same command after interruption. It resumes the saved
-version and frozen inputs instead of bumping twice. Asking for a different
-release type while a run is stopped and its tag was never published marks that
-run abandoned (its run directory, source archive and engine objects are kept),
-releases its lease and starts the new release from the current version. A
-running run or a published tag still refuses.
+independently. The version commit, `chore(release): X`, holds
+`app-version.json`, `release-notes.json` and the generated `CHANGELOG.md`.
+`release-notes.json` is the source of truth: newest release first, only feat,
+fix, perf and breaking changes, and the UTC date the version was prepared. The
+same notes become the GitHub release text on etsenake/parc and
+etsenake/parc-releases under Heads up, New, Fixed and Faster, followed by the
+build provenance. If main moves while the version commit is being pushed, the
+release merges it and adds those commits to its notes; the version chosen before
+stays.
+
+Rerun the same command after interruption. It resumes the saved type, version,
+notes and frozen inputs instead of bumping twice, and never records a release
+twice. A run without `--type` always resumes a stopped run. Asking for a
+different `--type` while a run is stopped and its tag was never published marks
+that run abandoned (its run directory, source archive and engine objects are
+kept), releases its lease and starts the new release from the current version;
+the new release's notes replace the abandoned version's. A running run or a
+published tag still refuses.
 
 ## Pipeline
 
@@ -90,8 +113,8 @@ canonical main and the same command is rerun; no manual receipt edits or cache
 cleanup are needed.
 
 If compilation exposes a source bug, fix, check and publish the source on main,
-then run `bash scripts/release.sh --type minor --refresh-source` (using the saved
-release type). This explicitly freezes a new published source archive for the
+then run `bash scripts/release.sh --refresh-source`, which keeps the saved
+release type. This explicitly freezes a new published source archive for the
 same version and retains the failed archive, source history and compiled objects.
 It is restricted to a stopped engine stage before sealing or packaging; existing
 version tags remain immutable. Ordinary resumes keep their original frozen inputs.

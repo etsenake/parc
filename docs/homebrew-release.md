@@ -6,7 +6,7 @@ artifacts and publishes the cask; Josh upgrades manually. Historical local test
 commands below are optional, separate actions, not release stages.
 
 For new production releases, use [the complete release command](master-release.md):
-`bash scripts/release.sh --type minor`. The individual commands below remain
+`bash scripts/release.sh`. The individual commands below remain
 available for evidence inspection and focused recovery.
 
 Josh explicitly confirmed normal startup of **1.0.0**. The earlier uncontrolled

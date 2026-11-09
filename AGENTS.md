@@ -1,14 +1,25 @@
 # Parc working contract
 
 **Current release-script scope — November 5, latest Josh correction:**
-`release.sh --type major|minor|patch` is release-only: build engine/app, Developer
-ID sign, notarize/staple, publish GitHub assets, and publish/verify the tap cask.
+`release.sh` (version from Conventional Commits; `--type major|minor|patch`
+overrides it) is release-only: build engine/app, Developer ID sign,
+notarize/staple, publish GitHub assets, and publish/verify the tap cask.
 It must never wait for main to be quiet, install/replace/quit/open the local app,
 run startup/browser checks, or run Homebrew install/upgrade/reinstall. Josh runs
 Homebrew upgrade himself. This supersedes historical immediate-install and
 startup-promotion requirements for this release command and tonight's 1.1.0 run.
 Artifact signature/hash/source/notarization checks remain required; never claim
 runtime acceptance from them. Root continues directly on main without agents.
+
+**CRITICAL — EVERY COMMIT SUBJECT IS A CONVENTIONAL COMMIT. User direction, November 9.**
+Write `type(scope)!: summary`; the scope is optional, and `!` or a
+`BREAKING CHANGE:` footer marks a breaking change. Types: `feat fix perf
+refactor docs build ci chore test style revert`. `feat`, `fix` and `perf`
+subjects are Parc's release notes on GitHub and in What's New, so write them for
+Parc users: a short sentence, starting with a capital, saying what changed for
+them (`fix(sidebar): Keep pinned tabs after a restart`). Internal work (tooling,
+tests, docs, the ledger, refactors) uses the other types. `.githooks/commit-msg`
+enforces this; enable it per clone as in [developer onboarding](docs/developer-onboarding.md).
 
 **Current Codex chat — November 5:** Josh directs root to do all work itself,
 directly in `/Users/josh.etsenake/parc` on `main`, with no subagents or new

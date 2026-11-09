@@ -2,8 +2,9 @@
 
 
 For complete production releases use [the master release command](../../docs/master-release.md):
-`bash scripts/release.sh --type major|minor|patch` (choose one release type). The
-commands below remain the individual building blocks.
+`bash scripts/release.sh`, which chooses the version from Conventional Commits
+(`--type major|minor|patch` overrides it). The commands below remain the
+individual building blocks.
 
 ## Inputs and commands
 
