@@ -12,7 +12,7 @@ Profiles selects that pane directly; ordinary Settings entry preserves the
 current pane. The window uses system appearance and native keyboard/accessibility
 behavior. Closing cancels an outstanding download-folder panel.
 
-Settings. Replay onboarding no longer has a Settings entry point; its
+Parc's Onboarding box with Replay onboarding, the only way to replay setup. Keep
 preferences belong to the selected profile in Profiles.
 
 Advanced → **More Settings…** opens the genuine `chrome://settings/` WebUI in
