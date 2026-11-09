@@ -51,7 +51,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private var selectedTheme: SpaceTheme
     private let themeEditor: SpaceThemeEditorView
     private let themeChrome: OnboardingThemeEditorChrome
-    private var defaultBrowserRequest: UUID?
     private let defaultBrowser = DefaultBrowserController.shared
     private var defaultChoice: NSHostingView<OnboardingDefaultBrowserChoice>?
     private var adBlockerHost: NSHostingView<OnboardingAdBlockersChoice>?
@@ -137,7 +136,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             self.favoritePicker.configure(draft: self.draft, enabled: true)
         }
         back.actionBlock = { [weak self] in
-            guard let self, !self.isFinishing, self.defaultBrowserRequest == nil,
+            guard let self, !self.isFinishing,
                   self.window?.attachedSheet == nil, self.passwordHelp?.isPresented != true else { return }
             guard self.browserImport == nil else { return }
             if let stage = self.draft.previousStage() { self.transition(to: stage) }
@@ -254,7 +253,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !isFinishing, sender.attachedSheet == nil else { return false }
-        closeBrowserImport(); suspend(); isClosed = true; defaultBrowserRequest = nil
+        closeBrowserImport(); suspend(); isClosed = true
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
         accessibilityObserver = nil
         if let extensionFailureObserver { NotificationCenter.default.removeObserver(extensionFailureObserver) }
@@ -300,7 +299,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func transition(to stage: OnboardingDraft.Stage) {
-        guard !isFinishing, !isClosed, browserImport == nil, defaultBrowserRequest == nil else { return }
+        guard !isFinishing, !isClosed, browserImport == nil else { return }
         scheduledAdvance?.cancel(); scheduledAdvance = nil
         captureDraft()
         let previous = draft.stage
@@ -389,10 +388,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let ordinal = order.firstIndex(of: draft.stage.current) ?? 0
         let isReady = draft.stage == .ready
         progress.stringValue = (isReplay ? "Replay · " : "") + (isReady ? "Ready" : "\(ordinal + 1) of \(draft.displayedSetupCount())")
-        back.isHidden = draft.previousStage() == nil
+        back.isHidden = isReady || draft.previousStage() == nil
         skip.title = "Skip for now"
-        skip.isHidden = ![.favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
-        let canAdvance = browserImport == nil && defaultBrowserRequest == nil
+        skip.isHidden = ![.theme, .favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
+        let canAdvance = browserImport == nil
         next.isEnabled = canAdvance; next.isLoading = false; back.isEnabled = canAdvance; skip.isEnabled = canAdvance
         next.title = isReady ? (isReplay ? "Finish replay" : "Get Started") : "Next"
         if isReady {
@@ -594,7 +593,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             back.nextKeyView = afterContent
         }
         skip.nextKeyView = next.keyboardView
-        next.keyboardView.nextKeyView = back.isHidden ? afterContent : back
+        next.keyboardView.nextKeyView = !back.isHidden ? back
+            : draft.stage == .ready ? readyContent.firstKeyView : afterContent
     }
 
     private func announceStageIfNeeded(from previous: OnboardingDraft.Stage?) {
@@ -636,48 +636,24 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
     }
     private func advance() {
-        guard !isFinishing, !isClosed, defaultBrowserRequest == nil,
+        guard !isFinishing, !isClosed,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
         if let browserImport { browserImport.advance(); return }
         if draft.stage == .ready { finish(); return }
-        if draft.stage == .defaultBrowser, draft.wantsDefaultBrowser {
-            defaultBrowser.refresh()
-            if !defaultBrowser.state.isDefault {
-                let request = UUID()
-                defaultBrowserRequest = request
-                render()
-                let started = defaultBrowser.makeDefault { [weak self] failure in
-                    guard let self, !self.isClosed, !self.isFinishing,
-                          self.defaultBrowserRequest == request, self.draft.stage == .defaultBrowser else { return }
-                    self.defaultBrowserRequest = nil
-                    if let failure {
-                        self.render()
-                        self.persistenceStatus.stringValue = failure
-                    } else {
-                        // Declining macOS consent still permits setup. The
-                        // pending choice is never treated as handler readback.
-                        self.transition(to: .ready)
-                    }
-                }
-                if !started {
-                    defaultBrowserRequest = nil
-                    render()
-                    persistenceStatus.stringValue = "Finish the current default-browser request, then try again."
-                }
-                return
-            }
-        }
+        //
+        // at once. The shared request starts nothing when Parc is already
+        // default or one is in flight, and keeps its outcome for Settings.
+        if draft.stage == .defaultBrowser, draft.wantsDefaultBrowser { defaultBrowser.makeDefault() }
         if let next = draft.nextStage() { transition(to: next) }
     }
 
     private func defaultBrowserChoices() -> OnboardingDefaultBrowserChoice {
         let palette = ThemeChromePalette(theme: selectedTheme, appearance: root.effectiveAppearance)
         return OnboardingDefaultBrowserChoice(selected: draft.wantsDefaultBrowser,
-            enabled: defaultBrowserRequest == nil,
             selectionColor: selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor,
             onSelect: { [weak self] choice in
                 guard let self, !self.isClosed, !self.isFinishing,
-                      self.draft.stage == .defaultBrowser, self.defaultBrowserRequest == nil,
+                      self.draft.stage == .defaultBrowser,
                       let window = self.window, window.isKeyWindow, window.attachedSheet == nil else { return }
                 self.draft.defaultBrowserChoice = choice
                 self.persistDraft()
@@ -701,7 +677,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func finish() {
-        guard !isFinishing, !isClosed, browserImport == nil, defaultBrowserRequest == nil else { return }
+        guard !isFinishing, !isClosed, browserImport == nil else { return }
         captureDraft(); persistDraft()
         isFinishing = true; next.isEnabled = false; back.isEnabled = false
         do {
@@ -811,12 +787,25 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func skipStep() {
-        guard !isClosed, !isFinishing, defaultBrowserRequest == nil,
+        guard !isClosed, !isFinishing,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
         if let browserImport {
             if browserImport.isImporting { browserImport.stopImport(); return }
             captureBrowserImportResults()
             closeBrowserImport()
+        }
+        if draft.stage == .theme {
+            themeEditor.finishEditing()
+            draft.theme = selectedTheme
+            draft.skipTheme(replayBase: !isReplay ? nil : draft.replayBaseTheme
+                ?? store.state.spaces.first { $0.id == draft.spaceID }.map(store.savedTheme(of:)))
+            themeEditor.resetTheme(draft.theme)
+            selectedTheme = draft.theme; persistDraft()
+            previewReplayTheme(draft.theme)
+            applySetupPalette()
+        } else if draft.stage == .favorites {
+            draft.skipFavorites(keeping: isReplay ? replayExistingFavorites : [])
+            persistDraft()
         }
         if let next = draft.nextStage() { transition(to: next) }
     }

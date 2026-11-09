@@ -224,6 +224,12 @@ final class SpaceThemeEditorView: NSView {
         replaceEditorTheme(theme)
         return true
     }
+    ///
+    /// history even when the theme itself is unchanged.
+    func resetTheme(_ theme: SpaceTheme) {
+        committedTheme = theme
+        replaceEditorTheme(theme)
+    }
     private func replaceEditorTheme(_ theme: SpaceTheme) {
         pad.cancelGesture(); intensity.cancelGesture(); noise.cancelGesture()
         activeInput = nil

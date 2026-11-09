@@ -28,17 +28,19 @@ struct OnboardingSetupCardTests {
         let name = NSTextField()
         let stages = [
             ("Welcome to Parc.", "A place for your tabs, your projects, and the way you browse.\nLet’s make it yours."),
-            ("Add some flair with a theme.", "Spaces keep different parts of your browsing together.\nGive your first one a name and a color."),
+            ("Add some flair with a theme.", "Pick a color, any color—add your favorite shade to your new home on the internet."),
             ("Choose the apps you use most.", "Favorites stay close at hand across your Spaces.\nChoose a few, or add your own while you browse."),
             ("Treat your bookmarks to an upgrade.", "Bring your browsing from another browser.\nChoose the bookmarks you want to keep in your sidebar."),
             ("Welcome to Parc, Ada Lovelace.", "Here’s your Parc Card. Show it off to the world or keep it to yourself.\n\nAnd with that, you’re now ready to experience your upgraded internet.")
         ]
         for (index, stage) in stages.enumerated() {
-            back.isHidden = index == 0
-            skip.isHidden = index != 2 && index != 3
+            //
+            back.isHidden = index == 0 || index == 4
+            skip.isHidden = !(1...3).contains(index)
+            // OnboardingThemeEditorLayout.spaceNameHeight
             card.configure(title: stage.0, subtitle: stage.1, font: font,
                            back: back, next: next, skip: skip, progress: progress,
-                           accessory: index == 1 ? name : nil)
+                           accessory: index == 1 ? name : nil, accessoryHeight: index == 1 ? 36 : 30)
             card.layoutSubtreeIfNeeded()
             precondition(card.instructions.frame.width == 257)
             precondition(card.content.frame == NSRect(x: 357, y: 0, width: 610, height: 548))
@@ -48,6 +50,8 @@ struct OnboardingSetupCardTests {
             if index == 1 {
                 precondition(name.superview === card.instructions)
                 precondition(name.frame.minY > card.message.frame.maxY && name.frame.maxY < next.frame.minY)
+                // The card keeps 967×548 bounds at every fit, so this holds at the smallest size too.
+                precondition(name.frame.maxY + 12 <= skip.frame.minY, "Space name clears Skip on the theme step")
             } else { precondition(name.superview == nil) }
             precondition(next.superview === card.instructions && progress.superview === card.instructions)
             precondition(next.frame.width == 257 && next.frame.height == 40)

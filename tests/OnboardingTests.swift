@@ -196,8 +196,49 @@ struct OnboardingTests {
             precondition(failureStore.state == previous, "A failed atomic write must roll back all setup")
         }
         try Self.checkReplay(root: root)
+        try Self.checkSkip(root: root)
         try Self.checkExperience()
-        print("Onboarding draft, commit, retry, restart, rollback and replay checks passed")
+        print("Onboarding draft, commit, retry, restart, rollback, replay and skip checks passed")
+    }
+
+    ///
+    /// (wheel and light/dark kept), Favorites to none. Replay restores what the Space had.
+    static func checkSkip(root: URL) throws {
+        let skipRoot = root.appendingPathComponent("skip")
+        let store = try BrowserStore(directory: skipRoot)
+        try store.save()
+        var draft = try OnboardingDraft.load(directory: skipRoot, space: store.activeSpace)
+        var chosen = SpaceTheme.singleColor(ThemeColor(hex: "4C6688")!)
+        chosen.wheel = .analogous; chosen.appearance = .dark; chosen.noise = 0.5; chosen.intensity = 0.3
+        chosen.texture = .denim
+        draft.theme = chosen
+        draft.skipTheme(replayBase: nil)
+        precondition(draft.theme == SpaceTheme(wheel: .analogous, appearance: .dark),
+                     "Skip on the theme step keeps only the wheel and light/dark")
+        precondition(draft.theme.primaryColor == nil && draft.theme.colorCount == 0 && draft.theme.noise == 0
+            && draft.theme.intensity == 0.8 && draft.theme.texture == .grain && draft.theme.isValid,
+            "Skipped theme is the no-colour default")
+
+        precondition(!draft.selectedFavorites.isEmpty, "Fixture starts with the default Favorites")
+        draft.skipFavorites()
+        precondition(draft.selectedFavorites.isEmpty && draft.favoriteOrder == [], "Skip on Favorites selects none")
+        try draft.save(directory: skipRoot)
+        let resumed = try OnboardingDraft.load(directory: skipRoot, space: store.activeSpace)
+        precondition(resumed.selectedFavorites.isEmpty, "A skipped Favorites step resumes empty, not with the defaults")
+        try store.completeOnboarding(resumed)
+        precondition(!store.state.tabs.contains { $0.kind == .favorite },
+                     "First launch after skipping Favorites adds no Favorites")
+
+        let base = SpaceTheme.singleColor(ThemeColor(hex: "a1b2c3")!)
+        var replay = OnboardingDraft(spaceID: store.activeSpace.id, spaceName: "Home", theme: chosen)
+        replay.replayBaseTheme = base
+        replay.skipTheme(replayBase: base)
+        precondition(replay.theme == base, "Replay Skip restores the theme the replay started from")
+        let existing: Set<String> = ["https://notion.so"]
+        replay.favoriteURLs = existing.union(["https://figma.com"])
+        replay.skipFavorites(keeping: existing)
+        precondition(replay.selectedFavorites.map(\.url) == ["https://notion.so"],
+                     "Replay Skip keeps the profile's existing Favorites selected and drops new picks")
     }
 
     /// Replay dedupes saved URLs the way saved tabs compare them, and archived

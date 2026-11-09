@@ -5,7 +5,6 @@ import SwiftUI
 /// pending-choice behavior. macOS consent belongs to the onboarding owner.
 struct OnboardingDefaultBrowserChoice: View {
     let selected: Bool
-    let enabled: Bool
     let selectionColor: NSColor
     let onSelect: (Bool) -> Void
 
@@ -23,7 +22,6 @@ struct OnboardingDefaultBrowserChoice: View {
                 }
         }
         .frame(width: 339)
-        .disabled(!enabled)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Default browser")
     }
