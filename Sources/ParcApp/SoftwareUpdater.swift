@@ -244,8 +244,13 @@ extension SoftwareUpdater: SPUUserDriver {
     func showUpdateInFocus() {
         if let window = updateWindow?.window ?? statusWindow?.window {
             window.makeKeyAndOrderFront(nil)
-        } else {
-            presentFound()
+            return
+        }
+        // A status window closed mid-way reopens at its step, not the offer.
+        switch phase {
+        case .preparing: status().show(status: "Preparing…", action: "Cancel", progress: nil, enabled: false)
+        case .installing: status().show(status: "Installing update... ", action: "Install and Relaunch", progress: 1, enabled: false)
+        default: presentFound()
         }
     }
 
