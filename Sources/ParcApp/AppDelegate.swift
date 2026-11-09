@@ -1476,7 +1476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
         }
         controller.onUntargetedReturn = { [weak self] id, owner, trigger in
-            guard let self, !self.terminationInProgress else { return false }
+            guard let self, !self.terminationInProgress else { return .unneeded }
             let others = self.windows.filter { $0 !== owner && $0.store === owner.store }
             let candidates = others.map {
                 PageReparenting.Candidate(windowID: $0.sessionID, displaysPlaceholder: $0.displaysPlaceholder(for: id),
@@ -1485,14 +1485,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
             for chosen in PageReparenting.returnDestinations(candidates, trigger: trigger) {
                 guard let destination = others.first(where: { $0.sessionID == chosen }) else { continue }
-                if owner.transferTab(id, to: destination, placement: { true }, untargeted: true) { return true }
+                if owner.transferTab(id, to: destination, placement: { true }, untargeted: true) { return .started }
+                if trigger == .deselected, owner.returnFailed(id) { return .blocked }
             }
-            return false
+            return PageReparenting.unstartedReturn(candidates)
+        }
+        controller.onReturnUnblocked = { [weak self, weak controller] in
+            guard let self, let controller, !self.terminationInProgress else { return }
+            for other in self.windows where other.store === controller.store { other.retryHeldReturns() }
         }
         controller.onClose = { [weak self, weak controller] in
             guard let controller else { return }
             controller.shutdownBrowsers()
             self?.windows.removeAll { $0 === controller }
+            for other in self?.windows ?? [] where other.store === controller.store { other.retryHeldReturns() }
             // Private windows' site colours live only until the last one closes.
             if controller.isPrivateBrowsing, self?.windows.contains(where: \.isPrivateBrowsing) == false {
                 TopBarColorClient.privateBrowsing.forgetAll()

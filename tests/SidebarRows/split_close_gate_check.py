@@ -89,8 +89,93 @@ expect("for id in ids { returnIfUnshown(id) }" in body(controller, "private func
 unshown = body(controller, "private func returnIfUnshown(_ id: UUID)")
 returnable = body(controller, "private var returnableIDs: Set<UUID>")
 expect("heldContentIDs.contains(id) || holdsEmptyClaim(id)" in unshown
-       and "shownSinceArrival.filter(holdsEmptyClaim)" in returnable,
-       "a handed-over claim with nothing behind it, which has no pane here, goes back as moved content does")
+       and "shownSinceArrival.union(heldReturns).filter(holdsEmptyClaim)" in returnable,
+       "a handed-over claim with nothing behind it, which has no pane here, goes back as moved content does, "
+       "including while its return is held")
+# A return the placeholder window can't take now (a move under way, page full
+# screen, a close, a move in its recovery prompt, another Space) is held, not
+# dropped, and retried on the change that ends that, never on a timer.
+returns = body(controller, "private func scheduleUntargetedReturns()")
+expect("self.shownSinceArrival.remove(id)" in returns
+       and "let outcome = self.onUntargetedReturn?(id, self, .deselected)" in returns
+       and "if outcome == .started { return }" in returns
+       and "if outcome == .blocked, self.failedDuringReturn != id { self.heldReturns.insert(id) }" in returns,
+       "a refused return is held for retry; one that no longer applies is dropped")
+transfer = body(controller, "func transferTab(_ id: UUID, to destination: BrowserWindowController")
+expect(transfer.index("if untargeted { failedDuringReturn = nil }") < transfer.index("holdsEmptyClaim(id)"),
+       "each untargeted attempt starts with no failure marked, so an old failure can't hide a refusal")
+expect("func returnFailed(_ id: UUID) -> Bool { failedDuringReturn == id }" in controller,
+       "a move that started and failed before reporting it is held only by its own failure, keeping the one-retry limit")
+retry = body(controller, "func retryHeldReturns()")
+gate = body(controller, "private func noteReturnGate()")
+for name, text in (("scheduleUntargetedReturns", returns), ("retryHeldReturns", retry), ("noteReturnGate", gate),
+                   ("holdFailedReturn", body(controller, "private func holdFailedReturn(_ id: UUID)"))):
+    expect("asyncAfter" not in text and "Timer" not in text, f"{name} never retries on a timer")
+expect("guard !heldReturns.isEmpty, !isClosing else { return }" in retry
+       and "shownSinceArrival.formUnion(heldReturns)" in retry and "heldReturns.removeAll()" in retry
+       and "scheduleUntargetedReturns()" in retry,
+       "a retry with nothing held does nothing; otherwise each held page is tried once more")
+for name, change in (("transferringTabIDs", "if transferringTabIDs.isEmpty, !oldValue.isEmpty { onReturnUnblocked?() }"),
+                     ("collectionTransfer", "if collectionTransfer == nil, oldValue != nil { onReturnUnblocked?() }"),
+                     ("nativeFullscreenTabID", "if nativeFullscreenTabID == nil, oldValue != nil { onReturnUnblocked?() }"),
+                     ("wholeWindowClose", "if !wholeWindowClose, oldValue { onReturnUnblocked?() }")):
+    expect(change in controller.split(f"private var {name}", 1)[1].split("\n    }\n", 1)[0],
+           f"the end of {name} (a move or its recovery, full screen, a cancelled close) retries held returns")
+expect(body(controller, "func selectSpace(_ id: UUID)").rstrip("}").rstrip().endswith("noteReturnGate()"),
+       "showing another Space retries held returns, after the new Space is in place")
+expect("if open, !returnGateWasOpen || space != returnGateSpaceID { onReturnUnblocked?() }" in gate
+       and "defer { returnGateWasOpen = open; returnGateSpaceID = space }" in gate,
+       "the window's own refusals retry held returns only as they end or its Space changes, never on every pass")
+gate_terms = body(controller, "private var returnGateOpen: Bool")
+for term in ("presentation.isReady", "activePeek == nil", "!promotingPeek", "commandBar == nil", "tabSwitcher == nil",
+             "themePopover == nil", "!siteControlCenterDefers", "closingTabIDs.isEmpty", "modelRetirementIDs.isEmpty",
+             "peekRetirementParents.isEmpty", "!$0.closePending", "!store.isProfileRemovalPending(activeProfileID)",
+             "nativeBinding?.canParticipateInPageTransfer == true"):
+    expect(term in gate_terms, f"a refusal that ends without a move, full screen or close is in the gate: {term}")
+expect("self.tabSwitcher = nil\n            self.noteReturnGate()" in controller, "closing the tab switcher checks the gate")
+for name in ("themePopover", "siteControlCenter", "peeks", "promotingPeek"):
+    declaration = controller.split(f"private var {name}", 1)[1].split("\n", 1)[0]
+    expect("noteReturnGate()" in declaration, f"closing {name} checks the gate")
+expect("noteReturnGate()" in body(controller, "private var commandBar: CommandBar?"), "closing the command bar checks the gate")
+navigation = body(controller, "private func updateNavigation()")
+expect(navigation.rstrip("}").rstrip().endswith("noteReturnGate()"), "every navigation refresh checks the gate")
+expect("noteReturnGate()\n        refreshEmptyWindowSidebar()\n        scheduleUntargetedReturns()\n    }" in controller,
+       "every render checks the gate, so a Space change any path made is seen")
+expect("heldReturns.formIntersection(returnableIDs); heldReturns.subtract(displayedIDs)" in controller
+       and "failedReturns.formIntersection(returnableIDs); failedReturns.subtract(displayedIDs)" in controller,
+       "a held return stops when its page closes, leaves or is shown here again")
+failed = body(controller, "private func holdFailedReturn(_ id: UUID)")
+expect("!presentation.displayedTabIDs.contains(id)" in failed and failed.index("failedDuringReturn = id") < failed.index("guard")
+       and "if failedReturns.insert(id).inserted { heldReturns.insert(id) } else {\n"
+           "            failedReturns.remove(id); heldReturns.remove(id); shownSinceArrival.remove(id)" in failed,
+       "a started return that leaves the page here is tried on one more change, then waits for a reselection")
+document_end = controller[controller.index("source.collectionTransfer = nil; destination.collectionTransfer = nil"):]
+expect(document_end.index("source.collectionTransfer = nil") < document_end.index("finished?(committed)"),
+       "a Note or Easel move's end wakes the others before its failure is held, so it can't retry itself")
+expect("} else if untargeted {\n                holdFailedReturn(id)" in body(controller, "private func resolveTabTransfer(")
+       and "if untargeted, !page.isClosed { holdFailedReturn(id) }" in body(controller, "private func resolvePeekTransfer(")
+       and "guard committed else { if untargeted { self.holdFailedReturn(id) }; return }"
+           in body(controller, "private func transferDocument("),
+       "every untargeted move that ends with the page still here holds its return")
+for move in ("private func resolveTabTransfer(", "private func resolvePeekTransfer("):
+    step = body(controller, move)
+    expect(step.rindex("finish()") < step.index("holdFailedReturn(id)"),
+           "a failed return is held after its own move's end has woken the others, so it can't retry itself")
+expect("== .started { closeAfterEjecting = true; return true }" in body(controller, "private func ejectPageBeforeClose()"),
+       "a closing window's ejection waits only for a started move")
+delegate = (root / "Sources/ParcApp/AppDelegate.swift").read_text()
+untargeted = body(delegate, "controller.onUntargetedReturn = {")
+expect("if trigger == .deselected, owner.returnFailed(id) { return .blocked }" in untargeted,
+       "a move that started and failed stops the pass, so a second placeholder window can't retry it in a loop")
+expect("return .started" in untargeted and "return PageReparenting.unstartedReturn(candidates)" in untargeted,
+       "a return no placeholder window could take reports whether one still keeps its placeholder")
+unblocked = body(delegate, "controller.onReturnUnblocked = {")
+expect("for other in self.windows where other.store === controller.store { other.retryHeldReturns() }" in unblocked,
+       "an unblocking change in one window retries held returns in every window")
+closed = body(delegate, "controller.onClose = {")
+expect(closed.index("self?.windows.removeAll { $0 === controller }")
+       < closed.index("for other in self?.windows ?? [] where other.store === controller.store { other.retryHeldReturns() }"),
+       "a closed window lets the others retry, after it is gone, so none waits for it")
 pending = body(controller, "private final class PendingArrival {")
 expect("guard !ran else { return }" in pending and "DispatchQueue.main.async(execute: abandoned)" in pending,
        "a dropped step reports itself on the main thread when released")

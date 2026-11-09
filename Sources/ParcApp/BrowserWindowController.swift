@@ -198,7 +198,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Tabs whose page navigated or loaded since their history was last saved.
     private var tabHistoryChanged = Set<UUID>()
     private var cookieFlush: DispatchWorkItem?
-    private var peeks: [String: PeekController] = [:]
+    private var peeks: [String: PeekController] = [:] { didSet { noteReturnGate() } }
     ///
     ///
     /// current page. The lease reserves the record until its Peek closes or
@@ -220,7 +220,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// title/URL/loading chrome ticks skip rebuild when this matches; media
     /// session status is fingerprinted only for listed music-host Favorites.
     private var lastFavoriteOverlayFingerprint: String?
-    private var promotingPeek = false
+    private var promotingPeek = false { didSet { noteReturnGate() } }
     private var activePeek: PeekController? {
         guard let id = currentTabID else { return nil }
         return peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
@@ -393,8 +393,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var nativeBinding: PCNativeBrowserWindow?
     private var closingTabIDs = Set<UUID>()
     private var modelRetirementIDs = Set<UUID>()
-    private var transferringTabIDs = Set<UUID>()
-    private var collectionTransfer: SidebarWindowTransfer?
+    private var transferringTabIDs = Set<UUID>() {
+        didSet { if transferringTabIDs.isEmpty, !oldValue.isEmpty { onReturnUnblocked?() } }
+    }
+    private var collectionTransfer: SidebarWindowTransfer? {
+        didSet { if collectionTransfer == nil, oldValue != nil { onReturnUnblocked?() } }
+    }
     private var transferContainers: [String: NSView] = [:]
     private var transferRecoveries: [UUID: () -> Void] = [:]
     private var resolvingTransfers = Set<UUID>()
@@ -406,23 +410,41 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Content this window has shown since it arrived: only that can be
     ///
     private var shownSinceArrival = Set<UUID>()
+    /// Deselected pages whose return the window keeping their placeholder
+    /// couldn't take; they go back on the next change that could clear that.
+    private var heldReturns = Set<UUID>()
+    /// Pages whose started return left them here: retried on one more change,
+    /// then left until shown and deselected again, so a move the engine
+    /// keeps failing never repeats itself.
+    private var failedReturns = Set<UUID>()
+    /// A started return that failed before reporting it started has already
+    /// been held or dropped by `holdFailedReturn`.
+    private var failedDuringReturn: UUID?
+    private var returnGateWasOpen = true
+    private var returnGateSpaceID: UUID?
     private var ejectionAttempts = Set<UUID>()
     private var closeAfterEjecting = false
     ///
     /// still holding a placeholder for a page it returns.
     private(set) var lastActivatedAt = Date.distantPast
     /// Returns a page this window holds but no longer shows to another window
-    /// keeping its placeholder; true when a move started.
-    var onUntargetedReturn: ((UUID, BrowserWindowController, PageReparenting.Trigger) -> Bool)?
+    /// keeping its placeholder.
+    var onUntargetedReturn: ((UUID, BrowserWindowController, PageReparenting.Trigger) -> PageReparenting.ReturnOutcome)?
+    /// A move, full screen, close or Space that could have refused a return ended.
+    var onReturnUnblocked: (() -> Void)?
     private var liveTabModels: [UUID: BrowserTab] = [:]
     var scriptingAuthorization: (() -> Bool)?
     private var scriptingWindowCloseCompletions: [(Bool) -> Void] = []
     private var windowClosePending = false
     private var windowCloseApproved = false
-    private var wholeWindowClose = false
+    private var wholeWindowClose = false {
+        didSet { if !wholeWindowClose, oldValue { onReturnUnblocked?() } }
+    }
     private var pendingApprovedWindowClose = false
     private var restoreSettingsAfterCancelledTermination = false
-    private var nativeFullscreenTabID: UUID?
+    private var nativeFullscreenTabID: UUID? {
+        didSet { if nativeFullscreenTabID == nil, oldValue != nil { onReturnUnblocked?() } }
+    }
     private var nativeFullscreenPresentation: (sidebar: SidebarPresentation, findHidden: Bool)?
     private var extensionSidePanelVisible = false
     private var attachedPageIDs = Set<String>()
@@ -470,6 +492,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if commandBar == nil { commandBarCreatesNewTab = false; commandBarShowsNewTabPlaceholder = false }
             refreshSplitPaneHighlights()
             refreshNewTabPlaceholder()
+            noteReturnGate()
         }
     }
     /// Key restoration during command-bar dismissal happens before its
@@ -534,9 +557,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var lastShareableAudioFingerprint: String?
     private var lastAppliedShareable = Set<UUID>()
     private var lastAppliedAudio: [UUID: SidebarTabAudio] = [:]
-    private var themePopover: NSPopover?
+    private var themePopover: NSPopover? { didSet { noteReturnGate() } }
     /// The open Site Control Center (WEB14), its controller and page.
-    private var siteControlCenter: SiteControlCenterController?
+    private var siteControlCenter: SiteControlCenterController? { didSet { noteReturnGate() } }
     /// An attached Site Control Center defers the window's other surfaces;
     /// a detached one is an ordinary window and does not.
     private var siteControlCenterDefers: Bool { siteControlCenter.map { !$0.isDetached } ?? false }
@@ -2063,6 +2086,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if previousProfile != activeProfileID { downloadReview?.dismiss() }
         refreshDownloads()
         if !isPopupWindow && !isPrivateBrowsing { store.linkRouting.noteVisitedSpace(activeSpaceID) }
+        noteReturnGate()
     }
 
     /// Moves each page that another window owns here through the ordinary
@@ -2170,9 +2194,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     ///
     /// holds but no longer shows goes back to the window still showing its
-    /// placeholder. One move at a time; the next render continues. Each
-    /// deselection is tried once: a refused or failed return waits for the
-    /// page to be shown and deselected again.
+    /// placeholder. One move at a time; the next render continues. A return
+    /// that window can't take now is held until a move, full screen, close or
+    /// Space in any window ends, never on a timer.
     private func scheduleUntargetedReturns() {
         guard !untargetedReturnScheduled, onUntargetedReturn != nil else { return }
         untargetedReturnScheduled = true
@@ -2187,9 +2211,43 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             where !shown.contains(id) && self.shownSinceArrival.contains(id)
                 && (self.canHandOverPage(id) || self.holdsEmptyClaim(id)) {
                 self.shownSinceArrival.remove(id)
-                if self.onUntargetedReturn?(id, self, .deselected) == true { return }
+                let outcome = self.onUntargetedReturn?(id, self, .deselected)
+                if outcome == .started { return }
+                if outcome == .blocked, self.failedDuringReturn != id { self.heldReturns.insert(id) }
             }
         }
+    }
+    func retryHeldReturns() {
+        guard !heldReturns.isEmpty, !isClosing else { return }
+        shownSinceArrival.formUnion(heldReturns)
+        heldReturns.removeAll()
+        scheduleUntargetedReturns()
+    }
+    /// An untargeted move that ended with the page still here.
+    private func holdFailedReturn(_ id: UUID) {
+        failedDuringReturn = id
+        guard !presentation.displayedTabIDs.contains(id), heldContentIDs.contains(id) || holdsEmptyClaim(id) else { return }
+        if failedReturns.insert(id).inserted { heldReturns.insert(id) } else {
+            failedReturns.remove(id); heldReturns.remove(id); shownSinceArrival.remove(id)
+        }
+    }
+    /// The move just tried for this return started and failed; no other
+    /// window is tried in the same pass.
+    func returnFailed(_ id: UUID) -> Bool { failedDuringReturn == id }
+    /// This window's own state, besides moves, full screen and closes, that
+    /// can refuse a returned page coming here or leaving.
+    private var returnGateOpen: Bool {
+        presentation.isReady && activePeek == nil && !promotingPeek && commandBar == nil && tabSwitcher == nil
+            && themePopover == nil && !siteControlCenterDefers && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty
+            && peekRetirementParents.isEmpty && peeks.values.allSatisfy({ !$0.closePending })
+            && !store.isProfileRemovalPending(activeProfileID) && nativeBinding?.canParticipateInPageTransfer == true
+    }
+    /// Fires when the gate opens or this window shows another Space, so a
+    /// placeholder it now shows can take its page back.
+    private func noteReturnGate() {
+        let open = returnGateOpen, space = activeSpaceID
+        defer { returnGateWasOpen = open; returnGateSpaceID = space }
+        if open, !returnGateWasOpen || space != returnGateSpaceID { onReturnUnblocked?() }
     }
 
     private var heldContentIDs: Set<UUID> {
@@ -2198,7 +2256,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Content, or an empty claim, that could go back to a placeholder. A
     /// handed-over claim that was never shown has no pane here.
     private var returnableIDs: Set<UUID> {
-        heldContentIDs.union(panes.keys.filter(holdsEmptyClaim)).union(shownSinceArrival.filter(holdsEmptyClaim))
+        heldContentIDs.union(panes.keys.filter(holdsEmptyClaim)).union(shownSinceArrival.union(heldReturns).filter(holdsEmptyClaim))
     }
     /// A page that arrived for a selection that then didn't happen (a later
     /// page of the split refused to move) goes back to its placeholder
@@ -2239,6 +2297,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     @discardableResult
     func transferTab(_ id: UUID, to destination: BrowserWindowController, placement: (() -> Bool)? = nil,
                      untargeted: Bool = false) -> Bool {
+        if untargeted { failedDuringReturn = nil }
         // A handed-over empty claim goes back the same way; the window
         // keeping its placeholder rejoins it in its slot.
         if untargeted, holdsEmptyClaim(id) {
@@ -2313,7 +2372,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         transaction.onFinish = { [weak self, weak destination] committed in
             guard let self else { return }
             defer { self.resumeCloseAfterEjecting() }
-            guard committed, let destination else { return }
+            guard committed else { if untargeted { self.holdFailedReturn(id) }; return }
+            guard let destination else { return }
             if let snapshot, self.presentation.showsPlaceholder(id) {
                 self.placeholderSnapshots[id] = self.paneSizedSnapshot(snapshot, for: id)
                 if !self.rendering { self.render(self.store.state) }
@@ -2440,6 +2500,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if let placement { destination.placeArrival(id, placement: placement) }
             } else if detail != nil, !untargeted {
                 destination.refuseTabMove()
+            } else if untargeted {
+                holdFailedReturn(id)
             }
             return
         }
@@ -2665,6 +2727,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             layoutPeeks()
             requestNativeSelection(); destination.requestNativeSelection()
             if failed, !untargeted { destination.refuseTabMove() }
+            if untargeted, !page.isClosed { holdFailedReturn(id) }
             return
         }
         presentTransferRecovery(id, destination: destination, pages: live, retry: retry)
@@ -3354,6 +3417,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let displayedIDs = displayed.map(\.id)
         shownSinceArrival.formIntersection(returnableIDs)
         shownSinceArrival.formUnion(displayedIDs.filter { !placeholderIDs.contains($0) })
+        heldReturns.formIntersection(returnableIDs); heldReturns.subtract(displayedIDs)
+        failedReturns.formIntersection(returnableIDs); failedReturns.subtract(displayedIDs)
         if renderedPaneIDs != displayedIDs || splitView.arrangedSubviews.isEmpty
             || renderedSpaceCreationID != spaceCreation?.draft.spaceID
             || renderedSplitInsertionID != splitInsertion?.id {
@@ -3431,6 +3496,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         updateNavigation()
         lastChromeState = sharedState
         lastChromeRevision = presentedRevision
+        noteReturnGate()
         refreshEmptyWindowSidebar()
         scheduleUntargetedReturns()
     }
@@ -4247,6 +4313,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         refreshNavigationControls()
         window?.title = activePeek.map { "\($0.browser.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
         refreshLoadingIndicators()
+        noteReturnGate()
     }
 
     ///
@@ -12057,6 +12124,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         controller.onComplete = { [weak self, weak controller] selection in
             guard let self, let controller, self.tabSwitcher === controller else { return }
             self.tabSwitcher = nil
+            self.noteReturnGate()
             if let selection { self.selectRecentItem(selection) }
         }
         controller.onCloseItem = { [weak self, weak controller, weak window] selection, completion in
@@ -16038,7 +16106,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         for id in heldContentIDs.sorted(by: { $0.uuidString < $1.uuidString })
         where !ejectionAttempts.contains(id) && canHandOverPage(id) {
             ejectionAttempts.insert(id)
-            if onUntargetedReturn?(id, self, .ownerClosing) == true { closeAfterEjecting = true; return true }
+            if onUntargetedReturn?(id, self, .ownerClosing) == .started { closeAfterEjecting = true; return true }
         }
         ejectionAttempts.removeAll()
         return false

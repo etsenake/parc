@@ -603,6 +603,16 @@ struct WindowPresentationTests {
         refusing[0].canReceive = false
         expect(PageReparenting.returnDestination(refusing, trigger: .ownerClosing) == nil,
                "with every placeholder window refusing, the page closes with its window")
+        expect(PageReparenting.unstartedReturn(refusing) == .blocked,
+               "a return every placeholder window refuses now waits for one of them")
+        let elsewhere = [PageReparenting.Candidate(windowID: sourceWindow, displaysPlaceholder: false, showsPlaceholder: true, lastActive: now)]
+        expect(PageReparenting.returnDestination(elsewhere, trigger: .deselected) == nil
+               && PageReparenting.unstartedReturn(elsewhere) == .blocked,
+               "a placeholder in a Space its window isn't showing holds the return until that window shows it")
+        expect(PageReparenting.unstartedReturn([]) == .unneeded,
+               "with no window keeping the placeholder, the return no longer applies")
+        let gone = [PageReparenting.Candidate(windowID: sourceWindow, displaysPlaceholder: false, showsPlaceholder: false, lastActive: now)]
+        expect(PageReparenting.unstartedReturn(gone) == .unneeded, "a window whose placeholder is gone waits for nothing")
         var keeping = WindowPresentation(state: frozenState, ready: true)
         expect(!keeping.hasPlaceholders, "a window showing its own pages has no placeholder")
         keeping.leavePlaceholder(x.id, state: frozenState)

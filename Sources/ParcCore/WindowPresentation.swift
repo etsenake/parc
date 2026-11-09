@@ -510,6 +510,19 @@ enum PageReparenting {
         candidates.filter { $0.canReceive && (trigger == .deselected ? $0.displaysPlaceholder : $0.showsPlaceholder) }
             .sorted { $0.lastActive > $1.lastActive }.map(\.windowID)
     }
+    enum ReturnOutcome: Equatable {
+        case started
+        /// A window keeps the page's placeholder but can't take it now.
+        case blocked
+        /// No window keeps its placeholder.
+        case unneeded
+    }
+    /// A return that started no move still waits while a window keeps the
+    /// page's placeholder in any Space; it can't take the page now (moving,
+    /// in full screen, closing, or showing another Space).
+    static func unstartedReturn(_ candidates: [Candidate]) -> ReturnOutcome {
+        candidates.contains(where: \.showsPlaceholder) ? .blocked : .unneeded
+    }
 }
 
 // The registry reserves model IDs before native creation and records the exact
