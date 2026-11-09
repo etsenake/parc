@@ -8,6 +8,8 @@ final class SoftwareUpdateBanner: ObservableObject {
     /// The What's New page in the bundle's Resources (UPD06 renders it at build
     /// time); a build without it has no release notes to open.
     static var releaseNotesURL: URL? { Bundle.main.url(forResource: "WhatsNew", withExtension: "html") }
+    /// Where Share Parc points: the public releases page.
+    static let shareURL = URL(string: "https://github.com/etsenake/parc-releases")!
 
     /// Update Complete!: the update this run is the first since, until the
     /// banner is retired.

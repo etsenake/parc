@@ -205,13 +205,12 @@ Both lead to `DelegateAction.didClickPerformUpdate`, then
 
 
 - a header with a sparkle effect (`BannerHeaderView.SparkleConfiguration`);
-- `RowView` rows (title, `systemImageName`, `isNarrow`, own hover):
-  - **See What’s New** → `didClickViewReleaseNotes`;
-    `didClickViewReferralCode`;
-  - the optional video-series row, SF Symbol `play.circle.fill` →
-    `didClickVideoSeriesLink(url)`.
+  - **See What’s New** → `didClickViewReleaseNotes`. Its icon follows the
+    `heart.circle.fill` for text notes, `play.circle.fill` once the view's
+    `didClickViewReferralCode`.
+  - the optional video-series row, SF Symbol `play.rectangle`
 
-recovered.
+that is the release-notes row's icon.)
 
 `SharedWindowFeature.TabCreationOptions` with a URL initialisation, and sends
 [R]. That the tab opens in the frontmost window is [I].
@@ -269,8 +268,9 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   Shortcuts, with no shortcut. It opens the bundled `WhatsNew.html`
   (`Bundle.main.url(forResource: "WhatsNew", withExtension: "html")`) as a
   file URL in a new tab of the key window, through the same path as History
-  and Extensions. A build without the page disables the item, so it stays
-  disabled until UPD06's build step bundles the page. The command bar lists it
+  and Extensions. `scripts/build.py` renders the page from
+  `release-notes.json` (`Sources/WhatsNew/README.md`); a bundle without it
+  disables the item. The command bar lists it
 
 - **Check for Updates…** sits in the Parc menu after Import from Another
   follows the phase: "Update Available…" while an update is available or
@@ -299,6 +299,52 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     `--disable-software-updater` never start Sparkle: a disposable session
     shares the installed Parc's bundle identifier, defaults and Sparkle
     to update." error.
+
+- **Update Complete** is the V2 summary banner in the shared slot: the same
+  `SidebarBannerHost` as the auto-archive card (8 points in, directly above
+  the bottom bar), with its spring/fade motion. One banner shows at a time:
+  while Update Complete holds the slot the auto-archive producer leaves its
+  - **When.** On the first launch whose Info.plist version
+    (`CFBundleShortVersionString`, then `CFBundleVersion`) is newer than the
+    one that last launched on this data, so Sparkle and Homebrew updates both
+    count. The record (`release-notes-launch.json` in the data directory, so
+    a disposable `--parc-profile` never shares it) stands in for
+    `firstLaunchAfterUpdatedFromVersion` / `pendingReleaseNotesVersionToShow`
+    / `lastReleaseNotesVersionShown`. A fresh install shows nothing. Data with
+    no record but a previous run's `launch.json` (written by every release
+    since 1.0.0) was last run by an older Parc, so it counts as an update;
+    seeded test profiles without one stay fresh. Following the inferred rule
+    above, a browser window whose sidebar isn't hidden records the version
+    once it shows the banner, so it appears on that one launch; a launch that
+    never shows it (setup, a hidden sidebar) carries it to the next. The
+    shown version is kept, so a downgrade shows nothing and a later upgrade
+    to that version, or an older one, doesn't show it again. A build without `WhatsNew.html` shows no banner.
+    See What’s New retires the banner only when the window can open the page.
+  - **Content.** "Update Complete!", then **See What’s New** (opens the
+    bundled page in a new tab of that window and retires the banner) and
+    **Share Parc** (Parc has no referral service: it copies
+    `https://github.com/etsenake/parc-releases` and shows "Copied Link" with
+    a share button; the banner stays). The close button retires it. The
+    are text, so See What’s New keeps `heart.circle.fill`.
+    8. Card: continuous radius 12, black/white at 0.9 (dark/light), shadow
+    black at 0.15/0.05 radius 2 y 2, a white 0.1 stroke in dark inset −0.5.
+    Header: title system 12, padding 4 vertical / 8 horizontal, centred, and
+    leading once its width + 40 exceeds the header; a 1-point divider (white
+    0.15 / black 0.07). Close button: 24 × 24, `xmark` bold 9 at 0.4 (1 on
+    hover), hover plate 20 × 20 at 0.15/0.1 with corners 2/11/2/2. Rows:
+    `HStack(spacing: 4)` of the icon and system-12 text, white 1 / black
+    0.8, 16 high, leading, inset 8; 0.75 opacity until hovered, ease-out
+    0.1 s. While the banner is hovered the release-notes row paints its text
+    with `ButtonBackground`: two blurred (12, 6) capsules hue-turned ±40°
+    over a base colour, brightness 0.6/−0.2 and saturation 1/2. The sparkles
+    run for `update-complete-sparkle-timeout-in-seconds` (default 15,
+  - **Not recovered** (Parc's values, open): the header height (24, the close
+    button's), the gradient's base palette colour (Parc uses the theme's max-
+    or min-contrast colour, else the accent colour) and its turn speed (4 s),
+    and the sparkles' glyph, count, colour and timing (six `sparkle` glyphs
+    not modelled. The card is one SwiftUI hosting view in the sidebar's key
+    loop; whether Tab reaches each of its three buttons hasn't been checked
+    (no app may be run here).
 
 ### Updater API
 

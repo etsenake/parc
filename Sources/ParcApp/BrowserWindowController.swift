@@ -170,6 +170,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var visibleFind: BrowserFindState<PCNativePage>?
     private var subscription: AnyCancellable?
     private var archiveEducationSubscription: AnyCancellable?
+    private var updateCompleteSubscription: AnyCancellable?
     private var developerModeSubscription: AnyCancellable?
     private var windowDraggingSubscription: AnyCancellable?
     private var toolbarSubscription: AnyCancellable?
@@ -999,7 +1000,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         archiveEducationSubscription = store.$autoArchiveEducationPending.removeDuplicates()
-            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshAutoArchiveEducation() }
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshSidebarBanners() }
+        updateCompleteSubscription = SoftwareUpdateBanner.shared.$completedUpdate.removeDuplicates()
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshSidebarBanners() }
         subscription = store.statePublisher.receive(on: RunLoop.main).sink { [weak self] _ in
             guard let self else { return }
             self.applyPublishedState(self.store.state)
@@ -3635,7 +3638,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     @discardableResult
     private func refreshLivePageChrome() -> Bool {
         guard presentation.isReady, !isClosing, !wholeWindowClose else { return true }
-        refreshAutoArchiveEducation()
+        refreshSidebarBanners()
         navigationHistory?.validate()
         refreshExtensionControls()
         refreshPaymentControls()
@@ -4238,9 +4241,36 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && !resolvingTransfers.contains(expected.id) && transferRecoveries[expected.id] == nil
     }
 
-    private func refreshAutoArchiveEducation() {
-        let visible = store.autoArchiveEducationPending && !isPrivateBrowsing && !isPopupWindow
-            && presentation.isReady && !isClosing && !wholeWindowClose
+    ///
+    /// education card (whose producer waits while another banner shows).
+    private func refreshSidebarBanners() {
+        let presentable = !isPrivateBrowsing && !isPopupWindow && presentation.isReady && !isClosing && !wholeWindowClose
+        let updateComplete = SoftwareUpdateBanner.shared
+        // Recorded once a sidebar actually shows it; a hidden one carries it on.
+        if presentable && updateComplete.showsCompletedUpdate && sidebarPresentation != .hidden
+            && libraryView == nil && nativeFullscreenTabID == nil {
+            updateComplete.markCompletedUpdateShown()
+        }
+        let mayActOnUpdate: () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return updateComplete.showsCompletedUpdate && !self.isClosing && !self.wholeWindowClose
+                && self.window?.isKeyWindow == true && self.window?.attachedSheet == nil
+        }
+        sidebar.onSeeWhatsNew = { [weak self] in
+            guard mayActOnUpdate(), let self, self.canOpenPageInNewTab, self.windowCommandSecurityAvailable else { return }
+            self.openReleaseNotes()
+            updateComplete.retireCompletedUpdate()
+        }
+        sidebar.onShareParc = { [weak self] in
+            guard mayActOnUpdate(), let self else { return }
+            NSPasteboard.general.clearContents()
+            guard NSPasteboard.general.setString(SoftwareUpdateBanner.shareURL.absoluteString, forType: .string) else { return }
+            self.showToast(.copiedLink(SoftwareUpdateBanner.shareURL), at: .window)
+        }
+        sidebar.onDismissUpdateComplete = { guard mayActOnUpdate() else { return }; updateComplete.retireCompletedUpdate() }
+        sidebar.showUpdateComplete(presentable && updateComplete.showsCompletedUpdate)
+
+        let visible = store.autoArchiveEducationPending && !updateComplete.showsCompletedUpdate && presentable
         let originalSpace = activeSpaceID, originalProfile = activeProfileID
         let mayAct: () -> Bool = { [weak self] in
             guard let self else { return false }
@@ -4252,7 +4282,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.onDismissAutoArchiveEducation = { [weak self] in
             guard mayAct(), let self else { return }
             self.store.dismissAutoArchiveEducation()
-            self.refreshAutoArchiveEducation()
+            self.refreshSidebarBanners()
         }
         sidebar.onAutoArchiveEducationSettings = { [weak self] in
             guard mayAct(), let self else { return }
@@ -4261,7 +4291,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.showSettings(pane: .profiles)
             guard self.settings?.showAutoArchiveSettings(profileID: originalProfile) == true else { return }
             self.store.dismissAutoArchiveEducation()
-            self.refreshAutoArchiveEducation()
+            self.refreshSidebarBanners()
         }
         sidebar.showAutoArchiveEducation(visible)
     }
@@ -4282,7 +4312,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func updateNavigation() {
         refreshHandoffActivity()
-        refreshAutoArchiveEducation()
+        refreshSidebarBanners()
         navigationHistory?.validate()
         refreshDeveloperToolbars()
         synchronizeNativeLayout()
@@ -6016,6 +6046,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebarPresentation = presentation
             layoutChrome()
         }
+        // A sidebar that stops hiding now shows any shared banner it holds.
+        if presentation != .hidden { refreshSidebarBanners() }
         // Layout and animation completion never select or focus a renderer.
         // Only hiding the currently focused sidebar explicitly returns focus;
         // a window that is not key keeps none in its off-screen sidebar.
@@ -16234,7 +16266,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard !isClosing else { return }
         if pendingApprovedWindowClose { window?.performClose(nil) }
     }
-    func windowWillClose(_ notification: Notification) { archiveEducationSubscription?.cancel(); sidebar.resetAutoArchiveEducation(); loadingIndicator.reset(); paneFrameObservers.values.forEach(NotificationCenter.default.removeObserver); paneFrameObservers.removeAll(); if isPrivateBrowsing { store.clearPrivateDownloads() }; if let session = spaceCreation { finishSpaceCreation(session) }; pageHost.cancelDrop(); favoriteRename?.cancel(); favoriteSplitRename?.cancel(); splitIconPicker?.cancel(); spaceIconPicker?.cancel(); sidebar.cancelSpaceNameEditing(); noteExport?.cancel(); dismissSidebarMoveNotice(); sharedQuotes.invalidate(); noteEditors.removeAll(); closedItems = WindowClosedItems(); peekRedo = nil; peekUndoOpen = nil; peekUndoAwaitingParent.removeAll(); awaitedPeekRetries.removeAll(); undoHiddenPeek = nil; retiringPageHistory.removeAll(); folderUndo.removeAllActions(); nativeEditingUndo.removeAllActions(); finishScriptingWindowClose(true); pageCapture?.dismiss(restoreFocus: false); navigationHistory?.dismiss(); shortcutEssentials?.close(); tabSwitcher?.cancel(); libraryMotion.cancel(); libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0; easelImageDestination?.dismiss(); downloadReview?.dismiss(); downloadArrival.dismiss(force: true); dismissSiteControlCenter(); addressPromptHolds.values.forEach { $0.end() }; shutdownBrowsers(); userActivity?.invalidate(); userActivity = nil; onClose?() }
+    func windowWillClose(_ notification: Notification) { archiveEducationSubscription?.cancel(); updateCompleteSubscription?.cancel(); sidebar.resetAutoArchiveEducation(); sidebar.resetUpdateComplete(); loadingIndicator.reset(); paneFrameObservers.values.forEach(NotificationCenter.default.removeObserver); paneFrameObservers.removeAll(); if isPrivateBrowsing { store.clearPrivateDownloads() }; if let session = spaceCreation { finishSpaceCreation(session) }; pageHost.cancelDrop(); favoriteRename?.cancel(); favoriteSplitRename?.cancel(); splitIconPicker?.cancel(); spaceIconPicker?.cancel(); sidebar.cancelSpaceNameEditing(); noteExport?.cancel(); dismissSidebarMoveNotice(); sharedQuotes.invalidate(); noteEditors.removeAll(); closedItems = WindowClosedItems(); peekRedo = nil; peekUndoOpen = nil; peekUndoAwaitingParent.removeAll(); awaitedPeekRetries.removeAll(); undoHiddenPeek = nil; retiringPageHistory.removeAll(); folderUndo.removeAllActions(); nativeEditingUndo.removeAllActions(); finishScriptingWindowClose(true); pageCapture?.dismiss(restoreFocus: false); navigationHistory?.dismiss(); shortcutEssentials?.close(); tabSwitcher?.cancel(); libraryMotion.cancel(); libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0; easelImageDestination?.dismiss(); downloadReview?.dismiss(); downloadArrival.dismiss(force: true); dismissSiteControlCenter(); addressPromptHolds.values.forEach { $0.end() }; shutdownBrowsers(); userActivity?.invalidate(); userActivity = nil; onClose?() }
     func windowDidResignKey(_ notification: Notification) {
         if notification.object as? NSWindow === window { splitLinkGeneration &+= 1 }
         pageHost.cancelDrop()

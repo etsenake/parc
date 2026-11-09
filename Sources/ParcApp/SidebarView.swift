@@ -1810,6 +1810,17 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         archiveEducationHost.setInteractionAllowed(isPresented && creationView == nil)
     }
     func resetAutoArchiveEducation() { archiveEducationHost.reset() }
+    // Update Complete shares the education card's slot; one shows at a time.
+    private let updateComplete = UpdateCompleteCard(frame: .zero)
+    private lazy var updateCompleteHost = SidebarBannerHost(card: updateComplete)
+    var onSeeWhatsNew: (() -> Void)?
+    var onShareParc: (() -> Void)?
+    var onDismissUpdateComplete: (() -> Void)?
+    func showUpdateComplete(_ visible: Bool) {
+        updateCompleteHost.show(visible)
+        updateCompleteHost.setInteractionAllowed(isPresented && creationView == nil)
+    }
+    func resetUpdateComplete() { updateCompleteHost.reset() }
     private var miniPlayerIDs: [String] = []
     func updateMiniPlayers(_ items: [MiniPlayerItem]) {
         miniPlayers.update(items)
@@ -2237,6 +2248,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             self?.setNeedsKeyViewLinking()
         }
         archiveEducationHost.onRelinquishFocus = { [weak self] in self?.onBannerRelinquishFocus?() }
+        contentSurface.addSubview(updateCompleteHost)
+        updateComplete.onSeeWhatsNew = { [weak self] in self?.onSeeWhatsNew?() }
+        updateComplete.onShare = { [weak self] in self?.onShareParc?() }
+        updateComplete.onDismiss = { [weak self] in self?.onDismissUpdateComplete?() }
+        updateCompleteHost.onLayoutChanged = { [weak self] in self?.setNeedsKeyViewLinking() }
+        updateCompleteHost.onInteractionChanged = { [weak self] enabled in
+            self?.updateComplete.setInteractionEnabled(enabled)
+            self?.setNeedsKeyViewLinking()
+        }
+        updateCompleteHost.onRelinquishFocus = { [weak self] in self?.onBannerRelinquishFocus?() }
         // The list's empty area and any other view without a menu of its own.
         spaceMenu = { [weak self] in self?.sidebarSpaceMenu() }
         for view in [keyViewGate, windowButtons, spacesHost, back, forward, reload, reloadOptions, footerMore, libraryEntry, toggle] { addSubview(view) }
@@ -2859,6 +2880,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             guard isPresented != oldValue else { return }
             if !isPresented { spacePager.cancel() }
             archiveEducationHost.setInteractionAllowed(isPresented && creationView == nil)
+            updateCompleteHost.setInteractionAllowed(isPresented && creationView == nil)
             retestPointer(); setNeedsKeyViewLinking()
             // Bypassed at once, not at the next layout, so no Tab enters the
             // settled hidden sidebar in between.
@@ -4308,6 +4330,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         creationSpaceButton.state = view == nil ? .off : .on
         if view != nil { clearItemSelection(); clearDrop() }
         archiveEducationHost.setInteractionAllowed(isPresented && view == nil)
+        updateCompleteHost.setInteractionAllowed(isPresented && view == nil)
         for (space, button) in zip(spaces, spaceButtons) {
             let selected = view == nil && space.id == activeSpaceID
             button.tag = selected ? 1 : 0; button.state = selected ? .on : .off
@@ -4349,6 +4372,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             + [paymentAction, pageActions]
         var regions: [NSView] = [list, miniPlayers]
         if archiveEducationHost.isInteractive { regions += archiveEducation.keyViewControls }
+        if updateCompleteHost.isInteractive { regions += updateComplete.keyViewControls }
         if let creationView { regions.append(creationView) }
         let chain = SidebarAccessibility.keyViewChain(leading: leading, favorites: favoritesHost, list: self, regions: regions,
                                                       trailing: [footerMore], space: self, beforeList: [spaceHeader], laidOut: listLaidOut)
@@ -4434,9 +4458,11 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let listY = Chrome.tablistTop(trayHeight: favoritesHeight, spaceHeader: showsSpaceHeader, hasFavorites: !favorites.isEmpty) - hiddenAddressHeight
         let dockTop = bounds.height - Chrome.dockHeight
         let bannerWidth = max(0, width - 16)
-        let bannerHeight = archiveEducationHost.occupiesSpace ? archiveEducation.preferredHeight(for: bannerWidth) : 0
+        let bannerHeight = archiveEducationHost.occupiesSpace ? archiveEducation.preferredHeight(for: bannerWidth)
+            : updateCompleteHost.occupiesSpace ? updateComplete.preferredHeight(for: bannerWidth) : 0
         let bannerSpacing: CGFloat = bannerHeight > 0 ? 8 : 0
         archiveEducationHost.frame = NSRect(x: 8, y: dockTop - bannerHeight, width: bannerWidth, height: bannerHeight)
+        updateCompleteHost.frame = archiveEducationHost.frame
         let playerBottom = dockTop - bannerHeight - bannerSpacing
         let playerHeight = min(miniPlayers.desiredHeight, max(0, playerBottom - listY))
         let playerSpacing: CGFloat = playerHeight > 0 ? 8 : 0
@@ -4753,6 +4779,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         miniPlayers.palette = palette
         guard let palette else { return }
         archiveEducation.applyPalette(palette)
+        updateComplete.applyPalette(palette)
         // Inferred: the dim alpha and overlay colour follow the theme's
         // darkness rather than the window's appearance.
         windowButtons.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)

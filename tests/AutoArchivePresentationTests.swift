@@ -64,7 +64,14 @@ struct AutoArchivePresentationTests {
         try expect(refused.isEmpty && !store.autoArchiveEducationPending && store.state.autoArchiveEducationEligible,
                    "Native refusal cannot consume education or report cleaned tabs")
         store.requestPageRetirement = nil
-        try expect(store.archiveExpiredTabs() == [old], "An accepted actual automatic close produces education")
+        store.sidebarBannerOccupied = { true }
+        try expect(store.archiveExpiredTabs() == [old] && !store.autoArchiveEducationPending && store.state.autoArchiveEducationEligible,
+                   "Another banner in the shared slot leaves education armed")
+        store.sidebarBannerOccupied = { false }
+        let next = store.open("https://later.example")
+        _ = store.open("https://selected-again.example")
+        now.addTimeInterval(12 * 3600 + 1)
+        try expect(store.archiveExpiredTabs().contains(next), "An accepted actual automatic close produces education")
         try expect(store.autoArchiveEducationPending && !store.state.autoArchiveEducationEligible, "Eligibility is consumed before presentation")
         store.dismissAutoArchiveEducation()
         try expect(!store.autoArchiveEducationPending, "Explicit dismissal clears the shared transient banner")

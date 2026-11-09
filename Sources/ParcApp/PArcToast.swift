@@ -36,6 +36,9 @@ struct PArcToastContent: Equatable {
         standard("Copied Link", icon: "quote.bubble.fill", subLabel: "With Quote", buttons: share(url.map { [$0] } ?? []))
     }
     ///
+    /// (ToastType.copyTabURLQuote's label, without its quote).
+    static func copiedLink(_ url: URL) -> PArcToastContent { standard("Copied Link", buttons: share([url])) }
+    ///
     ///
     static let copiedBuildInfo = standard("Copied Build Info")
     ///

@@ -2,10 +2,11 @@ import AppKit
 import SwiftUI
 
 ///
+/// SidebarBanner slot, used by the auto-archive education and Update Complete
 ///
-/// in .appeared and uses bottom-move + opacity, with a 0.6/0.4 spring on entry
-/// and 0.25-second ease-in on exit. The shared reducer retains the dismissing
-/// banner for 0.7 seconds. See docs/archive.md (AUTO12).
+/// + opacity, with a 0.6/0.4 spring on entry and 0.25-second ease-in on exit.
+/// The shared reducer retains the dismissing banner for 0.7 seconds. See
+/// docs/archive.md (AUTO12) and docs/software-update.md.
 @MainActor
 final class SidebarBannerHost: NSView {
     enum Phase: Equatable { case absent, initial, appeared, dismissing }

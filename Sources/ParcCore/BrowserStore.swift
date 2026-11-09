@@ -2243,6 +2243,8 @@ final class BrowserStore: ObservableObject {
     // native owner MUST call shouldCommit after all approvals and before any
     // unload, then report success only after every actual page is destroyed.
     var requestPageRetirement: ((Set<UUID>, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
+    /// Whether another shared sidebar banner (Update Complete) holds the slot.
+    var sidebarBannerOccupied: () -> Bool = { false }
     private var profileWriteReservations: [UUID: UUID] = [:]
     /// Capture output is an explicit durable write. Reserve its original
     /// parent before launching the disk actor so removal cannot cross it.
@@ -5357,9 +5359,10 @@ final class BrowserStore: ObservableObject {
         let provenance = archiveProvenance(for: candidates, reason: .automatic)
         var next = state
         // SharedAppFeature's real autoArchiveItems route enqueues one shared
-        // education banner and clears eligibility before presentation. Private
-        // stores never participate in application education or persistence.
-        if !isEphemeral && next.autoArchiveEducationEligible {
+        // education banner and clears eligibility before presentation, only
+        // while no other banner holds the slot. Private stores never
+        // participate in application education or persistence.
+        if !isEphemeral && next.autoArchiveEducationEligible && !sidebarBannerOccupied() {
             next.autoArchiveEducationEligible = false
             autoArchiveEducationPending = true
         }
