@@ -112,6 +112,8 @@ Tooltip.swift
 TooltipController.swift
 TooltipView.swift
 TranslucentButtonFace.swift
+UpdateCompleteCard.swift
+UpdateReadyCard.swift
 WindowStandardButtons.swift""".splitlines()
 with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
     scratch = Path(directory)
