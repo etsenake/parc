@@ -41,7 +41,7 @@ import AppKit
             check(value.selection == NSRange(location: 3, length: 0), "invalid input selection safely collapses")
         }
         let pill = CommandBarScopePill()
-        pill.title = "Wikipedia"
+        pill.showSite(name: "Wikipedia", unavailable: false)
         var opened = 0; pill.onOpen = { opened += 1 }
         pill.performClick(nil)
         check(opened == 1, "native button action opens same menu owner")
@@ -71,19 +71,25 @@ import AppKit
         for query in ["", "ma", "password manager extra", "wikipedia"] {
             check(!CommandBarScopeKeyboard.matchesPasswords(query: query), "no unrelated password command alias is invented")
         }
-        let actions = CommandBarActionsPill()
-        check(actions.stringValue == "Actions", "observed command-only scope label")
-        check(!actions.isEditable && !actions.isSelectable, "scope label cannot acquire an editor")
+        let actions = CommandBarScopePill()
+        var pressed = 0; actions.onOpen = { pressed += 1 }
+        check(actions.titleLabel.stringValue == "Actions", "observed command-only scope label")
         check(actions.accessibilityRole() == .staticText, "Actions is a label, not an unavailable site-search menu")
         check(actions.accessibilityHelp()?.contains("Backspace") == true, "scope exit is discoverable to accessibility")
+        check(!actions.accessibilityPerformPress() && pressed == 0, "Actions opens no site search menu")
         actions.showExtension(name: "Extension Finder")
-        check(actions.stringValue == "Extension Finder", "the actual extension name owns the label")
+        check(actions.titleLabel.stringValue == "Extension Finder", "the actual extension name owns the label")
         check(actions.accessibilityRole() == .staticText, "extension scope is not a saved-site mutation button")
-        check(actions.accessibilityValue() == "Extension Finder", "AX carries the exact extension name")
+        check(actions.accessibilityValue() as? String == "Extension Finder", "AX carries the exact extension name")
         check(actions.accessibilityHelp()?.contains("this extension") == true, "AX describes event submission, not URL navigation")
-        check(!actions.isEditable && !actions.isSelectable, "extension label cannot steal the query editor")
+        check(!actions.accessibilityPerformPress() && pressed == 0, "extension scope opens no site search menu")
+        actions.showSite(name: "Wikipedia", unavailable: false)
+        check(actions.accessibilityRole() == .button && actions.accessibilityValue() as? String == "Wikipedia", "a site's pill is its menu button")
+        check(actions.accessibilityPerformPress() && pressed == 1, "a site's pill opens the site search menu")
+        actions.showSite(name: "Wikipedia", unavailable: true)
+        check(actions.accessibilityValue() as? String == "Wikipedia, unavailable", "AX names a lost provider as unavailable")
         actions.showActions()
-        check(actions.stringValue == "Actions" && actions.accessibilityValue() == "Actions", "leaving extension restores Actions identity")
+        check(actions.titleLabel.stringValue == "Actions" && actions.accessibilityValue() as? String == "Actions", "leaving extension restores Actions identity")
         check(actions.accessibilityHelp()?.contains("Search commands") == true, "reused label restores its actual command-only behavior")
         field.string = "space"; field.setSelectedRange(NSRange(location: 0, length: 5))
         field.deleteBackward(nil)

@@ -76,18 +76,28 @@ import AppKit
         check(iconPixels.map { $0[1] > 200 && $0[3] < 40 } == true, "blue lands in byte 1 and red in byte 3")
 
         //
+        // label sits 10 points in from each side and 4 from the top and bottom.
         let pill = CommandBarScopePill(), orange = NSColor(srgbRed: 1, green: 0.27, blue: 0, alpha: 1)
-        pill.frame = NSRect(x: 0, y: 0, width: 80, height: 24); pill.layout()
         check(pill.focusColor == CommandBarPalette.colourless.scopePill, "pill defaults to the colourless palette, not the accent")
-        pill.font = CommandBarTypography.label; pill.title = "YouTube"
-        let titleLabel = NSTextField(labelWithString: "YouTube"); titleLabel.font = CommandBarTypography.label
-        check(pill.intrinsicContentSize.width == titleLabel.intrinsicContentSize.width + 20,
-              "pill is its title label plus 10 points each side")
-        let actions = CommandBarActionsPill(), actionsLabel = NSTextField(labelWithString: "Actions")
-        actionsLabel.font = CommandBarTypography.label
-        check(actions.font == CommandBarTypography.label, "Actions uses the pill's label font")
-        check(CommandBarScopePill.width(title: actions.stringValue, font: actions.font) == actionsLabel.intrinsicContentSize.width + 20,
-              "Actions pill is its title label plus 10 points each side")
+        for (show, title) in [({ pill.showSite(name: "YouTube", unavailable: false) }, "YouTube"),
+                              ({ pill.showActions() }, "Actions"), ({ pill.showExtension(name: "Extension Finder") }, "Extension Finder")] {
+            show()
+            let label = NSTextField(labelWithString: title); label.font = CommandBarTypography.label
+            check(pill.titleLabel.stringValue == title, "\(title) pill shows its scope's name")
+            check(pill.intrinsicContentSize == NSSize(width: label.intrinsicContentSize.width + 20, height: label.intrinsicContentSize.height + 8),
+                  "\(title) pill is its title label plus 10 points each side and 4 above and below")
+            check(pill.intrinsicContentSize.height == 24, "\(title) pill is 24 points high")
+            pill.frame = NSRect(origin: .zero, size: pill.intrinsicContentSize); pill.layout()
+            check(pill.titleLabel.cell!.cellSize.width <= pill.titleLabel.frame.width, "\(title) title fits its pill without truncating")
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(pill.frame.width * 2), pixelsHigh: 48,
+                                       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                       colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 32)!
+            rep.size = pill.frame.size
+            pill.cacheDisplay(in: pill.bounds, to: rep)
+            let ink = (0..<48).filter { y in (20..<rep.pixelsWide - 20).contains { x in
+                (rep.bitmapData! + y * rep.bytesPerRow + x * 4).pointee > 245 } }
+            check(abs((ink.first ?? 0) - (47 - (ink.last ?? 0))) <= 2, "\(title) title is centred in its pill, not drawn at the top")
+        }
         pill.focusColor = orange
         check(pill.layer?.cornerRadius == 12 && pill.layer?.cornerCurve == .continuous, "pill corners")
         check(pill.layer?.backgroundColor.flatMap(NSColor.init(cgColor:)).map(components) == components(orange), "pill fill")

@@ -27,37 +27,76 @@ struct CommandBarScopeEditing {
     }
 }
 
+///
+///
+/// keyword scopes the same token. Only a site's pill opens the site search menu.
 final class CommandBarScopePill: NSButton {
     var onOpen: (() -> Void)?
     ///
     var focusColor: NSColor = CommandBarPalette.colourless.scopePill {
         didSet { if focusColor != oldValue { refreshGlow(); refreshLayer() } }
     }
+    ///
+    ///
+    private static let titleInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+    ///
+    let titleLabel = NSTextField(labelWithString: "")
+    private var opensMenu = false
     init() {
         super.init(frame: .zero)
         title = ""; isBordered = false
         target = self; action = #selector(openMenu)
         wantsLayer = true
+        titleLabel.font = CommandBarTypography.label
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setAccessibilityElement(false)
+        addSubview(titleLabel)
         refreshGlow()
         setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel("Search scope")
-        setAccessibilityHelp("Open the site search menu to change, remove or manage this search scope.")
+        showActions()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    ///
-    static let titleInset: CGFloat = 10
-    private static let titleMeasure = NSTextField(labelWithString: "")
-    ///
-    /// a label, since NSButton and a framed NSTextField add their own padding.
-    static func width(title: String, font: NSFont?) -> CGFloat {
-        titleMeasure.font = font; titleMeasure.stringValue = title
-        return titleMeasure.intrinsicContentSize.width + 2 * titleInset
+    func showSite(name: String, unavailable: Bool) {
+        show(name, color: unavailable ? .disabledControlTextColor : .white, opensMenu: true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Search scope")
+        setAccessibilityValue(unavailable ? "\(name), unavailable" : name)
+        setAccessibilityHelp("Open the site search menu to change, remove or manage this search scope.")
+    }
+    /// Actions has no site-provider menu, so it reads as a scope label.
+    func showActions() {
+        show("Actions", color: .white, opensMenu: false)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel("Actions search scope")
+        setAccessibilityValue("Actions")
+        setAccessibilityHelp("Search commands. Escape leaves Actions; Tab or Backspace leaves when the query is empty.")
+    }
+    func showExtension(name: String) {
+        show(name, color: .white, opensMenu: false)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel("Extension search scope")
+        setAccessibilityValue(name)
+        setAccessibilityHelp("Send a query to this extension. Escape leaves the scope; Tab or Backspace leaves when the query is empty.")
+    }
+    private func show(_ name: String, color: NSColor, opensMenu: Bool) {
+        titleLabel.stringValue = name; titleLabel.textColor = color
+        self.opensMenu = opensMenu
+        invalidateIntrinsicContentSize(); needsLayout = true
     }
     override var intrinsicContentSize: NSSize {
-        NSSize(width: Self.width(title: title, font: font), height: super.intrinsicContentSize.height)
+        let label = titleLabel.intrinsicContentSize, insets = Self.titleInsets
+        return NSSize(width: label.width + insets.left + insets.right, height: label.height + insets.top + insets.bottom)
     }
-    override func layout() { super.layout(); refreshLayer() }
+    override func layout() {
+        super.layout()
+        let insets = Self.titleInsets
+        //
+        // text padding. A pill held at its 50-point minimum centres a short title.
+        let width = max(0, min(titleLabel.intrinsicContentSize.width, bounds.width - insets.left - insets.right))
+        titleLabel.frame = titleLabel.frame(forAlignmentRect: NSRect(x: ((bounds.width - width) / 2).rounded(),
+            y: insets.bottom, width: width, height: max(0, bounds.height - insets.top - insets.bottom)))
+        refreshLayer()
+    }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance(); refreshGlow(); refreshLayer()
     }
@@ -77,11 +116,15 @@ final class CommandBarScopePill: NSButton {
         glow.shadowColor = focusColor.withAlphaComponent(0.3)
         shadow = glow
     }
-    @objc private func openMenu() { if isEnabled { onOpen?() } }
+    @objc private func openMenu() { if isEnabled && opensMenu { onOpen?() } }
     override func rightMouseDown(with event: NSEvent) { openMenu() }
     override func accessibilityPerformPress() -> Bool {
-        guard isEnabled, !isHidden else { return false }
+        guard isEnabled, opensMenu, !isHidden else { return false }
         openMenu(); return true
+    }
+    /// Clicks on the title belong to the pill.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isHidden || !frame.contains(point) ? nil : self
     }
 }
 
@@ -209,34 +252,4 @@ enum CommandBarScopeKeyboard {
         case .unavailable: return .complete
         }
     }
-}
-
-/// Actions has no site-provider menu. It is a scope label, not a disabled
-/// website button or a control that pretends to mutate a native template.
-final class CommandBarActionsPill: NSTextField {
-    init() {
-        super.init(frame: .zero)
-        stringValue = "Actions"
-        isEditable = false; isSelectable = false; isBordered = false
-        drawsBackground = false; alignment = .center
-        font = CommandBarTypography.label; textColor = .white
-        cell?.lineBreakMode = .byTruncatingTail
-        // CommandBar fills it with the theme's focus (CommandBarPalette.scopePill).
-        wantsLayer = true; layer?.cornerRadius = 12
-        setAccessibilityElement(true); setAccessibilityRole(.staticText)
-        showActions()
-    }
-    func showActions() {
-        stringValue = "Actions"
-        setAccessibilityLabel("Actions search scope")
-        setAccessibilityValue("Actions")
-        setAccessibilityHelp("Search commands. Escape leaves Actions; Tab or Backspace leaves when the query is empty.")
-    }
-    func showExtension(name: String) {
-        stringValue = name
-        setAccessibilityLabel("Extension search scope")
-        setAccessibilityValue(name)
-        setAccessibilityHelp("Send a query to this extension. Escape leaves the scope; Tab or Backspace leaves when the query is empty.")
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }

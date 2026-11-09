@@ -123,7 +123,6 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private let input = NSTextField()
     private let inputIcon = NSImageView()
     private let scopePill = CommandBarScopePill()
-    private let actionsPill = CommandBarActionsPill()
     private var actionsScope = false
     private var scopeMenu: NSMenu?
     private var scopeMenuLease: PCNativeOmniboxScopeMenu?
@@ -308,13 +307,8 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         input.stringValue = initialEdit?.0 ?? initialInput
         previousInput = input.stringValue
         container.addSubview(input)
-        scopePill.font = CommandBarTypography.label
-        scopePill.contentTintColor = .white; scopePill.alignment = .center
-        scopePill.cell?.lineBreakMode = .byTruncatingTail
         scopePill.onOpen = { [weak self] in self?.showScopeMenu() }
-        scopePill.setAccessibilityLabel("Search scope")
         scopePill.isHidden = true; container.addSubview(scopePill)
-        actionsPill.isHidden = true; container.addSubview(actionsPill)
         scopeOfferButton.target = self; scopeOfferButton.action = #selector(enterOfferedScope)
         scopeOfferButton.isHidden = true; container.addSubview(scopeOfferButton)
         container.addSubview(divider)
@@ -530,9 +524,6 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
         inputIcon.contentTintColor = palette.inputIcon
         applySelectionColor()
         emptyLabel.textColor = CommandBarPalette.textSecondary
-        container.effectiveAppearance.performAsCurrentDrawingAppearance {
-            actionsPill.layer?.backgroundColor = palette.scopePill.cgColor
-        }
         scopePill.focusColor = scopeColor ?? palette.scopePill
         for row in 0..<table.numberOfRows {
             (table.rowView(atRow: row, makeIfNecessary: false) as? CommandResultRowView)?.selectedColor = selectedRowColor
@@ -1509,26 +1500,22 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
     private func layoutScopeHeader() {
         let showsScope = isScoped || scopeInvalidated
         let displayedName = unavailableScopeName ?? scopedName
+        scopePill.isHidden = !showsScope
         // Extension ownership does not expose the saved website-template menu.
-        let extensionScope = activeScope?.isExtension == true
-        scopePill.isHidden = !showsScope || actionsScope || extensionScope
-        actionsPill.isHidden = !actionsScope && !extensionScope
-        if extensionScope { actionsPill.showExtension(name: displayedName) }
-        else { actionsPill.showActions() }
-        scopePill.title = displayedName
-        scopePill.isEnabled = activeScope != nil && !scopeInvalidated
-        scopePill.contentTintColor = scopeInvalidated ? .disabledControlTextColor : .white
-        scopePill.setAccessibilityValue(scopeInvalidated ? "\(displayedName), unavailable" : displayedName)
+        if actionsScope { scopePill.showActions() }
+        else if activeScope?.isExtension == true { scopePill.showExtension(name: displayedName) }
+        else { scopePill.showSite(name: displayedName, unavailable: scopeInvalidated) }
+        scopePill.isEnabled = actionsScope || (activeScope != nil && !scopeInvalidated)
         input.placeholderString = isScoped ? "Search…" : (sidebarBrowsing ? "Search…" : "Search or Enter URL…")
         let baseX: CGFloat = sidebarAnchor == nil && !addressOnly ? 49 : 38
         let right: CGFloat = sidebarAnchor == nil && !addressOnly ? 22 : 11
+        // The pill and the offered hint share one centre line.
+        let headerCentre: CGFloat = sidebarAnchor == nil && !addressOnly ? 32 : 24
         var left = baseX
         if showsScope {
-            let natural = actionsPill.isHidden ? scopePill.intrinsicContentSize.width
-                : CommandBarScopePill.width(title: actionsPill.stringValue, font: actionsPill.font)
-            let width = min(max(50, natural), max(50, container.bounds.width * 0.4))
-            scopePill.frame = NSRect(x: left, y: sidebarAnchor == nil && !addressOnly ? 20 : 12, width: width, height: 24)
-            actionsPill.frame = scopePill.frame
+            let size = scopePill.intrinsicContentSize
+            let width = min(max(50, size.width), max(50, container.bounds.width * 0.4))
+            scopePill.frame = NSRect(x: left, y: headerCentre - size.height / 2, width: width, height: size.height)
             left += width + 10
         }
         let offer = selectedScopeOffer
@@ -1541,7 +1528,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
             let size = scopeOfferButton.intrinsicContentSize
             let width = min(size.width, max(0, container.bounds.width * 0.45))
             scopeOfferButton.frame = NSRect(x: container.bounds.width - right - width,
-                y: (sidebarAnchor == nil && !addressOnly ? 32 : 24) - size.height / 2, width: width, height: size.height)
+                y: headerCentre - size.height / 2, width: width, height: size.height)
             trailing += width + 12
         }
         let showsPrivacyInfo = CommandBarSearchPrivacyPolicy.showsInfoAccessory(
