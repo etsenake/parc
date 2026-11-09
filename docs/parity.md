@@ -28,6 +28,7 @@
 | After listed | [Folders](#folders) | 65.2% | 34.8% | — | Available |
 | After listed | [Archive and history](#archive-and-history) | 70.6% | 29.4% | — | Available |
 | After listed | [Command bar](#command-bar) | 82.8% | 17.2% | +0.7 pp | Codex `codex/command-bar-polish` (reported command failures and appearance) |
+| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 0.0% | 100.0% | — | Claude `claude/updates-*` (claimed November 9) |
 | After listed | [Tab switcher](#tab-switcher) | 69.2% | 30.8% | — | Available |
 | After listed | [Peek](#peek) | 66.7% | 33.3% | — | Available |
 | Before polish | [Onboarding / complete first launch](#onboarding-and-complete-first-launch) | 75.0% | 25.0% | +2.8 pp | Cursor `cursor/document-close` (claimed October 31) |
@@ -74,6 +75,16 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 
 ## Current ownership and handoffs
 
+- **Claude — software updates, release notes and unfinished commands (November 9).**
+  Josh asked for Conventional Commit semantic releases with real release notes,
+  sidebar banner, a bundled What's New page, and finishing command-bar commands
+  that still fail (Edit Theme…). Work runs in parallel `claude/updates-*`
+  worktrees; each increment gets a short independent review and ships to main.
+  Shared files: `scripts/release.py`, `scripts/build.py`, `AppDelegate.swift`,
+  `SidebarView.swift`, `CommandBar.swift`, `AGENTS.md`. The command-bar fixes
+  are done at Josh's direct request alongside Codex `codex/command-bar-polish`;
+  reconcile rather than overwrite each other's changes. Contract and evidence:
+  [software update](software-update.md).
 - **Codex root — eight-hour release watch (November 7).** Josh authorized
   checking main every twenty minutes through 07:26 Mountain (14:26 UTC),
   publishing new contributor changes as patch releases, monitoring each release
@@ -6816,6 +6827,17 @@ Evidence: command-bar.md; CommandBar.swift; native_search.mm; CommandBar action 
 | CMD26 | LEFT | Match exact panel/row/scope/label geometry and theme treatment. |
 | CMD27 | LEFT | Match hover/pressed/selection, entry/dismissal motion and haptics. |
 | CMD28 | LEFT | Complete remaining IME/layout/keyboard/AX and interruption-state comparison. |
+
+### Software updates and release notes
+
+`SUFeedURL`, `SUPublicEDKey`, automatic checks and installs, 28800-second interval);
+
+| ID | State | Requirement |
+|---|---|---|
+| UPD01 | LEFT | Derive the release version from Conventional Commits since the last tag and enforce the commit format. |
+| UPD02 | LEFT | Generate release notes (committed history, CHANGELOG, GitHub release bodies) from the same commits. |
+| UPD03 | LEFT | Embed pinned, Developer ID–signed Sparkle with an EdDSA key; publish a signed appcast with each release; mark the cask `auto_updates`. |
+| UPD06 | LEFT | Bundle a What's New page rendered from the release notes at build time and open it from the banner and menu. |
 
 ### Tab switcher
 
