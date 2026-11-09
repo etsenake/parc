@@ -20,6 +20,10 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents);
 void SyncBackgroundPictureInPicture(content::WebContents* contents,
                                     BackgroundPipVisibility shell_visibility);
 
+// The page registered its own auto-PiP handler (Meet), so Chromium's
+// AutoPictureInPictureTabHelper, not the policy above, enters its PiP.
+bool PageHandlesAutoPictureInPicture(content::WebContents* contents);
+
 }  // namespace parc
 
 #endif  // PARC_NATIVE_NATIVE_BACKGROUND_PICTURE_IN_PICTURE_API_H_

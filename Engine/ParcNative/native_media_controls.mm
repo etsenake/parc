@@ -426,10 +426,9 @@ class MediaState final : public content::WebContentsObserver,
     if (!contents) return false;
     auto* session = content::MediaSession::GetIfExists(contents);
     if (!session) return false;
-    // A page with its own auto-PiP handler (Meet) is Chromium's to enter: only
-    // that entry grants the activation a document PiP needs, and our plain
-    // Enter would fail and hold back the occlusion that triggers it.
-    if (Has(session, Action::kEnterAutoPictureInPicture)) return false;
+    // Only Chromium's entry grants the activation a document PiP needs; our
+    // plain Enter would fail and hold back the occlusion that triggers it.
+    if (PageHandlesAutoPictureInPicture(contents)) return false;
     const auto info = session->GetMediaSessionInfoSync();
     using AudioVideoState = media_session::mojom::MediaAudioVideoState;
     const bool has_video = info && HasBackgroundPipVideoTrack(
@@ -753,6 +752,11 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents) {
 void SyncBackgroundPictureInPicture(content::WebContents* contents,
                                     BackgroundPipVisibility shell_visibility) {
   SyncBackgroundPictureInPictureContents(contents, shell_visibility);
+}
+
+bool PageHandlesAutoPictureInPicture(content::WebContents* contents) {
+  return contents && Has(content::MediaSession::GetIfExists(contents),
+                         Action::kEnterAutoPictureInPicture);
 }
 
 void NativeMediaAirPlayChanged(content::WebContents* contents) {

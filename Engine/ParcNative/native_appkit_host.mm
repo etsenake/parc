@@ -1233,7 +1233,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // next frame, instead of Chromium's default four frames after which the
       // page's gutter colour shows. The shell keeps the page it replaces on
       // screen until then, having asked for that frame's report.
-      const bool drawn = shown && !occluded;
+      const bool page_occluded = PageOccluded(*contents, occluded);
+      const bool drawn = shown && !page_occluded;
       bool arriving = false;
       if (auto binding = pages_.find(contents.get()); binding != pages_.end()) {
         arriving = drawn && !binding->second.shown;
@@ -1244,8 +1245,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       ScopedShowDeadline show_deadline(arriving ? contents.get() : nullptr);
       // Keep Chromium paint visibility tied to shell attachment only. Mapping
       // resign-active to WasOccluded blanked the live page while the window
-      // stayed on screen. Auto-PiP still treats resign-active as occluded via
-      // the shell visibility passed below — without freezing the compositor.
+      // stayed on screen, so only a page Chromium's auto-PiP needs hidden is
+      // (PageOccluded). Parc's own auto-PiP treats resign-active as occluded
+      // via the shell visibility passed below, without freezing the page.
       // A page joins one of the window's persistent compositors before it
       // appears, so it replaces the previous page's last frame instead of a
       //
@@ -1304,10 +1306,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // it has seen it shown and re-reads only on its own triggers
       // (PageVisibilityWatch), so without this they rendered at full rate
       // unseen.
-      if (shown && !occluded &&
+      if (shown && !page_occluded &&
           contents->GetVisibility() != content::Visibility::VISIBLE) {
         contents->WasShown();
-      } else if (shown && occluded &&
+      } else if (shown && page_occluded &&
                  contents->GetVisibility() != content::Visibility::OCCLUDED) {
         contents->WasOccluded();
       } else if (!shown &&
@@ -1345,6 +1347,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       side_panel_->HostStateChanged();
     }
   }
+  // Leaving Parc occludes a page whose auto-PiP is Chromium's, as a covered
+  // Chrome window's: Chromium enters it only for a hidden page, and Meet's
+  // handler opens no PiP while its page is visible.
+  static bool PageOccluded(content::WebContents& contents,
+                           bool window_occluded) {
+    return window_occluded || (!NSApp.isActive &&
+                               parc::PageHandlesAutoPictureInPicture(&contents));
+  }
   // Every page the shell shows in an on-screen window must end a pass drawing
   // (or occluded with its window). One that did not — skipped while still
   // attaching, refused by its host — gets a few short delayed passes, so a
@@ -1363,8 +1373,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           continue;
         }
         const auto visibility = contents->GetVisibility();
-        if (occluded ? visibility == content::Visibility::HIDDEN
-                     : visibility != content::Visibility::VISIBLE) {
+        if (PageOccluded(*contents, occluded)
+                ? visibility == content::Visibility::HIDDEN
+                : visibility != content::Visibility::VISIBLE) {
           unsettled = true;
           break;
         }

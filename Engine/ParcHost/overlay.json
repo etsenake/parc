@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 646,
+  "version": 647,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -405,7 +405,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "3f2ba358c722c79769f18e7cdd561a011a97533a4910306694398a7dc9282bef"
+      "sha256": "5dfe1963844bc53ffea691aac21405050ed6fd42912f7ad01f3598298246c0fc"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -1210,7 +1210,7 @@
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture_api.h",
       "target": "cef/libcef/browser/parc_native/native_background_picture_in_picture_api.h",
-      "sha256": "e55cf473d719fbc31cd0ba4a20f579a0c90cc0a19d303818cdd80ba9f08fe1c0"
+      "sha256": "0ccc5146bc07f4fdbc93a681f9bdfaeee8a31bb4f43e71a5f382fb1917dd925f"
     },
     {
       "source": "Engine/ParcNative/native_media_notify.h",
@@ -1220,7 +1220,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "cef/libcef/browser/parc_native/native_media_controls.mm",
-      "sha256": "36820e257230d600657bb417ddc3b387f9fd196f693ede4741e6464ab5e02143"
+      "sha256": "4b7d8ddd7fc23c522415af159ce6b2c412ddf91005586be9f18296a58add1eb5"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
@@ -4301,17 +4301,17 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-auto-pip-host-occlusion.patch",
-      "sha256": "001b939dcc2715f8e62d98ec2ec4be32ea3dd99b7a2b1e1840ca6b2dd5ba2399",
+      "sha256": "f0a0132021a591ac79d871e2887fb7d4b4fbfa3808d7460154c11a5b46180925",
       "files": [
         {
           "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h",
           "before_sha256": "8d04b3dc944c41be95d473829eb396c8709fbe25384afbee0c7ddd430de30f28",
-          "after_sha256": "4e241af10a4df8f4f71715a78bf8d80c8b9399b5660569d00de42ceba17e20a7"
+          "after_sha256": "0e5901f11820c38ae7267dbc51add5a593a681700af7dd91d645e959217dc198"
         },
         {
           "target": "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc",
           "before_sha256": "184a6d15b62037cdf22573229f4df156bfd3ca69b007aac07abafb435f45d99e",
-          "after_sha256": "d4da029e6075e708e241508d4a50dcc3dc13154c2d0a6eceab23814757ab8001"
+          "after_sha256": "ec94bf0057a9ddf420ced7e3485789819e35a0978188f4ff7a0d5dbfbebc0c9f"
         }
       ]
     },
