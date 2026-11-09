@@ -233,7 +233,7 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
             def run(*args, **kwargs):
                 if args[:3] == ('git','remote','get-url'): return 'https://github.com/etsenake/homebrew-tap.git'
                 if args[:3] == ('git','branch','--show-current'): return 'main'
-                if args[:2] == ('git','show') and args[2].endswith(':release-notes.json'):
+                if args[:3] == ('git','show','a'*40 + ':release-notes.json'):
                     return json.dumps({'releases': [{'version': '1.1.0', 'changes': []}]})
                 if args[:2] == ('git','show'): return json.dumps(app_version)
                 return ''

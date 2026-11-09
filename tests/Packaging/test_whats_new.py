@@ -74,6 +74,7 @@ class WhatsNewTests(unittest.TestCase):
 
     def test_releases_without_user_facing_changes_say_so(self):
         page = self.render(release("1.9.1"), release("1.9.0"))
+        self.assertIn("Thanks for using Parc! Here’s what’s new in this version.", page)
         self.assertEqual(page.count('<p class="quiet">Small fixes and improvements.</p>'), 2)
 
     def test_out_of_order_or_unknown_changes_are_refused(self):

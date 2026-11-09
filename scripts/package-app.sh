@@ -162,13 +162,14 @@ if [ -n "$from_release" ]; then
   if [ -z "$release_tag" ]; then
     # A local test takes the newest engine; a published build needs HEAD's overlay, read
     # from the release's tagged source because stable release titles are just the version.
-    while IFS= read -r candidate; do
+    candidates="$(gh release list -R "$github_repo" --limit 200 --json tagName,createdAt,isDraft,isPrerelease \
+      --jq "[.[] | select((((.tagName | test(\"$tag_pattern\")) and .isPrerelease) or ((.tagName | test(\"$stable_tag_pattern\")) and (.isPrerelease | not))) and (.isDraft | not))] | sort_by(.createdAt) | reverse | .[].tagName" </dev/null)"
+    for candidate in $candidates; do
       if [ -n "$local_test" ] || [ "$(git show "$candidate:Engine/ParcHost/overlay.json" 2>/dev/null | jq .version)" = "$overlay" ]; then
         release_tag="$candidate"
         break
       fi
-    done < <(gh release list -R "$github_repo" --limit 200 --json tagName,createdAt,isDraft,isPrerelease \
-      --jq "[.[] | select((((.tagName | test(\"$tag_pattern\")) and .isPrerelease) or ((.tagName | test(\"$stable_tag_pattern\")) and (.isPrerelease | not))) and (.isDraft | not))] | sort_by(.createdAt) | reverse | .[].tagName" </dev/null)
+    done
     if [ -z "$release_tag" ] && [ -n "$local_test" ]; then
       echo "error: no published app package to take an engine from" >&2
       exit 1

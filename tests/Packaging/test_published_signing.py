@@ -64,6 +64,7 @@ class PublishedSigningTests(unittest.TestCase):
             import hashlib, json, os, pathlib, subprocess, sys
             if sys.argv[1:3] == ['auth', 'token']: print('fixture-token')
             elif sys.argv[1:3] == ['release', 'list']:
+                if os.environ.get('FIXTURE_LIST_FAIL'): sys.exit('HTTP 502')
                 releases = [{'tagName': 'v1.0.0', 'name': '1.0.0',
                              'createdAt': '2026-11-06T00:00:00Z', 'isDraft': False, 'isPrerelease': False},
                             {'tagName': 'v1.1.0', 'name': '1.1.0',
@@ -244,6 +245,21 @@ class PublishedSigningTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         arguments = json.loads((self.root / 'build-arguments.json').read_text())
         self.assertEqual(arguments[arguments.index('--release-tag') + 1], 'v1.0.0')
+
+    def test_auto_engine_selection_refuses_without_a_release_on_this_overlay(self):
+        (self.repo / "Engine/ParcHost/overlay.json").write_text('{"version": 318}')
+        result = self.run_package('--from-release')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('no published app package has engine overlay 318', result.stderr)
+        self.assertFalse((self.root / 'built').exists())
+
+    def test_auto_engine_selection_stops_on_a_failed_release_list(self):
+        self.env['FIXTURE_LIST_FAIL'] = '1'
+        result = self.run_package('--from-release')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('HTTP 502', result.stderr)
+        self.assertNotIn('build the engine instead', result.stderr)
+        self.assertFalse((self.root / 'built').exists())
 
 
 if __name__ == '__main__':
