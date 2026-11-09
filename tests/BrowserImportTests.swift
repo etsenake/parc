@@ -184,6 +184,108 @@ import Foundation
                "Failed new-destination save leaves no half-created Profile or Space")
         try FileManager.default.removeItem(at: session)
         try FileManager.default.moveItem(at: backup, to: session)
+        checks += try replaceChecks(directory: directory.appendingPathComponent("Replace"), date: importedAt)
         print("\(checks) actual browser-import selection/store assertions passed; no browser or personal source reads.")
+    }
+
+    /// Setup's Back to an accepted bookmark page: Next replaces what that
+    /// page added, and nothing else.
+    @MainActor static func replaceChecks(directory: URL, date: Date) throws -> Int {
+        var checks = 0
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            checks += 1; precondition(condition(), message)
+        }
+        let store = try BrowserStore(directory: directory, now: { date })
+        let space = store.activeSpace
+        let target = BrowserImportDestination(spaceID: space.id, profileID: space.profileID)
+        func page(_ id: String) -> BrowserImportBookmark {
+            .init(id: id, title: id.uppercased(), url: "https://example.test/\(id)", children: [])
+        }
+        let sub = BrowserImportBookmark(id: "sub", title: "Sub", url: nil, children: [page("c")])
+        let work = BrowserImportBookmark(id: "work", title: "Work", url: nil, children: [page("a"), page("b"), sub])
+        var selection = try BrowserImportSelection(roots: [work, page("d"), page("e"), page("f")])
+        for id in ["b", "sub", "e", "f"] { selection.toggle(id) }
+        let first = try store.commitImportedBookmarks(selection.includedRoots, destination: target)
+        let other = try store.commitImportedBookmarks([page("x")], destination: target)
+        func tab(_ id: String) -> BrowserTab? {
+            store.state.tabs.first { $0.url == "https://example.test/\(id)" && $0.archivedAt == nil }
+        }
+        func count(_ id: String) -> Int { store.state.tabs.filter { $0.url == "https://example.test/\(id)" }.count }
+        let root = SidebarContainerLocation(spaceID: space.id, folderID: nil, section: .pinned)
+        func order(_ location: SidebarContainerLocation) -> [SidebarItemReference] {
+            SidebarHierarchy.children(in: location, state: store.state)
+        }
+        let workFolder = store.state.folders.first { $0.name == "Work" }!
+        let a = tab("a")!, d = tab("d")!, x = tab("x")!
+        expect(order(root).suffix(3) == [.folder(workFolder.id), .tab(d.id), .tab(x.id)],
+               "A first accept adds the ticked tree; another import follows it")
+
+        let unchanged = store.state
+        let same = try store.commitImportedBookmarks([(selection.includedRoots, target, first)])
+        expect(store.state == unchanged && same == [first], "Next with the same ticks changes nothing")
+
+        selection.toggle("a"); selection.toggle("b"); selection.toggle("sub"); selection.toggle("e")
+        let second = try store.commitImportedBookmarks([(selection.includedRoots, target, first)])[0]
+        let b = tab("b")!, e = tab("e")!
+        let subFolder = store.state.folders.first { $0.name == "Sub" }!
+        expect(tab("a") == nil && count("a") == 0, "An unticked bookmark the page added leaves")
+        expect(store.state.folders.first { $0.id == workFolder.id } == workFolder && b.folderID == workFolder.id
+                   && subFolder.parentID == workFolder.id && tab("c")?.folderID == subFolder.id,
+               "Newly ticked bookmarks join the folders the page already added")
+        expect(store.state.tabs.first { $0.id == d.id } == d && tab("x") == x,
+               "A bookmark still ticked keeps its identity, and another import's is untouched")
+        expect(order(root).suffix(4) == [.folder(workFolder.id), .tab(d.id), .tab(e.id), .tab(x.id)],
+               "A newly ticked bookmark goes beside its source siblings, not after other items")
+        expect(order(.init(spaceID: space.id, folderID: workFolder.id, section: .pinned)) == [.tab(b.id), .folder(subFolder.id)],
+               "A folder keeps its source order")
+        expect(["b", "c", "d", "e", "x"].allSatisfy { count($0) == 1 } && count("f") == 0, "Nothing is added twice")
+        expect(!store.state.sidebarItemOrder.values.contains { $0.contains(.tab(a.id)) }, "The removed bookmark leaves the sidebar order")
+
+        // The user's own changes since make an item theirs; it stays.
+        _ = try store.saveSidebarTitle(d, title: "Renamed")
+        store.moveTab(b.id, toSpace: space.id, folderID: nil)
+        selection.toggle("d"); selection.toggle("b")
+        let third = try store.commitImportedBookmarks([(selection.includedRoots, target, second)])[0]
+        expect(tab("d")?.customTitle == "Renamed" && tab("b")?.folderID == nil, "Renamed or moved bookmarks are kept when unticked")
+        selection.toggle("d"); selection.toggle("b")
+        let fourth = try store.commitImportedBookmarks([(selection.includedRoots, target, third)])[0]
+        expect(count("d") == 1 && count("b") == 1, "Ticking a kept bookmark again adds no duplicate")
+
+        let beforeAll = store.state
+        selection.toggleAll(); selection.toggleAll()
+        expect(selection.selected.isEmpty, "Everything unticked")
+        store.moveTab(x.id, toSpace: space.id, folderID: workFolder.id)
+        store.selectTab(e.id)
+        let cleared = try store.commitImportedBookmarks([(selection.includedRoots, target, fourth)])[0]
+        expect(tab("c") == nil && !store.state.folders.contains { $0.id == subFolder.id },
+               "Unticking everything removes what the page still owns")
+        expect(tab("e") != nil && store.state.selectedTabIDs == [e.id], "A bookmark open in a window stays")
+        expect(store.state.folders.contains { $0.id == workFolder.id } && tab("x")?.folderID == workFolder.id,
+               "A folder holding another item stays")
+        expect(tab("d") != nil && tab("b") != nil && tab("x") != nil, "The user's and other imports' bookmarks stay")
+        expect(other.tabs.count == 1 && beforeAll.tabs.count - store.state.tabs.count == 1, "Only the page's own unchanged items left")
+
+        // A refused write leaves the previous accepted set exactly.
+        selection.toggleAll()
+        let accepted = store.state
+        let session = directory.appendingPathComponent("session.json")
+        let backup = directory.appendingPathComponent("prior-session.json")
+        try FileManager.default.moveItem(at: session, to: backup)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: false)
+        do {
+            _ = try store.commitImportedBookmarks([(selection.includedRoots, target, cleared)])
+            preconditionFailure("A refused replace write must propagate")
+        } catch { checks += 1 }
+        expect(store.state == accepted, "Failed persistence leaves the previous accepted bookmarks")
+        try FileManager.default.removeItem(at: session)
+        try FileManager.default.moveItem(at: backup, to: session)
+        var placement = cleared
+        for _ in 0..<3 { placement = try store.commitImportedBookmarks([(selection.includedRoots, target, placement)])[0] }
+        expect(["a", "b", "c", "d", "e", "f", "x"].allSatisfy { count($0) == 1 },
+               "Repeated Back and Next loops never duplicate")
+        let reloaded = try BrowserStore(directory: directory)
+        expect(reloaded.state.tabs == store.state.tabs && reloaded.state.folders == store.state.folders,
+               "The replaced set is what was saved")
+        return checks
     }
 }

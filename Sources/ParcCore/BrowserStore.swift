@@ -5512,12 +5512,27 @@ final class BrowserStore: ObservableObject {
 
     /// Imported native profile data has its own category transactions. This
     /// writes only selected sidebar bookmarks into the original local target.
-    func commitImportedBookmarks(_ roots: [BrowserImportBookmark], destination: BrowserImportDestination) throws {
-        guard !isEphemeral, destination.isCurrent(in: state) else { throw CocoaError(.userCancelled) }
+    @discardableResult
+    func commitImportedBookmarks(_ roots: [BrowserImportBookmark], destination: BrowserImportDestination) throws -> BrowserImportPlacement {
+        try commitImportedBookmarks([(roots, destination, BrowserImportPlacement())])[0]
+    }
+
+    /// Every page in one write. A page's `placed` is what it added before;
+    /// its new roots replace that (setup's Back to an accepted page).
+    func commitImportedBookmarks(_ pages: [(roots: [BrowserImportBookmark], destination: BrowserImportDestination,
+                                            placed: BrowserImportPlacement)]) throws -> [BrowserImportPlacement] {
+        guard !isEphemeral, pages.allSatisfy({ $0.destination.isCurrent(in: state) }) else { throw CocoaError(.userCancelled) }
+        var next = state, placements: [BrowserImportPlacement] = []
+        for page in pages {
+            let result = try page.destination.replacing(page.placed, with: page.roots, in: next, at: clock())
+            next = result.state; placements.append(result.placement)
+        }
+        guard next != state else { return placements }
         let previous = state
-        state = try destination.inserting(roots, into: state, at: clock())
+        state = next
         do { try save() } catch { state = previous; throw error }
         changed()
+        return placements
     }
 
     ///

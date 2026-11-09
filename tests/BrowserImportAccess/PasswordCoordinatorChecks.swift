@@ -304,7 +304,7 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
            "The menu wizard keeps its own buttons")
     unchangedMenu.cancel()
 
-    let skipping = start(); complete([selected])
+    let skipping = start(); complete([selected, omitted])
     expect(skipping.setupSkipTitle == "Skip for now" && skipping.canGoBackInSetup, "The bookmark picker offers Skip for now and Back")
     let tabsBeforeSkip = store.state.tabs
     skipping.skipInSetup()
@@ -333,21 +333,60 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
            "Once a file imports, Next is enabled and Do this later goes away")
     skipping.goBackInSetup()
     let tabsAfterAdd = store.state.tabs
+    let earlierTabs = Set(tabsBeforeSkip.map(\.id))
+    func tabs(_ bookmark: PCNativeImportedBookmark) -> [BrowserTab] {
+        store.state.tabs.filter { $0.url == bookmark.url!.absoluteString && !earlierTabs.contains($0.id) }
+    }
     expect(skipping.stage == .bookmarks && skipping.bookmarkPages[0].committed, "Back shows the bookmarks already added")
-    let accepted = skipping.bookmarkPages[0]
-    expect(!skipping.canChooseBookmarks(accepted) && skipping.canShowBookmarks(accepted),
-           "The bookmarks already added show as accepted: their ticks can't change")
-    skipping.toggleBookmark(pageID: accepted.id, id: selected.identifier)
-    skipping.toggleBookmark(pageID: accepted.id, id: nil)
-    skipping.toggleBookmark(page: 0, id: selected.identifier, expansion: false)
-    expect(skipping.bookmarkPages[0].selection.selected == accepted.selection.selected && store.state.tabs == tabsAfterAdd,
-           "Clicking an accepted page's ticks or Select All changes nothing")
+    let accepted = skipping.bookmarkPages[0], keptTab = tabs(selected)[0]
+    expect(skipping.canChooseBookmarks(accepted) && accepted.selection.selected == [selected.identifier, omitted.identifier],
+           "As in Parc, the page already added keeps its ticks and stays editable")
+    skipping.toggleBookmark(pageID: accepted.id, id: omitted.identifier)
+    expect(store.state.tabs == tabsAfterAdd, "Changing a tick adds or removes nothing before Next")
     skipping.commitBookmarks()
-    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == tabsAfterAdd,
-           "Next on the accepted page goes on without adding its bookmarks twice")
+    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords
+               && tabs(omitted).isEmpty && tabs(selected) == [keptTab] && store.state.tabs.count == tabsAfterAdd.count - 1,
+           "Next removes just the unticked bookmark and keeps the other in place, passwords kept")
+    skipping.goBackInSetup()
+    skipping.toggleBookmark(pageID: accepted.id, id: omitted.identifier)
+    skipping.commitBookmarks()
+    let reticked = store.state.tabs
+    expect(tabs(omitted).count == 1 && tabs(selected) == [keptTab] && reticked.count == tabsAfterAdd.count,
+           "Ticking it again after Back adds it once")
+    skipping.goBackInSetup()
+    skipping.toggleBookmark(pageID: accepted.id, id: selected.identifier)
+    skipping.skipInSetup()
+    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == reticked,
+           "Skip on the page already added keeps what it added")
+    skipping.goBackInSetup()
+    expect(skipping.bookmarkPages[0].selection.selected == [selected.identifier, omitted.identifier],
+           "After Skip, the page's ticks again show what it added")
+    for _ in 0..<3 { skipping.commitBookmarks(); skipping.goBackInSetup() }
+    expect(store.state.tabs == reticked && skipping.stage == .bookmarks, "Back and Next loops add nothing twice")
+
+    // A refused write keeps the bookmarks accepted before, and the edit to retry.
+    skipping.toggleBookmark(pageID: accepted.id, id: selected.identifier)
+    let session = store.directory.appendingPathComponent("session.json")
+    let backup = store.directory.appendingPathComponent("prior-session.json")
+    try? FileManager.default.moveItem(at: session, to: backup)
+    try? FileManager.default.createDirectory(at: session, withIntermediateDirectories: false)
+    skipping.commitBookmarks()
+    expect(skipping.stage == .bookmarks && skipping.error != nil && store.state.tabs == reticked
+               && skipping.bookmarkPages[0].selection.selected == [omitted.identifier],
+           "A failed save leaves the previous accepted set and the page as edited")
+    try? FileManager.default.removeItem(at: session)
+    try? FileManager.default.moveItem(at: backup, to: session)
+    skipping.commitBookmarks()
+    expect(skipping.stage == .safariPasswords && tabs(selected).isEmpty && tabs(omitted).count == 1,
+           "Next after the failure applies the edit once")
+    skipping.goBackInSetup()
+    skipping.toggleBookmark(pageID: accepted.id, id: selected.identifier)
+    skipping.commitBookmarks()
+    let restoredSet = store.state.tabs
+    expect(tabs(selected).count == 1 && tabs(omitted).count == 1, "Both are back, once each")
     skipping.goBackInSetup()
     skipping.skipInSetup()
-    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == tabsAfterAdd,
+    expect(skipping.stage == .safariPasswords && skipping.canContinueSetupPasswords && store.state.tabs == restoredSet,
            "Going forward again keeps the imported passwords and adds nothing twice")
     skipping.skipInSetup()
     expect(skipping.stage == .safariPasswords, "A completed file leaves no Do this later to press")

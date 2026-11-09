@@ -8,8 +8,8 @@ struct OnboardingImportBookmarksPicker: View {
         let id: UUID
         let title: String
         let selection: BrowserImportSelection
-        /// Whether ticks can change. A page already added shows as disabled,
-        /// but its folders still open.
+        /// Whether ticks can change. A page the menu window already added
+        /// shows as disabled, but its folders still open.
         let enabled: Bool
         let expandable: Bool
         let select: (String?) -> Void

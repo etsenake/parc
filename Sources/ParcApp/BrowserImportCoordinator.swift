@@ -11,6 +11,9 @@ final class BrowserImportCoordinator {
         let destination: BrowserImportDestination
         var selection: BrowserImportSelection
         var committed = false
+        /// What the last accepted Next added, and the ticks it had then.
+        var placement = BrowserImportPlacement()
+        var accepted: BrowserImportSelection?
         var discarded = false
         /// Setup's Skip leaves these out; Back to the bookmark step offers them again.
         var skipped = false
@@ -841,9 +844,9 @@ final class BrowserImportCoordinator {
         !page.discarded && page.destination.isCurrent(in: store.state)
     }
 
-    /// A page already added to the sidebar (setup's Back from its password
-    /// steps) shows as accepted: its ticks can't change, so Next adds nothing twice.
-    func canChooseBookmarks(_ page: BookmarkPage) -> Bool { !page.committed && canShowBookmarks(page) }
+    ///
+    /// editable; Next then changes what it added. The menu adds a page once.
+    func canChooseBookmarks(_ page: BookmarkPage) -> Bool { (onboarding || !page.committed) && canShowBookmarks(page) }
 
     func toggleBookmark(page: Int, id: String, expansion: Bool) {
         guard stage == .bookmarks, isCurrent, bookmarkPages.indices.contains(page),
@@ -870,15 +873,33 @@ final class BrowserImportCoordinator {
     func commitBookmarks() {
         guard stage == .bookmarks, isCurrent else { return }
         do {
-            for index in bookmarkPages.indices where !bookmarkPages[index].committed && !bookmarkPages[index].discarded {
+            var indices: [Int] = []
+            for index in bookmarkPages.indices where (onboarding || !bookmarkPages[index].committed) && !bookmarkPages[index].discarded {
                 let page = bookmarkPages[index]
                 guard page.destination.isCurrent(in: store.state) else {
-                    failed("\(page.sourceName): its destination Profile or Space was removed; these bookmarks were not added.")
+                    if !page.committed {
+                        failed("\(page.sourceName): its destination Profile or Space was removed; these bookmarks were not added.")
+                    }
                     bookmarkPages[index].discarded = true
                     continue
                 }
-                try store.commitImportedBookmarks(page.selection.includedRoots, destination: page.destination)
-                bookmarkPages[index].committed = true
+                indices.append(index)
+            }
+            let placements = indices.isEmpty ? [] : try store.commitImportedBookmarks(indices.map { index in
+                let page = bookmarkPages[index]
+                return (page.selection.includedRoots, page.destination, page.placement)
+            })
+            for (index, placement) in zip(indices, placements) {
+                bookmarkPages[index].committed = true; bookmarkPages[index].placement = placement
+                // An unticked bookmark the user already opened stays in the
+                // sidebar, so its tick does too.
+                var accepted = bookmarkPages[index].selection
+                let spaceID = bookmarkPages[index].destination.spaceID
+                for (sourceID, written) in placement.tabs where !accepted.selected.contains(sourceID)
+                    && store.state.tabs.contains(where: { $0.id == written.id && $0.archivedAt == nil && $0.spaceID == spaceID }) {
+                    accepted.toggle(sourceID)
+                }
+                bookmarkPages[index].accepted = accepted; bookmarkPages[index].selection = accepted
             }
             if !(onboarding && presentPasswordStageIfNeeded()) {
                 stage = .finished; message = "Your bookmarks are ready in Parc."; startDeferredBackground()
@@ -924,7 +945,11 @@ final class BrowserImportCoordinator {
         case .safariAccess:
             continueSafariWithoutRestarting()
         case .bookmarks:
-            for index in bookmarkPages.indices where !bookmarkPages[index].committed { bookmarkPages[index].skipped = true }
+            // A page already added keeps what it added, and its ticks again show that.
+            for index in bookmarkPages.indices {
+                if let accepted = bookmarkPages[index].accepted { bookmarkPages[index].selection = accepted }
+                else { bookmarkPages[index].skipped = true }
+            }
             error = nil
             if !presentPasswordStageIfNeeded() {
                 stage = .finished; message = "Your import has finished."; startDeferredBackground()

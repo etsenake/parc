@@ -83,38 +83,131 @@ struct BrowserImportDestination: Equatable {
     /// Pure preparation keeps the visible session unchanged until its real
     /// atomic write succeeds. No existing folder, split or tab is repurposed.
     func inserting(_ roots: [BrowserImportBookmark], into state: BrowserState, at date: Date) throws -> BrowserState {
+        try replacing(BrowserImportPlacement(), with: roots, in: state, at: date).state
+    }
+
+    /// Changes what one accepted page added to `roots`: newly ticked
+    /// bookmarks are added beside their source siblings, unticked ones leave,
+    /// and the rest stay as they are. Only an item still exactly as the
+    /// import wrote it, unselected and outside any split, is removed; a
+    /// folder also needs to be empty of everything else.
+    func replacing(_ placed: BrowserImportPlacement, with roots: [BrowserImportBookmark],
+                   in state: BrowserState, at date: Date) throws -> (state: BrowserState, placement: BrowserImportPlacement) {
         guard isCurrent(in: state) else { throw CocoaError(.userCancelled) }
         _ = try BrowserImportSelection(roots: roots)
-        var next = state
-        func append(_ items: [BrowserImportBookmark], parent: UUID?) throws {
+        var included = Set<String>()
+        func collect(_ items: [BrowserImportBookmark]) { for item in items { included.insert(item.id); collect(item.children) } }
+        collect(roots)
+        var next = state, placement = placed
+        var removedTabs = Set<UUID>(), removedFolders = Set<UUID>()
+        let selected = Set(state.selectedTabIDs + state.selectionBySpace.values.flatMap { $0 })
+        for (sourceID, written) in placed.tabs where !included.contains(sourceID) {
+            guard let current = next.tabs.first(where: { $0.id == written.id }) else { placement.tabs[sourceID] = nil; continue }
+            guard current == written, !selected.contains(current.id),
+                  !next.splitLayouts.contains(where: { $0.tabIDs.contains(current.id) }) else { continue }
+            removedTabs.insert(current.id); placement.tabs[sourceID] = nil
+        }
+        next.tabs.removeAll { removedTabs.contains($0.id) }
+        next.recentlyClosedIDs.removeAll { removedTabs.contains($0) }
+        var removing = true
+        while removing {
+            removing = false
+            for (sourceID, written) in placement.folders where !included.contains(sourceID) {
+                guard let current = next.folders.first(where: { $0.id == written.id }) else {
+                    placement.folders[sourceID] = nil; continue
+                }
+                var unchanged = current; unchanged.isExpanded = written.isExpanded
+                guard unchanged == written, !next.tabs.contains(where: { $0.folderID == current.id }),
+                      !next.folders.contains(where: { $0.parentID == current.id }) else { continue }
+                next.folders.removeAll { $0.id == current.id }
+                removedFolders.insert(current.id); placement.folders[sourceID] = nil; removing = true
+            }
+        }
+        let prefix = spaceID.uuidString + ":"
+        for folder in removedFolders {
+            next.sidebarItemOrder[SidebarContainerLocation(spaceID: spaceID, folderID: folder, section: .pinned).key] = nil
+        }
+        for key in next.sidebarItemOrder.keys where key.hasPrefix(prefix) {
+            next.sidebarItemOrder[key]?.removeAll { item in
+                switch item {
+                case .tab(let id): return removedTabs.contains(id)
+                case .folder(let id): return removedFolders.contains(id)
+                case .split: return false
+                }
+            }
+        }
+
+        func add(_ items: [BrowserImportBookmark], parent: UUID?) throws {
             let location = SidebarContainerLocation(spaceID: spaceID, folderID: parent, section: .pinned)
-            var order = SidebarHierarchy.children(in: location, state: next)
-            for item in items {
+            let before = SidebarHierarchy.children(in: location, state: next)
+            var order = before
+            // Each source item's sidebar entry when this page already has it here.
+            func existing(_ item: BrowserImportBookmark) -> SidebarItemReference? {
+                if item.url != nil {
+                    guard let id = placement.tabs[item.id]?.id,
+                          next.tabs.contains(where: { $0.id == id && $0.archivedAt == nil }) else { return nil }
+                    let group = next.splitLayouts.first { $0.tabIDs.contains(id) }
+                    return group.map { .split($0.id) } ?? .tab(id)
+                }
+                guard let id = placement.folders[item.id]?.id,
+                      next.folders.contains(where: { $0.id == id && $0.spaceID == spaceID }) else { return nil }
+                return .folder(id)
+            }
+            var anchor: SidebarItemReference?
+            for (position, item) in items.enumerated() {
+                // A folder the user moved to another Space is theirs now; no
+                // empty copy here.
+                if item.url == nil, let id = placement.folders[item.id]?.id,
+                   next.folders.contains(where: { $0.id == id && $0.spaceID != spaceID }) { continue }
+                if let kept = existing(item) {
+                    if order.contains(kept) { anchor = kept }
+                    if case .folder(let id) = kept { try add(item.children, parent: id) }
+                    continue
+                }
+                let reference: SidebarItemReference
                 if let value = item.url {
                     let publicURL = BrowserInternalURL.publicString(value)
                     guard let url = URL(string: publicURL), let scheme = url.scheme,
                           !scheme.isEmpty, scheme.lowercased() != "arc" else {
                         throw CocoaError(.fileReadCorruptFile)
                     }
-                    let id = UUID()
                     let title = item.title.isEmpty ? (url.host ?? value) : item.title
-                    next.tabs.append(BrowserTab(id: id, spaceID: spaceID, profileID: profileID,
+                    let tab = BrowserTab(id: UUID(), spaceID: spaceID, profileID: profileID,
                         url: publicURL, title: title, kind: .pinned, folderID: parent,
-                        createdAt: date, lastAccessed: date, savedURL: publicURL, savedTitle: title))
-                    order.append(.tab(id))
+                        createdAt: date, lastAccessed: date, savedURL: publicURL, savedTitle: title)
+                    next.tabs.append(tab); placement.tabs[item.id] = tab
+                    reference = .tab(tab.id)
                 } else {
-                    let id = UUID()
-                    next.folders.append(BrowserFolder(id: id, spaceID: spaceID,
-                        name: item.title.isEmpty ? "Imported folder" : item.title, parentID: parent))
-                    order.append(.folder(id))
-                    try append(item.children, parent: id)
+                    let folder = BrowserFolder(id: UUID(), spaceID: spaceID,
+                        name: item.title.isEmpty ? "Imported folder" : item.title, parentID: parent)
+                    next.folders.append(folder); placement.folders[item.id] = folder
+                    reference = .folder(folder.id)
                 }
+                // After the nearest earlier source sibling here, else before
+                // the nearest later one, else at the end.
+                if let anchor, let index = order.firstIndex(of: anchor) {
+                    order.insert(reference, at: index + 1)
+                } else if let later = items[(position + 1)...].lazy.compactMap(existing).first(where: { order.contains($0) }),
+                          let index = order.firstIndex(of: later) {
+                    order.insert(reference, at: index)
+                } else { order.append(reference) }
+                anchor = reference
+                if case .folder(let id) = reference { try add(item.children, parent: id) }
             }
-            next.sidebarItemOrder[location.key] = order
+            if order != before { next.sidebarItemOrder[location.key] = order }
         }
-        try append(roots, parent: nil)
-        return next
+        try add(roots, parent: nil)
+        return (next, placement)
     }
+}
+
+/// What one accepted bookmark page wrote, by source identity, exactly as
+/// written, so a later change of that page can tell its own items from the
+/// user's.
+struct BrowserImportPlacement: Equatable {
+    fileprivate(set) var tabs: [String: BrowserTab] = [:]
+    fileprivate(set) var folders: [String: BrowserFolder] = [:]
+    var isEmpty: Bool { tabs.isEmpty && folders.isEmpty }
 }
 
 /// An existing Parc Profile an import can land in. A Space is captured for
