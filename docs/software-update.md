@@ -290,13 +290,18 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   follows the phase: "Update Available…" while an update is available or
   ready, "Updating…" while downloading, preparing or installing, otherwise
   ("Download; Update; Check for Updates") and a Parc icon,
+  item's tooltip.
 - **Sparkle.** Parc embeds the pinned Sparkle 2.10.1 (`scripts/sparkle.py`,
   [packaging](../tests/Packaging/README.md#sparkle)). Only distribution
-  and local test builds never replace themselves.
+  and local test builds never replace themselves. Without `SUFeedURL` Parc
+  never starts Sparkle: Check for Updates… stays in the menu and the command
+  bar but is disabled, with the tooltip "Updates are only available in
+  released builds".
 - **Updater.** `SoftwareUpdater` (`Sources/ParcApp/SoftwareUpdater.swift`) is
   `SPUUpdaterDelegate`. Its state is `SoftwareUpdateSession`
   (`Sources/ParcCore/SoftwareUpdateSession.swift`), free of Sparkle and AppKit;
   `scripts/test-software-update.sh` tests it and the up-to-date window's
+  label to its 11-point font's 13-point line height: AppKit pads the label to
   - A manual check shows the status window ("Checking for updates..."), then
     the up-to-date window, the update-found window, or the "Update error!"
     alert, following the table above.
@@ -372,6 +377,9 @@ SoftwareUpdater.shared.installAndRelaunch()        // Restart and Update
 SoftwareUpdater.shared.automaticallyDownloadsUpdates  // get/set; the Automatic Updates checkbox
 SoftwareUpdater.shared.checkForUpdates()           // the menu's action
 ```
+
+A build without a feed never leaves `idle`, and `checkForUpdates()` does
+nothing there.
 
 `Phase` is `idle`, `checking`, `available(version:)`, `downloading`,
 `preparing`, `readyToInstall(version:)` or `installing`. The version is

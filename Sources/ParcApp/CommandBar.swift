@@ -1324,6 +1324,7 @@ final class CommandBar: NSWindowController, NSTextFieldDelegate, NSTableViewData
                                         || result.favoriteAction != nil || result.folderMove != nil || result.favoriteRename != nil
                                         || result.managesPasswords || result.muteAllTabs != nil)
         bind(cell, to: result)
+        cell.toolTip = result.command?.toolTip
         cell.selectedColor = selectedRowColor
         cell.setSelected(row == table.selectedRow)
         return cell

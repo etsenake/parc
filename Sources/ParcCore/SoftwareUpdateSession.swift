@@ -33,6 +33,9 @@ struct SoftwareUpdateSession {
         case resume
     }
 
+    /// Only distribution packages carry Sparkle's feed. Without one Sparkle
+    /// never starts, and Check for Updates… stays listed but disabled.
+    let hasFeed: Bool
     private(set) var phase = Phase.idle
     private var version = ""
     // Taken at most once each.
@@ -53,6 +56,10 @@ struct SoftwareUpdateSession {
         case .idle, .checking: "Check for Updates…"
         }
     }
+
+    var menuToolTip: String? { hasFeed ? nil : "Updates are only available in released builds" }
+
+    init(hasFeed: Bool = true) { self.hasFeed = hasFeed }
 
     mutating func beginCheck(cancellation: @escaping Reply) {
         self.cancellation = cancellation

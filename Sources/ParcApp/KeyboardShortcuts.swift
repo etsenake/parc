@@ -911,6 +911,7 @@ final class KeyboardShortcuts: ObservableObject {
     @MainActor final class MenuCommand {
         let id: String
         let title: String
+        let toolTip: String?
         let group: String
         let shortcut: KeyboardShortcut?
         /// Whether its target accepted it when the list was read.
@@ -920,7 +921,7 @@ final class KeyboardShortcuts: ObservableObject {
         fileprivate let revision: Int
         fileprivate init(id: String, item: NSMenuItem, group: String, shortcut: KeyboardShortcut?, wasAvailable: Bool,
                          window: NSWindow, revision: Int) {
-            self.id = id; self.item = item; title = item.title; self.group = group
+            self.id = id; self.item = item; title = item.title; toolTip = item.toolTip; self.group = group
             self.shortcut = shortcut; self.wasAvailable = wasAvailable; self.window = window; self.revision = revision
         }
     }

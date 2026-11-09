@@ -16,6 +16,7 @@ struct SoftwareUpdateSessionTests {
         dismissedDownloadStaysReady()
         cancelledQuitCanRetry()
         repliesMayReenterTheSession()
+        buildsWithoutAFeed()
         print("SoftwareUpdateSessionTests: \(checks) checks passed")
     }
 
@@ -234,5 +235,13 @@ struct SoftwareUpdateSessionTests {
         session.beginCheck { session.failed() }
         session.cancel()?()
         check(session.phase == .idle, "Cancelling may synchronously report a failure")
+    }
+
+    static func buildsWithoutAFeed() {
+        let released = SoftwareUpdateSession()
+        check(released.hasFeed && released.menuToolTip == nil, "A released build's Check for Updates… has no tooltip")
+        let local = SoftwareUpdateSession(hasFeed: false)
+        check(!local.hasFeed && local.menuTitle == "Check for Updates…", "A build without a feed keeps Check for Updates…")
+        check(local.menuToolTip == "Updates are only available in released builds", "Its tooltip says why it is disabled")
     }
 }

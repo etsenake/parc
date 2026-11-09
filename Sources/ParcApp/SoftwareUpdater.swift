@@ -21,7 +21,7 @@ import Sparkle
         set { updater.automaticallyDownloadsUpdates = newValue }
     }
 
-    private var session = SoftwareUpdateSession() {
+    private var session = SoftwareUpdateSession(hasFeed: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil) {
         didSet {
             if session.phase != oldValue.phase {
                 NotificationCenter.default.post(name: Self.phaseDidChangeNotification, object: self)
@@ -42,6 +42,7 @@ import Sparkle
     /// Sparkle installer with the installed Parc, so it never updates itself;
     ///
     func start(disabled: Bool) {
+        guard session.hasFeed else { return }
         if disabled {
             unavailable = NSError(domain: "org.parc.Browser.SoftwareUpdater", code: 1,
                                   userInfo: [NSLocalizedDescriptionKey: "Application is not allowed to update."])
@@ -51,6 +52,7 @@ import Sparkle
     }
 
     func checkForUpdates() {
+        guard session.hasFeed else { return }
         if let unavailable { showError(unavailable); return }
         updater.checkForUpdates()
     }
@@ -130,7 +132,8 @@ extension SoftwareUpdater: NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         menuItem.title = session.menuTitle
-        return true
+        menuItem.toolTip = session.menuToolTip
+        return session.hasFeed
     }
 }
 
