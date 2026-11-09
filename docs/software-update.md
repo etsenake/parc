@@ -371,9 +371,12 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     or min-contrast colour, else the accent colour when that is grey by HSL
     saturation) and its turn speed (4 s), and the sparkles' glyph, count,
     colour and timing (six `sparkle` glyphs in the base colour with the
-    not modelled. The card is one SwiftUI hosting view in the sidebar's key
-    loop; whether Tab reaches each of its three buttons hasn't been checked
-    (no app may be run here).
+    not modelled. Like the auto-archive card's native controls, each button
+    is its own stop in the sidebar's key loop: an empty AppKit button laid
+    over the SwiftUI one (`UpdateBannerKeyStop`) that draws its focus ring,
+    presses with Space, is its VoiceOver element, and lets the pointer
+    through. Tab runs close, See What's New, Share Parc; as for every
+    sidebar button, AppKit stops on them only with Full Keyboard Access.
 
   is `readyToInstall`, and through `installing` so a page that cancels the
   quit leaves Restart and Update to retry; it takes the slot from Update Complete and the
@@ -389,8 +392,11 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   passes) it expands for good on a 0.35/0.7 spring: the card background,
   divider and controls appear, and the slot grows. Parc's additions: the
   collapsed title is a button, so a click, Space with Full Keyboard Access
-  or VoiceOver's press also expands it. A keyboard expand leaves focus on
-  the now-plain title rather than moving it to the controls (open). Unverified without a run: how the slot's growth and the
+  or VoiceOver's press also expands it. Collapsed, the title is the only
+  key stop; open, Automatic Updates and Restart and Update are. Opening it
+  from the title's focus (Space or VoiceOver) moves focus to Automatic
+  Updates. It collapses only when shown anew, after the host has taken
+  focus back, so the title is the stop again. Unverified without a run: how the slot's growth and the
   spring line up (the slot resizes at once; the content springs inside it).
 
 ### Updater API

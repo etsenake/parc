@@ -16,23 +16,41 @@ final class UpdateReadyCard: NSView {
     private var hosting: NSHostingController<UpdateReadyBanner>!
     private var measured: (width: CGFloat, height: CGFloat)?
     private var expansion: AnyCancellable?
+    private let title = UpdateBannerKeyStop(label: "New Parc Version Available", cornerRadius: 12)
+    private let automatic = UpdateBannerKeyStop(label: "Automatic Updates", cornerRadius: 4)
+    private let restart = UpdateBannerKeyStop(label: "Restart and Update", cornerRadius: 6)
     override var isFlipped: Bool { true }
-    var keyViewControls: [NSView] { [hosting.view] }
+    /// Collapsed, the title; open, the controls it reveals, top to bottom.
+    var keyViewControls: [NSView] { model.expanded ? [automatic, restart] : [title] }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        model.restart = { [weak self] in self?.perform(self?.onRestart) }
-        model.toggle = { [weak self] in self?.perform(self?.onToggleAutomaticUpdates) }
-        hosting = NSHostingController(rootView: UpdateReadyBanner(model: model))
+        // A VoiceOver press moves focus with it, as Space does.
+        title.onPress = { [weak self] in
+            guard let self else { return }
+            window?.makeFirstResponder(title)
+            model.expand()
+        }
+        title.setAccessibilityHelp("Shows Restart and Update")
+        automatic.onPress = { [weak self] in self?.perform(self?.onToggleAutomaticUpdates) }
+        restart.onPress = { [weak self] in self?.perform(self?.onRestart) }
+        setAutomaticUpdates(model.automaticUpdates)
+        hosting = NSHostingController(rootView: UpdateReadyBanner(model: model, title: title, automatic: automatic, restart: restart))
         // The sidebar sizes the slot; the content must not add constraints.
         hosting.sizingOptions = []
         hosting.view.frame = bounds
         hosting.view.autoresizingMask = [.width, .height]
         addSubview(hosting.view)
         setAccessibilityElement(false)
-        expansion = model.$expanded.dropFirst().removeDuplicates().sink { [weak self] _ in
-            self?.measured = nil
-            self?.onHeightChange?()
+        expansion = model.$expanded.dropFirst().removeDuplicates().sink { [weak self] expanded in
+            guard let self else { return }
+            measured = nil
+            // Focus on the title moves to the first control it reveals. Read
+            // first, since the title gives focus up once disabled. It only
+            // collapses again when shown anew, after the host has taken focus back.
+            automatic.takesFocusOnArrival = expanded && window?.firstResponder === title
+            updateStops(expanded: expanded)
+            onHeightChange?()
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -47,10 +65,14 @@ final class UpdateReadyCard: NSView {
             model.label = luminance > 0.5 ? .black : .white
         } else { model.label = .white }
     }
-    func setInteractionEnabled(_ enabled: Bool) { model.interactive = enabled }
+    func setInteractionEnabled(_ enabled: Bool) {
+        model.interactive = enabled
+        updateStops(expanded: model.expanded)
+    }
     ///
     func collapse() { model.expanded = false }
     func setAutomaticUpdates(_ enabled: Bool) {
+        automatic.setAccessibilityValue(enabled ? "On" : "Off")
         // The window refreshes banners on every chrome tick; publish changes only.
         if model.automaticUpdates != enabled { model.automaticUpdates = enabled }
     }
@@ -60,6 +82,13 @@ final class UpdateReadyCard: NSView {
         let height = ceil(hosting.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height)
         measured = (width, height)
         return height
+    }
+    private func updateStops(expanded: Bool) {
+        title.isEnabled = model.interactive && !expanded
+        automatic.isEnabled = model.interactive && expanded
+        restart.isEnabled = automatic.isEnabled
+        // Open, VoiceOver reads SwiftUI's plain title instead.
+        title.setAccessibilityElement(!expanded)
     }
     private func perform(_ action: (() -> Void)?) {
         guard model.interactive, window?.isKeyWindow == true, !isHiddenOrHasHiddenAncestor else { return }
@@ -75,12 +104,20 @@ final class UpdateReadyModel: ObservableObject {
     @Published var expanded = false
     @Published var base = Color.accentColor
     @Published var label = Color.white
-    var restart: () -> Void = {}
-    var toggle: () -> Void = {}
+
+    ///
+    func expand() {
+        guard interactive, !expanded else { return }
+        withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil
+                      : .spring(response: 0.35, dampingFraction: 0.7)) { expanded = true }
+    }
 }
 
 struct UpdateReadyBanner: View {
     @ObservedObject var model: UpdateReadyModel
+    let title: UpdateBannerKeyStop
+    let automatic: UpdateBannerKeyStop
+    let restart: UpdateBannerKeyStop
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -92,7 +129,7 @@ struct UpdateReadyBanner: View {
             .task(id: hovered) {
                 guard hovered, !model.expanded else { return }
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                if !Task.isCancelled { expand() }
+                if !Task.isCancelled { model.expand() }
             }
             // No hover exit arrives once hit testing stops.
             .onReceive(model.$interactive) { if !$0 { hovered = false } }
@@ -101,24 +138,21 @@ struct UpdateReadyBanner: View {
             .environment(\.colorScheme, model.dark ? .dark : .light)
     }
 
-    private func expand() {
-        guard model.interactive, !model.expanded else { return }
-        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.7)) { model.expanded = true }
-    }
-
     // One header throughout, so expanding doesn't swap it for a copy.
     private var content: some View {
         VStack(spacing: 8) {
             // Parc's: a click, Space or VoiceOver's press on the collapsed
             // title also opens it, so the controls never need a resting pointer.
-            Button(action: expand) {
+            Button(action: model.expand) {
                 UpdateBannerHeader(title: "New Parc Version Available", dark: model.dark, sparkles: false,
                                    sparkleColor: model.base, close: nil, expanded: model.expanded, hovered: hovered)
             }
             .buttonStyle(Bare())
-            // Open, it's a plain title again for Tab and VoiceOver.
+            // Open, it's a plain title again.
             .disabled(model.expanded)
-            .accessibilityHint(model.expanded ? "" : "Shows Restart and Update")
+            // Collapsed, its key stop speaks for it.
+            .accessibilityHidden(!model.expanded)
+            .overlay { UpdateBannerKeyStop.Slot(stop: title).allowsHitTesting(false) }
             if model.expanded { controls.transition(.opacity) }
         }
         .padding(.bottom, model.expanded ? 8 : 0)
@@ -140,11 +174,10 @@ struct UpdateReadyBanner: View {
         VStack(spacing: 8) {
             //
             UpdateBannerRow(title: "Automatic Updates", icon: model.automaticUpdates ? "checkmark.square" : "square",
-                            dark: model.dark, gradient: false, base: model.base, alignment: .center, action: model.toggle)
-                .accessibilityValue(model.automaticUpdates ? "On" : "Off")
+                            dark: model.dark, gradient: false, base: model.base, alignment: .center, stop: automatic)
             UpdateBannerPrimaryButton(title: "Restart and Update", dark: model.dark, label: model.label,
                                       gradient: hovered && model.interactive && !reduceMotion, base: model.base,
-                                      action: model.restart)
+                                      stop: restart)
         }
         .padding(.horizontal, 8)
     }
@@ -161,10 +194,10 @@ private struct UpdateBannerPrimaryButton: View {
     let label: Color
     let gradient: Bool
     let base: Color
-    let action: () -> Void
+    let stop: UpdateBannerKeyStop
 
     var body: some View {
-        Button(action: action) {
+        Button(action: stop.press) {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
@@ -173,6 +206,7 @@ private struct UpdateBannerPrimaryButton: View {
         }
         .buttonStyle(Style(dark: dark, label: label, gradient: gradient, base: base))
         .animation(.easeOut(duration: 0.1), value: gradient)
+        .updateBannerKeyStop(stop)
     }
 
     private struct Style: ButtonStyle {

@@ -14,15 +14,20 @@ final class UpdateCompleteCard: NSView {
     private let model = UpdateCompleteModel()
     private var hosting: NSHostingController<UpdateCompleteBanner>!
     private var measured: (width: CGFloat, height: CGFloat)?
+    // Round, so its ring follows the card corner it sits in.
+    private let close = UpdateBannerKeyStop(label: "Dismiss", cornerRadius: 12)
+    private let whatsNew = UpdateBannerKeyStop(label: "See What’s New", cornerRadius: 4)
+    private let share = UpdateBannerKeyStop(label: "Share Parc", cornerRadius: 4)
     override var isFlipped: Bool { true }
-    var keyViewControls: [NSView] { [hosting.view] }
+    /// The header's close button, then the rows: the banner's visual order.
+    var keyViewControls: [NSView] { [close, whatsNew, share] }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        model.seeWhatsNew = { [weak self] in self?.perform(self?.onSeeWhatsNew) }
-        model.share = { [weak self] in self?.perform(self?.onShare) }
-        model.dismiss = { [weak self] in self?.perform(self?.onDismiss) }
-        hosting = NSHostingController(rootView: UpdateCompleteBanner(model: model))
+        whatsNew.onPress = { [weak self] in self?.perform(self?.onSeeWhatsNew) }
+        share.onPress = { [weak self] in self?.perform(self?.onShare) }
+        close.onPress = { [weak self] in self?.perform(self?.onDismiss) }
+        hosting = NSHostingController(rootView: UpdateCompleteBanner(model: model, close: close, whatsNew: whatsNew, share: share))
         // The sidebar sizes the slot; the content must not add constraints.
         hosting.sizingOptions = []
         hosting.view.frame = bounds
@@ -36,7 +41,10 @@ final class UpdateCompleteCard: NSView {
         model.dark = palette.isDark
         model.gradientBase = Color(nsColor: UpdateCompleteModel.gradientBase(palette))
     }
-    func setInteractionEnabled(_ enabled: Bool) { model.interactive = enabled }
+    func setInteractionEnabled(_ enabled: Bool) {
+        model.interactive = enabled
+        for stop in [close, whatsNew, share] { stop.isEnabled = enabled }
+    }
     /// Asked on every sidebar layout while the banner occupies the slot.
     func preferredHeight(for width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
@@ -50,14 +58,66 @@ final class UpdateCompleteCard: NSView {
     }
 }
 
+/// A banner control's stop in the sidebar's key loop, native like the
+/// auto-archive card's controls: an empty borderless button laid over the
+/// SwiftUI control that draws only its focus ring, presses with Space, and
+/// is the control's VoiceOver element. SwiftUI keeps the pointer, so the
+/// stop is pressed only from the keyboard or VoiceOver.
+@MainActor
+final class UpdateBannerKeyStop: NSButton {
+    var onPress: () -> Void = {}
+    /// Set to take focus once SwiftUI next puts the stop in a window: the
+    /// controls a banner reveals arrive a view update after the change.
+    var takesFocusOnArrival = false
+    private let cornerRadius: CGFloat
+
+    init(label: String, cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: .zero)
+        title = ""
+        isBordered = false
+        // Its card enables it while the banner takes input.
+        isEnabled = false
+        target = self
+        action = #selector(press)
+        setAccessibilityLabel(label)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc func press() { onPress() }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard takesFocusOnArrival, let window else { return }
+        takesFocusOnArrival = false
+        window.makeFirstResponder(self)
+    }
+
+    struct Slot: NSViewRepresentable {
+        let stop: UpdateBannerKeyStop
+        func makeNSView(context: Context) -> UpdateBannerKeyStop { stop }
+        func updateNSView(_ nsView: UpdateBannerKeyStop, context: Context) {}
+        func sizeThatFits(_ proposal: ProposedViewSize, nsView: UpdateBannerKeyStop, context: Context) -> CGSize? {
+            proposal.replacingUnspecifiedDimensions()
+        }
+    }
+}
+
+extension View {
+    /// Covers this control with its key stop, which speaks for it to VoiceOver.
+    func updateBannerKeyStop(_ stop: UpdateBannerKeyStop) -> some View {
+        accessibilityHidden(true).overlay { UpdateBannerKeyStop.Slot(stop: stop).allowsHitTesting(false) }
+    }
+}
+
 @MainActor
 final class UpdateCompleteModel: ObservableObject {
     @Published var dark = false
     @Published var interactive = false
     @Published var gradientBase = Color.accentColor
-    var seeWhatsNew: () -> Void = {}
-    var share: () -> Void = {}
-    var dismiss: () -> Void = {}
 
     /// `ButtonBackground` fills from the theme palette and falls back to a
     ///
@@ -76,21 +136,24 @@ final class UpdateCompleteModel: ObservableObject {
 
 struct UpdateCompleteBanner: View {
     @ObservedObject var model: UpdateCompleteModel
+    let close: UpdateBannerKeyStop
+    let whatsNew: UpdateBannerKeyStop
+    let share: UpdateBannerKeyStop
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 8) {
             UpdateBannerHeader(title: "Update Complete!", dark: model.dark, sparkles: !reduceMotion, sparkleColor: model.gradientBase,
-                               close: model.dismiss)
+                               close: close)
             VStack(alignment: .leading) {
                 //
                 //
                 UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark,
                                 gradient: hovered && model.interactive && !reduceMotion, base: model.gradientBase,
-                                action: model.seeWhatsNew)
+                                stop: whatsNew)
                 UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark,
-                                gradient: false, base: model.gradientBase, action: model.share)
+                                gradient: false, base: model.gradientBase, stop: share)
             }
             .padding(.horizontal, 8)
         }
@@ -128,7 +191,7 @@ struct UpdateBannerHeader: View {
     let sparkles: Bool
     let sparkleColor: Color
     ///
-    let close: (() -> Void)?
+    let close: UpdateBannerKeyStop?
     /// Collapsed, the header is the whole banner: its own fill, no divider.
     var expanded = true
     var hovered = false
@@ -145,7 +208,7 @@ struct UpdateBannerHeader: View {
                 label.frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, minHeight: 24)
-            if let close { UpdateBannerCloseButton(dark: dark, action: close) }
+            if let close { UpdateBannerCloseButton(dark: dark, stop: close) }
         }
         .overlay(alignment: .bottom) {
             if expanded {
@@ -189,10 +252,10 @@ struct UpdateBannerHeader: View {
 ///
 private struct UpdateBannerCloseButton: View {
     let dark: Bool
-    let action: () -> Void
+    let stop: UpdateBannerKeyStop
     @State private var hovered = false
     var body: some View {
-        Button(action: action) {
+        Button(action: stop.press) {
             ZStack {
                 CloseButtonPlate()
                     .fill((dark ? Color.white : .black).opacity(dark ? 0.15 : 0.1))
@@ -208,7 +271,7 @@ private struct UpdateBannerCloseButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-        .accessibilityLabel("Dismiss")
+        .updateBannerKeyStop(stop)
     }
 }
 
@@ -241,11 +304,11 @@ struct UpdateBannerRow: View {
     let gradient: Bool
     let base: Color
     var alignment = Alignment.leading
-    let action: () -> Void
+    let stop: UpdateBannerKeyStop
     @State private var hovered = false
 
     var body: some View {
-        Button(action: action) {
+        Button(action: stop.press) {
             label
                 .opacity(gradient ? 0 : 1)
                 .overlay {
@@ -264,6 +327,7 @@ struct UpdateBannerRow: View {
         .opacity(hovered ? 1 : 0.75)
         .animation(.easeOut(duration: 0.1), value: [hovered, gradient])
         .onHover { hovered = $0 }
+        .updateBannerKeyStop(stop)
     }
 
     private var label: some View {

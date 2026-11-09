@@ -2282,7 +2282,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         contentSurface.addSubview(updateReadyHost)
         updateReady.onRestart = { [weak self] in self?.onRestartAndUpdate?() }
         updateReady.onToggleAutomaticUpdates = { [weak self] in self?.onToggleAutomaticUpdates?() }
-        updateReady.onHeightChange = { [weak self] in self?.needsLayout = true }
+        // Opening or closing it also changes its key stops.
+        updateReady.onHeightChange = { [weak self] in self?.setNeedsKeyViewLinking() }
         updateReadyHost.onLayoutChanged = { [weak self] in self?.setNeedsKeyViewLinking() }
         updateReadyHost.onInteractionChanged = { [weak self] enabled in
             self?.updateReady.setInteractionEnabled(enabled)
