@@ -280,8 +280,9 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   copies, bookmark export, the Archive, folder previews and the back/forward
   list omit it. At session load, a saved address of another install's page
   opens this build's page when that bundle's `Info.plist` still says
-  `org.parc.Browser`. Chromium's own History page and captures of the page
-  still carry the file address.
+  `org.parc.Browser`. Its captures have no source address
+  (`PageCaptureController`), so Messages and the Capture Library share only
+  the image. Chromium's own History page still lists the file address.
 - **Feed.** Every release publishes the feed the embedded Sparkle reads,
   `SUFeedURL` = `parc-releases/releases/latest/download/appcast.xml`
   (`scripts/sparkle.py`). The release's appcast stage (`scripts/appcast.py`)

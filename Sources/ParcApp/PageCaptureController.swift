@@ -22,6 +22,8 @@ final class PageCaptureController: NSObject {
     private var savedCapture: SavedCapture?
     private var libraryWriteInProgress = false
     private let lease: PCNativePageCapture
+    // What's New is a path into the app, so its captures have no source address.
+    private var sourceURL: String { WhatsNewPage.presented(lease.sourceURL) }
     private let valid: () -> Bool
     private let finished: (Bool) -> Void
     private let easelDestinations: () throws -> [CaptureEaselDestination]
@@ -322,7 +324,7 @@ final class PageCaptureController: NSObject {
         overlay.setFramed(image.frame != nil)
         overlay.showPreview(image.pixels, sourceRect: capturePreviewRect)
         overlay.setMessageAvailable(CaptureMessageSharing.isAvailable(for:
-            CaptureMessagePayload(png: image.pngData, sourceAddress: lease.sourceURL)))
+            CaptureMessagePayload(png: image.pngData, sourceAddress: sourceURL)))
         refreshEaselDestinations()
         if changed {
             libraryNeedsUpdate = savedCapture != nil
@@ -408,7 +410,7 @@ final class PageCaptureController: NSObject {
     private func placeOnEasel(_ id: UUID?) {
         guard destination?.allowsEasels == true, let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil else { return }
         state = .output
-        var input = EaselImageInput(pngData: pngData, sourceURL: URL(string: lease.sourceURL),
+        var input = EaselImageInput(pngData: pngData, sourceURL: URL(string: sourceURL),
                                    pageTitle: lease.pageTitle, valid: { [weak self] in
             guard let self else { return false }
             return self.state != .finished && self.valid() && self.lease.isValid
@@ -433,7 +435,7 @@ final class PageCaptureController: NSObject {
     private func shareMessage() {
         guard let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil,
               messageSharing == nil else { return }
-        guard let payload = CaptureMessagePayload(png: pngData, sourceAddress: lease.sourceURL),
+        guard let payload = CaptureMessagePayload(png: pngData, sourceAddress: sourceURL),
               let sharing = CaptureMessageSharing(payload: payload, parent: parent,
             sourceView: overlay, sourceRect: overlay.imageRect, completion: { [weak self] outcome in
                 guard let self, self.state == .output, self.messageSharing != nil else { return }
@@ -460,7 +462,7 @@ final class PageCaptureController: NSObject {
         guard let reservation = destination.reserve() else { overlay.showError("The profile is no longer available."); return }
         let id = captureID
         let input = destination.input(id: id, expectedRevision: savedCapture?.revision, capturedAt: capturedAt,
-            title: lease.pageTitle, sourceURL: lease.sourceURL, kind: captureKind, pngData: pngData)
+            title: lease.pageTitle, sourceURL: sourceURL, kind: captureKind, pngData: pngData)
         libraryWriteInProgress = true; overlay.setLibraryBusy(true)
         // The user's explicit save transfers these immutable bytes into the
         // durable catalog. Closing the page cannot revoke a committed save.
