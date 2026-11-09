@@ -333,7 +333,8 @@ final class MembershipCardView: NSView {
     ///
     ///
     func squish() {
-        guard canAnimate else { return }
+        // A second Randomize mid-squish would restart it from 1, a visible snap.
+        guard canAnimate, squishLayer.animation(forKey: "squish") == nil else { return }
         let step = 1.0 / 120
         let squish = CAKeyframeAnimation(keyPath: "transform.scale")
         let values = Self.squishCurve(step: step)

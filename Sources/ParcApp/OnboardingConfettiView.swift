@@ -127,8 +127,10 @@ final class OnboardingConfettiView: NSView {
             guard let self else { return }
             self.pending = nil
             // The delayed writer re-reads Reduce Motion when it runs.
-            guard let window = self.window, window.isVisible, !self.isHiddenOrHasHiddenAncestor,
-                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            // A minimised or not-yet-shown window gets its burst once it is seen.
+            guard let window = self.window, window.isVisible, !window.isMiniaturized,
+                  !self.isHiddenOrHasHiddenAncestor else { self.fire(after: 0.25); return }
             self.hasFired = true
             self.burst()
         }

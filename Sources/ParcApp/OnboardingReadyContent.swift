@@ -157,8 +157,8 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
 
     private func randomizeCard() {
         guard actionWindow != nil else { return }
-        card.squish()
-        do { try cards?.regenerate() }
+        guard let cards else { return }
+        do { try cards.regenerate(); card.squish() }
         catch { report(error.localizedDescription) }
     }
 
