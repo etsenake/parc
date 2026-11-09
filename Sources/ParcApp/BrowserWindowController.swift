@@ -535,8 +535,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.libraryView == nil && self.pageCapture == nil && self.selectedNativePage() === page
     }, display: { [weak self] selection in
         guard let self else { return }
+        // A quote's link is the page's address, which What's New doesn't have.
         guard let selection, let page = self.selectedNativePage(), self.commandBar == nil,
-              self.libraryView == nil, self.pageCapture == nil, !self.isClosing, !self.wholeWindowClose else {
+              self.libraryView == nil, self.pageCapture == nil, !self.isClosing, !self.wholeWindowClose,
+              !WhatsNewPage.matches(page.url?.absoluteString ?? "") else {
             self.sidebar.updateSharedQuote(action: nil); return
         }
         self.sidebar.updateSharedQuote { [weak self, weak page] in
