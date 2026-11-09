@@ -28,6 +28,23 @@ def parse(message):
             "breaking": bool(match["breaking"] or BREAKING.search(body))}
 
 
+def undone(subject):
+    """("Revert" or "Reapply", the original subject) for git's own revert subjects, else (None, subject).
+
+    Each Revert layer undoes the one inside it: git 2.43+ reverts Revert "S" as Reapply "S", older git as
+    Revert "Revert "S"".
+    """
+    layers = []
+    undo = UNDO.fullmatch(subject)
+    while undo:
+        layers.append(undo[1])
+        subject = undo[2]
+        undo = UNDO.fullmatch(subject)
+    if not layers:
+        return None, subject
+    return ("Revert" if layers.count("Revert") % 2 else "Reapply"), subject
+
+
 def last_release(repo, revision):
     """The newest release tag revision contains; a superseded run's version commit has none."""
     return subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*", revision],
@@ -37,25 +54,27 @@ def last_release(repo, revision):
 def changes(repo, since, until):
     """Parsed commits in since..until, oldest first, without merges or unparseable subjects.
 
-    git's own Revert "subject" cancels that change within the range; Reapply "subject" restores it.
+    git's own Revert "subject" cancels that change and Reapply "subject" restores it.
     """
     log = subprocess.run(["git", "log", "-z", "--no-merges", "--reverse", "--format=%B", since + ".." + until],
                          cwd=repo, capture_output=True, text=True, check=True).stdout
     found, cancelled = [], {}
     for message in log.split("\0"):
-        subject = message.strip().partition("\n")[0].strip()
-        undo = UNDO.fullmatch(subject)
-        if undo and undo[1] == "Revert":
-            reverted = [index for index, (original, _) in enumerate(found) if original == undo[2]]
+        action, original = undone(message.strip().partition("\n")[0].strip())
+        if action == "Revert":
+            reverted = [index for index, (subject, _) in enumerate(found) if subject == original]
             if reverted:
-                cancelled[undo[2]] = found.pop(reverted[-1])[1]
+                cancelled[original] = found.pop(reverted[-1])[1]
+            else:
+                # The change shipped before this range, so reapplying it here ships nothing new.
+                cancelled.setdefault(original, None)
             continue
-        if undo:
-            change = cancelled.pop(undo[2], None) or parse(undo[2])
+        if action:
+            change = cancelled.pop(original) if original in cancelled else parse(original)
         else:
             change = parse(message)
         if change:
-            found.append((subject, change))
+            found.append((original, change))
     return [change for _, change in found]
 
 

@@ -144,6 +144,28 @@ class History(unittest.TestCase):
         self.commit('Revert "Reapply "feat(sidebar): Pin tabs""')
         self.assertEqual(notes.bump(notes.changes(self.root, 'v1.0.0', 'HEAD')), 'patch')
 
+    def test_git_before_2_43_reverting_a_revert_reapplies(self):
+        self.commit('feat: Pin tabs'); self.commit('Revert "feat: Pin tabs"')
+        self.commit('Revert "Revert "feat: Pin tabs""')
+        self.assertEqual([item['summary'] for item in notes.changes(self.root, 'v1.0.0', 'HEAD')], ['Pin tabs'])
+        # git 2.43+ leaves a revert of that form nested, and either git may write it.
+        self.commit('Revert "Revert "Revert "feat: Pin tabs"""')
+        self.assertEqual(notes.changes(self.root, 'v1.0.0', 'HEAD'), [])
+
+    def test_a_repeated_revert_keeps_the_change_to_reapply(self):
+        self.commit('feat: Pin tabs'); self.commit('Revert "feat: Pin tabs"'); self.commit('Revert "feat: Pin tabs"')
+        self.commit('Reapply "feat: Pin tabs"')
+        self.assertEqual([item['summary'] for item in notes.changes(self.root, 'v1.0.0', 'HEAD')], ['Pin tabs'])
+
+    def test_undoing_a_change_from_an_earlier_release(self):
+        self.commit('feat: Pin tabs'); self.git('tag', 'v1.1.0')
+        self.commit('Revert "feat: Pin tabs"'); self.commit('Revert "Revert "feat: Pin tabs""')
+        self.assertEqual(notes.changes(self.root, 'v1.1.0', 'HEAD'), [])
+        self.commit('Revert "Reapply "feat: Pin tabs""'); self.git('tag', 'v1.1.1')
+        # Pin tabs was out of 1.1.1, so restoring it ships again whatever depth git wrote.
+        self.commit('Reapply "Reapply "feat: Pin tabs""')
+        self.assertEqual([item['summary'] for item in notes.changes(self.root, 'v1.1.1', 'HEAD')], ['Pin tabs'])
+
     def test_last_release_skips_untagged_versions(self):
         self.commit('chore(release): 1.0.1'); self.commit('feat: Add')
         self.assertEqual(notes.last_release(self.root, 'HEAD'), 'v1.0.0')

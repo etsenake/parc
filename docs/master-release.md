@@ -16,7 +16,8 @@ The earlier one-night wait was coordination, not a feature of this command.
 
 Commit subjects follow Conventional Commits (see `AGENTS.md`). The release reads
 the commits since the newest published `v*` tag on main, ignoring merges and
-subjects that don't parse; git's own `Revert "…"` cancels the change it reverts.
+subjects that don't parse; git's own `Revert "…"` cancels the change it reverts
+and `Reapply "…"` (`Revert "Revert "…""` from git before 2.43) restores it.
 A breaking change (`type!:` or a `BREAKING CHANGE:` footer) makes a major
 release, any `feat` a minor one and any `fix` or `perf` a patch. With none of
 those the command prints `Nothing to release since vX` and exits successfully
