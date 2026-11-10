@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 648,
+  "version": 649,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -390,7 +390,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_application.mm",
-      "sha256": "436e5d13919f9189d5b1475a30f36daf33cbf006a16cbfcc9ba17c9594666531"
+      "sha256": "d8fb377d236ae470be62abf781ae1d5630ae3dd976a6dc141b620c15050505e3"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -1971,6 +1971,11 @@
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_toolbox_mpeg_video_decoder_unittest.cc",
       "target": "media/gpu/mac/parc_video_toolbox_mpeg_video_decoder_unittest.cc",
       "sha256": "c90bbe16f3b20dee7e5f0a48609551ab3fac61a9d75fb81083637e3428b64519"
+    },
+    {
+      "source": "Engine/ParcHost/integration/parc_branding.py",
+      "target": "tools/grit/grit/parc_branding.py",
+      "sha256": "1e3a20bff2c9bd6f6552acc03f0c375dc08a94e640637801b38ead2d7460a47c"
     }
   ],
   "patches": [
@@ -6269,6 +6274,27 @@
           "target": "content/browser/media/session/media_session_impl_service_routing_unittest.cc",
           "before_sha256": "a6510a0d676bff61605371291263a978ae29c96652629bc248907c1c87a1acec",
           "after_sha256": "f86e2ced95499658d4698e3bbb5337567745c79602b4cacd5581d64b78cc3fe6"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/product-name.patch",
+      "sha256": "366fc2563059c114b4c88595a7bbaa604f0c2710da60dad736a2ba4ecf3c300b",
+      "files": [
+        {
+          "target": "tools/grit/grit/node/message.py",
+          "before_sha256": "1a6ffe8f4619b502ac58fdd27ab5635548ce63636d7d1a6aa10bc9d013605dec",
+          "after_sha256": "e5782cbaf5673bc46ce7eaf72bde784b75e0bfcb4c3599027162b5539bc254a5"
+        },
+        {
+          "target": "tools/grit/grit.pydeps",
+          "before_sha256": "331ddd9f36510eb43413b3229bef544220e48eee454be6342882734193b290fa",
+          "after_sha256": "d34c296cb93ffba01c7904570e34665a6645b139e7ef1be931ad65773dea76aa"
+        },
+        {
+          "target": "components/metrics/debug/field_trials.html",
+          "before_sha256": "d078838cae9e20cc368931f39ed51dd57a5309c32c0b2a92766ab277581f9bea",
+          "after_sha256": "45289fd15c738afacbdbf5fb591e88373f656efbae1d9a6d90d044ce6a1d6a49"
         }
       ]
     }

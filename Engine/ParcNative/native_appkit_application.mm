@@ -17,7 +17,6 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
-#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "cef/include/cef_browser_process_handler.h"
@@ -59,7 +58,6 @@
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/webui/current_channel_logo.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/prefs/pref_service.h"
@@ -975,8 +973,8 @@ class ContextHandler final : public CefRequestContextHandler {
     auto& record = Profiles().at(path_);
     if (!profile || profile->IsOffTheRecord() ||
         profile->GetPath().value() != path_) {
-      record.failure =
-          Error(@"Chromium did not create the requested persistent Profile.");
+      record.failure = Error(@"The browser engine did not create the requested "
+                             @"persistent Profile.");
       record.context = nullptr;
       auto callbacks = std::move(record.waiters);
       record.waiters.clear();
@@ -1064,8 +1062,8 @@ void WithProfile(
     record.context = context;
   }
   if (!context && !record.failure) {
-    record.failure =
-        Error(@"Chromium could not initialize the requested Profile.");
+    record.failure = Error(
+        @"The browser engine could not initialize the requested Profile.");
     auto callbacks = std::move(record.waiters);
     record.waiters.clear();
     for (auto& waiter : callbacks) {
@@ -1074,14 +1072,12 @@ void WithProfile(
   }
 }
 //
-//
-// mark, black on light pages and white on dark ones, both served by the
-// browser's chrome://theme. Parc's history page and toolbar do the same with
-// Parc's mark; the toolbar patch asks for current-channel-logo-white, which
-// ThemeSource serves as IDR_PRODUCT_LOGO_NAME_22_WHITE. Only the browser
-// process publishes this, once its context exists.
+// white on dark ones, both served by the browser's chrome://theme. Parc's
+// toolbar does the same with Parc's mark; the toolbar patch asks for
+// current-channel-logo-white, which ThemeSource serves as
+// IDR_PRODUCT_LOGO_NAME_22_WHITE. Only the browser process publishes this,
+// once its context exists.
 struct ProductBranding {
-  std::u16string history_menu_item;
   int light_logo = -1;
 };
 std::atomic<const ProductBranding*> product_branding{nullptr};
@@ -1091,10 +1087,6 @@ void PrepareProductBranding() {
     return;
   }
   auto* branding = new ProductBranding;
-  branding->history_menu_item =
-      l10n_util::GetStringUTF16(IDS_HISTORY_HISTORY_MENU_ITEM);
-  base::ReplaceSubstringsAfterOffset(&branding->history_menu_item, 0,
-                                     u"Chromium", u"Parc");
   // The light toolbar logo is chrome://theme/current-channel-logo, served by
   // the browser's ThemeSource.
   branding->light_logo = webui::CurrentChannelLogoResourceId();
@@ -1156,12 +1148,7 @@ ProductLogos MakeProductLogos() {
 class ProductBrandingHandler final : public CefResourceBundleHandler {
  public:
   bool GetLocalizedString(int string_id, CefString& string) override {
-    const auto* branding = product_branding.load(std::memory_order_acquire);
-    if (!branding || string_id != IDS_HISTORY_HISTORY_MENU_ITEM) {
-      return false;
-    }
-    string = branding->history_menu_item;
-    return true;
+    return false;
   }
   bool GetDataResource(int resource_id,
                        void*& data,

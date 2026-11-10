@@ -368,6 +368,21 @@ one, so every path that shows a page attaches it first, and every compositor
 is destroyed before `CefShutdown`. See
 [page compositing](../docs/page-compositing.md); not yet built or run.
 
+## Product name
+
+Chromium's string resources call the browser Chromium in about 620 English
+strings across six bundles, and in each translation. Grit names Parc instead
+as it emits each message (`integration/parc_branding.py`, hooked into
+`MessageNode.Translate` by `integration/product-name.patch`, overlay 649). That
+covers every locale and the inflected, misspelt and transliterated forms
+translators used, without forking the `.grd`/`.xtb` files or their message IDs.
+The Chromium Authors' copyright, links to the Chromium project, Chromium OS and
+Google's Chromebook and Chromecast devices keep their names.
+Identifiers stay as they are: the user agent, bundle IDs, keychain items, paths
+and preference keys. `tests/ProductName` fails on any translation that still names
+Chromium (it needs `PARC_ENGINE_WORKSPACE`), and on any Parc source string
+that does outside its reviewed list. Not yet built.
+
 ## Acceptance and migration
 
 Version 39 connects the real CEF source-page status callback to a page-owned

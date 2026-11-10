@@ -131,8 +131,8 @@ static void PCFinishEngineTermination(void* unused) {
   }
   if (result != PARC_ENGINE_START_READY) {
     return PCStartupFailure(
-        exitCode, [NSString stringWithFormat:@"The independent Chromium engine "
-                                             @"did not initialize (exit %d).",
+        exitCode, [NSString stringWithFormat:@"The browser engine did not "
+                                             @"initialize (exit %d).",
                                              exitCode]);
   }
   PCStarted = YES;
