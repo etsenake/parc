@@ -51,8 +51,8 @@ never treat these historical numbers as a new whole-product completion score.
 
 Reviewed on November 10, 2026:
 
-- Source version: **1.12.1**.
-- Latest completed delivery confirmed by local release receipts: **1.12.1**,
+- Source version: **1.12.2**.
+- Latest completed delivery confirmed by local release receipts: **1.12.2**,
   published November 10 with signed/notarized app and DMG,
   signed update feed and Homebrew cask. See [release operations](master-release.md).
 
