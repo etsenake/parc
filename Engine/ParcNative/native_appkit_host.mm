@@ -1306,9 +1306,14 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // its timers throttle. Chromium's own view tracking ignores a page until
       // it has seen it shown and re-reads only on its own triggers
       // (PageVisibilityWatch), so without this they rendered at full rate
-      // unseen.
+      // unseen. An arriving page is shown even when it reports VISIBLE: a
+      // new tab starts VISIBLE with its renderer view hidden until WasShown,
+      // which Chromium sends itself only once its occlusion check finds the
+      // window uncovered (WebContentsImpl::UpdateWebContentsVisibility). A
+      // tab opened by the click that brings Parc forward stayed blank.
       if (shown && !page_occluded &&
-          contents->GetVisibility() != content::Visibility::VISIBLE) {
+          (arriving ||
+           contents->GetVisibility() != content::Visibility::VISIBLE)) {
         contents->WasShown();
       } else if (shown && page_occluded &&
                  contents->GetVisibility() != content::Visibility::OCCLUDED) {

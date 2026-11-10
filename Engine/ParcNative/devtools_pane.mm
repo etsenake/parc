@@ -127,6 +127,7 @@ bool NativeDevToolsPane::Refresh(bool update_contents) {
     ++presentation_generation_;
     tools_observer_.reset();
     tools_ = tools ? tools->GetWeakPtr() : nullptr;
+    tools_shown_ = false;
     if (tools) {
       tools_observer_ =
           std::make_unique<ToolsObserver>(tools, weak_factory_.GetWeakPtr());
@@ -311,7 +312,12 @@ void NativeDevToolsPane::UpdateVisibility() {
   } else {
     HidePaneCompositor(*tools_);
   }
-  if (visible && tools_->GetVisibility() != content::Visibility::VISIBLE) {
+  // Tools arriving are shown even when they report VISIBLE, as pages are
+  // (AppKitBrowserHost::ApplyVisibility).
+  const bool arriving = visible && !tools_shown_;
+  tools_shown_ = visible;
+  if (visible &&
+      (arriving || tools_->GetVisibility() != content::Visibility::VISIBLE)) {
     tools_->WasShown();
   } else if (!visible &&
              tools_->GetVisibility() != content::Visibility::HIDDEN) {

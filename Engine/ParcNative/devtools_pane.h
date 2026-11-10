@@ -46,6 +46,8 @@ class NativeDevToolsPane final
   std::shared_ptr<NativeAuxiliaryPage> auxiliary_;
   uint64_t presentation_generation_ = 0;
   bool show_tools_ = false;
+  // Whether the last UpdateVisibility showed tools_.
+  bool tools_shown_ = false;
   bool detached_ = false;
   bool refreshing_ = false;
   base::WeakPtrFactory<NativeDevToolsPane> weak_factory_{this};
