@@ -136,7 +136,7 @@ def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: d
     engine.verify_workspace(workspace, lock, state, env)
     if not verify_overlay_inputs:
         return
-    manifest = repo / "Engine/ParcHost/overlay.json"
+    manifest = repo / ("Engine/ParcHost/overlay-direct.json" if engine.direct_mode(lock) else "Engine/ParcHost/overlay.json")
     expected = _sha(manifest.read_bytes())
     if state.get("overlay", {}).get("identity") != expected:
         raise Refusal("Snapshot overlay is stale for this repository")

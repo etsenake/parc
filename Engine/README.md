@@ -7,9 +7,9 @@ depot_tools; `ParcHost/overlay.json` records that integration. Direct Chromium
 uses [source-lock-direct.json](source-lock-direct.json), explicitly selected with
 `--lock-file`. It requires the separately integrated `ParcHost/overlay-direct.json`;
 this preparatory tool does not supply that manifest or the direct startup code.
-Keep the stopgap workspace intact: this slice accepts fresh direct workspaces,
-while retargeting to direct mode is guarded off. The coordinator promotes the
-direct lock to the canonical filename after the first direct build.
+The engine owner must complete the stopgap build before transitioning its clone.
+The coordinator promotes the direct lock to the canonical filename after the
+first direct build.
 
 For current delivery and unfinished product work, use
 [product status](../docs/parity.md). For an authorized production release, use
@@ -124,9 +124,28 @@ reuse the existing source, objects and caches; the reserve allows for delta
 fetches and replacement blocks, not a second full checkout. Neither floor value
 changes, and neither guarantees that an operation will fit.
 
-It verifies that only supported defines changed and preserves sources/objects.
-The next authorized build regenerates and compiles. Shipping planning, generation
-and building use one operation lock:
+To leave CEF, save the stopgap lock and select the direct lock explicitly:
+
+```sh
+cp Engine/source-lock.json "$PWD/work/stopgap-source-lock.json"
+python3 scripts/engine-source.py retarget --workspace /absolute/project/engine \
+  --lock-file "$PWD/Engine/source-lock-direct.json" \
+  --previous-lock "$PWD/work/stopgap-source-lock.json"
+```
+
+This transition requires a completed stopgap build and identical Chromium,
+depot_tools pins and storage policy. It uses the existing 40 GB build reserve,
+restores the verified overlay and CEF patches, moves the CEF checkout to
+`cef-retired/` beside `chromium/`, and removes only the `/cef/` Git exclude.
+Objects, caches and unrelated files survive. Both build receipts become unsealed;
+apply the direct overlay, generate and build using the same `--lock-file`.
+Direct-to-direct pin upgrades retain the strict recipe check and use the 80 GB
+sync reserve when dependency pins change. Returning to CEF through retarget is
+refused. An interrupted transition stays incomplete for explicit inspection,
+with its source and compiled objects preserved.
+
+Reconfiguration preserves sources/objects and requires generation before building.
+Shipping planning, generation and building use one operation lock:
 
 ```sh
 python3 scripts/engine-source.py shipping-plan --workspace /absolute/engine-source
@@ -166,10 +185,10 @@ upstream capabilities; it is not the production architecture.
 ## Native construction and startup source integration
 
 `ParcNative` contains the native factory, BrowserWindow, page delegate and
-source-owned presentation services. The source manifest maps these to the pinned
-CEF graph. `native_components`, `autofill_save_sessions` and `native_extensions`
-are shared production/test source sets; other engine-facing units belong to their
-actual CEF owners. The Swift/Objective-C facade uses the independent route.
+source-owned presentation services. The stopgap manifest maps these into CEF;
+the direct manifest installs them under `//parc/native`. `native_components`,
+`autofill_save_sessions` and `native_extensions` are shared production/test
+source sets. The Swift/Objective-C facade uses the independent route.
 
 Before teardown, close request gates, invalidate native associations, cancel
 pending UI and drain callbacks while Browser/Profile services remain alive.

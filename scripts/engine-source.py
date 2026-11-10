@@ -527,14 +527,19 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
             or any(p.is_symlink() for p in [previous_path, *previous_path.parents])):
         raise Refusal("Previous source lock must be an absolute non-symlink path")
     previous, previous_sha = load_lock(previous_path)
-    if direct_mode(lock) or direct_mode(previous):
-        raise Refusal("Direct retarget transition is not enabled yet")
+    transition = direct_mode(lock) and not direct_mode(previous)
+    if direct_mode(previous) and not direct_mode(lock):
+        raise Refusal("Direct workspaces cannot retarget back to CEF")
     def fixed(item):
         return {k: v for k, v in item.items() if k not in
                 {"chromium", "cef", "depot_tools", "references"}}
-    if previous_sha == lock_sha or fixed(previous) != fixed(lock):
+    if transition:
+        # Leaving CEF is separate from a Chromium/depot_tools upgrade.
+        if any(previous[k] != lock[k] for k in ("chromium", "depot_tools", "storage")):
+            raise Refusal("Direct transition requires identical Chromium/depot_tools pins and storage policy")
+    elif previous_sha == lock_sha or fixed(previous) != fixed(lock):
         raise Refusal("retarget requires changed pins with unchanged build settings and storage")
-    for name in locations(workspace):
+    for name in locations(workspace, lock):
         if previous[name]["url"] != lock[name]["url"]:
             raise Refusal("retarget cannot change repository origins")
     report = host_report(workspace, lock, "build")
@@ -549,9 +554,15 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         state = read_marker(workspace, previous_sha)
         if state.get("phase") not in {"synced", "generated", "built"}:
             raise Refusal("retarget requires a recorded good source phase")
+        if transition and state["phase"] != "built":
+            raise Refusal("Complete the stopgap build before transitioning to direct mode")
         env = environment(workspace, previous, state["symbol_level"])
         verify_workspace(workspace, previous, state, env)
-        reserve = retarget_reserve(workspace, previous, lock, env)
+        if direct_mode(lock):
+            unchanged = all(previous[k] == lock[k] for k in ("chromium", "depot_tools"))
+            reserve = "build" if unchanged else "sync"
+        else:
+            reserve = retarget_reserve(workspace, previous, lock, env)
         report = host_report(workspace, lock, reserve)
         if report["blockers"]:
             raise Refusal("; ".join(report["blockers"]))
@@ -564,6 +575,20 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         shipping = None
         if shipping_path.exists():
             shipping = read_shipping_marker(workspace, previous_sha, state)
+        retired = internal_path(workspace / "cef-retired", workspace)
+        cef = internal_path(locations(workspace)["cef"], workspace)
+        exclude = internal_path(locations(workspace)["chromium"] / ".git/info/exclude", workspace)
+        shipping_args = None
+        if transition:
+            if retired.exists():
+                raise Refusal("Retired CEF destination already exists; preserved without transition")
+            if shipping is not None:
+                args_path = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION / "args.gn", workspace)
+                if not args_path.is_file():
+                    raise Refusal("Shipping output exists without its generated arguments")
+                if digest(args_path.read_bytes()) != shipping.get("args_sha256"):
+                    raise Refusal("Shipping arguments differ from their receipt")
+                shipping_args = shipping_arguments(workspace, shipping_environment(workspace, lock, state["symbol_level"]), lock)
         active = dict(state, phase="retarget-in-progress", retarget_lock_sha256=lock_sha)
         write_marker(workspace, active)
         if shipping is not None:
@@ -576,26 +601,40 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         for relative in state["repositories"]:
             path = internal_path(workspace / relative, workspace)
             run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."], path, env)
+        if transition:
+            # Preserve the verified CEF checkout without hiding it inside src.
+            cef.rename(retired)
+            if exclude.exists():
+                lines = exclude.read_text().splitlines(keepends=True)
+                write_source(exclude, "".join(line for line in lines if line.strip() != "/cef/").encode(), exclude.stat().st_mode & 0o777)
         plan = command_plan(workspace, lock, 4)
         env = environment(workspace, lock, state["symbol_level"])
         for index, command in enumerate(plan["sync"]):
-            if index < 12 and index % 4 not in {2, 3}:
+            if index < 4 * len(repository_names(lock)) and index % 4 not in {2, 3}:
                 continue
-            if index >= 12:
+            if index >= 4 * len(repository_names(lock)):
                 for name, path in locations(workspace, lock).items():
                     verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
             run(command["argv"], Path(command["cwd"]), env)
         # CEF's full patch set is normally applied by project generation. Apply
         # it explicitly here without generating or touching compiled outputs.
-        run([sys.executable, str(locations(workspace)["cef"] / "tools/patcher.py")],
-            locations(workspace)["cef"], env)
+        if not direct_mode(lock):
+            run([sys.executable, str(locations(workspace)["cef"] / "tools/patcher.py")],
+                locations(workspace)["cef"], env)
         repositories = synced_repositories(workspace, lock)
         for name, path in locations(workspace, lock).items():
             verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
-        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error"}}
+        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error", "engine_mode", "args_sha256", "build_targets"}}
         active.update(lock_sha256=lock_sha, phase="synced", repositories=repositories,
                       source_fingerprint=tree_fingerprint(workspace, env, repositories))
+        if direct_mode(lock):
+            active["engine_mode"] = "direct"
         if shipping is not None:
+            if shipping_args is not None:
+                write_source(args_path, shipping_args, args_path.stat().st_mode & 0o777)
+                shipping.update(args_sha256=digest(shipping_args), engine_mode="direct",
+                                build_targets=lock["build"]["targets"],
+                                effective_gn_defines=shipping_environment(workspace, lock, state["symbol_level"])["GN_DEFINES"])
             shipping.update(lock_sha256=lock_sha, phase="reconfigured",
                             source_fingerprint=active["source_fingerprint"], overlay=None)
             write_marker(workspace, shipping, SHIPPING_MARKER)
@@ -685,6 +724,12 @@ def tree_fingerprint(workspace: Path, env: dict, repositories: list[str]) -> str
 
 
 def verify_workspace(workspace: Path, lock: dict, state: dict, env: dict) -> None:
+    if direct_mode(lock):
+        if locations(workspace)["cef"].exists():
+            raise Refusal("Direct workspace still contains a CEF checkout")
+        exclude = internal_path(locations(workspace)["chromium"] / ".git/info/exclude", workspace)
+        if exclude.exists() and "/cef/" in [line.strip() for line in exclude.read_text().splitlines()]:
+            raise Refusal("Direct workspace still hides CEF in Git excludes")
     config = internal_path(workspace / "chromium/.gclient", workspace)
     if config.is_symlink() or config.read_text() != gclient_text(lock):
         raise Refusal("gclient configuration changed")
