@@ -4,8 +4,20 @@
 repository's `release-notes.json` and bundles the result as
 `Contents/Resources/WhatsNew.html`. It's one self-contained file: the font, the
 Parc mark, the grain texture and the favicon are inlined once each, and its
-Content-Security-Policy allows no scripts or network loads.
+Content-Security-Policy allows no network loads and no script but its own
+inline `WhatsNew.js`, by hash.
 A missing `release-notes.json` renders the empty state.
+
+Under the current release, a timeline lists every earlier release; each row
+opens to its notes. See What's New opens the page at `#from=1.7.0&to=1.9.0`,
+the versions the update replaced and installed. When `to` is this page's
+version, `WhatsNew.js` tags the releases after `from` as new to you, rings
+`from` and shows the skipped-releases note, whose link opens those rows. A tab
+restored after a later update keeps its old range, which no longer matches, so
+it shows the plain page. Help ▸ Release Notes opens the page without a range. Every line the
+timeline says is in `COPY` in `scripts/whats_new.py`. Releases 1.0.0 to 1.8.2
+came before release notes: `release-notes.json` lists them with their tags'
+dates and no changes, so they show the no-notes line.
 
 Preview it with the sample history:
 

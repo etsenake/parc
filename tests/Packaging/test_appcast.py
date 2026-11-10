@@ -45,11 +45,13 @@ class RenderTests(unittest.TestCase):
                     {"type": "fix", "scope": None, "summary": "Keep <b> titles", "breaking": False},
                     {"type": "feat", "scope": "updates", "summary": "Install updates", "breaking": True}]},
                 {"version": "1.8.2", "build": 22, "date": "2026-11-08", "changes": [
-                    {"type": "feat", "scope": None, "summary": "Older", "breaking": False}]}]}))
+                    {"type": "feat", "scope": None, "summary": "Older", "breaking": False}]},
+                {"version": "1.8.1", "build": 21, "date": "2026-11-08", "changes": []}]}))
             html = appcast.notes(path, "1.9.0")
             self.assertLess(html.index("Heads up"), html.index("Fixed"))
             self.assertIn("<li>Keep &lt;b&gt; titles</li>", html)
             self.assertNotIn("Older", html)
+            self.assertEqual(appcast.notes(path, "1.8.1"), '<p class="quiet">Small fixes and improvements.</p>')
             with self.assertRaisesRegex(ValueError, "no release 2.0.0"):
                 appcast.notes(path, "2.0.0")
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'sha256-$script_hash'">
 <title>What’s New in Parc</title>
 <link rel="icon" href="data:image/png;base64,$favicon">
 <style>
@@ -21,7 +21,9 @@
   --text: rgb(16 14 34 / 0.78);
   --muted: rgb(16 14 34 / 0.5);
   --rule: rgb(16 14 34 / 0.16);
+  --hover: rgb(16 14 34 / 0.04);
   --new: #3139FB;
+  --new-wash: rgb(49 57 251 / 0.09);
   --fixed: #D9263B;
   --faster: #00807C;
   --heads-up: #F5E8C7;
@@ -38,7 +40,9 @@
     --text: rgb(255 252 236 / 0.78);
     --muted: rgb(255 252 236 / 0.5);
     --rule: rgb(255 252 236 / 0.16);
+    --hover: rgb(255 252 236 / 0.05);
     --new: #7A80FF;
+    --new-wash: rgb(122 128 255 / 0.14);
     --fixed: #FF6B7A;
     --faster: #2CC7C1;
     --heads-up: rgb(245 232 199 / 0.1);
@@ -111,7 +115,7 @@ main {
   color: var(--ink);
 }
 
-.latest li { font-size: 17px; }
+.latest .group li { font-size: 17px; }
 
 .group + .group { margin-top: 32px; }
 
@@ -132,17 +136,17 @@ main {
   color: var(--accent);
 }
 
-ul { list-style: none; margin-top: 12px; }
+.group ul { list-style: none; margin-top: 12px; }
 
-li {
+.group li {
   position: relative;
   padding-left: 20px;
   text-wrap: pretty;
 }
 
-li + li { margin-top: 6px; }
+.group li + li { margin-top: 6px; }
 
-li::before {
+.group li::before {
   content: "";
   position: absolute;
   left: 2px;
@@ -163,28 +167,171 @@ li::before {
   mask: var(--line) left center / 20px 6px repeat-x;
 }
 
-.earlier > h2 {
-  font: italic 600 28px/1 var(--display);
+.skipped {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: -18px 0 40px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--new-wash);
   color: var(--ink);
-}
-
-.release {
-  display: grid;
-  grid-template-columns: 168px 1fr;
-  gap: 32px;
-  margin-top: 44px;
   font-size: 15px;
 }
 
-.release h3 {
-  font: italic 600 26px/1 var(--display);
+.skipped[hidden] { display: none; }
+
+.skipped a {
+  color: var(--new);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skipped a:hover { text-decoration: underline; }
+
+.earlier { scroll-margin-top: 40px; }
+
+.earlier > h2 {
+  font: italic 600 40px/1 var(--display);
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
-.release .date { margin-top: 10px; }
-.release .group + .group { margin-top: 22px; }
-.release .label { font-size: 17px; }
-.release ul { margin-top: 10px; }
+.earlier > p {
+  margin-top: 12px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.timeline {
+  list-style: none;
+  margin-top: 36px;
+  --dot: 28px;
+}
+
+/* Each release draws its own stretch of the rail, so the stretch from this
+   version down to the one you updated from can turn blue. */
+.step {
+  position: relative;
+  padding-left: 36px;
+}
+
+.step::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--rule);
+}
+
+.step:first-child::before { top: var(--dot); }
+.step:last-child::before { bottom: auto; height: var(--dot); }
+
+.step::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: calc(var(--dot) - 5px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
+.current:has(+ .unseen, + .previous)::before, .unseen::before { background: var(--new); }
+.previous::before { background: linear-gradient(var(--new) 0 var(--dot), var(--rule) 0); }
+.unseen::after { background: var(--new); box-shadow: none; }
+.previous::after { box-shadow: inset 0 0 0 2.5px var(--new); }
+
+.current::after {
+  left: 1px;
+  top: calc(var(--dot) - 6px);
+  width: 12px;
+  height: 12px;
+  background: var(--new);
+  box-shadow: 0 0 0 5px var(--new-wash);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: calc(var(--dot) * 2);
+  margin-left: -12px;
+  padding: 0 12px;
+  border-radius: 12px;
+}
+
+.current .row { padding-right: 38px; }
+
+summary.row {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+summary.row::-webkit-details-marker { display: none; }
+summary.row:hover { background: var(--hover); }
+summary.row:focus-visible { outline: 2px solid var(--new); outline-offset: -2px; }
+
+.version {
+  min-width: 64px;
+  font: italic 600 30px/1 var(--display);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.tag {
+  padding: 5px 9px;
+  border-radius: 99px;
+  font: 600 11px/1 var(--body);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.current .tag { background: var(--new); color: #FFFCEC; }
+.unseen .tag { background: var(--new-wash); color: var(--new); }
+.previous .tag { box-shadow: inset 0 0 0 1px var(--rule); color: var(--muted); }
+
+.glance {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.row .date {
+  width: 148px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chevron {
+  width: 14px;
+  height: 14px;
+  background: var(--muted);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 5.25 7 9.25l4-4' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+  transition: rotate 0.2s ease;
+}
+
+details[open] .chevron { rotate: 180deg; }
+
+.notes {
+  padding: 6px 0 30px;
+  font-size: 15px;
+}
+
+.notes .group + .group { margin-top: 22px; }
+.notes .label { font-size: 18px; }
+.notes .group ul { margin-top: 8px; }
+
 .quiet { color: var(--muted); }
 
 .empty {
@@ -215,7 +362,8 @@ li::before {
 @media (max-width: 640px) {
   .banner { padding: 56px 24px 78px; }
   main { padding: 56px 24px 0; }
-  .release { grid-template-columns: 1fr; gap: 16px; }
+  .glance { display: none; }
+  .row .date { margin-left: auto; width: auto; }
 }
 </style>
 </head>
@@ -227,5 +375,6 @@ li::before {
 <main>
 $content
 </main>
+<script>$script</script>
 </body>
 </html>
