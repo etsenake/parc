@@ -388,6 +388,23 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     stays ready and still installs on quit. A downloaded update whose window
     is dismissed with Remind me Later also stays ready: Sparkle keeps it, and
     installs it on quit once it has begun installing.
+  - **Steady download progress (Josh, November 9).** Sparkle's byte increments
+    accumulate in `SoftwareUpdateDownloadProgress`. The counter and bar use
+    one snapshot at most every 100 ms; pending refreshes are cancelled on
+    close, extraction, failure and a new transfer. The counter uses the total's
+    byte unit, padded fractional zeroes, equal-width digits and the completed
+    count's reserved width. Its decimal point and total stay in place as bytes
+    arrive. The native bar changes animation mode only when entering or
+    leaving indeterminate progress. An unknown size stays indeterminate and
+    shows only bytes downloaded; a later zero size does not erase a known
+    total. A corrected positive size is honored, so the fraction remains
+    consistent with the actual count and total. These are Parc display fixes,
+    retaining the recovered status layout and callback contract above.
+    `bash scripts/test-software-update.sh --inert` checks the session, automatic
+    update policy, byte counting and actual status controls without creating
+    windows or web views. The full script's release-notes layout test creates
+    a `WKWebView`, so it is excluded from the inert run. No live download or
+    on-screen motion acceptance is claimed.
     `--disable-software-updater` never start Sparkle: a disposable session
     shares the installed Parc's bundle identifier, defaults and Sparkle
     to update." error.

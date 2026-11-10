@@ -28,7 +28,7 @@
 | After listed | [Folders](#folders) | 65.2% | 34.8% | — | Available |
 | After listed | [Archive and history](#archive-and-history) | 70.6% | 29.4% | — | Available |
 | After listed | [Command bar](#command-bar) | 82.8% | 17.2% | +0.7 pp | Codex `codex/command-bar-polish` (reported command failures and appearance) |
-| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (scope: UPD08 added) | Claude `claude/updates-*` (claimed November 9) |
+| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (UPD04 progress correction) | Claude `claude/updates-*`; Codex root UPD04 progress fix (November 9) |
 | After listed | [Tab switcher](#tab-switcher) | 69.2% | 30.8% | — | Available |
 | After listed | [Peek](#peek) | 66.7% | 33.3% | — | Available |
 | Before polish | [Onboarding / complete first launch](#onboarding-and-complete-first-launch) | 75.0% | 25.0% | +2.8 pp | Cursor `cursor/document-close` (claimed October 31) |
@@ -74,6 +74,15 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 **Owner rule:** update this single table and the affected requirement rows in the same delivery. Record scope changes explicitly. Keep detailed evidence below; do not add separate percentage tables. Read [the collaboration guide](collaboration.md) for claims, repo-only communication, direct publication and shared-engine rules. Every owner ships directly to main; root integration is not a gate.
 
 ## Current ownership and handoffs
+
+- **November 9 updater progress correction — Codex root.** Josh reported the
+  download counter and bar jumping. Scope: `SoftwareUpdater.swift`,
+  `SoftwareUpdateWindow.swift`, the download-progress model and focused checks.
+  Byte updates are coalesced at 100 ms; the count reserves stable digit and
+  fractional widths; the bar's animation mode changes only at transitions.
+  Unknown-size downloads no longer appear complete. UPD04's requirements and
+  the family denominator are unchanged. Source/model/control checks only;
+  no app or browser was opened. Details: [software update](software-update.md#parc).
 
 - **Claude — Parc's name in engine strings (November 9).** Josh reported an
   extension menu reading "Remove from Chromium". Overlay 649 has grit name
@@ -6899,6 +6908,17 @@ and ZIP on the public latest release, against the
 `auto_updates true` ([master-release](master-release.md)). UPD05 builds on the
 [Updater API](software-update.md#updater-api). UPD04 is checked by compiler,
 model and layout tests only; per Josh, no build was launched.
+
+UPD04 progress correction (Josh, November 9): the bytes and bar share one
+cumulative snapshot, rendered at most ten times a second. Equal-width digits,
+padded decimals and a reserved completed-count width keep the label stationary;
+the native indicator no longer has its animation mode reset on every callback.
+Unknown sizes remain indeterminate. Focused inert regressions cover the reported
+202.8/227.5 MB case, digit boundaries, repeated/unknown size callbacks and stage
+transitions. All 164 session, automatic-update and progress checks pass, as do
+the whole-module warnings-as-errors typecheck and SIL. Restoring the old
+animation handling or dropping fractional zeroes makes the regressions fail.
+Actual download/window motion is not runtime-verified.
 
 auto-archive card's): Update Complete on the first launch after any update
 (Sparkle or Homebrew, gated by `ReleaseNotesLaunch`, nothing on a fresh

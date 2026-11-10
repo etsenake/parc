@@ -42,8 +42,8 @@ import Sparkle
     /// The update Sparkle reported, kept until its session ends so a
     /// scheduled find can be shown when the user asks for it.
     private var found: SUAppcastItem?
-    private var expectedLength: UInt64 = 0
-    private var receivedLength: UInt64 = 0
+    private var downloadProgress = SoftwareUpdateDownloadProgress()
+    private var pendingDownloadProgress: DispatchWorkItem?
 
     /// A disposable profile shares this app's bundle identifier, defaults and
     /// Sparkle installer with the installed Parc, so it never updates itself;
@@ -175,6 +175,7 @@ import Sparkle
             if case .readyToInstall = phase { installAndRelaunch() } else { session.cancel()?() }
         }
         window.onClose = { [weak self] in
+            self?.cancelDownloadProgressRefresh()
             self?.statusWindow = nil
             self?.session.statusClosed()?()
         }
@@ -184,6 +185,7 @@ import Sparkle
     }
 
     private func closeStatus() {
+        cancelDownloadProgressRefresh()
         statusWindow?.dismiss()
         statusWindow = nil
     }
@@ -270,30 +272,49 @@ extension SoftwareUpdater: SPUUserDriver {
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
         closeUpdateWindow()
+        cancelDownloadProgressRefresh()
         session.beginDownload(cancellation: cancellation)
-        expectedLength = 0
-        receivedLength = 0
+        downloadProgress = SoftwareUpdateDownloadProgress()
         status().show(status: "Downloading...", action: "Cancel", progress: nil)
     }
 
     func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
-        expectedLength = expectedContentLength
-        showDownloadProgress()
+        guard phase == .downloading else { return }
+        downloadProgress.expect(expectedContentLength)
+        scheduleDownloadProgressRefresh()
     }
 
     func showDownloadDidReceiveData(ofLength length: UInt64) {
-        receivedLength += length
-        showDownloadProgress()
+        guard phase == .downloading else { return }
+        downloadProgress.receive(length)
+        scheduleDownloadProgressRefresh()
     }
 
-    private func showDownloadProgress() {
-        let total = max(expectedLength, receivedLength)
-        let bytes = { (count: UInt64) in ByteCountFormatter.string(fromByteCount: Int64(clamping: count), countStyle: .file) }
-        statusWindow?.show(status: "\(bytes(receivedLength)) of \(bytes(total))", action: "Cancel",
-                           progress: total > 0 ? Double(receivedLength) / Double(total) : nil)
+    private func scheduleDownloadProgressRefresh() {
+        guard pendingDownloadProgress == nil, statusWindow != nil else { return }
+        // Network chunks can arrive much faster than a readable counter. Show
+        // the latest count at most ten times a second, without queuing frames.
+        let refresh = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pendingDownloadProgress = nil
+                guard self.phase == .downloading else { return }
+                let display = self.downloadProgress.display
+                self.statusWindow?.show(status: display.text, action: "Cancel", progress: display.fraction,
+                                       widthTemplate: display.widthTemplate)
+            }
+        }
+        pendingDownloadProgress = refresh
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: refresh)
+    }
+
+    private func cancelDownloadProgressRefresh() {
+        pendingDownloadProgress?.cancel()
+        pendingDownloadProgress = nil
     }
 
     func showDownloadDidStartExtractingUpdate() {
+        cancelDownloadProgressRefresh()
         session.beginPreparing()
         status().show(status: "Preparing…", action: "Cancel", progress: nil, enabled: false)
     }

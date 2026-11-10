@@ -230,54 +230,88 @@ private final class UpdaterButton: NSButton {
 /// installing, with a progress bar and one action button.
 @MainActor final class SoftwareUpdateStatusWindow: SoftwareUpdatePanel {
     var onAction: (() -> Void)?
-    private let status = SoftwareUpdatePanel.label("", font: NSFontManager.shared.convert(.systemFont(ofSize: 13), toHaveTrait: .boldFontMask),
-                                                   color: .labelColor)
-    private let progress = NSProgressIndicator()
-    private let action = UpdaterButton(title: "Cancel", filled: true)
+    private let content: SoftwareUpdateStatusView
 
     init() {
-        let content = NSView()
-        let icon = Self.icon(NSApp.applicationIconImage)
-        progress.style = .bar
-        progress.usesThreadedAnimation = true
-        progress.translatesAutoresizingMaskIntoConstraints = false
-        for view in [icon, status, progress, action] { content.addSubview(view) }
-        NSLayoutConstraint.activate([
-            icon.topAnchor.constraint(equalTo: content.topAnchor, constant: 54),
-            icon.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-            status.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 30),
-            status.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            status.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            progress.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 12),
-            progress.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 32),
-            progress.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
-            action.topAnchor.constraint(equalTo: progress.bottomAnchor, constant: 44),
-            action.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-        ])
+        content = SoftwareUpdateStatusView(icon: NSApp.applicationIconImage)
         super.init(content: content, size: NSSize(width: 270, height: 334), hidesOnDeactivate: true)
         window?.title = "Software Update"
-        action.target = self
-        action.action = #selector(actionClicked)
+        content.action.target = self
+        content.action.action = #selector(actionClicked)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func show(status text: String, action title: String, progress value: Double?, enabled: Bool = true,
+              widthTemplate: String? = nil) {
+        content.show(status: text, action: title, progress: value, enabled: enabled, widthTemplate: widthTemplate)
+    }
+
+    @objc private func actionClicked() { onAction?() }
+}
+
+/// The status content can be checked without creating a window or a web view.
+@MainActor final class SoftwareUpdateStatusView: NSView {
+    let status = SoftwareUpdatePanel.label("", font: .monospacedDigitSystemFont(ofSize: 13, weight: .bold),
+                                           color: .labelColor)
+    let progress: NSProgressIndicator
+    let action: NSButton = UpdaterButton(title: "Cancel", filled: true)
+    private var statusWidth: NSLayoutConstraint!
+    private var animating = false
+
+    init(icon image: NSImage, progress indicator: NSProgressIndicator? = nil) {
+        progress = indicator ?? NSProgressIndicator()
+        super.init(frame: NSRect(x: 0, y: 0, width: 270, height: 334))
+        let icon = SoftwareUpdatePanel.icon(image)
+        progress.style = .bar
+        progress.usesThreadedAnimation = true
+        progress.minValue = 0
+        progress.maxValue = 1
+        progress.translatesAutoresizingMaskIntoConstraints = false
+        statusWidth = status.widthAnchor.constraint(equalToConstant: 270)
+        for view in [icon, status, progress, action] { addSubview(view) }
+        NSLayoutConstraint.activate([
+            icon.topAnchor.constraint(equalTo: topAnchor, constant: 54),
+            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+            status.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 30),
+            status.centerXAnchor.constraint(equalTo: centerXAnchor),
+            statusWidth,
+            progress.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 12),
+            progress.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 32),
+            progress.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -32),
+            action.topAnchor.constraint(equalTo: progress.bottomAnchor, constant: 44),
+            action.centerXAnchor.constraint(equalTo: centerXAnchor),
+        ])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     /// A nil progress is indeterminate and animating.
-    func show(status text: String, action title: String, progress value: Double?, enabled: Bool = true) {
-        status.stringValue = text
-        action.title = title
-        action.isEnabled = enabled
+    func show(status text: String, action title: String, progress value: Double?, enabled: Bool = true,
+              widthTemplate: String? = nil) {
+        if status.stringValue != text { status.stringValue = text }
+        let alignment: NSTextAlignment = widthTemplate == nil ? .center : .right
+        if status.alignment != alignment { status.alignment = alignment }
+        let width = widthTemplate.map {
+            min(270, ceil(($0 as NSString).size(withAttributes: [.font: status.font!]).width) + 4)
+        } ?? 270
+        if statusWidth.constant != width { statusWidth.constant = width }
+        if action.title != title { action.title = title }
+        if action.isEnabled != enabled { action.isEnabled = enabled }
         if let value {
-            progress.stopAnimation(nil)
-            progress.isIndeterminate = false
-            progress.doubleValue = value * progress.maxValue
-        } else {
-            progress.isIndeterminate = true
+            if progress.isIndeterminate {
+                progress.stopAnimation(nil)
+                animating = false
+                progress.isIndeterminate = false
+            }
+            let fraction = value.isFinite ? min(1, max(0, value)) : 0
+            if progress.doubleValue != fraction { progress.doubleValue = fraction }
+        } else if !animating {
+            if !progress.isIndeterminate { progress.isIndeterminate = true }
             progress.startAnimation(nil)
+            animating = true
         }
     }
-
-    @objc private func actionClicked() { onAction?() }
 }
 
 ///
