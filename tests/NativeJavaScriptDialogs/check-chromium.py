@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check both dialog implementations with existing, real CEF ObjC++ flags.
+"""Check both dialog implementations with their real generated ObjC++ flags.
 
 No GN/Ninja, generation, downloads, linking or application execution. The source
 checkout is read-only; command records, diagnostics and caches stay in build/tests.
@@ -25,10 +25,12 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
     build = tree / "out" / args.output_name
-    flags_file = build / "obj/cef/libcef_static.ninja"
+    targets = {"presenter": "native_components", "manager": "native_javascript_dialogs"}
+    flags_files = {name: build / f"obj/parc/native/{target}.ninja"
+                   for name, target in targets.items()}
     compiler = tree / "third_party/llvm-build/Release+Asserts/bin/clang++"
-    if not compiler.is_file() or not flags_file.is_file():
-        parser.error("existing pinned compiler and generated libcef_static.ninja are required")
+    if not compiler.is_file() or not all(path.is_file() for path in flags_files.values()):
+        parser.error("existing pinned compiler and generated parc/native target ninja files are required")
 
     # Share the bounded Ninja literal reader. Import without writing __pycache__
     # into the repository's source directories.
@@ -41,20 +43,20 @@ def main():
     rule = re.search(r"^rule objcxx\n  command = (.+)$", toolchain_file.read_text(), re.MULTILINE)
     if not rule or "${cflags_objcc}" not in rule[1]:
         raise RuntimeError("Missing actual ObjC++ compiler rule")
-    # Unlike the cxx rule, pinned objcxx does not pass module_deps. Its system
-    # PCM is C++-only, despite being an order dependency of the object target.
-    flags = helper.flags_from(flags_file, language_flags="cflags_objcc",
-                              include_module_deps="${module_deps}" in rule[1])
-    if "-fobjc-arc" not in flags or "-Werror" not in flags:
-        raise RuntimeError("Expected real libcef ObjC++ ARC and warnings-as-errors settings")
 
     logs = repo / "build/tests/native-javascript-dialogs/chromium-syntax"
     logs.mkdir(parents=True, exist_ok=True)
-    flags = [f"-fcrash-diagnostics-dir={logs}" if flag.startswith("-fcrash-diagnostics-dir=")
-             else f"-fmodules-cache-path={logs / 'module-cache'}"
-             if flag.startswith("-fmodules-cache-path=") else flag for flag in flags]
     results = []
-    for name in ("presenter", "runner"):
+    for name, flags_file in flags_files.items():
+        # Unlike the cxx rule, pinned objcxx does not pass module_deps. Its system
+        # PCM is C++-only, despite being an order dependency of the object target.
+        flags = helper.flags_from(flags_file, language_flags="cflags_objcc",
+                                  include_module_deps="${module_deps}" in rule[1])
+        if "-fobjc-arc" not in flags or "-Werror" not in flags:
+            raise RuntimeError("Expected real ObjC++ ARC and warnings-as-errors settings")
+        flags = [f"-fcrash-diagnostics-dir={logs}" if flag.startswith("-fcrash-diagnostics-dir=")
+                 else f"-fmodules-cache-path={logs / 'module-cache'}"
+                 if flag.startswith("-fmodules-cache-path=") else flag for flag in flags]
         source = repo / f"Engine/ParcNative/javascript_dialog_{name}.mm"
         command = [str(compiler), *flags, "-fsyntax-only",
                    f"-I{repo / 'Engine/ParcNative'}", str(source)]

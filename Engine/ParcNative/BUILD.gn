@@ -81,7 +81,7 @@ source_set("native_background_picture_in_picture_api") {
 }
 
 # Chrome's BrowserWebContentsDelegate asks a Parc page's own alert sheet for
-# the repost warning; javascript_dialog_runner.mm implements it in libcef.
+# the repost warning; native_javascript_dialogs implements it.
 source_set("native_repost_form_warning_api") {
   public = [ "native_repost_form_warning_api.h" ]
   sources = public
@@ -587,6 +587,25 @@ source_set("native_devtools") {
     "//chrome/browser/devtools",
     "//ui/gfx",
     "//ui/gfx/geometry",
+  ]
+}
+
+# The page's content::JavaScriptDialogManager and its repost warning sheet.
+source_set("native_javascript_dialogs") {
+  public = [ "javascript_dialog_manager.h" ]
+  sources = [
+    "javascript_dialog_manager.h",
+    "javascript_dialog_manager.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [ ":native_repost_form_warning_api" ]
+  deps = [
+    ":native_components",
+    "//base",
+    "//components/javascript_dialogs",
+    "//components/strings:components_strings",
+    "//content/public/browser",
+    "//ui/base",
   ]
 }
 
