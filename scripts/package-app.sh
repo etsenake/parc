@@ -88,7 +88,7 @@ if [ -z "${PARC_RELEASE_COMMIT:-}" ] && [ -n "$(git status --porcelain --ignored
   git status --porcelain --ignored=matching --untracked-files=all -- Resources >&2
   exit 1
 fi
-overlay_manifest="$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); import build; print(build.overlay_path(Path(".")))')"
+overlay_manifest="Engine/ParcHost/overlay.json"
 overlay="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$overlay_manifest")"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 short="${commit:0:8}"
@@ -170,8 +170,7 @@ if [ -n "$from_release" ]; then
         release_tag="$candidate"
         break
       fi
-      candidate_overlay_manifest="$(git show "$candidate:Engine/source-lock.json" 2>/dev/null | python3 -c 'import json,sys; from pathlib import Path; sys.path.insert(0, "scripts"); import build; print(build.overlay_path(Path("."), json.load(sys.stdin)))' 2>/dev/null || true)"
-      if [ "$candidate_overlay_manifest" = "$overlay_manifest" ] && [ "$(git show "$candidate:$candidate_overlay_manifest" 2>/dev/null | jq .version)" = "$overlay" ]; then
+      if [ "$(git show "$candidate:$overlay_manifest" 2>/dev/null | jq .version)" = "$overlay" ]; then
         release_tag="$candidate"
         break
       fi

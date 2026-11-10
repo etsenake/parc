@@ -551,8 +551,7 @@ class Release:
         lock = source / "Engine/source-lock.json"
         engine_tool = module(source, "engine-source")
         selected_lock, _ = engine_tool.load_lock(lock)
-        overlay = source / ("Engine/ParcHost/overlay-direct.json" if engine_tool.direct_mode(selected_lock)
-                            else "Engine/ParcHost/overlay.json")
+        overlay = source / "Engine/ParcHost/overlay.json"
         self.checkpoint(workspace=str(workspace), overlay=json.loads(overlay.read_text())["version"])
         if not (workspace / ".parc-engine-source.json").exists() and (not workspace.exists() or not any(workspace.iterdir())):
             workspace.parent.mkdir(parents=True, exist_ok=True)
