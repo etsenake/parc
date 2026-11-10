@@ -1,64 +1,59 @@
-# Native Chrome page platform delegate
+# Native page binding
 
-`Engine/ParcNative/native_chrome_platform_delegate.{h,mm}` connects the actual Chrome
-runtime platform-delegate interface to Parc's page wrapper and page-bound
-JavaScript dialog runner. The canonical typed native route now selects this
-delegate, and the promoted Objective-C facade and Swift shell use the independent
-engine path.
+`Engine/ParcNative/native_page_binding.{h,mm}` connects one real Chromium
+WebContents to its stable AppKit page wrapper and page-bound services. The test
+directory keeps its historical name; the direct engine uses
+`parc::NativePageBinding`.
 
-## Native ownership
+## Ownership and lifetime
 
-The delegate wraps the existing WebContents native view and preserves its page,
-renderer and native hierarchy through creation and transfer. Wrapper focus is
-queued and revalidates the actual window at delivery; successful processing is
-not proof the renderer focused. Window movement invalidates old attachment.
-The native path returns no Views Widget and creates no hidden Chrome window.
+The binding is WebContents user data and observes that same WebContents. The
+Browser and its tab model retain ownership of the page. The binding wraps the
+existing native content view without creating a tab, reloading a URL or
+replacing the window's content view. Its weak Browser reference identifies the
+current tab owner and may be empty during insertion, transfer or DevTools
+docking. Binding and native-view access belong to the browser UI thread.
 
-The pinned CEF Chrome base preserves actual Browser, Profile, TabStripModel and
-WebContents ownership and forwards native input translation to its native
-secondary delegate. Parc wraps the supplied NSView without creating a tab,
-loading a replacement URL, replacing NSWindow.contentView or taking ownership
-of the window. The shell embeds that stable wrapper in its real page container.
-The attachment check requires both the owning Browser's tab membership and the
-same actual NSWindow as BrowserWindow. Popups cannot inherit a window merely
-because the opener had one.
+When the page is destroyed, the binding closes its attachment gate and cancels
+page-bound requests while their services are alive. The invalidated wrapper
+stays retained until binding destruction. Weak callbacks protect against
+cancellation or native reparenting destroying the binding during delivery.
 
-A detached/closing page cannot receive a new dialog or an affirmative focus
-request. Detachment closes the request gate before delivering cancellation;
-reattachment during that delivery is rejected. The dialog manager owns its
-runner; the delegate stores a weak pointer. Native-window changes invalidate
-attachment, and the shell must explicitly complete the new association before
-calling `PageHostDidAttach()`. `CloseHostWindow()` invalidates this page host,
-leaving native window close consent/shared-window coordination with the actual
-BrowserWindow owner. It does not delete Browser or WebContents.
+## Attachment and detachment
 
-CEF may query the window handle on other threads. A lock protects publication
-of the stable parent NSView handle; geometry remains UI-thread-only. An
-invalidated wrapper stays retained through delegate destruction so a handle
-fetched just before closure is not immediately freed. Renderer activation uses
-the real RenderWidgetHostView; focus then follows the deferred native wrapper.
+Ordinary attachment requires membership in the owning Browser's actual tab
+model, the original WebContents content view, and exact equality between the
+wrapper's NSWindow and the BrowserWindow's NSWindow. A popup cannot inherit an
+attachment merely because its opener has a window.
 
-Screen conversion follows the **current CEF Mac input contract**: page-local
-top-left DIP points go through the actual view's bounds/flip and window conversion
-to AppKit screen points. This includes split-pane offsets. This is an explicit
-API integration.
-The inherited modal host uses the owning Browser's active tab, matching the
-shared window-host design. Chrome runtime context menus are a separate route.
-The Alloy-only CEF native menu runner is not selected here.
+`PageHostWillDetach()` clears attachment before cancellation callbacks run.
+Reattachment during that delivery is rejected. The shell completes the real
+Browser/window association and view containment before `PageHostDidAttach()`
+can reopen the page's service gates. Unexpected native-window changes cancel
+old-window requests and require that explicit attachment step again.
 
-## Checks and integration
+Docked DevTools frontends use a separate auxiliary attachment lease supplied
+by their actual pane. It checks the original content view and that pane's exact
+NSWindow without inventing a Browser/tab owner. Gaining the lease opens the
+folder-upload, HTTP-auth, client-certificate and JavaScript-dialog gates; losing
+it closes the JavaScript-dialog gate. Other services observe their captured
+leases. Auxiliary attachment changes preserve newer leases established during
+an older callback.
+
+## Checks
 
 ```sh
-python3 -B tests/NativePlatformDelegate/check-chromium.py /absolute/path/to/chromium/src
+python3 -B tests/NativePlatformDelegate/check-chromium.py /absolute/path/to/chromium/src \
+  --lock-file Engine/source-lock-direct.json
 ```
 
-and warnings as errors. No fake headers or substitute Browser classes are used.
-Logs remain in ignored `build/tests/native-platform-delegate/`.
+The selected lock determines the source and generated compiler flags. Direct
+schema 2 checks `native_page_binding.mm` against `//parc:browser`'s
+`obj/parc/browser.ninja`; legacy schema 1 retains the old platform-delegate
+source and flags. The output name defaults to the selected lock's build
+configuration. Without `--lock-file`, the checker reads the canonical lock.
 
-The canonical `native-host-route.patch` selects `NativeChromePlatformDelegate`
-and constructs the native BrowserWindow through the real shell provider.
-`native_appkit_host.mm` attaches pages after Browser/tab registration, and
-`Sources/ParcApp/BrowserWindowController.swift` supplies the actual window and
-balanced `pageWillDetach`/`pageDidAttach` calls. Popup/internal creation policy,
-the dedicated DevTools route and native first-tab feature hooks are implemented
-in source.
+The checker reads the pinned compiler's generated Objective-C++ flags and runs
+syntax checks without generating, linking or launching anything. Logs remain
+in ignored `build/tests/native-platform-delegate/`. The shell supplies balanced
+page-will-detach/page-did-attach calls around actual view and window changes.
