@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.10.0 (2026-11-10)
+
+### New
+
+- **updates:** Check for updates every four hours
+- **updates:** Restart to install a downloaded update while your Mac is locked or asleep
+- **whats-new:** Set the What's New page's headings in a calligraphic italic serif over a grainier header
+- **updates:** Install a downloaded update after half an hour without keyboard or mouse use
+- **extensions:** Show an extension's Site Control Center menu in your Space's colours, beside its tile
+- **whats-new:** Show every Parc release on a timeline under the current one
+- **whats-new:** Mark the releases you skipped when you open What's New after an update
+
+### Fixed
+
+- **sidebar:** Keep rows lighting up on hover beside the sidebar's resize edge
+- **whats-new:** Stop stretching the Parc logo on the What's New tab
+- **extensions:** Keep the Site Control Center open while an extension's menu shows
+- **menus:** Open What's New, History and Extensions in a new tab right away and show them loading
+- **extensions:** Open Manage Extensions, Add Extension and site settings in a new tab right away
+- **engine:** Say Parc instead of Chromium in menus, dialogs, settings and notifications
+- **extensions:** Keep the Site Control Center and extension menus inside the window from every toolbar and split pane
+- **engine:** Say Parc instead of Chrome where a menu, dialog or setting means this browser
+
+### Faster
+
+- **whats-new:** Load the What's New page faster with a right-sized logo
+
 ## 1.9.0 (2026-11-09)
 
 ### New

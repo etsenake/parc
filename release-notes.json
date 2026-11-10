@@ -1,6 +1,109 @@
 {
   "releases": [
     {
+      "version": "1.10.0",
+      "build": 24,
+      "date": "2026-11-10",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "sidebar",
+          "summary": "Keep rows lighting up on hover beside the sidebar's resize edge",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "whats-new",
+          "summary": "Stop stretching the Parc logo on the What's New tab",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "updates",
+          "summary": "Check for updates every four hours",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "updates",
+          "summary": "Restart to install a downloaded update while your Mac is locked or asleep",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Keep the Site Control Center open while an extension's menu shows",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "menus",
+          "summary": "Open What's New, History and Extensions in a new tab right away and show them loading",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "whats-new",
+          "summary": "Set the What's New page's headings in a calligraphic italic serif over a grainier header",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "updates",
+          "summary": "Install a downloaded update after half an hour without keyboard or mouse use",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Open Manage Extensions, Add Extension and site settings in a new tab right away",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "engine",
+          "summary": "Say Parc instead of Chromium in menus, dialogs, settings and notifications",
+          "breaking": false
+        },
+        {
+          "type": "perf",
+          "scope": "whats-new",
+          "summary": "Load the What's New page faster with a right-sized logo",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "extensions",
+          "summary": "Show an extension's Site Control Center menu in your Space's colours, beside its tile",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "whats-new",
+          "summary": "Show every Parc release on a timeline under the current one",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "whats-new",
+          "summary": "Mark the releases you skipped when you open What's New after an update",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Keep the Site Control Center and extension menus inside the window from every toolbar and split pane",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "engine",
+          "summary": "Say Parc instead of Chrome where a menu, dialog or setting means this browser",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.9.0",
       "build": 23,
       "date": "2026-11-09",
