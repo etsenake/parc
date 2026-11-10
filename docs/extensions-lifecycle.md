@@ -41,7 +41,9 @@ The existing Parc implementation already preserves these boundaries:
 ## Site Control Center to extension handoff
 
 Parc previously called `dismissSiteControlCenter()` and immediately dispatched
-an extension action or context menu. AppKit could still be closing the native
+an extension action or context menu. Context menus no longer dismiss the card
+at all (a Josh request; see [WEB14](web-interactions.md#site-control-center--web14));
+actions still do, as below. AppKit could still be closing the native
 popover when the popup became key. Its subsequent parent-key notification is
 itself an established popup-dismissal input.
 

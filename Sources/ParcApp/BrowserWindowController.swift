@@ -14100,23 +14100,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.performExtensionActionAfterDismissingControls {
                         _ = binding.executeExtensionAction(action, for: page)
                     }
-                }, showContextMenu: { [weak self, weak binding, weak page] in
+                }, showContextMenu: { [weak self, weak binding, weak page] control in
                     guard let self, let binding, let page,
                           self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
-                          !self.isClosing, !page.isClosed else { return }
-                    self.performExtensionActionAfterDismissingControls {
-                        _ = binding.showExtensionActionContextMenu(action, for: page)
-                    }
-                }, showContextMenuInControlCenter: { [weak self, weak binding, weak page] in
-                    guard let self, let binding, let page,
-                          self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
-                          !self.isClosing, !page.isClosed else { return }
-                    // Parc's menu beside the card; earlier engines show their own at the pointer.
-                    let presented = binding.responds(to: #selector(PCNativeBrowserWindow.showExtensionActionContextMenu(_:for:presenter:)))
-                        && self.siteControlCenter?.presentExtensionMenu(for: action.identifier) { menu in
-                            _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu)
-                        } == true
-                    if !presented { _ = binding.showExtensionActionContextMenu(action, for: page) }
+                          !self.isClosing, !self.wholeWindowClose, !page.isClosed else { return }
+                    self.showExtensionContextMenu(action, binding: binding, page: page, beside: control)
                 }, setPinned: { [weak self, weak binding, weak page] pinned in
                     guard let self, let binding, let page,
                           self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
@@ -14172,6 +14160,32 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return false
         }
         return binding.hasEnabledExtensions(for: page)
+    }
+
+    /// Every extension action's menu, from a Site Control Center tile or a
+    /// pinned button: Parc's themed menu beside the control, in the card's
+    /// colours, with an open card left open. On the card it hangs from the
+    /// card's edge, its tile lit. Earlier engines show their own menu at the
+    /// pointer. A menu supersedes an action still waiting for the card to close.
+    private func showExtensionContextMenu(_ action: PCNativeExtensionAction, binding: PCNativeBrowserWindow,
+                                          page: PCNativePage, beside control: NSView) {
+        extensionActionGeneration = UUID()
+        guard binding.responds(to: #selector(PCNativeBrowserWindow.showExtensionActionContextMenu(_:for:presenter:))),
+              let window = control.window, window.isVisible else {
+            _ = binding.showExtensionActionContextMenu(action, for: page)
+            return
+        }
+        let show = { (menu: PArcContextMenu) in _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu) }
+        if siteControlCenter?.presentExtensionMenu(beside: control, for: action.identifier, show) == true { return }
+        let rect = window.convertToScreen(control.convert(control.bounds, to: nil))
+        let screen = SiteControlCenterPlacement.screen(at: CGPoint(x: rect.midX, y: rect.midY)) ?? window.screen?.visibleFrame
+        let menu = PArcContextMenu(anchor: rect, regions: SiteControlCenterPlacement.regions(window: window.frame, screen: screen),
+                                  parent: window, colors: PArcMenuColors(theme: rootView.theme))
+        // The sidebar's pinned buttons stay revealed under their menu, as under the card.
+        let inSidebar = control.isDescendant(of: sidebar)
+        if inSidebar { sidebar.setAddressPopover(menu, open: true) }
+        if let center = siteControlCenter { center.keepingOpen { show(menu) } } else { show(menu) }
+        if inSidebar { sidebar.setAddressPopover(menu, open: false) }
     }
 
     /// Opening a popup before the popover's native close completes lets its
@@ -14508,9 +14522,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let items = self.siteControlCenterItems
             return { id in items[id]?.execute() }
         }
-        model.onExtensionContextMenu = { [weak self] id in
-            guard currentPresentation(), let self else { return }
-            self.siteControlCenterItems[id]?.showContextMenuInControlCenter()
+        model.onExtensionContextMenu = { [weak self, weak controller] id in
+            guard currentPresentation(), let self, let tile = controller?.tile(for: id) else { return }
+            self.siteControlCenterItems[id]?.showContextMenu(tile)
         }
         model.onExtensionPin = { [weak self] id in
             guard currentPresentation(), let self, let item = self.siteControlCenterItems[id], item.canChangePin else { return }

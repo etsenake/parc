@@ -941,6 +941,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private var sizeCheck: Timer?
     /// The open extension menu; it closes with the card.
     private weak var extensionMenu: PArcContextMenu?
+    private var keptOpen = 0
     private var pendingShow: UUID?
     var onClose: (() -> Void)?
     var onDidClose: (() -> Void)?
@@ -979,13 +980,41 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
 
     func isAnchored(to view: NSView) -> Bool { anchorView === view }
 
+    /// Runs `body`, a menu from another control, without closing for losing
+    /// key: a Control-click makes the browser window key first, and the
+    /// losing-key check it queued runs inside the menu. Afterwards an
+    /// attached card takes key back if the window kept it, or closes as it
+    /// would have if the menu's command moved key elsewhere.
+    func keepingOpen(_ body: () -> Void) {
+        keptOpen += 1
+        body()
+        keptOpen -= 1
+        guard keptOpen == 0, let panel, !closing, !isDetached, panel.isVisible else { return }
+        if NSApp.isActive, let parent = anchorWindow, NSApp.keyWindow === parent {
+            panel.makeKey()
+        } else if !Self.holdsKey(panel) {
+            close()
+        }
+    }
+
+    /// Whether the key window is `panel` or a window it opened.
+    private static func holdsKey(_ panel: NSWindow) -> Bool {
+        var key = NSApp.keyWindow
+        while let window = key {
+            if window === panel { return true }
+            key = window.parent
+        }
+        return false
+    }
+
+    /// Extension `id`'s tile on this card.
+    func tile(for id: String) -> NSView? { Self.view(SiteControlCenterAlternateClick.identifier(id), in: host.view) }
+
     /// Runs `show` with a menu for extension `id` that hangs from this card
-    /// like a submenu, level with the tile, which stays lit until `show`
-    /// returns. False when the tile is not on the open card.
-    func presentExtensionMenu(for id: String, _ show: (PArcContextMenu) -> Void) -> Bool {
-        guard let panel, !closing,
-              let tile = Self.view(SiteControlCenterAlternateClick.identifier(id), in: host.view),
-              tile.window === panel else { return false }
+    /// like a submenu, level with `tile`, which stays lit until `show`
+    /// returns. False when `tile` is not on the open card.
+    func presentExtensionMenu(beside tile: NSView, for id: String, _ show: (PArcContextMenu) -> Void) -> Bool {
+        guard let panel, !closing, tile.window === panel else { return false }
         let row = panel.convertToScreen(tile.convert(tile.bounds, to: nil))
         let edges = panel.convertToScreen(card.convert(card.bounds, to: nil))
         // The menu looks for room as the card does; a torn-off card's only on screen.
@@ -1197,18 +1226,14 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     /// opened (a share picker) keeps it; a press on the card's own button is
     /// remembered so that press does not reopen it.
     private func lostFocus() {
-        guard let panel, !closing, !isDetached else { return }
+        guard let panel, !closing, !isDetached, keptOpen == 0 else { return }
         if let event = NSApp.currentEvent, event.type == .leftMouseDown, let anchor = anchorView, let window = anchor.window,
            event.window === window, anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) {
             Self.closingPresses[ObjectIdentifier(window)] = event.eventNumber
         }
         DispatchQueue.main.async { [weak self, weak panel] in
-            guard let self, let panel, self.panel === panel, !self.closing, !self.isDetached else { return }
-            var key = NSApp.keyWindow
-            while let window = key {
-                if window === panel { return }
-                key = window.parent
-            }
+            guard let self, let panel, self.panel === panel, !self.closing, !self.isDetached, self.keptOpen == 0,
+                  !Self.holdsKey(panel) else { return }
             self.close()
         }
     }

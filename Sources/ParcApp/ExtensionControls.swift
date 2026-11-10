@@ -46,9 +46,8 @@ struct ExtensionControlItem {
     let pinnedIndex: Int?
     let canChangePin: Bool
     let execute: () -> Void
-    let showContextMenu: () -> Void
-    /// The same menu over the open Site Control Center, which stays open.
-    let showContextMenuInControlCenter: () -> Void
+    /// Shows the action's menu beside `control`, its button or tile.
+    let showContextMenu: (_ control: NSView) -> Void
     let setPinned: (Bool) -> Void
     /// The pinned strips' artwork. Nil shows `image`, the engine's baked canvas.
     var pinnedArtwork: ExtensionPinnedArtwork? = nil
@@ -137,7 +136,7 @@ enum ExtensionActionBadgeMetrics {
 final class ExtensionActionButton: NSButton {
     let style: ExtensionControlStyle
     private var invokeAction: (() -> Void)?
-    private var contextAction: (() -> Void)?
+    private var contextAction: ((NSView) -> Void)?
     private var mouseDownAction: (() -> Void)?
     private var trackingMouseDown = false
     private var trackingArea: NSTrackingArea?
@@ -226,7 +225,7 @@ final class ExtensionActionButton: NSButton {
     override func accessibilityPerformShowMenu() -> Bool {
         guard available, let perform = contextAction else { return false }
         cancelInteraction()
-        perform()
+        perform(self)
         return true
     }
     override func isAccessibilityEnabled() -> Bool { available }
@@ -234,7 +233,7 @@ final class ExtensionActionButton: NSButton {
         guard available else { return }
         cancelInteraction()
         let perform = contextAction
-        perform?()
+        perform?(self)
     }
     override func mouseDown(with event: NSEvent) {
         guard available else { return }

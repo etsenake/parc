@@ -40,7 +40,9 @@ already-implemented ownership boundary, not new 1.122 UI constants.
   accessible name and already-decorated icon. Its disabled action can open
   the genuine context menu, so the shell must not disable the entire action
   solely from `PCNativeExtensionAction.isEnabled`. Pin policy remains the
-  actual `canChangePin`. Context menus stay the native engine/AppKit owner;
+  actual `canChangePin`. The engine builds and runs each context menu on the
+  real model; Parc only draws it (its themed menu beside the button, at Josh's
+  request, see [WEB14](web-interactions.md#site-control-center--web14)), and
   no shell menu recreates permissions or command state.
 - **Native content focus.** Real extension popup/side-panel contents retain
   their existing `ExtensionViewHost` and original native window. The popup

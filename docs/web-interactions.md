@@ -152,8 +152,10 @@ one.
   command. Closing the card cancels the menu, as does the engine's own
   cancellation. Engines before overlay 650 have no presenter hook and show
   their menu at the pointer, with the card kept open. Disabled rows don't show
-  the engine's reason tooltip (VoiceOver reads it as help). The pinned
-  extension buttons keep the system menu and close an open card first.
+  the engine's reason tooltip (VoiceOver reads it as help). A pinned
+  extension button's menu is the same themed menu, in the card's colours,
+  hanging beside the button with its first row level with it and
+  any open card left open.
 - A secondary click, Control-click or VoiceOver's Show Menu on an entry button
   argument was not decoded (rounded rectangle assumed); default SwiftUI
   resolves picker wrap, physical E (keyCode 14), Return selection and unrelated
