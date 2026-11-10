@@ -2,8 +2,8 @@
 
 Chromium owns the actual VideoOverlayWindow, media controller, Viz surface and
 compositor. The application retains PCVideoPiPPresenter and its panel/controls.
-The route adds no WebContents or hidden BrowserView. PiP is accepted as complete
-by Josh; old investigation receipts do not reopen that assignment.
+The route adds no WebContents or hidden BrowserView. PiP is accepted as complete;
+old investigation receipts do not reopen that assignment.
 
 ## Behavior and ownership
 

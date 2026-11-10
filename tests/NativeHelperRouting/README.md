@@ -8,7 +8,8 @@ signing policy are unchanged.
 
 The used `ApplyNativeStartupPolicy` helper adds
 `--disable-field-trial-config` in the real CEF application callback. Chromium's
-[`testing/variations/README.md`](https://chromium.googlesource.com/chromium/src/+/d0c02bfad08ec92a6ffcf989e53cd995e6381a4c/testing/variations/README.md)
+`testing/variations/README.md`, at the revision in
+[the source lock](../../Engine/source-lock.json),
 explicitly recommends this control for non-Chrome browsers. This disables the
 bundled developer test configuration by default; it does not permanently disable
 Aperitif or replace ordinary feature defaults. The existing product feature
@@ -41,8 +42,8 @@ trimmed as Chromium does, keeps its explicit state. The product
 exclusions are still applied over explicit enables. They are the
 history-embedding model, the excluded Chromium AI group (`Glic`, `GlicActorUi`,
 `AutofillActorMode` and `LensOverlay`) and the translate ranker
-(`TranslateRankerQuery`, `TranslateRankerEnforcement`), all Josh's decisions of
-November 1. Pinned CEF already disables `GlicActorUi`, `AutofillActorMode` and
+(`TranslateRankerQuery`, `TranslateRankerEnforcement`), matching the retained
+product exclusions. Pinned CEF already disables `GlicActorUi`, `AutofillActorMode` and
 `LensOverlay` in the browser process; listing them keeps them off for an
 explicit enable too. The on-device omnibox head model is no longer excluded: it
 arrives through the component updater and needs no Google API key.

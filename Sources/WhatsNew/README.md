@@ -34,13 +34,12 @@ wave as a line. An SVG noise filter uses `#2F39FF`, and the shared
 `Resources/ThemeTextures/grain.png` tile repeats every 100 px with overlay
 blending. Small inline assets keep the page self-contained and quick to load.
 
-their italic lines in EB Garamond; Josh chose Cormorant over it and two other
-open-licensed italics from rendered options. `CormorantGaramond-SemiBoldItalic.woff`
+Headings use Cormorant Garamond SemiBold Italic, selected from rendered
+open-licensed typeface options. `CormorantGaramond-SemiBoldItalic.woff`
 is a 21 KB Latin subset, at weight 600, of google/fonts'
-`ofl/cormorantgaramond/CormorantGaramond-Italic[wght].ttf` (SHA256
-`0f48ea6abb2084537854f7174c470991a463b13036309e3b50a81511611c530d`). Only the
-page carries the font; its licence, `Resources/WhatsNew/OFL.txt`, ships in the
-bundle:
+`ofl/cormorantgaramond/CormorantGaramond-Italic[wght].ttf`. Only the page
+carries the font; its [SIL Open Font License](../../Resources/WhatsNew/OFL.txt)
+ships in the bundle. The subset can be recreated with:
 
 ```sh
 python3 -m fontTools.varLib.instancer 'CormorantGaramond-Italic[wght].ttf' wght=600 --update-name-table -o semibold.ttf

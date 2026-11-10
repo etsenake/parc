@@ -1,18 +1,29 @@
 # Custom icon picker assets
 
 
-- `emojis.json` is a byte-for-byte copy of `ARC_Emojis.bundle/Contents/Resources/emojis.json` (gemoji format, 1,870 entries).
+## Fonts and emoji
 
-The picker's named colours are recorded in source rather than copied: `CustomizationBackground` from `ARC_CustomInfoPicker.bundle/Contents/Resources/Assets.car` (SHA-256 `852270eebd1f30f13a5757aec3d8773df1791d9d462fd2b01dccec8227abe98d`; Display P3 0.525/0.533/0.553 at 0.25 light, white at 0.25 dark), and `BrandGray`, `ForegroundSecondary`, `ForegroundTertiary` and `SidebarItemBackground` from the BaseAssets catalog above. Resource provenance alone does not establish picker appearance parity; see `docs/split-groups.md` and the parity ledger.
+- `ionicons.ttf` and `icomoon.ttf` come from
+  `ionicons` (Fontello build of Ionicons) and `icomoon` (IcoMoon build of Feather).
+  Every `SidebarIconType` except Linear and Figma uses an ionicons glyph;
+  Parc's source selects the code points.
+- The icomoon font supplies Remove (U+E9F0, trash) and eight emoji categories:
+  smile (U+E9DE), sun (U+E9E3), coffee (U+E943), award (U+E919), truck (U+E9F6),
+  gift (U+E971), heart (U+E97D) and flag (U+E96B).
+- `emojis.json` comes from `ARC_Emojis.bundle/Contents/Resources/emojis.json`:
+  a gemoji-format catalog containing 1,870 entries.
 
-| File | SHA-256 |
-|---|---|
-| `emojis.json` | `5705487ae12dd671cb1cf4a997b0fec85efa91485b30b28dd359c7322b556784` |
-| `figma.png` | `e1c7853b952e29381478c87f019d5661c2899475a8bdbf5c57b14b47a1847350` |
-| `figma@2x.png` | `acb1be73bff61185c59a9dabd0eb619484567f289ae84772f03e75e2611b0c10` |
-| `icomoon.ttf` | `dbf17c08aa14d28585f0df35960de0d25ab790e3c105bfb8f1dafb5741b29ef5` |
-| `ionicons.ttf` | `97087b7a242d8a246ee02c556da9ee0a904e04004b203ff91c4013294604709a` |
-| `linear-dark.png` | `aa7252d5ed839ce3899ddb2cc35b93f055492adbddeee3c9893f19c3129002e9` |
-| `linear-dark@2x.png` | `7560123759b64fcbb5a21b428f89b667f283e7074d1bd2ebc18c23291821e18d` |
-| `linear.png` | `e3ee6ebf6052efd4ae4961e94b829b15119694968ceda4e491a320e17acd2619` |
-| `linear@2x.png` | `da13905565dfc2bd315c922ddbc9093bd77a4963ad942f34687b598947e7160f` |
+## Images and colors
+
+`linear.png`, `linear@2x.png`, `linear-dark.png`, `linear-dark@2x.png`,
+`figma.png` and `figma@2x.png` come from the `linear` and `figma` assets in
+light or dark appearance and ImageIO exported 32 × 32 and 64 × 64 bitmaps without
+
+The picker's named colors are recorded in source. `CustomizationBackground`
+comes from `ARC_CustomInfoPicker.bundle`: Display P3 0.525/0.533/0.553 at
+0.25 alpha in light appearance, and white at 0.25 alpha in dark appearance.
+`BrandGray`, `ForegroundSecondary`, `ForegroundTertiary` and
+`SidebarItemBackground` come from the BaseAssets catalog.
+
+Asset provenance does not establish live appearance. See
+[split groups](../../docs/split-groups.md) for picker behavior.

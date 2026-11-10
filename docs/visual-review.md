@@ -12,7 +12,7 @@ retained artifacts, source inspection, compiler checks and model/unit tests.
 This guide does not authorize a render harness that launches an app or window.
 Live appearance and interaction checks need explicit renewed user authorization.
 
-## When Josh supplies an image
+## When the user supplies an image
 
 1. Establish which app, view and state it shows. Resolve ambiguous labels from
    the context before comparing anything.
@@ -42,7 +42,7 @@ preference. Keep screenshots and temporary receipts outside Git.
 A missing user reply does not block independent authorized work. Make reasonable
 reversible decisions and report them; do not infer permission for prohibited
 runtime checks. Keep known product gaps in the [backlog](backlog.md), and disclose
-them to Josh. Keep validation limitations distinct from confirmed defects.
+them to the user. Keep validation limitations distinct from confirmed defects.
 
 Implementation review and publication follow [collaboration](collaboration.md).
 Update the relevant guide in place; do not append a session-by-session review log.

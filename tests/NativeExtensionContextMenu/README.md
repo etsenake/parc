@@ -21,7 +21,9 @@ Uninstall uses the registered Browser-owned native service's exact capability ch
 
 `Engine/ParcNative/extension_context_menu_native.patch` preserves real `ToolbarActionsModel::SetActionVisibility` and its metrics. It guards the optional pin-feedback notification when `BrowserElements` or a real element context is absent and connects the native uninstall binding to the real command helper. Do not fabricate a Views element or disable pinning to avoid the optional notification. Missing native pin feedback remains an integration/polish gap.
 
-Patch target: `chrome/browser/extensions/extension_context_menu_model.cc`. Original SHA256 `c8f5cfc59ba611fb8455d453faabed1e1b6bc03d903504216a532ec1e8d5efa5`; v22 patched SHA256 `0cce3371a4cce9b6717790b8d9e80cc710f8777b2eaece46495f1ff402b4448d`. The overlay maintains one contextual patch for this target.
+The patch targets `chrome/browser/extensions/extension_context_menu_model.cc`.
+The [overlay manifest](../../Engine/ParcHost/overlay.json) owns its input and
+output checksums and maintains one contextual patch for this target.
 
 ## Checks and integration
 

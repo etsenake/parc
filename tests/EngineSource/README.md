@@ -13,16 +13,16 @@ The suite uses temporary files and mocked process/host boundaries. It does not r
 Read-only preflight and command plan (the parent directory must already exist):
 
 ```sh
-python3 scripts/engine-source.py check --workspace /Volumes/BuildDisk/ParcChromium
-python3 scripts/engine-source.py plan --workspace /Volumes/BuildDisk/ParcChromium
+python3 scripts/engine-source.py check --workspace /absolute/engine-workspace
+python3 scripts/engine-source.py plan --workspace /absolute/engine-workspace
 ```
 
 When storage is ready and a full source download/build is authorized:
 
 ```sh
-python3 scripts/engine-source.py sync --workspace /Volumes/BuildDisk/ParcChromium
-python3 scripts/engine-source.py plan --for build --workspace /Volumes/BuildDisk/ParcChromium
-python3 scripts/engine-source.py build --workspace /Volumes/BuildDisk/ParcChromium
+python3 scripts/engine-source.py sync --workspace /absolute/engine-workspace
+python3 scripts/engine-source.py plan --for build --workspace /absolute/engine-workspace
+python3 scripts/engine-source.py build --workspace /absolute/engine-workspace
 ```
 
 `sync` initially requires a **new directory**; a subsequent invocation may resume an owned, unchanged dependency-sync failure. It creates an ownership marker and workspace tmp directory, preserves the real HOME, fetches the three locked repositories, verifies revisions/origins and script hashes, synchronizes pinned Chromium dependencies without hooks, applies CEF's verified runhooks source patch, then runs hooks. CEF uses full commit ancestry for its version generator; Chromium and depot_tools use shallow pinned fetches. The selected dependency versions come from the pinned Chromium DEPS, without automate-git's moving `siso_version=latest` override. Depot auto-update is disabled. There is no shell command interpolation or arbitrary passthrough argument.
@@ -32,8 +32,8 @@ python3 scripts/engine-source.py build --workspace /Volumes/BuildDisk/ParcChromi
 After sync completes, inspect and apply the whole reviewed source overlay:
 
 ```sh
-python3 scripts/engine-source.py overlay-check --workspace /Volumes/BuildDisk/ParcChromium --manifest /absolute/Parc/Engine/ParcHost/overlay.json
-python3 scripts/engine-source.py overlay-apply --workspace /Volumes/BuildDisk/ParcChromium --manifest /absolute/Parc/Engine/ParcHost/overlay.json
+python3 scripts/engine-source.py overlay-check --workspace /absolute/engine-workspace --manifest /absolute/Parc/Engine/ParcHost/overlay.json
+python3 scripts/engine-source.py overlay-apply --workspace /absolute/engine-workspace --manifest /absolute/Parc/Engine/ParcHost/overlay.json
 ```
 
 `overlay-check` performs the complete validation and in-memory transformation without writing files. Both commands require a completed owned workspace, its unchanged source fingerprint, the matching pinned CEF/Chromium commits, and the exclusive operation lock. They do not download or build anything. Every source input, contextual patch and resulting target is SHA-256 bound. A mismatch anywhere prevents all source writes. Existing source changes require exact unified-diff context and before/after hashes; there is no fuzzy matching, binary patching, rename or executable-mode change. New files use the manifest's `files` array. Inputs and targets must be regular UTF-8 text without NUL, at most 8 MiB each, with confined paths and no symlinks. Repository metadata, dependency selection, output directories and pinned bootstrap scripts cannot be overlay targets.
@@ -44,7 +44,7 @@ Applying records the manifest identity, original text/modes, expected output has
 
 The default is Release ARM64 component build, `symbol_level=0`, `enable_dsyms=false`, and local execution. Choose `--symbol-level 1` on both initial sync and later build for minimal backtrace symbols. `--jobs` defaults to four. No remote builder or paid service is configured. Symbol level zero loses debugging detail; this is an integration build, not the final distribution recipe.
 
-Storage policy is conservative and **unmeasured for this exact configuration**: 150 GB free before initial sync and a 50 GB free reserve before compilation. Upstream documents 150 GB for a Debug build; it does not provide a measured release-size promise for these settings. These are guards, not guarantees against running out of space. `plan` prints blockers but succeeds so its proposed commands can be reviewed; `check`, `sync` and `build` return status 2 on blocked preflight. Execution rechecks capacity before mutation. No automatic cleanup occurs.
+Storage guards come from the `storage` section of [the source lock](../../Engine/source-lock.json). Preflight requires its configured free-space thresholds before sync and compilation. These are working floors, not guarantees that a build will fit. `plan` prints blockers but succeeds so its proposed commands can be reviewed; `check`, `sync` and `build` return status 2 on blocked preflight. Execution rechecks capacity before mutation. No automatic cleanup occurs.
 
 A failed gclient dependency-sync records the partial repository inventory and source fingerprint. Repeating `sync` validates that unchanged state, then resumes at gclient without reinitializing, checking out, resetting or deleting existing repositories. A returned project-generation error likewise records its source fingerprint and `generation-failed` phase, provided all applied overlay outputs still match. An unchanged retry can regenerate; a reviewed overlay update can correct a source issue before regeneration. A bootstrap error occurs before generation begins and preserves the previous phase. Interrupted initial Git bootstrap, terminated processes that could not record their state, runhooks failures and generation that modifies reviewed overlay outputs remain incomplete and require inspection; this tool does not guess a safe repair. Their files remain intact. Failed compilation can be retried if source fingerprints still match. One operation per workspace is enforced by an exclusive advisory lock. Source paths and their ancestors must not be symlinks; unsupported characters are rejected because upstream-generated commands do not uniformly support them.
 

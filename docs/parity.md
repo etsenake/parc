@@ -13,9 +13,9 @@ The older ledger is available in Git; do not copy it into an archive document.
 
 Reviewed on November 10, 2026:
 
-- Source version: **1.12.1**, build 27; engine overlay **654**.
+- Source version: **1.12.1**.
 - Latest completed delivery confirmed by local release receipts: **1.12.1**,
-  overlay **654**, published November 10 with signed/notarized app and DMG,
+  published November 10 with signed/notarized app and DMG,
   signed update feed and Homebrew cask. A version commit alone is not publication.
 - Release metadata and receipts establish artifact delivery, not installation
   or browser behavior. See [release operations](master-release.md).
@@ -74,9 +74,9 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - **Native interface corrections:** clickable controls use the pointing hand;
   toast, section-heading and update-banner text retain theme/hover contrast;
   the command bar remains inside its browser window with live commands.
-- **Page visibility and sizing:** overlay 653 corrects showing a tab during
-  application activation. Overlay 654 settles fresh native content sizing before
-  show; its offscreen regressions pass, but the reported live black-page delay
+- **Page visibility and sizing:** tabs opened during application activation
+  are shown, and new pages settle their content size before appearing.
+  Offscreen regressions pass, but the reported live black-page delay
   has not been retested. See [the remaining acceptance work](backlog.md#reported-behavior).
 - **Profile-preserving import:** every readable source Profile and its extensions
   are imported; the default Profile uses the captured destination and others
@@ -120,8 +120,8 @@ included. General Chromium/Google networking is not a separate removal project.
 Safe Browsing remains configured without a key and is inert without one;
 on-device suggestions do not require a Google API key.
 
-The existing Chromium AI exclusions remain. Josh accepted their current state
-and closed the broader audit/overhead proposal; that unperformed work does not
+The existing Chromium AI exclusions are the accepted scope. The broader
+audit/overhead proposal is closed; that unperformed work does not
 establish absence of every engine path or a measured performance improvement.
 Further scripting remains deferred. The removed cross-Profile created-page
 proposal (ROUTE11) and speculative shutdown task (WIN14) stay out of scope.

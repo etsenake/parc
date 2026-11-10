@@ -64,8 +64,8 @@ evidence. Renderer-driven exercise requires a separate authorized run and receip
 
 ## Source integration and remaining runtime work
 
-Pinned CEF is `4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f` and Chromium is
-`d0c02bfad08ec92a6ffcf989e53cd995e6381a4c` (156.0.8078.48).
+CEF and Chromium revisions are pinned in
+[the source lock](../../Engine/source-lock.json).
 
 The original v5 integration, retained by the current overlay, compiles the
 presenter in the native AppKit component source set and the runner in actual

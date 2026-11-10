@@ -1,12 +1,15 @@
 # Theme renderer textures
 
+`grain.png`, `sand.png`, `denim.png` and `tweed.png` come from the user-provided
+`ARC_WindowThemeUI.bundle/Contents/Resources/Assets.car`. Their source asset
+names are `grain_metal`, `sand_metal`, `denim_metal` and `tweed_metal`.
 
-The original image loader obtains `NSImage` by semantic resource name, then its `CGImage` compatibility getter calls `CGImageForProposedRect:context:hints:` with the image's logical-size rectangle and nil context/hints. Repeating that read-only conversion selects grain 200×200 pixels and sand/denim/tweed 100×100 pixels. ImageIO exported those CGImages directly without resizing or redrawing, preserving sRGB profiles and alpha. The exported files were compared byte-for-byte with a fresh nil-context conversion.
+The native export loaded each `NSImage` by resource name and requested its
+`CGImage` using the logical-size rectangle with no context or hints. This
+selected a 200 × 200 pixel image for grain and 100 × 100 for the other textures.
+ImageIO wrote those images without resizing or redrawing, preserving sRGB
+profiles and alpha.
 
-
-| File | SHA-256 |
-|---|---|
-| `denim.png` | `971da25f447cf5768376842db1be3e673c34f557ebfa03ae5776b1c440e80de2` |
-| `grain.png` | `8fbdb4aafc4995ccad07c908f6b10100dd06c7033dc7b6de0f857c7a788eb5fc` |
-| `sand.png` | `97304d64f6c096c2be7e8d50a636470676e9da7a4bbf745cecddb06bf16074af` |
-| `tweed.png` | `b347fae47b4664129bf0938822c110223a18f5890ce8e98a91a0881a2149af26` |
+Parc's own renderer and shader load only these standalone PNGs. No original
+provenance alone does not establish the complete renderer's appearance; see
+[theme rendering](../../docs/space-theme-rendering.md).

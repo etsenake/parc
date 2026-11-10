@@ -10,7 +10,7 @@ Version comes from Conventional Commits; `--type major|minor|patch` overrides th
 calculation. The command builds, signs, notarizes/staples, publishes GitHub assets
 and publishes/verifies the Homebrew cask. It never installs, quits or launches
 Parc, performs browser/startup checks, waits for quiet main, or runs a Homebrew
-install/upgrade/reinstall. Josh upgrades manually.
+install/upgrade/reinstall. Users upgrade manually.
 
 ## Package a versioned candidate
 

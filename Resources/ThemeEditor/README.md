@@ -1,19 +1,37 @@
 # Theme editor assets
 
+(71105) reference. Parc loads standalone bundled resources without an installed
 
-- DotGrid and the four texture knobs came from `ARC_SpaceStyleEditor.bundle/Contents/Resources/Assets.car` (SHA-256 `55f8fa84237f73d4a58b5a6aaba0d96066bbb5e8ab6acffa919e9664aeab4029`). AppKit selected native 2× CGImage renditions, then ImageIO wrote PNG without resizing or redrawing. DotGrid is 799×801 pixels (original logical size 400×401); each knob is 112×112 pixels (nominal logical size 56 points; the source GrainKnob reports 56×57). Preserve native layout dimensions separately from pixel dimensions. DotGrid is template artwork.
-- `sun.json`, `moon.json`, and `automatic.json` are unchanged Lottie files from the same bundle. Native selected appearance icons loop; the unselected icons are paused. The source renderer supports the used animation subset.
+## Grid and texture controls
 
-Extraction used semantic asset names; reused internal catalog rendition filenames are not identities. These exports preserve embedded image color profiles and alpha. Resource provenance does not establish complete editor visual/motion parity; see the project's parity ledger.
+`DotGrid.png`, `DenimKnob.png`, `GrainKnob.png`, `SandKnob.png` and
+`TweedKnob.png` come from `ARC_SpaceStyleEditor.bundle/Contents/Resources/Assets.car`.
+AppKit selected the native 2× bitmaps and ImageIO wrote them without resizing or
+redrawing, preserving their embedded color profiles and alpha.
 
-| File | SHA-256 |
-|---|---|
-| `DenimKnob.png` | `0ddd77aa473af3e78a3c51ed512e267b30ca1ceaf90d9247f0cdea38b1f870cb` |
-| `DotGrid.png` | `d30f9a08cbc4999b4ea597b84113f0e411a15818cc6d0f41316bb34279b49e4b` |
-| `GrainKnob.png` | `548894b96e434e6827b0615c5449d546002050357bffdc6a5145df87e7c4bf50` |
-| `SandKnob.png` | `8d353869ad748044e3c3cca725a88e4c623093815fe1fa385fd6cde0c85de09b` |
-| `TweedKnob.png` | `bd4942341e04d09b95d8bf309e14ec3a707f288e49e422ef2404a860d735cbf8` |
-| `automatic.json` | `977a093912df30d3bb1f02b772a8786ee973af3c5d0f679ef95a631d4b843242` |
-| `moon.json` | `9029532f85a02f90b21f58d9ed0268102cdaf462d6789fc99f54ee9023b7039c` |
-| `presets.json` | `8b086432fb467a5319da91266cddb8f54fa5c249548d0c10a4bcd998d5abfaf7` |
-| `sun.json` | `e6357eb2fd9a716a9f58f4797ca17be8642974d082b0f9076de70ee2d358839c` |
+DotGrid is template artwork at 799 × 801 pixels, with an original logical size
+of 400 × 401. Each knob is 112 × 112 pixels with a nominal 56-point size;
+the source GrainKnob reports 56 × 57. Keep native layout dimensions separate
+from pixel dimensions.
+
+## Appearance animations
+
+`sun.json`, `moon.json` and `automatic.json` are unchanged Lottie files from
+the same bundle. Selected appearance icons loop and unselected icons pause.
+Parc's source renderer supports the animation subset these files use.
+
+## Color presets
+
+`presets.json` contains 45 ordered picker records across five zero-based pages:
+solid Brand, three-color analogous Brand, Pastel, Drab and Greyscale. The first
+two pages intentionally reuse nine colors with different color counts and
+harmony settings.
+
+the remaining families come from the editor catalog. Floating-point RGBA values
+are preserved. Brand1–4 use sRGB; Brand5 uses extended linear sRGB (`linearSRGB`
+in the loader); Brand6–9 and every Pastel, Drab and Greyscale color use Display
+P3. Selecting a named color converts it to Display P3.
+
+Extraction used semantic asset names, since internal rendition filenames can
+be reused. Asset provenance alone does not establish the complete editor's
+appearance or motion. See [theme editor](../../docs/space-theme-editor.md).

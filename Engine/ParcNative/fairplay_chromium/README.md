@@ -380,8 +380,8 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
   still says no to `dvh1`/`dvhe`, and EME offers it only through key systems
   whose codecs list it, which means FairPlay and not Widevine. That is
   Chromium's model on Windows. FairPlay's `CdmInfo` lists profile 5 only. The
-  adapter and core can also play profile 8, but sites aren't offered it (Josh's
-  decision, November 6).
+  adapter and core can also play profile 8, but sites aren't offered it under the current
+  capability policy.
 - Dolby Vision in Media Source follows Safari, whose
   `AVSampleBufferDisplayLayer` decodes it clear or encrypted, with keys set
   before, after or never. On a document presenting Safari's identity (with
@@ -408,7 +408,7 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
     Dolby Vision later (`changeType()`) makes the demuxer prefer that renderer
     too (`Demuxer::ParcPrefersFairPlayRenderer`), and the player restarts into
     it (Known gaps).
-- AC-3/E-AC-3 is ordinary codec support (Josh's decision, November 6): pages
+- AC-3/E-AC-3 is ordinary codec support: pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:
   `media/cdm/supported_audio_codecs.cc` leaves AC-3/E-AC-3 out of library CDMs
@@ -417,7 +417,7 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
   `addSourceBuffer`/`changeType` now accept `dvh1`/`dvhe` (outside FairPlay
   only to reject a clear Dolby Vision init segment later, where it threw
   NotSupportedError before), and ClearKey's EME also offers AC-3/E-AC-3.
-- Changing `gn_defines` changes the source lock's digest, so Josh's existing
+- Changing `gn_defines` changes the source lock's digest, so an existing
   workspace needs `scripts/engine-source.py reconfigure` before the next build.
   The media buildflag headers change, so dependents of
   `media/media_buildflags.h` recompile.
@@ -476,7 +476,7 @@ Service-specific licensing/playback, protected-output behavior, hardware codec
 combinations and physical AirPlay delivery require separate runtime evidence.
 Component fixtures and engine compilation cannot establish those results.
 Browser/app execution remains prohibited by [AGENTS.md](../../../AGENTS.md)
-unless Josh explicitly changes that direction.
+unless the user explicitly authorizes it.
 
 ## Checks run without a build
 

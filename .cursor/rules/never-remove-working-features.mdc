@@ -8,4 +8,4 @@ alwaysApply: true
 Never remove, hide or disconnect a working control, setting, shortcut, behavior
 or its tests to match another browser. Replay onboarding in Settings → General
 is protected. Preserve additions when changing layout; surface any genuine
-product conflict to Josh. See [AGENTS.md](../../AGENTS.md).
+product conflict to the user. See [AGENTS.md](../../AGENTS.md).

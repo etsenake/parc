@@ -13,7 +13,7 @@ The direct internal C++ `CefInitialize` entry does not call the public wrapper's
 `cef_api_hash`, leaving `cef_api_version()` at its initial `-1`. Pinned CEF's
 `chrome_main_delegate_cef.cc` applies the settings names only inside
 `CEF_API_IS_ADDED(15600)`, so merely filling those settings did not change the
-actual OSCrypt namespace. Josh observed Chromium Safe Storage on overlay 326.
+actual OSCrypt namespace.
 This is an upstream-startup integration correction to the retained Parc-owned
 
 `native_engine_entry.mm` now explicitly sets the shared `KeychainPassword`

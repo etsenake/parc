@@ -13,7 +13,7 @@ Current user instructions override older repository guidance. Replace obsolete
 instructions rather than appending another dated override.
 
 Use the workspace and delegation scope authorized for the current task. The
-canonical checkout is `/Users/josh.etsenake/parc`, on `main`. Preserve other
+canonical checkout is this repository's `main` checkout. Preserve other
 contributors' edits. Do not create worktrees without authorization. Root owns
 this Mac's shared engine, packaging and signing operations unless it explicitly
 hands off ownership. A documentation task does not authorize product changes,
@@ -98,7 +98,7 @@ proven causes. A regression check should reproduce the failure, not merely mirro
 the proposed implementation.
 
 A gap may remain only for an explicit exclusion/deferral, a genuine user decision,
-or work outside the assignment. Record the needed next action. **Tell Josh about
+or work outside the assignment. Record the needed next action. **Disclose to the user
 every gap, limitation or decision recorded in documentation or a commit message
 in the same turn**, including findings from helpers, in
 plain words describing what the user experiences. Report unrun validation once
@@ -173,8 +173,8 @@ sync/build. Setup does not authorize compilation or feature development.
 (or `--type major|minor|patch`), build engine/app, Developer ID sign,
 notarize/staple, publish GitHub assets and publish/verify the tap cask. It must
 never wait for main to be quiet, install/replace/quit/open the local app, run
-startup/browser checks, or run Homebrew install/upgrade/reinstall. Josh upgrades
-Homebrew himself. Signature/hash/source/notarization checks remain required;
+startup/browser checks, or run Homebrew install/upgrade/reinstall. Users run
+Homebrew upgrades themselves. Signature/hash/source/notarization checks remain required;
 these do not prove runtime acceptance. See [release guide](docs/master-release.md).
 
 Publish authorized development app packages with `scripts/package-app.sh` and

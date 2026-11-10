@@ -17,7 +17,7 @@
 
 
 
-On October 28 Josh explicitly requested deterministic processing that preserves
+The approved deterministic processing preserves
 the artwork. The masters now have their outer alpha debris removed while every
 RGB byte and every pixel with alpha at least 128 remains identical to the approved
 input. `artwork-provenance.json` records the preservation fingerprints. The
@@ -78,7 +78,6 @@ included availability in [app icon availability](../../docs/app-icon-availabilit
 [UI marks and alpha cleanup](../../docs/app-icon-marks.md) records ICON08's
 source-preservation boundary and actual consumers. The approved variants retain
 their individual proportion/shading differences within the common optical frame.
-The current
-row states in [the icon guide](../../docs/app-icon-picker.md)
-govern completion. Integrated Dock/Finder appearance remains part of the separate
+The [icon guide](../../docs/app-icon-picker.md) describes current interaction
+and validation boundaries. Integrated Dock/Finder appearance remains part of the separate
 whole-product polish pass; these asset checks do not claim a browser runtime test.

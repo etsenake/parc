@@ -1,8 +1,9 @@
 # FairPlay M0 proof
 
-Proves the engine-independent FairPlay core in
-[Engine/ParcNative/fairplay](../../Engine/ParcNative/fairplay/README.md) plays
-real FairPlay content on this Mac, before any Chromium integration.
+Exercises the engine-independent FairPlay core in
+[Engine/ParcNative/fairplay](../../Engine/ParcNative/fairplay/README.md) with
+real FairPlay content, independently of Chromium. This harness opens a window;
+running it requires explicit authorization under [AGENTS.md](../../AGENTS.md).
 
 ```bash
 scripts/test-fairplay-core.sh
@@ -28,7 +29,8 @@ The README's Shaka player link for the FairPlay variant gives:
   English audio),
 - license: `https://drm-fairplay-licensing.axprod.net/AcquireLicense`,
 - certificate: `https://tools.axinom.com/FPScert/fairplay.cer`,
-- the entitlement token for key `302f80dd-411e-4886-bca5-bb1f8018a024`.
+- the SingleKey entitlement token and key identifier, held as `kToken` and
+  `kSkd` in [the harness](harness.mm).
 
 Axinom's player (tools.axinom.com `js/players/shaka.js`) adds only the
 `X-AxDRM-Message: <token>` header to Shaka's default FairPlay request, so the
@@ -50,154 +52,78 @@ reframing: Annex B with SPS/PPS before keyframes, ADTS on AAC, microseconds,
 16-byte IVs, and no decode timestamps (DecoderBuffer has none, so B-frames
 arrive in decode order with presentation times only).
 
-1. Offline self-tests on the downloaded segments: box builders against the
-   file's own `sinf`, the AAC cookie through CoreAudio, Annex B and ADTS round
-   trips through the core's reframing, init-data planning.
+1. Offline segment checks: box builders match the file's `sinf`; AAC cookies
+   work through CoreAudio; Annex B/ADTS round trips and init-data planning agree.
 2. License exchange through `FairPlayCdm` with skd init data.
-3. Chromium-framed playback: play 8 s, pause, resume, rate 1.5, volume/mute,
-   seek to 40 s (mid-segment), and end of stream with `OnEnded`. The frame
-   counts the Chromium adapter reports as playback statistics move with the
-   clock: the core's `frames_passed` matches the frames due after 8 s (also
-   ISO-framed), and both it and AVFoundation's counts stand still while
-   paused, then advance again after resuming.
-4. ISO-framed playback: play and seek.
-5. Clear lead: a clear segment, then protected segments, in one track.
-6. Underflow: 6 s of data, HAVE_NOTHING with the clock stopped, then more data
-   and recovery.
-7. Samples before keys, as WebKit handles them: encrypted samples are held
-   (up to 4 s past the clock) and count as buffered, so HAVE_ENOUGH comes
-   before the license while the clock waits at the start for samples it can
-   play; they play when the license arrives. A short clip enqueued in full
-   with end of stream before its license gets HAVE_ENOUGH and a clock held at
-   its start (rate 1 set), then plays from the start once the key arrives and
-   ends on time. A clear video lead followed by a protected tail and end of
-   stream, without the tail's license, keeps the clock running over the
-   frozen picture and ends at the tail's end, as Safari does.
-8. sinf, keyids and cenc init data (cenc both with the vector's own pssh boxes
-   and with a FairPlay pssh added): each gets a license and plays 3 s.
-9. Netflix's key flow on Axinom's three-key vector ("CMAF H264 MultiKey",
-   cbcs). One `cenc` request carries the vector's pssh boxes plus a FairPlay
-   pssh naming all three keys. That produces one JSON message with three SPCs,
-   each named by its own key ID; a response naming a key twice is rejected;
-   one JSON response makes all three keys usable, then video and audio play
-   under different keys. The FairPlay pssh is version 0 (key IDs only in its
-   `fpsd`), so the plan names no key IDs and each request carries only its
-   own: a version 1 box with the key IDs in its header gets no request from
-   AVFoundation at all on macOS 27.2. A
-   second run does the same without the FairPlay pssh, using the Widevine key
-   IDs.
-10. HEVC: "CMAF H265 SingleKey" (cbcs, its own token and key), Chromium-framed,
-    5 s.
-11. Netflix's codecs through the renderer's clear path, Chromium-framed and
-    played to `OnEnded`, each followed by a check of its protected format type.
-    Media comes from Chromium's `media/test/data`: `hev1` (also with its
-    parameter sets moved in-band), Dolby Vision profile 5, AV1 and xHE-AAC.
-    HE-AAC and HE-AACv2 are encoded locally with AudioToolbox. VP9 and Vorbis
-    come from its WebM files (`webm_parser.cc`): VP9 alone, Vorbis alone and
-    under Dolby Vision, and VP9 → Dolby Vision → VP9 through Reconfigure
-    (`CodecSwitchScenario`), each video one showing a picture at the end.
-12. FairPlay SAMPLE-AES in MPEG-2 TS: Axinom's "HLS H264 SingleKey" (H.264
-    `0xdb`, AAC `0xcf`), split as Chromium's TS parser splits it
-    (`ts_parser.cc`) and marked with the mpts key ID. `AVStreamDataParser`'s
-    own parse of the segments is the reference for the mpts init data, the
-    formats and every sample's bytes. Then the mpts license and 6 s of
-    playback with no corrupted frames. Axinom's license service wants a key
-    GUID as the SPC's asset ID, so the harness names it
-    (`SetSpcContentIdentifierForTesting`), where WebKit and Parc send
-    `TransportStreamIdentifier`. AC-3, E-AC-3, HE-AAC and HE-AACv2 get the
-    types `AVStreamDataParser` gives them.
+3. Chromium-framed playback: play, pause, resume, rate 1.5, volume/mute,
+   mid-segment seek and end of stream. Core frame statistics track frames due
+   at the clock; core and AVFoundation counters stay fixed while paused.
+4. ISO-framed playback and seeking.
+5. Clear lead followed by protected samples in the same track.
+6. Underflow: HAVE_NOTHING stops the clock; more data restores playback.
+7. Samples before keys: encrypted samples are held up to 4 s past the clock
+   and count as buffered. HAVE_ENOUGH can precede the license while playback
+   waits. A complete encrypted clip waits at its start and ends on time after
+   licensing; a clear lead with an unlicensed encrypted tail keeps the clock
+   running over the frozen picture and ends at the tail's end, as Safari does.
+8. sinf, keyids and cenc init data, with both the vector's pssh boxes and an
+   added FairPlay pssh, each license and play.
+9. Multi-key `cenc` requests: Axinom's "CMAF H264 MultiKey" produces one JSON
+   message containing three SPCs. Duplicate response key IDs are rejected;
+   one valid response makes the audio and video keys usable. A version 0
+   FairPlay pssh names keys only in `fpsd`, so each request carries its own.
+   A version 1 pssh with key IDs in its header gets no AVFoundation request
+   on macOS 27.2. The scenario also runs with only Widevine key IDs.
+10. HEVC: Axinom's "CMAF H265 SingleKey" with its own key/token and Chromium
+    framing.
+11. Clear codec playback to `OnEnded` and protected-format checks: Chromium's
+    `hev1` (including in-band parameter sets), Dolby Vision profile 5, AV1 and
+    xHE-AAC; locally encoded HE-AAC/HE-AACv2; WebM VP9/Vorbis parsed by
+    `webm_parser.cc`. VP9 and Vorbis run separately and under Dolby Vision;
+    `CodecSwitchScenario` reconfigures VP9 → Dolby Vision → VP9.
+12. SAMPLE-AES TS: Axinom's "HLS H264 SingleKey" is split by `ts_parser.cc`
+    like Chromium, with the mpts key ID. `AVStreamDataParser` supplies the
+    reference init data, formats and sample bytes. Axinom needs a key GUID
+    as the SPC asset ID, supplied by `SetSpcContentIdentifierForTesting`;
+    WebKit and Parc use `TransportStreamIdentifier`. AC-3, E-AC-3 and the
+    HE-AAC variants retain the parser's format types.
 13. Session remove and close.
-13. Keys after playback started (`HandOffScenario`): a clear lead played
-    without a CDM, then `SetCdm` during it, after it (over the frozen
-    picture), while paused, just before a seek and just before teardown; the
-    page's MediaKeys replaced during protected playback; clear Dolby Vision
-    without keys, then keys. Polled every 20 ms: a picture in the layer at
-    every poll, the clock never still longer than in plain playback (its
-    timebase reads back in steps of about 80 ms), no HAVE_NOTHING, and the
-    outgoing display layer gone once the new one has a frame (35-50 ms on
-    this Mac). Protected samples then play with the new keys.
-14. Video track switches (`VideoSwitchScenario`): protected to clear and
-    back, and the track turned off (end of stream) and on again, with audio
-    playing. The same display layer shows the new track; the clock waits for
-    its first frame (20-140 ms here), with no HAVE_NOTHING.
+14. `HandOffScenario`: attach keys during/after clear lead, while paused,
+    before seek and before teardown; replace MediaKeys during protected
+    playback; attach keys after clear Dolby Vision. It polls picture presence
+    and clock progress, requires no HAVE_NOTHING, and retires the outgoing
+    layer only after the replacement has a frame.
+15. `VideoSwitchScenario`: protected ↔ clear and video off/on while audio
+    plays. The same display layer shows the new track; the clock waits for
+    its first frame without HAVE_NOTHING.
 
-## Results
+## Results and limits
 
-Recorded 2026-11-06 on this MacBook Air (macOS 27.2, build 26B123): 186 checks,
-0 failed. Excerpts:
+Recorded core and multi-key harness runs on macOS 27.2 exercised license
+exchange, clear/protected playback, pause/rate/seek, underflow recovery,
+late keys, supported init-data forms, HEVC, session close/remove and clear-path
+codec decoding. The recorded core baseline and separate multi-key run had no
+failed checks. A later expanded run reached its time cap; the remaining HEVC
+B-frame and close/remove sections passed separately. These are historical
+harness results, not a current browser or service acceptance claim.
 
-- License (skd): 7632-byte SPC, HTTP 200, 1004-byte CKC, key
-  `302f80dd411e4886bca5bb1f8018a024` usable in 0.45 s.
-- Chromium framing (Annex B + in-band SPS/PPS, ADTS, µs, 16-byte IVs), 720p +
-  AAC:
-  - play: media time 0.000 → 7.900 over 8.005 s wall; video and audio
-    `rendering`; AVFoundation metrics 243 frames, 0 dropped, 0 corrupted;
-  - pause: 7.902 → 7.902 over 2.03 s; resume: +2.026 s over 2.014 s; rate
-    1.5: +3.018 s over 2.021 s;
-  - seek to 40 s: lands at 40.000, then +3.952 s over 4.028 s, 259 more
-    frames, 0 dropped or corrupted;
-  - end of stream: `OnEnded` at t=78.019 for a 78.000 s end;
-  - no HAVE_NOTHING during steady playback; output never obscured.
-- Frame counts (2026-11-06, with the adapter's statistics): after 8 s the
-  core counted 190 of 190 frames due (AVFoundation 247); paused 1.5 s apart,
-  core 190 → 190 and AVFoundation 247 → 247, dropped 0 → 0; 2 s after
-  resuming, core +49 (24 fps) and AVFoundation +32. AVFoundation's count
-  includes the frames decoded ahead of the clock, so right after a pause it
-  follows the decoder's queue rather than the clock. ISO-framed: 191 of 191
-  due. The full run reached 571 checks, 0 failed, before its 290 s time cap;
-  the two sections past the cap passed on their own (HEVC B-frames 82/82
-  frames; close and remove). The sandbox probe's h264 and hevc scenarios
-  passed under the GPU profile with the FairPlay rules (163 and 164 frames,
-  0 dropped).
-- ISO framing: +7.951 s over 8.031 s (231 frames); seek, then +3.949 s.
-- Clear lead: 4.951 s clear, then 6.000 s over 6.000 s into protected samples,
-  303 frames, 0 dropped or corrupted.
-- Underflow: HAVE_NOTHING at t=6.001 (data ended at 6.0); clock frozen for
-  1.5 s; with more data, HAVE_ENOUGH, then +3.034 s over 3.009 s.
-- Late keys: samples held, `OnWaitingForKey` once, nothing enqueued until the
-  license; then +3.948 s over 4.025 s.
-- sinf, keyids, cenc (vector pssh boxes), cenc (with a FairPlay pssh): each
-  license is HTTP 200, each plays about 2.95 s of 3 s.
-- HEVC (H265 vector, key `abcc44e5c12245abac80a5b3522a0a31`): 5840-byte SPC,
-  HTTP 200; +4.947 s over 5.021 s; 159 frames, 0 dropped or corrupted.
-- Remove reports the key released and unusable; close fires
-  `OnSessionClosed`; an update after close is rejected (InvalidStateError).
+The checks distinguish frames due at the playback clock from AVFoundation's
+frames decoded ahead. Both counters stayed fixed while paused and advanced
+on resume; the core's due-frame count matched the presentation timeline.
+Protected playback is assessed through the clock, renderer state and frame
+metrics. Captured protected video can appear blank, so an image alone is not
+playback evidence. Output-protection state sometimes became obscured while
+decoding continued; the harness records it separately from decoding success.
 
-Netflix profile (2026-11-06, 249 checks, 0 failed):
+[Protected-codec checks](codecs/README.md) cover locally encrypted Dolby Vision,
+AV1, AAC variants, AC-3 and E-AC-3, including 7.1 channel layout, and document
+the unsupported cenc path and other platform limits.
 
-- Three keys: the `cenc` init data was 890 bytes (vector boxes plus a FairPlay
-  pssh). It produced one 31,225-byte JSON license message with three SPCs;
-  Netflix's messages were 27–39 KB. Three Axinom CKCs went back in one JSON
-  response, and `b54ec914…` (audio), `c868c702…` (720p video) and `c83c4ea8…`
-  all became usable. Playback: 3.923 s over 4.001 s, 133 frames, 0 dropped or
-  corrupted. The same works with only the Widevine key IDs.
-- Clear-path decoding with Chromium framing, each played to `OnEnded` at the
-  clip's end:
-  - hev1: 82/82 frames, 0 corrupted;
-  - hev1 with in-band parameter sets only: 82/82;
-  - Dolby Vision profile 5: 120/120 frames, 0 corrupted;
-  - AV1: 82/82 frames;
-  - xHE-AAC, HE-AAC, HE-AACv2: each ended on time.
-- Protected types: `qhvc`, `qdh1`, `qav1`, `qusa`, and `qaac` with `qach` or
-  `qacp` layers.
-- During some runs `outputObscuredDueToInsufficientExternalProtection` went
-  true for about 30 s while frames kept decoding. That is consistent with
-  screen capture by another process on this Mac. The harness logs it rather
-  than failing.
-
-Screenshots of the window show no picture, as expected for protected video.
-Playback is proven by the clock, the renderer status and AVFoundation's frame
-counts instead.
-
-Protected decoding of the other codecs is in [codecs/](codecs/README.md). It
-covers Dolby Vision (`dvh1`, `dvhe`), AV1, HE-AAC, HE-AACv2, xHE-AAC, AC-3,
-E-AC-3, 7.1 E-AC-3 and the cenc scheme, using content encrypted locally under
-Axinom's published key. Its results list what still fails.
-
-Not verified: `avc3` (normalized like `hev1`, untested), Dolby Vision profile
-8 (`dvvC`), per-sample key rotation within one track (one format description
-per key ID is implemented, but untested), license renewal, macOS versions
-below 27, external displays and HDCP.
+The recorded runs do not establish `avc3`, Dolby Vision profile 8, per-sample
+key rotation within one track, license renewal, macOS versions below 27,
+external displays or HDCP. Having a scenario in source does not establish that
+it ran; retain exact commands and results in ignored output when an authorized
+run exercises newer coverage.
 
 ## Apple API behaviour
 
@@ -207,8 +133,8 @@ Key delivery
 - `AVSampleBufferAttachContentKey` fails on every sample with
   `AVFoundationErrorDomain -11836` ("Cannot Open", failure reason "This app is
   not authorized to play this file") over `NSOSStatusErrorDomain -12161`. The
-  first call also takes about 0.7 s. WebKit commit 271966@main (Apple-reviewed)
-  states the API needs `com.apple.private.coremedia.allow-fps-attachment` on
+  first call also takes about 0.7 s. WebKit's content-key attachment implementation
+  requires `com.apple.private.coremedia.allow-fps-attachment` on
   macOS, and WebKit grants that only to its GPU process. An ad-hoc signed binary
   that claims the entitlement is SIGKILLed at launch (exit 137). The API can't
   be used by Parc.
@@ -324,7 +250,7 @@ probed through its runtime interface)
 - Removing the display layer from its tree for 3 s mid-playback neither stops
   decoding nor sets `requiresFlushToResumeDecoding`.
 - DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator)
-  carries `dec3` `chan_loc` = 0x002 for Lrs/Rrs: bit 0 is the LSB. CoreMedia's
+  sets the second least-significant `dec3` `chan_loc` bit for Lrs/Rrs. CoreMedia's
   format description lists that box with a top layer of 8 channels
   (`EAC3_7_1_A`) over a 6-channel one, and the stream decodes to the end
   ([codecs/](codecs/README.md#results)).

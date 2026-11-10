@@ -136,7 +136,7 @@ python3 scripts/build.py build \
   --output "$PARC_RUN/development" --configuration release
 ```
 
-For an app Josh will run, package with `bash scripts/package-app.sh
+For a distributable development app, package with `bash scripts/package-app.sh
 "$PARC_RUN/engine-artifacts.json"` instead of the `build` step above: it
 packages from the clean pushed checkout into its own run folder and publishes
 the result to GitHub ([publishing app builds](../tests/Packaging/README.md#publishing-app-builds)).

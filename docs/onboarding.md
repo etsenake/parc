@@ -45,7 +45,7 @@ The account-free sequence is:
 Account, cloud and AI steps are excluded. No starter folder is seeded. Import
 is skipped if no browser is found; HTML selection remains available through its
 own action. Favorites follow the complete import. That position remains the
-existing default pending Josh's retained ordering decision (OB17).
+existing default pending the product ordering decision (OB17).
 
 Back follows the actual conditional order. Import pages use **Do this later**
 or **Skip for now** as appropriate. Theme Skip clears the first-launch color;

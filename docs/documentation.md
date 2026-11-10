@@ -51,7 +51,7 @@ invitation to rebuild the old percentage ledger.
    or update its backlog item; do not add a completed-work paragraph.
 4. State validation accurately: source checked, artifact published, runtime
    tested or explicitly user confirmed. Do not treat one as another.
-5. Tell Josh about any newly recorded or retained gap in the same turn. Keep
+5. Tell the user about any newly recorded or retained gap in the same turn. Keep
    unperformed validation separate from known missing behavior.
 
 Do not append dated implementation diaries, agent transcripts, build-by-build

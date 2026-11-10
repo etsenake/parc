@@ -29,7 +29,7 @@ disabled override before allocating the controller. That override also
 prevents Chrome's separate country/locale launch fallback. It does not alter
 the global FeatureList or install a testing controller.
 
-On-device search suggestions are no longer excluded (Josh, November 1). Their
+On-device search suggestions are included. Their
 model arrives through the component updater, which needs no Google API key, so
 `DefaultOmniboxProviders()` includes the on-device head provider here and the
 browser test expects it.
@@ -41,8 +41,9 @@ object's presence is not falsely reported as absence. See
 `components/omnibox/browser/autocomplete_classifier.cc`,
 `history_embeddings_provider.cc`, and
 `chrome/browser/history_embeddings/history_embeddings_utils.cc` in the pin.
-This guard covers these specific paths only. This is not an engine-wide absence claim. The broader AI audit was closed by
-Josh; preserve existing exclusions and investigate concrete contrary evidence.
+This guard covers these specific paths only, not engine-wide absence. The
+broader AI audit is closed; preserve existing exclusions and investigate
+concrete contrary evidence.
 No general Google-networking removal is implied.
 
 ## Checks and remaining integration

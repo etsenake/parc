@@ -57,21 +57,17 @@ python3 scripts/build.py build \
   --configuration release --sign-identity 'Developer ID Application: YOUR IDENTITY'
 ```
 
-The atomically published directory contains a standalone `Parc.app` and its provenance report, with no sibling engine components. Distribution requires release app optimization and certificate-backed signing; normal inside-out hardened signing and strict validation remain unchanged. A non-component engine can also be packaged explicitly for local development with ad-hoc signing. Reports distinguish engine eligibility, intended purpose and actual signing identity, and state `notarized: false`; this command does not submit a notarization request or publish the app. Engine generation/compilation and package production status belong in the [parity ledger](../../docs/parity.md).
+The atomically published directory contains a standalone `Parc.app` and its provenance report, with no sibling engine components. Distribution requires release app optimization and certificate-backed signing; normal inside-out hardened signing and strict validation remain unchanged. A non-component engine can also be packaged explicitly for local development with ad-hoc signing. Reports distinguish engine eligibility, intended purpose and actual signing identity, and state `notarized: false`; this command does not submit a notarization request or publish the app. Engine generation/compilation and package production status belong in the [product status](../../docs/parity.md).
 
 ## Publishing app builds
 
 ### Stable versions and Homebrew
 
 `app-version.json` is the single app/helper bundle version and build-number
-source. Josh confirmed normal startup of 1.0.0 (bundle build 1); the automated
-observation was interrupted by his deliberate behavior test and remains raw
-evidence, not an automated pass. Wait for Josh's ready candidate before preparing 1.0.1
-(bundle build 2). Then use `python3 scripts/app_version.py bump 1.0.1`, review the source and
-version change, run applicable checks, then commit and push before packaging.
-The command requires a numerically greater three-part version and advances the
-bundle build. Preview packages keep the prepared version and do not update the
-stable Homebrew cask.
+source. The [release command](../../docs/master-release.md) derives a version
+from Conventional Commits and advances the bundle build number. Preview packages
+keep the prepared version and do not update the stable Homebrew cask. A version
+change alone does not establish publication or runtime acceptance.
 
 ```sh
 bash scripts/package-app.sh --stable <sealed engine-artifacts.json>
@@ -93,50 +89,37 @@ against Apple's history rather than automatically submitted twice. This follows
 [Apple's container workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 and Pi Garden's signed DMG plus ZIP release arrangement. The ZIP retains the
 package report and supports later engine reuse. Stable releases are retained; the three-preview
-cleanup only matches `app-*`. Install and open the completed app immediately,
-as required below, then update the existing public tap clone:
+cleanup only matches `app-*`. Production publication uses verified artifacts
+without installing or opening the app. The release command handles tap
+publication; its focused equivalent is below. Set `PARC_RELEASE_TAG` to the
+already published versioned candidate tag:
 
 ```sh
-python3 scripts/publish-homebrew.py v1.0.1 \
-  --acceptance /absolute/acceptance.json --tap /absolute/homebrew-tap \
+python3 scripts/publish-homebrew.py "$PARC_RELEASE_TAG" \
+  --artifact-only --resume --tap /absolute/homebrew-tap \
   --appcast /absolute/appcast.xml
 ```
 
-First use the source-owned `scripts/record-release-acceptance.py` on a fresh
-installed ready candidate; it verifies strict signing before normal open,
-observes at least 60 seconds without exits/new crash reports, and checks every
-image, production Team and stable designated requirement again afterward.
-Alternatively, `--user-confirmed` records Josh's dated explicit acceptance and
-statically verifies the preserved package artifact without current-app access
-or launch; it retains an interrupted observation unchanged and never claims
-an automatic pass. The publisher requires either valid receipt bound to the exact raw archived
-report hash, source commit and version. It verifies the actual GitHub tag resolves to the release's exact source
-commit, both downloaded assets against GitHub's digests, the bundle and report
-versions, the production Team ID `94HKA7L2DR`, app and DMG notarization and every
-signed-image hash before promoting stable/latest and changing the
-cask. Review the tap diff, run its downloader harness, `brew audit --cask
-etsenake/tap/parc` and a real `brew fetch --cask etsenake/tap/parc`, then commit
-and push the tap immediately and compare its local/remote SHA. The updater
-requires a clean main checkout of `etsenake/homebrew-tap`; it preserves unrelated
-casks and rejects equal or decreasing release versions.
+The publisher verifies the release tag/source/version, downloaded ZIP and DMG,
+package report, production signing identity, notarization and every signed
+image before promoting the release and updating the cask. The signed appcast
+and exact public assets must agree. It preserves unrelated tap edits and
+refuses older versions; `--resume` permits an identical verified cask.
+The [Homebrew guide](../../docs/homebrew-release.md) owns publication and
+verification details, including the separate optional user-confirmation path.
+No startup receipt is required or runtime acceptance claimed by `--artifact-only`.
 
-On another Apple Silicon Mac, run `brew tap etsenake/tap` and
-`brew install --cask parc`; no GitHub login is needed. Upgrade with `brew update`
-and `brew upgrade --cask parc`. Stable releases are mirrored with identical
-bytes to the public `etsenake/parc-releases` repository, which the cask
-downloads from; the source stays private. Homebrew uninstall preserves the Parc
-profile. The initial 0.1.0 bootstrap cask can adopt the verified matching existing
-notarized app with `brew install --cask --adopt parc` before its
-first accepted stable upgrade. Actual DMG installation/upgrade validation waits
-for an authorized app operation; promotion of user-confirmed 1.0.0 is authorized
-now. Follow the complete [release runbook](../../docs/homebrew-release.md)
-for fresh installation, recording, immutable retries, local-seal reuse for
-documentation-only engine differences and promotion. No app/build/Keychain
-checks are authorized by this documentation while the current hold applies.
+Users install on another Apple Silicon Mac with `brew tap etsenake/tap` and
+`brew install --cask parc`, and upgrade with `brew update` followed by
+`brew upgrade --cask parc`. Stable assets are mirrored unchanged to the public
+`etsenake/parc-releases` repository, so no GitHub login is needed. Homebrew
+uninstall preserves the Parc profile. Publication does not authorize running
+these installation or upgrade commands; users handle their own upgrades.
 
 ### Preview builds
 
-Every app package Josh will run is built and published by one command, so his other Macs can use it without building. From a checkout whose `HEAD` is already pushed to `origin/main`, with the engine sealed:
+The preview command builds and publishes a package that can be used on another
+Mac without compiling it there. From a checkout whose `HEAD` is already pushed to `origin/main`, with the engine sealed:
 
 ```sh
 bash scripts/package-app.sh <sealed engine-artifacts.json>
@@ -148,7 +131,7 @@ When only app code changed, skip the engine and reuse the one in a published pac
 bash scripts/package-app.sh --from-release [app-<stamp>-<commit>]
 ```
 
-Without a tag it picks the newest `app-*` preview or stable `v<version>` release whose tagged source has `HEAD`'s overlay version in `Engine/ParcHost/overlay.json`. An explicit stable tag also works, for example `--from-release v1.0.0`; it selects the ZIP even when the release also includes a DMG. It refuses when `Engine/` differs between that release's commit and `HEAD`, checks the downloaded zip against GitHub's digest, then `build.py release-build` checks the package report: a standalone non-component engine whose overlay identity and source lock digest equal `HEAD`'s, with every overlay input still matching its pinned digest, recorded build flags matching `engine-source.py`'s current shipping defines (the recipe lives outside `Engine/`), and no Widevine host signatures from the earlier package. The framework must pass `codesign --verify --deep --strict` and its code must hash to the report's signed images. The few upstream files packaging reads besides the engine (CEF's `include/cef_application_mac.h` and `LICENSE.txt`, Chromium's `LICENSE` and `chrome/app/app-entitlements.plist`) are read from an engine workspace's Git objects at the source lock's commits, never its working tree, and refused if the overlay patches them; both licenses must equal the ones the release shipped. Set `PARC_ENGINE_WORKSPACE` if the workspace isn't at `work/engine` in the main checkout or the historical `~/Documents/Codex/2026-10-23/re/work/engine-source`. The new package report records the reused release and the release that originally built the engine (`engine_release`), so packages can chain. Compiling and signing are `build_app`'s, unchanged.
+Without a tag it picks the newest `app-*` preview or stable `v<version>` release whose tagged source has `HEAD`'s overlay version in `Engine/ParcHost/overlay.json`. An explicit stable tag also works, using `--from-release "$PARC_RELEASE_TAG"`; it selects the ZIP even when the release also includes a DMG. It refuses when `Engine/` differs between that release's commit and `HEAD`, checks the downloaded zip against GitHub's digest, then `build.py release-build` checks the package report: a standalone non-component engine whose overlay identity and source lock digest equal `HEAD`'s, with every overlay input still matching its pinned digest, recorded build flags matching `engine-source.py`'s current shipping defines (the recipe lives outside `Engine/`), and no Widevine host signatures from the earlier package. The framework must pass `codesign --verify --deep --strict` and its code must hash to the report's signed images. The few upstream files packaging reads besides the engine (CEF's `include/cef_application_mac.h` and `LICENSE.txt`, Chromium's `LICENSE` and `chrome/app/app-entitlements.plist`) are read from an engine workspace's Git objects at the source lock's commits, never its working tree, and refused if the overlay patches them; both licenses must equal the ones the release shipped. Set `PARC_ENGINE_WORKSPACE` to select an engine workspace outside the checkout's `work/engine` directory. The new package report records the reused release and the release that originally built the engine (`engine_release`), so packages can chain. Compiling and signing are `build_app`'s, unchanged.
 
 For runtime testing on a Mac whose newest published engine is older than `main`'s overlay, `bash scripts/package-app.sh --local-test [tag]` packages `main`'s app against the newest published engine without publishing anything. It refuses a changed source lock, and `build.py release-build --local-test` asks the compiler which `Engine/ParcNative` headers the app's native facade and bridging header include, then refuses if any differs from the engine's commit: a changed header means the app may call engine API that engine lacks. When every new call is guarded with `respondsToSelector:` (or `responds(to:)`), `PARC_ALLOW_CHANGED_ENGINE_HEADERS=1` accepts the changed headers and the report lists them; a new class or exported function would still stop the app launching. Engine-internal changes are allowed and simply absent. The bundle's `Info.plist` gets `ParcLocalTestBuild`, the report's `engine_release.local_test` records the checkout's overlay and the headers compared, and the package stays in `build/local-test-<stamp>`.
 
@@ -172,9 +155,17 @@ Moving from Apple Development to Developer ID changes the designated requirement
 The main bundle declares `http` and `https`, web Handoff, HTML/XHTML Viewer document types and the Productivity category. These declarations make it available to macOS as a browser and in Open With. They do not change the user's chosen default browser. Extra iOS default-browser entitlements or App Store metadata are not required for this Mac distribution.
 
 
-**Install each completed build immediately.** After publication and package verification, replace `/Applications/Parc.app` and open it before checking newer main, starting another build, or writing receipts. Never hold a completed app for stable main or a newer catch-up package. The twenty-minute refresh uses one fetched source snapshot; later commits belong to the next cycle. Josh authorizes stopping running Parc instances during these refreshes. Preserve `~/Library/Application Support/Parc`; stage a fresh bundle, replace the old one without merging, verify launch, then remove the superseded installed copy. Engine/cache objects remain intact.
+Publication ends after package verification and reporting the tag. Do not
+install, replace, quit or open the local app, run browser checks, or run
+Homebrew install/upgrade/reinstall as a publication follow-up. Users upgrade
+Homebrew themselves. Preserve profiles, existing signed artifacts and engine
+objects/caches. Installation and runtime testing require separate explicit
+authorization; [release operations](../../docs/master-release.md) owns this
+boundary.
 
-To install on another Mac (quit Parc first; the profile lives in `~/Library/Application Support/Parc`, not the install folder):
+The following manual installation instructions are for a user installing an
+already published package on another Mac. Quit Parc first; its profile lives
+in `$HOME/Library/Application Support/Parc`, outside the install folder.
 
 A prod (shipping) build's `Parc.app` carries its engine inside `Contents/Frameworks`, so it installs on its own into `/Applications`:
 
@@ -205,7 +196,13 @@ PARC_STAGE=$(mktemp -d /Applications/.Parc-install.XXXXXX)
 
 Keep `$PARC_INSTALL` until the new app's window opens and its launch check passes; then remove that temporary directory and its previous app. If launch fails, quit the failed app, remove only `/Applications/Parc.app`, move `$PARC_INSTALL/previous-Parc.app` back to `/Applications/Parc.app`, and reopen it. Failed download, extraction or staging validation leaves the existing app untouched. Do not copy over a running app or merge its old and new bundle contents.
 
-A development component build needs its whole `development` folder; install that into `~/ParcApp` (`ditto -x -k "$PARC_INSTALL/Parc.zip" ~/ParcApp` using the downloaded component archive, then `open ~/ParcApp/development/Parc.app`). Never install into `~/Parc`: macOS folder names ignore case, so on a Mac with the `~/parc` checkout that is the repository, and `rm -rf` would delete it. Remove the previous install first: `ditto -x` merges into an existing folder, which would leave an older build's files inside the new `Parc.app`.
+A development component build needs its whole `development` folder. Extract it
+into a new installation directory outside every source checkout, and keep its
+sibling libraries together. macOS commonly treats folder names without regard
+to case, so capitalization alone does not distinguish an install directory from
+a checkout. Never merge an archive into an existing installation; that can leave
+old files inside the new app. Preserve the previous installation until the new
+one is accepted, following the same manual-install boundary above.
 
 - The package is a development component build. `Parc.app` loads its engine libraries from the `development` directory that contains it, so keep that directory together; copying `Parc.app` alone fails. All its load paths are relative, so the directory can live anywhere.
 - It's ARM64 only.

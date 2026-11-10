@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Give plain spoken status updates
 
-Josh listens to progress updates. Use plain spoken paragraphs: what changed,
-what it means for him and what is happening now. Avoid tables, code names,
+Make progress updates easy to listen to. Use plain spoken paragraphs: what
+changed, what it means for the user and what is happening now. Avoid tables, code names,
 hashes and path lists in routine status. Verify current work before reporting
 it, and disclose recorded gaps. See [AGENTS.md](../../AGENTS.md).

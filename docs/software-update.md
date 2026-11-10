@@ -63,7 +63,7 @@ notifications deliver immediately even while Parc is inactive.
 
 Checks run every 300 seconds of awake uptime. An away-event period qualifies
 after 300 seconds, so installation is considered approximately five to ten
-minutes after it begins. Sleeping time does not count. Josh's additional rule
+minutes after it begins. Sleeping time does not count. An additional idle rule
 qualifies a Mac with no keyboard/pointer input for 30 minutes, provided no process
 holds a display-sleep-prevention assertion. Failure to read that assertion is
 conservatively treated as active use.

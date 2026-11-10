@@ -13,7 +13,13 @@ Current Chromium adaptations use the real `InputEventActivationProtector` utilit
 
 ## Remaining acceptance gates
 
-
-ARM64 reference SHA-256: Core
-`97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`;
-main `4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`.
+The shared service is registered through macOS libcef_static and the genuine
+test target; the framework consumes libcef_static. Validate generated targets
+and header dependencies before actual-target compilation and linked execution.
+An authorized runtime check must exercise external navigation, OS application
+lookup/launch, managed policy, private profiles, gesture/fenced-frame refusal,
+repeat requests, input activation and PiP overlap. Requests without a still-valid
+initiating document are conservatively refused by the current native/CEF path;
+browser-initiated/address-bar coverage remains a functionality gap. Layout,
+typography, material, motion and accessibility interactions need runtime
+acceptance separately from compiler or component checks.

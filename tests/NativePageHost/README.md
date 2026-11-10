@@ -65,9 +65,8 @@ tab or grants consent to unload.
 
 ## Chromium 156 parent-view visibility adaptation
 
-Pinned Chromium
-156.0.8078.48, commit `d0c02bfad08ec92a6ffcf989e53cd995e6381a4c`, separately
-requires the host to show the native WebContents container, in addition to the
+The Chromium version pinned in [the source lock](../../Engine/source-lock.json)
+requires the host to show the native WebContents container, in addition to
 renderer visibility notifications:
 
 | Pinned source evidence | Established behavior |

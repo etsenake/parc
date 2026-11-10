@@ -20,70 +20,30 @@ The suite checks copied immutable pin snapshots against the real toolbar model a
 python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_runtime_tests.app --artifacts /existing/test-artifacts --deadline 300 --suite extension-actions
 ```
 
-The default `controllers` suite and its recovery/auth assertions remain unchanged. The v61 increment passes normal generation, the actual driver header-dependency check, framework linking and required-export verification. Its fresh runtime package passes signing/provenance. Seven launcher checks, including actual loopback serving/shutdown, also pass.
-
-Actual v61 execution separates the two suites. `controllers` passes native AX, genuine renderer crash/recovery, all three authentication-controller cases and engine shutdown (exit 0, 98.088 seconds). `extension-actions` fails after registration, before any snapshot/selection/grant checks, with `Loaded extension instance changed.` (exit 1, 10.060 seconds). Its disposable profile records `DISABLE_UNSUPPORTED_DEVELOPER_EXTENSION`: normal developer mode was off, so installation completed with a disabled fixture. Both runs finish without an outer timeout, forced cleanup or remaining exact-package processes. Receipts are `build/parc-runtime-2podlx7p-logs/result.json` (SHA256 `e67d549b61bd19e36ce77a0df3db8263d3f25b0e1b7ddb0539dd57fd03d25e8a`) and `build/parc-runtime-z0g8yzs3-logs/result.json` (SHA256 `3952851aa419827a134e973f04ba61a738589d07dee8aa3b56018c69967b3a97`).
-
-The normal developer-mode correction passes the strict generated-v61 driver compiler check and the combined v64 build (eight steps, 42.57 seconds). Normal generation accepts all 117 CEF patches, and the exact runtime-driver header check passes. The fresh v64 runtime package passes signing/provenance, report `build/independent-v64-runtime/runtime-package-report.json`, SHA256 `8c8a76513dec5e1230794c1198e735af085750dd07573a4a8c1f6c6a2b9c72bf`. Its actual action suite passes registration but reaches the unchanged internal 15-second readiness/controller deadline before any snapshot/selection/grant PASS marker. It exits 1 after 99.021 seconds with clean engine shutdown, no outer timeout, forced cleanup or remaining package processes. Receipt: `build/parc-runtime-g35bhtke-logs/result.json`, SHA256 `68d2b8ac9f090b55d1e875f53598a675b2f7dec5925460dfe5614c573d88e21e`. This is distinct from the earlier disabled-fixture failure and is not an extension-action pass.
-
-The bounded readiness diagnostic addition (`ae12af3`) passes the strict generated-v64 compiler check. It records fixed stage labels and existing per-page loading/commit/frame/process predicates, including process blocked state; it does not change navigation, deadline or assertion ordering, or log page URLs/text. The v64 run predates those diagnostics, so it cannot identify the failed predicate precisely. The combined v67 activation/readiness increment builds successfully in six steps (30.94 seconds). The successful packaged action run below supersedes that pending checkpoint; it does not explain the earlier intermittent readiness failure. Production GUI popup/side-panel results are tracked separately in `docs/parity.md`; neither those observations nor compiler checks execute this suite's grant assertions or the existing Chrome test fixtures.
+Readiness diagnostics record fixed stage labels and existing per-page loading,
+commit, frame and process state, including whether a process is blocked. They
+leave navigation, deadlines and assertion order unchanged and redact page URLs
+and text. An installation or readiness failure must be distinguished from a
+failed snapshot, selection or grant assertion.
 
 ## Engine selection regression
 
-**Current v70 result:** both packages use the exact completed v70 seal. The
-runtime package report `build/independent-v70-runtime/runtime-package-report.json`
-hashes to `ccce9d51ec2f81fce799b8dbe8760f88929693e3c704f2a7b1bc7d857fc041a9`;
-its 519 exact pre-sign engine copies and 524 signed images pass the standard
-closure/signing/provenance checks. The actual action suite passes registration,
-then emits every new selection field as true:
+The extension-action suite also checks engine-to-shell selection through real
+`TabListInterface::ActivateTab`, the route used by `tabs.update`. It requires
+exact shell/engine selection after non-nestable task delivery, geometry-only
+synchronization, rapid B-to-A changes and a newer explicit shell command
+overriding an older queued event. The required marker is defined as
+`ENGINE_SELECTION` in [the launcher](run.py); a result from before this gate
+existed cannot satisfy it.
 
-```text
-NATIVE_ENGINE_SELECTION_PASS exact_page=true deferred=true geometry_preserved=true latest_wins=true shell_override=true
-```
-
-Copied snapshots, real pin model/order, unselected/stale-action and pin refusal,
-no grant on refusal, and genuine selected-tab/loopback-origin grants all pass.
-The other tab and origin remain denied. Post-shutdown AX querying and clean
-engine shutdown pass. Exit is 0 after **81.245 seconds**, with no outer timeout
-or forced cleanup; a separate final exact-package process scan is empty.
-Receipt `build/parc-runtime-fmzi86mf-logs/result.json` SHA256:
-`65770685b84fbbf8de6e21b2e8a32f283faa10f3b8c68a3a714fc4d606cfb219`.
-
-The same seal packages the production app at
-`build/independent-v70-development/Parc.app`; its report SHA256 is
-`c2a975c884cc95b8a687b152ec5226efe892c24deced8e5e08fb07b5d7729c79`.
-Both remain `development-component`, `distribution_eligible: false`. This run
-executes actual tab/controller selection and action/grant paths; it does not
-exercise the side-panel GUI stack, saved split/profile moves, popup restart,
-PiP input or the default recovery/auth suite. Those earlier default-suite
-results remain separate. The [production selection/restart check](../NativeBrowserWindow/README.md#engine-selection-and-shell-layout)
-records retained panel state, clean restart/quits and a remaining blank
-background-page defect; PiP input acceptance remains separate.
-
-**Earlier v67 action result:** the fresh runtime package passes signing and
-provenance (519 exact pre-sign engine copies, 524 signed images), report SHA256
-`219cb38428d022ac9fdd84dfc6ea7c0076db9c28577623a899b65bd920461ac7`.
-The actual suite passes registration, copied snapshots, real pin order,
-unselected/stale action rejection, and genuine activeTab grants limited to the
-selected tab and loopback origin. The other tab and origin remain denied.
-Clean shutdown and the post-shutdown accessibility query pass. Exit is 0 after
-84.394 seconds with no outer timeout, forced cleanup or remaining exact-package
-processes. Receipt `build/parc-runtime-c65epowf-logs/result.json` hashes to
-`a3a30c93d744b128d91fa768fd9099dd91bea5b7bb7b1cf363c6baa5c122d056`.
-Both documents commit with live, ready, unblocked renderer processes before
-installation. The earlier v64 readiness timeout does not recur; this does not
-establish its cause. No popup or side-panel acceptance follows from this suite.
-
-The subsequent v69 driver adds an engine-to-shell selection gate using the
-real `TabListInterface::ActivateTab`, the same route used by `tabs.update`.
-It verifies exact shell/engine selection after non-nestable task delivery,
-geometry-only synchronization, rapid B-to-A changes and a newer explicit shell
-command overriding an older queued event. It retains the original pin/grant
-assertions and deadline. The actual generated driver compiler check and seven
-launcher receipt checks pass. The driver links in v69 and executes successfully
-in the v70 run above. Its required `NATIVE_ENGINE_SELECTION_PASS` marker is
-absent from the earlier v67 suite by design; that historical pass does not pass
-this added gate.
+Recorded packaged runs passed the selection, pin/snapshot and selected-tab
+permission checks, followed by the post-shutdown accessibility query and clean
+engine shutdown. These results cover their recorded source only. An earlier
+intermittent readiness timeout did not recur in those runs; its cause was not
+established. This suite does not verify popup/side-panel presentation, saved
+split/profile moves, popup restart, PiP input or the default recovery/auth suite.
+Current browser behavior belongs in [product status](../../docs/parity.md) and
+[the backlog](../../docs/backlog.md), not old package receipts.
 
 ## Optional native video-PiP controller regression
 
@@ -120,16 +80,15 @@ activation and Promise assertions, not a physical user gesture.
 python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_runtime_tests.app --artifacts /existing/test-artifacts --deadline 300 --suite video-pip
 ```
 
-The source is integrated in overlay v74 and passes the strict generated-v70
-driver compiler flags through a
-private VFS, AppKit main/presenter syntax checks, and nine launcher/transport
-checks. Normal generation, framework linking, fresh packaging and execution of
-this optional suite remain pending. The original Chrome browser tests remain
-registered and unexecuted: their `InProcessBrowserTest` startup assumptions do
-not supply the actual CEF lifecycle. This migration does not mark them passed.
-The seven controller assertions do not verify floating pixels, pointer input,
-returned-page activation/focus, the current production GUI defects, document
-extension-action suites remain separate.
+The original Chrome browser fixtures require valid CEF initialization; their
+`InProcessBrowserTest` startup assumptions do not supply this application's
+production lifecycle. Compilation, framework linking, packaging and an actual
+suite pass are separate checks. This migration alone does not pass those
+fixtures. The seven controller assertions do not verify floating pixels,
+pointer input, returned-page activation/focus, document PiP or complete media
+behavior. General PiP acceptance remains recorded in the
+[PiP guide](../NativeVideoPiP/README.md); default recovery/auth and optional
+extension-action results remain separate.
 
 ## Native accessibility regression
 
@@ -140,17 +99,13 @@ and walks the actual attached AppKit accessibility children to `AXWebArea`.
 The detach case also checks that the same page's native tree survives reattachment.
 After genuine CefShutdown, the app queries its role again; this must not recreate
 an engine accessibility scope after shutdown. Both AX markers are required
-by the launcher. The v55 run passed registration but reached its 15-second deadline before
-the AX marker. Its existing log cannot distinguish initial document readiness,
-a missing engine AX root or native-child traversal; the driver now logs bounded stage/deadline diagnostics without
-changing its assertions or timeout. Production v55 separately passes actual HTML button, checkbox and
-text-field accessibility, which does not establish this harness gate. The later
-v57 run uses the exact nonempty HTML fixture and passes the genuine engine tree
-and native `AXWebArea` checks; its subsequent renderer-crash failure is recorded
-under Current verification below.
+by the launcher. Recorded controller runs passed the genuine engine tree and
+native `AXWebArea` checks. They do not establish current whole-browser
+accessibility. A timeout needs its stage diagnostics to distinguish document
+readiness, a missing engine AX root and native-child traversal.
 
-This restores the retained Arc142 role/manual/enhanced request policy (basic mode
-3), not its separate `ARC_UI_TESTS` full-mode startup path. Real system VoiceOver
+The role/manual/enhanced request policy uses basic mode 3, separate from the
+`ARC_UI_TESTS` full-mode startup path. Real system VoiceOver
 uses Chromium156's complete/screen-reader scope and releases that scope when
 VoiceOver stops. No renderer AX mode is enabled merely by application readiness.
 The local `fixtures/accessibility.html` provides a real button, checkbox and text
@@ -193,12 +148,11 @@ native shell's visible drawing acknowledgment and actual Retry action are
 separate from this controller fixture, which deliberately does not invent a
 first-paint event. Final aggregate close still has to exit
 zero through actual engine shutdown, without suppressing unexpected failures.
-The repeated production Cmd-Q crash and v52 final harness failure remain the
-pre-fix evidence. The v55 production app now passes two ordinary Cmd-Q exits
-and same-profile localStorage restart. The v57 harness passes native AX, then
-aborts in Chromium's Views-only crash presenter during genuine renderer
-termination. Those v57 failures are superseded by the passing v58 recovery/controller run recorded below.
-The scheduling preserves current-engine observer and callback lifetimes.
+Recorded controller runs passed genuine renderer failure/recovery and all three
+authentication cases, followed by clean shutdown. Earlier crash investigations
+are retained in Git history;
+they are not current failures. The scheduling preserves current-engine observer
+and callback lifetimes.
 
 ## Cases and limits
 
@@ -247,5 +201,5 @@ python3 tests/NativeRuntime/test_launcher.py -v
 Actual origin HTTP 401/proxy 407, normal encrypted restart and whole-browser
 behavior remain separate from synthetic LoginHandler controller cases. Current
 runtime work and product gaps belong in [the backlog](../../docs/backlog.md).
-Historical v51–v82 run receipts remain in Git history; they are not live process
+Historical run receipts remain in Git history; they are not live process
 records, current release failures or authorization to repeat browser runs.

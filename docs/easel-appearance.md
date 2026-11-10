@@ -51,7 +51,7 @@ logical state. The rich-link editor's Remove/Apply actions and the webpage
 Address/Search controls retain their existing semantic layout. These are
 native presentation choices.
 
-EASEL26's focus and geometry action owners and EASEL28's shared annotation
+The focus/geometry action owners and shared annotation
 eligibility predicates are integrated at drawing, hit admission, cursor
 regions, accessibility child creation and retained-action revalidation. Native
 motion visibility, Reduce Motion and original-owner cancellation remain owned

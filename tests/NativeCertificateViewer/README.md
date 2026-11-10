@@ -14,7 +14,11 @@ bash tests/NativeCertificateViewer/run.sh
 
 It compiles and opens genuine OS certificate sheets over synthetic AppKit pages, using only the public certificate in `fixture.pem`. The current suite executes **34 assertions**, including exact parent/visibility, BasicX509 policy, deferred cancellation, invalid page/hidden parent, once-only completion, parent close, delegate lifetime, a replacement sheet shown before the old begin call returns, and cancellation that releases the external owner during begin before sheet capture. The nested test temporarily intercepts the real `SFCertificatePanel` begin method in its own test process; it still presents and ends real OS panels, and restores the original method afterward. The in-flight cancellation case also checks retained callback ownership before the real OS completion. No trust/settings controls are exercised.
 
-`fixture.pem` is the public synthetic `net/data/ssl/certificates/root_ca_cert.pem` from pinned Chromium `d0c02bfad08ec92a6ffcf989e53cd995e6381a4c` (Chromium BSD-style license). It contains no private key or user identity. The runner converts it into an ignored build-directory DER file; it does not install it.
+[`fixture.pem`](fixture.pem) is the public synthetic
+`net/data/ssl/certificates/root_ca_cert.pem` from the Chromium revision in
+[the source lock](../../Engine/source-lock.json), under Chromium's BSD-style
+license. It contains no private key or user identity. The runner converts it
+into an ignored build-directory DER file; it does not install it.
 
 The thirteen `viewer_unittest.mm` cases use genuine Browser/Profile/TabInterface/WebContents, the generic viewer entry and `SSLErrorControllerClient`, the real native security lease and OS sheet. They cover exact owner/certificate checks, duplicate calls, detach/reattach, navigation/destruction, competing/reentrant reservations, parent close and preservation of stock dispatch. The test window only supplies the native NSWindow. These cases currently **compile but have not been linked or executed**. The current CEF-enabled Chrome test-main/context limitation remains; passing syntax is not controller runtime coverage.
 

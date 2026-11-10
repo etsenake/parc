@@ -19,8 +19,8 @@ first; scripting and the specifically deferred items below stay deferred.
 
 ## Reported behavior
 
-- **Fresh-tab black page:** the activation correction is in overlay 653; the
-  zero-size content correction is in 654, with failing-without-fix offscreen
+- **Fresh-tab black page:** the activation correction shipped in 1.12.0; the
+  zero-size content correction shipped in 1.12.1, with failing-without-fix offscreen
   checks. Real What's New/tab-opening delay has not been retested after those
   changes. Preserve this acceptance boundary rather than calling the reported
   behavior resolved from compiler tests. [Software updates](software-update.md).
@@ -187,8 +187,8 @@ implemented collection transactions before choosing another implementation:
 
 ## Onboarding
 
-- **OB17 — Josh's decision:** Favorites currently follows the whole import.
-  Keep that default unless Josh chooses to put it immediately after source
+- **OB17 — ordering decision:** Favorites currently follows the whole import.
+  Keep that default pending a decision on moving it immediately after source
   selection. The other 35 original onboarding requirements are implemented;
   old “75% complete” and already-closed theme/extension/reveal/traversal gaps
   were stale. [Onboarding](onboarding.md).
@@ -230,7 +230,7 @@ are found. Sampled flows cannot establish exhaustive coverage.
 
 - **SCRIPT10–SCRIPT13:** additional quit/command/error behavior, collection order
   and properties, window/sidebar mutation and scripting failure contexts remain
-  deferred by Josh. Preserve existing scripting. [Scripting](scripting.md).
+  deferred by the current product scope. Preserve existing scripting. [Scripting](scripting.md).
 - **PERF09 / DL-PERF-01:** after polish, investigate large-Downloads-folder
   stalls. This began as reported feedback about another browser, not a
   reproduced Parc defect. Establish the original report and reproduction;

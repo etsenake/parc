@@ -1,11 +1,12 @@
 # FairPlay protected-codec proof
 
-No public FairPlay content exists for Dolby Vision, AV1, HE-AAC, xHE-AAC,
-AC-3 or E-AC-3, so this program makes its own. It encrypts clear samples in
-memory with a content key that Axinom's FairPlay license service licenses.
+This program makes FairPlay samples for Dolby Vision, AV1, HE-AAC, xHE-AAC,
+AC-3 and E-AC-3. It encrypts clear samples in memory with a public test key
+that Axinom's FairPlay license service licenses.
 Then it plays them through `FairPlayCdm` and `FairPlayRenderer`
 ([core](../../../Engine/ParcNative/fairplay/README.md)) the way Chromium hands
-them over.
+them over. Running this visible harness requires explicit authorization under
+[AGENTS.md](../../../AGENTS.md).
 
 ```bash
 scripts/test-fairplay-codecs.sh
@@ -28,21 +29,15 @@ status is the number of failed checks clamped to 1.
 Axinom publishes the content keys of its v10 vectors next to their key IDs
 and entitlement tokens, in
 [ContentKeys/](https://github.com/Axinom/public-test-vectors/tree/master/ContentKeys).
-"CMAF H264 SingleKey" is key `302f80dd-411e-4886-bca5-bb1f8018a024`, content
-key `FbKq+Qbr7GMJ1A+RKJEnuA==`, with the same token the core harness uses.
-Axinom's FairPlay service licenses that key ID for any content. The token's
-inline key also carries the FairPlay IV (`77fd1889aaf4143b085548b3c0f95b9a`),
-which is the constant IV of Axinom's own content.
+The "CMAF H264 SingleKey" fixture uses `kKeyIdHex`, `kKeyBase64` and
+`kLicenseIv` in [codecs.mm](codecs.mm), with the same entitlement token as the
+core harness. Axinom's FairPlay service licenses that public test key for the
+locally encrypted content. The token carries the constant IV used by Axinom's
+own content; keep the encryption and license IV aligned.
 
-Dead ends:
-
-- `clearkey.axprod.net` (the Clear Key service in Axinom's README) no longer
-  exists in DNS: NXDOMAIN from Google's and Cloudflare's resolvers.
-- The v9 vector's page publishes key `f8c80c25-690f-4736-8132-430e5c6994ce`
-  and its token, but the FairPlay service refuses that token with HTTP 400:
-  "An initialization vector must be provided with every key in the
-  entitlement message". The token has no IV and is signed, so it can't be
-  amended.
+The older v9 token lacks an IV and was refused by the FairPlay service. Its
+signature prevents adding one locally, so use the v10 fixture rather than
+substituting the older token.
 
 ## What the program does
 
@@ -97,26 +92,24 @@ Recorded 2026-11-06 on this MacBook Air (macOS 27.2): 151 checks, 0
 failed. A clip expected to fail counts as one check. Run time is about eight
 minutes.
 
-Proven: each decrypts and decodes with no decoder errors, and a wrong key
-under the same key ID fails visibly.
+The table separates clear and protected playback. Wrong-key controls are
+required for protected codecs; AV1 has the specific limitation below. These
+results cover the recorded harness runs, not current browser acceptance.
 
-| Codec | Protected type | Evidence |
+| Codec / fixture | Protected type | Recorded outcome |
 |---|---|---|
-| Dolby Vision profile 5 `dvh1` (glass-blowing2) | `qdh1` | 120/120 frames, 0 corrupted, `OnEnded` at 2.000 s; wrong key: 120 decode failures |
-| Dolby Vision profile 5 `dvhe` (color_pattern 1080p) | `qdh1` | 75/75 frames, 0 corrupted, `OnEnded` at 3.125 s |
-| AV1 8-bit and 10-bit `av01` | `qav1` | 82/82 frames each, 0 corrupted, no decoder errors (see the AV1 caveat) |
-| HE-AAC (`mp4a.40.5`) and HE-AACv2 (`mp4a.40.29`) | `qaac` | 68/68 packets, `OnEnded` at 3.158 s, no decoder errors; an AAC wrong key logs 550 |
-| xHE-AAC (`mp4a.40.42`) | `qusa` | 24/24 packets, no decoder errors (the clear stream: none); wrong key: 22 `ACCPEDecoderWrapper` errors |
-| AC-3 | `qac3` | 30/30 packets, no decoder errors; wrong key: 60 (`ParseAC3Header failed`) |
-| E-AC-3 | `qec3` | 30/30 packets, no decoder errors; wrong key: 60 |
-| E-AC-3 7.1 (DASH-IF, FA01), with the file's `dec3` | `qec3` | 188/188 packets, 6.016 s, no decoder errors |
-| E-AC-3 7.1 as Chromium delivers it (8 channels, no `dec3`) | `qec3` | 188/188 packets, 6.016 s, no decoder errors, with the box the core builds from rate and channels |
-| FLAC (`fLaC`, Chromium's `bear-flac_frag.mp4`) as Chromium delivers it (STREAMINFO only) | `qflc` | clear: 27/27 frames as `flac`, `OnEnded` at 2.740 s, no decoder errors; protected: 27/27, no decoder errors; wrong key: 328 decoder errors (`ACFLACDecoder`) |
-| Opus (`Opus`, Chromium's `bear-opus.mp4`) as Chromium delivers it (an OpusHead) | none | clear: 137/137 packets as `opus`, `OnEnded` at 2.741 s, no decoder errors |
-| ALAC (`alac`, 3 s stereo 16-bit from Apple's encoder) as the ALACSpecificConfig | `qlac` | clear: 33/33 packets as `alac`, played to `OnEnded`, no decoder errors; protected: 33/33, no decoder errors; wrong key: 3 decoder errors (`ACCPEDecoderWrapper`) |
-| PCM `ipcm` 16/24-bit and `fpcm` 32-bit float (2 s stereo, 1024-frame samples) with `pcmC`, as Chromium delivers it | none (`enca`) | clear: 87/87 samples as `lpcm`, `OnEnded` at 2.000 s, no decoder errors; protected: fails at the first enqueue with -11800 (`fmt?`), as in Safari (`--only PCM --muted`, 2026-11-07) |
-| VP9 (`vp09`, Chromium's `bear-vp9.webm`) as Chromium's WebM parser delivers it (frames as stored, no `vpcC`) | none | clear: 82/82 frames as `vp09`, 0 corrupted, a 320x240 frame displayed, `OnEnded` at 2.737 s, no decoder errors (`--only VP9 --muted`, 2026-11-07) |
-| Vorbis (`vorb`, Chromium's `bear-320x240-audio-only.webm`) with its CodecPrivate as the cookie | none | clear: 166/166 packets as `vorb`, `OnEnded` at 2.767 s, no decoder errors; damaged setup header (control): never ends (`--only Vorbis --muted`, 2026-11-07) |
+| Dolby Vision profile 5 `dvh1` and `dvhe` | `qdh1` | Protected playback reached the end without corruption; the `dvh1` wrong-key control failed. |
+| AV1 8-bit and 10-bit `av01` | `qav1` | Protected playback completed without decoder errors; the wrong-key control is unreliable (see below). |
+| HE-AAC and HE-AACv2 | `qaac` | Protected playback completed without decoder errors; an AAC wrong-key control failed. |
+| xHE-AAC | `qusa` | Clear and protected playback passed; the wrong-key control failed. |
+| AC-3 and E-AC-3 | `qac3`, `qec3` | Protected playback passed; wrong-key controls failed. |
+| E-AC-3 7.1, DASH-IF FA01 | `qec3` | Passed both with the file's `dec3` and with the box built from Chromium's rate/channel configuration. |
+| FLAC, `bear-flac_frag.mp4` with STREAMINFO only | `qflc` | Clear and protected playback passed; the wrong-key control failed. An intermittent stall is described below. |
+| Opus, `bear-opus.mp4` with OpusHead | none | Clear playback passed; no protected type exists. |
+| ALAC, stereo ALACSpecificConfig from Apple's encoder | `qlac` | Clear and protected playback passed; the wrong-key control failed. |
+| PCM `ipcm` 16/24-bit and `fpcm` 32-bit float with `pcmC` | none | Clear playback passed; protected enqueue was refused, as in Safari. |
+| VP9, `bear-vp9.webm` frames with no `vpcC` | none | Clear playback displayed a frame and reached the end without corruption. |
+| Vorbis, `bear-320x240-audio-only.webm` with CodecPrivate cookie | none | Clear playback reached the end; the damaged-header control did not. |
 
 FLAC, Opus and ALAC were run with `--muted` (2026-11-07): every audio renderer muted
 at volume 0, which still decodes each packet and logs decoder errors, so
@@ -139,13 +132,14 @@ back (`copyDisplayedPixelBuffer` returns nothing, while the clear stream gives
 break them; the right key never has), but correct decryption of every block
 isn't proven.
 
-7.1 channel layout: CoreMedia's top layer for the file's `dec3` (chan_loc
-`0x002`, Lrs/Rrs) is 8 channels, `EAC3_7_1_A` (L C R Ls Rs LFE Rls Rrs).
+7.1 channel layout: CoreMedia's top layer for the file's `dec3` (Lrs/Rrs
+in `chan_loc`) is 8 channels, `EAC3_7_1_A` (L C R Ls Rs LFE Rls Rrs).
 Apple's E-AC-3 decoder decodes all 30 s of the clear stream to 8 channels with
 that layout, each carrying signal (RMS 0.015–0.024). The core builds the same
-layout both ways: `1800200f0202` from the clear syncframes (the file's own
-box), and `0000200f0202` from rate and 8 channels (the 5.1 core plus a
-dependent substream of Lrs/Rrs, with the bit rate unknown). CoreMedia lists
+layout both from the clear syncframes and from rate and 8 channels: a 5.1 core
+plus a dependent Lrs/Rrs substream, with an unknown bit rate in the latter case.
+`ChannelLayoutChecks` in [codecs.mm](codecs.mm) compares both generated boxes
+with the file's own box. CoreMedia lists
 both as 8 channels, `EAC3_7_1_A`, over a 6-channel layer. Chromium also counts
 8 channels for 7.1 wide (Lc/Rc); such a stream gets the Lrs/Rrs box, so Apple
 places its extra pair as rear surrounds.
