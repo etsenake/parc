@@ -18,7 +18,7 @@ import sys
 NATIVE = (
     ("Engine/ParcNative/extension_action_bridge.mm", "native_extensions"),
     ("Engine/ParcNative/extension_action_container.mm", "native_extensions"),
-    ("Engine/ParcNative/native_appkit_host.mm", "libcef_static"),
+    ("Engine/ParcNative/native_appkit_host.mm", "browser"),
     ("tests/NativeExtensionActions/action_bridge_unittest.mm", "action_tests"),
 )
 UPSTREAM = ()
@@ -71,7 +71,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default=None)
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
@@ -79,22 +78,20 @@ def main():
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock_path = repo / "Engine/source-lock.json"
     lock = json.loads(lock_path.read_text())
-    if lock.get("schema_version") not in (1, 2):
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
-    direct = lock["schema_version"] == 2
     if args.output_name is None:
         args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
-                            else "Engine/ParcHost/overlay.json")
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    upstream = ["chromium"] if direct else ["cef", "chromium"]
+    upstream = ['chromium']
     if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
@@ -147,16 +144,12 @@ def main():
     for source, name in NATIVE:
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
-        if name == "libcef_static":
-            owner = "obj/cef/libcef_static.ninja"
+        if name == "browser":
+            owner = "obj/parc/browser.ninja"
         elif name == "action_tests":
-            owner = f"obj/cef/tests/parc_native_extension_actions/{name}.ninja"
+            owner = f"obj/parc/tests/parc_native_extension_actions/{name}.ninja"
         else:
-            owner = f"obj/cef/libcef/browser/parc_native/{name}.ninja"
-        if direct:
-            owner = owner.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
-            owner = owner.replace("obj/cef/libcef_static.ninja", "obj/parc/browser.ninja")
-            owner = owner.replace("obj/cef/tests/", "obj/parc/tests/")
+            owner = f"obj/parc/native/{name}.ninja"
         flags_file = build / owner
         language = "cxx" if source.endswith(".cc") else "objcxx"
         if not flags_file.is_file() or not contains_object(flags_file, language, sources[source]):
@@ -164,7 +157,7 @@ def main():
         targets.append((sources[source], flags_file, language))
 
     # Discover the exact CXX owner rather than borrowing a nearby target's flags.
-    flags_file = build / "obj/cef/libcef_static.ninja"
+    flags_file = build / "obj/parc/browser.ninja"
     for target in UPSTREAM:
         if target not in outputs or not contains_object(flags_file, "cxx", target):
             raise ValueError(f"expected reviewed output and actual CXX owner: {target}")

@@ -141,13 +141,11 @@ def main():
     parser.add_argument('--results', type=Path, required=True)
     parser.add_argument('--compile-only', action='store_true',
                         help='compile the patched units and stop before linking against built objects')
-    parser.add_argument('--lock-file', type=Path, default=REPO / 'Engine/source-lock.json')
     args = parser.parse_args()
-    lock = json.loads(args.lock_file.read_text())
-    if lock.get('schema_version') not in (1, 2):
+    lock = json.loads((REPO / "Engine/source-lock.json").read_text())
+    if lock.get('schema_version') != 2:
         parser.error('unsupported source lock schema')
-    MANIFEST_PATH = REPO / ('Engine/ParcHost/overlay-direct.json' if lock['schema_version'] == 2
-                            else 'Engine/ParcHost/overlay.json')
+    MANIFEST_PATH = REPO / ('Engine/ParcHost/overlay.json')
     tree = args.source_tree.resolve(strict=True)
     build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()

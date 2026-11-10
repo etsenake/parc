@@ -15,12 +15,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default=None)
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[3]
     source_tree = args.source_tree.resolve(strict=True)
-    lock = json.loads((args.lock_file or repo / "Engine/source-lock.json").read_text())
-    if lock.get("schema_version") not in (1, 2):
+    lock = json.loads((repo / "Engine/source-lock.json").read_text())
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
     output_name = lock["build"]["configuration"] if args.output_name is None else args.output_name
     if Path(output_name).name != output_name or output_name in ("", ".", ".."):

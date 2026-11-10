@@ -22,8 +22,8 @@ sys.dont_write_bytecode = True
 
 REPO = Path(__file__).resolve().parents[2]
 UNITS = {
-    'obj/cef/libcef_static/native_page_capture.o': 'cef/libcef/browser/parc_native/native_page_capture.mm',
-    'obj/cef/libcef_static/native_appkit_page.o': 'cef/libcef/browser/parc_native/native_appkit_page.mm',
+    'obj/parc/browser/native_page_capture.o': 'parc/native/native_page_capture.mm',
+    'obj/parc/browser/native_appkit_page.o': 'parc/native/native_appkit_page.mm',
 }
 
 
@@ -64,12 +64,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source_tree', type=Path)
     parser.add_argument('--results', type=Path, required=True)
-    parser.add_argument('--lock-file', type=Path, default=REPO / 'Engine/source-lock.json')
     args = parser.parse_args()
-    lock = json.loads(args.lock_file.read_text())
-    if lock.get('schema_version') not in (1, 2):
+    lock = json.loads((REPO / "Engine/source-lock.json").read_text())
+    if lock.get('schema_version') != 2:
         parser.error('unsupported source lock schema')
-    direct = lock['schema_version'] == 2
     tree = args.source_tree.resolve(strict=True)
     build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()
@@ -78,8 +76,7 @@ def main():
     results.mkdir(parents=True, exist_ok=True)
     sources = results / 'src'
     shutil.rmtree(sources, ignore_errors=True)
-    manifest = json.loads((REPO / ('Engine/ParcHost/overlay-direct.json' if direct
-                                 else 'Engine/ParcHost/overlay.json')).read_text())
+    manifest = json.loads((REPO / ('Engine/ParcHost/overlay.json')).read_text())
     inputs = []
     for item in manifest['files']:
         if item['source'].startswith('Engine/ParcNative/'):
@@ -92,10 +89,9 @@ def main():
     receipt = {'overlay_version': manifest['version'], 'inputs': inputs, 'commands': []}
     code = 0
     units = UNITS
-    if direct:
-        units = {'obj/parc/browser/' + Path(obj).name:
-                 unit.replace('cef/libcef/browser/parc_native/', 'parc/native/')
-                 for obj, unit in UNITS.items()}
+    units = {'obj/parc/browser/' + Path(obj).name:
+             unit
+             for obj, unit in UNITS.items()}
     for objects, unit in units.items():
         command = real_command(tree, build, objects, unit, sources, results)
         process = subprocess.run(command, cwd=build, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

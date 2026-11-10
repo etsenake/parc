@@ -10,11 +10,7 @@
 #import "VideoPiPWindow.h"
 #import "native_appkit_bridge.h"
 #import "native_engine_entry.h"
-#if PARC_DIRECT_ENGINE
 #import "native_application_protocols.h"
-#else
-#import "include/cef_application_mac.h"
-#endif
 #import "runtime_driver.h"
 
 namespace {
@@ -36,11 +32,7 @@ bool shutdown_complete = false;
 // No NSApplication terminate recursion, nested event loop, or second engine owner.
 }  // namespace
 @class PCRuntimeController;
-#if PARC_DIRECT_ENGINE
 @interface PCRuntimeApplication : NSApplication <CrAppControlProtocol>
-#else
-@interface PCRuntimeApplication : NSApplication <CefAppProtocol>
-#endif
 @property(nonatomic, assign) BOOL handlingSendEvent;
 @property(nonatomic, weak) PCRuntimeController* runtime;
 @end

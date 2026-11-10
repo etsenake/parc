@@ -50,13 +50,12 @@ def main():
     helpers = []
     with package.engine_lock(engine):
         manifest = package.read_json(manifest_path)
-        direct = manifest.get("engine_runtime") == "chromium-direct"
         package.verify_manifest(manifest, engine, repo)
         binary = engine / package.FRAMEWORK / package.ENGINE_NAME
         if not TEST_EXPORTS <= package.exported_symbols(binary):
             raise package.Refusal("Real engine lacks the native runtime test driver")
         inputs = [test_dir / "main_mac.mm", test_dir / "runtime_driver.h",
-                  repo / ("Sources/ParcHelper/main.cc" if direct else "Sources/ParcHelper/cef_main.cc"),
+                  repo / ('Sources/ParcHelper/main.cc'),
                   repo / "scripts/build.py",
                   test_dir / "fixtures/extension-action/manifest.json",
                   repo / "Sources/ParcEngine/VideoPiPWindow.h",
@@ -76,8 +75,6 @@ def main():
             resources = contents / "Resources/EngineLicenses"
             resources.mkdir(parents=True)
             shutil.copy2(source / "LICENSE", resources / "Chromium-LICENSE.txt")
-            if not direct:
-                shutil.copy2(source / "cef/LICENSE.txt", resources / "CEF-LICENSE.txt")
             fixture = contents / "Resources/NativeExtensionActionFixture"
             fixture.mkdir()
             shutil.copy2(test_dir / "fixtures/extension-action/manifest.json", fixture / "manifest.json")
@@ -87,29 +84,22 @@ def main():
             if package.sha(media_resources / "bear.webm") != media_sha:
                 raise package.Refusal("Packaged video fixture differs from pinned source")
             common = ["-arch", "arm64", "-mmacosx-version-min=13.0", "-std=c++23", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-O2"]
-            native_root = source / ("parc/native" if direct else "cef/libcef/browser/parc_native")
-            includes = (["-DPARC_DIRECT_ENGINE=1"] if direct else
-                        ["-isystem", source / "cef", "-isystem", engine / "gen/cef"])
+            native_root = source / ('parc/native')
             package.run("xcrun", "clang++", *common, "-fobjc-arc", "-fblocks",
-                        "-I", source, "-I", engine / "gen", *includes,
+                        "-I", source, "-I", engine / "gen",
                         "-I", repo / "Sources/ParcEngine", "-I", native_root,
                         "-x", "objective-c++", test_dir / "main_mac.mm",
                         repo / "Sources/ParcEngine/VideoPiPWindow.m",
                         "-framework", "AppKit", "-framework", "QuartzCore",
                         "-o", contents / "MacOS" / APP)
             helper_binary = stage / "helper"
-            if direct:
-                helper = engine / manifest["helper"]["image"]
-                if package.sha(helper) != manifest["helper"]["sha256"]:
-                    raise package.Refusal("GN helper differs from sealed engine")
-                shutil.copy2(helper, helper_binary)
-            else:
-                package.run("xcrun", "clang++", *common, repo / "Sources/ParcHelper/cef_main.cc",
-                            "-Wl,-rpath,@executable_path/../../../../../..", "-o", helper_binary)
-            for binary_path in ((contents / "MacOS" / APP,) if direct else
-                                (helper_binary, contents / "MacOS" / APP)):
-                if any(not package.system_library(load) for load in package.inspect_macho(binary_path)["loads"]):
-                    raise package.Refusal("Runtime executable directly links non-system code before dlopen")
+            helper = engine / manifest["helper"]["image"]
+            if package.sha(helper) != manifest["helper"]["sha256"]:
+                raise package.Refusal("GN helper differs from sealed engine")
+            shutil.copy2(helper, helper_binary)
+            binary_path = contents / "MacOS" / APP
+            if any(not package.system_library(load) for load in package.inspect_macho(binary_path)["loads"]):
+                raise package.Refusal("Runtime executable directly links non-system code before dlopen")
             for suffix, id_suffix, jit in package.HELPERS:
                 name = APP + " Helper" + suffix
                 helper = frameworks / (name + ".app")
@@ -164,7 +154,7 @@ def main():
             if proof != {str(path.relative_to(repo)): package.sha(path) for path in inputs}:
                 raise package.Refusal("Runner inputs changed while packaging")
             report = {"schema_version": 1, "app": str(output / (APP + ".app")), "input_sha256": proof,
-                      "development_directory": str(output), "layout": "chromium-component-development" if direct else "cef-component-development",
+                      "development_directory": str(output), "layout": 'chromium-component-development',
                       "purpose": "development", "build_classification": manifest["build_classification"],
                       "engine_build_flags": manifest["engine_build_flags"],
                       "distribution_eligible": manifest["distribution_eligible"],

@@ -19,19 +19,16 @@ def main():
     parser.add_argument("--output-name", default=None)
     parser.add_argument("--tests-only", action="store_true",
                         help="Only compile the test source; do not check the implementation")
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock_path = repo / "Engine/source-lock.json"
     lock = json.loads(lock_path.read_text())
-    if lock.get("schema_version") not in (1, 2):
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
-    direct = lock["schema_version"] == 2
     if args.output_name is None:
         args.output_name = lock["build"]["configuration"]
-    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
-                            else "Engine/ParcHost/overlay.json")
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     build = tree / "out" / args.output_name
     flags_from = runpy.run_path(str(repo / "tests/NativeLocationBar/check-chromium.py"))["flags_from"]
     logs = repo / "build/tests/native-window-lookup/chromium-syntax"
@@ -42,29 +39,6 @@ def main():
               "obj/chrome/test/unit_tests.ninja")]
     if not args.tests_only:
         manifest = json.loads(manifest_path.read_text())
-        if not direct:
-            # CEF rechecks its patches during every project generation. Its own
-            # address hunk must recognize our native continuation as already
-            # applied, or generation fails before reaching GN.
-            patch_target = "cef/patch/patches/chrome_autofill_bubble_3796.patch"
-            entries = [entry for patch in manifest["patches"] for entry in patch["files"]
-                       if entry["target"] == patch_target]
-            patch_bytes = (tree / patch_target).read_bytes()
-            if (len(entries) != 1 or
-                    hashlib.sha256(patch_bytes).hexdigest() != entries[0]["after_sha256"]):
-                parser.error("CEF autofill patch does not match the reviewed overlay")
-            command = ["git", "apply", "-p0", "--ignore-whitespace", "--reverse", "--check"]
-            result = subprocess.run(command, cwd=tree, input=patch_bytes,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            (logs / "cef-patch-replay.log").write_bytes(result.stdout)
-            results.append({"name": "cef-patch-replay", "command": command,
-                            "cwd": str(tree), "input": patch_target,
-                            "exit_code": result.returncode})
-            print(f"cef-patch-replay: {'PASS' if not result.returncode else 'FAIL'}", flush=True)
-            if result.returncode:
-                (logs / "results.json").write_text(json.dumps(results, indent=2) + "\n")
-                print(result.stdout.decode(errors="replace"), flush=True)
-                return 1
         implementations = []
         for name, target, flags_file in (
             ("window-lookup", "chrome/browser/ui/views/frame/browser_view.cc",

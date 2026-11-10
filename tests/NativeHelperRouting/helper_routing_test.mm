@@ -13,14 +13,9 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
-#if PARC_DIRECT_ENGINE
 #include "base/apple/bundle_locations.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "parc/parc_bundle_mac.h"
-#else
-#include "cef/libcef/common/cef_switches.h"
-#include "cef/libcef/common/util_mac.h"
-#endif
 #include "content/public/browser/child_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
@@ -144,7 +139,6 @@ void CheckStartupPolicy() {
                  base::FeatureList::OVERRIDE_DISABLE_FEATURE),
          "Chromium applies Parc defaults to unnamed features");
 }
-#if PARC_DIRECT_ENGINE
 void CheckApplication(const std::string& name) {
   const base::FilePath executable = base::CommandLine::ForCurrentProcess()->GetProgram();
   const base::FilePath framework = executable.DirName().DirName().DirName();
@@ -180,62 +174,6 @@ void CheckApplication(const std::string& name) {
   command->RemoveSwitch(switches::kBrowserSubprocessPath);
   std::printf("PASS %s: real bundle overrides, helper routes and resources\n", name.c_str());
 }
-#else
-void CheckApplication(const std::string& name) {
-  const base::FilePath bundle("/parc-helper-routing-fixture/" + name + ".app");
-  const base::FilePath executable =
-      bundle.Append("Contents/MacOS").Append(name);
-  auto* command = base::CommandLine::ForCurrentProcess();
-  command->RemoveSwitch(switches::kBrowserSubprocessPath);
-  command->AppendSwitchPath(switches::kMainBundlePath, bundle);
-  Expect(base::PathService::OverrideWithoutCheckForTesting(base::FILE_EXE,
-                                                           executable),
-         "override only this test process's executable path");
-  auto expected = [&](const char* suffix) {
-    const std::string helper = name + " Helper" + suffix;
-    return bundle.Append("Contents/Frameworks")
-        .Append(helper + ".app")
-        .Append("Contents/MacOS")
-        .Append(helper);
-  };
-  Expect(util_mac::GetMainProcessPath() == executable, "actual CEF executable");
-  Expect(util_mac::GetChildProcessPath() == expected(""), "CEF base helper");
-  Expect(util_mac::GetChildProcessPath(" (Alerts)") == expected(" (Alerts)"),
-         "CEF Alerts helper derivation");
-  Expect(util_mac::GetChildProcessPath(" (CDM)") == expected(" (CDM)"),
-         "CEF CDM helper derivation");
-  // This is CEF's real OverrideChildProcessPath call, reached by startup.
-  util_mac::PreSandboxStartup();
-  base::FilePath child;
-  Expect(base::PathService::Get(content::CHILD_PROCESS_EXE, &child) &&
-             child == expected(""),
-         "CEF installs correct base child path");
-  using Host = content::ChildProcessHost;
-  Expect(Host::GetChildPath(Host::CHILD_NORMAL) == expected(""),
-         "real default route");
-  Expect(Host::GetChildPath(Host::CHILD_RENDERER) == expected(" (Renderer)"),
-         "real renderer route preserves JIT helper");
-  Expect(Host::GetChildPath(Host::CHILD_GPU) == expected(" (GPU)"),
-         "real GPU route preserves JIT helper");
-  Expect(util_mac::GetFrameworkDirectory() ==
-             bundle.Append(
-                 "Contents/Frameworks/Chromium Embedded Framework.framework"),
-         "CEF standard framework path");
-  Expect(util_mac::GetFrameworkResourcesDirectory() ==
-             util_mac::GetFrameworkDirectory().Append("Resources"),
-         "CEF framework resource path");
-  // Reproduce the removed setting's real command-line effect. The upstream
-  // selector bypasses all variant dispatch when this switch is populated.
-  command->AppendSwitchPath(switches::kBrowserSubprocessPath, expected(""));
-  Expect(Host::GetChildPath(Host::CHILD_RENDERER) == expected(""),
-         "explicit override reproduces wrong renderer route");
-  Expect(Host::GetChildPath(Host::CHILD_GPU) == expected(""),
-         "explicit override reproduces wrong GPU route");
-  command->RemoveSwitch(switches::kBrowserSubprocessPath);
-  std::printf("PASS %s: real base/renderer/GPU/Alerts/CDM and resource paths\n",
-              name.c_str());
-}
-#endif
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -248,13 +186,8 @@ int main(int argc, char** argv) {
   content::ContentClient content_client;
   content::SetContentClient(&content_client);
   CheckStartupPolicy();
-#if PARC_DIRECT_ENGINE
   Expect(argc == 2, "fixture executable name supplied");
   CheckApplication(argv[1]);
-#else
-  CheckApplication("Parc");
-  CheckApplication("parc_native_runtime_tests");
-#endif
   content::SetContentClient(nullptr);
   std::printf(
       "PASS %d assertions; no browser, profile or helper process created\n",

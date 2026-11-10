@@ -21,8 +21,8 @@ NATIVE = (
     ("Engine/ParcNative/extension_uninstall.mm", "native_extensions"),
     ("Engine/ParcNative/extension_action_container.mm", "native_extensions"),
     ("Engine/ParcNative/extension_context_menu.mm", "native_extensions"),
-    ("Engine/ParcNative/native_browser_window.mm", "libcef_static"),
-    ("Engine/ParcNative/native_chrome_platform_delegate.mm", "libcef_static"),
+    ("Engine/ParcNative/native_browser_window.mm", "browser"),
+    ("Engine/ParcNative/native_page_binding.mm", "browser"),
     ("tests/NativeExtensionUninstall/uninstall_browsertest.mm",
      "uninstall_browser_tests"),
 )
@@ -80,7 +80,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default=None)
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
@@ -88,22 +87,20 @@ def main():
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock_path = repo / "Engine/source-lock.json"
     lock = json.loads(lock_path.read_text())
-    if lock.get("schema_version") not in (1, 2):
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
-    direct = lock["schema_version"] == 2
     if args.output_name is None:
         args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
-                            else "Engine/ParcHost/overlay.json")
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    upstream = ["chromium"] if direct else ["cef", "chromium"]
+    upstream = ['chromium']
     if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
@@ -154,20 +151,15 @@ def main():
 
     targets = []
     for source, name in NATIVE:
-        if direct:
-            source = source.replace("native_chrome_platform_delegate.mm", "native_page_binding.mm")
+        source = source
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
-        if name == "libcef_static":
-            owner = "obj/cef/libcef_static.ninja"
+        if name == "browser":
+            owner = "obj/parc/browser.ninja"
         elif name == "uninstall_browser_tests":
-            owner = "obj/cef/tests/parc_native_extensions/uninstall_browser_tests.ninja"
+            owner = "obj/parc/tests/parc_native_extensions/uninstall_browser_tests.ninja"
         else:
-            owner = f"obj/cef/libcef/browser/parc_native/{name}.ninja"
-        if direct:
-            owner = owner.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
-            owner = owner.replace("obj/cef/libcef_static.ninja", "obj/parc/browser.ninja")
-            owner = owner.replace("obj/cef/tests/", "obj/parc/tests/")
+            owner = f"obj/parc/native/{name}.ninja"
         flags_file = build / owner
         if not flags_file.is_file() or not contains_object(flags_file, "objcxx", sources[source]):
             raise ValueError(f"missing actual object membership: {source}: {flags_file}")

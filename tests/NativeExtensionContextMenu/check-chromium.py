@@ -4,8 +4,7 @@
 No GN/Ninja, generation, downloads, linking or application execution. The source
 checkout is read-only; command records, diagnostics and caches stay in build/tests.
 The default requires the integrated production and test source_set targets.
---pre-integration explicitly checks compatibility with the older libcef_static
-and browser_tests flags; that mode does not verify the new targets' configurations.
+Uses the direct engine targets only.
 """
 import argparse
 import hashlib
@@ -21,22 +20,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default=None)
-    parser.add_argument(
-        "--pre-integration", action="store_true",
-        help="use existing libcef_static/browser_tests flags before the shared "
-             "targets are generated; this is compatibility-only evidence")
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     if args.output_name is not None and (Path(args.output_name).name != args.output_name or args.output_name in (".", "..", "")):
         parser.error("--output-name must be one existing output directory name")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock_path = repo / "Engine/source-lock.json"
     lock = json.loads(lock_path.read_text())
-    if lock.get("schema_version") not in (1, 2):
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
-    direct = lock["schema_version"] == 2
     if args.output_name is None:
         args.output_name = lock["build"]["configuration"]
     build = tree / "out" / args.output_name
@@ -44,35 +37,21 @@ def main():
     if not compiler.is_file():
         parser.error("the existing pinned compiler is required")
 
-    production_flags = ("obj/cef/libcef_static.ninja" if args.pre_integration else
-                        "obj/cef/libcef/browser/parc_native/native_extensions.ninja")
-    production_target = ("//cef:libcef_static" if args.pre_integration else
-                         "//cef/libcef/browser/parc_native:native_extensions")
+    production_flags = ('obj/parc/native/native_extensions.ninja')
+    production_target = ('//parc/native:native_extensions')
     targets = (
         ("extension_context_menu", "Engine/ParcNative/extension_context_menu.mm",
          production_flags, production_target),
         ("context-menu-browser-tests", "tests/NativeExtensionContextMenu/context_menu_browsertest.mm",
-         "obj/chrome/test/browser_tests.ninja" if args.pre_integration else
-         "obj/cef/tests/parc_native_extensions/context_menu_browser_tests.ninja",
-         "//chrome/test:browser_tests" if args.pre_integration else
-         "//cef/tests/parc_native_extensions:context_menu_browser_tests"),
+         'obj/parc/tests/parc_native_extensions/context_menu_browser_tests.ninja',
+         '//parc/tests/parc_native_extensions:context_menu_browser_tests'),
     )
-    if direct:
-        if args.pre_integration:
-            parser.error("--pre-integration requires the legacy CEF lock")
-        targets = tuple((name, source,
-                         flags.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
-                              .replace("obj/cef/tests/", "obj/parc/tests/"),
-                         target.replace("//cef/libcef/browser/parc_native:", "//parc/native:")
-                               .replace("//cef/tests/", "//parc/tests/"))
-                        for name, source, flags, target in targets)
     missing = [str(build / target[2]) for target in targets
                if not (build / target[2]).is_file()]
     if missing:
         parser.error("missing generated target flags:\n" + "\n".join(missing) +
                      "\nNo compiler check ran. Generate the reviewed targets "
-                     "through the source workflow, or explicitly use "
-                     "--pre-integration for compatibility-only checks.")
+                     "through the source workflow.")
 
     # Share the bounded Ninja literal reader. Import without writing __pycache__
     # into the repository's source directories.
@@ -87,8 +66,8 @@ def main():
         raise RuntimeError("Missing actual ObjC++ compiler rule")
     # Unlike the cxx rule, pinned objcxx does not pass module_deps. Its system
     # PCM is C++-only, despite being an order dependency of the object target.
-    mode = "pre-integration" if args.pre_integration else "integrated-targets"
-    log_name = "chromium-syntax-pre-integration" if args.pre_integration else "chromium-syntax"
+    mode = 'integrated-targets'
+    log_name = 'chromium-syntax'
     logs = repo / "build/tests/native-extension-context-menu" / log_name
     logs.mkdir(parents=True, exist_ok=True)
     print(f"Mode: {mode}; syntax only, no linking or test execution")

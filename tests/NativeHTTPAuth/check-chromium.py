@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Syntax-check the integrated native HTTP/proxy authentication route with actual target flags.
 
-Selects the overlay and output default from --lock-file (canonical lock by default).
+Uses the canonical engine lock and overlay.
 Requires the reviewed overlay's complete applied file/hash cohort and generated
 object membership. No compatibility mode, generation, linking, test execution or
 checkout writes. Logs and compiler caches stay in the repository's ignored build.
@@ -18,13 +18,13 @@ import sys
 
 NATIVE = (
     ("Engine/ParcNative/http_auth_presenter.mm",
-     "obj/cef/libcef/browser/parc_native/native_components.ninja"),
+     "obj/parc/native/native_components.ninja"),
     ("Engine/ParcNative/http_auth.mm",
-     "obj/cef/libcef/browser/parc_native/native_http_auth.ninja"),
-    ("Engine/ParcNative/native_chrome_platform_delegate.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/native/native_http_auth.ninja"),
+    ("Engine/ParcNative/native_page_binding.mm",
+     "obj/parc/browser.ninja"),
     ("tests/NativeHTTPAuth/login_unittest.mm",
-     "obj/cef/tests/parc_native_http_auth/unit_tests.ninja"),
+     "obj/parc/tests/parc_native_http_auth/unit_tests.ninja"),
 )
 UPSTREAM = (
     ("chrome/browser/ui/login/login_handler.cc",
@@ -81,7 +81,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default=None)
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
@@ -89,22 +88,20 @@ def main():
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    lock_path = args.lock_file.resolve() if args.lock_file else repo / "Engine/source-lock.json"
+    lock_path = repo / "Engine/source-lock.json"
     lock = json.loads(lock_path.read_text())
-    if lock.get("schema_version") not in (1, 2):
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
-    direct = lock["schema_version"] == 2
     if args.output_name is None:
         args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
-                            else "Engine/ParcHost/overlay.json")
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    upstream = ["chromium"] if direct else ["cef", "chromium"]
+    upstream = ['chromium']
     if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
@@ -155,11 +152,7 @@ def main():
 
     targets = []
     for source, owner in NATIVE:
-        if direct:
-            source = source.replace("native_chrome_platform_delegate.mm", "native_page_binding.mm")
-            owner = owner.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
-            owner = owner.replace("obj/cef/libcef_static.ninja", "obj/parc/browser.ninja")
-            owner = owner.replace("obj/cef/tests/", "obj/parc/tests/")
+        source = source
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
         flags_file = build / owner
@@ -217,7 +210,7 @@ def main():
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (logs / (target.replace("/", "_") + ".log")).write_text(result.stdout)
         results.append({"source": target, "source_sha256": outputs[target],
-                        "mode": "integrated-actual-target", "direct": direct, "rule": language,
+                        "mode": "integrated-actual-target", "direct": True, "rule": language,
                         "overlay_sha256": snapshots[manifest_path],
                         "source_lock_sha256": snapshots[lock_path],
                         "args_gn_sha256": snapshots[build / "args.gn"],

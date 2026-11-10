@@ -17,51 +17,47 @@ import sys
 
 NATIVE = (
     ("tests/NativeDevTools/auxiliary_browsertest.mm",
-     "obj/cef/tests/parc_native_devtools/browser_tests.ninja"),
+     "obj/parc/tests/parc_native_devtools/browser_tests.ninja"),
     ("Engine/ParcNative/client_certificates.mm",
-     "obj/cef/libcef/browser/parc_native/native_client_certificates.ninja"),
+     "obj/parc/native/native_client_certificates.ninja"),
     ("Engine/ParcNative/file_dialog.mm",
-     "obj/cef/libcef/browser/parc_native/native_downloads.ninja"),
+     "obj/parc/native/native_downloads.ninja"),
     ("Engine/ParcNative/http_auth.mm",
-     "obj/cef/libcef/browser/parc_native/native_http_auth.ninja"),
+     "obj/parc/native/native_http_auth.ninja"),
     ("tests/NativeHTTPAuth/login_unittest.mm",
-     "obj/cef/tests/parc_native_http_auth/unit_tests.ninja"),
+     "obj/parc/tests/parc_native_http_auth/unit_tests.ninja"),
     ("Engine/ParcNative/native_auxiliary_page.mm",
-     "obj/cef/libcef/browser/parc_native/native_auxiliary_page.ninja"),
+     "obj/parc/native/native_auxiliary_page.ninja"),
     ("Engine/ParcNative/native_auxiliary_services.mm",
-     "obj/cef/libcef/browser/parc_native/native_auxiliary_services.ninja"),
-    ("Engine/ParcNative/native_chrome_platform_delegate.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/native/native_auxiliary_services.ninja"),
+    ("Engine/ParcNative/native_page_binding.mm",
+     "obj/parc/browser.ninja"),
     ("Engine/ParcNative/site_permissions.mm",
-     "obj/cef/libcef/browser/parc_native/native_permissions.ninja"),
+     "obj/parc/native/native_permissions.ninja"),
     ("Engine/ParcNative/devtools_pane_view.mm",
-     "obj/cef/libcef/browser/parc_native/native_components.ninja"),
+     "obj/parc/native/native_components.ninja"),
     ("Engine/ParcNative/page_host.mm",
-     "obj/cef/libcef/browser/parc_native/native_components.ninja"),
+     "obj/parc/native/native_components.ninja"),
     ("Engine/ParcNative/pane_compositor_view.mm",
-     "obj/cef/libcef/browser/parc_native/native_components.ninja"),
+     "obj/parc/native/native_components.ninja"),
     ("Engine/ParcNative/pane_compositor.mm",
-     "obj/cef/libcef/browser/parc_native/native_pane_compositor.ninja"),
+     "obj/parc/native/native_pane_compositor.ninja"),
     ("Engine/ParcNative/devtools_pane.mm",
-     "obj/cef/libcef/browser/parc_native/native_devtools.ninja"),
+     "obj/parc/native/native_devtools.ninja"),
     ("Engine/ParcNative/native_appkit_host.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/browser.ninja"),
     ("Engine/ParcNative/native_appkit_application.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/browser.ninja"),
     ("Engine/ParcNative/native_appkit_page.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/browser.ninja"),
     ("tests/NativeDevTools/devtools_browsertest.mm",
-     "obj/cef/tests/parc_native_devtools/browser_tests.ninja"),
+     "obj/parc/tests/parc_native_devtools/browser_tests.ninja"),
 )
 UPSTREAM = (
     ("components/javascript_dialogs/app_modal_dialog_controller.cc",
      "obj/components/javascript_dialogs/javascript_dialogs.ninja"),
     ("components/javascript_dialogs/app_modal_dialog_manager.cc",
      "obj/components/javascript_dialogs/javascript_dialogs.ninja"),
-    ("cef/libcef/browser/file_dialog_runner.cc",
-     "obj/cef/libcef_static.ninja"),
-    ("cef/libcef/browser/permission_prompt.cc",
-     "obj/cef/libcef_static.ninja"),
     ("chrome/browser/devtools/devtools_ui_controller.cc",
      "obj/chrome/browser/devtools/devtools.ninja"),
     ("chrome/browser/devtools/devtools_window.cc",
@@ -70,8 +66,6 @@ UPSTREAM = (
      "obj/chrome/browser/devtools/devtools.ninja"),
     ("chrome/browser/ui/browser_window/internal/browser_window_features.cc",
      "obj/chrome/browser/ui/browser_window/internal/internal.ninja"),
-    ("cef/libcef/browser/chrome/chrome_browser_delegate.cc",
-     "obj/cef/libcef_static.ninja"),
 )
 RULE_PREFIX = (
     "../../third_party/llvm-build/Release+Asserts/bin/clang++ "
@@ -122,7 +116,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default=None)
-    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
@@ -130,22 +123,20 @@ def main():
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock_path = repo / "Engine/source-lock.json"
     lock = json.loads(lock_path.read_text())
-    if lock.get("schema_version") not in (1, 2):
+    if lock.get("schema_version") != 2:
         parser.error("unsupported source lock schema")
-    direct = lock["schema_version"] == 2
     if args.output_name is None:
         args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
-                            else "Engine/ParcHost/overlay.json")
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    upstream = ["chromium"] if direct else ["cef", "chromium"]
+    upstream = ['chromium']
     if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
@@ -196,11 +187,7 @@ def main():
 
     targets = []
     for source, owner in NATIVE:
-        if direct:
-            source = source.replace("native_chrome_platform_delegate.mm", "native_page_binding.mm")
-            owner = owner.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
-            owner = owner.replace("obj/cef/libcef_static.ninja", "obj/parc/browser.ninja")
-            owner = owner.replace("obj/cef/tests/", "obj/parc/tests/")
+        source = source
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
         flags_file = build / owner
@@ -212,18 +199,14 @@ def main():
     # These original CXX sources keep their own generated owners. A test
     # source_set must use its own flags, never chrome/test's top-level flags.
     upstream = UPSTREAM
-    if direct:
-        # CEF's runner and prompt now live in file_dialog.mm and site_permissions.mm,
-        # both already checked above with their real native owners.
-        upstream = tuple(item for item in UPSTREAM if not item[0].startswith("cef/"))
-        source = "Engine/ParcNative/native_browser_web_contents_delegate.mm"
-        if source not in sources:
-            raise ValueError(f"reviewed overlay does not map {source}")
-        target = sources[source]
-        owner = "obj/parc/browser.ninja"
-        if not contains_object(build / owner, "objcxx", target):
-            raise ValueError(f"missing direct browser delegate object: {target}")
-        targets.append((target, build / owner, "objcxx"))
+    source = "Engine/ParcNative/native_browser_web_contents_delegate.mm"
+    if source not in sources:
+        raise ValueError(f"reviewed overlay does not map {source}")
+    target = sources[source]
+    owner = "obj/parc/browser.ninja"
+    if not contains_object(build / owner, "objcxx", target):
+        raise ValueError(f"missing direct browser delegate object: {target}")
+    targets.append((target, build / owner, "objcxx"))
     for target, owner in upstream:
         flags_file = build / owner
         if (target not in outputs or not flags_file.is_file() or

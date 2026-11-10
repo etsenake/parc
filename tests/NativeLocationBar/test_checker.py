@@ -11,14 +11,14 @@ from unittest.mock import patch
 class LocationBarOwnerTest(unittest.TestCase):
     def test_actual_owner_for_each_lock(self):
         source = Path(__file__).with_name('check-chromium.py').read_text()
-        for schema, expected in ((1, 'obj/chrome/browser/ui/ui.ninja'),
-                                 (2, 'obj/parc/browser.ninja')):
+        for schema, expected in ((2, 'obj/parc/browser.ninja'),):
             with self.subTest(schema=schema), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
                 script = root / 'repo/tests/NativeLocationBar/check-chromium.py'
                 script.parent.mkdir(parents=True)
                 script.write_text(source)
-                lock = root / 'selected.json'
+                lock = root / 'repo/Engine/source-lock.json'
+                lock.parent.mkdir(parents=True)
                 lock.write_text(json.dumps({'schema_version': schema,
                     'build': {'configuration': 'SelectedOutput'}}))
                 tree = root / 'chromium'
@@ -29,7 +29,7 @@ class LocationBarOwnerTest(unittest.TestCase):
                     owners.append(path.relative_to(tree / 'out/SelectedOutput').as_posix())
                     return ['-Werror']
                 with patch.dict(main.__globals__, {'flags_from': flags_from}), \
-                        patch.object(sys, 'argv', [str(script), str(tree), '--lock-file', str(lock)]), \
+                        patch.object(sys, 'argv', [str(script), str(tree)]), \
                         patch('subprocess.run') as compiler:
                     compiler.return_value.returncode = 0
                     compiler.return_value.stdout = ''

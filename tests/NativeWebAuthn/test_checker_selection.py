@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 class CheckerSelectionTests(unittest.TestCase):
-    def exercise(self, name, direct, corrupt=False, refusal=None):
+    def exercise(self, name, corrupt=False, refusal=None):
         original = REPO / 'tests' / name / 'check-chromium.py'
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
@@ -32,27 +32,21 @@ class CheckerSelectionTests(unittest.TestCase):
                 path.write_text(data)
                 return hashlib.sha256(path.read_bytes()).hexdigest()
 
-            lock = {'schema_version': 2 if direct else 1,
+            lock = {'schema_version': 2,
                     'chromium': {'commit': 'chromium-pin'},
                     'build': {'configuration': 'ChosenOutput'}}
-            if not direct:
-                lock['cef'] = {'commit': 'cef-pin'}
             lock_path = repo / 'Engine/source-lock.json'
             write(lock_path, json.dumps(lock))
-            selected_lock = repo / 'selected-lock.json'
-            write(selected_lock, json.dumps(lock))
+            write(lock_path, json.dumps(lock))
             manifest = {'source_root': 'repository', 'upstream': {
                 key: lock[key]['commit'] for key in ('chromium',) if key in lock},
                 'files': [], 'patches': []}
-            if not direct:
-                manifest['upstream']['cef'] = 'cef-pin'
             expected = []
             for source, owner in namespace['NATIVE']:
-                if direct:
-                    source = source.replace('native_chrome_platform_delegate.mm', 'native_page_binding.mm')
-                    owner = owner.replace('obj/cef/libcef/browser/parc_native/', 'obj/parc/native/')
-                    owner = owner.replace('obj/cef/libcef_static.ninja', 'obj/parc/browser.ninja')
-                    owner = owner.replace('obj/cef/tests/', 'obj/parc/tests/')
+                source = source.replace('native_chrome_platform_delegate.mm', 'native_page_binding.mm')
+                owner = owner
+                owner = owner
+                owner = owner
                 target = 'mapped/' + source
                 digest = write(repo / source)
                 write(tree / target)
@@ -71,7 +65,7 @@ class CheckerSelectionTests(unittest.TestCase):
                 previous = flags.read_text() if flags.exists() else 'cc_module_name = fixture\n\n'
                 write(flags, previous + f'build object: cxx ../../{target}\n')
                 expected.append(str(tree / target))
-            write(repo / ('Engine/ParcHost/overlay-direct.json' if direct else 'Engine/ParcHost/overlay.json'), json.dumps(manifest))
+            write(repo / ('Engine/ParcHost/overlay.json'), json.dumps(manifest))
             write(build / 'args.gn')
             write(build / 'toolchain.ninja', '\n'.join(
                 f'rule {language}\n  command = {rule}' for language, rule in namespace['RULES'].items()))
@@ -80,13 +74,13 @@ class CheckerSelectionTests(unittest.TestCase):
                   'def flags_from(*args, **kwargs): return ["-Werror", "-fobjc-arc"]\n')
             if refusal == 'schema':
                 lock['schema_version'] = 3
-                write(selected_lock, json.dumps(lock))
+                write(lock_path, json.dumps(lock))
             elif refusal == 'identity':
                 lock['chromium']['commit'] = 'wrong-pin'
-                write(selected_lock, json.dumps(lock))
+                write(lock_path, json.dumps(lock))
             if corrupt:
                 (tree / manifest['files'][0]['target']).write_text('corrupted')
-            with patch.object(sys, 'argv', [str(script), str(tree), '--lock-file', str(selected_lock)]), patch('subprocess.run') as compiler:
+            with patch.object(sys, 'argv', [str(script), str(tree)]), patch('subprocess.run') as compiler:
                 compiler.return_value.returncode = 0
                 compiler.return_value.stdout = ''
                 if refusal:
@@ -102,19 +96,17 @@ class CheckerSelectionTests(unittest.TestCase):
                     self.assertEqual(namespace['main'](), 0)
                     self.assertEqual([call.args[0][-1] for call in compiler.call_args_list], expected)
 
-    def test_both_engines_and_hash_refusal(self):
+    def test_direct_targets_and_hash_refusal(self):
         for name in CHECKERS:
-            for direct in (False, True):
-                for corrupt in (False, True):
-                    with self.subTest(checker=name, direct=direct, corrupt=corrupt):
-                        self.exercise(name, direct, corrupt)
+            for corrupt in (False, True):
+                with self.subTest(checker=name, direct=True, corrupt=corrupt):
+                    self.exercise(name, corrupt)
 
     def test_bad_lock_refused_before_compiler(self):
         for name in CHECKERS:
-            for direct in (False, True):
-                for refusal in ('schema', 'identity'):
-                    with self.subTest(checker=name, direct=direct, refusal=refusal):
-                        self.exercise(name, direct, refusal=refusal)
+            for refusal in ('schema', 'identity'):
+                with self.subTest(checker=name, direct=True, refusal=refusal):
+                    self.exercise(name, refusal=refusal)
 
 
 if __name__ == '__main__':
