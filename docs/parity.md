@@ -111,13 +111,16 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   reconcile rather than overwrite each other's changes. Contract and evidence:
   [software update](software-update.md).
 
-- **Claude — commands that need a key browser (November 9, Josh's report).**
-  Helper increment; the Command bar family stays Codex's. Edit Theme… and every
-  other menu command whose validator needs its browser key showed dimmed in the
-  bar and beeped on Return, because Parc's bar is its own key panel. The bar now
-  keeps each command's availability from the moment it opened and validates the
-  chosen command again after dismissal. CMD04/CMD25 correction; no family count
-  changes. [Cause and fix](command-bar.md#commands-that-need-a-key-browser--november-9).
+- **Claude — command bar inside the browser window (November 9, Josh's request).**
+  Helper increment; the Command bar family stays Codex's. The bar, the sidebar
+  URL-bar session and the compact address editor are now one view inside their
+  in that view and within-window material; the child panel and both child
+  windows are gone. The window stays key, so the open-time availability and
+  page-tool snapshots are deleted and Edit Theme…, History, Extensions and
+  Release Notes validate live; shortcuts pressed with the bar open act as in
+  CMD04/CMD25 correction stands, so no family count changes. Toolbar, pane and
+  split controls under the bar can still show hover; no runtime check has run.
+  [Hosting, sweep and gaps](command-bar.md#in-window-hosting--november-9).
 
 - **Codex root — eight-hour release watch (November 7).** Josh authorized
   checking main every twenty minutes through 07:26 Mountain (14:26 UTC),
@@ -6858,7 +6861,6 @@ Evidence: command-bar.md; CommandBar.swift; native_search.mm; CommandBar action 
 | CMD22 | DONE | Support actual extension keyword scopes without inventing URL templates. |
 | CMD23 | DONE | Wait for real search-service readiness without replacing the original session. |
 | CMD25 | LEFT | Finish included command coverage and remaining contextual result variants. Left after CMD29: Open Task Manager in Notes, Easels and empty windows (needs a window-level engine route; the page-tool route needs a native page), Restore Data (Parc writes no sidebar backups) and Expand/Collapse Pinned Section (Sidebar family's collapsible pinned section). Accepted by the coordinator November 1: one Pin to [Space] row per Space, Show Spelling and Grammar out (acts on the bar's own field). Join Next Meeting is excluded (calendar integration); Getting Started stays out of the command bar by the October 26 onboarding-replay direction. |
-| CMD26 | LEFT | Match exact panel/row/scope/label geometry and theme treatment. |
 | CMD27 | LEFT | Match hover/pressed/selection, entry/dismissal motion and haptics. |
 | CMD28 | LEFT | Complete remaining IME/layout/keyboard/AX and interruption-state comparison. |
 

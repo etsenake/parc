@@ -9,7 +9,6 @@ tab-switching features. The compact surface shares the original page/profile
 lease, genuine native navigation requests, IME, selection and dismissal owner.
 
 
-The command bar is a temporary child panel of one browser window. Cmd-L begins with the current native page URL selected; Cmd-T begins with an empty field. It uses AppKit's field editor for selection, undo, input methods and ordinary text copy. Explicit native-result selection can project provider edit text while retaining the typed query and original request; eligible default results can now select their genuine inline suffix while typing.
 
 Rows retain one of three distinct actions:
 
@@ -19,7 +18,7 @@ Rows retain one of three distinct actions:
 
 
 
-A session leases the original Space, profile, tab, Peek, browser wrapper, page and window identity. Closing, transfer, selection change, profile change, sheet/security presentation, app deactivation or panel key loss cancels it. The original responder and native text-selection range are restored on Escape or a committed action only while that owner remains eligible. An outside click keeps its new focus. A previously dismissed panel cannot clear a replacement panel. Posted favicon callbacks use the existing exact-profile, exact-URL database service and cannot update a dismissed or replaced owner.
+A session leases the original Space, profile, tab, Peek, browser wrapper, page and window identity. Closing, transfer, selection change, profile change, sheet/security presentation, app deactivation, the window losing key or the field losing focus cancels it. The original responder and native text-selection range are restored on Escape or a committed action only while that owner remains eligible. An outside click keeps its new focus. A previously dismissed bar cannot clear a replacement bar. Posted favicon callbacks use the existing exact-profile, exact-URL database service and cannot update a dismissed or replaced owner.
 
 The existing Tabs → Copy Page URL command uses Cmd-Shift-C. With the command bar open, it copies the highlighted row's actual URL and is unavailable for a command or unresolved input row. Otherwise it copies the current native page URL, including the active Peek. Cmd-C remains the field editor's ordinary selected-text operation.
 
@@ -56,7 +55,7 @@ The offscreen harness can't sample what's behind its window, so these numbers ne
 
 Offscreen renders and the selection fade strip are in `work/cursor-review-images/cb-look/`. `tests/CommandBar/AppearanceTests.swift` checks:
 - the surface layers and views in both appearances;
-- the shadow window, its mask and its mouse transparency;
+- the shadow view, its mask and its mouse transparency;
 - the hairline;
 - the row highlight's attachment, geometry and fade;
 - cell tiles, colours and type, including after an appearance change.
@@ -216,7 +215,7 @@ The installed Arc1.170 selected-row/input/focus reference from cyclic selection 
 
 ## Contextual Favorite and Unfavorite
 
-**Favorite Tab** and **Unfavorite Tab** are now typed contextual command results. The action captures the originating sidebar's ordinary-tab collection before the child panel takes key focus; with no collection, it uses the original active ordinary tab. An unsupported folder, whole split or split-pane collection never silently falls back to that tab. All targets must be outside Favorites for Favorite, or inside Favorites for Unfavorite. Mixed membership offers neither command. Existing same-profile tab results already cover switching to Today, pinned and Favorite tabs by original ID; these new commands change membership rather than activate another result.
+**Favorite Tab** and **Unfavorite Tab** are now typed contextual command results. The action captures the originating sidebar's ordinary-tab collection as the bar opens; with no collection, it uses the original active ordinary tab. An unsupported folder, whole split or split-pane collection never silently falls back to that tab. All targets must be outside Favorites for Favorite, or inside Favorites for Unfavorite. Mixed membership offers neither command. Existing same-profile tab results already cover switching to Today, pinned and Favorite tabs by original ID; these new commands change membership rather than activate another result.
 
 Favorite appends the original items to the Profile's Favorites. Unfavorite places them at the beginning of Today in the originating current Space. The atomic model transaction retains each original ID and current URL, existing pinned home, history, selected pages and per-Space return arrangement. Promoting a Today snapshots its current URL/title as its saved home; returning to Today uses the existing Today boundary. Neither action loads a URL, closes a page or reconstructs a native wrapper. A failed durable write leaves the whole model unchanged and presents the existing error surface.
 
@@ -414,14 +413,12 @@ their nib icon, triggers and bump:
   **Every page-tool row.** The engine allows a page tool (Developer Tools,
   Inspect Elements, JavaScript Console, Network Inspector, View Source, Print,
   Save Page As, Clear Browsing Data, Clear Cache/Cookies and Refresh, Cast,
-  Task Manager) only while the page's window is key. An open command bar's
-  own panel holds key, so those rows used to show as disabled. The window now
-  asks the engine for every tool just before the bar opens and stores the
-  answers with that panel and page (`CommandBarPageToolSnapshot`). While that
-  bar is open, `canPerformPageTool` answers from the snapshot. Another page
-  never inherits it, and once the bar closes the snapshot is cleared. Running
-  a menu-backed row revalidates its menu item after dismissal, when the
-  engine is asked live; a refusal beeps instead of running. The same beep now
+  Task Manager) only while the page's window is key. The bar is a view in
+  that window, which stays key while it is open, so `canPerformPageTool`
+  asks the engine live. (When the bar was its own key panel these rows showed
+  disabled, and a snapshot taken at opening stood in; it is gone.) Running a
+  menu-backed row revalidates its menu item after dismissal; a refusal beeps
+  instead of running. The same beep now
   applies to any menu command the command bar dispatches, rather than failing
   silently. Whether Chromium's views task manager dialog
   presents correctly over Parc's AppKit windows needs that build; no runtime
@@ -488,7 +485,7 @@ Eligibility retains the exact selected native page, original weak document,
 physical window, Profile/OTR permission, enabled extension registration object
 and delivered publication. Profile load, navigation, close, transfer, extension
 disable and late suggestion callbacks cannot retarget a retained action. Actual
-execution/deletion requires the original window or child panel to be key and
+execution/deletion requires the original window to be key and
 free of sheets/security reservations. The active extension scope is a static
 native label; the website Remove/Change menu remains website-only. Escape and
 empty Tab/Backspace preserve the existing query-restoration and native IME owner.
@@ -680,31 +677,74 @@ window, registry revision, attached item and target. The deferred refresh reads
 the then-current Space state and window owner. A current-package runtime check
 is still needed to determine whether this resolves the observed failures.
 
+## In-window hosting — November 9
+
+of the child panel and its shadow and splash child windows.
+
+through `scripts/arc`; no new REA run, at Josh's direction):
+(`$__lazy_storage_$_commandBar`) with three constraint maps,
+`commandBarTopLeftConstraints`, `commandBarContentPanelConstraints` and
+`commandBarCenterConstraints`. Its `CommandBarPresentationAndPlacement.Placement`
+is `topLeftCommandBar(CGRect)`, `centeredInView(NSView)` or
+`onContentPanel(NSView)`, and `CommandBarLayoutDisposition` is
+`overCommandBarPlaceholder`, `overFocusedContent`, `centered` or
+`overContentPanel`. The window controller also has `needsPopoverBackdrop` and
+`onMouseDown`). `CommandBarContainer` holds `onDidResignFirstResponder`,
+`responderRegistration` and `splashViewHostingController`.
+`LittleWindowViewController` has its own `commandBarContainer` with full-window
+and floating constraints.
+
+**Inferred, not recovered:** every session, the centred Cmd-T/Cmd-L bar, the bar
+over the sidebar's URL placeholder and the one over the content panel's address,
+is that one container placed over its anchor in the window. Its z-order relative
+to the sidebar, Peek and sheets, and whether the popover backdrop swallows an
+outside press, were not recovered.
+
+**Parc.** `CommandBar` puts its surface, shadow and splash in one host view, the
+topmost subview of the browser window's content view, for every session: the
+main bar, the sidebar URL-bar session and the compact address editor, each placed
+over its anchor as before and kept inside the window. The window stays key and
+the field is first responder in it; the window's delegate supplies the field's
+own editor, which keeps its own undo. The material blends within the window. The
+host takes the mouse only over the bar. The bar ends when its field loses focus
+to anything outside it, when the window resigns key (except for the bar's own
+site-search alert, now a sheet on the window that the window's owner checks
+accept), on a press elsewhere in the window, and on the existing close, sheet,
+security and deactivation paths. Escape and commits return focus as before; any
+other end hands the window's responder back to what held it before the bar.
+
+**The class of defect** was "command bar hosted outside its window, so
+window-key-dependent state is wrong while it's open". Swept and fixed: the
+open-time command availability snapshot and the page-tool snapshot (both
+deleted; rows and shortcuts now validate live, so Edit Theme…, History,
+Extensions and Release Notes work from the bar); the `|| bar panel is key`
+clauses in Space, window-undo, Exit, Clear Today and tab-switcher gates and the
+sidebar tab-action check; the split-insertion panel's key hand-back; owner
+checks that refused the bar's own alert sheet; and hover. With the window key,
+key-window tracking areas under the bar switched on, so sidebar rows, split
+groups, hover buttons and row action buttons now show hover only where a press
+would land (`NSView.isTopmost(atWindowPoint:)` in `PointerCover.swift`), re-read
+as the pointer moves; the sidebar's resize strip is exempt.
+
+**Changed by being in the window:** shortcuts pressed while the bar is open now
+bar); Cmd-T, Cmd-L, Cmd-W and Escape are unchanged. The window's chrome stays in
+its active state. The site-search Learn More and Remove alerts drop from the
+window's title bar.
+
+**Not done or not verified.** Toolbar, pane title, split and extension controls
+under the bar (narrow windows, split view, the compact editor) can still show
+hover. Nothing here has run in an app: the module typecheck, the command-bar,
+shortcut and sidebar checks and offscreen renders of old and new hosting are the
+only evidence, and the material and shadow don't render offscreen.
+
 ## Commands that need a key browser — November 9
 
-draws its bar inside the browser window, so the browser stays key and its
-`MainWindowController` stays in the responder chain. Parc's bar is a key panel
-of its own. Every menu validator that needs its browser to be key therefore
-said no while the bar was open, and Return on the dimmed row only beeped. That
-covers `browserInputCommandWindow` (Edit Theme…, New Space…, Back, Forward,
-Refresh, Stop, Zoom, Toggle Sidebar, Pin, Share, Cast, History, Manage and Add
-Extensions), the native window gate behind Reveal Current Tab, Next/Previous
-Tab, Go to Sidebar Item and the recent-tab switcher, Reset Tab's key check, and
-nil-targeted items such as Minimize and Paste and Match Style, which resolved
-against the bar's own panel. The page-tool snapshot above fixed one instance of
-this.
-
-The bar now reads its command list as it opens, while the browser is still key
-(`presentCommandBar` requires the native window gate first), and records which
-commands could run (`MenuCommand.wasAvailable`). A row stays offered if it was
-available then or is available now. Choosing it dismisses the panel and
-`performMenuCommand` validates the original item again against the key
-browser, so the open-time answer never runs anything by itself. The answer
-isn't refreshed while the bar is open: a command that stops being available in
-that time (Stop after the page finishes loading) stays offered, and choosing it
-closes the bar and beeps. A command first registered while the bar is open has
-no open-time answer and shows its live state. Shortcuts pressed while the bar
-is open are unchanged. `MenuCommandAvailabilityTests` covers the rule.
+was the bar's own key panel: every validator that needs its browser key said no
+while it was open. The bar is now a view in the browser window, which stays key,
+so those commands validate live (see [in-window hosting](#in-window-hosting--november-9)).
+Choosing one dismisses the bar and `performMenuCommand` validates it again; a
+refusal beeps. `MenuCommandAvailabilityTests` covers a key-gated row (Release
+Notes) offered and run while a field in its key browser has focus.
 
 ## Search-suggestion privacy banner
 
