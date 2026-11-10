@@ -264,6 +264,11 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     /// into an open submenu.
     private var pointer: NSPoint?
     private var pendingRow: Timer?
+    /// The row whose tooltip is up or waiting for the pointer to rest (with
+    /// that wait), and the tooltip's presenter on its card, kept until its
+    /// fade ends.
+    private var tip: (level: Int, row: Int, timer: Timer?, delay: TimeInterval)?
+    private var tipPresenter: (presenter: TooltipPresenter, level: Int)?
 
     /// `anchor` is the control's rectangle on screen and `regions` where the
     /// cards look for room, in order; the cards are child windows of
@@ -365,9 +370,11 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         pendingRow?.invalidate()
         pendingRow = nil
         guard let (level, row) = hit(point) else {
+            hover(nil, in: nil)
             levels.last?.view.highlighted = nil
             return
         }
+        hover(row, in: level)
         guard let row else { return }
         let item = levels[level].view.items[row]
         let opened = level + 1 < levels.count && levels[level + 1].view.source === item.submenu
@@ -380,6 +387,77 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
             return
         }
         highlight(row, in: level)
+    }
+
+    /// A row's toolTip (the engine's reason a row is unavailable) shows as
+    /// Parc's tooltip with TooltipController's behaviour: after its stop
+    /// and idle delays once the pointer rests on the row, at once while a
+    /// tooltip is still up or fading, moving that tooltip on the same card,
+    /// and fading out when the pointer leaves. Timers run in this loop's mode.
+    private func hover(_ row: Int?, in level: Int?) {
+        if let tip, tip.level == level, tip.row == row {
+            tip.timer?.fireDate = Date(timeIntervalSinceNow: tip.delay)
+            return
+        }
+        let left = tip != nil
+        tip?.timer?.invalidate()
+        tip = nil
+        guard let level, let row, let reason = levels[level].view.items[row].toolTip, !reason.isEmpty else {
+            // Leaving a reason row starts the one fade; moving on doesn't restart it.
+            if left { fadeTip(TooltipTiming.exitDuration) }
+            return
+        }
+        let configuration = TooltipConfiguration(reason)
+        if tipPresenter != nil {
+            tip = (level, row, nil, 0)
+            showTip(configuration, level: level, row: row)
+            return
+        }
+        var delay = TooltipTiming.pointerStopDelay
+        if case .onMouseIdle(let idle) = configuration.behavior { delay += idle }
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.tip?.timer = nil
+                self?.showTip(configuration, level: level, row: row)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        tip = (level, row, timer, delay)
+    }
+
+    private func showTip(_ configuration: TooltipConfiguration, level: Int, row: Int) {
+        guard levels.indices.contains(level), let parent else { return }
+        let (view, window, _) = levels[level]
+        if let current = tipPresenter, current.level != level {
+            current.presenter.close()
+            tipPresenter = nil
+        }
+        let presenter = tipPresenter?.presenter ?? TooltipPresenter(parent: window)
+        let content = TooltipView.Content(label: configuration.label, keycaps: [],
+                                          corners: TooltipCorners(anchor: configuration.anchor),
+                                          palette: TooltipController.controller(for: parent).palette ?? .neutral,
+                                          maxWidth: TooltipConfiguration.defaultMaxWidth)
+        if presenter.present(content, anchor: configuration.anchor, from: view, rect: view.rows[row]) {
+            tipPresenter = (presenter, level)
+        } else {
+            presenter.close()
+            tipPresenter = nil
+        }
+    }
+
+    /// The tooltip fades; a show before the fade ends takes it back.
+    private func fadeTip(_ duration: TimeInterval) {
+        guard let current = tipPresenter else { return }
+        current.presenter.dismiss(duration: duration, delay: 0) { [weak self] in
+            guard let self, self.tipPresenter?.presenter === current.presenter else { return }
+            self.tipPresenter = nil
+        }
+    }
+
+    private func hideTip(fade: TimeInterval = TooltipTiming.interruptionDuration) {
+        tip?.timer?.invalidate()
+        tip = nil
+        fadeTip(fade)
     }
 
     private func highlight(_ row: Int, in level: Int) {
@@ -410,6 +488,7 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private func key(_ event: NSEvent) {
         pendingRow?.invalidate()
         pendingRow = nil
+        hideTip()
         guard let level = levels.lastIndex(where: { $0.view.highlighted != nil }) ?? levels.indices.last else { return }
         let view = levels[level].view
         switch event.keyCode {
@@ -497,6 +576,15 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
 
     /// Submenus close at once, as NSMenu's do.
     private func closeLevels(after level: Int) {
+        if let tip, tip.level > level {
+            tip.timer?.invalidate()
+            self.tip = nil
+        }
+        // A tooltip goes with its card.
+        if let current = tipPresenter, current.level > level {
+            current.presenter.close()
+            tipPresenter = nil
+        }
         while levels.count > level + 1, let (view, window, _) = levels.popLast() {
             view.onPress = nil
             window.parent?.removeChildWindow(window)
@@ -510,6 +598,7 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         pendingRow?.invalidate()
         pendingRow = nil
         pointer = nil
+        hideTip()
         while let (view, window, right) = levels.popLast() {
             view.onPress = nil
             let remove = {

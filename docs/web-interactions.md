@@ -151,8 +151,9 @@ one.
   synchronous show, so its model lease and guarded targets hold through the
   command. Closing the card cancels the menu, as does the engine's own
   cancellation. Engines before overlay 650 have no presenter hook and show
-  their menu at the pointer, with the card kept open. Disabled rows don't show
-  the engine's reason tooltip (VoiceOver reads it as help). A pinned
+  their menu at the pointer, with the card kept open. A disabled row shows
+  the engine's reason it is unavailable as Parc's tooltip once the pointer
+  rests on the row, as the grey menu did (VoiceOver reads it as help). A pinned
   extension button's menu is the same themed menu, in the card's colours,
   hanging beside the button with its first row level with it and
   any open card left open.

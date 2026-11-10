@@ -127,6 +127,8 @@ struct PArcContextMenuChecks {
             expect(presenter.present(menu), "the menu shows")
             settle()
             expect(parent.childWindows?.isEmpty ?? true, "its cards are gone once it returns")
+            expect(!NSApp.windows.contains { $0.isVisible && NSStringFromClass(type(of: $0)).hasSuffix("TooltipWindow") },
+                   "no tooltip outlives the menu")
             return recorder.log
         }
         func screenRow(_ view: PArcContextMenuView, _ row: Int, beside: NSRect) -> NSPoint {
@@ -186,6 +188,18 @@ struct PArcContextMenuChecks {
                "Down moves in the parent and closes the hovered submenu")
         expect(run(extensionMenu(), [mouse(.mouseMoved, siteRow), key(124), key(36)]) ==
                ["open root", "close root", "perform Ask on Every Visit"], "Right goes into the hovered submenu")
+
+        // Resting on the disabled row starts its reason's tooltip (off screen
+        // here, so it can't show); the menu carries on past it.
+        expect(run(extensionMenu(), [mouse(.mouseMoved, disabled)], during: { _ in
+            let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    NSApp.postEvent(mouse(.mouseMoved, options), atStart: false)
+                    NSApp.postEvent(mouse(.leftMouseUp, options), atStart: false)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }) == ["open root", "close root", "perform Options"], "a row's reason tooltip leaves the menu working")
 
         // VoiceOver's press chooses between events.
         expect(run(extensionMenu(), [], during: { _ in
@@ -247,15 +261,21 @@ struct PArcContextMenuChecks {
             Scene(name: "split-narrow-pane", screen: screen, window: narrow, bars: narrowBars, sidebar: nil, button: button(on: narrowBars[1])),
             Scene(name: "split-right-edge", screen: screen, window: edge, bars: edgeBars, sidebar: nil, button: button(on: edgeBars[1])),
         ]
-        for scene in scenes {
-            for (themeName, theme, appearanceName) in [("light", blue, NSAppearance.Name.aqua), ("dark", purple, .darkAqua)] {
-                draw(scene, theme: theme, appearance: NSAppearance(named: appearanceName)!, menu: menu,
+        for (themeName, theme, appearanceName) in [("light", blue, NSAppearance.Name.aqua), ("dark", purple, .darkAqua)] {
+            let appearance = NSAppearance(named: appearanceName)!
+            for scene in scenes {
+                draw(scene, theme: theme, appearance: appearance, menu: menu,
                      to: output.appendingPathComponent("extension-menu-\(scene.name)-\(themeName).png"))
             }
+            draw(scenes[0], theme: theme, appearance: appearance, menu: menu, reasonTip: true,
+                 to: output.appendingPathComponent("extension-menu-disabled-reason-\(themeName).png"))
         }
     }
 
-    @MainActor static func draw(_ scene: Scene, theme: SpaceTheme, appearance: NSAppearance, menu: () -> NSMenu, to url: URL) {
+    /// `reasonTip` rests the pointer on the disabled row instead of opening
+    /// the submenu, so its reason shows as the tooltip.
+    @MainActor static func draw(_ scene: Scene, theme: SpaceTheme, appearance: NSAppearance, menu: () -> NSMenu,
+                                reasonTip: Bool = false, to url: URL) {
         let colors = SiteControlCenterColors(theme: theme)
         let sample = SiteControlCenterModel()
         sample.colors = colors
@@ -296,7 +316,7 @@ struct PArcContextMenuChecks {
         let root = PArcContextMenuView(menu: menu(), colors: colors.menu)
         let rootPlaced = PArcContextMenuMetrics.frame(card: root.card.size, reach: root.reach, beside: anchorRow, right: true, regions: regions)
         root.frame.origin = NSPoint(x: rootPlaced.frame.minX - margin, y: rootPlaced.frame.minY - margin)
-        root.highlighted = 2
+        root.highlighted = reasonTip ? nil : 2
         let siteRow = root.submenuAnchor(2).offsetBy(dx: root.frame.minX, dy: root.frame.minY)
         let sub = PArcContextMenuView(menu: root.items[2].submenu!, colors: colors.menu)
         let subPlaced = PArcContextMenuMetrics.frame(card: sub.card.size, reach: sub.reach, beside: siteRow, right: rootPlaced.right, regions: regions)
@@ -344,9 +364,27 @@ struct PArcContextMenuChecks {
         clip.addClip()
         snapshot(chrome).draw(in: placed.frame)
         NSGraphicsContext.restoreGraphicsState()
-        for view in [root, sub] {
+        for view in reasonTip ? [root] : [root, sub] {
             view.appearance = appearance
             snapshot(view).draw(in: view.frame)
+        }
+        if reasonTip, let reason = root.items[7].toolTip {
+            //
+            let tip = TooltipConfiguration(reason)
+            let tipView = TooltipView(content: TooltipView.Content(label: reason, keycaps: [],
+                corners: TooltipCorners(anchor: tip.anchor), palette: TooltipColorPalette(theme: theme),
+                maxWidth: TooltipConfiguration.defaultMaxWidth))
+            tipView.backingScale = 2
+            let row = root.rows[7]
+            let flipped = CGRect(x: row.minX, y: root.frame.height - row.maxY, width: row.width, height: row.height)
+            if let placed = TooltipPlacement.screenFrame(preferred: tip.anchor, size: tipView.contentLayout.size, anchorRect: flipped,
+                                                         mouse: CGPoint(x: flipped.midX, y: flipped.midY), windowFrame: root.frame,
+                                                         screenFrame: scene.screen) {
+                let frame = placed.insetBy(dx: -TooltipView.margin(scale: 2), dy: -TooltipView.margin(scale: 2))
+                tipView.frame = NSRect(origin: .zero, size: frame.size)
+                tipView.appearance = appearance
+                snapshot(tipView).draw(in: frame)
+            }
         }
         NSGraphicsContext.restoreGraphicsState()
         try? rep.representation(using: .png, properties: [:])?.write(to: url)

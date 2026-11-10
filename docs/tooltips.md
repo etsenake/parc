@@ -9,7 +9,12 @@ Sources: `Tooltip.swift` (configuration, palette, keycaps, corners, shadows,
 timing, eligibility, the presentation state and placement), `TooltipView.swift`
 (layout and drawing) and `TooltipController.swift` (the `NSView` property,
 the SwiftUI modifier and its anchor view, `LiveShortcutToolTip`, each view's
-tracker, the per-window controller and the tooltip window).
+tracker, the per-window controller and the tooltip window). Parc's extension
+controller's timers and tracking areas don't fire, so it presents a disabled
+row's reason through `TooltipPresenter` itself, on a common-mode timer with the
+controller's stop and idle delays and fade. It reuses one presenter on the same
+card, so a tooltip still up or fading moves to the next row at once, as the
+controller's does.
 
 ## Reference
 
@@ -367,7 +372,8 @@ inventory `rea/inventory.tsv` and the helper outputs `rea/sites.tsv` and
 - **Help only**: the New Tab row already had no tooltip (`NewTabCellState`
   has none). It gains "New tab" with New Tab's binding
   (`NewTabCellState.newTabShortcut`) as accessibility help.
-  `View.help`), Easel (its own EaselUI tooltip path), Notes, menu items, and
+  `View.help`), Easel (its own EaselUI tooltip path), Notes, system menu items
+  (the extension menu's rows use Parc's tooltip), and
   overflowing content or status text.
   ([Copy Quote as URL](#copy-quote-as-url)).
 

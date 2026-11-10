@@ -459,7 +459,7 @@ final class TooltipAnchorView: NSView {
 ///
 ///
 /// window that never takes key or mouse events.
-@MainActor private final class TooltipPresenter {
+@MainActor final class TooltipPresenter {
     private weak var parent: NSWindow?
     private let window: NSWindow
     private let view = TooltipView(content: TooltipView.Content(label: "", keycaps: [], corners: TooltipCorners(anchor: .bottomTrailing),
