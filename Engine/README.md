@@ -371,17 +371,30 @@ is destroyed before `CefShutdown`. See
 ## Product name
 
 Chromium's string resources call the browser Chromium in about 620 English
-strings across six bundles, and in each translation. Grit names Parc instead
-as it emits each message (`integration/parc_branding.py`, hooked into
-`MessageNode.Translate` by `integration/product-name.patch`, overlay 649). That
-covers every locale and the inflected, misspelt and transliterated forms
-translators used, without forking the `.grd`/`.xtb` files or their message IDs.
+strings across six bundles, and in each translation; another 378 say Chrome.
+Grit names Parc as it emits each message (`integration/parc_branding.py`,
+hooked into `MessageNode.Translate` by `integration/product-name.patch`,
+overlays 649 and 651), without forking the `.grd`/`.xtb` files or their
+message IDs. Chromium becomes Parc in every locale, including the inflected,
+misspelt and transliterated forms translators used. Chrome becomes Parc only
+in the 164 messages in `CHROME_MEANS_PARC`, where it is the browser the user
+is running. The other 214 keep it: it names a Google product or service (the
+Chrome Web Store, Chrome Apps, sign-in and sync, Chrome Enterprise), describes
+what Google does that Parc doesn't (Safe Browsing lookups, inert without a
+Google API key; Google Account features; Google's updater), or belongs to a
+feature Parc excludes (Gemini and Chrome's other AI features, other
+platforms); `tests/ProductName` lists them by reason. Where a language's
+ending was chosen for the sound of Chrome or Chromium, Parc gets the one it
+takes ("Parc'ı", "Parc를", "Parcissa").
+
 The Chromium Authors' copyright, links to the Chromium project, Chromium OS and
-Google's Chromebook and Chromecast devices keep their names.
-Identifiers stay as they are: the user agent, bundle IDs, keychain items, paths
-and preference keys. `tests/ProductName` fails on any translation that still names
-Chromium (it needs `PARC_ENGINE_WORKSPACE`), and on any Parc source string
-that does outside its reviewed list. Not yet built.
+Google's Chromebook and Chromecast devices keep their names. Identifiers stay
+as they are: the user agent, bundle IDs, keychain items, paths and preference
+keys. `tests/ProductName` (it needs `PARC_ENGINE_WORKSPACE`) fails on any
+compiled translation that still names Chromium, on Chrome left in a renamed
+message or changed in a kept one, and on a compiled message saying Chrome that
+has no decision. It also fails on any Parc source string naming Chromium
+outside its reviewed list. Not yet built.
 
 ## Acceptance and migration
 

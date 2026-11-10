@@ -16,7 +16,7 @@
 -      lang, gender, self.PseudoIsAllowed(), self.ShouldFallbackToEnglish()
 -    ).GetRealContent()
 +    msg = parc_branding.Rename(
-+      self.NameOrOffset(), self.clique.GetMessage(),
++      self.NameOrOffset(), lang, self.clique.GetMessage(),
 +      self.clique.MessageForLanguageAndGender(
 +        lang, gender, self.PseudoIsAllowed(), self.ShouldFallbackToEnglish()))
      # Optimization: Avoid the overhead of regular expression substitution if the

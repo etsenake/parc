@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 650,
+  "version": 651,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -1975,7 +1975,7 @@
     {
       "source": "Engine/ParcHost/integration/parc_branding.py",
       "target": "tools/grit/grit/parc_branding.py",
-      "sha256": "1e3a20bff2c9bd6f6552acc03f0c375dc08a94e640637801b38ead2d7460a47c"
+      "sha256": "f1abb7ba99d00ae3f19901c805b92339c1d3225e2b3c1e6db0d462ca317ff652"
     }
   ],
   "patches": [
@@ -6279,12 +6279,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/product-name.patch",
-      "sha256": "366fc2563059c114b4c88595a7bbaa604f0c2710da60dad736a2ba4ecf3c300b",
+      "sha256": "500359ee0f3ef2cb741797aac9dba7dff6f8f30c13487a858e0fcd104723e404",
       "files": [
         {
           "target": "tools/grit/grit/node/message.py",
           "before_sha256": "1a6ffe8f4619b502ac58fdd27ab5635548ce63636d7d1a6aa10bc9d013605dec",
-          "after_sha256": "e5782cbaf5673bc46ce7eaf72bde784b75e0bfcb4c3599027162b5539bc254a5"
+          "after_sha256": "2b36e7321fe2f70e82d6c3decd3f9409b6bf24f0823441ec5aa446d04dfa8922"
         },
         {
           "target": "tools/grit/grit.pydeps",

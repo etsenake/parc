@@ -81,10 +81,12 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   [Product name](../Engine/README.md#product-name)), drops the history-title
   workaround and rewords two engine errors; `tests/ProductName` guards both
   engine and app strings. **Pending an engine build;** until then the shipped
-  engine still says Chromium. Separately, about 355 English engine strings
-  say Chrome (Google's wording in shared bundles, many for features Parc
-  excludes); they need a per-string decision because Chrome also names real
-  services such as the Chrome Web Store, and are unchanged.
+  engine still says Chromium. Overlay 651 adds Josh's per-string decision on
+  the 378 compiled strings whose English says Chrome: 164 name the browser the
+  user is running and now say Parc; 103 name Google products or services, 52
+  describe what Google does that Parc doesn't and 59 belong to excluded
+  features, and keep Chrome. Endings in ten languages now suit Parc; Mongolian
+  keeps endings chosen for Chrome. Also pending the engine build.
 
 - **November 9 screenshot corrections — Codex root.** Josh requested the
   the page toolbar is shown, a separate compact current-tab URL editor, live
