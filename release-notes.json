@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "1.12.1",
+      "build": 27,
+      "date": "2026-11-10",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "pages",
+          "summary": "Size new tabs before showing their content",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.12.0",
       "build": 26,
       "date": "2026-11-10",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.1 (2026-11-10)
+
+### Fixed
+
+- **pages:** Size new tabs before showing their content
+
 ## 1.12.0 (2026-11-10)
 
 ### New
