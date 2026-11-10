@@ -8,9 +8,13 @@
 #include <cstring>
 
 #import "VideoPiPWindow.h"
-#import "cef/libcef/browser/parc_native/native_appkit_bridge.h"  // nogncheck
-#import "cef/libcef/browser/parc_native/native_engine_entry.h"   // nogncheck
+#import "native_appkit_bridge.h"
+#import "native_engine_entry.h"
+#if PARC_DIRECT_ENGINE
+#import "native_application_protocols.h"
+#else
 #import "include/cef_application_mac.h"
+#endif
 #import "runtime_driver.h"
 
 namespace {
@@ -29,10 +33,14 @@ struct API {
 API api{};
 int result = 1;
 bool shutdown_complete = false;
-// No NSApplication terminate recursion, nested event loop, or second CEF owner.
+// No NSApplication terminate recursion, nested event loop, or second engine owner.
 }  // namespace
 @class PCRuntimeController;
+#if PARC_DIRECT_ENGINE
+@interface PCRuntimeApplication : NSApplication <CrAppControlProtocol>
+#else
 @interface PCRuntimeApplication : NSApplication <CefAppProtocol>
+#endif
 @property(nonatomic, assign) BOOL handlingSendEvent;
 @property(nonatomic, weak) PCRuntimeController* runtime;
 @end
@@ -677,7 +685,7 @@ int main(int argc, char** argv) {
                    shutdown_complete ? "true" : "false");
     }
     // Do not unload Chromium: Objective-C classes remain registered. Process
-    // exit follows genuine CefShutdown and includes the real CEF exit code.
+    // exit follows genuine engine shutdown and includes its real exit code.
     return result;
   }
 }

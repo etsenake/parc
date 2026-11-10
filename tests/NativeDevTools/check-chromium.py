@@ -121,25 +121,32 @@ def contains_object(flags_file, rule, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
-    if (Path(args.output_name).name != args.output_name or
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
         parser.error("--output-name must name one existing output directory")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / "Engine/ParcHost/overlay.json"
+    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
+                            else "Engine/ParcHost/overlay.json")
     manifest = json.loads(manifest_path.read_text())
-    lock_path = repo / "Engine/source-lock.json"
-    lock = json.loads(lock_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    if (manifest["upstream"]["cef"] != lock["cef"]["commit"] or
-            manifest["upstream"]["chromium"] != lock["chromium"]["commit"]):
+    upstream = ["chromium"] if direct else ["cef", "chromium"]
+    if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
     snapshots = {}
@@ -189,6 +196,11 @@ def main():
 
     targets = []
     for source, owner in NATIVE:
+        if direct:
+            source = source.replace("native_chrome_platform_delegate.mm", "native_page_binding.mm")
+            owner = owner.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
+            owner = owner.replace("obj/cef/libcef_static.ninja", "obj/parc/browser.ninja")
+            owner = owner.replace("obj/cef/tests/", "obj/parc/tests/")
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
         flags_file = build / owner
@@ -199,7 +211,20 @@ def main():
 
     # These original CXX sources keep their own generated owners. A test
     # source_set must use its own flags, never chrome/test's top-level flags.
-    for target, owner in UPSTREAM:
+    upstream = UPSTREAM
+    if direct:
+        # CEF's runner and prompt now live in file_dialog.mm and site_permissions.mm,
+        # both already checked above with their real native owners.
+        upstream = tuple(item for item in UPSTREAM if not item[0].startswith("cef/"))
+        source = "Engine/ParcNative/native_browser_web_contents_delegate.mm"
+        if source not in sources:
+            raise ValueError(f"reviewed overlay does not map {source}")
+        target = sources[source]
+        owner = "obj/parc/browser.ninja"
+        if not contains_object(build / owner, "objcxx", target):
+            raise ValueError(f"missing direct browser delegate object: {target}")
+        targets.append((target, build / owner, "objcxx"))
+    for target, owner in upstream:
         flags_file = build / owner
         if (target not in outputs or not flags_file.is_file() or
                 not contains_object(flags_file, "cxx", target)):
