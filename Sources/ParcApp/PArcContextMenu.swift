@@ -26,21 +26,33 @@ enum PArcContextMenuMetrics {
     static let shadowRadius: CGFloat = 3
 
     /// The card beside `row` (screen coordinates), its first row level with
-    /// `row`: to the right when `right` and it fits, otherwise on the side
-    /// with more room, then moved up or down onto `screen`.
-    static func frame(card size: NSSize, beside row: NSRect, right: Bool,
-                      screen: NSRect?) -> (frame: NSRect, right: Bool) {
+    /// `row`, in the first of `regions` that holds the row and has room for
+    /// the card on one side of it (the window's part on screen, then the
+    /// screen), so moving in from an edge keeps it beside the row. There it takes
+    /// the side `right` names when `reach` (it and its deepest submenus) fits,
+    /// else the other side if that fits it, else the first side the card
+    /// alone fits. With room nowhere it takes the roomier side of the last
+    /// region and moves onto it. No regions leave it where it hangs.
+    static func frame(card size: NSSize, reach: CGFloat, beside row: NSRect, right: Bool,
+                      regions: [NSRect]) -> (frame: NSRect, right: Bool) {
         func placed(_ right: Bool) -> NSRect {
             NSRect(x: right ? row.maxX + gap : row.minX - gap - size.width,
                    y: row.maxY + inset - size.height, width: size.width, height: size.height)
         }
-        guard let screen else { return (placed(right), right) }
-        let fits = { (right: Bool) in right ? placed(true).maxX <= screen.maxX : placed(false).minX >= screen.minX }
-        var side = right
-        if !fits(side) { side = fits(!side) ? !side : screen.maxX - row.maxX >= row.minX - screen.minX }
+        func room(_ right: Bool, in region: NSRect) -> CGFloat {
+            right ? region.maxX - row.maxX - gap : row.minX - gap - region.minX
+        }
+        let roomy = regions.first { region in
+            region.minY <= row.minY && row.maxY <= region.maxY && size.height <= region.height
+                && (room(true, in: region) >= size.width || room(false, in: region) >= size.width)
+        }
+        guard let region = roomy ?? regions.last else { return (placed(right), right) }
+        let sides = [right, !right]
+        let side = sides.first { room($0, in: region) >= reach } ?? sides.first { room($0, in: region) >= size.width }
+            ?? (room(!right, in: region) > room(right, in: region) ? !right : right)
         var frame = placed(side)
-        if frame.minY < screen.minY { frame.origin.y = screen.minY }
-        if frame.maxY > screen.maxY { frame.origin.y = screen.maxY - frame.height }
+        frame.origin.x = max(region.minX, min(frame.minX, region.maxX - frame.width))
+        frame.origin.y = max(region.minY, min(frame.minY, region.maxY - frame.height))
         return (frame, side)
     }
 
@@ -78,10 +90,7 @@ final class PArcContextMenuView: NSView {
         self.colors = colors
         items = m.shownItems(menu)
         showsState = items.contains { $0.state != .off || $0.image != nil }
-        let titleWidth = items.map { Self.title($0, color: .black).size().width }.max() ?? 0
-        let leading = showsState ? m.stateTitleInset : m.titleInset
-        let trailing = m.titleInset + (items.contains { $0.hasSubmenu } ? m.chevronWidth : 0)
-        let width = min(m.maximumWidth, max(m.minimumWidth, ceil(2 * m.inset + leading + titleWidth + trailing)))
+        let width = Self.cardWidth(items)
         let heights = items.map { $0.isSeparatorItem ? SidebarPlusMenuView.divider : m.rowHeight }
         var top = 2 * (m.shadowMargin + m.inset) + heights.reduce(0, +)
         let size = NSSize(width: width + 2 * m.shadowMargin, height: top)
@@ -109,6 +118,23 @@ final class PArcContextMenuView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// The card and, beside it, its widest chain of submenus.
+    var reach: CGFloat { Self.reach(items) }
+
+    static func reach(_ items: [NSMenuItem]) -> CGFloat {
+        let chains = items.compactMap(\.submenu).map { PArcContextMenuMetrics.gap + reach(PArcContextMenuMetrics.shownItems($0)) }
+        return cardWidth(items) + (chains.max() ?? 0)
+    }
+
+    /// A card's width for `items`: its titles, state column and chevrons.
+    static func cardWidth(_ items: [NSMenuItem]) -> CGFloat {
+        let m = PArcContextMenuMetrics.self
+        let titleWidth = items.map { title($0, color: .black).size().width }.max() ?? 0
+        let leading = items.contains { $0.state != .off || $0.image != nil } ? m.stateTitleInset : m.titleInset
+        let trailing = m.titleInset + (items.contains { $0.hasSubmenu } ? m.chevronWidth : 0)
+        return min(m.maximumWidth, max(m.minimumWidth, ceil(2 * m.inset + leading + titleWidth + trailing)))
+    }
 
     /// The card, inside the shadow's margin.
     var card: NSRect { bounds.insetBy(dx: PArcContextMenuMetrics.shadowMargin, dy: PArcContextMenuMetrics.shadowMargin) }
@@ -227,6 +253,7 @@ final class PArcContextMenuView: NSView {
 @MainActor
 final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private let anchor: NSRect
+    private let regions: [NSRect]
     private weak var parent: NSWindow?
     private let colors: PArcMenuColors
     private var levels: [(view: PArcContextMenuView, window: NSWindow, right: Bool)] = []
@@ -238,10 +265,12 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private var pointer: NSPoint?
     private var pendingRow: Timer?
 
-    /// `anchor` is the control's rectangle on screen; the cards are child
-    /// windows of `parent`, in its appearance.
-    init(anchor: NSRect, parent: NSWindow, colors: PArcMenuColors) {
+    /// `anchor` is the control's rectangle on screen and `regions` where the
+    /// cards look for room, in order; the cards are child windows of
+    /// `parent`, in its appearance.
+    init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: PArcMenuColors) {
         self.anchor = anchor
+        self.regions = regions
         self.parent = parent
         self.colors = colors
     }
@@ -440,8 +469,8 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         menu.delegate?.menuWillOpen?(menu)
         let view = PArcContextMenuView(menu: menu, colors: colors)
         let margin = PArcContextMenuMetrics.shadowMargin
-        let placed = PArcContextMenuMetrics.frame(card: view.card.size, beside: row, right: right,
-                                                 screen: owner.screen?.visibleFrame)
+        let placed = PArcContextMenuMetrics.frame(card: view.card.size, reach: view.reach, beside: row, right: right,
+                                                 regions: regions)
         let window = NSWindow(contentRect: placed.frame.insetBy(dx: -margin, dy: -margin), styleMask: .borderless,
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

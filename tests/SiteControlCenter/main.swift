@@ -184,6 +184,28 @@ struct SiteControlCenterChecks {
                                                          card: CGSize(width: 232, height: 300), below: true,
                                                          parent: parentFrame, screen: parentFrame)
         expect(!low.below && low.frame.minY == 132, "without room below, the card opens above the button")
+        // Every anchor (sidebar URL bar, top toolbar, a split pane's bar) keeps
+        // the card on screen and in the window's part on it.
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let offRight = SiteControlCenterPlacement.windowFrame(anchor: CGRect(x: 1420, y: 800, width: 32, height: 32),
+                                                              card: CGSize(width: 232, height: 300), below: true,
+                                                              parent: CGRect(x: 900, y: 300, width: 700, height: 575), screen: screen)
+        expect(offRight.frame.maxX == screen.maxX, "a window running off the screen keeps the card on it")
+        let short = SiteControlCenterPlacement.windowFrame(anchor: CGRect(x: 500, y: 350, width: 32, height: 32),
+                                                           card: CGSize(width: 232, height: 380), below: true,
+                                                           parent: CGRect(x: 0, y: 0, width: 1000, height: 400), screen: screen)
+        expect(!short.below && short.frame.minY == 382 && short.frame.maxX <= 1000,
+               "with room on neither side inside the window it hangs past the window rather than cover its button")
+        let nowhere = SiteControlCenterPlacement.windowFrame(anchor: CGRect(x: 500, y: 400, width: 32, height: 32),
+                                                             card: CGSize(width: 232, height: 600), below: true,
+                                                             parent: CGRect(x: 0, y: 0, width: 1000, height: 875), screen: screen)
+        expect(!nowhere.below && nowhere.frame.maxY == screen.maxY,
+               "with room on neither side anywhere it takes the roomier one, on screen")
+        let tall = SiteControlCenterPlacement.windowFrame(anchor: CGRect(x: 500, y: 560, width: 32, height: 32),
+                                                          card: CGSize(width: 232, height: 400), below: true,
+                                                          parent: CGRect(x: 0, y: 300, width: 1000, height: 300), screen: screen)
+        expect(tall.below && tall.frame.maxY == 560 && tall.frame.minY >= screen.minY,
+               "a card taller than the window hangs past it but stays on screen")
 
         // The plus HUD's chrome: the tail above the card or below it.
         let content = NSView(frame: .zero)

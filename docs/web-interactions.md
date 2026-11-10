@@ -136,7 +136,13 @@ one.
   Show Menu) keeps the card open and is Parc's own, both at Josh's request.
   palette, 8-point row plate, 13-point medium titles, separators and motion,
   It hangs 4 points off the card's edge with its first row level with the
-  tile, like a submenu, on the side with room. The tile stays lit while it is
+  tile, like a submenu. It looks for room as the card does: inside the
+  window's part on screen, then on the screen (as beside a small popup
+  window). There it takes the side where it and its submenus, every level
+  deep, all fit, so a pane at the window's right edge, or a narrow one, opens
+  the whole chain to the left rather than a submenu doubling back over the
+  card. Failing that, it takes the side the menu alone fits, then the roomier
+  one, and moves in from any edge. The tile stays lit while it is
   open, and the site-access submenu hangs from the menu the same way. Like
   NSMenu it runs its own event-tracking loop: arrows, Return, Escape, a release
   over a row (including a drag from the tile), a press outside and an open
@@ -169,8 +175,13 @@ kept and the capture buttons unchanged (ledger: Completion requirements).
   resize, app deactivation, losing key; a press on the button that closed it
   does not reopen it). Escape closes, and the sidebar hiding closes a card
   hanging from the pill. The card centres under its button with the tail on
-  the button's midpoint, inside the parent window, and opens above when the
-  screen has no room; it follows the button and re-flips as it grows. It takes
+  the button's midpoint. From every anchor (the sidebar URL bar, the top
+  toolbar, each split pane's bar, a popup's bar) it hangs from the button
+  inside the part of the window on the button's display, opening above when
+  there's no room below. Failing both, it hangs from the button past the
+  window, on screen. Only with no room on either side anywhere does it take
+  the roomier side and move onto the screen over the button. It follows the
+  button and re-flips as it grows. It takes
   takes its positioning view's, announces itself as a popover, and gives the
   hosted buttons keyboard focus (Tab, Full Keyboard Access).
   (its methods are `popoverDidClose:` and `popoverShouldDetach:`), so

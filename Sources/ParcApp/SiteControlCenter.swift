@@ -806,25 +806,45 @@ final class SiteControlCenterDismissal {
 ///
 /// popover centres on the button with its arrow on the button's midpoint
 ///
-/// stays within the parent window horizontally, and it moves to the button's
-/// other side when the screen has no room for it.
+/// card hangs from the button inside the part of the window on screen, on
+/// the button's other side when its own has no room there; failing both, it
+/// hangs from the button on the screen past the window. Only with room on
+/// neither side of the button anywhere does it take the roomier side and
+/// move onto the screen over the button.
 @MainActor
 enum SiteControlCenterPlacement {
     static func windowFrame(anchor: CGRect, card: CGSize, below: Bool, parent: CGRect,
                             screen: CGRect?) -> (frame: CGRect, tailX: CGFloat, below: Bool) {
-        let tail = SidebarPlusMenuPlacement.tailHeight
-        let height = card.height + tail
-        var x = anchor.midX - card.width / 2
-        x = max(parent.minX, min(x, parent.maxX - card.width))
-        var below = below
-        if let screen {
-            if below, anchor.minY - height < screen.minY, anchor.maxY + height <= screen.maxY { below = false }
-            else if !below, anchor.maxY + height > screen.maxY, anchor.minY - height >= screen.minY { below = true }
+        let height = card.height + SidebarPlusMenuPlacement.tailHeight
+        let regions = Self.regions(window: parent, screen: screen)
+        func fits(_ below: Bool, in region: CGRect) -> Bool {
+            below ? anchor.minY - height >= region.minY : anchor.maxY + height <= region.maxY
         }
-        let frame = CGRect(x: x, y: below ? anchor.minY - height : anchor.maxY, width: card.width, height: height)
+        let region = regions.first { card.width <= $0.width && (fits(below, in: $0) || fits(!below, in: $0)) } ?? regions[regions.count - 1]
+        let side = fits(below, in: region) ? below
+            : fits(!below, in: region) ? !below : anchor.minY - region.minY >= region.maxY - anchor.maxY
+        let y = max(region.minY, min(side ? anchor.minY - height : anchor.maxY, region.maxY - height))
+        // Across, the card keeps to the window wherever it is wide enough.
+        let across = regions.first { card.width <= $0.width } ?? region
+        let x = max(across.minX, min(anchor.midX - card.width / 2, across.maxX - card.width))
+        let frame = CGRect(x: x, y: y, width: card.width, height: height)
         let edge = SidebarPlusMenuPlacement.cornerRadius + SidebarPlusMenuPlacement.tailBase / 2
         let tailX = min(card.width - edge, max(edge, anchor.midX - x))
-        return (frame, tailX, below)
+        return (frame, tailX, side)
+    }
+
+    /// Where a card or menu looks for room, in order: the part of `window` on
+    /// `screen` (a visible frame), then the screen.
+    static func regions(window: CGRect, screen: CGRect?) -> [CGRect] {
+        guard let screen else { return [window] }
+        let visible = window.intersection(screen)
+        return visible.isNull || visible.isEmpty ? [screen] : [visible, screen]
+    }
+
+    /// The visible frame of the display showing `point`; a window across two
+    /// displays opens its card on the button's.
+    static func screen(at point: CGPoint) -> CGRect? {
+        NSScreen.screens.first { $0.frame.contains(point) }?.visibleFrame
     }
 }
 
@@ -968,8 +988,14 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
               tile.window === panel else { return false }
         let row = panel.convertToScreen(tile.convert(tile.bounds, to: nil))
         let edges = panel.convertToScreen(card.convert(card.bounds, to: nil))
+        // The menu looks for room as the card does; a torn-off card's only on screen.
+        let screen = SiteControlCenterPlacement.screen(at: CGPoint(x: row.midX, y: row.midY)) ?? panel.screen?.visibleFrame
+        var regions = screen.map { [$0] } ?? []
+        if let window = anchorWindow, !isDetached {
+            regions = SiteControlCenterPlacement.regions(window: window.frame, screen: screen)
+        }
         let menu = PArcContextMenu(anchor: NSRect(x: edges.minX, y: row.minY, width: edges.width, height: row.height),
-                                  parent: panel, colors: model.colors.menu)
+                                  regions: regions, parent: panel, colors: model.colors.menu)
         extensionMenu = menu
         model.menuExtension = id
         show(menu)
@@ -1045,8 +1071,9 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         guard panel == nil, let parent = view.window else { close(); return }
         let anchor = view.convert(rect, to: nil)
         let size = contentSize
-        let placed = SiteControlCenterPlacement.windowFrame(anchor: parent.convertToScreen(anchor), card: size, below: below,
-                                                           parent: parent.frame, screen: parent.screen?.visibleFrame)
+        let button = parent.convertToScreen(anchor)
+        let placed = SiteControlCenterPlacement.windowFrame(anchor: button, card: size, below: below, parent: parent.frame,
+            screen: SiteControlCenterPlacement.screen(at: CGPoint(x: button.midX, y: button.midY)) ?? parent.screen?.visibleFrame)
         card.frame.size = size
         let chrome = PArcMenuChrome(content: card, size: size, colors: model.colors.menu, tailX: placed.tailX,
                                    tailOnTop: placed.below)
@@ -1105,9 +1132,10 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
             return
         }
         let anchor = anchorView.flatMap { $0.window === parent ? $0.convert(placement.rect, to: nil) : nil } ?? placement.opened
-        let placed = SiteControlCenterPlacement.windowFrame(anchor: parent.convertToScreen(anchor), card: size,
-                                                           below: placement.below, parent: parent.frame,
-                                                           screen: parent.screen?.visibleFrame)
+        let button = parent.convertToScreen(anchor)
+        let placed = SiteControlCenterPlacement.windowFrame(anchor: button, card: size, below: placement.below,
+            parent: parent.frame,
+            screen: SiteControlCenterPlacement.screen(at: CGPoint(x: button.midX, y: button.midY)) ?? parent.screen?.visibleFrame)
         if placed.below != chrome.tailOnTop || placed.tailX != chrome.tailX {
             let next = PArcMenuChrome(content: card, size: size, colors: model.colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
             panel.contentView = next

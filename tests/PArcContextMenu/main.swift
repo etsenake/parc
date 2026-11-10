@@ -53,17 +53,36 @@ struct PArcContextMenuChecks {
         let m = PArcContextMenuMetrics.self
         let tile = NSRect(x: 100, y: 500, width: 48, height: 32)
         let size = NSSize(width: 200, height: 300)
-        let right = m.frame(card: size, beside: tile, right: true, screen: NSRect(x: 0, y: 0, width: 1000, height: 800))
+        let right = m.frame(card: size, reach: size.width, beside: tile, right: true, regions: [NSRect(x: 0, y: 0, width: 1000, height: 800)])
         expect(right.right && right.frame.minX == tile.maxX + m.gap && right.frame.maxY == tile.maxY + m.inset,
                "the card hangs to the right of the tile, its first row level with it")
-        let edge = m.frame(card: size, beside: NSRect(x: 850, y: 500, width: 48, height: 32), right: true,
-                           screen: NSRect(x: 0, y: 0, width: 1000, height: 800))
+        let edge = m.frame(card: size, reach: size.width, beside: NSRect(x: 850, y: 500, width: 48, height: 32), right: true,
+                           regions: [NSRect(x: 0, y: 0, width: 1000, height: 800)])
         expect(!edge.right && edge.frame.maxX == 850 - m.gap, "without room on the right it hangs to the left")
-        let low = m.frame(card: size, beside: NSRect(x: 100, y: 40, width: 48, height: 32), right: true,
-                          screen: NSRect(x: 0, y: 20, width: 1000, height: 800))
+        let low = m.frame(card: size, reach: size.width, beside: NSRect(x: 100, y: 40, width: 48, height: 32), right: true,
+                          regions: [NSRect(x: 0, y: 20, width: 1000, height: 800)])
         expect(low.frame.minY == 20, "near the bottom of the screen it moves up onto it")
-        expect(m.frame(card: size, beside: tile, right: false, screen: nil).frame.maxX == tile.minX - m.gap,
+        expect(m.frame(card: size, reach: size.width, beside: tile, right: false, regions: []).frame.maxX == tile.minX - m.gap,
                "a submenu keeps its parent's side")
+        let cramped = m.frame(card: size, reach: size.width, beside: NSRect(x: 150, y: 500, width: 100, height: 32), right: true,
+                              regions: [NSRect(x: 0, y: 0, width: 300, height: 800)])
+        expect(!cramped.right && cramped.frame.minX == 0, "with room on neither side it takes the roomier one, inside the bounds")
+        let chain = m.frame(card: size, reach: size.width + m.gap + 180, beside: NSRect(x: 500, y: 500, width: 100, height: 32),
+                            right: true, regions: [NSRect(x: 0, y: 0, width: 900, height: 800)])
+        expect(!chain.right, "a menu whose submenu would not fit on the right opens on the left with it")
+        let popup = m.frame(card: size, reach: size.width, beside: NSRect(x: 100, y: 500, width: 232, height: 32), right: true,
+                            regions: [NSRect(x: 100, y: 200, width: 300, height: 400), NSRect(x: 0, y: 0, width: 1000, height: 800)])
+        expect(popup.right && popup.frame.minX == 336, "a window too small for the menu beside the card leaves it on the screen")
+        let above = m.frame(card: NSSize(width: 200, height: 176), reach: 200, beside: NSRect(x: 100, y: 640, width: 232, height: 32),
+                            right: true, regions: [NSRect(x: 0, y: 0, width: 600, height: 360), NSRect(x: 0, y: 0, width: 1440, height: 875)])
+        expect(above.frame.maxY == 672 + m.inset, "a tile on a card above its window keeps the menu level with it, on the screen")
+        let deep = NSMenu(title: "deep"), middle = NSMenu(title: "middle"), top = NSMenu(title: "top")
+        deep.addItem(item("A Rather Long Third-Level Choice"))
+        let toDeep = NSMenuItem(title: "Deeper", action: nil, keyEquivalent: ""); toDeep.submenu = deep; middle.addItem(toDeep)
+        let toMiddle = NSMenuItem(title: "More", action: nil, keyEquivalent: ""); toMiddle.submenu = middle; top.addItem(toMiddle)
+        let deepView = PArcContextMenuView(menu: top, colors: PArcMenuColors(theme: SpaceTheme()))
+        expect(deepView.reach == deepView.card.width + 2 * m.gap + PArcContextMenuView.cardWidth([toDeep])
+               + PArcContextMenuView.cardWidth(deep.items), "the reach counts every level of submenus")
 
         // Rows: hidden items and stray separators drop; 32-point rows, 17-point dividers.
         let menu = extensionMenu()
@@ -102,7 +121,7 @@ struct PArcContextMenuChecks {
         /// Presents `menu` with `events` queued, then returns the log.
         func run(_ menu: NSMenu, _ events: [NSEvent], during: ((PArcContextMenu) -> Void)? = nil) -> [String] {
             recorder.log.removeAll()
-            let presenter = PArcContextMenu(anchor: anchor, parent: parent, colors: colors)
+            let presenter = PArcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors)
             events.forEach { NSApp.postEvent($0, atStart: false) }
             during?(presenter)
             expect(presenter.present(menu), "the menu shows")
@@ -111,7 +130,7 @@ struct PArcContextMenuChecks {
             return recorder.log
         }
         func screenRow(_ view: PArcContextMenuView, _ row: Int, beside: NSRect) -> NSPoint {
-            let frame = m.frame(card: view.card.size, beside: beside, right: true, screen: nil).frame
+            let frame = m.frame(card: view.card.size, reach: view.reach, beside: beside, right: true, regions: []).frame
             return NSPoint(x: frame.minX - m.shadowMargin + view.rows[row].midX, y: frame.minY - m.shadowMargin + view.rows[row].midY)
         }
 
@@ -139,7 +158,7 @@ struct PArcContextMenuChecks {
         expect(run(extensionMenu(), [mouse(.leftMouseUp, disabled), key(53)]) == ["open root", "close root"],
                "a disabled row does nothing")
         let siteRow = screenRow(sample, 2, beside: anchor)
-        let rootFrame = m.frame(card: sample.card.size, beside: anchor, right: true, screen: nil).frame
+        let rootFrame = m.frame(card: sample.card.size, reach: sample.reach, beside: anchor, right: true, regions: []).frame
         let siteRect = sample.submenuAnchor(2).offsetBy(dx: rootFrame.minX - m.shadowMargin, dy: rootFrame.minY - m.shadowMargin)
         let access = PArcContextMenuView(menu: keyed.items[2].submenu!, colors: colors)
         let allSites = screenRow(access, 2, beside: siteRect)
@@ -182,7 +201,7 @@ struct PArcContextMenuChecks {
         }) == ["open root", "close root", "perform Options"], "a VoiceOver press on a row chooses it at once")
 
         parent.orderOut(nil)
-        expect(!PArcContextMenu(anchor: anchor, parent: parent, colors: colors).present(extensionMenu()),
+        expect(!PArcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors).present(extensionMenu()),
                "a hidden parent shows nothing")
 
         if CommandLine.arguments.count > 1 {
@@ -191,79 +210,146 @@ struct PArcContextMenuChecks {
         print("PASS: \(assertions) extension context menu assertions")
     }
 
-    /// The Site Control Center hanging from its button with the second
-    /// tile's menu open beside it and that menu's site-access submenu open.
+    /// A window on a screen with its top bars (or a sidebar URL bar) and the
+    /// Site Control Center button the card opens from, in screen coordinates.
+    struct Scene {
+        let name: String
+        let screen: CGRect
+        let window: CGRect
+        let bars: [CGRect]
+        let sidebar: CGRect?
+        let button: CGRect
+    }
+
+    /// Each scene with the card placed from its button and the second tile's
+    /// menu and site-access submenu open, all placed as the app places them.
     @MainActor static func render(to output: URL, menu: () -> NSMenu) {
         let purple = SpaceTheme(primaryColor: ThemeColor(hex: "3D2468"), colorCount: 1, appearance: .dark, noise: 0.3)
         let blue = SpaceTheme(primaryColor: ThemeColor(hex: "3F9BD6"), colorCount: 2, noise: 0.3)
-        for (name, theme, appearanceName, page) in [("light", blue, NSAppearance.Name.aqua, NSColor(white: 0.95, alpha: 1)),
-                                                     ("dark", purple, .darkAqua, NSColor(white: 0.12, alpha: 1))] {
-            let appearance = NSAppearance(named: appearanceName)
-            let colors = SiteControlCenterColors(theme: theme)
-            let sample = SiteControlCenterModel()
-            sample.colors = colors
-            sample.canCopy = true; sample.canShare = true; sample.captureAvailable = true; sample.canCapture = true
-            sample.extensions = ["a", "b", "c"].map {
-                .init(id: $0, name: "Extension " + $0, tooltip: "", accessibilityLabel: "", icon: nil,
-                      isPinned: $0 == "a", canChangePin: true)
-            }
-            sample.settings = [
-                .init(id: "preview", symbol: "filemenu.and.cursorarrow", symbolSize: 14, symbolWeight: .bold, title: "Preview",
-                      subtitle: "Enabled", isOn: true, isEnabled: true),
-                .init(id: "developerMode", symbol: "hammer.fill", symbolSize: 13, symbolWeight: .medium, title: "Developer Mode",
-                      subtitle: "Off", isOn: false, isEnabled: true)]
-            sample.isSecure = true
-            sample.menuExtension = "b"
-            let host = NSHostingView(rootView: SiteControlCenterView(model: sample))
-            let size = NSSize(width: SiteControlCenterMetrics.width,
-                              height: ceil(host.fittingSize.height))
-            host.frame.size = size
-            let card = SiteControlCenterCard(content: host, colors: colors.menu)
-            let chrome = PArcMenuChrome(content: card, size: size, colors: colors.menu, tailX: size.width - 28, tailOnTop: true)
-            let window = NSWindow(contentRect: NSRect(x: -12_000, y: -12_000, width: chrome.frame.width, height: chrome.frame.height),
-                                  styleMask: .borderless, backing: .buffered, defer: false)
-            window.appearance = appearance
-            window.contentView = chrome
-            chrome.layoutSubtreeIfNeeded()
-            host.layoutSubtreeIfNeeded()
-            guard let tile = find(SiteControlCenterAlternateClick.identifier("b"), in: host) else { fatalError("no tile b") }
-            let margin: CGFloat = 24
-            let origin = NSPoint(x: margin, y: margin + 140)
-            let tileRect = tile.convert(tile.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
-            // As SiteControlCenterController.presentExtensionMenu anchors it: the card's width, the tile's height.
-            let cardRect = card.convert(card.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
-            let anchorRow = NSRect(x: cardRect.minX, y: tileRect.minY, width: cardRect.width, height: tileRect.height)
-            let root = PArcContextMenuView(menu: menu(), colors: colors.menu)
-            let rootFrame = PArcContextMenuMetrics.frame(card: root.card.size, beside: anchorRow, right: true, screen: nil).frame
-            root.frame.origin = NSPoint(x: rootFrame.minX - PArcContextMenuMetrics.shadowMargin, y: rootFrame.minY - PArcContextMenuMetrics.shadowMargin)
-            root.highlighted = 2
-            let siteRow = root.submenuAnchor(2).offsetBy(dx: root.frame.minX, dy: root.frame.minY)
-            let sub = PArcContextMenuView(menu: root.items[2].submenu!, colors: colors.menu)
-            let subFrame = PArcContextMenuMetrics.frame(card: sub.card.size, beside: siteRow, right: true, screen: nil).frame
-            sub.frame.origin = NSPoint(x: subFrame.minX - PArcContextMenuMetrics.shadowMargin, y: subFrame.minY - PArcContextMenuMetrics.shadowMargin)
-            sub.highlighted = 2
-            let chromeFrame = NSRect(origin: origin, size: chrome.frame.size)
-            let bounds = chromeFrame.union(root.frame).union(sub.frame).insetBy(dx: -margin, dy: -margin)
-            let canvas = NSSize(width: ceil(bounds.maxX), height: ceil(max(bounds.maxY, chromeFrame.maxY + margin)))
-            let rep = bitmap(canvas)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-            page.setFill(); NSRect(origin: .zero, size: canvas).fill()
-            // AppKit masks the card's layer to its corners; this draw path does not, so clip as it does.
-            NSGraphicsContext.saveGraphicsState()
-            let clip = NSBezierPath(roundedRect: NSRect(origin: origin, size: size), xRadius: 12, yRadius: 12)
-            clip.append(NSBezierPath(rect: NSRect(x: origin.x, y: origin.y + size.height, width: size.width,
-                                                  height: SidebarPlusMenuPlacement.tailHeight)))
-            clip.addClip()
-            snapshot(chrome).draw(in: chromeFrame)
-            NSGraphicsContext.restoreGraphicsState()
-            for view in [root, sub] {
-                view.appearance = appearance
-                snapshot(view).draw(in: view.frame)
-            }
-            NSGraphicsContext.restoreGraphicsState()
-            try? rep.representation(using: .png, properties: [:])?.write(to: output.appendingPathComponent("extension-menu-\(name).png"))
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let barHeight: CGFloat = 32  // PaneTopBarLayout.height
+        func bar(_ window: CGRect, _ minX: CGFloat, _ maxX: CGFloat) -> CGRect {
+            CGRect(x: window.minX + minX, y: window.maxY - barHeight, width: maxX - minX, height: barHeight)
         }
+        func button(on bar: CGRect) -> CGRect { CGRect(x: bar.maxX - 8 - 32 - 28, y: bar.minY + 2, width: 28, height: 28) }
+        let sidebarWindow = CGRect(x: 120, y: 160, width: 1100, height: 680)
+        let sidebarBar = CGRect(x: sidebarWindow.minX + 10, y: sidebarWindow.maxY - 82, width: 220, height: 34)
+        let twoBar = CGRect(x: 200, y: 260, width: 900, height: 560)
+        let twoBarBar = bar(twoBar, 0, twoBar.width)
+        let narrow = CGRect(x: 100, y: 120, width: 1120, height: 700)
+        let narrowBars = [bar(narrow, 0, 430), bar(narrow, 430, 690), bar(narrow, 690, 1120)]
+        let edge = CGRect(x: 340, y: 120, width: 1100, height: 700)
+        let edgeBars = [bar(edge, 0, 600), bar(edge, 600, 1100)]
+        let scenes = [
+            Scene(name: "sidebar", screen: screen, window: sidebarWindow, bars: [], sidebar: sidebarBar,
+                  button: CGRect(x: sidebarBar.maxX - 30, y: sidebarBar.minY + 3, width: 28, height: 28)),
+            Scene(name: "two-bar", screen: screen, window: twoBar, bars: [twoBarBar], sidebar: nil, button: button(on: twoBarBar)),
+            Scene(name: "split-narrow-pane", screen: screen, window: narrow, bars: narrowBars, sidebar: nil, button: button(on: narrowBars[1])),
+            Scene(name: "split-right-edge", screen: screen, window: edge, bars: edgeBars, sidebar: nil, button: button(on: edgeBars[1])),
+        ]
+        for scene in scenes {
+            for (themeName, theme, appearanceName) in [("light", blue, NSAppearance.Name.aqua), ("dark", purple, .darkAqua)] {
+                draw(scene, theme: theme, appearance: NSAppearance(named: appearanceName)!, menu: menu,
+                     to: output.appendingPathComponent("extension-menu-\(scene.name)-\(themeName).png"))
+            }
+        }
+    }
+
+    @MainActor static func draw(_ scene: Scene, theme: SpaceTheme, appearance: NSAppearance, menu: () -> NSMenu, to url: URL) {
+        let colors = SiteControlCenterColors(theme: theme)
+        let sample = SiteControlCenterModel()
+        sample.colors = colors
+        sample.canCopy = true; sample.canShare = true; sample.captureAvailable = true; sample.canCapture = true
+        sample.extensions = ["a", "b", "c"].map {
+            .init(id: $0, name: "Extension " + $0, tooltip: "", accessibilityLabel: "", icon: nil,
+                  isPinned: $0 == "a", canChangePin: true)
+        }
+        sample.settings = [
+            .init(id: "preview", symbol: "filemenu.and.cursorarrow", symbolSize: 14, symbolWeight: .bold, title: "Preview",
+                  subtitle: "Enabled", isOn: true, isEnabled: true),
+            .init(id: "developerMode", symbol: "hammer.fill", symbolSize: 13, symbolWeight: .medium, title: "Developer Mode",
+                  subtitle: "Off", isOn: false, isEnabled: true)]
+        sample.isSecure = true
+        sample.menuExtension = "b"
+        let host = NSHostingView(rootView: SiteControlCenterView(model: sample))
+        let size = NSSize(width: SiteControlCenterMetrics.width, height: ceil(host.fittingSize.height))
+        host.frame.size = size
+        let card = SiteControlCenterCard(content: host, colors: colors.menu)
+        // As SiteControlCenterController.present places it.
+        let placed = SiteControlCenterPlacement.windowFrame(anchor: scene.button, card: size, below: true,
+                                                           parent: scene.window, screen: scene.screen)
+        let chrome = PArcMenuChrome(content: card, size: size, colors: colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
+        let window = NSWindow(contentRect: NSRect(x: -12_000, y: -12_000, width: chrome.frame.width, height: chrome.frame.height),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.appearance = appearance
+        window.contentView = chrome
+        chrome.layoutSubtreeIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        guard let tile = find(SiteControlCenterAlternateClick.identifier("b"), in: host) else { fatalError("no tile b") }
+        let origin = placed.frame.origin
+        let tileRect = tile.convert(tile.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
+        let cardRect = card.convert(card.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
+        // As SiteControlCenterController.presentExtensionMenu anchors and bounds it.
+        let regions = SiteControlCenterPlacement.regions(window: scene.window, screen: scene.screen)
+        let anchorRow = NSRect(x: cardRect.minX, y: tileRect.minY, width: cardRect.width, height: tileRect.height)
+        let margin = PArcContextMenuMetrics.shadowMargin
+        let root = PArcContextMenuView(menu: menu(), colors: colors.menu)
+        let rootPlaced = PArcContextMenuMetrics.frame(card: root.card.size, reach: root.reach, beside: anchorRow, right: true, regions: regions)
+        root.frame.origin = NSPoint(x: rootPlaced.frame.minX - margin, y: rootPlaced.frame.minY - margin)
+        root.highlighted = 2
+        let siteRow = root.submenuAnchor(2).offsetBy(dx: root.frame.minX, dy: root.frame.minY)
+        let sub = PArcContextMenuView(menu: root.items[2].submenu!, colors: colors.menu)
+        let subPlaced = PArcContextMenuMetrics.frame(card: sub.card.size, reach: sub.reach, beside: siteRow, right: rootPlaced.right, regions: regions)
+        sub.frame.origin = NSPoint(x: subPlaced.frame.minX - margin, y: subPlaced.frame.minY - margin)
+        sub.highlighted = 2
+
+        // The window, 40 points of desktop around it, and what lies off the screen in black.
+        let area = scene.window.insetBy(dx: -40, dy: -40)
+        let rep = bitmap(area.size)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        let shift = NSAffineTransform()
+        shift.translateX(by: -area.minX, yBy: -area.minY)
+        shift.concat()
+        NSColor.black.setFill(); area.fill()
+        NSColor(srgbRed: 0.42, green: 0.45, blue: 0.5, alpha: 1).setFill(); area.intersection(scene.screen).fill()
+        let light = appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
+        let page = light ? NSColor(white: 0.97, alpha: 1) : NSColor(white: 0.13, alpha: 1)
+        let chromeFill = light ? NSColor(white: 0.88, alpha: 1) : NSColor(white: 0.2, alpha: 1)
+        chromeFill.setFill(); NSBezierPath(roundedRect: scene.window, xRadius: 10, yRadius: 10).fill()
+        page.setFill(); scene.window.insetBy(dx: 6, dy: 6).fill()
+        if let sidebar = scene.sidebar {
+            chromeFill.setFill(); NSRect(x: scene.window.minX, y: scene.window.minY, width: sidebar.maxX + 10 - scene.window.minX,
+                                         height: scene.window.height).fill()
+            page.setFill(); NSBezierPath(roundedRect: sidebar, xRadius: 8, yRadius: 8).fill()
+        }
+        for bar in scene.bars {
+            chromeFill.setFill(); bar.fill()
+            NSColor.gray.setFill(); NSRect(x: bar.minX, y: scene.window.minY, width: 1, height: scene.window.height).fill()
+        }
+        if let glyph = SiteControlCenterArtwork.controlCenter {
+            let tinted = NSImage(size: glyph.size, flipped: false) { rect in
+                glyph.draw(in: rect); (light ? NSColor.black : .white).setFill(); rect.fill(using: .sourceAtop); return true
+            }
+            tinted.draw(in: NSRect(x: scene.button.midX - glyph.size.width / 2, y: scene.button.midY - glyph.size.height / 2,
+                                   width: glyph.size.width, height: glyph.size.height))
+        }
+        // AppKit masks the card's layer to its corners; this draw path does not, so clip as it does.
+        NSGraphicsContext.saveGraphicsState()
+        let cardInChrome = NSRect(x: origin.x, y: origin.y + (placed.below ? 0 : SidebarPlusMenuPlacement.tailHeight),
+                                  width: size.width, height: size.height)
+        let clip = NSBezierPath(roundedRect: cardInChrome, xRadius: 12, yRadius: 12)
+        clip.append(NSBezierPath(rect: NSRect(x: origin.x, y: placed.below ? cardInChrome.maxY : origin.y, width: size.width,
+                                              height: SidebarPlusMenuPlacement.tailHeight)))
+        clip.addClip()
+        snapshot(chrome).draw(in: placed.frame)
+        NSGraphicsContext.restoreGraphicsState()
+        for view in [root, sub] {
+            view.appearance = appearance
+            snapshot(view).draw(in: view.frame)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }
 
     static func bitmap(_ size: NSSize) -> NSBitmapImageRep {
