@@ -9,6 +9,44 @@ Use the [backlog](backlog.md) for unfinished work, the linked subsystem guides
 for behavior and architecture, and [release notes](../CHANGELOG.md) for history.
 The older ledger is available in Git; do not copy it into an archive document.
 
+## What the old percentages meant
+
+The November 10 audit reconciled the retired checklist with existing behavior.
+These figures preserve that comparison, not a new ongoing scoreboard. An item
+received no credit while partly unfinished, and every item had equal weight.
+Some items were questions or broad review obligations rather than missing
+features. These numbers do not measure the percentage of Parc that works,
+remaining effort, speed, or additions outside that old checklist.
+
+| Area | Old headline | Reconciled old checklist |
+|---|---:|---|
+| Link destinations | 92.3% | 12/13, still 92.3%; overlapping private-window openings/closings remain. |
+| Windows | 71.4% | 10/14, still 71.4%; each remaining broad item contains a specific limitation. |
+| Data and credentials | 75.0% | 15/16, 93.8%; additional browser-import formats remain. |
+| Folders | 65.2% | 19/23, 82.6%; copying, selection, document moves and later folder restoration remain. |
+| Archive and history | 70.6% | 15/17, 88.2%; broader previews and deleted-folder reconstruction remain. |
+| Command bar | 82.8% | 26/29, 89.7%; missing commands and covered controls reacting to hover remain. |
+| Recent-tab switcher | 69.2% | 13/13, 100% of that inventory; the old open claims were already implemented. |
+| Peek | 66.7% | At least 16/21, 76.2%; two old open items are complete, while other items overlap remaining cases. |
+| First-run setup | 75.0% | Its own old rows already said 35/36, 97.2%; the headline had not caught up. |
+| Automation | 69.2% | 9/13, unchanged; additional commands remain explicitly deferred. |
+| Performance | 40.0% | Retired: broad comparison obligations did not describe a measured speed deficit. |
+| Whole-product polish | 0% | Retired: universal review criteria did not mean no polishing had been done. |
+
+The folder count includes answering whether Duplicate has Undo: it does not.
+Adding Undo is a separate product decision, not a newly completed feature.
+The setup count corrects old arithmetic; the audit also found silent failures
+when installing iCloud Passwords or removing an imported blocker. Those failures
+remain in the [backlog](backlog.md#onboarding), outside the old count.
+
+The old table already marked keyboard navigation, downloads, sidebar, saved tabs,
+auto-archive, general navigation, splits, web interactions, extensions, Spaces
+and profiles, icons, settings, capture, Easels, Notes, page tools, media, updates,
+accepted AI cleanup and the independent engine at 100%. That meant their listed
+requirements were accounted for, not that every later corner case was solved.
+The [backlog](backlog.md) remains the authority for actual unfinished behavior;
+never treat these historical numbers as a new whole-product completion score.
+
 ## Delivery snapshot
 
 Reviewed on November 10, 2026:

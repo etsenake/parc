@@ -38,8 +38,10 @@ Do not replace deleted hex strings with equally unhelpful receipt inventories.
 
 Keep one home for each fact. Link to it instead of copying it into README,
 the status page, agent instructions and a subsystem guide. Existing
-`docs/parity.md` is the product-status entry point for compatibility, not an
-invitation to rebuild the old percentage ledger.
+`docs/parity.md` is the product-status entry point for compatibility. Its compact
+historical progress comparison preserves useful context without rebuilding the
+old requirement ledger. Keep its counting method and scope clear; do not turn
+old checklist percentages into a whole-product score or remaining-time estimate.
 
 ## Updating a feature
 

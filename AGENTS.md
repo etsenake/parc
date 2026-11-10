@@ -61,8 +61,9 @@ Technical details should help a reader act, not serve as proof that an agent wor
 
 - `README.md`: product overview, install/build entry points and navigation.
 - `docs/parity.md`: compact product capabilities, current source/release status,
-  explicit product scope and links. Keep the path for existing readers; do not
-  restore the historical percentage ledger or completed-row inventory.
+  explicit product scope and links. Keep the compact historical progress
+  comparison, with its meaning and limits; do not rebuild the old requirement
+  ledger, completed-row inventory or an invented whole-product percentage.
 - `docs/backlog.md`: concrete unfinished work, explicit deferrals and current
   handoffs. Remove resolved entries in the same delivery. Old requirement IDs
   may identify unresolved work; they are not a second progress accounting system.
@@ -125,7 +126,11 @@ release timing do not count as gaps.
 Check real state before saying work is running, reviewed, built or shipped:
 inspect current activity, source and remote commits, and relevant build receipts.
 An old ledger entry is not proof of live ownership or successful delivery. Report
-progress in plain spoken paragraphs: what changed, what it means, what is next.
+progress in plain spoken paragraphs: the situation a person is in, what they
+see, hear or can do, and how the change affects that experience. Describe
+remaining work the same way. Keep file paths, code symbols, internal identifiers
+and engineering jargon out of user-facing explanations unless requested.
+Explain what changed, what it means and what is next through that user impact.
 Never claim monitoring unless actively following the work through completion.
 
 Use checks appropriate to the changed inputs; inspect scripts before execution.
