@@ -1,0 +1,13 @@
+--- a/chrome/browser/ui/webui/version/version_ui.cc
++++ b/chrome/browser/ui/webui/version/version_ui.cc
+@@ -110,6 +110,10 @@
+ #endif  // BUILDFLAG(IS_ANDROID)
+   };
+   html_source->AddLocalizedStrings(kStrings);
++  html_source->AddString(version_ui::kTitle, "About Parc");
++  html_source->AddString(version_ui::kApplicationLabel, "Parc");
++  html_source->AddString(version_ui::kLogoAltText, "Parc");
++
+ 
+   VersionUI::AddVersionDetailStrings(html_source);
+ 

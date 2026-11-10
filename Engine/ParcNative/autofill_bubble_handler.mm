@@ -1,5 +1,5 @@
 // Copyright 2026 Parc contributors.
-#include "cef/libcef/browser/parc_native/autofill_bubble_handler.h"
+#include "parc/native/autofill_bubble_handler.h"
 
 #import <Cocoa/Cocoa.h>
 

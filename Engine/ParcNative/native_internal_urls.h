@@ -1,6 +1,6 @@
 // Public addresses are a presentation/navigation boundary, never WebUI origins.
-#ifndef CEF_LIBCEF_BROWSER_PARC_NATIVE_NATIVE_INTERNAL_URLS_H_
-#define CEF_LIBCEF_BROWSER_PARC_NATIVE_NATIVE_INTERNAL_URLS_H_
+#ifndef PARC_NATIVE_NATIVE_INTERNAL_URLS_H_
+#define PARC_NATIVE_NATIVE_INTERNAL_URLS_H_
 
 #include "url/gurl.h"
 

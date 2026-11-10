@@ -1,5 +1,5 @@
 // Copyright 2026 Parc contributors.
-#include "cef/libcef/renderer/website_theme_agent.h"
+#include "parc/renderer/website_theme_agent.h"
 
 #include <utility>
 

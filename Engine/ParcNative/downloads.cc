@@ -1,6 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "downloads.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "parc/native/native_internal_urls.h"
 
 #include <algorithm>
 #include <utility>
@@ -280,7 +280,7 @@ NativeDownloadSnapshot NativeDownloads::Snapshot(
     result.time_remaining_seconds = remaining.InSecondsF();
   const bool progressing = result.state == download::DownloadItem::IN_PROGRESS;
   // Pause/resume in TARGET_PENDING has not acquired a real transfer. Unlike
-  // the CEF helper's retry loop, expose unavailable until the manager updates.
+  // an asynchronous retry loop, expose unavailable until the manager updates.
   const bool transfer_ready = !item.GetFullPath().empty();
   result.can_pause = result.available && progressing && !result.paused &&
                      transfer_ready && !result.requires_review;

@@ -1,6 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "native_page_context_menu.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "parc/native/native_internal_urls.h"
 
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
@@ -13,8 +13,6 @@
 #include "ui/base/clipboard/clipboard_metadata.h"
 #include "ui/base/data_transfer_policy/data_transfer_endpoint.h"
 #include "base/strings/sys_string_conversions.h"
-#include "cef/include/internal/cef_types.h"
-#include "cef/libcef/common/app_manager.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
@@ -49,8 +47,8 @@
 
 namespace parc {
 namespace {
-constexpr int kAddImageToEasel = MENU_ID_USER_FIRST;
-constexpr int kOpenLinkInSplitView = MENU_ID_USER_FIRST + 1;
+constexpr int kAddImageToEasel = 26500;
+constexpr int kOpenLinkInSplitView = kAddImageToEasel + 1;
 // render_view_context_menu.cc kMaxOpenLinkInProfileItems (file-local there).
 constexpr int kProfileLinkCommands = 100;
 struct PageLease {
@@ -71,7 +69,7 @@ struct PageLease {
   }
 };
 PageLease Lease(RenderViewContextMenu& menu) {
-  auto* contents = menu.source_web_contents();
+  auto* contents = menu.GetWebContents();
   auto* frame = menu.GetRenderFrameHost();
   PCNativePage* page = ExistingNativePage(contents);
   return {contents->GetWeakPtr(), frame ? frame->GetWeakDocumentPtr()
@@ -195,7 +193,7 @@ void CheckImagePolicy(PageLease lease, NSURL* source, NSString* title,
       }, lease.document), *frame);
   content::ClipboardPasteData data;
   data.bitmap = bitmap;
-  CefAppManager::Get()->GetContentClient()->browser()->IsClipboardCopyAllowedByPolicy(
+  content::GetContentClient()->browser()->IsClipboardCopyAllowedByPolicy(
       source_endpoint, {.size = bitmap.computeByteSize(),
                         .format_type = ui::ClipboardFormatType::BitmapType()}, data,
       base::BindOnce([](PageLease lease, NSURL* source, NSString* title,
@@ -389,12 +387,12 @@ void GuardItems(NSMenu* menu, MenuControllerCocoa* controller, PageLease lease,
 }  // namespace
 std::unique_ptr<RenderViewContextMenuObserver> CreateNativePageContextMenuObserver(
     RenderViewContextMenu* menu) {
-  return ExistingNativePage(menu->source_web_contents())
+  return ExistingNativePage(menu->GetWebContents())
       ? std::make_unique<ContextObserver>(menu) : nullptr;
 }
 bool ShowNativePageContextMenu(RenderViewContextMenu& menu, NSView* parent,
                               MenuControllerCocoa* __strong* destination) {
-  if (!ExistingNativePage(menu.source_web_contents())) return false;
+  if (!ExistingNativePage(menu.GetWebContents())) return false;
   auto lease = Lease(menu);
   if (!lease.Valid() || !parent || parent.window != lease.window) return true;
   MenuControllerCocoa* controller = [[MenuControllerCocoa alloc]

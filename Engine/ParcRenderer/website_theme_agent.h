@@ -1,19 +1,19 @@
 // Copyright 2026 Parc contributors.
-#ifndef CEF_LIBCEF_RENDERER_WEBSITE_THEME_AGENT_H_
-#define CEF_LIBCEF_RENDERER_WEBSITE_THEME_AGENT_H_
+#ifndef PARC_RENDERER_WEBSITE_THEME_AGENT_H_
+#define PARC_RENDERER_WEBSITE_THEME_AGENT_H_
 
 #include <optional>
 #include <string>
 
 #include "base/unguessable_token.h"
-#include "cef/libcef/common/mojom/parc_theme.mojom.h"
+#include "parc/common/mojom/parc_theme.mojom.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 
 namespace parc {
 // Self-owned for the lifetime of the original RenderFrame. Only a browser-side
-// PageBinding publishes; unowned CEF frames never receive a stylesheet.
+// PageBinding publishes; unowned frames never receive a stylesheet.
 class WebsiteThemeAgent final : public content::RenderFrameObserver,
                                 public mojom::WebsiteThemeAgent {
  public:

@@ -192,10 +192,10 @@ including the modified existing Chromium test sources.
 ## Real controller regression target
 
 The shared production source set
-`//cef/libcef/browser/parc_native:autofill_save_sessions` is used by the engine
-and `//cef/tests/parc_native_autofill:session_tests`. The latter is included in
-Chromium's existing `//chrome/test:unit_tests` for macOS CEF builds. This avoids
-compiling a second copy of the session or linking the whole CEF implementation
+`//parc/native:autofill_save_sessions` is used by the engine
+and `//parc/tests/parc_native_autofill:session_tests`. The latter is included in
+Chromium's existing `//chrome/test:unit_tests` for macOS Parc builds. This avoids
+compiling a second copy of the session or linking the whole browser implementation
 into the tests. UI thread checks use the same real Chromium browser thread.
 
 Seven cases use `BrowserWithTestWindowTest`, actual Browser/Tab/WebContents,
