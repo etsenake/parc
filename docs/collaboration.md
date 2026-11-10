@@ -52,11 +52,10 @@ being reassigned; unfinished original assignments may resume.
 
 Read a check's implementation before running it. Never launch apps/browsers,
 including headless or test copies, or take app screenshots without explicit
-authorization for the current task. For a live timing investigation, use the
-[runtime tracing workflow](runtime-tracing.md), including permission, Codex
-computer-use routing and prompt release of control. Otherwise use permitted
-compiler, model and inert component checks. Documentation-only changes need
-size, link and diff checks, not an engine or app build. See
+authorization for the current task. Follow the
+[runtime investigation procedure](#runtime-investigations) when authorized.
+Otherwise use permitted compiler, model and inert component checks.
+Documentation-only changes need size, link and diff checks, not an engine or app build. See
 [development setup](development-setup.md)
 for Swift typecheck and whole-module SIL commands.
 
@@ -81,6 +80,34 @@ and run applicable checks plus `python3 scripts/check-docs.py` and
 `git diff --check`. Commit using the single-line format in AGENTS and immediately
 push. Verify remote SHA/ancestry. If main advances, fetch and reconcile without
 force-pushing or dropping changes. Do not accumulate unpublished commits.
+
+## Runtime investigations
+
+Define the reported symptom before choosing measurements. Page loading, a blank
+frame and a tab-switch animation need different evidence. Follow the production
+path and inspect existing traces first; do not change behavior to fit a guess.
+
+Before computer use, explain the exact app, actions and local capture in one
+plain permission question. Existing approval covers the same scope. Codex runs
+the approved capture directly; other providers delegate that bounded portion to
+a Codex agent with computer-use access. Verify availability and give one agent
+control. Do not substitute another driver or retry around a user stop.
+
+Prepare the configuration and output directory offline. The reusable
+[page-display trace profile](../scripts/tracing/page-display.textproto) covers
+Chromium loading and drawing; it does not record every native macOS animation.
+Identify the running app separately from source, record action times and inspect
+events for the affected page. Add focused measurements only for a named missing
+boundary. For a visual transient, ensure the capture covers the transition;
+a late screenshot or a completed frame does not prove uninterrupted display.
+
+Keep traces, recordings and analysis in ignored `build/` or `work/`; they may
+contain private page details. Stop recording, verify the saved file, close only
+temporary tabs and restore the original tab. Immediately end the computer-use
+session before analysis. A completion acknowledgment does not prove a lingering
+cursor overlay disappeared; stop input and respect the user's stop control.
+Report observed facts separately from inferred causes and fix only the supported
+mechanism. Preserve reusable procedure here, not a diary of each investigation.
 
 ## Shared engine and retained work
 

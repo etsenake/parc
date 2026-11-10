@@ -76,6 +76,5 @@ selection/layout integration. Focused checks cover compositor reuse policy,
 `NativePageHost`, `NativeFocusManager`, `NativeDevTools`,
 [display handoffs](../tests/PaneCompositorDisplay/README.md) and packaging exports.
 Native compiler checks validate bridge integration when run.
-For an authorized live investigation, [runtime tracing](runtime-tracing.md)
-explains how to distinguish page loading, frame production, native display
-attachment and the moment the user can actually see the page.
+Authorized runtime investigations follow
+[collaboration](collaboration.md#runtime-investigations).

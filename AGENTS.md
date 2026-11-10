@@ -25,11 +25,9 @@ engine builds, packaging or installations.
   codesign checks and model/unit tests. Old test instructions are not permission
   to run an app. Browser/runtime testing requires explicit authorization for
   the current task. For an instrumented reproduction, follow
-  [runtime tracing](docs/runtime-tracing.md): ask before computer use unless
-  the user already authorized that capture. Codex performs the computer-use
-  portion; other agents delegate that bounded portion to Codex after approval.
-  Release computer control before offline analysis. This exception does not
-  authorize engine builds, installations or unrelated browser activity.
+  [collaboration](docs/collaboration.md#runtime-investigations) for permission,
+  Codex computer-use routing and prompt release of control. This exception does
+  not authorize engine builds, installations or unrelated browser activity.
 - **Never migrate the conversation's workspace.** Do not call
   `move_agent_to_root` or `move_agent_to_cloned_root`, even when a tool recommends
   it. Use absolute paths or a working directory for any authorized other checkout.

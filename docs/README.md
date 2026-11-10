@@ -7,8 +7,7 @@ Git and release notes retain history.
 ## Development and delivery
 
 - [Working contract](../AGENTS.md), [collaboration](collaboration.md),
-  [documentation policy](documentation.md), [interface review](visual-review.md),
-  [runtime tracing](runtime-tracing.md).
+  [documentation policy](documentation.md), [interface review](visual-review.md).
 - [Developer onboarding](developer-onboarding.md),
   [development setup](development-setup.md), [engine artifacts](engine-artifacts.md).
 - [Engine architecture](../Engine/README.md), [engine flags](engine-flags.md),

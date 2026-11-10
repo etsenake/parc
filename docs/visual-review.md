@@ -11,8 +11,9 @@ including test/headless copies, and taking app screenshots. Use supplied images,
 retained artifacts, source inspection, compiler checks and model/unit tests.
 This guide does not authorize a render harness that launches an app or window.
 Live appearance and interaction checks need explicit renewed user authorization.
-For slow or blank transitions, use [runtime tracing](runtime-tracing.md) to
-connect what the user sees with the work that produced the picture.
+For slow or blank transitions, follow
+[collaboration](collaboration.md#runtime-investigations) to connect what the user
+sees with the work that produced the picture.
 
 ## When the user supplies an image
 
