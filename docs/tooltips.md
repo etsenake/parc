@@ -136,4 +136,3 @@ when no tooltip is showing.
 
 `python3 tests/Tooltip/check.py` covers configuration, layout, live bindings,
 placement, timing and invalidation through native components and injected events.
-It does not establish live browser hover behavior or rendered appearance.

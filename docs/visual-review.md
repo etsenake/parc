@@ -20,8 +20,8 @@ Live appearance and interaction checks need explicit renewed user authorization.
    responsible for it, including state, theme and owner lifetime.
 3. Fix the whole affected interaction within scope: normal/hover/pressed states,
    light/dark appearance, keyboard focus and disabled behavior where relevant.
-4. Check real source and applicable models. State what those checks cannot show;
-   do not claim visual acceptance from a compiler result.
+4. Check real source and applicable models, then close the completed fix.
+   Do not leave it waiting for user confirmation or another browser test.
 
 For authorized parallel work, assign exact file boundaries and share the same
 reference/state description. Read results as they arrive and integrate them;
@@ -42,7 +42,7 @@ preference. Keep screenshots and temporary receipts outside Git.
 A missing user reply does not block independent authorized work. Make reasonable
 reversible decisions and report them; do not infer permission for prohibited
 runtime checks. Keep known product gaps in the [backlog](backlog.md), and disclose
-them to the user. Keep validation limitations distinct from confirmed defects.
+them to the user. A failed test setup is not evidence of a product defect.
 
 Implementation review and publication follow [collaboration](collaboration.md).
 Update the relevant guide in place; do not append a session-by-session review log.

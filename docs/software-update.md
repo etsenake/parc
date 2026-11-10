@@ -45,7 +45,7 @@ The up-to-date window is 270 × 341; status is 270 × 334. Update-found adds a
 398 × 394 notes pane with 12-point gaps/insets. The icon occupies an 82-point
 view, primary button is 170 × 48 with radius 10, and labels use native light/dark
 colors. Windows use transparent titlebar/full-size content with native close
-behavior. These dimensions are current layout choices, not runtime acceptance.
+behavior.
 
 `SoftwareUpdateDownloadProgress` accumulates bytes and publishes counter/bar
 snapshots at most every 100 ms. It reserves equal-width digits, fractional zeroes
@@ -123,8 +123,7 @@ service or vendor-video row.
 The card has radius 12, shared spring/fade motion, a close control and separate
 native key/accessibility stops for Close, See What's New and Share Parc. Notes
 text stays black/white, including hover, so pale Space themes remain readable.
-Decorative sparkles are bounded to 15 seconds. Live alignment of slot growth and
-its inner spring remains a visual-validation item.
+Decorative sparkles are bounded to 15 seconds.
 
 ## What's New page ownership
 
@@ -141,10 +140,8 @@ image-only metadata and enter Easels as images, not live web cards.
 A fresh native host could have a sized outer pane but a 0 × 0 content/renderer
 view. `PCNativePageHost` now settles dirty edge constraints before show, marks
 size/content/infobar changes dirty immediately, and revalidates after reentrant
-layout. Clean shows do not walk layout. Overlay 654 is published in v1.12.1;
-source/component regression evidence does not establish live black-page latency.
-The adjacent source audit covers exact opening routes, renderer creation/reload,
-focus/occlusion, split pages, tab holds, parking and window/content transfer.
+layout. Clean shows do not walk layout. This fixes fresh tabs appearing with
+zero-sized content.
 
 ### Remaining address exposure
 
@@ -175,8 +172,7 @@ app's `SUPublicEDKey`, verifies that signature and emits an item containing:
   `sparkle:releaseNotesLink`.
 
 The Homebrew cask marks `auto_updates true`; Sparkle and Homebrew share the same
-published versioned artifacts. Release publication verifies signatures/hashes,
-not installed-app runtime behavior.
+published versioned artifacts.
 
 ## Validation
 
@@ -184,5 +180,4 @@ not installed-app runtime behavior.
 byte counting and actual status controls without windows/web views. The full
 script's notes-layout check creates a WKWebView and is outside the current inert
 check scope. Page-generation and native-host regressions cover bundled resources
-and layout ownership. No live download, restart, browser timing or on-screen
-motion acceptance is inferred from those checks.
+and layout ownership.

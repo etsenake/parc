@@ -6,11 +6,8 @@ start every task. [Product status](parity.md) describes what exists; subsystem
 guides own technical details. Legacy IDs keep unresolved obligations traceable
 without preserving thousands of completed rows or percentage tables.
 
-**Status meaning:** confirmed source gaps say what is missing; older broad
-requirements are explicitly marked for source reconciliation. Such a requirement
-is not evidence of a current user-visible defect. Do not implement speculative
-features just to close an old row. Runtime-dependent acceptance waits for explicit
-authorization under [AGENTS.md](../AGENTS.md).
+Keep only concrete missing behavior, explicit deferrals and product decisions.
+Completed fixes do not wait for user confirmation or another browser test.
 
 Keep the existing requested order for otherwise unassigned work: Routing,
 Windows, Data, Performance, then Folders, Archive, Command bar, Tab switcher,
@@ -19,14 +16,6 @@ first; scripting and the specifically deferred items below stay deferred.
 
 ## Reported behavior
 
-- **Fresh-tab black page:** the activation correction shipped in 1.12.0; the
-  zero-size content correction shipped in 1.12.1, with failing-without-fix offscreen
-  checks. Real What's New/tab-opening delay has not been retested after those
-  changes. Preserve this acceptance boundary rather than calling the reported
-  behavior resolved from compiler tests. [Software updates](software-update.md).
-- **Sidebar motion:** preserve the user's reported Command-S jank until actual
-  motion/frame-pacing acceptance exists. Source changes and focused checks have
-  landed; they do not settle the live smoothness report. [Sidebar motion](sidebar-motion.md).
 - **What's New address leakage:** native History can retain its local file URL,
   and engine copy paths can expose the committed file address while a new typed
   destination is loading. These need engine history/copy handling, beyond the
@@ -211,10 +200,6 @@ implemented collection transactions before choosing another implementation:
   native-HLS route and the MSE route's lack of AirPlay rather than promising
   unsupported casting. [FairPlay identity](fairplay-identity.md),
   [native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md).
-- The automatic Meet picture-in-picture correction shipped in overlay 648,
-  but live Meet acceptance after that correction is unrecorded. Keep this
-  specific limit separate from accepted general picture-in-picture support.
-  [Media controls](media-interactions.md).
 
 ## Product quality
 

@@ -84,6 +84,16 @@ material to the requested work, with its specific cause and next action. Do not
 explain that new code is absent from the user's installed release unless release
 status was requested or an actual version mismatch explains the reported issue.
 
+**Completed fixes do not need user sign-off.** Once the implementation and
+applicable permitted checks are complete, mark the work done and remove its
+backlog entry. The user will report a recurring problem; do not leave a fix open
+waiting for confirmation or permission to test it in a browser. Reopen it only
+for a new report or concrete evidence of a defect. A failed or inconclusive test
+setup is not proof of a product failure: establish which failed before changing
+behavior, and never stack speculative patches or repeat browser tests to chase
+a harness problem. Browser testing remains reserved for the user under the
+current restriction.
+
 Keep one authoritative home for each fact and link to it. Do not add dated
 progress essays, transcript dumps, per-commit receipts, duplicate status tables,
 research procedures or completion history. Git and release notes retain history;

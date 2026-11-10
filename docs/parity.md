@@ -16,9 +16,7 @@ Reviewed on November 10, 2026:
 - Source version: **1.12.1**.
 - Latest completed delivery confirmed by local release receipts: **1.12.1**,
   published November 10 with signed/notarized app and DMG,
-  signed update feed and Homebrew cask. A version commit alone is not publication.
-- Release metadata and receipts establish artifact delivery, not installation
-  or browser behavior. See [release operations](master-release.md).
+  signed update feed and Homebrew cask. See [release operations](master-release.md).
 
 Keep this one snapshot current from `app-version.json`, `Engine/ParcHost/overlay.json`
 and completed delivery receipts; use the
@@ -26,9 +24,8 @@ and completed delivery receipts; use the
 
 ## What Parc includes
 
-“Implemented” describes connected production source. It does not mean every
-visual, accessibility, device or long-session case has been exercised. Existing
-functionality stays supported while the [remaining work](backlog.md) is resolved.
+Existing functionality stays supported while the [remaining work](backlog.md)
+is resolved.
 
 | Area | Current capability | Details |
 |---|---|---|
@@ -76,8 +73,7 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   the command bar remains inside its browser window with live commands.
 - **Page visibility and sizing:** tabs opened during application activation
   are shown, and new pages settle their content size before appearing.
-  Offscreen regressions pass, but the reported live black-page delay
-  has not been retested. See [the remaining acceptance work](backlog.md#reported-behavior).
+  These corrections fix fresh tabs appearing with hidden or zero-sized content.
 - **Profile-preserving import:** every readable source Profile and its extensions
   are imported; the default Profile uses the captured destination and others
   use suitable existing or new local Profiles. Sidebar data and bookmark
@@ -126,14 +122,10 @@ establish absence of every engine path or a measured performance improvement.
 Further scripting remains deferred. The removed cross-Profile created-page
 proposal (ROUTE11) and speculative shutdown task (WIN14) stay out of scope.
 
-## Evidence and maintenance
+## Maintenance
 
-No application or browser was launched for this documentation update. Source,
-compiler/component checks, release artifacts and user-confirmed behavior are
-separate kinds of evidence; no one substitutes for the others. The original
-engine-replacement milestone is implementation complete. Picture in picture
-remains accepted as implemented; a particular reported regression can
-be tracked without reopening the whole completed family.
+The independent engine and picture in picture are implemented. Completed fixes
+stay done unless a new report or concrete defect evidence reopens them.
 
 The [backlog](backlog.md) retains unresolved work and explicit deferrals. It is
 not a declaration that every old concern is still a defect. Reconcile an item

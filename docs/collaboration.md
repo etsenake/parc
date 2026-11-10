@@ -61,6 +61,12 @@ truthful about the checks run. Do not invent validation-only backlog work or
 repeat release-timing caveats; report a blocked check when its specific cause
 materially affects the task. An old receipt does not cover later source changes.
 
+Completed implementation and applicable permitted checks close a fix. Do not
+wait for the user to confirm it or grant browser access; reopen only on a new
+report or concrete defect evidence. Separate a failing test setup from a failing
+product before making behavior changes. Do not chase harness uncertainty with
+repeated browser runs or speculative patches.
+
 Update the affected guide, product status or backlog in place. Follow the
 [documentation policy](documentation.md): one home per fact, normal 150–300 lines,
 hard 500-line maximum, no append-only delivery narratives. Changelogs are exempt

@@ -60,6 +60,11 @@ including its cause and next action. Mention an installed-version mismatch only
 when it explains a reported problem or release status was requested. Test guides
 should explain how their checks work, without repeating general disclaimers.
 
+Close a fix when its implementation and applicable permitted checks are complete.
+Do not keep it open for user confirmation, a browser test or a release-timing
+note. Reopen it for a new report or concrete defect evidence. An inconclusive or
+broken test setup is not a product bug and does not justify speculative patches.
+
 Do not append dated implementation diaries, agent transcripts, build-by-build
 receipts, old ownership tables or duplicated lists of completed requirements.
 Replace superseded rules instead of layering corrections over them. History is

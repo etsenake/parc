@@ -81,14 +81,11 @@ Completed actions do not imply external sharing reached a recipient.
 `scripts/test-toasts.sh` covers placement, one-time framing, geometry, hit testing,
 replacement, timer/hover, scroll, tap ordering, binding/parent changes and theme
 contrast. Shortcut cue checks retain their own lifecycle tests; BrowserToolbar
-checks cover share-menu construction. These are inert components and do not
-establish live hover/click/accessibility acceptance.
+checks cover share-menu construction.
 
-## Recorded gaps
+## Scope
 
 Library-capture Copy has no Share button because the catalog supplies no file
 URL. Local Notes/Easels have no cloud share link. Clean-link feedback is absent
 because Parc does not strip trackers. New Document Created is unreachable from
-pinned-tab separation, which currently requires a live browser page. Exact live
-material/tint and non-key child-window interaction remain unverified; component
-colors/geometry do not establish final visual acceptance.
+pinned-tab separation, which requires a live browser page.
