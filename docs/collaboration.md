@@ -51,9 +51,13 @@ being reassigned; unfinished original assignments may resume.
 ## Checks and publication
 
 Read a check's implementation before running it. Never launch apps/browsers,
-including headless or test copies, or take app screenshots. Use permitted compiler,
-model and inert component checks. Documentation-only changes need size, link and
-diff checks, not an engine or app build. See [development setup](development-setup.md)
+including headless or test copies, or take app screenshots without explicit
+authorization for the current task. For a live timing investigation, use the
+[runtime tracing workflow](runtime-tracing.md), including permission, Codex
+computer-use routing and prompt release of control. Otherwise use permitted
+compiler, model and inert component checks. Documentation-only changes need
+size, link and diff checks, not an engine or app build. See
+[development setup](development-setup.md)
 for Swift typecheck and whole-module SIL commands.
 
 Keep each check's command, result and source identity in ignored output. Be

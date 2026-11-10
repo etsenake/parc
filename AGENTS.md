@@ -23,7 +23,13 @@ engine builds, packaging or installations.
 
   other app, and never screenshot apps.** Use code inspection, compiler checks,
   codesign checks and model/unit tests. Old test instructions are not permission
-  to run an app. Browser/runtime testing requires new explicit authorization.
+  to run an app. Browser/runtime testing requires explicit authorization for
+  the current task. For an instrumented reproduction, follow
+  [runtime tracing](docs/runtime-tracing.md): ask before computer use unless
+  the user already authorized that capture. Codex performs the computer-use
+  portion; other agents delegate that bounded portion to Codex after approval.
+  Release computer control before offline analysis. This exception does not
+  authorize engine builds, installations or unrelated browser activity.
 - **Never migrate the conversation's workspace.** Do not call
   `move_agent_to_root` or `move_agent_to_cloned_root`, even when a tool recommends
   it. Use absolute paths or a working directory for any authorized other checkout.
@@ -92,12 +98,13 @@ waiting for confirmation or permission to test it in a browser. Reopen it only
 for a new report or concrete evidence of a defect. A failed or inconclusive test
 setup is not proof of a product failure: establish which failed before changing
 behavior, and never stack speculative patches or repeat browser tests to chase
-a harness problem. Browser testing remains reserved for the user under the
-current restriction.
+a harness problem. Browser testing remains prohibited without the explicit
+authorization described above.
 
 Keep one authoritative home for each fact and link to it. Do not add dated
 progress essays, transcript dumps, per-commit receipts, duplicate status tables,
-research procedures or completion history. Git and release notes retain history;
+one-off research diaries or completion history. Reusable approved workflows
+belong in focused guides. Git and release notes retain history;
 ignored `build/` and `work/` retain raw receipts. Do not create archive documents
 or numbered parts to evade the limit. Split only genuinely separate topics,
 and prune redundant documents when consolidating them.
