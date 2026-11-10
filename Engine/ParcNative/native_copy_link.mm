@@ -5,7 +5,7 @@
 #import "native_appkit_page.h"
 #import "window_security_reservation.h"
 #include "native_page_retirement.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "parc/native/native_internal_urls.h"
 #include <memory>
 #include <optional>
 #include <string>

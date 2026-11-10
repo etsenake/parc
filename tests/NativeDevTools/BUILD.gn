@@ -1,24 +1,24 @@
-# Map to //cef/tests/parc_native_devtools; consume in chrome/test:browser_tests.
+# Map to //parc/tests/parc_native_devtools; consume in chrome/test:browser_tests.
 assert(is_mac)
 
 source_set("browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   sources = [ "devtools_browsertest.mm", "auxiliary_browsertest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
-    "//cef/libcef/browser/parc_native:native_auxiliary_page",
-    "//cef/libcef/browser/parc_native:native_auxiliary_services",
-    "//cef/libcef/browser/parc_native:native_downloads",
+    "//parc/native:native_auxiliary_page",
+    "//parc/native:native_auxiliary_services",
+    "//parc/native:native_downloads",
     "//chrome/browser/ui:browser_window_header",
     "//components/javascript_dialogs",
     "//components/tabs:public",
     "//ui/shell_dialogs",
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_components",
-    "//cef/libcef/browser/parc_native:native_devtools",
+    "//parc/native:native_components",
+    "//parc/native:native_devtools",
     "//chrome/browser/devtools",
     "//chrome/browser/devtools:test_support",
     "//chrome/browser/ui/browser_web_contents_delegate",

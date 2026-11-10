@@ -1,17 +1,17 @@
-# Map to //cef/tests/parc_native_client_certificates. The genuine selector and
+# Map to //parc/tests/parc_native_client_certificates. The genuine selector and
 # manager use the same native service as production; no libcef_static test link.
 assert(is_mac)
 
 source_set("unit_tests") {
   testonly = true
   sources = [ "selector_unittest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_client_certificates",
-    "//cef/libcef/browser/parc_native:native_components",
+    "//parc/native:native_client_certificates",
+    "//parc/native:native_components",
     "//chrome/browser/ssl",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/tabs:tab_strip",

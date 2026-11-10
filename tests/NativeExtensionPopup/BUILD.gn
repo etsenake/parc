@@ -1,4 +1,4 @@
-# Installed by the reviewed overlay at //cef/tests/parc_native_extensions.
+# Installed by the reviewed overlay at //parc/tests/parc_native_extensions.
 # Native extension tests, consumed by //chrome/test:browser_tests on macOS.
 assert(is_mac)
 
@@ -8,13 +8,13 @@ source_set("popup_browser_tests") {
   # The consuming browser_tests binary isolates each case in a child process.
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   sources = [ "extension_popup_browsertest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
 
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_extensions",
+    "//parc/native:native_extensions",
     "//chrome/browser/extensions",
     "//chrome/browser/extensions:test_support",
     "//chrome/browser/profiles:profile",
@@ -32,13 +32,13 @@ source_set("context_menu_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   sources = [ "context_menu_browsertest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
 
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_extensions",
+    "//parc/native:native_extensions",
     "//chrome/app:branded_strings",
     "//chrome/app:generated_resources",
     "//chrome/browser/extensions",
@@ -62,14 +62,14 @@ source_set("uninstall_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   sources = [ "uninstall_browsertest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
 
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_components",
-    "//cef/libcef/browser/parc_native:native_extensions",
+    "//parc/native:native_components",
+    "//parc/native:native_extensions",
     "//chrome/app:generated_resources",
     "//chrome/browser/extensions",
     "//chrome/browser/extensions:test_support",
@@ -95,14 +95,14 @@ source_set("install_browser_tests") {
   testonly = true
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   sources = [ "install_browsertest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
 
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_components",
-    "//cef/libcef/browser/parc_native:native_extensions",
+    "//parc/native:native_components",
+    "//parc/native:native_extensions",
     "//chrome/app:generated_resources",
     "//chrome/browser/extensions",
     "//chrome/browser/extensions:test_support",

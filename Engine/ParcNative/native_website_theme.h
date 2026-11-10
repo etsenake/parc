@@ -7,7 +7,7 @@
 
 #include "base/functional/callback.h"
 #include "base/unguessable_token.h"
-#include "cef/libcef/common/mojom/parc_theme.mojom.h"
+#include "parc/common/mojom/parc_theme.mojom.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"

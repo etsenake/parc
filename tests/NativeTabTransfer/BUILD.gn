@@ -1,15 +1,15 @@
-# Install at //cef/tests/parc_native_tab_transfer and add its unit_tests target
-# to //chrome/test:unit_tests only on macOS with enable_cef.
+# Install at //parc/tests/parc_native_tab_transfer and add its unit_tests target
+# to //chrome/test:unit_tests only on macOS with enable_parc.
 assert(is_mac)
 
 source_set("unit_tests") {
   testonly = true
   sources = [ "tab_transfer_unittest.cc" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:tab_transfer",
+    "//parc/native:tab_transfer",
     "//chrome/browser/ui:unload_controller",
     "//chrome/browser/ui:unload_controller_impl",
     "//chrome/browser/ui/tabs:tab_strip",

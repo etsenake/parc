@@ -1,4 +1,4 @@
-# Map this directory to //cef/tests/parc_native_video_pip. The two application
+# Map this directory to //parc/tests/parc_native_video_pip. The two application
 # presenter files are mapped here from Sources/ParcEngine for the real-controller
 # executable; the production app continues to compile them into its own binary.
 assert(is_mac)
@@ -11,12 +11,12 @@ source_set("browser_tests") {
     "VideoPiPWindow.m",
     "controller_browsertest.mm",
   ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework", "QuartzCore.framework" ]
   deps = [
     "//base",
-    "//cef:libcef_static",
-    "//cef/libcef/browser/parc_native:native_video_pip_api",
+    "//parc:browser",
+    "//parc/native:native_video_pip_api",
     "//chrome/browser:core",
     "//chrome/browser:chrome_content_browser_client",
     "//chrome/browser/picture_in_picture",
@@ -38,7 +38,7 @@ source_set("unit_tests") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef:libcef_static",
+    "//parc:browser",
     "//chrome/browser/picture_in_picture",
     "//chrome/browser/picture_in_picture:impl",
     "//chrome/test/views",
