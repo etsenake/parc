@@ -151,8 +151,9 @@ is included. Parc must not require Google API keys or paid Google services.
 Ordinary websites and extensions, general sidebar previews, local Notes/Easels,
 password/autofill/security behavior, language detection and macOS dictation stay
 included. General Chromium/Google networking is not a separate removal project.
-Safe Browsing remains configured without a key and is inert without one;
-on-device suggestions do not require a Google API key.
+Safe Browsing remains included without a configured Google API key; that does
+not disable every browser security warning. On-device suggestions do not
+require a Google API key. See [engine policy](engine-flags.md#runtime-features).
 
 The existing Chromium AI exclusions are the accepted scope. The broader
 audit/overhead proposal is closed.

@@ -62,9 +62,11 @@ Defaults applied only when the command line has not explicitly named a feature:
 
 Back/forward cache, ServiceWorkerAutoPreload and Privacy Sandbox attestation
 retain upstream defaults. On-device omnibox suggestions and the web Translator
-API remain available without a Google API key. Safe Browsing remains included,
-with its key-dependent service inert without a key. The app's actual updater is
-Sparkle; Chromium's app-clone mechanism is not its update owner.
+API remain available without a Google API key. Safe Browsing remains included
+without a configured key. Its local database, service startup and warning paths
+are not disabled merely by the missing key; request construction omits an absent
+key rather than refusing every request. The app's actual updater is Sparkle;
+Chromium's app-clone mechanism is not its update owner.
 
 ## Page translation
 
