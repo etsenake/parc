@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "1.12.2",
+      "build": 28,
+      "date": "2026-11-10",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "pages",
+          "summary": "Stop new tabs from needing a nudge to appear",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.12.1",
       "build": 27,
       "date": "2026-11-10",

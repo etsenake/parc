@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.2 (2026-11-10)
+
+### Fixed
+
+- **pages:** Stop new tabs from needing a nudge to appear
+
 ## 1.12.1 (2026-11-10)
 
 ### Fixed
