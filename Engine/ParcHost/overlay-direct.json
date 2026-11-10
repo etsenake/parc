@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 658,
+  "version": 659,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -11,31 +11,6 @@
     "//parc/helper:parc_helper"
   ],
   "files": [
-    {
-      "source": "Engine/ParcHost/parc_native_host.h",
-      "target": "parc/harness/parc_native_host.h",
-      "sha256": "e33eb20114216a426f63635a7f269b453efb5132ba4f34f1fa74601641318c68"
-    },
-    {
-      "source": "Engine/ParcHost/parc_native_host.mm",
-      "target": "parc/harness/parc_native_host.mm",
-      "sha256": "8c332ce4e14d9e7adadb0e1ecae7fab3ece06026548599039e111344a196a84c"
-    },
-    {
-      "source": "tests/EngineConformance/native/main_mac.mm",
-      "target": "parc/tests/parc_host/main_mac.mm",
-      "sha256": "90a280012b5b409d2a6d1d4446c353a3212fcf206897df5e7ac848233a91c6d9"
-    },
-    {
-      "source": "tests/EngineConformance/native/Info.plist.in",
-      "target": "parc/tests/parc_host/Info.plist.in",
-      "sha256": "c9b3000b20116c884b60db2726a40fe04b2d15620996bad0066204868e2cd9be"
-    },
-    {
-      "source": "tests/EngineConformance/native/helper-Info.plist.in",
-      "target": "parc/tests/parc_host/helper-Info.plist.in",
-      "sha256": "3523c543c266181fe26a7069b554ddf33854d7ba81412aa204fd0547d544ebfc"
-    },
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
@@ -2035,11 +2010,6 @@
       "source": "Sources/ParcHelper/main.cc",
       "target": "parc/helper/main.cc",
       "sha256": "e4ecf5b022782a535441bde86b251a47e7bfbd434af745892e7e0adacc23dbf0"
-    },
-    {
-      "source": "tests/EngineConformance/native/BUILD.gn",
-      "target": "parc/tests/parc_native_host/BUILD.gn",
-      "sha256": "0d71cb7d56851547f0508f208465267169f2748f6dbd9a9c91221e28803bd791"
     },
     {
       "source": "Engine/ParcChromium/BUILD.gn",
