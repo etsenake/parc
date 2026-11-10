@@ -11,10 +11,10 @@ engine = fixture.engine
 class DirectTests(unittest.TestCase):
     def setUp(self):
         fixture.EngineSourceTests.setUp(self)
-        self.lock, self.sha = engine.load_lock(fixture.ROOT / 'Engine/source-lock-direct.json')
+        self.lock, self.sha = engine.load_lock(fixture.ROOT / 'Engine/source-lock.json')
 
-    def test_default_stays_stopgap(self):
-        self.assertIn('cef', engine.load_lock()[0])
+    def test_canonical_lock_is_direct(self):
+        self.assertEqual(self.lock, engine.load_lock()[0])
         self.assertNotIn('cef', self.lock)
         self.assertEqual(set(engine.locations(self.workspace, self.lock)), {'chromium', 'depot_tools'})
 
@@ -44,8 +44,8 @@ class DirectTests(unittest.TestCase):
         plan = engine.shipping_command_plan(self.workspace, 4, self.lock)
         self.assertEqual(plan[-1]['argv'][-2:], [t[2:] for t in self.lock['build']['targets']])
 
-    def test_lock_refuses_cef_and_expression_arguments(self):
-        for mutate in [lambda l: l.update(cef={}), lambda l: l['build'].update(gn_defines='import("x")')]:
+    def test_lock_refuses_expression_arguments(self):
+        for mutate in [lambda l: l['build'].update(gn_defines='import("x")')]:
             lock = copy.deepcopy(self.lock)
             mutate(lock)
             path = self.base / 'bad.json'
@@ -53,9 +53,6 @@ class DirectTests(unittest.TestCase):
             with self.assertRaises(engine.Refusal):
                 engine.load_lock(path)
 
-    def test_direct_overlay_cannot_write_cef(self):
-        with self.assertRaisesRegex(engine.Refusal, 'cannot target CEF'):
-            engine.target_path(self.workspace, 'cef/BUILD.gn', self.lock)
 
     def test_dependency_inventory_has_no_cef(self):
         self.workspace.mkdir()

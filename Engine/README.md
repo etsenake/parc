@@ -1,19 +1,9 @@
 # Independent Chromium engine
 
-Parc builds its own Chromium/CEF engine and integrates it with a source-owned
-Swift/AppKit shell. No installed third-party browser or executable is a build or
-runtime dependency. The stopgap `source-lock.json` pins Chromium, CEF and
-depot_tools; `ParcHost/overlay.json` records that integration. Direct Chromium
-uses [source-lock-direct.json](source-lock-direct.json), explicitly selected with
-`--lock-file`. It requires the separately integrated `ParcHost/overlay-direct.json`;
-this preparatory tool does not supply that manifest or the direct startup code.
-The engine owner transitions only an idle clone with verified generated sources.
-The coordinator promotes the direct lock to the canonical filename after the
-first direct build.
-
-For current delivery and unfinished product work, use
-[product status](../docs/parity.md). For an authorized production release, use
-[the release command](../docs/master-release.md).
+Parc builds Chromium directly with its source-owned native integration. The
+canonical [source lock](source-lock.json) pins Chromium and depot_tools; the
+canonical [overlay](ParcHost/overlay.json) records reviewed source inputs.
+Builds have no CEF checkout or installed-browser dependency.
 
 ## Build configuration
 
@@ -35,16 +25,15 @@ one. Supported commands and sequencing are in
 [development setup](../docs/development-setup.md). Never hand-edit generated copies
 instead of their manifest-owned inputs.
 
-Direct mode writes explicit GN arguments without CEF's generator. It builds
+Generation writes explicit GN arguments. It builds
 `//parc:parc_framework` and `//parc/helper:parc_helper`, including the framework's
-resource dependencies. Generated `root_extra_deps` loads both Parc targets into
-the Chromium root graph. `Release_GN_arm64` deliberately keeps its name so existing
+resource dependencies. `Release_GN_arm64` deliberately keeps its name so existing
 output consumers and compiled objects remain usable. Chromium's gclient hooks
-still run; no CEF checkout or patcher participates. Overlay patches run in their
+still run. Overlay patches run in their
 reviewed manifest order against Chromium; each target has one consolidated patch
 with checked input and output hashes.
 
-Both engine configurations use ARM64 Release, `dcheck_always_on=false`,
+The engine uses ARM64 Release, `dcheck_always_on=false`,
 `disable_fieldtrial_testing_config=true`, no dSYM bundles and the workspace's
 chosen symbol level (default zero). The disabled field-trial testing config
 removes the testing JSON startup path; individual supported feature overrides
@@ -107,44 +96,12 @@ python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
   --previous-lock "$PWD/work/previous-source-lock.json"
 ```
 
-Retarget requires an idle, owned workspace in a good recorded phase. It verifies
-its previous lock and fingerprint, restores recorded overlay originals, removes
-only verified overlay additions, and restores tracked CEF patch changes before
-checking out the new pins. It repeats dependency sync, hooks and CEF patching,
-then records `synced`; reapply the new overlay before generation/build. Outputs,
-caches and unrelated untracked files are preserved. Interrupted retargeting is
-left incomplete for inspection rather than guessed recovery. Verified incremental
-retargets use the existing **40 GB build reserve**: both lock tags must name the
-same Chromium major, minor and branch (for example `156.0.8078.x`), and both
-locked CEF commits must be ancestors of the freshly fetched matching CEF branch.
-Only that CEF branch is fetched to establish ancestry, after ownership/source
-verification and the 40 GB preflight; checkouts and dependency sync wait for the
-selected reserve check. Missing tags, unprovable CEF ancestry or cross-branch
-changes use the **80 GB sync reserve**, as do fresh syncs. Incremental retargets
-reuse the existing source, objects and caches; the reserve allows for delta
-fetches and replacement blocks, not a second full checkout. Neither floor value
-changes, and neither guarantees that an operation will fit.
-
-To leave CEF, save the stopgap lock and select the direct lock explicitly:
-
-```sh
-cp Engine/source-lock.json "$PWD/work/stopgap-source-lock.json"
-python3 scripts/engine-source.py retarget --workspace /absolute/project/engine \
-  --lock-file "$PWD/Engine/source-lock-direct.json" \
-  --previous-lock "$PWD/work/stopgap-source-lock.json"
-```
-
-This transition accepts a built engine or a generated/interrupted build with a
-verified applied overlay, and requires identical Chromium,
-depot_tools pins and storage policy. It uses the existing 40 GB build reserve,
-restores the verified overlay and CEF patches, moves the CEF checkout to
-`cef-retired/` beside `chromium/`, and removes only the `/cef/` Git exclude.
-Objects, caches and unrelated files survive. Both build receipts become unsealed;
-apply the direct overlay, generate and build using the same `--lock-file`.
-Direct-to-direct pin upgrades retain the strict recipe check and use the 80 GB
-sync reserve when dependency pins change. Returning to CEF through retarget is
-refused. An interrupted transition stays incomplete for explicit inspection,
-with its source and compiled objects preserved.
+Retarget requires an idle owned workspace, its previous lock and an unchanged
+source fingerprint. It restores recorded overlay originals, preserves compiled
+objects and unrelated files, checks out the new pins and repeats dependency
+sync and hooks. Changed dependency pins use the 80 GB sync reserve; unchanged
+pins use the 40 GB build reserve. Reapply the overlay before generation.
+Interrupted operations remain incomplete for inspection.
 
 Reconfiguration preserves sources/objects and requires generation before building.
 Shipping planning, generation and building use one operation lock:
@@ -161,10 +118,8 @@ outputs cannot be sealed. Returned failures can resume without deleting objects;
 unowned output is preserved and refused. Disk reserves are preflight policy,
 not a measured guarantee that another output fits.
 
-See [packaging](../tests/Packaging/README.md#standalone-distribution). CEF's
-`docs/master_build_quick_start.md` and `tools/gn_args.py` in the pinned source
-checkout explain its build and distribution configuration; exact dependency
-versions live in [the source lock](source-lock.json).
+See [packaging](../tests/Packaging/README.md#standalone-distribution).
+Exact dependency versions live in [the source lock](source-lock.json).
 
 ## Required native integration
 
@@ -179,16 +134,12 @@ profile-bound Browsers, while selected state determines activation. Page hosts
 retain the actual native view independently of tab selection and profile ownership.
 Parc supports up to four visible panes, live popup adoption and cancellable close.
 
-Do not substitute stock embedding assumptions for these contracts: macOS CEF
-native-parent embedding selects Alloy, and stock Chrome Views have their own
-window/tab constraints. The optional [ParcHost harness](ParcHost/README.md) tests
-upstream capabilities; it is not the production architecture.
+Do not substitute stock embedding assumptions for these contracts: stock Chrome Views have their own window/tab constraints.
 
 ## Native construction and startup source integration
 
 `ParcNative` contains the native factory, BrowserWindow, page delegate and
-source-owned presentation services. The stopgap manifest maps these into CEF;
-the direct manifest installs them under `//parc/native`. `native_components`,
+source-owned presentation services. The overlay installs them under `//parc/native`. `native_components`,
 `autofill_save_sessions` and `native_extensions` are shared production/test
 source sets. The Swift/Objective-C facade uses the independent route.
 
@@ -292,7 +243,7 @@ certificate panel. Cancellation and page/window invalidation are explicit.
 Each pane owns its compositor. A new page in the same pane retains the previous
 frame until its first frame, while an incompatible picture is concealed without
 disconnecting the display. Shown pages must attach to their compositor first;
-all compositors die before CefShutdown.
+all compositors die before engine shutdown.
 The host settles changed constraints before showing fresh content, including
 DevTools composition and infobar geometry.
 See [page compositing](../docs/page-compositing.md) and
@@ -320,7 +271,7 @@ The independent engine is the production path. Current gaps belong in
 Browser/app launch is currently prohibited by
 [AGENTS.md](../AGENTS.md); historical fixture commands do not authorize it.
 
-Maintain upstream security through deliberate pinned Chromium/CEF upgrades and
+Maintain upstream security through deliberate pinned Chromium upgrades and
 appropriate integration checks. Preserve product exclusions without expanding
 them into unrelated Google/Chromium networking removal. Keep generated outputs,
 profiles, logs and dependency binaries outside Git.

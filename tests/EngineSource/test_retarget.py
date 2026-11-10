@@ -22,7 +22,7 @@ class RetargetTests(unittest.TestCase):
             self.git(root, 'config', 'user.email', 'fixture@example.org')
             self.git(root, 'config', 'user.name', 'Fixture')
             self.git(root, 'remote', 'add', 'origin', self.lock[name]['url'])
-            (root / '.gitignore').write_text('/cef/\n/out/\n')
+            (root / '.gitignore').write_text('/out/\n')
             (root / 'pinned').write_text('old\n')
             (root / 'source.cc').write_text('upstream\n')
             self.git(root, 'add', '.')
@@ -41,15 +41,19 @@ class RetargetTests(unittest.TestCase):
         self.new_sha = engine.digest(json.dumps(self.new).encode())
         (self.workspace / 'chromium/.gclient').write_text(engine.gclient_text(self.old))
         (self.workspace / '.parc-operation.lock').touch()
-        self.repos = ['chromium/src', 'chromium/src/cef']
+        self.repos = ['chromium/src']
         self.state = dict(schema_version=1, workspace=str(self.workspace), lock_sha256=self.old_sha,
                           phase='built', symbol_level=0, repositories=self.repos,
                           source_fingerprint=engine.tree_fingerprint(self.workspace, self.env, self.repos))
+        output = self.roots['chromium'] / 'out' / self.old['build']['configuration']
+        output.mkdir(parents=True)
+        args = engine.engine_arguments(self.old, engine.environment(self.workspace, self.old, 0)['GN_DEFINES'])
+        (output / 'args.gn').write_bytes(args)
+        self.state.update(engine_mode='direct', build_targets=self.old['build']['targets'], args_sha256=engine.digest(args))
         engine.write_marker(self.workspace, self.state)
         self.calls = []
         self.command_locations = []
         self.prove_branch = False
-        self.branch_head = self.new["cef"]["commit"]
 
     def git(self, root, *args):
         return subprocess.check_output(engine.GIT + list(args), cwd=root, stderr=subprocess.DEVNULL)
@@ -60,8 +64,6 @@ class RetargetTests(unittest.TestCase):
             self.calls.append(argv)
             self.command_locations.append((argv, cwd))
             if 'fetch' in argv:
-                if argv[-1].startswith('refs/heads/') and self.prove_branch:
-                    (self.roots['cef'] / '.git/FETCH_HEAD').write_text(self.branch_head + '\n')
                 return b''  # Both revisions already exist in the fixture.
             if argv[0] != engine.GIT[0]:
                 if fail:
@@ -78,7 +80,7 @@ class RetargetTests(unittest.TestCase):
 
     def test_moves_all_pins_and_preserves_objects_and_user_files(self):
         output = self.roots['chromium'] / 'out/object.o'
-        output.parent.mkdir()
+        output.parent.mkdir(exist_ok=True)
         output.write_bytes(b'cached')
         user = self.roots['chromium'] / 'notes.txt'
         user.write_text('mine')
@@ -140,6 +142,9 @@ class RetargetTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_shipping_is_invalidated_without_deleting_objects(self):
+        output = self.roots['chromium'] / 'out' / engine.SHIPPING_CONFIGURATION
+        output.mkdir()
+        (output / 'shipping.o').write_bytes(b'cached shipping object')
         shipping = dict(schema_version=1, workspace=str(self.workspace), lock_sha256=self.old_sha,
                         configuration=engine.SHIPPING_CONFIGURATION, gn_defines=engine.SHIPPING_DEFINES,
                         symbol_level=0, phase='built', overlay=None)
@@ -147,15 +152,10 @@ class RetargetTests(unittest.TestCase):
         self.call()
         current = engine.read_shipping_marker(self.workspace, self.new_sha, self.state)
         self.assertEqual(current['phase'], 'reconfigured')
+        self.assertEqual((output / 'shipping.o').read_bytes(), b'cached shipping object')
+        with self.assertRaises(engine.Refusal):
+            engine.verify_shipping_build(self.workspace, self.new_sha, self.state)
 
-    def test_verified_incremental_retarget_uses_40gb_at_47gb_free(self):
-        self.prove_branch = True
-        result = self.call(free_bytes=47_000_000_000)
-        self.assertEqual(result['reserve'], 'build')
-        first_fetch = next((argv, cwd) for argv, cwd in self.command_locations if 'fetch' in argv)
-        self.assertEqual(first_fetch, (engine.GIT + ['fetch', '--no-tags', 'origin', 'refs/heads/8078'], self.roots['cef']))
-        self.assertEqual(result['minimum_free_bytes'], 40_000_000_000)
-        self.assertEqual(engine.read_marker(self.workspace, self.new_sha)['phase'], 'synced')
 
     def test_cross_milestone_or_branch_keeps_80gb_and_never_fetches(self):
         for tag in ['157.0.8103.51', '156.0.8079.1', '156.1.8078.1']:
@@ -172,15 +172,6 @@ class RetargetTests(unittest.TestCase):
                 self.call(free_bytes=47_000_000_000)
             self.assertFalse(any('restore' in c for c in self.calls))
 
-    def test_cef_commit_outside_matching_branch_uses_80gb(self):
-        self.prove_branch = True
-        root = self.roots['cef']
-        tree = self.git(root, 'rev-parse', 'HEAD^{tree}').strip().decode()
-        self.branch_head = self.git(root, 'commit-tree', tree, '-m', 'unrelated branch').strip().decode()
-        with self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
-            self.call(free_bytes=47_000_000_000)
-        self.assertFalse(any('restore' in c for c in self.calls))
-        self.assertEqual(engine.read_marker(self.workspace, self.old_sha)['phase'], 'built')
 
     def test_below_40gb_refused_before_any_git_command(self):
         self.prove_branch = True
@@ -188,19 +179,10 @@ class RetargetTests(unittest.TestCase):
             self.call(free_bytes=39_000_000_000)
         self.assertEqual(self.calls, [])
 
-    def test_cef_branch_fetch_failure_falls_back_to_sync_reserve(self):
-        with patch.object(engine, 'run', side_effect=OSError('offline')):
-            self.assertEqual(engine.retarget_reserve(self.workspace, self.old, self.new, self.env), 'sync')
 
-    def test_changed_source_is_checked_before_cef_branch_fetch(self):
+    def test_changed_source_prevents_retarget_fetches(self):
         self.prove_branch = True
         (self.roots['chromium'] / 'source.cc').write_text('user changes')
         with self.assertRaises(engine.Refusal):
             self.call(free_bytes=47_000_000_000)
         self.assertFalse(any('fetch' in c for c in self.calls))
-
-    def test_matching_tags_with_unprovable_cef_ancestry_keep_80gb(self):
-        self.new['chromium']['tag'] = self.old['chromium']['tag']
-        with self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
-            self.call(free_bytes=47_000_000_000)
-        self.assertFalse(any('restore' in c for c in self.calls))

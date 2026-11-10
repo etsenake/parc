@@ -26,8 +26,7 @@ class WorkspaceTests(unittest.TestCase):
         self.source = self.root / "original"
         self.source.mkdir()
         self.engine = ws._engine(self.repo)
-        direct = getattr(self, "direct", False)
-        self.lock, _ = self.engine.load_lock(REPO / ("Engine/source-lock-direct.json" if direct else "Engine/source-lock.json"))
+        self.lock, _ = self.engine.load_lock(REPO / ('Engine/source-lock.json'))
         for name, path in self.engine.locations(self.source, self.lock).items():
             path.mkdir(parents=True, exist_ok=True)
             self.git(path, "init", "-q")
@@ -36,7 +35,7 @@ class WorkspaceTests(unittest.TestCase):
             self.git(path, "remote", "add", "origin", self.lock[name]["url"])
             (path / "README").write_text(name)
             if name == "chromium":
-                (path / ".gitignore").write_text("/out/\n" if direct else "/cef/\n/out/\n")
+                (path / ".gitignore").write_text('/out/\n')
             self.git(path, "add", ".")
             self.git(path, "commit", "-qm", "fixture")
             self.lock[name]["commit"] = self.git(path, "rev-parse", "HEAD").strip()
@@ -52,14 +51,14 @@ class WorkspaceTests(unittest.TestCase):
         (self.output / "toolchain.ninja").write_text("command = ../../../../Applications/Xcode.app/tool\n")
         (self.repo / "Engine/owned.txt").write_text("reviewed overlay\n")
         manifest = {"schema_version": 1, "id": "parc-native-host", "version": 1,
-                    "source_root": "repository", "upstream": {name: self.lock[name]["commit"] for name in (("chromium",) if direct else ("cef", "chromium"))},
-                    "files": [{"source": "Engine/owned.txt", "target": "parc/owned.txt" if direct else "cef/owned.txt", "sha256": ws._sha(b"reviewed overlay\n")}]}
-        self.manifest = self.repo / ("Engine/ParcHost/overlay-direct.json" if direct else "Engine/ParcHost/overlay.json")
+                    "source_root": "repository", "upstream": {name: self.lock[name]["commit"] for name in (('chromium',))},
+                    "files": [{"source": "Engine/owned.txt", "target": 'parc/owned.txt', "sha256": ws._sha(b"reviewed overlay\n")}]}
+        self.manifest = self.repo / ('Engine/ParcHost/overlay.json')
         self.manifest.write_bytes(ws.canonical_json(manifest))
         self.state = {"schema_version": 1, "workspace": str(self.source),
                       "lock_sha256": ws._sha((self.repo / "Engine/source-lock.json").read_bytes()),
                       "phase": "generated", "symbol_level": 0,
-                      "repositories": ["chromium/src"] if direct else ["chromium/src", "chromium/src/cef"]}
+                      "repositories": ['chromium/src']}
         record, writes = self.engine.prepare_overlay(self.source, self.lock, self.state, self.manifest)
         for target, data in writes.items():
             self.engine.target_path(self.source, target).parent.mkdir(parents=True, exist_ok=True)
@@ -68,11 +67,10 @@ class WorkspaceTests(unittest.TestCase):
         raw = self.engine.overlay_record_bytes(record)
         (self.source / ".parc-overlays" / (record["identity"] + ".json")).write_bytes(raw)
         self.state["overlay"] = {"identity": record["identity"], "record_sha256": ws._sha(raw)}
-        if direct:
-            arguments = self.engine.gn_arguments(self.engine.environment(self.source, self.lock, 0)["GN_DEFINES"])
-            (self.output / "args.gn").write_bytes(arguments)
-            self.state.update(engine_mode="direct", build_targets=self.lock["build"]["targets"],
-                              args_sha256=self.engine.digest(arguments))
+        arguments = self.engine.engine_arguments(self.lock, self.engine.environment(self.source, self.lock, 0)["GN_DEFINES"])
+        (self.output / "args.gn").write_bytes(arguments)
+        self.state.update(engine_mode="direct", build_targets=self.lock["build"]["targets"],
+                          args_sha256=self.engine.digest(arguments))
         self.update_receipt()
 
     def git(self, root, *args):
@@ -266,9 +264,6 @@ class WorkspaceTests(unittest.TestCase):
             self.adopt(restored, metadata)
 
 
-
-class DirectWorkspaceTests(WorkspaceTests):
-    direct = True
 
 
 if __name__ == "__main__":

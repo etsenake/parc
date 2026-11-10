@@ -47,7 +47,7 @@ class ShippingTests(unittest.TestCase):
         self.assertEqual((self.workspace / engine.MARKER).read_bytes(), before)
         self.assertEqual((self.development / "args.gn").read_bytes(), b"development arguments")
         self.assertEqual(calls[0].args[0][-2:], ["gen", "out/" + engine.SHIPPING_CONFIGURATION])
-        self.assertEqual(calls[1].args[0][-1], "cef_framework")
+        self.assertEqual(calls[1].args[0][-1], "parc/helper:parc_helper")
         self.assertNotIn("parc_native_window_tests", calls[1].args[0])
         self.assertEqual(engine.verify_shipping_build(self.workspace, self.sha, self.state)["phase"], "built")
 
