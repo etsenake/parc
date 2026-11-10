@@ -387,28 +387,14 @@ extension NSView {
                 + "drag auto-scroll frame max \(fmt(dragFrames.max() ?? 0)) ms, spring-open frame max \(fmt(springFrames.max() ?? 0)) ms, "
                 + "expand/collapse frame max \(fmt(disclosureFrames.max() ?? 0)) ms; footprint \(fmt(memory)) MB"
             print(line); report.append(line)
+            // The frame-time limits are judged by check.py over several runs.
             if ProcessInfo.processInfo.environment["SWIPE_ASSERT"] != nil {
                 // Prepared while idle, no swipe builds a row, first visits included.
                 precondition(builtInFrames == 0 && built == 0, "\(items): a swipe built rows (\(builtInFrames) tracking, \(built) in all)")
-                // Each Space keeps its page: a swipe only moves it, within a frame,
-                // and its release and the spring don't lay a page out again.
-                precondition(first < 16 && (steady.max() ?? 0) < 16, "\(items): a swipe frame took \(fmt(max(first, steady.max() ?? 0))) ms")
-                precondition(settle < 8, "\(items): a spring frame took \(fmt(settle)) ms")
-                precondition(release < 50, "\(items): a release took \(fmt(release)) ms")
                 precondition(swipes.allSatisfy(\.settled), "\(items): a page didn't spring back to rest")
                 precondition(jumpBuilt == 0, "\(items): a jump to a kept Space built \(jumpBuilt) rows")
-                // Rows have views only near the visible area: no idle turn, AppKit's
-                // layout passes included, and no frame of the list's own motion
-                // grows with the list.
-                precondition(idleTurn < 8, "\(items): an idle turn took \(fmt(idleTurn)) ms")
-                precondition(jump < 50, "\(items): a far jump took \(fmt(jump)) ms")
-                for (name, frames) in [("scroll", scrollFrames), ("drag auto-scroll", dragFrames)] {
-                    precondition(!frames.isEmpty && frames.max()! < 8, "\(items): a \(name) frame took \(fmt(frames.max() ?? .infinity)) ms")
-                }
-                // A folder's expand or collapse still rebuilds its page's list.
-                for (name, frames) in [("spring-open", springFrames), ("expand/collapse", disclosureFrames)] {
-                    precondition(!frames.isEmpty && frames.max()! < 16, "\(items): a \(name) frame took \(fmt(frames.max() ?? .infinity)) ms")
-                }
+                precondition(!scrollFrames.isEmpty && !dragFrames.isEmpty && !springFrames.isEmpty && !disclosureFrames.isEmpty,
+                             "\(items): a list motion produced no frames")
             }
             if let hold = ProcessInfo.processInfo.environment["SWIPE_HOLD"].flatMap(Double.init) {
                 print("hold pid \(getpid())"); fflush(stdout); Thread.sleep(forTimeInterval: hold)
