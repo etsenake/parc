@@ -1,0 +1,594 @@
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -41,6 +41,7 @@
+ #include "base/timer/timer.h"
+ #include "build/build_config.h"
+ #include "chrome/common/buildflags.h"
++#include "parc/features.h"
+ #include "chrome/common/channel_info.h"
+ #include "chrome/common/chrome_constants.h"
+ #include "chrome/common/chrome_content_client.h"
+@@ -639,7 +640,7 @@
+   int (*function)(content::MainFunctionParams);
+ };
+ 
+-#if !defined(BUILDING_CHROME_RENDERER)
++#if !defined(BUILDING_CHROME_RENDERER) && !BUILDFLAG(ENABLE_PARC)
+ // Initializes the user data dir. Must be called before InitializeLocalState().
+ void InitializeUserDataDir(base::CommandLine* command_line) {
+ #if BUILDFLAG(IS_WIN)
+@@ -730,7 +731,7 @@
+ 
+ #endif  // BUILDFLAG(IS_WIN)
+ }
+-#endif  // !defined(BUILDING_CHROME_RENDERER)
++#endif  // !defined(BUILDING_CHROME_RENDERER) && !BUILDFLAG(ENABLE_PARC)
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+ void InitLogging(const std::string& process_type) {
+@@ -965,8 +966,10 @@
+   CommonEarlyInitialization();
+ 
+   // Initializes the resource bundle and determines the locale.
+-  std::string actual_locale = LoadLocalState(
+-      chrome_feature_list_creator, invoked_in_browser->is_running_test);
++  std::string actual_locale =
++      LoadLocalState(chrome_feature_list_creator,
++                     invoked_in_browser->is_running_test,
++                     GetResourceBundleDelegate());
+   chrome_feature_list_creator->SetApplicationLocale(actual_locale);
+ 
+ #if BUILDFLAG(CHROME_FOR_TESTING)
+@@ -1546,6 +1549,9 @@
+   }
+ #endif
+ 
++#if !BUILDFLAG(ENABLE_PARC)
++  // Parc ships without crash reporting and sets its exact user data
++  // directory itself, with no policy redirection or fallback root.
+   crash_reporter::InitializeCrashKeys();
+ 
+ #if BUILDFLAG(IS_POSIX)
+@@ -1556,12 +1562,15 @@
+   InitMacCrashReporter(command_line, process_type);
+   SetUpInstallerPreferences(command_line);
+ #endif
++#endif  // !BUILDFLAG(ENABLE_PARC)
+ 
+ #if !defined(BUILDING_CHROME_RENDERER)
++#if !BUILDFLAG(ENABLE_PARC)
+   // Initialize the user data dir for any process type that needs it.
+   if (chrome::ProcessNeedsProfileDir(process_type)) {
+     InitializeUserDataDir(base::CommandLine::ForCurrentProcess());
+   }
++#endif  // !BUILDFLAG(ENABLE_PARC)
+ 
+   // Register component_updater PathProvider after DIR_USER_DATA overridden by
+   // command line flags. Maybe move the chrome PathProvider down here also?
+@@ -1667,7 +1676,8 @@
+ #else
+     const std::string loaded_locale =
+         ui::ResourceBundle::InitSharedInstanceWithLocale(
+-            locale, nullptr, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
++            locale, GetResourceBundleDelegate(),
++            ui::ResourceBundle::LOAD_COMMON_RESOURCES);
+ 
+     base::FilePath resources_pack_path;
+     base::PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
+@@ -1710,9 +1720,11 @@
+                                 : base::android::PROCESS_CHILD);
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
++#if !BUILDFLAG(ENABLE_PARC)
+   // After all the platform Breakpads have been initialized, store the command
+   // line for crash reporting.
+   crash_keys::SetCrashKeysFromCommandLine(command_line);
++#endif
+ 
+ #if BUILDFLAG(ENABLE_PDF) && !defined(BUILDING_CHROME_RENDERER)
+   MaybePatchGdiGetFontData();
+--- a/chrome/app/chrome_main_delegate.h
++++ b/chrome/app/chrome_main_delegate.h
+@@ -17,6 +17,7 @@
+ #include "chrome/common/chrome_content_client.h"
+ #include "components/memory_system/memory_system.h"
+ #include "content/public/app/content_main_delegate.h"
++#include "ui/base/resource/resource_bundle.h"
+ 
+ namespace base {
+ class CommandLine;
+@@ -101,6 +102,11 @@
+ 
+   bool IsInitFeatureListEarly() override;
+ 
++  // Supplies resources such as product logos before the shared bundle loads.
++  virtual ui::ResourceBundle::Delegate* GetResourceBundleDelegate() {
++    return nullptr;
++  }
++
+ #if !defined(BUILDING_CHROME_RENDERER)
+   std::unique_ptr<ChromeContentBrowserClient> chrome_content_browser_client_;
+   std::unique_ptr<ChromeContentUtilityClient> chrome_content_utility_client_;
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -29,6 +29,7 @@
+ #include "base/values.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
++#include "parc/features.h"
+ #include "chrome/browser/active_use_util.h"
+ #include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/browser_features.h"
+@@ -1221,6 +1222,8 @@
+ #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+   master_prefs_ = std::make_unique<first_run::MasterPrefs>();
+ 
++#if !BUILDFLAG(ENABLE_PARC)
++  // Parc has no installer preferences or first-run import.
+   std::unique_ptr<installer::InitialPreferences> installer_initial_prefs =
+       startup_data_->chrome_feature_list_creator()->TakeInitialPrefs();
+   if (!installer_initial_prefs) {
+@@ -1256,6 +1259,7 @@
+                             master_prefs_->confirm_to_quit);
+   }
+ #endif
++#endif  // !BUILDFLAG(ENABLE_PARC)
+ #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+   return content::RESULT_CODE_NORMAL_EXIT;
+ }
+@@ -1327,7 +1331,7 @@
+ 
+ // Android does first run in Java instead of native.
+ // Chrome OS has its own out-of-box-experience code.
+-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
++#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(ENABLE_PARC)
+   if (first_run::IsChromeFirstRun()) {
+     if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kApp) &&
+         !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppId)) {
+@@ -1830,6 +1834,7 @@
+   }
+ #endif
+ 
++#if !BUILDFLAG(ENABLE_PARC)
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kMakeDefaultBrowser)) {
+     bool is_managed = g_browser_process->local_state()->IsManagedPreference(
+@@ -1843,6 +1848,7 @@
+                ? static_cast<int>(content::RESULT_CODE_NORMAL_EXIT)
+                : static_cast<int>(CHROME_RESULT_CODE_SHELL_INTEGRATION_FAILED);
+   }
++#endif  // !BUILDFLAG(ENABLE_PARC)
+ 
+ #if defined(USE_AURA)
+   // Make sure aura::Env has been initialized.
+@@ -1966,7 +1972,7 @@
+   // Call `PostProfileInit()`and set it up for profiles created later.
+   profile_init_manager_ = std::make_unique<ProfileInitManager>(this, profile);
+ 
+-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
++#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(ENABLE_PARC)
+   // Execute first run specific code after the PrefService has been initialized
+   // and preferences have been registered since some of the import code depends
+   // on preferences.
+@@ -2120,6 +2126,8 @@
+   }
+ #endif
+ 
++#if !BUILDFLAG(ENABLE_PARC)
++  // Parc opens its own native windows and runs the main loop itself.
+   // This step is costly.
+   if (browser_creator_->Start(*base::CommandLine::ForCurrentProcess(),
+                               base::FilePath(), profile_info,
+@@ -2152,6 +2160,7 @@
+     browser_process_->SetQuitClosure(
+         GetMainRunLoopInstance()->QuitWhenIdleClosure());
+   }
++#endif  // !BUILDFLAG(ENABLE_PARC)
+   browser_creator_.reset();
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
+--- a/chrome/browser/chrome_browser_main_mac.mm
++++ b/chrome/browser/chrome_browser_main_mac.mm
+@@ -21,6 +21,7 @@
+ #include "base/path_service.h"
+ #include "base/strings/sys_string_conversions.h"
+ #include "build/branding_buildflags.h"
++#include "parc/features.h"
+ #import "chrome/browser/app_controller_mac.h"
+ #include "chrome/browser/apps/app_shim/app_shim_listener.h"
+ #include "chrome/browser/browser_process.h"
+@@ -154,6 +155,8 @@
+     return ret;
+   }
+ 
++#if !BUILDFLAG(ENABLE_PARC)
++  // Parc's Swift application owns NSApp's delegate and main menu.
+   // Create the app delegate by requesting the shared AppController.
+   CHECK_EQ(nil, NSApp.delegate);
+   AppController* app_controller = AppController.sharedController;
+@@ -164,6 +167,7 @@
+                         /*is_pwa=*/false,
+                         /*is_rtl=*/base::i18n::IsRTL());
+   [app_controller mainMenuCreated];
++#endif  // !BUILDFLAG(ENABLE_PARC)
+ 
+   return content::RESULT_CODE_NORMAL_EXIT;
+ }
+@@ -182,5 +186,7 @@
+ }
+ 
+ void ChromeBrowserMainPartsMac::DidEndMainMessageLoop() {
++#if !BUILDFLAG(ENABLE_PARC)
+   [AppController.sharedController didEndMainMessageLoop];
++#endif
+ }
+--- a/chrome/browser/chrome_resource_bundle_helper.cc
++++ b/chrome/browser/chrome_resource_bundle_helper.cc
+@@ -61,8 +61,10 @@
+ 
+ // Initializes the shared instance of ResourceBundle and returns the application
+ // locale. An empty |actual_locale| value indicates failure.
+-std::string InitResourceBundleAndDetermineLocale(PrefService* local_state,
+-                                                 bool is_running_tests) {
++std::string InitResourceBundleAndDetermineLocale(
++    PrefService* local_state,
++    bool is_running_tests,
++    ui::ResourceBundle::Delegate* resource_bundle_delegate) {
+ #if BUILDFLAG(IS_ANDROID)
+   // In order for DetectAndSetLoadNonWebViewLocalePaks() to work ResourceBundle
+   // must not have been created yet.
+@@ -86,7 +88,8 @@
+   // On a POSIX OS other than ChromeOS, the parameter that is passed to the
+   // method InitSharedInstance is ignored.
+   std::string actual_locale = ui::ResourceBundle::InitSharedInstanceWithLocale(
+-      preferred_locale, nullptr, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
++      preferred_locale, resource_bundle_delegate,
++      ui::ResourceBundle::LOAD_COMMON_RESOURCES);
+   CHECK(!actual_locale.empty())
+       << "Locale could not be found for " << preferred_locale;
+ 
+@@ -119,7 +122,8 @@
+ 
+ std::string LoadLocalState(
+     ChromeFeatureListCreator* chrome_feature_list_creator,
+-    bool is_running_tests) {
++    bool is_running_tests,
++    ui::ResourceBundle::Delegate* resource_bundle_delegate) {
+   base::FilePath user_data_dir;
+   if (!base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
+     return std::string();
+@@ -131,5 +135,6 @@
+           base::CommandLine::ForCurrentProcess()));
+ 
+   return InitResourceBundleAndDetermineLocale(
+-      chrome_feature_list_creator->local_state(), is_running_tests);
++      chrome_feature_list_creator->local_state(), is_running_tests,
++      resource_bundle_delegate);
+ }
+--- a/chrome/browser/chrome_resource_bundle_helper.h
++++ b/chrome/browser/chrome_resource_bundle_helper.h
+@@ -7,12 +7,15 @@
+ 
+ #include <string>
+ 
++#include "ui/base/resource/resource_bundle.h"
++
+ class ChromeFeatureListCreator;
+ 
+ // Loads the local state, and returns the application locale. An empty return
+ // value indicates the ResouceBundle couldn't be loaded.
+ std::string LoadLocalState(
+     ChromeFeatureListCreator* chrome_feature_list_creator,
+-    bool is_running_tests);
++    bool is_running_tests,
++    ui::ResourceBundle::Delegate* resource_bundle_delegate = nullptr);
+ 
+ #endif  // CHROME_BROWSER_CHROME_RESOURCE_BUNDLE_HELPER_H_
+--- a/chrome/browser/profiles/pref_service_builder_utils.cc
++++ b/chrome/browser/profiles/pref_service_builder_utils.cc
+@@ -35,6 +35,7 @@
+ #include "components/supervised_user/core/browser/family_link_settings_service.h"
+ #include "components/sync_preferences/pref_service_syncable.h"
+ #include "components/variations/service/variations_service.h"
++#include "parc/features.h"
+ #include "content/public/browser/network_service_instance.h"
+ #include "services/preferences/public/mojom/tracked_preference_validation_delegate.mojom.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -63,6 +64,14 @@
+   }
+ }
+ 
++#if BUILDFLAG(ENABLE_PARC)
++namespace parc {
++// Defined by Parc's native profile registry; called after every Chrome and
++// service registration, so it may also change those preferences' defaults.
++void RegisterNativeProfilePrefs(PrefRegistrySimple* registry);
++}  // namespace parc
++#endif
++
+ void RegisterProfilePrefs(bool is_signin_profile,
+                           const std::string& locale,
+                           user_prefs::PrefRegistrySyncable* pref_registry) {
+@@ -77,6 +86,9 @@
+       pref_registry);
+   BrowserContextDependencyManager::GetInstance()
+       ->RegisterProfilePrefsForServices(pref_registry);
++#if BUILDFLAG(ENABLE_PARC)
++  parc::RegisterNativeProfilePrefs(pref_registry);
++#endif
+ }
+ 
+ std::unique_ptr<sync_preferences::PrefServiceSyncable> CreateProfilePrefService(
+--- a/chrome/browser/ui/startup/startup_browser_creator.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator.cc
+@@ -27,6 +27,7 @@
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/metrics/statistics_recorder.h"
++#include "base/no_destructor.h"
+ #include "base/scoped_multi_source_observation.h"
+ #include "base/strings/string_tokenizer.h"
+ #include "base/task/thread_pool.h"
+@@ -659,6 +660,12 @@
+   return false;
+ }
+ 
++StartupBrowserCreator::ProcessCommandLineCallback& AlreadyRunningCallback() {
++  static base::NoDestructor<StartupBrowserCreator::ProcessCommandLineCallback>
++      callback;
++  return *callback;
++}
++
+ }  // namespace
+ 
+ StartupBrowserCreator::StartupBrowserCreator() = default;
+@@ -1544,6 +1551,12 @@
+   startup_browser_creator.ProcessCmdLineImpl(
+       command_line, cur_dir, chrome::startup::IsProcessStartup::kNo,
+       {profile, mode}, last_opened_profiles);
++}
++
++// static
++void StartupBrowserCreator::RegisterProcessCommandLineCallback(
++    ProcessCommandLineCallback callback) {
++  AlreadyRunningCallback() = std::move(callback);
+ }
+ 
+ // static
+@@ -1552,6 +1565,11 @@
+     const base::FilePath& cur_dir,
+     const StartupProfilePathInfo& profile_path_info) {
+   if (profile_path_info.mode == StartupProfileMode::kError) {
++    return;
++  }
++
++  const auto& callback = AlreadyRunningCallback();
++  if (callback && callback.Run(command_line, cur_dir)) {
+     return;
+   }
+ 
+--- a/chrome/browser/ui/startup/startup_browser_creator.h
++++ b/chrome/browser/ui/startup/startup_browser_creator.h
+@@ -9,6 +9,7 @@
+ #include <vector>
+ 
+ #include "base/files/file_path.h"
++#include "base/functional/callback.h"
+ #include "base/gtest_prod_util.h"
+ #include "base/memory/raw_ptr.h"
+ #include "build/build_config.h"
+@@ -93,6 +94,14 @@
+              StartupProfileInfo profile_info,
+              const Profiles& last_opened_profiles);
+ 
++  // A callback that may consume each command line handed over by a second
++  // launch before stock handling runs; true means it was handled.
++  using ProcessCommandLineCallback =
++      base::RepeatingCallback<bool(const base::CommandLine& command_line,
++                                   const base::FilePath& cur_dir)>;
++  static void RegisterProcessCommandLineCallback(
++      ProcessCommandLineCallback callback);
++
+   // This function performs command-line handling and is invoked only after
+   // start up (for example when we get a start request for another process).
+   // |command_line| holds the command line we need to process.
+--- a/chrome/common/BUILD.gn
++++ b/chrome/common/BUILD.gn
+@@ -620,6 +620,7 @@
+   }
+   if (is_mac) {
+     sources += [ "chrome_paths_mac.mm" ]
++    deps += [ "//parc:buildflags" ]
+   }
+   if (is_win) {
+     sources += [ "chrome_paths_win.cc" ]
+--- a/chrome/common/chrome_paths_mac.mm
++++ b/chrome/common/chrome_paths_mac.mm
+@@ -20,6 +20,7 @@
+ #include "build/build_config.h"
+ #include "chrome/common/chrome_constants.h"
+ #include "chrome/common/chrome_paths_internal.h"
++#include "parc/features.h"
+ 
+ namespace {
+ 
+@@ -131,6 +132,11 @@
+ }
+ 
+ base::FilePath GetFrameworkBundlePath() {
++#if BUILDFLAG(ENABLE_PARC)
++  // Parc installs the framework bundle override in every process before
++  // ContentMain; its layout has no Chrome version directory or Helpers.
++  return base::apple::FrameworkBundlePath();
++#else
+   // It's tempting to use +[NSBundle bundleWithIdentifier:], but it's really
+   // slow (about 30ms on 10.5 and 10.6), despite Apple's documentation stating
+   // that it may be more efficient than +bundleForClass:.  +bundleForClass:
+@@ -176,6 +182,7 @@
+                 .Extension(),
+             ".app");
+   return path;
++#endif  // BUILDFLAG(ENABLE_PARC)
+ }
+ 
+ bool GetLocalLibraryDirectory(base::FilePath* result) {
+--- a/chrome/common/features.gni
++++ b/chrome/common/features.gni
+@@ -10,6 +10,7 @@
+ import("//components/safe_browsing/buildflags.gni")
+ import("//components/signin/features.gni")
+ import("//components/supervised_user/buildflags.gni")
++import("//parc/features.gni")
+ import("//content/public/common/features.gni")
+ import("//crypto/features.gni")
+ import("//device/vr/buildflags/buildflags.gni")
+@@ -33,7 +34,7 @@
+ declare_args() {
+   # Enables the build to have logging enabled by default.
+   # This is intended for use only in developer builds.
+-  chrome_enable_logging_by_default = is_debug
++  chrome_enable_logging_by_default = is_debug || enable_parc
+ 
+   # Platforms for which Chrome supports a certificate management UI that
+   # shows the Chrome Root Store. This is specific to the v2 UI that is
+@@ -77,7 +78,8 @@
+ # Logging must be disabled by default in all official builds (including special
+ # DCHECK-enabled builds). Logging is enabled by default for debug builds, and
+ # may be selectively enabled by default for release builds.
+-assert(!chrome_enable_logging_by_default || !is_official_build,
++# Parc's shipping build keeps the logging its CEF engine enabled by default.
++assert(!chrome_enable_logging_by_default || !is_official_build || enable_parc,
+        "Logging must be disabled by default in Official builds")
+ 
+ # Use brlapi from brltty for braille display support.
+--- a/components/os_crypt/common/BUILD.gn
++++ b/components/os_crypt/common/BUILD.gn
+@@ -17,11 +17,17 @@
+ }
+ 
+ if (is_apple) {
++  # Parc names its own Keychain item before any OSCrypt provider starts.
++  config("runtime_configurable_key_storage") {
++    defines = [ "ALLOW_RUNTIME_CONFIGURABLE_KEY_STORAGE" ]
++  }
++
+   source_set("keychain_password_mac") {
+     sources = [
+       "keychain_password_mac.h",
+       "keychain_password_mac.mm",
+     ]
++    public_configs = [ ":runtime_configurable_key_storage" ]
+     deps = [
+       "//base",
+       "//build:branding_buildflags",
+--- a/content/app/content_main.cc
++++ b/content/app/content_main.cc
+@@ -184,16 +184,10 @@
+ ContentMainParams::ContentMainParams(ContentMainParams&&) = default;
+ ContentMainParams& ContentMainParams::operator=(ContentMainParams&&) = default;
+ 
+-// This function must be marked with NO_STACK_PROTECTOR or it may crash on
+-// return, see the --change-stack-guard-on-fork command line flag.
+-NO_STACK_PROTECTOR int RunContentProcess(
+-    ContentMainParams params,
+-    ContentMainRunner* content_main_runner) {
++int ContentMainInitialize(ContentMainParams params,
++                          ContentMainRunner* content_main_runner) {
+   base::FeatureList::FailOnFeatureAccessWithoutFeatureList();
+   int exit_code = -1;
+-#if BUILDFLAG(IS_MAC)
+-  base::apple::ScopedNSAutoreleasePool autorelease_pool;
+-#endif
+ 
+   // A flag to indicate whether Main() has been called before. On Android, we
+   // may re-run Main() without restarting the browser process. This flag
+@@ -277,14 +271,6 @@
+ #endif
+ 
+ #if BUILDFLAG(IS_MAC)
+-    // We need this pool for all the objects created before we get to the event
+-    // loop, but we don't want to leave them hanging around until the app quits.
+-    // Each "main" needs to flush this pool right before it goes into its main
+-    // event loop to get rid of the cruft. TODO(crbug.com/40260311): This
+-    // is not safe. Each main loop should create and destroy its own pool; it
+-    // should not be flushing the pool at the base of the autorelease pool
+-    // stack.
+-    params.autorelease_pool = &autorelease_pool;
+     InitializeMac();
+ #endif
+ 
+@@ -334,6 +320,30 @@
+ 
+   if (IsSubprocess())
+     CommonSubprocessInit();
++  return exit_code;
++}
++
++// This function must be marked with NO_STACK_PROTECTOR or it may crash on
++// return, see the --change-stack-guard-on-fork command line flag.
++NO_STACK_PROTECTOR int RunContentProcess(
++    ContentMainParams params,
++    ContentMainRunner* content_main_runner) {
++#if BUILDFLAG(IS_MAC)
++  // We need this pool for all the objects created before we get to the event
++  // loop, but we don't want to leave them hanging around until the app quits.
++  // Each "main" needs to flush this pool right before it goes into its main
++  // event loop to get rid of the cruft. TODO(crbug.com/40260311): This
++  // is not safe. Each main loop should create and destroy its own pool; it
++  // should not be flushing the pool at the base of the autorelease pool
++  // stack.
++  base::apple::ScopedNSAutoreleasePool autorelease_pool;
++  params.autorelease_pool = &autorelease_pool;
++#endif
++  int exit_code =
++      ContentMainInitialize(std::move(params), content_main_runner);
++  if (exit_code >= 0) {
++    return exit_code;
++  }
+   exit_code = content_main_runner->Run();
+ 
+ #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+--- a/content/browser/scheduler/responsiveness/native_event_observer_mac.mm
++++ b/content/browser/scheduler/responsiveness/native_event_observer_mac.mm
+@@ -10,16 +10,20 @@
+ 
+ namespace content::responsiveness {
+ 
++// An embedder's NSApplication need not report native events; the
++// responsiveness metrics then go without them.
+ void BrowserUINativeEventObserver::RegisterObserver() {
+-  CHECK([NSApp conformsToProtocol:@protocol(NativeEventProcessor)],
+-        base::NotFatalUntil::M160);
++  if (![NSApp conformsToProtocol:@protocol(NativeEventProcessor)]) {
++    return;
++  }
+   id<NativeEventProcessor> processor =
+       static_cast<id<NativeEventProcessor>>(NSApp);
+   [processor addNativeEventProcessorObserver:this];
+ }
+ void BrowserUINativeEventObserver::UnregisterObserver() {
+-  CHECK([NSApp conformsToProtocol:@protocol(NativeEventProcessor)],
+-        base::NotFatalUntil::M160);
++  if (![NSApp conformsToProtocol:@protocol(NativeEventProcessor)]) {
++    return;
++  }
+   id<NativeEventProcessor> processor =
+       static_cast<id<NativeEventProcessor>>(NSApp);
+   [processor removeNativeEventProcessorObserver:this];
+--- a/content/public/app/content_main.h
++++ b/content/public/app/content_main.h
+@@ -94,6 +94,14 @@
+   }
+ };
+ 
++// The first stage of RunContentProcess(), for an embedder that runs the
++// browser's main loop itself: returns -1 to continue with
++// content_main_runner->Run() and, after it returns, ->Shutdown(); otherwise
++// returns the process exit code. The caller owns params.autorelease_pool.
++CONTENT_EXPORT int ContentMainInitialize(
++    ContentMainParams params,
++    ContentMainRunner* content_main_runner);
++
+ CONTENT_EXPORT int RunContentProcess(ContentMainParams params,
+                                      ContentMainRunner* content_main_runner);
+ 
