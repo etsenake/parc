@@ -117,6 +117,62 @@ class ReleaseEngineTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaisesRegex(pkg.Refusal, message):
                 pkg.release_report(self.repo, self.package, local_test=True)
 
+    def test_direct_release_report_uses_only_selected_overlay(self):
+        self.write_lock({"schema_version": 2, "chromium": {"commit": "a"}})
+        direct = self.repo / "Engine/ParcHost/overlay-direct.json"
+        direct.write_text(json.dumps(self.overlay))
+        # A stale CEF manifest must neither block nor authorize a direct release.
+        (self.repo / "Engine/ParcHost/overlay.json").write_text('{"files": [], "patches": []}')
+        self.report["overlay"]["identity"] = digest(direct)
+        self.write_report()
+        self.assertEqual(pkg.release_report(self.repo, self.package)["overlay"], self.report["overlay"])
+        self.write_report(overlay={"identity": digest(self.repo / "Engine/ParcHost/overlay.json")})
+        with self.assertRaisesRegex(pkg.Refusal, "different engine overlay"):
+            pkg.release_report(self.repo, self.package)
+
+    def test_direct_pinned_source_uses_selected_overlay_for_patched_inputs(self):
+        workspace = self.pinned_workspace()
+        lock = json.loads((self.repo / "Engine/source-lock.json").read_text())
+        lock.pop("cef")
+        lock["schema_version"] = 2
+        self.write_lock(lock)
+        direct = self.repo / "Engine/ParcHost/overlay-direct.json"
+        direct.write_text(json.dumps({"files": [], "patches": []}))
+        # Ignore a CEF overlay that patches a direct packaging input.
+        self.overlay["patches"][0]["files"].append({"target": "LICENSE"})
+        self.write_overlay()
+        source = pkg.pinned_source(self.repo, workspace, self.root / "pinned-direct", direct=True)
+        self.assertEqual((source / "LICENSE").read_text(), "chromium license")
+        self.assertFalse((source / "cef").exists())
+        direct.write_text(json.dumps(self.overlay))
+        with self.assertRaisesRegex(pkg.Refusal, "overlay changes a pinned packaging input"):
+            pkg.pinned_source(self.repo, workspace, self.root / "refused", direct=True)
+
+    def test_direct_local_test_records_the_selected_checkout_overlay(self):
+        self.write_lock({"schema_version": 2, "chromium": {"commit": "a"}})
+        direct = self.repo / "Engine/ParcHost/overlay-direct.json"
+        direct.write_text(json.dumps(self.overlay))
+        self.write_report()
+        licenses = self.package / "Parc.app/Contents/Resources/EngineLicenses"
+        licenses.mkdir(parents=True)
+        (licenses / "Chromium-LICENSE.txt").write_text("license")
+        stage = self.root / "pinned"
+        stage.mkdir()
+        (stage / "LICENSE").write_text("license")
+        engine = self.package / "Parc.app/Contents/Frameworks"
+        helper = engine / "Parc Helper.app/Contents/MacOS/Parc Helper"
+        helper.parent.mkdir(parents=True)
+        helper.write_text("helper")
+        with patch.object(pkg, "release_report", return_value=self.report), \
+                patch.object(pkg, "verify_release_framework"), patch.object(pkg, "verify_release_helper"), \
+                patch.object(pkg, "pinned_source", return_value=stage), \
+                patch.object(pkg, "app_engine_headers", return_value=[]), \
+                patch.object(pkg, "changed_since", return_value=[]), \
+                patch.object(pkg, "release_manifest", return_value={"components": {}}) as seal:
+            pkg.release_engine(self.repo, self.package, self.root, stage, "v1", "a" * 40, local_test=True)
+        release = seal.call_args.args[2]
+        self.assertEqual(release["local_test"]["checkout_overlay"], digest(direct))
+
     def test_changed_since_names_edited_and_new_headers(self):
         released = commit(self.repo, {"Engine/ParcNative/page_host.h": "api",
                                       "Engine/ParcNative/native_engine_entry.h": "entry"})

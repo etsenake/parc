@@ -81,7 +81,7 @@ class DirectEngineTests(unittest.TestCase):
         files = {
             "content/public/app/mac_helpers.gni": 'content_mac_helpers = [\n["default", "", ""], ["renderer", ".renderer", " (Renderer)"], ["gpu", "", " (GPU)"],\n]',
             "parc/helper/BUILD.gn": 'executable("parc_helper") { deps = [ "//sandbox/mac:seatbelt" ] }',
-            "parc/parc_content_clients.cc": 'constexpr char kMacHelperSuffixCdm[] = " (CDM)"; SetCdmServiceChildFlags( GetChildProcessPath(chrome::kMacHelperSuffixAlerts)',
+            "parc/parc_content_clients.cc": 'constexpr char kMacHelperSuffixCdm[] = " (CDM)"; SetCdmServiceChildFlags( HelperExecutablePath(chrome::kMacHelperSuffixAlerts)',
             "parc/parc_bundle_mac.mm": 'name + " Helper"',
             "chrome/common/chrome_constants.cc": 'kMacHelperSuffixAlerts[] = " (Alerts)";',
         }

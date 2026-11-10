@@ -8,7 +8,7 @@ individual building blocks.
 
 ## Inputs and commands
 
-Use an absolute `--engine-dir` for the locked `Release_GN_arm64` output. First finish the reviewed native-host overlay with `scripts/engine-source.py build`. A successful source-tool completion must record phase `built`; manually linked files and a still-running build cannot be sealed. The matching reviewed source overlay must include the actual public native bridge headers and compiled exports.
+Use an absolute `--engine-dir` for the locked `Release_GN_arm64` output. First finish the reviewed native-host overlay with `scripts/engine-source.py build`. A successful source-tool completion must record phase `built`; manually linked files and a still-running build cannot be sealed. The canonical `Engine/source-lock.json` selects `overlay-direct.json` for schema 2 and `overlay.json` for the legacy schema. Sealing, release reuse and package stamps use that same selection. The matching reviewed source overlay must include the actual public native bridge headers and compiled exports.
 
 Create the manifest and package in ignored local directories (replace the example paths with your workspace):
 

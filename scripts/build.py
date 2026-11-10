@@ -312,6 +312,12 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def overlay_path(repo: Path, lock: dict | None = None) -> Path:
+    lock = read_json(repo / "Engine/source-lock.json") if lock is None else lock
+    name = "overlay-direct.json" if lock.get("schema_version") == 2 else "overlay.json"
+    return repo / "Engine/ParcHost" / name
+
+
 def check_helper_contract(source: Path, *, direct: bool = False) -> None:
     content = (source / "content/public/app/mac_helpers.gni").read_text()
     block = content.split("content_mac_helpers = [", 1)[1].split("\n]", 1)[0]
@@ -327,7 +333,7 @@ def check_helper_contract(source: Path, *, direct: bool = False) -> None:
         constants = (source / "chrome/common/chrome_constants.cc").read_text()
         if (f'kMacHelperSuffixCdm[] = "{CDM_HELPER}";' not in client or
                 "SetCdmServiceChildFlags(" not in client or
-                "GetChildProcessPath(chrome::kMacHelperSuffixAlerts)" not in client or
+                "HelperExecutablePath(chrome::kMacHelperSuffixAlerts)" not in client or
                 '" Helper"' not in bundle or
                 'kMacHelperSuffixAlerts[] = " (Alerts)";' not in constants):
             raise Refusal("Direct engine CDM or Alerts helper routing is missing")
@@ -381,7 +387,7 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
             raise Refusal(str(error)) from error
         shipping_proof = sha(workspace / module.SHIPPING_MARKER)
     reference = state.get("overlay", {})
-    identity = sha(repo / "Engine/ParcHost/overlay.json")
+    identity = sha(overlay_path(repo))
     if reference.get("identity") != identity:
         raise Refusal("Built engine does not match the repository's reviewed overlay")
     record_path = workspace / ".parc-overlays" / (identity + ".json")
@@ -600,12 +606,12 @@ def release_report(repo: Path, package: Path, *, local_test: bool = False) -> di
         if name in recorded and recorded[name] != json.loads(value):
             raise Refusal(f"The release engine was built with {name}={json.dumps(recorded[name])}, "
                           f"not the current shipping {value}")
-    overlay_path = repo / "Engine/ParcHost/overlay.json"
-    if report.get("overlay", {}).get("identity") != sha(overlay_path):
+    manifest_path = overlay_path(repo)
+    if report.get("overlay", {}).get("identity") != sha(manifest_path):
         raise Refusal("The release engine was built from a different engine overlay than this checkout")
     # The overlay pins each repository input's digest; an edited input means
     # this checkout carries engine source the release engine was not built from.
-    overlay = read_json(overlay_path)
+    overlay = read_json(manifest_path)
     for item in overlay["files"] + overlay.get("patches", []):
         if sha(repo / relative(item["source"])) != item["sha256"]:
             raise Refusal("Engine source changed without a new overlay: " + item["source"])
@@ -640,7 +646,7 @@ def verify_release_helper(package: Path, report: dict) -> None:
 def pinned_source(repo: Path, workspace: Path, destination: Path, *, direct: bool = False) -> Path:
     """Write PINNED_INPUTS at the source lock's commits under destination."""
     lock = read_json(repo / "Engine/source-lock.json")
-    overlay = read_json(repo / "Engine/ParcHost/overlay.json")
+    overlay = read_json(overlay_path(repo, lock))
     patched = {item["target"] for item in overlay["files"]}
     patched |= {item["target"] for patch in overlay.get("patches", []) for item in patch["files"]}
     chromium = explicit_path(workspace) / "chromium/src"
@@ -733,7 +739,7 @@ def release_engine(repo: Path, package: Path, workspace: Path, stage: Path, tag:
             raise Refusal(f"The app compiles against engine headers changed since {commit[:8]} "
                           f"({', '.join(changed)}); it needs a newer engine unless every new call is "
                           "guarded with respondsToSelector:, which --allow-changed-headers asserts")
-        release["local_test"] = {"checkout_overlay": sha(repo / "Engine/ParcHost/overlay.json"),
+        release["local_test"] = {"checkout_overlay": sha(overlay_path(repo)),
                                  "engine_api_headers": headers, "changed_headers_allowed": changed}
     engine = package / "Parc.app/Contents/Frameworks"
     manifest = release_manifest(engine, report, release)

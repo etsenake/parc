@@ -272,7 +272,7 @@ Load command 4
             self.assertEqual(lock["build"]["targets"], ["//parc:parc_framework", "//parc/helper:parc_helper"])
         lock_path = repo / "Engine/source-lock.json"
         lock_path.write_text(json.dumps(lock))
-        overlay = repo / "Engine/ParcHost/overlay.json"
+        overlay = repo / "Engine/ParcHost" / ("overlay-direct.json" if direct else "overlay.json")
         overlay.write_text("{}")
         workspace = self.root / "workspace"
         source = workspace / "chromium/src"
