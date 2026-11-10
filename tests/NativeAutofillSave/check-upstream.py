@@ -21,20 +21,30 @@ def digest(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
-    if (Path(args.output_name).name != args.output_name or
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
         parser.error("--output-name must name one existing output directory")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
+    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
+                            else "Engine/ParcHost/overlay.json")
     build = tree / "out" / args.output_name
     compiler = tree / "third_party/llvm-build/Release+Asserts/bin/clang++"
     if not compiler.is_file():
         parser.error("the existing pinned compiler is required")
     compiler_sha256 = digest(compiler.read_bytes())
-    manifest_bytes = (repo / "Engine/ParcHost/overlay.json").read_bytes()
+    manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
     sources = {}
     for patch in manifest["patches"]:

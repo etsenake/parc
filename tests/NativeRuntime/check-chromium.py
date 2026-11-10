@@ -21,19 +21,28 @@ def sha(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
-    if Path(args.output_name).name != args.output_name or args.output_name in (".", "..", ""):
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or args.output_name in (".", "..", "")):
         parser.error("output-name must be one existing output directory")
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
+    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
+                            else "Engine/ParcHost/overlay.json")
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("build output left the source tree")
     sys.dont_write_bytecode = True
     shared = runpy.run_path(str(repo / "tests/NativeHTTPAuth/check-chromium.py"))
     contained = shared["contained"]
-    manifest_path = repo / "Engine/ParcHost/overlay.json"
     manifest = json.loads(manifest_path.read_text())
     snapshots = {}
     outputs = {}
@@ -44,9 +53,7 @@ def main():
         snapshots[path] = expected
     if manifest.get("source_root") != "repository":
         raise ValueError("expected repository-relative reviewed manifest")
-    lock_path = repo / "Engine/source-lock.json"
-    lock = json.loads(lock_path.read_text())
-    if manifest["upstream"] != {name: lock[name]["commit"] for name in ("cef", "chromium")}:
+    if manifest["upstream"] != {name: lock[name]["commit"] for name in (("chromium",) if direct else ("cef", "chromium"))}:
         raise ValueError("overlay revisions differ from the source lock")
     for item in manifest["files"]:
         if item["target"] in outputs or item["source"] in sources:
@@ -63,7 +70,8 @@ def main():
             check(contained(tree, item["target"]), item["after_sha256"])
             outputs[item["target"]] = item["after_sha256"]
     target = sources["tests/NativeRuntime/runtime_driver.mm"]
-    flags_file = build / "obj/cef/tests/parc_native_runtime/driver.ninja"
+    flags_file = build / ("obj/parc/tests/parc_native_runtime/driver.ninja" if direct
+                          else "obj/cef/tests/parc_native_runtime/driver.ninja")
     if not shared["contains_object"](flags_file, "objcxx", target):
         raise ValueError("actual source-set object is not generated")
     toolchain = build / "toolchain.ninja"

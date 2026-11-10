@@ -25,6 +25,7 @@ import wave
 sys.dont_write_bytecode = True
 
 REPO = Path(__file__).resolve().parents[2]
+MANIFEST_PATH = REPO / 'Engine/ParcHost/overlay.json'
 PATCHES = ['Engine/ParcHost/integration/platform-codecs.patch',
            'Engine/ParcHost/integration/webaudio-aac.patch']
 WEBAUDIO = 'third_party/blink/renderer/modules/webaudio'
@@ -71,7 +72,7 @@ def patched_sources(tree):
     """Every target of both patches and the new files, from the reviewed overlay. A live target
     may be patched, pristine or an earlier overlay's version; for the last, the pristine bytes
     come read-only from the Git checkout that holds the file."""
-    manifest = json.loads((REPO / 'Engine/ParcHost/overlay.json').read_text())
+    manifest = json.loads(MANIFEST_PATH.read_text())
     outputs = {}
     for name in PATCHES:
         entry = next(p for p in manifest['patches'] if p['source'] == name)
@@ -134,14 +135,21 @@ def write_wav(path, channels, seconds):
 
 
 def main():
+    global MANIFEST_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source_tree', type=Path)
     parser.add_argument('--results', type=Path, required=True)
     parser.add_argument('--compile-only', action='store_true',
                         help='compile the patched units and stop before linking against built objects')
+    parser.add_argument('--lock-file', type=Path, default=REPO / 'Engine/source-lock.json')
     args = parser.parse_args()
+    lock = json.loads(args.lock_file.read_text())
+    if lock.get('schema_version') not in (1, 2):
+        parser.error('unsupported source lock schema')
+    MANIFEST_PATH = REPO / ('Engine/ParcHost/overlay-direct.json' if lock['schema_version'] == 2
+                            else 'Engine/ParcHost/overlay.json')
     tree = args.source_tree.resolve(strict=True)
-    build = tree / 'out/Release_GN_arm64'
+    build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()
     if results.is_relative_to(tree):
         parser.error('results must be outside the source checkout')
@@ -159,7 +167,7 @@ def main():
     objects = results / 'objects'
     objects.mkdir(exist_ok=True)
     test = Path(__file__).with_name('webaudio_aac_test.cc')
-    inputs = [*(REPO / p for p in PATCHES), REPO / 'Engine/ParcHost/overlay.json', test, llvm / 'clang++']
+    inputs = [*(REPO / p for p in PATCHES), MANIFEST_PATH, test, llvm / 'clang++']
     commands, linked = [], []
     for source, ninja, link in [*UNITS, (str(test), TEST_NINJA, True)]:
         flags = ['-I' + str(sources), *CODECS.target_flags(build / ninja, cxx_keys, config_dir, results)]
