@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import IOKit
+import IOKit.pwr_mgt
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, PCNativeBrowserApplicationClient {
@@ -363,8 +365,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             },
             dialogOpen: NSApp.modalWindow != nil || NSApp.windows.contains { $0.attachedSheet != nil },
             privateWindowOpen: windows.contains(where: \.isPrivateBrowsing),
-            //
-            idleTime: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!))
+            idleTime: Self.inputIdleTime,
+            displayKeptOn: Self.displayKeptOn)
+    }
+
+    /// Any process holds `kIOPMAssertPreventUserIdleDisplaySleep`, as video
+    /// calls and players do. Held when it can't be read.
+    private static var displayKeptOn: Bool {
+        var status: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsStatus(&status) == kIOReturnSuccess,
+              let levels = status?.takeRetainedValue() as? [String: NSNumber] else { return true }
+        return (levels["PreventUserIdleDisplaySleep"]?.intValue ?? 0) > 0
+    }
+
+    ///
+    /// since the last keyboard or pointer event. Only the HID event system
+    /// resets it, so power assertions and `caffeinate` don't. Zero, which
+    /// counts as in use, when it can't be read.
+    private static var inputIdleTime: TimeInterval {
+        let system = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
+        guard system != 0 else { return 0 }
+        defer { IOObjectRelease(system) }
+        let nanoseconds = IORegistryEntryCreateCFProperty(system, "HIDIdleTime" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? NSNumber
+        return (nanoseconds?.doubleValue ?? 0) / 1_000_000_000
     }
 
     func openInitialWindow() {

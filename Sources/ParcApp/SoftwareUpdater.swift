@@ -63,6 +63,7 @@ import Sparkle
         }
         do { try updater.start() } catch { unavailable = error; return }
         observeAway()
+        scheduleAutomaticCheck()
     }
 
     ///
@@ -95,24 +96,25 @@ import Sparkle
 
     @objc private func awayChanged(_ notification: Notification) {
         guard let event = Self.workspaceEvents[notification.name] ?? Self.distributedEvents[notification.name] else { return }
-        if !event.began {
+        if event.began {
+            automatic.began(event.reason, at: ProcessInfo.processInfo.systemUptime)
+        } else {
             automatic.ended(event.reason)
-        } else if let due = automatic.began(event.reason, at: ProcessInfo.processInfo.systemUptime) {
-            scheduleAutomaticCheck(due)
         }
     }
 
-    /// Awake time: the wait stops while the Mac sleeps.
-    private func scheduleAutomaticCheck(_ due: TimeInterval) {
+    /// Every five minutes of awake time, which stops while the Mac sleeps.
+    private func scheduleAutomaticCheck() {
         DispatchQueue.main.asyncAfter(deadline: .now() + AutomaticUpdate.delay) { [weak self] in
-            MainActor.assumeIsolated { self?.automaticCheck(due: due) }
+            MainActor.assumeIsolated { self?.automaticCheck() }
         }
     }
 
-    private func automaticCheck(due: TimeInterval) {
-        guard let next = automatic.checkFired(due: due, at: ProcessInfo.processInfo.systemUptime) else { return }
-        scheduleAutomaticCheck(next)
-        guard let activity = activity?(), AutomaticUpdate.allows(activity),
+    private func automaticCheck() {
+        scheduleAutomaticCheck()
+        // `activity` reads every page, so only once an update is waiting.
+        guard installsWithoutWindow, let activity = activity?(),
+              automatic.allows(activity, at: ProcessInfo.processInfo.systemUptime),
               let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
               let url = URL(string: feed) else { return }
         //
@@ -121,9 +123,9 @@ import Sparkle
         request.httpMethod = "HEAD"
         Task { [weak self, request] in
             let status = (try? await URLSession.shared.data(for: request).1 as? HTTPURLResponse)?.statusCode
-            // Only if the Mac has stayed away since this check.
-            guard let self, let status, (200..<300).contains(status), automatic.nextCheck == next,
-                  let activity = self.activity?(), AutomaticUpdate.allows(activity) else { return }
+            // The Mac may be back in use by now.
+            guard let self, let status, (200..<300).contains(status), let activity = self.activity?(),
+                  automatic.allows(activity, at: ProcessInfo.processInfo.systemUptime) else { return }
             installAndRelaunch()
         }
     }
