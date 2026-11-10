@@ -34,8 +34,8 @@
    observers_.AddObserver(&autofill_context_menu_manager_);
  }
  
-@@ -1588,6 +1601,12 @@
-     if (!use_simplified_menu_for_text_selection) {
+@@ -1589,6 +1602,12 @@
+         !took_simplified_page_items_path) {
        AppendReadAnythingItem();
      }
 +  }
@@ -49,7 +49,7 @@
  
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
-@@ -581,6 +581,9 @@
+@@ -582,6 +582,9 @@
    // Video frame sub-menu handling.
    ui::SimpleMenuModel video_frame_submenu_model_;
  
