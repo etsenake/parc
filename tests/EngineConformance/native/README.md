@@ -15,6 +15,19 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/EngineConformance/native/validate_overla
 
 The second command reads pristine pinned preimages and applies the actual overlay parser in memory. Once an overlay is applied, use the engine tool's recorded-overlay validation rather than treating the modified checkout as a pristine preimage.
 
+The AppKit panel uses Chromium's real Browser, tab model and UI-thread checks.
+Its direct source-set recipe is `//parc/tests/parc_native_host:panel`, depending
+on `//parc:browser`. The overlay integrator must map this directory's `BUILD.gn`
+and the panel sources under `parc/harness/`, then refresh their source hashes
+before applying the direct recipe. The executable migration is blocked: the direct startup C
+ABI fixes the production Keychain namespace and creates the production native
+application, while this harness requires its separate Safe Storage namespace
+and a normal Chrome Views window with a side panel. The startup and window
+owners must provide a test-only entry seam preserving those two contracts
+before `parc_host_harness` can replace its CEF executable and bundle recipe.
+Keep the existing executable and fixture guards until that seam is available;
+using the production Keychain or a different window would change this test.
+Do not disable the sandbox, move a component app out of its build directory
 
 Launch after a successful build, using a new path whose parent already exists:
 
@@ -26,14 +39,14 @@ python3 tests/EngineConformance/native/launch.py \
 ```
 
 
-The initial window has normal Chrome controls plus an AppKit side panel titled **Parc native host**. Retained Chrome controls are intentional test infrastructure, not the proposed Parc UI. New tabs created from either UI must appear in both lists. The native address field accepts explicit HTTP(S), `chrome:` and `about:blank` URLs; search and normal browsing are available through Chrome's real omnibox. **Log identities** writes a JSON snapshot to the launching terminal, not to a remote service. CEF creation/close callbacks also print IDs. A missing panel, source CHECK, crash or incorrect identity is a failure; do not count a rendered page alone as a pass.
+The initial window has normal Chrome controls plus an AppKit side panel titled **Parc native host**. Retained Chrome controls are intentional test infrastructure, not the proposed Parc UI. New tabs created from either UI must appear in both lists. The native address field accepts explicit HTTP(S), `chrome:` and `about:blank` URLs; search and normal browsing are available through Chrome's real omnibox. **Log identities** writes a JSON snapshot to the launching terminal, not to a remote service. The existing executable prints creation/close callbacks; the panel reports real Chromium page IDs. A missing panel, source CHECK, crash or incorrect identity is a failure; do not count a rendered page alone as a pass.
 
 Required runtime record:
 
 | Check | Pass evidence |
 |---|---|
 | Native host/window | Side panel is a real accessible NSView in the same visible NSWindow; resize changes page and panel geometry without overlap or a hidden second window. Snapshot attachment field is true. Native typing, selection, keyboard traversal and page input work. |
-| Real tabs | Create at least three tabs with AppKit **New tab** and Chrome controls. Select each from both lists. Native/extension window ID and tab IDs agree, ordered indices are contiguous, exactly one tab is active, each actual tab has its own CEF host ID. Closing a non-active tab never clears the active page or another tab's host. |
+| Real tabs | Create at least three tabs with AppKit **New tab** and Chrome controls. Select each from both lists. Native/extension window ID and tab IDs agree, ordered indices are contiguous, exactly one tab is active, each actual tab has its own positive, unique Chromium session page ID. Closing a non-active tab never clears the active page or another tab's host. |
 | Navigation/rendering | Load a local fixture and real HTTPS page, exercise script/input, navigate Back/Forward/Reload and resize GPU content. Native model rows track actual active content. |
 | Close consent | On a user-activated beforeunload fixture, **Close tab → Stay** retains that exact tab; a subsequent **Leave** closes it once. Repeat with native window close and ⌘Q. No premature row deletion, crash, stuck message loop or surviving helpers. The harness exits only after actual last-page close callbacks. |
 | Native view lifetime | Close/reopen the host panel with Chrome's header/action UI, change tabs while hidden, close tabs, then close the window. No stale owner/model access; the reopened panel reflects real model state. |

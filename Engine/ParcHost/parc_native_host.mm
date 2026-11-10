@@ -14,8 +14,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
-#include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
-#include "cef/libcef/browser/thread_util.h"
+#include "base/containers/flat_set.h"
+#include "content/public/browser/browser_thread.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_actions.h"
@@ -63,7 +63,7 @@ class NativeHostView final : public views::NativeViewHost,
                              public TabStripModelObserver {
  public:
   explicit NativeHostView(Browser* browser) : browser_(browser) {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     CHECK(browser_);
     CHECK_EQ(browser_->GetType(), BrowserWindowInterface::TYPE_NORMAL);
     model_ = browser_->tab_strip_model();
@@ -74,7 +74,7 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   ~NativeHostView() override {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     [panel_ invalidateOwner];
     if (model_) {
       model_->RemoveObserver(this);
@@ -120,7 +120,7 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   void Select(int tab_id) {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     const int index = IndexForID(tab_id);
     if (index == TabStripModel::kNoTab) {
       return;
@@ -133,7 +133,7 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   void NewTab() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (browser_) {
       chrome::AddTabAt(browser_, GURL("about:blank"), TabStripModel::kNoTab,
                        /*foreground=*/true);
@@ -141,7 +141,7 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   void Navigate(NSString* input) {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     auto* contents = model_ ? model_->GetActiveWebContents() : nullptr;
     if (!contents) {
       return;
@@ -161,28 +161,28 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   void Back() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (browser_ && chrome::CanGoBack(browser_)) {
       chrome::GoBack(browser_, WindowOpenDisposition::CURRENT_TAB);
     }
   }
 
   void Forward() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (browser_ && chrome::CanGoForward(browser_)) {
       chrome::GoForward(browser_, WindowOpenDisposition::CURRENT_TAB);
     }
   }
 
   void Reload() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (browser_ && chrome::CanReload(browser_)) {
       chrome::Reload(browser_, WindowOpenDisposition::CURRENT_TAB);
     }
   }
 
   void CloseActive() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     auto* contents = model_ ? model_->GetActiveWebContents() : nullptr;
     if (contents) {
       // Native close performs beforeunload negotiation. Do not remove any row
@@ -194,7 +194,7 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   void LogIdentity() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (!browser_ || !model_) {
       return;
     }
@@ -207,6 +207,7 @@ class NativeHostView final : public views::NativeViewHost,
                  GetWidget() && panel_.window ==
                      GetWidget()->GetNativeWindow().GetNativeNSWindow());
     base::ListValue tabs;
+    base::flat_set<int> page_ids;
     for (int index = 0; index < model_->count(); ++index) {
       auto* contents = model_->GetWebContentsAt(index);
       base::DictValue tab;
@@ -215,9 +216,10 @@ class NativeHostView final : public views::NativeViewHost,
               sessions::SessionTabHelper::IdForWindowContainingTab(contents).id());
       tab.Set("index", index);
       tab.Set("active", index == model_->active_index());
-      if (auto host = ChromeBrowserHostImpl::GetBrowserForContents(contents)) {
-        tab.Set("cefBrowserId", host->GetIdentifier());
-      }
+      const int page_id = sessions::SessionTabHelper::IdForTab(contents).id();
+      CHECK_GT(page_id, 0);
+      CHECK(page_ids.insert(page_id).second);
+      tab.Set("pageId", page_id);
       tabs.Append(std::move(tab));
     }
     snapshot.Set("tabs", std::move(tabs));
@@ -247,7 +249,7 @@ class NativeHostView final : public views::NativeViewHost,
   }
 
   void Refresh() {
-    CEF_REQUIRE_UIT();
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     if (!model_ || !browser_) {
       return;
     }
@@ -277,7 +279,7 @@ class NativeHostView final : public views::NativeViewHost,
 };
 
 void InstallNativeHost(Browser* browser) {
-  CEF_REQUIRE_UIT();
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   CHECK(browser);
   CHECK_EQ(browser->GetType(), BrowserWindowInterface::TYPE_NORMAL);
   CHECK(BrowserView::GetBrowserViewForBrowser(browser));
