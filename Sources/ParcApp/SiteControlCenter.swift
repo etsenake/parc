@@ -391,7 +391,9 @@ struct SiteControlCenterActionButton: View {
 ///
 /// header and the content, 5 points of bottom padding. The header's title and
 /// its hover text (shown while the section is hovered) take the plus HUD's
-/// title font and its trailing shortcut text in the subtitle colour.
+/// title font and its trailing shortcut font. Parc draws them in the menu's
+///
+/// a pale theme.
 struct SiteControlCenterSectionView<Content: View>: View {
     let title: String
     let hoverAccessoryText: String
@@ -411,7 +413,7 @@ struct SiteControlCenterSectionView<Content: View>: View {
                     Text(hoverAccessoryText).font(Font(SidebarPlusRowButton.shortcutFont))
                 }
             }
-            .foregroundColor(Color(nsColor: colors.subtitle))
+            .foregroundColor(Color(nsColor: colors.title))
             .padding(.horizontal, SidebarPlusMenuView.separatorInsets.left)
             .contentShape(Rectangle())
             .onTapGesture(perform: onHeaderClick)

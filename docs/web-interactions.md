@@ -206,11 +206,12 @@ kept and the capture buttons unchanged (ledger: Completion requirements).
   lock and the ellipsis are the plus HUD's title colour at full strength,
   like the text (Josh: brighter, not washed-out grey); extension icons keep
   their own artwork. Titles and state lines use the plus HUD's 13-point
-  medium / regular fonts in its title and subtitle colours; section headers
-  its subtitle colour. Settings rows are 40-point rows (icon centre 20, title
-  at 42), 8 points apart. Setting circles (32) and the pin badge (14) draw a
-  real title-colour glyph, no knockout: on / pinned on the theme's `focus`
-  (white 6.3:1 green, 6.6:1 purple), off on the rail's selected fill. Top-row
+  section headers in its subtitle colour; Parc uses the title colour
+  (Josh: the themed tint was unreadable on pale and dark themes). Settings
+  rows are 40-point rows (icon centre 20, title at 42), 8 points apart.
+  Setting circles (32) and the pin badge (14) draw a real title-colour glyph,
+  no knockout: on / pinned on the theme's `focus` (white 6.3:1 green, 6.6:1
+  purple), off on the rail's selected fill. Top-row
   glyphs are offset so their ink centroids sit on the tile centre (share −2,
   `window-screenshot-icon` draws its frame at 40% alpha. Extension images are
   the engine's 32-point canvas shown at its own size: Chromium centres the
