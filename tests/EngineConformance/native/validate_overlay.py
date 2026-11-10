@@ -18,14 +18,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path,
                         help="Pristine pinned Chromium src directory; never modified")
+    parser.add_argument("--manifest", type=Path,
+                        default=REPO / "Engine/ParcHost/overlay.json")
+    parser.add_argument("--lock-file", type=Path,
+                        default=REPO / "Engine/source-lock.json")
     args = parser.parse_args()
     source = args.source.resolve(strict=True)
     spec = importlib.util.spec_from_file_location("engine_source", REPO / "scripts/engine-source.py")
     engine = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(engine)
-    manifest = json.loads((REPO / "Engine/ParcHost/overlay.json").read_text())
-    lock = json.loads((REPO / "Engine/source-lock.json").read_text())
-    assert manifest["upstream"] == {key: lock[key]["commit"] for key in ["cef", "chromium"]}
+    manifest = json.loads(args.manifest.read_text())
+    lock = json.loads(args.lock_file.read_text())
+    upstream = ["chromium"] if lock.get("schema_version") == 2 else ["cef", "chromium"]
+    assert manifest["upstream"] == {key: lock[key]["commit"] for key in upstream}
     targets = set()
     for entry in manifest["files"]:
         assert entry["target"] not in targets
