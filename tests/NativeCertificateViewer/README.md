@@ -20,7 +20,7 @@ It compiles and opens genuine OS certificate sheets over synthetic AppKit pages,
 license. It contains no private key or user identity. The runner converts it
 into an ignored build-directory DER file; it does not install it.
 
-The thirteen `viewer_unittest.mm` cases use genuine Browser/Profile/TabInterface/WebContents, the generic viewer entry and `SSLErrorControllerClient`, the real native security lease and OS sheet. They cover exact owner/certificate checks, duplicate calls, detach/reattach, navigation/destruction, competing/reentrant reservations, parent close and preservation of stock dispatch. The test window only supplies the native NSWindow. The suite uses the Chrome test runner; a valid CEF process/context is a prerequisite for execution.
+The thirteen `viewer_unittest.mm` cases use genuine Browser/Profile/TabInterface/WebContents, the generic viewer entry and `SSLErrorControllerClient`, the real native security lease and OS sheet. They cover exact owner/certificate checks, duplicate calls, detach/reattach, navigation/destruction, competing/reentrant reservations, parent close and preservation of stock dispatch. The test window only supplies the native NSWindow. The suite uses the Chrome test runner; a valid Chromium process/context is a prerequisite for execution.
 
 After the complete overlay is applied and its actual targets generated, run:
 
@@ -30,7 +30,7 @@ python3 tests/NativeCertificateViewer/check-chromium.py /absolute/path/to/chromi
 
 The checker verifies the entire overlay cohort, source lock, generated object membership and exact compiler rules before checking the two production ObjC++ units, platform integration, generic Chromium viewer and controller test source. It has no compatibility fallback and does not generate, build, link, execute tests or write into the checkout.
 
-Integration maps the new typed header to `chrome/browser/native_server_certificate_viewer.h`, the native sources into `cef/libcef/browser/parc_native`, and the controller test into `cef/tests/parc_native_certificate_viewer`. The shared `native_certificate_viewer` target owns both production implementations and SecurityInterface linking; `libcef_static` and the test source set depend on it. Only `chrome/test:unit_tests` under macOS plus `enable_cef` imports the test source set. The test target does not depend on `libcef_static`.
+Integration maps the new typed header to `chrome/browser/native_server_certificate_viewer.h`, the native sources into `parc/native`, and the controller test into `parc/tests/native_certificate_viewer`. The shared `native_certificate_viewer` target owns both production implementations and SecurityInterface linking; `//parc:browser` and the test source set depend on it. Only `chrome/test:unit_tests` under macOS imports the test source set. The test target does not depend on `//parc:browser`.
 
 The presenter retains its callback target until SecurityInterface delivers the
 actual dismissal callback. That ownership prevents a late OS callback from

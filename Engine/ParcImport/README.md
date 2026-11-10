@@ -131,7 +131,7 @@ and generated Mojo headers.
 
 `native_password_file_import.mm` owns a separately selected file and original
 regular destination Profile/window. It shares destination admission with the
-ordinary importer, retains the actual CEF context, and rejects OTR, shutdown and
+ordinary importer, retains the actual Chromium context, and rejects OTR, shutdown and
 password-saving policy refusal. It never uses the Safari History reader for
 credentials. Chromium's `LaunchCSVPasswordParser()` service parses the file in
 its genuine utility process; ProfilePasswordStore receives actual imported

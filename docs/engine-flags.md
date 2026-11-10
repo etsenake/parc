@@ -131,7 +131,7 @@ contract below; old claims that their build flags are off are obsolete.
 
 ### What Parc has today
 
-The pinned CEF build enables Widevine, host verification and storage IDs.
+The pinned Chromium build enables Widevine, host verification and storage IDs.
 The component updater supplies the CDM; Parc does not bundle its binary or
 turn off component updates. The renderer registers `com.widevine.alpha`.
 macOS Widevine uses software robustness and temporary licenses. Parc remains an
@@ -140,7 +140,7 @@ unverified host unless official host signing is separately provisioned.
 ### Host verification
 
 The CDM runs in its sandboxed utility process, routed to `Parc Helper (CDM)`.
-CEF supplies the framework and helper host files when their signatures exist:
+Chromium supplies the framework and helper host files when their signatures exist:
 
 | Host | Signature |
 |---|---|
@@ -189,7 +189,7 @@ Protected video is not capturable as ordinary pixels.
 ### Library validation
 
 Only the CDM helper weakens library validation. `cdm-helper.patch` supplies
-`SetCdmServiceChildFlags`; CEF's browser client selects the dedicated helper
+`SetCdmServiceChildFlags`; Parc's browser client selects the dedicated helper
 only when it exists in the bundle. The process retains the CDM sandbox and all
 bundle path restrictions. Packaging refuses an engine that cannot route the
 CDM to the expected helper. No default network/storage/audio helper receives

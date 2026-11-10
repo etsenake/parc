@@ -63,7 +63,7 @@ evidence.
 
 ## Source integration
 
-CEF and Chromium revisions are pinned in
+Chromium revisions are pinned in
 [the source lock](../../Engine/source-lock.json).
 
 The presenter compiles in the native AppKit component source set and the

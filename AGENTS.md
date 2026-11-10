@@ -43,7 +43,7 @@ engine builds, packaging or installations.
   Do not reopen accepted AI cleanup or picture-in-picture work without a new
   defect or user request. Generic Chromium/Google networking is outside the
   service-removal scope.
-  code. Keep Chromium/CEF security maintenance on deliberate pinned upgrades.
+  code. Keep Chromium security maintenance on deliberate pinned upgrades.
   Architecture decisions follow Parc's actual source, requirements and tests.
 - Preserve profiles, release tags/assets, signed artifacts, engine objects and
   compiler caches. Do not infer that a process or workspace is unused from an

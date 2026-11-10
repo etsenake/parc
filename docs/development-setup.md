@@ -91,22 +91,11 @@ python3 scripts/engine-source.py check --workspace "$PARC_ENGINE"
 JSON output: `plan` may exit successfully while reporting blockers. Do not
 pre-create the final engine directory to try to fix a refusal.
 
-`Engine/source-lock.json` remains the stopgap lock. Direct mode is opt-in with
-`--lock-file "$PWD/Engine/source-lock-direct.json"` on every source-tool command;
-use the separately integrated `Engine/ParcHost/overlay-direct.json` for its overlay.
-The engine owner transitions only its idle isolated clone after source generation
-with a verified applied overlay, using `retarget --previous-lock` with unchanged Chromium/depot_tools
-pins. CEF is preserved outside the source tree, compiled objects stay in place,
-and both configurations require regeneration. The
-[engine transition commands](../Engine/README.md#build-configuration) describe
-these guards. After the first direct build, the
-coordinator promotes the direct lock to the canonical filename. The selected
-lock is authoritative for repositories and build settings. Do not substitute a system CEF package or manually update one
-dependency. For pinned-source upgrades, use `retarget --previous-lock` as described
-in [Engine](../Engine/README.md#build-configuration); preserve the previous lock
-before updating it. Verified same-branch incremental retargets use the existing
-40 GB build reserve; fresh syncs and cross-branch or unverifiable retargets keep
-the 80 GB sync reserve. The engine guide defines the required lock/CEF proofs.
+`Engine/source-lock.json` and `Engine/ParcHost/overlay.json` are the sole engine
+inputs. For pinned-source upgrades, preserve the previous lock and use
+`retarget --previous-lock` as described in
+[Engine](../Engine/README.md#build-configuration). Changed pins require the
+80 GB sync reserve; unchanged pins use the 40 GB build reserve.
 The source tool owns its dependency checkout and lock/receipt files;
 it does not reset, clean, delete or adopt an arbitrary existing checkout.
 
@@ -192,9 +181,9 @@ measure the intended configuration before making performance claims.
 The reusable checker preserves the previous scratch helper's compiler contract:
 warnings as errors, whole-module checking, ARM64 macOS 13, the checkout's current
 native bridge headers. The direct facade needs no engine headers or built
-package. Legacy facades require an explicitly selected CEF include tree.
+package.
 
-For a direct facade:
+Run:
 
 ```sh
 python3 scripts/check-swift.py --plan
@@ -208,22 +197,15 @@ as required by [the working contract](../AGENTS.md). It catches compiler stages
 that plain typechecking omits, including definite initialization.
 
 The script finds its own checkout regardless of the shell's working directory.
-Use `--repo /absolute/other-worktree` to select another checkout, or
-`--chromium-source "$PARC_ENGINE/chromium/src"` or
-`--cef-include /absolute/cef/include` when checking a legacy facade.
-When the facade imports `native_application_protocols.h`, the checker uses the
-self-contained declarations in `Engine/ParcNative` without an engine checkout.
-Explicit legacy header options are refused for the direct facade.
-`PARC_CHROMIUM_SOURCE` is an optional environment default; an explicit header
-option takes precedence. There are no historical username, workspace or package
-defaults.
+Use `--repo /absolute/other-worktree` to select another checkout. The checker
+uses self-contained declarations in `Engine/ParcNative`.
 
 Each execution creates a fresh directory under `build/swift-checks` containing
 `start.json`, `compiler.log` and `result.json`. Use `--output-dir` and `--label`
 to choose another location/name; an existing receipt directory is never
 overwritten. A passing result requires compiler exit zero, unchanged Git HEAD
 and unchanged hashes/file membership for the Swift sources, bridge headers,
-CEF include tree, source lock and checker. The receipt records the command,
+source lock and checker. The receipt records the command,
 selected compiler/SDK, source hashes and Git state. `--plan` validates input
 paths and prints the command/hashes without invoking the compiler or writing
 receipts.

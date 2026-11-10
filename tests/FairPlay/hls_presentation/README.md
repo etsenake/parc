@@ -21,7 +21,7 @@ main thread, as `CARendererLayerTree` places them.
 
 - **Display.** An `AVPlayerLayer` made on that queue inside an explicit
   `CATransaction`, placed in a page window's host the way
-  `FillProtectedLayer` fills it (`fairplay-compositing.patch`: anchor and
+  `FillProtectedLayer` fills it (`fairplay-compositing-direct.patch`: anchor and
   position zero, the host's bounds, Resize gravity). It becomes ready for
   display, its `videoRect` equals its bounds, and it keeps playing when moved
   to a second window's host (Picture in Picture), back again, and after a few

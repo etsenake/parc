@@ -22,7 +22,7 @@ Sixteen genuine browser cases use actual Browser/Profile/TabInterface, service, 
 
 The production service and browser-test target are in the reviewed overlay.
 Compiler checks validate their actual generated flags and headers. Executing
-the browser-test fixture requires valid CEF process/context initialization.
+the browser-test fixture requires valid Chromium process/context initialization.
 
 ## Native dismissal input component
 

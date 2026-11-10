@@ -27,8 +27,8 @@ checkout paths. Setup does not claim backlog items or authorize a new build.
    separate artifact. Do not start a fresh Chromium sync/build or edit receipts
    to make an incompatible workspace appear valid.
 
-5. **Run applicable inert checks.** Read the check scripts first. When matching
-   CEF headers exist, run `scripts/check-swift.py` with their explicit path.
+5. **Run applicable inert checks.** Read the check scripts first. Run
+   `scripts/check-swift.py` against the checkout's native bridge headers.
    Inspect restored package reports. Do not launch apps/browsers, take app
    screenshots, rebuild Chromium or package an app for onboarding.
 

@@ -27,11 +27,7 @@ optional promotion. Its eligibility callback ultimately creates a Views bubble
 anchored to Chrome's toolbar. The native save result remains intact; this is a
 promotion. Other promotion entrypoints are outside this focused change.
 
-CEF rechecks its own source patches during project generation. The native
-continuation overlaps its existing Autofill hunk, so the overlay updates
-that patch definition to recognize the same reviewed result. All other CEF
-hunks remain intact. The checker repeats CEF's actual read-only reverse check
-before compilation; it does not skip or disable the patcher.
+Generation must leave the reviewed overlay output unchanged.
 
 The fixture's intentional non-Views window exposes the original defect. The
 overlay registers these cases in the existing macOS `chrome/test:unit_tests`

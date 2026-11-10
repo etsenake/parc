@@ -40,7 +40,7 @@ the actual key window and outside teardown. IME events marked
 browser changes within a shared NSWindow. Deactivation and destruction clear the
 profile's active registry only if it still points to this instance.
 
-The reviewed source overlay compiles this service in libcef_static with a direct
+The reviewed source overlay compiles this service in //parc:browser with a direct
 dependency on Chromium's accelerator helper. The native client supplies its
 menu-only `OnKeyEvent` route before Chromium's existing DevTools-to-Window
 fallback. It must not also dispatch extensions. The typed native outer delegate
@@ -77,7 +77,7 @@ Run the read-only syntax check once generated prerequisites exist:
 python3 -B tests/NativeExtensionCommands/check-chromium.py /absolute/path/to/chromium/src
 ```
 
-It reads actual `libcef_static.ninja` and `browser_tests.ninja` compiler flags,
+It reads actual `//parc:browser.ninja` and `browser_tests.ninja` compiler flags,
 uses the pinned Clang with `-fsyntax-only`, and writes logs only under ignored
 `build/tests/native-extension-commands/`. It neither generates nor builds the
 external tree. The production registry and browser-test source use the pinned

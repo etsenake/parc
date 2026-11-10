@@ -29,7 +29,7 @@ focus, weak delegate ownership, invalid contexts and reentrant teardown. A
 regression reparents the destination pane to another window during focus-loss
 callback delivery: attachment rejects that now-invalid context.
 
-The separate checker reads the actual generated `obj/cef/libcef_static.ninja`
+The separate checker reads the actual generated `obj/cef///parc:browser.ninja`
 Objective-C++ settings and uses the pinned Chromium compiler, without modifying
 the checkout or invoking GN/Ninja. It syntax-checks the AppKit view and Chromium
 bridge with warnings treated as errors and requires the real upstream generated
@@ -69,4 +69,4 @@ from the user choosing another control.
 `GetHostWidget()` is null because the host is AppKit. Fullscreen uses the native
 path rather than Views-only immersive reparenting. Show/hide is immediate;
 `StopAnimation` has no animation to stop. The source overlay compiles the view
-in native_components and the bridge in libcef_static.
+in native_components and the bridge in //parc:browser.

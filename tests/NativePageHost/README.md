@@ -78,7 +78,7 @@ renderer visibility notifications:
 
 The native adapter now applies the existing shell-visible-page decision to that
 exact managed container before `WasShown()`/`WasHidden()`. It revalidates the
-Browser, page binding, pane, view, supplied window and CEF attachment around the
+Browser, page binding, pane, view, supplied window and native attachment around the
 native callback, then checks the latest reconciliation generation and actual
 visible-page set before the engine notification. Superseded work cannot change a
 later owner's visibility. This adds no page, selection, navigation or focus

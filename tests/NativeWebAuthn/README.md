@@ -10,7 +10,7 @@ The production page delegate installs the WebAuthn context when it creates a
 page, admits presentation on exact native attachment, and cancels on detachment.
 The overlay connects Chromium's scheduler, dialog factory, platform-window
 selection and request callbacks to that context. Its GN target is linked into
-the CEF native route; the request tests join Chromium's unit-test target.
+the Chromium native route; the request tests join Chromium's unit-test target.
 
 Ambient sign-in, standalone `WINDOW` recovery and non-request settings/change-PIN
 presentation use the same native ownership. Ambient uses the genuine Chromium

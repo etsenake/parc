@@ -35,7 +35,7 @@ python3 tests/NativeHelperRouting/run.py /absolute/chromium/src --results /absol
 
 The runner reads generated Objective-C++ flags and links completed upstream
 objects/components. The selected source lock chooses the engine layout; pass
-`--lock-file Engine/source-lock-direct.json` for the separate direct recipe.
+`` for the separate direct recipe.
 It exercises real `base::CommandLine`, FeatureList, bundle path configuration
 and `ChildProcessHost::GetChildPath`. Direct checks place the executable inside
 a disposable framework layout so the real loaded-image lookup supplies its

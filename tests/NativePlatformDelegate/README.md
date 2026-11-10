@@ -44,14 +44,13 @@ an older callback.
 
 ```sh
 python3 -B tests/NativePlatformDelegate/check-chromium.py /absolute/path/to/chromium/src \
-  --lock-file Engine/source-lock-direct.json
 ```
 
 The selected lock determines the source and generated compiler flags. Direct
 schema 2 checks `native_page_binding.mm` against `//parc:browser`'s
 `obj/parc/browser.ninja`; legacy schema 1 retains the old platform-delegate
 source and flags. The output name defaults to the selected lock's build
-configuration. Without `--lock-file`, the checker reads the canonical lock.
+configuration. The checker reads the canonical lock.
 
 The checker reads the pinned compiler's generated Objective-C++ flags and runs
 syntax checks without generating, linking or launching anything. Logs remain

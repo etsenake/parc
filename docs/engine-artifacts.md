@@ -36,7 +36,8 @@ completed development package** separately. Restoring the workspace preserves
 source repositories, toolchains, object files and Siso build state. Its captured
 receipt may describe an unfinished build; the snapshot does not turn it into a
 completed engine. Capture and restore use the checkout’s `Engine/source-lock.json` for
-both CEF and direct Chromium workspaces; archive transport stays unchanged.
+direct Chromium workspaces. Old published assets remain on GitHub; these tools
+do not restore or rebuild old CEF workspaces.
 The development package includes `Parc.app`, its sibling
 engine libraries and its original `package-report.json`.
 

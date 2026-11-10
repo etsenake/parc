@@ -12,7 +12,7 @@ formatting, icons, live modifier explanations and preservation of transient text
 
 ## Production path
 
-CEF's `OnStatusMessage` resolves the callback's original WebContents and existing
+The status observer resolves the callback's original WebContents and existing
 NativePageState. Each state owns a controller inside its native page host.
 Attachment, navigation, renderer exit, visibility and page destruction gate the
 presentation. Resizing the page within docked DevTools keeps the capsule out of

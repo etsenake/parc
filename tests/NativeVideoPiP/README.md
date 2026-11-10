@@ -38,13 +38,13 @@ Current media behavior and remaining work belong in
 
 ## Integration membership
 
-The CEF engine owns `video_overlay_window.mm`; the header-only native PiP API
-allows Chrome callers to use the bridge without a Chrome-to-libcef cycle.
+The Chromium engine owns `video_overlay_window.mm`; the header-only native PiP API
+allows Chrome callers to use the bridge without a Chrome-to-native cycle.
 Production targets depend on the real media-session, compositor, accelerated
 widget, display and window owners. AppKit and QuartzCore are explicit.
 
 The native video PiP browser/unit test targets are reached from the actual Chrome
 test graph and link the engine implementation. Browser fixtures require valid
-CEF test initialization before execution. The app build compiles
+Chromium test initialization before execution. The app build compiles
 `Sources/ParcEngine/VideoPiPWindow.m` with the existing facade and QuartzCore.
 Target membership, compilation, linking and execution are separate checks.
