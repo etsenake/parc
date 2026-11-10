@@ -4,7 +4,8 @@ and the menu entries. The ledger rows are UPD04–UPD06 in
 [parity](parity.md#software-updates-and-release-notes).
 
 `4e452201…9547`). Facts come from the helpers (`arcidx.py`, `arctypes.py`,
-halved to points). No new REA decompilation was used. Raw helper output stays
+halved to points). One bounded REA decompilation, of the MacLifecycle reducer
+for the automatic restart, was used. Raw helper output stays
 outside Git in `work/updates-research/` of the research worktree. That folder
 also has a wrapper, `arcfnw.py`: `arcfn.py` crashes on a selector reference
 that resolves to a bind.
@@ -116,9 +117,52 @@ by Josh's choice, because it releases more often.
   update is already downloaded, Sparkle reports the found update with a
   non-zero `stage`, so the window offers **Install and Relaunch** [R for the
   stage branch, I for Sparkle's resume path].
-  `lastUpdateWasAutoUpdate` and `autoUpdateBannerDismissalCount` [R for the
-  names]. That the V2 banner's "Automatic Updates" checkbox toggles it, and
-  its conditions (e.g. restarting after sleep), are [I] (open question).
+  once the Mac isn't in use; see the next section.
+
+### Automatic restart
+
+use. Recovered with the helpers from `AppState+AutoUpdate.swift`
+the analytics event fields, plus one bounded decompilation of the
+
+- **Away events** [R]. `MacLifecycle.Event` is `computerSleeping`,
+  `screenSleeping`, `screensaverActive` or `screenLocked`, and its state keeps
+  `activeEvents`, `eventBeginTimes`, `isAutoUpdateTimerActive` and
+  received" and "Screen did sleep notification received"; that the other two
+  come from the screen saver's and the lock's distributed notifications is [I].
+- **Two triggers** [R]. The remote flag `new-auto-update-heuristic-enabled`
+  (off by default in both 1.122 and 1.170) picks one:
+    for `auto-update-inactivity-delay-in-seconds` (default 300 in both
+    versions) on the main queue (cancel ID `autoUpdateInactivity`). If it
+    `inactiveLengthSatisfiedForAutoUpdate(timerDuration)`. When the last away
+    timer is [I].
+  - **Old rule.** When an away event ends at least 10,800 s (3 hours) after it
+    the second is the same delegate action is [I]: the decompiled slice ends
+    before it.
+    "updates whenever the browser isn't in use", fits the new rule, and
+    that's the one Parc follows.
+  Each failure is a field of `autoUpdateFlowAborted`: userDisabledAutoUpdates,
+  activeTabsBlockedUpdate, internetUnreachable, windowDialogSheetVisible,
+  incognitoWindowsWithWebContentsExist, userIsActive and ignoreUserIdle. The
+  checks are:
+  - an update is available (`SoftwareUpdate.State.availableUpdate`);
+  - automatic updates are on: the `auto-updates-enabled` flag and the
+    `TabTrait`s audioPlaying, audioMuting, mediaRecording, tabCapturing,
+    desktopCapturing, pipPlaying or vrPresentingInHeadset (the auto-archive's
+    unless `active-forms-blocking-restart-disabled` is set;
+    exact window test];
+    `auto-update-required-idle-duration-in-seconds` (default 3).
+
+  Update's path, or `retryUpdateTermination` [R for the two actions, I for the
+  state bit that picks between them].
+  automatic update while a download is in progress ("Auto update was
+  cancelled because in progress download was detected."). A web contents
+- **Setting** [R]. The banner's Automatic Updates checkbox shows
+  `shouldAutomaticallyUpdateArc` (settings key 33), not Sparkle's download
+  (`PreferencesFeature.State.autoUpdatesEnabled`) [R for the strings, I that
+  it is the same setting]. The default isn't recovered [I: on, since Josh
+  automatic update caused the restart ("…will not be restored, because the
+  `automaticUpdateWillRelaunchApp` and `lastUpdateWasAutoUpdate` record the
+  recovered reference.
 
 
 shown at a time.
@@ -173,20 +217,17 @@ autoUpdateEnabled, autoUpdateFeatureEnabled) [R]:
 
 - Primary button "Restart and Update" (`didClickUpdate`).
   `SidebarBanner.SecondaryButton` with SF Symbol `checkmark.square` when on,
-  `square` when off (`didToggleEnableAutoUpdate`). It is shown only with
-  `autoUpdateFeatureEnabled` [I].
+  `shouldAutomaticallyUpdateArc` setting as `autoUpdateEnabled` and the
+  `auto-updates-enabled` flag as `autoUpdateFeatureEnabled` [R]; the row shows
+  only with the flag [I]. See [automatic restart](#automatic-restart).
 - `didClickDismiss`.
 - The view keeps a `ParticlesState`
   (`SoftwareUpdateBannerUpdateAvailableView`) [R].
 
 Both lead to `DelegateAction.didClickPerformUpdate`, then
 `SoftwareUpdate.performUpdate`, then `installAndQuit` [R for the types].
-[R], whose defaults are unknown:
-
-- `software-update-relaunch-animation-enabled`
-- `software-update-relaunch-animation-exit-duration`
-- `software-update-relaunch-animation-enter-duration`
-- `software-update-relaunch-animation-enter-shimmer-duration`
+[R]. `software-update-relaunch-animation-enabled` defaults off, and the exit,
+enter and enter-shimmer durations default to 0.35, 0.6 and 0.45 s
 
 ### Update Complete
 
@@ -337,7 +378,8 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   - A scheduled check (every 4 hours) downloads silently. Sparkle's
     `willInstallUpdateOnQuit` handler is kept, the phase becomes
     `readyToInstall`, and only the sidebar banner shows it. Restart and Update
-    runs the handler; otherwise Sparkle installs on quit.
+    runs the handler, or the automatic restart below does once the Mac is
+    away; otherwise Sparkle installs on quit.
   - A scheduled find that isn't downloaded (automatic downloads turned off)
     also shows no window; the menu reads Update Available… and opens it.
   - Closing a status window cancels a check or download. A prepared update
@@ -347,6 +389,48 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     `--disable-software-updater` never start Sparkle: a disposable session
     shares the installed Parc's bundle identifier, defaults and Sparkle
     to update." error.
+
+  (`Sources/ParcCore/AutomaticUpdate.swift`) tracks when the Mac is away:
+  - it sleeps (`NSWorkspace` `willSleep` / `didWake`);
+  - its displays sleep (`screensDidSleep` / `screensDidWake`);
+  - the screen saver runs (`com.apple.screensaver.didstart` / `didstop`);
+  - the screen is locked (`com.apple.screenIsLocked` / `screenIsUnlocked`).
+
+  The last two are distributed notifications. Parc registers them with
+  `.deliverImmediately`, because AppKit holds them while Parc isn't the
+  active app, which would delay a lock made from another app.
+
+  The first reason schedules a check 300 s later and the last one ending
+  cancels it. The wait is `DispatchQueue.main.asyncAfter` awake time, which
+  stops while the Mac sleeps. Time asleep doesn't count, but awake time
+  already spent away does.
+  starts its single timer again only when another away event begins; Parc
+  just keeps checking. A check calls `installAndRelaunch()` when:
+  - Automatic Updates is on, and Sparkle holds an install-now handler
+    (`installsWithoutWindow`). That means a background download, as with
+    update from a manual check never installs by itself, whether it is still
+    waiting in its window or was dismissed, because resuming it opens a
+    check;
+  - no live page is protected (`automaticArchiveProtectionState`). That covers
+    mirroring, Picture in Picture, VR, form interaction or user edits. It also
+    covers an active, ducking or suspended media session, so a paused video
+  - no download is pending, running or paused;
+  - no sheet or modal alert is open;
+  - no private window is open (a relaunch restores none);
+  - there has been no input for 3 s (`CGEventSource`'s HID idle time);
+  - a HEAD request to `SUFeedURL` (60-second timeout) succeeds. Afterwards
+    the checks above must still pass, and the Mac must still be in the same
+    away period.
+
+  The relaunch follows Restart and Update's path. Sparkle's kept handler runs,
+  Quit command. A page's beforeunload prompt still waits for an answer, and if
+  the page keeps Parc open, a later check retries. The next launch is a new build, so every window comes back
+  (`LaunchContinuity`) and Update Complete shows. Parc has no relaunch
+  - **Automatic Updates** is Parc's `automaticallyInstallsUpdates` (defaults
+    `shouldAutomaticallyUpdateArc`. Sparkle's silent download stays on. The
+    checkbox used to turn that download off. If an earlier build left it off,
+    Parc turns it back on at start and turns automatic installs off instead.
+    banner is the only control.
 
 - **Update Complete** is the V2 summary banner in the shared slot: the same
   `SidebarBannerHost` as the auto-archive card (8 points in, directly above
@@ -401,7 +485,7 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   is `readyToInstall`, and through `installing` so a page that cancels the
   quit leaves Restart and Update to retry; it takes the slot from Update Complete and the
   auto-archive card. The shared header reads "New Parc Version Available"
-  `automaticallyDownloadsUpdates`, and **Restart and Update**, which calls
+  `automaticallyInstallsUpdates`, and **Restart and Update**, which calls
   `installAndRelaunch()`. The primary button is the theme base colour in a
   continuous radius-6 shape, with `ButtonBackground`'s gradient (blur 12,
   opacity 0.5) while the banner is hovered, a white 0.2 edge in dark, and a
@@ -427,7 +511,9 @@ For the sidebar's update banners (UPD05). Everything is on the main actor.
 SoftwareUpdater.shared.phase                       // SoftwareUpdater.Phase
 SoftwareUpdater.phaseDidChangeNotification         // posted on the main thread, object: SoftwareUpdater.shared
 SoftwareUpdater.shared.installAndRelaunch()        // Restart and Update
-SoftwareUpdater.shared.automaticallyDownloadsUpdates  // get/set; the Automatic Updates checkbox
+SoftwareUpdater.shared.automaticallyInstallsUpdates  // get/set; the Automatic Updates checkbox
+SoftwareUpdater.shared.installsWithoutWindow      // Sparkle holds an install-now handler
+SoftwareUpdater.shared.activity                     // set by AppDelegate: what a restart would interrupt
 SoftwareUpdater.shared.checkForUpdates()           // the menu's action
 ```
 
@@ -447,9 +533,9 @@ Sparkle's display version, e.g. "1.9.0".
   a downloaded update whose window was dismissed, it starts a check that
   resumes the update and installs it without another window. Parc quits and
   Sparkle relaunches it.
-- `automaticallyDownloadsUpdates` is Sparkle's own persisted setting
-  (`SUAutomaticallyUpdate`, on by default). Turning it off makes later
-  scheduled checks report `available(version:)` without downloading.
+- `automaticallyInstallsUpdates` is Parc's persisted setting, on by default.
+  Turning it off stops the automatic restart. Updates still download, and
+  they install on Restart and Update or at quit.
 - Dismissing the banner needs nothing from the updater: the update stays
   ready and installs on quit.
 
@@ -477,11 +563,15 @@ embedded notes only; Parc doesn't fetch `sparkle:releaseNotesLink`.
    `…UpdateSummaryV2View` and `RowView`. Next step: decompile the view bodies
    heart with "Click to restart", or V2 with "Restart and Update". Next step:
    settles it.
-4. **Auto-restart.** The conditions in `AppState+AutoUpdate` (sleep/idle) and
+4. **Automatic restart.** Answered in [automatic restart](#automatic-restart),
+   except for three things: the remote value of
+   `new-auto-update-heuristic-enabled`, the setting's default, and what
+   `automaticUpdateWillRelaunchApp` changes in the summary banner's gating.
 5. **Shadow image.** The image behind the 0.15-alpha button shadow. Next step:
    `xcrun assetutil --info` on the owning bundle.
 6. **Download text.** The download status text before the first progress
    callback, and the "Download manually" base URL. Next step: `arcfn.py
    `onSelectResource_releaseNotes:` in
    `feature-discovery/all-objc-methods.json` and annotate it.
-8. **Relaunch animation and `--post-update-restart`.** Their defaults, and
+8. **Relaunch animation and `--post-update-restart`.** The animation's
+   defaults are recovered (off). Still open: what it draws, and where

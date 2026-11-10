@@ -28,7 +28,7 @@
 | After listed | [Folders](#folders) | 65.2% | 34.8% | — | Available |
 | After listed | [Archive and history](#archive-and-history) | 70.6% | 29.4% | — | Available |
 | After listed | [Command bar](#command-bar) | 82.8% | 17.2% | +0.7 pp | Codex `codex/command-bar-polish` (reported command failures and appearance) |
-| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +33.3 pp | Claude `claude/updates-*` (claimed November 9) |
+| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (scope: UPD07 added) | Claude `claude/updates-*` (claimed November 9) |
 | After listed | [Tab switcher](#tab-switcher) | 69.2% | 30.8% | — | Available |
 | After listed | [Peek](#peek) | 66.7% | 33.3% | — | Available |
 | Before polish | [Onboarding / complete first launch](#onboarding-and-complete-first-launch) | 75.0% | 25.0% | +2.8 pp | Cursor `cursor/document-close` (claimed October 31) |
@@ -6874,6 +6874,7 @@ Evidence: command-bar.md; CommandBar.swift; native_search.mm; CommandBar action 
 | UPD02 | DONE | Generate release notes (committed history, CHANGELOG, GitHub release bodies) from the same commits. |
 | UPD03 | DONE | Embed pinned, Developer ID–signed Sparkle with an EdDSA key; publish a signed appcast with each release; mark the cask `auto_updates`. |
 | UPD06 | DONE | Bundle a What's New page rendered from the release notes at build time and open it from the banner and menu. |
+| UPD07 | DONE | Install a downloaded update by itself once the Mac has been away for five minutes, holding it while anything a restart would interrupt is in use; the banner's Automatic Updates checkbox turns it off. |
 
 UPD03: pinned Sparkle 2.10.1 is embedded and Developer ID–signed, distribution
 packages carry the feed and the EdDSA public key, and the private key is in the
@@ -6895,6 +6896,12 @@ bundles `WhatsNew.html`, and See What’s New and Help ▸ Release Notes open it
 in a new tab. Recovered values and Parc's own (open) values are in
 [software update](software-update.md#parc). Checked by the warnings-as-errors
 typecheck and SIL, model tests and inert card tests only; per Josh, no build
+
+checks ([automatic restart](software-update.md#automatic-restart)), with the
+model in `AutomaticUpdate.swift`. The relaunch restores every window as
+Restart and Update does, and Update Complete follows. Checked by the
+warnings-as-errors typecheck and model tests only; per Josh, nothing was
+launched, so no real sleep, lock or restart was observed.
 
 ### Tab switcher
 
