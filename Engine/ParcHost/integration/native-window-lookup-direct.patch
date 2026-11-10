@@ -1,0 +1,95 @@
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1181,12 +1181,16 @@
+   // level NativeView.
+   if (const auto* widget = views::Widget::GetTopLevelWidgetForNativeView(
+           web_contents->GetNativeView())) {
+-    return BrowserView::GetBrowserViewForNativeWindow(
+-        widget->GetNativeWindow());
+-  }
+-  const auto* browser =
++    if (auto* view = BrowserView::GetBrowserViewForNativeWindow(
++            widget->GetNativeWindow())) {
++      return view;
++    }
++  }
++  auto* browser =
+       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
+-  return browser ? BrowserView::GetBrowserViewForBrowser(browser) : nullptr;
++  // The actual tab owner can supply a native BrowserWindow without a
++  // BrowserView/Widget property. Preserve that window and its real services.
++  return BrowserWindow::FromBrowser(browser);
+ }
+-
++
+ // static
+--- a/chrome/browser/ui/autofill/save_address_bubble_controller.h
++++ b/chrome/browser/ui/autofill/save_address_bubble_controller.h
+@@ -47,6 +47,9 @@
+   virtual std::u16string GetOkButtonLabel() const;
+   std::u16string GetNegativeButtonLabel() const;
+   const AutofillProfile& GetAutofillProfile() const { return address_profile_; }
++  AutofillClient::SaveAddressBubbleType GetSaveAddressBubbleType() const {
++    return save_address_bubble_type_;
++  }
+-
++
+   // The value returned by the cancel button callback depends on whether
+   // the address is to be saved into user's account. Different values are needed
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -12,6 +12,7 @@
+ import("//build/config/ui.gni")
+ import("//build/config/vpython.gni")
+ import("//build/toolchain/toolchain.gni")
++import("//parc/features.gni")
+ import("//chrome/browser/buildflags.gni")
+ import("//chrome/browser/downgrade/buildflags.gni")
+ import("//chrome/common/features.gni")
+@@ -2597,6 +2598,18 @@
+         "//chrome/browser/ui:browser_commands_mac",
+         "//chrome/updater:browser_sources",
+       ]
++      if (enable_parc) {
++        deps += [
++          "//parc/tests/parc_native_extensions:context_menu_browser_tests",
++          "//parc/tests/parc_native_downloads:file_dialog_browser_tests",
++          "//parc/tests/parc_native_extensions:install_browser_tests",
++          "//parc/tests/parc_native_extensions:popup_browser_tests",
++          "//parc/tests/parc_native_devtools:browser_tests",
++          "//parc/tests/parc_native_video_pip:browser_tests",
++          "//parc/tests/parc_native_extensions:uninstall_browser_tests",
++          "//parc/tests/parc_native_side_panel:browser_tests",
++        ]
++      }
+     }
+-
++
+     if (enable_guest_view) {
+@@ -7491,6 +7504,25 @@
+       "../browser/ui/views/web_apps/view_visible_in_active_widget_notifier_unittest.cc",
+     ]
+     sources += [ "../browser/ui/views/profiles/avatar_badge_view_unittest.cc" ]
++    if (is_mac) {
++      sources += [ "../browser/ui/views/frame/parc_native_window_lookup_unittest.cc" ]
++      if (enable_parc) {
++        deps += [
++          "//parc/tests/parc_native_autofill:session_tests",
++          "//parc/tests/parc_native_extension_actions:action_tests",
++          "//parc/tests/parc_native_downloads:download_unit_tests",
++          "//parc/tests/parc_native_http_auth:unit_tests",
++          "//parc/tests/parc_native_external_protocol:unit_tests",
++          "//parc/tests/parc_native_certificate_viewer:unit_tests",
++          "//parc/tests/parc_native_client_certificates:unit_tests",
++          "//parc/tests/parc_native_webauthn:unit_tests",
++          "//parc/tests/parc_native_video_pip:unit_tests",
++          "//parc/tests/parc_native_page_retirement:unit_tests",
++          "//parc/tests/parc_native_tab_transfer:unit_tests",
++          "//parc/tests/parc_native_permissions:unit_tests",
++        ]
++      }
++    }
+-
++
+     # TODO(crbug.com/353332589): Remove this dependency when the
+     # views/autofill/popup/ unit tests get modularized.

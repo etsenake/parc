@@ -1,0 +1,68 @@
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -2,6 +2,7 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+-
++
++import("//parc/features.gni")
+ import("//base/allocator/allocator.gni")
+ import("//build/buildflag_header.gni")
+ import("//build/config/buildflags_paint_preview.gni")
+@@ -482,12 +483,16 @@
+-
++
+ if (!is_android) {
+   source_set("certificate_viewer") {
+-    public = [ "certificate_viewer.h" ]
+-    deps = [
++    public = [
++      "certificate_viewer.h",
++      "native_server_certificate_viewer.h",
++    ]
++    public_deps = [
++      "//base",
+       "//content/public/browser",
+-      "//net",
+       "//ui/gfx:native_ui_types",
+     ]
++    deps = [ "//net" ]
+   }
+-
++
+   source_set("repost_form_warning_controller") {
+@@ -1517,7 +1522,12 @@
+     }
+   }
+-
++
++  deps += [ "//parc:buildflags" ]
++
+   if (is_mac) {
++    if (enable_parc) {
++      deps += [ "//parc/native:native_video_pip_api" ]
++    }
+     sources += [
+       "app_controller_mac.mm",
+       "browser_process_platform_part_mac.mm",
+--- a/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
++++ b/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
+@@ -25,6 +25,7 @@
+ #include "base/time/time.h"
+ #include "base/values.h"
+ #include "chrome/browser/certificate_viewer.h"
++#include "chrome/browser/native_server_certificate_viewer.h"
+ #include "chrome/browser/platform_util.h"
+ #include "chrome/browser/ui/certificate_dialogs.h"
+ #include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_ui.h"
+@@ -341,6 +342,10 @@
+ void ShowCertificateViewer(WebContents* web_contents,
+                            gfx::NativeWindow parent,
+                            net::X509Certificate* cert) {
++  if (auto* native = NativeServerCertificateViewer::Get(web_contents)) {
++    native->Show(*web_contents, parent, cert);
++    return;
++  }
+   CertificateViewerDialog::ShowConstrained(cert->CopyCertBuffers(),
+                                            web_contents, parent);
+ }
