@@ -1,0 +1,4 @@
+# Copyright 2026 Parc contributors.
+# Parc's Chromium integration. A constant rather than a build argument: this
+# source tree only ever builds Parc.
+enable_parc = true
