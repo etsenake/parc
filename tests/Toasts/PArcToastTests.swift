@@ -231,6 +231,43 @@ import AppKit
             check(toast.isRetiring && toast.window == nil, "\(name.rawValue) closes the toast")
         }
 
+        // The quote icon and sub-label stay readable when the app's scheme and
+        // the Space's lightness disagree.
+        func luminance(_ color: NSColor) -> CGFloat {
+            let c = color.usingColorSpace(.sRGB) ?? color
+            func linear(_ v: CGFloat) -> CGFloat { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(c.redComponent) + 0.7152 * linear(c.greenComponent) + 0.0722 * linear(c.blueComponent)
+        }
+        for (appearance, hex) in [(NSAppearance.Name.darkAqua, "E4E2F7"), (.aqua, "1F1D33")] {
+            parent.appearance = NSAppearance(named: appearance)
+            let quote = PArcToastPresentation(content: .copiedQuoteLink(url), theme: .singleColor(ThemeColor(hex: hex)!))
+            check(quote.present(in: parent, over: pane), "quote toast admitted")
+            await drain(0.6)
+            guard let rep = quote.bitmapImageRepForCachingDisplay(in: quote.bounds) else { preconditionFailure("no bitmap") }
+            quote.cacheDisplay(in: quote.bounds, to: rep)
+            let scale = CGFloat(rep.pixelsWide) / quote.bounds.width
+            let card = quote.frames.body
+            func contrast(xs: ClosedRange<CGFloat>, ys: ClosedRange<CGFloat>) -> CGFloat {
+                guard let fill = rep.colorAt(x: Int((card.minX + 4) * scale), y: Int(card.midY * scale)) else { return 0 }
+                let background = luminance(fill)
+                var best: CGFloat = 1
+                for y in stride(from: card.minY + ys.lowerBound, to: card.minY + ys.upperBound, by: 1 / scale) {
+                    for x in stride(from: card.minX + xs.lowerBound, to: card.minX + xs.upperBound, by: 1 / scale) {
+                        guard let pixel = rep.colorAt(x: Int(x * scale), y: Int(y * scale)) else { continue }
+                        let value = luminance(pixel)
+                        best = max(best, (max(value, background) + 0.05) / (min(value, background) + 0.05))
+                    }
+                }
+                return best
+            }
+            let icon = contrast(xs: 12...30, ys: 14...card.height - 14)
+            let subLabel = contrast(xs: 40...80, ys: 34...card.height - 12)
+            check(icon >= 4.5, "\(appearance.rawValue): the quote icon takes the toast's ink (\(icon):1)")
+            check(subLabel >= 4.5, "\(appearance.rawValue): the sub-label is readable (\(subLabel):1)")
+            quote.dismiss(animated: false)
+        }
+        parent.appearance = nil
+
         let closing = PArcToastPresentation(content: .standard("Close"), theme: SpaceTheme())
         check(closing.present(in: parent, over: pane), "close owner admitted")
         parent.close()

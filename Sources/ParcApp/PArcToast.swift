@@ -295,7 +295,10 @@ struct PArcToastCard: View {
     }
 
     private var card: some View {
-        content
+        //
+        // app's primary colour and vanishes when the card's scheme differs.
+        // Everything in the card takes the toast's ink.
+        content.foregroundStyle(ink)
             .padding(.horizontal, 12).padding(.vertical, 10).frame(minHeight: 42)
             .background(backdrop(accessory: false))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -331,18 +334,15 @@ struct PArcToastCard: View {
         case .standard(let icon, let label, let subLabel, let buttons):
             //
             HStack(spacing: 8) {
-                if let icon {
-                    //
-                    // the inherited primary colour, not the toast's ink.
-                    Image(systemName: icon).font(Self.iconFont)
-                }
+                if let icon { Image(systemName: icon).font(Self.iconFont) }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(label).font(.system(size: 14, weight: .medium)).foregroundStyle(ink)
+                    Text(label).font(.system(size: 14, weight: .medium))
                         .fixedSize(horizontal: false, vertical: true)
                     //
                     //
+                    // on a light card; 0.7 keeps it secondary and readable.
                     if let subLabel {
-                        Text(subLabel).font(.system(size: 11, weight: .semibold)).foregroundStyle(ink.opacity(0.33))
+                        Text(subLabel).font(.system(size: 11, weight: .semibold)).foregroundStyle(ink.opacity(0.7))
                     }
                 }
                 .padding(.vertical, subLabel != nil && !buttons.isEmpty ? 4 : 0)
@@ -368,7 +368,7 @@ struct PArcToastCard: View {
                         .padding(.horizontal, -2)
                     if let trailing { Text(trailing) }
                 }
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(ink)
+                .font(.system(size: 14, weight: .medium))
             }
         }
     }

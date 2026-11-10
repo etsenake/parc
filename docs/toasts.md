@@ -66,10 +66,13 @@ The label-to-button gap measures 8.5 points; Parc uses 8.
   foreground colour. The screenshot's cap height (10 pt) and text width (131 pt)
   match SF 14 medium exactly.
   ([tooltips](tooltips.md)).
-  semibold, the foreground at 0.33: system 11 semibold.
+  semibold, the foreground at 0.33: system 11 semibold. That is about 2:1 on a
+  light card, so Parc draws it at 0.7 (about 5.5:1).
   (semibold) 13. Its body sets only the font; neither it, the default content
   view nor the dropdown applies a colour, so the icon keeps the inherited
-  primary colour of the app appearance, not the toast's ink.
+  primary colour of the app appearance, not the toast's ink. With a dark app
+  and a light Space that is white on a light card (1.7:1), so Parc draws the
+  whole card's content, icon included, in the toast's ink.
   palette: foreground and accessory foreground from `title` (class offset
   0x150), background from `backgroundExtra` (0xb0), accessory background from
   The label, sub-label, keycap (`ToastBigKeyView`) and share button read the
@@ -157,7 +160,8 @@ on the window's Undo without a toast. See [Close Undo](reopen-closed-tabs.md#clo
 on resize), card geometry and scale-in place, hit-testing, replacement, timer
 and hover hold, scroll, tap order, binding-change and parent-notification
 checks on offscreen windows, plus each new toast's wording, the quote icon's
-weight and the Peek's content region (measured on a stand-in anchor view with
+weight, the quote icon's and sub-label's measured contrast (a dark app over a
+light Space and a light app over a dark Space) and the Peek's content region (measured on a stand-in anchor view with
 a title band, not a live `PeekHostView`). The Press Again cue keeps
 `scripts/test-shortcut-hint-presentation.sh` and `scripts/test-shortcut-cue.sh`;
 the share builder is covered by `tests/BrowserToolbar`.
