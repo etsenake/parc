@@ -1,11 +1,36 @@
 # Media interactions — tab audio
 
-The ordinary sidebar tab context menu and its audible/muted indicator use the original live Chromium page, independently of the Mini Player episode. The row indicator is shown for a currently audible or muted page, and the context menu can mute or unmute an eligible live tab. The menu and pointer action capture an opaque immutable document, WebContents, Profile, browser and mute-state lease. Guarded page selectors keep the controls unavailable on older engines without linking the new native lease class. Replacement, transfer, retirement, a changed mute revision (including mute/unmute ABA) or an unavailable original window refuse the action. Chromium’s `DidUpdateAudioMutingState` and `OnAudioStateChanged` observations publish coalesced page updates, so all mute producers refresh both controls from Chromium rather than a saved tab flag. Favorite and split-child context menus use the same original tab action. A split child without room for its indicator retains the context and accessibility action.
+The sidebar context menu and audible/muted indicator use the original live
+Chromium page, independently of the Mini Player episode. The indicator appears
+when the page is audible or muted. Favorite and split-child menus use the same
+action; a compact split child retains context and accessibility controls even
+when its indicator does not fit.
 
+## Original-page actions
 
+Menu and pointer actions capture an immutable document, WebContents, Profile,
+Browser and mute-state lease. Replacement, transfer, retirement, mute revision
+changes (including mute/unmute cycles) or loss of the original window refuse the
+action. Guarded selectors keep unsupported older engines unavailable.
+`DidUpdateAudioMutingState` and `OnAudioStateChanged` publish coalesced updates
+from Chromium rather than a saved tab flag.
 
-The initial tab-audio increment passed whole-module Swift typecheck, pinned native syntax, and read-only overlay 254 replay (564 targets). A focused probe using the actual opaque API and header linked against sealed v240 and introduced no tab-audio class symbol. A full app link compiled with `-Onone -whole-module-optimization` failed on an unrelated SharedQuote class symbol absent from that engine; the delivered v240 package used release `-O`, so this debug-style failure is not evidence of a release defect or a passing full-app link. No functional browser test, live keyboard/VoiceOver acceptance or PiP work was performed.
+The 14-point speaker uses three animated wave paths and a diagonal clip for mute.
+Its per-tab host survives sidebar row reconstruction; theme ink and Reduce
+Motion follow the existing view owner. The Mini Player volume control mutes
+when Option is held or the tab is already muted; otherwise it toggles its drawer.
 
-The global mute increment passed whole-module Swift typecheck with no diagnostics, pinned Chromium native syntax with unchanged inputs, and read-only overlay 255 replay (identity `1d50e8b7b345c3cdee4b7481770dfcdb6cf3435fa5b9e806f0816cad087e35a8`). These are source checks; they do not establish live browser interaction acceptance.
+## Global mute
 
-The finished sidebar speaker passed whole-module Swift typecheck and `-emit-sil -Onone` with zero diagnostics. An isolated AppKit/SwiftUI component probe detached an already-rendered host, changed its mute state, and reattached it: sampled wave opacity and positions progressed through intermediate values before settling. This checks that reparenting sequence, not live browser interaction or visual equivalence.
+Mute All Tabs and Unmute All Tabs run from the original Command Bar owner over a
+snapshot of live native page frames across windows and Profiles. Each target
+rechecks its original WebContents, document, Browser and Profile before mutation;
+new or transferred pages cannot replace a captured target. The submitting
+window/revision must remain current, registered, active, key and free of sheets
+or security reservations. A crashed page may retain the mute setting for reload.
+
+## Validation
+
+Swift/native compiler checks and inert speaker components cover the API boundary,
+lease guards and host reparenting animation. They do not establish live keyboard,
+VoiceOver, browser interaction or physical appearance acceptance.

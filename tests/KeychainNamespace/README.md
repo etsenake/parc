@@ -1,5 +1,9 @@
 # Normal encrypted persistence fixture
 
+Browser/app launch is currently prohibited by [AGENTS.md](../../AGENTS.md).
+The runtime procedures below are retained for a future explicitly authorized
+run. Source/model checks do not grant that authorization.
+
 `cookie_fixture.py` is a backend-independent loopback fixture for a persistent
 interposer and its synthetic provider/client tests.
 

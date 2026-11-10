@@ -12,7 +12,6 @@ The HTTP-auth request also latches cancellation before deferred modal-list remov
 
 ## Evidence and adaptation
 
-
 ## Verification
 
 Sixteen pinned-Clang syntax checks cover eight native implementations, six changed upstream implementations, the new 12-case genuine DevTools/AppModal/chooser test source and the 13-case HTTP-auth source. The latter adds one invalid-host/restoration regression to the existing twelve. Checks use an isolated VFS and generated source-owner or explicitly labelled compatibility flags; they do not mutate the engine checkout, generate GN, link or execute the browser cases.

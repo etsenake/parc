@@ -6,16 +6,9 @@ safe reattachment/teardown. `find_bar.h/.mm` supplies the actual Chromium 156
 `FindBar` implementation to its real `FindBarController` and `FindTabHelper`.
 It does not simulate search, own WebContents or construct a substitute Browser.
 
-SHA-256 `4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`:
-
-  page chrome. The caller supplies real container/top-panel geometry.
-- REA command evidence `ev_8d02b876bf43898b3acedc88639235899e476e8bd4a4994b3d7b65803f3cd44e`;
-  presentation evidence `ev_cf965b6659e91a32f3869900a47f50f7b7461828e27b028fd491e63cdd5d3831`.
-
-The complete bounded report is retained in the task outputs as
-`arc-native-find-ui-contract.md`. Exact colors, inner spacing, font tokens,
-animations and split-pane simultaneous Find presentation are not established.
-Current system styling and synchronous show/hide are explicitly unfinished
+The per-page overlay receives its content/top-bar geometry from the host.
+Find presentation and keyboard behavior are documented in
+[keyboard navigation](../../docs/keyboard-navigation.md).
 
 ## Checks actually run
 
@@ -58,14 +51,12 @@ Escape/close use controller `EndFindSession(kKeep,kKeep)`. It forwards visibilit
 changes and actual field-focus state. Query updates from results do not replace
 marked IME text. Chromium's Mac helper supplies its global Find pasteboard;
 clearing results retains that query, and Mac audible notifications are counted
-without playing a sound, matching pinned upstream behavior. These are explicit
-were not established by this bounded trace.
+without playing a sound, matching pinned upstream behavior.
 
 The native view saves an actual keyed responder or weak same-window control,
 normalizing shared field editors to their owning field, and uses the explicit
 page key as fallback. A hide-induced transition to NSWindow is distinguished
-from the user choosing another control. The Find-specific restoration caller in
-mechanism is separately recovered and tested. Full keyboard traversal among
+from the user choosing another control.  Full keyboard traversal among
 Find buttons and exact focus behavior across split/profile switches remain
 browser acceptance work.
 
@@ -76,4 +67,4 @@ no work. Real Browser/Find command routing, navigation/tab-switch behavior,
 renderer matches/highlights, profile/pasteboard boundaries, actual accessibility
 and visual/motion comparison remain integration gates. The v5 reviewed source
 overlay compiles the view in native_components and the bridge in libcef_static.
-The current application backend and production native host remain unchanged.
+The production native host supplies this service.

@@ -1,47 +1,25 @@
 # Native LocationBar compatibility service
 
 `Engine/ParcNative/location_bar.{h,cc}` implements the non-rendering service
-owned by the future native BrowserWindow. It is not the visible Parc command
+owned by the native BrowserWindow. It is not the visible Parc command
 loaded by this component.
 
-## Reference and current interface
+## Current interface
 
-`97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`.
-The bounded REA record is `arc-location-bar-contract.md` in the task's outputs.
+The owning native BrowserWindow contains `NativeLocationBar`, the real
+`OmniboxController` and `ChromeOmniboxClient`, and a non-rendering view.
+`GetWebContents()` queries that Browser's active tab; `LocationBarModel::From`
+requires the Browser's model to have been registered first. The controller uses
+a 1.5-second stop-duration override. Inherited edit-model methods remain live;
+this service does not supply the visible command field or suggestion popup.
 
-| Recovered mechanism | Parc source |
-| --- | --- |
-| Window embeds LocationBar at `+0xf0`, constructor `0x689d4f0` owns view/controller/client | Window owns `NativeLocationBar`; it owns the actual Chromium controller, client and non-rendering view. |
-| Active contents `0x689da00` follows the same Browser's tab model | `GetWebContents()` queries that Browser's live active tab. |
-| Model `0x689d9d4` returns an existing Browser-owned model | `LocationBarModel::From(browser)`; construction requires prior registration. |
-| View vtable `0xbc916f8` has empty visual text/focus/selection/popup hooks | `NativeOmniboxView` has no native text widget or suggestion popup. |
-| Inherited SetUserText, RevertAll, TextChanged remain functional | Those base methods are not overridden; they retain real edit-model behavior. The separate LocationBar `Revert()` hook remains empty. |
-| Empty chip anchor `0x689dc60`; false content-setting testing methods | No chip/anchor or native setting-image UI. |
+Absent visual widgets yield false, empty or null only for their UI queries.
+Fullscreen queries the actual window; editing queries the real OmniboxView.
+Permission and accessible command-bar presentations are separate services.
 
-Fresh REA evidence IDs are
-`ev_07ebaed13660eb38c3fc5f52049f5f8cc0ab1cdf1eab5c65a371a4e227a91bb8`,
-`ev_e3122386eed65b58c4f88964da27bd4d3067cdebc742bf93c52552e5e8649dda`, and
-`ev_e20cf219ef7a0d49ec93b055e2e33537aa176cafe0ee4c047fb0ea8772db3186`.
-
-The implementation targets Chromium156.0.8078.48 pinned by `Engine/source-lock.json`.
-Its LocationBar interface has additional widget, geometry, popup, accessibility
-and initialization queries. The absent control yields false/empty/null only for
-those visual surfaces. `IsFullscreen()` queries the actual owning window;
-`IsEditingOrEmpty()` queries the real OmniboxView behavior. These are explicit
-current-version adaptations, not newly recovered Arc142 methods. Permission
-prompts and accessible command-bar announcements must be connected separately;
-a missing chip is not a permission grant or denial.
-
-Two deliberate lifetime/safety adaptations matter:
-
-- Chromium156's view no longer owns its controller. Members are declared so the
-  view dies first and clears the edit model's view pointer, followed immediately
-  by the controller/client. Construct after the owning Browser's feature
-  registration and destroy before its features, Browser and Profile. A raw
-  Browser reference expresses this required containment; the original weak
-  pointer was not an invitation to let the client outlive its Profile.
-  operation dereferences it. Parc binds the real BrowserCommandController and
-  checks that it exists. It does not expose that unsafe original configuration.
+The view dies before the controller/client and clears its edit-model pointer.
+Construct after Browser features and destroy before Browser/Profile teardown.
+The client binds the actual BrowserCommandController and validates its presence.
 
 ## Narrow AI policy prerequisite
 
@@ -63,9 +41,9 @@ object's presence is not falsely reported as absence. See
 `components/omnibox/browser/autocomplete_classifier.cc`,
 `history_embeddings_provider.cc`, and
 `chrome/browser/history_embeddings/history_embeddings_utils.cc` in the pin.
-This guard covers these specific paths only. Other AI-capable client entrypoints,
-provider behavior, service initialization and final engine-wide exclusions still
-need their integration audit; no general Google-networking removal is implied.
+This guard covers these specific paths only. This is not an engine-wide absence claim. The broader AI audit was closed by
+Josh; preserve existing exclusions and investigate concrete contrary evidence.
+No general Google-networking removal is implied.
 
 ## Checks and remaining integration
 

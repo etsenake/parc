@@ -7,45 +7,18 @@ Chromium's shared ExtensionKeybindingRegistry. It does not introduce a
 FocusManager, a substitute Browser, a second event router or a second permission
 grant implementation.
 
-## Reference and adaptations
+## Dispatch model
 
-`97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`.
-The retained report is `outputs/parc/arc-extension-keyboard-contract.md` in the
-analysis workspace. Its original instruction addresses are:
+The window owns the registry; Chromium's base owns extension/command identities,
+load/unload and edit observations, listener checks, permission-filtered tab data,
+activeTab grants and user-gesture marking. Construction calls `Init()` to include
+already-enabled extensions. Active regular named commands come from the real
+`CommandService`.
 
-- Native window-owned registry construction: `0x315e738`, base `0x2999e00`.
-- Action-before-named-command dispatch: `0x68a4f4c`; REA evidence
-  `ev_826904e7d769993af96afa0c44bf6c30a6bc048d1787c5e154684c198ed66464`.
-- Native registration/removal: `0x68a51dc` / `0x68a537c`; registration evidence
-  `ev_1d60662beb8cbebf216cde5361612ccc77b1398f861426c17f062c7bde0a1b65`.
-- Shared command dispatch and active-tab resolution: `0x5e99ca8` / `0x68aab58`;
-  evidence `ev_a665f041888d16218f16b0fa70acd31a5d04d56d30910d4f88abd84d96b2159d`.
-- Set/conditionally clear the active profile registry: `0x68a5f5c` / `0x68a600c`.
-
-The follow-up `arc-page-platform-contract.md` resolves the original fallback:
-menu helper `0x6868c60` reaches the cached Browser delegate through its `+0xe8`
-slot, adjustor `0xa504c94` and body `0xa504c3c`. That body tries DevTools, then
-tail-calls the actual Window's registry. It contains no second menu attempt.
-Fresh REA evidence for that Browser body is
-`ev_11c52d03797a6b19228c6bacc639add5a8fa0a21b5ff0d9210a9c59d456320b9`;
-the original branch instruction corroborates the decompiler's external tail.
-Modifier helper `0x4751eb0` matches the shared Chromium conversion. Current156
-`ui::GetAcceleratorFromNativeWebKeyboardEvent` preserves the same virtual key,
-translated modifiers, key-up phase and timestamp without private-layout copies.
-
-Chromium's base still owns the authoritative extension-ID/command-name targets.
-This avoids redundant identity storage and preserves current Chromium's
-accelerator matching and media-key behavior. The real base provides extension
-load/unload and command-edit observation, listener checks, permission-filtered
-tab data, activeTab grants before delivery, and user-gesture marking.
-
-Two deliberate differences are explicit. First, construction calls upstream
-constructor does not prove where its equivalent initial enumeration occurs.
-Second, Parc returns `CommandService::GetNamedCommands(ACTIVE, REGULAR)` directly.
-returns true for a nonempty map and the base only registers on true. Two agents
-checked that bounded branch anomaly. Parc intentionally corrects it rather than
-copying a route that appears to discard active named commands. This does not
-remain unresolved.
+Action accelerators run before named commands. Native event conversion preserves
+virtual key, translated modifiers, key phase and timestamp. The native menu gets
+its existing opportunity before the DevTools-to-window fallback; do not dispatch
+extensions again from an earlier menu callback.
 
 ## Integration contract
 
@@ -68,16 +41,16 @@ browser changes within a shared NSWindow. Deactivation and destruction clear the
 profile's active registry only if it still points to this instance.
 
 The reviewed source overlay compiles this service in libcef_static with a direct
-dependency on Chromium's accelerator helper. The native client still needs its
+dependency on Chromium's accelerator helper. The native client supplies its
 menu-only `OnKeyEvent` route before Chromium's existing DevTools-to-Window
 fallback. It must not also dispatch extensions. The typed native outer delegate
 must retain the skip guard for direct calls; ordinary renderer ACK already
-filters those events. Action controller/popup implementation and production
-BrowserWindow factory selection remain unfinished.
+filters those events. Action controllers, popup services and the native BrowserWindow factory are
+installed by the production host.
 OS-global listener registration remains Chromium's responsibility. Native menu
 precedence, renderer-consumed keys, repeat/layout/IME, media keys, worker restart,
-incognito routing and real action popup ownership still require integration and
-runtime verification. General Google networking is outside this task.
+incognito routing and real action popup ownership require separate integrated
+verification. General Google networking is outside this task.
 
 ## Checks and current result
 

@@ -1,6 +1,7 @@
 # Crashed-page artwork
 
 
+The source is `Contents/Resources/ARC_SadTab.bundle/Contents/Resources/Assets.car`, SHA-256 `7b96790d40774820ab7e086939c1511f9b37ec7bfe4076c199e92ab4df40b131`, asset `SadTab` (rendition `sad_tab.svg`, 96 × 103 points, `Template Mode: template`).
 
 The files are kept as the catalog holds them:
 

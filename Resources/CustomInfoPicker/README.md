@@ -1,6 +1,7 @@
 # Custom icon picker assets
 
 
+- `emojis.json` is a byte-for-byte copy of `ARC_Emojis.bundle/Contents/Resources/emojis.json` (gemoji format, 1,870 entries).
 
 The picker's named colours are recorded in source rather than copied: `CustomizationBackground` from `ARC_CustomInfoPicker.bundle/Contents/Resources/Assets.car` (SHA-256 `852270eebd1f30f13a5757aec3d8773df1791d9d462fd2b01dccec8227abe98d`; Display P3 0.525/0.533/0.553 at 0.25 light, white at 0.25 dark), and `BrandGray`, `ForegroundSecondary`, `ForegroundTertiary` and `SidebarItemBackground` from the BaseAssets catalog above. Resource provenance alone does not establish picker appearance parity; see `docs/split-groups.md` and the parity ledger.
 

@@ -21,8 +21,8 @@ buildflag before packaging. With the config excluded, upstream precedence for
 `--enable-field-trial-config` is Chromium's startup refusal; this switch then
 only guards engines built before that source lock.
 
-`0xe10f478`, applied at `0x45922b4`) and its engine flag table, whose
-`enableCertificateTransparency` default is on. It enables
+The same callback applies Parc's startup feature defaults.
+It enables
 `CertificateTransparencyAskBeforeEnabling`, the opt-in that turns on
 Certificate Transparency enforcement in non-Google-branded builds
 (`SystemNetworkContextManager::IsCertificateTransparencyEnabled`). It disables
@@ -34,10 +34,12 @@ bundle clone and no cleanup helper at quit), `FedCm`,
 `TailoredSecurityIntegration`. Each name matches its `BASE_FEATURE` definition in
 the pinned Chromium source. Chromium registers `--disable-features` before
 `--enable-features` and keeps the first entry for a feature, so a disable would
+override an explicit enable. These states are defaults: a feature the
 command line already names in either list, including the `*Name`,
 `Name<Study.Group` and `Name:params` forms with whitespace around the name
 trimmed as Chromium does, keeps its explicit state. The product
 exclusions are still applied over explicit enables. They are the
+history-embedding model, the excluded Chromium AI group (`Glic`, `GlicActorUi`,
 `AutofillActorMode` and `LensOverlay`) and the translate ranker
 (`TranslateRankerQuery`, `TranslateRankerEnforcement`), all Josh's decisions of
 November 1. Pinned CEF already disables `GlicActorUi`, `AutofillActorMode` and

@@ -36,7 +36,7 @@ tree, and the app already links AVFoundation; CoreText is imported by the Swift
 
 ## Favorites artwork
 
-The nine setup apps use the recovered BaseAssets resource keys (`twitter`,
+The nine setup apps use the original BaseAssets resource keys (`twitter`,
 `gmail`, `gcal`, `spotify`, `youtube`, `notion`, `slack`, `figma`, `outlook`).
 with explicit Aqua and Dark Aqua drawing appearances. Twitter has separate
 light/dark artwork (the current catalog uses X); all others share one rendition.

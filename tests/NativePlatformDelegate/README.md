@@ -4,23 +4,16 @@
 runtime platform-delegate interface to Parc's page wrapper and page-bound
 JavaScript dialog runner. The canonical typed native route now selects this
 delegate, and the promoted Objective-C facade and Swift shell use the independent
-engine path. The complete v50 engine build has linked. Production packaging,
-independent app launch and engine-dependent runtime acceptance remain open;
+engine path. Release delivery and runtime verification are tracked separately in
+[product status](../../docs/parity.md).
 
-## Recovered contract and current-source adaptations
+## Native ownership
 
-`97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`.
-
-- `0x6855578` → `0xa88cb4c` wraps the existing WebContents native view;
-  `0x68e4610` exposes its native host. Page creation/transfer must preserve this
-  actual WebContents identity and its renderer/native-view hierarchy.
-- `0xa88ac10` / `0xa88ac64` accept wrapper focus and defer the renderer send,
-  resolving its actual window at delivery. The delegate uses the implemented
-  wrapper, not CEF NativeMac's direct focus call. Actual focus completion belongs
-  to the shell's firstResponder observer, not the attempted-focus callback.
-- `0xa88af38` reports actual window movement. Explicit cancellation/reattachment
-  cancellation implementation.
-  Views Widget and never creates a hidden Chrome window.
+The delegate wraps the existing WebContents native view and preserves its page,
+renderer and native hierarchy through creation and transfer. Wrapper focus is
+queued and revalidates the actual window at delivery; successful processing is
+not proof the renderer focused. Window movement invalidates old attachment.
+The native path returns no Views Widget and creates no hidden Chrome window.
 
 The pinned CEF Chrome base preserves actual Browser, Profile, TabStripModel and
 WebContents ownership and forwards native input translation to its native
@@ -49,8 +42,9 @@ the real RenderWidgetHostView; focus then follows the deferred native wrapper.
 Screen conversion follows the **current CEF Mac input contract**: page-local
 top-left DIP points go through the actual view's bounds/flip and window conversion
 to AppKit screen points. This includes split-pane offsets. This is an explicit
+API integration.
 The inherited modal host uses the owning Browser's active tab, matching the
-recovered shared window-host design; per-pane modal behavior still needs runtime
+shared window-host design; per-pane modal behavior still needs runtime
 verification. Chrome runtime context menus are a separate route. The Alloy-only
 CEF native menu runner is not selected here.
 

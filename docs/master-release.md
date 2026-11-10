@@ -10,7 +10,6 @@ engine/app build, production signing, notarization, GitHub assets and Homebrew
 cask publication. It never installs/replaces/quits/opens Parc, runs startup or
 browser tests, or invokes Homebrew install/upgrade/reinstall. Josh runs
 `brew upgrade --cask parc` himself. There is no quiet-window timer.
-The earlier one-night wait was coordination, not a feature of this command.
 
 ## Versions and release notes
 
@@ -86,8 +85,7 @@ published tag still refuses.
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
    alone. Refresh the local tap metadata, check Ruby syntax and audit the cask.
    **Updating the tap does not install or upgrade the app.** Runtime acceptance
-   is neither required nor claimed by this artifact-only release path. Separate
-   manual startup tools remain optional.
+   is neither required nor claimed by this artifact-only release path. Artifact validation does not authorize app launch or runtime checks.
 
 On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
 first to avoid a full pinned source sync/build. An unowned existing workspace is
@@ -106,8 +104,7 @@ command PID. Each `build/releases/<run>/` contains atomic `state.json`, an
 `events.jsonl` stage journal and individual command logs. Swift/compiler detail
 is in `package/package-output.log`. Final publication metadata is in
 `delivery.json` and `build/releases/latest.json`; it records that no app was
-installed/launched and no runtime acceptance is claimed. The deleted recurring
-refresh automation is not recreated and its installed-app state is not rewritten.
+installed/launched and no runtime acceptance is claimed. Release status does not alter the installed-app state.
 
 A nonblocking local lock serializes release/legacy refresh operations. An atomic
 temporary GitHub tag lease, `parc-release-in-progress`, prevents two Macs
@@ -196,8 +193,8 @@ generates a strong password in memory, and stores both as concealed fields via
 It verifies a fresh vault read before reporting success and preserves an existing
 backup. Set `PARC_SIGNING_VAULT` if the account has no default vault, and
 `OP_ACCOUNT` to use a 1Password account other than the default `my.1password.ca`. Backup is interactive and may unlock through the 1Password app. Normal
-Keychain export approval may be required. The current CLI is not signed in, so
-**the actual secure backup remains pending `op signin`/vault unlock**.
+Keychain export approval may be required. A successful verified helper result is required before relying on a vault
+backup; this guide is not a current backup receipt.
 
 On another Mac with that vault available, the release command automatically
 restores a missing identity into the normal login Keychain; explicit recovery is
@@ -236,9 +233,8 @@ profile fails and `op` is installed, rechecks it, and stops if it still fails.
 `store-credentials --sync` remains Apple's separate iCloud Keychain route; it
 cannot combine with `--keychain`. The script checks credentials before starting
 compilation. One-time provisioning or a locked Keychain can require the user's
-normal OS approval; those cannot be made unattended by a release script. **This
-backup has not been run yet; it needs `op signin` and the app-specific
-password.**
+normal OS approval; those cannot be made unattended by a release script. Confirm the verified backup receipt before treating these credentials as
+recoverable on another Mac.
 
 The Sparkle EdDSA private key lives in the release Mac's login Keychain, under
 Sparkle's service `https://sparkle-project.org` with account `parc`. If it is
@@ -252,8 +248,7 @@ the same way with `generate_keys -f` and checks the public key afterwards,
 removing an imported key that doesn't match; it leaves a present key and
 identity alone. Two vault items with the same title stop both commands. The release preflight runs `restore`
 when either credential is missing and `op` is installed, and stops if the
-Sparkle key is still missing. Like the identity, **this backup has not been run
-yet; it needs `op signin`/vault unlock**. Never run plain `generate_keys
+Sparkle key is still missing. As with the identity, confirm the verified backup exists before relying on it. Never run plain `generate_keys
 --account parc` on a Mac without the key: it would create a new key that no
 installed Parc trusts, and the appcast stage refuses to sign with it. The first
 signing asks for Keychain access to `sign_update`; choose Always Allow so later

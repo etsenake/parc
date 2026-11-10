@@ -1,9 +1,12 @@
 # Automatic archive runtime fixture
 
+Browser/app launch is currently prohibited by [AGENTS.md](../../AGENTS.md).
+The runtime procedures below are retained for a future explicitly authorized
+run. Source/model checks do not grant that authorization.
+
 `runtime_fixture.py` is a backend-independent loopback fixture with clean,
 editable-form, play/pause/stop media and appearance pages. It can seed a new
 throwaway session with known tab ages and two profile-specific archive policies.
-been retired. They were not consumers of the independent engine.
 
 The current `PCNativePage.archiveProtectionState` implementation in
 `Engine/ParcNative/native_appkit_page.mm` reads real Chromium page live-state,
@@ -44,16 +47,6 @@ site colors and CSS color-scheme changes; it is not an archive-state assertion.
 
 `bash scripts/test.sh` retains the actual BrowserStore elapsed-time/profile policy
 checks. These model checks, fixture availability and source wiring do not prove
-that the independent renderer reports every exemption correctly. The historical
-56 trait-classifier assertions and clean/play/pause/stop callback values (3/0/2/3)
-coverage. Independent archive runtime, a full real-day wait and all capture/PiP/VR
+that the independent renderer reports every exemption correctly. Independent archive runtime, a full real-day wait and all capture/PiP/VR
 cases remain explicit acceptance work. Real HTTPS responsiveness is also a
 separate check.
-
-audioPlaying (3), audioMuting (4), pipPlaying (10), desktopCapturing (11) and
-vrPresentingInHeadset (12) protecting a tab. Recognized values 5–9 did not by
-themselves protect it; form edits did. Value 0, values above 12 and malformed
-snapshots were Unknown. Media-session values active (0), ducking (1) and
-suspended (2) protected; inactive (3) was eligible only with eligible activity
-state. A known positive exemption protected even when another source was
-unavailable. These historical numeric values are reference evidence, not an

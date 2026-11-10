@@ -27,14 +27,12 @@ python3 scripts/whats_new.py --notes tests/Packaging/fixtures/release-notes-samp
 
 ## Where the design comes from
 
-`PreferencesFeature.MaxBanner` clips `MaxBannerColor` (`#484FFF`) under a
-`y = maxY − A + (A / 2) · sin(−2πx / 20)` across the width, so its wavelength
-is always 20 pt. The CSS mask repeats one 20 × 6 pt period of that curve. The
-to within a few colour levels. Over it, Parc's grain texture
-(`Resources/ThemeTextures/grain.png`, the tile onboarding's import header and
-setup card draw) repeats every 100 px with `overlay` blending at full
-strength. The onboarding welcome's grain frames are 8 MB each, too heavy to
-inline. The divider between releases reuses the wave as a line.
+The banner uses blue `#484FFF`, layered grain and a repeating wave mask.
+The wave follows `y = maxY − A + (A / 2) · sin(−2πx / 20)` with a 20 pt
+wavelength. A 20 × 6 pt CSS mask holds one period; release dividers reuse the
+wave as a line. An SVG noise filter uses `#2F39FF`, and the shared
+`Resources/ThemeTextures/grain.png` tile repeats every 100 px with overlay
+blending. Small inline assets keep the page self-contained and quick to load.
 
 their italic lines in EB Garamond; Josh chose Cormorant over it and two other
 open-licensed italics from rendered options. `CormorantGaramond-SemiBoldItalic.woff`

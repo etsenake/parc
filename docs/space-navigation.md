@@ -16,12 +16,11 @@ The window also remembers the selected split’s orientation and relative pane s
 
 If the remembered focused pane is unavailable, Parc retains its existing first-surviving-member fallback. It consumes the invalid focus immediately, so that page becoming available later cannot override a newer choice. With no surviving members, the existing empty-selection behavior remains; no additional tab ranking or page creation was added. This focus cache belongs to the live window and is not a new restart-persistence format. Accepted Peek remains attached to its original parent tab; returning to that parent uses the existing Peek presentation and selection path.
 
-## Reference and limits
+## Validation and scope
 
-
-REA evidence: `ev_42a4b2269ae181f2bfcdacd1d6fed2f94c53bae0842d6e93976e9402fce8e42e`, `ev_5344d85bc24da1200ffbfc9678ce694d104dabfac2a64c4333270ca479daaed4`, and `ev_9af6a6d6981532c422712a368038566d2bec41e103e5d9b637117f47ad2f3f86`.
-
-
-
-
-Parc’s prospective command-panel availability, conservative retirement/theme/fullscreen gates and native security adapter are explicit adaptations. Space-transition geometry, spring/timing, haptics, hover/pressed styling, profile-reassignment interaction, background-window activation and gesture routes remain outside this bounded implementation. No new animation or gesture was invented; there is no new motion to suppress under Reduce Motion. The combined 50-file app source passes Swift compiler checking without diagnostics. The existing window-presentation component suite passes 100 assertions, including per-Space focus return, closed-pane filtering, proportional split restoration, stale-focus refusal and atomic selection/layout refusal. No functional browser tests were run.
+The window-presentation model checks per-Space focus return, closed-pane filtering,
+proportional split restoration, stale-focus refusal and atomic selection/layout
+admission. The cache belongs to the live window and does not add restart
+persistence. Transition drawing and gesture behavior are maintained in
+[sidebar motion](sidebar-motion.md), separately from this selection owner.
+No live browser validation is established by these source/model checks.

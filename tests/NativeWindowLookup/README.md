@@ -9,7 +9,7 @@ The reviewed overlay preserves successful Widget/BrowserView lookup, including
 non-tab contents. If that path cannot provide a window, it resolves the actual
 tab owner through `GlobalBrowserCollection` and returns `BrowserWindow::FromBrowser`.
 It never substitutes the last-active browser, another profile or a fake view.
-specific helper change adapts the pinned Chromium 156 interfaces.
+The helper uses the pinned Chromium interfaces and actual native ownership.
 
 Four regression cases use `BrowserWithTestWindowTest` and the real tab model:
 

@@ -1,6 +1,7 @@
 # Split pane menu artwork
 
 
+- Source catalog: `Contents/Resources/ARC_ContextMenus.bundle/Contents/Resources/Assets.car`, SHA-256 `5e9d36ac3261cf7c145a53f6e5cc532ebc2d0e46bb15a36e9260d875164063e8`.
 - Each asset has a light (any appearance) and a Dark Aqua rendition, each at 1× and 2×, and no template mode. `name.png` / `name@2x.png` are the light renditions and `name-dark.png` / `name-dark@2x.png` the dark ones. AppKit loaded each asset by name from the bundle under the Aqua or Dark Aqua drawing appearance, and its CGImage was taken at the rendition's own pixel size (`NSImage.cgImage(forProposedRect:)`) and written by ImageIO without resizing, keeping its colour profile (sRGB or Generic Gray Gamma 2.2) and alpha. The vector renditions are not copied.
 - Sizes: 18 × 18 points, except `icon-split-horizontal` and `icon-split-vertical` (Convert), 22 × 22.
 

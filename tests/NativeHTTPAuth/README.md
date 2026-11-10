@@ -8,8 +8,10 @@ The handler binds the original document, Browser, Profile, native page and NSWin
 
 After generation, `python3 tests/NativeHTTPAuth/check-chromium.py /path/to/chromium/src` validates the entire applied overlay against repository input/output hashes and source-lock identities, then checks exact generated object membership and each source's own target flags before compiling. It rejects stale applied snapshots, accepts no VFS/include override, and invokes neither GN nor Ninja. The real-controller test must belong to its own `parc_native_http_auth:unit_tests` source set; the top-level Chrome test flags are not accepted as its owner. Six isolated compatibility checks pass with the complete v38 source: the new native service borrows existing native-extensions flags and the test borrows top-level unit-test flags pending generation; the other four units use their existing owners' flags. No synthetic generated headers or relaxed warning policy were used.
 
-Read-only v38 overlay replay passes with 116 mapped files and 104 patched targets; the active v22 checkout remains unchanged. The shared source and test targets are registered in the reviewed overlay, but their new GN graph, header dependencies and link are not verified. Ordinary Chrome test launchers also lack the CEF context/process lifecycle required by this build. A CEF-compatible fixture/runner remains necessary before these genuine controller cases can execute; registering or compiling them alone does not close that gate.
+The production and controller-test targets are registered in the reviewed overlay.
+The tests need a CEF-compatible runner with actual process/context initialization;
+registration or compilation does not establish execution. Old candidate receipts
+must not be used to describe current release delivery.
 
 The remaining runtime gates are actual origin 401 and proxy 407 challenges, wrong-password retry, main-frame LoginTabHelper versus subresource challenges, extension `onAuthRequired`, managed proxy policy, saved HTTP credential autofill/submission/restart, transfer/navigation/quit with pending challenges, concurrent contexts and real-page responsiveness. A hidden/background owner or concurrent browser-security sheet currently cancels that particular prompt; queuing/background presentation is unfinished. Ownerless `CefURLRequest` authentication still has no native owner and is not redirected to an arbitrary window. WebAuthn, certificates and external protocols are separate P0-19 work.
-
 

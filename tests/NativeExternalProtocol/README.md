@@ -14,7 +14,6 @@ Current Chromium adaptations use the real `InputEventActivationProtector` utilit
 ## Remaining acceptance gates
 
 
-
 ARM64 reference SHA-256: Core
 `97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`;
 main `4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`.

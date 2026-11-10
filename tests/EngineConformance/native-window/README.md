@@ -2,14 +2,18 @@
 
 This is a bounded component test, not a complete `BrowserWindow` or a replacement-engine demonstration. `Engine/ParcNative/browser_window.h/.mm` supplies a weak shell-window association and a real Chromium `WebContentsModalDialogHost` companion. The shell owns its `NSWindow`; neither component creates a Chrome window, `BrowserView`, hidden parking window or replacement page.
 
-## Reference and adaptation
+## Window and modal ownership
 
+The shell supplies a weak NSWindow association. Close, key/resign and fullscreen
+notifications are filtered by that exact owner; multiple Browser associations
+may refer to one physical window. The BrowserWindow adapter arbitrates selection.
 
-- A custom `arc::browser::ui::Window` associates a supplied weak `NSWindow`; its native tracker registers close, key/resign-key and enter/exit-fullscreen notifications (`0xa888fb8`, close handler `0xa8892d0`). The app cache has separate window and profile/context identities. Multiple associations can consequently refer to one shell window; activation arbitration remains the future adapter's responsibility.
-- Both modal-host getters (`0x68a8860`, `0x68a88f4`) return the same companion at Window+`0x1d0`. Host-view resolution (`0x68a9f7c` → `0xa89d188`) queries the actual active page's native superview. The future adapter must supply that wrapper, not `NSWindow.contentView`.
-- Primary positioning (`0x68a9d30`) subtracts separately truncated dialog half-sizes from window half-sizes. An 800-wide window and 301-wide dialog produce x=250. Oversized dialogs are not clamped in that method. Maximum size (`0x68a9f30`) comes from active content, falling back to the associated window frame. The delegate supplies those dimensions; no origin/coordinate conversion is guessed here.
-- The reference has an additional, differently positioned host method whose name/caller selection is unresolved. This implementation does not invent an equivalent API. The activation/constrain results are true in the corresponding interface neighborhood, with that identification an interface-based inference rather than recovered symbols.
-
+Both modal-host getters return the same companion. Its host view is the active
+page's native superview, not the window content view. Positioning subtracts
+separately truncated half-sizes: an 800-wide window and 301-wide dialog yield
+x=250. Maximum size uses active content, falling back to the window frame.
+Position and destruction observers may reenter. Remove each observer before its
+terminal callback, and defer owner deletion until all callbacks finish.
 
 ## Executable AppKit checks
 

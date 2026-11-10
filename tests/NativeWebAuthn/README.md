@@ -2,7 +2,6 @@
 
 This source-owned adapter retains Chromium's genuine scheduler, request delegate, dialog model/sheets, transport dispatch and Apple AuthenticationServices implementation. It supplies the exact app-owned NSWindow and real modal/auxiliary-window ownership. No hidden BrowserView, credential store or fabricated authentication result is involved.
 
-
 The current Chromium adaptation changes only registered native pages. It preserves the default Chrome factory and PWA exclusion, replaces the Views-parent assumption with an actual native child window, and uses the genuine WebContents modal manager and security-dialog tracker. The context binds exact request/document/page/Browser/Profile/window identity; detachment cannot revive an old request. Callback-registration and modal-manager host-iteration boundaries defer real cancellation/removal where synchronous deletion would invalidate the caller.
 
 `request_unittest.mm` uses the real scheduler, request delegate, model, Views sheet, Browser/Profile/TabInterface and modal manager. Its cases cover native ownership, genuine cancellation, detach/reattach, pre-registration invalidation, duplicate request refusal, OS-window binding, competing security reservations, navigation, window close, construction reentry and real modal-host change. Credential success and OS authorization are not mocked or asserted.
@@ -15,6 +14,10 @@ Recovery keeps the original Chromium Browser and WebContents, original-profile c
 
 Conditional/autofill credentials, another-device choices and inline QR already use the genuine `PasswordAutofillManager` and `ChromeWebAuthnCredentialsDelegate`. `CanShowRootPopup` and `PopupBaseView::DoShow` explicitly support a Cocoa parent without a Views BrowserWindow. No replacement popup or fabricated passkey result is introduced.
 
+Compiler and component receipts apply only to their recorded source. Ambient and
+recovery presentation, keyboard/accessibility and real authenticator interaction
+need separate authorized validation; a source change alone does not establish
+those results.
 
 The integrated v44 composition preserves the current external-protocol install,
 attachment and cancellation hooks, with a separate weak-self check after

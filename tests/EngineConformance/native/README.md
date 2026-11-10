@@ -1,5 +1,9 @@
 # Native Chrome/AppKit host conformance
 
+Browser/app launch is currently prohibited by [AGENTS.md](../../../AGENTS.md).
+The runtime procedures below are retained for a future explicitly authorized
+run. Source/model checks do not grant that authorization.
+
 
 Source checks, without launching an app or accessing a real profile/Keychain:
 
@@ -35,3 +39,4 @@ Required runtime record:
 | Extensions | Use `chrome://extensions` to load the [local MV3 fixture](../README.md), then its **real Chrome action**. Run its documented identity, scripting, command, worker, popup-window and profile-nonce procedures. Compare native snapshot IDs with fixture API output. Fixture PASS does not verify denied activeTab enforcement. |
 | Restart | Cleanly quit; relaunch with `--reuse-profile` and confirm the fixture's known nonce/local storage survives. Independent profile directories must not share that nonce. |
 
+Do not claim live tab transfer, full popup POST/opener preservation, four-pane presentation, multi-profile bindings in one physical window, extension installation UX parity, production settings or complete engine service exclusions from this harness. Those remain separate required gates.

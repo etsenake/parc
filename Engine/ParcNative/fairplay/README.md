@@ -1,12 +1,11 @@
 # FairPlay playback core
 
-Engine-independent FairPlay Streaming playback for Parc's second DRM option
-(M0). Chromium keeps demuxing the page's media; these classes take the still
+Engine-independent FairPlay Streaming playback for Parc. Chromium keeps demuxing the page's media; these classes take the still
 encrypted samples with their DecryptConfig and play them through Apple's public
 sample-buffer API. Nothing here depends on Chromium: ObjC++ with ARC over
 AVFoundation, CoreMedia and AudioToolbox, plus the C++ standard library. Headers
 are plain C++ so Chromium `.cc` files can include them. Deployment target is
-macOS 13.0; newer APIs are behind `@available`. Not wired into any build yet.
+macOS 13.0; newer APIs are behind `@available`. The production overlay builds it with the GPU media service.
 
 The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 `scripts/test-fairplay-core.sh`.
@@ -276,76 +275,25 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
 
 ## M1 constraints from key delivery
 
-Keys reach the renderer only because its `AVSampleBufferDisplayLayer` and
-`AVSampleBufferAudioRenderer` are recipients of the CDM's `AVContentKeySession`
-object. `addContentKeyRecipient:` takes the object itself, not an identifier,
-so this forces the following on the Chromium integration.
+The CDM and its sample-buffer renderers share one GPU process and owner sequence.
+Recipients join the `AVContentKeySession` before receiving media; replacing keys
+after playback begins stages new recipients on the existing synchronizer. The
+compositor places the protected layer without obtaining decoded video pixels.
+Canvas, WebGL and capture APIs cannot read protected frames.
 
-- **One process for the CDM and every renderer using it.** A MediaKeys'
-  `FairPlayCdm` and the `FairPlayRenderer` of each media element it is attached
-  to must live in the same process, on one sequence. Chromium already has this
-  shape on Windows: `MediaFoundationService` hosts `MediaFoundationCdm` and
-  `MediaFoundationRenderer` together, and the renderer finds the CDM through
-  the in-process `CdmContext`. The FairPlay CDM and renderer should be served
-  the same way, as the `media::mojom::ContentDecryptionModule` and
-  `media::mojom::Renderer` of one service, with `SetCdm` resolving the
-  `cdm_id` within that process.
-- **The video layer must be composited from that process.** No `VideoFrame`
-  ever exists, so Chromium can only place the layer.
-  - In the GPU process (WebKit's choice), the layer can join the
-    `CARendererLayerTree` that `ca_renderer_layer_tree.mm` already builds with
-    `AVSampleBufferDisplayLayer`s.
-  - In a separate service process, it needs remote hosting (a `CAContext` and
-    `CALayerHost`, as the GPU process uses towards the browser).
-  - In the browser process, Parc's AppKit page host can parent it directly.
-  - In every case the video element's rect, clipping, visibility and z-order,
-    plus Picture in Picture, must be forwarded to the layer, as
-    `MediaFoundationRendererExtension` forwards the output rect on Windows.
-    Canvas `drawImage`, WebGL, `captureStream` and `requestVideoFrameCallback`
-    on protected video get no pixels.
-- **That process's sandbox must allow FairPlay.** SPC generation, decryption
-  and protected decode go through system FairPlay and CoreMedia services. The
-  harness proves them only unsandboxed; the Chromium sandbox profile of the
-  hosting process needs the matching allowances (unverified).
-- **The renderer replaces Chromium's decode path for these streams.** Samples
-  stay encrypted from the demuxer to `Enqueue`; there is no `media::Decryptor`
-  (`CdmContext::GetDecryptor` returns null), no `DecryptingDemuxerStream` and
-  no software fallback. The pipeline must choose the FairPlay renderer when a
-  `com.apple.fps` CDM is attached, like the MediaFoundation renderer type for
-  MediaFoundation CDMs.
-- **The CDM is fixed per renderer, from before the first sample.** Recipients
-  must join before processing media and can join only one session, so
-  `SetCdm` precedes the first encrypted (or clear-lead) sample and can't change
-  later. That matches `RendererImpl`, which refuses to change a set CDM. If
-  `setMediaKeys` arrives after playback began on another renderer, the
-  pipeline must switch renderers rather than retrofit this one.
-- **Audio bypasses Chromium's audio stack.** `AVSampleBufferAudioRenderer`
-  plays to the system directly: Web Audio `createMediaElementSource` gets
-  silence. Volume, mute, audio focus and ducking must map to `SetVolume` and
-  `SetMuted`; `setSinkId` maps to `SetAudioOutputDevice` (a Core Audio device
-  UID). Empty keeps following the system default until a device is named;
-  after that it pins the default device's UID and re-pins it whenever the
-  default changes, since `audioOutputDeviceUniqueID` throws on nil. A named
-  device that leaves Core Audio's device list (unplugged) moves every audio
-  renderer, outgoing ones too, to the default before AVFoundation fails them,
-  and the clock runs on, as Chromium's clear audio falls back; the native HLS
-  player sets nil there. Both listen for Core Audio's notifications only once
-  a device is named.
-- **The clock is the synchronizer's.** The pipeline reads `GetMediaTime`,
-  which may be called from any thread (it reads a retained `CMTimebase`). It
-  runs once HAVE_ENOUGH (from the data given, keys or not, as WebKit's
-  `MediaSource::monitorSourceBuffers`) and both renderers have samples to
-  play (WebKit's `allRenderersHaveAvailableSamples`), and stops only at the
-  end of what a stream was given (WebKit's `resetStallForTime`), on a
-  boundary observer. Samples held for a key mid-playback don't stop it.
-- **The hosting process must not be napped.** Synchronizer time observers,
-  media-data requests and posted callbacks drive end of stream, underflow and
-  need-data. In the harness, a covered window playing video alone showed
-  seconds-late timers until it opted out of App Nap. Whether Chromium's GPU
-  process is ever napped is unverified.
-- **Several media elements can share one MediaKeys.** Each renderer's layer
-  joins the same session; keys are matched by key ID, so any element can use
-  any usable key of that MediaKeys.
+The GPU sandbox includes the required FairPlay/CoreMedia services; dedicated
+sandbox fixtures document component coverage. Service-specific playback and
+power behavior still need separately authorized runtime validation.
+
+Audio bypasses Chromium's mixer. Web Audio's `createMediaElementSource` receives
+silence from this path. Volume, mute, ducking and output device map to the native
+renderers. A named device disappearing falls back to the default before native
+audio fails; empty device selection follows the system default. The native HLS
+route uses AVPlayer's corresponding device selection.
+
+The synchronizer owns time. It advances when buffering and available samples
+permit, stops at the supplied stream boundary, and handles multiple renderers
+sharing one MediaKeys. Key-held samples and buffering are separate signals.
 
 ## Recovery inside the renderer
 
@@ -463,202 +411,66 @@ for what the proof established.
 
 ## Native HLS player
 
-`FairPlayHlsPlayer` plays an HLS URL through `AVPlayer`, as Safari does, for
-pages that hand the element a playlist instead of using MSE. The GPU
-service runs it for Safari-identity pages
-([NATIVE_HLS.md](../fairplay_chromium/NATIVE_HLS.md)).
+`FairPlayHlsPlayer` plays URL media with `AVPlayer` in the GPU media service.
+The complete route, networking, display, AirPlay, timing and element behavior are
+maintained in [Native HLS](../fairplay_chromium/NATIVE_HLS.md).
 
-- AVFoundation never fetches by itself: the asset is created with
-  `AVURLAssetUseClientURLLoadingExclusively` and its resource loader's
-  `URLSession` is the player's stand-in, whose data tasks become
-  `HlsLoader::StartLoad` calls (WebKit's SPI, its `WebCoreNSURLSession` does
-  the same). `IsSupported()` checks both exist; `Load` refuses otherwise.
-- `skd://` key requests go to the CDM's key loader for the asset when one is
-  installed (`SetHlsKeyRequestHandler`, between `CreateAsset` and `Start`,
-  because the loader must exist before the item routes a request), else to
-  the client (`OnKeyRequest`, for every request). A failed key request is
-  asked for again rather than failing the item. AVPlayer's
-  `outputObscuredDueToInsufficientExternalProtection` reaches the client as
-  `OnOutputObscuredChange`.
-- `clearkey://` key requests (the legacy `org.w3c.clearkey` key system) go to
-  the client the same way; `FulfillKeyRequests` answers them with the raw key
-  (WebKit's `fulfillRequestWithKeyData`), and `HlsClearKeyId` gives WebKit's
-  key ID for them (the URL's resource specifier).
-- Metadata comes from the asset, as WebKit's HAVE_METADATA does: `Start`
-  loads its `playable` and `tracks` keys, then WebKit's metadata keys and
-  each track's, and once every key is loaded, every enabled track has a
-  format description and the asset is playable, `OnMetadata` reports the
-  asset's duration, the seekable window up to it and the media types (from
-  the variants when they all name codecs, else both assumed); only then are
-  the item and player made, so no key request comes before it. The item goes
-  on the player once the element prepares to play (`PrepareToPlay`: WebKit's
-  preload auto, a missing `preload` included, `autoplay` or `load()`;
-  `SetRate` above 0; `Seek`) or at once for a live stream,
-  as WebKit's `updateStates` and `prepareToPlay` make the item. A key that fails is the asset's error (a network error for
-  a URL error or a misconfigured server, else an unsupported source); an
-  asset that isn't playable is an unsupported source.
-- State then comes from the item: once it is `readyToPlay` its duration,
-  seekable window and presentation size follow as changes, a seek made
-  before that waits for it (only the latest), and buffering follows
-  `playbackLikelyToKeepUp`/`playbackBufferFull`/`playbackBufferEmpty`. As
-  WebKit, the item's status, those three and the layer's `readyForDisplay`
-  are taken from each KVO notification's own value (the buffering keys once
-  no prior notification awaits its change), never read live, so a dip and
-  recovery that both happen before the owner sequence runs still reach the
-  client; after every seek the state is reported again, changed or not; loaded
-  ranges, end, and a failed item (a decode error, as WebKit's `updateStates`;
-  `AVPlayerItemFailedToPlayToEndTime` isn't one, as WebKit doesn't observe
-  it). A metadata key AVFoundation cancels is a format error, as WebKit's
-  `MediaPlayerAVAssetStatusCancelled`.
-  Seeks are exact (zero tolerance).
-- Live and DVR timing (`HlsTimeline`, WebKit's
-  `MediaPlayerPrivateAVFoundationObjC` with the cache its GPU process keeps
-  for the page): the duration is the item's, +infinity when indefinite (live)
-  and 0 when invalid, and `OnDurationChange` fires only when it really
-  changes (live becoming VOD at `EXT-X-ENDLIST`; never while live). Seekable
-  is one window from the smallest start to the largest end of the valid,
-  non-empty `seekableTimeRanges`, up to the duration when there are none,
-  and empty when its end is 0; it is recomputed when the ranges change and,
-  while empty, at each buffering change. `getStartDate()` is
-  `round(currentDate − currentTime)` in whole seconds, none without
-  `EXT-X-PROGRAM-DATE-TIME`, sampled at metadata and at each buffering change
-  (Safari's ready-state changes), reported by `OnStartDateChange` just before
-  `OnBufferingStateChange`.
-- Threads: one owner sequence; KVO, notifications and resource loader calls
-  hop to it. `CurrentTime()` reads the item's timebase from any thread.
+The core creates an asset using exclusive client URL loading. `IsSupported`
+checks the required OS interfaces; unavailable interfaces refuse the load.
+`HlsLoader` receives all ordinary loads, while the asset key loader receives
+`skd://` requests and the legacy key path receives `clearkey://` requests.
 
-Proof: `scripts/test-fairplay-hls.sh` ([harness](../../../tests/FairPlay/hls_player_harness.mm))
-runs the player on a serial queue with no run loop and serves the streams
-under a host only its loader can reach (`parc-hls.invalid`), so playing proves
-every load went through `HlsLoader`. On macOS 27.2 (M3): Apple's TS VOD
-(79 loads, exact seek to 300 s, pause holds the clock, ended), Axinom's clear
-CMAF fMP4 with alternate audio and subtitle groups, Unified Streaming's live
-stream (infinite duration, a ~595 s DVR window, a program date time), a 404
-playlist (network error before metadata), an `http://` playlist (App
-Transport Security doesn't apply: AVFoundation fetches nothing itself),
-`preservesPitch` and rate picking the pitch algorithm, Axinom's FairPlay HLS (the skd URI
-reaches the client and never the loader; no key, no playback) and teardown
-with loads in flight. The `keys-*` scenarios license Axinom's FairPlay HLS
-vectors through `FairPlayHlsKeyLoader` and `FairPlayCdm` on both key routes
-("HLS assets"). The `timeline` scenario checks WebKit's timing rules
-with no network; `live` also checks the one-range window, a whole-second start
-date that matches the wall clock, an exact seek into the DVR window and one to
-its end reaching the live edge.
+Metadata precedes player-item creation and key events. Preload/prepare-to-play
+controls when the item reaches the player; live items attach immediately.
+Notifications retain their observed values before posting to the owner queue,
+so a short buffering dip cannot disappear before delivery. Seeks before item
+readiness keep only the latest request. Teardown cancels loads and invalidates
+queued callbacks.
 
-`tests/FairPlay/sandbox` (`--scenarios hls-ts,hls-fmp4`) plays both clear
-streams inside Chromium's GPU seatbelt profile with only the MSE route's
-FairPlay rules, every load going through the unsandboxed helper.
+The HLS player, timeline, key and sandbox fixtures are described in
+[FairPlay tests](../../../tests/FairPlay/README.md). Component results are distinct
+from integrated playback or physical receiver acceptance.
 
 ## HLS assets (FairPlay keys on the native HLS route)
 
-Safari gets an HLS stream's FairPlay keys from AVFoundation asking for each
-`EXT-X-KEY` skd URI. `FairPlayHlsKeyLoader` gives pages WebKit's events and
-messages for them: the element's `encrypted` (initDataType `skd`, the URI as
-UTF-8) when a key is needed and no session asked for it (`OnKeyNeeded`), a raw
-SPC with the URI as content identifier (a legacy session's `contentId`
-instead), the raw CKC, and key statuses under the URI's bytes. Every loading
-request it is handed is also reported (`OnKeyLoadingRequest`), for legacy
-pages' `webkitneedkey`.
+`FairPlayHlsKeyLoader` holds each asset resource-loading request and reports it
+before licensing. The attached CDM answers `generateRequest("skd", uri)` using
+that request's own SPC; earlier session requests wait for the matching asset
+request. The asset is never made a content-key recipient on this route, because
+that prevents held requests from generating their own SPC and suppresses legacy
+key events on the tested OS.
 
-AVFoundation asks for the keys through the asset's resource loader, which
-the player hands to the loader, and Parc keeps it there: the loader holds
-each skd request and reports it, and the attached CDM answers the page's
-`generateRequest("skd", uri)` with a CKC from the request's own SPC
-(`streamingContentKeyRequestDataForApp:`, WebKit's legacy
-`CDMSessionAVFoundationObjC`). A `generateRequest` that comes first waits for
-the asset to ask. It works whatever order the page attaches MediaKeys and
-licenses keys in, and every request raises `webkitneedkey` as in Safari.
-WebKit's modern route instead licenses by URI through the
-`AVContentKeySession`, then makes the asset a content key recipient and
-finishes the held requests; on this macOS a held request finished before its
-key is usable never plays, and once the asset is a recipient a still-held
-request can neither make an SPC nor be requested through the session, so
-that order stalls a key requested before an earlier one was licensed, and a
-recipient asset raises no `webkitneedkey` at all
-([tests/FairPlay README](../../../tests/FairPlay/README.md#apple-api-behaviour),
-"HLS assets").
+Each URI is the key identity and content identifier, except a legacy session's
+explicit `contentId`. The message and response are raw SPC/CKC. `webkitneedkey`
+precedes `encrypted`, and metadata precedes both. A session created before asset
+attachment receives a further license request rather than a duplicate encrypted
+event. Modern attachment and licensing order may vary.
 
-These keys have no `AVContentKey`: no `renew`, no `revoke`, and output
-protection comes from `AVPlayer`'s
-`outputObscuredDueToInsufficientExternalProtection` (`SetOutputObscured`),
-WebKit's fallback. A loading request gives one SPC. A session closed or
-removed before its answer, or a CDM detached, leaves it pending, as WebKit
-leaves its key requests (legacy `releaseKeys` does nothing; closing a modern
-session drops its requests without failing them): AVFoundation doesn't ask
-again and nothing answers it. AVFoundation asking again for a key a session
-answered is a request no session expects, as in WebKit: a new `encrypted`,
-which the page answers with a new session. After AVFoundation cancelled a
-taken request (a seek), its next request goes to that session as a new
-license request. The player answers no AVFoundation renewal request
-(`shouldWaitForRenewalOfRequestedResource`), which WebKit's loader delegate
-doesn't implement.
-
-With an asset attached, skd init data is always named by the URI; without
-one it keeps the MSE route's plan. A session made for a URI before its asset
-was attached gets the asset's request as a further license request instead
-of the page getting a second `encrypted` (pages drop duplicate init data).
-Legacy `WebKitMediaKeys` sessions (`com.apple.fps`, `1_0`) send
-`{"skd": URI, "contentId": base64}` through the same path.
+Resource-loader keys have no `AVContentKey`, so they cannot renew or revoke that
+object. Output-protection state comes from AVPlayer. Closing/removing a session
+or detaching its CDM before answering leaves its held request pending; the
+player does not invent a failure or retry. A cancelled request caused by a seek
+can become a new license request. The legacy renewal delegate is not supplied.
+See [key routing](../fairplay_chromium/NATIVE_HLS.md#keys).
 
 ## Native HLS tracks
 
-`HlsMediaSelection` is a port of WebKit's AVFoundation track code
-(`MediaPlayerPrivateAVFoundationObjC`'s `tracksChanged`, `updateAudioTracks`,
-`processMediaSelectionOptions`, `setCurrentTextTrack` and legible output,
-`configureInbandTracks`, `MediaSelectionGroupAVFObjC`,
-`AVTrackPrivateAVFObjCImpl`, `InbandTextTrackPrivateAVF(ObjC)`). It is
-compiled into the core but not yet called by the GPU service.
+`HlsMediaSelection` supplies the GPU service's `FairPlayHlsTrackBridge`; it is
+connected to the player and DOM track manager. It disables AVFoundation's
+automatic media-selection criteria and applies page choices plus system language
+and accessibility preferences.
 
-- audioTracks: the audible group's playable options (the item's audio tracks
-  when there is no group). WebKit, not AVFoundation, picks the option: the
-  player's `appliesMediaSelectionCriteriaAutomatically` is NO, and until the
-  page enables a track the group follows the user's languages and the
-  accessibility audio characteristics (audio descriptions). Ids, kinds,
-  labels, languages and indexes come from the asset track WebKit finds for
-  the option, else the option, exactly as WebKit derives them (so an id can
-  repeat, and `description` is WebKit's audio kind keyword).
-- textTracks: the legible group's playable options, numbered from 0 in order
-  of discovery; kinds `captions` (closed captions, SDH), `forced` or
-  `subtitles`. The legible output serves one track, the first showing, else
-  the last hidden; no option is selected until the page shows one. One text
-  track is marked `automatic`: the one WebKit's automatic selection shows
-  when none is showing (`configureTextTrackGroup` scored by
-  `CaptionUserPreferencesMediaAF` from MediaAccessibility's display mode,
-  caption languages and SDH preference, the user's languages, and the
-  enabled audio track's language; languages matched as WTF does on Cocoa).
-- Chapter tracks: one per locale in the asset's chapter locales (loaded
-  first, and again on `AVAssetChapterMetadataGroupsDidChangeNotification`),
-  kind `chapters`, language the locale identifier, numbered with the text
-  tracks; each chapter item becomes one WebVTT cue (its start and duration,
-  the chapter number as the id, the title as the text), made once, as
-  WebKit's `InbandChapterTrackPrivateAVFObjC`. They never feed the legible
-  output and a mode change does nothing.
-- Metadata track: WebKit's `InbandMetadataTextTrackPrivateAVF`, kind
-  `metadata`, dispatch type `com.apple.streaming`, made once when the item
-  has an enabled metadata track or the first timed metadata arrives.
-  `AVPlayerItemMetadataOutput` (every identifier, 2 s advance) gives timed
-  metadata such as ID3; `AVPlayerItemMetadataCollector` gives date ranges,
-  placed on the timeline by the item's current date. Each item becomes a
-  data cue (`HlsDataCue`): its value as `SerializedPlatformDataCueValue`
-  keeps it (MIME type, lower-cased extra attributes, locale, key, string,
-  number, boolean, bytes or date), its type names the key space
-  (`org.id3`, `com.apple.quicktime.HLS`, ...). A cue without a duration is
-  open until the next item ends it (an update); a seek removes the open ones
-  and drops metadata until it ends.
-- Cues: one `AVPlayerItemLegibleOutput` (2 s advance, player rendering
-  suppressed, source and rules styling) with WebVTT as native samples. WebVTT
-  arrives as ISO WebVTT cue boxes (`kWebVtt`, plus the `vttC` header once per
-  track); everything else (CEA-608/708, other formats) as generic cues added
-  open-ended and completed, extended or, on a seek or output flush, removed
-  as WebKit does. The page side turns them into `VTTCue`s.
+- Audio options retain stable keys, labels, language, kind and ordering. A page
+  enabling one option updates the native selection and subsequent reported state.
+- Text options include subtitles, forced and SDH/closed captions. One automatic
+  choice follows system caption preferences and enabled audio language. The page
+  controls modes; the legible output uses the first showing or last hidden track.
+- Chapter tracks expose per-locale WebVTT cues.
+- Timed/date-range metadata exposes data cues with the streaming dispatch type;
+  open cues end on later data or are removed at seek.
+- WebVTT and generic caption cues preserve IDs, timing, styling and changes.
+  Seek bracketing flushes open cues and prevents stale updates.
 
-Proof: `scripts/test-fairplay-hls-tracks.sh`
-([harness](../../../tests/FairPlay/hls_media_selection_harness.mm)) runs the
-selection on a serial queue with no run loop over Apple's
-`bipbop_16x9_variant` (two audio renditions, eight WebVTT subtitle options
-with forced ones) and `img_bipbop_adv_example_fmp4` (CEA-608 CC1): the track
-lists, kinds, labels, languages and defaults; WebKit's automatic audio
-choice; enabling audio 2 selecting its option and audio 1 then reporting
-disabled; show/hide/disable picking the legible option; WebVTT and CEA-608
-cues with their timing; a seek flushing the open caption; teardown with cues
-flowing.
+[Native HLS tracks](../fairplay_chromium/NATIVE_HLS.md#tracks) owns the end-to-end
+contract. `scripts/test-fairplay-hls-tracks.sh` exercises the core selection and
+cue lifecycle; read the script and current execution rules before selecting it.

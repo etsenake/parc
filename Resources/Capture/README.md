@@ -3,7 +3,7 @@
 1.170.0 (89123), `Contents/Resources/ARC_Capture.bundle/Contents/Resources/Assets.car`,
 SHA-256 `f844669aa3e1da67309a194220cb1100f93d086791140f205428492af524a1a6`.
 The installed catalog is used only to obtain the unavailable resource pixels and
-named color values; behavior is traced once in the retained 1.122 executable.
+named color values. Parc owns the behavior that uses them.
 
 The PDF is the catalog's unchanged raw vector payload (53.296878814697266 × 50
 points). The PNGs are AppKit's original 53 × 50 and 107 × 100 compiled CGImage
@@ -23,3 +23,4 @@ TextFieldBackground, HoveredCellBackground,
 HoveredAndKeyboardSelectedBackground, ToggleCellTextColor and OverlayBubbleText.
 Display P3 colors retain that color space; remaining values use sRGB. The selected
 `31176addd4f96f7ca0aa1a04743d64eba5ef429f4a89a723b62944a261e034b3`,
+and matches the light ToggleCellTextColor.

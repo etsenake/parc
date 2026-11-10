@@ -1,41 +1,35 @@
-# Archive preview document owner handoff
+# Archive preview document ownership
 
-The Archive preview owner receives `ArchivePreviewDocumentOwner`, one per
-original Note or Easel member. It loads the existing profile-scoped document
-store and real editor; it does not restore the archived tab, own a lease, or
-construct a substitute snapshot. Admission checks the exact archived record,
-profile removal and the caller's current lease before and after loading. The
-containing window retains and revalidates the lease and all members, and owns
-the whole-group transition. Its callbacks must bind to that preview session,
-not the underlying selected tab. Title edits use the normal document-title
-update path; lease/operation snapshots must account for those real edits.
+`ArchivePreviewDocumentOwner` loads the existing Profile-scoped Note or Easel
+store and real editor for one original archived member. It neither restores the
+tab nor substitutes a snapshot. Admission checks the exact archived record,
+Profile-removal state and caller's lease before and after loading. The window
+retains the complete member set and owns its transition; callbacks bind to the
+preview session rather than the selected tab behind it. Real title edits use
+the normal document path and must be reflected in lease snapshots.
 
-Configure Easel pages with the existing `configurePages` and a validity closure
-bound to the preview's physical window, exact original member and lease. The
-existing embedded-page creation revalidates that closure before native commit.
-Expose `noteEditor`, `embeddedPages` and `hasPendingPageCreation` to the shared
-retirement collector, retain the original owner/editor through consent and
-repeat `prepareToClose()` at the admission, commit and completion boundaries.
-Only after the real embedded pages have closed may `retireAfterClose()` dispose
-the Easel page owner. A refusal preserves the editor and pages.
+## Embedded pages and retirement
 
-Expand must transfer the same editor object into the restored pane. The existing
-Easel `WindowTransfer` snapshots exact page/view identities and gates creation
-and retirement while a handoff is reserved. It can rebind the same physical
-window and, before restore, rebind the retained original callbacks if staging
-must be reversed. Before beginning a transfer, `prepareToClose()` refuses an
-active web-input draft or marked text, so beginning the transfer cannot cancel
-that draft. The consumer must establish and protect its whole-window
-reservation, stage all members, revalidate their identities and the lease,
-and handle synchronous model-publication callbacks. The current store restore
-API publishes synchronously and does not itself guarantee that staged shell
-owners survive those callbacks; that promotion transaction remains unresolved.
-It must never replace the editor to paper over a failed transfer. A Note's
-normal title and URL callbacks likewise need rebinding to the restored pane.
-These are Parc adaptations; the reference identity and promotion ordering are
-not established by the retained Archive evidence in
-[archive-preview.md](archive-preview.md).
+Configure an Easel through its existing `configurePages`, with validity bound to
+the physical preview window, original member and lease. Native creation rechecks
+that validity before commit. The retirement collector needs `noteEditor`,
+`embeddedPages` and `hasPendingPageCreation`; retain these owners through consent
+and repeat `prepareToClose()` at admission, commit and completion.
+`retireAfterClose()` may dispose the Easel page owner only after its real pages
+close. Refusal preserves the original editor and pages.
 
-This is an integration seam, not completion of Archive preview. Group
-materialization, presentation, whole-set retirement and restore remain with
-`codex/library-archive-preview`; functional browser validation is not claimed.
+## Promotion constraint
+
+Expand must transfer the same editor into the restored pane. Easel's
+`WindowTransfer` snapshots original page/view identities and gates creation and
+retirement. `prepareToClose()` refuses active web-input drafts and marked text;
+a transfer must not cancel those edits. Stage all members under a whole-window
+reservation and revalidate every identity and the archive lease before commit.
+Notes also require title/URL callbacks to be rebound to the restored pane.
+
+The store restore API publishes synchronously. Its callbacks alone do not
+protect staged shell owners, so the promotion transaction remains unfinished.
+Do not replace an editor to conceal a failed transfer. Group materialization,
+presentation, whole-set retirement and restore belong to
+[Archive preview](archive-preview.md). This seam is not an assertion of completed
+preview behavior or browser-runtime acceptance.

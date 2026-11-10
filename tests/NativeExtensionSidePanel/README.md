@@ -15,11 +15,13 @@ The page attaches hidden before renderer creation, so the real native window is 
 
 ## Evidence and verification boundaries
 
-
 Sixteen genuine browser cases use actual Browser/Profile/TabInterface, service, registries, extension hosts and AppKit windows. They cover registered global routing and window identity; hidden/unselected refusal; background contextual selection; global/contextual precedence; pending unload; actual page `window.close`; wrong-window rejection; asynchronous host/manager drain; cached JavaScript state; explicit-close state; reentrant shutdown; live tab movement; native focus restoration; empty-tab drain; path-change/disable behavior; and pending background load without page recreation. The explicitly non-Views `TestBrowserWindow` fixture isolates the registration/presentation boundary, rather than letting stock BrowserView satisfy it accidentally. The fixture remains a test window, not production construction.
 
-
-The reviewed v26 source overlay maps the native service and its separate browser-test target, adds the actual coordinator/registry adaptation, and registers the tests under the existing macOS/CEF browser-test guard. Read-only replay validates all 69 source additions and 74 patched targets. This source integration has not been applied to the active v22 checkout: the full baseline build continues uninterrupted. Fresh GN generation/header-dependency checking, linking and execution remain pending.
+The production service and browser-test target are in the reviewed overlay.
+Compiler checks validate their actual generated flags and headers. Browser tests
+still need valid CEF fixture initialization and an execution receipt before they
+count as run. Permissions, incognito, crash/reload and API user-gesture behavior
+need their own integrated coverage.
 
 ## Native dismissal input component
 

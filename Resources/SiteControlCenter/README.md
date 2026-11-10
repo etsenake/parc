@@ -1,6 +1,7 @@
 # Site Control Center artwork
 
 
+- `icon-control-center` is the toolbar and address-pill entry glyph.
 
 Every asset is a template image (the catalog's `Template Mode: template`), loaded by its semantic asset name from the bundle:
 

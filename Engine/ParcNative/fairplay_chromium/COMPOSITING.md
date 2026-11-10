@@ -3,8 +3,7 @@
 A FairPlay renderer decodes into an `AVSampleBufferDisplayLayer` that Apple
 never reads back, so Chromium can't draw the video. It can only put that layer
 where the `<video>` element is, among the page's other CALayers. This document
-covers the path that does that, what happens when it can't, and what Josh's
-first engine build should check. The CDM, renderer and media pipeline belong to
+covers the path that does that, what happens when it can't, and its verification boundaries. The CDM, renderer and media pipeline belong to
 `fairplay-media`; this covers the registry and the compositor.
 
 Engine changes: `Engine/ParcHost/integration/fairplay-compositing.patch`, plus
@@ -442,77 +441,27 @@ sequence.
    steps; what that route must keep for them, and the proof with the layer
    moving between CAContexts, are in [NATIVE_HLS.md](NATIVE_HLS.md).
 
-## What Josh's first build should check
+## Verification targets
 
-1. The overlay applies, and `accelerated_widget_mac`, `viz_service` and
-   `gl` compile. Optionally build and run `accelerated_widget_mac_unittests`
-   with `--gtest_filter='CALayerTreeTest.ProtectedLayer*'`. `ProtectedLayer`
-   checks placement, reuse across frames, taking the layer back from an idle
-   tree, handing it back when a late tree drops the token, and the black host.
-   `ProtectedLayerPictureInPicture` runs the PiP sequence, and
-   `ProtectedLayerBelowPass` checks a host scheduled below a pass's layer with
-   a composed clip, rounded clip and opacity. `viz_unittests` with
-   `--gtest_filter='CALayerOverlayTest.Protected*:CALayerOverlayNestedTest.*'`
-   checks that a parked display shows the hole black without a token, and
-   that the flag leaves an ordinary frame alone. It also checks the video
-   inside a dialog pass, and two passes deep, on both routes: the punches, the
-   DstOut copies, opacity, clips, occluded parts, the effects that keep it
-   black, and redraws when a punch starts or stops.
-2. Ordinary video is unchanged: YouTube and an MSE test page still show
-   yellow (8-bit) or cyan (HDR) AV layers, or regular layers, with
-   `--show-mac-overlay-borders`.
-3. Once `fairplay-media` lands, an Axinom FairPlay vector in a Parc tab shows
-   an orange-bordered host with the video inside, under the page's controls.
-4. Scroll, resize the window, enter and leave fullscreen, switch tabs away
-   and back, and drag the tab to another window. The video follows each time
-   and never shows stale content. After the drag, hide and show the tab in the
-   new window: the video stays there. Ordinary tab switches still show the
-   previous page until the new one draws.
-5. Screenshots (⌘⇧4) and screen sharing show black where the video is.
-   Watch the macOS fullscreen transition too: its animation is a window
-   snapshot and may show the video black for its half second.
-6. Picture in Picture from the video's context menu or the page's button:
-   - The video moves into Parc's panel, orange-bordered, at the panel's
-     aspect ratio, and the page shows its placeholder.
-   - Resizing the panel follows. A screenshot of the panel is black.
-   - Leaving PiP puts the video back in the page.
-   - Repeat with auto PiP on a tab switch.
-   - Put the video element itself into fullscreen while in PiP: PiP ends and
-     the video shows in the page.
-   - Put Netflix's player container into fullscreen while in PiP: PiP stays
-     and the video stays in the panel.
-   - After leaving PiP, hide and show the tab: the video shows in the page,
-     not in the hidden panel.
-7. Hidden tab for about 30 seconds, then back: does the video resume, or
-   does the display layer report `requiresFlushToResumeDecoding`?
-8. `chrome://histograms/Compositing.Renderer.CALayerResult` while playing:
-   mostly success (0) on Netflix's watch page.
-9. Apple TV+: play a title. The player dialog shows the picture in an
-   orange-bordered host, under its controls and subtitles, on either route.
-   The picture fades in with the dialog, and the area is never black while
-   playing.
+`accelerated_widget_mac_unittests` contains `CALayerTreeTest.ProtectedLayer*`
+for placement, reuse, cross-tree ownership, black fallback and PiP. `viz_unittests`
+contains `CALayerOverlayTest.Protected*` and `CALayerOverlayNestedTest.*` for
+parked frames, nested passes, clipping, punches, opacity and redraws.
+
+Use generated target flags and the pinned headers for compiler checks. Tests
+that have only compiled must not be reported as executed. Existing component
+receipts do not establish service playback, capture protection on every display,
+physical receiver behavior or current integrated performance.
+
+Browser/app launch, screenshots and live playback checks require explicit new
+user authorization under [AGENTS.md](../../../AGENTS.md). This document does not
+authorize them. Current source/release status belongs in
+[product status](../../../docs/parity.md).
 
 ## Verification done without a build
 
-- Registry: syntax-checked against the pinned Chromium headers with
-  `-Wall -Wextra -Werror -Wthread-safety`. A behaviour test built with small
-  stand-ins for the base classes passes under ThreadSanitizer. It covers input
-  checks, re-registration rules, a `Lookup` reference surviving a concurrent
-  `Unregister`, release after `Unregister`, and 8 threads × 2,000 operations.
-- `ca_renderer_layer_tree.mm`, `ca_layer_tree_unittest_mac.mm`,
-  `ca_renderer_layer_params.h` and `overlay_candidate.h` are syntax-checked
-  against the pinned headers with stand-ins only for perfetto's generated trace
-  macros, one generated mojom enum and generated buildflag headers. The new
-  viz code is compiled as an extract against the real viz headers. The full viz
-  `.cc` files need generated mojom headers that don't exist without a build
-  directory, so their hunks were re-read against the pinned source.
-- The nested-pass change: the patched `ca_layer_overlay.cc`,
-  `overlay_processor_mac.cc`, `overlay_ca_unittest.cc` and
-  `ca_layer_tree_unittest_mac.mm` are syntax-checked whole with the pinned
-  clang and libc++ (`-std=c++23 -Wall -Wextra -Werror -Wthread-safety
-  -Wshorten-64-to-32 -Wunreachable-code-aggressive`). Generated headers are
-  stood in for: buildflags (all off), trace macros, enum-only mojoms and the
-  mojom interfaces the test fixtures name.
-- Every hunk applies with `scripts/engine-source.py`'s exact-context patcher,
-  and the whole overlay transforms in memory against the shared workspace's
-  recorded originals, with no writes.
+Registry fixtures cover input validation, re-registration, retained lookup across
+unregister and concurrent operations. Compositor fixtures cover geometry and
+ownership. Their commands, target settings and result receipts must be bound to
+the exact source being checked; old increment receipts do not verify a later
+change. A compiler check is not engine test execution or browser acceptance.

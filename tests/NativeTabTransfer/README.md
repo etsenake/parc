@@ -12,16 +12,13 @@ Before calling, reserve both shell ownership claims and attach a temporary plain
 
 Refused leaves the source unchanged. Restored means the actual tab was put back in its surviving source after attachment failed; the shell retains the source claim. Interrupted reports independent external page/owner mutation, requiring exact-identity reconciliation, never saved-URL reconstruction. Such independent destruction cannot be rolled back. Completion is posted, with native window/app close and another transfer blocked through result callback delivery. Ordinary native page close is blocked during the synchronous ownership change.
 
+The current Chromium adaptation briefly reserves both real UnloadControllers. This prevents last-tab detachment from advancing empty-source close state before insertion or rollback. It releases on stack unwind and returns an optional weak-source close operation. The native caller runs it only after the posted Swift result callback has reconciled or retained its ownership claims and returned. The close operation rechecks actual emptiness and scheduled deletion. Preexisting destinations remain owned on every rollback, even if they briefly contained the moved tab; only an empty destination created by this native request is independently retired after the callback. This fixes ownership ordering, not a claimed rejection by a global busy flag: NativeBrowserWindow::Close itself enters the real UnloadController. The TestBrowserWindow fixture records the initial Browser::TabStripEmpty notification directly, so ordering tests observe the separately returned close operation after that notification, rather than pretending that fixture implements the native window's close gate. The hold accounts for Chromium's synchronous Browser::TabStripEmpty behavior.
 
+The connected Swift consumer reserves both physical-window claims and keeps the original wrapper/observer. It uses the callback-free `PCNativeBrowserApplication.owner(of:)` lookup (actual TabInterface membership plus CEF Browser association), then requires successful final attachment before updating the claim. An interrupted third/unknown owner or failed final attachment stays reserved with its temporary container mapping; ordinary rendering, navigation and model retirement remain blocked until exact reconciliation or actual page closure. Retry/Close Page is a Parc recovery adaptation, with a separate presentation contract. The full Swift cohort typechecks, and the ownership/presentation executable passes 57 assertions. This does not execute native transfer, renderer continuation, AppKit reparenting or beforeunload.
 
-## Reference and verification boundary
+## Verification boundary
 
-`97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`:
-transfer entry `0x68b6918` reaches `0x685ebe0`, which preserves the detached
-TabModel/WebContents, rejects mismatched contexts, clears/rebinds page delegate
-ownership and activates an empty destination. It does not recreate the page from
-its URL or preserve source pin/group flags as destination insertion flags.
-Current Chromium owns those delegate transitions through its actual tab-strip
+Current Chromium owns delegate transitions through its actual tab-strip
 callbacks; rollback restores surviving source pin/group/opener state.
 
 Version 36 source-connects the native bridge and shared controller/test targets.

@@ -40,7 +40,7 @@ before their native writes.
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
 | Chrome, Chromium, Brave, Edge, Vivaldi, Opera | History; ordered bookmarks/empty folders; cookies; saved passwords; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
-| Safari | Default-store history and XML/binary-plist bookmarks | The recovered entry has no direct password/cookie/payment/extension reader. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
+| Safari | Default-store history and XML/binary-plist bookmarks | This reader supports no direct password/cookie/payment/extension import. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
 | Firefox | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct Firefox passwords, cookies, encrypted payment records or add-on installation is advertised. |
 
 Chrome-family source keys come from the browser's actual macOS Keychain service
@@ -102,32 +102,16 @@ not an all-categories database transaction. Original source timestamps and
 available fields are retained where the target model supports them; destination
 address/card GUIDs are fresh local identities.
 
+## Ownership and verification
 
-1.122 Core image (`97df76204405d2046261e9f8efeb0cb84f74bf9c223b81f3567e6087b52967a8`).
-source and delegate. REA
-`ev_f370b5691631073f32cc11408d7088c9228af7b84fb2ba5dc49f2ca068b70460`.
+An import belongs to one exact destination context. Supported categories are
+intersected with the source's capabilities before reading. The utility protocol,
+per-category failures, cancellation deadline, source-identity validation and
+shell-owned bookmark commit are Parc's implementation contracts.
 
-Core `0x68c382c` → `0x6827c44` → `0x67e53f0` → `0x6818880` retains one
-context-owned import, intersects categories with source support, snapshots the
-source and installs its own host/writer. REA
-`ev_a4ce74d1fcf31ba8c239408d8608154223d3fc77cbc6f3a3233d29902fde5db4`,
-`ev_7e9fa12b02268f8643ee93ca30833e0d234211ebdd44488b1628e87b4afa16bd`,
-`ev_1a7bfecdf7f50f717950b3d40519a0ecefa5f184c6ec9afc83da6399b8c78b05`.
-The shipped paths identify `arc/browser/importer/importer_manager.cc`,
-`arc_external_process_importer_host.cc` and the Chrome reader. Bounded original
-assembly establishes base host `0x5ff1698`/start `0x5ff17a4`, writer `0x5ff50b8`,
-source Chrome DB/decrypt work around `0x67af000`–`0x67b1800`, encrypted-cookie
-32-byte host validation `0x67b03fc`–`0x67b049c` and source extension preference
-filters around `0x681689c`. These excerpts are not claimed as a complete original
-class reconstruction.
-
-Safari's actual `0xa8243b0` entry and `0xa824bb0` history reader support only the
-history/bookmark categories claimed here; fresh REA
-`ev_02e22e14d5d9eafeca75026b9f62b78163ae32a0df4f79fb8ce293de12f1ff71`.
-Firefox follows the retained importer schema and current pinned macOS constraints.
-The typed utility protocol, explicit per-category failures, cancellation deadline,
-source identity checks and shell-owned bookmark commit are Parc adaptations of
-those recovered owners. Compilation and disposable native fixtures establish
+Compilation and disposable native fixtures establish source/API and reader
+behavior; they do not establish browser-runtime acceptance. This path has no
+third-party executable or library dependency beyond the pinned engine.
 
 ## Focused checks
 

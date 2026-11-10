@@ -1,13 +1,22 @@
 # Native extension actions and popup lifecycle
 
 
-## Evidence and adaptations
+## Presentation and lifecycle
 
+The actual supplied page view is hosted in an AppKit child window anchored to
+the owning page/sidebar/window. Resize preserves its anchor until the user moves
+it. Attachment to a visible parent waits for load readiness; preparing a popup
+must not show it prematurely.
 
-- The native cleanup edge is actual page-host detachment → weak forwarding `0x68791e0` → owning Browser observer `0x680a3cc` → real action `HidePopup 0x6097ee0` → `ExtensionHost::Close 0x573a568` → owner cleanup `0x6808f30`. The owner clears its host slot before deletion. REA evidence IDs are `ev_5fd046fe953307ea355e2570c60076269b2a37a46dd49815ef9deb1c99992b4d` and `ev_13297a53361c2d7237b1b7c8b9c72c8a2f27d73ddbe17cc21a4b90c723075cea`. Original carrier assembly supplies the final external branch that the bounded second decompilation truncates.
-- Current156 uses `ExtensionActionViewModel` and `ExtensionActionDelegate`, rather than copying Arc142 private C++ offsets. Actual upstream models retain user/API grant semantics. The local action accelerator map precedes regular command dispatch through the existing native registry. Delegates are bound to the exact model identity so a removed model cannot clear a same-ID replacement's popup/command.
+`ExtensionActionViewModel` and `ExtensionActionDelegate` preserve upstream grants.
+Delegates bind exact model identity, so unloading an extension cannot clear a
+replacement with the same ID. Page-host detachment closes the real ExtensionHost;
+the container clears its current-host slot before deletion.
 
-Full local evidence reports are `outputs/parc/arc-extension-popup-presentation-contract.md`, `native-extension-popup-lifecycle-plan.md`, and `arc-extension-popup-dialog-exceptions.md` in the REA workspace. Those raw reports/binaries are not a build dependency.
+Popup-owned dialogs or DevTools inspection hold ordinary parent-key dismissal.
+Browser security UI instead prevents showing or closes an obscuring popup.
+The supplied host uses `AppModalDialogManager`; keep this distinct from the
+separate page JavaScript-dialog runner.
 
 ## Source boundaries
 
@@ -20,7 +29,7 @@ The `NativeExtensionActionHost` interface is a mandatory connection to real nati
 ## Integration obligations
 
 1. Construct the container only after the actual Browser/Profile/TabList/ToolbarActionsModel exists, and only on the native path where another ExtensionsContainer has not been registered. Keep the shell host alive through container shutdown. Connect the existing native keybinding registry's action dispatcher to `DispatchActionAccelerator` exactly once.
-2. Forward shell selection/security-state changes to `HostStateChanged`; do not use `SecurityDialogTracker`'s Views-only false result as native security evidence. Real extension context menus and toolbar/menu rendering remain required surrounding services. The native factory/window integration is not part of this batch.
+2. Forward shell selection/security-state changes to `HostStateChanged`; do not use `SecurityDialogTracker`'s Views-only false result as native security evidence. Real extension context menus and toolbar/menu rendering remain required surrounding services. The native factory/window supplies those services.
 3. Shut the container down before Browser/Profile/TabList destruction. Browser/Profile must outlive any in-flight engine or native `sendEvent` callback and deferred terminal host destruction. Use `Shutdown(completion)` and retain Browser/Profile until its completion. Shutdown retains active and retiring popup sessions together with their real action models; a non-nestable task releases those models only after every supplied host is destroyed. Even an empty shutdown completes asynchronously. Do not destroy the Browser halfway through its own popup engine callback and assume a retained session also retains the Browser.
 4. Keep the supplied host's genuine WebContents delegate, background-readiness logic, modal handler and Escape behavior. If JS-dialog routing is later replaced with Parc's native CEF runner, feed its actual dialog state into the policy; the global AppModal queue will no longer describe that route.
 5. The native view is installed before renderer creation, which may run synchronously. A queued terminal dismissal prevents load completion from showing/focusing/reporting success. The show callback runs once with a real shown host or null on cancellation. Old-generation callbacks cannot clear a new session.
@@ -58,4 +67,3 @@ that implementation. The latter is registered with the actual macOS CEF
 `chrome/test:browser_tests` target and declares `HAS_OUT_OF_PROC_TEST_RUNNER`, as
 required for test cases executed by that binary. Registration and compiler
 acceptance do not mean the tests have been linked or run.
-

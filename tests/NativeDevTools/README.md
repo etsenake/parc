@@ -2,7 +2,6 @@
 
 This source keeps Chromium's real `DevToolsWindow`, main tools/toolbox WebContents, inspected-page identity, docking state, resize strategy and close decisions. Parc supplies native presentation; it does not recreate a tools URL, use a hidden BrowserView or insert developer tools into BrowserStore.
 
-
 ## Ownership and integration
 
 - The actual `DevtoolsUIController` gains a typed native presentation delegate only for a registered Parc route. Its ordinary Views behavior stays intact. BrowserWindowFeatures owns its lifetime. Docking requires both the real CanDockDevtools policy and an owned live NativeDelegate; no test-only route marker bypasses the capability check.
@@ -35,3 +34,4 @@ Linked native runtime must verify frontend load; left/right/bottom docking; undo
 
 **Known unavailable auxiliary service binding:** first-docked tools need not have a CEF host. A retained CEF host after redocking has no Browser-owned TabInterface, and `NativeChromePlatformDelegate::PageHostDidAttach` / `HasAttachedPage` deliberately reject it. Thus CEF `SetFocus`/`GetScreenPoint`, the native CEF JavaScript runner and permission attachment, and the tab-owned native file/authentication/client-certificate routes are not connected for docked tools. Direct DevTools WebContents focus/render and its genuine AppModal/web-modal route are separate; they do not establish those CEF services. This needs an exact auxiliary-owner service binding, not a fabricated tab or weaker ownership check.
 
+Undocked autosave is `bundleIdentifier + ".devToolsWindowAutosaveFrame"` with `setFrameUsingName:` and `center` on failure. First-open empty-rect fallback size is a current-engine adaptation. Docked bounds remain Chromium's resizing strategy. Native tools focus on appear is the AppKit stand-in for Chromium's doubled `SetInitialFocus` because first-docked tools have no CEF `SetFocus`. Exact installed visual, motion and runtime acceptance remain unverified. Passing a component test or compiler check does not establish completed DevTools parity.

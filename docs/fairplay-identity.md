@@ -1,748 +1,258 @@
 # Safari identity for FairPlay sites
 
-Sites offer Apple FairPlay only to Safari (see "Apple FairPlay inside
-Chromium" in [engine-flags.md](engine-flags.md)). So Parc shows Safari's
-identity to the sites that need FairPlay and stays Chrome everywhere else.
-There's no built-in list of sites. Parc learns them, and the user can undo
-any of them.
+Parc presents Safari's media-facing identity to sites it learns need FairPlay,
+while other sites retain Chromium identity. There is no built-in site list.
+The user can undo a learned choice. Pages remain in Chromium, including their
+extensions, passwords, cookies, history, DevTools and native page owners.
+The protected-media architecture is in [engine policy](engine-flags.md).
 
 ## What a Safari-identity page shows
 
-The probes in the decision (a WKWebView with Safari's user agent, then the
-same view with every WebKit-only API Chromium lacks removed) showed that
-Netflix and Apple TV+ decide by the user agent string, `navigator.vendor` and
-whether `navigator.userAgentData` exists. Apple TV+ also constructs
-`ManagedMediaSource`, which Chromium doesn't have. Neither checked
-`window.chrome`. That probe missed one: Netflix's UI does check legacy
-`WebKitMediaKeys` (see below), and Parc 1.2.0 showed UI3001 without it.
+Requests and scripts use a Safari User-Agent derived from the installed Safari
+version read once at engine start, with the macOS version as fallback. Client
+hint metadata is absent, so `Sec-CH-UA*` is omitted. `navigator.vendor` is
+`Apple Computer, Inc.`; `userAgentData` is absent in documents and workers.
 
-On a page that presents Safari's identity:
+The media surface includes ManagedMediaSource, legacy WebKitMediaKeys and video
+presentation/fullscreen helpers. `MediaKeys.getStatusForPolicy` is removed in the
+main world. Widevine requests reject with NotSupportedError on this identity;
+FairPlay and ClearKey remain. Ordinary Chrome-identity pages keep their existing
+surface, while FairPlay itself is available to every page.
 
-- Requests carry Safari's `User-Agent`, built the way Safari builds it:
-  `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15
-  (KHTML, like Gecko) Version/27.2 Safari/605.1.15`. The version comes from
-  the installed Safari's `CFBundleShortVersionString`, read once at engine
-  start. If that can't be read, the macOS version is used, since Safari's
-  version has matched macOS's since macOS 26.
-- No `Sec-CH-UA*` client hints are sent: Chromium drops them when a UA
-  override comes without client-hint metadata.
-- `navigator.userAgent` and `navigator.appVersion` match the header.
-  `navigator.vendor` is `Apple Computer, Inc.`. `navigator.userAgentData`
-  doesn't exist, in the page or in its workers.
-- Safari's legacy prefixed EME exists (`WebKitMediaKeys`, its sessions,
-  `webkitSetMediaKeys`, `webkitneedkey`); Netflix requires its capability
-  probe (see "WebKitMediaKeys" below).
-- `MediaKeys` has no `getStatusForPolicy`, as in Safari (WebKit's
-  `MediaKeys.idl` has none), so a player that tests for it behaves as it
-  does there. A main-world script (`Engine/ParcRenderer/parc_safari_media_keys.h`),
-  run with the other Safari scripts, deletes it from `MediaKeys.prototype`.
-- Encrypted Media works on `http://` pages and in frames without
-  `allow="encrypted-media"`, legacy and modern alike, as WebKit gates none of
-  it on a secure context or a permissions policy (Chrome pages keep both).
-- `requestMediaKeySystemAccess` reads its configurations as WebKit's bindings
-  do: an `encryptionScheme` other than `cenc` or `cbcs` (`cbcs-1-9` included)
-  or a session type WebKit doesn't know is a TypeError for the whole call,
-  where a Chrome page skips that capability or configuration. FairPlay takes
-  a capability naming no encryption scheme or `cbcs`, as WebKit's FairPlay
-  CDM does, and skips one naming `cenc`; it refuses a configuration that
-  names no init data type, as that CDM does. Its capabilities read
-  `contentType` as WebKit does: `video/mp4` or `audio/mp4` without codecs is
-  supported, a type may also list the other kind's FairPlay codecs, and an
-  unparsable type skips only that capability. AVFoundation judges each
-  capability's `contentType` first, as WebKit's FairPlay CDM asks
-  `isPlayableExtendedMIMEType` (the browser answers): for the HLS types
-  (`application/vnd.apple.mpegurl`, `application/x-mpegurl`) its answer
-  alone decides, since Parc's native HLS route plays what AVFoundation plays;
-  an MP4 type must also name codecs the FairPlay Renderer plays, so Media
-  Source is never offered what it can't play. As on macOS Safari,
-  `persistent-license` listed beside `temporary` is granted (persistent state
-  becomes required) and `createMediaKeys` then rejects with NotAllowedError,
-  since FairPlay keeps no persistent licenses outside iOS; listed alone it is
-  refused.
-- Videos have Safari's presentation and fullscreen API
-  (`webkitSupportsPresentationMode`, `webkitSetPresentationMode`,
-  `webkitPresentationMode`, `webkitpresentationmodechanged`,
-  `webkitSupportsFullscreen`, `webkitDisplayingFullscreen`,
-  `webkitEnterFullscreen`/`webkitExitFullscreen` and their `FullScreen`
-  spellings, `webkitendfullscreen`), as WebKit has it on macOS. A main-world
-  script (`Engine/ParcRenderer/parc_webkit_presentation.h`) maps it onto
-  Chromium's standard Picture-in-Picture and Fullscreen APIs, so Parc's
-  picture-in-picture panel and fullscreen window present the video and the
-  standard API's state always agrees with it.
-- Fullscreen events follow WebKit whatever the request's prefix:
-  `fullscreenchange`, then `webkitfullscreenchange` unless the target or its
-  document listens for both, and both `fullscreenerror` and
-  `webkitfullscreenerror` (Blink's fullscreen rendering steps,
-  `FireParcSafariEvents`). Chrome pages keep one event by request type.
-- `HTMLMediaElement.fastSeek(time)` exists, as WebKit's
-  (`[ContextEnabled=ParcSafariIdentity]`): a seek that may land early, no
-  earlier than the current position going forward, anywhere before the
-  target going back, never after it. The element hands that tolerance to
-  `WebMediaPlayer::ParcFastSeek`; the demuxer lands the seek
-  (`Demuxer::ParcSetFastSeek`/`ParcTakeFastSeekLanding`) and the pipeline
-  starts the renderer there. A Media Source element (FairPlay too) lands
-  as WebKit's `SourceBufferPrivate::computeSeekTime` does once the target is
-  buffered: each enabled stream's last keyframe at or before the target
-  within the tolerance, the earliest of those. Demuxers that can't land
-  early seek exactly.
-- `disablePictureInPicture` is reflected but, as in WebKit, never checked:
-  such a video still enters picture in picture, and setting the attribute
-  leaves one there (`PictureInPictureControllerImpl::IsElementAllowedInternal`,
-  `HTMLVideoElement::AttributeChanged`).
-- `HTMLMediaElement.getStartDate()` exists, as in WebKit's IDL. It answers
-  what Safari's GPU process last sampled: the native HLS route's
-  `EXT-X-PROGRAM-DATE-TIME` date in whole seconds, an Invalid Date for other
-  media, and the epoch before the player's first ready-state change.
-  `currentTime` takes WebKit's `unrestricted double`: Infinity
-  (`currentTime = duration` on a live stream) seeks to the end of the seekable
-  range, the live edge, and −Infinity and NaN seek to 0, where a Chrome page
-  gets a TypeError (fairplay-identity-blink.patch, `ContextEnabled=ParcSafariIdentity`;
-  NATIVE_HLS.md, Live and DVR).
-- Widevine isn't there. `requestMediaKeySystemAccess("com.widevine.alpha")`
-  rejects with `NotSupportedError` and Chromium's usual message. Apple TV+
-  probes PlayReady, Widevine and ClearKey before FairPlay, so it would pick
-  Widevine and fail if it answered. FairPlay and ClearKey stay available
-  (Safari has ClearKey too).
-- `mediaCapabilities.decodingInfo` answers as WebKit's does. WebKit's
-  `MediaDecodingConfiguration` has no `keySystemConfiguration`, so it is
-  ignored (any key system, Widevine included) and the media answered as
-  clear; the result has no `keySystemAccess` and carries the `configuration`
-  WebKit read (with `alphaChannel`). For H.264, HEVC and Dolby Vision video
-  and for audio alone the answer is WebKit's `computeMediaCapabilitiesInfo`:
-  an HDR field (`hdrMetadataType`, `colorGamut`, `transferFunction`) refuses
-  H.264 and needs HEVC Main10, `smooth` and `powerEfficient` come from
-  VideoToolbox as WebKit reads it (H.264 hardware decode; HEVC per-profile
-  hardware and playback level, a level over the decode level refused; Dolby
-  Vision profiles, levels and hardware), and audio alone is supported but
-  neither smooth nor power efficient. With `spatialRendering`, `supported`
-  then follows the audio output device as on macOS Safari: the device's
-  spatial audio sources for audiovisual or audio-only content (AudioToolbox's
-  `AudioGetDeviceSpatialPreferencesForContentType`) against the
-  configuration's `channels` (multichannel sources for more than two,
-  mono-or-stereo sources for at least one). The browser reads VideoToolbox
-  once, and the spatial audio sources at each query, and serves them to
-  windows and dedicated workers
-  (`content/browser/media/parc_video_toolbox_decoding.mm`), since a renderer
-  can't ask from its sandbox. Other video codecs keep Chromium's answers in
-  WebKit's result shape, without the spatial audio check. Media Source
-  queries for `dav1.10` (AV1 hardware required) and `dvh1.20`/`dvhe.20`
-  retain the support advertised by `MediaSource.isTypeSupported`; missing
-  VideoToolbox Dolby Vision profile/level facts make them neither smooth nor
-  power efficient, rather than hiding the rendition. Profile 8 capability
-  queries retain their existing answer. SDR-compatible Dolby Vision 8.2 and
-  10.2 base layers preserve compatibility ID 2 through the FairPlay renderer
-  and are tagged BT.709 instead of PQ on Safari-identity pages.
-- FairPlay takes WebKit's init data types `sinf`, `skd` and `mpts` (MPEG-2
-  TS, macOS) besides `cenc`: `requestMediaKeySystemAccess` keeps them in a
-  FairPlay configuration and `generateRequest` accepts them. Every other page
-  treats them as the unregistered names they were before. Netflix and Apple
-  TV+ ask for `cenc` only.
-- A Media Source element on a Safari-identity document fires `encrypted` with
-  `mpts` init data for each FairPlay SAMPLE-AES stream of an MPEG-2 TS
-  (stream types `0xdb`, `0xcf`, `0xc1`, `0xc2` with Apple's private data
-  indicator, audio with its `apad` setup), the bytes `AVStreamDataParser`'s
-  key specifier carries, `{\n  "cont" : "mpts",\n  "codc" : <type>,\n  "mtyp"
-  : <media>\n}`, once per stream. Its samples play through the FairPlay
-  renderer with the mpts request's key, in `AVStreamDataParser`'s formats
-  ([fairplay/README.md](../Engine/ParcNative/fairplay/README.md)). The mpts SPC
-  is named `TransportStreamIdentifier`, as WebKit names it, so a license
-  service must accept that asset ID (Axinom's doesn't, for Safari either).
-- A Media Source element fires `encrypted` with `sinf` init data,
-  `{"sinf":["<base64 sinf payload>"]}`, for each protected track of an
-  initialization segment, as Safari's Media Source does. The MP4 parser
-  reports it for every page (fairplay-media.patch, `mp4_stream_parser.cc`);
-  `WebMediaPlayerImpl` passes it on only for Media Source on a
-  Safari-identity document (`HTMLMediaElement::PresentsParcSafariIdentity`).
-  Such an element hears no other `encrypted` init data: Safari's Media
-  Source surfaces only `sinf`, never pssh boxes (`cenc`) or WebM key IDs.
-  Elements playing a URL keep Chromium's events. As in Safari
-  (`AudioVideoRendererAVFObjC::setInitData`), the event is skipped while a
-  session of the element's MediaKeys has a key request, answered or not, for
-  a key ID it names; a removed session keeps its requests, a closed one has
-  none. The FairPlay CDM answers that from the GPU process
-  (`CdmContext::ParcHasSessionForInitData` through MojoCdm), so with
-  MediaKeys attached the event follows that answer.
-- Service and shared workers of the site start with the same user agent
-  (not those partitioned under another site's page, where the site's frames
-  stay Chrome), so their `navigator.userAgent` and their fetches match, and
-  their scripts
-  (service worker scripts, imports and update checks, shared worker scripts)
-  are requested with it. A service worker's imports from another site follow
-  the worker. Dedicated workers take their document's user agent, and the
-  browser requests their scripts with that document's identity.
+### EME and capability rules
+
+Safari-identity EME permits HTTP and frames without an encrypted-media policy,
+matching the compatibility surface. Other pages retain Chromium's security gates.
+Configuration conversion rejects unknown encryption/session types with TypeError.
+FairPlay accepts absent encryptionScheme or `cbcs`, skips `cenc`, and requires
+an init-data type. AVFoundation checks each MIME capability; MP4 also requires a
+codec the FairPlay renderer can play. HLS support follows its native platform
+route. `persistent-license` beside `temporary` can select required persistent
+state, but `createMediaKeys` then rejects; persistent licenses alone are refused.
+
+FairPlay accepts `cenc`, `sinf`, `skd` and `mpts`. Media Source on Safari identity
+surfaces `sinf` per protected MP4 track rather than pssh/WebM init events. A key
+request already covering that ID suppresses a duplicate event; removed sessions
+retain requests, closed sessions do not. SAMPLE-AES MPEG-2 TS reports `mpts`
+per protected stream. Its SPC asset identifier is `TransportStreamIdentifier`,
+which the license service must support. Native URL playback retains its own
+init-data event route.
+
+`mediaCapabilities.decodingInfo` ignores `keySystemConfiguration` for this
+identity, returns no keySystemAccess and carries the converted configuration,
+including alphaChannel. H.264/HEVC/Dolby Vision answers use browser-side
+VideoToolbox capabilities. HDR fields refuse H.264 and require HEVC Main10;
+profile/level constraints determine smoothness and power efficiency. Audio-only
+support is neither smooth nor power-efficient. Spatial rendering additionally
+checks the current audio device's source capabilities for the requested channels.
+Other video codecs retain Chromium support in this result shape.
+
+AV1 requires actual VideoToolbox hardware support on Safari identity, including
+undeclared streams and configuration changes; see [AV1](media/av1-hardware.md).
+Supported Dolby Vision 10/20 capability routes preserve their type support even
+without platform smoothness/efficiency facts. SDR-compatible 8.2/10.2 base layers
+retain compatibility ID 2 and BT.709 tagging instead of PQ.
+
+### Presentation and playback API
+
+The prefixed presentation/fullscreen methods map to Chromium's real PiP and
+fullscreen owners. API state stays aligned with native events. Fullscreen fires
+the standard event then the prefixed event unless the listener configuration
+already covers both; errors fire both. `disablePictureInPicture` reflects its
+attribute but does not prevent entry or force exit on Safari identity.
+
+`fastSeek` carries a keyframe tolerance through the demuxer/pipeline. Forward
+seeks cannot land before the current position; neither direction lands after the
+target. MSE chooses the earliest eligible keyframe across enabled streams once
+the target is buffered. Unsupported demuxers use exact seek.
+
+`getStartDate` reports native HLS program-date-time in whole seconds, Invalid
+Date for other media and epoch before the first ready-state update. Nonfinite
+`currentTime` follows the compatibility surface: positive Infinity seeks to the
+live edge, negative Infinity and NaN to zero. Other identities retain Chromium's
+conversion rules.
 
 ## Dolby audio
 
-AC-3 and E-AC-3 (Dolby Digital and Dolby Digital Plus) answer yes only in a
-document presenting Safari's identity; every other page keeps Chromium's
-answer from before Parc turned them on. Apple TV+ asks for `ac-3` and `ec-3`
-next to Dolby Vision. fairplay-media turns on `enable_platform_ac3_eac3_audio`
-and lists both codecs for FairPlay; the gate is in Blink and keys on the
-context's user agent like the rest of the identity:
-
-- `MediaSource.isTypeSupported`, `addSourceBuffer` and `SourceBuffer.changeType`
-  (`MediaSource::IsTypeSupportedInternal`), for the codec IDs `ac-3`, `ec-3`,
-  `mp4a.a5` and `mp4a.a6`.
-- `HTMLMediaElement.canPlayType`, the choice among `<source type>` children,
-  `mediaCapabilities.decodingInfo` and WebCodecs `AudioDecoder`
-  (`isConfigSupported` and `configure`), so a Chrome page never hears
-  "probably" from one and "no" from another. A document without a window of
-  its own answers for the window that created it.
-  On a Chrome page `AudioDecoder.configure()` with a Dolby codec fails with
-  `NotSupportedError`, as the WebCodecs spec asks for an unsupported codec,
-  where Chromium without the codecs reported `OperationError` from decoder
-  setup.
-- EME: `MediaKeySystemAccessInitializerBase` gives an audio capability naming
-  AC-3 or E-AC-3 an unknown codec outside Safari's identity, so the key-system
-  selector skips that capability and judges the rest of the configuration as
-  before. Widevine's own audio support is unchanged.
+AC-3/E-AC-3 are advertised only on Safari identity. MSE type queries, add/change
+SourceBuffer, canPlayType, source selection, decodingInfo, WebCodecs and EME
+capabilities share the gate. Chrome-identity AudioDecoder configuration refuses
+these codecs with NotSupportedError; Widevine's audio support is unchanged.
 
 ## Dolby Vision
 
-Netflix adds Dolby Vision SourceBuffers (`dvhe.05.01`, `dvhe.05.04`) and Apple
-TV+ uses `dvh1.05.01`. Both ask first and drop to other streams on a "no".
-fairplay-media builds with `enable_platform_encrypted_dolby_vision`, turns
-`kPlatformEncryptedDolbyVision` on for macOS and lists profile 5 for FairPlay.
-Chromium's own rules then already answer yes for `addSourceBuffer`,
-`changeType`, EME capabilities and `mediaCapabilities.decodingInfo` with a key
-system, and no for clear Dolby Vision on Chrome-identity documents. On a Safari-identity document Parc also answers yes,
-as Safari does, for profile 5 (`dvh1.05.*`, `dvhe.05.*`):
-
-- `MediaSource.isTypeSupported` checks the rest of the type without those
-  codecs, as `addSourceBuffer` already does.
-- `HTMLMediaElement.canPlayType` does the same; a type naming only them
-  answers "probably".
-
-Other Dolby Vision profiles, profile 8 (`dvh1.08.*`, `dvhe.08.*`) included,
-keep Chromium's answer there. EME and `decodingInfo` with a key system follow
-the profiles fairplay-media lists for FairPlay; `addSourceBuffer` and
-`changeType` accept every Dolby Vision profile, as Chromium does once
-encrypted Dolby Vision is on. The choice among
-`<source type>` children keeps Chromium's answer too: a `<source>` plays as a
-plain file, where clear Dolby Vision can't decode, and failing after its
-metadata loaded wouldn't fall back to the next `<source>`. In Media Source on
-a Safari-identity document, Dolby Vision 5 and 8 play clear or encrypted,
-with keys set before, after or never, through the FairPlay Renderer (a
-switch into Dolby Vision, or keys, reaching Chromium's renderer hand over to
-it at a keyframe without a gap)
-([fairplay_chromium/README.md](../Engine/ParcNative/fairplay_chromium/README.md),
-"Codec build flags"). `decodingInfo` on a Chrome page without a key system
-still answers no, and on a Safari-identity page answers profile 5 (above).
+Platform Dolby Vision and encrypted Dolby Vision build flags are enabled.
+Safari-identity MSE routes clear/encrypted Dolby Vision 5/8 through the FairPlay
+renderer, with keys set before, after or never. A renderer handoff happens at an
+eligible keyframe. Profile 5 type queries are exposed for this route; ordinary
+file/source selection and other profiles retain their route-specific support
+checks. Advertising one type is not a promise that every container/profile can
+play. Detailed codec handling belongs to
+[the renderer guide](../Engine/ParcNative/fairplay_chromium/README.md).
 
 ## Which documents present it
 
-A site is a registrable domain, private registries included, so
-`user.github.io` is its own site. Each browsing context has two lists: Safari
-sites, and Chrome sites. Chrome sites are ones the user moved back to Chrome,
-and they win over a Safari entry. A normal Profile and its private windows
-are separate contexts. The shell owns the lists and gives them to the engine
-with `+[PCNativeBrowserApplication setFairPlayIdentitySafariSites:chromeSites:profilePath:offTheRecord:]`.
+A site is a registrable domain, including private registries. Safari and explicit
+Chrome lists belong to a browsing context; Chrome wins if both contain a site.
+Normal and private contexts remain separate. The shell publishes their lists
+through `setFairPlayIdentitySafariSites:chromeSites:profilePath:offTheRecord:`.
 
-Each native page's contents carry Safari's user agent as Chromium's UA
-override (`WebContents::SetUserAgentOverride`, without client-hint metadata).
-Chromium uses it only for a navigation that asks for it, and every navigation
-decides in `DidStartNavigation`, the one place
-`NavigationHandle::SetIsOverridingUserAgent` is allowed:
+A page's native UA override is selected at navigation start:
 
-- A main frame presents Safari's identity when its URL's site is a Safari
-  site. Leaving that site in the same tab returns to Chrome.
-- A subframe on the main document's site (scheme included, as site isolation
-  compares it) follows the main document, wherever it sits in the page.
-- A subframe on another site keeps Chrome's identity, even when its site is a
-  Safari site. A fenced frame counts as a subframe of the page holding it.
-- A frame without a site (about:blank, srcdoc, data:) inherits its parent.
-- With site isolation turned off every subframe shares the main document's
-  process, so every subframe follows the main document.
-- Parc's renderer applies the override to each frame from the document of its
-  local root, the main frame or the frame at the top of its process's part of
-  the page (`RenderFrameImpl::ShouldUseUserAgentOverride`, changed in
-  `native-host-route.patch`; upstream follows the main frame and never
-  overrides a frame in another process). So a frame on the main document's
-  site that Chromium puts in a process of its own, a sandboxed frame without
-  `allow-same-origin` or one isolated by a response header
-  (`Origin-Agent-Cluster: ?1`, `Content-Security-Policy: sandbox`), shows its
-  scripts the identity its request carried. Choosing the headers by the same
-  rule keeps every frame's headers equal to what its scripts see.
-- Once frames have committed, a frame presents what its local root's
-  document was committed with (its SiteInstanceGroup decides which frame
-  that is).
+- Main frames use their destination site's learned choice.
+- Same-site subframes, including scheme, follow the main document. Cross-site
+  subframes stay Chrome even when independently learned as Safari sites.
+- `about:blank`, srcdoc and data frames inherit their parent. Without site
+  isolation, subframes share the main document's process/identity.
+- Renderer scripts use the committed document of their local root, preserving
+  the identity carried by isolated same-site or sandboxed frame requests.
+- Service/shared workers use their site's identity except when partitioned under
+  another site's page. Dedicated workers inherit their document's identity;
+  script requests, imports and update checks use the corresponding header.
 
-The helper attaches when Parc's platform delegate receives the new contents,
-which is before the first navigation of a popup or a new tab. A main-frame
-commit that started before the helper existed is checked when it commits.
-
-The renderer side keys on the context's own user agent string
-(`third_party/blink/renderer/core/frame/parc_safari_identity.h`), so vendor,
-`userAgentData` and Widevine always agree with what `navigator.userAgent`
-shows. That also covers DevTools when it emulates a Safari user agent.
-
-The identity is fixed when a document commits. Three cases fix a mismatch by
-reloading:
-
-- A redirect from one identity's site to the other's commits with the
-  identity chosen at the start. The tab reloads once with the right one. A
-  POST result isn't reloaded.
-- When the lists change, each open page whose main document no longer
-  matches its site's identity reloads. A page in the middle of a navigation
-  is left to that navigation, a POST result isn't resubmitted, and a
-  discarded tab picks up the new identity when it's next shown.
-- A page restored from the back/forward cache with the old identity is
-  evicted and loaded again; Chromium does that when the requested identity
-  differs.
-
-A subframe whose scripts got the wrong identity because a redirect took it
-elsewhere reloads on its own: one that left the main document's site for a
-process of its own while presenting Safari, or one that a redirect brought
-onto the main document's site inside a cross-site frame with Chrome's
-identity (a player there couldn't get Widevine or FairPlay's identity
-otherwise). Its reload starts from the address it ended at, so the choice
-then fits. A frame reloads at most once for each identity in a main
-document, and a POST result never reloads.
+The helper attaches before new-tab/popup navigation; commits that predate helper
+attachment are checked as they arrive. Identity is fixed at commit. A main-frame
+redirect/list change may reload once to correct it, but POST results are not
+resubmitted. A running navigation determines its own result; discarded tabs
+update on next show. BFCache entries with an old identity are evicted/reloaded.
+Eligible redirected subframes get at most one correction per identity in the
+main document, never by replaying POST. History entries are restored to the
+main document's identity after subframe commits.
 
 ## ManagedMediaSource
 
-Apple TV+ plays titles through Safari's `ManagedMediaSource`, which Chromium
-doesn't have. Whether its player falls back to plain `MediaSource` wasn't
-tested. So the main world of every Safari-identity document gets a
-`ManagedMediaSource` before any of the page's scripts run. The script is
-`Engine/ParcRenderer/parc_managed_media_source.h`, run from
-`LocalWindowProxy::Initialize` next to the `userAgentData` removal.
+`Engine/ParcRenderer/parc_managed_media_source.h` installs a main-world class
+before page scripts. It extends Chromium MediaSource rather than creating a
+second parser/decoder. Dedicated workers also receive it; shared/service workers
+and extension isolated worlds do not.
 
-- `ManagedMediaSource` extends Chromium's `MediaSource`, so appends, MSE
-  parsing and FairPlay decryption are Chromium's. It adds `quality`, which
-  answers `"high"` as WebKit's always does (so `qualitychange` never fires),
-  and `onqualitychange`; `streaming`, `startstreaming`/`endstreaming` with
-  `onstartstreaming`/`onendstreaming`; and a static `isTypeSupported` that
-  answers like `MediaSource`'s, as WebKit's does. The three interfaces have
-  exactly the members of WebKit's IDL: `addSourceBuffer` stays on
-  `MediaSource.prototype` and `canConstructInDedicatedWorker` comes from
-  `MediaSource`; the constructor converts WebKit's `MediaSourceInit`;
-  `BufferedChangeEvent` requires its init dictionary, takes only `TimeRanges`
-  and reports ranges not given as `null`; members called on another object
-  throw as WebIDL's do.
-- Its SourceBuffers are `ManagedSourceBuffer`s that fire `bufferedchange`, a
-  `BufferedChangeEvent` with `addedRanges` and `removedRanges` as
-  `TimeRanges`, whenever their buffered ranges change. WebKit queues it while
-  the append or removal that caused it (eviction during an append included)
-  is still running, so the page hears it before `update` and `updateend`,
-  with `updating` true. Chromium has finished the operation by then, so the
-  event is dispatched as `update` arrives, ahead of the page's listeners,
-  and while it is, the SourceBuffer acts as WebKit's does while updating:
-  `updating` reads true; `appendBuffer`, `remove`, `changeType`, setting
-  `timestampOffset`, `appendWindowStart`, `appendWindowEnd` or `mode`, and the
-  source's `endOfStream()` and `duration` throw `InvalidStateError`;
-  `abort()` (or `removeSourceBuffer`) ends an append with `abort` and
-  `updateend` instead of `update` and `updateend`, and throws during a
-  removal. An append that fails or is aborted reports what its parsing
-  changed before `updateend`. Changes made outside an operation (end of
-  stream, a shorter duration, an ended source reopened by setting
-  `timestampOffset` or `mode`) are queued as tasks. Anything else Chromium
-  changes is caught by the once-a-second check. The replaced members sit
-  where Chromium has them, on `SourceBuffer.prototype` and
-  `MediaSource.prototype`, and act only for managed ones.
-- Under memory pressure its SourceBuffers drop buffered data as WebKit's
-  `SourceBuffer::memoryPressure` does (`HTMLMediaElement::
-  purgeBufferedDataIfPossible`, then `SourceBufferPrivate::evictFrames`): as
-  the pressure level rises, an inactive SourceBuffer is emptied, and an
-  active one loses, across its tracks, everything before the earlier of
-  3.75 s before the position and its previous keyframe (each track's removal
-  then runs to its next keyframe, so the GOP being played stays), and
-  everything after the point where playback from the position would stall
-  (`nextStallTime` over the SourceBuffer's intersected track ranges, gaps
-  bridged by WebKit's tolerance: 125 ms, 250 ms where the active
-  SourceBuffers' audio covers the gap, 1 s before a first range that starts
-  within the first second), or after 3.75 s past the position when it isn't
-  buffered. An ended source is purged the same way, and playback then waits
-  where the data stops, as in WebKit, until the page appends again. An
-  inactive SourceBuffer the purge emptied stops counting toward the
-  element's buffered ranges and the data a seek waits for while it stays
-  inactive and empty, since WebKit counts only active SourceBuffers there
-  and Chromium otherwise counts them all. A purge
-  waits for the append or removal in progress and runs as it completes, and
-  doesn't repeat until playback has moved on. The page then gets
-  `bufferedchange` with the removed ranges and, when the next 10 s are gone,
-  `startstreaming`. Chromium's Media Source has no such eviction, so the
-  engine does it (`SourceBufferState::ParcPurgeForMemoryPressure`, reached
-  through `ChunkDemuxer` and `WebSourceBuffer` in `fairplay-media.patch`, and
-  Blink's `SourceBuffer`, which listens for memory pressure under its own
-  `MemoryPressureListenerTag`, in `fairplay-identity-blink.patch`); it
-  recognises a managed source by a listener the script adds, and the script
-  reports the purge when the engine tells it. For a SourceBuffer carrying
-  several tracks, WebKit's previous keyframe is that of whichever track its
-  hash map visits last, so which one wins is arbitrary and can cut into
-  another track's playing GOP; Parc takes the earliest, which keeps every
-  track's.
-- `streaming` follows WebKit's `ManagedMediaSource::monitorSourceBuffers`.
-  With no active SourceBuffer it's true. Otherwise it turns true while the
-  next 10 s after the playback position aren't buffered, and false once the
-  next 30 s are; only once the source has ended are those windows capped at
-  the duration, and an ended source whose position reached the duration
-  stops. Buffered means the intersection of the active SourceBuffers' ranges
-  (each reaching the highest end time once ended), with WebKit's gap
-  tolerances: 125 ms, 250 ms where a SourceBuffer carrying audio covers the
-  gap, and 1 s before a first range that starts within the first second. The
-  attribute changes at once and `startstreaming`/`endstreaming` follow as
-  tasks, so it's already true when the page hears `sourceopen`, and current
-  when it hears `update`, `updateend`, `sourceended` and `sourceclose`. A seek
-  back after `endOfStream()` starts it again. It's checked on the media
-  element's playback events, as appends and removals complete and once a
-  second while the source is open; that check holds the source weakly, so a
-  torn-down player can still be collected. Without a known media element the
-  source may start streaming but never stops, so a player that obeys it
-  can't stall.
-- It can be attached through `src` or `setAttribute('src')` with an object
-  URL, through a `<source>` child, or through `srcObject`, as Safari allows
-  (`setAttribute` is followed on media and `<source>` elements only).
-  Chromium's `srcObject` takes only MediaStreams, so a managed source assigned
-  there plays through an object URL. While it does, `srcObject` returns the
-  source, `src` and `currentSrc` are empty as in Safari, `load()` attaches it
-  again, and clearing `srcObject` restores any `src` set before.
-- Dedicated workers of a Safari-identity document get it too, before their
-  own script runs, and `ManagedMediaSource.canConstructInDedicatedWorker`
-  answers like `MediaSource`'s (true, as in Safari). In a worker it attaches
-  through `handle`; with no media element to watch, it may start streaming
-  but never stops, so a player that moves its buffering to a worker because
-  of that answer relies on its own buffer limits. Workers have no
-  `TimeRanges` interface, so its event ranges take the prototype of the first
-  real buffered ranges (an event a page builds before reading any gets plain
-  objects). Its errors aren't muted, and a document that can't run scripts
-  doesn't get it.
-- A popup's initial empty document can hand its window and script context to
-  the same-origin page it loads. That page loses `userAgentData` in every
-  world when it takes the window over, and gets `ManagedMediaSource` from a
-  microtask: after the commit has finished (the window's globals may hold the
-  opener's getters, which mustn't run in the middle of a commit) and before
-  any of its own scripts run.
-- `scripts/test-fairplay-identity.sh` runs the exact script against a model of
-  the media APIs (`tests/FairPlayIdentity/managed_media_source.mjs`).
+- `quality` is high and does not change. The object supplies streaming state,
+  start/endstreaming events, ManagedSourceBuffer and BufferedChangeEvent with
+  converted TimeRanges and WebIDL-style receiver/argument checks.
+- Managed buffers report added/removed ranges before page update/updateend
+  listeners. During that event, updating and mutation errors behave as an active
+  operation; abort/removeSourceBuffer preserve the relevant event order.
+  Outside-operation changes are queued, with a periodic fallback check.
+- Streaming starts when the next 10 seconds are missing and stops once 30 seconds
+  are buffered. Ended sources cap those windows at duration and stop at the end;
+  seeking back can restart them. Active buffers intersect with gap tolerances
+  of 125 ms, 250 ms where audio covers the gap, and one second before an initial
+  range beginning in the first second. State changes precede queued events.
+- The monitor checks media events, append/removal completions and once a second
+  while open using a weak source reference. Without an observed media element,
+  including worker-owned buffering, streaming may start but never stop; players
+  must retain their own buffer limits.
+- Memory pressure empties inactive buffers and purges active data outside the
+  retained playing/keyframe region. It preserves the earliest playing GOP across
+  tracks and defers until active append/removal finishes. A purge does not repeat
+  until playback advances. Removed ranges reach bufferedchange and can request
+  streaming again. SourceBufferState, ChunkDemuxer and Blink own actual eviction.
+- Attachment supports src/object URLs, source children and srcObject. A managed
+  srcObject uses an internal object URL while exposing empty src/currentSrc;
+  clearing it restores an earlier src. Worker attachment uses its handle.
+
+A reused initial popup document installs helpers after commit in a microtask,
+before the new page's scripts, so inherited getters cannot run during commit.
 
 ## WebKitMediaKeys
 
-Netflix's UI (`akiraClient`) decides that Safari can play DRM video with
-exactly `!!(window.WebKitMediaKeys &&
-WebKitMediaKeys.isTypeSupported("com.apple.fps.2_0"))`. Without it, Netflix
-logs `canPlayHTML5WithDRM: false` and shows UI3001 before asking for a
-manifest. Its player then uses standard EME (`com.apple.fps.3_0`, `cenc`) and
-never constructs `WebKitMediaKeys`. Other players use the legacy sessions. So
-the main world of every Safari-identity document gets Safari's legacy prefixed
-EME for Media Source, installed with `ManagedMediaSource`, from
-`Engine/ParcRenderer/parc_webkit_media_keys.h`. Workers don't get it; Safari
-has it in windows only. The rows and what is still open are in
-[fairplay-safari-surface.md](fairplay-safari-surface.md).
+`parc_webkit_media_keys.h` installs legacy prefixed EME in Safari document main
+worlds, not workers. It retains the original modern EME functions before page
+scripts, preventing recursion when a service wraps the legacy layer itself.
 
-- `WebKitMediaKeys.isTypeSupported(keySystem, type)` answers true for the key
-  systems of WebKit's legacy Media Source CDM, `com.apple.fps.2_N` and
-  `com.apple.fps.3_N` (`LegacyCDMPrivateAVFObjC`, the same pattern). With a
-  type, it answers as that CDM does: true for `keyrelease` (ignoring case),
-  otherwise whether Media Source plays the type (Chromium's
-  `MediaSource.isTypeSupported`, taken before any page script). `createSession`
-  takes `keyrelease` only in lower case, as WebKit's `supportsMIMEType`.
-- `com.apple.fps` and `com.apple.fps.1_0` belong to WebKit's AVFoundation
-  player, which plays HLS through `<video src>` with skd key requests, and
-  Parc's native HLS route
-  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md))
-  serves them. They follow WebKit's
-  `CDMSessionAVFoundationObjC`: types by what AVFoundation decodes, sessions
-  bound to the attached player's held key requests, the SPC as the first
-  message, `webkitkeyadded` after every update. Clear key
-  (`org.w3c.clearkey`, for `application/x-mpegurl` only) comes with them, as
-  WebKit's `CDMSessionClearKey`: the key ID is the message and `update` takes a
-  JWK set for the player's `clearkey://` key requests.
-- `new WebKitMediaKeys(keySystem)` works for `com.apple.fps.2_N` and `3_N`
-  (`InvalidAccessError` for an empty key system, `NotSupportedError` for one
-  it doesn't serve, as WebKit). Its keys are a modern FairPlay `MediaKeys`
-  made through the EME natives the script took before any page script ran, so
-  a page that replaces `requestMediaKeySystemAccess` or `setMediaKeys` (Shaka's
-  `PatchedMediaKeysApple` does, on top of `WebKitMediaKeys`) doesn't loop back
-  into itself. A media element using them reports `mediaKeys` null, as in
-  Safari, and keys set on a second element move there.
-- `createSession(type, initData)` follows WebKit's
-  `CDMSessionAVContentKeySession`. The first `webkitkeymessage` is the bytes
-  `certificate`; `update(certificate)` sets the certificate and the next
-  message is the SPC; `update(ckc)` answers it and fires `webkitkeyadded`;
-  `update("renew")` sends a renewal SPC; `close()` closes the keys. Version 3
-  takes the init data from `createSession` (the `webkitneedkey` data, `cenc`
-  pssh boxes or `sinf` JSON); version 2 takes the SPC's content identifier
-  there and the source buffer's init data, the first the session got while it
-  was its element's renderer session (WebKit's `AudioVideoRendererAVFObjC`
-  hands it the latest when the session is created on attached keys or the keys
-  are attached, and later arrivals while it has none; InvalidPlayerState until
-  it has some). That init data is the sinf JSON, and Parc's CDM takes the
-  identifier as its `contentId` member (Blink passes sinf init data through
-  unchanged, while it rebuilds keyids init data from the key IDs alone). Parc's
-  CDM sends `cenc` requests as JSON with one SPC per
-  key, so the script sends each SPC as its own message and gives each CKC to
-  the oldest unanswered one. Errors are `webkitkeyerror` with a
-  `WebKitMediaKeyError`: DOMAIN with the CDM's system code when an SPC can't be
-  made. Secure stop follows WebKit's: legacy keys ask for persistent state
-  first, so their sessions keep AVFoundation's expired-session reports in the
-  document's MediaKeys storage (none in a private window); when a keys
-  object's last session closes, its key session expires and the report kept
-  for it arrives as a `webkitkeymessage` on the closed session;
-  `createSession("keyrelease", certificate)` sends the first report for that
-  certificate (none: CLIENT with `'!mor'`), and `update("acknowledged")`
-  removes it and fires `webkitkeyadded`. The CDM takes these as sinf init
-  data `{"legacySecureStop": "session" | "first"}`.
-- `webkitneedkey` (`WebKitMediaKeyNeededEvent`) is raised as WebKit's
-  `HTMLMediaElement::mediaPlayerKeyNeeded` raises it: a trusted task queued at
-  the media element, whether or not anything listens, before the `encrypted`
-  event of the same init data. `WebMediaPlayerImpl` reports each protected
-  track's sinf of a Safari-identity Media Source before it decides whether
-  `encrypted` follows, and the native HLS route reports every `skd://` and
-  `clearkey://` key request (WebKit's legacy layouts). The script's
-  completion value is its key-needed hook, which `LocalWindowProxy` keeps in a
-  private property of the main world's global and the media element calls to
-  make the event (`parc_webkit_need_key.h`), so no page script can raise or
-  intercept it, and it reaches elements outside the document and in shadow
-  trees. `encrypted` events raise nothing. `MediaError.MEDIA_ERR_ENCRYPTED` is
-  5. As in WebKit's `HTMLElement`, `onwebkitneedkey`, `onwebkitkeyadded`,
-  `onwebkitkeyerror` and `onwebkitkeymessage` are event handler content
-  attributes of every HTML element (no IDL attributes), live only on a
-  Safari-identity document.
+Media Source key systems `com.apple.fps.2_N` and `.3_N` use modern FairPlay keys.
+Type support checks the actual MSE route, plus keyrelease. Version 3 takes its
+init data directly; version 2 combines the supplied content identifier with its
+first eligible renderer-session init data. The session exchange is certificate
+request → certificate update → SPC → CKC update, with trusted key events.
+Renewal sends another SPC. Per-key requests receive their own messages and CKCs
+answer the oldest outstanding request.
 
-What the other services' current scripts do with it (fetched without signing
-in, November 6, 2026):
+Legacy keys move when attached to another element and expose mediaKeys as null.
+Closing the final session expires its native key session. Secure-stop reports
+are kept in the document MediaKeys store outside private browsing; keyrelease
+retrieves and acknowledges them. Actual native failure codes remain available
+through WebKitMediaKeyError rather than fabricated success.
 
-- **Apple TV+** video keeps its path. Its hls.js never touches
-  `WebKitMediaKeys` and picks its key system from
-  `requestMediaKeySystemAccess`. MusicKit (`mediakit~*.js`) probes only
-  `isTypeSupported("com.apple.fps.1_0", …)`, for `hasWebKitMediaKeysSupport`
-  and in the media extension of its encrypted audio player and the native
-  Safari video player behind a feature flag. That probe answers true, as in
-  Safari, since native HLS serves `1_0`, so those take Safari's skd EME or
-  `new WebKitMediaKeys("com.apple.fps")` path.
-- **Disney+** keeps its path. Its web player detects DRM with
-  `requestMediaKeySystemAccess` over Widevine, PlayReady, `com.apple.fps.2_0`
-  and ClearKey. Its native media client constructs
-  `new WebKitMediaKeys("com.apple.fps.1_0")` inside a try, but the server's
-  playback schema chooses that client, not this object. `1_0` constructs, as
-  in Safari, since native HLS serves it, so that client gets its keys when
-  the server picks it.
-- **TELUS TV+** takes its Safari path. On a Safari user agent its app calls
-  Shaka's `PatchedMediaKeysApple.install()`, which only acts when
-  `WebKitMediaKeys` exists. It then replaces `requestMediaKeySystemAccess`,
-  `MediaKeys` and `HTMLMediaElement.setMediaKeys` with legacy WebKit EME,
-  where TELUS's FairPlay key system, `com.apple.fps.1_0`, is served by the
-  native HLS route: the HLS URL plays through AVPlayer, and its skd key
-  requests reach the page as `webkitneedkey`.
+Native HLS serves `com.apple.fps`/`.1_0` and its attached player's key requests.
+Its ClearKey route accepts `org.w3c.clearkey` for HLS and JWK updates. See
+[native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md).
 
-- **Spotify** (fetched November 7, 2026) asks for Widevine in Chrome's
-  identity, so Parc learns `spotify.com`. As Safari, its player sees
-  `WebKitMediaKeys`, replaces EME with its own layer over it and keeps only
-  `com.apple.fps.1_0`; it writes the track's HLS playlist itself and plays
-  `<source src="data:application/vnd.apple.mpegurl;base64,…">` (a `blob:`
-  URL only without `MediaSource`), keyed through `webkitneedkey`. Parc used
-  to refuse that data: URL; the native HLS route now plays it as Safari does
-  (NATIVE_HLS.md, Routing). AVFoundation refuses `blob:` playlists outright.
-- **Apple Music** and **Apple Podcasts** switch with `apple.com`. Their
-  MusicKit takes legacy `WebKitMediaKeys("com.apple.fps")` and sets the https
-  HLS asset as an `<audio>` element's `src`, which the native HLS route
-  already served.
-
-`scripts/test-fairplay-identity.sh` runs the script
-(`tests/FairPlayIdentity/webkit_media_keys.mjs`, with each service's check
-copied exactly). It also checks the renderer's gate with the real
-`IsParcSafariIdentityUserAgent` and the user agent Parc sends
-(`tests/FairPlayIdentity/renderer_gate_main.cc`).
+`webkitneedkey` is a trusted queued task before the matching encrypted event,
+including detached elements and shadow trees. Blink retains its private dispatch
+hook; page scripts cannot replace it. Modern encrypted events do not themselves
+create a duplicate legacy event. Legacy event-handler content attributes and
+MEDIA_ERR_ENCRYPTED are identity-gated.
 
 ## How Parc learns a site
 
-Asking for Widevine while in Chrome's identity is the signal. fairplay-media's
-hook (`parc::fairplay::SetWidevineCdmRequestObserver`, called from
-`MediaInterfaceProxy::CreateCdm` for `com.widevine.alpha` and its sub key
-systems) reaches `OnWidevineCdmRequest` in `fairplay_identity.mm` before the
-CDM exists:
+The Widevine CDM request observer runs before CDM creation. It lets the request
+through when the page is not a native primary page, lacks a site, originates in
+another process, or the user explicitly chose Chrome. Otherwise it holds the
+request before a license exchange, adds the main site's identity and notifies
+both the page and app client so the shell records it.
 
-- The request is let through (Widevine as today) when the page isn't a
-  native page, isn't the tab's primary page, has no site, or the asking frame
-  is in another process than the main document, so a reload couldn't give it
-  Safari's identity. It's also let through when the user chose Chrome for the
-  site.
-- Otherwise the CDM is held, so no Widevine license request ever leaves.
-  Netflix signs users out after a failed one. The main document's site joins
-  the context's Safari sites at once. The page's observer gets
-  `nativePage:didLearnSafariIdentityForSite:`, and the application client gets
-  `nativeApplicationDidLearnSafariIdentityForSite:profilePath:offTheRecord:`
-  even when no page forwards it, so the shell always records it. The site's
-  running service workers stop (they restart with Safari's user agent), and
-  every open page of that site in the context reloads with Safari's identity.
-- The page holding the request reloads. If it's a POST result, its address
-  loads again as a GET in place of its entry; a page a script wrote into its
-  initial entry (`document.open`) has no address of its own and is left
-  alone. If another navigation is waiting on a beforeunload dialog, or the
-  browser is quitting or closing every window, the reload waits and tries
-  again every half second until the dialog is answered or the page closes.
-  Further held requests from the same page don't restart its workers again.
-- A page already in Safari's identity shouldn't reach Widevine, which is
-  hidden there. If one does, its request is held without a reload, so it
-  can't loop.
+The site's service workers stop and restart with the new identity. Open matching
+pages reload; an already-Safari request is held without creating a reload loop.
+The requesting POST result loads its address as GET rather than resubmitting its
+body. A script-written initial page without an address is left alone. Pending
+beforeunload, quit or whole-window close defers reload and retries while the
+original page survives. Repeated held requests do not repeatedly stop workers.
 
 ## The lists: storage and undo
 
-The shell keeps the lists (`Sources/ParcApp/FairPlayIdentityController.swift`,
-model in `Sources/ParcCore/FairPlayIdentity.swift`):
+`FairPlayIdentityController.swift` and `FairPlayIdentity.swift` own each Profile's
+`Parc FairPlay Identity.json` in its engine folder. Malformed JSON is
+moved aside with a damaged timestamp; unreadable or newer-version files remain
+untouched and changes stay in memory. Profile removal owns the file's lifetime.
 
-- A Profile's lists are `Parc FairPlay Identity.json` in its engine folder,
-  so they go with the Profile when it's removed. A file that can't be decoded
-  is moved aside as `.damaged-<time>`, not overwritten. One that can't be
-  read, or that a newer Parc wrote, stays untouched and changes stay in
-  memory.
-- A private window starts with its Profile's lists. Its own choices go on top
-  in memory, are never written, and end when the last private window closes;
-  every Profile's private lists then go back to the Profile's, including a
-  site learned in a private window just before it closed.
-- At engine start, the shell gives the engine every Profile's lists for its
-  normal and private context, before any page loads. Every change is given to
-  the engine again, and open pages update.
-- View > Use Chrome Identity for This Site appears on a page whose site Parc
-  learned. It moves the site to the Chrome list, so learning won't add it
-  again; its open pages reload as Chrome. On a site the user moved to Chrome,
-  the item reads Use Safari Identity for This Site and moves it back. It's
-  hidden on every other site.
+Private contexts start from their normal Profile's lists; later choices are
+memory-only and reset after the last private window closes. The lists are
+preferences, not site data, so clearing site data does not remove an entry.
+View → Use Chrome Identity for This Site moves a learned site to the override
+list; the inverse menu restores Safari. Open pages update accordingly.
 
 ## Engine pieces
 
-- `Engine/ParcNative/fairplay_identity.{h,mm}`: the per-page helper, the
-  lists, the worker hook and the bridge methods.
-  `Engine/ParcNative/fairplay_identity_policy.h` holds the decisions with no
-  Chromium dependency; `scripts/test-fairplay-identity.sh` checks them.
-- `fairplay-identity-blink.patch`: `navigator.vendor`, removal of
-  `userAgentData` in windows (`LocalWindowProxy::Initialize`) and workers
-  (`WorkerOrWorkletScriptController::PrepareForEvaluation`), the
-  `ManagedMediaSource` and `WebKitMediaKeys` scripts
-  (`Engine/ParcRenderer/parc_managed_media_source.h`,
-  `parc_webkit_media_keys.h`), the `getStatusForPolicy` removal
-  (`parc_safari_media_keys.h`), the video presentation API
-  (`parc_webkit_presentation.h`) with its private helpers and
-  `HTMLMediaElement`'s record of a gesture-started media change, WebKit's
-  fullscreen events (`core/fullscreen/fullscreen.cc`), its ignored
-  `disablePictureInPicture` (`picture_in_picture_controller_impl.cc`,
-  `html_video_element.cc`), FairPlay's `sinf`, `skd` and `mpts` init
-  data gate,
-  the Widevine refusal in
-  `requestMediaKeySystemAccess` and `decodingInfo`, and the memory-pressure
-  listener of a `ManagedMediaSource`'s SourceBuffers
-  (`SourceBuffer::ParcOnMemoryPressure`, with its
-  `MemoryPressureListenerTag::kParcManagedMediaSource` in
-  `base/memory/memory_pressure_listener.h`).
-- `fairplay-media.patch` also carries the purge those SourceBuffers run:
-  `SourceBufferState::ParcPurgeForMemoryPressure`, its `SourceBufferStream`
-  pieces and its path through `ChunkDemuxer` and `WebSourceBuffer`.
-- `fairplay-identity-workers.patch`: `content/public/browser/parc_worker_identity.h`,
-  a hook that service and shared workers call as they start, and that worker
-  script requests consult for their `User-Agent` (a dedicated worker's with
-  its creating frame).
-- `native-host.patch` adds the new sources to `libcef_static`, and
-  `native-host-route.patch` makes the renderer apply the override from each
-  frame's local root.
+| Owner | Responsibility |
+|---|---|
+| `Engine/ParcNative/fairplay_identity.{h,mm}` | Page identity, navigation, workers, lists and bridge |
+| `fairplay_identity_policy.h` | Chromium-independent decisions |
+| `fairplay-identity-blink.patch` | Identity-gated APIs, trusted events and memory-pressure listener |
+| `fairplay-media.patch` | Codec/EME integration and real managed-buffer eviction |
+| `fairplay-identity-workers.patch` | Worker identity and script-request hooks |
+| `native-host-route.patch` | Per-local-root renderer identity |
 
 ## Known limits
 
-- Native HLS (`<video src="….m3u8">` through AVPlayer,
-  [NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md)) is on
-  for Safari-identity pages but has not been compiled or run in an engine
-  yet. The GPU-sandbox probe played clear HLS with the existing rules;
-  FairPlay HLS inside the sandbox is unchecked. It depends on WebKit's
-  AVFoundation SPI for client URL loading: on a macOS without it the element
-  reports an unsupported source rather than letting AVFoundation fetch. The
-  sandbox denies the caption-preferences service (`mediaaccessibilityd`), so
-  whether caption styling follows the system settings is unchecked. AirPlay
-  plays it to the device the system's route list picks
-  ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#airplay));
-  the MSE route plays to none, as Safari's Media Source player.
-- A Safari site embedded by a page on another site keeps Chrome's identity
-  (see the subframe rule above).
-- The lists are a preference, not site data: clearing a site's data leaves
-  its entry, which the user removes with the View menu item. A private
-  window starts from its Profile's lists. So which learned sites present
-  Safari is visible across clearing data and between a Profile and its
-  private windows. Only a site the user opened and that asked for Widevine
-  there gets an entry.
-- A subframe that a redirect brings onto the main document's site in the
-  main document's process shows its scripts the main document's identity,
-  but its own request carried the identity chosen at the start. It isn't
-  reloaded to fix those headers, since the response already arrived and a
-  reload could repeat a one-time address (a sign-in callback).
-- A prerendered page's subframes aren't checked for redirects when the
-  page is activated, and fenced frames aren't checked at all: a fenced frame
-  whose URL is on a Safari page's site keeps Safari's identity if a redirect
-  takes it to another site.
-- Chromium copies each committing subframe's identity into the page's
-  history entry. Parc puts the main document's identity back after every
-  subframe commit, so restoring or prerendering the entry uses the right one.
-- A shared worker that is already running when its site's identity changes
-  keeps the old user agent until it ends. Service workers are stopped and
-  restart with the new one.
-- `ManagedMediaSource` is a script on top of Chromium's MediaSource, not
-  WebKit's engine policy (below). It is visible to a page that inspects it,
-  for example through `Function.prototype.toString`. Isolated worlds and
-  shared or service workers don't get it (Safari offers it to windows and
-  dedicated workers). `WebKitMediaKeys` is a script too, visible the same
-  way, and it overrides `addEventListener` and the `mediaKeys` getter on
-  `HTMLMediaElement.prototype`. `getStatusForPolicy` is removed by a main-world
-  script too, so isolated worlds (extensions) still see it. The video
-  presentation and fullscreen API is a script as well and overrides
-  `addEventListener` and `requestPictureInPicture` on
-  `HTMLVideoElement.prototype` (the latter still Chromium's request, run as
-  WebKit's presentation-mode change). Blink hands it private
-  helpers the page never sees: its events are dispatched natively, so they
-  are trusted, and `HTMLMediaElement` remembers a gesture-started load,
-  play, volume, muted, audio track or autoplay change, after which WebKit
-  lets the element enter fullscreen or picture in picture without a gesture
-  (picture in picture then uses Chromium's picture-in-picture request token;
-  element fullscreen still needs transient activation, as in WebKit).
-  A page's own `requestPictureInPicture` changes the mode as WebKit's does;
-  other changes the page or the browser starts through the standard APIs
-  report their new mode when Chromium's own event for them arrives rather
-  than as the change begins.
-- FairPlay is offered to every page, Chrome identity included, as the decision
-  asks. A multi-DRM player that lists FairPlay before Widevine and has a
-  FairPlay license server could now choose FairPlay on a site that used
-  Widevine before. Hiding `com.apple.fps*` from Chrome-identity frames would
-  keep those sites on Widevine; it's a one-line addition next to the Widevine
-  refusal if wanted.
+- HLS relies on platform client-URL-loading SPI. Missing SPI produces unsupported
+  source rather than bypassing Chromium networking. Protected HLS GPU-sandbox,
+  caption-preference service and actual AirPlay acceptance require their own
+  evidence. MSE does not route to AirPlay; native HLS uses the system route list.
+- A same-process redirect onto the main site can leave its already-sent request
+  header different from its eventual script identity; replaying one-time callback
+  URLs would be unsafe. Prerender subframe redirects and fenced-frame redirect
+  correction are not covered by the ordinary subframe correction path.
+- A running shared worker keeps its old identity until it ends. Service workers
+  are stopped when identity changes. Cross-site embedded learned sites remain
+  Chrome by design.
+- Script compatibility layers are observable through reflection. Isolated worlds
+  retain their own prototype surface. Standard PiP/fullscreen changes initiated
+  elsewhere update the compatibility state when Chromium's event arrives.
+- Worker ManagedMediaSource does not infer a playback position, so its streaming
+  state cannot enforce a player's buffer ceiling. This is a documented limit,
+  not an assertion of full WebKit engine policy.
+- FairPlay is advertised outside Safari identity too. A multi-DRM site offering
+  FairPlay first may choose it even when it previously selected Widevine.
+- Learned identity persists across site-data clearing and is inherited initially
+  by private windows; private learning itself does not persist.
 
-## What Josh's first build should test
+## Validation
 
-Nothing here has run yet; every piece needs the engine build. Steps 1, 2, 5
-and 6 need learning (the Widevine hook observer); without it, a site can be
-seeded by adding it to `safari` in the Profile's `Parc FairPlay Identity.json`
-while Parc is quit. On a fresh build, signed in to each service:
-
-1. **Netflix learns.** Open netflix.com and play a title. The first Widevine
-   request is held (no license request in DevTools' Network panel, no
-   sign-out). The tab reloads by itself, `Parc FairPlay Identity.json` in the
-   Profile's engine folder lists `netflix.com`, and the title plays through
-   FairPlay (`com.apple.fps.3_0` in the media log).
-2. **Apple TV+ learns.** Open tv.apple.com/ca (the store must match the
-   account) and play a title; same sequence as Netflix, with the list showing
-   `apple.com`. Watch whether the player constructs `ManagedMediaSource` and
-   receives `startstreaming`.
-3. **Identity surface on a learned site.** In the console: `navigator.userAgent`
-   ends `Version/27.2 Safari/605.1.15`, `navigator.vendor` is
-   `Apple Computer, Inc.`, `'userAgentData' in navigator` is `false`, and
-   `navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{}])`
-   rejects with `NotSupportedError`, and
-   `WebKitMediaKeys.isTypeSupported('com.apple.fps.2_0')` is `true`. Requests
-   show no `Sec-CH-UA` headers.
-4. **Chrome everywhere else.** Navigate the same tab to google.com: the user
-   agent is Chrome's again, `navigator.userAgentData` exists and
-   `'WebKitMediaKeys' in window` is `false`. A cross-site iframe on
-   netflix.com reports Chrome's user agent.
-5. **Undo.** View > Use Chrome Identity for This Site on Netflix reloads it as
-   Chrome; the file moves `netflix.com` to `chrome`. The item then reads Use
-   Safari Identity for This Site and moves it back.
-6. **Private windows.** A private window plays Netflix as Safari right away
-   (inherited). Learning a new site there doesn't change the file, and the
-   site is forgotten after the last private window closes.
-7. **Audio services.** Signed in, a Spotify track and an Apple Music song
-   play through `NativeHlsRenderer` (Spotify's with a data: URL).
-8. **Native HLS.** On telustvplus.com (learned as Safari), play a live
-   channel: the player gets an HLS URL, `chrome://media-internals` shows the
-   renderer `NativeHlsRenderer` (Safari's native HLS route, not
-   `ManifestDemuxer`), each `skd://` key request raises `webkitneedkey` and
-   gets a license, and video shows in the element's box, follows scrolling,
-   PiP and fullscreen, with `seekable` covering the DVR window. Pause, seek
-   back, return to live (`currentTime = Infinity`), switch the audio track.
-   If it fails, check the GPU process's sandbox denials first, as for the
-   MSE route.
+`scripts/test-fairplay-identity.sh` runs policy and exact compatibility-script
+models, renderer identity gates and service capability fixtures. Native codec,
+FairPlay/HLS and Blink component/compiler checks cover their separate layers.
+Current shipping/source status is centralized in [product status](parity.md).
+Neither source integration nor a built/notarized release establishes live
+Netflix/Apple TV+/other-service playback, PiP/casting, caption or output-protection
+acceptance. Browser/app launch restrictions remain in force.

@@ -4,7 +4,6 @@ This adapter routes the generic Chromium `ShowCertificateViewer` call for an ins
 
 This is certificate inspection only. It does not replace `SSLErrorNavigationThrottle`, the Chrome security blocking-page factory, SSL policy or interstitial commands. It does not grant trust, accept a network certificate, import a certificate, write a Keychain identity or fabricate a Proceed result. The separate macOS client-auth Details route still uses its real selector Widget/Mojo interface unchanged. Native page-info UI is not added by this slice.
 
-
 The request holds the shared native security reservation, rejects competing prompts, and retires on page navigation/destruction, detach or parent close. Detach changes its epoch before any callback; reattachment cannot revive it. The presenter defers opening, checks the actual parent/page before and after the OS call, and retains its modal delegate until the actual OS callback. On this macOS version, the allocated panel is a factory and `beginSheet` creates a separate attached `SFCertificatePanel`; cancellation targets that exact sheet. A completed begin frame never adopts or hides a replacement sheet opened by a nested callback. The completion is dismissal only, once, with no SSL decision attached.
 
 Run the standalone native suite from the repository:

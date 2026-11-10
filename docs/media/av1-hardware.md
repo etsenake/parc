@@ -15,41 +15,18 @@ configuration is stopped too. These checks do not depend on visibility,
 background state, picture in picture or remote-rendering state. Hardware AV1
 keeps the previous paths. FairPlay's existing codec restrictions remain.
 
-## WebKit evidence
+## Source contract
 
-Reference: WebKit main `db2d79f4`, retained sparse checkout
-`work/safari-media-audit-src/webkit-main`. Paths below are relative to
-`Source/WebCore`.
+The capability fact comes from VideoToolbox before renderer sandboxing, and is
+shared with workers. The implementation gates API queries, parser admission and
+later player configuration changes; checking only `isTypeSupported` would miss
+undeclared media. WebKit's AV1/WebM and platform media capability paths provide
+the platform-facing contract. MP4 file playback also depends on AVFoundation
+rather than Chromium's software AV1 decoder.
 
-- `platform/graphics/cocoa/AV1UtilitiesCocoa.mm:230-235` implements
-  `av1HardwareDecoderAvailableInProcess`: a soft-link availability check and
-  `VTIsHardwareDecodeSupported('av01')`. Lines 188-227 cache/deliver the
-  browser/GPU process fact with a test override.
-- `platform/graphics/cocoa/SourceBufferParserWebM.cpp:1546-1555` accepts an
-  `av01.` codec only with that hardware fact. Lines 838-854 construct AV1
-  track data only with hardware; otherwise the track is unsupported, and
-  lines 977-987 skip its blocks rather than decoding them in software.
-- `Modules/mediasource/MediaSource.cpp:696-719,963-1018` uses type support for
-  `isTypeSupported` and `addSourceBuffer`.
-  `Modules/mediasource/SourceBuffer.cpp:470-499` checks parser switch support
-  for `changeType`.
-- `html/HTMLMediaElement.cpp:1587-1616` delegates `canPlayType` to the selected
-  media engine. `platform/graphics/avfoundation/objc/MediaPlayerPrivateMediaSourceAVFObjC.mm:207-222`
-  delegates MSE types to SourceBufferParser.
-- MP4 does not contain an additional explicit AV1 hardware predicate in these
-  WebKit entry points. `platform/graphics/avfoundation/objc/SourceBufferParserAVFObjC.mm:204-213`
-  uses AVStreamDataParserMIMETypeCache; that cache's lines 67-114 consult the
-  asset cache. `AVAssetMIMETypeCache.mm:canDecodeExtendedType` asks
-  `AVURLAsset.isPlayableExtendedMIMEType`.
-  `MediaPlayerPrivateAVFoundationObjC.mm:2112-2146` selects file playback using
-  that asset cache and AVFoundation. WebKit does not install Chromium's
-  software AV1 decoder on this file path. The no-hardware MP4 platform answer
-  is Josh's supplied Safari observation; it was not remeasured on an M1/M2.
-- `platform/graphics/cocoa/PlatformMediaEngineConfigurationFactoryCocoa.cpp:63-88,138-145`
-  first requires media-engine support, then validates AV1 parameters through
-  `AV1UtilitiesCocoa.mm:72-180`, including the platform's profiles, levels,
-  chroma and color-depth capabilities. This edge adds the missing hardware
-  refusal; existing hardware-present profile/performance answers are unchanged.
+Hardware-present profile/level/chroma/depth checks retain their existing owners.
+This gate is not a processor-name heuristic and does not depend on tab visibility,
+PiP, casting or capture state.
 
 ## Validation boundary
 
@@ -59,11 +36,11 @@ identities/hardware states for file and MediaSource. Player tests cover
 undeclared AV1 refusal and the Chrome bypass. The injected hardware result
 uses a scoped process command line, restored after each test.
 
-All modified translation units and tests are compiled with compile_copy.sh
-and shipping engine flags. Chromium test executables are unavailable here:
-tests are not linked or run. Scratch generated playback-controls enum/interface
-stand-ins cover the existing generated-header lag and are not in the overlay.
+Recorded validation compiled the affected translation units and tests with
+shipping flags. Chromium test executables were not linked or run. Temporary
+generated-header stand-ins were compilation inputs only, not overlay contents.
 An inert AVFoundation probe on this hardware-capable Mac returned hardware=1,
 MP4 AV1 playable=1, WebM AVURLAsset playable=0 (WebKit supplies its WebM parser).
 No browser, PiP, casting, FairPlay playback, battery or frame-drop measurement
-was run. This source change requires the next engine build to reach users.
+was run. Current publication status is in [product status](../parity.md);
+a published engine does not turn this evidence into runtime acceptance.

@@ -7,7 +7,6 @@ The CEF callback must return false without consuming its callback. Chrome enterp
 The source binds the real page/document/Profile/Browser/window and requires live native attachment, activation, visible parent and sole security reservation. It validates before key acquisition, after key completion before same-challenge broadcast, and before deferred network continuation. Native widget close and pending key acquisition have separate lifetimes. Detach/navigation/parent close abort, and reservation release detects reentrant replacement. The original page's modal manager owns input blocking and list removal.
 
 
-
 `selector_unittest.mm` has 14 genuine-controller cases: real native-parent/table/identity selection, explicit no-certificate cancellation, empty list, detached/hidden owners, exact-page detach, delayed key completion, invalid late-key same-challenge broadcast, competing reservation, release-time replacement, navigation, parent close, concurrent request refusal and delegate reentry destroying the page. The fixtures use synthetic certificate/key inputs, not the user's identities. They compile but have not been linked or executed.
 
 After applying the complete reviewed overlay and generating its targets, run:

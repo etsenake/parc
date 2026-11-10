@@ -87,21 +87,10 @@ read-only using `compile_copy.sh`; Chromium test executables are unavailable,
 so these tests are compiled, not linked or run. No browser/app build or runtime
 acceptance is claimed.
 
-## Check commands
+## Checks
 
-Copy root and receipt directory:
-`/Users/josh.etsenake/parc/work/safari-media-audit-src/scratch/WMPI-4`.
-
-```
-PYTHONPATH=tests/EngineSource python3 -m unittest tests.EngineSource.test_overlays
-bash /Users/josh.etsenake/parc/work/safari-media-audit-src/compile_copy.sh ParcDistribution_GN_arm64 obj/third_party/blink/renderer/platform/media/media/web_media_player_impl.o /Users/josh.etsenake/parc/work/safari-media-audit-src/scratch/WMPI-4 third_party/blink/renderer/platform/media/web_media_player_impl.cc /Users/josh.etsenake/parc/work/safari-media-audit-src/scratch/WMPI-4/player-final.o
-bash /Users/josh.etsenake/parc/work/safari-media-audit-src/compile_copy.sh ParcDistribution_GN_arm64 obj/third_party/blink/renderer/core/unit_tests/web_media_player_impl_unittest.o /Users/josh.etsenake/parc/work/safari-media-audit-src/scratch/WMPI-4 third_party/blink/renderer/core/exported/web_media_player_impl_unittest.cc /Users/josh.etsenake/parc/work/safari-media-audit-src/scratch/WMPI-4/tests-rebased.o
-```
-
-Independent review: bounded read-only review of the Safari identity gate and
-Chrome/Safari URL/MSE regression cases; no findings. Source-identical WMPI-4
-hunks were retained across the rebase. Other contributors' key-request source
-and tests were preserved and the combined files recompiled.
-
-Results: all 27 overlay tests passed; both final rebased translation units
-compiled successfully. `git diff --check` passed. Chromium tests were not run.
+`tests/EngineSource/test_overlays.py` checks overlay structure. The pinned Blink
+unit source covers Safari/Chrome URL and MSE cases; recorded native compilation
+uses shipping flags. A compiled test object is not an executed Chromium test.
+Current source/publication status is in [product status](parity.md), separate
+from live playback, return latency or power measurements.

@@ -79,6 +79,6 @@ included availability in [app icon availability](../../docs/app-icon-availabilit
 source-preservation boundary and actual consumers. The approved variants retain
 their individual proportion/shading differences within the common optical frame.
 The current
-row states in [the parity ledger](../../docs/parity.md#app-identity-and-icon-variants)
+row states in [the icon guide](../../docs/app-icon-picker.md)
 govern completion. Integrated Dock/Finder appearance remains part of the separate
 whole-product polish pass; these asset checks do not claim a browser runtime test.

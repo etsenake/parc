@@ -6,29 +6,16 @@ delegate, which constructs this runner. The promoted Objective-C facade and
 Swift shell use that independent engine path. The complete v50 engine build has
 linked, but independent app launch and renderer-driven dialog/close acceptance
 
-## Reference and decisions
+## Decisions
 
-`4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`:
+Dialogs preserve per-page identity and retained asynchronous completion.
+Exactly-once cancellation, weak page/window binding, missing-host rejection and
+terminal teardown prevent stale requests from accepting. Cancel returns false;
+OK returns true under Chromium's actual beforeunload contract.
 
-- `ADK.WebContentChromium` alert/confirm/prompt/beforeunload bridges at
-  content and text to the actual weak page delegate. The implementations copy
-  the completion block and retain the loaded delegate during forwarding.
-  the Boolean's low bit unchanged. This does not establish original button
-  polarity. Prompt has a separate optional-string path.
-  values; no completion invocation is visible in that bounded method.
-- Fresh REA/Ghidra analyses: beforeunload
-  `ev_21d9c8293fdc5590b5f3534a9b833754c49e8b7cf3050b280370d1c6831a401a`,
-  confirm `ev_588b1d078bba080e7b3ee4515af3c06ac4c4af9515e8cab07ffb55ad05977fc0`.
-  geometry, presentation ordering and cancellation fallback remain unproven.
-
-Parc preserves per-page identity and retained asynchronous completion. Its
-exactly-once cancellation, weak page/window binding, missing-host rejection and
-teardown behavior are explicit adaptations to current Chromium ownership. They
-returns true under Chromium's actual beforeunload callback contract.
-
-[web-interactions.md](../../docs/web-interactions.md#dialogs-authentication-certificates-and-permissions--web15)):
-Chromium's title ("<origin> says", "Leave site?"/"Reload site?") as the message
-(from a page's sixth dialog) in a 280-point stack.
+The native sheet uses Chromium's origin-aware title, OK/Cancel, a prompt field
+when appropriate and the repeated-dialog suppression checkbox. Its presentation
+contract is maintained in [web interactions](../../docs/web-interactions.md).
 
 ## Executable AppKit checks
 
@@ -55,7 +42,7 @@ timing.
 
 Another pending request or an existing sheet in that same window is rejected
 with false; the original request is unchanged. Independent windows can each
-present a dialog. This bounded contention policy is tested, but it is not a
+present a dialog. The contention policy is covered by component tests. The canonical native window/application close
 coordinator and exact-page retirement coordinator serialize genuine Chromium
 beforeunload decisions. Their renderer-driven interaction with this runner
 remains a runtime gate; busy rejection must not become acceptance.
@@ -73,8 +60,7 @@ and writes logs, source/flags digests and exact commands only to
 `build/tests/native-javascript-dialogs/chromium-syntax/`. It never generates,
 builds or modifies the external source checkout. A missing generated header is
 a failed check, not replaced with a stub. This command provides syntax-only
-evidence. The later complete v50 engine build linked the implementations;
-renderer-driven exercise of these dialogs is still pending.
+evidence. Renderer-driven exercise requires a separate authorized run and receipt.
 
 ## Source integration and remaining runtime work
 

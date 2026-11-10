@@ -1,4 +1,4 @@
-# FairPlay in Chromium (M1 media plumbing)
+# FairPlay in Chromium
 
 FairPlay Streaming is an ordinary Chromium DRM option in Parc. Sites ask for
 `com.apple.fps` (or a versioned `com.apple.fps.N_M`) through standard EME, as
@@ -16,25 +16,13 @@ which the core predates, don't apply. Upstream hunks are in
 
 ## Status
 
-Landed on main in increments, each building on its own:
+The production overlay includes CDM registration, GPU renderer and sandbox
+integration, tab mute/audibility and native HLS. Current shipping status is in
+[product status](../../../docs/parity.md); build/signing receipts are separate
+from runtime acceptance.
 
-1. The CDM: routing, GPU adapter and factory, `CdmContext` additions, the
-   Widevine hook and the GPU sandbox rules. Inert: `MediaInterfaceProxy`
-   creates a FairPlay CDM only for a key system `CdmRegistryImpl` has
-   registered, as for every other CDM, and nothing registers it yet.
-2. The renderer: `RendererType::kFairPlay`, `InterfaceFactory.CreateFairPlayRenderer`,
-   the GPU renderer adapter and the render-process client. Still inert, since
-   it is only selected for a FairPlay CDM.
-3. Registration (browser `CdmInfo`, Blink key system info) and the codec build
-   flags. From here FairPlay is offered to every page.
-4. The GPU sandbox rules as `tests/FairPlay/sandbox` proved them.
-5. Tab mute and the tab's audio indicator.
-
-Safari's second route, native HLS (`<video src="….m3u8">` through `AVPlayer`
-with `skd` keys), plays HLS on Safari-identity pages; [NATIVE_HLS.md](NATIVE_HLS.md)
-describes it. Its engine-free player is the core's `FairPlayHlsPlayer`
-([core README](../fairplay/README.md#native-hls-player)), which the GPU
-service (`fairplay_hls_player_service.{h,mm}`) runs.
+[Native HLS](NATIVE_HLS.md) describes URL playback through AVPlayer. The rest of
+this guide covers demuxed samples and the Chromium/CDM boundary.
 
 ## What is where
 
@@ -54,13 +42,8 @@ service (`fairplay_hls_player_service.{h,mm}`) runs.
 | VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames and dedicated workers, for Safari-identity `decodingInfo` |
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
 
-No mojo-media GN arguments change. `enable_library_cdms` is true on macOS,
-so `mojo_media_services` already contains `"cdm"` (`ENABLE_MOJO_CDM`) and
-`mojo_media_host` is `"gpu"`. `"renderer"` stays out of `mojo_media_services`:
-it would make the GPU's default renderer every page's renderer. The FairPlay
-renderer has its own `InterfaceFactory` method instead, as Windows'
-MediaFoundation renderer does, and `InterfaceFactoryImpl` compiles its renderer
-receivers on macOS for it.
+FairPlay uses dedicated GPU InterfaceFactory methods. It does not make the GPU
+renderer the default for ordinary pages or change unrelated Mojo media services.
 
 ## Call flow (CDM)
 
@@ -333,121 +316,36 @@ after `MediaSource::monitorSourceBuffers`,
 
 ### Frame readiness before macOS 14.4
 
-Parc's minimum is macOS 13.0 (`scripts/build.py`, `LSMinimumSystemVersion`
-and compiler deployment targets). On 13.0–14.3 the FairPlay renderer uses
-WebKit's older `prerollDecodeWithCompletionHandler:` signal after a displayable
-sample is enqueued. Only success releases video readiness and the clock.
-Flush, start/seek and decoder reset invalidate earlier completions; end of
-stream with queued video still waits for its frame. Chrome-identity playback
-never enters this renderer.
-
-Reference: WebKit main `db2d79f4`,
-`Source/WebCore/platform/graphics/avfoundation/AudioVideoRendererAVFObjC.mm:1682–1684`
-connects `notifyFirstFrameAvailable` to `setHasAvailableVideoFrame`;
-`graphics/cocoa/VideoMediaSampleRenderer.mm:1426–1433` forwards the display
-notification, and `graphics/avfoundation/WebAVSampleBufferListener.mm:124,243–257`
-observes it. This main checkout targets newer systems; it has no older-system
-KVO fallback. Its decompression path supplies decoded samples instead
-(`VideoMediaSampleRenderer.mm:790–837`), but protected samples can bypass that
-path (`:462–468`). Queue capacity and renderer status do not prove a frame.
-
-The matching older reference is [WebKit webkitgtk-2.44.0
-SourceBufferPrivateAVFObjC.mm](https://github.com/WebKit/WebKit/blob/webkitgtk-2.44.0/Source/WebCore/platform/graphics/avfoundation/objc/SourceBufferPrivateAVFObjC.mm#L1074-L1107):
-`:1080–1085` uses the newer display signal if available, otherwise
-`:1093–1105` waits for successful preroll before reporting the frame. The older
-[webkitgtk-2.42.0 source](https://github.com/WebKit/WebKit/blob/webkitgtk-2.42.0/Source/WebCore/platform/graphics/avfoundation/objc/SourceBufferPrivateAVFObjC.mm#L1295-L1325)
-checks for preroll and, on still older systems without it, asks CoreMedia for
-`PostNotificationWhenConsumed` / `BufferConsumed` instead (`:335–336,1300–1305`).
-It does not document the OS cutover for that historical fallback; no supported
-13.0–14.3 range has been identified as lacking preroll. The current macOS SDK
-explicitly declares `readyForDisplay` from 14.4 and says it is **not** KVO
-observable; observing it from 14.0 would not be a valid substitute.
-
-`PARC_FAIRPLAY_FORCE_LEGACY_PREROLL=1 bash scripts/test-fairplay-core.sh --only
-WaitingForKeyScenario --muted` exercises the older callback on a current Mac;
-`--only SeekOrderScenario` checks the target picture before releasing a seek.
-This verifies the fallback on the development OS, not an execution on macOS 13.
-The signal applies equally to ordinary composition, PiP and background tabs;
-it adds no casting route or change to Now Playing. Protected display continues
-to use AVFoundation and its output protection.
-
-The legacy seek check exposed a producer capacity race: capacity can turn false
-between enqueue and the caller's next capacity read. That read now arms the
-existing request callback, so audio resumes instead of stalling after a seek.
-Focused legacy late-key, seek (including an audio-only tail), short-final-chunk
-and EOS-before-key checks pass apart from the pre-existing key-system-names
-assertion. Restoring the old readiness bypass makes the new pre-key assertion
-fail. The harness compiles native core and tests with a macOS 13.0 deployment
-target; these are component checks, not protected-video acceptance on an older
-OS or PiP/casting/background-tab runtime acceptance.
+Older systems lack the newer public frame-readiness APIs. The renderer keeps
+readiness, buffering and key waits distinct and uses its available-sample state
+for the fallback; see [waiting for keys](WAITING_FOR_KEY.md). Do not infer that a
+usable key alone means a decoded frame is ready.
 
 ## Known gaps
 
-- FairPlay MediaKeys attached while Chromium's renderer plays (a clear start
-  in H.264, HEVC or AV1, such as a clear ad before encrypted content when the
-  page sets MediaKeys only then), a late SourceBuffer whose track needs them,
-  and a SourceBuffer switching into Dolby Vision while Chromium's renderer
-  plays move playback to the FairPlay Renderer without stopping it: Safari
-  attaches each sample's key itself (`AVSampleBufferAttachContentKey`, a
-  private entitlement only WebKit's GPU process has), and Chromium's renderer
-  can't decrypt FairPlay. `PipelineImpl::ParcHandOffToFairPlay` makes the
-  FairPlay Renderer beside Chromium's, hidden, and `ChunkDemuxer` splits
-  every stream at one video keyframe at least half a second ahead
-  (`Demuxer::ParcSplitForHandOff`): Chromium's renderer plays up to it and
-  reaches end of stream there, the FairPlay Renderer prerolls paused from
-  it, and at that end the pipeline swaps them, painting the video hole frame
-  and setting the FairPlay Renderer playing. The page sees nothing: no
-  `waiting`, `playing` or `ended`. Once prerolled, the FairPlay Renderer runs
-  hidden on Chromium's renderer's clock
-  (`RendererWrapper::ParcFollowPlayingClock`, the core's
-  `SetPlaybackRateAt`, as WebKit's `setRateAtHostTime`): from that clock's
-  time now, at its rate, and stopped while it pauses or stalls. So at the
-  split the last old frame and sound end where the first new ones begin:
-  `HandOffStartScenario` measures its clock within 2 ms of the other's line
-  (set playing only at the swap, as before, it trailed by 40 to 95 ms, which
-  someone saw as a held picture and heard as a pause). The video hole frame
-  then replaces Chromium's last frame on the compositor's next frame, which
-  that frame waits for. A FairPlay Renderer prerolled too late to
-  meet the split starts from it at the swap, as before. Casting, picture in
-  picture and background tabs see the same. A seek during the
-  hand-off completes it at once (before the split it ends it, and the
-  pipeline restarts as before); a suspend ends it, the resume making the
-  FairPlay Renderer; a CDM change or turning backward ends it and restarts;
-  track changes wait for it; one asked for during a seek starts once the
-  seek is done. It also restarts, with one rebuffer, where no hand-off is
-  possible: while playing backward, during a resume or track switch, outside
-  Safari's Media Source, or when the FairPlay Renderer can't play the
-  current codecs (below). The FairPlay
-  Renderer itself takes keys at any time (`SetCdm` after media, in the
-  core's README): after a clear start or clear Dolby Vision without keys,
-  and when the page replaces its MediaKeys, new renderers join the key
-  session and take over on the same clock with no rebuffer.
-- On Safari-identity pages the FairPlay Renderer plays VP9 (profiles 0 and
-  2) and Vorbis too, as Safari's AVSampleBufferDisplayLayer and
-  AVSampleBufferAudioRenderer do (core README), so VP9 video before a switch
-  into Dolby Vision hands off at a keyframe, Vorbis plays beside Dolby
-  Vision, and `changeType()` between them is accepted. Chrome-identity pages
-  keep refusing both (`FairPlayRendererClient::Initialize`), as before.
-  The FairPlay Renderer still can't play VP8 (WebKit decodes it in software
-  and enqueues the frames, `VideoMediaSampleRenderer`) or MP3, which Safari
-  plays: beside them a switch into Dolby Vision fails and late FairPlay keys
-  restart playback, as before.
-- A page that turns its own video track off (`videoTracks`) ends video, a
-  disabled `ChunkDemuxerStream` answering with end of stream, while audio
-  plays on; turned back on, or switched to another video track, the track
-  plays from the current time in the same display layer
-  (`FairPlayRenderer::ReplaceVideo`), the picture held while it decodes, as
-  WebKit's `AudioVideoRendererAVFObjC` flushes its video renderer for a new
-  track. The background-tab optimization that turns video off is turned off
-  for FairPlay players.
-- A `setSinkId` device that goes away (a headset unplugged) plays on from
-  the system default, as clear media does in Chromium. Safari stalls there:
-  WebKit leaves it to AVFoundation, which fails the audio renderer (a decode
-  error, through `audioRendererDidReceiveError`) or pauses AVPlayer for good.
-- Two FairPlay players in one frame can lose the speaker icon: upstream's
-  `AudibilityBypassTracker` hands any pending grant to whichever player
-  claims first, so when one renderer goes, the other player's claimed grant
-  can go with it (the same holds for MediaFoundation on Windows).
+Safari-identity MSE can hand off from Chromium's renderer to FairPlay at a future
+video keyframe. The incoming renderer prerolls on the outgoing clock, and the
+pipeline swaps at the split without synthetic waiting/playing/ended events.
+Seek, suspend, reverse playback, CDM replacement and track changes have explicit
+restart or cancellation paths. Where hand-off is impossible, restart can cause
+one rebuffer. This also affects casting, PiP and background tabs.
+
+The current core supports VP9 and Vorbis for Safari-identity media, but has no
+VP8 or MP3 renderer implementation. Transitions into Dolby Vision beside those
+codecs can fail, and late FairPlay attachment can require restart. This is a
+source capability limit, not a newly reproduced site failure.
+
+Audio-grant association remains a source-review concern with multiple native
+players in one frame: `AudibilityBypassTracker::ClaimGrant` takes a pending grant
+without its originating player identity. The overlay preserves grants across
+document moves, but that does not by itself prove correct attribution when two
+players start or stop in different orders. A focused multi-player regression is
+needed before claiming the old speaker-icon concern resolved; no current live
+failure is established here.
+
+A lost selected output device falls back to the system default. Turning a video
+track off leaves audio playing; re-enabling or replacing it resumes video on the
+same clock/layer. These are implemented behaviors, not outstanding gaps.
 
 ## Widevine request hook
 
@@ -572,119 +470,22 @@ included. The probe doesn't cover Intel Macs, external displays, AirPlay or
 Bluetooth route changes. To check a real build, use
 `log stream --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "Helper (GPU)"'`.
 
-## What Josh's first build should test
+## Runtime verification boundary
 
-Use a fresh disposable profile. The steps assume the increments up to key
-system registration are on main.
-
-1. `chrome://media-internals` → Registered CDMs lists "Apple FairPlay
-   Streaming" (`com.apple.fps`, software secure, empty path).
-2. In a Parc tab on any https page, in DevTools:
-   `await navigator.requestMediaKeySystemAccess("com.apple.fps.3_0", [{initDataTypes: ["cenc"], videoCapabilities: [{contentType: 'video/mp4; codecs="avc1.640028"'}], audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}]}])`
-   resolves, and `createMediaKeys()` resolves. That proves the CDM was created
-   in the GPU process.
-3. Axinom's FairPlay CMAF vector ("CMAF H264 SingleKey (cbcs)", HLS over
-   CMAF: `https://media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/`,
-   details in [tests/FairPlay/README.md](../../../tests/FairPlay/README.md))
-   through Shaka Player in a Parc tab (a local page loading
-   shaka-player.compiled.js, or the Shaka demo's custom content). Chromium's
-   MP4 parser raises `encrypted` with `cenc` init data (the vector's Widevine
-   and PlayReady pssh), so the CDM sends WebKit's cenc message, a JSON array
-   `[{"keyID", "payload"}]`. Axinom's service wants the raw SPC, so unwrap it
-   and wrap the CKC back:
-
-   ```js
-   player.configure({drm: {
-     servers: {"com.apple.fps": "https://drm-fairplay-licensing.axprod.net/AcquireLicense"},
-     advanced: {"com.apple.fps": {serverCertificateUri: "https://tools.axinom.com/FPScert/fairplay.cer"}}}});
-   const net = player.getNetworkingEngine(), LICENSE = shaka.net.NetworkingEngine.RequestType.LICENSE;
-   let keyID;
-   net.registerRequestFilter((type, req) => {
-     if (type !== LICENSE) return;
-     const [entry] = JSON.parse(new TextDecoder().decode(req.body));
-     keyID = entry.keyID;
-     req.body = Uint8Array.from(atob(entry.payload), c => c.charCodeAt(0));
-     req.headers["Content-Type"] = "application/octet-stream";
-     req.headers["X-AxDRM-Message"] = TOKEN;  // kToken in tests/FairPlay/harness.mm
-   });
-   net.registerResponseFilter((type, res) => {
-     if (type !== LICENSE) return;
-     const ckc = btoa(String.fromCharCode(...new Uint8Array(res.data)));
-     res.data = new TextEncoder().encode(JSON.stringify([{keyID, payload: ckc}]));
-   });
-   await player.load("https://media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/manifest.m3u8");
-   ```
-
-   Expect: one license request in the Network tab, `keystatuseschange` to
-   "usable", video in the element's box that follows scrolling, resizing and
-   fullscreen, audio, and working seek and pause. The tab shows its speaker
-   icon while audio plays, and muting the tab (or the site) silences it.
-   The vector has no clear lead, so this doesn't depend on the core's clear-lead work. (Check the vector's
-   master playlist name in Axinom's README if `manifest.m3u8` 404s.)
-4. Ordinary paths unchanged: a clear MP4/MSE video, and a Widevine site (e.g.
-   Shaka's Widevine demo asset) play as before. In media-internals their
-   renderer is "RendererImpl", not "FairPlayRenderer".
-5. If FairPlay fails, first check Console for GPU sandbox denials:
-   `log stream --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "Helper (GPU)"'`.
-   Then check media-internals' log for "FairPlay renderer" errors.
+Service-specific licensing/playback, protected-output behavior, hardware codec
+combinations and physical AirPlay delivery require separate runtime evidence.
+Component fixtures and engine compilation cannot establish those results.
+Browser/app execution remains prohibited by [AGENTS.md](../../../AGENTS.md)
+unless Josh explicitly changes that direction.
 
 ## Checks run without a build
 
-Nothing here builds the engine. For each increment:
-
-- Every hunk was re-read against the pinned source (d0c02bfa). Each target is
-  byte-identical to `git show d0c02bfa:<path>` (no CEF patch or earlier overlay
-  touches it), and none is a target of another overlay patch on main.
-- The overlay tool's exact applier (`apply_context_patch` in
-  `scripts/engine-source.py`) applies `fairplay-media.patch` to those
-  preimages with matching after-hashes. Every manifest input digest matches,
-  no target is duplicated, and no new file exists upstream.
-- `tests/EngineSource` and `tests/EngineConformance/native` pass. The codec
-  defines have their own test (`test_development_and_shipping_engines_build_fairplay_platform_codecs`).
-  against the pinned headers and stub buildflag headers. These compile clean
-  at `-Wall`: `fairplay_cdm_adapter.cc`, `fairplay_cdm_factory.cc`,
-  `fairplay_renderer_adapter.mm` (with fairplay-compositing's registry
-  header), `fairplay_key_system_info.cc`, and the patched
-  `media/base/cdm_context.cc`, `media/base/renderer.cc`,
-  `media/base/pipeline_impl.cc` and `media/cdm/supported_audio_codecs.cc`.
-- Not compiled, because they need generated mojom or perfetto headers that only
-  exist in a build directory: `media_interface_proxy.cc`,
-  `frameless_media_interface_proxy.cc`, `mojo_cdm.cc`, `mojo_cdm_service.cc`,
-  `interface_factory_impl.cc`, `mojo_media_client.cc`,
-  `gpu_mojo_media_client_mac.cc`, `mojo_renderer_factory.cc`, the
-  render-process `media_interface_factory.cc`, `media_factory.cc`,
-  `fairplay_renderer_client{,_factory}.cc`, `key_system_support_update.cc`
-  and `cdm_registry_impl.cc`. Those hunks follow the existing
-  MediaFoundation code next to them line for line, and were re-read for exact
-  signatures.
-- Playback statistics (2026-11-06): `fairplay_renderer_adapter.mm` passes
-  `-fsyntax-only` (debug and `NDEBUG`) against the pinned headers with
-  fairplay-media's patched `renderer.h`/`cdm_context.h` (exact applier,
-  every before/after digest matching) and stub buildflag headers; a copy
-  with a misspelled member fails, so the check reads the code. The counts it
-  reports are covered by `tests/FairPlay` (see its README's results).
-- Native HLS mojo and loader (2026-11-06): Chromium's mojom parser accepts
-  the patched `renderer_extensions.mojom` and `interface_factory.mojom` with
-  every import, and its C++ bindings generator (Python 3.13, a typemap file
-  written from the GN `cpp_typemaps` of the types used) produces their
-  headers. Against those, the generated `-shared.h` headers of the network
-  and Blink fetch mojoms, the pinned headers and stub buildflag headers,
-  `fairplay_hls_loader.cc` and `fairplay_hls_loader_unittest.cc` pass
-  `-fsyntax-only -Wall -Wextra -Werror` (`NDEBUG`, `INSIDE_BLINK`); a copy
-  with a misspelled member fails. That check caught a struct name clashing
-  with a mojo-generated alias (`FairPlayHlsLoadRequest` vs the
-  `FairPlayHlsLoadRequestDataView` of interface `FairPlayHlsLoad`), now
-  `FairPlayHlsRequest`/`FairPlayHlsResponse`. The unit tests run only when
-  `blink_platform_unittests` is built. `fairplay_hls_player_service.mm`
-  on main and fairplay-media's patched `cdm_context.h`; copies with a
-  misspelled core or mojom member fail. `gpu_mojo_media_client_mac.cc`'s
-  hunk (it needs the GPU channel's generated headers) mirrors
-  `CreateFairPlayRenderer` beside it.
-- Each increment had an independent read-only review before main, and its
-  findings were fixed.
-
-Unverified until Josh builds: compilation of the files above, mojom
-generation, `gn check`, the GPU sandbox rules, and all runtime behaviour.
+Use source/manifest validation and compiler checks with the pinned generated
+headers and target flags. The core, codec, timeline, key, presentation and
+sandbox fixtures are documented in [FairPlay tests](../../../tests/FairPlay/README.md).
+Record whether each selected check compiled or executed, and bind its receipt to
+the finished source. Historical increment results are available in Git; do not
+reuse them as current verification.
 
 ## Binary test data
 

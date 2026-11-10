@@ -2,31 +2,21 @@
 
 The repository source connects Chromium's actual action-menu `UNINSTALL`
 command, helper, policy/removal controller, asynchronous icon loading and
-`DialogModel` to a source-owned AppKit sheet. The v22 source overlay is applied
-and its targets are generated. Linked browser execution remains pending; this
+`DialogModel` to a source-owned AppKit sheet. The production native host registers this service. Its test coverage is distinct
+from integrated browser acceptance.
 
-## Reference and adaptations
+## Confirmation presentation
 
-`0x6895c74`, show path `0x6895f0c` and main app exact-frame sheet presenter
-controller through `0x6896378`. The research record is
-`outputs/parc/arc-extension-uninstall-contract.md`; recovered pseudocode is not
-original source. The original permissive missing-delegate fallback is not copied.
+The source-owned NSPanel uses scheduled `beginSheet` on the captured parent,
+validity-gated Return/Escape and terminal teardown before result delivery. The
+actual Chromium model supplies sanitized title, icon, buttons, optional
+triggering-extension text and report-abuse checkbox. Model callbacks and
+`OnDialogDestroying` run once; unsupported model fields cancel.
 
-The presenter follows the recovered custom `Dialogs.SheetWindow` boundary:
-source-owned `NSPanel` and content view, scheduled `beginSheet` on the captured
-parent, validity-gated `insertNewline:`/`cancelOperation:` and terminal teardown
-before result delivery. It consumes the real Chromium 156 model's sanitized
-title, icon, buttons, optional triggering-extension paragraph and report-abuse
-checkbox. It invokes model callbacks and `OnDialogDestroying` exactly once;
-unsupported model fields cancel. Provisional geometry/fonts and AppKit sheet
-motion do not claim visual parity.
-
-Exact Browser/Profile/page/window/extension-instance binding, the shared-window
-pending reservation and expiry rules are Parc/current-engine adaptations.
-Ordinary navigation retains profile-scoped consent. Page detach/ownership loss,
-Browser selection loss, owner teardown and extension unload/replacement cancel
-it. A replacement extension with the same ID cannot inherit consent. Browsers
-without the registered native service retain the ordinary Views factory route.
+Consent binds exact Browser/Profile/page/window/extension instance. Navigation
+retains profile-scoped consent, but detach, selection loss, owner teardown and
+extension replacement cancel. A replacement with the same ID cannot inherit
+consent. Browsers without the native service retain the ordinary Views route.
 
 ## Ownership and shell obligations
 
@@ -42,6 +32,7 @@ without the registered native service retain the ordinary Views factory route.
   Chromium's tracker. `OnSecurityDialogAdded` matches actual Widget/native-window
   ancestry before visibility: registration can precede `Show`. Relevant-window
   registration cancels; unrelated windows remain isolated. This conservative
+  registration-time policy prevents security UI being obscured.
 - The shell's side-effect-free `HasVisibleBrowserSecurityUI` query covers the
   whole window. The presenter uses `HasVisibleBrowserSecurityUIExcluding` with
   its exact sheet and reservation; only a sole active lease in that same window
@@ -58,8 +49,8 @@ without the registered native service retain the ordinary Views factory route.
   Terminal state is committed before external delivery. A late model after
   cancellation is destroyed once and cannot resurrect the sheet.
 
-The production native factory and complete shell are still integration work;
-registering this service alone does not create the required native browser.
+The production native BrowserWindow owns and registers this service. It must
+retain the host and Browser/Profile through shutdown completion.
 
 ## Verification
 
@@ -81,28 +72,11 @@ with their own generated target settings but **have not been linked or executed*
 
 ### Integration verification
 
-The v33 source correction fixes a concrete integration defect: the full AppKit
-host includes all sheets/reservations in its aggregate query, so the uninstall
-request was rejecting its own pending reservation. Exact-owner exclusion now
-preserves its confirmation while competing owners cancel it. The actual host,
-request and fifteen-case browser source compile with pinned target settings;
-read-only overlay replay passes. The unchanged v22 build does not yet contain
-this correction, and genuine Chromium removal remains unexecuted.
-
-- Reviewed source/hash coverage: **65 mapped files and 67 patched outputs passed**.
-- Live v22 overlay application and GN generation pass. All 117 CEF patches take
-  the normal already-applied path, with none failing.
-- Header-dependency checks pass for `native_components`, `native_extensions`
-  and `uninstall_browser_tests`.
-- All eight native/test units and all three complete upstream translation units
-  pass their actual generated target compiler checks, with warnings as errors.
-- The broader upstream `chrome/browser/extensions:extensions` header check
-  reports two existing pinned-CEF includes in `extension_tab_util.cc` and
-  `api/chrome_extensions_api_client.cc`. Both are introduced by CEF's unchanged
-  `chrome_browser_extensions.patch`; neither file is modified by this overlay.
-  Adding the suggested `libcef_static` dependency would create a cycle and has
-  not been done. This broader check is not reported as passing.
-- Linked browser tests and production native-shell runtime: **pending**.
+The aggregate security query must exclude only the request's own exact sheet and
+reservation. Competing reservations still cancel it. Generated-target compiler
+checks and header checks cover their recorded inputs; the browser fixture still
+requires its valid CEF test initialization before execution. Do not treat older
+candidate/build receipts as the status of a current release.
 
 ## Targets and commands
 

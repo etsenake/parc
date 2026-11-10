@@ -23,10 +23,6 @@ Detach, replacement, navigation and visibility loss interrupt the captured reque
 actual sheet attachment precedes OnBubbleShown. No credential values are sent to
 the Swift shell. Trusted-vault blocking retains Chromium's unlock-before-save path.
 
-Fresh REA evidence `ev_874f7524c1af834e254eecb9ad380c54f51d19118cc246acb14f273aa5f464f5`
-`4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`:
-source-frame window lookup, Save/No/Never choices, Never omitted for updates,
-system palette and motion remain adaptations, not recovered exact visual parity.
 Management is reachable through the command bar and Settings. Generation retains
 Chromium's existing Cocoa-container popup route; manager reveal retains the real
 profile store and macOS DeviceAuthenticator. No duplicate generation or reveal
@@ -44,31 +40,19 @@ route because `TabDialogManager` requires a Views host widget. Ordinary Views
 browsers retain that route. Page hiding/navigation/detachment cancels unfinished
 editing; old controllers cannot clear a replacement request.
 
-controller and returns an inert object (REA
-`ev_8e8f4f75971a25c9318408f06a7890f5b45e77aa50e106115d966f060f13de18`).
-surface is absent. The genuine Chromium156 update/editor presentation is an explicit
-adaptation. Its exact visual parity is not claimed. New account-address saves,
+New account-address saves,
 migration/Home-Work merge, sign-in promotion and remaining payment modes still
 have explicit capability boundaries. No functional browser tests were run here.
 
-## Reference and deliberate adaptations
+## Presentation boundaries
 
-The investigation in `outputs/parc/arc-native-autofill-presenter-contract.md`
-(external REA workspace) establishes Arc1.122.0/71105's native frame-associated
-the keyboard paths reach real controller results. The original path does not
-prove teardown-wide once-only completion.
+The native controls use a 400×180 initial sheet, AppKit layout and system sheet
+motion. Card copy comes from the actual controller, which distinguishes card-only
+and card+CVC saves. Localization, long translated text, focus restoration and
+integrated presentation need validation beyond source checks.
 
-This implementation preserves that architecture with source-owned native
-controls. The 400×180 initial sheet geometry, AppKit controls/layout and default
-system sheet motion are engineering choices, **not recovered visual/timing
-parity**. Title/buttons use recovered local-save copy. Card explanatory copy
-comes from the current controller because Chromium156 distinguishes card-only from
-card+CVC saving; private options must not be guessed or hidden by generic copy.
-Localization, original visual measurements, layout with longer translated text,
-animation comparison and exact focus restoration remain work.
-
-Explicit terminal state, delayed callback delivery, generation invalidation and
-physical association checks close known ownership gaps. They are Parc safeguards,
+Terminal state, delayed delivery, generation invalidation and physical-owner
+checks prevent stale results from consuming replacement requests.
 
 ## Scope and integration contract
 
@@ -117,7 +101,7 @@ physical association checks close known ownership gaps. They are Parc safeguards
   managers do not add strikes, and address imports use `kAutoDeclined` without
   treating it as a user refusal. Request/view generations prevent an old
   result from clearing a newer request on the same controller.
-- User Save, explicit Decline (including the recovered Escape path), and
+- User Save, explicit Decline (including Escape), and
   interruption after presentation are distinct. Interrupted visible address UI only closes bookkeeping;
   the real backend retains its pending decision and reports Ignored on page
   destruction. Interrupted card UI uses NotInteracted when it still owns the
@@ -145,9 +129,7 @@ icon after successful presentation. The product buildflag excludes Autofill AI
 and AtMemory construction/direct presentation before Browser attachment; this
 is a scoped exclusion, not proof that the entire engine contains no AI.
 
-The reference report classifies all 18 handler methods and the separate
-current-version capability gates. The actual
-address acceptance continuation had a connected native-window defect:
+The address acceptance continuation needs a native-window capability guard:
 `AddressBubblesController::MaybeShowIOSDektopAddressPromo` unconditionally used
 `AsBrowserView()->browser()` after the generic lookup. The reviewed overlay
 checks for the actual Views presentation capability before that optional
@@ -228,11 +210,8 @@ destruction during handler return/action notification and closing before
 presentation observation. These tests use the real controllers and managers;
 none of the Chromium cases has been linked or executed yet.
 
-Project generation with v16 succeeds and incremental engine compilation is running. The native save-session, regression-test and upstream Autofill UI targets pass GN header-dependency checks. All eight native source/test units and all 29 changed upstream Autofill translation units pass the pinned compiler with actual generated target settings and real generated headers. All 117 CEF patches take the normal already-applied path; no patch failed. These are syntax and dependency checks, not linked Chromium test execution.
-
 Passing AppKit tests proves presenter behavior. Passing pinned syntax checks
 proves source interfaces, **not linked Chromium controller execution or saved
 data**. Synthetic-profile persistence, execution of the BubbleManager feature-state
-matrix, navigation/transfer and address-replacement coverage remain open. The full
-browser still needs handler routing and lifecycle hooks before this is usable
-autofill.
+matrix, navigation/transfer and address-replacement coverage remain open. Production routing is installed by the native host; component checks alone do
+not establish persisted data or browser-level acceptance.

@@ -1,6 +1,10 @@
 # Independent-engine extension conformance fixture
 
-This self-contained Manifest V3 extension is a **test input**, not an engine implementation or a compatibility claim. It has not yet been run against Parc's replacement engine. Browser runtime checks belong in a disposable profile; keep reports under ignored `build/`, outside source control. A Chrome baseline can help separate fixture defects from backend defects, but does not establish Parc compatibility.
+Browser/app launch is currently prohibited by [AGENTS.md](../../AGENTS.md).
+The runtime procedures below are retained for a future explicitly authorized
+run. Source/model checks do not grant that authorization.
+
+This self-contained Manifest V3 extension is a **test input**, not an engine implementation or a compatibility claim. Source validation is separate from recorded engine execution. Browser runtime checks belong in a disposable profile; keep reports under ignored `build/`, outside source control. A Chrome baseline can help separate fixture defects from backend defects, but does not establish Parc compatibility.
 
 ## Start and install
 

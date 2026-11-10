@@ -14,4 +14,4 @@ native component windows remain off screen.
 The checks cover original responder preservation, actual SwiftUI-to-AppKit card
 attachment, focus relinquishment when disabling the card, repeated updates,
 hidden controls, superseded dismissal, detach/reattach, reset cancellation and
-motion acceptance. The reference contract is in `docs/archive.md`.
+motion acceptance. The behavior contract is in `docs/archive.md`.

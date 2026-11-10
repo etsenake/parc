@@ -1,5 +1,9 @@
 # Native runtime controller regressions
 
+Browser/app launch is currently prohibited by [AGENTS.md](../../AGENTS.md).
+The runtime procedures below are retained for a future explicitly authorized
+run. Source/model checks do not grant that authorization.
+
 This focused AppKit application uses the **production** `parc_engine_initialize` → `parc_engine_run_message_loop` → genuine all-window close → idle callback → `parc_engine_shutdown_if_idle` lifecycle. Its default controller suite registers an actual supplied NSWindow and opens one real `PCNativePage` at the exact nonempty data-document URL shared by `runtime_driver.h`, the launcher and the driver. The document contains ordinary HTML controls, needs no external server, and remains the exact required URL across the real renderer crash/reload. It does not use `ChromeUnitTestSuite`, `TestingBrowserProcess`, `BrowserTaskEnvironment`, or a second `CefInitialize`.
 
 The internal driver lives in CEF's existing `libcef_test_support` boundary, which already links CEF's internal test helpers into its framework. No new GN argument, source-lock variant or product UI is added. The driver refuses an ordinary app process: it requires the explicit harness switch, Chromium's official `--use-mock-keychain`, exact `runtime-profile` path, and owned disposable-root marker. The launcher and executable separately reject profile reuse before startup. This is a test seam, not a web-accessible API.
@@ -52,7 +56,7 @@ Both remain `development-component`, `distribution_eligible: false`. This run
 executes actual tab/controller selection and action/grant paths; it does not
 exercise the side-panel GUI stack, saved split/profile moves, popup restart,
 PiP input or the default recovery/auth suite. Those earlier default-suite
-results remain separate. The [production selection/restart check](../NativeBrowserWindow/README.md#production-selection-and-restart-check)
+results remain separate. The [production selection/restart check](../NativeBrowserWindow/README.md#engine-selection-and-shell-layout)
 records retained panel state, clean restart/quits and a remaining blank
 background-page defect; PiP input acceptance remains separate.
 
@@ -194,7 +198,7 @@ pre-fix evidence. The v55 production app now passes two ordinary Cmd-Q exits
 and same-profile localStorage restart. The v57 harness passes native AX, then
 aborts in Chromium's Views-only crash presenter during genuine renderer
 termination. Those v57 failures are superseded by the passing v58 recovery/controller run recorded below.
-behavior.
+The scheduling preserves current-engine observer and callback lifetimes.
 
 ## Cases and limits
 
@@ -226,103 +230,22 @@ The launcher imposes a 120-second outer deadline (the app uses 80 seconds, each 
 
 `python3 tests/NativeRuntime/test_launcher.py` verifies the fresh-profile/result guards and actual loopback transport/hash/range behavior. It never runs Chromium and its success is not runtime browser coverage. The source checker verifies the full applied overlay and exact generated driver object/flags before syntax checking; it has no compatibility fallback and never invokes GN/Ninja.
 
-## Current verification
+## Verification boundaries
 
+The driver requires real Browser/Profile/tab/window registration before controller
+cases, then native accessibility, renderer-failure/recovery and authentication
+markers in order. Missing, duplicate, false or out-of-order markers fail the run.
+A successful package or compiled driver is not a runtime pass.
 
-The v58 native crash implementation now passes normal CEF generation, incremental full linking and engine sealing. The actual generated driver object and applied-source hashes match, and its compiler check passes. The fresh runtime package and actual run now pass. Registration, native AX, genuine renderer failure/deferred events, exact crash snapshot status, same-snapshot detach persistence, same-page recovery, crash clearing and stale-action rejection all pass. All three synthetic real LoginHandler/native-sheet cases then pass, followed by actual shutdown and post-shutdown AX. Exit is 0 after 84.775 seconds, with no timeout, forced cleanup or remaining exact-package processes. The ignored receipt `build/parc-runtime-4wf8o30l-logs/result.json` hashes to `021abf76276b14c66654db8b2ad02749d623425734cb7a354cb545961c0f3e97`. The separate production checks above verify visible Swift Retry/focus and actual tab transfer; real HTTP401/proxy407 remains unverified. The earlier failures below are historical evidence.
+Launcher unit tests verify receipt parsing and guard behavior without executing
+Chromium. Run them with:
 
-The v57 engine build and unchanged-layout runtime package succeed. In the actual
-run, registration and the real native `AXWebArea` pass, and the controller reaches
-`waiting-renderer-exit` after 26 ms. Genuine `RenderProcessHost::Shutdown(1)` then
-reaches `SadTabHelper` and aborts at
-`SadTabController::FindContentsWebView`'s `DCHECK(browser_view)`: the standard
-presenter assumes a Chrome Views window that this native browser does not own.
-The process exits with SIGABRT (-6) after 79.836 seconds, with no outer timeout,
-forced cleanup or remaining owned processes. Recovery, auth and clean engine
-shutdown did not pass. The retained receipt is
-`build/parc-runtime-n9wlyf_r-logs/result.json`. This was the production integration
-defect closed by v58; the test's real renderer termination and failure verdict
-remain required.
+```sh
+python3 tests/NativeRuntime/test_launcher.py -v
+```
 
-The v58 native fix retains Chromium's actual SadTabHelper lifecycle while
-publishing per-page crash state for the native shell. The launcher also
-requires the driver's explicit
-`NATIVE_RENDERER_CRASH_PASS snapshot_status=true persistent_detach=true stale_action_rejected=true cleared_on_recovery=true`
-marker after page recovery and before authentication. Receipt guards reject old
-runs without it, duplicate or out-of-order markers and any false field. Those
-five launcher test methods do not execute Chromium. The integrated v58/v61 runs
-separately verify actual termination status/error code, snapshot persistence
-through real detach/reattach, rejection of the old snapshot after recovery and
-authoritative state clearing. Same-window reattachment is not live transfer
-coverage; the separate v58 production checks above cover the visible Swift error
-view, Retry and real crashed-tab transfer.
-
-The first v55 harness run passed exact Browser/Profile/tab/window registration,
-then failed at the initial document/AX wait with `HTTP_AUTH_CONTROLLER_0 FAIL:
-HTTP-auth controller deadline.` Neither the accessibility nor renderer-event
-PASS marker appeared. Post-shutdown AX querying passed, engine shutdown
-completed and exit was 1 after 97.884 seconds; no outer timeout, forced cleanup
-or remaining exact-package processes. The passing production-app AX/dialog/
-beforeunload/quit/restart checks remain separate from this failing harness gate.
-
-The v52 standard-layout package passes signing and provenance checks. Its first genuine run printed the exact registration PASS and all three HTTP-auth controller PASS results, then exited 1 with `NATIVE_RUNTIME_FAIL cases=3 synthetic_http_auth=true clean_shutdown=true`. A renderer-exit error caused failure after the cases; the old log omitted its termination status and closing state. The retained diagnostic now records the real error domain/code, lifecycle phase, completed cases and incoming/expected page identity before preserving the same failure verdict. Syntax checking against actual public headers passes. The run took 88.15 seconds, did not time out or need forced cleanup, and left no app/helper processes. These are partial controller results, not an overall runtime pass or real network authentication coverage.
-
-The current driver first requires the created page's exact Browser to be owned
-by its profile's manager, published in the global collection, associated with
-the real tab, and attached to the supplied native window. Only then does it emit
-`NATIVE_REGISTRATION_PASS manager=true global=true tab=true supplied_window=true`.
-The launcher requires this marker exactly once, before the first controller
-case result; a compiled driver or successful package does not satisfy it.
-
-The production startup callback now supplies `--disable-field-trial-config`,
-following pinned Chromium's guidance for non-Chrome browsers. This selects
-ordinary feature defaults instead of its bundled developer experiments; it is
-not a permanent Aperitif exclusion. Existing explicit feature switches remain
-intact, including upstream precedence for deliberate test-config opt-ins. The
-to features named explicitly on the command line; see
-[helper routing and startup policy](../NativeHelperRouting/README.md). The
-real command-line/helper-routing regression passed 34 assertions before that
-revision; the 42-assertion revision passes syntax checking and awaits a linked
-run. These checks do not establish browser startup. Both engine configurations now carry
-the separate GN testing-config exclusion that CEF's official-build policy
-supplies, verified by the packager. The v58 harness lifecycle passes as scoped above; shipping and whole-browser acceptance remain separate.
-
-**Historical relocated-package checkpoint:** the independent v51 engine built and linked with the runtime driver. The
-canonical packager and helper have been promoted; packaging no longer selects
-repository's ignored `build/` directory, with 524 images, required driver exports,
-full dependency checks and strict deep signature verification. The resulting
-`runtime-package-report.json` binds that exact app to its sealed engine and
-source inputs. Output validation permits fresh destinations under `build/` while
-still rejecting engine overlap, other repository subtrees, reused outputs and
-symlinked paths. Twelve packaging-path cases and two launcher-guard tests pass;
-these tests do not run Chromium.
-
-The first actual v51 harness launch exited with code 1 before any controller
-case. macOS rejected the copied `libscript_type_mojom.dylib` because its load
-commands did not fit in its declared `__TEXT` file size. The packaged component
-had a zero-size `__TEXT` segment, unlike the sealed original. That custom relocation path has now been removed. The current packager keeps
-engine binaries in CEF's original component layout, retaining useful structural
-checks without load-command edits. The real unchanged-layout fixtures verify
-app and sandbox-first helper loads with the original output unavailable; they
-do not execute Chromium. The v52 packaging and partial controller results above supersede this historical
-package failure; the later v58 and v61 default suites pass the scoped harness lifecycle.
-No authentication case, renderer startup or clean engine shutdown is verified by
-that run; it neither timed out nor required forced cleanup. Repeat packaging and
-the actual launcher using a fresh complete development directory.
-
-The main remains a public-ABI consumer and must not inherit
-`USING_CHROMIUM_INCLUDES` from engine implementation targets. The three genuine
-controller cases and default lifecycle pass in v58/v61 as scoped above; real
-network `401`/`407` coverage and normal Keychain/restart behavior remain separate
-acceptance gates.
-
-The v56 diagnostic run narrowed the prior failure: the initial `about:blank`
-was committed and live, its exact native view was attached, and global/page AX
-modes were both basic (`0x3`), but the engine AX root was still absent at 15 s.
-No native AX traversal, renderer-failure probe or auth case ran. Pinned Blink
-suppresses load-start/load-complete events for an empty top-level blank document;
-its other serialization paths mean this is not proof that every blank tree is
-suppressed. The nonempty fixture adaptation changes only the test document.
-It does not force AX, alter production behavior, extend deadlines, or remove
-any ownership, mode, native-WebArea, crash/reload, auth or shutdown assertion.
-The adapted fixture passes native AX in v57 and the complete default lifecycle in v58/v61; those later runs do not establish an empty-blank-page AX repair.
+Actual origin HTTP 401/proxy 407, normal encrypted restart and whole-browser
+behavior remain separate from synthetic LoginHandler controller cases. Current
+runtime work and product gaps belong in [the backlog](../../docs/backlog.md).
+Historical v51–v82 run receipts remain in Git history; they are not live process
+records, current release failures or authorization to repeat browser runs.

@@ -4,6 +4,11 @@ This target exercises the production `RequestTabRetirement` coordinator and the 
 
 The contract is all-document preflight, then a synchronous model validator, then exact lease revalidation, then posted unload. A Stay or invalidation before commit leaves every transaction-owned page intact. The model completion is asynchronous and successful only after all original contents are destroyed. Independent external destruction/navigation/transfer is not rollbackable; it terminates the transaction without reconstructing pages or unloading replacement documents. Outstanding replies are scoped to the actual WebContents and unique request token, including after a move between Browsers. Cross-document navigation and renderer loss retire that reply neutrally so a recovered page can be closed later. Individual/window/app closes cannot steal the same pending callbacks.
 
+Beforeunload retains the exact page and completion through the native delegate
+([dialog contract](../NativeJavaScriptDialogs/README.md)). The all-document
+reservation and model validation adapt the pinned Chromium controller.
+Automatic archive must recheck model state and actual native protection before
+this irreversible boundary.
 
 ## Integration
 

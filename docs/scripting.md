@@ -42,24 +42,31 @@ The request checks the same browser, native page observer, profile, window and w
 
 Parc uses a 30-second reply deadline and a 100-millisecond ownership check alongside actual document/profile/window observers. These are explicit adaptations for bounded completion through the independent owner lifecycle. They cancel the outstanding reply; they do not terminate JavaScript already running or reverse side effects. Permission refusal reports `-1743`, cancellation `-128`, timeout `-1712` and a lost model owner `-1728`. macOS Apple Events authorization remains outside this preference; Parc does not grant or bypass system authorization.
 
-## Reference basis
-
-
-
-
-
-
-
-
-
-
 ## Incognito ownership and creation
 
 File → **New Incognito Window** (⌘⇧N) and scripting `make new window with properties {incognito:true}` create a genuine Chromium primary off-the-record Browser. `mode:"incognito"` is also accepted at creation; conflicting properties are rejected. The native owner records the exact private Profile separately from its normal parent's path. A copied path never selects privacy. Page creation, classified navigation and the empty window's omnibox use that actual private binding; they cannot fall back to normal browsing. Chromium-created private windows and their DevTools retain the original request's typed private context.
 
+A private window has an empty dark Space with Incognito Tabs and New Tab. Each
+physical window owns a memory-only BrowserStore and Space identity; windows from
+one normal parent share Chromium's genuine primary OTR context. Normal tabs and
+history are not copied. Private session/navigation/archive/window-frame data is
+not saved. Approved page retirement removes its tab; refusal preserves it.
+Chromium owns OTR teardown. The shared creation-race requirement is described in
+[private routing lifecycle](private-route-lifecycle.md).
 
 The native parent Profile may not yet be loaded when the front window shows no page (no tab, or a blank tab). Private creation prepares that exact parent asynchronously without making a temporary page. `ParcCreateCommand` suspends private-window creation and returns the actual new wrapper after the native Browser exists; ordinary window/tab creation retains Cocoa's one-use insertion acknowledgment. App shutdown cancels pending creations once, and later readiness cannot create a replacement window. Profile removal, policy or readiness failure returns an error without a simulated owner.
 
+Private browsing supports original-tab scripting and native page tools. Capture
+supports Copy, Save, Messages and editing; persistent Library/Easel destinations,
+pinning and Space editing are withheld. Settings explicitly uses the normal
+parent Profile. Context-image-to-Easel and private download publication cannot
+write normal app storage; native download dialogs retain their actual window.
+The remaining private Library coverage is in [the backlog](backlog.md).
 
+## Scope and checks
 
-
+Existing windows cannot switch browsing context; state and sidebar location are
+read-only. Additional automation work remains explicitly deferred. The bundled
+`sdef`, `BrowserScripting.swift` and [scripting tests](../tests/Scripting/README.md)
+are the implementation contract. Examples document the interface; current app
+launch restrictions still apply and are not overridden by this guide.

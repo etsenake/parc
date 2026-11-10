@@ -53,11 +53,11 @@ template images. The retained PNG hashes are:
 The Library rail icons (`screenshots`, `downloads`, `easels`, `spaces` and
 `archive`.json) are the Lottie compositions shipped beside that same
 copied byte for byte; `boosts.json` is not copied because Boosts are excluded.
-each composition through value providers on its `primaryColor` and
-`secondaryColor` layers: the theme palette's `maxContrastColor` (palette
-`hover-start` to `selection-end` once when a page becomes selected in a window,
-unless Reduce Motion is on. Deselection does not stop a play that is still
-page that has not played shows the composition's start frame (`ip`, frame 0).
+Parc colors each composition's `primaryColor` and `secondaryColor` layers
+with the theme's `maxContrastColor` and `cutoutColor`. Selection plays
+`hover-start` to `selection-end` once unless Reduce Motion is on. Deselection
+does not stop a running play. Completion parks on `selection-end`; an unplayed
+page shows the start frame (`ip`, frame 0).
 `LibraryRailAnimation` draws these files directly; no Lottie runtime is copied.
 
 `easels`, `spaces` and `archive` carry 12 Offset Path items (`op`, amount −0.5,

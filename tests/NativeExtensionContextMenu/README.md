@@ -2,14 +2,12 @@
 
 This source slice connects the actual Chromium156 action menu model to the actual `MenuControllerCocoa` and native `NSMenu`. It is a service for `NativeExtensionActionHost::ShowActionContextMenu`, not a toolbar or a completed extension UI.
 
-## Reference and source contract
+## Source contract
 
-
-- `0x6896a3c` looks up the live action by ID, calls its dynamic `GetContextMenu` equivalent `0x6098044` with source0 (toolbar action), and passes that model plus the actual native window to `0xa89cc5c`.
-- `0xa89cc5c` allocates `MenuControllerCocoa`, initializes it with the model and nil delegate, obtains its `NSMenu`, and synchronously uses `popUpMenuPositioningItem:atLocation:inView:`. It uses the current mouse location and supplied window content view. It does not construct a Views menu or invent a separate extension-command model.
-
-
-Current156's `ExtensionActionViewModel::GetContextMenu` still creates its real dynamic `ExtensionContextMenuModel`, replacing the previous instance. `MenuControllerCocoa` holds weak model references, installs original menu indexes/targets, validates checked/visible/enabled state, and sends `ActivatedAt` with native event flags. This service keeps that implementation. Its guarded item target forwards the original selector to the original controller only after validating current ownership; it does not interpret commands, recreate permission grants or clone a parallel menu model.
+`ExtensionActionViewModel::GetContextMenu` builds the real dynamic menu model.
+`MenuControllerCocoa` preserves model indexes, enabled/visible/checked state and
+native activation flags. Guarded targets forward to that controller only after
+validating current ownership; Parc does not clone commands or permission grants.
 
 ## Ownership and truthful capabilities
 
@@ -17,7 +15,7 @@ Current156's `ExtensionActionViewModel::GetContextMenu` still creates its real d
 
 The session checks the exact registered action pointer, exact enabled extension instance, Browser/Profile, actual active WebContents and actual parent window. It cancels on tab changes/removal/replacement, main-frame navigation, extension unload, page destruction and parent close. Shell selection/security changes call `HostStateChanged`. Host queries retain the existing side-effect-free snapshot contract. A second `Show` is rejected before it can replace the currently used model. Cancellation retains the active session slot, and a UI-thread action-model lease lasts until the original `Show` returns, even if its presenter is destroyed/replaced during a synchronous pin notification. This prevents the new presenter from destroying a model whose `ExecuteCommand` is still running. Weak submenu models and index/command identity prevent dispatch into a destroyed/rebuilt model.
 
-The original cursor/window anchor is retained, using AppKit's screen-to-window-to-view conversion for both flipped and unflipped roots. An app presenter (`PCNativeMenuPresenter`, passed to `showExtensionActionContextMenu:forPage:presenter:`) replaces only that popup call: within the same synchronous `Show`, after the same validation, it receives the controller's `NSMenu`, sends its delegate's open/close calls, performs any chosen item after closing, and returns. Session cancellation also calls its `cancelMenu`. The Site Control Center uses it for Parc's own menu (see [WEB14](../../docs/web-interactions.md#site-control-center--web14)). The original helper's unflipped branch appears to mix screen/view coordinates; that anomaly is not copied. Multi-monitor placement still requires runtime comparison.
+The original cursor/window anchor is retained, using AppKit's screen-to-window-to-view conversion for both flipped and unflipped roots. An app presenter (`PCNativeMenuPresenter`, passed to `showExtensionActionContextMenu:forPage:presenter:`) replaces only that popup call: within the same synchronous `Show`, after the same validation, it receives the controller's `NSMenu`, sends its delegate's open/close calls, performs any chosen item after closing, and returns. Session cancellation also calls its `cancelMenu`. The Site Control Center uses it for Parc's own menu (see [WEB14](../../docs/web-interactions.md#site-control-center--web14)). Multi-monitor placement still requires runtime comparison.
 
 Uninstall uses the registered Browser-owned native service's exact capability check. Its command captures the real Browser/page/window/extension binding before asynchronous icon loading and uses Chromium's removal controller with the native confirmation sheet. Without a valid registered service, the row remains disabled with its capability-reason tooltip. Side-panel presentation remains unavailable in this menu. Other commands execute the original model and still depend on genuine native Browser navigation/settings/inspection services. See the [uninstall integration and runtime limits](../NativeExtensionUninstall/README.md).
 
@@ -34,10 +32,8 @@ python3 tests/NativeExtensionContextMenu/check-chromium.py /absolute/path/to/chr
 
 The twelve browser cases use actual loaded extensions, real action models and actual `NSMenu` dispatch/tracking. They cover pin mutation, cancellation, rejected nested Show, cancellation and presenter replacement inside a real synchronous pin observer, stale rebuilt model, presenter destruction during tracking, active-page changes, security changes unavailable uninstall, terminal drain after actual pin dispatch destroys the presenter, and repeated idle drains that permanently refuse new tracking. Callback state belongs to the fixture, including failure paths. They have **not been linked or executed**. No menu runtime acceptance is claimed from compiler results.
 
-The reviewed v12 overlay includes both implementation files in `native_extensions`, exposes the real extension-model header dependency and links the Cocoa menu adapter. It registers `//cef/tests/parc_native_extensions:context_menu_browser_tests` with Chromium browser tests, including `HAS_OUT_OF_PROC_TEST_RUNNER` and its direct resource/header dependencies. This is source/target integration; production native shell routing remains pending.
+The reviewed v12 overlay includes both implementation files in `native_extensions`, exposes the real extension-model header dependency and links the Cocoa menu adapter. It registers `//cef/tests/parc_native_extensions:context_menu_browser_tests` with Chromium browser tests, including `HAS_OUT_OF_PROC_TEST_RUNNER` and its direct resource/header dependencies. This is source/target integration; production native shell routing uses the same service.
 
 The v22 integration also closes menu/popup presentation when the exact native window gains an uninstall reservation or a Chromium security widget, including registration before visibility. Unrelated native windows remain independent. Actual shell security-state notifications remain required.
 
 Still required: linked tests, native-only pin operation with no BrowserElements, actual custom extension command delivery and site-permission actions, extension unload/reload while tracking, macOS menu cancellation/key behavior, integrated uninstall execution, native side-panel/inspection/settings services, multiwindow/profile changes and visual/motion comparison.
-
-The two added drain cases and production menu unit pass actual-target compiler checks through an isolated VFS overlay. Source overlay v24 includes these changes; the full build is deliberately continuing on v22 without source mutation. The new cases remain unlinked and unexecuted.
