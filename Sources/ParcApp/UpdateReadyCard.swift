@@ -174,7 +174,7 @@ struct UpdateReadyBanner: View {
         VStack(spacing: 8) {
             //
             UpdateBannerRow(title: "Automatic Updates", icon: model.automaticUpdates ? "checkmark.square" : "square",
-                            dark: model.dark, gradient: false, base: model.base, alignment: .center, stop: automatic)
+                            dark: model.dark, alignment: .center, stop: automatic)
             UpdateBannerPrimaryButton(title: "Restart and Update", dark: model.dark, label: model.label,
                                       gradient: hovered && model.interactive && !reduceMotion, base: model.base,
                                       stop: restart)

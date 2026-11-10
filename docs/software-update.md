@@ -517,10 +517,10 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     hover), hover plate 20 × 20 at 0.15/0.1 with corners 2/11/2/2. Rows:
     `HStack(spacing: 4)` of the icon and system-12 text, white 1 / black
     0.8, 16 high, leading, inset 8; 0.75 opacity until hovered, ease-out
-    0.1 s. While the banner is hovered the release-notes row paints its text
-    with `ButtonBackground`: two blurred (12, 6) capsules hue-turned ±40°
-    over a base colour, brightness 0.6/−0.2 and saturation 1/2. The sparkles
-    run for `update-complete-sparkle-timeout-in-seconds` (default 15,
+    text with `ButtonBackground`: two blurred (12, 6) capsules hue-turned ±40°
+    over a base colour, brightness 0.6/−0.2 and saturation 1/2. Parc keeps
+    that text black or white (Josh: the gradient made it unreadable on a pale
+    theme). The sparkles run for `update-complete-sparkle-timeout-in-seconds`
   - **Not recovered** (Parc's values, open): the header height (24, the close
     button's), the gradient's base palette colour (Parc uses the theme's max-
     or min-contrast colour, else the accent colour when that is grey by HSL

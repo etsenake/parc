@@ -139,7 +139,6 @@ struct UpdateCompleteBanner: View {
     let close: UpdateBannerKeyStop
     let whatsNew: UpdateBannerKeyStop
     let share: UpdateBannerKeyStop
-    @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -148,20 +147,15 @@ struct UpdateCompleteBanner: View {
                                close: close)
             VStack(alignment: .leading) {
                 //
+                // hover gradient Parc drops: on a pale theme it hid the text.
                 //
-                UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark,
-                                gradient: hovered && model.interactive && !reduceMotion, base: model.gradientBase,
-                                stop: whatsNew)
-                UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark,
-                                gradient: false, base: model.gradientBase, stop: share)
+                UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, stop: whatsNew)
+                UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark, stop: share)
             }
             .padding(.horizontal, 8)
         }
         .padding(.bottom, 8)
         .background(UpdateBannerCard(dark: model.dark))
-        .onHover { hovered = $0 }
-        // No hover exit arrives once hit testing stops.
-        .onReceive(model.$interactive) { if !$0 { hovered = false } }
         // Not .disabled: that would dim the rows through the exit fade.
         .allowsHitTesting(model.interactive)
         .environment(\.colorScheme, model.dark ? .dark : .light)
@@ -296,36 +290,21 @@ private struct CloseButtonPlate: Shape {
 }
 
 ///
-/// hovered; a gradient row paints its label with `ButtonBackground`.
 struct UpdateBannerRow: View {
     let title: String
     let icon: String
     let dark: Bool
-    let gradient: Bool
-    let base: Color
     var alignment = Alignment.leading
     let stop: UpdateBannerKeyStop
     @State private var hovered = false
 
     var body: some View {
         Button(action: stop.press) {
-            label
-                .opacity(gradient ? 0 : 1)
-                .overlay {
-                    // Built only while shown, so its endless turn stops with it.
-                    if gradient {
-                        UpdateBannerGradient(base: base)
-                            .brightness(dark ? 0.6 : -0.2)
-                            .saturation(dark ? 1 : 2)
-                            .mask { label }
-                            .transition(.opacity)
-                    }
-                }
-                .contentShape(Rectangle())
+            label.contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(hovered ? 1 : 0.75)
-        .animation(.easeOut(duration: 0.1), value: [hovered, gradient])
+        .animation(.easeOut(duration: 0.1), value: hovered)
         .onHover { hovered = $0 }
         .updateBannerKeyStop(stop)
     }
@@ -347,9 +326,9 @@ struct UpdateBannerRow: View {
 /// not recovered.
 struct UpdateBannerGradient: View {
     let base: Color
-    /// `SecondaryButton` passes 6 and 1, `PrimaryButtonStyle` 12 and 0.5.
-    var blurRadius: CGFloat = 6
-    var blurOpacity = 1.0
+    /// `PrimaryButtonStyle` passes 12 and 0.5.
+    let blurRadius: CGFloat
+    let blurOpacity: Double
     @State private var size = CGSize.zero
     @State private var turned = false
 
