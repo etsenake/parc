@@ -38,7 +38,7 @@
         {
           "type": "fix",
           "scope": "command-bar",
-          "summary": "center and restyle scope tokens",
+          "summary": "center and restyle search scopes in the command bar",
           "breaking": false
         },
         {
@@ -50,13 +50,13 @@
         {
           "type": "feat",
           "scope": "sidebar",
-          "summary": "add the hover gradient and sparkles to Update Complete",
+          "summary": "add a hover gradient and sparkles to Update Complete",
           "breaking": false
         },
         {
           "type": "fix",
           "scope": "updates",
-          "summary": "Size the up-to-date window at the 270 \u00d7 341",
+          "summary": "Resize the window that says Parc is up to date",
           "breaking": false
         },
         {
@@ -116,7 +116,7 @@
         {
           "type": "fix",
           "scope": "command-bar",
-          "summary": "Keep window commands and their shortcuts live while the command bar is open",
+          "summary": "Keep window commands and their shortcuts working while the command bar is open",
           "breaking": false
         },
         {
