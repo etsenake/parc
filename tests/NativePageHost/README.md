@@ -19,7 +19,7 @@ uses their real view hierarchies, Auto Layout, first-responder mechanism and a
 running main queue. It does not verify visible key-window keyboard delivery,
 renderer accessibility, GPU rendering or actual Chromium integration.
 
-The suite passes **214 assertions across fourteen groups** and runs in
+The suite passes **231 assertions across fifteen groups** and runs in
 `scripts/test.sh`: containment/reuse, replacement/external removal, deferred
 renderer focus/replacement, window move and detach, invalidation/weak lifetime,
 reentrant replacement teardown, hidden queued-focus refusal, initially-hidden
@@ -32,12 +32,14 @@ Chromium-style detach
 regression against the earlier component exits 1 at “selected initially-hidden
 native content and its renderer are actually unhidden”.
 
-The November 10 fresh-tab regressions never run a window event between native
-attachment and show. Both initially visible and initially hidden new pages,
-their renderer fixtures and the compositor display must have the host's size
-when show returns. They also cover changed pane/infobar geometry, replacement
-content, clean repeated shows without subtree walks, and transfer, hide or
-invalidation callbacks during layout. Against the preceding production host,
+The November 10 fresh-tab regressions attach the real native DevTools pane
+after the shell wrapper has been laid out, then show without a window event.
+Both initially visible and initially hidden new pages, their renderer fixtures
+and the compositor display must have the host's size when show returns. They
+also cover changed pane/infobar geometry, replacement content, clean repeated
+shows without subtree walks, parked-page selection, two visible split panes,
+window transfer, native content reattachment, and transfer, hide or invalidation
+callbacks during layout. Against the preceding production host,
 the new foreground-page regression fails with a 0×0 page and renderer. These
 checks establish the geometry defect and correction, not the reported live
 load time or a GPU-rendering result.

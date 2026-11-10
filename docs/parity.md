@@ -83,12 +83,17 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
   now settles dirty edge constraints before showing, explicitly invalidates
   layout on size/content/infobar changes, and rejects a show superseded during
   layout. Clean shows do not walk the renderer tree. Overlay **654** carries
-  the correction; it has **not been applied or built**. Native host (214),
+  the correction; it has **not been applied or built**. Native host (231),
   focus (103), DevTools containment (57), compositor policy (50), bundled-page
   generation (15) and native export checks pass, as does the production
   Chromium target's syntax check. The new size regression fails without the
   fix. No app/browser was opened; the reported live delay is not yet retested.
-  Root continues the requested audit of other opening/visibility paths.
+  Root completed the adjacent-path source audit: both opening controls and Help,
+  renderer creation/navigation/reload, focus/occlusion reconciliation, split
+  panes, tab switching, parking and window/content transfer. The real-pane
+  regression now covers these geometry lifecycles; switch-hold (23) and content
+  resizer (41) checks also pass. No additional independent defect was established.
+  See the evidence and runtime limits in [software updates](software-update.md).
   UPD06's requirements and denominator are unchanged.
 
 - **Claude — SIDE18 tab picture card (November 9).** Josh asked for the sidebar

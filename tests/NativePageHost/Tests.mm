@@ -2,6 +2,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import "page_host.h"
 #import "pane_compositor_view.h"
+#import "devtools_pane_view.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -455,6 +456,9 @@ static void TestFreshContentSizeBeforeShow(void) {
   const BOOL initialVisibility[] = {NO, YES};
   for (BOOL initiallyHidden : initialVisibility) {
     NSWindow *window = Window();
+    NSView *wrapper = [[NSView alloc] initWithFrame:window.contentView.bounds];
+    [window.contentView addSubview:wrapper];
+    [window.contentView layoutSubtreeIfNeeded];
     LayoutView *page = [[LayoutView alloc] initWithFrame:NSZeroRect];
     page.hidden = initiallyHidden;
     RendererView *renderer = [[RendererView alloc] initWithFrame:NSZeroRect];
@@ -464,8 +468,13 @@ static void TestFreshContentSizeBeforeShow(void) {
         initWithHostedLayer:[CALayer layer]];
     [page addSubview:display];
     PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
-    host.frame = window.contentView.bounds;
-    [window.contentView addSubview:host];
+    // Native attachment adds a pane after the shell has already sized its
+    // wrapper. Layout of the pane sets the host's frame, not its constraints.
+    PCNativeDevToolsPaneView *pane = [[PCNativeDevToolsPaneView alloc]
+        initWithInspectedView:host];
+    pane.frame = wrapper.bounds;
+    [wrapper addSubview:pane];
+    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
     Check(!window.visible && !window.isKeyWindow,
           "fresh-page check needs no window activation or display");
     Check(NSIsEmptyRect(page.bounds) && NSIsEmptyRect(renderer.bounds),
@@ -493,15 +502,110 @@ static void TestFreshContentSizeBeforeShow(void) {
     Check(NSEqualSizes(page.bounds.size, NSMakeSize(640, 330)) &&
               NSEqualSizes(renderer.bounds.size, page.bounds.size),
           "showing settles the page below its infobar at the new size");
+    [host setInfobarView:shelf preferredHeight:60];
+    Check([host setContentVisible:YES inWindow:window] &&
+              NSEqualSizes(page.bounds.size, NSMakeSize(640, 300)),
+          "changing an existing infobar settles its new inset before show");
+    [host setInfobarView:nil preferredHeight:0];
+    Check([host setContentVisible:YES inWindow:window] &&
+              NSEqualSizes(page.bounds.size, NSMakeSize(640, 360)),
+          "removing an infobar gives the page its full size before show");
 
     NSView *replacement = [[NSView alloc] initWithFrame:NSZeroRect];
     Check([host replaceContentView:replacement], "fresh native content can replace the old view");
     Check([host setContentVisible:YES inWindow:window] &&
-              NSEqualSizes(replacement.bounds.size, NSMakeSize(640, 330)),
+              NSEqualSizes(replacement.bounds.size, NSMakeSize(640, 360)),
           "same-size host settles a newly replaced content view");
+    [pane invalidate];
     [host invalidate];
     [window close];
   }
+}
+
+static void TestParkedSplitAndTransferredGeometry(void) {
+  ++groups;
+  NSWindow *first = Window();
+  NSWindow *second = Window();
+  [second setContentSize:NSMakeSize(720, 480)];
+  NSView *parking = [[NSView alloc] initWithFrame:NSZeroRect];
+  parking.hidden = YES;
+  [first.contentView addSubview:parking];
+  NSView *left = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 240, 320)];
+  NSView *right = [[NSView alloc] initWithFrame:NSMakeRect(240, 0, 240, 320)];
+  [first.contentView addSubview:left];
+  [first.contentView addSubview:right];
+  RendererView *renderer = nil;
+  NSView *page = Page(&renderer);
+  page.frame = NSZeroRect;
+  page.hidden = YES;
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  PCNativeDevToolsPaneView *pane = [[PCNativeDevToolsPaneView alloc]
+      initWithInspectedView:host];
+  [parking addSubview:pane];
+  [pane applyInspectedRect:NSZeroRect toolsRect:NSZeroRect hideInspected:NO];
+  Check(![host setContentVisible:YES inWindow:first] && page.hidden,
+        "a new parked page stays hidden until a visible pane owns it");
+  [left addSubview:pane];
+  pane.frame = left.bounds;
+  [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+  Check([host setContentVisible:YES inWindow:first] &&
+            NSEqualSizes(page.bounds.size, left.bounds.size) &&
+            NSEqualSizes(renderer.bounds.size, left.bounds.size),
+        "selecting a parked page sizes it to its split pane without a window event");
+
+  NSView *otherPage = [[NSView alloc] initWithFrame:NSZeroRect];
+  PCNativePageHost *otherHost = [PCNativePageHost hostWithContentView:otherPage observer:nil];
+  PCNativeDevToolsPaneView *otherPane = [[PCNativeDevToolsPaneView alloc]
+      initWithInspectedView:otherHost];
+  otherPane.frame = right.bounds;
+  [right addSubview:otherPane];
+  [otherPane applyInspectedRect:otherPane.bounds toolsRect:NSZeroRect hideInspected:NO];
+  Check([otherHost setContentVisible:YES inWindow:first] &&
+            NSEqualSizes(otherPage.bounds.size, right.bounds.size) && !page.hidden,
+        "each displayed split page gets its own geometry without needing focus");
+
+  Check([host setContentVisible:NO inWindow:first], "hide a page before parking it");
+  [parking addSubview:pane];
+  pane.frame = NSZeroRect;
+  [pane applyInspectedRect:NSZeroRect toolsRect:NSZeroRect hideInspected:NO];
+  [left addSubview:pane];
+  pane.frame = left.bounds;
+  [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+  Check([host setContentVisible:YES inWindow:first] &&
+            NSEqualSizes(renderer.bounds.size, left.bounds.size),
+        "reselecting a parked page restores its dimensions immediately");
+
+  Check([host setContentVisible:NO inWindow:first], "hide a page before window transfer");
+  [pane invalidate];
+  PCNativeDevToolsPaneView *moved = [[PCNativeDevToolsPaneView alloc]
+      initWithInspectedView:host];
+  moved.frame = second.contentView.bounds;
+  [second.contentView addSubview:moved];
+  [moved applyInspectedRect:moved.bounds toolsRect:NSZeroRect hideInspected:NO];
+  Check(![host setContentVisible:YES inWindow:first] && page.hidden,
+        "the previous window cannot show a transferred page");
+  Check([host setContentVisible:YES inWindow:second] &&
+            NSEqualSizes(page.bounds.size, second.contentView.bounds.size) &&
+            NSEqualSizes(renderer.bounds.size, second.contentView.bounds.size),
+        "the receiving window sizes and shows the same page without activation");
+  Check(!otherPage.hidden && NSEqualSizes(otherPage.bounds.size, right.bounds.size),
+        "moving one split page preserves the other page's geometry and visibility");
+
+  Check([host setContentVisible:NO inWindow:second], "hide before native content reattachment");
+  [page removeFromSuperview];
+  page.frame = NSZeroRect;
+  Check([host restoreContentView:page], "reattach the native content to its existing host");
+  Check([host setContentVisible:YES inWindow:second] &&
+            NSEqualSizes(renderer.bounds.size, second.contentView.bounds.size),
+        "reattachment into an unchanged host settles the new edge constraints");
+  Check(!first.visible && !second.visible && !first.isKeyWindow && !second.isKeyWindow,
+        "split selection and window transfer require no displayed or key test window");
+  [moved invalidate];
+  [host invalidate];
+  [otherPane invalidate];
+  [otherHost invalidate];
+  [first close];
+  [second close];
 }
 
 static void TestLayoutReentrantOwnership(void) {
@@ -789,8 +893,9 @@ int main(void) {
       TestInvalidationAndWeakLifetime();
       TestReentrantReplacementTeardown();
       TestHiddenQueuedFocus();
-      TestBackgroundContentVisibility();
       TestFreshContentSizeBeforeShow();
+      TestBackgroundContentVisibility();
+      TestParkedSplitAndTransferredGeometry();
       TestLayoutReentrantOwnership();
       TestVisibilityReentrantOwnership();
       TestPaneCompositorViewIsNeverTheRenderer();

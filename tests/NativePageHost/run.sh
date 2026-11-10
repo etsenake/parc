@@ -8,6 +8,7 @@ xcrun clang++ -arch arm64 -std=c++20 -mmacosx-version-min=13.0 \
   -I "$repo_root/Engine/ParcNative" \
   "$repo_root/Engine/ParcNative/page_host.mm" \
   "$repo_root/Engine/ParcNative/pane_compositor_view.mm" \
+  "$repo_root/Engine/ParcNative/devtools_pane_view.mm" \
   "$repo_root/tests/NativePageHost/Tests.mm" \
   -framework Cocoa -framework QuartzCore -o "$output_dir/NativePageHostTests"
 "$output_dir/NativePageHostTests"

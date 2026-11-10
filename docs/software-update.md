@@ -328,6 +328,20 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   renderer views with the old source and passes with the correction; it does
   not measure browser load time. Overlay 654 is pending an engine build, and
   the reported live black-page delay remains unverified after this correction.
+- **Adjacent-path audit (November 10).** Root reviewed the routes below against
+  current Parc source and pinned Chromium 156.0.8078.48. No additional independent
+  defect was established. This is source and component evidence; it does not
+  establish browser rendering latency or rule out every possible runtime cause.
+
+  | Path or possible delay | Evidence and coverage |
+  |---|---|
+  | Sidebar button, command bar and Help menu | All reach `openReleaseNotes` → `openPageInNewTab` → `openExactAddress`. They create the exact file URL directly, with no search-engine initialization or intermediate blank-tab navigation. The bundled page embeds its assets and its small script has no asynchronous loading gate; the 15 page-generation checks pass. |
+  | New foreground/background pages, later selection and split panes | Native creation and adoption reach `AppKitBrowserHost::AttachPage` and the shared `ApplyVisibility` boundary. That boundary now sizes the page before show. The native-host suite exercises both initial hidden states, parking/reselection and independently visible split pages using the real pane wrapper. |
+  | Focus moving to another window | `visibleNativePages` uses displayed panes, not keyboard focus. App activity, key-window and occlusion notifications synchronize the host. Actual full occlusion may suspend painting; uncovering reconciles visibility immediately. The previous arriving-page `WasShown` correction remains in place. The offscreen geometry checks need no key window or input event. |
+  | Reload, navigation and a renderer created after attachment | Chromium's `WebContentsViewMac::CreateViewForWidget` sizes a new renderer from its native container and autoresizes it with that container. `PrimaryMainFrameCommitted` applies visibility to the replacement renderer; Parc's `NativePageState::PrimaryPageChanged` resends visual properties after commit. These are source checks, not executed Chromium integration tests. |
+  | Tab switching and sidebar resize holds | The outgoing-page hold has an absolute one-second cap; repeated switches do not extend it (23 checks). New pages without frame reports resize intrinsically; the production content resizer passes 41 checks. These models do not measure real main-thread scheduling. |
+  | Window transfer, replaced/detached content and infobars | The shared host marks new geometry/constraints dirty, sizes on show and revalidates the owner after callbacks. The expanded native suite passes 231 assertions in 15 groups, including transfer to a different-sized window, unchanged-host reattachment, changed/removed infobars and reentrant move/hide/invalidation. The exact expanded suite fails against the preceding host at the fresh-page renderer-size assertion. |
+
 - **The page has no address.** It stays an ordinary file page, so reload,
   back, forward and session restore work, but its address is a path into the
   `WhatsNewPage` (`BrowserStore.swift`) recognises only the running app's
