@@ -20,6 +20,7 @@ refused. The browser does not substitute the selected page or another window
 as authority. The continuation rechecks that same document before remembering a
 decision and before launching the external application.
 
-The shared service is registered through `libcef_static`; the controller test
-source has its own target. The tests intercept the OS launch effect and keep
+The shared service links into the Parc browser target, and Parc's content
+browser client leaves Chrome's external-protocol policy route in place; the
+controller test source has its own target. The tests intercept the OS launch effect and keep
 Chromium's actual remembered-decision policy.

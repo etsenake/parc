@@ -158,11 +158,18 @@ class NativeJavaScriptDialogs final
     return true;
   }
 
-  void CancelDialogs(content::WebContents* contents, bool) override {
+  void CancelDialogs(content::WebContents* contents,
+                     bool reset_state) override {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (contents == web_contents()) {
-      [presenter_ cancel];
+    if (contents != web_contents()) {
+      return;
     }
+    // Before cancelling: its completion may destroy this manager.
+    if (reset_state) {
+      displayed_ = 0;
+      blocking_ = false;
+    }
+    [presenter_ cancel];
   }
 
  private:
@@ -185,7 +192,7 @@ class NativeJavaScriptDialogs final
   }
 
   //
-  // Chromium's own suppression does on navigation.
+  // which content does not always pair with a reset_state cancellation.
   void PrimaryPageChanged(content::Page&) override {
     displayed_ = 0;
     blocking_ = false;

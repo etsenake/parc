@@ -71,7 +71,8 @@ manager in `native_javascript_dialogs`. Content calls the manager with the
 asking frame, so the title uses that frame's real origin and beforeunload keeps
 its typed reload distinction. Only the page's own frames may ask. The
 "Don't show this again" block uses content's own suppression, which answers as
-Cancel, and resets with the primary page.
+Cancel, and resets with the primary page or when content asks to reset the
+page's dialog state.
 
 The manager starts detached. The page association gate calls
 `SetNativeJavaScriptDialogsAttached(false)` before cancellation and rejects
