@@ -7,7 +7,7 @@ import QuartzCore
 /// window owner keeps SidebarResizeGesture and the width; this view owns the
 /// cursor, the hover indicator and recognizer forwarding.
 @MainActor
-final class SidebarResizeRegionView: NSView {
+final class SidebarResizeRegionView: NSView, ResizeHandleView {
     static let width: CGFloat = 8
     ///
     /// the 5 pt window inset plus 6. Both rects are in the region's superview;
