@@ -26,7 +26,8 @@ for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter()
             'guard page.canShowCertificate else { return }',
             'let host = page.developerModeSiteHost',
             'let secure = page.developerModeHost != nil && page.developerModeSecure',
-            'after: pill ? .milliseconds(anchor.isHiddenOrHasHiddenAncestor ? 100 : 10) : nil,'):
+            'after: pill ? .milliseconds(anchor.isHiddenOrHasHiddenAncestor ? 100 : 10) : nil,',
+            'self.siteControlCenterItems[id]?.showContextMenuInControlCenter()'):
     assert use in controller, f"the window owner no longer routes the Site Control Center: {use}"
 assert controller.count(".developerModeHost") == 1, \
     "only the permission rows' web-host gate reads developerModeHost; Developer Mode reads share developerModeSiteHost"

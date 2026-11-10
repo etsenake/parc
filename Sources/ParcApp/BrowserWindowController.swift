@@ -14106,6 +14106,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.performExtensionActionAfterDismissingControls {
                         _ = binding.showExtensionActionContextMenu(action, for: page)
                     }
+                }, showContextMenuInControlCenter: { [weak self, weak binding, weak page] in
+                    guard let self, let binding, let page,
+                          self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
+                          !self.isClosing, !page.isClosed else { return }
+                    _ = binding.showExtensionActionContextMenu(action, for: page)
                 }, setPinned: { [weak self, weak binding, weak page] pinned in
                     guard let self, let binding, let page,
                           self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
@@ -14499,7 +14504,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         model.onExtensionContextMenu = { [weak self] id in
             guard currentPresentation(), let self else { return }
-            self.siteControlCenterItems[id]?.showContextMenu()
+            self.siteControlCenterItems[id]?.showContextMenuInControlCenter()
         }
         model.onExtensionPin = { [weak self] id in
             guard currentPresentation(), let self, let item = self.siteControlCenterItems[id], item.canChangePin else { return }

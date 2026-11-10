@@ -37,7 +37,8 @@ fonts `0x730` 14 semibold, `0x738` 12 semibold, `0x748` 14 semibold, `0x750`
   Manage Extensions. Settings: "Settings" / "More", header → site settings.
   Add Extension (`plus` 13 semibold 0.8), rows of four 48 × 32 Secondary items,
   spacing (236 − 20 − 192) / 3 = 8. An item is the 16-point action icon over
-  `AlternateClickView` (secondary click → its context menu); the picker's
+  `AlternateClickView` (secondary click → its context menu, with the card kept
+  the card's button); the picker's
   focus is a 2-point maxContrast stroke, radius 6; the pin badge
   `pin.fill` 8 black, rotated 0.576 rad, knocked out (destinationOut) of a
   14-point maxContrast circle at 1 pinned / 0.33 not; tooltip Pin / Unpin.

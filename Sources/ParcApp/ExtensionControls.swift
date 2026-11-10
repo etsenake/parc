@@ -47,6 +47,8 @@ struct ExtensionControlItem {
     let canChangePin: Bool
     let execute: () -> Void
     let showContextMenu: () -> Void
+    /// The same menu over the open Site Control Center, which stays open.
+    let showContextMenuInControlCenter: () -> Void
     let setPinned: (Bool) -> Void
     /// The pinned strips' artwork. Nil shows `image`, the engine's baked canvas.
     var pinnedArtwork: ExtensionPinnedArtwork? = nil
