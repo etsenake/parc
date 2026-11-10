@@ -1,8 +1,7 @@
 #import <Cocoa/Cocoa.h>
 
-// Pinned public CEF protocol, used by the real Swift NSApplication subclass.
 #import "VideoPiPWindow.h"
-#import "cef_application_mac.h"
+#import "native_application_protocols.h"
 #import "native_appkit_bridge.h"
 #import "page_host.h"
 #import "content_drop_router.h"
