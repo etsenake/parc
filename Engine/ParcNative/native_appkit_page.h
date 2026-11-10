@@ -11,11 +11,11 @@ namespace content {
 class WebContents;
 }
 namespace parc {
-class NativeChromePlatformDelegate;
-// Call only for a native-routed, initialized CEF host. Same contents returns
+class NativePageBinding;
+// Call only for a native-routed, initialized Chromium page. Same contents returns
 // the same Objective-C identity. TabStripModel retains contents, not this API.
 PCNativePage* GetOrCreateNativePage(content::WebContents& contents,
-                                    NativeChromePlatformDelegate& platform,
+                                    NativePageBinding& platform,
                                     NSString* profile_path);
 // Set only during native creation, before publishing the original page.
 void MarkNativePageEmbedded(PCNativePage* page);
