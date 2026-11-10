@@ -7,15 +7,24 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ref.h"
-#include "chrome/browser/ui/browser_window_deleter.h"
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
 
 class Browser;
 class BrowserFocusController;
+class BrowserUiController;
+class BrowserWebContentsDelegate;
 class BrowserWindow;
 class BrowserWindowInterface;
+class DesktopBrowserWindowCapabilities;
 class DevtoolsUIController;
+class Profile;
+class ExclusiveAccessManager;
+class UnloadController;
 struct BrowserWindowCreateParams;
+struct BrowserWindowDeleter;
+namespace chrome {
+class BrowserCommandController;
+}
 namespace content {
 class WebContents;
 }
@@ -24,6 +33,9 @@ struct NativeWebKeyboardEvent;
 }
 namespace ui {
 class ColorProviderSource;
+}
+namespace web_app {
+class AppBrowserController;
 }
 
 namespace parc {
@@ -60,6 +72,14 @@ class NativeBrowser final {
   ui::ColorProviderSource& ColorProviderSource();
   std::unique_ptr<BrowserFocusController> CreateFocusController();
   std::unique_ptr<DevtoolsUIController> CreateDevtoolsController();
+  std::unique_ptr<BrowserWebContentsDelegate> CreateWebContentsDelegate(
+      ExclusiveAccessManager& exclusive_access_manager,
+      chrome::BrowserCommandController& command_controller,
+      UnloadController& unload_controller,
+      web_app::AppBrowserController* app_browser_controller,
+      BrowserWindow& window,
+      DesktopBrowserWindowCapabilities& capabilities,
+      BrowserUiController& browser_ui_controller);
 
   // Browser::SetAsDelegate: binds or releases the page's native presentation.
   void SetAsDelegate(content::WebContents& contents, bool set_delegate);
@@ -82,6 +102,13 @@ bool IsNativeBrowser(const BrowserWindowInterface* browser);
 // Includes Browsers scheduled for deletion (upstream public collection hides
 // those), so engine shutdown cannot race native service draining.
 size_t NativeBrowsersAlive();
+
+// True keeps a primary OTR Profile whose last Browser closed while a native
+// operation still holds it; RetryNativeOTRProfileDestruction destroys it once
+// the operations end, unless a Browser reopened it.
+bool DeferNativeOTRProfileDestruction(Profile& profile);
+// Native operations changed; called from the Profile registry notification.
+void RetryNativeOTRProfileDestruction();
 
 // CreateBrowserWindow preflight, before any Browser or feature exists. A
 // native Profile gets a one-use window reservation in `params`. false is a

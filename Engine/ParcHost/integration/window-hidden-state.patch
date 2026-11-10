@@ -1,0 +1,76 @@
+--- a/ui/base/mojom/window_show_state.mojom
++++ b/ui/base/mojom/window_show_state.mojom
+@@ -20,6 +20,7 @@
+   kMaximized = 3,
+   kInactive = 4, // Views only, not persisted.
+   kFullscreen = 5,
++  kHidden = 6,
+   // TODO(crbug.com/361560784): Investigate and Remove `kEnd`
+-  [MinVersion=1] kEnd = 6,
++  [MinVersion=1] kEnd = 7,
+ };
+--- a/chrome/browser/extensions/api/sessions/sessions_api.cc
++++ b/chrome/browser/extensions/api/sessions/sessions_api.cc
+@@ -582,6 +582,7 @@
+       state = api::windows::WindowState::kNormal;
+       break;
+     case ui::mojom::WindowShowState::kMinimized:
++    case ui::mojom::WindowShowState::kHidden:
+       state = api::windows::WindowState::kMinimized;
+       break;
+     case ui::mojom::WindowShowState::kMaximized:
+--- a/components/sessions/core/session_service_commands.cc
++++ b/components/sessions/core/session_service_commands.cc
+@@ -237,9 +237,10 @@
+   PERSISTED_SHOW_STATE_MAXIMIZED = 3,
+   // SHOW_STATE_INACTIVE (4) never persisted.
+   PERSISTED_SHOW_STATE_FULLSCREEN = 5,
+-  PERSISTED_SHOW_STATE_DETACHED_DEPRECATED = 6,
+-  PERSISTED_SHOW_STATE_DOCKED_DEPRECATED = 7,
+-  PERSISTED_SHOW_STATE_END = 8,
++  // SHOW_STATE_HIDDEN (6) never persisted.
++  PERSISTED_SHOW_STATE_DETACHED_DEPRECATED = 7,
++  PERSISTED_SHOW_STATE_DOCKED_DEPRECATED = 8,
++  PERSISTED_SHOW_STATE_END = 9,
+ };
+-
++
+ // Assert to ensure PersistedWindowShowState is updated if ui::WindowShowState
+@@ -257,6 +258,7 @@
+     case ui::mojom::WindowShowState::kNormal:
+       return PERSISTED_SHOW_STATE_NORMAL;
+     case ui::mojom::WindowShowState::kMinimized:
++    case ui::mojom::WindowShowState::kHidden:
+       return PERSISTED_SHOW_STATE_MINIMIZED;
+     case ui::mojom::WindowShowState::kMaximized:
+       return PERSISTED_SHOW_STATE_MAXIMIZED;
+--- a/components/sessions/core/tab_restore_service_impl.cc
++++ b/components/sessions/core/tab_restore_service_impl.cc
+@@ -214,6 +214,7 @@
+     case ui::mojom::WindowShowState::kNormal:
+       return kSerializedShowStateNormal;
+     case ui::mojom::WindowShowState::kMinimized:
++    case ui::mojom::WindowShowState::kHidden:
+       return kSerializedShowStateMinimized;
+     case ui::mojom::WindowShowState::kMaximized:
+       return kSerializedShowStateMaximized;
+--- a/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
++++ b/third_party/blink/renderer/core/frame/web_frame_widget_impl.cc
+@@ -6131,6 +6131,7 @@
+       break;
+     case WindowShowState::kInactive:
+     case WindowShowState::kFullscreen:
++    case WindowShowState::kHidden:
+     case WindowShowState::kEnd:
+       break;
+   }
+--- a/ui/views/widget/native_widget_mac.mm
++++ b/ui/views/widget/native_widget_mac.mm
+@@ -769,6 +769,7 @@
+       break;
+     case ui::mojom::WindowShowState::kMaximized:
+     case ui::mojom::WindowShowState::kFullscreen:
++    case ui::mojom::WindowShowState::kHidden:
+       NOTIMPLEMENTED();
+       break;
+     case ui::mojom::WindowShowState::kEnd:

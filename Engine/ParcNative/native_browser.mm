@@ -1,31 +1,44 @@
 // Copyright 2026 Parc contributors.
 #include "native_browser.h"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/devtools/devtools_ui_controller.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_manager_service.h"
 #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
+#include "chrome/browser/ui/browser_window_deleter.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/focus/browser_focus_controller.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "native_appkit_host.h"
 #include "native_auxiliary_services.h"
+#include "native_browser_web_contents_delegate.h"
 #include "native_browser_window.h"
 #include "native_engine_entry.h"
 #include "native_host_route.h"
 #include "native_page_binding.h"
+#include "native_profiles.h"
 
 namespace parc {
 namespace {
 size_t native_browsers_alive = 0;
+
+std::vector<base::WeakPtr<Profile>>& DeferredOTRProfiles() {
+  static base::NoDestructor<std::vector<base::WeakPtr<Profile>>> value;
+  return *value;
+}
 
 NativeBrowserWindow& WindowOf(Browser& browser) {
   return *static_cast<NativeBrowserWindow*>(browser.GetWindow());
@@ -136,6 +149,21 @@ NativeBrowser::CreateDevtoolsController() {
   return CreateAppKitDevtoolsController(*browser_);
 }
 
+std::unique_ptr<BrowserWebContentsDelegate>
+NativeBrowser::CreateWebContentsDelegate(
+    ExclusiveAccessManager& exclusive_access_manager,
+    chrome::BrowserCommandController& command_controller,
+    UnloadController& unload_controller,
+    web_app::AppBrowserController* app_browser_controller,
+    BrowserWindow& window,
+    DesktopBrowserWindowCapabilities& capabilities,
+    BrowserUiController& browser_ui_controller) {
+  return std::make_unique<NativeBrowserWebContentsDelegate>(
+      &*browser_, exclusive_access_manager, command_controller,
+      unload_controller, app_browser_controller, window, capabilities,
+      browser_ui_controller);
+}
+
 void NativeBrowser::SetAsDelegate(content::WebContents& contents,
                                   bool set_delegate) {
   auto* binding = NativePageBinding::FromWebContents(&contents);
@@ -162,6 +190,35 @@ bool IsNativeBrowser(const BrowserWindowInterface* browser) {
 
 size_t NativeBrowsersAlive() {
   return native_browsers_alive;
+}
+
+bool DeferNativeOTRProfileDestruction(Profile& profile) {
+  if (!NativeProfileHasOperations(profile)) {
+    return false;
+  }
+  auto& deferred = DeferredOTRProfiles();
+  if (std::ranges::none_of(deferred, [&](const base::WeakPtr<Profile>& entry) {
+        return entry.get() == &profile;
+      })) {
+    deferred.push_back(profile.GetWeakPtr());
+  }
+  return true;
+}
+
+void RetryNativeOTRProfileDestruction() {
+  // Destruction below can reenter the registry and this function.
+  auto deferred = std::exchange(DeferredOTRProfiles(), {});
+  for (auto& profile : deferred) {
+    if (!profile) {
+      continue;
+    }
+    if (NativeProfileHasOperations(*profile)) {
+      DeferredOTRProfiles().push_back(profile);
+    } else if (ProfileBrowserCollection::GetForProfile(profile.get())
+                   ->IsEmpty()) {
+      BrowserManagerService::DestroyUnusedOTRProfile(*profile);
+    }
+  }
 }
 
 bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
