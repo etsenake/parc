@@ -96,7 +96,7 @@ NS_SWIFT_UI_ACTOR
 // the main thread.
 + (int)run;
 // Call from the NSApplication terminate: override, which must return without
-// entering NSTerminateLater. YES follows consent, actual drain and CefShutdown;
+// entering NSTerminateLater. YES follows consent, actual drain and engine shutdown;
 // NO leaves the native loop and same browser pages alive. Main-thread callback.
 + (void)requestTermination:(void (^)(BOOL allow))completion
     NS_SWIFT_NAME(requestTermination(completion:));
