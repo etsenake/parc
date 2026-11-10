@@ -310,9 +310,11 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   Shortcuts, with no shortcut. It opens the bundled `WhatsNew.html`
   (`Bundle.main.url(forResource: "WhatsNew", withExtension: "html")`) as a
   file URL in a new tab of the key window, through the same path as History
-  and Extensions. `scripts/build.py` renders the page from
-  `release-notes.json` (`Sources/WhatsNew/README.md`); a bundle without it
-  disables the item. The command bar lists it
+  and Extensions. That path opens the exact address the way an external link
+  does, not through the address classifier, which waits for the profile's
+  search engines before any tab exists and then opens a blank page first.
+  `scripts/build.py` renders the page from `release-notes.json`
+  (`Sources/WhatsNew/README.md`); a bundle without it disables the item. The
 - **The page has no address.** It stays an ordinary file page, so reload,
   back, forward and session restore work, but its address is a path into the
   `WhatsNewPage` (`BrowserStore.swift`) recognises only the running app's

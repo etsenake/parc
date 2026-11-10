@@ -6797,16 +6797,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let url = SoftwareUpdateBanner.releaseNotesURL else { return }
         openPageInNewTab(url.absoluteString)
     }
-    private func openPageInNewTab(_ input: String) {
-        guard canOpenPageInNewTab, let original = window, original.isKeyWindow,
-              windowCommandSecurityAvailable else { return }
-        let profileID = activeProfileID, spaceID = activeSpaceID
-        let isCurrent: () -> Bool = { [weak self, weak original] in
-            guard let self, let original, self.window === original, original.isKeyWindow,
-                  self.activeProfileID == profileID, self.activeSpaceID == spaceID else { return false }
-            return self.canOpenPageInNewTab && self.windowCommandSecurityAvailable
+    /// An app-owned exact address opens directly, like an external link: the
+    /// address classifier would first wait for the profile's search engines,
+    /// with no tab to show loading yet, and then open a blank page before it.
+    private func openPageInNewTab(_ address: String) {
+        guard canOpenPageInNewTab, window?.isKeyWindow == true, windowCommandSecurityAvailable,
+              let url = URL(string: address) else { return }
+        let creation = creationProvenance(activeTabID: currentTabID)
+        performWindowCommand {
+            let id = store.openResolvedURL(url, creation: creation)
+            presentation.recordCreation(id, state: store.state)
         }
-        resolveInput(input, replacing: nil, isCurrent: isCurrent)
     }
 
     /// Rename edits a presented sidebar: a hidden one floats in first, settled
