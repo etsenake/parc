@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 657,
+  "version": 658,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -5450,7 +5450,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-extension-uninstall-direct.patch",
-      "sha256": "7fe606aa5ac6aa908c54fa39229b793b3fc45793dbe140a53db5189c8902117c",
+      "sha256": "0030bbbaff002905f856adb0e625f3395a68eea354035cf3f3b1702822663eb1",
       "files": [
         {
           "target": "chrome/browser/extensions/extension_uninstall_dialog.cc",
@@ -5466,11 +5466,17 @@
           "target": "chrome/browser/ui/extensions/extension_uninstall_dialog_impl.cc",
           "before_sha256": "2e7ac67f38c708490ecfac8206cfd0deafacff183a76b817fa730c111e295a9e",
           "after_sha256": "db3998d9d0538606d6e925bb7363ec95bcdb0a0f616fde32af91ed766822bc63"
-        },
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-extensions-background-mode.patch",
+      "sha256": "e9da89002e1c11f92af34f2510631ba5eb02510fa0c971855132867baee3c8f8",
+      "files": [
         {
           "target": "chrome/browser/extensions/BUILD.gn",
           "before_sha256": "71208f99269c97574d1e66135d913bd7248568369732471224045e8336dc9b64",
-          "after_sha256": "023ddc607b8048c632e75097cd7f4f761df1563e37af598aac8a918b3ad6d681"
+          "after_sha256": "1e2355139b5a067e29092c5d1ac66914c5ae792bd040d4cf3f67d7e5f8c3cbe4"
         }
       ]
     },
