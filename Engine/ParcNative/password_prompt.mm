@@ -1,7 +1,7 @@
 // Copyright 2026 Parc contributors.
 //
 // this site (Never omitted for updates); no editable credential fields.
-#include "cef/libcef/browser/parc_native/password_prompt.h"
+#include "password_prompt.h"
 
 #include <map>
 #include <memory>
@@ -14,8 +14,8 @@
 #include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "cef/libcef/browser/chrome/browser_delegate.h"
-#import "cef/libcef/browser/parc_native/autofill_save_presenter.h"
+#import "autofill_save_presenter.h"
+#include "native_browser.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/passwords/bubble_controllers/save_update_bubble_controller.h"
@@ -265,9 +265,7 @@ class NativePasswordPrompt final : public content::WebContentsObserver {
 bool UsesNativePasswordPrompt(content::WebContents* contents) {
   auto* tab = contents ? tabs::TabInterface::MaybeGetFromContents(contents)
                        : nullptr;
-  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
-  return browser && browser->cef_delegate() &&
-         browser->cef_delegate()->IsNativeWindow();
+  return tab && IsNativeBrowser(tab->GetBrowserWindowInterface());
 }
 
 bool ShowNativePasswordPrompt(content::WebContents* contents, bool user_action) {

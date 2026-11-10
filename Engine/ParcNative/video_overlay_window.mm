@@ -2,7 +2,7 @@
 // Arc142 0x68a30a4 owns the real VideoOverlayWindow controller and supplied
 // compositor surface; 0xa89c328/a889c90 use RecyclableCompositorMac. This is
 // source-owned adaptation to Chromium156, not a binary wrapper.
-#include "cef/libcef/browser/parc_native/video_overlay_window.h"
+#include "video_overlay_window.h"
 
 #import <QuartzCore/QuartzCore.h>
 
@@ -18,9 +18,9 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "cef/libcef/browser/chrome/browser_delegate.h"
-#import "cef/libcef/browser/parc_native/native_appkit_bridge.h"
-#include "cef/libcef/browser/parc_native/native_appkit_page.h"
+#import "native_appkit_bridge.h"
+#include "native_appkit_page.h"
+#include "native_browser.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -654,9 +654,7 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
 bool UsesNativeVideoPictureInPicture(content::WebContents* contents) {
   auto* tab =
       contents ? tabs::TabInterface::MaybeGetFromContents(contents) : nullptr;
-  auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
-  return browser && browser->cef_delegate() &&
-         browser->cef_delegate()->IsNativeWindow();
+  return tab && IsNativeBrowser(tab->GetBrowserWindowInterface());
 }
 std::unique_ptr<content::VideoOverlayWindow> CreateNativeVideoOverlayWindow(
     content::VideoPictureInPictureWindowController* controller) {

@@ -28,7 +28,7 @@ A main-thread owner shared by every OTR creation path must:
 1. Acquire an identity-bearing original-Profile claim before callback-capable OTR
    creation/initialization. Reentry either joins a safely retained operation or
    refuses before consuming the original navigation; it cannot register twice.
-2. Resolve the exact primary OTR Profile, route, provider and retained CEF context,
+2. Resolve the exact primary OTR Profile and route with a registry lease,
    rechecking after callbacks. Existing live registered OTR Browsers remain a
    reuse path, not a new context factory.
 3. Give every new Browser a separate one-use window reservation bound to the exact
@@ -45,15 +45,15 @@ navigation or retargeting another request.
 
 ## Last-Browser destruction
 
-The shared owner must also cover `BrowserManagerService` last-Browser teardown,
-not only Parc's failed-creator closure. Destroying a Browser can release the last
-CEF context, reenter creation or destroy the manager/Profile synchronously.
-While an exact-parent/OTR claim exists, retain its matching context and defer
-natural teardown. Recheck after callback-capable destruction; final claim release
-may request normal destruction only if the exact context remains eligible and no
-Browser appeared. Deferred natural teardown differs from failure cleanup.
+`BrowserManagerService` already defers a primary OTR Profile's last-Browser
+teardown while a native operation lease holds it, and retries when the last
+lease ends: the Profile is destroyed only if no Browser reopened it. The shared
+creation owner must hold the same kind of claim, so last-Browser teardown waits
+for it too. Destroying a Browser can release a Profile's last keep-alive,
+reenter creation or destroy the manager/Profile synchronously. Deferred natural
+teardown differs from failure cleanup.
 
-A CEF context reference alone is not proof of a universal Profile keepalive.
+An operation lease keeps the parent Profile alive, not the OTR Profile itself.
 Audit every primary-OTR destruction entry, preserve forced-shutdown semantics,
 and never touch a manager/Profile after callbacks may have destroyed it.
 
