@@ -36,6 +36,13 @@ or profile change and rechecks its original owner before accepting.
 
 ## Native file chooser
 
+Parc installs a `ui::SelectFileDialog` factory at startup, so every chooser
+Chrome opens after FileSelectHelper and its SelectFilePolicy reaches
+NativeFileDialog for the page the policy names, or for the page hosting an
+inner page. A chooser that names no page is refused rather than parented to the
+frontmost window. Profile-owned downloads without a page use their own
+shell-selected parent.
+
 NativeFileDialog wraps macOS SelectFileDialog with its real type, multiple-file
 selection, filters, directory mode, caller URL and policy. It binds exact tab,
 Browser and native window; navigation/detach/closure/listener loss cancels.
@@ -47,8 +54,8 @@ then retires nonnestably. Policy refusal and user cancellation share a once-only
 finish path. Docked DevTools uses its registered auxiliary-page lease to bind
 the chooser to the inspected tab and original native window. Detach, rebinding
 or owner loss revokes the chooser; an unbound auxiliary page cancels without
-falling back to another window. Print Preview has its own original-document
-route for Save to PDF.
+falling back to another window. Print Preview names its preview as the source,
+so Save to PDF binds to the preview's own window and its original document.
 
 ## Directory-upload confirmation correction
 

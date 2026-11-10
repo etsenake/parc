@@ -460,6 +460,7 @@ source_set("native_downloads") {
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/download",
     "//chrome/browser/ui/download:impl",
+    "//chrome/browser/ui/select_file_policy",
     "//net/traffic_annotation",
     "//printing/buildflags",
     "//chrome/common",
