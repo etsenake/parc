@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.11.0 (2026-11-10)
+
+### New
+
+- **extensions:** Show a pinned extension's menu in your Space's colours beside its button, without closing the Site Control Center
+- **developer-mode:** Turn Developer Mode and the developer tools on and off together, from the Site Control Center or any developer shortcut
+
+### Fixed
+
+- **extensions:** Show why an extension menu item is unavailable when you rest the pointer on it
+
 ## 1.10.0 (2026-11-10)
 
 ### New

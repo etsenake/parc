@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "version": "1.11.0",
+      "build": 25,
+      "date": "2026-11-10",
+      "changes": [
+        {
+          "type": "feat",
+          "scope": "extensions",
+          "summary": "Show a pinned extension's menu in your Space's colours beside its button, without closing the Site Control Center",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Show why an extension menu item is unavailable when you rest the pointer on it",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "developer-mode",
+          "summary": "Turn Developer Mode and the developer tools on and off together, from the Site Control Center or any developer shortcut",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.10.0",
       "build": 24,
       "date": "2026-11-10",
