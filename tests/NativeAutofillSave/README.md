@@ -172,11 +172,12 @@ python3 tests/NativeAutofillSave/check-upstream.py /path/to/chromium/src
 ```
 
 The checker reuses the bounded literal flags reader in NativeLocationBar and
+the actual ObjC++ rule, with ARC and `-Werror`. It requires the
 generated `native_components`, `autofill_save_sessions` and `session_tests`
 targets; it checks the presenter, production session, handler and regression sources with
 their respective settings. Missing targets are an error before compilation.
-The explicit `--pre-integration` option checks only compatibility with older
-`libcef_static` / `unit_tests` settings and labels that limited result separately.
+The checker uses `//parc/native` and `//parc/tests/parc_native_autofill` targets;
+it requires the direct engine graph rather than the retired CEF target flags.
 Logs, command records and caches stay in the ignored test build directory. The
 checker performs no generation, GN, Ninja, source-checkout writes, downloads or
 synthetic-header substitution.
