@@ -1091,7 +1091,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure", "retarget"))
+    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure", "retarget", "adopt-clone"))
     parser.add_argument("--workspace", required=True,
                         help="Dedicated absolute path under this checkout's ignored work/ "
                              "(preferred) or outside the repo; sync claims a new directory or "
@@ -1101,13 +1101,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--jobs", type=int, choices=range(1, 33), default=4)
     parser.add_argument("--manifest", type=Path, help="Absolute reviewed source overlay manifest for overlay-check/apply")
     parser.add_argument("--previous-lock", type=Path,
-                        help="Absolute copy of the source lock the workspace was built with, for reconfigure")
+                        help="Absolute copy of the source lock the workspace was built with, for reconfigure, retarget or adopt-clone")
+    parser.add_argument("--source-workspace", type=Path, help="Idle owned source of an APFS clone")
     args = parser.parse_args(argv)
     try:
         lock, sha = load_lock()
         workspace = safe_path(args.workspace)
-        if args.previous_lock is not None and args.command not in {"reconfigure", "retarget"}:
-            raise Refusal("--previous-lock is only accepted by reconfigure or retarget")
+        if args.previous_lock is not None and args.command not in {"reconfigure", "retarget", "adopt-clone"}:
+            raise Refusal("--previous-lock is only accepted by reconfigure, retarget or adopt-clone")
+        if args.command == "adopt-clone":
+            if args.source_workspace is None or args.manifest is not None:
+                raise Refusal("adopt-clone requires --source-workspace, without a manifest override")
+            import engine_workspace
+            try:
+                print(json.dumps(engine_workspace.adopt_local_clone(args.source_workspace, workspace, REPO, args.previous_lock), indent=2))
+            except engine_workspace.Refusal as error:
+                raise Refusal(str(error)) from error
+            return 0
+        if args.source_workspace is not None:
+            raise Refusal("--source-workspace is only accepted by adopt-clone")
         if args.command.startswith("overlay-"):
             if args.manifest is None:
                 raise Refusal("Source overlay requires --manifest")

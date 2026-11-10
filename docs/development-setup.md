@@ -54,6 +54,12 @@ the last completed engine package and saved build workspace. The restore tool
 checks their provenance without starting a build. Preserve the downloaded parts
 to avoid downloading them again after an interrupted restore.
 
+For an isolated local engine, the engine owner can use `cp -c -p -R` followed
+by `adopt-clone --source-workspace` as described in
+[Engine](../Engine/README.md#build-configuration). The copy must have the same
+path depth and volume as its idle owned source. Adoption requires regeneration;
+use `--previous-lock` when copying a workspace still on the previous pins.
+
 The source bootstrap below is for intentionally creating a new engine workspace.
 It is not the default new-machine onboarding path.
 

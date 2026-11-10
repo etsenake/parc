@@ -48,6 +48,27 @@ Codec flags select macOS decoding/encoding rather than bundled proprietary
 FFmpeg/OpenH264 paths. See [engine policy](../docs/engine-flags.md) and
 [FairPlay integration](ParcNative/fairplay_chromium/README.md).
 
+An engine owner can isolate work with an APFS clone of an idle owned workspace.
+Choose an unused destination on the same volume and at the same path depth:
+
+```sh
+cp -c -p -R /absolute/shared/engine /absolute/project/engine
+python3 scripts/engine-source.py adopt-clone --workspace /absolute/project/engine \
+  --source-workspace /absolute/shared/engine \
+  --previous-lock "$PWD/work/previous-source-lock.json"
+```
+
+Omit `--previous-lock` when the current lock already matches the source.
+Keep the source idle during copying. Adoption holds both operation locks, checks
+the source receipt and copied source/overlay/graph fingerprints, records local
+provenance and requires generation at the new path. It accepts only the matching
+current lock or an explicit previous lock; it cannot adopt arbitrary checkouts.
+It normalizes proven internal generated links and drops only known generated
+external links in the copy, preserving objects, caches and the original workspace.
+Copy-on-write ancestry itself is not detectable; the receipt and fingerprints
+prove the copy's source state. Adoption does not fetch or build and has no disk
+floor; later retarget and build commands retain their existing floors.
+
 Build-setting-only lock changes use the guarded reconfiguration path:
 
 ```sh
