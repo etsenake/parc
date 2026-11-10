@@ -28,7 +28,7 @@
 | After listed | [Folders](#folders) | 65.2% | 34.8% | — | Available |
 | After listed | [Archive and history](#archive-and-history) | 70.6% | 29.4% | — | Available |
 | After listed | [Command bar](#command-bar) | 82.8% | 17.2% | +0.7 pp | Codex `codex/command-bar-polish` (reported command failures and appearance) |
-| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (scope: UPD07 added) | Claude `claude/updates-*` (claimed November 9) |
+| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (scope: UPD08 added) | Claude `claude/updates-*` (claimed November 9) |
 | After listed | [Tab switcher](#tab-switcher) | 69.2% | 30.8% | — | Available |
 | After listed | [Peek](#peek) | 66.7% | 33.3% | — | Available |
 | Before polish | [Onboarding / complete first launch](#onboarding-and-complete-first-launch) | 75.0% | 25.0% | +2.8 pp | Cursor `cursor/document-close` (claimed October 31) |
@@ -6902,6 +6902,14 @@ model in `AutomaticUpdate.swift`. The relaunch restores every window as
 Restart and Update does, and Update Complete follows. Checked by the
 warnings-as-errors typecheck and model tests only; per Josh, nothing was
 launched, so no real sleep, lock or restart was observed.
+
+unlocked overnight with its display, screen saver and sleep off, so it never
+posts an away event. Half an hour without keyboard or pointer input
+(IOHIDSystem's `HIDIdleTime`, which power assertions and `caffeinate` don't
+reset; see [automatic restart](software-update.md#parc)) now counts as away
+too, under the same checks. It doesn't count while any app holds a
+display-sleep assertion, as a call or a film does. Checked by the typecheck
+and model tests only.
 
 ### Tab switcher
 

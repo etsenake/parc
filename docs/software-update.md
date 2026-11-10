@@ -392,8 +392,10 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     shares the installed Parc's bundle identifier, defaults and Sparkle
     to update." error.
 
-  (`Sources/ParcCore/AutomaticUpdate.swift`) tracks when the Mac is away:
-  - it sleeps (`NSWorkspace` `willSleep` / `didWake`);
+  rule (UPD08). `AutomaticUpdate` (`Sources/ParcCore/AutomaticUpdate.swift`)
+  records when an away period begins and ends. One starts with the first of
+  these, and ends when the last one stops:
+  - the Mac sleeps (`NSWorkspace` `willSleep` / `didWake`);
   - its displays sleep (`screensDidSleep` / `screensDidWake`);
   - the screen saver runs (`com.apple.screensaver.didstart` / `didstop`);
   - the screen is locked (`com.apple.screenIsLocked` / `screenIsUnlocked`).
@@ -402,12 +404,25 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   `.deliverImmediately`, because AppKit holds them while Parc isn't the
   active app, which would delay a lock made from another app.
 
-  The first reason schedules a check 300 s later and the last one ending
-  cancels it. The wait is `DispatchQueue.main.asyncAfter` awake time, which
-  stops while the Mac sleeps. Time asleep doesn't count, but awake time
-  already spent away does.
-  starts its single timer again only when another away event begins; Parc
-  just keeps checking. A check calls `installAndRelaunch()` when:
+  Parc checks every 300 s of awake time (`DispatchQueue.main.asyncAfter`).
+  Times come from `ProcessInfo.systemUptime`, which also stops while the Mac
+  sleeps, so time asleep doesn't count but awake time already spent away
+  does. A check does nothing unless an update is waiting. It counts the Mac
+  as away in either of two cases:
+    fires exactly 300 s after the event; Parc's next check comes 5 to 10
+    minutes after it.
+  - **Josh's addition (UPD08).** There has been no keyboard or pointer input
+    for 30 minutes (1,800 s of IOHIDSystem's `HIDIdleTime`). This is for a
+    Mac whose display never sleeps, whose screen saver is off and which
+    It doesn't count while any process holds
+    `kIOPMAssertPreventUserIdleDisplaySleep` (`IOPMCopyAssertionsStatus`;
+    when that can't be read, Parc treats the display as kept on). Video calls
+    and players in any app hold that assertion while nobody touches the Mac,
+    and Parc's own pages are already held by the page check. A Mac whose
+    display stays on only because of its Energy settings holds no such
+    assertion.
+
+  While the Mac is away, a check calls `installAndRelaunch()` when:
   - Automatic Updates is on, and Sparkle holds an install-now handler
     (`installsWithoutWindow`). That means a background download, as with
     update from a manual check never installs by itself, whether it is still
@@ -419,20 +434,35 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   - no download is pending, running or paused;
   - no sheet or modal alert is open;
   - no private window is open (a relaunch restores none);
-  - there has been no input for 3 s (`CGEventSource`'s HID idle time);
+  - there has been no input for 3 s (`HIDIdleTime`);
   - a HEAD request to `SUFeedURL` (60-second timeout) succeeds. Afterwards
-    the checks above must still pass, and the Mac must still be in the same
-    away period.
-
+    the Mac must still be away and every check above must still pass.
   The relaunch follows Restart and Update's path. Sparkle's kept handler runs,
   Quit command. A page's beforeunload prompt still waits for an answer, and if
-  the page keeps Parc open, a later check retries. The next launch is a new build, so every window comes back
-  (`LaunchContinuity`) and Update Complete shows. Parc has no relaunch
+  the page keeps Parc open, a later check retries. The next launch is a new
+  build, so every window comes back (`LaunchContinuity`) and Update Complete
   - **Automatic Updates** is Parc's `automaticallyInstallsUpdates` (defaults
     `shouldAutomaticallyUpdateArc`. Sparkle's silent download stays on. The
     checkbox used to turn that download off. If an earlier build left it off,
     Parc turns it back on at start and turns automatic installs off instead.
     banner is the only control.
+    IOHIDSystem registry property. Apple's open-source IOHIDFamily shows what
+    it counts:
+    - `IOHIDSystem::_idleTimeSerializerCallback` returns uptime minus
+      `lastUndimEvent`. Uptime excludes sleep, and the value reads as 0 when
+      HID events aren't open, which Parc treats as in use.
+    - The only writer of `lastUndimEvent` is `setProperties` with
+      `kIOHIDActivityUserIdleKey` 0. In Apple's sources, only the HID event
+      system's `IOHIDNXEventTranslatorSessionFilter` sends that, when it
+      declares activity for an input event that passes its power policy. That
+      includes events another process posts into the HID stream.
+    - powerd (PowerManagement `SystemLoad.c`) only reads the HID activity
+      state. So power assertions, `caffeinate` (including `-u`, which declares
+      user activity) and a running agent leave it alone.
+    - A tool that posts synthetic keyboard or pointer events does reset it.
+
+    Parc used to read `CGEventSource`'s HID-state idle time, which is closed
+    source, so what it counts couldn't be checked.
 
 - **Update Complete** is the V2 summary banner in the shared slot: the same
   `SidebarBannerHost` as the auto-archive card (8 points in, directly above
