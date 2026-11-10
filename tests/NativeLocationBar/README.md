@@ -57,8 +57,10 @@ command bar, while native permissions use their own page-bound presenter.
 python3 tests/NativeLocationBar/check-chromium.py /absolute/path/to/chromium/src
 ```
 
-The script reads existing generated `ui.ninja` and `browser_tests.ninja` flags,
-then invokes that checkout's Clang with `-fsyntax-only`. It does not generate
+The selected source lock chooses the implementation flags: `browser.ninja`
+for direct schema 2, or `ui.ninja` for legacy schema 1. Pass `--lock-file` to
+select the separate direct lock before canonical cutover. Both use the existing
+`browser_tests.ninja` test flags. The script then invokes that checkout's Clang with `-fsyntax-only`. It does not generate
 headers, link tests or launch an application. Logs and exact commands go to
 ignored `build/tests/native-location-bar/`.
 

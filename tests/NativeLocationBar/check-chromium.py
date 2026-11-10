@@ -45,6 +45,7 @@ def main():
     lock = json.loads(lock_path.read_text())
     if lock.get("schema_version") not in (1, 2):
         parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
     output_name = (lock["build"]["configuration"] if args.output_name is None
                    else args.output_name)
     if Path(output_name).name != output_name or output_name in ("", ".", ".."):
@@ -56,7 +57,7 @@ def main():
     results = []
     for name, source, flags_file in (
         ("implementation", repo / "Engine/ParcNative/location_bar.cc",
-         "obj/chrome/browser/ui/ui.ninja"),
+         "obj/parc/browser.ninja" if direct else "obj/chrome/browser/ui/ui.ninja"),
         ("browser-tests", Path(__file__).with_name("location_bar_browsertest.cc"),
          "obj/chrome/test/browser_tests.ninja"),
     ):
