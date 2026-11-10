@@ -8,7 +8,7 @@ final class AutoArchiveEducationView: NSView, NSTextViewDelegate {
     var onSettings: (() -> Void)?
     private let title = NSTextField(wrappingLabelWithString: "We cleaned up!")
     private let message = AutoArchiveEducationLinkView()
-    private let dismiss = NSButton(title: "Got it", target: nil, action: nil)
+    private let dismiss = PointingHandButton(title: "Got it", target: nil, action: nil)
     private var palette: ThemeChromePalette?
     private var interactionEnabled = true
     private let messageText = "Parc archives tabs that you haven’t used in the past 12 hours. You can adjust this in Settings."

@@ -25,7 +25,7 @@ enum LibraryRailLayout {
 ///
 /// continuous radius 12, inset 2 while pressed with spring(0.18, 0.8).
 @MainActor
-final class LibraryRailTile: NSButton {
+final class LibraryRailTile: PointingHandButton {
     /// `_AnimatedPageSidebarItemView` constrains itself to 28 × 28
     ///
     ///

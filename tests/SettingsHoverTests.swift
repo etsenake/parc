@@ -55,7 +55,8 @@ private final class HoverTrackingEvent: NSEvent {
                 timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!)
         }
         control.updateTrackingAreas(); control.updateTrackingAreas()
-        check(control.trackingAreas.count == 1, "Layout replaces the original tracking area")
+        check(control.trackingAreas.filter { !$0.options.contains(.cursorUpdate) }.count == 1,
+              "Layout replaces the original tracking area")
         move(first)
         check(control.isHovered, "Current native window pointer enters the original control")
         control.needsDisplay = false
@@ -120,7 +121,7 @@ private final class HoverTrackingEvent: NSEvent {
         move(first)
         check(control.isHovered, "A late former-window event cannot clear current hover")
         let retiredExit = HoverTrackingEvent()
-        retiredExit.area = control.trackingAreas.first
+        retiredExit.area = control.trackingAreas.first { !$0.options.contains(.cursorUpdate) }
         retiredExit.ownerNumber = second.windowNumber
         control.updateTrackingAreas()
         control.mouseExited(with: retiredExit)

@@ -4,7 +4,7 @@ import QuartzCore
 /// A row action retains its original owner's one-use command from press until
 /// release. Native NSButton tracking, keyboard activation and cancellation stay
 /// authoritative; a disappearing/replaced row cannot dispatch a fresh command.
-final class SidebarRowActionButton: NSButton {
+final class SidebarRowActionButton: PointingHandButton {
     var prepareAction: (() -> (() -> Bool)?)?
     /// A cheap stand-in for `prepareAction() != nil` when preparing the action
     /// is costly; the action itself is then prepared only on press.
@@ -221,7 +221,7 @@ final class SidebarRowSlashView: NSView {
 ///
 /// with per-region corners (TabCellRegionalBackgroundButton.updateLayer
 ///
-class SidebarRowRegionView: NSButton {
+class SidebarRowRegionView: PointingHandButton {
     var dark = false { didSet { if dark != oldValue { refreshFill() } } }
     var corners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner] {
         didSet { if corners != oldValue { refreshFill() } }

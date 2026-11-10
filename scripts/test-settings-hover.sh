@@ -6,5 +6,6 @@ output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 xcrun swiftc -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/SettingsHoverButton.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/tests/SettingsHoverTests.swift" -o "$output/settings-hover-tests"
 "$output/settings-hover-tests"

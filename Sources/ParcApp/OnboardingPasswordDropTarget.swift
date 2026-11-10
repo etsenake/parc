@@ -27,7 +27,7 @@ enum OnboardingPasswordPalette {
 /// 2.5-point [7, 5] dashed outline). Results come from the existing CSV owner;
 /// a selected file alone never produces the reference's success presentation.
 @MainActor
-final class OnboardingPasswordDropTarget: NSButton {
+final class OnboardingPasswordDropTarget: PointingHandButton {
     enum Presentation { case ready, working, removingExport, saved, needsAttention }
     var onChoose: (() -> Void)?
     var onDrop: ((URL) -> Void)?

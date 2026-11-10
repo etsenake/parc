@@ -37,6 +37,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-outline-") as directory:
                     str(scratch / "SidebarItemReference.swift"),
                     str(scratch / "ActionButton.swift"),
                     str(root / "Sources/ParcApp/TranslucentButtonFace.swift"), str(root / "Sources/ParcApp/PointerCover.swift"),
-                    str(root / "Sources/ParcApp/ReloadControl.swift"),
+                    str(root / "Sources/ParcApp/ReloadControl.swift"), str(root / "Sources/ParcApp/PointingHand.swift"),
                     str(Path(__file__).with_name("SidebarOutlineTests.swift")), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

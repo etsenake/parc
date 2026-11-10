@@ -154,7 +154,7 @@ enum PageFindResultPresentation: Equatable {
 
 /// Find's original control is a native momentary-change button. Its hover
 /// surface is decoration; AppKit still owns pressing, key traversal and AX.
-@MainActor final class PageFindButton: NSButton {
+@MainActor final class PageFindButton: PointingHandButton {
     private var hoverTrackingArea: NSTrackingArea?
     private var resignationObserver: NSObjectProtocol?
     private(set) var isHovered = false

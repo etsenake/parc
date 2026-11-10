@@ -357,7 +357,7 @@ struct SidebarSpaceHeaderTests {
               "an ellipsis at 13 points semibold, no title, borderless momentary change, centred, no alignment insets")
         check(components(button.contentTintColor) == [0, 0, 0, 0.565], "GrayA11 in a light theme")
         check(button.target === header && button.action == NSSelectorFromString("didClickEditButton:"), "aimed at didClickEditButton:")
-        let areaOptions = { (view: NSView) in view.trackingAreas.filter { $0.owner === view }.map(\.options.rawValue) }
+        let areaOptions = { (view: NSView) in view.trackingAreas.filter { $0.owner === view && !$0.options.contains(.cursorUpdate) }.map(\.options.rawValue) }
         check(areaOptions(header) == [0x223] && areaOptions(button) == [0x223] && !window.isKeyWindow,
               "the header and the button track entered/exited, moved, in the visible rect and only in the key window (0x223)")
 

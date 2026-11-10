@@ -1118,7 +1118,7 @@ enum LibraryPageHeader {
     override func mouseDown(with event: NSEvent) { onFocus?() }
 }
 
-@MainActor final class DownloadFilterButton: NSButton {
+@MainActor final class DownloadFilterButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     var profileID: UUID?
     var isChosen = false { didSet { state = isChosen ? .on : .off; needsDisplay = true } }
@@ -1549,7 +1549,7 @@ enum LibraryPageHeader {
 
 /// Native tracking/focus with the recovered 14pt medium accessory glyph.
 /// Its pressed/disabled behavior remains NSButton-owned; no synthetic action.
-@MainActor private final class DownloadRowButton: NSButton {
+@MainActor private final class DownloadRowButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     private var area: NSTrackingArea?
     private var hovered = false

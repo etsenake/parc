@@ -295,6 +295,7 @@ struct SiteControlCenterTileStyle: ButtonStyle {
             SiteControlCenterTileFace(label: label, state: state, colors: colors, raised: raised)
                 .animation(reduceMotion ? nil : SiteControlCenterMotion.interaction, value: state)
                 .onHover { hovered = $0 }
+                .pointingHandCursor()
         }
     }
 }
@@ -416,6 +417,7 @@ struct SiteControlCenterSectionView<Content: View>: View {
             .foregroundColor(Color(nsColor: colors.title))
             .padding(.horizontal, SidebarPlusMenuView.separatorInsets.left)
             .contentShape(Rectangle())
+            .pointingHandCursor()
             .onTapGesture(perform: onHeaderClick)
             .parcTooltip(TooltipConfiguration(tooltip))
             .accessibilityElement(children: .ignore)
@@ -603,6 +605,7 @@ struct SiteControlCenterExtensionPinButton: View {
                 .background(Color(nsColor: isPinned ? colors.onPlate : colors.offPlate))
                 .clipShape(Circle())
                 .contentShape(Circle())
+                .pointingHandCursor()
         }
         .buttonStyle(.plain)
         .parcTooltip(TooltipConfiguration(isPinned ? "Unpin" : "Pin"))

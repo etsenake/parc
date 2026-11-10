@@ -147,6 +147,7 @@ struct TranslucentItemFace: View {
     /// The SwiftUI rendering of the item (and, for the entry, its cells).
     private(set) var host: LibraryRenderingHostingView<AnyView>!
     private var tracking: NSTrackingArea?
+    private var cursorArea: NSTrackingArea?
     private var tracksPress = false
 
     init(colors: TranslucentButtonColors? = nil, action: (() -> Void)? = nil) {
@@ -197,6 +198,15 @@ struct TranslucentItemFace: View {
         let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect],
                                   owner: self, userInfo: nil)
         addTrackingArea(area); tracking = area
+        if let cursorArea { removeTrackingArea(cursorArea) }
+        cursorArea = NSTrackingArea(rect: buttonRect, options: [.cursorUpdate, .activeInKeyWindow], owner: self)
+        addTrackingArea(cursorArea!)
+    }
+    /// The decorative download-bin item does nothing on a click.
+    var showsPointingHand: Bool { state.enabled }
+    override func cursorUpdate(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if showsPointingHand, buttonRect.contains(point) { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
     }
     override func mouseEntered(with event: NSEvent) { pointerMoved(to: convert(event.locationInWindow, from: nil)) }
     override func mouseMoved(with event: NSEvent) { pointerMoved(to: convert(event.locationInWindow, from: nil)) }
@@ -250,4 +260,5 @@ struct TranslucentItemFace: View {
         super.init(colors: .bin(maxContrast: palette.maxContrastColor), action: {})
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override var showsPointingHand: Bool { false }
 }

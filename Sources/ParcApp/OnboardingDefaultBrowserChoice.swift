@@ -69,6 +69,7 @@ struct OnboardingChoiceRow<Label: View>: View {
                 .strokeBorder(selected ? tint : titleColor.opacity(0.1), lineWidth: 1.5))
             .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 5)
             .contentShape(Rectangle())
+            .pointingHandCursor()
         }
         .buttonStyle(.plain)
         .scaleEffect(hovered && enabled && !reduceMotion ? 1.04 : 1)

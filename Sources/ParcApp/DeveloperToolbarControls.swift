@@ -5,7 +5,7 @@ import QuartzCore
 /// buttons: clear at rest, GrayA4 while hovered, GrayA5 while pressed, radius
 /// 5, no scale and no fill fade. Distinct from ordinary toolbar
 /// `TopBarButtonStyle`. Disabled and non-key windows keep a clear surface.
-@MainActor final class DeveloperToolbarButton: NSButton {
+@MainActor final class DeveloperToolbarButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
     private var resignationObserver: NSObjectProtocol?

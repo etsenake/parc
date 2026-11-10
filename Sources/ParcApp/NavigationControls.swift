@@ -2,7 +2,7 @@ import AppKit
 
 enum NavigationControlKind { case back, forward, reload }
 
-final class NavigationControlButton: NSButton, NSGestureRecognizerDelegate {
+final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDelegate {
     var prepareInteraction: (() -> NavigationControlInteraction?)?
     private var press: NavigationControlPress?
     private var trackingArea: NSTrackingArea?

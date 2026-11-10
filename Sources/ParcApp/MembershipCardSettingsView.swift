@@ -12,7 +12,7 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
     private let download = MembershipCardActionButton(title: "", target: nil, action: nil)
     private let randomize = MembershipCardActionButton(title: "", target: nil, action: nil)
     private let rename = SettingsPillButton(title: "Edit…")
-    private let reload = NSButton(title: "Reload Card", target: nil, action: nil)
+    private let reload = PointingHandButton(title: "Reload Card", target: nil, action: nil)
     private var subscription: AnyCancellable?
     private var errorSubscription: AnyCancellable?
     private var nameSheet: MembershipCardNameSheet?

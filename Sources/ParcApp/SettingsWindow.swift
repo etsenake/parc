@@ -12,8 +12,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     var onSheetEnded: (() -> Void)?
     let contextSpaceID: UUID?
     private let applicationProfileID: UUID?
-    private let engine = NSPopUpButton()
-    private let searchSuggestions = NSSwitch()
+    private let engine = PointingHandPopUpButton()
+    private let searchSuggestions = PointingHandSwitch()
     ///
     /// the engine picker's tooltip and accessibility help.
     private var searchNote = "" {
@@ -30,26 +30,26 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             identifier = engine.identifier; self.preferences = preferences
         }
     }
-    private let archive = NSPopUpButton()
-    private let archiveInfo = NSButton()
+    private let archive = PointingHandPopUpButton()
+    private let archiveInfo = PointingHandButton()
     private var archiveInfoPopover: NSPopover?
     private var archiveScopeAlert: NSAlert?
     private var archiveScopeChange: AutoArchiveProfileChange?
-    private let restore = NSSwitch()
-    private let warnBeforeQuitting = NSSwitch()
+    private let restore = PointingHandSwitch()
+    private let warnBeforeQuitting = PointingHandSwitch()
     private var defaultBrowserSubscription: AnyCancellable?
     private var quitWarningSubscription: AnyCancellable?
     private var windowDraggingSubscription: AnyCancellable?
-    private let windowDragging = NSSwitch()
+    private let windowDragging = PointingHandSwitch()
     private var feedbackSubscription: AnyCancellable?
-    private let soundEffects = NSSwitch()
-    private let reorderingHaptics = NSSwitch()
+    private let soundEffects = PointingHandSwitch()
+    private let reorderingHaptics = PointingHandSwitch()
     private var sharedQuoteSubscription: AnyCancellable?
-    private let sharedQuotes = NSSwitch()
+    private let sharedQuotes = PointingHandSwitch()
     private var websiteThemeSubscription: AnyCancellable?
-    private let websiteTheme = NSSwitch()
+    private let websiteTheme = PointingHandSwitch()
     private var toolbarSubscription: AnyCancellable?
-    private let toolbarFullURL = NSSwitch()
+    private let toolbarFullURL = PointingHandSwitch()
     enum Pane: String, CaseIterable {
         case membership = "Membership", general = "General", profiles = "Profiles", links = "Links", shortcuts = "Shortcuts", icon = "Icon", advanced = "Advanced"
         var identifier: NSToolbarItem.Identifier { .init("Parc.Settings." + rawValue) }
@@ -89,7 +89,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var downloadPreferences: PCNativeDownloadPreferences?
     private var downloadFolderPanel: NSOpenPanel?
     private var downloadPreferencesGeneration: UInt64 = 0
-    private let downloadRetry = NSButton(title: "Retry", target: nil, action: nil)
+    private let downloadRetry = PointingHandButton(title: "Retry", target: nil, action: nil)
     private var subscription: AnyCancellable?
     private var displayedProfileID: UUID?
     private var displayedSpaceID: UUID?

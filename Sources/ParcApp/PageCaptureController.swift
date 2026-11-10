@@ -1174,7 +1174,7 @@ private final class CaptureSelectionShade: CaptureFlippedView {
 }
 
 @MainActor
-private final class CaptureActionButton: NSButton {
+private final class CaptureActionButton: PointingHandButton {
     var onFocus: (() -> Void)?
     var onMoveFocus: ((Bool) -> Void)?
     var chosen = false { didSet { needsDisplay = true } }

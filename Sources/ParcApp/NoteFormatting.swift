@@ -504,7 +504,7 @@ private enum NoteFormatControl {
 /// disclosure triangle unless it represents an empty paragraph. AppKit owns
 /// its press, keyboard and accessibility action; drawing never modifies text.
 @MainActor
-final class NoteGutterButton: NSButton {
+final class NoteGutterButton: PointingHandButton {
     static let controlSize = NSSize(width: 42, height: 30)
     static let textGap: CGFloat = 5
     private var tracking: NSTrackingArea?

@@ -456,7 +456,7 @@ final class PortraitCaptureView: NSView {
 ///
 /// height, radius-6 continuous clip, Return-key capture control.
 @MainActor
-final class PortraitPrimaryButton: NSButton {
+final class PortraitPrimaryButton: PointingHandButton {
     init(title: String) {
         super.init(frame: .zero)
         self.title = title
@@ -527,7 +527,7 @@ private final class PortraitPreviewChrome: NSView {
 }
 
 @MainActor
-private final class PortraitOptionButton: NSButton {
+private final class PortraitOptionButton: PointingHandButton {
     var swatch: NSColor? { didSet { needsDisplay = true } }
     var thumbnail: NSImage? { didSet { needsDisplay = true } }
     private var hovered = false

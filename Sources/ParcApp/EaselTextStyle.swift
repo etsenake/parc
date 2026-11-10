@@ -813,14 +813,14 @@ final class EaselTextStyleBar: NSView {
     private let fontButton = EaselPaletteButton(title: "Aa", target: nil, action: nil)
     private var expanded = false
     var onLayoutChange: (() -> Void)?
-    private let families = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let sizes = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let families = PointingHandPopUpButton(frame: .zero, pullsDown: false)
+    private let sizes = PointingHandPopUpButton(frame: .zero, pullsDown: false)
     private let smaller = EaselPaletteButton(title: "−", target: nil, action: nil)
     private let larger = EaselPaletteButton(title: "+", target: nil, action: nil)
     private var emphasisButtons: [NSButton] = []
     private let link = EaselPaletteButton(title: "Link…", target: nil, action: nil)
-    private let paragraphs = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let fill = NSButton(checkboxWithTitle: "Text fill", target: nil, action: nil)
+    private let paragraphs = PointingHandPopUpButton(frame: .zero, pullsDown: false)
+    private let fill = PointingHandButton(checkboxWithTitle: "Text fill", target: nil, action: nil)
     private var displayedFillState: NSControl.StateValue = .off
     var onFill: ((EaselTextStyle.Fill) -> Void)?
     private var isEditing = false

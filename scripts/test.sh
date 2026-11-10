@@ -61,6 +61,7 @@ xcrun swiftc -parse-as-library \
   -o "$repo_root/build/tests/settings-pretty-json-persist-skip"
 "$repo_root/build/tests/settings-pretty-json-persist-skip"
 python3 "$repo_root/tests/SettingsPrettyJSONPersistSkip/check.py"
+python3 "$repo_root/tests/PointingHand/check.py"
 
 # Other browsers' native messaging manifests linked into the engine folder
 # (temporary directories only).
@@ -94,7 +95,7 @@ compile_and_run link-routing-text LinkRoutingTextEditingTests \
 compile_and_run automatic-archive-presentation AutoArchivePresentationTests
 compile_and_run automatic-archive-education-view AutoArchiveEducationViewTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
-  "$repo_root/Sources/ParcApp/AutoArchiveEducationView.swift"
+  "$repo_root/Sources/ParcApp/AutoArchiveEducationView.swift" "$repo_root/Sources/ParcApp/PointingHand.swift"
 compile_and_run update-complete-card UpdateCompleteCardTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcApp/UpdateCompleteCard.swift"
@@ -126,7 +127,7 @@ compile_and_run profile-removal-sheets ProfileRemovalSheetTests \
   "$repo_root/Sources/ParcApp/ProfileRemovalController.swift" \
   "$repo_root/Sources/ParcApp/ProfileRemovalDialog.swift" \
   "$repo_root/Sources/ParcApp/ProfileRemovalButton.swift" \
-  "$repo_root/Sources/ParcApp/SettingsHoverButton.swift" \
+  "$repo_root/Sources/ParcApp/SettingsHoverButton.swift" "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/ProfileRemovalSheet.swift" \
   "$repo_root/Sources/ParcApp/UnusedProfileRemovalSheet.swift" \
   "$repo_root/tests/ProfileRemovalTestSupport.swift"

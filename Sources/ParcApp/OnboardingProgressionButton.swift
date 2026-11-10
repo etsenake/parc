@@ -18,6 +18,7 @@ struct OnboardingProgressionButtonStyle: ButtonStyle {
             .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.45, blendDuration: 0),
                        value: scale)
             .onHover { isHovered = $0 }
+            .pointingHandCursor()
     }
 }
 

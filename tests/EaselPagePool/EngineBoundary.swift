@@ -100,6 +100,7 @@ import AppKit
         if accepted { pages.forEach { $0.isClosed = true } }
         completion(accepted)
     }
+    static func setFairPlayIdentity(safariSites: [String], chromeSites: [String], profilePath: String, offTheRecord: Bool) {}
 }
 
 @MainActor final class PCNativeLiveCapturePosition {

@@ -56,7 +56,7 @@ enum EaselAppearance {
 /// Native pressed, checked and keyboard-ring feedback are explicit AppKit
 /// adaptations; drawing never changes the button's logical state or action.
 @MainActor
-final class EaselPaletteButton: NSButton {
+final class EaselPaletteButton: PointingHandButton {
     var usesToolbarInk = false
     var caption: String?
     private var pointerInside = false

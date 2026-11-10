@@ -10,7 +10,7 @@ final class SidebarPreviewSettingsSheet: NSWindowController {
     private var retired = false
     private var observers: [NSObjectProtocol] = []
     private var choices: [SidebarPreviewPreference: NSButton] = [:]
-    private let done = NSButton(title: "Done", target: nil, action: nil)
+    private let done = PointingHandButton(title: "Done", target: nil, action: nil)
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -38,7 +38,7 @@ final class SidebarPreviewSettingsSheet: NSWindowController {
         help.frame = NSRect(x: 24, y: size.height - 90, width: 374, height: 40)
         content.addSubview(help)
         for (index, preference) in SidebarPreviewPreference.allCases.enumerated() {
-            let button = NSButton(checkboxWithTitle: preference.settingsTitle,
+            let button = PointingHandButton(checkboxWithTitle: preference.settingsTitle,
                                   target: self, action: #selector(preferenceChanged(_:)))
             button.font = .systemFont(ofSize: 12)
             button.identifier = NSUserInterfaceItemIdentifier(preference.rawValue)

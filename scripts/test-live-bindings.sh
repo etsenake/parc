@@ -10,6 +10,7 @@ xcrun swiftc -whole-module-optimization -warnings-as-errors -parse-as-library -t
   "$repo_root/Sources/ParcApp/PeekOpenCommand.swift" \
   "$repo_root/Sources/ParcCore/SpaceTheme.swift" \
   "$repo_root/Sources/ParcApp/PArcToast.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" \
   "$repo_root/tests/KeyboardNavigation/LiveBindingTests.swift" \
   -o "$check_dir/live-bindings"

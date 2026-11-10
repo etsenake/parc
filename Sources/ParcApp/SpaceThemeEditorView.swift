@@ -486,7 +486,7 @@ private class ThemeIconButton: NSButton {
     }
 }
 
-private final class ThemePresetButton: NSButton {
+private final class ThemePresetButton: PointingHandButton {
     var onAction: (() -> Void)?
     var color: NSColor? { didSet { needsDisplay = true } }
     init() {

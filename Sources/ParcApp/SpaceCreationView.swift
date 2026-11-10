@@ -20,16 +20,16 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
     private let profileCard = SpaceCreationCard()
     private let themeCard = SpaceCreationCard()
     private let nameField = NSTextField()
-    private let iconButton = NSButton()
+    private let iconButton = PointingHandButton()
     private let profileGlyph = NSImageView()
     private let profileLabel = NSTextField(labelWithString: "Profile")
-    private let profilePicker = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let profileInfo = NSButton()
-    private let themeButton = NSButton()
+    private let profilePicker = PointingHandPopUpButton(frame: .zero, pullsDown: false)
+    private let profileInfo = PointingHandButton()
+    private let themeButton = PointingHandButton()
     private let createButton = SpaceCreationCreateButton()
     ///
     var palette: ThemeChromePalette? { didSet { createButton.palette = palette } }
-    private let cancelButton = NSButton()
+    private let cancelButton = PointingHandButton()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private var availableProfiles: [BrowserProfile] = []
     private var selectedProfileID: UUID
@@ -233,7 +233,7 @@ private final class SpaceCreationCards: NSView {
 /// it, a press scales it to 0.98 and a disabled button is at 0.4 — never the
 /// system accent.
 @MainActor
-final class SpaceCreationCreateButton: NSButton {
+final class SpaceCreationCreateButton: PointingHandButton {
     var palette: ThemeChromePalette? { didSet { needsDisplay = true } }
     override var isEnabled: Bool { didSet { alphaValue = isEnabled ? 1 : 0.4 } }
     override init(frame frameRect: NSRect) {

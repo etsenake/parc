@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix="parc-plus-menu-") as directory:
             str(root / "Sources/ParcApp/BoxOfThingsIcon.swift"),
             str(root / "Sources/ParcApp/SidebarPlusButtonFace.swift"),
             str(root / "Sources/ParcApp/TranslucentButtonFace.swift"), str(root / "Sources/ParcApp/PointerCover.swift"),
-            str(root / "Sources/ParcApp/ReloadControl.swift"),
+            str(root / "Sources/ParcApp/ReloadControl.swift"), str(root / "Sources/ParcApp/PointingHand.swift"),
             str(controls),
             str(Path(__file__).with_name("PlusButtonTests.swift")),
             "-o",

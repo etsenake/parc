@@ -312,7 +312,7 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
 /// over 0.16 s. The native cell's highlight owns press; NSButton keeps input,
 /// focus and its single accessibility element. Like the neighbouring
 /// SplitPaneControl and PaneTitleControl, Reduce Motion skips the fades.
-@MainActor final class BrowserToolbarActionButton: NSButton {
+@MainActor final class BrowserToolbarActionButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     private let surface = CALayer()
     private var area: NSTrackingArea?

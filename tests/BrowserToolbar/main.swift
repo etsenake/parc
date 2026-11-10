@@ -284,7 +284,7 @@ try MainActor.assumeIsolated {
           && PaneMenuContent(livePage: false, tabURL: "", localDocument: false) == .none
           && PaneMenuContent(livePage: false, tabURL: nil, localDocument: false) == .none,
           "a content without a URL has no actions")
-    func titleAreas() -> [NSTrackingArea] { labelControl.trackingAreas.filter { $0.owner === labelControl } }
+    func titleAreas() -> [NSTrackingArea] { labelControl.trackingAreas.filter { $0.owner === labelControl && !$0.options.contains(.cursorUpdate) } }
     let old = TitleTrackingEvent(); old.area = titleAreas().first
     labelControl.updateTrackingAreas(); labelControl.mouseEntered(with: old)
     check(!labelControl.isHovered, "retired title tracking cannot start decoration")
@@ -518,7 +518,7 @@ try MainActor.assumeIsolated {
     check(siteSurface.opacity == 0 && abs((siteButton.contentTintColor?.alphaComponent ?? 0) - 0.55) < 0.00001,
           "original light rest surface and enabled glyph")
     siteButton.updateTrackingAreas()
-    let siteHover = TitleTrackingEvent(); siteHover.area = siteButton.trackingAreas.first { $0.owner === siteButton }
+    let siteHover = TitleTrackingEvent(); siteHover.area = siteButton.trackingAreas.first { $0.owner === siteButton && !$0.options.contains(.cursorUpdate) }
     siteButton.mouseEntered(with: siteHover)
     check(siteButton.isHovered && abs(siteSurface.opacity - 0.05) < 0.00001, "original light hover surface")
     if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -541,7 +541,7 @@ try MainActor.assumeIsolated {
     let motionChecked = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     siteButton.isEnabled = true
     actionWindow.pointer = siteButton.convert(NSPoint(x: 5, y: 5), to: nil); siteButton.updateTrackingAreas()
-    let republishedHover = TitleTrackingEvent(); republishedHover.area = siteButton.trackingAreas.first { $0.owner === siteButton }
+    let republishedHover = TitleTrackingEvent(); republishedHover.area = siteButton.trackingAreas.first { $0.owner === siteButton && !$0.options.contains(.cursorUpdate) }
     check(siteButton.isHovered && abs(siteSurface.opacity - 0.09) < 0.00001
           && (!motionChecked || siteSurface.animation(forKey: "toolbar-action-opacity") != nil),
           "unchanged enable and layout re-sampling keep the running hover fade")

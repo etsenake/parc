@@ -102,7 +102,6 @@ private struct OnboardingFavoritesView: View {
         }
         .buttonStyle(OnboardingFavoriteButtonStyle())
         .disabled(!state.enabled)
-        .background(OnboardingFavoriteCursor(enabled: state.enabled))
         .onHover { inside in
             // An exit from the preceding tile cannot clear the new tile owner.
             if inside { hovered = choice.id }
@@ -123,25 +122,7 @@ private struct OnboardingFavoriteButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.75 : 1)
             .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.4, blendDuration: 0.5),
                        value: configuration.isPressed)
-    }
-}
-
-/// A cursor rect follows the tile's native attachment and never intercepts its
-/// SwiftUI button, keyboard or accessibility input.
-private struct OnboardingFavoriteCursor: NSViewRepresentable {
-    let enabled: Bool
-    func makeNSView(context: Context) -> CursorView { CursorView() }
-    func updateNSView(_ view: CursorView, context: Context) {
-        view.enabled = enabled
-        view.window?.invalidateCursorRects(for: view)
-    }
-    final class CursorView: NSView {
-        var enabled = true
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        override func resetCursorRects() {
-            super.resetCursorRects()
-            if enabled { addCursorRect(bounds, cursor: .pointingHand) }
-        }
+            .pointingHandCursor()
     }
 }
 

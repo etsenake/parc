@@ -8,6 +8,7 @@ xcrun swiftc -whole-module-optimization -warnings-as-errors -target arm64-apple-
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcCore/SpaceTheme.swift" \
   "$repo_root/Sources/ParcApp/ShortcutsSettingsView.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcCore/NumberedTarget.swift" \
   "$repo_root/Sources/ParcApp/ShortcutKeycapView.swift" \
   "$repo_root/Sources/ParcApp/ShortcutSmileyView.swift" \

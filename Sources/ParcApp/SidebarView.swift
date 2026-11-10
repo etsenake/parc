@@ -46,7 +46,7 @@ extension NSColor {
     static let parcInk = NSColor(srgbRed: 0.16, green: 0.20, blue: 0.28, alpha: 1)
 }
 
-final class ActionButton: NSButton {
+final class ActionButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     var onHover: ((Bool) -> Void)?
     var showsHoverFill = false

@@ -383,6 +383,7 @@ struct PArcToastCard: View {
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(backdrop(accessory: true))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .pointingHandCursor()
         }
         .buttonStyle(.plain).accessibilityLabel(accessory.accessibilityLabel)
         .opacity(accessoryHovered ? 0.6 : 1).onHover { accessoryHovered = $0 }
@@ -459,6 +460,7 @@ struct PArcToastButtonStyle: ButtonStyle {
                             : hovered ? Color.black.opacity(0.025) : Color.clear))
                 )
                 .onHover { hovered = $0 }
+                .pointingHandCursor()
         }
     }
 }

@@ -9,7 +9,7 @@ final class EaselImageDestinationController: NSWindowController {
     private let image: EaselImageInput
     private let store: EaselStore
     private let destinations: [EaselSummary]
-    private let picker = NSPopUpButton()
+    private let picker = PointingHandPopUpButton()
     private let name = NSTextField(string: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private let valid: () -> Bool
@@ -64,9 +64,9 @@ final class EaselImageDestinationController: NSWindowController {
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
         status.stringValue = "Saved locally in this profile."; root.addArrangedSubview(status)
         let buttons = NSStackView(); buttons.orientation = .horizontal; buttons.spacing = 10
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel))
+        let cancel = PointingHandButton(title: "Cancel", target: self, action: #selector(cancel))
         cancel.keyEquivalent = "\u{1b}"; cancel.bezelStyle = .rounded
-        let add = NSButton(title: "Add Image", target: self, action: #selector(addImage))
+        let add = PointingHandButton(title: "Add Image", target: self, action: #selector(addImage))
         add.keyEquivalent = "\r"; add.bezelStyle = .rounded
         buttons.addArrangedSubview(cancel); buttons.addArrangedSubview(add); root.addArrangedSubview(buttons)
         panel.setContentSize(root.fittingSize)

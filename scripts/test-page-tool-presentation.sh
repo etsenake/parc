@@ -6,6 +6,7 @@ trap 'rm -rf "$check_dir"' EXIT
 xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   "$repo_root/Sources/ParcApp/DeveloperToolbarLayout.swift" \
   "$repo_root/Sources/ParcApp/DeveloperToolbarControls.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/tests/PageToolPresentation/PageToolPresentationTests.swift" \
   -o "$check_dir/page-tool-presentation"
 "$check_dir/page-tool-presentation"

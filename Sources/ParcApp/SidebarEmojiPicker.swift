@@ -352,7 +352,7 @@ final class SidebarEmojiCategoryBar: NSStackView {
 ///
 /// hovered background (GrayA4 unless overridden), clear otherwise.
 @MainActor
-final class SidebarPickerHoverButton: NSButton {
+final class SidebarPickerHoverButton: PointingHandButton {
     var contentInsets = NSEdgeInsets() { didSet { invalidateIntrinsicContentSize() } }
     var hoveredBackgroundColor: NSColor?
     private(set) var hovered = false { didSet { needsDisplay = true } }
@@ -373,10 +373,12 @@ final class SidebarPickerHoverButton: NSButton {
         return NSSize(width: base.width + contentInsets.left + contentInsets.right,
                       height: base.height + contentInsets.top + contentInsets.bottom)
     }
+    private var tracking: NSTrackingArea?
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: trackingOptions, owner: self))
+        if let tracking { removeTrackingArea(tracking) }
+        tracking = NSTrackingArea(rect: .zero, options: trackingOptions, owner: self)
+        addTrackingArea(tracking!)
     }
     override func mouseEntered(with event: NSEvent) { hovered = true }
     override func mouseExited(with event: NSEvent) { hovered = false }

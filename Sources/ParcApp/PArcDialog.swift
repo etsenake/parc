@@ -64,7 +64,7 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         confirmButton = PArcDialogButton(title: content.confirm, primary: true, destructive: content.destructive)
         cancelButton = content.cancel.map { PArcDialogButton(title: $0, primary: false) }
         auxiliaryButton = content.auxiliary.map { PArcDialogButton(title: $0, primary: false, hint: false) }
-        suppression = content.suppression.map { NSButton(checkboxWithTitle: $0, target: nil, action: nil) }
+        suppression = content.suppression.map { PointingHandButton(checkboxWithTitle: $0, target: nil, action: nil) }
         textField = content.field.map { field in
             let text = NSTextField(string: field.value)
             text.placeholderString = field.placeholder
@@ -370,7 +370,7 @@ private final class PArcDialogPictureIcon: NSView {
 /// `ButtonHotkeyHint`: 12-point side padding, a 36-point continuous radius-6
 /// body with a 1-point border and a 2-point lip, and an ESC or return badge.
 @MainActor
-final class PArcDialogButton: NSButton {
+final class PArcDialogButton: PointingHandButton {
     let primary: Bool
     let destructive: Bool
     /// `ButtonHotkeyHint`: ESC for Cancel, return for the confirm button, none

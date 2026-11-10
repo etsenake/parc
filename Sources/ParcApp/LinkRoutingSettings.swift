@@ -5,8 +5,8 @@ import Combine
 final class LinksSettingsView: NSView {
     private let store: BrowserStore
     private var routes: LinkRoutingWindow?
-    private let automaticPeek = NSSwitch()
-    private let shiftPeek = NSSwitch()
+    private let automaticPeek = PointingHandSwitch()
+    private let shiftPeek = PointingHandSwitch()
     private var settingsSubscription: AnyCancellable?
     override var isFlipped: Bool { true }
 
@@ -338,7 +338,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                         icon.contentTintColor = .secondaryLabelColor; row.addSubview(icon)
                     }
                     label(conditionIndex == 0 ? "URL" : "and", frame: NSRect(x: 56, y: cy + 4, width: 36, height: 21), in: row, secondary: true)
-                    let popup = NSPopUpButton(frame: NSRect(x: 92, y: cy, width: 110, height: 26))
+                    let popup = PointingHandPopUpButton(frame: NSRect(x: 92, y: cy, width: 110, height: 26))
                     popup.addItems(withTitles: ["Is equal to", "Contains"]); popup.selectItem(at: condition.style == .matches ? 0 : 1)
                     popup.menu?.delegate = self
                     popup.setAccessibilityLabel("Matching style for route \(index + 1), condition \(conditionIndex + 1)")
@@ -359,7 +359,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                 arrow.image = NSImage(systemSymbolName: "arrow.turn.down.right", accessibilityDescription: nil)
                 arrow.contentTintColor = .secondaryLabelColor; row.addSubview(arrow)
                 label("Open in", frame: NSRect(x: 129, y: cy + 4, width: 58, height: 21), in: row, secondary: true)
-                let popup = NSPopUpButton(frame: NSRect(x: 187, y: cy, width: 165, height: 26))
+                let popup = PointingHandPopUpButton(frame: NSRect(x: 187, y: cy, width: 165, height: 26))
                 popup.menu?.autoenablesItems = false; popup.setAccessibilityLabel("Destination for route \(index + 1)")
                 popup.menu?.delegate = self
                 var choices: [LinkRouteDestination] = []

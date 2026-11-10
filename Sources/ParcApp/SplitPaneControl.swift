@@ -24,7 +24,7 @@ enum SplitPaneControlLayoutSkip {
 ///
 /// slot, red `lock.slash.fill` at 11-point semibold, and the same hover/press
 ///
-@MainActor final class SplitPaneControl: NSButton {
+@MainActor final class SplitPaneControl: PointingHandButton {
     enum Kind { case menu, close, insecure }
     static let surfaceSize = NSSize(width: 32, height: 24)
     ///

@@ -28,7 +28,7 @@ assert "sidebar.dismissFavoritesEmptyState = { [weak self] profileID in self?.st
     "BrowserWindowController no longer records a dismissal in the store"
 store = sorted((root / "Sources/ParcCore").glob("*.swift"))
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-empty-state-") as directory:
-    for name, sources in [("view", [*store, app / "SidebarChromeLayout.swift", app / "SidebarFavoritesEmptyState.swift",
+    for name, sources in [("view", [*store, app / "SidebarChromeLayout.swift", app / "SidebarFavoritesEmptyState.swift", app / "PointerCover.swift", app / "PointingHand.swift",
                                     app / "SidebarAccessibility.swift", here / "EmptyStateViewTests.swift"]),
                           ("dismissal", [*store, here / "EmptyStateDismissalTests.swift"])]:
         executable = Path(directory) / name

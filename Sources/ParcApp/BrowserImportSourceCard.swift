@@ -45,6 +45,7 @@ private struct BrowserImportSourceCardStyle: ButtonStyle {
         configuration.label
             .environment(\.browserImportCardPressed, configuration.isPressed)
             .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .pointingHandCursor()
     }
 }
 

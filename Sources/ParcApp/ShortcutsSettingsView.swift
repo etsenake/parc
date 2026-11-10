@@ -14,17 +14,17 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
     private let heading = NSTextField(wrappingLabelWithString: "Custom Shortcuts")
     private let explanation = NSTextField(wrappingLabelWithString: "Change shortcuts for your favorite actions.")
     private let feedback = NSTextField(wrappingLabelWithString: "")
-    private let reset = NSButton(title: "Reset All Shortcuts", target: nil, action: nil)
-    private let more = NSButton()
-    private let priority = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let reset = PointingHandButton(title: "Reset All Shortcuts", target: nil, action: nil)
+    private let more = PointingHandButton()
+    private let priority = PointingHandPopUpButton(frame: .zero, pullsDown: false)
     private let priorityHelp = NSTextField(wrappingLabelWithString: "")
     private let detailDivider = NSBox()
     //
     // bindings: Favorites on item1…item8; item9 shows its ninth-item toggle,
     //
-    private let includeFavorites = NSButton(checkboxWithTitle: "Include Favorites in ordering.", target: nil, action: nil)
-    private let ninthItem = NSButton(checkboxWithTitle: "Switch to ninth tab.", target: nil, action: nil)
-    private let captureGesture = NSButton(checkboxWithTitle: "Hold Command and Shift to start a Capture.", target: nil, action: nil)
+    private let includeFavorites = PointingHandButton(checkboxWithTitle: "Include Favorites in ordering.", target: nil, action: nil)
+    private let ninthItem = PointingHandButton(checkboxWithTitle: "Switch to ninth tab.", target: nil, action: nil)
+    private let captureGesture = PointingHandButton(checkboxWithTitle: "Hold Command and Shift to start a Capture.", target: nil, action: nil)
     private var interactiveSymbols: [String]?
     private var subscription: AnyCancellable?
     private var systemSubscriptions: [AnyCancellable] = []
@@ -609,7 +609,7 @@ struct ShortcutRemovalEffect {
     func clearWarning() { warning?.removeFromSuperview(); warning = nil; onReveal = nil }
     func showConflict(help: String, spoken: String, reveal: @escaping () -> Void) {
         onReveal = reveal
-        let button = (warning as? NSButton) ?? NSButton(image: NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)!,
+        let button = (warning as? NSButton) ?? PointingHandButton(image: NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)!,
                               target: self, action: #selector(revealConflict))
         button.isBordered = false; button.imagePosition = .imageOnly; button.contentTintColor = .systemRed
         button.toolTip = help; button.setAccessibilityLabel(spoken); button.setAccessibilityHelp("Show the conflicting shortcut")
@@ -662,6 +662,7 @@ struct ShortcutBasicsContent: View {
                 Text("Learn the Essential Shortcuts").font(.system(size: 13)).opacity(0.85)
             }
             .buttonStyle(.borderedProminent)
+            .pointingHandCursor()
             .accessibilityLabel("Learn the Essential Shortcuts")
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -759,6 +760,7 @@ private struct ShortcutClearButton: View {
         Button(action: onPress) {
             Image(systemName: "xmark.circle.fill")
                 .foregroundStyle(Color(white: colorScheme == .dark ? 0.439 : 0.561))
+                .pointingHandCursor()
         }
         .buttonStyle(.borderless)
         .accessibilityLabel("Clear search")

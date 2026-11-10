@@ -270,6 +270,7 @@ struct EssentialsViewAllLabel: View {
         .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
             .stroke(colorScheme == .dark ? Color.white.opacity(0.172) : Color.black.opacity(0.141), lineWidth: 1)
             .allowsHitTesting(false))
+        .pointingHandCursor()
         .accessibilityLabel("View All Shortcuts")
     }
 }

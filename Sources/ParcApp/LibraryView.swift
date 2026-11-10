@@ -1237,7 +1237,7 @@ private final class LibraryItemView: NSTableCellView {
 /// ContentCell's 32-point trailing accessory: a 14-point medium glyph in
 /// the GrayA11/A12 accessory colours over GrayA6/A7 while hovered or pressed.
 @MainActor
-private final class LibraryRowButton: NSButton {
+private final class LibraryRowButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     private var area: NSTrackingArea?
     private var hovered = false

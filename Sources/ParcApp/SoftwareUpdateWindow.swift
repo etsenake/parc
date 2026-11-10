@@ -19,7 +19,7 @@ private enum UpdaterColors {
 
 ///
 ///
-private final class UpdaterButton: NSButton {
+private final class UpdaterButton: PointingHandButton {
     private let filled: Bool
 
     init(title: String, filled: Bool) {

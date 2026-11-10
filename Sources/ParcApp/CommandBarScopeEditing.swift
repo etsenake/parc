@@ -30,7 +30,7 @@ struct CommandBarScopeEditing {
 ///
 ///
 /// keyword scopes the same token. Only a site's pill opens the site search menu.
-final class CommandBarScopePill: NSButton {
+final class CommandBarScopePill: PointingHandButton {
     var onOpen: (() -> Void)?
     ///
     var focusColor: NSColor = CommandBarPalette.colourless.scopePill {
@@ -81,6 +81,7 @@ final class CommandBarScopePill: NSButton {
     private func show(_ name: String, color: NSColor, opensMenu: Bool) {
         titleLabel.stringValue = name; titleLabel.textColor = color
         self.opensMenu = opensMenu
+        refreshPointingHand(showsPointingHand)
         invalidateIntrinsicContentSize(); needsLayout = true
     }
     override var intrinsicContentSize: NSSize {
@@ -116,6 +117,7 @@ final class CommandBarScopePill: NSButton {
         glow.shadowColor = focusColor.withAlphaComponent(0.3)
         shadow = glow
     }
+    override var showsPointingHand: Bool { isEnabled && opensMenu }
     @objc private func openMenu() { if isEnabled && opensMenu { onOpen?() } }
     override func rightMouseDown(with event: NSEvent) { openMenu() }
     override func accessibilityPerformPress() -> Bool {

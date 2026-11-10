@@ -3,7 +3,7 @@ import QuartzCore
 
 /// URLTextView's presentation on the existing native button. The page owner
 /// supplies the action; neither these display runs nor hover can navigate.
-@MainActor final class PaneTitleControl: NSButton {
+@MainActor final class PaneTitleControl: PointingHandButton {
     var actionBlock: (() -> Void)?
     ///
     ///

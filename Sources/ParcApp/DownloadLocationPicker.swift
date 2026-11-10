@@ -20,7 +20,7 @@ import AppKit
 ///
 ///
 @MainActor
-final class DownloadLocationPicker: NSPopUpButton {
+final class DownloadLocationPicker: PointingHandPopUpButton {
     ///
     /// "arc.other", promptTag "arc.promptForDownload" (cases 0, 1, 2).
     enum Choice: Int { case folder = 0, other = 1, prompt = 2 }

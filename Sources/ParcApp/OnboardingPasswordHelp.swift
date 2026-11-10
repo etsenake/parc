@@ -193,6 +193,7 @@ final class OnboardingPasswordHelp: NSView {
                 .background((dark ? Color.white : Color.black).opacity(opacity),
                             in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .onHover { hovered = $0 }
+                .pointingHandCursor()
         }
     }
 

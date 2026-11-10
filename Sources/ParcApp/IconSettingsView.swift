@@ -9,7 +9,7 @@ final class IconSettingsView: NSView {
     private let list = NSScrollView()
     private let choices = IconChoiceStack()
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let retry = NSButton(title: "Try Again", target: nil, action: nil)
+    private let retry = PointingHandButton(title: "Try Again", target: nil, action: nil)
     private var rows: [IconChoiceRow] = []
     private var subscriptions: Set<AnyCancellable> = []
     private var displayedSelection: String?
@@ -109,7 +109,7 @@ private final class IconListGroup: NSView {
 }
 
 @MainActor
-final class IconChoiceRow: NSButton {
+final class IconChoiceRow: PointingHandButton {
     override var isFlipped: Bool { true }
     let iconID: String
     private let preview: NSImageView

@@ -292,7 +292,7 @@ import Quartz
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-@MainActor private final class DownloadPreviewButton: NSButton {
+@MainActor private final class DownloadPreviewButton: PointingHandButton {
     private var tracking: NSTrackingArea?
     private var hovered = false
     init(symbol: String, label: String) {

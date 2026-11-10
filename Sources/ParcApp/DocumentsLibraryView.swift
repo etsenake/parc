@@ -382,9 +382,10 @@ private final class DocumentCard: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self)
         tracking = next; addTrackingArea(next)
     }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
     override func mouseEntered(with event: NSEvent) { hovered = true }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func mouseDown(with event: NSEvent) {
@@ -455,7 +456,7 @@ private final class DocumentsGridTable: NSTableView {
 }
 
 @MainActor
-private final class DocumentMoreButton: NSButton {
+private final class DocumentMoreButton: PointingHandButton {
     var tab: ((Bool) -> Bool)?
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {

@@ -6,5 +6,5 @@ trap 'rm -rf "$output"' EXIT
 # A busy dialog button shows the onboarding button's spinner.
 spinner=$(python3 -B tests/Support/declarations.py "$output/PArcButtonSpinner.swift" PArcButtonSpinner)
 xcrun swiftc -parse-as-library Sources/ParcApp/QuitWarningPreferences.swift \
-    Sources/ParcApp/ApplicationQuitWarning.swift Sources/ParcApp/PArcDialog.swift "$spinner" tests/QuitWarningTests.swift -o "$output/check"
+    Sources/ParcApp/ApplicationQuitWarning.swift Sources/ParcApp/PArcDialog.swift Sources/ParcApp/PointingHand.swift "$spinner" tests/QuitWarningTests.swift -o "$output/check"
 "$output/check"

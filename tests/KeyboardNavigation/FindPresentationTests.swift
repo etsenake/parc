@@ -101,12 +101,14 @@ import AppKit
         hoverWindow.contentView = surface
         let control = PageFindButton(frame: NSRect(x: 20, y: 20, width: 26, height: 26))
         surface.addSubview(control)
+        // The pointing hand's cursor-update area is not the hover tracking.
+        func hoverAreas() -> [NSTrackingArea] { control.trackingAreas.filter { !$0.options.contains(.cursorUpdate) } }
         control.updateTrackingAreas()
-        check(control.trackingAreas.count == 1, "one original hover tracking area")
-        let options = control.trackingAreas[0].options
+        check(hoverAreas().count == 1, "one original hover tracking area")
+        let options = hoverAreas()[0].options
         check(options.rawValue == 0x223, "recovered key-window visible-rect tracking options")
         control.updateTrackingAreas()
-        check(control.trackingAreas.count == 1, "layout replaces rather than stacks tracking")
+        check(hoverAreas().count == 1, "layout replaces rather than stacks tracking")
         check(control.focusRingMaskBounds == control.bounds, "native focus ring uses original bounds")
         check((control.cell as? NSButtonCell)?.highlightsBy == .contentsCellMask,
               "momentary-change keeps AppKit's native content press feedback")

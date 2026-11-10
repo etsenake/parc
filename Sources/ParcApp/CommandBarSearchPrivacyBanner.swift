@@ -25,7 +25,7 @@ struct CommandBarSearchPrivacyPolicy {
 ///
 ///
 /// the `info.circle` symbol the banner uses, in the bar's accessory colour.
-final class CommandBarPrivacyInfoButton: NSButton {
+final class CommandBarPrivacyInfoButton: PointingHandButton {
     override init(frame: NSRect) {
         super.init(frame: frame)
         isBordered = false
@@ -148,7 +148,7 @@ final class CommandBarSearchPrivacyBanner: NSView {
 ///
 /// a 36-point continuous radius-6 body, a 1-point border and a 2-point lip in
 /// the neutral palette, with no hotkey badge. Pressed precedes hover.
-final class CommandBarPrivacyButton: NSButton {
+final class CommandBarPrivacyButton: PointingHandButton {
     static let bodyHeight: CGFloat = 36
     private var hovered = false { didSet { needsDisplay = true } }
     private var tracking: NSTrackingArea?

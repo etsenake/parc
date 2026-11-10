@@ -11,7 +11,7 @@ final class CommandResultCell: NSView {
         }
     }
     static let iconTileIdentifier = NSUserInterfaceItemIdentifier("CommandResultIconTile")
-    private let deleteButton = NSButton()
+    private let deleteButton = PointingHandButton()
     private var isHovered = false
     /// The row theme's selected colour, which a selected row's glyphs and
     /// keycap take on their white tiles.

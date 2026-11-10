@@ -5,9 +5,9 @@ import AppKit
 @MainActor
 final class EaselWebInput: NSViewController, NSTextFieldDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
-    private let mode = NSSegmentedControl(labels: ["Address", "Search"], trackingMode: .selectOne, target: nil, action: nil)
+    private let mode = PointingHandSegmentedControl(labels: ["Address", "Search"], trackingMode: .selectOne, target: nil, action: nil)
     private let field = NSTextField()
-    private let category = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let category = PointingHandPopUpButton(frame: .zero, pullsDown: false)
     private let errorLabel = NSTextField(labelWithString: "")
     private let submitButton: NSButton
     private weak var anchor: NSView?

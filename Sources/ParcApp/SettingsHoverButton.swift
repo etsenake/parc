@@ -5,7 +5,7 @@ import AppKit
 /// pressed tracking, keyboard activation and accessibility. No timing, scale or
 /// haptic is shared between controls. See docs/settings-motion.md (SET25).
 @MainActor
-class SettingsHoverButton: NSButton {
+class SettingsHoverButton: PointingHandButton {
     private var hovered = false
     private var tracking: NSTrackingArea?
     private var observers: [NSObjectProtocol] = []

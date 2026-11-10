@@ -133,7 +133,7 @@ enum ExtensionActionBadgeMetrics {
 }
 
 @MainActor
-final class ExtensionActionButton: NSButton {
+final class ExtensionActionButton: PointingHandButton {
     let style: ExtensionControlStyle
     private var invokeAction: (() -> Void)?
     private var contextAction: ((NSView) -> Void)?

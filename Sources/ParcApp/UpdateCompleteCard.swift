@@ -85,6 +85,12 @@ final class UpdateBannerKeyStop: NSButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @objc func press() { onPress() }
+    // Enabled exactly while its control takes a click. A cursor rect, since
+    // under SwiftUI the cursor update goes to the hosting view.
+    override var isEnabled: Bool { didSet { if isEnabled != oldValue { window?.invalidateCursorRects(for: self) } } }
+    override func resetCursorRects() {
+        if isEnabled { addCursorRect(visibleRect, cursor: .pointingHand) }
+    }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() {
         NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()

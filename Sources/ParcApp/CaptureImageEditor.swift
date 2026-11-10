@@ -24,7 +24,7 @@ final class CaptureImageEditor: NSObject {
     private let root = LayoutView()
     private let scroll = NSScrollView()
     private let status = NSTextField(labelWithString: "")
-    private let ink = NSColorWell()
+    private let ink = PointingHandColorWell()
     private var subscription: AnyCancellable?
     private var importPanel: NSOpenPanel?
     private var finished = false

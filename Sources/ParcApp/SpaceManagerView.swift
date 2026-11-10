@@ -439,7 +439,7 @@ enum SpaceManagementLayout {
 
 ///
 /// glyph U+E9A4 in a hoverable button.
-@MainActor private final class SpaceManagementMoreButton: NSButton {
+@MainActor private final class SpaceManagementMoreButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     var dark = false { didSet { if dark != oldValue { needsDisplay = true } } }
     private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
@@ -476,7 +476,7 @@ enum SpaceManagementLayout {
 ///
 ///
 ///
-@MainActor private final class SpaceManagementAddButton: NSButton {
+@MainActor private final class SpaceManagementAddButton: PointingHandButton {
     var palette: ThemeChromePalette? { didSet { updateColors() } }
     var actionBlock: (() -> Void)?
     private let circle = CAShapeLayer()

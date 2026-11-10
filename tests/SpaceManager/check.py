@@ -67,6 +67,7 @@ NavigationControlPress.swift
 PageCardShadow.swift
 ParcSplitView.swift
 PointerCover.swift
+PointingHand.swift
 ReloadControl.swift
 SadTabContent.swift
 SavedFocus.swift

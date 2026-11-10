@@ -149,7 +149,7 @@ final class SettingsProfileRowView: NSTableRowView {
 /// fill (black 15% light, near-white 7% dark), 6-point corners and the
 /// PreferencesButtonForegroundColor title.
 @MainActor
-final class SettingsPillButton: NSButton {
+final class SettingsPillButton: PointingHandButton {
     /// PreferencesLoadableButtonBackgroundColor (white; white 15% dark), used
     /// on the default-browser banner.
     private let loadable: Bool

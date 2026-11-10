@@ -10,6 +10,7 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/NoteExportArchive.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \

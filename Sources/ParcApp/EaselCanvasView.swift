@@ -131,7 +131,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var finishingEditor = false
     private let textStyleBar = EaselTextStyleBar(frame: .zero)
     private var textPaletteSelection: Set<UUID> = []
-    private let liveCaptureButton = NSButton(title: "Make Live", target: nil, action: nil)
+    private let liveCaptureButton = PointingHandButton(title: "Make Live", target: nil, action: nil)
     private var liveCaptureEducation: NSAlert?
     private static let liveCaptureEducationKey = "easel.liveCaptureEducationSeen"
     private var editingID: UUID?

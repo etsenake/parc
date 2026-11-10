@@ -123,7 +123,7 @@ private final class TrackingEvent: NSEvent {
               "disabled lock keeps its foreground and shows no surface")
         lock.isEnabled = true
         let lockArea = TrackingEvent()
-        lockArea.area = lock.trackingAreas.first { $0.owner === lock && $0.options.contains(.inVisibleRect) }
+        lockArea.area = lock.trackingAreas.first { $0.owner === lock && $0.options.contains(.inVisibleRect) && !$0.options.contains(.cursorUpdate) }
         lock.appearance = NSAppearance(named: .aqua); lock.viewDidChangeEffectiveAppearance()
         lock.mouseEntered(with: lockArea)
         check(lock.isHovered && abs(lockSurface.opacity - 0.05) < 0.00001, "lock shares the symbol hover surface")
@@ -173,7 +173,7 @@ private final class TrackingEvent: NSEvent {
         control.updateTrackingAreas()
         let skipHover = TrackingEvent()
         skipHover.area = control.trackingAreas.first {
-            $0.owner === control && $0.options.contains(.inVisibleRect)
+            $0.owner === control && $0.options.contains(.inVisibleRect) && !$0.options.contains(.cursorUpdate)
         }
         control.appearance = NSAppearance(named: .aqua); control.viewDidChangeEffectiveAppearance()
         let hovered = layoutWrites { control.mouseEntered(with: skipHover) }

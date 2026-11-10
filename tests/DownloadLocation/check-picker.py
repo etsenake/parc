@@ -91,6 +91,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-location-") as directory:
     sources = [controls, temporary / "DownloadsCard.swift", root / "Sources/ParcApp/DownloadLocationPicker.swift",
                root / "Sources/ParcApp/MenuItemImage.swift",
                root / "Sources/ParcApp/TranslucentButtonFace.swift", root / "Sources/ParcApp/PointerCover.swift", root / "Sources/ParcApp/ReloadControl.swift",
+               root / "Sources/ParcApp/PointingHand.swift",
                root / "tests/DownloadLocation/PickerTests.swift"]
     executable = temporary / "download-location-picker"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",

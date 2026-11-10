@@ -8,5 +8,6 @@ trap 'rm -rf "$output"' EXIT
 xcrun swiftc -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/AppIconController.swift" \
   "$repo_root/Sources/ParcApp/IconSettingsView.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/tests/IconSettingsTests.swift" -o "$output/icon-settings-tests"
 "$output/icon-settings-tests" "$repo_root" "$@"

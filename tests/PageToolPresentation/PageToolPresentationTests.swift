@@ -50,8 +50,9 @@ import QuartzCore
         control.frame = NSRect(x: 20, y: 20, width: 28, height: 28)
         surface.addSubview(control)
         control.updateTrackingAreas()
-        check(control.trackingAreas.count == 1, "one original hover tracking area")
-        check(control.trackingAreas[0].options.rawValue == 0x223, "recovered key-window visible-rect tracking options")
+        let hoverAreas = control.trackingAreas.filter { !$0.options.contains(.cursorUpdate) }
+        check(hoverAreas.count == 1, "one original hover tracking area")
+        check(hoverAreas[0].options.rawValue == 0x223, "recovered key-window visible-rect tracking options")
         check(control.accessibilityRole() == .button, "named button role")
         check(control.accessibilityLabel() == "Copy Link", "named developer-strip control")
         check(control.focusRingType == .exterior, "exterior focus ring")

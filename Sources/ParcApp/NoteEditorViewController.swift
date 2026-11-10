@@ -9,9 +9,9 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
     private let scroll = NSScrollView()
     private lazy var documentView = NoteDocumentLayout(title: titleText, body: text)
     private let status = NSTextField(labelWithString: "Saved on this Mac")
-    private let retry = NSButton(title: "Retry", target: nil, action: nil)
-    private let discard = NSButton(title: "Discard Draft", target: nil, action: nil)
-    private let formatButton = NSButton(title: "Format Paragraph", target: nil, action: nil)
+    private let retry = PointingHandButton(title: "Retry", target: nil, action: nil)
+    private let discard = PointingHandButton(title: "Discard Draft", target: nil, action: nil)
+    private let formatButton = PointingHandButton(title: "Format Paragraph", target: nil, action: nil)
     private(set) var formatting: NoteFormattingView!
     private var subscription: AnyCancellable?
     private var diskSaveSubscription: AnyCancellable?

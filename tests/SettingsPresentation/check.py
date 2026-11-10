@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix="parc-settings-presentation-") as folder
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
     executable = folder / "presentation"
     sources = [folder / "NativeControls.swift", root / "Sources/ParcApp/TranslucentButtonFace.swift", root / "Sources/ParcApp/PointerCover.swift",
-               root / "Sources/ParcApp/ReloadControl.swift", root / "Sources/ParcApp/SettingsHoverButton.swift",
+               root / "Sources/ParcApp/ReloadControl.swift", root / "Sources/ParcApp/PointingHand.swift", root / "Sources/ParcApp/SettingsHoverButton.swift",
                root / "Sources/ParcApp/SettingsPresentation.swift", root / "tests/SettingsPresentation/PresentationTests.swift"]
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)

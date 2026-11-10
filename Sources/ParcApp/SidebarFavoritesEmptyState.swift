@@ -215,7 +215,7 @@ final class FavoritesEmptyStateView: NSView {
 /// A borderless image button gives AppKit no focus ring mask, so the Dismiss
 ///
 /// was not compared [I].
-private final class DismissButton: NSButton {
+private final class DismissButton: PointingHandButton {
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(ovalIn: bounds).fill() }
 }

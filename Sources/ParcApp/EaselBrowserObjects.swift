@@ -509,7 +509,7 @@ private final class EaselBrowserSurface: NSView {
         }
     }
     var onSnapshot: (() -> Void)?
-    private let snapshot = NSButton(title: "Snapshot", target: nil, action: nil)
+    private let snapshot = PointingHandButton(title: "Snapshot", target: nil, action: nil)
     var interactive = false { didSet { if oldValue != interactive { if !interactive { input?.cancel(restoreFocus: false) }; needsLayout = true } } }
     var onLayout: (() -> Void)?
     var onRetry: (() -> Void)?
@@ -517,12 +517,12 @@ private final class EaselBrowserSurface: NSView {
     var onNavigate: ((URL) -> Bool)?
     private var input: EaselWebInput?
     private var lastDraft = EaselWebNavigation.Draft()
-    private let label = NSButton(title: "Webpage", target: nil, action: nil)
+    private let label = PointingHandButton(title: "Webpage", target: nil, action: nil)
     private let status = NSTextField(wrappingLabelWithString: "")
     private let cover = NSView()
-    private let retry = NSButton(title: "Retry", target: nil, action: nil)
-    private let back = NSButton(), forward = NSButton(), reload = NSButton(), done = NSButton()
-    private let security = NSButton()
+    private let retry = PointingHandButton(title: "Retry", target: nil, action: nil)
+    private let back = PointingHandButton(), forward = PointingHandButton(), reload = PointingHandButton(), done = PointingHandButton()
+    private let security = PointingHandButton()
     var inputAvailable: Bool {
         interactive && (browser.nativePage?.isClosed != false || browser.nativePage?.embeddedOwnerValid == true)
     }

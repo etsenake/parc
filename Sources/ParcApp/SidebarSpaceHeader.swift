@@ -192,6 +192,8 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         incognitoIndicator.isHidden = true
         for view in [symbolView, emojiField, nameField, profileButton, incognitoIndicator, editButton] as [NSView] { addSubview(view) }
         addTrackingArea(NSTrackingArea(rect: .zero, options: SidebarSpaceHeaderEditButton.trackingOptions, owner: self))
+        // The header takes their clicks, so it answers their cursor updates too.
+        symbolView.addCursorUpdateArea(owner: self); emojiField.addCursorUpdateArea(owner: self)
         applyStyle(dark: false, tint: nil)
         updateEditButton(animated: false)
     }
@@ -324,6 +326,10 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         return self
     }
 
+    override func cursorUpdate(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if showsIcon, symbolView.frame.contains(point) || emojiField.frame.contains(point) { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+    }
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if showsIcon, symbolView.frame.contains(point) || emojiField.frame.contains(point) {
@@ -403,7 +409,7 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
 /// enabled, else with its clear `backgroundColor`. No pressed fill, and no
 /// animation of the fill, was found.
 @MainActor
-final class SidebarSpaceHeaderEditButton: NSButton {
+final class SidebarSpaceHeaderEditButton: PointingHandButton {
     static let trackingOptions: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect]
     static let cornerRadius: CGFloat = 6
     ///
@@ -541,7 +547,7 @@ final class SidebarMaskedTextField: NSTextField {
 /// The full Profile indicator's native button adapter. The recovered label is
 /// 11-point medium, with 4/2 padding and a 6-point background shape. Native
 /// mouse/keyboard/AX activation retains the original menu owner.
-@MainActor final class SpaceProfileIndicatorButton: NSButton {
+@MainActor final class SpaceProfileIndicatorButton: PointingHandButton {
     var dark = false { didSet { needsDisplay = true } }
     private var hover = false { didSet { needsDisplay = true } }
     private var tracking: NSTrackingArea?

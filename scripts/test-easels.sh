@@ -23,6 +23,7 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -39,6 +40,7 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -62,6 +64,7 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -94,6 +97,7 @@ xcrun swiftc -parse-as-library \
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselWebNavigation.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/EaselWebInput.swift" \
   "$repo_root/Sources/ParcApp/SavedFocus.swift" \
   "$repo_root/tests/EaselWebInputTests.swift" \
