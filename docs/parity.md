@@ -28,7 +28,7 @@
 | After listed | [Folders](#folders) | 65.2% | 34.8% | — | Available |
 | After listed | [Archive and history](#archive-and-history) | 70.6% | 29.4% | — | Available |
 | After listed | [Command bar](#command-bar) | 82.8% | 17.2% | +0.7 pp | Codex `codex/command-bar-polish` (reported command failures and appearance) |
-| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (UPD04 progress correction) | Claude `claude/updates-*`; Codex root UPD04 progress fix (November 9) |
+| Josh request | [Software updates and release notes](#software-updates-and-release-notes) | 100.0% | 0.0% | +0.0 pp (UPD06 fresh-tab correction) | Claude `claude/updates-*`; Codex root UPD06 load fix (November 10) |
 | After listed | [Tab switcher](#tab-switcher) | 69.2% | 30.8% | — | Available |
 | After listed | [Peek](#peek) | 66.7% | 33.3% | — | Available |
 | Before polish | [Onboarding / complete first launch](#onboarding-and-complete-first-launch) | 75.0% | 25.0% | +2.8 pp | Cursor `cursor/document-close` (claimed October 31) |
@@ -74,6 +74,22 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 **Owner rule:** update this single table and the affected requirement rows in the same delivery. Record scope changes explicitly. Keep detailed evidence below; do not add separate percentage tables. Read [the collaboration guide](collaboration.md) for claims, repo-only communication, direct publication and shared-engine rules. Every owner ships directly to main; root integration is not a gate.
 
 ## Current ownership and handoffs
+
+- **November 10 What's New black-page correction — Codex root.** Josh reports
+  brand-new tabs from both See What's New and the command bar staying black
+  for 5–10 seconds, sometimes a minute after focusing another window. A real
+  offscreen AppKit reproduction establishes a fresh native page host with the
+  correct outer size but a 0×0 content view and renderer after show. The host
+  now settles dirty edge constraints before showing, explicitly invalidates
+  layout on size/content/infobar changes, and rejects a show superseded during
+  layout. Clean shows do not walk the renderer tree. Overlay **654** carries
+  the correction; it has **not been applied or built**. Native host (214),
+  focus (103), DevTools containment (57), compositor policy (50), bundled-page
+  generation (15) and native export checks pass, as does the production
+  Chromium target's syntax check. The new size regression fails without the
+  fix. No app/browser was opened; the reported live delay is not yet retested.
+  Root continues the requested audit of other opening/visibility paths.
+  UPD06's requirements and denominator are unchanged.
 
 - **Claude — SIDE18 tab picture card (November 9).** Josh asked for the sidebar
   preview card to show a tab's last picture, title and site when you hover a

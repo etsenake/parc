@@ -35,6 +35,7 @@
   NSView *_historyOverlayContainer;
   __weak id<PCNativePageHostObserver> _observer;
   BOOL _invalidated;
+  NSUInteger _visibilityGeneration;
 }
 - (instancetype)initWithContentView:(NSView *)contentView
                            observer:(nullable id<PCNativePageHostObserver>)observer;
@@ -74,6 +75,16 @@
   return _contentView;
 }
 
+- (void)setFrameSize:(NSSize)size {
+  const NSSize previous = self.frame.size;
+  [super setFrameSize:size];
+  // AppKit does not necessarily mark a manually framed host dirty until a
+  // later window pass. Its edge-constrained content needs this size now.
+  if (!NSEqualSizes(previous, self.frame.size)) {
+    self.needsLayout = YES;
+  }
+}
+
 - (void)pinContentView:(NSView *)contentView {
   contentView.translatesAutoresizingMaskIntoConstraints = NO;
   _contentTop = [contentView.topAnchor constraintEqualToAnchor:
@@ -85,6 +96,7 @@
     [contentView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
   ];
   [NSLayoutConstraint activateConstraints:_contentConstraints];
+  self.needsLayout = YES;
 }
 
 - (void)setInfobarView:(NSView *)view preferredHeight:(CGFloat)height {
@@ -92,7 +104,10 @@
   if (_invalidated || view == self || view == _contentView ||
       (view && [self isDescendantOf:view])) return;
   if (view == _infobarView) {
-    _infobarHeight.constant = MAX(0, height);
+    if (_infobarHeight.constant != MAX(0, height)) {
+      _infobarHeight.constant = MAX(0, height);
+      self.needsLayout = YES;
+    }
     return;
   }
   [NSLayoutConstraint deactivateConstraints:_infobarConstraints ?: @[]];
@@ -189,6 +204,25 @@
       (visible && self.hiddenOrHasHiddenAncestor)) {
     return NO;
   }
+  const NSUInteger generation = ++_visibilityGeneration;
+  const auto still_current = [&] {
+    return !host->_invalidated && host->_visibilityGeneration == generation &&
+           host->_contentView == content && host.superview == parent &&
+           content.superview == host && host.window == window &&
+           content.window == window &&
+           (!visible || !host.hiddenOrHasHiddenAncestor);
+  };
+  // A fresh tab's pane sizes this host before AppKit has solved the managed
+  // content's edge constraints. The outer pane can already be clean while
+  // the WebContents view and its renderer are still 0x0. Settle that dirty
+  // host before showing it, without waiting for another window/input event.
+  // Clean hosts keep the no-op path: no walk through Chromium's view tree.
+  if (visible && host.needsLayout) {
+    [host layoutSubtreeIfNeeded];
+    if (!still_current()) {
+      return NO;
+    }
+  }
   // Current Chromium's WebContentsViewMac creates the actual container hidden
   // for NEW_BACKGROUND_TAB. Its normal NativeViewHostMac explicitly shows the
   // container; WebContents::WasShown only shows the renderer child. This is the
@@ -196,12 +230,9 @@
   if (content.hidden == visible) {
     content.hidden = !visible;
   }
-  // setHidden can synchronously notify native/engine observers. Never finish
-  // an old owner's operation against a replacement or reparented live page.
-  return !host->_invalidated && host->_contentView == content &&
-         host.superview == parent && content.superview == host && host.window == window &&
-         content.window == window && content.hidden == !visible &&
-         (!visible || !host.hiddenOrHasHiddenAncestor);
+  // Layout and setHidden can synchronously notify native/engine observers.
+  // Never finish an old owner's operation or supersede a newer show/hide.
+  return still_current() && content.hidden == !visible;
 }
 
 - (NSView *)historyOverlayContainer {

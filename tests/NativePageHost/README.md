@@ -19,7 +19,7 @@ uses their real view hierarchies, Auto Layout, first-responder mechanism and a
 running main queue. It does not verify visible key-window keyboard delivery,
 renderer accessibility, GPU rendering or actual Chromium integration.
 
-The suite passes **168 assertions across eleven groups** and runs in
+The suite passes **214 assertions across fourteen groups** and runs in
 `scripts/test.sh`: containment/reuse, replacement/external removal, deferred
 renderer focus/replacement, window move and detach, invalidation/weak lifetime,
 reentrant replacement teardown, hidden queued-focus refusal, initially-hidden
@@ -31,6 +31,16 @@ Chromium-style detach
 ([page compositing](../../docs/page-compositing.md)). The background-visibility
 regression against the earlier component exits 1 at “selected initially-hidden
 native content and its renderer are actually unhidden”.
+
+The November 10 fresh-tab regressions never run a window event between native
+attachment and show. Both initially visible and initially hidden new pages,
+their renderer fixtures and the compositor display must have the host's size
+when show returns. They also cover changed pane/infobar geometry, replacement
+content, clean repeated shows without subtree walks, and transfer, hide or
+invalidation callbacks during layout. Against the preceding production host,
+the new foreground-page regression fails with a 0×0 page and renderer. These
+checks establish the geometry defect and correction, not the reported live
+load time or a GPU-rendering result.
 
 From October 26 (`90578fb5`, Peek focus routing) to November 1 the suite failed:
 that change made a queued focus request belong to the renderer and window it

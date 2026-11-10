@@ -87,6 +87,21 @@ static void Check(BOOL condition, const char *message) {
 }
 @end
 
+@interface LayoutView : NSView
+@property(nonatomic) NSUInteger subtreeLayouts;
+@property(nonatomic, copy) void (^didLayout)(void);
+@end
+@implementation LayoutView
+- (void)layoutSubtreeIfNeeded {
+  ++_subtreeLayouts;
+  [super layoutSubtreeIfNeeded];
+}
+- (void)layout {
+  [super layout];
+  if (self.didLayout) self.didLayout();
+}
+@end
+
 static NSWindow *Window(void) {
   NSWindow *window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, 480, 320)
@@ -403,7 +418,6 @@ static void TestBackgroundContentVisibility(void) {
   }
   [window.contentView addSubview:host];
   host.frame = NSMakeRect(0, 0, 640, 360);
-  [host layoutSubtreeIfNeeded];
   // The old host has no parent visibility operation: reparenting, resizing
   // and showing the renderer child leave this native parent hidden.
   renderer.hidden = NO;
@@ -431,6 +445,118 @@ static void TestBackgroundContentVisibility(void) {
         "detached content is not exposed by stale presentation");
   [host invalidate];
   [window close];
+}
+
+static void TestFreshContentSizeBeforeShow(void) {
+  ++groups;
+  // A new foreground page's native container starts visible, but unsized.
+  // A new background page starts hidden. Neither has run an AppKit layout
+  // pass when the native tab attachment sizes the outer host and shows it.
+  const BOOL initialVisibility[] = {NO, YES};
+  for (BOOL initiallyHidden : initialVisibility) {
+    NSWindow *window = Window();
+    LayoutView *page = [[LayoutView alloc] initWithFrame:NSZeroRect];
+    page.hidden = initiallyHidden;
+    RendererView *renderer = [[RendererView alloc] initWithFrame:NSZeroRect];
+    renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [page addSubview:renderer];
+    PCNativePaneCompositorView *display = [[PCNativePaneCompositorView alloc]
+        initWithHostedLayer:[CALayer layer]];
+    [page addSubview:display];
+    PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+    host.frame = window.contentView.bounds;
+    [window.contentView addSubview:host];
+    Check(!window.visible && !window.isKeyWindow,
+          "fresh-page check needs no window activation or display");
+    Check(NSIsEmptyRect(page.bounds) && NSIsEmptyRect(renderer.bounds),
+          "new native page and renderer have no size before presentation");
+    Check([host setContentVisible:YES inWindow:window], "fresh page can be shown");
+    Check(NSEqualSizes(page.bounds.size, host.bounds.size) &&
+              NSEqualSizes(renderer.bounds.size, host.bounds.size),
+          "showing a brand-new page sizes its renderer without another window event");
+    Check(NSEqualSizes(display.bounds.size, host.bounds.size),
+          "the compositor display receives the same nonempty size");
+    Check(!page.hidden, "fresh page is visible after its geometry is ready");
+    const NSUInteger layouts = page.subtreeLayouts;
+    for (int i = 0; i < 5; ++i) {
+      Check([host setContentVisible:YES inWindow:window], "settled show remains valid");
+    }
+    Check(page.subtreeLayouts == layouts,
+          "settled visibility does not walk the renderer subtree again");
+
+    // A later pane resize or infobar changes the constraints; drawing must
+    // use their actual result, not overwrite them with the outer host size.
+    host.frame = NSMakeRect(0, 0, 640, 360);
+    NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
+    [host setInfobarView:shelf preferredHeight:30];
+    Check([host setContentVisible:YES inWindow:window], "resized page can be shown");
+    Check(NSEqualSizes(page.bounds.size, NSMakeSize(640, 330)) &&
+              NSEqualSizes(renderer.bounds.size, page.bounds.size),
+          "showing settles the page below its infobar at the new size");
+
+    NSView *replacement = [[NSView alloc] initWithFrame:NSZeroRect];
+    Check([host replaceContentView:replacement], "fresh native content can replace the old view");
+    Check([host setContentVisible:YES inWindow:window] &&
+              NSEqualSizes(replacement.bounds.size, NSMakeSize(640, 330)),
+          "same-size host settles a newly replaced content view");
+    [host invalidate];
+    [window close];
+  }
+}
+
+static void TestLayoutReentrantOwnership(void) {
+  ++groups;
+  NSWindow *first = Window();
+  NSWindow *second = Window();
+  LayoutView *page = [[LayoutView alloc] initWithFrame:NSZeroRect];
+  page.hidden = YES;
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  host.frame = first.contentView.bounds;
+  [first.contentView addSubview:host];
+  __weak PCNativePageHost *weakHost = host;
+  __weak LayoutView *weakPage = page;
+  page.needsLayout = YES;
+  page.didLayout = ^{
+    weakPage.didLayout = nil;
+    [second.contentView addSubview:weakHost];
+  };
+  Check(![host setContentVisible:YES inWindow:first],
+        "show is refused when layout transfers the page to another window");
+  Check(host.window == second && page.hidden,
+        "old layout leaves the new owner's page hidden");
+  [host invalidate];
+
+  // Layout may also deliver a newer visibility decision for the same owner.
+  // Retaining the right host/window alone cannot authorize the old show.
+  LayoutView *current = [[LayoutView alloc] initWithFrame:NSZeroRect];
+  current.hidden = YES;
+  PCNativePageHost *currentHost = [PCNativePageHost hostWithContentView:current observer:nil];
+  currentHost.frame = first.contentView.bounds;
+  [first.contentView addSubview:currentHost];
+  __weak PCNativePageHost *weakCurrentHost = currentHost;
+  __weak LayoutView *weakCurrent = current;
+  current.needsLayout = YES;
+  current.didLayout = ^{
+    weakCurrent.didLayout = nil;
+    Check([weakCurrentHost setContentVisible:NO inWindow:first],
+          "layout can deliver a newer hide for the same owner");
+  };
+  Check(![currentHost setContentVisible:YES inWindow:first] && current.hidden,
+        "the older show cannot reverse a hide delivered by layout");
+  Check([currentHost setContentVisible:YES inWindow:first], "a later show succeeds");
+  [currentHost setContentVisible:NO inWindow:first];
+  currentHost.frame = NSMakeRect(0, 0, 640, 360);
+  current.needsLayout = YES;
+  current.didLayout = ^{
+    weakCurrent.didLayout = nil;
+    [weakCurrentHost invalidate];
+  };
+  Check(![currentHost setContentVisible:YES inWindow:first],
+        "layout invalidation refuses the pending show");
+  Check(current.hidden && current.superview == nil,
+        "invalidated layout cannot resurrect or unhide its content");
+  [first close];
+  [second close];
 }
 
 static void TestVisibilityReentrantOwnership(void) {
@@ -664,6 +790,8 @@ int main(void) {
       TestReentrantReplacementTeardown();
       TestHiddenQueuedFocus();
       TestBackgroundContentVisibility();
+      TestFreshContentSizeBeforeShow();
+      TestLayoutReentrantOwnership();
       TestVisibilityReentrantOwnership();
       TestPaneCompositorViewIsNeverTheRenderer();
       TestRestoreContentAfterNativeDetach();

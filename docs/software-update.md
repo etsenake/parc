@@ -315,6 +315,19 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   search engines before any tab exists and then opens a blank page first.
   `scripts/build.py` renders the page from `release-notes.json`
   (`Sources/WhatsNew/README.md`); a bundle without it disables the item. The
+- **Fresh-tab geometry (November 10).** Both entry points use that same native
+  tab path. A fresh WebContents view can still be 0×0 after its outer pane has
+  been sized: the native host's edge constraints have not run, and the shell's
+  shallow layout check deliberately stops at the DevTools pane. Showing the
+  native container alone did not size it. `PCNativePageHost` now flushes its
+  dirty layout before showing; size changes and new content/infobar constraints
+  mark it dirty immediately. Clean shows remain a no-op for layout. Layout
+  callbacks that move, close or supersede the host's visibility cancel the old
+  operation. This is a fresh-page defect, independent of session restoration
+  or the HTML's size. The offscreen regression reproduces zero-sized page and
+  renderer views with the old source and passes with the correction; it does
+  not measure browser load time. Overlay 654 is pending an engine build, and
+  the reported live black-page delay remains unverified after this correction.
 - **The page has no address.** It stays an ordinary file page, so reload,
   back, forward and session restore work, but its address is a path into the
   `WhatsNewPage` (`BrowserStore.swift`) recognises only the running app's
