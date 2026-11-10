@@ -14,8 +14,10 @@ The registered Chromium filter is `NativeSitePermissionTest.*`.
 
 ## Production ownership
 
-`NativeChromePlatformDelegate::CreatePermissionPrompt` returns the manager-owned
-prompt for native pages and binds cancellation to that exact prompt. Each
+Parc replaces Chrome's prompt factory at startup. It returns the manager-owned
+prompt for auxiliary pages and for native pages that installed the service, and
+binds the page's detach cancellation to that exact prompt. Any other page gets
+no prompt, so the request stays undecided rather than granted. Each
 request retains requesting/embedding origins, requesting documents, primary
 document, Profile, Browser, native window and actual page view. Navigation,
 hiding, detachment or closure cancel stale UI. Release may reenter, so the

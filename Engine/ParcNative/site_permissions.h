@@ -8,10 +8,19 @@ namespace content {
 class WebContents;
 }
 namespace parc {
+// Replaces Chrome's Views prompts once at startup. Auxiliary pages and
+// installed native pages get the typed native prompt; any other page gets no
+// prompt, which Chrome leaves undecided rather than granted.
+void RegisterNativeSitePermissionPrompts();
+// Install before navigation. The page starts detached: a prompt created while
+// detached is cancelled, and detaching cancels the live prompt.
+void InstallNativeSitePermissions(content::WebContents& contents);
+void SetNativeSitePermissionsAttached(content::WebContents& contents,
+                                      bool attached);
 // The actual PermissionRequestManager owns the returned prompt. The factory
 // defers presentation until the manager has installed that exact prompt.
-// on_page_detach is weakly bound to only this prompt; retain it in the actual
-// page platform delegate and call before native detachment.
+// on_page_detach is weakly bound to only this prompt; call it before native
+// detachment.
 std::unique_ptr<permissions::PermissionPrompt> CreateNativeSitePermissionPrompt(
     content::WebContents& contents,
     permissions::PermissionPrompt::Delegate* delegate,
