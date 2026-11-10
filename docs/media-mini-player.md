@@ -20,10 +20,11 @@ On Safari-identity pages whose video plays through the native HLS route
 ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#airplay)).
 Pressing it opens the system's AirPlay route list at the button: the same list
 Safari shows, since only Apple's AVKit services may list or choose AirPlay
-symbol, `PlaybackControlForeground`) with `HoverableButtonStyle` (radius 5,
-GrayA4 hover, GrayA5 pressed, `alwaysSelected` while the list is open, as the
-Connected tint it with the Space's contrasting hue (`maxContrastColor` on light
-button; the tooltip and label read "Playing on <device>". All row buttons now
+devices. The button uses a 24 × 24-point plate, 14-point symbol, 5-point corners,
+GrayA4 hover and GrayA5 press, retaining selected appearance while its list is
+open. Connecting pulses opacity 0.4–1 over 0.75 seconds unless Reduce Motion is
+on. Connecting/connected states use the Space's contrasting tint and expose the
+device name in their label and tooltip.
 
 ## Cast
 
@@ -86,114 +87,48 @@ current page has media of its own, Cast... below it opens the dialog.
 
 ## Volume adaptation
 
+Parc uses a separate `MediaSessionImpl` user volume multiplier, clamped to 0...1 with non-finite input refused, and composes it with Chromium's existing ducking multiplier. Existing player observer delivery and new-player initialization use the composed value. The default factor is 1, preserving normal upstream behavior; a replacement primary document resets the factor. The slider is exposed only when the session has actual normal player observers; a metadata-only controllable session cannot advertise it. Ordinary MediaSession-controlled media players receive genuine renderer volume changes. Uncontrollable WebAudio-only/independent output paths are not represented as a supported volume row; this is not a claim that every output stream has a new mixer.
 
-## Reference and adaptations
+## Episode admission and dismissal
 
+New ordinary playback requires a controllable active session, an unmuted original
+tab and an audio-only or audio-video entry in Chromium's routed player inventory.
+Null/empty/unknown/video-only inventories do not qualify; any audio member in a
+mixed inventory does. Camera/microphone action capability remains a compatibility
+admission path; declaring an action does not by itself prove active recording.
+The gate applies to new episodes, not existing retention on mute/pause/transfer.
 
-- `MediaControlsDataStore.MediaControlDataSource` contains original content, sidebar item/container, WebContentFrame, and browser IDs. ControllerInput owns a window ID/incognito flag. MiniPlayer state separately carries the original source, title/icon, volume/mute, media type, audio/video transport capabilities, and recording camera/microphone capabilities.
-- Recovered view state includes mini-player height/opacity/y/width offsets, expanded state, immediate/debounced hover-off publishers, volume-expanded state, marquee title preference, color palette, and a state-change animation. This establishes the shelf/expanded/control structure, not exact metrics or timing.
+At most five episodes are admitted per privacy domain. Regular pages share a
+pool; each exact off-the-record Profile has its own, so private activity cannot
+evict regular or unrelated private rows. Oldest admission is evicted first;
+metadata does not reorder it. Snapshot reads cannot admit a row. Closing or
+retired sources are withdrawn before a new source may evict another.
 
-
-### MEDIA12 investigation and interim correction
-
-New ordinary playback episodes require a controllable active session, an
-unmuted original tab, and an audio-only or audio-video entry in Chromium's
-routed `audio_video_states` player inventory. Null, empty, unknown and
-video-only inventories do not qualify; a mixed inventory qualifies when any
-content type: Chromium may omit audio in another frame or ambient players,
-and may include one-shot players. It does not identify a producer event.
-The existing toggle-capability admission remains an interim compatibility
-exception; a site declaring an action is not evidence of actual recording.
-The new gate applies only when admitting a new episode and does not change existing
-episode retention, dismissal, action validation or source leases on mute,
-pause or transfer. Exact recording and producer policies remain open; see
-[producer contract](media12-producer-contract.md) and
-[Chromium boundaries](media12-chromium-events.md).
-
-association, adds a control and enforces the store's maximum; the separately
-recovered close path removes both the control and its source-ID association.
-Parc maintains at most five admitted episodes per privacy domain and evicts
-the oldest when a new episode arrives. Regular pages share a pool; each exact
-off-the-record Profile has a separate pool, so private activity cannot evict a
-visible regular or unrelated private row. This is an intentional isolation
-Admission order is preserved across hosts; arrivals coalesced into one app
-refresh use the order in which Parc enumerates the live sources. Source leases
-are checked before explicit admission; ordinary snapshot reads cannot admit a
-row. Closing and retiring sources are withdrawn before new admissions, while
-temporary transfers retain their episode. Native eligibility and retirement
-are rechecked before a new source can evict another.
-That establishes store operations, not the producer event that re-admits a
-closed control. The visible-controls publisher maps datastore state through
-entry; the predicate also distinguishes recorded PiP transition states. A
-source byte with the host state's byte. The field layout indicates the source
-browser-context type and host incognito flag, but the complete host policy and
-producer trigger remain open. Parc now fans the retained original sources out
-to registered regular hosts, or private hosts with the same actual OTR Profile,
-while retaining the source document and owner for every action. This is an adaptation of that
-These observations do not establish that a
-
-`dismissMediaControls` actions. Its ordinary audio/video branch at
-`active` case, alongside additional source conditions. The exact change
-triggers and their Chromium correspondence remain open. Its separate
-recording branch consults the `media-tray-for-recording-tabs-enabled` flag at
-user close/minimize, and failed close/request outcomes. Chromium's existing
-`MediaPictureInPictureChanged(bool)` cannot by itself distinguish those
-transitions. No PiP Boolean has been substituted for that history.
-The recovered history filter, observed transition boundaries and remaining
-failure and removal questions are detailed in [PiP history](media12-pip-history-contract.md).
-The pinned Chromium session and capture notifications, their document and
-ordering limits, and a possible producer-side event fence are documented in
-[Chromium event boundaries](media12-chromium-events.md). Neither document
-The source predicate, its action paths and the activation sweep's negative
-re-admission result are recorded in [producer investigation](media12-producer-contract.md).
-
-Loss of a native window owner no longer resets a dismissed, still-eligible
-session. Transfer or other temporary host unavailability therefore cannot by
-itself make that episode visible again. Capacity eviction uses the same
-suppression. Re-admission requires either session-eligibility loss /
-primary-document replacement, or a consumed presentation-set producer
-(Separate, ItemSelection mirrors, tab-fullscreen enter, Space switch, or
-non-split Peek Expand) through the shared lease/fence path. Ordinary Mojo
-callbacks and chrome refreshes still must not re-admit. See
-
-## Validation
-
-The private native bridge and modified MediaSession implementation are checked with the pinned Chromium compilation commands, using source overlays outside the active build tree. The complete Swift application is typechecked with the real bridge header. No browser functional test, playback experiment, installed-profile mutation, or PiP retest is part of this batch.
+Dismissal and eviction remain suppressed through temporary window unavailability.
+Re-admission requires loss of eligibility, primary-document replacement or a
+consumed presentation-set producer through the shared lease/fence path. Ordinary
+Mojo updates and chrome refreshes do not suffice. See [producer contract](media12-producer-contract.md),
+[Chromium events](media12-chromium-events.md) and [PiP state boundaries](media12-pip-history-contract.md).
 
 ## Motion and hover — MEDIA14
 
-The `MiniPlayerView` volume transition uses its stored animation in a transaction
-main-queue Combine debounce with integer-literal stride 2 at
-sets expanded immediately on hover-in, and has a separate immediate hover-off
-`MiniPlayerFeature.State.isVolumeExpanded` into that field. The same stored
-spring transaction animates the state change. This is an explicit slider
-opacity, not a claim about other implicit SwiftUI transitions.
+Deck geometry/opacity and volume use response 0.25/damping 0.9 springs only when
+their targets change. Reversal starts at presentation values; transfer, teardown
+and Reduce Motion settle owned layers. The 33-point volume drawer remains
+attached for its fade, while collapsed controls immediately reject pointer,
+keyboard and accessibility actions. Lost slider capability returns focus to its
+volume button or row.
 
-Parc applies a physically parameterized Core Animation spring to the deck's
-changed deck layout and opacity and its sidebar list viewport, with the same
-response and damping; this is an adaptation, not proof of identical SwiftUI
-rendering. Only properties with changed model targets receive media animations.
-Reversal starts from presentation values; moving the deck between windows,
-teardown or turning on Reduce Motion settles precisely the layers it owns.
-The slider stays attached for its recovered opacity fade while the collapsed
-control immediately refuses pointer and keyboard input and leaves the AX tree.
-Its percentage label follows the fade as an AppKit adaptation; focus moves to
-the volume button or row if the focused slider becomes unavailable.
-Hover expansion is immediate for one player and for the stacked shelf; collapse
-after leaving waits two seconds and is cancelled by re-entry or teardown. The
-volume slider is the in-card 33-point drawer, shown while the volume control or
-slider is hovered or pinned by click, not a detached menu. Retaining a focused row
-is an accessibility adaptation: when the deadline expires with focus inside,
-the pending collapse is reconsidered on the owning window's next update after
-focus leaves. AppKit [documents window updates](https://developer.apple.com/documentation/appkit/nswindow/update())
-on event-loop passes. Dismissal below two rows clears the pending and expanded
-`performFeedbackPattern:performanceTime:` reference in the Mini Player region
-or in its direct/two-hop callees. This does not exclude indirect or system-owned
-feedback; no Mini Player-specific haptic is invented. These source findings do
-not establish live visual timing or tactile acceptance.
+Hover expands immediately. Leaving waits two seconds to collapse; re-entry and
+teardown cancel it. Focus inside the deck defers collapse until a later window
+update after focus leaves. Dismissing below two rows clears pending expansion.
+No Mini Player-specific haptic is added.
 
-The off-screen inert deck check uses stand-in media objects and verifies stacked
-card geometry/opacity animation, slider fade, collapsed focus/AX/hit-test
-gates, capability loss/restoration, focus-preserving collapse, deferred hover-off,
-dismissal/re-admission, and animation settlement on a window transfer. It does not exercise a
-browser, media playback, live keyboard navigation, or haptic hardware.
+## Validation
+
+Pinned native compilation and Swift checks cover bridge integration. Inert deck
+checks cover layout, fade, focus/AX/input gating, hover delay, dismissal and
+transfer settlement. They do not establish live playback, casting/AirPlay device
+behavior, keyboard/VoiceOver or haptic acceptance. Capability guards remain
+truthful: WebAudio-only output is not a supported volume slider and encrypted
+media is not cast as an unprotected remote source.

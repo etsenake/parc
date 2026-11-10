@@ -1,58 +1,39 @@
 # Developer onboarding
 
-Complete this checklist on a new machine before starting feature work. Use the
-actual checkout and local paths; paths recorded for the previous machine are
-historical context. Onboarding does not claim or resume feature rows.
+Complete this checklist on a new machine before feature work. Use the actual
+checkout paths. Setup does not claim backlog items or authorize a new build.
 
-1. **Read the project contract.** Read [AGENTS.md](../AGENTS.md),
-   [README.md](../README.md), [collaboration](collaboration.md),
-   [parity](parity.md) and [development setup](development-setup.md).
-   Use the current ledger for ownership and outstanding dependencies.
+1. **Read the contract.** Read [AGENTS.md](../AGENTS.md), [README](../README.md),
+   [collaboration](collaboration.md), [product status](parity.md) and
+   [development setup](development-setup.md). Check current ownership directly;
+   an old task note does not prove someone is active.
 
-2. **Check the checkout.** Verify the repository, origin, branch and working
-   tree. Fetch `origin/main`; update a clean checkout safely while preserving
-   local changes. Do not reset or discard work to make setup easier.
-   Enable the commit-message hooks once per clone; its worktrees share them:
-   `git config core.hooksPath .githooks`. `commit-msg` rejects a message that
-   isn't one Conventional Commit line, which the release builds its version and
-   notes from, and `pre-push` refuses to push any commit no remote has yet that
-   breaks the same rule (see [AGENTS.md](../AGENTS.md)).
+2. **Check the checkout.** Verify origin, branch and working tree. Fetch
+   `origin/main` and safely update without discarding local changes. Enable
+   hooks with `git config core.hooksPath .githooks`. Commit messages must be one
+   Conventional Commit line. Pre-push also enforces the **500-line maximum**
+   for Markdown guides in the pushed tree; changelogs are exempt. See
+   [documentation policy](documentation.md).
 
-3. **Set up prerequisites.** Follow the setup guide to verify full Xcode,
-   its selected developer directory, Swift/SDK, Python 3.12+, Git, GitHub CLI,
-   repository access and sufficient disk space. Install missing prerequisites;
-   request user input when login or administrator authorization is required.
+3. **Verify prerequisites.** Follow the setup guide for full Xcode, the selected
+   developer directory, Swift/SDK, Python 3.12+, Git, GitHub CLI, repository
+   access and disk space. Complete available setup steps while user login or
+   administrator authorization is pending.
 
-   [the reference guide](../References/README.md). Use the configured modern
-   Python interpreter to run `scripts/reference-artifacts.py fetch`, then
-   `scripts/reference-artifacts.py verify`. If already restored, verify it
-   instead of fetching over it. Check the restored app's signature at the path
-   recorded in `References/arc-reference.json`. Set `PARC_REFERENCE_ROOT` to
-   its absolute location so worktrees share the reference and slot pool.
-   Exercise `components.py`, `arcidx.py`, `arctypes.py` and `arcfn.py` using
-   [the documented examples](../scripts/arc/README.md). Keep the pinned reference;
+4. **Restore the saved engine workspace.** Follow
+   [engine artifacts](engine-artifacts.md). Verify the pinned archives and let
+   the restore tool validate provenance and adopt the new local path. Preserve
+   compiled objects and caches. The completed app-and-engine package is a
+   separate artifact. Do not start a fresh Chromium sync/build or edit receipts
+   to make an incompatible workspace appear valid.
 
-5. **Restore the existing engine build workspace.** Follow the
-   [engine artifact guide](engine-artifacts.md) to fetch the pinned archives,
-   verify them and restore them to dedicated local paths. Preserve the existing
-   compiled objects and build caches. The last completed app-and-engine package
-   validate provenance and adopt the new workspace path. Do not start
-   a full Chromium sync/build or manually rewrite receipts to make a copied
-   workspace pass validation. Report the exact incompatibility if restore checks
-   fail and complete the independent setup steps.
+5. **Run applicable inert checks.** Read the check scripts first. When matching
+   CEF headers exist, run `scripts/check-swift.py` with their explicit path.
+   Inspect restored package reports. Do not launch apps/browsers, take app
+   screenshots, rebuild Chromium or package an app for onboarding.
 
-6. **Run applicable setup checks.** Inspect and run the documented inert tooling
-   checks. When matching CEF headers are available, run `scripts/check-swift.py`
-   with their explicit path. Inspect the restored engine package's report;
-   do not rebuild Chromium for onboarding.
-   Check optional REA/Node/Ghidra availability separately;
-   do not start decompilation or browser tests just to validate onboarding.
-
-7. **Record readiness and stop.** Save relevant tool versions, actual paths,
-   environment settings, check results and unresolved dependencies in
-   `work/onboarding.md`. Report reference-analysis, restored-package and
-   workspace readiness separately. Distinguish successful restoration from a
-   completed current engine build; retain any unfinished build state and do not
-   compile merely to change that status. A missing archive or failed
-   prerequisite means setup is not fully ready.
-   Stop before feature development.
+6. **Report readiness and stop.** Store tool versions, actual paths, environment
+   settings and check results in ignored `work/onboarding.md`. Report workspace
+   restoration and completed-package availability separately. Preserve unfinished
+   build state; restoration is not proof of a successful current build. Name any
+   failed prerequisite and its next action, then stop before feature development.

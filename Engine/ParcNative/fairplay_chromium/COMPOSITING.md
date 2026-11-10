@@ -163,7 +163,7 @@ Ordinary pages are unchanged:
   (`tests/PaneCompositorPolicy`) pass.
 
 So a tab switch from a page without FairPlay video keeps the previous frame
-until the new page's first frame, as 04b9741d and 115676bb made it. For a page
+until the new page's first frame. For a page
 with FairPlay video, the redraw that parking triggers shows the video area of
 the held frame black. The next page keeps showing it that way until its own
 frame arrives, and the video is never placed in that compositor meanwhile. A
@@ -370,7 +370,7 @@ video it can't composite the same way.
   `WebMediaPlayerImpl::ShouldDisableVideoWhenHidden` may also disable the video
   track of an A/V MSE player that isn't in PiP. A disabled stream ends video in
   the FairPlay renderer, so `fairplay-media` makes that function return false
-  for FairPlay players (06350901): the track stays enabled while hidden, as in
+  for FairPlay players: the track stays enabled while hidden, as in
   PiP. It also turns off idle and background auto-suspend for them, since a
   suspended renderer would drop its layer while the painted hole frame still
   named it.
@@ -417,7 +417,7 @@ sequence.
    stream's config with the metadata (`OnMetadata`), then changes only through
    `RendererClient::OnVideoNaturalSizeChange`. Updates also follow surface ID
    changes, which the hole frame's size changes cause. As agreed with
-   `fairplay-media` (06350901), FairPlayRendererClient forwards each size to
+   `fairplay-media`, FairPlayRendererClient forwards each size to
    the pipeline's `OnVideoNaturalSizeChange` first, then repaints the hole
    frame at that size, and the GPU adapter reports the config's size once at
    the first `StartPlayingFrom`.

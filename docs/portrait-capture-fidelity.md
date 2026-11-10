@@ -1,65 +1,37 @@
 # Portrait controls and rendering
 
-CAP19 completes the Portrait controls, backing-density, color, watermark and
-live desktop-background implementation. The user's unified post-capture editor
-remains intentional: Portion, Visible Area and Full Page share the same existing
-PNG, frame editor and output transactions. Apply and Cancel return to that
-preview; changing a frame never captures the page again.
+Portion, Visible Area and Full Page share one post-capture editor and output
+transaction. Apply and Cancel return to the same preview. Changing a frame never
+recaptures the page; removing it restores the original PNG byte for byte.
 
-## Retained reference
+## Controls and image output
 
-`4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`.
-The components/type/cross-reference/annotated-function helpers answered this
-assignment; no new heavy REA job or second-version investigation was needed.
+The frame card has 10-point outside padding and 8-point vertical spacing. Its
+primary Apply Frame action responds to Return; Escape dismisses. A 140 × 96
+preview preserves the output's aspect ratio with 2.5-point inner padding/corners
+and 5-point outer corners. The watermark control sits at bottom-leading with
+4-point padding. Website Color and Desktop Wallpaper are independent choices
+beside a 12-point color track with a 24-point white knob, 152-point travel and
+8-point end padding. Latest color changes are throttled at 50 ms.
 
-outside padding and eight-point vertical spacing. Its primary action has the
-Return equivalent and the original skeuomorphic primary-button style.
-the color slider and distinct Website Color and Desktop Wallpaper buttons. The
-Website button uses the actual page tint, with a tertiary fallback; Desktop uses
-its actual wallpaper thumbnail. Both are independent choices, not a segmented
-aspect ratio inside a 140×96 thumbnail, 2.5-point inner corners/padding,
-five-point outer corners, white at 0.4 and black shadow at 0.15. These preview
-constants are separate from the exported frame.
+Composition uses logical points: the source is bounded by
+`min(1, 2160 / width, 2160 / height)`, rounded upward, and the canvas adds
+384 points. Export retains the capture window's backing factor: a 2× capture
+has 2× radii/shadow/frame pixels and 144-DPI PNG metadata. Source content is
+not enlarged before integral rounding. Preview and every destination use the
+same result and source RGB profile; unsupported non-RGB sources use sRGB.
 
-24-point white knob, 152-point travel and eight-point end padding. Its model
-the main queue by 0.05 seconds. `WindowScreenshotWatermarkToggle` stores the
-replaced by the approved Parc P. Parc uses native AppKit buttons, focus rings,
-tracking and a popover-material card within the capture owner. The post-capture
-preview shows the actual composed output, preserving varying region/full-page
-corners, white at 0.4, black shadow at 0.15) with the 32-point SkeuPrimaryButtonStyle
-control, 152-point color slider and website/desktop buttons. Apply Frame remains
-the unified-flow label; Escape still dismisses without a visible Cancel control.
-Controls are labeled, show selected/disabled states,
-retain native keyboard actions and expose desktop errors without fake pixels.
-
-uses `min(1, 2160 / width, 2160 / height)`, rounds the scaled dimensions upward,
-adds 384 points and creates a deferred `imageWithSize:flipped:drawingHandler:`.
-space. The original lazy image can be rasterized at a destination's density;
-it does not establish one universal output pixel size. Parc resolves that
-ambiguity explicitly: it retains the original capture window's backing factor,
-composes in logical points, and exports at that same density. A 2× capture has
-2× frame/radii/shadow pixels and PNG density 144 DPI; the content is never
-scaled up before upward integral rounding. The 2160-point source bound and
-384-point canvas remain unchanged. This fixed-density policy makes preview,
-Copy, Save, Library, Easel and Messages agree. Output composition retains the
-source RGB profile (sRGB fallback for unsupported non-RGB sources) and converts
-drawing colors through Core Graphics instead of discarding the PNG profile.
-The actual original PNG stays byte-identical when the frame is removed.
-
-footprint. Parc applies that calculation to the actual composed desktop below
-watermark resource is bundled. The final bitmap and thumbnail share that policy.
+The Parc watermark chooses black at 0.45 or white at 0.75 around a 0.75
+brightness threshold using sRGB coefficients 0.299, 0.587 and 0.114. Desktop
+backgrounds are sampled beneath the actual mark footprint. Thumbnail and final
+bitmap follow the same policy.
 
 ## Live desktop and lifetime
-
-non-Dock window, reads its bounds/ID, captures only that window with
-`CGWindowListCreateImage`, and constructs NSImage with the window's logical
-bounds. It reads visible desktop pixels, not the wallpaper file. The model
-retains a wallpaper preview; the compositor invokes the helper when rendering.
 
 Parc's `PortraitDesktopSnapshot` preserves that desktop-window boundary. It
 preflights the actual screen-capture permission without requesting or bypassing
 it. It requires a wallpaper candidate at or below the system desktop-window level whose bounds exactly match the original
-Dock producer remains supported; current macOS WindowManager's `Wallpaper`
+window's display and whose PID/bundle is the system wallpaper producer. The system Dock producer remains supported; current macOS WindowManager's `Wallpaper`
 window and Apple's wallpaper process are explicit platform adaptations. Finder,
 widgets, other applications, another display and the Dock itself cannot be
 substituted. On macOS 14+, the matching ID/PID/frame is revalidated against
@@ -82,33 +54,13 @@ missing desktop pixels never silently render a different background.
 
 ## Checks and boundaries
 
-The production compositor and CapturedImage component checks cover original and
-cropped PNG preservation, repeated reversible frames, tall-image restoration,
-2× source pixels and PNG density, source Display P3 profile/conversion,
-watermark threshold/opacity and bottom-footprint sampling, invalid resource and
-desktop failures, same-display wallpaper candidate filtering, native control
-callbacks with an isolated defaults suite, cancellation and error sizing.
-Nested AppKit light/dark drawing caught an existing graphics-context stack bug:
-rendering now restores the exact prior context explicitly. Inert preview captures
-include source pixels, frame and watermark in both appearances.
+The compositor/CapturedImage checks cover original/cropped PNG preservation,
+reversible framing, tall images, 2× density, Display P3 conversion, watermark
+thresholds, desktop candidate filtering, async cancellation and failure controls
+with isolated preferences. A missing desktop image remains a visible error;
+tests must not simulate permission success to bypass that path.
 
-The real desktop-only provider was exercised with existing permission: the
-system WindowManager wallpaper window matched 1470×956 logical points and
-returned 2940×1912 sRGB pixels. No page or full-display screenshot was taken.
-This is native provider evidence, not a functional browser capture, screenshot
-permission-bypass claim, or acceptance of every wallpaper/display configuration.
-The unified entry/lease, overlay geometry, output destinations, richer editor
-and family-wide motion/focus remain with their respective owners. CAP19 changes
-no engine overlay and requires no Chromium rebuild.
-
-The full intended diff received fresh independent code review. Its saved-Desktop
-failure finding is fixed with a throwing-provider regression check (not simulated
-permission success). Finished whole-module SIL passes in 31 seconds with zero
-diagnostics, followed by source-identical integration of reviewed CAP20/CAP23.
-The original density/compositor files and the bounded controller delta retain
-exact-source clearance. Receipts and source hashes are retained under
-`work/capture-coordination/cap19` and `work/claude-split-checks/cap19-review-fix`.
-
-CAP24 applies the separately recovered outer spring to the owned native preview
-bitmap transition; [capture motion](capture-motion.md) records its native
-rendering adaptation, interruption/Reduce Motion and focus boundaries.
+These component checks do not prove behavior on every wallpaper/display or
+browser capture path. Current no-app/no-screenshot rules apply to future checks.
+[Capture motion](capture-motion.md) owns preview transitions and focus return;
+[capture destinations](capture-destinations.md) owns output attribution.

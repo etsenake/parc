@@ -1,28 +1,12 @@
 ---
-description: Check real state before telling Josh any status
+description: Verify current state before reporting
 alwaysApply: true
 ---
-# Check before you report, and act on what you find
 
-This is a **must-do** rule (Josh, November 1).
+# Verify current state before reporting
 
-Before telling Josh anything is done, in review, running, shipped or built,
-check it in the same turn and show the evidence with the status:
-
-- **Agents:** when each one last wrote to its transcript. An agent silent for
-  more than about 10 minutes with no finished result is dead. Resume it in
-  that same turn; don't note it for later. Dead agents send no notification,
-  so no news never means "still working".
-- **Main:** what `origin/main` contains, and what is still uncommitted or
-  unpushed in each worktree.
-- **Engine:** main's overlay version against the built engine's, and whether
-  any engine change is still unfinished. Never call a build "everything" while
-  one is.
-
-Never report from memory of what you assigned. If you haven't checked, say
-"I don't know yet" and check. Once Josh has given the work, keep it moving:
-don't stop to ask permission for the next step that was already agreed.
-
-On November 1 three agents died in a Cursor freeze. They sat dead for 38
-minutes while Josh was told one of them was "in review", and he found it
-himself.
+Before calling work active, reviewed, built or shipped, check its current
+activity, source/remote state and relevant receipts. An old owner note or
+silent agent is not proof of liveness; inspect and resume interrupted authorized
+work when appropriate. Do not kill or restart a live job based only on age.
+Keep authorized work moving. See [AGENTS.md](../../AGENTS.md).

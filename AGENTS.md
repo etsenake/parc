@@ -1,137 +1,183 @@
 # Parc working contract
 
-**Current release-script scope — November 5, latest Josh correction:**
-`release.sh` (version from Conventional Commits; `--type major|minor|patch`
-overrides it) is release-only: build engine/app, Developer ID sign,
-notarize/staple, publish GitHub assets, and publish/verify the tap cask.
-It must never wait for main to be quiet, install/replace/quit/open the local app,
-run startup/browser checks, or run Homebrew install/upgrade/reinstall. Josh runs
-Homebrew upgrade himself. This supersedes historical immediate-install and
-startup-promotion requirements for this release command and tonight's 1.1.0 run.
-Artifact signature/hash/source/notarization checks remain required; never claim
-runtime acceptance from them. Root continues directly on main without agents.
+Parc is an independent macOS browser with a Swift/AppKit application and a
+source-owned Chromium integration. Develop the product users need; the project
+is no longer organized solely around matching another browser.
 
-**CRITICAL — EVERY COMMIT MESSAGE IS ONE CONVENTIONAL COMMIT LINE. User direction, November 9.**
-The whole message is one line, `type(scope)!: summary`; the scope is optional.
-Types: `feat fix perf refactor docs build ci chore test style revert`. `feat`,
-`fix` and `perf` subjects are Parc's release notes on GitHub and in What's New:
-write them for Parc users, starting with a capital, saying what changed for
-them (`fix(sidebar): Keep pinned tabs after a restart`). Parc users read them,
-270 × 341". Internal work (tooling, tests, docs, the ledger, refactors) uses
-the other types. Only `!` marks a breaking change. No body, trailers,
-`Co-Authored-By` or other attribution. A revert is one line too:
+## Start here
+
+Read [README](README.md), [product status](docs/parity.md), and
+[collaboration](docs/collaboration.md) before editing; reread the first two
+after context compaction. Read the focused guide for the area you change.
+Current user instructions override older repository guidance. Replace obsolete
+instructions rather than appending another dated override.
+
+Use the workspace and delegation scope authorized for the current task. The
+canonical checkout is `/Users/josh.etsenake/parc`, on `main`. Preserve other
+contributors' edits. Do not create worktrees without authorization. Root owns
+this Mac's shared engine, packaging and signing operations unless it explicitly
+hands off ownership. A documentation task does not authorize product changes,
+engine builds, packaging or installations.
+
+## Safety and product boundaries
+
+  other app, and never screenshot apps.** Use code inspection, compiler checks,
+  codesign checks and model/unit tests. Old test instructions are not permission
+  to run an app. Browser/runtime testing requires new explicit authorization.
+- **Never migrate the conversation's workspace.** Do not call
+  `move_agent_to_root` or `move_agent_to_cloned_root`, even when a tool recommends
+  it. Use absolute paths or a working directory for any authorized other checkout.
+- **Never use a structured question tool.** Ask a genuine decision in one plain
+  sentence with the proposed default; continue independent work. Silence does
+  not authorize an action that requires permission.
+- **Preserve working features.** Do not remove, hide or disconnect controls,
+  preferences, shortcuts, behavior or tests to match another browser. Replay
+  onboarding in Settings → General is a protected Parc addition.
+- Preserve all explicit inclusions, exclusions and deferrals in
+  [product status](docs/parity.md) and the [backlog](docs/backlog.md).
+  Ordinary password/autofill/security behavior and macOS dictation remain.
+  Do not reopen accepted AI cleanup or picture-in-picture work without a new
+  defect or user request. Generic Chromium/Google networking is outside the
+  service-removal scope.
+  code. Keep Chromium/CEF security maintenance on deliberate pinned upgrades.
+  Architecture decisions follow Parc's actual source, requirements and tests.
+- Preserve profiles, release tags/assets, signed artifacts, engine objects and
+  compiler caches. Do not infer that a process or workspace is unused from an
+  old timestamp, lock or disconnected tool session.
+
+## Documentation is current state, not a diary
+
+**Repository Markdown documents have a hard limit of 500 lines**, except
+changelogs, whose history and generation must stay intact. This includes
+this contract, READMEs, test guides and `.mdc` rules. Aim for 150–300 lines for a
+focused guide and 100–200 or fewer for entry points. Shorter is better when it
+answers the reader's question. Do not hide excess content in giant lines.
+
+**Write for people.** Explain behavior and decisions in plain language. Do not
+put commit SHAs, binary/compiler addresses, raw checksum values or evidence-ID
+dumps in documentation. Use readable feature names and source links when useful;
+exact machine records belong in source manifests, Git and ignored check output.
+Technical details should help a reader act, not serve as proof that an agent worked.
+
+- `README.md`: product overview, install/build entry points and navigation.
+- `docs/parity.md`: compact product capabilities, current source/release status,
+  explicit product scope and links. Keep the path for existing readers; do not
+  restore the historical percentage ledger or completed-row inventory.
+- `docs/backlog.md`: concrete unfinished work, explicit deferrals and current
+  handoffs. Remove resolved entries in the same delivery. Old requirement IDs
+  may identify unresolved work; they are not a second progress accounting system.
+- Focused subsystem guides: current behavior, ownership/lifetimes, important
+  decisions, commands and validation boundaries. Link the backlog for open work.
+- `docs/README.md`: navigation. [Documentation policy](docs/documentation.md)
+  defines maintenance and the size check.
+
+Update the relevant existing paragraph in the same change as the behavior.
+Verify claims against current code, tests, release receipts or user confirmation;
+label source implementation, shipped artifacts and runtime acceptance separately.
+Do not copy an old pending-build note or agent assignment as current fact.
+
+Keep one authoritative home for each fact and link to it. Do not add dated
+progress essays, transcript dumps, per-commit receipts, duplicate status tables,
+research procedures or completion history. Git and release notes retain history;
+ignored `build/` and `work/` retain raw receipts. Do not create archive documents
+or numbered parts to evade the limit. Split only genuinely separate topics,
+and prune redundant documents when consolidating them.
+
+Before publishing, run `python3 scripts/check-docs.py`, check changed links and
+anchors, and run `git diff --check`. The pre-push hook checks the documentation
+in every pushed tip against the same 500-line ceiling, excluding changelogs.
+No other file exemptions or hook bypass. Enable hooks with `git config core.hooksPath .githooks`.
+
+## Complete and verify the assigned work
+
+Fix concrete problems within the assignment before handing it back. A user-visible
+failure is not optional because it is rare or affects casting, background tabs
+or another specific mode. Work at realistic usage sizes; synthetic stress cases
+alone do not justify expanding scope. Keep independent findings separate from
+proven causes. A regression check should reproduce the failure, not merely mirror
+the proposed implementation.
+
+A gap may remain only for an explicit exclusion/deferral, a genuine user decision,
+or work outside the assignment. Record the needed next action. **Tell Josh about
+every gap, limitation or decision recorded in documentation or a commit message
+in the same turn**, including findings from helpers, in
+plain words describing what the user experiences. Report unrun validation once
+and separately from known missing behavior.
+
+Check real state before saying work is running, reviewed, built or shipped:
+inspect current activity, source and remote commits, and relevant build receipts.
+An old ledger entry is not proof of live ownership or successful delivery. Report
+progress in plain spoken paragraphs: what changed, what it means, what is next.
+Never claim monitoring unless actively following the work through completion.
+
+Use checks appropriate to the changed inputs; inspect scripts before execution.
+Swift iteration uses `scripts/check-swift.py` typechecking. A completed feature
+with material Swift changes also needs whole-module SIL (`--mode sil`,
+`-emit-sil -Onone -o /dev/null`). Keep warnings as errors. Documentation-only
+changes need documentation checks, not app compilation. Compiler/model tests and
+artifact signatures do not establish visual or browser-runtime acceptance.
+
+When delegation is authorized, assign disjoint scopes and keep independent work
+moving. Authors integrate their helpers' work and remain responsible for the
+whole assignment. Use fresh reviewers for new/materially changed implementation,
+including new files; fix findings and re-review affected code. Do not re-review
+unchanged cleared code or rerun passing checks without a reason. Under root-only
+execution, root performs the source review directly. Do not repurpose a completed
+agent; resuming its original unfinished assignment is allowed.
+
+## Commits and publication
+
+Every commit message is **one Conventional Commit line**:
+`type(scope)!: summary` (scope optional). Types:
+`feat fix perf refactor docs build ci chore test style revert`.
+
+**Voice: casual, playful and preferably funny.** Give Parc a relaxed personality
+in every commit summary, including internal work. Make the joke about the actual
+change, and keep the outcome clear; a vague punchline is not a description. Fun
+and descriptive still means one line, never a body or an explanatory second line.
+
+`feat`, `fix` and `perf` subjects become release notes. Write them for Parc users,
+internal names, file paths or measurement archaeology. Examples:
+
+- `fix(tabs): Stop pinned tabs from ghosting you after a restart`
+- `fix(updates): Keep the download counter from doing parkour`
+- `docs: Give the docs a haircut and a 500-line curfew`
+
+Internal tooling, docs and refactors use the other types. Only `!` marks breaking
+changes. No body, trailers, coauthor lines or attribution. Reverts are one line:
 `git revert --no-commit X && git commit -m 'Revert "<original subject>"'`.
-`.githooks/commit-msg` rejects anything else, and
-`.githooks/pre-push` refuses a push carrying a nonconforming commit, including
-ones made with `commit-tree`, rebases or cherry-picks. Never use `--no-verify`;
-reword the commit instead. Enable the hooks per clone as in
-[developer onboarding](docs/developer-onboarding.md).
 
-**Current Codex chat — November 5:** Josh directs root to do all work itself,
-directly in `/Users/josh.etsenake/parc` on `main`, with no subagents or new
-worktrees. Root owns this Mac's shared engine, packaging, production signing,
-notarization and installation. This supersedes earlier delegation, dedicated
-engine-owner, worktree and independent-agent-review instructions for this chat.
-Perform source review and applicable checks directly; keep changes visible in
-the main checkout and preserve other contributors' edits.
+Fetch main, reconcile without discarding others' work, inspect the exact final
+diff and run applicable checks. Commit and immediately push to `origin`; verify
+the published SHA (or ancestry if another contributor advanced main) before
+another commit. No unpublished backlog, force-pushes to shared main or
+`--no-verify`. A rejected push requires fetching and safely reconciling again.
 
-Josh subsequently authorized one focused Codex Homebrew agent for the existing
-tap, app versioning, DMG packaging and 1.0 release delivery. This is an explicit
-exception to root-only execution. It edits Parc directly on canonical `main`
-and the tap in `~/homebrew-tap`, creates no worktrees or further agents, and
-uses the shared packaging/install tools only after root hands off ownership.
-Root retains the shared engine and Safe Storage correction.
+## Engine and release operations
 
-Josh subsequently assigned the behavior-triggered crash to another agent and explicitly
-stopped crash investigation in this chat. Root and the Homebrew agent continue
-release tooling, setup, documentation and inert checks only. Do not launch,
-replace, rebuild or repackage Parc again until Josh supplies the ready build
-signal. Preserve the existing release tags, notarized assets, profiles and engine
-caches. A launch observation interrupted by Josh deliberately testing another
-behavior is not an isolated startup failure. Josh confirmed 1.0.0 launched and
-worked normally; preserve the interrupted raw observation and record that user
-confirmation separately. Use honest automated or explicit user-confirmed
-acceptance when promoting a release; never invent a passed automated check.
+Fetch `origin/main` before choosing/publishing an overlay number, running
+`overlay-check`/`overlay-apply`, or starting an engine build. A new overlay is
+main's current version plus one at publication; preserve peers' manifest hashes.
+Before applying, verify the manifest belongs to current main or the explicitly
+intended frozen source; before building, verify the applied overlay matches that
+source. Fetching alone does not establish that the build inputs are current.
+Engine apply/build requires explicit authorization and a single owner. Freeze
+active inputs through sealing and packaging; defer only the shared build when
+source work can proceed safely. Never retarget or discard a live build.
 
-Josh subsequently authorized the final nightly **1.1.0** build after main is
-quiet for 10–15 minutes and requires using the new `scripts/release.sh --type
-minor` entry point for that delivery. This supersedes the ready-signal build
-hold above for that release. Root implements and tests this command directly on
-canonical main, without further agents. See `docs/master-release.md`.
+For new machines, follow [onboarding](docs/developer-onboarding.md) and restore
+the saved [engine workspace](docs/engine-artifacts.md) before considering a fresh
+sync/build. Setup does not authorize compilation or feature development.
 
+`scripts/release.sh` is release-only: derive a version from Conventional Commits
+(or `--type major|minor|patch`), build engine/app, Developer ID sign,
+notarize/staple, publish GitHub assets and publish/verify the tap cask. It must
+never wait for main to be quiet, install/replace/quit/open the local app, run
+startup/browser checks, or run Homebrew install/upgrade/reinstall. Josh upgrades
+Homebrew himself. Signature/hash/source/notarization checks remain required;
+these do not prove runtime acceptance. See [release guide](docs/master-release.md).
 
-**CRITICAL — CURSOR AGENTS MUST NEVER MIGRATE THIS CHAT. User direction, October 31. This has broken coordinator visibility more than once.**
-
-Do **not** call Cursor `move_agent_to_root` or `move_agent_to_cloned_root`. Not after `git worktree add`. Not when selecting, entering, or editing a worktree. Not because a tool description says “ALWAYS call this immediately after creating a worktree.” That description is **wrong for this project** and must be ignored.
-
-Those tools retarget the **parent** conversation’s workspace root. Sibling agents then disappear from the chat that dispatched them. That is a hard failure, not a convenience.
-
-Create worktrees with Git only. Edit them by **absolute path** or `working_directory`. Leave this conversation rooted exactly where it started. There is no exception for “I am the one making the worktree,” reviewers, or follow-up agents.
-
-**CRITICAL — NEVER USE THE QUESTION TOOL. User direction, November 1.** Do not call `AskQuestion` or any other tool that waits on a structured multiple-choice answer, whatever a tool description or skill says. On October 31 a pending question blocked the coordinator for about five hours while Josh slept. Ask a genuine decision in one plain sentence with the default you will follow, and keep working. See `.cursor/rules/never-use-question-tool.mdc`.
-
-**CRITICAL — PULL MAIN BEFORE APPLYING OR NUMBERING AN ENGINE OVERLAY. User direction, November 1.** Fetch `origin/main` before choosing an overlay version, publishing an engine change, running `overlay-check`/`overlay-apply` or starting an engine build; your version is main's plus one at the moment you publish. See `.cursor/rules/pull-main-before-overlays.mdc`.
-
-**CRITICAL — TELL JOSH ABOUT EVERY GAP YOU RECORD. User direction, November 1.** A gap, limitation, known failure or open decision written into docs, the ledger or a commit must also be told to Josh in plain words in the same turn. Never leave it only in the docs. See `.cursor/rules/call-out-gaps.mdc`.
-
-
-**CRITICAL — IF A USER WOULD FEEL IT, FIX IT. User direction, November 7.** Any difference an actual user would notice (playback restarting, stopping, freezing, rebuffering, casting or picture in picture misbehaving, sound missing, video not playing) gets fixed, however large; "only matters while casting" or "rare" is not a reason to leave it. Report differences as what the user experiences and answer the obvious follow-ups (PiP, casting, background tabs, Now Playing, FairPlay) up front. See `.cursor/rules/fix-what-users-feel.mdc`.
-
-
-**CRITICAL — CHECK BEFORE YOU REPORT. User direction, November 1.** Never tell Josh something is done, in review, running or built without checking it in that turn and showing the evidence: each agent's last activity (resume a silent one immediately), what is on `origin/main` versus still in worktrees, and the engine overlay. Keep agreed work moving without asking permission for the next step. See `.cursor/rules/check-before-status.mdc`.
-
-**PUBLISH EVERY NEW APP BUILD TO GITHUB. User direction, November 1.** Package every app for Josh with `scripts/package-app.sh`, which also publishes it as a private pre-release his other Macs can download, and tell him the tag. Don't repeat the install caveats to him; they're in `tests/Packaging/README.md`, "Publishing app builds". See `.cursor/rules/publish-app-builds.mdc`.
-
-**CRITICAL — INSTALL AND OPEN EVERY COMPLETED APP BUILD IMMEDIATELY. User direction, November 5.** Replace `/Applications/Parc.app` and open it as soon as each build is published. Never hold a finished app for metadata, documentation or to wait for main to stop changing. In a coordinated build, the engine owner sends the completed app path and release tag to root immediately; root installs and opens it before further catch-up work. Josh authorizes quitting or terminating Parc whenever replacement needs it while he is away. Each twenty-minute refresh uses a bounded fetched source snapshot; later commits belong to the next refresh. Keep active packaging inputs frozen and preserve engine objects and caches.
-
-**Visual work:** follow [the visual review workflow](docs/visual-review.md). It covers screenshot references, renders before checks, how the coordinator stands in for Josh's judgement when he is away, and why a screenshot he hasn't answered never stops the work.
-
-**New machine setup:** follow [developer onboarding](docs/developer-onboarding.md)
-before starting development in a fresh environment. An onboarding request is
-setup work only; it does not authorize claiming or resuming feature rows.
-Restore the saved engine build workspace using `docs/engine-artifacts.md`
-before considering a fresh Chromium sync/build. Preserve its compiled objects
-and caches; onboarding must not start compilation or discard build output.
-
-helpers now live in `scripts/`; follow `docs/development-setup.md` and
-`scripts/arc/README.md`. Restore the exact optional reference snapshot using
-`python3 scripts/reference-artifacts.py fetch` (modern Python required), which
-defaults to `work/reference`. `PARC_REFERENCE_ROOT` selects another restored
-location. Older absolute paths below document this Mac's retained original
-is stored as a private release asset identified by `References/arc-reference.json`,
-and remains outside Parc's build/runtime inputs. Keep the existing helper-first,
-single-version and shared two-slot rules when using the portable helpers.
-
-**Keep driving each row to completion — user clarification, October 28:** checked, independently reviewed partial increments may be committed and pushed. Publishing an increment does not end the original row assignment. The author actively continues remaining research, implementation, integration, checks and fixes until the entire row is complete; partial rows remain LEFT. Do not stop or retire after a partial publication or an unresolved-reference/handoff note.
-
-**Parallelize within each owned row — user direction, October 29:** the row owner actively identifies independent reference research, implementation, integration and dependency work and assigns it to fresh, focused agents so it proceeds concurrently with other research, coding, checks and review. Do not leave an independent investigation waiting for an unrelated increment to finish or publish. For example, recover document ownership while capture-to-Library is being implemented or reviewed. The original owner organizes the work, agrees scopes and interfaces directly with helpers, integrates their results and remains responsible for completing the entire fixed row; delegation does not split, reweight or prematurely complete it. Helpers coordinate directly with the owner and record durable handoffs. Use separate worktrees for independent source edits, retain the required independent review before publication, respect the shared nonblocking decompilation slots and dedicated engine owner, and continue other useful work if agent or tool capacity is unavailable. Reassess available parallel work and dispatch pending helpers as capacity opens; do not wait in a blocking queue or poll repeatedly. Cursor agents still must not call `move_agent_to_root` / `move_agent_to_cloned_root` when creating those worktrees; see the CRITICAL rule at the top of this file.
-
-**Independent delivery and integration ownership — user direction, October 29:** do not hold a completed, checked and independently reviewed row from publication or completion because another owned row must integrate it. Publish the completed row directly; the consuming row's owner owns its integration, checks and any fixes needed there. Agree and record the concrete interface and handoff, and coordinate without making the producer wait for the consumer's delivery. Unowned required work remains the author's responsibility; partial work on the author's own row stays LEFT and continues through completion. This supersedes the October 28 instruction to keep a completed producer row open until a separately owned consumer integrates it.
-
-Before changing this project, read `README.md` for the project/build overview and `docs/parity.md` for current progress, delivery order, durable user requirements, feature inventory, exclusions and completion rules. Re-read these after context compaction. They are part of the implementation workflow, not a finished-feature claim. New contributors, including Claude, must also read `docs/collaboration.md` before claiming or editing work. Coordination with contributors outside this Codex session happens through committed repository documents; chat-only decisions are insufficient.
-
-**Documentation direction, October 25:** keep README concise: project overview, build entry points and at most one constantly updated current-state line. Put progress, remaining work, priorities and feature requests in `docs/parity.md`; do not duplicate them in README. Focused architecture/usage documents may explain their actual subsystem. Old README progress history remains recoverable in Git, not copied into another redundant report.
-
-
-
-**Agent utilization and fresh context — user direction, October 28:** when an agent finishes its original assignment, terminate/close it when supported; otherwise interrupt and retire it permanently. Never reuse it for another assignment through `followup_task`, messages or another mechanism. Start a fresh agent with `fork_turns="none"` and a focused, self-contained brief using current instructions, exact paths and verified evidence. Continuing the same unfinished assignment is allowed. Keep family ownership and row handoffs in the parity ledger so fresh agents can continue without inherited transcripts. Each owner verifies and publishes its completed increments directly to main; root is not an integration gate. This supersedes older completed-agent reuse guidance.
-
-
-**Review scope clarification — October 29:** if each increment has already been independently reviewed, do not repeat a whole-row or complete historical diff review at completion. Review the current increment's new and materially changed code, including untracked files and its integration with earlier reviewed increments. Previously cleared, unchanged code does not need a repeated review; material changes do. Row completion still requires appropriate checks and clearance of all new or changed source.
-
-**Dedicated engine-owner exception — user direction, October 28:** retain and reuse the single Codex `engine_owner` agent for the engine-owner job every time. This is the only exception to completed-agent retirement; never repurpose it for feature work. It owns shared apply/build/seal/package, canonical source freezes and advances, stage receipts, pending-engine checks and engine documentation/publication. Root coordinates, supervises and reports progress; feature owners continue to publish their own work.
-
-**Whole-family delivery, October 26:** each owner keeps one complete feature family through its remaining production behavior and essential presentation/interaction, using the existing parity breakdown and REA plus permitted appearance inspection. Publish coherent increments frequently, but do not call an increment a completed family or defer missing layouts, controls, focus behavior and transitions as optional polish. Keep a finite remaining checklist with the family; move to another family only after closure or explicit reprioritization. Each owner reconciles current main, completes the applicable checks, and commits and pushes its own work directly to main; root is not an approval or integration gate. The user explicitly overrides all Boulder instructions, including atomic-commit, review-gate and merge-workflow guidance. Preserve useful source review and checks, but do not wait for root or build an unpublished backlog. Current ownership and remaining work belong in the parity ledger, not README.
-
-- **Helpers first; nonblocking REA slots — user direction, October 28.** Every agent starts with retained contracts/evidence and the recovered-components, cross-reference, Swift-type and annotated-function helpers below. Do not use direct REA or decompilation when those helpers answer the question. Before a direct call, state the specific unresolved question and why the helpers did not resolve it; do not decompile just to corroborate a helper result. Only two decompilation slots are available. Use the shared status and atomic nonblocking acquisition in `work/claude-sidebar-rea/rea-decompile`; if both are busy, continue independent source work, documentation or permitted checks and retry later. Never sit in a blocking slot queue or polling loop, bypass the shared pool with a heavy direct REA call, steal a live slot, or classify a long-running job as stale. Slot records identify owner, job and start time. Report a genuinely blocking dependency to the coordinator after independent work is exhausted.
-- For runtime failures, establish a controlled reproduction and identify the failing delivery/state boundary before changing behavior. Keep independent reference mismatches separate from proven causes. If a correction leaves the original failure unchanged, stop adding behavior patches and improve the causal observation. Tests must reproduce the reported failure, not merely assert the proposed change. Keep tool-targeting limits distinct from app failures, and do not infer a priority change or permission to abandon work from a status question or frustration.
-- Before interpreting native GUI input failures, verify the exact app/window owner and the OS active/key state required by that interaction. Indexed accessibility actions and synthetic clicks can reach a background window without normal user activation. Record the frontmost app when activation fails; a protected system authorization surface makes the run unsuitable for isolated input acceptance until it is resolved. Do not turn that test condition into a browser focus, visibility or click-replay patch.
-- Finish the active feature batch through source, appropriate checks under the current user direction, documentation, commit and push before switching features. Put new reminders in the parity ledger or delegate bounded independent investigation.
-- Keep the parity ledger current and update only the single README state line when needed. Mark implemented, runtime-verified and unresolved behavior separately. Full functionality, design, interaction and motion parity plus the dedicated deep polish pass are required before calling Parc finished.
-- **Progress updates — corrected user direction, October 28:** every five minutes, finish the bounded checks, thinking and coordination first, then deliver one complete uninterrupted update at the end, without interleaving row updates with tools or further coordination. Report each active row in Claude's plain format: `ROW (name): previous% → current%. What changed. Actual current step.` Use the owner's estimated completion for that row; show one percentage until a previous estimate exists. Do not substitute family totals, repeat estimate disclaimers, or explain the reporting process. Announce publication and engine-stage outcomes promptly. The fixed family DONE/LEFT ledger still records only completed requirements; partial rows stay LEFT. Do not revisit completed rows merely because their old names remain on reused worktree directories.
-- Keep only used source, focused tests and useful documentation in Git. Remove abandoned implementation. Build outputs, profiles, logs, raw REA output and dependency binaries are ignored local artifacts.
-- Every commit must be immediately pushed to `origin` (`https://github.com/etsenake/parc.git`), with local and remote SHA checked before another commit. Do not leave an unpublished commit backlog. Keep completed engine changes and their dependent app source together in a Git worktree and push its commits to GitHub main while an earlier engine build runs. Only the engine rebuild is deferred: complete the same source reviews, compiler/component checks, integration validation and other currently authorized checks before delivery. The active build inputs stay unchanged; publication and further implementation must not wait for the build. Fast-forward the original main checkout to the published commits after the active engine is sealed and its in-flight app packaging is finished, then run the next required incremental build.
-- If the user later reauthorizes functional browser tests, verify real HTTPS rendering and responsiveness alongside local fixtures. That permission is currently withdrawn. Do not infer full performance or visual parity from a short sample or passing unit tests.
-
-**Whole-module Swift check (clarified October 29):** iterate with the fast `-typecheck`. Before closing a completed row with material Swift changes, run the whole-module check as `-emit-sil -Onone -o /dev/null` on its finished tree. Josh clarified that SIL is for closing whole rows, not for each partial increment. Partial increments still need appropriate checks and independent review before publication. SIL catches definite-initialization errors (for example `self` used before `self.init`) that `-typecheck` passes and release packaging refuses; v234's first packaging failed this way.
-
+Publish authorized development app packages with `scripts/package-app.sh` and
+report their tag. Keep component packages with their sibling libraries. Preserve
+existing release assets and profiles; never install or launch as an implied
+follow-up to publication.

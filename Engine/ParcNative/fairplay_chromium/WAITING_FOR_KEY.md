@@ -1,8 +1,7 @@
 # Safari identity: waiting for protected media keys
 
-Reference: WebKit main `db2d79f4` (November 7, 2026), retained in the
-Safari media audit's sparse checkout. These rules apply only to documents
-presenting Safari identity. Chromium identity keeps its original event path.
+These rules apply to documents presenting Safari identity and follow WebKit's
+media-key waiting behavior. Chromium identity keeps its original event path.
 
 - `MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource`,
   lines 2218–2230: a src= key request with a CDM attached finishes loading;

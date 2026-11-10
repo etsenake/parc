@@ -11,7 +11,7 @@ The older ledger is available in Git; do not copy it into an archive document.
 
 ## Delivery snapshot
 
-Reviewed against source `d214f7b3` on November 10, 2026:
+Reviewed on November 10, 2026:
 
 - Source version: **1.12.1**, build 27; engine overlay **654**.
 - Latest completed delivery confirmed by local release receipts: **1.12.1**,
@@ -85,9 +85,6 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   imports. See [browser import](browser-import.md).
 - **Parc identity in the engine:** menus and messages name Parc when they mean
   this browser; references to separate Google products and services remain.
-
-The source records for this update include `cdf780fa`, `71e70ced`, `f360588a`,
-`7fe52b8a`, `337e9088`, `5898b2fe`, `2c396b87` and `9ec88d3d`.
 
 ## Product decisions to preserve
 

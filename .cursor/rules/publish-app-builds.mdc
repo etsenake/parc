@@ -1,21 +1,12 @@
 ---
-description: Publish every new app build to GitHub
+description: Publish authorized app builds
 alwaysApply: true
 ---
-# Publish every new app build to GitHub
 
-This is a **must-do** rule (Josh, November 1).
+# Publish authorized app builds
 
-Package every app Josh will run with the one command that also publishes it as
-a private GitHub pre-release, so he can use it on his other Macs without
-building there. Push the commit to `origin/main` first; the script refuses an
-unpushed or dirty checkout.
-
-```sh
-bash scripts/package-app.sh <sealed engine-artifacts.json>
-```
-
-Tell Josh the release tag. Don't repeat the install caveats (keep the
-`development` folder together, ARM64 only, `gh` download avoids quarantine);
-he knows them. They're documented in `tests/Packaging/README.md`, "Publishing
-app builds", for agents.
+Package authorized development builds with `scripts/package-app.sh`, which
+publishes a private GitHub prerelease, and report the tag. Production releases
+use `scripts/release.sh`; neither workflow authorizes local installation or
+launch. See [packaging](../../tests/Packaging/README.md) and
+[AGENTS.md](../../AGENTS.md#engine-and-release-operations).

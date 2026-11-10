@@ -1,48 +1,12 @@
 ---
-description: If a user would feel it, fix it; report differences as what the user feels
+description: Fix user-visible problems within scope
 alwaysApply: true
 ---
 
-# If a user would feel it, fix it
+# Fix user-visible problems within scope
 
-This is a **must-do** rule (Josh, November 7).
-
-Any difference, gap or limitation that an actual user would feel gets fixed.
-"It only matters while casting", "it's rare" or "Chrome does the same" are
-not reasons to leave it. Casting was the example: leaving a page restarted a
-cast, and an agent proposed to leave it because it "only matters while
-casting". Casting is a core experience, not an edge case.
-
-Something a user feels includes: playback restarting, stopping, jumping back,
-freezing, going blank, rebuffering, stuttering or losing sync; sound starting,
-stopping or missing; a video that won't play; controls (Now Playing, media
-keys, picture in picture, casting, fullscreen) doing the wrong thing; slower
-starts; noticeably worse battery or heat.
-
-- Before proposing to leave anything, ask: would someone using Parc notice
-  this while watching, listening, casting, using picture in picture, switching
-  tabs or apps, or navigating? If yes, it's a fix, however large. Say how big
-  it is and start it.
-- Only differences no user could perceive (a page-internal ordering of events
-  within one task, a timestamp that differs by microseconds) may be proposed
-  as "leave", and those still go to Josh before they go into any document.
-- When matching Safari would make the experience worse (a video that plays
-  today would stop playing), say so plainly and recommend the better
-  experience; that is Josh's call.
-
-## Real usage only (Josh, November 8)
-
-"Would feel it" means in realistic use, like Josh's own (a sidebar of about
-five folders and 20 to 100 items), not at stress-test sizes. A harness's large
-sizes are for spotting scaling bugs, never a reason to start new work. On
-November 8 a stutter report grew into four hours of work on 200-folder
-sidebars nobody has. Fix what's felt at real sizes, confirm it, and stop.
-
-## How to report a difference
-
-Report every difference as what the user experiences, not what the code does:
-the everyday situation, what they see or hear, and how often they'd hit it.
-Answer the obvious follow-ups before Josh has to ask them: does it affect
-picture in picture, casting, fullscreen, background tabs, Now Playing and
-media keys, protected (FairPlay) video; does keeping the current behaviour
-break sites that expect Safari's; and what fixing it costs.
+Fix reported failures at realistic usage sizes, including background tabs,
+casting, picture in picture, Now Playing and protected video. Rarity is not a
+reason to leave a defect. Synthetic stress sizes alone do not expand scope.
+Describe what the user sees or hears; distinguish confirmed causes from
+hypotheses. Follow [AGENTS.md](../../AGENTS.md#complete-and-verify-the-assigned-work).

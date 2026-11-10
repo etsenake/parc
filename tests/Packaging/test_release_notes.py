@@ -202,6 +202,7 @@ class Hooks(unittest.TestCase):
         (self.root / 'scripts').mkdir(parents=True)
         shutil.copytree(source / '.githooks', self.root / '.githooks')
         shutil.copy2(source / 'scripts/release_notes.py', self.root / 'scripts')
+        shutil.copy2(source / 'scripts/check-docs.py', self.root / 'scripts')
         self.git('init', '-b', 'main'); self.git('config', 'core.hooksPath', '/dev/null')
         self.git('config', 'user.name', 'Fixture'); self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'commit.gpgsign', 'false'); self.git('add', '-A')

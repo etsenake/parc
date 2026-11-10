@@ -1,39 +1,55 @@
 # Split pane navigation
 
-Split focus is an application selection command over the current window's ordered panes. It is separate from next/previous tab, held MRU and Chromium's generic `RotatePaneFocus` compatibility hook. Parc uses its existing original-page native selection and layout transaction after changing the focused member; no page is recreated or navigated from a stored URL.
+Split focus selects an original page in the current window's ordered pane group.
+It is separate from next/previous tab, the MRU switcher and Chromium's generic
+pane-rotation hook. No page is recreated from a stored URL.
 
+The View menu offers Add Split View, Close this Split Pane, Separate Page from
+Split View and Expand Current Split. Control–Shift–1…4 and Control–Shift–]/[
+select numbered/adjacent panes through the existing shortcut editor, command
+search and native priority pipeline. Hidden menu commands accept shortcuts only
+when `allowsKeyEquivalentWhenHidden` is set explicitly.
 
 ## Interaction and ownership
 
-| Interaction | Production path and states | Reference boundary |
-|---|---|---|
-| Numbered focus | One-based position in the original ordered group; absent positions are unavailable. The selected original page becomes native selection. A single pane remains a valid position 1. | Original numbered reducer bounds-checks the content count and subtracts one; it does not manufacture a missing pane. |
-| Adjacent focus | Next/previous wrap in group order and keep the group intact. Each invocation resolves a fresh command; a stale menu target cannot advance a different group. | Recovered reducer finds focused identity, calls the wrapping collection helper with +1/-1 and writes focused content before an original-window focus effect. |
-| Separate | The focused original remains displayed alone; another displayed child leaves focus on the surviving group. Background targets preserve the current selection. The original saved group and selection commit atomically without closing pages. | Actual WindowContents mutation tests the removed set against its focused identity, preserving that focused content when included. The historical saved-parent relocation remains a separate attribution boundary. |
-| Close | View menu, page menu and pane header carry the original pane target. Existing page close/beforeunload decides whether removal commits; refusal keeps the original page. | Original action resolves focused content and dispatches the genuine close helper. No replacement close transaction is introduced. |
+| Action | Behavior |
+|---|---|
+| Numbered focus | Selects a one-based member; missing positions are unavailable. A single pane is position 1. |
+| Adjacent focus | Wraps in current group order and preserves group membership. |
+| Expand | Requires multiple panes. Gives the focused pane the room left after other panes' 220-point minimum, preserving orientation and membership. Each browser window applies it to its own focused split and saves changed weights. It is not a restore toggle. |
+| Separate | A separated focused pane remains displayed alone; separating another member preserves the surviving focus. Model/group selection changes atomically without closing pages. |
+| Close | Retains the exact original pane and uses real close/beforeunload consent. Refusal preserves it. |
+| Orientation | Uses the existing validated group/page layout transaction. |
 
-A `SplitCommandTarget` snapshots the original physical window, Space/profile, ordered membership, focused tab, expansion state, pane objects, browser wrappers and native page identifiers. Main-menu tracking preserves that target. Execution checks it again after dismissing owned command/history/hover surfaces, checks the real native security gate, then consumes it once. A changed Space, selected group, focused pane, page wrapper, ownership, retirement or window makes the command unavailable. Normal navigation within the same live page does not replace its tab identity.
+`SplitCommandTarget` captures the physical window, Space/Profile, ordered
+membership, focused tab, pane/wrapper identities and native page identifiers.
+Execution revalidates after dismissing owned transient surfaces and checking the
+native security gate, then consumes the target once. Changed ownership, group,
+selection or retirement invalidates it; normal navigation within the same live
+page does not replace tab identity.
 
-Settings or another application window cannot cause these actions to fall back to the last browser. Active Peek, popup/native fullscreen, library, sheet/security reservation, transfers, close transactions and MRU exclude the split-underlay commands. Command search may display prospective availability for its owned browser panel, but actual execution closes that panel and revalidates the native owner. Existing renderer versus browser shortcut arbitration, native text editing/IME, custom bindings, repeat policy and keyboard lock remain authoritative.
+Settings or another window cannot redirect an action to the last browser.
+Active Peek, popup/native fullscreen, Library, sheets/security reservations,
+transfers, close transactions and MRU prevent underlay split commands. Command
+search can show prospective availability but must dismiss and revalidate before
+execution. Native text editing, IME, custom bindings, key repeat and keyboard
+lock keep their existing arbitration.
 
-
-## Reference evidence
-
-
-
-The new REA record uses exact `LC_FUNCTION_STARTS` boundaries, original section/file-offset mapping and hashed bytes. Original full-image assembly and the decoded relative jump-table entries support cross-function attribution. Raw-slice decompiler signatures and external/global references are incomplete; pseudocode is generated evidence, not original source or observed execution.
-
+A local Easel pane focuses its canvas after native deselection; selecting an
+already focused Easel preserves its title/text editor. A blank tab without a
+content target leaves focus with the window.
 
 ## Delivery boundary
 
-This slice changes existing app source only and needs no new native API, engine overlay or registration. Read-only source review covers original target invalidation, page ownership, expanded-pane selection, retained geometry and genuine close transactions. The combined 51-file Swift compiler check passes with zero diagnostics. No functional browser sequence was performed. Space continuity, accepted Peek and the generic native pane-rotation hook remain unchanged.
+The app uses the existing native selection/layout and close transactions. Model
+and compiler checks cover stale targets, original-page ownership and atomic
+selection. They do not establish live browser focus or visual acceptance. See
+[split groups](split-groups.md) for full layout, command choreography and
+accessibility contracts.
 
 ### Separate focus correction
 
-Separate now uses the original focused-item branch recovered from
-while separating another child preserves current focus. Context/AX actions bind
-the original selection and every page/editor claim as well as the saved group.
-The group/selection save is atomic and failure leaves both unchanged. See
-[the complete Separate contract](split-groups.md#separate-page-and-original-focus).
-Saved-parent relocation and exact animation remain separate from this recovered
+Context and accessibility actions bind the original selection plus every page
+and editor claim. Failed group/selection persistence leaves both unchanged.
+Saved-parent relocation and animation are separate responsibilities from this
 focus policy.

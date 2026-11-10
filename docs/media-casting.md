@@ -2,21 +2,15 @@
 
 View → Cast and the current page menu open the genuine Chromium Cast dialog for the original selected page. The registered View command is also available through the command bar. The dialog owns real device discovery, tab/desktop Sources, connecting and connected status, issues, Stop, and the pause/resume controls supported by a real route. Closing the chooser ends discovery/UI ownership; it does not pretend to stop an established route. Reopening exposes the router’s current routes.
 
-## Reference and native ownership
+## Native ownership
 
-
-
-Parc uses Chromium 156 `MediaRouterUI::CreateWithDefaultMediaSourceAndMirroring` and the actual `CastDialogView`. Its native adapter supplies the original AppKit page parent and anchor instead of manufacturing a Chrome BrowserView/toolbar. The real router retains discovery, supported sinks/modes, default presentation requests, OS capture permission, route requests/results and failure messages. The modern view’s geometry, palette, glyphs, accessibility and keyboard behavior are Chromium adaptations; exact historical geometry and motion remain unmeasured.
+Parc uses Chromium 156 `MediaRouterUI::CreateWithDefaultMediaSourceAndMirroring` and the actual `CastDialogView`. Its native adapter supplies the original AppKit page parent and anchor instead of manufacturing a Chrome BrowserView/toolbar. The real router retains discovery, supported sinks/modes, default presentation requests, OS capture permission, route requests/results and failure messages. The dialog retains Chromium's geometry, palette, keyboard and accessibility behavior.
 
 The native session binds the original WebContents/document, Browser/Profile and NSWindow. Each route-changing action revalidates them, selected/visible page, policy, security reservation, retirement and transfer state. Navigation, hidden/changed selection, transfer, renderer loss, parent closure/minimization and profile/service shutdown revoke the chooser. Controller dispatch retains its owner and defers destructive reentry until the current controller call returns. Native service observers detach before service shutdown. No URL is replayed and no page or device list is duplicated.
 
 Read-only menu eligibility may run while the original window’s command bar is key. Opening discovery/UI still requires the original browser window to be key and the app active, then repeats validation after dropping renderer fullscreen. The true fullscreen blocker remains owned until the chooser closes.
 
 When policy enables Chromium’s Access Code control, the genuine starter and WebUI retain the original Profile and request. A stale native controller returns no starter and opens nothing; a native AppKit parent uses the original WebContents view without requiring an unrelated Views widget. That accepted continuation follows upstream ownership and permissions. The separate website-initiated Presentation/Remote Playback chooser is described below.
-
-## Checks and remaining comparison
-
-Private pinned-flag syntax checks cover the native Cast/page units and the two changed upstream dialog units. The full app typechecks with warnings treated as errors. Cumulative overlay forward/reverse replay validates exact source ownership without changing live build inputs. No functional browser/device tests ran, so device interoperability, network/OS permission presentation and integrated visual behavior are not runtime-verified. No PiP work is reopened.
 
 ## Website presentation requests: native media-controls chooser
 
@@ -26,5 +20,10 @@ The chooser owns the original WebContents, main and requesting-frame documents, 
 
 The upstream device host prefers presentation or remote playback and, where Chromium's enabled audio-mirroring feature permits, offers tab mirroring for audio speakers and groups. The latter starts the real mirroring route; because it is not a presentation route, the unconsumed website context receives Chromium's cancellation/no-screen result when its controller is retired. No tab or desktop source is substituted for the website's successful presentation callback.
 
+## Checks and remaining comparison
 
-Pinned native/Chromium compilation covered the affected implementation and focused manager, supplemental-picker, presentation-item and service regression test sources. Overlay 256 replayed 587 cumulative targets forward and backward without changing the shared engine. These are source checks; the tests were not executed and no functional browser or device tests ran. The independent reviewer cleared the final implementation and reentrancy fixes before publication.
+Pinned native/Chromium compiler checks cover the Cast and presentation adapters.
+Focused manager, supplemental-picker, presentation-item and service regression
+sources have compilation coverage; this is not test execution. Device
+interoperability, network/OS permission presentation and integrated keyboard,
+accessibility and appearance remain unverified. PiP work is not reopened.

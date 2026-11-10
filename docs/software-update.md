@@ -1,655 +1,188 @@
-# Software update
+# Software updates
 
-and the menu entries. The ledger rows are UPD04–UPD06 in
-[parity](parity.md#software-updates-and-release-notes).
-
-`4e452201…9547`). Facts come from the helpers (`arcidx.py`, `arctypes.py`,
-halved to points). One bounded REA decompilation, of the MacLifecycle reducer
-for the automatic restart, was used. Raw helper output stays
-outside Git in `work/updates-research/` of the research worktree. That folder
-also has a wrapper, `arcfnw.py`: `arcfn.py` crashes on a selector reference
-that resolves to a bind.
-
-Each item is marked **[R]** (recovered from the binary or its assets),
-**[M]** (measured on the 1.172.1 screenshot) or **[I]** (inference).
-
-
-`SoftwareUpdaterClient.CustomUserDriver`. It has three window controllers:
-`checkingStatusController` and `downloadingStatusController` (both
-`UpdaterStatusController`), and `newVersionController`
-(`UpdaterWindowController`) [R].
-
-### Windows
-
-There are two window kinds. Both are borderless-looking, with a transparent
-titlebar and a full-size content view.
-
-| | Updater window (`UpdaterWindowView`) | Status window (`UpdaterStatusView`) |
-|---|---|---|
-| Style mask | `0x8003`: titled, closable, full-size content. `0x8001` (no close button) in minimum-version mode (`isMinimumVersionRequirement`) [R] | Same choice between `0x8003` and `0x8001` [R] |
-| Backing / defer | Buffered, not deferred [R] | Same [R] |
-
-The traffic lights are the system's. Minimise and zoom are present but
-disabled, because the mask has no miniaturizable or resizable bit [R]/[M].
-
-### Updater window layout
-
-
-- **Left column.** A plain `NSView`, 270 wide, pinned to the view's top,
-  leading and bottom edges. When there is no update, its trailing edge is the
-  view's. When there is an update, it ends 12 before the release notes.
-- **Release notes** (update found only). 398 × 394, inset 12 from the top,
-  trailing and bottom edges.
-  centred horizontally. It holds `NSWorkspace iconForFile:` for the app bundle,
-  sized to 64 × 64 [R]. The visible icon art measures 51 pt [M], which is a
-  64 pt icon's art.
-  `convertFont:toHaveTrait:` [R]. Top = icon bottom + 12; leading and trailing
-  match the column. Colour: default label colour [R]; #DDDDDF in dark [M].
-  "1.172.1 (90370)" [M]. Centred, `FontSet.subLabel` (system 11), colour
-  `ForegroundSecondary` [R]. That is black at 0.5 in light, white at 0.5 in
-  background [M]. Top = title bottom; the version is leading/trailing to the
-  title.
-  centred, line spacing 4, wrapping, not single-line. Font `FontSet.label`
-  (system 13), colour `ForegroundSecondary` [R]. Width 270 − 2 × 32 = 206,
-  centred, top = version bottom + 20 [R].
-  [R].
-  - Borderless, button type 5. Font `FontSet.label` with the bold trait
-    in light, white at 0.8 in dark, which measures #CCCCCC on black [R][M].
-  - Background `UpdaterButtonBackgroundColor` (`ARC_SoftwareUpdaterClient`
-    asset): white in light, black in Dark Aqua [R].
-  outside the primary button on every side [R]. The image is from
-  `NSButton`, type 5, bold 13, `ForegroundPrimary` tint, continuous corner
-  radius 10, hidden by default [R]. Top = primary bottom + 20, centred [R].
-    button's bottom 38 above the column bottom [R]. The screenshot measures
-    37–38 [M].
-- **Actions.** The primary button calls `didClickPrimaryButton` and the
-  - A title field: `AppUpdate.title`, else "A new version is available"
-    uses 32 and 20 [R].
-  - The web view renders `AppUpdate.description` with this stylesheet
-    12/8/16/0; `li` line-height 20px; links #458AFF; white background; in dark
-    mode a black background with white text. With no notes it starts
-    "<p>Thanks for using …" [R].
-
-### Status window layout
-
-
-- **Icon.** The same 82 pt view with its 64 pt icon, top + 54, centred.
-  width. Top = icon bottom + 30.
-  each side. Top = status bottom + 12. It starts indeterminate, with threaded
-  animation, already animating.
-  style, action `didClickCancel`. Top = progress bottom + 44, centred, with the
-  same 0.15 shadow image 10 outside it.
-
-### Copy and buttons per state
-
-The left column is the `SPUUserDriver` callback (strings at
-
-| State | Callback | Window | Copy | Buttons |
-|---|---|---|---|---|
-| Check ended | `dismissUserInitiatedUpdateCheck()` | Closes the checking window | — | — |
-| Permission request | `show(_:reply:)` | Assertion: "should never be called, because we set SUEnableAutomaticChecks" | — | — |
-
-**Remind me later** is Sparkle's dismiss choice. Its click sends an
-`SPUUserUpdateChoice` through `completionBlock` [R]; that the value is
-`.dismiss` is [I].
-
-`--disable-software-updater` turns the updater off [R], via
-`SoftwareUpdaterClient.isDisabled`. "Application is not allowed to update."
-is its error [R].
-
-### Automatic checks
-
-and an 8-hour `SUScheduledCheckInterval` [R]. Parc checks every 4 hours instead,
-by Josh's choice, because it releases more often.
-
-- **Silent download.** Scheduled checks call `checkForUpdatesInBackground`
-  asserting `show(_:reply:)` is unreachable].
-  as `installAndQuitHandler` [R].
-  - It emits `SoftwareUpdaterClient.DelegateAction.willInstallUpdateOnQuit(AppUpdate)`.
-    `SharedAppFeature.SoftwareUpdate` stores it as `availableUpdate`, which
-    shows the sidebar banner [R for the types, I for the exact path].
-- **Install on quit.** With no action from the user, Sparkle installs the
-- **Restart now.** "Restart and Update" goes through
-  which logs "Execute updater immediate installation handler" and runs
-  the kept block [R].
-- **Window vs banner.** Automatic updates only produce the banner. The window
-  appears only for a manual Check for Updates… When the user checks while an
-  update is already downloaded, Sparkle reports the found update with a
-  non-zero `stage`, so the window offers **Install and Relaunch** [R for the
-  stage branch, I for Sparkle's resume path].
-  once the Mac isn't in use; see the next section.
-
-### Automatic restart
-
-use. Recovered with the helpers from `AppState+AutoUpdate.swift`
-the analytics event fields, plus one bounded decompilation of the
-
-- **Away events** [R]. `MacLifecycle.Event` is `computerSleeping`,
-  `screenSleeping`, `screensaverActive` or `screenLocked`, and its state keeps
-  `activeEvents`, `eventBeginTimes`, `isAutoUpdateTimerActive` and
-  received" and "Screen did sleep notification received"; that the other two
-  come from the screen saver's and the lock's distributed notifications is [I].
-- **Two triggers** [R]. The remote flag `new-auto-update-heuristic-enabled`
-  (off by default in both 1.122 and 1.170) picks one:
-    for `auto-update-inactivity-delay-in-seconds` (default 300 in both
-    versions) on the main queue (cancel ID `autoUpdateInactivity`). If it
-    `inactiveLengthSatisfiedForAutoUpdate(timerDuration)`. When the last away
-    timer is [I].
-  - **Old rule.** When an away event ends at least 10,800 s (3 hours) after it
-    the second is the same delegate action is [I]: the decompiled slice ends
-    before it.
-    "updates whenever the browser isn't in use", fits the new rule, and
-    that's the one Parc follows.
-  Each failure is a field of `autoUpdateFlowAborted`: userDisabledAutoUpdates,
-  activeTabsBlockedUpdate, internetUnreachable, windowDialogSheetVisible,
-  incognitoWindowsWithWebContentsExist, userIsActive and ignoreUserIdle. The
-  checks are:
-  - an update is available (`SoftwareUpdate.State.availableUpdate`);
-  - automatic updates are on: the `auto-updates-enabled` flag and the
-    `TabTrait`s audioPlaying, audioMuting, mediaRecording, tabCapturing,
-    desktopCapturing, pipPlaying or vrPresentingInHeadset (the auto-archive's
-    unless `active-forms-blocking-restart-disabled` is set;
-    exact window test];
-    `auto-update-required-idle-duration-in-seconds` (default 3).
-
-  Update's path, or `retryUpdateTermination` [R for the two actions, I for the
-  state bit that picks between them].
-  automatic update while a download is in progress ("Auto update was
-  cancelled because in progress download was detected."). A web contents
-- **Setting** [R]. The banner's Automatic Updates checkbox shows
-  `shouldAutomaticallyUpdateArc` (settings key 33), not Sparkle's download
-  (`PreferencesFeature.State.autoUpdatesEnabled`) [R for the strings, I that
-  it is the same setting]. The default isn't recovered [I: on, since Josh
-  automatic update caused the restart ("…will not be restored, because the
-  `automaticUpdateWillRelaunchApp` and `lastUpdateWasAutoUpdate` record the
-  recovered reference.
-
-
-shown at a time.
-
-`State` holds:
-
-- `content`: `updateAvailable`, `updateAvailableV2`, `updateSummary`,
-  `multipleAdBlockers`, `downloadRenameItem`, `newArcIconUnlocked`,
-  `windowsBuddyDay` or `autoArchiveEducation`.
-- `presentationState`: `appeared(Date)`, `initial` or `dismissing`.
-- `isHovered`, `newUpdateSummaryBannerEnabled` and
-  `newUpdateAvailableBannerEnabled`.
-
-### Placement and motion
-
-- **Placement.** It is the same host and slot as the auto-archive education
-  card ([archive](archive.md#recovered-motion-and-lifetime)).
-  `AppearanceModifier` bottom-aligns the banner at its measured height [R].
-  Parc's existing host (`SidebarView.swift`, `archiveEducationHost`) puts that
-  slot 8 in from each side, directly above the bottom bar (Spaces / dock row),
-  with media mini players above it. Update banners belong in that same slot
-  and replace whatever card is there [I: one `content` at a time].
-- **Motion** [R, shared]. Content appears only in `appeared`. It enters with
-  `.move(edge: .bottom)` plus opacity on a spring (response 0.6, damping 0.4)
-  and leaves with ease-in 0.25 s. The reducer keeps the space for 0.7 s before
-  removal. Hover is tracked (`didHover`/`didUnhover`).
-- **Colours.** Banners take the window theme's `SemanticColorPalette`
-  (`SidebarBannerViewState.colorPalette`) [R]. Exact fills are an open
-  question.
-- **Dismissal.** Each update banner has a dismiss action, and analytics
-  records the source as `auto` or `button`
-  (`SoftwareUpdateBannerDismissSource`) [R]. So banners can also dismiss
-  themselves; when is an open question.
-
-### Update ready
-
-second argument, which is [I] `newUpdateAvailableBannerEnabled`.
-
-**V1 `UpdateAvailableState`** (title, narrowTitle, message, animation) [R]:
-
-  ready!"; message "Click to restart". Comments: "Software Update banner
-  title" / "… description".
-  are both "Early Birds update ready!".
-- Artwork: the Lottie file `update-heart-animation.json` in
-  120 frames (2 s), with layers `heart` and `ring-1`. `Animation` is `loop` or
-  `playOnce` (`preferredAnimationChanged`).
-- Actions: `didClickBanner` (the whole banner is the restart target) and
-  `didClickDismiss`.
-
-**V2 `UpdateAvailableV2State`** (title, primaryButtonTitle,
-autoUpdateEnabled, autoUpdateFeatureEnabled) [R]:
-
-- Primary button "Restart and Update" (`didClickUpdate`).
-  `SidebarBanner.SecondaryButton` with SF Symbol `checkmark.square` when on,
-  `shouldAutomaticallyUpdateArc` setting as `autoUpdateEnabled` and the
-  `auto-updates-enabled` flag as `autoUpdateFeatureEnabled` [R]; the row shows
-  only with the flag [I]. See [automatic restart](#automatic-restart).
-- `didClickDismiss`.
-- The view keeps a `ParticlesState`
-  (`SoftwareUpdateBannerUpdateAvailableView`) [R].
-
-Both lead to `DelegateAction.didClickPerformUpdate`, then
-`SoftwareUpdate.performUpdate`, then `installAndQuit` [R for the types].
-[R]. `software-update-relaunch-animation-enabled` defaults off, and the exit,
-enter and enter-shimmer durations default to 0.35, 0.6 and 0.45 s
-
-### Update Complete
-
-
-| Field | First flag set ([I] `newUpdateSummaryBannerEnabled`) | Not set |
-|---|---|---|
-| narrowTitle | "Updated!" | "Updated!" |
-| releaseNotesTitle | "See What’s New" | "What’s New" |
-| narrowReleaseTitle | "What’s New" | "What’s New" |
-| videoSeriesTitle / URL | Optional | Optional |
-
-- Early Birds: title "Early Birds Updated!", narrowTitle "Early
-  Birds\nUpdated!".
-- The referral row appears only when the first argument is true. Otherwise
-  `referralCodeTitle` is nil.
-- Typographic apostrophe (U+2019) throughout.
-
-
-- a header with a sparkle effect (`BannerHeaderView.SparkleConfiguration`);
-  - **See What’s New** → `didClickViewReleaseNotes`. Its icon follows the
-    `heart.circle.fill` for text notes, `play.circle.fill` once the view's
-    `didClickViewReferralCode`.
-  - the optional video-series row, SF Symbol `play.rectangle`
-
-that is the release-notes row's icon.)
-
-`SharedWindowFeature.TabCreationOptions` with a URL initialisation, and sends
-[R]. That the tab opens in the frontmost window is [I].
-
-### Gating
-
-What is recovered [R]:
-
-- `SoftwareUpdate.State.updateSummaryBannerEligibilityState` is
-  `pending(startTime: Date)`, `awaitingAppSetup`, `ineligible` or `eligible`.
-- `UpdateSummaryState.sparkleTimeout` is an `Int`.
-  `lastReleaseNotesVersionShown`, `pendingReleaseNotesVersionToShow`,
-  `firstLaunchAfterUpdatedFromVersion`, `lastUpdateWasAutoUpdate`,
-  `currentUpdateAvailableSince`, `currentUpdateDownloadedSince`,
-  `mostRecentUpdateDownloadTime` and `autoUpdateBannerDismissalCount`.
-- `newUpdateAvailableBannerEnabled`, `newUpdateSummaryBannerEnabled`,
-  `updateAvailableV2`, `updateAvailableState` and `appUpdateAvailable` are
-  Swift field names (reflection strings), not defaults keys.
-
-The working rule, until the open question below is answered [I]:
-
-- **Update ready** appears when `availableUpdate` becomes non-nil (download
-  finished, install on quit pending). It goes on restart or dismissal.
-  `currentUpdateAvailableSince` / `currentUpdateDownloadedSince` time-stamp
-  it.
-- **Update Complete** appears once, on the first launch after an update. Then
-  `firstLaunchAfterUpdatedFromVersion` is set and the running version differs
-  from `lastReleaseNotesVersionShown`; `pendingReleaseNotesVersionToShow`
-  carries a version across a launch that is still in app setup
-  (`awaitingAppSetup`). Showing it or clicking See What’s New records the
-  version in `lastReleaseNotesVersionShown`.
-
-## Menus
-
-From `Base.lproj/MainMenu.nib` (SHA-256 `c05560f6…1963`, the same in 1.122
-and 1.170), decoded as data [R].
-
-  Browser · — · Import from Another Browser… · **Check for Updates…** · — ·
-  - Check for Updates… is item 1337. It goes to
-    `SoftwareUpdate.State.availableUpdate` is non-nil (or a flag in the state
-    is set), otherwise "Check for Updates…", and "Updating…" during an update.
-    All three share the comment "Title for menu item to check for updates."
-- **Help menu:** Getting Started · Essential Keyboard Shortcuts · **Release
-  Notes · — · Troubleshooting ▸.
-  - Release Notes is a help resource (selector name
-    Opening it in a new tab is [I], following the other resource items.
-  is shown is not traced.
-
-Check for Updates and Release Notes were excluded from Parc's earlier menu
-and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-the-ledger),
-[command bar](command-bar.md)). Josh's request now brings them into scope.
+Released Parc builds use Sparkle with Parc's own update window and sidebar
+banners. Development/disposable builds do not update themselves. Release creation
+and publication are covered by [the release guide](master-release.md); bundled
+notes generation is covered by [What's New](../Sources/WhatsNew/README.md).
 
 ## Parc
 
-  Shortcuts, with no shortcut. It opens the bundled `WhatsNew.html`
-  (`Bundle.main.url(forResource: "WhatsNew", withExtension: "html")`) as a
-  file URL in a new tab of the key window, through the same path as History
-  and Extensions. That path opens the exact address the way an external link
-  does, not through the address classifier, which waits for the profile's
-  search engines before any tab exists and then opens a blank page first.
-  `scripts/build.py` renders the page from `release-notes.json`
-  (`Sources/WhatsNew/README.md`); a bundle without it disables the item. The
-- **Fresh-tab geometry (November 10).** Both entry points use that same native
-  tab path. A fresh WebContents view can still be 0×0 after its outer pane has
-  been sized: the native host's edge constraints have not run, and the shell's
-  shallow layout check deliberately stops at the DevTools pane. Showing the
-  native container alone did not size it. `PCNativePageHost` now flushes its
-  dirty layout before showing; size changes and new content/infobar constraints
-  mark it dirty immediately. Clean shows remain a no-op for layout. Layout
-  callbacks that move, close or supersede the host's visibility cancel the old
-  operation. This is a fresh-page defect, independent of session restoration
-  or the HTML's size. The offscreen regression reproduces zero-sized page and
-  renderer views with the old source and passes with the correction; it does
-  not measure browser load time. Overlay 654 is pending an engine build, and
-  the reported live black-page delay remains unverified after this correction.
-- **Adjacent-path audit (November 10).** Root reviewed the routes below against
-  current Parc source and pinned Chromium 156.0.8078.48. No additional independent
-  defect was established. This is source and component evidence; it does not
-  establish browser rendering latency or rule out every possible runtime cause.
+`SoftwareUpdater` owns `SPUUpdater`, `SPUUserDriver` and `SPUUpdaterDelegate`.
+`SoftwareUpdateSession` is the AppKit/Sparkle-independent state model. Distribution
+packages carry the pinned Sparkle framework, feed and verification key. Without
+`SUFeedURL`, Sparkle never starts and Check for Updates remains disabled with
+“Updates are only available in released builds.” `--parc-profile` and
+`--disable-software-updater` also block updater startup.
 
-  | Path or possible delay | Evidence and coverage |
-  |---|---|
-  | Sidebar button, command bar and Help menu | All reach `openReleaseNotes` → `openPageInNewTab` → `openExactAddress`. They create the exact file URL directly, with no search-engine initialization or intermediate blank-tab navigation. The bundled page embeds its assets and its small script has no asynchronous loading gate; the 15 page-generation checks pass. |
-  | New foreground/background pages, later selection and split panes | Native creation and adoption reach `AppKitBrowserHost::AttachPage` and the shared `ApplyVisibility` boundary. That boundary now sizes the page before show. The native-host suite exercises both initial hidden states, parking/reselection and independently visible split pages using the real pane wrapper. |
-  | Focus moving to another window | `visibleNativePages` uses displayed panes, not keyboard focus. App activity, key-window and occlusion notifications synchronize the host. Actual full occlusion may suspend painting; uncovering reconciles visibility immediately. The previous arriving-page `WasShown` correction remains in place. The offscreen geometry checks need no key window or input event. |
-  | Reload, navigation and a renderer created after attachment | Chromium's `WebContentsViewMac::CreateViewForWidget` sizes a new renderer from its native container and autoresizes it with that container. `PrimaryMainFrameCommitted` applies visibility to the replacement renderer; Parc's `NativePageState::PrimaryPageChanged` resends visual properties after commit. These are source checks, not executed Chromium integration tests. |
-  | Tab switching and sidebar resize holds | The outgoing-page hold has an absolute one-second cap; repeated switches do not extend it (23 checks). New pages without frame reports resize intrinsically; the production content resizer passes 41 checks. These models do not measure real main-thread scheduling. |
-  | Window transfer, replaced/detached content and infobars | The shared host marks new geometry/constraints dirty, sizes on show and revalidates the owner after callbacks. The expanded native suite passes 231 assertions in 15 groups, including transfer to a different-sized window, unchanged-host reattachment, changed/removed infobars and reentrant move/hide/invalidation. The exact expanded suite fails against the preceding host at the fresh-page renderer-size assertion. |
+## Menus
 
-- **The page has no address.** It stays an ordinary file page, so reload,
-  back, forward and session restore work, but its address is a path into the
-  `WhatsNewPage` (`BrowserStore.swift`) recognises only the running app's
-  page; another app's `WhatsNew.html` keeps its address. The sidebar and
-  toolbar address show its title, and Copy URL (plain, Markdown, Quote),
-  Share, the command bar's address edit and rows, row and Favorite help, link
-  copies, bookmark export, the Archive, folder previews and the back/forward
-  list omit it, and the sidebar offers no shared quote on it. At session load,
-  a saved address of another install's page opens this build's page when that
-  bundle's `Info.plist` still says `org.parc.Browser`. Its captures have no
-  source address (`PageCaptureController`), so Messages and the Capture
-  Library share only the image and an Easel gets a plain image, not a web
-  card.
-- **Engine paths that still show the address.** No existing engine API reaches
-  them, so they need an engine change. Chromium records `file:` visits
-  (`CanAddURLToHistory`, `chrome/browser/history/history_utils.cc`), so its
-  history deletion: the omnibox's `deleteResult:` removes only a delivered
-  result, and Clear Browsing Data is the user's dialog. The fix is for
-  `CanAddURLToHistory` to refuse the running app's
-  `Contents/Resources/WhatsNew.html`, so no visit is written; a bridge method
-  over `history::HistoryService::DeleteURLs` (for example
-  `+[PCNativeBrowserApplication deleteHistoryForURLs:profilePath:]`) would
-  instead let the app remove visits after the fact. Copy URL and the shared
-  quote check the visible address, but the engine copies the committed one, so
-  while a typed address is loading in the page's tab they can still copy the
-  file address. `CanCopy` (`native_copy_link.mm`) would have to refuse the
-  page's committed address, as Chromium's own Copy Link to Highlight refuses
-  anything but http(s).
-- **Feed.** Every release publishes the feed the embedded Sparkle reads,
-  `SUFeedURL` = `parc-releases/releases/latest/download/appcast.xml`
-  (`scripts/sparkle.py`). The release's appcast stage (`scripts/appcast.py`)
-  signs the notarized ZIP with `sign_update --account parc` once that key's
-  public half matches the app's `SUPublicEDKey`, verifies it with
-  `sign_update --verify`, and writes one item. The item carries
-  `sparkle:version` = `CFBundleVersion`, `shortVersionString`, the app's
-  `LSMinimumSystemVersion`, the ZIP enclosure, and this version's notes as
-  HTML grouped like the What's New page. The homebrew stage uploads it with the
-  ZIP and DMG to the same public release and makes that release latest. The cask
-  says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
-  alone; installs from before Sparkle need one `brew upgrade parc` (or
-  `--greedy`) to reach the first Sparkle build. Pipeline and recovery:
-  [master-release](master-release.md).
+Check for Updates appears in the Parc menu and command bar. Its title becomes
+Update Available when an update is available/ready, and Updating while downloading,
+preparing or installing. Help → Release Notes and the corresponding command open
+the bundled What's New page in a new tab through `openExactAddress`, without
+search-engine initialization or an intermediate blank-page route.
 
-- **Check for Updates…** sits in the Parc menu after Import from Another
-  follows the phase: "Update Available…" while an update is available or
-  ready, "Updating…" while downloading, preparing or installing, otherwise
-  ("Download; Update; Check for Updates") and a Parc icon,
-  item's tooltip.
-- **Sparkle.** Parc embeds the pinned Sparkle 2.10.1 (`scripts/sparkle.py`,
-  [packaging](../tests/Packaging/README.md#sparkle)). Only distribution
-  and local test builds never replace themselves. Without `SUFeedURL` Parc
-  never starts Sparkle: Check for Updates… stays in the menu and the command
-  bar but is disabled, with the tooltip "Updates are only available in
-  released builds".
-- **Updater.** `SoftwareUpdater` (`Sources/ParcApp/SoftwareUpdater.swift`) is
-  `SPUUpdaterDelegate`. Its state is `SoftwareUpdateSession`
-  (`Sources/ParcCore/SoftwareUpdateSession.swift`), free of Sparkle and AppKit;
-  `scripts/test-software-update.sh` tests it and the up-to-date window's
-  label to its 11-point font's 13-point line height: AppKit pads the label to
-  - A manual check shows the status window ("Checking for updates..."), then
-    the up-to-date window, the update-found window, or the "Update error!"
-    alert, following the table above.
-  - A scheduled check (every 4 hours) downloads silently. Sparkle's
-    `willInstallUpdateOnQuit` handler is kept, the phase becomes
-    `readyToInstall`, and only the sidebar banner shows it. Restart and Update
-    runs the handler, or the automatic restart below does once the Mac is
-    away; otherwise Sparkle installs on quit.
-  - A scheduled find that isn't downloaded (automatic downloads turned off)
-    also shows no window; the menu reads Update Available… and opens it.
-  - Closing a status window cancels a check or download. A prepared update
-    stays ready and still installs on quit. A downloaded update whose window
-    is dismissed with Remind me Later also stays ready: Sparkle keeps it, and
-    installs it on quit once it has begun installing.
-  - **Steady download progress (Josh, November 9).** Sparkle's byte increments
-    accumulate in `SoftwareUpdateDownloadProgress`. The counter and bar use
-    one snapshot at most every 100 ms; pending refreshes are cancelled on
-    close, extraction, failure and a new transfer. The counter uses the total's
-    byte unit, padded fractional zeroes, equal-width digits and the completed
-    count's reserved width. Its decimal point and total stay in place as bytes
-    arrive. The native bar changes animation mode only when entering or
-    leaving indeterminate progress. An unknown size stays indeterminate and
-    shows only bytes downloaded; a later zero size does not erase a known
-    total. A corrected positive size is honored, so the fraction remains
-    consistent with the actual count and total. These are Parc display fixes,
-    retaining the recovered status layout and callback contract above.
-    `bash scripts/test-software-update.sh --inert` checks the session, automatic
-    update policy, byte counting and actual status controls without creating
-    windows or web views. The full script's release-notes layout test creates
-    a `WKWebView`, so it is excluded from the inert run. No live download or
-    on-screen motion acceptance is claimed.
-    `--disable-software-updater` never start Sparkle: a disposable session
-    shares the installed Parc's bundle identifier, defaults and Sparkle
-    to update." error.
+## Updater windows
 
-  rule (UPD08). `AutomaticUpdate` (`Sources/ParcCore/AutomaticUpdate.swift`)
-  records when an away period begins and ends. One starts with the first of
-  these, and ends when the last one stops:
-  - the Mac sleeps (`NSWorkspace` `willSleep` / `didWake`);
-  - its displays sleep (`screensDidSleep` / `screensDidWake`);
-  - the screen saver runs (`com.apple.screensaver.didstart` / `didstop`);
-  - the screen is locked (`com.apple.screenIsLocked` / `screenIsUnlocked`).
+Manual checks show checking, up-to-date, update-found or error presentation.
+Scheduled checks every four hours download silently; ready updates show a sidebar
+banner. Closing a status window cancels checking/downloading. Prepared updates
+remain ready and can install on quit. Remind me Later dismisses the prompt without
+throwing away a downloaded update.
 
-  The last two are distributed notifications. Parc registers them with
-  `.deliverImmediately`, because AppKit holds them while Parc isn't the
-  active app, which would delay a lock made from another app.
+| State | Presentation and action |
+|---|---|
+| Checking | “Checking for updates...” and Cancel. |
+| Up to date | Parc title/version, “Your browser is up to date”, Close. |
+| Available | Installed/new versions, embedded notes, Download or Install and Relaunch, Remind me Later. |
+| Downloading | Byte counter, progress and Cancel. |
+| Preparing | “Preparing…” with actions disabled. |
+| Ready | “Ready to Install”, full bar, Install and Relaunch. |
+| Installing | Installing status, actions disabled. |
+| Failure | Update error alert with acknowledgement and manual-download action. |
 
-  Parc checks every 300 s of awake time (`DispatchQueue.main.asyncAfter`).
-  Times come from `ProcessInfo.systemUptime`, which also stops while the Mac
-  sleeps, so time asleep doesn't count but awake time already spent away
-  does. A check does nothing unless an update is waiting. It counts the Mac
-  as away in either of two cases:
-    fires exactly 300 s after the event; Parc's next check comes 5 to 10
-    minutes after it.
-  - **Josh's addition (UPD08).** There has been no keyboard or pointer input
-    for 30 minutes (1,800 s of IOHIDSystem's `HIDIdleTime`). This is for a
-    Mac whose display never sleeps, whose screen saver is off and which
-    It doesn't count while any process holds
-    `kIOPMAssertPreventUserIdleDisplaySleep` (`IOPMCopyAssertionsStatus`;
-    when that can't be read, Parc treats the display as kept on). Video calls
-    and players in any app hold that assertion while nobody touches the Mac,
-    and Parc's own pages are already held by the page check. A Mac whose
-    display stays on only because of its Energy settings holds no such
-    assertion.
+The up-to-date window is 270 × 341; status is 270 × 334. Update-found adds a
+398 × 394 notes pane with 12-point gaps/insets. The icon occupies an 82-point
+view, primary button is 170 × 48 with radius 10, and labels use native light/dark
+colors. Windows use transparent titlebar/full-size content with native close
+behavior. These dimensions are current layout choices, not runtime acceptance.
 
-  While the Mac is away, a check calls `installAndRelaunch()` when:
-  - Automatic Updates is on, and Sparkle holds an install-now handler
-    (`installsWithoutWindow`). That means a background download, as with
-    update from a manual check never installs by itself, whether it is still
-    waiting in its window or was dismissed, because resuming it opens a
-    check;
-  - no live page is protected (`automaticArchiveProtectionState`). That covers
-    mirroring, Picture in Picture, VR, form interaction or user edits. It also
-    covers an active, ducking or suspended media session, so a paused video
-  - no download is pending, running or paused;
-  - no sheet or modal alert is open;
-  - no private window is open (a relaunch restores none);
-  - there has been no input for 3 s (`HIDIdleTime`);
-  - a HEAD request to `SUFeedURL` (60-second timeout) succeeds. Afterwards
-    the Mac must still be away and every check above must still pass.
-  The relaunch follows Restart and Update's path. Sparkle's kept handler runs,
-  Quit command. A page's beforeunload prompt still waits for an answer, and if
-  the page keeps Parc open, a later check retries. The next launch is a new
-  build, so every window comes back (`LaunchContinuity`) and Update Complete
-  - **Automatic Updates** is Parc's `automaticallyInstallsUpdates` (defaults
-    `shouldAutomaticallyUpdateArc`. Sparkle's silent download stays on. The
-    checkbox used to turn that download off. If an earlier build left it off,
-    Parc turns it back on at start and turns automatic installs off instead.
-    banner is the only control.
-    IOHIDSystem registry property. Apple's open-source IOHIDFamily shows what
-    it counts:
-    - `IOHIDSystem::_idleTimeSerializerCallback` returns uptime minus
-      `lastUndimEvent`. Uptime excludes sleep, and the value reads as 0 when
-      HID events aren't open, which Parc treats as in use.
-    - The only writer of `lastUndimEvent` is `setProperties` with
-      `kIOHIDActivityUserIdleKey` 0. In Apple's sources, only the HID event
-      system's `IOHIDNXEventTranslatorSessionFilter` sends that, when it
-      declares activity for an input event that passes its power policy. That
-      includes events another process posts into the HID stream.
-    - powerd (PowerManagement `SystemLoad.c`) only reads the HID activity
-      state. So power assertions, `caffeinate` (including `-u`, which declares
-      user activity) and a running agent leave it alone.
-    - A tool that posts synthetic keyboard or pointer events does reset it.
+`SoftwareUpdateDownloadProgress` accumulates bytes and publishes counter/bar
+snapshots at most every 100 ms. It reserves equal-width digits, fractional zeroes
+and completed-count width so decimal/total alignment stays stable. Unknown totals
+remain indeterminate; zero does not erase a known total, while corrected positive
+totals are honored. Native animation mode changes only at state transitions.
+Closing, extraction, failure or a new transfer cancels pending refreshes.
 
-    Parc used to read `CGEventSource`'s HID-state idle time, which is closed
-    source, so what it counts couldn't be checked.
+## Automatic restart
 
-- **Update Complete** is the V2 summary banner in the shared slot: the same
-  `SidebarBannerHost` as the auto-archive card (8 points in, directly above
-  the bottom bar), with its spring/fade motion. One banner shows at a time:
-  while Update Complete holds the slot the auto-archive producer leaves its
-  - **When.** On the first launch whose Info.plist version
-    (`CFBundleShortVersionString`, then `CFBundleVersion`) is newer than the
-    one that last launched on this data, so Sparkle and Homebrew updates both
-    count. The record (`release-notes-launch.json` in the data directory, so
-    a disposable `--parc-profile` never shares it) stands in for
-    `firstLaunchAfterUpdatedFromVersion` / `pendingReleaseNotesVersionToShow`
-    / `lastReleaseNotesVersionShown`. A fresh install shows nothing. Data with
-    no record but a previous run's `launch.json` (written by every release
-    since 1.0.0) was last run by an older Parc, so it counts as an update;
-    seeded test profiles without one stay fresh. Following the inferred rule
-    above, a browser window whose sidebar isn't hidden records the version
-    once it shows the banner, so it appears on that one launch; a launch that
-    never shows it (setup, a hidden sidebar) carries it to the next. The
-    shown version is kept, so a downgrade shows nothing and a later upgrade
-    to that version, or an older one, doesn't show it again. A build without `WhatsNew.html` shows no banner.
-    See What’s New retires the banner only when the window can open the page.
-  - **Content.** "Update Complete!", then **See What’s New** (opens the
-    bundled page in a new tab of that window and retires the banner; the
-    page opens at `#from=<replaced>&to=<installed>`, from the record's
-    releases in between only while `to` is its own version) and
-    **Share Parc** (Parc has no referral service: it copies
-    `https://github.com/etsenake/parc-releases` and shows "Copied Link" with
-    a share button; the banner stays). The close button retires it. The
-    are text, so See What’s New keeps `heart.circle.fill`.
-    8. Card: continuous radius 12, black/white at 0.9 (dark/light), shadow
-    black at 0.15/0.05 radius 2 y 2, a white 0.1 stroke in dark inset −0.5.
-    Header: title system 12, padding 4 vertical / 8 horizontal, centred, and
-    leading once its width + 40 exceeds the header; a 1-point divider (white
-    0.15 / black 0.07). Close button: 24 × 24, `xmark` bold 9 at 0.4 (1 on
-    hover), hover plate 20 × 20 at 0.15/0.1 with corners 2/11/2/2. Rows:
-    `HStack(spacing: 4)` of the icon and system-12 text, white 1 / black
-    0.8, 16 high, leading, inset 8; 0.75 opacity until hovered, ease-out
-    text with `ButtonBackground`: two blurred (12, 6) capsules hue-turned ±40°
-    over a base colour, brightness 0.6/−0.2 and saturation 1/2. Parc keeps
-    that text black or white (Josh: the gradient made it unreadable on a pale
-    theme). The sparkles run for `update-complete-sparkle-timeout-in-seconds`
-  - **Not recovered** (Parc's values, open): the header height (24, the close
-    button's), the gradient's base palette colour (Parc uses the theme's max-
-    or min-contrast colour, else the accent colour when that is grey by HSL
-    saturation) and its turn speed (4 s), and the sparkles' glyph, count,
-    colour and timing (six `sparkle` glyphs in the base colour with the
-    not modelled. Like the auto-archive card's native controls, each button
-    is its own stop in the sidebar's key loop: an empty AppKit button laid
-    over the SwiftUI one (`UpdateBannerKeyStop`) that draws its focus ring,
-    presses with Space, is its VoiceOver element, and lets the pointer
-    through. Tab runs close, See What's New, Share Parc; as for every
-    sidebar button, AppKit stops on them only with Full Keyboard Access.
+Parc periodically checks whether a background-downloaded update can install.
+`AutomaticUpdate` tracks Mac/display sleep, screensaver and screen-lock events;
+the away period begins with the first and ends when the last stops. Lock/saver
+notifications deliver immediately even while Parc is inactive.
 
-  is `readyToInstall`, and through `installing` so a page that cancels the
-  quit leaves Restart and Update to retry; it takes the slot from Update Complete and the
-  auto-archive card. The shared header reads "New Parc Version Available"
-  `automaticallyInstallsUpdates`, and **Restart and Update**, which calls
-  `installAndRelaunch()`. The primary button is the theme base colour in a
-  continuous radius-6 shape, with `ButtonBackground`'s gradient (blur 12,
-  opacity 0.5) while the banner is hovered, a white 0.2 edge in dark, and a
-  0.97 scale with 0.8 label opacity on a 0.2/0.6 spring when pressed [R].
-  Parc's values (open): the label is 12-point medium in black or white by the
-  the header's own fill (white/black at 0.1/0.03, doubled on hover, a 0.08
-  edge) and the container's dark white-0.2 edge. Once the pointer rests on it
-  passes) it expands for good on a 0.35/0.7 spring: the card background,
-  divider and controls appear, and the slot grows. Parc's additions: the
-  collapsed title is a button, so a click, Space with Full Keyboard Access
-  or VoiceOver's press also expands it. Collapsed, the title is the only
-  key stop; open, Automatic Updates and Restart and Update are. Opening it
-  from the title's focus (Space or VoiceOver) moves focus to Automatic
-  Updates. It collapses only when shown anew, after the host has taken
-  focus back, so the title is the stop again. Unverified without a run: how the slot's growth and the
-  spring line up (the slot resizes at once; the content springs inside it).
+Checks run every 300 seconds of awake uptime. An away-event period qualifies
+after 300 seconds, so installation is considered approximately five to ten
+minutes after it begins. Sleeping time does not count. Josh's additional rule
+qualifies a Mac with no keyboard/pointer input for 30 minutes, provided no process
+holds a display-sleep-prevention assertion. Failure to read that assertion is
+conservatively treated as active use.
+
+Automatic installation requires all of the following, rechecked after a successful
+HEAD request to the feed (60-second timeout):
+
+- Automatic Updates enabled and a background install-now handler available.
+- No protected live page: audio (including muted), capture/mirroring, PiP, VR,
+  active forms/edits, or active/ducking/suspended media sessions. Paused video
+  therefore also prevents automatic restart.
+- No pending/running/paused download, sheet, modal alert or private window.
+- At least three seconds without input and the Mac still qualifying as away.
+
+Manual-check downloads never install automatically merely because their window
+was dismissed. The normal quit path retains real beforeunload consent; a refusal
+can retry later. Explicit Quit's warning is not synthesized for update restart.
+Automatic Updates controls Parc's `ParcAutomaticallyInstallsUpdates` preference,
+on by default. Turning it off preserves silent downloads and explicit/quit-time
+installation. A previous disabled-download preference is migrated into disabled
+automatic installation. The banner is the current control; there is no duplicate
+Settings checkbox.
+
+Input idle uses IOHIDSystem `HIDIdleTime`. Real or synthetic keyboard/pointer
+activity in the HID stream resets it; a running agent or a power assertion alone
+is not keyboard/pointer activity. Missing/zero idle information is treated as use.
+
+## Sidebar banners
+
+One `SidebarBannerHost` slot sits eight points in above the bottom bar. Update
+ready takes priority over Update Complete and auto-archive education. Education
+remains armed while another banner occupies the slot.
+
+### Update ready
+
+The collapsed New Parc Version Available header expands after 300 ms hover, or
+click/Space/accessibility press. Expansion persists until a newly shown banner.
+It exposes Automatic Updates and Restart and Update. It remains through installing
+so a cancelled quit can retry. Keyboard focus moves from the header to Automatic
+Updates when expanded by keyboard/accessibility. Buttons use the current Space
+palette; labels keep readable black/white contrast.
+
+### Update Complete
+
+The banner appears on the first eligible launch after a newer bundle version,
+including Homebrew upgrades. `release-notes-launch.json` is data-directory scoped;
+disposable profiles do not share it. Fresh installs show nothing. Setup/hidden
+sidebar can defer display until a later launch. Recorded shown versions prevent
+repeat banners after downgrade/re-upgrade. Missing bundled notes suppress it.
+
+See What's New opens the bundled page with `#from=<replaced>&to=<installed>` and
+retires the banner only after admission to open succeeds. The page marks skipped
+releases only when `to` matches its own version. Share Parc copies the public
+release URL and leaves the banner open; Close retires it. There is no referral
+service or vendor-video row.
+
+The card has radius 12, shared spring/fade motion, a close control and separate
+native key/accessibility stops for Close, See What's New and Share Parc. Notes
+text stays black/white, including hover, so pale Space themes remain readable.
+Decorative sparkles are bounded to 15 seconds. Live alignment of slot growth and
+its inner spring remains a visual-validation item.
+
+## What's New page ownership
+
+`scripts/build.py` creates self-contained `WhatsNew.html` from
+`release-notes.json`, including release history. Only the running app's exact
+page is recognized by `WhatsNewPage`; unrelated files keep their normal address.
+The native address displays the title. App-owned copy/share, command edit,
+bookmarks, archive/folder previews and capture attribution omit its bundle path.
+A recognized older install path restores to this build's page. Captures share
+image-only metadata and enter Easels as images, not live web cards.
+
+### Fresh-tab geometry
+
+A fresh native host could have a sized outer pane but a 0 × 0 content/renderer
+view. `PCNativePageHost` now settles dirty edge constraints before show, marks
+size/content/infobar changes dirty immediately, and revalidates after reentrant
+layout. Clean shows do not walk layout. Overlay 654 is published in v1.12.1;
+source/component regression evidence does not establish live black-page latency.
+The adjacent source audit covers exact opening routes, renderer creation/reload,
+focus/occlusion, split pages, tab holds, parking and window/content transfer.
+
+### Remaining address exposure
+
+App suppression does not yet cover Chromium History recording the file visit or
+native Copy URL reading the committed bundle URL while a different typed address
+is loading. These require engine-side exact-URL history/copy guards; hiding the
+visible address alone is insufficient. This is retained in [the backlog](backlog.md).
 
 ### Updater API
 
-For the sidebar's update banners (UPD05). Everything is on the main actor.
-
-```swift
-SoftwareUpdater.shared.phase                       // SoftwareUpdater.Phase
-SoftwareUpdater.phaseDidChangeNotification         // posted on the main thread, object: SoftwareUpdater.shared
-SoftwareUpdater.shared.installAndRelaunch()        // Restart and Update
-SoftwareUpdater.shared.automaticallyInstallsUpdates  // get/set; the Automatic Updates checkbox
-SoftwareUpdater.shared.installsWithoutWindow      // Sparkle holds an install-now handler
-SoftwareUpdater.shared.activity                     // set by AppDelegate: what a restart would interrupt
-SoftwareUpdater.shared.checkForUpdates()           // the menu's action
-```
-
-A build without a feed never leaves `idle`, and `checkForUpdates()` does
-nothing there.
-
-`Phase` is `idle`, `checking`, `available(version:)`, `downloading`,
-`preparing`, `readyToInstall(version:)` or `installing`. The version is
-Sparkle's display version, e.g. "1.9.0".
-
-- Show **update ready** while the phase is `readyToInstall` (Parc keeps it
-  through `installing`, so a cancelled quit can retry); the notification
-  fires on every phase change, so read `phase` when it arrives.
-- `installAndRelaunch()` acts in `readyToInstall`, and retries in
-  `installing` if a page cancelled the quit. It runs Sparkle's install-now
-  handler for a background download or answers the ready window's reply. For
-  a downloaded update whose window was dismissed, it starts a check that
-  resumes the update and installs it without another window. Parc quits and
-  Sparkle relaunches it.
-- `automaticallyInstallsUpdates` is Parc's persisted setting, on by default.
-  Turning it off stops the automatic restart. Updates still download, and
-  they install on Restart and Update or at quit.
-- Dismissing the banner needs nothing from the updater: the update stays
-  ready and installs on quit.
+The main-actor interface includes `phase`, `phaseDidChangeNotification`,
+`checkForUpdates()`, `installAndRelaunch()`, `automaticallyInstallsUpdates`,
+`installsWithoutWindow` and the `activity` snapshot supplied by `AppDelegate`.
+Phases are idle, checking, available, downloading, preparing, readyToInstall and
+installing. Listeners read current phase after notification. Install executes the
+retained background handler or ready-window reply and supports retry after a
+cancelled quit.
 
 ### Appcast contract
 
-For the release appcast's owner. The update-found window shows the item's
-embedded notes only; Parc doesn't fetch `sparkle:releaseNotesLink`.
+The public latest-release feed accompanies verified ZIP/DMG assets.
+`scripts/appcast.py` signs the notarized ZIP only when its public key matches the
+app's `SUPublicEDKey`, verifies that signature and emits an item containing:
 
-  appcast does. Without it the window says "Thanks for using Parc!".
-- `sparkle:version` is `CFBundleVersion` (Sparkle compares it) and
-  `sparkle:shortVersionString` the plain version, e.g. "1.9.0". The prompt
-  reads "v1.9.0 (23)" from these two.
-- The enclosure must carry `sparkle:edSignature` from the Keychain key
-  (account `parc`) and its `length`; Parc's ZIP may keep its `development/`
-  folder, since Sparkle finds `Parc.app` anywhere in the archive.
+- `sparkle:version` from `CFBundleVersion`, display version and minimum macOS.
+- Exact public ZIP URL, length and EdDSA signature.
+- Title and HTML notes in `<description>`; the app does not fetch an external
+  `sparkle:releaseNotesLink`.
 
-## Open questions
+The Homebrew cask marks `auto_updates true`; Sparkle and Homebrew share the same
+published versioned artifacts. Release publication verifies signatures/hashes,
+not installed-app runtime behavior.
 
-1. **Banner gating.** The exact reads and writes of the release-notes and
-   update-time keys, the `pending → awaitingAppSetup → eligible` transitions,
-   `sparkleTimeout`, and when a banner dismisses itself (`auto`). Next step:
-   [I] rule above.
-2. **Banner visuals.** Card size, padding, typography, fills and the
-   particle/sparkle header of `SoftwareUpdateBannerUpdateAvailableView`,
-   `…UpdateSummaryV2View` and `RowView`. Next step: decompile the view bodies
-   heart with "Click to restart", or V2 with "Restart and Update". Next step:
-   settles it.
-4. **Automatic restart.** Answered in [automatic restart](#automatic-restart),
-   except for three things: the remote value of
-   `new-auto-update-heuristic-enabled`, the setting's default, and what
-   `automaticUpdateWillRelaunchApp` changes in the summary banner's gating.
-5. **Shadow image.** The image behind the 0.15-alpha button shadow. Next step:
-   `xcrun assetutil --info` on the owning bundle.
-6. **Download text.** The download status text before the first progress
-   callback, and the "Download manually" base URL. Next step: `arcfn.py
-   `onSelectResource_releaseNotes:` in
-   `feature-discovery/all-objc-methods.json` and annotate it.
-8. **Relaunch animation and `--post-update-restart`.** The animation's
-   defaults are recovered (off). Still open: what it draws, and where
+## Validation
+
+`bash scripts/test-software-update.sh --inert` covers the session, restart policy,
+byte counting and actual status controls without windows/web views. The full
+script's notes-layout check creates a WKWebView and is outside the current inert
+check scope. Page-generation and native-host regressions cover bundled resources
+and layout ownership. No live download, restart, browser timing or on-screen
+motion acceptance is inferred from those checks.

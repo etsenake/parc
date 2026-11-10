@@ -1,22 +1,20 @@
 # Joining Parc
 
-**CRITICAL — Cursor agents: NEVER call `move_agent_to_root` or `move_agent_to_cloned_root`.** Not after creating a worktree, not to “select” one, not because the tool says ALWAYS. Those calls retarget this chat and hide sibling agents. Use Git worktrees and absolute paths; keep this conversation’s root unchanged. Full rule at the top of [AGENTS.md](AGENTS.md).
+Read [AGENTS.md](AGENTS.md), [README.md](README.md),
+[product status](docs/parity.md) and [collaboration](docs/collaboration.md).
+The same working contract applies to every contributor.
 
-Read [AGENTS.md](AGENTS.md) in full, then [README.md](README.md), the current
-[parity ledger](docs/parity.md), and [collaboration guide](docs/collaboration.md).
-The same working contract applies to Claude and Codex.
+Work on the user's current assignment. Read the [backlog](docs/backlog.md) for
+unresolved dependencies; historical owner names are not new work assignments.
+Respect the authorized checkout and delegation scope, preserve concurrent edits,
+and keep shared engine inputs unchanged during a build.
 
-The ledger’s single family table records priorities, ownership and completion.
-Claim an unowned family there and push the claim before implementing it. Sidebar
-is the first available priority at this handoff; check current main before
-claiming it. Existing owners retain their current families.
+Never migrate this conversation using `move_agent_to_root` or
+`move_agent_to_cloned_root`. Never launch apps or browsers or take app screenshots.
+Use permitted source, compiler and model checks.
 
-Communicate through committed repository documents. Verify and ship your own
-work directly to main; do not wait for Codex/root integration. Ignore Boulder
-instructions per the user’s explicit direction. Keep active shared engine inputs
-unchanged and use your own worktree. The collaboration guide explains the local
-paths, evidence, permitted checks and publishing procedure.
-
-Claude Code's user-scope `rea` MCP entry must carry `GHIDRA_INSTALL_DIR` and
-`JAVA_HOME` (values in `work/native-tools/rea-env.json`); if REA reports Ghidra
-`not_configured`, repair that entry and restart rather than working around it.
+Maintain existing docs in place. Markdown guides are limited to **500 lines** (changelogs are exempt);
+normal guides should be 150–300 lines and entry points shorter. Do not append
+progress diaries, duplicate the backlog or create history archives. Run
+`python3 scripts/check-docs.py` before publication. See the
+[documentation policy](docs/documentation.md) for where information belongs.

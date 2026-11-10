@@ -1,7 +1,7 @@
 # Safari hidden playing video (WMPI-4)
 
-Reference: WebKit main `db2d79f4` (November 7, 2026), paths below relative to
-`Source/WebCore`. This concerns audio+video that is allowed to keep playing;
+The WebKit source paths below are relative to `Source/WebCore`. This concerns
+audio and video that are allowed to keep playing;
 media-session interruption/autoplay policy is a separate decision.
 
 ## WebKit source contract

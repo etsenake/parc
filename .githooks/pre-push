@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuses a push carrying commits that break the commit rules; commit-tree, rebases, cherry-picks and reverts skip commit-msg."""
+"""Check commit messages and documentation size in every pushed tip."""
 from pathlib import Path
 import subprocess
 import sys
@@ -8,10 +8,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from release_notes import RULE, check
 
 rejected = {}
+tips = set()
 for line in sys.stdin:
     _, local, _, remote = line.rsplit(maxsplit=3)  # the source as typed may hold spaces
     if not local.strip("0"):
         continue
+    tips.add(local)
     # Only commits no remote has yet; the remote's old tip covers a URL push without tracking refs.
     log = subprocess.run(["git", "log", "-z", "--format=%h %p%n%B", "--ignore-missing", local, "--not", "--remotes", remote],
                          capture_output=True, text=True, check=True).stdout
@@ -24,3 +26,13 @@ for line in sys.stdin:
 if rejected:
     sys.exit("Push refused; reword these commits and push again:\n"
              + "".join(f"  {commit} {error}\n" for commit, error in rejected.items()) + RULE)
+
+if tips:
+    repo = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).rstrip("\n")
+    checker = Path(__file__).resolve().parents[1] / "scripts" / "check-docs.py"
+    failed = False
+    for tip in sorted(tips):
+        result = subprocess.run([sys.executable, str(checker), "--repo", repo, "--ref", tip])
+        failed = failed or result.returncode != 0
+    if failed:
+        sys.exit("Push refused; shorten oversized documentation in the pushed commits and push again.")

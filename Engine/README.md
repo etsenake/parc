@@ -72,9 +72,10 @@ outputs cannot be sealed. Returned failures can resume without deleting objects;
 unowned output is preserved and refused. Disk reserves are preflight policy,
 not a measured guarantee that another output fits.
 
-See [packaging](../tests/Packaging/README.md#standalone-distribution),
-[CEF build guidance](https://github.com/chromiumembedded/cef/blob/4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f/docs/master_build_quick_start.md)
-and [pinned distribution configuration](https://github.com/chromiumembedded/cef/blob/4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f/tools/gn_args.py).
+See [packaging](../tests/Packaging/README.md#standalone-distribution). CEF's
+`docs/master_build_quick_start.md` and `tools/gn_args.py` in the pinned source
+checkout explain its build and distribution configuration; exact dependency
+versions live in [the source lock](source-lock.json).
 
 ## Required native integration
 

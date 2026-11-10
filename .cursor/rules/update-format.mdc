@@ -1,25 +1,11 @@
 ---
-description: How to give Josh a status update
+description: Give plain spoken status updates
 alwaysApply: true
 ---
 
-# Status updates are meant to be listened to
+# Give plain spoken status updates
 
-This is a **must-do** rule (Josh, November 7).
-
-Josh listens to updates. Write them as plain spoken paragraphs, the way you
-would say them out loud to him.
-
-- No bullet points, no lists, no tables, no headings.
-- No commit hashes, file names, function names, overlay numbers, edge or agent
-  codenames, or anything else that can't be read aloud naturally. Say what the
-  thing is ("the casting fix", "the agent rebuilding rewind").
-- For each piece of work, say what it means practically (what someone using
-  Parc now sees, hears or can do), what it means technically in a sentence a
-  non-specialist follows, and what it means for performance or battery when
-  that matters.
-- Cover what was found, what was finished and is now on main, what the agents
-  are doing right now, and anything that needs Josh's decision, with the
-  default being followed.
-- Commit hashes and file paths belong in the edges document and running log,
-  not in what Josh hears.
+Josh listens to progress updates. Use plain spoken paragraphs: what changed,
+what it means for him and what is happening now. Avoid tables, code names,
+hashes and path lists in routine status. Verify current work before reporting
+it, and disclose recorded gaps. See [AGENTS.md](../../AGENTS.md).

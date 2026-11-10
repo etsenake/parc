@@ -1,0 +1,17 @@
+---
+description: Keep documentation current and below 500 lines
+alwaysApply: true
+---
+
+# Keep documentation current and below 500 lines
+
+Markdown guides, including agent instructions, READMEs and these rules,
+have a hard **500-line limit**. Changelogs are exempt; preserve their full history
+and generation. Aim for 150–300 lines, with shorter entry points.
+Update current descriptions in place; no progress diaries, duplicate ledgers
+or archive overflow files. Run `python3 scripts/check-docs.py`; pre-push checks
+the pushed tree. See [documentation policy](../../docs/documentation.md).
+
+Write for people: no literal commit SHAs, binary/compiler addresses, checksum
+values or evidence-ID dumps. Explain behavior and decisions; link readable source
+when useful and keep machine records in manifests, Git or ignored check output.

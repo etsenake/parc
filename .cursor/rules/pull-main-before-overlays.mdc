@@ -1,30 +1,14 @@
 ---
-description: Pull main before applying or numbering an engine overlay
+description: Fetch main before engine overlay operations
 alwaysApply: true
 ---
 
-# Pull main before applying or numbering an engine overlay
+# Fetch main before engine overlay operations
 
-This is a **must-do** rule (Josh, November 1).
-
-Several sessions publish engine changes to main at the same time. Every
-overlay step starts from current main:
-
-1. **Before choosing an overlay version**, `git fetch origin` and read
-   `Engine/ParcHost/overlay.json` on `origin/main`. Your version is main's plus
-   one at the moment you publish, not when you started.
-2. **Before publishing an engine change**, rebase onto `origin/main`, keep every
-   hash main already records for files you didn't change, regenerate only your
-   own, and set the version to main's plus one. Recheck right before `git push`;
-   if main moved, rebase and renumber again.
-3. **Before `overlay-check` or `overlay-apply`**, fetch and make sure the
-   manifest you pass is current `origin/main`'s (or the exact commit you mean to
-   build). Never apply a branch's manifest that main has already overtaken.
-4. **Before starting an engine build**, confirm the applied overlay equals
-   `origin/main`'s, so the build includes every engine change other sessions
-   have landed.
-
-On November 1, three pending branches claimed overlay 289 while another
-session published 288 and a further engine change, and a fast-forward of the
-main checkout nearly broke a packaging step that was waiting on an older
-engine.
+Fetch `origin/main` before choosing or publishing an overlay version, running
+`overlay-check`/`overlay-apply`, or starting an engine build. New versions use
+main's current number plus one at publication; preserve other contributors'
+hashes and freeze active build inputs. Apply/build requires explicit authorization.
+Verify the manifest against current main or the intended frozen source before
+apply, and the applied overlay against that source before build.
+See [AGENTS.md](../../AGENTS.md#engine-and-release-operations).

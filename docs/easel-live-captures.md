@@ -3,31 +3,9 @@
 A captured WebCard keeps its original PNG, URL, acquisition time and optional
 renderer geometry. **Make Live**, on the selected card and its context menu,
 opens a real auxiliary Chromium page in that Easel editor's window and Profile.
-The first use presents the recovered Make it Live/Cancel education, explaining that sites can change and the original screenshot remains available through Snapshot. Its callback is bound to the same window, selection and document. The page is framed to the captured region. Its own renderer continues to update;
+The first use presents the Make it Live/Cancel education, explaining that sites can change and the original screenshot remains available through Snapshot. Its callback is bound to the same window, selection and document. The page is framed to the captured region. Its own renderer continues to update;
 there is no screenshot timer or image relabeling. **Snapshot** returns to the
 same original image after the live page actually agrees to close.
-
-## Recovered contract
-
-`4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547`.
-The local component, type, cross-reference and annotated-function helpers resolve
-this contract without new decompilation:
-
-- `EaselClient.WebCard` owns image, text, URL, favicon, acquisition date,
-  capture type and optional `CaptureLayoutInfo`. Layout stores web-content size,
-  content offset and the rectangle relative to the viewport.
-  actual canvas window, loads the original captured URL, retains the content and
-  live toggle and first-use education; the preference uses the object identity.
-  view and back. The live view retains its provider, content, positioning
-  cancellation and an interaction overlay.
-  scale from the displayed width divided by captured-region width, converts the
-  stored rectangle's bottom-origin Y, and positions the real content.
-  wait for the actual body to be ready, transform it using scale and translation,
-  scroll to the scaled original offset, and accept an offset within three CSS
-  pixels. `EaselLiveCaptureOverlay` separately owns forwarded input.
-
-Exact helper outputs are retained in local `work/easel-coordination/easel23`.
-These are static recovered facts, not a claim of observed browser behavior.
 
 ## Source and geometry
 
@@ -51,15 +29,13 @@ A live card is a member of the existing `EaselBrowserObjects` pool. Its pending
 request and eventual actual page use the same creation, selection, visibility,
 beforeunload, window-transfer and retirement boundaries as an ordinary embedded
 browser object. The original capture page stays untouched. Reopening live mode
-explicitly creates a new auxiliary page from the saved source, as the recovered
-provider does; hiding the Easel preserves its existing live page.
+explicitly creates a new auxiliary page from the saved source, from its saved capture metadata; hiding the Easel preserves its existing live page.
 
 The native positioning API only accepts an already-owned embedded page and
 finite bounded geometry. Each attempt validates the same renderer document,
 page, native window and embedded owner. Navigation, destruction, retirement or
 transfer invalidates pending work. A five-second deadline bounds a nonresponsive
-renderer; the twenty-attempt limit is recovered, while the 100-ms retry spacing
-and deadline are Parc adaptations. Stale callbacks cannot replace a newer
+renderer; there are at most twenty attempts, spaced 100 ms apart. Stale callbacks cannot replace a newer
 position or report it as successful.
 
 The page retains normal renderer updates and original permission, dialog,
@@ -72,7 +48,7 @@ Cross-Profile moves retire these same children before the document moves; the
 destination owns fresh content in its destination Profile, never a rebound
 source renderer.
 
-## Explicit adaptations and checks
+## Presentation and checks
 
 Parc stores the live preference with the local object so it follows document
 Undo and relocation. The compact security/reload/Snapshot control strip and
@@ -87,24 +63,3 @@ Compilation and injected page-pool checks validate source, geometry ownership,
 retirement and immutable image persistence. They create no browser and make no
 claim about installed appearance, animation, renderer interaction or runtime
 acceptance. Functional browser tests remain prohibited.
-
-The final integrated whole-module SIL pass has zero diagnostics. The real
-Swift pool with injected engine replies passes 57 assertions, including delayed
-source-window positioning, destination retry, stale-callback status suppression,
-completed-page rollback and beforeunload refusal. The native capture translation
-unit passes its pinned production compiler flags. Exact source `18b4012f` is
-independently CLEAR and published. EASEL29's separately reviewed `e9221af7`
-integration expands the pool to 76 assertions, including fresh destination
-Profile pages for live cards and no live request for paused cards, while
-preserving original pixels and capture geometry.
-
-The dedicated engine owner completed v239/overlay247 apply, real engine build,
-seal and dependent release app package, all with exit 0. The package at
-`/Users/josh/Parc/build/independent-v239/development-app-a60c015` contains app
-source `a60c0157` and both required new native capture exports. All 369 reviewed
-inputs and 755 package inputs stayed unchanged; strict app and sibling-component
-signature verification passed. Actual stage, artifact-verification and completion
-receipts are in `work/integrated-engine239`; engine publication `11019b6f`
-confirms delivery. EASEL23 is DONE under the source/component completion rule.
-The package was not executed, and these checks do not claim browser runtime or
-final appearance/motion acceptance.

@@ -33,8 +33,8 @@ directory.
   `build/config/mac/mac_sdk.gni` describe its SDK policy. The macOS 13 deployment
   target is not a claim that an old Xcode can build the current source.
 - Install Python 3.12 or later and ensure `python3` selects it. The engine scripts
-  require at least 3.11; the reference archive workflow also needs tar extraction
-  filters, which are standard in 3.12+. **Do not use macOS's Python 3.9.6** for
+  require at least 3.11; archive tooling also uses modern tar extraction
+  filters. **Do not use macOS's Python 3.9.6** for
   this setup. Every `python3` command below assumes a suitable interpreter on
   `PATH`; otherwise replace it with the installed interpreter's absolute path
   (for example `/opt/homebrew/bin/python3.13`). Git must also be available.
@@ -95,8 +95,9 @@ it does not reset, clean, delete or adopt an arbitrary existing checkout.
 Run each command after the preceding command succeeds. These are the supported
 tracked entry points; no historical `integrated-engine*/run.py` wrapper is
 needed. Keep this Parc checkout unchanged through the engine stages and app
-packaging. In a shared workspace, coordinate the freeze with the dedicated
-engine owner as required by [the collaboration guide](collaboration.md).
+packaging. In a shared workspace, coordinate the freeze with the explicitly assigned
+engine owner as required by [the collaboration guide](collaboration.md). These
+commands document the workflow; engine apply/build still requires authorization.
 
 ```sh
 python3 scripts/engine-source.py sync --workspace "$PARC_ENGINE"
@@ -162,9 +163,9 @@ completed stage. These commands do not install or launch Parc. The separate
 non-component shipping build, certificate signing and distribution boundaries
 are documented in [the packaging guide](../tests/Packaging/README.md).
 
-Every development helper process loads the framework's ~513 component
-libraries: about 3 s of CPU per new renderer or utility process on November 1,
-of these processes (icon decode, CRX unzip, then CRX decoding), so compare
+Component development packages load many sibling libraries per helper process.
+Their launch costs are not representative of the non-component shipping engine;
+measure the intended configuration before making performance claims.
 
 ## Check Swift without building an engine or app
 
@@ -183,7 +184,7 @@ python3 scripts/check-swift.py \
 ```
 
 The default `typecheck` mode is for iteration. `--mode sil` emits SIL to
-`/dev/null` with `-Onone`; use it for finished rows with material Swift changes,
+`/dev/null` with `-Onone`; use it for completed features with material Swift changes,
 as required by [the working contract](../AGENTS.md). It catches compiler stages
 that plain typechecking omits, including definite initialization.
 
@@ -219,12 +220,11 @@ fixture or change a real profile.
 ## What to carry over from the old Mac
 
 Git carries the reusable application/build tools and pinned artifact manifests.
-The private release assets carry the completed engine package, build workspace
+The private release assets carry the completed engine package and build workspace
+archives. Use the documented restore commands so their hashes,
 provenance and compatibility are checked. Do not manually rewrite receipts to
 make a copied workspace pass validation. Code-signing certificates and local app
 profiles are separate machine-specific inputs and are not part of these archives.
 
-Reference-analysis setup is separate from the production build. Preserve needed
-reference artifacts using [the reference manifest and archive guide](../References/README.md)
-inputs. Binaries and compiler caches belong in the release assets and restored
-local directories, outside Git history.
+Binaries and compiler caches belong in release assets and restored local
+directories, outside Git history.

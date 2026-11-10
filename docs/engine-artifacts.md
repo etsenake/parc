@@ -98,8 +98,8 @@ parts plus uncompressed files. No automatic cleanup is performed.
 
 ## Capture and publish
 
-The dedicated engine owner freezes the existing workspace and waits for its
-owned build process to exit before capture. These commands do not build an
+The owner of the active engine work freezes the existing workspace and waits
+for its build process to exit before capture. These commands do not build an
 engine or change the source receipt:
 
 ```sh

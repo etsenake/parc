@@ -1,31 +1,18 @@
 # Easels & Notes Library cards
 
-with static `easel` or `note` artwork at 18 × 18, title, and document contents
-as subtitle (empty for an Easel), with 12-point leading and trailing insets
+Library presents local Easels and Notes as two columns of title cards. Each card
+is 140 × 140 points with 12-point corners and insets, 18-point appearance-aware
+artwork and a wrapping 15-point semibold title. Light appearance uses opaque
+white cards with black titles; dark appearance uses raised gray cards and light
+titles. Space tint stays behind the cards. Note bodies are searchable but are
+not drawn on cards.
 
-is an opaque white 140 × 140 title-card grid on the Space-tinted panel: 18-point
-coral easel artwork, wrapping 15-point semibold black title, hairline, and a
-light drop shadow. Search is the full content width (“Search Easels…”). There
-are no Open / Rename / Delete / New Easel footer bezels. Card title contrast is
-independent of the Space tint — white tiles, black titles — which is why they
-read as cards rather than themed buttons. A shutdown banner on that page is not
-copied.
+Rename and Delete live in the ellipsis/context menu. New Note is a header icon,
+leaving search nearly full-width. Escape, including Escape from empty search,
+closes Library through its window owner. Click and Return use profile/window-
+guarded callbacks with real document identities and deletion confirmation.
 
-Dark Spaces use the catalog’s `easel-dark` / `note-dark` artwork (lighter ink
-meant for a dark tile). Parc therefore paints an **opaque** raised gray tile
-and a light title in dark appearance. A translucent white wash over the Space
-
-Parc’s Easels & Notes page follows that tile: 12-point continuous corners,
-12-point insets, 18-point appearance-resolved artwork, wrapping title only
-(Note body stays searchable, not drawn on the card). Rename and Delete stay on
-the card’s ellipsis / context menu. New Note is a header icon so search stays
-nearly full-width; the combined “Easels & Notes” name and that create control
-are documented adaptations. Escape / empty-search Escape closes Library through
-the existing window close owner.
-
-Parc uses the existing profile/window-guarded document callbacks for click and
-Return, retaining its real local document identities and deletion confirmation.
-The native table virtualizes two-card rows. At widths below the two 140-point
-cards plus spacing, Parc reduces both card sides together to keep them visible;
-this narrow-window rule is an adaptation. Remaining Archive / History / Media /
-Downloads rail polish stays with Codex `codex/library-polish`.
+The native table virtualizes pairs of cards. When the window cannot fit both
+140-point cards and their spacing, both cards shrink together. No document data
+or callback ownership changes with layout. Other Library sections retain their
+own presentation and lifecycle owners.
