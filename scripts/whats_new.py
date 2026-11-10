@@ -92,7 +92,7 @@ def favicon(path: Path) -> str:
 def render(notes: Path, repo: Path = ROOT) -> str:
     page = Template((repo / TEMPLATE).read_text(encoding="utf-8"))
     return page.substitute(font=inline(repo / "Sources/WhatsNew/CormorantGaramond-SemiBoldItalic.woff"),
-                           mark=inline(repo / "Resources/AppIcons/Marks/Monochrome.png"),
+                           mark=inline(repo / "Sources/WhatsNew/mark.png"),
                            grain=inline(repo / "Resources/ThemeTextures/grain.png"),
                            favicon=favicon(repo / "Sources/WhatsNew/favicon.png"),
                            content=render_content(read_releases(notes)))

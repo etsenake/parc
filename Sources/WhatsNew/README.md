@@ -40,7 +40,8 @@ python3 -m fontTools.subset semibold.ttf --unicodes='U+0020-007E,U+00A0-00FF,U+2
 
 Paper `#FFFCEC`, ink `#100E22` and blue
 highlight colours (`PreferencesSectionHighlight*`, `ARC_PreferencesFeature`
-catalog). The mark is Parc's `Resources/AppIcons/Marks/Monochrome.png`.
+catalog). `mark.png` is Parc's `Resources/AppIcons/Marks/Monochrome.png` at twice the
+size the page shows it.
 `favicon.png` is `Marks/Borderless.png` centred in a 32 px square, since Chromium
 stores favicons as square 16 and 32 px bitmaps:
 `sips -Z 30 Borderless.png --out mark.png && sips -p 32 32 mark.png --out favicon.png`.

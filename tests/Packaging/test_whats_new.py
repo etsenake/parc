@@ -96,8 +96,12 @@ class WhatsNewTests(unittest.TestCase):
     def test_each_inlined_asset_appears_once(self):
         page = whats_new.render(SAMPLE)
         for asset in ("Sources/WhatsNew/CormorantGaramond-SemiBoldItalic.woff",
-                      "Resources/AppIcons/Marks/Monochrome.png", "Resources/ThemeTextures/grain.png"):
+                      "Sources/WhatsNew/mark.png", "Resources/ThemeTextures/grain.png"):
             self.assertEqual(page.count(whats_new.inline(REPO / asset)), 1, asset)
+
+    def test_page_stays_small(self):
+        # Nearly all of the page is its inlined images and font; a large one here would slow a local page.
+        self.assertLess(len(whats_new.render(REPO / "release-notes.json").encode()), 300_000)
 
     def test_favicon_is_square_so_it_is_not_stretched(self):
         page = whats_new.render(SAMPLE)
